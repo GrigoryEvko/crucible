@@ -1,17 +1,26 @@
 #include <crucible/cipher/CipherTierPromotion.h>
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
 #include <foundation/Pinned.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
-#include "test_assert.h"
 #include <cstdio>
 #include <optional>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -75,38 +84,41 @@ void test_promote_and_demote_preserve_value() {
     auto hot = mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Hot>(std::move(cold));
     static_assert(std::is_same_v<decltype(hot), tier::Hot<MoveOnlyHash>>);
     MoveOnlyHash moved_hot = std::move(hot).consume();
-    assert(moved_hot.hash == cold_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, moved_hot.hash == cold_hash);
 
     constexpr ContentHash hot_hash{0xB002000000000002ULL};
     auto hot_source = ::fixy::mint_band<tier::Hot<MoveOnlyHash>>(MoveOnlyHash{hot_hash});
     auto cold_again = mint_demote<CipherTierTag_v::Hot, CipherTierTag_v::Cold>(std::move(hot_source));
     static_assert(std::is_same_v<decltype(cold_again), tier::Cold<MoveOnlyHash>>);
     MoveOnlyHash moved_cold = std::move(cold_again).consume();
-    assert(moved_cold.hash == hot_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, moved_cold.hash == hot_hash);
 }
 
 void test_restore_returns_expected_warm_handle() {
     constexpr ContentHash hash{0xC003000000000003ULL};
     auto restored = mint_restore<ContentHash>(::fixy::mint_band<tier::Cold<ContentHash>>(hash), hash);
-    assert(restored.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, restored.is_ok());
     static_assert(std::is_same_v<decltype(restored), ::fixy::Result<tier::Warm<ContentHash>, RestoreError>>);
     ContentHash restored_hash = std::move(restored).expect("the restore of a matching hash succeeds").consume();
-    assert(restored_hash == hash);
+    CRUCIBLE_TEST_ASSERT(kTest, restored_hash == hash);
 }
 
 void test_restore_error_surface() {
     constexpr ContentHash hash{0xD004000000000004ULL};
     auto empty_key = mint_restore<ContentHash>(::fixy::mint_band<tier::Cold<ContentHash>>(hash), ContentHash{});
-    assert(empty_key.is_err());
-    assert(empty_key.err().expect("the restore refuses an empty key") == RestoreError::EmptyContentHash);
+    CRUCIBLE_TEST_ASSERT(kTest, empty_key.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         empty_key.err().expect("the restore refuses an empty key") == RestoreError::EmptyContentHash);
 
     auto empty_handle = mint_restore<ContentHash>(::fixy::mint_band<tier::Cold<ContentHash>>(ContentHash{}), hash);
-    assert(empty_handle.is_err());
-    assert(empty_handle.err().expect("the restore refuses an empty handle") == RestoreError::EmptyColdHandle);
+    CRUCIBLE_TEST_ASSERT(kTest, empty_handle.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, empty_handle.err().expect("the restore refuses an empty handle")
+                                    == RestoreError::EmptyColdHandle);
 
     auto mismatch = mint_restore<ContentHash>(::fixy::mint_band<tier::Cold<ContentHash>>(ContentHash{0xE005ULL}), hash);
-    assert(mismatch.is_err());
-    assert(mismatch.err().expect("the restore refuses a mismatch") == RestoreError::ContentHashMismatch);
+    CRUCIBLE_TEST_ASSERT(kTest, mismatch.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         mismatch.err().expect("the restore refuses a mismatch") == RestoreError::ContentHashMismatch);
 }
 
 // The endpoint of the hot promotion: one hot-tier value and End, over a
@@ -163,7 +175,7 @@ void test_hot_promote_delegate_protocol() {
         });
     static_cast<void>(std::move(delegator_end).close());
     static_cast<void>(std::move(acceptor_end).close());
-    assert(slot.delegated_endpoints == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, slot.delegated_endpoints == 1);
 
     auto hot_endpoint = std::move(received).accept();
     auto hot_end = std::move(hot_endpoint)
@@ -173,8 +185,8 @@ void test_hot_promote_delegate_protocol() {
                                  return true;
                              });
     const HotWire hot_wire = std::move(hot_end).close();
-    assert(hot_wire.marker == marker);
-    assert(hot_wire.sent == payload);
+    CRUCIBLE_TEST_ASSERT(kTest, hot_wire.marker == marker);
+    CRUCIBLE_TEST_ASSERT(kTest, hot_wire.sent == payload);
 }
 
 }  // namespace
@@ -184,6 +196,6 @@ int main() {
     test_restore_returns_expected_warm_handle();
     test_restore_error_surface();
     test_hot_promote_delegate_protocol();
-    crucible::test::pass("cipher_tier_promotion: ok\n");
+    ::fixy::check::pass(kTest, "cipher_tier_promotion: ok\n");
     return 0;
 }

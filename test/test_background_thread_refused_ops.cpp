@@ -16,9 +16,18 @@
 #include <fixy/Ctx.h>
 #include <fixy/os/Time.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "test_harness.h"
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::BackgroundThread;
 using crucible::MetaIndex;
@@ -92,7 +101,7 @@ void test_refused_ops_give_no_wrong_region() {
     for (const uint64_t end = TraceRing::CAPACITY + kRefused; index < end; ++index) {
         if (!record(ring, index)) ++refused;
     }
-    assert(refused == kRefused);
+    CRUCIBLE_TEST_ASSERT(kTest, refused == kRefused);
 
     // The pipeline publishes the regions of the iterations in the full ring.
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring, test_log());
@@ -102,16 +111,17 @@ void test_refused_ops_give_no_wrong_region() {
     // The loop goes on after the gap, and the pipeline reads the stream with
     // the gap.
     for (const uint64_t end = index + kIterationsAfterGap * kPeriod; index < end; ++index)
-        assert(record(ring, index));
+        CRUCIBLE_TEST_ASSERT(kTest, record(ring, index));
     wait_for_pipeline(bt, ring);
     bt.stop();
 
-    assert(regions_before_gap > 0 && "the loop before the gap published no region");
-    assert(bt.uncompiled_regions.total() > regions_before_gap && "the loop after the gap published no region");
+    CRUCIBLE_TEST_ASSERT(kTest, regions_before_gap > 0 && "the loop before the gap published no region");
+    CRUCIBLE_TEST_ASSERT(kTest, bt.uncompiled_regions.total() > regions_before_gap
+                                    && "the loop after the gap published no region");
     // The pipeline is stopped, so the queue can be read.
     for (uint32_t age = 0; age < bt.uncompiled_regions.size(); ++age) {
-        assert(is_one_iteration(bt.uncompiled_regions.at(age).get().ops)
-               && "a region holds ops that are not one iteration of the loop");
+        CRUCIBLE_TEST_ASSERT(kTest, is_one_iteration(bt.uncompiled_regions.at(age).get().ops)
+                                        && "a region holds ops that are not one iteration of the loop");
     }
 }
 

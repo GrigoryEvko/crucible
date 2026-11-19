@@ -1,17 +1,25 @@
 #include <crucible/cntp/Pacing.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/os/Socket.h>
 #include <foundation/effects/Effect.h>
 
 #include <array>
 #include "tcp_socket.h"
-#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
 
 #include <net/if.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cntp = crucible::cntp;
 
@@ -58,66 +66,73 @@ constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
 
 void test_interface_name_admission() {
     cntp::NicInterfaceName const lo = take(cntp::NicInterfaceName::from("lo"));
-    assert(lo.view() == "lo");
+    CRUCIBLE_TEST_ASSERT(kTest, lo.view() == "lo");
 
     cntp::NicInterfaceName const colon = take(cntp::NicInterfaceName::from("enp1s0f0:1"));
-    assert(colon.view() == "enp1s0f0:1");
+    CRUCIBLE_TEST_ASSERT(kTest, colon.view() == "enp1s0f0:1");
 
     // A name of max_bytes - 1 characters fits beside its zero, and one more
     // character does not.
     cntp::NicInterfaceName const longest = take(cntp::NicInterfaceName::from("0123456789abcde"));
-    assert(longest.view().size() == cntp::NicInterfaceName::max_bytes - 1);
-    assert(error_of(cntp::NicInterfaceName::from("0123456789abcdef")) == cntp::PacingError::InvalidInterfaceName);
+    CRUCIBLE_TEST_ASSERT(kTest, longest.view().size() == cntp::NicInterfaceName::max_bytes - 1);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::NicInterfaceName::from("0123456789abcdef"))
+                                    == cntp::PacingError::InvalidInterfaceName);
 
-    assert(error_of(cntp::NicInterfaceName::from("")) == cntp::PacingError::InvalidInterfaceName);
-    assert(error_of(cntp::NicInterfaceName::from("../eth0")) == cntp::PacingError::InvalidInterfaceName);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::NicInterfaceName::from("")) == cntp::PacingError::InvalidInterfaceName);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(cntp::NicInterfaceName::from("../eth0")) == cntp::PacingError::InvalidInterfaceName);
 
     // "." and ".." name a directory and no interface, and the kernel refuses
     // them as interface names.  A sysfs path of either would leave the
     // directory of the interface.
-    assert(error_of(cntp::NicInterfaceName::from(".")) == cntp::PacingError::InvalidInterfaceName);
-    assert(error_of(cntp::NicInterfaceName::from("..")) == cntp::PacingError::InvalidInterfaceName);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::NicInterfaceName::from(".")) == cntp::PacingError::InvalidInterfaceName);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(cntp::NicInterfaceName::from("..")) == cntp::PacingError::InvalidInterfaceName);
     cntp::NicInterfaceName const three_dots = take(cntp::NicInterfaceName::from("..."));
-    assert(three_dots.view() == "...");
+    CRUCIBLE_TEST_ASSERT(kTest, three_dots.view() == "...");
 
-    crucible::test::pass("  test_interface_name_admission: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_interface_name_admission: PASSED\n");
 }
 
 // The sysfs path of a name stays in the directory of the interface.
 void test_interface_path() {
     cntp::NicInterfaceName const lo = take(cntp::NicInterfaceName::from("lo"));
     cntp::detail::InterfacePath const path = cntp::detail::interface_path_of(lo, "ifindex");
-    assert(path.c_text().view() == "/sys/class/net/lo/ifindex");
+    CRUCIBLE_TEST_ASSERT(kTest, path.c_text().view() == "/sys/class/net/lo/ifindex");
 
     // The index of a missing interface is refused.  The name holds the
     // characters that the type admits, and no interface has it.
     cntp::NicInterfaceName const missing = take(cntp::NicInterfaceName::from("no-such-nic.0"));
-    assert(error_of(cntp::detail::read_interface_index(missing)) == cntp::PacingError::InterfaceNotFound);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(cntp::detail::read_interface_index(missing)) == cntp::PacingError::InterfaceNotFound);
 
-    crucible::test::pass("  test_interface_path:           PASSED\n");
+    ::fixy::check::pass(kTest, "  test_interface_path:           PASSED\n");
 }
 
 void test_qdisc_parse() {
     cntp::Qdisc const fq = take(cntp::qdisc_from_kernel_name("fq"));
-    assert(fq == cntp::Qdisc::Fq);
-    assert(cntp::qdisc_name(fq) == "fq");
+    CRUCIBLE_TEST_ASSERT(kTest, fq == cntp::Qdisc::Fq);
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::qdisc_name(fq) == "fq");
 
-    assert(take(cntp::qdisc_from_kernel_name("fq_codel")) == cntp::Qdisc::FqCodel);
-    assert(take(cntp::qdisc_from_kernel_name("pfifo_fast")) == cntp::Qdisc::Pfifo);
-    assert(take(cntp::qdisc_from_kernel_name("mq")) == cntp::Qdisc::Mq);
-    assert(take(cntp::qdisc_from_kernel_name("noqueue")) == cntp::Qdisc::Noqueue);
-    assert(take(cntp::qdisc_from_kernel_name("cake")) == cntp::Qdisc::Other);
-    assert(error_of(cntp::qdisc_from_kernel_name("")) == cntp::PacingError::QdiscKindMissing);
+    CRUCIBLE_TEST_ASSERT(kTest, take(cntp::qdisc_from_kernel_name("fq_codel")) == cntp::Qdisc::FqCodel);
+    CRUCIBLE_TEST_ASSERT(kTest, take(cntp::qdisc_from_kernel_name("pfifo_fast")) == cntp::Qdisc::Pfifo);
+    CRUCIBLE_TEST_ASSERT(kTest, take(cntp::qdisc_from_kernel_name("mq")) == cntp::Qdisc::Mq);
+    CRUCIBLE_TEST_ASSERT(kTest, take(cntp::qdisc_from_kernel_name("noqueue")) == cntp::Qdisc::Noqueue);
+    CRUCIBLE_TEST_ASSERT(kTest, take(cntp::qdisc_from_kernel_name("cake")) == cntp::Qdisc::Other);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::qdisc_from_kernel_name("")) == cntp::PacingError::QdiscKindMissing);
 
-    assert(take(cntp::parse_tc_qdisc_show("qdisc fq 8001: root refcnt 2 limit 10000p flow_limit 100p\n"))
-           == cntp::Qdisc::Fq);
-    assert(take(cntp::parse_tc_qdisc_show("qdisc fq_codel 0: root\n")) == cntp::Qdisc::FqCodel);
-    assert(error_of(cntp::parse_tc_qdisc_show("class htb 1:1 root")) == cntp::PacingError::QdiscKindMissing);
-    assert(take(cntp::parse_tc_qdisc_show("noise qdisc   mq 0: root\n")) == cntp::Qdisc::Mq);
-    assert(take(cntp::parse_tc_qdisc_show("qdisc a_very_long_queue_kind 0: root")) == cntp::Qdisc::Other);
-    assert(error_of(cntp::parse_tc_qdisc_show("qdisc \n")) == cntp::PacingError::QdiscKindMissing);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         take(cntp::parse_tc_qdisc_show("qdisc fq 8001: root refcnt 2 limit 10000p flow_limit 100p\n"))
+                             == cntp::Qdisc::Fq);
+    CRUCIBLE_TEST_ASSERT(kTest, take(cntp::parse_tc_qdisc_show("qdisc fq_codel 0: root\n")) == cntp::Qdisc::FqCodel);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::parse_tc_qdisc_show("class htb 1:1 root"))
+                                    == cntp::PacingError::QdiscKindMissing);
+    CRUCIBLE_TEST_ASSERT(kTest, take(cntp::parse_tc_qdisc_show("noise qdisc   mq 0: root\n")) == cntp::Qdisc::Mq);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         take(cntp::parse_tc_qdisc_show("qdisc a_very_long_queue_kind 0: root")) == cntp::Qdisc::Other);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::parse_tc_qdisc_show("qdisc \n")) == cntp::PacingError::QdiscKindMissing);
 
-    crucible::test::pass("  test_qdisc_parse:              PASSED\n");
+    ::fixy::check::pass(kTest, "  test_qdisc_parse:              PASSED\n");
 }
 
 // A part of a qdisc dump reply: a message of a different request, the
@@ -163,25 +178,26 @@ void test_qdisc_reply_scan() {
     QdiscReplyPart const part = qdisc_reply_part(7);
 
     auto found = cntp::detail::scan_qdisc_reply(::fixy::bytes(part), 7);
-    assert(found.is_some());
-    assert(take(std::move(found).expect("the part names the root qdisc of interface 7")) == cntp::Qdisc::Fq);
+    CRUCIBLE_TEST_ASSERT(kTest, found.is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, take(std::move(found).expect("the part names the root qdisc of interface 7"))
+                                    == cntp::Qdisc::Fq);
 
     // The part names no qdisc of interface 8, so the scan reaches the end.
     auto ended = cntp::detail::scan_qdisc_reply(::fixy::bytes(part), 8);
-    assert(error_of(std::move(ended).expect("the part holds the end of the dump"))
-           == cntp::PacingError::QdiscKindMissing);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(std::move(ended).expect("the part holds the end of the dump"))
+                                    == cntp::PacingError::QdiscKindMissing);
 
     // The message of a different request alone holds no answer.
-    assert(cntp::detail::scan_qdisc_reply(::fixy::bytes(part.foreign_header), 7).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::detail::scan_qdisc_reply(::fixy::bytes(part.foreign_header), 7).is_none());
 
     // A message whose length passes the end of the part is refused.
     QdiscReplyPart cut = part;
     cut.qdisc_header.length = 4096;
     auto refused = cntp::detail::scan_qdisc_reply(::fixy::bytes(cut), 7);
-    assert(error_of(std::move(refused).expect("the scan refuses the cut message"))
-           == cntp::PacingError::NetlinkReceiveFailed);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(std::move(refused).expect("the scan refuses the cut message"))
+                                    == cntp::PacingError::NetlinkReceiveFailed);
 
-    crucible::test::pass("  test_qdisc_reply_scan:         PASSED\n");
+    ::fixy::check::pass(kTest, "  test_qdisc_reply_scan:         PASSED\n");
 }
 
 void test_mint_and_rate_surfaces() {
@@ -189,14 +205,14 @@ void test_mint_and_rate_surfaces() {
 
     auto config = cntp::mint_bbr_qdisc_config<cntp::Qdisc::FqCodel>(lo);
     static_assert(std::same_as<decltype(config), cntp::DeclaredQdiscConfig>);
-    assert(config.value().interface.view() == "lo");
-    assert(config.value().required == cntp::Qdisc::FqCodel);
-    assert(!config.value().allow_auto_config);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().interface.view() == "lo");
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().required == cntp::Qdisc::FqCodel);
+    CRUCIBLE_TEST_ASSERT(kTest, !config.value().allow_auto_config);
 
-    assert(take(cntp::admit_pacing_rate(1000000)).value() == 1000000);
-    assert(error_of(cntp::admit_pacing_rate(0)) == cntp::PacingError::InvalidPacingRate);
+    CRUCIBLE_TEST_ASSERT(kTest, take(cntp::admit_pacing_rate(1000000)).value() == 1000000);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::admit_pacing_rate(0)) == cntp::PacingError::InvalidPacingRate);
 
-    crucible::test::pass("  test_mint_and_rate_surfaces:   PASSED\n");
+    ::fixy::check::pass(kTest, "  test_mint_and_rate_surfaces:   PASSED\n");
 }
 
 void test_live_socket_pacing_if_available() {
@@ -204,7 +220,7 @@ void test_live_socket_pacing_if_available() {
     // IO and Block that the socket option gate asks for.
     ::fixy::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
     crucible::test::TcpSocket const socket = crucible::test::open_tcp_socket(test_ctx);
-    assert(socket.is_open());
+    CRUCIBLE_TEST_ASSERT(kTest, socket.is_open());
 
     cntp::SocketFd const fd = ::fixy::net::share_socket(socket.ref());
 
@@ -215,9 +231,9 @@ void test_live_socket_pacing_if_available() {
                        "  test_live_socket_pacing_if_available: SKIPPED (qemu-user has no SO_MAX_PACING_RATE)\n");
         return;
     }
-    assert(set.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, set.is_ok());
 
-    crucible::test::pass("  test_live_socket_pacing_if_available: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_live_socket_pacing_if_available: PASSED\n");
 }
 
 void test_live_loopback_qdisc_query_if_available() {
@@ -229,24 +245,27 @@ void test_live_loopback_qdisc_query_if_available() {
 
     // The index from sysfs is the index that the kernel gives for the name.
     cntp::NicInterfaceName const lo = take(cntp::NicInterfaceName::from("lo"));
-    assert(take(cntp::detail::read_interface_index(lo)) == static_cast<std::int32_t>(kernel_index));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         take(cntp::detail::read_interface_index(lo)) == static_cast<std::int32_t>(kernel_index));
     // The socket door wants IO and Block, and the test runner context
     // carries both.
     ::fixy::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
     auto queried = cntp::query_active_qdisc(test_ctx, lo);
     if (queried.is_err()) {
         cntp::PacingError const refusal = error_of(std::move(queried));
-        assert(refusal == cntp::PacingError::QdiscKindMissing || refusal == cntp::PacingError::NetlinkOpenFailed
-               || refusal == cntp::PacingError::NetlinkSendFailed
-               || refusal == cntp::PacingError::NetlinkReceiveFailed);
+        CRUCIBLE_TEST_ASSERT(kTest, refusal == cntp::PacingError::QdiscKindMissing
+                                        || refusal == cntp::PacingError::NetlinkOpenFailed
+                                        || refusal == cntp::PacingError::NetlinkSendFailed
+                                        || refusal == cntp::PacingError::NetlinkReceiveFailed);
         ::fixy::report(::fixy::Sink::Out, "  test_live_loopback_qdisc_query_if_available: SKIPPED\n");
         return;
     }
 
     cntp::Qdisc const active = take(std::move(queried));
-    assert(active == cntp::Qdisc::Fq || active == cntp::Qdisc::FqCodel || active == cntp::Qdisc::Pfifo
-           || active == cntp::Qdisc::Mq || active == cntp::Qdisc::Noqueue || active == cntp::Qdisc::Other);
-    crucible::test::pass("  test_live_loopback_qdisc_query_if_available: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, active == cntp::Qdisc::Fq || active == cntp::Qdisc::FqCodel
+                                    || active == cntp::Qdisc::Pfifo || active == cntp::Qdisc::Mq
+                                    || active == cntp::Qdisc::Noqueue || active == cntp::Qdisc::Other);
+    ::fixy::check::pass(kTest, "  test_live_loopback_qdisc_query_if_available: PASSED\n");
 }
 
 }  // namespace
@@ -297,6 +316,6 @@ int main() {
     test_mint_and_rate_surfaces();
     test_live_socket_pacing_if_available();
     test_live_loopback_qdisc_query_if_available();
-    crucible::test::pass("test_cntp_pacing: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_cntp_pacing: all PASSED\n");
     return 0;
 }

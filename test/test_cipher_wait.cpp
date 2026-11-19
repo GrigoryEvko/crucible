@@ -6,8 +6,11 @@
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
-#include "test_assert.h"
+#include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -15,6 +18,13 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 // Opening the store and its open view need a context whose row admits IO
 // and Block.
@@ -60,11 +70,11 @@ static ::fixy::Ref<RegionNode> make_test_region(::fixy::BumpArena& dag_arena, ui
     meta.sizes[0] = ::crucible::tensor_dim(16);
     meta.strides[0] = ::crucible::tensor_dim(1);
     meta.dtype = ScalarType::Float;
-    op.set_inputs(crucible::test::run_of(g_test.alloc, dag_arena, meta),
-                  crucible::test::run_of(g_test.alloc, dag_arena, OpIndex{}),
-                  crucible::test::run_of(g_test.alloc, dag_arena, SlotId{}));
-    op.set_outputs(crucible::test::run_of(g_test.alloc, dag_arena, meta),
-                   crucible::test::run_of(g_test.alloc, dag_arena, SlotId{seed}));
+    op.set_inputs(::fixy::check::run_of(kTest, g_test.alloc, dag_arena, meta),
+                  ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, OpIndex{}),
+                  ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, SlotId{}));
+    op.set_outputs(::fixy::check::run_of(kTest, g_test.alloc, dag_arena, meta),
+                   ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, SlotId{seed}));
     return crucible::make_region(g_test.alloc, dag_arena, ops);
 }
 
@@ -78,7 +88,7 @@ static void test_store_pinned_bit_equality(const char* dir) {
     ContentHash raw = cipher.store(store_ctx(), view, payload);
     auto pinned = cipher.store_pinned(store_ctx(), view, payload);
     ContentHash via_wrapper = std::move(pinned).consume();
-    assert(raw == via_wrapper);
+    CRUCIBLE_TEST_ASSERT(kTest, raw == via_wrapper);
 }
 
 static void test_store_pinned_type_identity(const char* dir) {
@@ -111,7 +121,7 @@ static void test_store_pinned_payload_route(const char* dir) {
 
     auto p = cipher.store_pinned(store_ctx(), view, payload);
     ContentHash h = std::move(p).consume();
-    assert(static_cast<bool>(h));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(h));
 }
 
 // Block sits at the bottom of the wait lattice, so it satisfies only
@@ -145,13 +155,13 @@ static void test_e2e_block_fence_consumer(const char* dir) {
 
     auto pinned = cipher.store_pinned(store_ctx(), view, payload);
     ContentHash h = block_fence_consumer(std::move(pinned));
-    assert(static_cast<bool>(h));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(h));
 }
 
 int main() {
     char tmpdir[] = "/tmp/crucible_cipher_wait_XXXXXX";
     char* dir = mkdtemp(tmpdir);
-    assert(dir != nullptr);
+    CRUCIBLE_TEST_ASSERT(kTest, dir != nullptr);
 
     test_store_pinned_bit_equality(dir);
     test_store_pinned_type_identity(dir);

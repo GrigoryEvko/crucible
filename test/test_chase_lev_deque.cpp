@@ -6,16 +6,26 @@
 // dropped work; a repeated item means two threads were handed the same
 // work.  Either one is an ordering defect and neither can hide.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/concurrent/ChaseLevDeque.h>
+#include <foundation/effects/Effect.h>
 
 #include <atomic>
-#include "test_assert.h"
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <thread>
 #include <type_traits>
 #include <vector>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace fixy::concurrent;
 
@@ -41,91 +51,91 @@ static_assert(DequeValue<uint64_t>);
 
 static void test_empty_deque() {
     ChaseLevDeque<uint64_t, 64> dq;
-    assert(dq.empty_approx(kSnapshot));
-    assert(dq.size_approx(kSnapshot) == 0);
-    assert(!dq.pop_bottom().has_value());
-    assert(!dq.steal_top().has_value());
-    crucible::test::pass("  test_empty_deque: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, dq.empty_approx(kSnapshot));
+    CRUCIBLE_TEST_ASSERT(kTest, dq.size_approx(kSnapshot) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, !dq.pop_bottom().has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, !dq.steal_top().has_value());
+    ::fixy::check::pass(kTest, "  test_empty_deque: PASSED\n");
 }
 
 static void test_single_thread_lifo() {
     ChaseLevDeque<uint64_t, 64> dq;
 
     for (uint64_t i = 0; i < 32; ++i) {
-        assert(dq.push_bottom(i));
+        CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(i));
     }
-    assert(dq.size_approx(kSnapshot) == 32);
+    CRUCIBLE_TEST_ASSERT(kTest, dq.size_approx(kSnapshot) == 32);
 
     // The owner's own end is last in, first out.
     for (uint64_t i = 0; i < 32; ++i) {
         const uint64_t expected = 31 - i;
         const auto opt = dq.pop_bottom();
-        assert(opt.has_value());
-        assert(*opt == expected);
+        CRUCIBLE_TEST_ASSERT(kTest, opt.has_value());
+        CRUCIBLE_TEST_ASSERT(kTest, *opt == expected);
     }
-    assert(dq.empty_approx(kSnapshot));
-    assert(!dq.pop_bottom().has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, dq.empty_approx(kSnapshot));
+    CRUCIBLE_TEST_ASSERT(kTest, !dq.pop_bottom().has_value());
 
-    crucible::test::pass("  test_single_thread_lifo: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_single_thread_lifo: PASSED\n");
 }
 
 static void test_single_thread_steal_fifo() {
     ChaseLevDeque<uint64_t, 64> dq;
 
     for (uint64_t i = 0; i < 32; ++i) {
-        assert(dq.push_bottom(i));
+        CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(i));
     }
     // The thief's end is the opposite one, so it drains oldest first.
     for (uint64_t i = 0; i < 32; ++i) {
         const auto opt = dq.steal_top();
-        assert(opt.has_value());
-        assert(*opt == i);
+        CRUCIBLE_TEST_ASSERT(kTest, opt.has_value());
+        CRUCIBLE_TEST_ASSERT(kTest, *opt == i);
     }
-    assert(!dq.steal_top().has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, !dq.steal_top().has_value());
 
-    crucible::test::pass("  test_single_thread_steal_fifo: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_single_thread_steal_fifo: PASSED\n");
 }
 
 static void test_capacity_bound() {
     ChaseLevDeque<uint64_t, 8> dq;
     for (uint64_t i = 0; i < 8; ++i) {
-        assert(dq.push_bottom(i));
+        CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(i));
     }
-    assert(!dq.push_bottom(99));
-    assert(dq.size_approx(kSnapshot) == 8);
+    CRUCIBLE_TEST_ASSERT(kTest, !dq.push_bottom(99));
+    CRUCIBLE_TEST_ASSERT(kTest, dq.size_approx(kSnapshot) == 8);
 
     // Freeing one slot has to make room again, so the refusal above is
     // about occupancy and not a latched state.
     auto popped = dq.pop_bottom();
-    assert(popped.has_value());
-    assert(*popped == 7);
-    assert(dq.push_bottom(99));
-    assert(dq.size_approx(kSnapshot) == 8);
+    CRUCIBLE_TEST_ASSERT(kTest, popped.has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, *popped == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(99));
+    CRUCIBLE_TEST_ASSERT(kTest, dq.size_approx(kSnapshot) == 8);
 
-    crucible::test::pass("  test_capacity_bound: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_capacity_bound: PASSED\n");
 }
 
 static void test_interleaved_single_thread() {
     ChaseLevDeque<uint64_t, 32> dq;
 
-    assert(dq.push_bottom(1));
-    assert(dq.push_bottom(2));
-    assert(dq.push_bottom(3));
+    CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(1));
+    CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(2));
+    CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(3));
 
     // Stealing from the owning thread is unusual but permitted, and it
     // takes from the far end just as a thief would.
     auto a = dq.steal_top();
-    assert(a.has_value() && *a == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, a.has_value() && *a == 1);
 
     auto b = dq.pop_bottom();
-    assert(b.has_value() && *b == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, b.has_value() && *b == 3);
 
     auto c = dq.steal_top();
-    assert(c.has_value() && *c == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, c.has_value() && *c == 2);
 
-    assert(dq.empty_approx(kSnapshot));
+    CRUCIBLE_TEST_ASSERT(kTest, dq.empty_approx(kSnapshot));
 
-    crucible::test::pass("  test_interleaved_single_thread: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_interleaved_single_thread: PASSED\n");
 }
 
 // The owner both produces and consumes here, so the contended element
@@ -234,10 +244,10 @@ static void test_stress_one_owner_n_thieves() {
                    N_ITEMS, missing, static_cast<unsigned long long>(dup),
                    static_cast<unsigned long long>(empty_steals));
 
-    assert(missing == 0 && "item lost — owner pushed but no receiver marked it");
-    assert(dup == 0 && "item duplicated — owner-vs-thief race resolution is broken");
+    CRUCIBLE_TEST_ASSERT(kTest, missing == 0 && "item lost — owner pushed but no receiver marked it");
+    CRUCIBLE_TEST_ASSERT(kTest, dup == 0 && "item duplicated — owner-vs-thief race resolution is broken");
 
-    crucible::test::pass("  test_stress_one_owner_n_thieves: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_stress_one_owner_n_thieves: PASSED\n");
 }
 
 // A small queue with more thieves keeps the two ends close together, so
@@ -315,10 +325,10 @@ static void test_stress_high_contention() {
     ::fixy::report(::fixy::Sink::Out, "    items: {}, missing: {}, duplicates: {}\n", N_ITEMS, missing,
                    static_cast<unsigned long long>(dup));
 
-    assert(missing == 0 && "item lost under high contention");
-    assert(dup == 0 && "item duplicated under high contention");
+    CRUCIBLE_TEST_ASSERT(kTest, missing == 0 && "item lost under high contention");
+    CRUCIBLE_TEST_ASSERT(kTest, dup == 0 && "item duplicated under high contention");
 
-    crucible::test::pass("  test_stress_high_contention: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_stress_high_contention: PASSED\n");
 }
 
 // A pointer payload is the shape real work items take, and it is also
@@ -329,19 +339,19 @@ static void test_pointer_payload() {
     int values[10];
     for (int i = 0; i < 10; ++i) {
         values[i] = i * 100;
-        assert(dq.push_bottom(&values[i]));
+        CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(&values[i]));
     }
 
     // The pointers come back in reverse, and each one still addresses
     // the value it was taken from.
     for (int i = 9; i >= 0; --i) {
         auto opt = dq.pop_bottom();
-        assert(opt.has_value());
-        assert(*opt == &values[i]);
-        assert(**opt == i * 100);
+        CRUCIBLE_TEST_ASSERT(kTest, opt.has_value());
+        CRUCIBLE_TEST_ASSERT(kTest, *opt == &values[i]);
+        CRUCIBLE_TEST_ASSERT(kTest, **opt == i * 100);
     }
 
-    crucible::test::pass("  test_pointer_payload: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_pointer_payload: PASSED\n");
 }
 
 int main() {
@@ -356,6 +366,6 @@ int main() {
     test_stress_one_owner_n_thieves();
     test_stress_high_contention();
 
-    crucible::test::pass("test_chase_lev_deque: ALL PASSED\n");
+    ::fixy::check::pass(kTest, "test_chase_lev_deque: ALL PASSED\n");
     return 0;
 }

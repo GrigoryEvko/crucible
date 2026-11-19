@@ -14,8 +14,10 @@
 #include <crucible/IterationDetector.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/TensorMeta.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
-#include "test_assert.h"
 
 #include <atomic>
 #include <bit>
@@ -24,6 +26,13 @@
 #include <cstdio>
 #include <functional>
 #include <memory>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::BackgroundThread;
 using crucible::MetaIndex;
@@ -75,15 +84,15 @@ struct Work {
     // An op with one output tensor, whose metadata goes to the log.  Returns
     // the end of that metadata in the log.
     uint64_t push_op_with_meta(MetaLog& log, uint32_t op) {
-        assert(count < CAPACITY);
+        CRUCIBLE_TEST_ASSERT(kTest, count < CAPACITY);
         const ::fixy::FixedArray<crucible::TensorMeta, 1> record{output_meta(op)};
         const MetaIndex index = log.try_append(record.view());
-        assert(index.is_valid());
-        TraceRing::Entry& entry = crucible::test::element_at(trace, count);
+        CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
+        TraceRing::Entry& entry = *trace.get(count).expect("a test reads an element at or past the count of its array");
         entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
         entry.shape_hash = crucible::ShapeHash{0x8000ULL + op};
         entry.num_outputs = 1;
-        crucible::test::element_at(meta_starts, count) = index;
+        *meta_starts.get(count).expect("a test reads an element at or past the count of its array") = index;
         ++count;
         return index.raw() + 1;
     }
@@ -91,38 +100,38 @@ struct Work {
     // An op with no tensor and two scalar arguments.  The foreground gives
     // such an op no metadata index.
     void push_op_with_scalars(uint32_t op, int64_t first, int64_t second) {
-        assert(count < CAPACITY);
-        TraceRing::Entry& entry = crucible::test::element_at(trace, count);
+        CRUCIBLE_TEST_ASSERT(kTest, count < CAPACITY);
+        TraceRing::Entry& entry = *trace.get(count).expect("a test reads an element at or past the count of its array");
         entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
         entry.shape_hash = crucible::ShapeHash{0x8000ULL + op};
         entry.num_scalar_args = 2;
         entry.scalar_values.at(::fixy::index<0>()) = first;
         entry.scalar_values.at(::fixy::index<1>()) = second;
-        crucible::test::element_at(meta_starts, count) = MetaIndex::none();
+        *meta_starts.get(count).expect("a test reads an element at or past the count of its array") = MetaIndex::none();
         ++count;
     }
 
     // An op with one output tensor and no metadata index, as the foreground
     // records it when the log is full.
     void push_op_without_meta(uint32_t op) {
-        assert(count < CAPACITY);
-        TraceRing::Entry& entry = crucible::test::element_at(trace, count);
+        CRUCIBLE_TEST_ASSERT(kTest, count < CAPACITY);
+        TraceRing::Entry& entry = *trace.get(count).expect("a test reads an element at or past the count of its array");
         entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
         entry.shape_hash = crucible::ShapeHash{0x8000ULL + op};
         entry.num_outputs = 1;
-        crucible::test::element_at(meta_starts, count) = MetaIndex::none();
+        *meta_starts.get(count).expect("a test reads an element at or past the count of its array") = MetaIndex::none();
         ++count;
     }
 
     // The closing entry of a nest whose op did not reach the Vigil, at the
     // depth of that op, with no tensor, as Vigil::give_unrecorded_nest gives it.
     void push_closing_entry(crucible::OpDepth depth) {
-        assert(count < CAPACITY);
-        TraceRing::Entry& entry = crucible::test::element_at(trace, count);
+        CRUCIBLE_TEST_ASSERT(kTest, count < CAPACITY);
+        TraceRing::Entry& entry = *trace.get(count).expect("a test reads an element at or past the count of its array");
         entry.schema_hash = crucible::kUnrecordedNestSchema;
         entry.shape_hash = crucible::ShapeHash{0x8100ULL};
-        crucible::test::element_at(meta_starts, count) = MetaIndex::none();
-        crucible::test::element_at(depths, count) = depth;
+        *meta_starts.get(count).expect("a test reads an element at or past the count of its array") = MetaIndex::none();
+        *depths.get(count).expect("a test reads an element at or past the count of its array") = depth;
         ++count;
     }
 };
@@ -157,19 +166,20 @@ void test_overflow_build_leaves_tail() {
 
     ::fixy::BumpArena scratch{size_t{1} << 16};
     const BackgroundThread::TraceBuild built = overflowing.build(bt, test.alloc, scratch);
-    assert(built.err().expect("the overflow refuses the build") == BackgroundThread::BuildRefusal::MetaLogOverflow);
-    assert(metalog->tail.get() == 0u && "the build stage moved the tail of the metadata log");
+    CRUCIBLE_TEST_ASSERT(kTest, built.err().expect("the overflow refuses the build")
+                                    == BackgroundThread::BuildRefusal::MetaLogOverflow);
+    CRUCIBLE_TEST_ASSERT(kTest, metalog->tail.get() == 0u && "the build stage moved the tail of the metadata log");
 
     // The overflow at the first op reads no metadata.
     Work overflowing_at_start;
     overflowing_at_start.push_op_without_meta(3);
     (void)overflowing_at_start.push_op_with_meta(*metalog, 4);
     const BackgroundThread::TraceBuild built_at_start = overflowing_at_start.build(bt, test.alloc, scratch);
-    assert(built_at_start.err().expect("the overflow refuses the build")
-           == BackgroundThread::BuildRefusal::MetaLogOverflow);
-    assert(metalog->tail.get() == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, built_at_start.err().expect("the overflow refuses the build")
+                                    == BackgroundThread::BuildRefusal::MetaLogOverflow);
+    CRUCIBLE_TEST_ASSERT(kTest, metalog->tail.get() == 0u);
 
-    crucible::test::pass("  overflow_build_leaves_tail:                PASSED\n");
+    ::fixy::check::pass(kTest, "  overflow_build_leaves_tail:                PASSED\n");
 }
 
 // A work that holds the closing entry of a nest whose op did not reach the
@@ -186,20 +196,21 @@ void test_unrecorded_nest_refuses_the_build() {
 
     Work raised;
     raised.push_op_with_scalars(0, 1, 2);
-    crucible::test::element_at(raised.depths, 0) = crucible::OpDepth{1};
+    *raised.depths.get(0).expect("a test reads an element at or past the count of its array") = crucible::OpDepth{1};
     raised.push_closing_entry(crucible::OpDepth{0});
     raised.push_op_with_scalars(1, 3, 4);
     const BackgroundThread::TraceBuild refused = raised.build(bt, test.alloc, scratch);
-    assert(refused.err().expect("the closing entry refuses the build")
-           == BackgroundThread::BuildRefusal::UnrecordedNest);
+    CRUCIBLE_TEST_ASSERT(kTest, refused.err().expect("the closing entry refuses the build")
+                                    == BackgroundThread::BuildRefusal::UnrecordedNest);
 
     Work recorded;
     recorded.push_op_with_scalars(0, 1, 2);
-    crucible::test::element_at(recorded.depths, 0) = crucible::OpDepth{1};
+    *recorded.depths.get(0).expect("a test reads an element at or past the count of its array") = crucible::OpDepth{1};
     recorded.push_op_with_scalars(1, 3, 4);
-    assert(recorded.build(bt, test.alloc, scratch).is_ok() && "the work with no closing entry builds");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         recorded.build(bt, test.alloc, scratch).is_ok() && "the work with no closing entry builds");
 
-    crucible::test::pass("  unrecorded_nest_refuses_the_build:         PASSED\n");
+    ::fixy::check::pass(kTest, "  unrecorded_nest_refuses_the_build:         PASSED\n");
 }
 
 // The order that the pipeline permits: the build stage builds a graph and
@@ -228,26 +239,27 @@ void test_publish_stage_releases_in_order() {
 
     ::fixy::BumpArena scratch{size_t{1} << 16};
     BackgroundThread::TraceBuild built = first.build(bt, test.alloc, scratch);
-    assert(built.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, built.is_ok());
     const BackgroundThread::TraceBuild overflowed = overflowing.build(bt, test.alloc, scratch);
-    assert(overflowed.is_err());
-    assert(metalog->tail.get() == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, overflowed.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, metalog->tail.get() == 0u);
 
     // The job takes the region of the build, which moves to the thread of the
     // publish stage, and not the build, which borrows the graph of the caller.
     BackgroundThread::BuiltRegion first_region = std::move(built).expect("the first work builds").region;
     bt.run_on_publish_stage([&](BackgroundThread& owner, BackgroundThread::PublishStage const& stage) noexcept {
         owner.publish_region(bg, stage, std::move(first_region), BackgroundThread::StreamPoint{});
-        assert(owner.meta_log.get()->tail.get() == 0u && "the publish of a region moved the tail");
+        CRUCIBLE_TEST_ASSERT(kTest, owner.meta_log.get()->tail.get() == 0u && "the publish of a region moved the tail");
         owner.release_meta_log(stage, first_end);
-        assert(owner.meta_log.get()->tail.get() == first_end);
+        CRUCIBLE_TEST_ASSERT(kTest, owner.meta_log.get()->tail.get() == first_end);
         owner.release_meta_log(stage, 1);
-        assert(owner.meta_log.get()->tail.get() == first_end && "a floor before the tail moved the tail");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             owner.meta_log.get()->tail.get() == first_end && "a floor before the tail moved the tail");
         owner.release_meta_log(stage, overflow_end);
     });
-    assert(metalog->tail.get() == overflow_end);
+    CRUCIBLE_TEST_ASSERT(kTest, metalog->tail.get() == overflow_end);
 
-    crucible::test::pass("  publish_stage_releases_in_order:           PASSED\n");
+    ::fixy::check::pass(kTest, "  publish_stage_releases_in_order:           PASSED\n");
 }
 
 // The release goes through the four stages of a running pipeline.  The last
@@ -289,7 +301,7 @@ void test_pipeline_releases_after_overflow() {
             }
             const ::fixy::FixedArray<crucible::TensorMeta, 1> record{output_meta(op)};
             const MetaIndex index = metalog->try_append(record.view());
-            assert(index.is_valid());
+            CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
             if (is_last && op + 1 == OVERFLOW_OP) overflow_end = index.raw() + 1;
             push(op, index, 1);
         }
@@ -304,15 +316,16 @@ void test_pipeline_releases_after_overflow() {
     while (bt.total_processed.load_acquire() < target && std::chrono::steady_clock::now() < deadline) {
         CRUCIBLE_SPIN_PAUSE;
     }
-    assert(bt.total_processed.load_acquire() >= target && "the pipeline did not process every entry");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         bt.total_processed.load_acquire() >= target && "the pipeline did not process every entry");
     bt.stop();
 
-    assert(overflow_end != 0u);
-    assert(bt.meta_log.get()->tail.get() == bt.meta_log.get()->head.get()
-           && "the floor of the last commit marker did not release each record");
+    CRUCIBLE_TEST_ASSERT(kTest, overflow_end != 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, bt.meta_log.get()->tail.get() == bt.meta_log.get()->head.get()
+                                    && "the floor of the last commit marker did not release each record");
 
-    crucible::test::pass("  pipeline_releases_after_overflow:          PASSED (tail={})\n",
-                         static_cast<unsigned long long>(metalog->tail.get()));
+    ::fixy::check::pass(kTest, "  pipeline_releases_after_overflow:          PASSED (tail={})\n",
+                        static_cast<unsigned long long>(metalog->tail.get()));
 }
 
 // The ops of a built graph hold a copy of the run of the metadata log that
@@ -342,14 +355,17 @@ void test_built_graph_owns_its_metadata() {
     const crucible::TensorMeta* const log_begin = &metalog->records_.at(::fixy::index<0>());
     const crucible::TensorMeta* const log_end = log_begin + MetaLog::CAPACITY;
     for (uint32_t op = 0; op < OPS; ++op) {
-        // element_at ends the process when the op holds no output metadata.
+        // The expect ends the process when the op holds no output metadata.
         const crucible::TensorMeta& first_meta =
-            crucible::test::element_at(graph->op(crucible::OpIndex{op}).output_metas(), 0);
+            *graph->op(crucible::OpIndex{op})
+                 .output_metas()
+                 .get(0)
+                 .expect("a test reads an element at or past the count of its View");
         const crucible::TensorMeta* const metas = &first_meta;
-        assert((before(metas, log_begin) || !before(metas, log_end))
-               && "an op of the graph points into the buffer of the metadata log");
-        assert(first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
-        assert(crucible::raw_tensor_dim(first_meta.sizes[0]) == 64);
+        CRUCIBLE_TEST_ASSERT(kTest, (before(metas, log_begin) || !before(metas, log_end))
+                                        && "an op of the graph points into the buffer of the metadata log");
+        CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_tensor_dim(first_meta.sizes[0]) == 64);
     }
 
     // The region of the publish holds the same ops, and a release to the end
@@ -359,10 +375,10 @@ void test_built_graph_owns_its_metadata() {
         owner.release_meta_log(stage, OPS);
     });
     const crucible::RegionNode* const region = bt.active_region.load_acquire().try_get();
-    assert(region != nullptr && &region->op_at(0) == &graph->op(crucible::OpIndex{0}));
-    assert(metalog->tail.get() == OPS);
+    CRUCIBLE_TEST_ASSERT(kTest, region != nullptr && &region->op_at(0) == &graph->op(crucible::OpIndex{0}));
+    CRUCIBLE_TEST_ASSERT(kTest, metalog->tail.get() == OPS);
 
-    crucible::test::pass("  built_graph_owns_its_metadata:             PASSED\n");
+    ::fixy::check::pass(kTest, "  built_graph_owns_its_metadata:             PASSED\n");
 }
 
 // The two counters of the metadata log count each record that the log held.
@@ -387,24 +403,27 @@ void test_build_and_release_pass_two_to_the_32() {
     uint64_t run_end = 0;
     for (uint32_t op = 0; op < OPS; ++op)
         run_end = work.push_op_with_meta(*metalog, op);
-    assert(run_end == uint64_t{BELOW_WRAP} + OPS);
+    CRUCIBLE_TEST_ASSERT(kTest, run_end == uint64_t{BELOW_WRAP} + OPS);
 
     ::fixy::BumpArena scratch{size_t{1} << 16};
     BackgroundThread::TraceBuild built = work.build(bt, test.alloc, scratch);
     auto [graph, parts] = std::move(built).expect("the work builds a graph");
     for (uint32_t op = 0; op < OPS; ++op) {
         const crucible::TensorMeta& first_meta =
-            crucible::test::element_at(graph->op(crucible::OpIndex{op}).output_metas(), 0);
-        assert(first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
+            *graph->op(crucible::OpIndex{op})
+                 .output_metas()
+                 .get(0)
+                 .expect("a test reads an element at or past the count of its View");
+        CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
     }
 
     bt.run_on_publish_stage([&](BackgroundThread& owner, BackgroundThread::PublishStage const& stage) noexcept {
         owner.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
         owner.release_meta_log(stage, run_end);
     });
-    assert(metalog->tail.get() == run_end && "the release did not move the tail past 2^32");
+    CRUCIBLE_TEST_ASSERT(kTest, metalog->tail.get() == run_end && "the release did not move the tail past 2^32");
 
-    crucible::test::pass("  build_and_release_pass_two_to_the_32:      PASSED\n");
+    ::fixy::check::pass(kTest, "  build_and_release_pass_two_to_the_32:      PASSED\n");
 }
 
 // An op with no tensors has no metadata index.  Its scalar arguments still go
@@ -428,14 +447,16 @@ void test_scalars_of_an_op_with_no_tensors() {
     auto [graph_b, region_b] = five_seven.build(bt, test.alloc, scratch).expect("the work builds a graph");
 
     const crucible::TraceEntry& op = *region_a.ops.get(0).expect("the region holds its one op");
-    assert(op.num_inputs() == 0 && op.num_outputs() == 0);
-    assert(op.num_scalar_args() == 2 && op.scalar_args().size() == 2);
-    assert(crucible::test::element_at(op.scalar_args(), 0) == 5);
-    assert(crucible::test::element_at(op.scalar_args(), 1) == 6);
-    assert(region_a.content_hash != region_b.content_hash
-           && "two ops that differ only in a scalar must give two content hashes");
+    CRUCIBLE_TEST_ASSERT(kTest, op.num_inputs() == 0 && op.num_outputs() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, op.num_scalar_args() == 2 && op.scalar_args().size() == 2);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, *op.scalar_args().get(0).expect("a test reads an element at or past the count of its View") == 5);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, *op.scalar_args().get(1).expect("a test reads an element at or past the count of its View") == 6);
+    CRUCIBLE_TEST_ASSERT(kTest, region_a.content_hash != region_b.content_hash
+                                    && "two ops that differ only in a scalar must give two content hashes");
 
-    crucible::test::pass("  scalars_of_an_op_with_no_tensors:          PASSED\n");
+    ::fixy::check::pass(kTest, "  scalars_of_an_op_with_no_tensors:          PASSED\n");
 }
 
 }  // namespace test_background_thread_run_in_row

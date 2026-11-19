@@ -4,13 +4,23 @@
 #include "background_thread_run_in_row.h"
 
 #include <crucible/BackgroundThread.h>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <thread>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::BackgroundThread;
 using crucible::TraceRing;
@@ -36,9 +46,9 @@ void test_t04_runtime_smoke() {
         done = true;
     });
     t.join();
-    assert(done);
+    CRUCIBLE_TEST_ASSERT(kTest, done);
 
-    crucible::test::pass("  T04 runtime_smoke:                         PASSED\n");
+    ::fixy::check::pass(kTest, "  T04 runtime_smoke:                         PASSED\n");
 }
 
 // A real drain, with one thread pushing while the entry point consumes.
@@ -79,12 +89,12 @@ void test_concurrent_spsc_drain() {
     while (bt.total_processed.load_acquire() < N && std::chrono::steady_clock::now() < deadline) {
         CRUCIBLE_SPIN_PAUSE;
     }
-    assert(bt.total_processed.load_acquire() >= N);
+    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() >= N);
 
     bt.stop_requested.signal();
     bg_thread.join();
 
-    crucible::test::pass("  concurrent_spsc_drain:                     PASSED\n");
+    ::fixy::check::pass(kTest, "  concurrent_spsc_drain:                     PASSED\n");
 }
 
 // A batch large enough to span several drain batches, to catch a loop that
@@ -119,18 +129,19 @@ void test_large_batch_drain() {
         CRUCIBLE_SPIN_PAUSE;
     }
     const uint64_t processed_after_push = bt.total_processed.load_acquire();
-    assert(processed_after_push >= TOTAL);
+    CRUCIBLE_TEST_ASSERT(kTest, processed_after_push >= TOTAL);
 
     bt.stop_requested.signal();
     bg_thread.join();
 
     // No signature ever matched twice, so the boundary path never ran and the
     // completed count stays at zero.
-    assert(bt.iterations_completed.get() == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, bt.iterations_completed.get() == 0u);
 
-    crucible::test::pass("  large_batch_drain:                         "
-                         "PASSED (processed={} of {})\n",
-                         static_cast<unsigned long long>(processed_after_push), TOTAL);
+    ::fixy::check::pass(kTest,
+                        "  large_batch_drain:                         "
+                        "PASSED (processed={} of {})\n",
+                        static_cast<unsigned long long>(processed_after_push), TOTAL);
 }
 
 // Spawn, stop, spawn again.  A once-flag, a static guard inside the template
@@ -169,7 +180,7 @@ void test_rearm_cycle() {
         while (bt.total_processed.load_acquire() < target && std::chrono::steady_clock::now() < deadline) {
             CRUCIBLE_SPIN_PAUSE;
         }
-        assert(bt.total_processed.load_acquire() >= target);
+        CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() >= target);
 
         bt.stop_requested.signal();
         bg.join();
@@ -178,11 +189,12 @@ void test_rearm_cycle() {
     }
 
     // Both invocations consumed entries, so the total covers both cycles.
-    assert(bt.total_processed.load_acquire() >= 2 * PER_CYCLE);
+    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() >= 2 * PER_CYCLE);
 
-    crucible::test::pass("  rearm_cycle:                               "
-                         "PASSED (total={} over 2 cycles)\n",
-                         static_cast<unsigned long long>(bt.total_processed.load_acquire()));
+    ::fixy::check::pass(kTest,
+                        "  rearm_cycle:                               "
+                        "PASSED (total={} over 2 cycles)\n",
+                        static_cast<unsigned long long>(bt.total_processed.load_acquire()));
 }
 
 }  // namespace test_background_thread_run_in_row

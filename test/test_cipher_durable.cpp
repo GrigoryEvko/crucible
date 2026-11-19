@@ -12,11 +12,13 @@
 #include <crucible/cipher/CipherDurable.h>
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/os/Fs.h>
 #include <fixy/os/Path.h>
+#include <foundation/effects/Effect.h>
 
 #include "scratch_dir.h"
-#include "test_assert.h"
 
 #include <cerrno>
 #include <cstddef>
@@ -25,6 +27,13 @@
 #include <span>
 #include <string>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace eff = foundation::effects;
 namespace fs = fixy::fs;
@@ -176,8 +185,8 @@ template <typename T>
         return 1;
     }
     if (errno_of(refused) == EINVAL) {
-        crucible::test::pass(
-            "[skipped] this filesystem has no RENAME_NOREPLACE; the errno is passed through as designed\n");
+        ::fixy::check::pass(
+            kTest, "[skipped] this filesystem has no RENAME_NOREPLACE; the errno is passed through as designed\n");
         return 0;
     }
     if (errno_of(refused) != EEXIST) {

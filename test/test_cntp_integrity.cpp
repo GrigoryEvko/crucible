@@ -1,10 +1,20 @@
 #include <crucible/cntp/Integrity.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -36,12 +46,13 @@ int main() {
     static_assert(ci::ByteContiguousPayload<::fixy::View<std::byte const>>);
     static_assert(!ci::ByteContiguousPayload<std::uint64_t>);
 
-    assert(ci::xxhash64_raw(::fixy::View<std::byte const>{}) == 0xEF46DB3751D8E999ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, ci::xxhash64_raw(::fixy::View<std::byte const>{}) == 0xEF46DB3751D8E999ULL);
 
     HelloBytes const hello{
         std::byte{0x68}, std::byte{0x65}, std::byte{0x6C}, std::byte{0x6C}, std::byte{0x6F},
     };
-    assert(ci::xxhash64(hello.view()).expect("the hash of hello is not zero").value() == 0x26C7827D889F6DA3ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, ci::xxhash64(hello.view()).expect("the hash of hello is not zero").value()
+                                    == 0x26C7827D889F6DA3ULL);
 
     PayloadBytes payload{};
     for (auto index : payload.indices()) {
@@ -52,50 +63,51 @@ int main() {
 
     auto stream = ci::xxhash64_streaming();
     auto const bytes = payload.view();
-    assert(stream.update(bytes.window(0, 7).expect("seven bytes fit")).is_ok());
-    assert(stream.update(bytes.window(7, 25).expect("25 bytes fit")).is_ok());
-    assert(stream.update(bytes.window(32, 64).expect("64 bytes fit")).is_ok());
-    assert(stream.digest().expect("the digest is not zero").value() == one_shot);
+    CRUCIBLE_TEST_ASSERT(kTest, stream.update(bytes.window(0, 7).expect("seven bytes fit")).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, stream.update(bytes.window(7, 25).expect("25 bytes fit")).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, stream.update(bytes.window(32, 64).expect("64 bytes fit")).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, stream.digest().expect("the digest is not zero").value() == one_shot);
 
     auto wrapped = ci::wrap(payload).expect("the hash of the payload is not zero");
-    assert(wrapped.hash.value() == one_shot);
+    CRUCIBLE_TEST_ASSERT(kTest, wrapped.hash.value() == one_shot);
 
     auto verified = ci::unwrap(std::move(wrapped)).expect("the hash of the payload matches");
     static_assert(std::same_as<decltype(verified), ci::IntegrityVerifiedPayload<PayloadBytes>>);
-    assert(verified.value().peek().at(::fixy::index<0>()) == std::byte{3});
+    CRUCIBLE_TEST_ASSERT(kTest, verified.value().peek().at(::fixy::index<0>()) == std::byte{3});
 
     auto owned_payload = std::move(verified).into();
     auto restored_payload = std::move(owned_payload).consume();
-    assert(restored_payload.at(::fixy::index<95>()) == payload.at(::fixy::index<95>()));
+    CRUCIBLE_TEST_ASSERT(kTest, restored_payload.at(::fixy::index<95>()) == payload.at(::fixy::index<95>()));
 
     auto tampered = ci::wrap(payload).expect("the hash of the payload is not zero");
     tampered.payload.peek_mut().at(::fixy::index<5>()) = std::byte{0xEE};
-    assert(unwrap_error(std::move(tampered)).expect("the unwrap refuses a changed payload")
-           == ci::IntegrityError::HashMismatch);
+    CRUCIBLE_TEST_ASSERT(kTest, unwrap_error(std::move(tampered)).expect("the unwrap refuses a changed payload")
+                                    == ci::IntegrityError::HashMismatch);
 
-    assert(ci::admit_integrity_hash(0).err().expect("a zero hash is refused") == ci::IntegrityError::ZeroHash);
+    CRUCIBLE_TEST_ASSERT(kTest, ci::admit_integrity_hash(0).err().expect("a zero hash is refused")
+                                    == ci::IntegrityError::ZeroHash);
 
     ci::IntegrityPolicy sampled{
         .mode = ci::IntegrityMode::Sampled,
         .sample_rate = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{4}),
         .flow_opt_in = true,
     };
-    assert(sampled.enabled(0));
-    assert(!sampled.enabled(1));
-    assert(sampled.enabled(4));
+    CRUCIBLE_TEST_ASSERT(kTest, sampled.enabled(0));
+    CRUCIBLE_TEST_ASSERT(kTest, !sampled.enabled(1));
+    CRUCIBLE_TEST_ASSERT(kTest, sampled.enabled(4));
 
     ci::IntegrityPolicy opt_in{
         .mode = ci::IntegrityMode::OptInPerFlow,
         .sample_rate = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1}),
         .flow_opt_in = false,
     };
-    assert(!opt_in.enabled(0));
+    CRUCIBLE_TEST_ASSERT(kTest, !opt_in.enabled(0));
 
     ci::IntegrityStats stats{};
     stats.record_ok();
     stats.record_violation();
-    assert(stats.checked == 2);
-    assert(stats.violations == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.checked == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.violations == 1);
 
     return 0;
 }

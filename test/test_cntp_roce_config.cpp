@@ -1,12 +1,21 @@
 #include <crucible/cntp/RoceConfig.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
-#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 // apply_roce_config, query_dcqcn_state and verify_dcqcn_active all carry
 // [[deprecated("CRUCIBLE_STUB:...")]] while no vendor policy installer
@@ -24,50 +33,52 @@ void test_admission_and_names() {
     static_assert(::foundation::reflect::enum_name(cntp::RoceError::InvalidDscp) == std::string_view{"InvalidDscp"});
 
     auto pfc = cntp::admit_pfc_priorities(0b00001000);
-    assert(pfc.is_ok());
-    assert(std::move(pfc).expect("one priority is set").value() == 0b00001000);
+    CRUCIBLE_TEST_ASSERT(kTest, pfc.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(pfc).expect("one priority is set").value() == 0b00001000);
 
     auto zero_pfc = cntp::admit_pfc_priorities(0);
-    assert(zero_pfc.is_err());
-    assert(zero_pfc.err() == ::fixy::some(cntp::RoceError::InvalidPfcPriorityMask));
+    CRUCIBLE_TEST_ASSERT(kTest, zero_pfc.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_pfc.err() == ::fixy::some(cntp::RoceError::InvalidPfcPriorityMask));
 
     auto dscp = cntp::admit_roce_dscp(26);
-    assert(dscp.is_ok());
-    assert(std::move(dscp).expect("26 is a DSCP value").value() == 26);
+    CRUCIBLE_TEST_ASSERT(kTest, dscp.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(dscp).expect("26 is a DSCP value").value() == 26);
 
     // The DSCP field is six bits wide, so 63 is the last value it takes.
-    assert(cntp::admit_roce_dscp(63).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::admit_roce_dscp(63).is_ok());
     auto invalid_dscp = cntp::admit_roce_dscp(64);
-    assert(invalid_dscp.is_err());
-    assert(invalid_dscp.err() == ::fixy::some(cntp::RoceError::InvalidDscp));
+    CRUCIBLE_TEST_ASSERT(kTest, invalid_dscp.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, invalid_dscp.err() == ::fixy::some(cntp::RoceError::InvalidDscp));
 
     auto alpha = cntp::admit_dcqcn_alpha_ppm(500000);
-    assert(alpha.is_ok());
-    assert(std::move(alpha).expect("half of one million fits").value() == 500000);
+    CRUCIBLE_TEST_ASSERT(kTest, alpha.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(alpha).expect("half of one million fits").value() == 500000);
 
     auto alpha_zero = cntp::admit_dcqcn_alpha_ppm(0);
-    assert(alpha_zero.is_err());
-    assert(alpha_zero.err() == ::fixy::some(cntp::RoceError::InvalidDcqcnAlpha));
+    CRUCIBLE_TEST_ASSERT(kTest, alpha_zero.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, alpha_zero.err() == ::fixy::some(cntp::RoceError::InvalidDcqcnAlpha));
 
     // An alpha is a fraction of one million parts, so one million is the
     // whole and one part more is refused.
-    assert(cntp::admit_dcqcn_alpha_ppm(1000000).is_ok());
-    assert(cntp::admit_dcqcn_alpha_ppm(1000001).err() == ::fixy::some(cntp::RoceError::InvalidDcqcnAlpha));
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::admit_dcqcn_alpha_ppm(1000000).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::admit_dcqcn_alpha_ppm(1000001).err()
+                                    == ::fixy::some(cntp::RoceError::InvalidDcqcnAlpha));
 
     auto target = cntp::admit_dcqcn_target_packets(5);
-    assert(target.is_ok());
-    assert(std::move(target).expect("5 packets is positive").value() == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, target.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(target).expect("5 packets is positive").value() == 5);
 
     auto target_zero = cntp::admit_dcqcn_target_packets(0);
-    assert(target_zero.is_err());
-    assert(target_zero.err() == ::fixy::some(cntp::RoceError::InvalidDcqcnTargetPackets));
+    CRUCIBLE_TEST_ASSERT(kTest, target_zero.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, target_zero.err() == ::fixy::some(cntp::RoceError::InvalidDcqcnTargetPackets));
 
     auto ce = cntp::admit_dcqcn_ce_threshold_bytes(64 * 1024);
-    assert(ce.is_ok());
-    assert(std::move(ce).expect("64 KiB is positive").value() == 64 * 1024);
-    assert(cntp::admit_dcqcn_ce_threshold_bytes(0).err() == ::fixy::some(cntp::RoceError::InvalidCeThresholdBytes));
+    CRUCIBLE_TEST_ASSERT(kTest, ce.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(ce).expect("64 KiB is positive").value() == 64 * 1024);
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::admit_dcqcn_ce_threshold_bytes(0).err()
+                                    == ::fixy::some(cntp::RoceError::InvalidCeThresholdBytes));
 
-    crucible::test::pass("  test_admission_and_names: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_admission_and_names: PASSED\n");
 }
 
 // The error of a call that fails in this test.  A call that succeeds ends
@@ -86,53 +97,58 @@ void test_config_minting_and_validation() {
 
     auto config = cntp::mint_roce_config<0b00001000, 26>(iface);
     static_assert(std::same_as<decltype(config), cntp::DeclaredRoceConfig>);
-    assert(config.value().interface.view() == "eth0");
-    assert(config.value().enable_pfc);
-    assert(config.value().pfc_priorities.value() == 0b00001000);
-    assert(config.value().trust_dscp);
-    assert(config.value().enable_ecn);
-    assert(config.value().enable_dcqcn);
-    assert(config.value().roce_dscp.value() == 26);
-    assert(config.value().dcqcn.alpha_ppm.value() == 500000);
-    assert(config.value().dcqcn.target_packets.value() == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().interface.view() == "eth0");
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().enable_pfc);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().pfc_priorities.value() == 0b00001000);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().trust_dscp);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().enable_ecn);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().enable_dcqcn);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().roce_dscp.value() == 26);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().dcqcn.alpha_ppm.value() == 500000);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().dcqcn.target_packets.value() == 5);
 
-    assert(cntp::validate_roce_config(config).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::validate_roce_config(config).is_ok());
 
-    assert(error_of(cntp::apply_roce_config(config)) == cntp::RoceError::PrivilegedApplyDeferred);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::apply_roce_config(config)) == cntp::RoceError::PrivilegedApplyDeferred);
 
     auto privileged = cntp::mint_roce_config<0b00001000, 26>(iface, cntp::DcqcnParams{}, true);
-    assert(error_of(cntp::apply_roce_config(privileged)) == cntp::RoceError::VendorBackendUnavailable);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(cntp::apply_roce_config(privileged)) == cntp::RoceError::VendorBackendUnavailable);
 
     // A value that entered through the trusted door skips the predicate.
     // The validation reads the predicate again and refuses it.
     cntp::RoceConfig forged{.interface = iface};
     forged.roce_dscp = ::fixy::mint_refined_trusted<cntp::roce_dscp_bits>(std::uint8_t{64});
-    assert(error_of(cntp::validate_roce_config(::fixy::mint_tagged<src::RoceConfig>(forged)))
-           == cntp::RoceError::InvalidDscp);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::validate_roce_config(::fixy::mint_tagged<src::RoceConfig>(forged)))
+                                    == cntp::RoceError::InvalidDscp);
 
-    crucible::test::pass("  test_config_minting_and_validation: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_config_minting_and_validation: PASSED\n");
 }
 
 void test_pause_counter_parse() {
     cntp::PfcPauseStats const parsed =
         cntp::parse_pfc_pause_counters(" 17\n", "23\n").expect("two counters with white space parse");
-    assert(parsed.rx_pause_frames == 17);
-    assert(parsed.tx_pause_frames == 23);
+    CRUCIBLE_TEST_ASSERT(kTest, parsed.rx_pause_frames == 17);
+    CRUCIBLE_TEST_ASSERT(kTest, parsed.tx_pause_frames == 23);
 
-    assert(error_of(cntp::parse_pfc_pause_counters("17x", "23\n")) == cntp::RoceError::CounterParseFailed);
-    assert(error_of(cntp::parse_pfc_pause_counters("1 7", "23\n")) == cntp::RoceError::CounterParseFailed);
-    assert(error_of(cntp::parse_pfc_pause_counters("0x11", "23\n")) == cntp::RoceError::CounterParseFailed);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::parse_pfc_pause_counters("17x", "23\n"))
+                                    == cntp::RoceError::CounterParseFailed);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::parse_pfc_pause_counters("1 7", "23\n"))
+                                    == cntp::RoceError::CounterParseFailed);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::parse_pfc_pause_counters("0x11", "23\n"))
+                                    == cntp::RoceError::CounterParseFailed);
 
     // The largest counter parses, and one more is refused, not wrapped.
     cntp::PfcPauseStats const widest =
         cntp::parse_pfc_pause_counters("18446744073709551615\n", "0").expect("the largest counter parses");
-    assert(widest.rx_pause_frames == ::fixy::max_of<std::uint64_t>);
-    assert(error_of(cntp::parse_pfc_pause_counters("0", "18446744073709551616"))
-           == cntp::RoceError::CounterParseFailed);
+    CRUCIBLE_TEST_ASSERT(kTest, widest.rx_pause_frames == ::fixy::max_of<std::uint64_t>);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::parse_pfc_pause_counters("0", "18446744073709551616"))
+                                    == cntp::RoceError::CounterParseFailed);
 
-    assert(error_of(cntp::parse_pfc_pause_counters("   ", "1")) == cntp::RoceError::CounterParseFailed);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(cntp::parse_pfc_pause_counters("   ", "1")) == cntp::RoceError::CounterParseFailed);
 
-    crucible::test::pass("  test_pause_counter_parse: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_pause_counter_parse: PASSED\n");
 }
 
 void test_live_surfaces_if_available() {
@@ -142,26 +158,27 @@ void test_live_surfaces_if_available() {
     auto counters = cntp::query_pfc_pause_counters(load, lo);
     if (counters.is_err()) {
         cntp::RoceError const refusal = error_of(std::move(counters));
-        assert(refusal == cntp::RoceError::CounterUnavailable || refusal == cntp::RoceError::CounterParseFailed);
+        CRUCIBLE_TEST_ASSERT(kTest, refusal == cntp::RoceError::CounterUnavailable
+                                        || refusal == cntp::RoceError::CounterParseFailed);
         ::fixy::report(::fixy::Sink::Out, "  test_live_pfc_pause_counters: SKIPPED\n");
     } else {
-        crucible::test::pass("  test_live_pfc_pause_counters: PASSED\n");
+        ::fixy::check::pass(kTest, "  test_live_pfc_pause_counters: PASSED\n");
     }
 
     // A counter of an interface that does not exist is refused.
-    assert(error_of(cntp::query_pfc_pause_counters(load, interface_named("no-such-nic.0")))
-           == cntp::RoceError::CounterUnavailable);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::query_pfc_pause_counters(load, interface_named("no-such-nic.0")))
+                                    == cntp::RoceError::CounterUnavailable);
 
     // No interface name is "." or "..", so the path of a counter stays in
     // the sysfs directory of its interface.
-    assert(cntp::NicInterfaceName::from("..").is_err());
-    assert(cntp::NicInterfaceName::from(".").is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::NicInterfaceName::from("..").is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::NicInterfaceName::from(".").is_err());
 
     // With no vendor probe in place the answer is explicitly unknown, not
     // inactive. A caller has to be able to tell "the card says off" from "we
     // did not ask".
     auto state = cntp::query_dcqcn_state(lo);
-    assert(state == cntp::DcqcnState::BackendUnavailable);
+    CRUCIBLE_TEST_ASSERT(kTest, state == cntp::DcqcnState::BackendUnavailable);
     static_assert(::foundation::reflect::enum_name(cntp::DcqcnState::BackendUnavailable)
                   == std::string_view{"BackendUnavailable"});
     static_assert(::foundation::reflect::enum_name(cntp::DcqcnState::Inactive) == std::string_view{"Inactive"});
@@ -169,9 +186,9 @@ void test_live_surfaces_if_available() {
 
     // The boolean-shaped accessor maps that unknown state onto its own error
     // code, so a caller written against it keeps working unchanged.
-    assert(error_of(cntp::verify_dcqcn_active(lo)) == cntp::RoceError::DcqcnStatusUnavailable);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::verify_dcqcn_active(lo)) == cntp::RoceError::DcqcnStatusUnavailable);
 
-    crucible::test::pass("  test_live_surfaces_if_available: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_live_surfaces_if_available: PASSED\n");
 }
 
 // The distinction these assertions defend is between a substrate that
@@ -190,17 +207,19 @@ void test_apply_paths_are_stubbed() {
     cntp::NicInterfaceName const iface = interface_named("eth0");
 
     auto deferred = cntp::mint_roce_config<0b00001000, 26>(iface);
-    assert(error_of(cntp::apply_roce_config(deferred)) == cntp::RoceError::PrivilegedApplyDeferred);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(cntp::apply_roce_config(deferred)) == cntp::RoceError::PrivilegedApplyDeferred);
 
     auto requested = cntp::mint_roce_config<0b00001000, 26>(iface, cntp::DcqcnParams{}, true);
-    assert(error_of(cntp::apply_roce_config(requested)) == cntp::RoceError::VendorBackendUnavailable);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(cntp::apply_roce_config(requested)) == cntp::RoceError::VendorBackendUnavailable);
 
     // The read side is stubbed in step with the write side.
     auto state = cntp::query_dcqcn_state(iface);
-    assert(state == cntp::DcqcnState::BackendUnavailable);
-    assert(error_of(cntp::verify_dcqcn_active(iface)) == cntp::RoceError::DcqcnStatusUnavailable);
+    CRUCIBLE_TEST_ASSERT(kTest, state == cntp::DcqcnState::BackendUnavailable);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::verify_dcqcn_active(iface)) == cntp::RoceError::DcqcnStatusUnavailable);
 
-    crucible::test::pass("  test_apply_paths_are_stubbed: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_apply_paths_are_stubbed: PASSED\n");
 }
 
 }  // namespace
@@ -240,7 +259,7 @@ int main() {
     test_pause_counter_parse();
     test_live_surfaces_if_available();
     test_apply_paths_are_stubbed();
-    crucible::test::pass("test_cntp_roce_config: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_cntp_roce_config: all PASSED\n");
     return 0;
 }
 

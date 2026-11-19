@@ -1,16 +1,24 @@
 #include <crucible/CallSiteTable.h>
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -36,48 +44,48 @@ static ::fixy::TextView name_of(CallSiteTable::InternedName const& name) { retur
 
 static void test_empty_table_has_nothing() {
     CallSiteTable t;
-    assert(t.size() == 0);
-    assert(!t.has(H(1)));
-    assert(!t.has(H(0x12345678ABCDEF00ULL)));
-    crucible::test::pass("  test_empty:                     PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, t.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, !t.has(H(1)));
+    CRUCIBLE_TEST_ASSERT(kTest, !t.has(H(0x12345678ABCDEF00ULL)));
+    ::fixy::check::pass(kTest, "  test_empty:                     PASSED\n");
 }
 
 static void test_single_insert_then_has() {
     CallSiteTable t;
-    assert(t.insert(alloc_cap(), NZ(42), "foo.py", "main", 10));
-    assert(t.has(H(42)));
-    assert(t.size() == 1);
-    assert(t.entries[0].lineno.value() == 10);
+    CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), NZ(42), "foo.py", "main", 10));
+    CRUCIBLE_TEST_ASSERT(kTest, t.has(H(42)));
+    CRUCIBLE_TEST_ASSERT(kTest, t.size() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, t.entries[0].lineno.value() == 10);
     // The filename and funcname fields are tagged wrappers, so the comparison
     // reads through value().
-    assert(name_of(t.entries[0].filename) == ::fixy::TextView{"foo.py"});
-    assert(name_of(t.entries[0].funcname) == ::fixy::TextView{"main"});
-    crucible::test::pass("  test_single_insert:             PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, name_of(t.entries[0].filename) == ::fixy::TextView{"foo.py"});
+    CRUCIBLE_TEST_ASSERT(kTest, name_of(t.entries[0].funcname) == ::fixy::TextView{"main"});
+    ::fixy::check::pass(kTest, "  test_single_insert:             PASSED\n");
 }
 
 static void test_duplicate_insert_is_noop() {
     CallSiteTable t;
-    assert(t.insert(alloc_cap(), NZ(42), "foo.py", "main", 10));
-    assert(t.insert(alloc_cap(), NZ(42), "foo.py", "main", 10));
-    assert(t.insert(alloc_cap(), NZ(42), "different.py", "other", 99));
-    assert(t.size() == 1);
-    assert(t.entries[0].lineno.value() == 10);
-    assert(name_of(t.entries[0].filename) == ::fixy::TextView{"foo.py"});
-    crucible::test::pass("  test_duplicate_noop:            PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), NZ(42), "foo.py", "main", 10));
+    CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), NZ(42), "foo.py", "main", 10));
+    CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), NZ(42), "different.py", "other", 99));
+    CRUCIBLE_TEST_ASSERT(kTest, t.size() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, t.entries[0].lineno.value() == 10);
+    CRUCIBLE_TEST_ASSERT(kTest, name_of(t.entries[0].filename) == ::fixy::TextView{"foo.py"});
+    ::fixy::check::pass(kTest, "  test_duplicate_noop:            PASSED\n");
 }
 
 static void test_many_distinct_inserts() {
     CallSiteTable t;
     constexpr uint32_t N = 200;
     for (uint32_t i = 1; i <= N; ++i) {
-        assert(t.insert(alloc_cap(), NZ(i), "file.py", "func", static_cast<int32_t>(i)));
+        CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), NZ(i), "file.py", "func", static_cast<int32_t>(i)));
     }
-    assert(t.size() == N);
+    CRUCIBLE_TEST_ASSERT(kTest, t.size() == N);
     for (uint32_t i = 1; i <= N; ++i)
-        assert(t.has(H(i)));
-    assert(!t.has(H(0)));  // zero is the empty-slot sentinel
-    assert(!t.has(H(9999)));
-    crucible::test::pass("  test_many_inserts:              PASSED\n");
+        CRUCIBLE_TEST_ASSERT(kTest, t.has(H(i)));
+    CRUCIBLE_TEST_ASSERT(kTest, !t.has(H(0)));  // zero is the empty-slot sentinel
+    CRUCIBLE_TEST_ASSERT(kTest, !t.has(H(9999)));
+    ::fixy::check::pass(kTest, "  test_many_inserts:              PASSED\n");
 }
 
 static void test_probe_does_not_confuse_hash_collision() {
@@ -86,13 +94,13 @@ static void test_probe_does_not_confuse_hash_collision() {
     CallSiteTable t;
     const auto h_a = H(100);
     const auto h_b = H(100 + CallSiteTable::SET_CAP);
-    assert((h_a.raw() & CallSiteTable::SET_MASK) == (h_b.raw() & CallSiteTable::SET_MASK));
-    assert(t.insert(alloc_cap(), ::fixy::mint_refined<::fixy::non_zero>(h_a), "a.py", "fa", 1));
-    assert(t.insert(alloc_cap(), ::fixy::mint_refined<::fixy::non_zero>(h_b), "b.py", "fb", 2));
-    assert(t.has(h_a));
-    assert(t.has(h_b));
-    assert(t.size() == 2);
-    crucible::test::pass("  test_collision_probe:           PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, (h_a.raw() & CallSiteTable::SET_MASK) == (h_b.raw() & CallSiteTable::SET_MASK));
+    CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), ::fixy::mint_refined<::fixy::non_zero>(h_a), "a.py", "fa", 1));
+    CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), ::fixy::mint_refined<::fixy::non_zero>(h_b), "b.py", "fb", 2));
+    CRUCIBLE_TEST_ASSERT(kTest, t.has(h_a));
+    CRUCIBLE_TEST_ASSERT(kTest, t.has(h_b));
+    CRUCIBLE_TEST_ASSERT(kTest, t.size() == 2);
+    ::fixy::check::pass(kTest, "  test_collision_probe:           PASSED\n");
 }
 
 static void test_sentinel_zero_is_not_a_callsite() {
@@ -100,30 +108,33 @@ static void test_sentinel_zero_is_not_a_callsite() {
     // NonZeroHash, so it cannot reach the table through the public mutation
     // surface.
     CallSiteTable t;
-    assert(!t.has(H(0)));
-    assert(t.insert(alloc_cap(), NZ(5), "five.py", "f5", 5));
-    assert(t.has(H(5)));
-    crucible::test::pass("  test_sentinel_zero:             PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, !t.has(H(0)));
+    CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), NZ(5), "five.py", "f5", 5));
+    CRUCIBLE_TEST_ASSERT(kTest, t.has(H(5)));
+    ::fixy::check::pass(kTest, "  test_sentinel_zero:             PASSED\n");
 }
 
 static void test_tagged_overloads_store_interned() {
     // Each tagged overload strips its tag, and the entry stores the bytes
     // under Interned.  The first write for a hash wins over the other tag.
     CallSiteTable t;
-    assert(t.insert(alloc_cap(), NZ(7), ::fixy::mint_tagged<source::External>(::fixy::TextView{"ext.py"}),
-                    ::fixy::mint_tagged<source::External>(::fixy::TextView{"ext_fn"}), 70));
-    assert(t.insert(alloc_cap(), NZ(8), ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"int.py"}),
-                    ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"int_fn"}), 80));
-    assert(t.insert(alloc_cap(), NZ(7), ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"later.py"}),
-                    ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"later_fn"}), 71));
-    assert(t.size() == 2);
-    assert(name_of(t.entries[0].filename) == ::fixy::TextView{"ext.py"}
-           && name_of(t.entries[0].funcname) == ::fixy::TextView{"ext_fn"});
-    assert(t.entries[0].lineno.value() == 70);
-    assert(name_of(t.entries[1].filename) == ::fixy::TextView{"int.py"}
-           && name_of(t.entries[1].funcname) == ::fixy::TextView{"int_fn"});
-    assert(t.entries[1].lineno.value() == 80);
-    crucible::test::pass("  test_tagged_overloads:          PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         t.insert(alloc_cap(), NZ(7), ::fixy::mint_tagged<source::External>(::fixy::TextView{"ext.py"}),
+                                  ::fixy::mint_tagged<source::External>(::fixy::TextView{"ext_fn"}), 70));
+    CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), NZ(8),
+                                         ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"int.py"}),
+                                         ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"int_fn"}), 80));
+    CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), NZ(7),
+                                         ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"later.py"}),
+                                         ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"later_fn"}), 71));
+    CRUCIBLE_TEST_ASSERT(kTest, t.size() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, name_of(t.entries[0].filename) == ::fixy::TextView{"ext.py"}
+                                    && name_of(t.entries[0].funcname) == ::fixy::TextView{"ext_fn"});
+    CRUCIBLE_TEST_ASSERT(kTest, t.entries[0].lineno.value() == 70);
+    CRUCIBLE_TEST_ASSERT(kTest, name_of(t.entries[1].filename) == ::fixy::TextView{"int.py"}
+                                    && name_of(t.entries[1].funcname) == ::fixy::TextView{"int_fn"});
+    CRUCIBLE_TEST_ASSERT(kTest, t.entries[1].lineno.value() == 80);
+    ::fixy::check::pass(kTest, "  test_tagged_overloads:          PASSED\n");
 }
 
 static void test_name_past_the_bound_is_refused() {
@@ -132,14 +143,18 @@ static void test_name_past_the_bound_is_refused() {
     CallSiteTable t;
     ::fixy::GrowText longest = ::fixy::mint_grow_text(CallSiteTable::MAX_NAME_CHARS + 1);
     for (std::size_t index = 0; index < CallSiteTable::MAX_NAME_CHARS; ++index) {
-        assert(longest.append(alloc_cap(), 'a').is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, longest.append(alloc_cap(), 'a').is_ok());
     }
-    assert(longest.with_view([&t](::fixy::TextView name) { return t.insert(alloc_cap(), NZ(11), name, "f", 1); }));
-    assert(longest.append(alloc_cap(), 'a').is_ok());
-    assert(!longest.with_view([&t](::fixy::TextView name) { return t.insert(alloc_cap(), NZ(12), name, "f", 2); }));
-    assert(!longest.with_view([&t](::fixy::TextView name) { return t.insert(alloc_cap(), NZ(13), "f.py", name, 3); }));
-    assert(t.size() == 1 && t.has(H(11)) && !t.has(H(12)) && !t.has(H(13)));
-    crucible::test::pass("  test_name_bound:                PASSED\n");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, longest.with_view([&t](::fixy::TextView name) { return t.insert(alloc_cap(), NZ(11), name, "f", 1); }));
+    CRUCIBLE_TEST_ASSERT(kTest, longest.append(alloc_cap(), 'a').is_ok());
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !longest.with_view([&t](::fixy::TextView name) { return t.insert(alloc_cap(), NZ(12), name, "f", 2); }));
+    CRUCIBLE_TEST_ASSERT(kTest, !longest.with_view([&t](::fixy::TextView name) {
+        return t.insert(alloc_cap(), NZ(13), "f.py", name, 3);
+    }));
+    CRUCIBLE_TEST_ASSERT(kTest, t.size() == 1 && t.has(H(11)) && !t.has(H(12)) && !t.has(H(13)));
+    ::fixy::check::pass(kTest, "  test_name_bound:                PASSED\n");
 }
 
 int main() {
@@ -151,6 +166,6 @@ int main() {
     test_sentinel_zero_is_not_a_callsite();
     test_tagged_overloads_store_interned();
     test_name_past_the_bound_is_refused();
-    crucible::test::pass("test_call_site_table: 8 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_call_site_table: 8 groups, all passed\n");
     return 0;
 }

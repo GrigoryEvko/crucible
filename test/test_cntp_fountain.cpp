@@ -1,13 +1,22 @@
 #include <crucible/cntp/Fountain.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Qtt.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -67,7 +76,7 @@ int main() {
 
     {
         constexpr auto payload = payload_seed<29>();
-        assert(encoder.start_encoding(payload.view(), key).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, encoder.start_encoding(payload.view(), key).is_ok());
 
         for (std::uint32_t id = 0; id < 256 && !decoder.complete(); ++id) {
             auto packet = encoder.next_packet().expect("the encoder is started");
@@ -77,12 +86,12 @@ int main() {
                 continue;
             }
 
-            assert(decoder.add_packet(packet).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, decoder.add_packet(packet).is_ok());
         }
 
-        assert(decoder.complete());
+        CRUCIBLE_TEST_ASSERT(kTest, decoder.complete());
         auto decoded = decoder.extract_decoded().expect("the decoder is complete");
-        assert(::fixy::equal(payload.view(), decoded));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(payload.view(), decoded));
     }
 
     {
@@ -97,7 +106,7 @@ int main() {
         using Probe = ci::FountainEncoder<7, 8>;
         auto probe = ci::mint_fountain_encoder<7, 8>(init);
         constexpr auto probe_payload = payload_seed<Probe::max_source_bytes>();
-        assert(probe.start_encoding(probe_payload.view(), key).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, probe.start_encoding(probe_payload.view(), key).is_ok());
 
         ::foundation::core::FixedArray<std::uint32_t, 7> inclusion{};
         ::foundation::core::FixedArray<std::uint64_t, 256> masks_a{};
@@ -111,13 +120,13 @@ int main() {
             }
         }
         for (auto count : inclusion) {
-            assert(count > 0);
+            CRUCIBLE_TEST_ASSERT(kTest, count > 0);
         }
 
         auto probe_again = ci::mint_fountain_encoder<7, 8>(init);
-        assert(probe_again.start_encoding(probe_payload.view(), key).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, probe_again.start_encoding(probe_payload.view(), key).is_ok());
         for (auto const mask : masks_a) {
-            assert(probe_again.next_packet().expect("the encoder is started").mask == mask);
+            CRUCIBLE_TEST_ASSERT(kTest, probe_again.next_packet().expect("the encoder is started").mask == mask);
         }
     }
 
@@ -125,8 +134,8 @@ int main() {
         constexpr auto payload = payload_seed<16>();
         auto a = encoder.encode_packet(payload.view(), key, 12).expect("16 bytes fit");
         auto b = encoder.encode_packet(payload.view(), key, 12).expect("16 bytes fit");
-        assert(a.mask == b.mask);
-        assert(a.payload == b.payload);
+        CRUCIBLE_TEST_ASSERT(kTest, a.mask == b.mask);
+        CRUCIBLE_TEST_ASSERT(kTest, a.payload == b.payload);
     }
 
     {
@@ -136,16 +145,17 @@ int main() {
 
         auto owned_decoder = ci::mint_fountain_decoder<8, 4>(init);
         auto state = owned_decoder.add_packet_owned(std::move(owned_packet)).expect("the packet has the shape");
-        assert(state == ci::FountainDecodeState::NeedsMore);
-        assert(owned_decoder.decoded_count() == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, state == ci::FountainDecodeState::NeedsMore);
+        CRUCIBLE_TEST_ASSERT(kTest, owned_decoder.decoded_count() == 1);
     }
 
     {
-        assert(error_of(encoder.start_encoding(::fixy::View<std::byte const>{}, key))
-               == ci::FountainError::InvalidInputSize);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(encoder.start_encoding(::fixy::View<std::byte const>{}, key))
+                                        == ci::FountainError::InvalidInputSize);
 
         Bytes<Encoder::max_source_bytes + 1> too_large{};
-        assert(error_of(encoder.start_encoding(too_large.view(), key)) == ci::FountainError::InvalidInputSize);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(encoder.start_encoding(too_large.view(), key))
+                                        == ci::FountainError::InvalidInputSize);
     }
 
     {
@@ -155,7 +165,7 @@ int main() {
         bad.mask = 1;
 
         auto shape_decoder = ci::mint_fountain_decoder<8, 4>(init);
-        assert(error_of(shape_decoder.add_packet(bad)) == ci::FountainError::PacketShapeMismatch);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(shape_decoder.add_packet(bad)) == ci::FountainError::PacketShapeMismatch);
     }
 
     {
@@ -163,13 +173,13 @@ int main() {
         using SmallPacket = ci::FountainPacket<4, 4>;
 
         SmallDecoder small = ci::mint_fountain_decoder<4, 4, 4>(init);
-        assert(small.add_packet(equation_packet<SmallPacket>(0b0011, std::byte{0x11})).is_ok());
-        assert(small.add_packet(equation_packet<SmallPacket>(0b0101, std::byte{0x22})).is_ok());
-        assert(small.add_packet(equation_packet<SmallPacket>(0b0110, std::byte{0x33})).is_ok());
-        assert(small.add_packet(equation_packet<SmallPacket>(0b1001, std::byte{0x44})).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, small.add_packet(equation_packet<SmallPacket>(0b0011, std::byte{0x11})).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, small.add_packet(equation_packet<SmallPacket>(0b0101, std::byte{0x22})).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, small.add_packet(equation_packet<SmallPacket>(0b0110, std::byte{0x33})).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, small.add_packet(equation_packet<SmallPacket>(0b1001, std::byte{0x44})).is_ok());
 
-        assert(error_of(small.add_packet(equation_packet<SmallPacket>(0b1010, std::byte{0x55})))
-               == ci::FountainError::EquationCapacityExceeded);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(small.add_packet(equation_packet<SmallPacket>(0b1010, std::byte{0x55})))
+                                        == ci::FountainError::EquationCapacityExceeded);
     }
 
     {
@@ -181,8 +191,8 @@ int main() {
         auto second = first;
         second.payload.at(::fixy::index<0>()) = std::byte{0x22};
 
-        assert(small.add_packet(first).is_ok());
-        assert(error_of(small.add_packet(second)) == ci::FountainError::InconsistentEquation);
+        CRUCIBLE_TEST_ASSERT(kTest, small.add_packet(first).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(small.add_packet(second)) == ci::FountainError::InconsistentEquation);
     }
 
     {
@@ -190,10 +200,10 @@ int main() {
         using SmallPacket = ci::FountainPacket<4, 4>;
 
         SmallDecoder small = ci::mint_fountain_decoder<4, 4, 4>(init);
-        assert(small.add_packet(equation_packet<SmallPacket>(0b0001, std::byte{0x11})).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, small.add_packet(equation_packet<SmallPacket>(0b0001, std::byte{0x11})).is_ok());
 
         auto conflicting = equation_packet<SmallPacket>(0b0001, std::byte{0x22});
-        assert(error_of(small.add_packet(conflicting)) == ci::FountainError::InconsistentEquation);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(small.add_packet(conflicting)) == ci::FountainError::InconsistentEquation);
     }
 
     return 0;

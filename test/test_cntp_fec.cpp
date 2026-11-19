@@ -1,11 +1,21 @@
 #include <crucible/cntp/Fec.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -59,8 +69,8 @@ void verify_all_recoverable_erasures(Codec const& codec, Bytes<InputBytes> const
         }
 
         Bytes<InputBytes> decoded{};
-        assert(codec.decode(damaged.view(), erasures.view(), decoded.view()).is_ok());
-        assert(payload == decoded);
+        CRUCIBLE_TEST_ASSERT(kTest, codec.decode(damaged.view(), erasures.view(), decoded.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, payload == decoded);
     }
 }
 
@@ -94,7 +104,7 @@ void verify_mul_xor_against_scalar_product() {
                 detail::mul_xor(target.view().window(offset, len).expect("the run lies inside the target"),
                                 source_seed.view().window(offset, len).expect("the run lies inside the source"),
                                 factor);
-                assert(expected == target);
+                CRUCIBLE_TEST_ASSERT(kTest, expected == target);
             }
         }
     }
@@ -129,13 +139,13 @@ int main() {
     {
         constexpr auto payload = payload_seed<17>();
         Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode(payload.view(), encoded.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, rs42.encode(payload.view(), encoded.view()).is_ok());
         verify_all_recoverable_erasures(rs42, payload, encoded);
 
         Flags<Rs42::total_shards> erasures{};
         Bytes<payload.size()> decoded{};
-        assert(rs42.decode(encoded.view(), erasures.view(), decoded.view()).is_ok());
-        assert(payload == decoded);
+        CRUCIBLE_TEST_ASSERT(kTest, rs42.decode(encoded.view(), erasures.view(), decoded.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, payload == decoded);
     }
 
     verify_mul_xor_against_scalar_product();
@@ -145,7 +155,7 @@ int main() {
         // tail of eight bytes.
         constexpr auto payload = payload_seed<413>();
         Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode(payload.view(), encoded.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, rs42.encode(payload.view(), encoded.view()).is_ok());
         verify_all_recoverable_erasures(rs42, payload, encoded);
     }
 
@@ -153,7 +163,7 @@ int main() {
         constexpr auto payload = payload_seed<19>();
         constexpr auto shard_bytes = Rs42::shard_bytes_for(payload.size());
         Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode(payload.view(), encoded.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, rs42.encode(payload.view(), encoded.view()).is_ok());
 
         Flags<Rs42::total_shards> erasures{};
         erasures.at(::fixy::index<0>()) = true;
@@ -162,15 +172,15 @@ int main() {
         poison_shard(encoded.view(), 2, shard_bytes, std::byte{0xEE});
 
         Bytes<payload.size()> decoded{};
-        assert(rs42.decode(encoded.view(), erasures.view(), decoded.view()).is_ok());
-        assert(payload == decoded);
+        CRUCIBLE_TEST_ASSERT(kTest, rs42.decode(encoded.view(), erasures.view(), decoded.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, payload == decoded);
     }
 
     {
         constexpr auto payload = payload_seed<31>();
         constexpr auto shard_bytes = Rs42::shard_bytes_for(payload.size());
         Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode(payload.view(), encoded.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, rs42.encode(payload.view(), encoded.view()).is_ok());
 
         Flags<Rs42::total_shards> erasures{};
         erasures.at(::fixy::index<1>()) = true;
@@ -179,14 +189,14 @@ int main() {
         poison_shard(encoded.view(), 5, shard_bytes, std::byte{0xEE});
 
         Bytes<payload.size()> decoded{};
-        assert(rs42.decode(encoded.view(), erasures.view(), decoded.view()).is_ok());
-        assert(payload == decoded);
+        CRUCIBLE_TEST_ASSERT(kTest, rs42.decode(encoded.view(), erasures.view(), decoded.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, payload == decoded);
     }
 
     {
         constexpr auto payload = payload_seed<23>();
         Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode(payload.view(), encoded.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, rs42.encode(payload.view(), encoded.view()).is_ok());
 
         Flags<Rs42::total_shards> too_many{};
         too_many.at(::fixy::index<0>()) = true;
@@ -195,32 +205,35 @@ int main() {
 
         Bytes<payload.size()> decoded{};
         auto rejected = rs42.decode(encoded.view(), too_many.view(), decoded.view());
-        assert(rejected.err().expect("three erasures are too many") == ci::FecError::TooManyErasures);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             rejected.err().expect("three erasures are too many") == ci::FecError::TooManyErasures);
     }
 
     {
         constexpr auto payload = payload_seed<13>();
         auto owned_payload = ::fixy::mint_linear<Bytes<payload.size()>>(payload);
         Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode_owned(std::move(owned_payload), encoded).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, rs42.encode_owned(std::move(owned_payload), encoded).is_ok());
 
         auto owned_encoded = ::fixy::mint_linear<decltype(encoded)>(encoded);
         Flags<Rs42::total_shards> erasures{};
         Bytes<payload.size()> decoded{};
-        assert(rs42.decode_owned(std::move(owned_encoded), erasures.view(), decoded).is_ok());
-        assert(payload == decoded);
+        CRUCIBLE_TEST_ASSERT(kTest, rs42.decode_owned(std::move(owned_encoded), erasures.view(), decoded).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, payload == decoded);
     }
 
     {
         auto rejected = rs42.encode(::fixy::View<std::byte const>{}, ::fixy::View<std::byte>{});
-        assert(rejected.err().expect("an empty input is refused") == ci::FecError::InvalidInputSize);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             rejected.err().expect("an empty input is refused") == ci::FecError::InvalidInputSize);
     }
 
     {
         constexpr auto payload = payload_seed<9>();
         Bytes<1> too_small{};
         auto rejected = rs42.encode(payload.view(), too_small.view());
-        assert(rejected.err().expect("a short output is refused") == ci::FecError::InvalidOutputSize);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             rejected.err().expect("a short output is refused") == ci::FecError::InvalidOutputSize);
     }
 
     {
@@ -228,7 +241,7 @@ int main() {
         constexpr auto payload = payload_seed<103>();
         constexpr auto shard_bytes = Rs102::shard_bytes_for(payload.size());
         Bytes<Rs102::encoded_size_for(payload.size())> encoded{};
-        assert(rs102.encode(payload.view(), encoded.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, rs102.encode(payload.view(), encoded.view()).is_ok());
 
         Flags<Rs102::total_shards> erasures{};
         erasures.at(::fixy::index<3>()) = true;
@@ -237,19 +250,20 @@ int main() {
         poison_shard(encoded.view(), 10, shard_bytes, std::byte{0xEE});
 
         Bytes<payload.size()> decoded{};
-        assert(rs102.decode(encoded.view(), erasures.view(), decoded.view()).is_ok());
-        assert(payload == decoded);
+        CRUCIBLE_TEST_ASSERT(kTest, rs102.decode(encoded.view(), erasures.view(), decoded.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, payload == decoded);
     }
 
     {
         constexpr auto payload = payload_seed<17>();
         Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode(payload.view(), encoded.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, rs42.encode(payload.view(), encoded.view()).is_ok());
 
         Flags<Rs42::total_shards - 1> short_mask{};
         Bytes<payload.size()> decoded{};
         auto rejected = rs42.decode(encoded.view(), short_mask.view(), decoded.view());
-        assert(rejected.err().expect("a short mask is refused") == ci::FecError::ErasureMaskSizeMismatch);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             rejected.err().expect("a short mask is refused") == ci::FecError::ErasureMaskSizeMismatch);
     }
 
     return 0;

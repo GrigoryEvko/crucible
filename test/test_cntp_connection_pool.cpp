@@ -1,15 +1,24 @@
 #include <crucible/cntp/ConnectionPool.h>
 #include <crucible/cntp/ConnectionPoolRuntime.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <atomic>
 #include "tcp_socket.h"
-#include "test_assert.h"
 #include <cstddef>
 #include <cstdio>
 #include <string_view>
 #include <thread>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cntp = crucible::cntp;
 namespace cog = crucible::cog;
@@ -35,7 +44,7 @@ namespace {
     if (!socket.is_open()) {
         ::fixy::TestRunnerCtx const ctx{fe::testing::test()};
         socket = crucible::test::open_tcp_socket(ctx);
-        assert(socket.is_open());
+        CRUCIBLE_TEST_ASSERT(kTest, socket.is_open());
     }
     return ::fixy::net::share_socket(socket.ref());
 }
@@ -44,7 +53,7 @@ namespace {
                                                                                std::uint64_t connection_id) {
     cntp::SocketFd const socket = test_socket(fd);
     auto cid = cntp::admit_connection_id(connection_id);
-    assert(cid.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, cid.is_ok());
     auto conn = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(
         socket, id, std::move(cid).expect("the connection id is positive"));
     return std::move(conn).expect("the remote of the test is valid");
@@ -88,7 +97,8 @@ void test_admission_and_names() {
     static_assert(cntp::pool_error_name(cntp::PoolError::PoolFull) == "PoolFull");
     static_assert(cntp::pool_event_kind_name(cntp::PoolEventKind::Returned) == "returned");
     static_assert(cntp::pool_event_kind_name(cntp::PoolEventKind::EvictedUnhealthy) == "evicted_unhealthy");
-    assert(cntp::transport_class_name(static_cast<cntp::TransportClass>(255)) == "<unknown TransportClass>");
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::transport_class_name(static_cast<cntp::TransportClass>(255))
+                                    == "<unknown TransportClass>");
 
     auto size = cntp::admit_pool_size(4);
     auto zero_size = cntp::admit_pool_size(0);
@@ -97,35 +107,35 @@ void test_admission_and_names() {
     auto id = cntp::admit_connection_id(77);
     auto zero_id = cntp::admit_connection_id(0);
 
-    assert(size.is_ok());
-    assert(zero_size.is_err());
-    assert(zero_size.err() == ::fixy::some(cntp::PoolError::InvalidPoolSize));
-    assert(idle.is_ok());
-    assert(zero_idle.is_err());
-    assert(zero_idle.err() == ::fixy::some(cntp::PoolError::InvalidIdleTimeout));
-    assert(id.is_ok());
-    assert(zero_id.is_err());
-    assert(zero_id.err() == ::fixy::some(cntp::PoolError::InvalidConnectionId));
+    CRUCIBLE_TEST_ASSERT(kTest, size.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_size.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_size.err() == ::fixy::some(cntp::PoolError::InvalidPoolSize));
+    CRUCIBLE_TEST_ASSERT(kTest, idle.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_idle.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_idle.err() == ::fixy::some(cntp::PoolError::InvalidIdleTimeout));
+    CRUCIBLE_TEST_ASSERT(kTest, id.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_id.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_id.err() == ::fixy::some(cntp::PoolError::InvalidConnectionId));
     auto const admitted_id = std::move(id).expect("77 is positive");
 
     cog::CogIdentity empty{};
     cntp::SocketFd const socket = test_socket(100);
     auto bad = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(socket, empty, admitted_id);
-    assert(error_of(std::move(bad)) == cntp::PoolError::InvalidRemoteCog);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(std::move(bad)) == cntp::PoolError::InvalidRemoteCog);
 
     // A connection holds an open socket, so the empty ref is refused.
     auto closed = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(cntp::SocketFd{}, remote(9), admitted_id);
-    assert(error_of(std::move(closed)) == cntp::PoolError::ClosedSocket);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(std::move(closed)) == cntp::PoolError::ClosedSocket);
 
     auto good = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(socket, remote(9), admitted_id);
     MtlsConnection made = take(std::move(good));
-    assert(made.peek().socket() == socket);
-    assert(!(made.peek().socket() == test_socket(101)));
-    assert(made.peek().remote_uuid() == remote(9).uuid);
-    assert(made.peek().connection_id().value() == 77);
+    CRUCIBLE_TEST_ASSERT(kTest, made.peek().socket() == socket);
+    CRUCIBLE_TEST_ASSERT(kTest, !(made.peek().socket() == test_socket(101)));
+    CRUCIBLE_TEST_ASSERT(kTest, made.peek().remote_uuid() == remote(9).uuid);
+    CRUCIBLE_TEST_ASSERT(kTest, made.peek().connection_id().value() == 77);
     drop(std::move(made));
 
-    crucible::test::pass("  test_admission_and_names:       PASSED\n");
+    ::fixy::check::pass(kTest, "  test_admission_and_names:       PASSED\n");
 }
 
 void test_lease_return_and_capacity() {
@@ -134,46 +144,48 @@ void test_lease_return_and_capacity() {
     auto id = remote(1);
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(init);
 
-    assert(pool.add_connection(bg, connection(10, id, 1), 100).is_ok());
-    assert(pool.add_connection(bg, connection(11, id, 2), 100).is_ok());
-    assert(error_of(pool.add_connection(bg, connection(12, id, 3), 100)) == cntp::PoolError::PoolFull);
-    assert(pool.available_count(bg, id) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(10, id, 1), 100).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(11, id, 2), 100).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(pool.add_connection(bg, connection(12, id, 3), 100)) == cntp::PoolError::PoolFull);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 2);
 
     {
         auto lease = take(pool.lease(bg, id, 200));
-        assert(static_cast<bool>(lease));
-        assert((*lease).remote_uuid() == id.uuid);
-        assert(lease->socket() == test_socket(10));
+        CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(lease));
+        CRUCIBLE_TEST_ASSERT(kTest, (*lease).remote_uuid() == id.uuid);
+        CRUCIBLE_TEST_ASSERT(kTest, lease->socket() == test_socket(10));
         static_assert(std::is_const_v<std::remove_reference_t<decltype(*lease)>>,
                       "a lease reads its connection and cannot rewrite it");
-        assert(pool.available_count(bg, id) == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 1);
     }
-    assert(pool.available_count(bg, id) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 2);
 
-    assert(pool.event_count(bg) >= 4);
-    assert(take(pool.event_at(bg, 0)).value().kind == cntp::PoolEventKind::Added);
-    assert(take(pool.event_at(bg, 2)).value().kind == cntp::PoolEventKind::Leased);
-    assert(take(pool.event_at(bg, 3)).value().kind == cntp::PoolEventKind::Returned);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.event_count(bg) >= 4);
+    CRUCIBLE_TEST_ASSERT(kTest, take(pool.event_at(bg, 0)).value().kind == cntp::PoolEventKind::Added);
+    CRUCIBLE_TEST_ASSERT(kTest, take(pool.event_at(bg, 2)).value().kind == cntp::PoolEventKind::Leased);
+    CRUCIBLE_TEST_ASSERT(kTest, take(pool.event_at(bg, 3)).value().kind == cntp::PoolEventKind::Returned);
 
     // An explicit return records the same event as a scope exit.
     auto lease = take(pool.lease(bg, id, 300));
-    assert(pool.available_count(bg, id) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 1);
     pool.return_lease(bg, std::move(lease));
-    assert(pool.available_count(bg, id) == 2);
-    assert(take(pool.event_at(bg, pool.event_count(bg) - 1)).value().kind == cntp::PoolEventKind::Returned);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, take(pool.event_at(bg, pool.event_count(bg) - 1)).value().kind
+                                    == cntp::PoolEventKind::Returned);
 
     // A move assignment gives the slot of the target back, then takes over
     // the slot of the source, so one slot is free after it.
     auto held = take(pool.lease(bg, id, 400));
     auto taken = take(pool.lease(bg, id, 401));
-    assert(pool.available_count(bg, id) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 0);
     held = std::move(taken);
-    assert(static_cast<bool>(held));
-    assert(pool.available_count(bg, id) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(held));
+    CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 1);
     held.reset();
-    assert(pool.available_count(bg, id) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 2);
 
-    crucible::test::pass("  test_lease_return_and_capacity: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_lease_return_and_capacity: PASSED\n");
 }
 
 void test_unhealthy_idle_and_quarantine_eviction() {
@@ -183,24 +195,24 @@ void test_unhealthy_idle_and_quarantine_eviction() {
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(init, config(2, 50));
 
     cntp::SocketFd const fd20 = test_socket(20);
-    assert(pool.add_connection(bg, connection(20, id, 20), 10).is_ok());
-    assert(pool.add_connection(bg, connection(21, id, 21), 10).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(20, id, 20), 10).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(21, id, 21), 10).is_ok());
     pool.mark_unhealthy(bg, id, fd20);
     pool.evict_unhealthy(bg, id);
-    assert(pool.available_count(bg, id) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 1);
     pool.evict_idle(bg, id, 70);
-    assert(pool.available_count(bg, id) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 0);
 
-    assert(pool.add_connection(bg, connection(22, id, 22), 100).is_ok());
-    assert(pool.add_connection(bg, connection(23, id, 23), 100).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(22, id, 22), 100).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(23, id, 23), 100).is_ok());
     auto lease = take(pool.lease(bg, id, 110));
-    assert(pool.available_count(bg, id) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 1);
     pool.drain_quarantined(bg, id);
-    assert(pool.available_count(bg, id) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 0);
     lease.reset();
-    assert(error_of(pool.lease(bg, id, 120)) == cntp::PoolError::PoolEmpty);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(pool.lease(bg, id, 120)) == cntp::PoolError::PoolEmpty);
 
-    crucible::test::pass("  test_unhealthy_idle_and_quarantine_eviction: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_unhealthy_idle_and_quarantine_eviction: PASSED\n");
 }
 
 void test_quarantined_remote_refuses_a_lease() {
@@ -209,20 +221,20 @@ void test_quarantined_remote_refuses_a_lease() {
     auto id = remote(4);
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(init);
 
-    assert(pool.add_connection(bg, connection(90, id, 90), 0).is_ok());
-    assert(pool.add_connection(bg, connection(91, id, 91), 0).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(90, id, 90), 0).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(91, id, 91), 0).is_ok());
     auto held = take(pool.lease(bg, id, 0));
     pool.drain_quarantined(bg, id);
 
     // The leased slot stays, quarantined, so the remote is still counted and
     // a new lease for it is refused by name.
-    assert(pool.distinct_remote_count(bg) == 1u);
-    assert(error_of(pool.lease(bg, id, 1)) == cntp::PoolError::RemoteQuarantined);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(pool.lease(bg, id, 1)) == cntp::PoolError::RemoteQuarantined);
 
     held.reset();
-    assert(pool.distinct_remote_count(bg) == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 0u);
 
-    crucible::test::pass("  test_quarantined_remote_refuses_a_lease: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_quarantined_remote_refuses_a_lease: PASSED\n");
 }
 
 void test_configured_per_remote_limit() {
@@ -231,10 +243,11 @@ void test_configured_per_remote_limit() {
     auto id = remote(3);
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(init, config(1, 1000));
 
-    assert(pool.add_connection(bg, connection(30, id, 30), 0).is_ok());
-    assert(error_of(pool.add_connection(bg, connection(31, id, 31), 0)) == cntp::PoolError::PoolFull);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(30, id, 30), 0).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(pool.add_connection(bg, connection(31, id, 31), 0)) == cntp::PoolError::PoolFull);
 
-    crucible::test::pass("  test_configured_per_remote_limit: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_configured_per_remote_limit: PASSED\n");
 }
 
 void test_event_ring_wrap_chronological_order() {
@@ -253,31 +266,31 @@ void test_event_ring_wrap_chronological_order() {
     auto id = remote(10);
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(init);
 
-    assert(pool.add_connection(bg, connection(40, id, 1), 100).is_ok());
-    assert(pool.add_connection(bg, connection(41, id, 2), 100).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(40, id, 1), 100).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(41, id, 2), 100).is_ok());
     for (int i = 0; i < 4; ++i) {
         auto lease = take(pool.lease(bg, id, std::uint64_t{200} + std::uint64_t(i)));
-        assert(static_cast<bool>(lease));
+        CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(lease));
         // The lease returns itself at the end of this scope, and that
         // is what records the return event.
     }
 
-    assert(pool.event_count(bg) == 8u);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.event_count(bg) == 8u);
 
-    assert(take(pool.event_at(bg, 0)).value().sequence == 3u);
-    assert(take(pool.event_at(bg, 7)).value().sequence == 10u);
+    CRUCIBLE_TEST_ASSERT(kTest, take(pool.event_at(bg, 0)).value().sequence == 3u);
+    CRUCIBLE_TEST_ASSERT(kTest, take(pool.event_at(bg, 7)).value().sequence == 10u);
 
     std::uint64_t prev = 0;
     for (std::size_t k = 0; k < pool.event_count(bg); ++k) {
         std::uint64_t const sequence = take(pool.event_at(bg, k)).value().sequence;
-        assert(sequence > prev);
+        CRUCIBLE_TEST_ASSERT(kTest, sequence > prev);
         prev = sequence;
     }
-    assert(prev == 10u);
+    CRUCIBLE_TEST_ASSERT(kTest, prev == 10u);
 
-    assert(error_of(pool.event_at(bg, 8)) == cntp::PoolError::InvalidConnectionId);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(pool.event_at(bg, 8)) == cntp::PoolError::InvalidConnectionId);
 
-    crucible::test::pass("  test_event_ring_wrap_chronological_order: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_event_ring_wrap_chronological_order: PASSED\n");
 }
 
 void test_distinct_remote_counter_parity() {
@@ -291,44 +304,45 @@ void test_distinct_remote_counter_parity() {
     auto third = remote(22);
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 3, 2>(init, config(2, 50));
 
-    assert(pool.distinct_remote_count(bg) == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 0u);
 
     // Only the first connection to a remote raises the count.
-    assert(pool.add_connection(bg, connection(50, first, 1), 0).is_ok());
-    assert(pool.distinct_remote_count(bg) == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(50, first, 1), 0).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 1u);
 
-    assert(pool.add_connection(bg, connection(51, first, 2), 0).is_ok());
-    assert(pool.distinct_remote_count(bg) == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(51, first, 2), 0).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 1u);
 
-    assert(pool.add_connection(bg, connection(60, second, 3), 0).is_ok());
-    assert(pool.distinct_remote_count(bg) == 2u);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(60, second, 3), 0).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 2u);
 
-    assert(pool.add_connection(bg, connection(70, third, 4), 0).is_ok());
-    assert(pool.distinct_remote_count(bg) == 3u);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(70, third, 4), 0).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 3u);
 
     // The admission gate reads that same counter, so a fourth remote
     // is refused once three are held.
     auto fourth = remote(23);
-    assert(error_of(pool.add_connection(bg, connection(80, fourth, 5), 0)) == cntp::PoolError::PoolFull);
-    assert(pool.distinct_remote_count(bg) == 3u);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(pool.add_connection(bg, connection(80, fourth, 5), 0)) == cntp::PoolError::PoolFull);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 3u);
 
     // Evicting one unhealthy connection leaves the remote with its
     // other one, so the count does not move.
     cntp::SocketFd const fd50 = test_socket(50);
     pool.mark_unhealthy(bg, first, fd50);
     pool.evict_unhealthy(bg, first);
-    assert(pool.distinct_remote_count(bg) == 3u);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 3u);
 
     // Evicting the last connection to a remote does move it.
     pool.evict_idle(bg, first, /*now_ns=*/100);
-    assert(pool.distinct_remote_count(bg) == 2u);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 2u);
 
     // Draining a remote that holds no lease drops it outright.
     pool.drain_quarantined(bg, second);
-    assert(pool.distinct_remote_count(bg) == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 1u);
 
-    assert(pool.add_connection(bg, connection(80, fourth, 5), 0).is_ok());
-    assert(pool.distinct_remote_count(bg) == 2u);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.add_connection(bg, connection(80, fourth, 5), 0).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 2u);
 
     // A connection marked unhealthy while leased is drained when the
     // lease comes back, and it was the remote's only one.
@@ -336,9 +350,9 @@ void test_distinct_remote_counter_parity() {
     cntp::SocketFd const fd70 = test_socket(70);
     pool.mark_unhealthy(bg, third, fd70);
     lease.reset();
-    assert(pool.distinct_remote_count(bg) == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 1u);
 
-    crucible::test::pass("  test_distinct_remote_counter_parity: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_distinct_remote_counter_parity: PASSED\n");
 }
 
 // Two background threads take and return leases on one pool at once.  The
@@ -350,7 +364,8 @@ void test_concurrent_leases_keep_the_count() {
     auto id = remote(30);
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 1, 4>(init);
     for (int fd = 0; fd < 4; ++fd) {
-        assert(pool.add_connection(bg, connection(200 + fd, id, static_cast<std::uint64_t>(fd + 1)), 0).is_ok());
+        CRUCIBLE_TEST_ASSERT(
+            kTest, pool.add_connection(bg, connection(200 + fd, id, static_cast<std::uint64_t>(fd + 1)), 0).is_ok());
     }
 
     std::atomic<int> granted{0};
@@ -360,7 +375,7 @@ void test_concurrent_leases_keep_the_count() {
             if (lease.is_ok()) {
                 granted.fetch_add(1, std::memory_order_relaxed);
             } else {
-                assert(error_of(std::move(lease)) == cntp::PoolError::PoolEmpty);
+                CRUCIBLE_TEST_ASSERT(kTest, error_of(std::move(lease)) == cntp::PoolError::PoolEmpty);
             }
         }
     };
@@ -368,11 +383,11 @@ void test_concurrent_leases_keep_the_count() {
         std::jthread left{worker};
         std::jthread right{worker};
     }
-    assert(granted.load() > 0);
-    assert(pool.available_count(bg, id) == 4);
-    assert(pool.distinct_remote_count(bg) == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, granted.load() > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.available_count(bg, id) == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.distinct_remote_count(bg) == 1u);
 
-    crucible::test::pass("  test_concurrent_leases_keep_the_count: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_concurrent_leases_keep_the_count: PASSED\n");
 }
 
 void test_gate_cache_line_isolation() {
@@ -383,7 +398,7 @@ void test_gate_cache_line_isolation() {
     using PoolT = cntp::ConnectionPool<cntp::TransportClass::MtlsTcp, 2, 2>;
     static_assert(alignof(PoolT) >= 64u, "The pool must be aligned to a cache line so that the "
                                          "gate does not share one with the counters.");
-    crucible::test::pass("  test_gate_cache_line_isolation: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_gate_cache_line_isolation: PASSED\n");
 }
 
 }  // namespace
@@ -417,6 +432,6 @@ int main() {
     test_distinct_remote_counter_parity();
     test_concurrent_leases_keep_the_count();
     test_gate_cache_line_isolation();
-    crucible::test::pass("test_cntp_connection_pool: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_cntp_connection_pool: all PASSED\n");
     return 0;
 }

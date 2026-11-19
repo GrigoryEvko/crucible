@@ -19,13 +19,21 @@
 #include <crucible/MetaLog.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/TensorMeta.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
-
-#include "test_assert.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -85,7 +93,7 @@ struct Work {
     // records go to the log, the inputs first.
     void push_op(MetaLog& log, uint32_t op, ::fixy::View<const TensorMeta> inputs,
                  ::fixy::View<const TensorMeta> outputs, crucible::OpDepth depth = {}) {
-        assert(count < CAPACITY);
+        CRUCIBLE_TEST_ASSERT(kTest, count < CAPACITY);
         ::fixy::FixedArray<TensorMeta, 4> records{};
         std::size_t filled = 0;
         for (const TensorMeta& meta : inputs) {
@@ -98,14 +106,14 @@ struct Work {
         }
         const MetaIndex index = log.try_append(
             ::fixy::View<const TensorMeta>{records.view()}.window(0, filled).expect("the records fit the array"));
-        assert(index.is_valid());
-        TraceRing::Entry& entry = crucible::test::element_at(trace, count);
+        CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
+        TraceRing::Entry& entry = *trace.get(count).expect("a test reads an element at or past the count of its array");
         entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
         entry.shape_hash = crucible::ShapeHash{0x8000ULL + op};
         entry.num_inputs = static_cast<uint16_t>(inputs.size());
         entry.num_outputs = static_cast<uint16_t>(outputs.size());
-        crucible::test::element_at(meta_starts, count) = index;
-        crucible::test::element_at(depths, count) = depth;
+        *meta_starts.get(count).expect("a test reads an element at or past the count of its array") = index;
+        *depths.get(count).expect("a test reads an element at or past the count of its array") = depth;
         ++count;
     }
 
@@ -198,25 +206,28 @@ struct Rig {
 void test_reused_address_keeps_the_hash() {
     const BackgroundThread::BuiltRegion fresh = build_three_ops(kZ);
     const BackgroundThread::BuiltRegion reused = build_three_ops(kX);
-    assert(fresh.content_hash == reused.content_hash
-           && "the content hash does not depend on the address that the allocator gives a new tensor");
-    assert(fresh.content_hash == crucible::compute_content_hash(fresh.ops.view(), fresh.numerics));
-    assert(reused.content_hash == crucible::compute_content_hash(reused.ops.view(), reused.numerics));
-    crucible::test::pass("  test_reused_address_keeps_the_hash: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, fresh.content_hash == reused.content_hash
+                   && "the content hash does not depend on the address that the allocator gives a new tensor");
+    CRUCIBLE_TEST_ASSERT(kTest, fresh.content_hash == crucible::compute_content_hash(fresh.ops.view(), fresh.numerics));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         reused.content_hash == crucible::compute_content_hash(reused.ops.view(), reused.numerics));
+    ::fixy::check::pass(kTest, "  test_reused_address_keeps_the_hash: PASSED\n");
 }
 
 // The output of op 2 at the address of the dead output of op 0 is a new
 // storage: it takes a slot of its own, and the slot of op 0 dies at op 1.
 void test_reused_address_gets_a_new_slot() {
     const BackgroundThread::BuiltRegion reused = build_three_ops(kX);
-    assert(reused.slots.size() == 3 && "a new storage at the address of a dead one takes a slot of its own");
+    CRUCIBLE_TEST_ASSERT(kTest, reused.slots.size() == 3
+                                    && "a new storage at the address of a dead one takes a slot of its own");
     const crucible::SlotId first = output_slot(reused, 0, 0);
     const crucible::SlotId last = output_slot(reused, 2, 0);
-    assert(first != last);
-    assert(slot_of(reused, first).death_op == crucible::OpIndex{1});
-    assert(slot_of(reused, last).birth_op == crucible::OpIndex{2});
-    assert(!slot_of(reused, first).is_external && !slot_of(reused, last).is_external);
-    crucible::test::pass("  test_reused_address_gets_a_new_slot: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, first != last);
+    CRUCIBLE_TEST_ASSERT(kTest, slot_of(reused, first).death_op == crucible::OpIndex{1});
+    CRUCIBLE_TEST_ASSERT(kTest, slot_of(reused, last).birth_op == crucible::OpIndex{2});
+    CRUCIBLE_TEST_ASSERT(kTest, !slot_of(reused, first).is_external && !slot_of(reused, last).is_external);
+    ::fixy::check::pass(kTest, "  test_reused_address_gets_a_new_slot: PASSED\n");
 }
 
 // Op 0 writes the base B of 64 floats.  Op 1 reads the view of B from element
@@ -231,14 +242,16 @@ void test_view_at_an_offset_reads_its_base() {
     const BackgroundThread::BuiltRegion region = rig.build();
 
     const crucible::SlotId base = output_slot(region, 0, 0);
-    assert(region.slots.size() == 3 && "the views of B take the slot of B, and no external slot");
-    assert(input_slot(region, 1, 0) == base && producer(region, 1, 0) == crucible::OpIndex{0}
-           && "a view at an offset reads the slot of its base");
-    assert(output_slot(region, 2, 0) == base && "a view that an op returns keeps the slot of its base");
-    assert(input_slot(region, 3, 0) == base && producer(region, 3, 0) == crucible::OpIndex{2});
-    assert(!slot_of(region, base).is_external);
-    assert(slot_of(region, base).nbytes == 64 * sizeof(float) && "the slot holds the span of each view of B");
-    crucible::test::pass("  test_view_at_an_offset_reads_its_base: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, region.slots.size() == 3 && "the views of B take the slot of B, and no external slot");
+    CRUCIBLE_TEST_ASSERT(kTest, input_slot(region, 1, 0) == base && producer(region, 1, 0) == crucible::OpIndex{0}
+                                    && "a view at an offset reads the slot of its base");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         output_slot(region, 2, 0) == base && "a view that an op returns keeps the slot of its base");
+    CRUCIBLE_TEST_ASSERT(kTest, input_slot(region, 3, 0) == base && producer(region, 3, 0) == crucible::OpIndex{2});
+    CRUCIBLE_TEST_ASSERT(kTest, !slot_of(region, base).is_external);
+    CRUCIBLE_TEST_ASSERT(kTest, slot_of(region, base).nbytes == 64 * sizeof(float)
+                                    && "the slot holds the span of each view of B");
+    ::fixy::check::pass(kTest, "  test_view_at_an_offset_reads_its_base: PASSED\n");
 }
 
 // Op 1 of depth 0 returns the tensor R that op 0 of depth 1, in its nest,
@@ -253,8 +266,10 @@ void test_return_of_the_nest_keeps_the_slot() {
     rig.work.push_unary(*rig.log, 2, vector_at(kZ), vector_at(kY), crucible::OpDepth{0});
     const BackgroundThread::BuiltRegion region = rig.build();
 
-    assert(output_slot(region, 1, 0) == output_slot(region, 0, 0) && "the tensor of the nest keeps its slot");
-    assert(output_slot(region, 2, 0) != output_slot(region, 1, 0) && "a sibling writes a new storage");
+    CRUCIBLE_TEST_ASSERT(kTest, output_slot(region, 1, 0) == output_slot(region, 0, 0)
+                                    && "the tensor of the nest keeps its slot");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         output_slot(region, 2, 0) != output_slot(region, 1, 0) && "a sibling writes a new storage");
 
     // The nest of linear in the record of an MLP: copy_ of depth 2 writes the
     // bias into the result R in place, addmm of depth 1 writes R, and linear
@@ -267,9 +282,9 @@ void test_return_of_the_nest_keeps_the_slot() {
     chain.work.push_unary(*chain.log, 2, vector_at(kX), vector_at(kY), crucible::OpDepth{0});
     const BackgroundThread::BuiltRegion nested = chain.build();
     const crucible::SlotId copied = output_slot(nested, 0, 0);
-    assert(output_slot(nested, 1, 0) == copied && output_slot(nested, 2, 0) == copied);
-    assert(input_slot(nested, 0, 0) == copied);
-    crucible::test::pass("  test_return_of_the_nest_keeps_the_slot: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, output_slot(nested, 1, 0) == copied && output_slot(nested, 2, 0) == copied);
+    CRUCIBLE_TEST_ASSERT(kTest, input_slot(nested, 0, 0) == copied);
+    ::fixy::check::pass(kTest, "  test_return_of_the_nest_keeps_the_slot: PASSED\n");
 }
 
 // The ops of the first layer of the MLP of test_region_ops.py, in the order
@@ -292,21 +307,24 @@ void test_result_of_a_nest_is_internal() {
     const BackgroundThread::BuiltRegion layer = mlp.build();
 
     const crucible::SlotId made = output_slot(layer, 2, 0);
-    assert(!slot_of(layer, made).is_external && "the result that addmm makes is a slot of the region");
-    assert(slot_of(layer, made).birth_op == crucible::OpIndex{0}
-           && slot_of(layer, made).death_op == crucible::OpIndex{3});
-    assert(input_slot(layer, 3, 0) == made && producer(layer, 3, 0) == crucible::OpIndex{2});
-    assert(slot_of(layer, input_slot(layer, 0, 1)).is_external && "the bias lives before the region");
-    assert(slot_of(layer, input_slot(layer, 1, 1)).is_external && "the input x lives before the region");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !slot_of(layer, made).is_external && "the result that addmm makes is a slot of the region");
+    CRUCIBLE_TEST_ASSERT(kTest, slot_of(layer, made).birth_op == crucible::OpIndex{0}
+                                    && slot_of(layer, made).death_op == crucible::OpIndex{3});
+    CRUCIBLE_TEST_ASSERT(kTest, input_slot(layer, 3, 0) == made && producer(layer, 3, 0) == crucible::OpIndex{2});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         slot_of(layer, input_slot(layer, 0, 1)).is_external && "the bias lives before the region");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         slot_of(layer, input_slot(layer, 1, 1)).is_external && "the input x lives before the region");
 
     Rig param;
     param.work.push_unary(*param.log, 0, vector_at(kX), vector_at(kX), crucible::OpDepth{1});
     param.work.push_unary(*param.log, 1, vector_at(kX), vector_at(kX), crucible::OpDepth{0});
     const BackgroundThread::BuiltRegion returned = param.build();
-    assert(slot_of(returned, output_slot(returned, 1, 0)).is_external
-           && "a storage that the parent reads lives before it");
-    assert(slot_of(returned, output_slot(returned, 1, 0)).birth_op == crucible::OpIndex{0});
-    crucible::test::pass("  test_result_of_a_nest_is_internal: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, slot_of(returned, output_slot(returned, 1, 0)).is_external
+                                    && "a storage that the parent reads lives before it");
+    CRUCIBLE_TEST_ASSERT(kTest, slot_of(returned, output_slot(returned, 1, 0)).birth_op == crucible::OpIndex{0});
+    ::fixy::check::pass(kTest, "  test_result_of_a_nest_is_internal: PASSED\n");
 }
 
 // The same ops under the default policy, under the strict tier, and under
@@ -315,7 +333,9 @@ void test_result_of_a_nest_is_internal() {
 // folds.
 void test_numerics_policy_moves_the_hash() {
     const BackgroundThread::BuiltRegion ordered = build_three_ops(kZ);
-    assert(ordered.numerics == crucible::compute_numerics_hash(crucible::NumericsPolicy{}, crucible::EagerNumerics{}));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ordered.numerics
+                             == crucible::compute_numerics_hash(crucible::NumericsPolicy{}, crucible::EagerNumerics{}));
 
     crucible::NumericsPolicy strict_policy{};
     strict_policy.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
@@ -330,12 +350,14 @@ void test_numerics_policy_moves_the_hash() {
         rig.work.push_unary(*rig.log, 1, vector_at(kX), vector_at(kY));
         rig.work.push_unary(*rig.log, 2, vector_at(kY), vector_at(kZ));
         const BackgroundThread::BuiltRegion region = rig.build();
-        assert(region.numerics == numerics);
-        assert(region.content_hash != ordered.content_hash && "the numerics of the run separate two regions");
-        assert(region.content_hash == crucible::compute_content_hash(region.ops.view(), numerics));
+        CRUCIBLE_TEST_ASSERT(kTest, region.numerics == numerics);
+        CRUCIBLE_TEST_ASSERT(kTest, region.content_hash != ordered.content_hash
+                                        && "the numerics of the run separate two regions");
+        CRUCIBLE_TEST_ASSERT(kTest, region.content_hash == crucible::compute_content_hash(region.ops.view(), numerics));
     }
-    assert(*others.view().get(0).expect("two hashes") != *others.view().get(1).expect("two hashes"));
-    crucible::test::pass("  test_numerics_policy_moves_the_hash: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         *others.view().get(0).expect("two hashes") != *others.view().get(1).expect("two hashes"));
+    ::fixy::check::pass(kTest, "  test_numerics_policy_moves_the_hash: PASSED\n");
 }
 
 // Two ops read the external storage X, the first one at the first element
@@ -348,11 +370,13 @@ void test_reads_of_an_external_take_one_slot() {
     const BackgroundThread::BuiltRegion region = rig.build();
 
     const crucible::SlotId external = input_slot(region, 0, 0);
-    assert(input_slot(region, 1, 0) == external && "each read of one external storage reads one slot");
-    assert(!producer(region, 1, 0).is_valid());
-    assert(slot_of(region, external).is_external && slot_of(region, external).death_op == crucible::OpIndex{1});
-    assert(region.slots.size() == 3);
-    crucible::test::pass("  test_reads_of_an_external_take_one_slot: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         input_slot(region, 1, 0) == external && "each read of one external storage reads one slot");
+    CRUCIBLE_TEST_ASSERT(kTest, !producer(region, 1, 0).is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, slot_of(region, external).is_external
+                                    && slot_of(region, external).death_op == crucible::OpIndex{1});
+    CRUCIBLE_TEST_ASSERT(kTest, region.slots.size() == 3);
+    ::fixy::check::pass(kTest, "  test_reads_of_an_external_take_one_slot: PASSED\n");
 }
 
 // Op 0 writes X with the generation 1, and op 1 reads it, so X dies after op
@@ -369,20 +393,22 @@ void test_new_storage_at_a_dead_address_is_a_new_input() {
     const BackgroundThread::BuiltRegion fresh = known.build();
     const crucible::SlotId written = output_slot(fresh, 0, 0);
     const crucible::SlotId read = input_slot(fresh, 2, 0);
-    assert(read != written && "a new storage at the address of a dead one is a new input");
-    assert(!producer(fresh, 2, 0).is_valid() && "no op of the region wrote the new storage");
-    assert(slot_of(fresh, read).is_external);
-    assert(slot_of(fresh, written).death_op == crucible::OpIndex{1} && "the dead storage dies at its last read");
-    assert(fresh.slots.size() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, read != written && "a new storage at the address of a dead one is a new input");
+    CRUCIBLE_TEST_ASSERT(kTest, !producer(fresh, 2, 0).is_valid() && "no op of the region wrote the new storage");
+    CRUCIBLE_TEST_ASSERT(kTest, slot_of(fresh, read).is_external);
+    CRUCIBLE_TEST_ASSERT(kTest, slot_of(fresh, written).death_op == crucible::OpIndex{1}
+                                    && "the dead storage dies at its last read");
+    CRUCIBLE_TEST_ASSERT(kTest, fresh.slots.size() == 4);
 
     Rig unknown;
     unknown.work.push_source(*unknown.log, 0, vector_at(kX));
     unknown.work.push_unary(*unknown.log, 1, vector_at(kX), vector_at(kY));
     unknown.work.push_unary(*unknown.log, 2, vector_at(kX), vector_at(kZ));
     const BackgroundThread::BuiltRegion merged = unknown.build();
-    assert(input_slot(merged, 2, 0) == output_slot(merged, 0, 0) && producer(merged, 2, 0) == crucible::OpIndex{0}
-           && "with no generation, a read at the address reads the slot of the address");
-    crucible::test::pass("  test_new_storage_at_a_dead_address_is_a_new_input: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, input_slot(merged, 2, 0) == output_slot(merged, 0, 0)
+                                    && producer(merged, 2, 0) == crucible::OpIndex{0}
+                                    && "with no generation, a read at the address reads the slot of the address");
+    ::fixy::check::pass(kTest, "  test_new_storage_at_a_dead_address_is_a_new_input: PASSED\n");
 }
 
 // Op 0 writes X with the generation 1.  Op 1 reads Y and writes X again with
@@ -396,16 +422,16 @@ void test_output_with_the_same_generation_keeps_the_slot() {
     known.work.push_source(*known.log, 0, vector_at(kX, 0, 64, kKnownFirst));
     known.work.push_unary(*known.log, 1, vector_at(kY, 0, 64, kKnownSecond), vector_at(kX, 0, 64, kKnownFirst));
     const BackgroundThread::BuiltRegion same = known.build();
-    assert(output_slot(same, 1, 0) == output_slot(same, 0, 0) && "one generation is one storage");
-    assert(slot_of(same, output_slot(same, 0, 0)).death_op == crucible::OpIndex{1});
+    CRUCIBLE_TEST_ASSERT(kTest, output_slot(same, 1, 0) == output_slot(same, 0, 0) && "one generation is one storage");
+    CRUCIBLE_TEST_ASSERT(kTest, slot_of(same, output_slot(same, 0, 0)).death_op == crucible::OpIndex{1});
 
     Rig unknown;
     unknown.work.push_source(*unknown.log, 0, vector_at(kX));
     unknown.work.push_unary(*unknown.log, 1, vector_at(kY), vector_at(kX));
     const BackgroundThread::BuiltRegion split = unknown.build();
-    assert(output_slot(split, 1, 0) != output_slot(split, 0, 0)
-           && "with no generation, an output that the op does not read is a new storage");
-    crucible::test::pass("  test_output_with_the_same_generation_keeps_the_slot: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, output_slot(split, 1, 0) != output_slot(split, 0, 0)
+                                    && "with no generation, an output that the op does not read is a new storage");
+    ::fixy::check::pass(kTest, "  test_output_with_the_same_generation_keeps_the_slot: PASSED\n");
 }
 
 // Op 0 adds into the storage U at X in place, in the first period of the
@@ -428,15 +454,17 @@ void test_unknown_storage_of_another_period_is_a_new_input() {
     const BackgroundThread::BuiltRegion region = periods.build();
 
     const crucible::SlotId first = input_slot(region, 0, 0);
-    assert(output_slot(region, 0, 0) == first && "an in-place op writes the storage that it reads");
-    assert(input_slot(region, 1, 0) == first && producer(region, 1, 0) == crucible::OpIndex{0}
-           && "one period keeps one storage at one address");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         output_slot(region, 0, 0) == first && "an in-place op writes the storage that it reads");
+    CRUCIBLE_TEST_ASSERT(kTest, input_slot(region, 1, 0) == first && producer(region, 1, 0) == crucible::OpIndex{0}
+                                    && "one period keeps one storage at one address");
     const crucible::SlotId later = input_slot(region, 2, 0);
-    assert(later != first && "a storage of another period at the address is a new input");
-    assert(!producer(region, 2, 0).is_valid() && slot_of(region, later).is_external);
-    assert(slot_of(region, first).death_op == crucible::OpIndex{1} && "the storage of the first period dies at op 1");
-    assert(region.slots.size() == 4);
-    crucible::test::pass("  test_unknown_storage_of_another_period_is_a_new_input: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, later != first && "a storage of another period at the address is a new input");
+    CRUCIBLE_TEST_ASSERT(kTest, !producer(region, 2, 0).is_valid() && slot_of(region, later).is_external);
+    CRUCIBLE_TEST_ASSERT(kTest, slot_of(region, first).death_op == crucible::OpIndex{1}
+                                    && "the storage of the first period dies at op 1");
+    CRUCIBLE_TEST_ASSERT(kTest, region.slots.size() == 4);
+    ::fixy::check::pass(kTest, "  test_unknown_storage_of_another_period_is_a_new_input: PASSED\n");
 }
 
 }  // namespace
@@ -456,6 +484,6 @@ int main() {
     test_new_storage_at_a_dead_address_is_a_new_input();
     test_output_with_the_same_generation_keeps_the_slot();
     test_unknown_storage_of_another_period_is_a_new_input();
-    crucible::test::pass("test_build_address_reuse: ALL PASSED\n");
+    ::fixy::check::pass(kTest, "test_build_address_reuse: ALL PASSED\n");
     return 0;
 }

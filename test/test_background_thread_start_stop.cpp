@@ -20,9 +20,15 @@
 #include <fixy/os/Time.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
 #include "test_harness.h"
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::BackgroundThread;
 using crucible::MetaIndex;
@@ -58,7 +64,7 @@ uint64_t record_loop(TraceRing& ring, uint64_t first) {
         TraceRing::Entry entry{};
         entry.schema_hash = crucible::SchemaHash{kSchemaBase + index % kPeriod};
         entry.shape_hash = crucible::ShapeHash{0x400 + index % kPeriod};
-        assert(ring.try_append(entry, MetaIndex::none()));
+        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(entry, MetaIndex::none()));
     }
     return index;
 }
@@ -79,7 +85,7 @@ void test_start_and_stop() {
     static_cast<void>(record_loop(ring, 0));
     wait_for_pipeline(bt, ring);
     bt.stop();
-    assert(bt.total_processed.load_acquire() == ring.total_produced());
+    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == ring.total_produced());
 
     // A stop with no pipeline thread joins nothing.
     bt.stop();
@@ -165,9 +171,9 @@ void record_stream(TraceRing& ring, MetaLog& log, uint64_t first, uint64_t end) 
             entry.num_outputs = 1;
             const ::fixy::FixedArray<crucible::TensorMeta, 1> record{output_meta(index)};
             meta_start = log.try_append(record.view());
-            assert(meta_start.is_valid());
+            CRUCIBLE_TEST_ASSERT(kTest, meta_start.is_valid());
         }
-        assert(ring.try_append(entry, meta_start));
+        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(entry, meta_start));
     }
 }
 
@@ -187,7 +193,8 @@ void test_start_again_continues_the_stream() {
     record_stream(ring, log, 0, kOpsBeforeStop);
     wait_for_pipeline(bt, ring);
     bt.stop();
-    assert(log.tail.get() < log.head.get() && "the first pipeline holds no op with a record of the log");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         log.tail.get() < log.head.get() && "the first pipeline holds no op with a record of the log");
 
     record_stream(ring, log, kOpsBeforeStop, kOpsBeforeStop + kOpsWhileStopped);
     bt.start(startup(), ring, log);
@@ -203,20 +210,23 @@ void test_start_again_continues_the_stream() {
     wait_for_pipeline(control, one_ring);
     control.stop();
 
-    assert(ring.total_produced() == kStreamOps && one_ring.total_produced() == kStreamOps);
-    assert(bt.total_processed.load_acquire() == kStreamOps && "the second pipeline read an op twice or lost one");
-    assert(control.total_processed.load_acquire() == kStreamOps);
-    assert(bt.iterations_completed.get() == control.iterations_completed.get());
-    assert(bt.works_built() == control.works_built());
-    assert(control.uncompiled_regions.total() > 0 && "the stream gave no region");
-    assert(bt.uncompiled_regions.total() == control.uncompiled_regions.total());
+    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == kStreamOps && one_ring.total_produced() == kStreamOps);
+    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == kStreamOps
+                                    && "the second pipeline read an op twice or lost one");
+    CRUCIBLE_TEST_ASSERT(kTest, control.total_processed.load_acquire() == kStreamOps);
+    CRUCIBLE_TEST_ASSERT(kTest, bt.iterations_completed.get() == control.iterations_completed.get());
+    CRUCIBLE_TEST_ASSERT(kTest, bt.works_built() == control.works_built());
+    CRUCIBLE_TEST_ASSERT(kTest, control.uncompiled_regions.total() > 0 && "the stream gave no region");
+    CRUCIBLE_TEST_ASSERT(kTest, bt.uncompiled_regions.total() == control.uncompiled_regions.total());
     // Each pipeline is stopped, so the queues can be read.
     for (uint32_t age = 0; age < control.uncompiled_regions.size(); ++age) {
-        assert(bt.uncompiled_regions.at(age).get().content_hash == control.uncompiled_regions.at(age).get().content_hash
-               && "the second pipeline gave a region that a pipeline with no stop does not give");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             bt.uncompiled_regions.at(age).get().content_hash
+                                     == control.uncompiled_regions.at(age).get().content_hash
+                                 && "the second pipeline gave a region that a pipeline with no stop does not give");
     }
-    assert(one_log.tail.get() == one_log.head.get());
-    assert(log.tail.get() == one_log.tail.get() && "the second start moved the cursor of the log");
+    CRUCIBLE_TEST_ASSERT(kTest, one_log.tail.get() == one_log.head.get());
+    CRUCIBLE_TEST_ASSERT(kTest, log.tail.get() == one_log.tail.get() && "the second start moved the cursor of the log");
 }
 
 // A start after stop() that names a different ring or a different log breaks

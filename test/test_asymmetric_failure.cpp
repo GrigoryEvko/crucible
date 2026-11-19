@@ -1,11 +1,21 @@
 #include <crucible/topology/AsymmetricFailure.h>
 #include <foundation/reflect/EnumName.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cog = crucible::cog;
 namespace eff = ::fixy;
@@ -37,15 +47,17 @@ static observe::ProbeOutcome outcome(bool ok, std::uint64_t seq) {
 
 template <class Detector>
 static void record_pair(Detector& detector, cog::CogIdentity const& p, bool outbound, bool inbound, std::uint64_t seq) {
-    assert(detector.record_outbound(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, outbound, seq));
-    assert(detector.record_inbound(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, inbound, seq + 1));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, detector.record_outbound(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, outbound, seq));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, detector.record_inbound(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, inbound, seq + 1));
 }
 
 // The log spelling of both enums comes from reflection.
 static void test_name_accessors() {
     static_assert(::foundation::reflect::enum_name(topology::FailureClass::TxBroken) == "TxBroken");
     static_assert(::foundation::reflect::enum_name(topology::FailureSignal::WitnessReachable) == "WitnessReachable");
-    crucible::test::pass("  test_name_accessors:                     PASSED\n");
+    ::fixy::check::pass(kTest, "  test_name_accessors:                     PASSED\n");
 }
 
 static void test_local_bidirectional_classification() {
@@ -55,24 +67,24 @@ static void test_local_bidirectional_classification() {
     auto ok = peer(1);
     record_pair(detector, ok, true, true, 1);
     record_pair(detector, ok, true, true, 3);
-    assert(detector.classify(ok) == topology::FailureClass::BidiOk);
+    CRUCIBLE_TEST_ASSERT(kTest, detector.classify(ok) == topology::FailureClass::BidiOk);
 
     auto tx = peer(2);
     record_pair(detector, tx, false, true, 10);
     record_pair(detector, tx, false, true, 12);
-    assert(detector.classify(tx) == topology::FailureClass::TxBroken);
+    CRUCIBLE_TEST_ASSERT(kTest, detector.classify(tx) == topology::FailureClass::TxBroken);
 
     auto rx = peer(3);
     record_pair(detector, rx, true, false, 20);
     record_pair(detector, rx, true, false, 22);
-    assert(detector.classify(rx) == topology::FailureClass::RxBroken);
+    CRUCIBLE_TEST_ASSERT(kTest, detector.classify(rx) == topology::FailureClass::RxBroken);
 
     auto dead = peer(4);
     record_pair(detector, dead, false, false, 30);
     record_pair(detector, dead, false, false, 32);
-    assert(detector.classify(dead) == topology::FailureClass::BidiFailed);
+    CRUCIBLE_TEST_ASSERT(kTest, detector.classify(dead) == topology::FailureClass::BidiFailed);
 
-    crucible::test::pass("  test_local_bidirectional_classification: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_local_bidirectional_classification: PASSED\n");
 }
 
 static void test_multi_vantage_overrides_naive_dead_peer() {
@@ -82,18 +94,20 @@ static void test_multi_vantage_overrides_naive_dead_peer() {
     auto target = peer(10);
     record_pair(detector, target, false, false, 1);
     record_pair(detector, target, false, false, 3);
-    assert(detector.classify(target) == topology::FailureClass::BidiFailed);
+    CRUCIBLE_TEST_ASSERT(kTest, detector.classify(target) == topology::FailureClass::BidiFailed);
 
-    assert(detector.record_witness(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target, peer(100), true, 5));
-    assert(detector.record_witness(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target, peer(101), true, 6));
+    CRUCIBLE_TEST_ASSERT(kTest, detector.record_witness(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target,
+                                                        peer(100), true, 5));
+    CRUCIBLE_TEST_ASSERT(kTest, detector.record_witness(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target,
+                                                        peer(101), true, 6));
     auto summary = detector.summary(target);
-    assert(summary.witnesses == 2);
-    assert(summary.witness_reachable == 2);
-    assert(summary.signals.test(topology::FailureSignal::WitnessMajorityReachable));
-    assert(summary.with_witnesses == topology::FailureClass::TxBroken);
-    assert(detector.classify_with_witnesses(target) == topology::FailureClass::TxBroken);
+    CRUCIBLE_TEST_ASSERT(kTest, summary.witnesses == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, summary.witness_reachable == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, summary.signals.test(topology::FailureSignal::WitnessMajorityReachable));
+    CRUCIBLE_TEST_ASSERT(kTest, summary.with_witnesses == topology::FailureClass::TxBroken);
+    CRUCIBLE_TEST_ASSERT(kTest, detector.classify_with_witnesses(target) == topology::FailureClass::TxBroken);
 
-    crucible::test::pass("  test_multi_vantage_overrides_naive_dead_peer: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_multi_vantage_overrides_naive_dead_peer: PASSED\n");
 }
 
 static void test_witness_majority_unreachable_keeps_dead_class() {
@@ -103,16 +117,19 @@ static void test_witness_majority_unreachable_keeps_dead_class() {
     auto target = peer(11);
     record_pair(detector, target, false, false, 1);
     record_pair(detector, target, false, false, 3);
-    assert(detector.record_witness(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target, peer(100), false, 5));
-    assert(detector.record_witness(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target, peer(101), false, 6));
+    CRUCIBLE_TEST_ASSERT(kTest, detector.record_witness(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target,
+                                                        peer(100), false, 5));
+    CRUCIBLE_TEST_ASSERT(kTest, detector.record_witness(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target,
+                                                        peer(101), false, 6));
 
     auto summary = detector.summary(target);
-    assert(summary.with_witnesses == topology::FailureClass::BidiFailed);
-    assert(summary.signals.test(topology::FailureSignal::WitnessMajorityUnreachable));
-    assert(topology::health_state_for_failure(summary.with_witnesses, topology::HealthState::Healthy)
-           == topology::HealthState::Quarantined);
+    CRUCIBLE_TEST_ASSERT(kTest, summary.with_witnesses == topology::FailureClass::BidiFailed);
+    CRUCIBLE_TEST_ASSERT(kTest, summary.signals.test(topology::FailureSignal::WitnessMajorityUnreachable));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         topology::health_state_for_failure(summary.with_witnesses, topology::HealthState::Healthy)
+                             == topology::HealthState::Quarantined);
 
-    crucible::test::pass("  test_witness_majority_unreachable_keeps_dead_class: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_witness_majority_unreachable_keeps_dead_class: PASSED\n");
 }
 
 static void test_synthetic_round_and_transition_events() {
@@ -120,21 +137,22 @@ static void test_synthetic_round_and_transition_events() {
         eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto target = peer(12);
 
-    assert(detector.record_synthetic_round(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target,
-                                           outcome(false, 1), outcome(true, 2)));
-    assert(detector.record_synthetic_round(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target,
-                                           outcome(false, 3), outcome(true, 4)));
+    CRUCIBLE_TEST_ASSERT(kTest, detector.record_synthetic_round(eff::BgDrainCtx{::foundation::effects::testing::bg()},
+                                                                target, outcome(false, 1), outcome(true, 2)));
+    CRUCIBLE_TEST_ASSERT(kTest, detector.record_synthetic_round(eff::BgDrainCtx{::foundation::effects::testing::bg()},
+                                                                target, outcome(false, 3), outcome(true, 4)));
 
-    assert(detector.classify(target) == topology::FailureClass::TxBroken);
-    assert(detector.event_count() >= 1);
+    CRUCIBLE_TEST_ASSERT(kTest, detector.classify(target) == topology::FailureClass::TxBroken);
+    CRUCIBLE_TEST_ASSERT(kTest, detector.event_count() >= 1);
     auto const events = detector.events();
     std::size_t const last_event = detector.event_count() - 1u;
-    assert(events.get(last_event).expect("the detector recorded the last event")->to
-           == topology::FailureClass::TxBroken);
-    assert(topology::health_state_for_failure(topology::FailureClass::TxBroken, topology::HealthState::Healthy)
-           == topology::HealthState::Suspect);
+    CRUCIBLE_TEST_ASSERT(kTest, events.get(last_event).expect("the detector recorded the last event")->to
+                                    == topology::FailureClass::TxBroken);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, topology::health_state_for_failure(topology::FailureClass::TxBroken, topology::HealthState::Healthy)
+                   == topology::HealthState::Suspect);
 
-    crucible::test::pass("  test_synthetic_round_and_transition_events: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_synthetic_round_and_transition_events: PASSED\n");
 }
 
 int main() {
@@ -151,6 +169,6 @@ int main() {
     test_multi_vantage_overrides_naive_dead_peer();
     test_witness_majority_unreachable_keeps_dead_class();
     test_synthetic_round_and_transition_events();
-    crucible::test::pass("test_asymmetric_failure: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_asymmetric_failure: all PASSED\n");
     return 0;
 }

@@ -11,14 +11,24 @@
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
-#include "test_assert.h"
+#include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 // Opening the store and its open view need a context whose row admits IO
 // and Block.
@@ -70,11 +80,11 @@ static ::fixy::Ref<RegionNode> make_test_region(::fixy::BumpArena& dag_arena, ui
     meta.sizes[0] = ::crucible::tensor_dim(16);
     meta.strides[0] = ::crucible::tensor_dim(1);
     meta.dtype = ScalarType::Float;
-    op.set_inputs(crucible::test::run_of(g_test.alloc, dag_arena, meta),
-                  crucible::test::run_of(g_test.alloc, dag_arena, OpIndex{}),
-                  crucible::test::run_of(g_test.alloc, dag_arena, SlotId{}));
-    op.set_outputs(crucible::test::run_of(g_test.alloc, dag_arena, meta),
-                   crucible::test::run_of(g_test.alloc, dag_arena, SlotId{seed}));
+    op.set_inputs(::fixy::check::run_of(kTest, g_test.alloc, dag_arena, meta),
+                  ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, OpIndex{}),
+                  ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, SlotId{}));
+    op.set_outputs(::fixy::check::run_of(kTest, g_test.alloc, dag_arena, meta),
+                   ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, SlotId{seed}));
     return crucible::make_region(g_test.alloc, dag_arena, ops);
 }
 
@@ -91,8 +101,8 @@ static void test_publish_warm_bit_equality(const char* dir) {
     ContentHash raw = cipher.store(store_ctx(), view, payload);
     auto warm = cipher.publish_warm(store_ctx(), view, payload);
     ContentHash via_wrapper = std::move(warm).consume();
-    assert(raw == via_wrapper);
-    assert(static_cast<bool>(raw));
+    CRUCIBLE_TEST_ASSERT(kTest, raw == via_wrapper);
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(raw));
 }
 
 static void test_publish_warm_type_identity(const char* dir) {
@@ -126,7 +136,7 @@ static void test_publish_hot_type_identity(const char* dir) {
     // The hot path writes nothing yet, so the hash it returns is none.
     auto p = cipher.publish_hot(view, payload);
     ContentHash h = std::move(p).consume();
-    assert(!static_cast<bool>(h));
+    CRUCIBLE_TEST_ASSERT(kTest, !static_cast<bool>(h));
 }
 
 static void test_publish_cold_type_identity(const char* dir) {
@@ -144,7 +154,7 @@ static void test_publish_cold_type_identity(const char* dir) {
     // The cold path writes nothing yet, so the hash it returns is none.
     auto p = cipher.publish_cold(view, payload);
     ContentHash h = std::move(p).consume();
-    assert(!static_cast<bool>(h));
+    CRUCIBLE_TEST_ASSERT(kTest, !static_cast<bool>(h));
 }
 
 static void test_view_and_payload_route(const char* dir) {
@@ -240,7 +250,7 @@ static void test_e2e_hot_fence_consumer(const char* dir) {
     ContentHash h = hot_reshard_consumer(std::move(pinned));
     // Passing the gate is the property under test.  The hash is none
     // because the hot path writes nothing yet.
-    assert(!static_cast<bool>(h));
+    CRUCIBLE_TEST_ASSERT(kTest, !static_cast<bool>(h));
 }
 
 template <typename W>
@@ -258,7 +268,7 @@ static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
 
     auto warm_val = cipher.publish_warm(store_ctx(), view, payload);
     ContentHash h_warm = warm_publish_consumer(std::move(warm_val));
-    assert(static_cast<bool>(h_warm));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(h_warm));
 
     // A stronger tier passes the same gate.
     auto hot_val = cipher.publish_hot(view, payload);
@@ -283,8 +293,8 @@ static void test_phase5_stub_semantics(const char* dir) {
     auto cold = cipher.publish_cold(view, payload);
     ContentHash h_hot = std::move(hot).consume();
     ContentHash h_cold = std::move(cold).consume();
-    assert(!static_cast<bool>(h_hot));
-    assert(!static_cast<bool>(h_cold));
+    CRUCIBLE_TEST_ASSERT(kTest, !static_cast<bool>(h_hot));
+    CRUCIBLE_TEST_ASSERT(kTest, !static_cast<bool>(h_cold));
 }
 
 // Drift attribution has to tell a hot-tier problem apart from a
@@ -340,7 +350,7 @@ static void test_replay_engine_admits_all_tiers(const char* dir) {
 
     auto warm = cipher.publish_warm(store_ctx(), view, payload);
     ContentHash h = replay_consumer(std::move(warm));
-    assert(static_cast<bool>(h));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(h));
 
     auto hot = cipher.publish_hot(view, payload);
     (void)replay_consumer(std::move(hot));
@@ -374,9 +384,9 @@ static void test_sequential_three_tier_publish(const char* dir) {
     ContentHash c_hash = std::move(c_pub).consume();
 
     // Only the warm publication has written anything.
-    assert(!static_cast<bool>(h_hash));
-    assert(static_cast<bool>(w_hash));
-    assert(!static_cast<bool>(c_hash));
+    CRUCIBLE_TEST_ASSERT(kTest, !static_cast<bool>(h_hash));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(w_hash));
+    CRUCIBLE_TEST_ASSERT(kTest, !static_cast<bool>(c_hash));
 }
 
 // Relaxing weakens a claim, and no argument to it can strengthen one.
@@ -424,7 +434,7 @@ static void test_content_addressed_publish_overloads(const char* dir) {
     static_assert(std::is_same_v<ColdGot, CipherTier<CipherTierTag_v::Cold, ContentHash>>);
 
     ContentHash warm_hash = std::move(cipher.publish_warm(store_ctx(), view, payload)).consume();
-    assert(static_cast<bool>(warm_hash));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(warm_hash));
     (void)std::move(cipher.publish_hot(view, payload)).consume();
     (void)std::move(cipher.publish_cold(view, payload)).consume();
 }
@@ -432,7 +442,7 @@ static void test_content_addressed_publish_overloads(const char* dir) {
 int main() {
     char tmpdir[] = "/tmp/crucible_cipher_publish_XXXXXX";
     char* dir = mkdtemp(tmpdir);
-    assert(dir != nullptr);
+    CRUCIBLE_TEST_ASSERT(kTest, dir != nullptr);
 
     test_publish_warm_bit_equality(dir);
     test_publish_warm_type_identity(dir);

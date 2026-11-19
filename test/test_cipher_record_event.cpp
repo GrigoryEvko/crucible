@@ -7,11 +7,13 @@
 // fixtures hold the rejecting side.
 
 #include <crucible/Cipher.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 #include "scratch_dir.h"
-#include "test_assert.h"
 
 #include <charconv>
 #include <cstdio>
@@ -23,6 +25,13 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 // Opening the store and its open view need a context whose row admits IO
 // and Block.
@@ -50,12 +59,12 @@ namespace eff = ::foundation::effects;
 template <typename Ctx>
 static void record(Cipher& cipher, Ctx const& ctx, Cipher::OpenView const& view, ContentHash hash, std::uint64_t step) {
     const auto recorded = cipher.record_event(ctx, view, hash, step);
-    assert(recorded.is_ok() && "record_event must commit when the writes pass");
+    CRUCIBLE_TEST_ASSERT(kTest, recorded.is_ok() && "record_event must commit when the writes pass");
 }
 
 // The step of a commit that failed.
 [[nodiscard]] static Cipher::CommitError failure_of(Cipher::CommitResult const& recorded) {
-    assert(recorded.is_err() && "the commit must report the failed write");
+    CRUCIBLE_TEST_ASSERT(kTest, recorded.is_err() && "the commit must report the failed write");
     return recorded.err().expect("the commit failed");
 }
 
@@ -73,11 +82,11 @@ static void record(Cipher& cipher, Ctx const& ctx, Cipher::OpenView const& view,
     std::string line;
     while (std::getline(log, line)) {
         const std::size_t second_comma = line.find(',', line.find(',') + 1);
-        assert(second_comma != std::string::npos);
+        CRUCIBLE_TEST_ASSERT(kTest, second_comma != std::string::npos);
         std::uint64_t order = 0;
         const char* const end = line.data() + line.size();
         const auto [stop, error] = std::from_chars(line.data() + second_comma + 1, end, order);
-        assert(error == std::errc{} && stop == end);
+        CRUCIBLE_TEST_ASSERT(kTest, error == std::errc{} && stop == end);
         orders.push_back(order);
     }
     return orders;
@@ -95,7 +104,8 @@ static void record(Cipher& cipher, Ctx const& ctx, Cipher::OpenView const& view,
 [[nodiscard]] static ::fixy::HeapText log_text_of(Cipher const& cipher) {
     ::fixy::GrowText text = ::fixy::mint_grow_text(Cipher::MAX_OBJECT_BYTES);
     const ::fixy::fs::DirectoryHandle root = root_directory_of(cipher);
-    assert(::fixy::fs::read_whole_at(store_ctx(), store_ctx().cap().alloc, root.ref(), "log", text).is_ok());
+    CRUCIBLE_TEST_ASSERT(
+        kTest, ::fixy::fs::read_whole_at(store_ctx(), store_ctx().cap().alloc, root.ref(), "log", text).is_ok());
     return ::fixy::freeze(std::move(text));
 }
 
@@ -108,7 +118,7 @@ static void write_log_of(Cipher const& cipher, ::fixy::TextView text) {
         ::fixy::fs::mint_file_at<WriteTruncate>(store_ctx(), root.ref(), "log")
             .expect("the test opens the log to write it")
             .consume();
-    assert(::fixy::fs::write_full(store_ctx(), file.ref(), text).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fs::write_full(store_ctx(), file.ref(), text).is_ok());
 }
 
 static void test_t01_required_row_pinned() {
@@ -125,7 +135,7 @@ static void test_t01_required_row_pinned() {
 
     static_assert(eff::row_size(^^Cipher::record_event_required_row) == 2);
 
-    crucible::test::pass("  T01 required_row_pinned:                 PASSED\n");
+    ::fixy::check::pass(kTest, "  T01 required_row_pinned:                 PASSED\n");
 }
 
 static void test_t02_subrow_accepted_shapes() {
@@ -158,7 +168,7 @@ static void test_t02_subrow_accepted_shapes() {
         cipher.record_event(ctx, view, ContentHash{1u}, 1u);
     });
 
-    crucible::test::pass("  T02 subrow_accepted_shapes:              PASSED\n");
+    ::fixy::check::pass(kTest, "  T02 subrow_accepted_shapes:              PASSED\n");
 }
 
 // These assert the containment predicate directly.  What happens at a
@@ -188,7 +198,7 @@ static void test_t03_subrow_rejected_shapes() {
     static_assert(!crucible::CtxFitsCipherPersistence<Required>);
     static_assert(!crucible::CtxFitsCipherPersistence<int>);
 
-    crucible::test::pass("  T03 subrow_rejected_shapes:              PASSED\n");
+    ::fixy::check::pass(kTest, "  T03 subrow_rejected_shapes:              PASSED\n");
 }
 
 // The commit is durable: a Cipher opened again on the same directory
@@ -207,14 +217,14 @@ static void test_t04_record_event_is_durable(const char* base_dir) {
     }
 
     // The head file holds sixteen hex digits and a newline.
-    assert(read_file(dir + "/HEAD") == "c0ffeeba12345678\n");
+    CRUCIBLE_TEST_ASSERT(kTest, read_file(dir + "/HEAD") == "c0ffeeba12345678\n");
 
     auto reopened = open_cipher(dir);
     auto view = reopened.mint_open_view(store_ctx());
-    assert(reopened.head() == kHash);
-    assert(reopened.hash_at_step(view, kStep) == kHash);
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == kHash);
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.hash_at_step(view, kStep) == kHash);
 
-    crucible::test::pass("  T04 record_event_is_durable:             PASSED\n");
+    ::fixy::check::pass(kTest, "  T04 record_event_is_durable:             PASSED\n");
 }
 
 static void test_t05_round_trip(const char* base_dir) {
@@ -228,13 +238,13 @@ static void test_t05_round_trip(const char* base_dir) {
 
     record(cipher, store_ctx(), view, kHash, kStep);
 
-    assert(cipher.head() == kHash);
-    assert(cipher.hash_at_step(view, kStep) == kHash);
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == kHash);
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, kStep) == kHash);
 
     // A query past the end answers with the last recorded step.
-    assert(cipher.hash_at_step(view, kStep + 100) == kHash);
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, kStep + 100) == kHash);
 
-    crucible::test::pass("  T05 round_trip:                          PASSED\n");
+    ::fixy::check::pass(kTest, "  T05 round_trip:                          PASSED\n");
 }
 
 // The context of a background thread carries more than the two required
@@ -254,8 +264,8 @@ static void test_t06_bg_superset_row(const char* base_dir) {
     constexpr ContentHash kHash{0x123456789ABCDEF0ULL};
     record(cipher, bg_ctx, view, kHash, 1u);
 
-    assert(cipher.head() == kHash);
-    crucible::test::pass("  T06 bg_superset_row:                     PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == kHash);
+    ::fixy::check::pass(kTest, "  T06 bg_superset_row:                     PASSED\n");
 }
 
 // The startup context carries Init on top of the two required atoms.
@@ -271,8 +281,8 @@ static void test_t07_startup_superset_row(const char* base_dir) {
     constexpr ContentHash kHash{0xFEDCBA9876543210ULL};
     record(cipher, init_ctx, view, kHash, 1u);
 
-    assert(cipher.head() == kHash);
-    crucible::test::pass("  T07 startup_superset_row:                PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == kHash);
+    ::fixy::check::pass(kTest, "  T07 startup_superset_row:                PASSED\n");
 }
 
 // Recording an ordered sequence and querying it back shows that the
@@ -291,15 +301,15 @@ static void test_t08_monotonic_steps(const char* base_dir) {
 
     // The query answers with the last entry at or before the step
     // asked for.
-    assert(cipher.hash_at_step(view, 0u) == ContentHash{});  // before all
-    assert(cipher.hash_at_step(view, 1u) == ContentHash{0xAA});
-    assert(cipher.hash_at_step(view, 3u) == ContentHash{0xAA});  // gap
-    assert(cipher.hash_at_step(view, 5u) == ContentHash{0xBB});
-    assert(cipher.hash_at_step(view, 7u) == ContentHash{0xBB});  // gap
-    assert(cipher.hash_at_step(view, 10u) == ContentHash{0xCC});
-    assert(cipher.hash_at_step(view, 99u) == ContentHash{0xCC});  // future
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 0u) == ContentHash{});  // before all
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 1u) == ContentHash{0xAA});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 3u) == ContentHash{0xAA});  // gap
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 5u) == ContentHash{0xBB});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 7u) == ContentHash{0xBB});  // gap
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 10u) == ContentHash{0xCC});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 99u) == ContentHash{0xCC});  // future
 
-    crucible::test::pass("  T08 monotonic_steps:                     PASSED\n");
+    ::fixy::check::pass(kTest, "  T08 monotonic_steps:                     PASSED\n");
 }
 
 static void test_t09_multiple_events_monotonic(const char* base_dir) {
@@ -315,14 +325,14 @@ static void test_t09_multiple_events_monotonic(const char* base_dir) {
                static_cast<std::uint64_t>(i));
     }
 
-    assert(cipher.head() == ContentHash{0x1000ULL + (N - 1)});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x1000ULL + (N - 1)});
 
     for (int i = 0; i < N; ++i) {
         const auto h = cipher.hash_at_step(view, static_cast<std::uint64_t>(i));
-        assert(h == ContentHash{std::uint64_t{0x1000u} + static_cast<std::uint64_t>(i)});
+        CRUCIBLE_TEST_ASSERT(kTest, h == ContentHash{std::uint64_t{0x1000u} + static_cast<std::uint64_t>(i)});
     }
 
-    crucible::test::pass("  T09 multiple_events_monotonic:           PASSED\n");
+    ::fixy::check::pass(kTest, "  T09 multiple_events_monotonic:           PASSED\n");
 }
 
 // The context travels as the first argument, and the result says whether
@@ -347,9 +357,9 @@ static void test_t10_api_surface_pinned(const char* base_dir) {
                                         Cipher&, Ctx const&, Cipher::OpenView const&, ContentHash, std::uint64_t>);
 
     record(cipher, store_ctx(), view, ContentHash{42u}, 0u);
-    assert(cipher.head() == ContentHash{42u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{42u});
 
-    crucible::test::pass("  T10 api_surface_pinned:                  PASSED\n");
+    ::fixy::check::pass(kTest, "  T10 api_surface_pinned:                  PASSED\n");
 }
 
 // Each log line holds the place of its commit: one for the first commit,
@@ -369,12 +379,12 @@ static void test_t11_log_holds_the_places(const char* base_dir) {
     }
 
     const std::vector<std::uint64_t> orders = log_orders(dir);
-    assert(orders.size() == static_cast<std::size_t>(N));
+    CRUCIBLE_TEST_ASSERT(kTest, orders.size() == static_cast<std::size_t>(N));
     for (std::size_t i = 0; i < orders.size(); ++i) {
-        assert(orders[i] == i + 1);
+        CRUCIBLE_TEST_ASSERT(kTest, orders[i] == i + 1);
     }
 
-    crucible::test::pass("  T11 log_holds_the_places:                PASSED\n");
+    ::fixy::check::pass(kTest, "  T11 log_holds_the_places:                PASSED\n");
 }
 
 // Two runs of one computation write the same log, byte for byte.  On a log
@@ -396,13 +406,13 @@ static void test_t12_two_runs_write_one_log(const crucible::test::ScratchDir& sc
 
     const ::fixy::HeapText first_log = log_text_of(first);
     const ::fixy::HeapText second_log = log_text_of(second);
-    assert(first_log.view() == second_log.view());
-    assert(first_log.view()
-           == ::fixy::TextView{"1,0000000000003001,1\n"
-                               "4,0000000000003002,2\n"
-                               "4,0000000000003003,3\n"});
+    CRUCIBLE_TEST_ASSERT(kTest, first_log.view() == second_log.view());
+    CRUCIBLE_TEST_ASSERT(kTest, first_log.view()
+                                    == ::fixy::TextView{"1,0000000000003001,1\n"
+                                                        "4,0000000000003002,2\n"
+                                                        "4,0000000000003003,3\n"});
 
-    crucible::test::pass("  T12 two_runs_write_one_log:              PASSED\n");
+    ::fixy::check::pass(kTest, "  T12 two_runs_write_one_log:              PASSED\n");
 }
 
 // A store that opens again continues the count from the place of the last
@@ -420,12 +430,12 @@ static void test_t13_reopen_continues_the_places(const crucible::test::ScratchDi
     record(cipher, store_ctx(), view, ContentHash{0x4003u}, 3u);
 
     const ::fixy::HeapText log = log_text_of(cipher);
-    assert(log.view()
-           == ::fixy::TextView{"1,0000000000004001,1\n"
-                               "2,0000000000004002,2\n"
-                               "3,0000000000004003,3\n"});
+    CRUCIBLE_TEST_ASSERT(kTest, log.view()
+                                    == ::fixy::TextView{"1,0000000000004001,1\n"
+                                                        "2,0000000000004002,2\n"
+                                                        "3,0000000000004003,3\n"});
 
-    crucible::test::pass("  T13 reopen_continues_the_places:         PASSED\n");
+    ::fixy::check::pass(kTest, "  T13 reopen_continues_the_places:         PASSED\n");
 }
 
 // A line whose place does not grow is a corrupt line, and the open skips
@@ -438,20 +448,20 @@ static void test_t14_open_skips_a_place_that_does_not_grow(const crucible::test:
                                                                     "4,0000000000005004,6\n"});
     auto cipher = open_cipher(scratch.file("t14"));
     const auto view = cipher.mint_open_view(store_ctx());
-    assert(cipher.head() == ContentHash{0x5004u});
-    assert(cipher.hash_at_step(view, 2u) == ContentHash{0x5001u});
-    assert(cipher.hash_at_step(view, 3u) == ContentHash{0x5001u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x5004u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 2u) == ContentHash{0x5001u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 3u) == ContentHash{0x5001u});
 
     record(cipher, store_ctx(), view, ContentHash{0x5005u}, 5u);
     const ::fixy::HeapText log = log_text_of(cipher);
-    assert(log.view()
-           == ::fixy::TextView{"1,0000000000005001,5\n"
-                               "2,0000000000005002,5\n"
-                               "3,0000000000005003,4\n"
-                               "4,0000000000005004,6\n"
-                               "5,0000000000005005,7\n"});
+    CRUCIBLE_TEST_ASSERT(kTest, log.view()
+                                    == ::fixy::TextView{"1,0000000000005001,5\n"
+                                                        "2,0000000000005002,5\n"
+                                                        "3,0000000000005003,4\n"
+                                                        "4,0000000000005004,6\n"
+                                                        "5,0000000000005005,7\n"});
 
-    crucible::test::pass("  T14 open_skips_a_place_that_does_not_grow: PASSED\n");
+    ::fixy::check::pass(kTest, "  T14 open_skips_a_place_that_does_not_grow: PASSED\n");
 }
 
 // A log whose last place is the largest count leaves the next commit no
@@ -462,15 +472,15 @@ static void test_t15_no_place_after_the_largest(const crucible::test::ScratchDir
     write_log_of(open_cipher(scratch.file("t15")), largest);
     auto cipher = open_cipher(scratch.file("t15"));
     const auto view = cipher.mint_open_view(store_ctx());
-    assert(cipher.head() == ContentHash{0x6001u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x6001u});
 
-    assert(failure_of(cipher.record_event(store_ctx(), view, ContentHash{0x6002u}, 2u))
-           == Cipher::CommitError::order_exhausted);
-    assert(cipher.head() == ContentHash{0x6001u});
+    CRUCIBLE_TEST_ASSERT(kTest, failure_of(cipher.record_event(store_ctx(), view, ContentHash{0x6002u}, 2u))
+                                    == Cipher::CommitError::order_exhausted);
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x6001u});
     const ::fixy::HeapText log = log_text_of(cipher);
-    assert(log.view() == largest);
+    CRUCIBLE_TEST_ASSERT(kTest, log.view() == largest);
 
-    crucible::test::pass("  T15 no_place_after_the_largest:          PASSED\n");
+    ::fixy::check::pass(kTest, "  T15 no_place_after_the_largest:          PASSED\n");
 }
 
 // The header asserts the content of the required row where it
@@ -488,7 +498,7 @@ static void test_required_row_header_fence() {
     static_assert(!eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::Init));
     static_assert(!eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::Test));
 
-    crucible::test::pass("  required_row_header_fence:              PASSED\n");
+    ::fixy::check::pass(kTest, "  required_row_header_fence:              PASSED\n");
 }
 
 // One record is not enough to show that the files read back.  A defect
@@ -516,17 +526,18 @@ static void test_multi_event_durability(const char* base_dir) {
         }
     }
 
-    assert(read_file(dir + "/HEAD") == "fedcba9876543211\n");
-    assert(log_orders(dir).size() == static_cast<std::size_t>(N));
+    CRUCIBLE_TEST_ASSERT(kTest, read_file(dir + "/HEAD") == "fedcba9876543211\n");
+    CRUCIBLE_TEST_ASSERT(kTest, log_orders(dir).size() == static_cast<std::size_t>(N));
 
     auto reopened = open_cipher(dir);
     auto view = reopened.mint_open_view(store_ctx());
-    assert(reopened.head() == ContentHash{kHashes[N - 1]});
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == ContentHash{kHashes[N - 1]});
     for (int i = 0; i < N; ++i) {
-        assert(reopened.hash_at_step(view, static_cast<std::uint64_t>(i)) == ContentHash{kHashes[i]});
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             reopened.hash_at_step(view, static_cast<std::uint64_t>(i)) == ContentHash{kHashes[i]});
     }
 
-    crucible::test::pass("  multi_event_durability:                 PASSED\n");
+    ::fixy::check::pass(kTest, "  multi_event_durability:                 PASSED\n");
 }
 
 // Every other use of the required row in this file is inside a
@@ -545,7 +556,7 @@ static_assert(eff::CtxAdmits<::fixy::TestRunnerCtx, ExtRow>);
 static void test_external_visibility() {
     using ExtRow = external_visibility::ExtRow;
     static_assert(eff::row_size(^^ExtRow) == 2u);
-    crucible::test::pass("  external_visibility:                    PASSED\n");
+    ::fixy::check::pass(kTest, "  external_visibility:                    PASSED\n");
 }
 
 // Each context that fits the commit is interchangeable at a call site,
@@ -558,20 +569,20 @@ static void test_canonical_row_acceptance(const char* base_dir) {
     auto view = cipher.mint_open_view(store_ctx());
 
     record(cipher, store_ctx(), view, ContentHash{0xAAAA}, 1u);
-    assert(cipher.head() == ContentHash{0xAAAA});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0xAAAA});
 
     // A commit reads no clock, so the narrowed row needs no Nondet.
     const auto narrowed = store_ctx().in_row<eff::Row<eff::Effect::IO, eff::Effect::Block>>();
     record(cipher, narrowed, view, ContentHash{0xBBBB}, 2u);
-    assert(cipher.head() == ContentHash{0xBBBB});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0xBBBB});
 
     // The same two atoms in another order, which containment by
     // membership accepts.
     const auto reordered = store_ctx().in_row<eff::Row<eff::Effect::Block, eff::Effect::IO>>();
     record(cipher, reordered, view, ContentHash{0xCCCC}, 3u);
-    assert(cipher.head() == ContentHash{0xCCCC});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0xCCCC});
 
-    crucible::test::pass("  canonical_row_acceptance:               PASSED\n");
+    ::fixy::check::pass(kTest, "  canonical_row_acceptance:               PASSED\n");
 }
 
 // The context gate fires while the template is substituted and the
@@ -592,12 +603,12 @@ static void test_pre_clause_orthogonal(const char* base_dir) {
     record(cipher, ctx, view, ContentHash{3u}, 1u);  // a repeated step is allowed
     record(cipher, ctx, view, ContentHash{4u}, 5u);
 
-    assert(cipher.head() == ContentHash{4u});
-    assert(cipher.hash_at_step(view, 0u) == ContentHash{1u});
-    assert(cipher.hash_at_step(view, 1u) == ContentHash{3u});  // the later of the two at step 1
-    assert(cipher.hash_at_step(view, 5u) == ContentHash{4u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{4u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 0u) == ContentHash{1u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 1u) == ContentHash{3u});  // the later of the two at step 1
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 5u) == ContentHash{4u});
 
-    crucible::test::pass("  pre_clause_orthogonal:                  PASSED\n");
+    ::fixy::check::pass(kTest, "  pre_clause_orthogonal:                  PASSED\n");
 }
 
 // A store opened at a path makes a directory there.  A directory at the
@@ -607,26 +618,27 @@ static void test_pre_clause_orthogonal(const char* base_dir) {
 // The log append is the commit.  When it fails, the commit reports the
 // failure and the head does not move, in memory and in HEAD.
 static void test_failed_log_append_moves_no_head(const crucible::test::ScratchDir& scratch) {
-    assert(open_cipher(scratch.file("log_blocked/log")).is_open());
+    CRUCIBLE_TEST_ASSERT(kTest, open_cipher(scratch.file("log_blocked/log")).is_open());
 
     constexpr ContentHash kHash{0xA11CE5EEDULL};
     constexpr std::uint64_t kStep = 3u;
     {
         auto cipher = open_cipher(scratch.file("log_blocked"));
         auto view = cipher.mint_open_view(store_ctx());
-        assert(failure_of(cipher.record_event(store_ctx(), view, kHash, kStep)) == Cipher::CommitError::log_append);
-        assert(cipher.head() == ContentHash{});
-        assert(cipher.hash_at_step(view, kStep) == ContentHash{});
+        CRUCIBLE_TEST_ASSERT(kTest, failure_of(cipher.record_event(store_ctx(), view, kHash, kStep))
+                                        == Cipher::CommitError::log_append);
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{});
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, kStep) == ContentHash{});
     }
 
     // The log holds no commit, so the open reads HEAD.  The failed commit
     // wrote no HEAD, so the reopen has no head.
     auto reopened = open_cipher(scratch.file("log_blocked"));
     auto view = reopened.mint_open_view(store_ctx());
-    assert(reopened.head() == ContentHash{});
-    assert(reopened.hash_at_step(view, kStep) == ContentHash{});
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == ContentHash{});
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.hash_at_step(view, kStep) == ContentHash{});
 
-    crucible::test::pass("  failed_log_append_moves_no_head:        PASSED\n");
+    ::fixy::check::pass(kTest, "  failed_log_append_moves_no_head:        PASSED\n");
 }
 
 // A failed HEAD write comes after a durable log append.  The commit
@@ -641,20 +653,21 @@ static void test_failed_head_write_keeps_the_logged_commit(const crucible::test:
         auto view = cipher.mint_open_view(store_ctx());
         record(cipher, store_ctx(), view, kFirst, 1u);
 
-        assert(open_cipher(scratch.file("head_blocked/HEAD.tmp")).is_open());
+        CRUCIBLE_TEST_ASSERT(kTest, open_cipher(scratch.file("head_blocked/HEAD.tmp")).is_open());
 
-        assert(failure_of(cipher.record_event(store_ctx(), view, kSecond, 2u)) == Cipher::CommitError::head_write);
-        assert(cipher.head() == kSecond);
-        assert(cipher.hash_at_step(view, 2u) == kSecond);
+        CRUCIBLE_TEST_ASSERT(kTest, failure_of(cipher.record_event(store_ctx(), view, kSecond, 2u))
+                                        == Cipher::CommitError::head_write);
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == kSecond);
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 2u) == kSecond);
     }
 
     auto reopened = open_cipher(scratch.file("head_blocked"));
     auto view = reopened.mint_open_view(store_ctx());
-    assert(reopened.head() == kSecond);
-    assert(reopened.hash_at_step(view, 1u) == kFirst);
-    assert(reopened.hash_at_step(view, 2u) == kSecond);
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == kSecond);
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.hash_at_step(view, 1u) == kFirst);
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.hash_at_step(view, 2u) == kSecond);
 
-    crucible::test::pass("  failed_head_write_keeps_logged_commit:  PASSED\n");
+    ::fixy::check::pass(kTest, "  failed_head_write_keeps_logged_commit:  PASSED\n");
 }
 
 // The open reads HEAD when the log holds no commit.  HEAD holds sixteen
@@ -671,16 +684,16 @@ static void test_head_without_logged_commit(const crucible::test::ScratchDir& sc
     std::filesystem::remove(scratch.file("head_only/log"));
     auto reopened = open_cipher(scratch.file("head_only"));
     auto view = reopened.mint_open_view(store_ctx());
-    assert(reopened.head() == kHash);
-    assert(reopened.hash_at_step(view, 1u) == ContentHash{});
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == kHash);
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.hash_at_step(view, 1u) == ContentHash{});
 
-    crucible::test::pass("  head_without_logged_commit:             PASSED\n");
+    ::fixy::check::pass(kTest, "  head_without_logged_commit:             PASSED\n");
 }
 
 int main() {
     // A scratch directory of this process, so the test is hermetic.
     const crucible::test::ScratchDir scratch{"crucible_test_record_event"};
-    assert(scratch.is_ready());
+    CRUCIBLE_TEST_ASSERT(kTest, scratch.is_ready());
     const std::string base = scratch.path();
 
     ::fixy::report(::fixy::Sink::Out, "test_cipher_record_event\n");
@@ -709,6 +722,6 @@ int main() {
     test_failed_head_write_keeps_the_logged_commit(scratch);
     test_head_without_logged_commit(scratch);
 
-    crucible::test::pass("test_cipher_record_event: 23 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_cipher_record_event: 23 groups, all passed\n");
     return 0;
 }

@@ -16,8 +16,10 @@
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
-#include "test_assert.h"
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
 #include <cstdint>
@@ -27,6 +29,13 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 // Opening the store and its open view need a context whose row admits IO
 // and Block.
@@ -125,7 +134,7 @@ static void test_commit_per_program_type_identity() {
         c.commit_per_program(store_ctx(), c.mint_open_view(store_ctx()), pinned<Lifetime_v::PER_PROGRAM>(region));
     ContentHash hash = std::move(result).consume();
     // Warm is the tier with a real store behind it, so a hash comes back.
-    assert(static_cast<bool>(hash));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(hash));
     std::filesystem::remove_all(tmp);
 }
 
@@ -171,7 +180,7 @@ static void test_fleet_satisfies_program() {
     auto result = c.commit_per_program(store_ctx(), c.mint_open_view(store_ctx()), std::move(fleet_wrapped));
     static_assert(std::is_same_v<decltype(result), Warm<ContentHash>>);
     ContentHash hash = std::move(result).consume();
-    assert(static_cast<bool>(hash));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(hash));
     std::filesystem::remove_all(tmp);
 }
 
@@ -199,7 +208,7 @@ static void test_program_self_match() {
     auto result = c.commit_per_program(store_ctx(), c.mint_open_view(store_ctx()), std::move(wrapped));
     static_assert(std::is_same_v<decltype(result), Warm<ContentHash>>);
     ContentHash hash = std::move(result).consume();
-    assert(static_cast<bool>(hash));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(hash));
     std::filesystem::remove_all(tmp);
 }
 
@@ -232,14 +241,14 @@ static void test_round_trip_via_program_commit() {
     auto wrapped = pinned<Lifetime_v::PER_PROGRAM>(region);
     auto result = c.commit_per_program(store_ctx(), view, std::move(wrapped));
     ContentHash written = std::move(result).consume();
-    assert(written == original_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, written == original_hash);
 
     ::fixy::BumpArena loader_arena{};
     const ::fixy::Ref<RegionNode> loaded =
         c.load_content_addressed(store_ctx(), view, g_test.alloc, written, loader_arena)
             .expect("the store loads the region it wrote")
             .get();
-    assert(loaded->content_hash == original_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded->content_hash == original_hash);
     std::filesystem::remove_all(tmp);
 }
 
@@ -361,8 +370,8 @@ static void test_idempotent_commit_per_program() {
         c.commit_per_program(store_ctx(), c.mint_open_view(store_ctx()), pinned<Lifetime_v::PER_PROGRAM>(region));
     ContentHash second_hash = std::move(second).consume();
 
-    assert(first_hash == second_hash);
-    assert(static_cast<bool>(first_hash));
+    CRUCIBLE_TEST_ASSERT(kTest, first_hash == second_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(first_hash));
     std::filesystem::remove_all(tmp);
 }
 
@@ -426,7 +435,7 @@ static void test_content_hash_equality_across_overlay() {
     auto result = c2.commit_per_program(store_ctx(), c2.mint_open_view(store_ctx()), std::move(wrapped));
     ContentHash via_overlay = std::move(result).consume();
 
-    assert(bare_hash == via_overlay);
+    CRUCIBLE_TEST_ASSERT(kTest, bare_hash == via_overlay);
     std::filesystem::remove_all(tmp);
     std::filesystem::remove_all(tmp2);
 }

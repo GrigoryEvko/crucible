@@ -9,7 +9,9 @@
 #include <fixy/Ctx.h>
 #include <fixy/os/Process.h>
 #include <fixy/session/Subtype.h>
-#include "test_assert.h"
+#include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
+#include <foundation/effects/Effect.h>
 #include <charconv>
 #include <cinttypes>
 #include <cstdio>
@@ -19,6 +21,13 @@
 #include <string>
 #include <type_traits>
 #include <vector>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 // Opening the store and its open view need a context whose row admits IO
 // and Block.
@@ -59,11 +68,11 @@ static ::fixy::Ref<crucible::RegionNode> make_test_region(::fixy::BumpArena& dag
         meta.sizes[0] = ::crucible::tensor_dim(16);
         meta.strides[0] = ::crucible::tensor_dim(1);
         meta.dtype = crucible::ScalarType::Float;
-        op.set_inputs(crucible::test::run_of(g_test.alloc, dag_arena, meta),
-                      crucible::test::run_of(g_test.alloc, dag_arena, crucible::OpIndex{}),
-                      crucible::test::run_of(g_test.alloc, dag_arena, crucible::SlotId{}));
-        op.set_outputs(crucible::test::run_of(g_test.alloc, dag_arena, meta),
-                       crucible::test::run_of(g_test.alloc, dag_arena, crucible::SlotId{i}));
+        op.set_inputs(::fixy::check::run_of(kTest, g_test.alloc, dag_arena, meta),
+                      ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, crucible::OpIndex{}),
+                      ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, crucible::SlotId{}));
+        op.set_outputs(::fixy::check::run_of(kTest, g_test.alloc, dag_arena, meta),
+                       ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, crucible::SlotId{i}));
     }
 
     return crucible::make_region(g_test.alloc, dag_arena, ops);
@@ -81,7 +90,7 @@ static std::string object_path(const char* dir, crucible::ContentHash hash) {
 static void commit_head(crucible::Cipher& cipher, crucible::Cipher::OpenView const& view, crucible::ContentHash hash,
                         std::uint64_t step) {
     const auto committed = cipher.record_event(store_ctx(), view, hash, step);
-    assert(committed.is_ok() && "record_event must commit when the writes pass");
+    CRUCIBLE_TEST_ASSERT(kTest, committed.is_ok() && "record_event must commit when the writes pass");
 }
 
 // The third field of the last line of the log, the place of the last
@@ -94,11 +103,11 @@ static std::uint64_t last_log_order(const char* dir) {
         if (!line.empty()) last = line;
     }
     const std::size_t second_comma = last.find(',', last.find(',') + 1);
-    assert(second_comma != std::string::npos);
+    CRUCIBLE_TEST_ASSERT(kTest, second_comma != std::string::npos);
     std::uint64_t order = 0;
     const char* const end = last.data() + last.size();
     const auto [stop, error] = std::from_chars(last.data() + second_comma + 1, end, order);
-    assert(error == std::errc{} && stop == end);
+    CRUCIBLE_TEST_ASSERT(kTest, error == std::errc{} && stop == end);
     return order;
 }
 
@@ -164,7 +173,7 @@ static void overwrite_batch_file(crucible::Cipher const& cipher, ::fixy::session
         ::fixy::fs::mint_file_at<WriteTruncate>(store_ctx(), root.ref(), batch.c_text())
             .expect("the test opens the batch file to write it")
             .consume();
-    assert(::fixy::fs::write_full(store_ctx(), file.ref(), bytes).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fs::write_full(store_ctx(), file.ref(), bytes).is_ok());
 }
 
 // Appends line to the index of the events of session under the root of
@@ -179,7 +188,7 @@ static void append_index_line(crucible::Cipher const& cipher, ::fixy::session::S
         ::fixy::fs::mint_file_at<WriteAppend>(store_ctx(), root.ref(), index.c_text())
             .expect("the test opens the index to append a line")
             .consume();
-    assert(::fixy::fs::write_full(store_ctx(), file.ref(), line).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fs::write_full(store_ctx(), file.ref(), line).is_ok());
 }
 
 // The region of a load that gives one.
@@ -227,7 +236,7 @@ static void write_object_file(::fixy::TextView root, crucible::ContentHash hash,
                     return bytes.size() == 0 || ::fixy::fs::write_full(ctx, file.ref(), bytes).is_ok();
                 },
                 [](::foundation::os::Errno) { return false; });
-    assert(is_written && "the test writes the file of the object");
+    CRUCIBLE_TEST_ASSERT(kTest, is_written && "the test writes the file of the object");
 }
 
 static_assert(
@@ -257,42 +266,43 @@ static_assert(sizeof(crucible::Cipher::LoadedContentAddressedRegionPayload::Valu
 int main() {
     char tmpdir[] = "/tmp/crucible_cipher_XXXXXX";
     char* dir = mkdtemp(tmpdir);
-    assert(dir != nullptr && "mkdtemp failed");
+    CRUCIBLE_TEST_ASSERT(kTest, dir != nullptr && "mkdtemp failed");
 
     ::fixy::BumpArena dag_arena{1 << 16};
 
     {
         auto cipher = open_cipher(dir);
-        assert(cipher.empty() && "freshly opened Cipher must be empty");
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.empty() && "freshly opened Cipher must be empty");
         // The store keeps each character of its root.
         std::size_t root_index = 0;
         for (const char character : cipher.root()) {
-            assert(character == dir[root_index]);
+            CRUCIBLE_TEST_ASSERT(kTest, character == dir[root_index]);
             ++root_index;
         }
-        assert(dir[root_index] == '\0');
-        assert(std::filesystem::is_directory(std::string(dir) + "/objects"));
+        CRUCIBLE_TEST_ASSERT(kTest, dir[root_index] == '\0');
+        CRUCIBLE_TEST_ASSERT(kTest, std::filesystem::is_directory(std::string(dir) + "/objects"));
     }
 
     const crucible::RegionNode& region = *make_test_region(dag_arena);
     const crucible::ContentHash expected_hash = region.content_hash;
-    assert(static_cast<bool>(expected_hash));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(expected_hash));
 
     {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
         const crucible::ContentHash stored_hash =
             cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(region)));
-        assert(stored_hash == expected_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, stored_hash == expected_hash);
 
         const std::string expected_path = object_path(dir, expected_hash);
-        assert(std::filesystem::exists(expected_path) && "serialized object file must exist after store()");
+        CRUCIBLE_TEST_ASSERT(kTest, std::filesystem::exists(expected_path)
+                                        && "serialized object file must exist after store()");
 
         // The content decides the name, so storing the same region
         // again names the same object.
         const crucible::ContentHash second_hash =
             cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(region)));
-        assert(second_hash == expected_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, second_hash == expected_hash);
     }
 
     {
@@ -302,9 +312,9 @@ int main() {
         auto ov = cipher.mint_open_view(store_ctx());
         ::fixy::BumpArena arena2{1 << 16};
         auto loaded_ca = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, expected_hash, arena2);
-        assert(loaded_ca.is_ok() && "load() must succeed for a stored hash");
-        assert(region_of(loaded_ca).content_hash == expected_hash);
-        assert(region_of(loaded_ca).num_ops() == region.num_ops());
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_ca.is_ok() && "load() must succeed for a stored hash");
+        CRUCIBLE_TEST_ASSERT(kTest, region_of(loaded_ca).content_hash == expected_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, region_of(loaded_ca).num_ops() == region.num_ops());
     }
 
     {
@@ -315,8 +325,8 @@ int main() {
         // The log line of the first commit of the store holds the first
         // place, one.
         commit_head(cipher, ov, expected_hash, 10);
-        assert(cipher.head() == expected_hash);
-        assert(last_log_order(dir) == 1u);
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == expected_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, last_log_order(dir) == 1u);
 
         // The HEAD file holds the hash as sixteen lowercase hex digits
         // on one line, and that spelling is what another reader parses.
@@ -325,15 +335,15 @@ int main() {
         std::getline(hf, head_str);
         char hex[17];
         std::snprintf(hex, sizeof(hex), "%016" PRIx64, expected_hash.raw());
-        assert(head_str == hex && "HEAD file must contain the hex hash");
+        CRUCIBLE_TEST_ASSERT(kTest, head_str == hex && "HEAD file must contain the hex hash");
 
         // Nothing was ever stored under this hash.  Advancing to it
         // still succeeds, because the head names a commit rather than
         // an object that has to be resident.
         const crucible::ContentHash hash2{0xDEADBEEF12345678ULL};
         commit_head(cipher, ov, hash2, 50);
-        assert(cipher.head() == hash2);
-        assert(last_log_order(dir) == 2u && "the second commit takes the next place");
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == hash2);
+        CRUCIBLE_TEST_ASSERT(kTest, last_log_order(dir) == 2u && "the second commit takes the next place");
     }
 
     {
@@ -346,14 +356,15 @@ int main() {
         const crucible::ContentHash hash2{0xDEADBEEF12345678ULL};
 
         // A step before the first commit has no answer.
-        assert(!cipher.hash_at_step(ov, 0) && "hash_at_step before first commit must return default");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             !cipher.hash_at_step(ov, 0) && "hash_at_step before first commit must return default");
 
         // The log holds commits at steps 10 and 50.  A step between or
         // beyond them resolves to the last commit at or before it.
-        assert(cipher.hash_at_step(ov, 10) == expected_hash);
-        assert(cipher.hash_at_step(ov, 30) == expected_hash);
-        assert(cipher.hash_at_step(ov, 50) == hash2);
-        assert(cipher.hash_at_step(ov, 999) == hash2);
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(ov, 10) == expected_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(ov, 30) == expected_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(ov, 50) == hash2);
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(ov, 999) == hash2);
     }
 
     // Each refusal of a load names its reason.  The files below have hashes
@@ -368,36 +379,36 @@ int main() {
             return cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, crucible::ContentHash{hash}, arena3);
         };
         using crucible::LoadError;
-        assert(reason_of(load(0)) == LoadError::none_hash);
-        assert(reason_of(load(0xBADBADBADBADBAD0ULL)) == LoadError::file_open_failed);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0)) == LoadError::none_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0xBADBADBADBADBAD0ULL)) == LoadError::file_open_failed);
 
         const crucible::RegionNode& other_region = *make_test_region(reason_dag_arena, 0x5E);
         ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0});
         const std::size_t image_bytes =
             crucible::serialize_region(crucible::SerializedRegion{other_region}, image.view());
-        assert(image_bytes > 0);
+        CRUCIBLE_TEST_ASSERT(kTest, image_bytes > 0);
         const ::fixy::View<std::byte> sound = image.view().window(0, image_bytes).expect("the image holds its bytes");
 
         write_object_file(cipher.root(), crucible::ContentHash{0x1111111111111111ULL}, ::fixy::View<const std::byte>{});
-        assert(reason_of(load(0x1111111111111111ULL)) == LoadError::file_size);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x1111111111111111ULL)) == LoadError::file_size);
 
         // A sound region under the name of another hash.
         write_object_file(cipher.root(), crucible::ContentHash{0x2222222222222222ULL}, sound);
-        assert(reason_of(load(0x2222222222222222ULL)) == LoadError::object_hash_mismatch);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x2222222222222222ULL)) == LoadError::object_hash_mismatch);
 
         // A damaged image gives the reason of its first fault.
         write_object_file(cipher.root(), crucible::ContentHash{0x3333333333333333ULL},
                           sound.window(0, 16).expect("the image holds sixteen bytes"));
-        assert(reason_of(load(0x3333333333333333ULL)) == LoadError::truncated);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x3333333333333333ULL)) == LoadError::truncated);
         *sound.get(0).expect("the image holds its magic") = std::byte{0};
         write_object_file(cipher.root(), crucible::ContentHash{0x4444444444444444ULL}, sound);
-        assert(reason_of(load(0x4444444444444444ULL)) == LoadError::bad_magic);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x4444444444444444ULL)) == LoadError::bad_magic);
     }
 
     {
         char tmpl_ca[] = "/tmp/crucible_cipher_ca_XXXXXX";
         char* dir_ca = mkdtemp(tmpl_ca);
-        assert(dir_ca != nullptr);
+        CRUCIBLE_TEST_ASSERT(kTest, dir_ca != nullptr);
 
         ::fixy::BumpArena ca_dag_arena{1 << 16};
         const crucible::RegionNode& ca_region = *make_test_region(ca_dag_arena);
@@ -406,10 +417,10 @@ int main() {
         auto cipher = open_cipher(dir_ca);
         auto ov = cipher.mint_open_view(store_ctx());
         const crucible::ContentHash hash = cipher.store(store_ctx(), ov, ca_payload);
-        assert(hash == ca_region.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, hash == ca_region.content_hash);
 
         const std::string path = object_path(dir_ca, hash);
-        assert(std::filesystem::exists(path));
+        CRUCIBLE_TEST_ASSERT(kTest, std::filesystem::exists(path));
 
         // Overwriting the object with something shorter makes the next
         // store detectable: if it rewrote the bytes, the file would
@@ -421,18 +432,18 @@ int main() {
         const auto corrupted_size = std::filesystem::file_size(path);
 
         const crucible::ContentHash second = cipher.store(store_ctx(), ov, ca_payload);
-        assert(second == hash);
-        assert(std::filesystem::file_size(path) == corrupted_size
-               && "duplicate ContentAddressed store must not rewrite bytes");
+        CRUCIBLE_TEST_ASSERT(kTest, second == hash);
+        CRUCIBLE_TEST_ASSERT(kTest, std::filesystem::file_size(path) == corrupted_size
+                                        && "duplicate ContentAddressed store must not rewrite bytes");
 
         // Deleting the object leaves the load no disk to fall back on,
         // so a successful read can only have come from memory.
         std::filesystem::remove(path);
         ::fixy::BumpArena read_arena{1 << 16};
         auto loaded = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hash, read_arena);
-        assert(is_cache_hit(loaded) && "resident ContentAddressed bytes must avoid disk fetch");
-        assert(loaded.is_ok());
-        assert(region_of(loaded).content_hash == hash);
+        CRUCIBLE_TEST_ASSERT(kTest, is_cache_hit(loaded) && "resident ContentAddressed bytes must avoid disk fetch");
+        CRUCIBLE_TEST_ASSERT(kTest, loaded.is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, region_of(loaded).content_hash == hash);
 
         std::filesystem::remove_all(dir_ca);
     }
@@ -445,8 +456,8 @@ int main() {
         char receiver_tmpl[] = "/tmp/crucible_cipher_receiver_XXXXXX";
         char* sender_dir = mkdtemp(sender_tmpl);
         char* receiver_dir = mkdtemp(receiver_tmpl);
-        assert(sender_dir != nullptr);
-        assert(receiver_dir != nullptr);
+        CRUCIBLE_TEST_ASSERT(kTest, sender_dir != nullptr);
+        CRUCIBLE_TEST_ASSERT(kTest, receiver_dir != nullptr);
 
         ::fixy::BumpArena ca_dag_arena{1 << 16};
         const auto ca_payload = crucible::Cipher::content_addressed(make_test_region(ca_dag_arena));
@@ -457,14 +468,14 @@ int main() {
         auto receiver_ov = receiver.mint_open_view(store_ctx());
         const crucible::ContentHash sender_hash = sender.store(store_ctx(), sender_ov, ca_payload);
         const crucible::ContentHash receiver_hash = receiver.store(store_ctx(), receiver_ov, ca_payload);
-        assert(sender_hash == receiver_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, sender_hash == receiver_hash);
 
         std::filesystem::remove(object_path(receiver_dir, receiver_hash));
         ::fixy::BumpArena read_arena{1 << 16};
         auto loaded = receiver.load_content_addressed(store_ctx(), receiver_ov, g_test.alloc, sender_hash, read_arena);
-        assert(is_cache_hit(loaded));
-        assert(loaded.is_ok());
-        assert(region_of(loaded).content_hash == sender_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, is_cache_hit(loaded));
+        CRUCIBLE_TEST_ASSERT(kTest, loaded.is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, region_of(loaded).content_hash == sender_hash);
 
         std::filesystem::remove_all(sender_dir);
         std::filesystem::remove_all(receiver_dir);
@@ -472,25 +483,25 @@ int main() {
 
     {
         crucible::Cipher closed{::foundation::effects::testing::test().alloc};
-        assert(!closed.is_open() && "a constructed Cipher must be Closed");
+        CRUCIBLE_TEST_ASSERT(kTest, !closed.is_open() && "a constructed Cipher must be Closed");
         // These two queries are answerable without a root, so they stay
         // callable in the closed state rather than becoming errors.
-        assert(closed.empty());
-        assert(!closed.head());
+        CRUCIBLE_TEST_ASSERT(kTest, closed.empty());
+        CRUCIBLE_TEST_ASSERT(kTest, !closed.head());
     }
 
     {
         auto cipher = open_cipher(dir);
-        assert(cipher.is_open());
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.is_open());
         // Minting the view is itself the check.  Every call below takes
         // it as proof and repeats no check of its own.
         auto ov = cipher.mint_open_view(store_ctx());
         const auto hash =
             cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(make_test_region(dag_arena)));
-        assert(static_cast<bool>(hash));
+        CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(hash));
         commit_head(cipher, ov, hash, 100);
-        assert(cipher.head() == hash);
-        assert(cipher.hash_at_step(ov, 100) == hash);
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == hash);
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(ov, 100) == hash);
     }
 
     {
@@ -500,14 +511,14 @@ int main() {
         auto ov = cipher.mint_open_view(store_ctx());
         const crucible::ContentHash hash = cipher.store(
             store_ctx(), ov, crucible::cipher::content_addressed_payload<crucible::RegionNode>(::fixy::none));
-        assert(!static_cast<bool>(hash));
+        CRUCIBLE_TEST_ASSERT(kTest, !static_cast<bool>(hash));
     }
 
     {
         auto cipher = open_cipher(dir);
-        assert(cipher.is_open());
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.is_open());
         auto moved = std::move(cipher);
-        assert(moved.is_open() && "moved-to must be Open");
+        CRUCIBLE_TEST_ASSERT(kTest, moved.is_open() && "moved-to must be Open");
         // Nothing is asserted about the source.  Its openness follows
         // from the state of a moved-from string, which the standard
         // leaves valid but unspecified.
@@ -519,7 +530,7 @@ int main() {
     {
         char tmpl2[] = "/tmp/crucible_corrupt_XXXXXX";
         char* dir2 = mkdtemp(tmpl2);
-        assert(dir2 != nullptr);
+        CRUCIBLE_TEST_ASSERT(kTest, dir2 != nullptr);
         std::filesystem::create_directories(std::string(dir2) + "/objects");
 
         {
@@ -533,12 +544,12 @@ int main() {
 
         auto cipher = open_cipher(dir2);
         auto ov = cipher.mint_open_view(store_ctx());
-        assert(cipher.hash_at_step(ov, 10) == crucible::ContentHash{0xdeadbeef00000001ULL});
-        assert(cipher.hash_at_step(ov, 40) == crucible::ContentHash{0xdeadbeef00000004ULL});
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(ov, 10) == crucible::ContentHash{0xdeadbeef00000001ULL});
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(ov, 40) == crucible::ContentHash{0xdeadbeef00000004ULL});
         // Step 30 falls where a skipped line claimed a commit.  It must
         // resolve back to step 10, which is what shows the bad line was
         // dropped rather than half-parsed.
-        assert(cipher.hash_at_step(ov, 30) == crucible::ContentHash{0xdeadbeef00000001ULL});
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(ov, 30) == crucible::ContentHash{0xdeadbeef00000001ULL});
 
         std::filesystem::remove_all(dir2);
     }
@@ -549,49 +560,53 @@ int main() {
     {
         char tmpl_events[] = "/tmp/crucible_cipher_events_XXXXXX";
         char* dir_events = mkdtemp(tmpl_events);
-        assert(dir_events != nullptr);
+        CRUCIBLE_TEST_ASSERT(kTest, dir_events != nullptr);
         auto cipher = open_cipher(dir_events);
         auto ov = cipher.mint_open_view(store_ctx());
         const auto first_batch = session_batch(10, 10);
         const auto second_batch = session_batch(20, 5);
         const crucible::ContentHash first_hash =
             persisted_hash(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view()));
-        assert(static_cast<bool>(first_hash));
+        CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(first_hash));
         const crucible::ContentHash second_hash =
             persisted_hash(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, second_batch.view()));
-        assert(static_cast<bool>(second_hash));
+        CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(second_hash));
         // A batch whose file the store holds gives its hash again, after a
         // compare of the stored bytes with the bytes of the batch.
-        assert(persisted_hash(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view()))
-               == first_hash);
+        CRUCIBLE_TEST_ASSERT(
+            kTest, persisted_hash(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view()))
+                       == first_hash);
 
         const ::fixy::session::SessionTagId session =
             first_batch.view().get(0).expect("the first batch holds ten events")->session();
         const auto from_middle =
             cipher.load_session_events(store_ctx(), ov, g_test.alloc, session, ::fixy::session::StepId{15});
-        assert(from_middle.events.size() == 10 && from_middle.skipped_batches == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, from_middle.events.size() == 10 && from_middle.skipped_batches == 0);
         for (std::size_t i = 0; i < from_middle.events.size(); ++i) {
-            assert(step_at(from_middle, i) == 15 + i);
+            CRUCIBLE_TEST_ASSERT(kTest, step_at(from_middle, i) == 15 + i);
         }
         // The index holds the line of the first batch two times, and the
         // second line is no skip.
         const auto every_event = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
-        assert(every_event.events.size() == 15 && every_event.skipped_batches == 0);
-        assert(step_at(every_event, 0) == 10 && step_at(every_event, 14) == 24);
+        CRUCIBLE_TEST_ASSERT(kTest, every_event.events.size() == 15 && every_event.skipped_batches == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, step_at(every_event, 0) == 10 && step_at(every_event, 14) == 24);
         const auto second_only =
             cipher.load_session_events(store_ctx(), ov, g_test.alloc, session, ::fixy::session::StepId{20});
-        assert(second_only.events.size() == 5 && step_at(second_only, 0) == 20);
+        CRUCIBLE_TEST_ASSERT(kTest, second_only.events.size() == 5 && step_at(second_only, 0) == 20);
 
         // A batch at steps 35 to 39, and then a batch at steps 30 to 34.  The
         // load holds steps 35 to 39 when it reads the second line, so it skips
         // that batch, counts the skip and reports it.
         const auto latest_batch = session_batch(35, 5);
         const auto late_batch = session_batch(30, 5);
-        assert(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, latest_batch.view()).is_ok());
-        assert(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, late_batch.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             cipher.persist_session_events(store_ctx(), ov, g_test.alloc, latest_batch.view()).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             cipher.persist_session_events(store_ctx(), ov, g_test.alloc, late_batch.view()).is_ok());
         const auto out_of_order = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
-        assert(out_of_order.events.size() == 20 && step_at(out_of_order, 15) == 35);
-        assert(out_of_order.skipped_batches == 1 && "a batch that overlaps the events of the load is a skip");
+        CRUCIBLE_TEST_ASSERT(kTest, out_of_order.events.size() == 20 && step_at(out_of_order, 15) == 35);
+        CRUCIBLE_TEST_ASSERT(kTest, out_of_order.skipped_batches == 1
+                                        && "a batch that overlaps the events of the load is a skip");
 
         // The batch file of the first batch does not read.  A persist of
         // the first batch gives the LoadError of the read, and no hash.
@@ -604,14 +619,14 @@ int main() {
                                [](crucible::Cipher::PersistRefusal) { return false; },
                                [](crucible::LoadError reason) { return reason == crucible::LoadError::file_size; });
                        });
-        assert(is_unreadable_reported && "a stored batch that does not read gives its LoadError");
+        CRUCIBLE_TEST_ASSERT(kTest, is_unreadable_reported && "a stored batch that does not read gives its LoadError");
 
         // A load skips the first batch at each of its two lines, and the
         // batch at steps 30 to 34.  It counts each skip and reports it.  The
         // load runs in a child, so the test reads the report.
         const auto without_first = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
-        assert(without_first.events.size() == 10 && step_at(without_first, 0) == 20);
-        assert(step_at(without_first, 5) == 35 && without_first.skipped_batches == 3);
+        CRUCIBLE_TEST_ASSERT(kTest, without_first.events.size() == 10 && step_at(without_first, 0) == 20);
+        CRUCIBLE_TEST_ASSERT(kTest, step_at(without_first, 5) == 35 && without_first.skipped_batches == 3);
         const ::fixy::TestRunnerCtx child_ctx = store_ctx();
         const ::fixy::process::ChildReport report =
             ::fixy::process::wait(::fixy::process::spawn_child(child_ctx,
@@ -621,13 +636,16 @@ int main() {
                                                                })
                                       .expect("the test starts a child"))
                 .expect("the test waits for its child");
-        assert(report.is_exit_with(0));
-        assert(::fixy::find(report.output(),
-                            ::fixy::TextView{"[crucible] the Cipher store skips the session-event batch "})
-                   .is_some());
-        assert(::fixy::find(report.output(), crucible::load_error_text(crucible::LoadError::file_size)).is_some());
-        assert(::fixy::find(report.output(), crucible::load_error_text(crucible::LoadError::batch_steps_mismatch))
-                   .is_some());
+        CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, ::fixy::find(report.output(),
+                                ::fixy::TextView{"[crucible] the Cipher store skips the session-event batch "})
+                       .is_some());
+        CRUCIBLE_TEST_ASSERT(
+            kTest, ::fixy::find(report.output(), crucible::load_error_text(crucible::LoadError::file_size)).is_some());
+        CRUCIBLE_TEST_ASSERT(
+            kTest, ::fixy::find(report.output(), crucible::load_error_text(crucible::LoadError::batch_steps_mismatch))
+                       .is_some());
 
         // The batch file at steps 35 to 39 holds bytes that are no
         // federation entry, and a new line of the index counts 3 events for
@@ -645,8 +663,9 @@ int main() {
                           ::fixy::format(counted_line, "60,64,3,{}\n", latest_digits.view())
                               .expect("an index line fits 96 characters"));
         const auto damaged = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
-        assert(damaged.events.size() == 10 && step_at(damaged, 5) == 30);
-        assert(damaged.skipped_batches == 5 && "two lines of each damaged batch, and the line of the wrong count");
+        CRUCIBLE_TEST_ASSERT(kTest, damaged.events.size() == 10 && step_at(damaged, 5) == 30);
+        CRUCIBLE_TEST_ASSERT(kTest, damaged.skipped_batches == 5
+                                        && "two lines of each damaged batch, and the line of the wrong count");
         const ::fixy::process::ChildReport damaged_report =
             ::fixy::process::wait(::fixy::process::spawn_child(child_ctx,
                                                                [&cipher, &ov, &child_ctx, session] noexcept {
@@ -655,13 +674,13 @@ int main() {
                                                                })
                                       .expect("the test starts a child"))
                 .expect("the test waits for its child");
-        assert(damaged_report.is_exit_with(0));
-        assert(
-            ::fixy::find(damaged_report.output(), crucible::load_error_text(crucible::LoadError::batch_entry_malformed))
-                .is_some());
-        assert(
-            ::fixy::find(damaged_report.output(), crucible::load_error_text(crucible::LoadError::batch_count_mismatch))
-                .is_some());
+        CRUCIBLE_TEST_ASSERT(kTest, damaged_report.is_exit_with(0));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::find(damaged_report.output(),
+                                                 crucible::load_error_text(crucible::LoadError::batch_entry_malformed))
+                                        .is_some());
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::find(damaged_report.output(),
+                                                 crucible::load_error_text(crucible::LoadError::batch_count_mismatch))
+                                        .is_some());
 
         std::filesystem::remove_all(dir_events);
     }
@@ -678,12 +697,12 @@ int main() {
         }
         ::foundation::core::FixedArray<std::byte, 72> repeated{};
         ::fixy::fill(repeated.view(), std::byte{0xAB});
-        assert(crucible::Cipher::session_event_batch_hash(counting.view())
-               == crucible::ContentHash{0xeb48340c1ea14751ULL});
-        assert(crucible::Cipher::session_event_batch_hash(repeated.view())
-               == crucible::ContentHash{0x1a51e80700eac78fULL});
-        assert(crucible::Cipher::session_event_batch_hash(::fixy::View<std::byte const>{})
-               == crucible::ContentHash{0x35c3cb3b6b06b0e2ULL});
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::Cipher::session_event_batch_hash(counting.view())
+                                        == crucible::ContentHash{0xeb48340c1ea14751ULL});
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::Cipher::session_event_batch_hash(repeated.view())
+                                        == crucible::ContentHash{0x1a51e80700eac78fULL});
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::Cipher::session_event_batch_hash(::fixy::View<std::byte const>{})
+                                        == crucible::ContentHash{0x35c3cb3b6b06b0e2ULL});
 
         // The federation key in the header of a batch is the keyed BLAKE3 of
         // the payload under the key "crucible cipher session events 2".  Each
@@ -697,9 +716,10 @@ int main() {
             Hash256{0x87b6a87e3ca535d0ULL, 0x482bd9e3290213c7ULL, 0x8f9efe6225b472a0ULL, 0x9e74f9b92b0cf626ULL}};
         const FederationKey empty_key{
             Hash256{0x8017e8ac3fb85a68ULL, 0xe1668b978596f805ULL, 0x0379df74210974b3ULL, 0x9960f40a5d09d12dULL}};
-        assert(crucible::Cipher::session_event_batch_key(counting.view()) == counting_key);
-        assert(crucible::Cipher::session_event_batch_key(repeated.view()) == repeated_key);
-        assert(crucible::Cipher::session_event_batch_key(::fixy::View<std::byte const>{}) == empty_key);
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::Cipher::session_event_batch_key(counting.view()) == counting_key);
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::Cipher::session_event_batch_key(repeated.view()) == repeated_key);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             crucible::Cipher::session_event_batch_key(::fixy::View<std::byte const>{}) == empty_key);
     }
 
     // The cache of object bytes holds at most 64 entries, and it removes the
@@ -710,7 +730,7 @@ int main() {
     {
         char tmpl_cache[] = "/tmp/crucible_cipher_cache_XXXXXX";
         char* dir_cache = mkdtemp(tmpl_cache);
-        assert(dir_cache != nullptr);
+        CRUCIBLE_TEST_ASSERT(kTest, dir_cache != nullptr);
         ::fixy::BumpArena cache_dag_arena{1 << 20};
         auto cipher = open_cipher(dir_cache);
         auto ov = cipher.mint_open_view(store_ctx());
@@ -719,32 +739,34 @@ int main() {
         ::fixy::BumpArena read_arena{1 << 16};
         for (std::size_t i = 0; i < kStoreCount; ++i) {
             if (i + 1 == kStoreCount) {
-                assert(is_cache_hit(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc,
-                                                                  hashes.at(::fixy::index<0>()), read_arena)));
+                CRUCIBLE_TEST_ASSERT(
+                    kTest, is_cache_hit(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc,
+                                                                      hashes.at(::fixy::index<0>()), read_arena)));
             }
-            crucible::ContentHash& stored = crucible::test::element_at(hashes, i);
+            crucible::ContentHash& stored =
+                *hashes.get(i).expect("a test reads an element at or past the count of its array");
             stored = cipher.store(store_ctx(), ov,
                                   crucible::Cipher::content_addressed(make_test_region(cache_dag_arena, i + 1)));
-            assert(static_cast<bool>(stored));
+            CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(stored));
         }
         for (const crucible::ContentHash hash : hashes) {
             std::filesystem::remove(object_path(dir_cache, hash));
         }
         // The cache removed the second object, and its file is gone.
-        assert(reason_of(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<1>()),
-                                                       read_arena))
-               == crucible::LoadError::file_open_failed);
-        assert(is_cache_hit(
-            cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<0>()), read_arena)));
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc,
+                                                                            hashes.at(::fixy::index<1>()), read_arena))
+                                        == crucible::LoadError::file_open_failed);
+        CRUCIBLE_TEST_ASSERT(kTest, is_cache_hit(cipher.load_content_addressed(
+                                        store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<0>()), read_arena)));
         const auto newest = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc,
                                                           hashes.at(::fixy::index<kStoreCount - 1>()), read_arena);
-        assert(is_cache_hit(newest) && newest.is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, is_cache_hit(newest) && newest.is_ok());
 
         std::filesystem::remove_all(dir_cache);
     }
 
     std::filesystem::remove_all(dir);
 
-    crucible::test::pass("test_cipher: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_cipher: all tests passed\n");
     return 0;
 }

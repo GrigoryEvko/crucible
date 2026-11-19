@@ -2,13 +2,20 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Tags.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Ctx.h>
-
-#include "test_assert.h"
+#include <foundation/effects/Effect.h>
 
 #include <concepts>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cntp = crucible::cntp;
 namespace cog = crucible::cog;
@@ -93,19 +100,23 @@ using SlotOfFour = ::fixy::Index<4>;
 }
 
 void test_names_and_admission() {
-    assert(dataplane::xdp_action_name(dataplane::XdpAction::Redirect) == "Redirect");
-    assert(dataplane::xdp_mode_name(dataplane::XdpMode::Native) == "Native");
-    assert(dataplane::xdp_program_kind_name(dataplane::XdpProgramKind::GossipMulticast) == "GossipMulticast");
-    assert(dataplane::bpf_map_kind_name(dataplane::BpfMapKind::DevMap) == "DevMap");
-    assert(dataplane::xdp_error_name(dataplane::XdpError::MissingNativeXdp) == "MissingNativeXdp");
-    assert(dataplane::xdp_action_name(static_cast<dataplane::XdpAction>(0xFF)) == "<unknown XdpAction>");
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::xdp_action_name(dataplane::XdpAction::Redirect) == "Redirect");
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::xdp_mode_name(dataplane::XdpMode::Native) == "Native");
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::xdp_program_kind_name(dataplane::XdpProgramKind::GossipMulticast)
+                                    == "GossipMulticast");
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::bpf_map_kind_name(dataplane::BpfMapKind::DevMap) == "DevMap");
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::xdp_error_name(dataplane::XdpError::MissingNativeXdp) == "MissingNativeXdp");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         dataplane::xdp_action_name(static_cast<dataplane::XdpAction>(0xFF)) == "<unknown XdpAction>");
 
-    assert(error_of(dataplane::admit_xdp_ifindex(0)) == dataplane::XdpError::InvalidIfIndex);
-    assert(error_of(dataplane::admit_bpf_map_entries(0)) == dataplane::XdpError::InvalidMapEntries);
-    assert(error_of(dataplane::admit_bpf_map_element_bytes(0)) == dataplane::XdpError::InvalidMapElementSize);
-    assert(take(dataplane::admit_xdp_ifindex(7)).value() == 7u);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(dataplane::admit_xdp_ifindex(0)) == dataplane::XdpError::InvalidIfIndex);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(dataplane::admit_bpf_map_entries(0)) == dataplane::XdpError::InvalidMapEntries);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(dataplane::admit_bpf_map_element_bytes(0))
+                                    == dataplane::XdpError::InvalidMapElementSize);
+    CRUCIBLE_TEST_ASSERT(kTest, take(dataplane::admit_xdp_ifindex(7)).value() == 7u);
 
-    crucible::test::pass("  test_names_and_admission: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_names_and_admission: PASSED\n");
 }
 
 void test_program_caps() {
@@ -115,60 +126,64 @@ void test_program_caps() {
     auto const native = dataplane::mint_xdp_program(init, iface(), ifindex, dataplane::XdpProgramKind::FlowFilter,
                                                     dataplane::XdpMode::Native);
     static_assert(std::same_as<decltype(native)::tag_type, source::Xdp>);
-    assert(native.value().required_features.test(cog::NicFeature::XdpNative));
-    assert(dataplane::xdp_admit_nic(nic_identity(), native_caps(), native).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, native.value().required_features.test(cog::NicFeature::XdpNative));
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::xdp_admit_nic(nic_identity(), native_caps(), native).is_ok());
 
     cog::NicPortTargetCaps const no_xdp{};
-    assert(error_of(dataplane::xdp_admit_nic(nic_identity(), no_xdp, native)) == dataplane::XdpError::MissingNativeXdp);
-    assert(error_of(dataplane::xdp_admit_nic(gpu_identity(), native_caps(), native))
-           == dataplane::XdpError::WrongCogKind);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(dataplane::xdp_admit_nic(nic_identity(), no_xdp, native))
+                                    == dataplane::XdpError::MissingNativeXdp);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(dataplane::xdp_admit_nic(gpu_identity(), native_caps(), native))
+                                    == dataplane::XdpError::WrongCogKind);
 
     auto const offload = dataplane::mint_xdp_program(init, iface(), ifindex, dataplane::XdpProgramKind::TcamAcl,
                                                      dataplane::XdpMode::Offload);
-    assert(error_of(dataplane::xdp_admit_nic(nic_identity(), native_caps(), offload))
-           == dataplane::XdpError::MissingOffloadXdp);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(dataplane::xdp_admit_nic(nic_identity(), native_caps(), offload))
+                                    == dataplane::XdpError::MissingOffloadXdp);
 
     auto const generic = dataplane::mint_xdp_program(init, iface(), ifindex, dataplane::XdpProgramKind::FlowFilter,
                                                      dataplane::XdpMode::Generic);
-    assert(dataplane::xdp_admit_nic(nic_identity(), no_xdp, generic).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::xdp_admit_nic(nic_identity(), no_xdp, generic).is_ok());
 
-    crucible::test::pass("  test_program_caps: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_program_caps: PASSED\n");
 }
 
 void test_map_spec_and_image() {
     dataplane::PositiveMapEntries const entries = take(dataplane::admit_bpf_map_entries(2));
     auto const spec = dataplane::mint_bpf_map_spec<FlowKey, FlowDecision>(dataplane::BpfMapKind::LruHash, entries);
     static_assert(std::same_as<decltype(spec)::tag_type, source::BpfMap>);
-    assert(spec.value().key_bytes.value() == sizeof(FlowKey));
-    assert(spec.value().value_bytes.value() == sizeof(FlowDecision));
-    assert(spec.value().max_entries.value() == 2u);
+    CRUCIBLE_TEST_ASSERT(kTest, spec.value().key_bytes.value() == sizeof(FlowKey));
+    CRUCIBLE_TEST_ASSERT(kTest, spec.value().value_bytes.value() == sizeof(FlowDecision));
+    CRUCIBLE_TEST_ASSERT(kTest, spec.value().max_entries.value() == 2u);
 
     dataplane::BpfMapImage<FlowKey, FlowDecision, 2, dataplane::BpfMapKind::LruHash> map{};
     FlowKey const first{.src = 1, .dst = 2};
-    assert(map.update(first, FlowDecision{.action = dataplane::XdpAction::Redirect, .queue = 7}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         map.update(first, FlowDecision{.action = dataplane::XdpAction::Redirect, .queue = 7}).is_ok());
     FlowDecision const found = map.lookup(first).expect("the image holds the first key");
-    assert(found.action == dataplane::XdpAction::Redirect);
-    assert(found.queue == 7u);
+    CRUCIBLE_TEST_ASSERT(kTest, found.action == dataplane::XdpAction::Redirect);
+    CRUCIBLE_TEST_ASSERT(kTest, found.queue == 7u);
 
-    assert(error_of(map.update(first, FlowDecision{}, dataplane::BpfMapUpdate::NoExist))
-           == dataplane::XdpError::KeyAlreadyExists);
-    assert(error_of(map.update(FlowKey{.src = 9, .dst = 9}, FlowDecision{}, dataplane::BpfMapUpdate::Exist))
-           == dataplane::XdpError::KeyNotFound);
-    assert(map.update(first, FlowDecision{.queue = 8}, dataplane::BpfMapUpdate::Exist).is_ok());
-    assert(map.lookup(first).expect("the image holds the first key").queue == 8u);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(map.update(first, FlowDecision{}, dataplane::BpfMapUpdate::NoExist))
+                                    == dataplane::XdpError::KeyAlreadyExists);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, error_of(map.update(FlowKey{.src = 9, .dst = 9}, FlowDecision{}, dataplane::BpfMapUpdate::Exist))
+                   == dataplane::XdpError::KeyNotFound);
+    CRUCIBLE_TEST_ASSERT(kTest, map.update(first, FlowDecision{.queue = 8}, dataplane::BpfMapUpdate::Exist).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.lookup(first).expect("the image holds the first key").queue == 8u);
 
     FlowKey const second{.src = 2, .dst = 3};
-    assert(map.update(second, FlowDecision{}).is_ok());
-    assert(map.is_full());
-    assert(error_of(map.update(FlowKey{.src = 3, .dst = 4}, FlowDecision{})) == dataplane::XdpError::MapFull);
+    CRUCIBLE_TEST_ASSERT(kTest, map.update(second, FlowDecision{}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.is_full());
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(map.update(FlowKey{.src = 3, .dst = 4}, FlowDecision{}))
+                                    == dataplane::XdpError::MapFull);
 
-    assert(map.erase(first).is_ok());
-    assert(map.lookup(first).is_none());
-    assert(map.lookup(second).is_some());
-    assert(error_of(map.erase(first)) == dataplane::XdpError::KeyNotFound);
-    assert(map.size() == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, map.erase(first).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.lookup(first).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, map.lookup(second).is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(map.erase(first)) == dataplane::XdpError::KeyNotFound);
+    CRUCIBLE_TEST_ASSERT(kTest, map.size() == 1u);
 
-    crucible::test::pass("  test_map_spec_and_image: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_map_spec_and_image: PASSED\n");
 }
 
 // Three keys start their probes at the last slot, so they take the slots 3,
@@ -182,35 +197,35 @@ void test_erase_of_a_wrapped_run() {
     FlowKey const fourth = key_with_home(::fixy::index<0>(), key_before_each());
 
     FourSlotImage map{};
-    assert(map.update(first, FlowDecision{.queue = 1}).is_ok());
-    assert(map.update(second, FlowDecision{.queue = 2}).is_ok());
-    assert(map.update(third, FlowDecision{.queue = 3}).is_ok());
-    assert(map.update(fourth, FlowDecision{.queue = 4}).is_ok());
-    assert(map.is_full());
+    CRUCIBLE_TEST_ASSERT(kTest, map.update(first, FlowDecision{.queue = 1}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.update(second, FlowDecision{.queue = 2}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.update(third, FlowDecision{.queue = 3}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.update(fourth, FlowDecision{.queue = 4}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.is_full());
 
-    assert(map.erase(first).is_ok());
-    assert(map.size() == 3u);
-    assert(map.lookup(first).is_none());
-    assert(queue_of(map, second) == 2u);
-    assert(queue_of(map, third) == 3u);
-    assert(queue_of(map, fourth) == 4u);
+    CRUCIBLE_TEST_ASSERT(kTest, map.erase(first).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.size() == 3u);
+    CRUCIBLE_TEST_ASSERT(kTest, map.lookup(first).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, queue_of(map, second) == 2u);
+    CRUCIBLE_TEST_ASSERT(kTest, queue_of(map, third) == 3u);
+    CRUCIBLE_TEST_ASSERT(kTest, queue_of(map, fourth) == 4u);
 
     // The slot that the erase freed takes a new key, and a second erase in
     // the middle of the run keeps the keys after it.
     FlowKey const fifth = key_with_home(::fixy::index<1>(), key_before_each());
-    assert(map.update(fifth, FlowDecision{.queue = 5}).is_ok());
-    assert(map.erase(third).is_ok());
-    assert(queue_of(map, second) == 2u);
-    assert(queue_of(map, fourth) == 4u);
-    assert(queue_of(map, fifth) == 5u);
-    assert(map.lookup(third).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, map.update(fifth, FlowDecision{.queue = 5}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.erase(third).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, queue_of(map, second) == 2u);
+    CRUCIBLE_TEST_ASSERT(kTest, queue_of(map, fourth) == 4u);
+    CRUCIBLE_TEST_ASSERT(kTest, queue_of(map, fifth) == 5u);
+    CRUCIBLE_TEST_ASSERT(kTest, map.lookup(third).is_none());
 
-    assert(map.erase(second).is_ok());
-    assert(map.erase(fourth).is_ok());
-    assert(map.erase(fifth).is_ok());
-    assert(map.size() == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, map.erase(second).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.erase(fourth).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.erase(fifth).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.size() == 0u);
 
-    crucible::test::pass("  test_erase_of_a_wrapped_run: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_erase_of_a_wrapped_run: PASSED\n");
 }
 
 }  // namespace
@@ -235,6 +250,6 @@ int main() {
     test_program_caps();
     test_map_spec_and_image();
     test_erase_of_a_wrapped_run();
-    crucible::test::pass("test_cntp_dataplane_xdp: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_cntp_dataplane_xdp: all PASSED\n");
     return 0;
 }

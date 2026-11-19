@@ -1,15 +1,24 @@
 #include <crucible/cog/Calibrate.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <array>
-#include "test_assert.h"
 #include <cstdio>
 #include <limits>
 #include <span>
 #include <string_view>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cog = crucible::cog;
 namespace eff = ::fixy;
@@ -33,78 +42,79 @@ cog::CogIdentity nic_identity() {
 
 void test_admission() {
     auto iterations = cog::admit_calibration_iterations(1000);
-    assert(iterations.is_ok());
-    assert(std::move(iterations).expect("1000 iterations fit").value() == 1000u);
+    CRUCIBLE_TEST_ASSERT(kTest, iterations.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(iterations).expect("1000 iterations fit").value() == 1000u);
 
     auto bad_iterations = cog::admit_calibration_iterations(0);
-    assert(bad_iterations.is_err());
-    assert(bad_iterations.err() == ::fixy::some(cog::CalibrationError::InvalidIterations));
+    CRUCIBLE_TEST_ASSERT(kTest, bad_iterations.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, bad_iterations.err() == ::fixy::some(cog::CalibrationError::InvalidIterations));
 
     auto warmup = cog::admit_warmup_iterations(0);
-    assert(warmup.is_ok());
-    assert(std::move(warmup).expect("no warmup fits").value() == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, warmup.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(warmup).expect("no warmup fits").value() == 0u);
 
     auto trim = cog::admit_trim_basis_points(100);
-    assert(trim.is_ok());
-    assert(std::move(trim).expect("100 basis points fit").value() == 100u);
+    CRUCIBLE_TEST_ASSERT(kTest, trim.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(trim).expect("100 basis points fit").value() == 100u);
 
     auto too_much_trim = cog::admit_trim_basis_points(1001);
-    assert(too_much_trim.is_err());
-    assert(too_much_trim.err() == ::fixy::some(cog::CalibrationError::InvalidTrimBasisPoints));
+    CRUCIBLE_TEST_ASSERT(kTest, too_much_trim.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, too_much_trim.err() == ::fixy::some(cog::CalibrationError::InvalidTrimBasisPoints));
 
     auto latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{100u, 500u, 900u});
-    assert(latency.is_ok());
-    assert(std::move(latency).expect("the quantiles are ordered").value().p99_ns == 500u);
+    CRUCIBLE_TEST_ASSERT(kTest, latency.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(latency).expect("the quantiles are ordered").value().p99_ns == 500u);
 
     auto zero_latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{0u, 1u, 2u});
-    assert(zero_latency.is_err());
-    assert(zero_latency.err() == ::fixy::some(cog::CalibrationError::InvalidLatencyQuantiles));
+    CRUCIBLE_TEST_ASSERT(kTest, zero_latency.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_latency.err() == ::fixy::some(cog::CalibrationError::InvalidLatencyQuantiles));
 
     auto inverted_latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{20u, 10u, 30u});
-    assert(inverted_latency.is_err());
-    assert(inverted_latency.err() == ::fixy::some(cog::CalibrationError::InvalidLatencyQuantiles));
+    CRUCIBLE_TEST_ASSERT(kTest, inverted_latency.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, inverted_latency.err() == ::fixy::some(cog::CalibrationError::InvalidLatencyQuantiles));
 
     auto throughput = cog::admit_throughput_per_sec(989.0e12);
-    assert(throughput.is_ok());
-    assert(std::move(throughput).expect("the throughput is finite and positive").value() > 900.0e12);
+    CRUCIBLE_TEST_ASSERT(kTest, throughput.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         std::move(throughput).expect("the throughput is finite and positive").value() > 900.0e12);
 
     auto bad_throughput = cog::admit_throughput_per_sec(-1.0);
-    assert(bad_throughput.is_err());
-    assert(bad_throughput.err() == ::fixy::some(cog::CalibrationError::InvalidThroughput));
+    CRUCIBLE_TEST_ASSERT(kTest, bad_throughput.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, bad_throughput.err() == ::fixy::some(cog::CalibrationError::InvalidThroughput));
 
     // A NaN fails the positive conjunct and an infinity fails the ceiling.
-    assert(cog::admit_throughput_per_sec(std::numeric_limits<double>::quiet_NaN()).is_err());
-    assert(cog::admit_throughput_per_sec(std::numeric_limits<double>::infinity()).is_err());
-    assert(cog::admit_throughput_per_sec(0.0).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, cog::admit_throughput_per_sec(std::numeric_limits<double>::quiet_NaN()).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, cog::admit_throughput_per_sec(std::numeric_limits<double>::infinity()).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, cog::admit_throughput_per_sec(0.0).is_err());
 
     auto bad_drift = cog::admit_drift_basis_points(0);
-    assert(bad_drift.is_err());
-    assert(bad_drift.err() == ::fixy::some(cog::CalibrationError::InvalidDriftBasisPoints));
-    assert(cog::admit_drift_basis_points(10001).is_err());
-    assert(cog::admit_drift_basis_points(10000).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, bad_drift.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, bad_drift.err() == ::fixy::some(cog::CalibrationError::InvalidDriftBasisPoints));
+    CRUCIBLE_TEST_ASSERT(kTest, cog::admit_drift_basis_points(10001).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, cog::admit_drift_basis_points(10000).is_ok());
 
-    assert(cog::admit_runtime_budget_ms(0).is_err());
-    assert(cog::admit_runtime_budget_ms(86400000u).is_ok());
-    assert(cog::admit_runtime_budget_ms(86400001u).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, cog::admit_runtime_budget_ms(0).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, cog::admit_runtime_budget_ms(86400000u).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, cog::admit_runtime_budget_ms(86400001u).is_err());
 
     // A count above the storage width is refused before the narrowing,
     // never truncated into range.
     auto wide_count = cog::admit_sample_count(65536u + 7u);
-    assert(wide_count.is_err());
-    assert(wide_count.err() == ::fixy::some(cog::CalibrationError::InvalidSampleCount));
-    assert(cog::admit_sample_count(0u).is_err());
-    assert(cog::admit_sample_count(65535u).expect("65535 samples fit").value() == 65535u);
+    CRUCIBLE_TEST_ASSERT(kTest, wide_count.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, wide_count.err() == ::fixy::some(cog::CalibrationError::InvalidSampleCount));
+    CRUCIBLE_TEST_ASSERT(kTest, cog::admit_sample_count(0u).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, cog::admit_sample_count(65535u).expect("65535 samples fit").value() == 65535u);
 
-    crucible::test::pass("  test_admission: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_admission: PASSED\n");
 }
 
 void test_latency_entry_and_result() {
     auto latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{100u, 500u, 900u});
     auto throughput = cog::admit_throughput_per_sec(989.0e12);
     auto samples = cog::admit_sample_count(1024);
-    assert(latency.is_ok());
-    assert(throughput.is_ok());
-    assert(samples.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, latency.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, throughput.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, samples.is_ok());
 
     cog::CalibrationSample<cog::CogKind::Gpu> sample{
         .opcode = cog::GpuOpcode::GemmPlain,
@@ -118,12 +128,12 @@ void test_latency_entry_and_result() {
         .sample_count = std::move(samples).expect("1024 samples fit"),
     };
     auto entry = cog::make_latency_entry(sample);
-    assert(entry.opcode == cog::GpuOpcode::GemmPlain);
-    assert(entry.latency.value().p50_ns == 100u);
-    assert(entry.sample_count.value() == 1024u);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.opcode == cog::GpuOpcode::GemmPlain);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.latency.value().p50_ns == 100u);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.sample_count.value() == 1024u);
 
     auto valid_entry = cog::validate_latency_entry(entry);
-    assert(valid_entry.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, valid_entry.is_ok());
 
     cog::GpuTargetCaps caps{};
     caps.tflops_fp16 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated, float>(989.0f);
@@ -133,29 +143,29 @@ void test_latency_entry_and_result() {
     ::fixy::SequenceSource cycles = ::fixy::mint_sequence_source(eff::ColdInitCtx{testing::init()});
     auto result = cog::build_calibration_result<cog::CogKind::Gpu>(gpu_identity(), caps, rows.view(), cycles)
                       .expect("a Gpu identity and one valid row make a result");
-    assert(result.identity.kind == cog::CogKind::Gpu);
-    assert(result.entry_count.value() == 1u);
-    assert(result.opcode_table.size() == 1u);
-    assert(result.opcode_table.lookup_by_opcode(cog::GpuOpcode::GemmPlain).is_some());
-    assert(result.opcode_table.calibration_age_seconds.is_fresh());
+    CRUCIBLE_TEST_ASSERT(kTest, result.identity.kind == cog::CogKind::Gpu);
+    CRUCIBLE_TEST_ASSERT(kTest, result.entry_count.value() == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, result.opcode_table.size() == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, result.opcode_table.lookup_by_opcode(cog::GpuOpcode::GemmPlain).is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, result.opcode_table.calibration_age_seconds.is_fresh());
     // The table of an earlier cycle is one cycle old at the next cycle.
     ::fixy::SequenceStamp const calibrated = cycles.stamp();
     static_cast<void>(cycles.advance());
-    assert(::fixy::Stale<double>::at(0.0, cycles, calibrated).staleness().value == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::Stale<double>::at(0.0, cycles, calibrated).staleness().value == 1);
 
     auto mismatched = cog::build_calibration_result<cog::CogKind::Gpu>(nic_identity(), caps, rows.view(), cycles);
-    assert(mismatched.err() == ::fixy::some(cog::CalibrationError::KindMismatch));
+    CRUCIBLE_TEST_ASSERT(kTest, mismatched.err() == ::fixy::some(cog::CalibrationError::KindMismatch));
 
-    crucible::test::pass("  test_latency_entry_and_result: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_latency_entry_and_result: PASSED\n");
 }
 
 void test_nic_result() {
     auto latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{1500u, 2500u, 5500u});
     auto throughput = cog::admit_throughput_per_sec(6.25e9);
     auto samples = cog::admit_sample_count(4096);
-    assert(latency.is_ok());
-    assert(throughput.is_ok());
-    assert(samples.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, latency.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, throughput.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, samples.is_ok());
 
     cog::CalibrationSample<cog::CogKind::NicPort> sample{
         .opcode = cog::NicOpcode::RdmaWrite,
@@ -180,9 +190,9 @@ void test_nic_result() {
                      .latency_for_size_bucket(cog::NicOpcode::RdmaWrite, cog::SizeBucket::None, cog::DtypeBucket::None,
                                               cog::TransposeMode::Nn, cog::MessageSizeBucket::M64B)
                      .expect("the table holds the row of the 64-byte bucket");
-    assert(found.latency.value().p99_ns == 2500u);
+    CRUCIBLE_TEST_ASSERT(kTest, found.latency.value().p99_ns == 2500u);
 
-    crucible::test::pass("  test_nic_result: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_nic_result: PASSED\n");
 }
 
 eff::ColdInitCtx init_ctx() { return eff::ColdInitCtx{testing::init()}; }
@@ -190,23 +200,23 @@ eff::BgDrainCtx bg_ctx() { return eff::BgDrainCtx{testing::bg()}; }
 
 void test_backend_boundaries() {
     auto init = cog::calibrate_cog<cog::CogKind::Gpu>(init_ctx(), gpu_identity());
-    assert(init.err() == ::fixy::some(cog::CalibrationError::BackendUnavailable));
+    CRUCIBLE_TEST_ASSERT(kTest, init.err() == ::fixy::some(cog::CalibrationError::BackendUnavailable));
 
     auto bg = cog::calibrate_cog<cog::CogKind::Gpu>(bg_ctx(), gpu_identity());
-    assert(bg.err() == ::fixy::some(cog::CalibrationError::BackendUnavailable));
+    CRUCIBLE_TEST_ASSERT(kTest, bg.err() == ::fixy::some(cog::CalibrationError::BackendUnavailable));
 
     auto wrong_kind = cog::calibrate_cog<cog::CogKind::Gpu>(init_ctx(), nic_identity());
-    assert(wrong_kind.err() == ::fixy::some(cog::CalibrationError::KindMismatch));
+    CRUCIBLE_TEST_ASSERT(kTest, wrong_kind.err() == ::fixy::some(cog::CalibrationError::KindMismatch));
 
     ::foundation::core::FixedArray<cog::GpuOpcode, 1> opcodes{cog::GpuOpcode::GemmPlain};
     auto specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(init_ctx(), gpu_identity(), opcodes.view());
-    assert(specific.err() == ::fixy::some(cog::CalibrationError::BackendUnavailable));
+    CRUCIBLE_TEST_ASSERT(kTest, specific.err() == ::fixy::some(cog::CalibrationError::BackendUnavailable));
 
     auto empty_specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(init_ctx(), gpu_identity(),
                                                                              ::fixy::View<cog::GpuOpcode const>{});
-    assert(empty_specific.err() == ::fixy::some(cog::CalibrationError::EmptyOpcodeSet));
+    CRUCIBLE_TEST_ASSERT(kTest, empty_specific.err() == ::fixy::some(cog::CalibrationError::EmptyOpcodeSet));
 
-    crucible::test::pass("  test_backend_boundaries: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_backend_boundaries: PASSED\n");
 }
 
 void test_drift_gate() {
@@ -214,19 +224,19 @@ void test_drift_gate() {
         .observed_drift_bps = cog::admit_drift_basis_points(500).expect("500 basis points fit"),
         .threshold_bps = cog::admit_drift_basis_points(1000).expect("1000 basis points fit"),
     };
-    assert(!cog::should_recalibrate(below));
+    CRUCIBLE_TEST_ASSERT(kTest, !cog::should_recalibrate(below));
     auto below_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(bg_ctx(), gpu_identity(), below);
-    assert(below_result.err() == ::fixy::some(cog::CalibrationError::DriftBelowThreshold));
+    CRUCIBLE_TEST_ASSERT(kTest, below_result.err() == ::fixy::some(cog::CalibrationError::DriftBelowThreshold));
 
     cog::DriftSignal above{
         .observed_drift_bps = cog::admit_drift_basis_points(1200).expect("1200 basis points fit"),
         .threshold_bps = cog::admit_drift_basis_points(1000).expect("1000 basis points fit"),
     };
-    assert(cog::should_recalibrate(above));
+    CRUCIBLE_TEST_ASSERT(kTest, cog::should_recalibrate(above));
     auto above_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(bg_ctx(), gpu_identity(), above);
-    assert(above_result.err() == ::fixy::some(cog::CalibrationError::BackendUnavailable));
+    CRUCIBLE_TEST_ASSERT(kTest, above_result.err() == ::fixy::some(cog::CalibrationError::BackendUnavailable));
 
-    crucible::test::pass("  test_drift_gate: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_drift_gate: PASSED\n");
 }
 
 }  // namespace
@@ -262,6 +272,6 @@ int main() {
     test_nic_result();
     test_backend_boundaries();
     test_drift_gate();
-    crucible::test::pass("test_calibrate: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_calibrate: all PASSED\n");
     return 0;
 }

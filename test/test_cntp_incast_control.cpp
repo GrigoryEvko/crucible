@@ -1,14 +1,23 @@
 #include <crucible/cntp/IncastControl.h>
 #include <crucible/cntp/IncastControlRuntime.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include "tcp_socket.h"
-#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cntp = crucible::cntp;
 namespace fe = ::foundation::effects;
@@ -29,18 +38,18 @@ cntp::IncastError error_of(::fixy::Result<Value, cntp::IncastError> result) {
 }
 
 void test_admission_and_names() {
-    assert(cntp::incast_error_name(cntp::IncastError::CreditUnavailable) == "CreditUnavailable");
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::incast_error_name(cntp::IncastError::CreditUnavailable) == "CreditUnavailable");
 
-    assert(take(cntp::admit_credit_bytes(64 * 1024)).value() == 64 * 1024);
-    assert(error_of(cntp::admit_credit_bytes(0)) == cntp::IncastError::InvalidCreditBytes);
+    CRUCIBLE_TEST_ASSERT(kTest, take(cntp::admit_credit_bytes(64 * 1024)).value() == 64 * 1024);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::admit_credit_bytes(0)) == cntp::IncastError::InvalidCreditBytes);
 
-    assert(take(cntp::admit_rto_min_usec(10000)).value() == 10000);
-    assert(error_of(cntp::admit_rto_min_usec(0)) == cntp::IncastError::InvalidRtoMin);
+    CRUCIBLE_TEST_ASSERT(kTest, take(cntp::admit_rto_min_usec(10000)).value() == 10000);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::admit_rto_min_usec(0)) == cntp::IncastError::InvalidRtoMin);
 
-    assert(take(cntp::admit_sender_count(64)).value() == 64);
-    assert(error_of(cntp::admit_sender_count(0)) == cntp::IncastError::InvalidSenderCount);
+    CRUCIBLE_TEST_ASSERT(kTest, take(cntp::admit_sender_count(64)).value() == 64);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::admit_sender_count(0)) == cntp::IncastError::InvalidSenderCount);
 
-    crucible::test::pass("  test_admission_and_names: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_admission_and_names: PASSED\n");
 }
 
 void test_config_minting() {
@@ -50,11 +59,11 @@ void test_config_minting() {
 
     auto config = cntp::mint_dctcp_incast_config<cntp::LinkClass::LosslessDatacenterFabric>(credit, rto, senders);
     static_assert(std::same_as<decltype(config), cntp::DeclaredIncastConfig>);
-    assert(config.value().enable_dctcp);
-    assert(config.value().enable_ecn);
-    assert(config.value().enable_credit_pacing);
-    assert(config.value().initial_credit_bytes.value() == 32 * 1024);
-    assert(config.value().expected_senders.value() == 32);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().enable_dctcp);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().enable_ecn);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().enable_credit_pacing);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().initial_credit_bytes.value() == 32 * 1024);
+    CRUCIBLE_TEST_ASSERT(kTest, config.value().expected_senders.value() == 32);
 
     auto manual = cntp::mint_incast_config(cntp::IncastConfig{
         .enable_dctcp = false,
@@ -64,9 +73,9 @@ void test_config_minting() {
         .initial_credit_bytes = credit,
         .expected_senders = senders,
     });
-    assert(!take(std::move(manual)).value().enable_dctcp);
+    CRUCIBLE_TEST_ASSERT(kTest, !take(std::move(manual)).value().enable_dctcp);
 
-    crucible::test::pass("  test_config_minting:      PASSED\n");
+    ::fixy::check::pass(kTest, "  test_config_minting:      PASSED\n");
 }
 
 void test_credit_pacing_state() {
@@ -82,19 +91,20 @@ void test_credit_pacing_state() {
     cntp::PositiveCreditBytes const initial = take(cntp::admit_credit_bytes(4096));
     cntp::PositiveCreditBytes const extra = take(cntp::admit_credit_bytes(1024));
 
-    assert(controller.start_credit_flow(init, fd0, initial).is_ok());
-    assert(take(controller.outstanding_credit(fd0)).value() == 4096);
+    CRUCIBLE_TEST_ASSERT(kTest, controller.start_credit_flow(init, fd0, initial).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, take(controller.outstanding_credit(fd0)).value() == 4096);
 
     cntp::IncastCreditGrant const grant = take(controller.issue_credit(bg, fd0, extra, 7));
-    assert(grant.socket == fd0);
-    assert(grant.bytes.value() == extra.value());
-    assert(grant.sequence == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, grant.socket == fd0);
+    CRUCIBLE_TEST_ASSERT(kTest, grant.bytes.value() == extra.value());
+    CRUCIBLE_TEST_ASSERT(kTest, grant.sequence == 7);
 
     // The consume call polls once and never blocks.  The first drains the
     // whole balance, 4096 started plus 1024 issued, and the second finds
     // nothing left because no further credit was granted between them.
-    assert(take(controller.try_consume_credit(bg, fd0)).value() == 5120);
-    assert(error_of(controller.try_consume_credit(bg, fd0)) == cntp::IncastError::CreditUnavailable);
+    CRUCIBLE_TEST_ASSERT(kTest, take(controller.try_consume_credit(bg, fd0)).value() == 5120);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(controller.try_consume_credit(bg, fd0)) == cntp::IncastError::CreditUnavailable);
 
     // The signature must carry no timeout parameter.  A parameter that is
     // accepted and then ignored reads as a working timeout to every
@@ -103,10 +113,11 @@ void test_credit_pacing_state() {
         ::fixy::BgDrainCtx const&, cntp::SocketIdentity) noexcept;
     static_cast<void>(static_cast<ConsumeFn>(&cntp::IncastController<2>::try_consume_credit<::fixy::BgDrainCtx>));
 
-    assert(controller.start_credit_flow(init, fd1, initial).is_ok());
-    assert(error_of(controller.start_credit_flow(init, fd2, initial)) == cntp::IncastError::TooManyFlows);
+    CRUCIBLE_TEST_ASSERT(kTest, controller.start_credit_flow(init, fd1, initial).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(controller.start_credit_flow(init, fd2, initial)) == cntp::IncastError::TooManyFlows);
 
-    crucible::test::pass("  test_credit_pacing_state: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_credit_pacing_state: PASSED\n");
 }
 
 void test_live_rto_if_available() {
@@ -114,19 +125,20 @@ void test_live_rto_if_available() {
     // the IO and Block that the socket option gate asks for.
     ::fixy::TestRunnerCtx test_ctx{fe::testing::test()};
     crucible::test::TcpSocket const socket = crucible::test::open_tcp_socket(test_ctx);
-    assert(socket.is_open());
+    CRUCIBLE_TEST_ASSERT(kTest, socket.is_open());
 
     cntp::SocketFd const fd = ::fixy::net::share_socket(socket.ref());
     cntp::PositiveRtoMinUsec const rto = take(cntp::admit_rto_min_usec(10000));
     auto set = cntp::set_socket_rto_min_usec(test_ctx, fd, rto);
     if (set.is_err()) {
         cntp::IncastError const refusal = error_of(std::move(set));
-        assert(refusal == cntp::IncastError::SetRtoMinFailed || refusal == cntp::IncastError::UnsupportedRtoMinSockOpt);
+        CRUCIBLE_TEST_ASSERT(kTest, refusal == cntp::IncastError::SetRtoMinFailed
+                                        || refusal == cntp::IncastError::UnsupportedRtoMinSockOpt);
         ::fixy::report(::fixy::Sink::Out, "  test_live_rto_if_available: SKIPPED\n");
         return;
     }
 
-    crucible::test::pass("  test_live_rto_if_available: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_live_rto_if_available: PASSED\n");
 }
 
 }  // namespace
@@ -154,6 +166,6 @@ int main() {
     test_config_minting();
     test_credit_pacing_state();
     test_live_rto_if_available();
-    crucible::test::pass("test_cntp_incast_control: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_cntp_incast_control: all PASSED\n");
     return 0;
 }

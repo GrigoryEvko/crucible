@@ -33,12 +33,20 @@
 #include <crucible/perf/detail/BpfHub.h>
 #include <crucible/perf/detail/BpfLoader.h>
 #include <fixy/Core.h>
-
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <meta>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace dataplane = crucible::cntp::dataplane;
 namespace facade = crucible::perf;
@@ -145,7 +153,7 @@ private:
 template <std::size_t Field>
 [[nodiscard]] LittleEndian btf_part(Bytes section) noexcept {
     LittleEndian const header{section};
-    assert(header.word<2>(0) == 0xEB9Fu);
+    CRUCIBLE_TEST_ASSERT(kTest, header.word<2>(0) == 0xEB9Fu);
     return LittleEndian{section.window(header.word<4>(4) + header.word<4>(Field), header.word<4>(Field + 4))
                             .expect("the part is inside the section .BTF")};
 }
@@ -236,7 +244,7 @@ public:
             static_cast<void>(offsets_.append(offset).expect("a stub object holds at most kMaxTypes types"));
             offset += 12 + BtfType{.parts = parts_, .offset = offset}.extra_bytes();
         }
-        assert(offset == parts_.types.bytes().size());
+        CRUCIBLE_TEST_ASSERT(kTest, offset == parts_.types.bytes().size());
     }
 
     [[nodiscard]] std::size_t count() const noexcept { return offsets_.size(); }
@@ -370,7 +378,7 @@ template <class Mirror>
     return find_struct(types, struct_name)
         .match(
             [&types, struct_name, objects](BtfType found) noexcept {
-                assert(has_layout_of<Mirror>(types, found, struct_name));
+                CRUCIBLE_TEST_ASSERT(kTest, has_layout_of<Mirror>(types, found, struct_name));
                 return objects + 1;
             },
             [objects] noexcept { return objects; });
@@ -386,7 +394,7 @@ void compare_object(::fixy::TextView name, perf::ForeignBytes bytes, MirrorCount
     counts.timeline_header =
         count_after_compare<dataplane::NetTimelineHeader>(types, "timeline_header", counts.timeline_header);
     counts.timeline = count_after_compare<dataplane::NetTimeline>(types, "crucible_net_timeline", counts.timeline);
-    crucible::test::pass("  {}: {} types\n", name, types.count());
+    ::fixy::check::pass(kTest, "  {}: {} types\n", name, types.count());
 }
 
 void test_each_stub_object_agrees_with_its_mirrors() {
@@ -418,13 +426,13 @@ void test_each_stub_object_agrees_with_its_mirrors() {
     compare_object("observe_ecn_sample", perf::observe_ecn_sample_bpf_object(), counts);
     compare_object("cog_nic_cog_probe", perf::cog_nic_cog_probe_bpf_object(), counts);
     compare_object("cog_offload_cap_probe", perf::cog_offload_cap_probe_bpf_object(), counts);
-    assert(counts.flow_key >= 1);
-    assert(counts.flow_class >= 1);
-    assert(counts.event >= 1);
-    assert(counts.timeline_header >= 1);
-    assert(counts.timeline >= 1);
-    crucible::test::pass("  test_each_stub_object_agrees_with_its_mirrors: {} {} {} {} {} objects\n", counts.flow_key,
-                         counts.flow_class, counts.event, counts.timeline_header, counts.timeline);
+    CRUCIBLE_TEST_ASSERT(kTest, counts.flow_key >= 1);
+    CRUCIBLE_TEST_ASSERT(kTest, counts.flow_class >= 1);
+    CRUCIBLE_TEST_ASSERT(kTest, counts.event >= 1);
+    CRUCIBLE_TEST_ASSERT(kTest, counts.timeline_header >= 1);
+    CRUCIBLE_TEST_ASSERT(kTest, counts.timeline >= 1);
+    ::fixy::check::pass(kTest, "  test_each_stub_object_agrees_with_its_mirrors: {} {} {} {} {} objects\n",
+                        counts.flow_key, counts.flow_class, counts.event, counts.timeline_header, counts.timeline);
 }
 
 // The name of the C struct of each mirror of a perf facade, in
@@ -502,8 +510,8 @@ template <class Header, class Event, std::uint32_t Capacity>
 template <class Header, class Event, std::uint32_t Capacity>
 void compare_ring_object(::fixy::TextView name, perf::ForeignBytes bytes) noexcept {
     BtfTypes const types = btf_types_of(bytes);
-    assert(holds_struct_of<Header>(types));
-    assert(holds_struct_of<Event>(types));
+    CRUCIBLE_TEST_ASSERT(kTest, holds_struct_of<Header>(types));
+    CRUCIBLE_TEST_ASSERT(kTest, holds_struct_of<Event>(types));
     bool const is_ring_same =
         find_struct(types, kRingName<Event>)
             .match([&types](BtfType found) noexcept { return has_ring_layout<Header, Event, Capacity>(types, found); },
@@ -511,8 +519,8 @@ void compare_ring_object(::fixy::TextView name, perf::ForeignBytes bytes) noexce
                        ::fixy::report(::fixy::Sink::Err, "  the object holds no struct {}\n", kRingName<Event>);
                        return false;
                    });
-    assert(is_ring_same);
-    crucible::test::pass("  {}: {} types\n", name, types.count());
+    CRUCIBLE_TEST_ASSERT(kTest, is_ring_same);
+    ::fixy::check::pass(kTest, "  {}: {} types\n", name, types.count());
 }
 
 // The id of the type that the member of name of the definition of the map
@@ -558,8 +566,8 @@ void compare_sense_hub_object() noexcept {
         ::fixy::report(::fixy::Sink::Err, "  counters: the map has {} entries of {} bytes, and the facade {} of {}\n",
                        entries, word_bytes, std::uint64_t{facade::NUM_COUNTERS}, sizeof(std::uint64_t));
     }
-    assert(entries == std::uint64_t{facade::NUM_COUNTERS} && word_bytes == sizeof(std::uint64_t));
-    crucible::test::pass("  sense_hub: {} types, {} counters\n", types.count(), entries);
+    CRUCIBLE_TEST_ASSERT(kTest, entries == std::uint64_t{facade::NUM_COUNTERS} && word_bytes == sizeof(std::uint64_t));
+    ::fixy::check::pass(kTest, "  sense_hub: {} types, {} counters\n", types.count(), entries);
 }
 
 void test_each_perf_object_agrees_with_its_facade() {
@@ -576,7 +584,7 @@ void test_each_perf_object_agrees_with_its_facade() {
         "lock_contention", perf::lock_contention_bpf_object());
     compare_ring_object<facade::PmuSampleHeader, facade::PmuSampleEvent, facade::PMU_SAMPLE_CAPACITY>(
         "pmu_sample", perf::pmu_sample_bpf_object());
-    crucible::test::pass("  test_each_perf_object_agrees_with_its_facade: 7 objects\n");
+    ::fixy::check::pass(kTest, "  test_each_perf_object_agrees_with_its_facade: 7 objects\n");
 }
 
 }  // namespace
@@ -585,6 +593,6 @@ int main() {
     ::fixy::report(::fixy::Sink::Out, "test_bpf_mirror_btf:\n");
     test_each_stub_object_agrees_with_its_mirrors();
     test_each_perf_object_agrees_with_its_facade();
-    crucible::test::pass("test_bpf_mirror_btf: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_bpf_mirror_btf: all PASSED\n");
     return 0;
 }

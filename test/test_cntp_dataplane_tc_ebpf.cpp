@@ -2,13 +2,20 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Tags.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Ctx.h>
-
-#include "test_assert.h"
+#include <foundation/effects/Effect.h>
 
 #include <concepts>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cntp = crucible::cntp;
 namespace cog = crucible::cog;
@@ -70,20 +77,21 @@ constexpr dataplane::NetFlowKey kAlternateFlow{
 };
 
 void test_names_and_admission() {
-    assert(dataplane::tc_action_name(dataplane::TcAction::Shot) == "Shot");
-    assert(dataplane::tc_attach_point_name(dataplane::TcAttachPoint::Egress) == "Egress");
-    assert(dataplane::tc_program_kind_name(dataplane::TcProgramKind::PacingGate) == "PacingGate");
-    assert(dataplane::tc_error_name(dataplane::TcError::MissingTcEbpf) == "MissingTcEbpf");
-    assert(dataplane::tc_action_name(static_cast<dataplane::TcAction>(5)) == "<unknown TcAction>");
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::tc_action_name(dataplane::TcAction::Shot) == "Shot");
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::tc_attach_point_name(dataplane::TcAttachPoint::Egress) == "Egress");
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::tc_program_kind_name(dataplane::TcProgramKind::PacingGate) == "PacingGate");
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::tc_error_name(dataplane::TcError::MissingTcEbpf) == "MissingTcEbpf");
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::tc_action_name(static_cast<dataplane::TcAction>(5)) == "<unknown TcAction>");
 
-    assert(take(dataplane::admit_tc_dscp(63)).value() == 63u);
-    assert(error_of(dataplane::admit_tc_dscp(64)) == dataplane::TcError::InvalidDscp);
-    assert(take(dataplane::admit_tc_classid(1)).value() == 1u);
-    assert(error_of(dataplane::admit_tc_classid(0)) == dataplane::TcError::InvalidClassId);
-    assert(take(dataplane::admit_tc_flow_priority(7)).value() == 7u);
-    assert(error_of(dataplane::admit_tc_flow_priority(8)) == dataplane::TcError::InvalidFlowPriority);
+    CRUCIBLE_TEST_ASSERT(kTest, take(dataplane::admit_tc_dscp(63)).value() == 63u);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(dataplane::admit_tc_dscp(64)) == dataplane::TcError::InvalidDscp);
+    CRUCIBLE_TEST_ASSERT(kTest, take(dataplane::admit_tc_classid(1)).value() == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(dataplane::admit_tc_classid(0)) == dataplane::TcError::InvalidClassId);
+    CRUCIBLE_TEST_ASSERT(kTest, take(dataplane::admit_tc_flow_priority(7)).value() == 7u);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(dataplane::admit_tc_flow_priority(8)) == dataplane::TcError::InvalidFlowPriority);
 
-    crucible::test::pass("  test_names_and_admission: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_names_and_admission: PASSED\n");
 }
 
 void test_program_caps() {
@@ -93,16 +101,19 @@ void test_program_caps() {
     auto const program = dataplane::mint_tc_program(init, iface(), ifindex, dataplane::TcAttachPoint::Egress,
                                                     dataplane::TcProgramKind::EgressMark);
     static_assert(std::same_as<decltype(program)::tag_type, ::fixy::tags::source::TcEbpf>);
-    assert(program.value().required_features.test(cog::NicFeature::TcEbpf));
-    assert(program.value().is_direct_action);
-    assert(dataplane::tc_admit_nic(nic_identity(), tc_caps(), program).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, program.value().required_features.test(cog::NicFeature::TcEbpf));
+    CRUCIBLE_TEST_ASSERT(kTest, program.value().is_direct_action);
+    CRUCIBLE_TEST_ASSERT(kTest, dataplane::tc_admit_nic(nic_identity(), tc_caps(), program).is_ok());
 
     cog::NicPortTargetCaps const no_tc{};
-    assert(error_of(dataplane::tc_admit_nic(nic_identity(), no_tc, program)) == dataplane::TcError::MissingTcEbpf);
-    assert(error_of(dataplane::tc_admit_nic(gpu_identity(), tc_caps(), program)) == dataplane::TcError::WrongCogKind);
-    assert(error_of(dataplane::attach_tc_program(program)) == dataplane::TcError::PrivilegedAttachDeferred);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(dataplane::tc_admit_nic(nic_identity(), no_tc, program))
+                                    == dataplane::TcError::MissingTcEbpf);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(dataplane::tc_admit_nic(gpu_identity(), tc_caps(), program))
+                                    == dataplane::TcError::WrongCogKind);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(dataplane::attach_tc_program(program))
+                                    == dataplane::TcError::PrivilegedAttachDeferred);
 
-    crucible::test::pass("  test_program_caps: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_program_caps: PASSED\n");
 }
 
 // The map is keyed by the flow key of the kernel map, and it stores the byte
@@ -115,29 +126,29 @@ void test_flow_class_map() {
     static_assert(std::same_as<decltype(cls)::tag_type, ::fixy::tags::source::TcEbpf>);
 
     dataplane::TcFlowClassMap<2> map{};
-    assert(map.update(kHttpsFlow, cls).is_ok());
-    assert(map.size() == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, map.update(kHttpsFlow, cls).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.size() == 1u);
 
     dataplane::DeclaredTcFlowClass const found = map.lookup(kHttpsFlow).expect("the map holds the flow");
-    assert(found.value().dscp.value() == 46u);
-    assert(found.value().classid.value() == 0x10001u);
-    assert(found.value().priority.value() == 5u);
-    assert(found.value().action == dataplane::TcAction::Shot);
+    CRUCIBLE_TEST_ASSERT(kTest, found.value().dscp.value() == 46u);
+    CRUCIBLE_TEST_ASSERT(kTest, found.value().classid.value() == 0x10001u);
+    CRUCIBLE_TEST_ASSERT(kTest, found.value().priority.value() == 5u);
+    CRUCIBLE_TEST_ASSERT(kTest, found.value().action == dataplane::TcAction::Shot);
 
-    assert(map.lookup(kAlternateFlow).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, map.lookup(kAlternateFlow).is_none());
 
     // The pad bytes are part of the key, so a key with a pad byte that is
     // not zero is a different key.
     dataplane::NetFlowKey padded = kHttpsFlow;
     padded.pad = ::fixy::FixedArray<std::uint8_t, 3>{std::uint8_t{0}, std::uint8_t{0}, std::uint8_t{1}};
-    assert(!(padded == kHttpsFlow));
-    assert(map.lookup(padded).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, !(padded == kHttpsFlow));
+    CRUCIBLE_TEST_ASSERT(kTest, map.lookup(padded).is_none());
 
-    assert(map.erase(kHttpsFlow).is_ok());
-    assert(map.lookup(kHttpsFlow).is_none());
-    assert(map.size() == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, map.erase(kHttpsFlow).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, map.lookup(kHttpsFlow).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, map.size() == 0u);
 
-    crucible::test::pass("  test_flow_class_map: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_flow_class_map: PASSED\n");
 }
 
 }  // namespace
@@ -154,6 +165,6 @@ int main() {
     test_names_and_admission();
     test_program_caps();
     test_flow_class_map();
-    crucible::test::pass("test_cntp_dataplane_tc_ebpf: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_cntp_dataplane_tc_ebpf: all PASSED\n");
     return 0;
 }

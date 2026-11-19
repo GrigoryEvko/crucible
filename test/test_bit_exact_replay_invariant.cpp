@@ -60,9 +60,10 @@
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/MerkleDag.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
-
-#include "test_assert.h"
 
 #include <bit>
 #include <cstdint>
@@ -122,7 +123,8 @@ void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena& arena, ::fixy
 
         const ::fixy::View<TensorMeta> metas = arena.array<TensorMeta>(ctx.alloc, num_inputs, TensorMeta{});
         for (uint16_t input_index = 0; input_index < num_inputs; input_index++) {
-            TensorMeta& meta = crucible::test::element_at(metas, input_index);
+            TensorMeta& meta =
+                *metas.get(input_index).expect("a test reads an element at or past the count of its View");
             meta = TensorMeta{};
             meta.ndim = 4;
             meta.dtype = ScalarType::Float;
@@ -144,7 +146,7 @@ void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena& arena, ::fixy
 
         const ::fixy::View<int64_t> scalars = arena.array<int64_t>(ctx.alloc, num_scalars, int64_t{0});
         for (uint16_t scalar_index = 0; scalar_index < num_scalars; scalar_index++) {
-            crucible::test::element_at(scalars, scalar_index) =
+            *scalars.get(scalar_index).expect("a test reads an element at or past the count of its View") =
                 static_cast<int64_t>(mix(seed ^ (uint64_t{scalar_index} << 32)) % 4096);
         }
         entry.set_scalar_args(scalars);

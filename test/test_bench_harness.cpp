@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <bit>
-#include "test_assert.h"
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -32,11 +31,21 @@
 
 #include "bench_harness.h"
 #include <crucible/perf/SenseHub.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/ThreadTasks.h>
 #include <fixy/os/Sched.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -1233,7 +1242,7 @@ int main() {
 
     constexpr int kNumGroups = 24;
     if (g_failures == 0) {
-        crucible::test::pass("test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);
+        ::fixy::check::pass(kTest, "test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);
         return 0;
     }
     std::fprintf(stderr, "test_bench_harness: FAIL (%d groups, %d CHECK failure(s))\n", kNumGroups, g_failures);

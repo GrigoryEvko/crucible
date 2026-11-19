@@ -1,16 +1,25 @@
 #include <crucible/cntp/Backpressure.h>
 #include <crucible/cntp/BackpressureRuntime.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <array>
-#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <span>
 #include <string_view>
 #include <thread>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cntp = crucible::cntp;
 namespace fe = ::foundation::effects;
@@ -37,30 +46,35 @@ void test_admission_helpers() {
     static_assert(cntp::admission_decision_kind_name(cntp::AdmissionDecisionKind::RejectedResource)
                   == "rejected_resource");
 
-    assert(cntp::admit_backpressure_credit(4096).is_ok());
-    assert(error_of(cntp::admit_backpressure_credit(0)) == cntp::BackpressureError::InvalidCreditBytes);
-    assert(cntp::admit_connection_limit(8).is_ok());
-    assert(error_of(cntp::admit_connection_limit(0)) == cntp::BackpressureError::InvalidConnectionLimit);
-    assert(cntp::admit_resource_pressure_ppm(900000).is_ok());
-    assert(cntp::admit_resource_pressure_ppm(1000000).is_ok());
-    assert(error_of(cntp::admit_resource_pressure_ppm(1000001)) == cntp::BackpressureError::InvalidResourcePressure);
-    assert(cntp::admit_resource_limit_ppm(950000).is_ok());
-    assert(error_of(cntp::admit_resource_limit_ppm(0)) == cntp::BackpressureError::InvalidResourceLimit);
-    assert(error_of(cntp::admit_resource_limit_ppm(1000001)) == cntp::BackpressureError::InvalidResourceLimit);
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::admit_backpressure_credit(4096).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(cntp::admit_backpressure_credit(0)) == cntp::BackpressureError::InvalidCreditBytes);
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::admit_connection_limit(8).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(cntp::admit_connection_limit(0)) == cntp::BackpressureError::InvalidConnectionLimit);
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::admit_resource_pressure_ppm(900000).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::admit_resource_pressure_ppm(1000000).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::admit_resource_pressure_ppm(1000001))
+                                    == cntp::BackpressureError::InvalidResourcePressure);
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::admit_resource_limit_ppm(950000).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(cntp::admit_resource_limit_ppm(0)) == cntp::BackpressureError::InvalidResourceLimit);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::admit_resource_limit_ppm(1000001))
+                                    == cntp::BackpressureError::InvalidResourceLimit);
 
     cntp::ResourcePressure const nic_pressure = take(cntp::mint_resource_pressure<fe::ResourceKind::NicQ>(900000));
     cntp::ResourceLimit const nic_limit = take(cntp::mint_resource_limit<fe::ResourceKind::NicQ>(800000));
     cntp::ResourceLimit const hbm_limit = take(cntp::mint_resource_limit<fe::ResourceKind::HbmBytes>(800000));
-    assert(error_of(cntp::mint_resource_pressure<fe::ResourceKind::NicQ>(1000001))
-           == cntp::BackpressureError::InvalidResourcePressure);
-    assert(nic_pressure.kind() == fe::ResourceKind::NicQ);
-    assert(nic_pressure.used_ppm().value() == 900000u);
-    assert(nic_limit.reject_at_or_above_ppm().value() == 800000u);
-    assert(cntp::resource_pressure_exceeds(nic_pressure, nic_limit));
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(cntp::mint_resource_pressure<fe::ResourceKind::NicQ>(1000001))
+                                    == cntp::BackpressureError::InvalidResourcePressure);
+    CRUCIBLE_TEST_ASSERT(kTest, nic_pressure.kind() == fe::ResourceKind::NicQ);
+    CRUCIBLE_TEST_ASSERT(kTest, nic_pressure.used_ppm().value() == 900000u);
+    CRUCIBLE_TEST_ASSERT(kTest, nic_limit.reject_at_or_above_ppm().value() == 800000u);
+    CRUCIBLE_TEST_ASSERT(kTest, cntp::resource_pressure_exceeds(nic_pressure, nic_limit));
     // A pressure on one resource says nothing about a limit on another.
-    assert(!cntp::resource_pressure_exceeds(nic_pressure, hbm_limit));
+    CRUCIBLE_TEST_ASSERT(kTest, !cntp::resource_pressure_exceeds(nic_pressure, hbm_limit));
 
-    crucible::test::pass("  test_admission_helpers:       PASSED\n");
+    ::fixy::check::pass(kTest, "  test_admission_helpers:       PASSED\n");
 }
 
 void test_credit_flow_control() {
@@ -78,20 +92,24 @@ void test_credit_flow_control() {
     cntp::PositiveBackpressureBytes const grant = take(cntp::admit_backpressure_credit(512));
     cntp::PositiveBackpressureBytes const consume = take(cntp::admit_backpressure_credit(1536));
 
-    assert(error_of(controller.current_credit(fd0)) == cntp::BackpressureError::CreditFlowNotStarted);
-    assert(error_of(controller.grant_credit(bg, fd0, grant)) == cntp::BackpressureError::CreditFlowNotStarted);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(controller.current_credit(fd0)) == cntp::BackpressureError::CreditFlowNotStarted);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(controller.grant_credit(bg, fd0, grant))
+                                    == cntp::BackpressureError::CreditFlowNotStarted);
 
-    assert(controller.start_flow(bg_load, fd0, initial).is_ok());
-    assert(controller.grant_credit(bg, fd0, grant).is_ok());
-    assert(take(controller.current_credit(fd0)).value() == 1536);
-    assert(controller.consume_credit(bg, fd0, consume).is_ok());
-    assert(error_of(controller.current_credit(fd0)) == cntp::BackpressureError::CreditExhausted);
-    assert(error_of(controller.consume_credit(bg, fd0, grant)) == cntp::BackpressureError::CreditExhausted);
+    CRUCIBLE_TEST_ASSERT(kTest, controller.start_flow(bg_load, fd0, initial).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, controller.grant_credit(bg, fd0, grant).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, take(controller.current_credit(fd0)).value() == 1536);
+    CRUCIBLE_TEST_ASSERT(kTest, controller.consume_credit(bg, fd0, consume).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(controller.current_credit(fd0)) == cntp::BackpressureError::CreditExhausted);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(controller.consume_credit(bg, fd0, grant))
+                                    == cntp::BackpressureError::CreditExhausted);
 
-    assert(controller.start_flow(bg_load, fd1, initial).is_ok());
-    assert(error_of(controller.start_flow(bg_load, fd2, initial)) == cntp::BackpressureError::TooManyCreditFlows);
+    CRUCIBLE_TEST_ASSERT(kTest, controller.start_flow(bg_load, fd1, initial).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(controller.start_flow(bg_load, fd2, initial))
+                                    == cntp::BackpressureError::TooManyCreditFlows);
 
-    crucible::test::pass("  test_credit_flow_control:     PASSED\n");
+    ::fixy::check::pass(kTest, "  test_credit_flow_control:     PASSED\n");
 }
 
 void test_credit_flow_control_parallel_grants() {
@@ -102,7 +120,7 @@ void test_credit_flow_control_parallel_grants() {
 
     cntp::SocketIdentity const fd{std::uint32_t{23}};
     cntp::PositiveBackpressureBytes const one = take(cntp::admit_backpressure_credit(1));
-    assert(controller.start_flow(bg_load, fd, one).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, controller.start_flow(bg_load, fd, one).is_ok());
 
     constexpr int kThreads = 4;
     constexpr int kGrantsPerThread = 1000;
@@ -110,7 +128,7 @@ void test_credit_flow_control_parallel_grants() {
     for (auto& worker : workers) {
         worker = std::jthread{[&controller, bg, fd, one] {
             for (int grant_index = 0; grant_index < kGrantsPerThread; ++grant_index) {
-                assert(controller.grant_credit(bg, fd, one).is_ok());
+                CRUCIBLE_TEST_ASSERT(kTest, controller.grant_credit(bg, fd, one).is_ok());
             }
         }};
     }
@@ -119,12 +137,12 @@ void test_credit_flow_control_parallel_grants() {
     }
 
     cntp::PositiveBackpressureBytes const total = take(controller.current_credit(fd));
-    assert(total.value() == 1u + static_cast<std::uint32_t>(kThreads * kGrantsPerThread));
+    CRUCIBLE_TEST_ASSERT(kTest, total.value() == 1u + static_cast<std::uint32_t>(kThreads * kGrantsPerThread));
 
-    assert(controller.consume_credit(bg, fd, total).is_ok());
-    assert(controller.current_credit(fd).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, controller.consume_credit(bg, fd, total).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, controller.current_credit(fd).is_err());
 
-    crucible::test::pass("  test_credit_flow_control_parallel_grants: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_credit_flow_control_parallel_grants: PASSED\n");
 }
 
 // Two threads start the same socket at once.  The start gate serializes
@@ -138,19 +156,22 @@ void test_credit_flow_control_parallel_start_same_fd() {
     cntp::PositiveBackpressureBytes const first = take(cntp::admit_backpressure_credit(1));
     cntp::PositiveBackpressureBytes const second = take(cntp::admit_backpressure_credit(2));
 
-    std::jthread starter_a{
-        [&controller, bg_load, fd, first] { assert(controller.start_flow(bg_load, fd, first).is_ok()); }};
-    std::jthread starter_b{
-        [&controller, bg_load, fd, second] { assert(controller.start_flow(bg_load, fd, second).is_ok()); }};
+    std::jthread starter_a{[&controller, bg_load, fd, first] {
+        CRUCIBLE_TEST_ASSERT(kTest, controller.start_flow(bg_load, fd, first).is_ok());
+    }};
+    std::jthread starter_b{[&controller, bg_load, fd, second] {
+        CRUCIBLE_TEST_ASSERT(kTest, controller.start_flow(bg_load, fd, second).is_ok());
+    }};
     starter_a.join();
     starter_b.join();
 
     cntp::SocketIdentity const fd2{std::uint32_t{25}};
-    assert(error_of(controller.start_flow(bg_load, fd2, first)) == cntp::BackpressureError::TooManyCreditFlows);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(controller.start_flow(bg_load, fd2, first))
+                                    == cntp::BackpressureError::TooManyCreditFlows);
     std::uint32_t const current = take(controller.current_credit(fd)).value();
-    assert(current == 1u || current == 2u);
+    CRUCIBLE_TEST_ASSERT(kTest, current == 1u || current == 2u);
 
-    crucible::test::pass("  test_credit_flow_control_parallel_start_same_fd: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_credit_flow_control_parallel_start_same_fd: PASSED\n");
 }
 
 void test_admission_controller() {
@@ -159,14 +180,14 @@ void test_admission_controller() {
     auto controller = cntp::mint_admission_controller<2, 2>(init);
 
     cntp::ResourceLimit const nic_limit = take(cntp::mint_resource_limit<fe::ResourceKind::NicQ>(900000));
-    assert(controller.register_resource_limit(init, nic_limit).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, controller.register_resource_limit(init, nic_limit).is_ok());
     // A second limit on the same resource replaces the first.
-    assert(controller.register_resource_limit(init, nic_limit).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, controller.register_resource_limit(init, nic_limit).is_ok());
     cntp::ResourceLimit const hbm_limit = take(cntp::mint_resource_limit<fe::ResourceKind::HbmBytes>(900000));
     cntp::ResourceLimit const smem_limit = take(cntp::mint_resource_limit<fe::ResourceKind::Smem>(900000));
-    assert(controller.register_resource_limit(init, hbm_limit).is_ok());
-    assert(error_of(controller.register_resource_limit(init, smem_limit))
-           == cntp::BackpressureError::TooManyResourceLimits);
+    CRUCIBLE_TEST_ASSERT(kTest, controller.register_resource_limit(init, hbm_limit).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(controller.register_resource_limit(init, smem_limit))
+                                    == cntp::BackpressureError::TooManyResourceLimits);
 
     cntp::SocketIdentity const fd0{std::uint32_t{30}};
     cntp::SocketIdentity const fd1{std::uint32_t{31}};
@@ -180,33 +201,33 @@ void test_admission_controller() {
         take(cntp::mint_resource_pressure<fe::ResourceKind::NicQ>(100000))};
     cntp::DeclaredAdmissionDecision const accepted0 = take(controller.try_accept_connection(bg, req0, low.view()));
     cntp::DeclaredAdmissionDecision const accepted1 = take(controller.try_accept_connection(bg, req1, low.view()));
-    assert(accepted0.value().kind == cntp::AdmissionDecisionKind::Accepted);
-    assert(accepted0.value().sequence == 1);
-    assert(accepted1.value().sequence == 2);
-    assert(controller.live_connections() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, accepted0.value().kind == cntp::AdmissionDecisionKind::Accepted);
+    CRUCIBLE_TEST_ASSERT(kTest, accepted0.value().sequence == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, accepted1.value().sequence == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, controller.live_connections() == 2);
 
     cntp::DeclaredAdmissionDecision const over_capacity =
         take(controller.try_accept_connection(bg, req2, low.view(), 25));
-    assert(over_capacity.value().kind == cntp::AdmissionDecisionKind::RejectedBackoff);
-    assert(over_capacity.value().retry_after_ms == 25);
+    CRUCIBLE_TEST_ASSERT(kTest, over_capacity.value().kind == cntp::AdmissionDecisionKind::RejectedBackoff);
+    CRUCIBLE_TEST_ASSERT(kTest, over_capacity.value().retry_after_ms == 25);
 
     controller.release_connection(bg);
-    assert(controller.live_connections() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, controller.live_connections() == 1);
 
     ::foundation::core::FixedArray<cntp::ResourcePressure, 1> const high{
         take(cntp::mint_resource_pressure<fe::ResourceKind::NicQ>(950000))};
     cntp::DeclaredAdmissionDecision const rejected = take(controller.try_accept_connection(bg, req2, high.view(), 50));
-    assert(rejected.value().kind == cntp::AdmissionDecisionKind::RejectedResource);
-    assert(rejected.value().limiting_resource == fe::ResourceKind::NicQ);
-    assert(rejected.value().observed_ppm.value() == 950000);
-    assert(rejected.value().threshold_ppm.value() == 900000);
-    assert(controller.live_connections() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, rejected.value().kind == cntp::AdmissionDecisionKind::RejectedResource);
+    CRUCIBLE_TEST_ASSERT(kTest, rejected.value().limiting_resource == fe::ResourceKind::NicQ);
+    CRUCIBLE_TEST_ASSERT(kTest, rejected.value().observed_ppm.value() == 950000);
+    CRUCIBLE_TEST_ASSERT(kTest, rejected.value().threshold_ppm.value() == 900000);
+    CRUCIBLE_TEST_ASSERT(kTest, controller.live_connections() == 1);
 
     controller.release_connection(bg);
     controller.release_connection(bg);
-    assert(controller.live_connections() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, controller.live_connections() == 0);
 
-    crucible::test::pass("  test_admission_controller:    PASSED\n");
+    ::fixy::check::pass(kTest, "  test_admission_controller:    PASSED\n");
 }
 
 }  // namespace
@@ -239,6 +260,6 @@ int main() {
     test_credit_flow_control_parallel_grants();
     test_credit_flow_control_parallel_start_same_fd();
     test_admission_controller();
-    crucible::test::pass("test_cntp_backpressure: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_cntp_backpressure: all PASSED\n");
     return 0;
 }
