@@ -704,6 +704,19 @@ def budget_cases(expect: testing.Expect) -> None:
             and free == 20.0
             and ceiling == 40.0,
         )
+        (group / "memory.high").write_text(f"{36 * gib}\n", encoding="ascii")
+        (group / "app.scope" / "memory.high").write_text("max\n", encoding="ascii")
+        throttled_free = heavy.available_gb(meminfo, own, cgroups)
+        throttled_ceiling = heavy.memory_ceiling_gb(meminfo, own, cgroups)
+        (group / "memory.high").write_text(f"{48 * gib}\n", encoding="ascii")
+        above_free = heavy.available_gb(meminfo, own, cgroups)
+        above_ceiling = heavy.memory_ceiling_gb(meminfo, own, cgroups)
+        expect(
+            f"a group whose memory.high is below its memory.max limits the pool at memory.high, where the kernel "
+            f"throttles each task of the group, and a memory.high of max or above memory.max changes nothing: free "
+            f"{throttled_free} and {above_free} GB, ceiling {throttled_ceiling} and {above_ceiling} GB",
+            throttled_free == 16.0 and throttled_ceiling == 36.0 and above_free == 20.0 and above_ceiling == 40.0,
+        )
 
 
 def priority_cases(expect: testing.Expect) -> None:

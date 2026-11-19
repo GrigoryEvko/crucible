@@ -181,15 +181,23 @@ THE BUDGET
     A take fits two limits (budget_jobs()):
       * The sum of the reservations of the pool after the take stays at
         most the ceiling of the pool less RESERVE_GB.  The ceiling is the
-        smallest of MemTotal and the memory.max of each group of the
-        control group chain of the process (memory_ceiling_gb()).  This
-        limit holds also when many leases start together, before a job
-        holds its memory.
+        smallest of MemTotal and the limit of each group of the control
+        group chain of the process (memory_ceiling_gb()).  This limit holds
+        also when many leases start together, before a job holds its
+        memory.
       * The new jobs fit in the free memory less RESERVE_GB.  The free
         memory is the smallest of MemAvailable and, for each group of the
-        chain, memory.max less memory.current plus its inactive page cache
+        chain, its limit less memory.current plus its inactive page cache
         (available_gb()).  This limit holds when processes with no lease use
         the memory.
+    The limit of a group is the smaller of memory.high and memory.max
+    (group_limit_bytes()).  Above memory.high, the kernel takes memory back
+    in each task of the group that asks for memory, and it makes the task
+    sleep.  The load average counts such a task.  On 2026-11-19 the user
+    slice had memory.high at 170 GiB and memory.max at 181.65 GiB.  The pool
+    read only memory.max, so its leases could fill the slice past
+    memory.high.  The kernel log then had no line for 12 minutes, and
+    compiles of 3 s ran past their limit of 900 s.
     The free memory already holds the memory of the jobs that run, so the
     first limit does not count it again.  A pool where each job holds its
     memory then still grows to its ceiling, not to half of it.
@@ -256,6 +264,8 @@ CGROUP_FILE = Path("/proc/self/cgroup")
 CGROUP_ROOT = Path("/sys/fs/cgroup")
 # The page cache that the kernel can take back before an out-of-memory kill, in memory.stat of a control group.
 RECLAIMABLE_FIELD = "inactive_file"
+# The two limits of a control group: the throttle line and the kill line (THE BUDGET).
+LIMIT_FILES = ("memory.high", "memory.max")
 # The lock of the pool for each change of the slots under the budget (THE BUDGET).
 BUDGET_LOCK_NAME = "budget.lock"
 # The counters of the kills of the kernel for lack of memory: the host and each control group (oom_kills()).
@@ -365,17 +375,26 @@ def reclaimable_bytes(directory: Path) -> int:
     return counter_of(directory / "memory.stat", RECLAIMABLE_FIELD)
 
 
+def group_limit_bytes(directory: Path) -> int | None:
+    """Return the limit of a control group in bytes: the smaller of LIMIT_FILES, or None when each one is max.
+
+    Above memory.high the kernel throttles each task of the group, and at memory.max it kills one (THE BUDGET).
+    """
+    limits = [limit for limit in (cgroup_bytes(directory / name) for name in LIMIT_FILES) if limit is not None]
+    return min(limits) if limits else None
+
+
 def available_gb(
     path: Path = MEMORY_FILE, cgroup_file: Path = CGROUP_FILE, cgroup_root: Path = CGROUP_ROOT
 ) -> float | None:
     """Return the free memory of this process in GB, or None when nothing can be read (THE BUDGET).
 
     The free memory is the smallest of MemAvailable of the host and, for each group of the control group chain with a
-    limit, its memory.max less its memory.current, plus the page cache that the group can give back.
+    limit, its limit (group_limit_bytes()) less its memory.current, plus the page cache that the group can give back.
     """
     values = [meminfo_gb(MEMORY_FIELD, path)]
     for directory in cgroup_chain(cgroup_file, cgroup_root):
-        limit, current = cgroup_bytes(directory / "memory.max"), cgroup_bytes(directory / "memory.current")
+        limit, current = group_limit_bytes(directory), cgroup_bytes(directory / "memory.current")
         if limit is not None and current is not None:
             values.append((limit - current + reclaimable_bytes(directory)) / BYTES_PER_GB)
     known = [value for value in values if value is not None]
@@ -398,11 +417,12 @@ def memory_ceiling_gb(
 ) -> float | None:
     """Return the most memory that this process can use in GB, or None when nothing can be read (THE BUDGET).
 
-    The ceiling is the smallest of MemTotal of the host and the memory.max of each group of the control group chain.
+    The ceiling is the smallest of MemTotal of the host and the limit of each group of the control group chain
+    (group_limit_bytes()).
     """
     values = [meminfo_gb(TOTAL_FIELD, path)]
     for directory in cgroup_chain(cgroup_file, cgroup_root):
-        limit = cgroup_bytes(directory / "memory.max")
+        limit = group_limit_bytes(directory)
         if limit is not None:
             values.append(limit / BYTES_PER_GB)
     known = [value for value in values if value is not None]
