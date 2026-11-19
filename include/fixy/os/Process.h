@@ -246,13 +246,18 @@ template <eff::IsExecCtx Ctx, typename Body>
 [[nodiscard]] ::foundation::core::Result<Child, ::foundation::os::Errno> spawn_child(Ctx const& /*test*/,
                                                                                      Body&& body) noexcept {
     namespace os = ::foundation::os;
-    return os::detail::start_child_().map([&body](os::detail::ChildStart start) noexcept {
-        if (start.child == 0) {
-            body();
-            os::detail::exit_child_(0);
-        }
-        return detail::ChildDoor::make(start.child, start.error_output);
-    });
+    // The arm of the start runs the body in the child and ends the child, so
+    // the start is a match and not a map.
+    using Spawned = ::foundation::core::Result<Child, os::Errno>;
+    return os::detail::start_child_().match(
+        [&body](os::detail::ChildStart start) noexcept -> Spawned {
+            if (start.child == 0) {
+                body();
+                os::detail::exit_child_(0);
+            }
+            return detail::ChildDoor::make(start.child, start.error_output);
+        },
+        [](os::Errno error) noexcept -> Spawned { return ::foundation::core::err(error); });
 }
 
 // Reads the standard error of the child to its end, and waits for the end

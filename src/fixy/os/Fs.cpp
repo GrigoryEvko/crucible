@@ -117,16 +117,19 @@ enum class RenameKind : std::uint8_t {
 constexpr int kDirectoryPartFlags = os::kOpenPath | os::kOpenDirectory | os::kOpenCloseOnExec;
 
 // Gives ACT(PARENT, NAME), where PARENT is the descriptor of the directory
-// PART beneath DIRECTORY.  The door closes PARENT after ACT.
+// PART beneath DIRECTORY.  The door closes PARENT after ACT.  The arm of the
+// open also closes PARENT, so the open is a match and not an and_then.
 template <class T, class Act>
 [[nodiscard]] core::Result<T, os::Errno> act_in_part(int directory, char const* part, char const* name,
                                                      Act const& act) noexcept {
     return open_beneath_(directory, part, kDirectoryPartFlags, 0)
-        .and_then([&](int parent) noexcept -> core::Result<T, os::Errno> {
-            core::Result<T, os::Errno> acted = act(parent, name);
-            close_descriptor_(parent);
-            return acted;
-        });
+        .match(
+            [&](int parent) noexcept -> core::Result<T, os::Errno> {
+                core::Result<T, os::Errno> acted = act(parent, name);
+                close_descriptor_(parent);
+                return acted;
+            },
+            [](os::Errno error) noexcept -> core::Result<T, os::Errno> { return core::err(error); });
 }
 
 // Gives ACT(PARENT, NAME) for the split of PATH beneath DIRECTORY (THE FINAL

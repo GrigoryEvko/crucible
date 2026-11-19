@@ -333,16 +333,21 @@ struct ClockReader final {
     // gives an error and no reading.  The floor of a clamped reader does
     // not move on a failed read.  The read takes the bare tag of Nondet, so
     // a reader that a reference takes into a body whose context holds no
-    // Nondet does not read there.
+    // Nondet does not read there.  The arm of a reading advances the floor of
+    // a clamped reader, so the read is a match and not a map.
     [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno>
     read(eff::cap::Nondet) const noexcept {
-        return detail::read_clock_nanos(clockid_for(Source)).map([this](std::uint64_t raw) noexcept {
-            if constexpr (is_clamped) {
-                return detail::clock_stamp_access::stamp<Source>(clamp_non_decreasing(last_, raw));
-            } else {
-                return detail::clock_stamp_access::stamp<Source>(raw);
-            }
-        });
+        using Reading = ::foundation::core::Result<result_type, ::foundation::os::Errno>;
+        return detail::read_clock_nanos(clockid_for(Source))
+            .match(
+                [this](std::uint64_t raw) noexcept -> Reading {
+                    if constexpr (is_clamped) {
+                        return detail::clock_stamp_access::stamp<Source>(clamp_non_decreasing(last_, raw));
+                    } else {
+                        return detail::clock_stamp_access::stamp<Source>(raw);
+                    }
+                },
+                [](::foundation::os::Errno error) noexcept -> Reading { return ::foundation::core::err(error); });
     }
 
     // The reader stays in the frame that minted it.  The gate of the mint
