@@ -20,6 +20,11 @@
 //
 // The body names the handles of a stage, so the type of a stage holds only
 // the body and the context.
+//
+// A stage can run on a thread of its own, so each gate also asks that each
+// parameter of the body and the context move to another thread
+// (StageCrossesThreads, foundation/Transfer.h).  A context that belongs to
+// one thread, such as the branded foreground, does not.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/HandleTraits.h>
@@ -27,6 +32,7 @@
 #include <fixy/concurrent/StageShape.h>
 #include <fixy/concurrent/WorkingSet.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
@@ -65,9 +71,34 @@ concept StageOutputRowAdmitted =
     && ::foundation::effects::is_subrow(^^payload_effect_row_t<pipeline_stage_output_value_t<FnPtr>>,
                                         ^^typename Ctx::row_type);
 
+namespace detail {
+
+// True when each parameter of the stage body moves to another thread.  A
+// parameter is a handle that the body takes by move, so the walk asks
+// Sendable of the handle itself.  Complexity: linear in the count of the
+// parameters, times the walk of foundation/Transfer.h.
+template <auto FnPtr>
+[[nodiscard]] consteval bool are_stage_parameters_sendable() {
+    const std::meta::info function = std::meta::remove_pointer(^^decltype(FnPtr));
+    for (const std::meta::info parameter : std::meta::parameters_of(function)) {
+        if (!::foundation::transfer::holds(std::meta::remove_cvref(parameter),
+                                           ::foundation::transfer::Property::Send)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace detail
+
+// Each parameter of the body and the context move to the thread of the stage.
 template <auto FnPtr, class Ctx>
-concept CtxFitsStage = PipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx>
-                    && StageInputRowAdmitted<FnPtr, Ctx> && StageOutputRowAdmitted<FnPtr, Ctx>;
+concept StageCrossesThreads = detail::are_stage_parameters_sendable<FnPtr>() && ::foundation::transfer::Sendable<Ctx>;
+
+template <auto FnPtr, class Ctx>
+concept CtxFitsStage =
+    PipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx> && StageInputRowAdmitted<FnPtr, Ctx>
+    && StageOutputRowAdmitted<FnPtr, Ctx> && StageCrossesThreads<FnPtr, Ctx>;
 
 namespace detail {
 
@@ -185,7 +216,7 @@ using variadic_stage_row_union_t = typename detail::variadic_stage_row_union<FnP
 
 template <auto FnPtr, class Ctx>
 concept CtxFitsVariadicStage = VariadicPipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx>
-                            && detail::variadic_stage_rows_admitted<FnPtr, Ctx>();
+                            && detail::variadic_stage_rows_admitted<FnPtr, Ctx>() && StageCrossesThreads<FnPtr, Ctx>;
 
 template <auto FnPtr, class... Handles>
 concept VariadicStageHandlesMatch = detail::can_variadic_stage_take_handles<FnPtr, Handles...>::value;
@@ -217,7 +248,8 @@ using swmr_stage_row_union_t = ::foundation::effects::row_union_t<
 template <auto FnPtr, class Ctx>
 concept CtxFitsSwmrPublishStage =
     SwmrPublishStageBody<FnPtr> && ::foundation::effects::IsExecCtx<Ctx>
-    && ::foundation::effects::is_subrow(^^swmr_stage_row_union_t<FnPtr>, ^^typename Ctx::row_type);
+    && ::foundation::effects::is_subrow(^^swmr_stage_row_union_t<FnPtr>, ^^typename Ctx::row_type)
+    && StageCrossesThreads<FnPtr, Ctx>;
 
 template <auto FnPtr, class Ctx>
     requires CtxFitsStage<FnPtr, Ctx>

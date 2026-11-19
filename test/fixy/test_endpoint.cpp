@@ -10,6 +10,7 @@
 #include <fixy/channels/StageEndpointBridge.h>
 #include <fixy/channels/SubstrateSessionBridge.h>
 
+#include <foundation/core/Atomic.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
@@ -303,10 +304,11 @@ void summing_stage(FanLeft::ConsumerHandle&& left, FanRight::ConsumerHandle&& ri
 }
 
 // A writer with the publish shape of a single-writer cell.  It keeps the
-// last value it was given.
+// last value it was given in an atomic cell of the test, so the stage can run
+// on a thread of its own (foundation/Transfer.h).
 struct LastValueWriter {
-    int* last = nullptr;
-    void publish(int const& value) noexcept { *last = value; }
+    ::foundation::core::Atomic<int>& last;
+    void publish(int const& value) noexcept { last.store_release(value); }
 };
 
 struct SwmrInTag {};
@@ -332,13 +334,13 @@ void publishing_stage(SwmrIn::ConsumerHandle&& in, LastValueWriter&& writer) noe
     (void)feeder.try_push(5);
     (void)feeder.try_push(6);
 
-    int last = 0;
+    ::foundation::core::Atomic<int> last{0};
     auto stage = channels::mint_swmr_stage_from_endpoint<&publishing_stage>(
         ctx,
         channels::mint_endpoint<SwmrIn, channels::Direction::Consumer>(ctx, channel.consumer(std::move(consumer_perm))),
-        LastValueWriter{.last = &last});
+        LastValueWriter{.last = last});
     std::move(stage).run();
-    if (last != 6) return fail("the single-writer stage did not publish the last value");
+    if (last.load_acquire() != 6) return fail("the single-writer stage did not publish the last value");
     return 0;
 }
 

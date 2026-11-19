@@ -64,6 +64,7 @@
 #include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -213,10 +214,16 @@ public:
 
 }  // namespace detail
 
+// A value of a channel: a value of a ring that moves to another thread
+// (foundation/Transfer.h), because a push on one thread gives it to a pop on
+// another thread.
+template <class T>
+concept ChannelValue = RingValue<T> && ::foundation::transfer::Sendable<T>;
+
 // UserTag and Brand have no default.  A default tag would give every channel
 // that omits it one set of Permission types.  The erased brand would let a
 // token of every root site open the endpoints.
-template <ChannelForm Form, RingValue T, std::size_t Capacity, typename UserTag,
+template <ChannelForm Form, ChannelValue T, std::size_t Capacity, typename UserTag,
           ::foundation::brand::IsFreshBrand Brand>
 class PermissionedChannel : public ::foundation::Pinned<PermissionedChannel<Form, T, Capacity, UserTag, Brand>> {
     using parts = detail::channel_form_parts<Form, T, Capacity, channel_tag::Producer<Form, UserTag>, Brand>;
@@ -656,7 +663,7 @@ struct channel_root_parts<::foundation::permissions::Permission<channel_tag::Who
 
 // The channel of a whole root of type Root.  The alias reads the form, the
 // user tag and the brand off the root.
-template <RingValue T, std::size_t Capacity, typename Root>
+template <ChannelValue T, std::size_t Capacity, typename Root>
 using channel_t = PermissionedChannel<detail::channel_root_parts<Root>::form, T, Capacity,
                                       typename detail::channel_root_parts<Root>::user_tag,
                                       typename detail::channel_root_parts<Root>::brand>;

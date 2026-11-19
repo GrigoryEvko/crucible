@@ -4204,6 +4204,25 @@ fixy_test(test_mpsc_box_channel)
 fixy_neg_compile_test(neg_mpsc_box_channel_of_linear_payload
   "template constraint failure for .template<class T, long unsigned int Capacity, class Root>  requires  DroppableBoxPayload<T> using fixy::concurrent::box_channel_t"
   "required for the satisfaction of .DroppableBoxPayload<T>. \\[with T = foundation::core::Hole<8, 8>\\]")
+# A value of a channel and the payload of a Box channel move to another
+# thread, so each is Sendable (foundation/Transfer.h).  A raw pointer is not,
+# and neither is a payload that refers to a plain int.
+fixy_neg_compile_test(neg_channel_of_unsendable_payload
+  "required for the satisfaction of .ChannelValue<T>. \\[with T = int\\*\\]"
+  "required for the satisfaction of .Sendable<T>. \\[with T = int\\*\\]")
+fixy_neg_compile_test(neg_box_channel_of_unsendable_payload
+  "template constraint failure for .template<fixy::concurrent::ChannelForm Form, class T, long unsigned int Capacity, class UserTag, class Brand>"
+  "required for the satisfaction of .Sendable<T>. \\[with T = .*Parcel\\]")
+# A stage can run on a thread of its own, so each handle of its body is
+# Sendable.  A handle that refers to a plain int is not, and neither is a
+# handle that refers to a branded foreground context, which belongs to one
+# thread.
+fixy_neg_compile_test(neg_stage_handle_not_sendable
+  "no matching function for call to .mint_stage<\\{anonymous\\}::pass_through>"
+  "required for the satisfaction of .StageCrossesThreads<FnPtr, Ctx>. \\[with FnPtr = &pass_through\\(<unnamed>::ReferringConsumer<int>&&")
+fixy_neg_compile_test(neg_stage_handle_with_thread_affinity
+  "no matching function for call to .mint_stage<\\{anonymous\\}::pass_through>"
+  "required for the satisfaction of .StageCrossesThreads<FnPtr, Ctx>. \\[with FnPtr = &pass_through\\(<unnamed>::ForegroundConsumer<int>&&")
 # The end of the stream: the close and the open of the SPSC and the MPSC
 # channel, many threaded rounds, and pipelines with no sentinel.
 fixy_test(test_channel_close)

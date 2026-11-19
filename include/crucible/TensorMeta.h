@@ -6,6 +6,7 @@
 #include <fixy/Tagged.h>
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
+#include <foundation/Transfer.h>
 #include <foundation/contracts/Pre.h>
 
 #include <cstddef>
@@ -132,7 +133,13 @@ inline constexpr uint8_t IS_CONJ = 1 << 5;
 // zero.  So no byte door makes one: no_start_over_bytes refuses decode of the
 // family, decode of the Scalar family and a lifetime start over bytes, and
 // decode_tensor_meta is the one door from bytes of outside.
-struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] TensorMeta {
+//
+// The descriptor moves between threads, and two threads read it at once
+// (foundation/Transfer.h).  Its one pointer, data_ptr, is a cookie that the
+// code hashes and compares and never dereferences, so the descriptor states
+// the two properties that its fields hide.
+struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_bytes{}]]
+      [[= ::foundation::transfer::sendable{}]][[= ::foundation::transfer::shareable{}]] TensorMeta {
     // The lanes past ndim must start at zero, and the reason is the wire
     // image rather than any hash. write_meta in Serialize.h writes both
     // blocks at their full width, so a tail lane holding anything but zero

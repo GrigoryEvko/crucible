@@ -14,7 +14,7 @@ using channel_witness::WitnessBrand;
 // A channel names its form, its tag and a brand of one root.  A channel that
 // omits the tag or the brand names no type, and no channel is on the erased
 // brand or on a type that is not a brand.
-template <template <ChannelForm, RingValue, std::size_t, typename, ::foundation::brand::IsFreshBrand> class Channel,
+template <template <ChannelForm, ChannelValue, std::size_t, typename, ::foundation::brand::IsFreshBrand> class Channel,
           ChannelForm Form, typename... TagAndBrand>
 concept NamesAChannelOf = requires { typename Channel<Form, int, 8, TagAndBrand...>; };
 static_assert(NamesAChannelOf<PermissionedChannel, ChannelForm::wire, WitnessTag, WitnessBrand>);

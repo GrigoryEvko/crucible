@@ -29,6 +29,7 @@
 #include <fixy/handle/OneShotFlag.h>
 #include <fixy/handle/PublishCommit.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -71,7 +72,13 @@ struct PipelineLimits {
 //
 // Scratch buffers (PtrMap, SlotInfo, Edge) are allocated once and reused, so
 // the drain path performs no per-call allocation.
-struct BackgroundThread {
+//
+// The foreground thread and the stages of the pipeline share one object of
+// this class, each stage through a Ref of its input (foundation/Transfer.h).
+// Each field that two threads use is an atomic, a ring of one producer and
+// one consumer, or a field of one stage alone, as the comment of the field
+// tells, so the class states that two threads use it at the same time.
+struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
     // The first start() sets each pointer, and never to null.  Each later
     // start() names the same ring and the same log, so no start sets a
     // pointer again.
@@ -437,7 +444,12 @@ public:
     // and the publish stage gives them to the region store, or frees them
     // when it discards the region.  The payload walk of the pipeline channels
     // reads each member (fixy/concurrent/PayloadRow.h).
-    struct BuiltRegion {
+    //
+    // A region moves between threads (foundation/Transfer.h).  Each op points
+    // into the buffers of its own region, which move with it, and no object
+    // outside the region points into them, so the region states the property
+    // that the pointers of its ops hide.
+    struct[[= ::foundation::transfer::sendable{}]] BuiltRegion {
         ::fixy::HeapArray<TraceEntry> ops;
         // The tensor metadata of the ops.  An op points into this buffer.
         ::fixy::HeapArray<TensorMeta> metas;

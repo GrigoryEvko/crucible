@@ -129,8 +129,11 @@ public:
 
 }  // namespace detail
 
+// The object of a Box moves from the thread of a push to the thread of a pop,
+// so the payload is Sendable (foundation/Transfer.h).
 template <ChannelForm Form, ::foundation::core::DroppableBoxPayload T, std::size_t Capacity, typename UserTag,
           ::foundation::brand::IsFreshBrand Brand>
+    requires ::foundation::transfer::Sendable<T>
 class PermissionedBoxChannel : public ::foundation::Pinned<PermissionedBoxChannel<Form, T, Capacity, UserTag, Brand>> {
     using word_type = ::foundation::core::BoxWord<T, PermissionedBoxChannel>;
     using cell_channel = PermissionedChannel<Form, word_type, Capacity, UserTag, Brand>;
