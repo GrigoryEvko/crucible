@@ -247,16 +247,38 @@ static_assert(!every_tier_has_an_alias<^^::fixy::det_safe, std::meta::dealias(^^
               "fixy/Bands.h: the alias walk must answer no for an enum whose tiers the namespace does not name, "
               "or the assertions above prove nothing.");
 
-// The tier of the hot path is a view of the row.  Nondet and the atom of a
-// context leave a row hot, Alloc makes it warm, and IO, Block or Div make
-// it cold.
+// The tier of the hot path is a view of the row.  A subrow of Row<Nondet>
+// is hot, a subrow of Row<Alloc, Nondet> with Alloc is warm, and each other
+// row is cold.  So the atom of a context makes a row cold.
 namespace fe_ = ::foundation::effects;
 static_assert(hot_path_tier_v<fe_::Row<>> == HotPathTier_v::Hot);
-static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Nondet, fe_::Effect::Bg>> == HotPathTier_v::Hot);
-static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Bg, fe_::Effect::Alloc>> == HotPathTier_v::Warm);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Nondet>> == HotPathTier_v::Hot);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Alloc>> == HotPathTier_v::Warm);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Alloc, fe_::Effect::Nondet>> == HotPathTier_v::Warm);
 static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Alloc, fe_::Effect::IO>> == HotPathTier_v::Cold);
 static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Block>> == HotPathTier_v::Cold);
 static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Div>> == HotPathTier_v::Cold);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Bg>> == HotPathTier_v::Cold);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Init>> == HotPathTier_v::Cold);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Test>> == HotPathTier_v::Cold);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Nondet, fe_::Effect::Bg>> == HotPathTier_v::Cold);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Bg, fe_::Effect::Alloc>> == HotPathTier_v::Cold);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Init, fe_::Effect::Alloc>> == HotPathTier_v::Cold);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Test, fe_::Effect::Alloc>> == HotPathTier_v::Cold);
+
+// The view fails closed: of the rows of one atom, only Row<Nondet> is hot,
+// and only Row<Alloc> is warm.  So an atom that the catalog adds is cold
+// until the view names it.
+template <class R>
+struct single_atom_tiers_;
+
+template <fe_::Effect... Es>
+struct single_atom_tiers_<fe_::Row<Es...>> {
+    static constexpr bool is_fail_closed =
+        (((hot_path_tier_v<fe_::Row<Es>> == HotPathTier_v::Hot) == (Es == fe_::Effect::Nondet)) && ...)
+        && (((hot_path_tier_v<fe_::Row<Es>> == HotPathTier_v::Warm) == (Es == fe_::Effect::Alloc)) && ...);
+};
+static_assert(single_atom_tiers_<fe_::every_effect_row>::is_fail_closed);
 
 }  // namespace detail::bands_self_test
 

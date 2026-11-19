@@ -1,12 +1,13 @@
 // The tier of the hot path is a view of the effect row of a context, and
 // no value stores it.  The pure variants of the append and drain calls of
 // the ring and the metadata log take a context whose row is pure, so the
-// view gives each such context the tier Hot.  A context whose row holds
-// Alloc has the tier Warm, and the pure variants refuse it.
+// view gives each such context the tier Hot.  The pure variants refuse a
+// context whose row holds Alloc.
 
 #include <crucible/MetaLog.h>
 #include <crucible/TraceRing.h>
 #include <fixy/Bands.h>
+#include <fixy/Ctx.h>
 #include "test_assert.h"
 
 #include <cstdint>
@@ -51,10 +52,13 @@ template <class Ctx>
 concept AppendsToLog =
     requires(MetaLog& log, Ctx const& ctx) { log.try_append_pure(ctx, ::fixy::View<const TensorMeta>{}); };
 
-// The foreground row is hot, and each pure variant takes it.  A row with
-// Alloc is warm, and each pure variant refuses it.
+// The foreground row is hot, and each pure variant takes it.  The row of
+// the test context holds Test and Alloc, so it is cold, and each pure
+// variant refuses it.  The row of the observe context of a background
+// thread holds Bg and Nondet, so it is cold too.
 static_assert(hot_path_tier_v<eff::row_type_of_t<ForegroundCtx>> == HotPathTier_v::Hot);
-static_assert(hot_path_tier_v<eff::row_type_of_t<AllocCtx>> == HotPathTier_v::Warm);
+static_assert(hot_path_tier_v<eff::row_type_of_t<AllocCtx>> == HotPathTier_v::Cold);
+static_assert(hot_path_tier_v<eff::row_type_of_t<::fixy::BgObserveCtx>> == HotPathTier_v::Cold);
 static_assert(AppendsToRing<ForegroundCtx> && DrainsRing<ForegroundCtx> && AppendsToLog<ForegroundCtx>);
 static_assert(!AppendsToRing<AllocCtx> && !DrainsRing<AllocCtx> && !AppendsToLog<AllocCtx>);
 

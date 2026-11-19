@@ -13,17 +13,17 @@ namespace foundation::diag {
 struct HotPathViolation : tag_base {
     static constexpr tag_text_literal name = "HotPathViolation";
     static constexpr tag_text_literal description = "A function whose effect row gives the tier Hot (the foreground "
-                                                    "recording path: no Alloc, IO, Block or Div in the row) invoked "
-                                                    "a callee whose row gives Warm (Alloc) or Cold (IO, Block or "
-                                                    "Div).  The tier is hot_path_tier_v of fixy/Bands.h, a view of "
+                                                    "recording path: a subrow of Row<Nondet>) invoked a callee "
+                                                    "whose row gives Warm (Alloc) or Cold (IO, Block, Div or the "
+                                                    "atom of a context).  The tier is hot_path_tier_v of "
+                                                    "fixy/Bands.h, a view of "
                                                     "the row.  The hot path's per-op latency budget is "
                                                     "shape-dependent; admitting Warm/Cold callees breaks the budget "
                                                     "structurally.  Crucible discipline per CLAUDE.md §IX.";
     static constexpr tag_text_literal remediation = "Either move the offending operation off the hot path (drain "
                                                     "to bg thread via SPSC ring; defer to a Warm-tier helper), OR "
-                                                    "if the operation IS hot-path-safe, give it a row with no "
-                                                    "Alloc, IO, Block or Div, so the empty row of the foreground "
-                                                    "admits it.  The "
+                                                    "if the operation IS hot-path-safe, give it the empty row, so "
+                                                    "the empty row of the foreground admits it.  The "
                                                     "common refactor: a printf for debugging is Cold; replace with "
                                                     "atomic counter increment (Hot) and drain to a bg formatter.";
 
