@@ -275,15 +275,17 @@ struct FutexWake final {
     }
 };
 
-// The wake latencies of kSamples rounds of FORM, in ticks of the counter.
-template <class Form, class Notify>
-[[nodiscard]] HeapArray<std::uint64_t> measure_wake(::fixy::BgLoadCtx const& ctx, RowCores const& cores,
-                                                    Form const& form, Notify const& after_store,
-                                                    DelayWindow window) noexcept {
-    Line line{};
-    Handshake handshake{};
-    HeapArray<std::uint64_t> latencies = core::mint_heap_array(kAlloc, kSamples, std::uint64_t{0});
-    auto waiter = [&]() noexcept {
+// The waiter of a wake row.  It waits for each round with FORM, and it keeps
+// the latency of each wake, which the caller reads after the join.
+template <class Form>
+struct MeasureWake {
+    Line const& line;
+    Handshake& handshake;
+    RowCores const& cores;
+    Form const& form;
+    HeapArray<std::uint64_t> latencies;
+
+    void operator()() noexcept {
         pin_to(cores.waiter);
         std::uint32_t number = 0;
         for (std::uint64_t& latency : latencies) {
@@ -293,8 +295,22 @@ template <class Form, class Notify>
             std::uint64_t const woken = read_ordered_counter();
             latency = core::saturating_sub(woken, handshake.stamp.load_acquire());
         }
-    };
-    auto writer = [&]() noexcept {
+    }
+};
+
+// The wake latencies of kSamples rounds of FORM, in ticks of the counter.
+template <class Form, class Notify>
+[[nodiscard]] HeapArray<std::uint64_t> measure_wake(::fixy::BgLoadCtx const& ctx, RowCores const& cores,
+                                                    Form const& form, Notify const& after_store,
+                                                    DelayWindow window) noexcept {
+    Line line{};
+    Handshake handshake{};
+    MeasureWake<Form> waiter{.line = line,
+                             .handshake = handshake,
+                             .cores = cores,
+                             .form = form,
+                             .latencies = core::mint_heap_array(kAlloc, kSamples, std::uint64_t{0})};
+    auto writer = [&line, &handshake, &cores, &after_store, window]() noexcept {
         pin_to(cores.writer);
         for (std::uint32_t number = 1; number <= kSamples; ++number) {
             while (handshake.ready.load_acquire() != number) {
@@ -308,7 +324,7 @@ template <class Form, class Notify>
     };
     ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, waiter, writer)
         .expect("the two threads of a wake row start and join");
-    return latencies;
+    return std::move(waiter.latencies);
 }
 
 // The samples of a row in ascending order.
@@ -463,26 +479,37 @@ enum class ReaderPresence : std::uint8_t {
     waiting,
 };
 
+// The thread of a writer row that adds to the neighbor word and measures the
+// add.  With a reader, it waits until the reader waits first.  It keeps its
+// report, which the caller reads after the join.
+struct MeasureWriter {
+    Line& line;
+    Handshake const& handshake;
+    ReaderPresence presence = ReaderPresence::none;
+    bench::Report measured{};
+
+    void operator()() noexcept {
+        if (presence == ReaderPresence::waiting) {
+            while (handshake.ready.load_acquire() == 0) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
+        }
+        measured = bench::run("writer add", [this] {
+            std::uint32_t const before = line.neighbor.fetch_add_acq_rel(1);
+            bench::do_not_optimize(before);
+        });
+        line.word.store_release(1);
+    }
+};
+
 // The percentiles of one add of the writer to the neighbor word, with a
 // reader that waits on the word with ARM, or with no reader (THE WRITER).
 [[nodiscard]] bench::Report measure_writer(::fixy::BgLoadCtx const& ctx, RowCores const& cores, ReaderPresence presence,
                                            ArmWait const& reader_form) noexcept {
     Line line{};
     Handshake handshake{};
-    bench::Report measured{};
-    auto adder = [&]() noexcept {
-        if (presence == ReaderPresence::waiting) {
-            while (handshake.ready.load_acquire() == 0) {
-                CRUCIBLE_SPIN_PAUSE;
-            }
-        }
-        measured = bench::run("writer add", [&line] {
-            std::uint32_t const before = line.neighbor.fetch_add_acq_rel(1);
-            bench::do_not_optimize(before);
-        });
-        line.word.store_release(1);
-    };
-    auto reader = [&]() noexcept {
+    MeasureWriter adder{.line = line, .handshake = handshake, .presence = presence};
+    auto reader = [&line, &handshake, &cores, &reader_form, presence]() noexcept {
         if (presence == ReaderPresence::none) return;
         pin_to(cores.writer);
         handshake.ready.store_release(1);
@@ -490,7 +517,7 @@ enum class ReaderPresence : std::uint8_t {
     };
     ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, adder, reader)
         .expect("the two threads of a writer row start and join");
-    return measured;
+    return std::move(adder.measured);
 }
 
 // A writer row and the row with no reader.
