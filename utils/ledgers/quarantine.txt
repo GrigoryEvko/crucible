@@ -544,7 +544,7 @@ test/foundation/ | opted-out | 45 | PROBE: a report to a stream with no reader r
 test/foundation/ | opted-out | 1 | PROBE: a union member reads the bytes of a different member as an Option | the test of the forged tag reads an Option through a member of a local union in a PROBE region
 test/foundation/ | opted-out | 16 | PROBE: a violation report blocks on a full pipe, and a timer raises a second one | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
-test/foundation/ | opted-out | 6 | PROBE: the address of a body or an object tells which unit of the link holds it | -
+test/foundation/ | opted-out | 10 | PROBE: the address of a body or an object tells which unit of the link holds it | -
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | opted-out | 2 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -
 test/foundation/ | raw-function-pointer | 13 | - | -
