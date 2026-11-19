@@ -407,6 +407,8 @@ THE RIGHT OF WAY
     of way before its next composition.  It holds a lock of flock(2) on the
     file NUMBER.right of the queue, with the number of its first request,
     until the batch ends.  The kernel frees the lock of a holder that ends.
+    The file of a holder that a signal ended stays until the sweep of the
+    queue removes it (removed_dead_holders()).
 
     A right of way goes first when a different batch holds it.  For a batch
     that holds a right of way, only a right of way with a smaller number goes
@@ -441,7 +443,8 @@ THE STACK
     branch.  The batch holds a lock of
     flock(2) on the file NUMBER.stacked while it has an entry.  The kernel
     frees the lock of a holder that ends, and a file with no lock is no
-    entry.
+    entry.  The sweep of the queue removes the files of such a holder
+    (removed_dead_holders()).
       * At the start of each round, the batch removes its entry.  The stack
         starts at the commit of the branch.  It follows each entry on the
         top of the stack, for at most STACK_DEPTH entries.  Among the entries
@@ -706,6 +709,11 @@ RIGHT_SUFFIX = ".right"
 # file is the lock of a request.
 STACK_SUFFIX = ".stack"
 STACK_LOCK_SUFFIX = ".stacked"
+# The age in seconds of a file of the right of way or of the stack with no lock, after which the sweep removes it
+# (removed_dead_holders()).  A holder makes the file before it takes the lock, also on a stalled host, so a young file
+# with no lock can be the file of a live holder.  On 2026-11-19 the queue held such files of dead holders from
+# 2026-11-15 on.
+DEAD_HOLDER_AGE_S = 3600.0
 # The lines of the error of `git fsck` that the refusal of a damaged store names (THE STORE).
 STORE_LINES = 3
 PATCH_MARK = ".patch-"
@@ -3286,6 +3294,41 @@ def removed_orphans(queue: Path) -> None:
             remove_request(queue, number)
 
 
+def removed_dead_holders(queue: Path, now: float | None = None) -> list[str]:
+    """Remove the files of the right of way and of the stack of each holder that ended, and return their names.
+
+    A holder frees its files at the end of its batch (Right.free(), Stack.free()).  A holder that a signal or a stop of
+    the host ended leaves them, and each reader skips a file with no lock (THE RIGHT OF WAY, THE STACK).  The function
+    removes a file NUMBER.right or NUMBER.stacked whose lock no process holds, and a file NUMBER.stack whose file
+    NUMBER.stacked no process holds.  It keeps a file younger than DEAD_HOLDER_AGE_S, because a holder makes its file
+    before it takes the lock.  Complexity: linear in the files of the queue.
+
+    Args:
+        queue: The directory of the queue
+        now: The time of the clock of the file times, or None for the time of this call
+    """
+    moment = time.time() if now is None else now
+    removed: list[str] = []
+    paths_of = (
+        *paths.listing(queue, f"*{RIGHT_SUFFIX}"),
+        *paths.listing(queue, f"*{STACK_LOCK_SUFFIX}"),
+        *paths.listing(queue, f"*{STACK_SUFFIX}"),
+    )
+    for path in paths_of:
+        number = number_of(path)
+        if number is None:
+            continue
+        lock = queue_file(queue, number, STACK_LOCK_SUFFIX) if path.name.endswith(STACK_SUFFIX) else path
+        try:
+            age_s = moment - path.stat().st_mtime
+        except FileNotFoundError:
+            continue
+        if age_s >= DEAD_HOLDER_AGE_S and not heavy.is_held(lock):
+            path.unlink(missing_ok=True)
+            removed.append(path.name)
+    return sorted(removed)
+
+
 def waiting_requests(queue: Path, pause: heavy.Pause = time.sleep) -> list[Queued]:
     """Return each request of the queue with no verdict and a live process, in the sequence of the numbers (THE HOLDER).
 
@@ -3297,6 +3340,7 @@ def waiting_requests(queue: Path, pause: heavy.Pause = time.sleep) -> list[Queue
     waited = 0.0
     while True:
         removed_orphans(queue)
+        removed_dead_holders(queue)
         found: list[Queued] = []
         is_incomplete = False
         for lock in paths.listing(queue, f"*{LOCK_SUFFIX}"):

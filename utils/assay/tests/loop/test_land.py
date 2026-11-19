@@ -1682,6 +1682,48 @@ def turn_landing(root: Path, queue: Path, number: int, pause: heavy.Pause) -> la
     return landing
 
 
+def dead_holder_cases(expect: testing.Expect) -> None:
+    """Hold the sweep of the files of dead holders: an old file with no lock goes, a held or young file stays.
+
+    The case plants the files of three batches in a queue, with planted file times, and calls the sweep with a planted
+    time, so the verdict reads no clock.  Batch 1 ended long ago, batch 2 is a live holder with old files, and batch 3
+    made its files a moment ago and has no lock yet.
+    """
+    with tempfile.TemporaryDirectory(prefix="land-dead-holder-") as work_text:
+        queue = Path(work_text)
+        now = 2_000_000_000.0
+        old = now - land.DEAD_HOLDER_AGE_S - 1.0
+        young = now - 1.0
+        files = {
+            (1, land.RIGHT_SUFFIX): old,
+            (1, land.STACK_SUFFIX): old,
+            (1, land.STACK_LOCK_SUFFIX): old,
+            (2, land.RIGHT_SUFFIX): old,
+            (2, land.STACK_SUFFIX): old,
+            (2, land.STACK_LOCK_SUFFIX): old,
+            (3, land.RIGHT_SUFFIX): young,
+            (3, land.STACK_LOCK_SUFFIX): young,
+        }
+        for (number, suffix), moment in files.items():
+            path = land.queue_file(queue, number, suffix)
+            path.write_text("{}\n" if suffix == land.STACK_SUFFIX else "", encoding="utf-8")
+            os.utime(path, (moment, moment))
+        with (
+            open(land.queue_file(queue, 2, land.RIGHT_SUFFIX), encoding="utf-8") as right,
+            open(land.queue_file(queue, 2, land.STACK_LOCK_SUFFIX), encoding="utf-8") as stacked,
+        ):
+            fcntl.flock(right, fcntl.LOCK_EX)
+            fcntl.flock(stacked, fcntl.LOCK_EX)
+            removed = land.removed_dead_holders(queue, now)
+        kept = sorted(path.name for path in queue.iterdir())
+        expect(
+            f"the sweep removes the old files of a dead holder, and keeps the files of a live holder and the young files "
+            f"of a holder that has no lock yet: removed {removed}, kept {kept}",
+            removed == ["00000001.right", "00000001.stack", "00000001.stacked"]
+            and kept == ["00000002.right", "00000002.stack", "00000002.stacked", "00000003.right", "00000003.stacked"],
+        )
+
+
 def right_cases(expect: testing.Expect) -> None:
     """Hold the right of way: a batch that loses swaps takes it, and the swap of a different batch waits for it."""
     with tempfile.TemporaryDirectory(prefix="land-right-") as work_text:
@@ -3488,6 +3530,7 @@ def main(argv: list[str]) -> int:
             confirmation_cases,
             drop_cases,
             store_cases,
+            dead_holder_cases,
             right_cases,
             stack_cases,
             lost_run_cases,
