@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include <foundation/reflect/Members.h>
 #include <foundation/reflect/Mix.h>
 #include <foundation/reflect/TypeComponents.h>
 
@@ -809,13 +810,15 @@ template <std::meta::info Scope, std::size_t Size>
     std::uint64_t state = detail::layout_seed;
     // A namespace has no access control, so the current context sees each
     // member.
-    for (const std::meta::info member : std::meta::members_of(Scope, std::meta::access_context::current())) {
-        if (!std::meta::is_function(member) || !std::meta::has_c_language_linkage(member)) continue;
-        if (!std::meta::identifier_of(member).starts_with({prefix, Size - 1})) continue;
-        state = combine_ids(state, detail::layout_mark_entry);
-        state = combine_ids(state, detail::hash_name(std::meta::identifier_of(member)));
-        state = combine_ids(state, detail::layout_name_of(std::meta::type_of(member)));
-    }
+    static_cast<void>(
+        find_member(Scope, std::meta::access_context::current(), [&state, &prefix](std::meta::info member) {
+            if (!std::meta::is_function(member) || !std::meta::has_c_language_linkage(member)) return false;
+            if (!std::meta::identifier_of(member).starts_with({prefix, Size - 1})) return false;
+            state = combine_ids(state, detail::layout_mark_entry);
+            state = combine_ids(state, detail::hash_name(std::meta::identifier_of(member)));
+            state = combine_ids(state, detail::layout_name_of(std::meta::type_of(member)));
+            return false;
+        }));
     return state;
 }
 

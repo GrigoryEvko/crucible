@@ -15,6 +15,7 @@
 // for that axis.  A channel or a fork that wants a budget takes it as its
 // own parameter.  A context describes the surrounding scope, not a value.
 
+#include <foundation/reflect/Members.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
 #include <foundation/SoleWriterProof.h>
@@ -310,12 +311,10 @@ namespace detail {
 // that member names the expected type.
 [[nodiscard]] consteval bool names_member_type_(std::meta::info type, std::string_view identifier,
                                                 std::meta::info expected) {
-    for (const std::meta::info member : std::meta::members_of(type, std::meta::access_context::current())) {
-        if (!std::meta::is_type(member) || !std::meta::has_identifier(member)) continue;
-        if (std::meta::identifier_of(member) != identifier) continue;
-        return std::meta::dealias(member) == std::meta::dealias(expected);
-    }
-    return false;
+    const std::meta::info member =
+        ::foundation::reflect::member_named_in(type, std::meta::access_context::current(), identifier);
+    return member != std::meta::info{} && std::meta::is_type(member)
+        && std::meta::dealias(member) == std::meta::dealias(expected);
 }
 
 }  // namespace detail

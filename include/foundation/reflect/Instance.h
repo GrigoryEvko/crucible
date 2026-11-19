@@ -22,6 +22,8 @@
 // explicitly specialized, and a gate that read one would admit each class
 // that a specialization marks, so no variable template spells the answer.
 
+#include <foundation/reflect/Members.h>
+
 #include <meta>
 #include <string_view>
 
@@ -50,9 +52,8 @@ concept IsInstanceOfAny = (IsInstanceOf<T, Templates> || ...);
     const std::meta::info bare = std::meta::dealias(std::meta::remove_cvref(type));
     if (!std::meta::is_class_type(bare)) return {};
     const std::meta::access_context outside = std::meta::access_context::unprivileged();
-    for (const std::meta::info member : std::meta::members_of(bare, outside)) {
-        if (std::meta::has_identifier(member) && std::meta::identifier_of(member) == name) return member;
-    }
+    const std::meta::info own = member_named_in(bare, outside, name);
+    if (own != std::meta::info{}) return own;
     for (const std::meta::info base : std::meta::bases_of(bare, outside)) {
         const std::meta::info inherited = member_named(std::meta::type_of(base), name);
         if (inherited != std::meta::info{}) return inherited;
