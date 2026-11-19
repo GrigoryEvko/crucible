@@ -16,7 +16,7 @@
 // sense of foundation/algebra/Lattice.h: a bounded lattice whose
 // elements are built from atoms and asked whether they hold one.
 //
-// row_descriptor_v is the one-way projection from the first spelling to
+// row_descriptor is the one-way projection from the first spelling to
 // the second.  Code that must keep the atom pack itself keeps naming
 // Row<Es...>.
 
@@ -161,14 +161,90 @@ inline constexpr std::size_t row_unique_size_v = row_pack_size_v<canonical_row_t
     return std::meta::template_arguments_of(std::meta::dealias(row)).size();
 }
 
-// True when the row names the effect.  A type that is not a row names no
-// effect.  Complexity: linear in the size of the row.
-[[nodiscard]] consteval bool row_contains(std::meta::info row, Effect effect) {
-    if (!detail::is_row_specialization(row)) return false;
-    for (const std::meta::info argument : std::meta::template_arguments_of(std::meta::dealias(row))) {
-        if (std::meta::extract<Effect>(argument) == effect) return true;
+struct EffectRowLattice {
+    using element_type = std::uint64_t;
+    using atom_type = Effect;
+
+    // A row bounds the effects that a computation can do.  A larger row
+    // promises less and is the weaker claim.
+    static constexpr ::foundation::algebra::ClaimOrientation claim_orientation =
+        ::foundation::algebra::ClaimOrientation::weaker_is_higher;
+
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return 0; }
+
+    [[nodiscard]] static constexpr element_type top() noexcept {
+        return (effect_count == 0) ? element_type{0} : ((element_type{1} << effect_count) - element_type{1});
     }
-    return false;
+
+    // Subset test.  Every bit of a is also in b exactly when a & ~b is
+    // empty.
+    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return (a & ~b) == 0; }
+
+    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept { return a | b; }
+
+    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept { return a & b; }
+
+    // The row containing one atom, and the membership test.  These two
+    // are what make the mask a Row and not just a bounded lattice.
+    [[nodiscard]] static constexpr element_type single(Effect atom) noexcept {
+        return element_type{1} << static_cast<std::uint8_t>(atom);
+    }
+    [[nodiscard]] static constexpr bool contains(element_type row, Effect atom) noexcept {
+        return (row & single(atom)) != 0;
+    }
+
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "EffectRow"; }
+
+    // A singleton sub-lattice whose one element is the pinned atom set.
+    // Every operation returns that element, so the lattice axioms are
+    // satisfied without inspecting anything, and the grade can live in
+    // the type instead of in a runtime field.
+    template <Effect... Atoms>
+    struct At {
+        static constexpr std::uint64_t value =
+            ((std::uint64_t{1} << static_cast<std::uint8_t>(Atoms)) | ... | std::uint64_t{0});
+
+        struct element_type {
+            constexpr element_type() noexcept = default;
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
+        };
+        static_assert(std::is_empty_v<element_type>,
+                      "At<Atoms...>::element_type must be empty so that the grade slot of the "
+                      "grading substrate collapses to 0 bytes.");
+
+        [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
+        [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
+
+        [[nodiscard]] static consteval std::string_view name() noexcept { return "EffectRow::At"; }
+
+        [[nodiscard]] static constexpr std::uint64_t bits() noexcept { return value; }
+    };
+};
+
+// The mask of the row: bit n is the atom whose underlying value is n.  A
+// type carrying no row maps to the empty mask, which is below every
+// descriptor.  That answer is safe rather than meaningful: such a type
+// has no business being queried.  The function is not a template, so no
+// translation unit can specialize the mask of a row.  It is the one walk
+// of the atoms of a row, and the membership and the subrow test read the
+// mask.  Complexity: linear in the size of the row.
+[[nodiscard]] consteval EffectRowLattice::element_type row_descriptor(std::meta::info row) {
+    EffectRowLattice::element_type mask = 0;
+    if (!detail::is_row_specialization(row)) return mask;
+    for (const std::meta::info argument : std::meta::template_arguments_of(std::meta::dealias(row))) {
+        mask = EffectRowLattice::join(mask, EffectRowLattice::single(std::meta::extract<Effect>(argument)));
+    }
+    return mask;
+}
+
+// True when the row names the effect.  A type that is not a row has the
+// empty mask, so it names no effect.  Complexity: linear in the size of the
+// row.
+[[nodiscard]] consteval bool row_contains(std::meta::info row, Effect effect) {
+    return EffectRowLattice::contains(row_descriptor(row), effect);
 }
 
 namespace detail {
@@ -248,15 +324,13 @@ using row_difference_t = canonical_row_t<typename detail::row_difference_impl<R1
 template <typename R1, typename R2>
 using row_intersection_t = canonical_row_t<typename detail::row_intersection_impl<R1, R2>::type>;
 
-// True when each atom of the narrow row is in the wide row.  A type that
-// is not a row is no subrow and has no subrow.  Complexity: the product
-// of the two sizes.
+// True when each atom of the narrow row is in the wide row: the mask of
+// the narrow row is below the mask of the wide row.  A type that is not a
+// row is no subrow and has no subrow.  Complexity: linear in the sum of the
+// two sizes.
 [[nodiscard]] consteval bool is_subrow(std::meta::info narrow, std::meta::info wide) {
     if (!detail::is_row_specialization(narrow) || !detail::is_row_specialization(wide)) return false;
-    for (const std::meta::info argument : std::meta::template_arguments_of(std::meta::dealias(narrow))) {
-        if (!row_contains(wide, std::meta::extract<Effect>(argument))) return false;
-    }
-    return true;
+    return EffectRowLattice::leq(row_descriptor(narrow), row_descriptor(wide));
 }
 
 template <typename R1, typename R2>
@@ -268,79 +342,6 @@ concept Subrow = is_subrow(^^R1, ^^R2);
 // from the enum and pins this list to it, so a new atom cannot stay out.
 using every_effect_row =
     Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test, Effect::Nondet, Effect::Div>;
-
-struct EffectRowLattice {
-    using element_type = std::uint64_t;
-    using atom_type = Effect;
-
-    // A row bounds the effects that a computation can do.  A larger row
-    // promises less and is the weaker claim.
-    static constexpr ::foundation::algebra::ClaimOrientation claim_orientation =
-        ::foundation::algebra::ClaimOrientation::weaker_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return 0; }
-
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return (effect_count == 0) ? element_type{0} : ((element_type{1} << effect_count) - element_type{1});
-    }
-
-    // Subset test.  Every bit of a is also in b exactly when a & ~b is
-    // empty.
-    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return (a & ~b) == 0; }
-
-    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept { return a | b; }
-
-    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept { return a & b; }
-
-    // The row containing one atom, and the membership test.  These two
-    // are what make the mask a Row and not just a bounded lattice.
-    [[nodiscard]] static constexpr element_type single(Effect atom) noexcept {
-        return element_type{1} << static_cast<std::uint8_t>(atom);
-    }
-    [[nodiscard]] static constexpr bool contains(element_type row, Effect atom) noexcept {
-        return (row & single(atom)) != 0;
-    }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "EffectRow"; }
-
-    // A singleton sub-lattice whose one element is the pinned atom set.
-    // Every operation returns that element, so the lattice axioms are
-    // satisfied without inspecting anything, and the grade can live in
-    // the type instead of in a runtime field.
-    template <Effect... Atoms>
-    struct At {
-        static constexpr std::uint64_t value =
-            ((std::uint64_t{1} << static_cast<std::uint8_t>(Atoms)) | ... | std::uint64_t{0});
-
-        struct element_type {
-            constexpr element_type() noexcept = default;
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
-        };
-        static_assert(std::is_empty_v<element_type>,
-                      "At<Atoms...>::element_type must be empty so that the grade slot of the "
-                      "grading substrate collapses to 0 bytes.");
-
-        [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
-        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
-        [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
-
-        [[nodiscard]] static consteval std::string_view name() noexcept { return "EffectRow::At"; }
-
-        [[nodiscard]] static constexpr std::uint64_t bits() noexcept { return value; }
-    };
-};
-
-// A type carrying no row maps to the empty mask, which is below every
-// descriptor.  That answer is safe rather than meaningful: such a type
-// has no business being queried.
-template <typename R>
-inline constexpr EffectRowLattice::element_type row_descriptor_v = 0;
-
-template <Effect... Es>
-inline constexpr EffectRowLattice::element_type row_descriptor_v<Row<Es...>> =
-    ((EffectRowLattice::element_type{1} << static_cast<std::uint8_t>(Es)) | ... | EffectRowLattice::element_type{0});
 
 namespace detail {
 // The primary template is left undefined so that a non-Row argument

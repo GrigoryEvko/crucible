@@ -142,8 +142,8 @@ static_assert(::foundation::algebra::Row<fe::EffectRowLattice>);
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         constexpr fe::Effect atom = [:en:];
-        if (!fe::EffectRowLattice::contains(fe::row_descriptor_v<fe::Row<atom>>, atom)) return false;
-        if (fe::EffectRowLattice::contains(fe::row_descriptor_v<fe::Row<>>, atom)) return false;
+        if (!fe::EffectRowLattice::contains(fe::row_descriptor(^^fe::Row<atom>), atom)) return false;
+        if (fe::EffectRowLattice::contains(fe::row_descriptor(^^fe::Row<>), atom)) return false;
         if (!fe::row_contains(^^fe::Row<atom>, atom)) return false;
     }
 #pragma GCC diagnostic pop
@@ -231,8 +231,8 @@ void effect_row_lattice_runs_at_run_time() noexcept {
 
     [[maybe_unused]] auto nm = ::foundation::algebra::lattice_name<L>();
 
-    [[maybe_unused]] EL d_pure = row_descriptor_v<Row<>>;
-    [[maybe_unused]] EL d_alloc = row_descriptor_v<Row<Effect::Alloc>>;
+    [[maybe_unused]] EL d_pure = row_descriptor(^^Row<>);
+    [[maybe_unused]] EL d_alloc = row_descriptor(^^Row<Effect::Alloc>);
 
     Effect atom = ok_le ? Effect::IO : Effect::Alloc;  // deliberately not constexpr
     [[maybe_unused]] EL one = L::single(atom);
@@ -305,7 +305,7 @@ int main() {
     if (with_alloc(test.alloc) != 42) return 2;
 
     fe::Effect atom = fe::Effect::Block;  // deliberately not constexpr
-    auto row = fe::EffectRowLattice::join(fe::row_descriptor_v<fe::Row<fe::Effect::Alloc>>,
+    auto row = fe::EffectRowLattice::join(fe::row_descriptor(^^fe::Row<fe::Effect::Alloc>),
                                           fe::EffectRowLattice::single(atom));
     if (!fe::EffectRowLattice::contains(row, atom)) return 3;
     if (!fe::EffectRowLattice::leq(row, fe::EffectRowLattice::top())) return 4;

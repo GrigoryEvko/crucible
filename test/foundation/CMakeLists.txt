@@ -270,6 +270,15 @@ foundation_neg_compile_test(neg_claim_subject_v_specialized
 foundation_neg_compile_test(neg_product_orientation_specialized
   "neg_product_orientation_specialized\\.cpp:27:[0-9]+: error: expected initializer before .<. token"
   "neg_product_orientation_specialized\\.cpp:33:[0-9]+: error: static assertion failed")
+
+# The mask of an effect row is a function at namespace scope that is not a
+# template.  A specialization of the trait spelling does not compile, and
+# an explicit specialization of the function matches no template.
+foundation_neg_compile_test(neg_row_descriptor_v_specialized
+  "neg_row_descriptor_v_specialized\\.cpp:13:[0-9]+: error: expected initializer before .<. token")
+foundation_neg_compile_test(neg_row_descriptor_specialized
+  "template-id .row_descriptor<>. for .consteval foundation::effects::EffectRowLattice::element_type foundation::effects::row_descriptor\\(std::meta::info\\). does not match any template declaration"
+  "neg_row_descriptor_specialized\\.cpp:12:[0-9]+: error:")
 foundation_neg_compile_test(neg_graded_default_value_claims_bytes
   "no matching function for call to .foundation::algebra::Graded<.*OneByteValue>::Graded\\(\\)."
   "required by the constraints of .template<foundation::algebra::ModalityKind M, class L, class T> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(\\) requires ! foundation::algebra::Graded<M, L, T>::stores_grade_ \\|\\| \\(GradeIgnoresBytes<L>\\).")

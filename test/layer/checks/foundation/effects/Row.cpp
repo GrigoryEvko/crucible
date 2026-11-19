@@ -258,10 +258,10 @@ static_assert(EffectRowLattice::At<Effect::Alloc, Effect::IO>::bits()
               == EffectRowLattice::join(EffectRowLattice::At<Effect::Alloc>::bits(),
                                         EffectRowLattice::At<Effect::IO>::bits()));
 
-static_assert(EffectRowLattice::At<>::bits() == row_descriptor_v<Row<>>);
-static_assert(EffectRowLattice::At<Effect::Alloc>::bits() == row_descriptor_v<Row<Effect::Alloc>>);
+static_assert(EffectRowLattice::At<>::bits() == row_descriptor(^^Row<>));
+static_assert(EffectRowLattice::At<Effect::Alloc>::bits() == row_descriptor(^^Row<Effect::Alloc>));
 static_assert(EffectRowLattice::At<Effect::Alloc, Effect::IO>::bits()
-              == row_descriptor_v<Row<Effect::Alloc, Effect::IO>>);
+              == row_descriptor(^^Row<Effect::Alloc, Effect::IO>));
 static_assert(EffectRowLattice::At<Effect::Alloc, Effect::IO>::bits()
               == EffectRowLattice::At<Effect::IO, Effect::Alloc>::bits());
 
@@ -276,10 +276,10 @@ static_assert(std::is_same_v<effect_row_to_at_t<Row<Effect::Alloc, Effect::IO>>,
 static_assert(
     std::is_same_v<effect_row_to_at_t<every_effect_row>, typename[:detail::every_effect_of_(^^EffectRowLattice::At):]>);
 
-static_assert(effect_row_to_at_t<Row<>>::bits() == row_descriptor_v<Row<>>);
-static_assert(effect_row_to_at_t<Row<Effect::Alloc>>::bits() == row_descriptor_v<Row<Effect::Alloc>>);
+static_assert(effect_row_to_at_t<Row<>>::bits() == row_descriptor(^^Row<>));
+static_assert(effect_row_to_at_t<Row<Effect::Alloc>>::bits() == row_descriptor(^^Row<Effect::Alloc>));
 static_assert(effect_row_to_at_t<Row<Effect::Alloc, Effect::IO>>::bits()
-              == row_descriptor_v<Row<Effect::Alloc, Effect::IO>>);
+              == row_descriptor(^^Row<Effect::Alloc, Effect::IO>));
 
 namespace detail::effect_row_lattice_self_test {
 
@@ -332,50 +332,50 @@ static_assert(::foundation::algebra::verify_distributive_lattice<L>(e_alloc, e_i
 static_assert(::foundation::algebra::verify_distributive_lattice<L>(e_alloc | e_io, e_io | e_block, e_block | e_bg));
 static_assert(::foundation::algebra::verify_distributive_lattice<L>(e_bot, e_alloc, e_top));
 
-static_assert(row_descriptor_v<Row<>> == e_bot);
-static_assert(row_descriptor_v<Row<Effect::Alloc>> == e_alloc);
-static_assert(row_descriptor_v<Row<Effect::IO>> == e_io);
-static_assert(row_descriptor_v<Row<Effect::Block>> == e_block);
-static_assert(row_descriptor_v<Row<Effect::Bg>> == e_bg);
-static_assert(row_descriptor_v<Row<Effect::Init>> == e_init);
-static_assert(row_descriptor_v<Row<Effect::Test>> == e_test);
+static_assert(row_descriptor(^^Row<>) == e_bot);
+static_assert(row_descriptor(^^Row<Effect::Alloc>) == e_alloc);
+static_assert(row_descriptor(^^Row<Effect::IO>) == e_io);
+static_assert(row_descriptor(^^Row<Effect::Block>) == e_block);
+static_assert(row_descriptor(^^Row<Effect::Bg>) == e_bg);
+static_assert(row_descriptor(^^Row<Effect::Init>) == e_init);
+static_assert(row_descriptor(^^Row<Effect::Test>) == e_test);
 
-static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::IO>> == (e_alloc | e_io));
-static_assert(row_descriptor_v<Row<Effect::Block, Effect::Alloc, Effect::IO>> == (e_block | e_alloc | e_io));
+static_assert(row_descriptor(^^Row<Effect::Alloc, Effect::IO>) == (e_alloc | e_io));
+static_assert(row_descriptor(^^Row<Effect::Block, Effect::Alloc, Effect::IO>) == (e_block | e_alloc | e_io));
 
-static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::IO>> == row_descriptor_v<Row<Effect::IO, Effect::Alloc>>);
+static_assert(row_descriptor(^^Row<Effect::Alloc, Effect::IO>) == row_descriptor(^^Row<Effect::IO, Effect::Alloc>));
 
-static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::Alloc>> == row_descriptor_v<Row<Effect::Alloc>>);
+static_assert(row_descriptor(^^Row<Effect::Alloc, Effect::Alloc>) == row_descriptor(^^Row<Effect::Alloc>));
 
-static_assert(row_descriptor_v<every_effect_row> == e_top);
+static_assert(row_descriptor(^^every_effect_row) == e_top);
 
-static_assert(row_descriptor_v<int> == 0);
-static_assert(row_descriptor_v<double> == 0);
+static_assert(row_descriptor(^^int) == 0);
+static_assert(row_descriptor(^^double) == 0);
 
 static_assert(L::single(Effect::Alloc) == e_alloc);
 static_assert(L::single(Effect::Test) == e_test);
-static_assert(L::contains(row_descriptor_v<Row<Effect::Alloc, Effect::IO>>, Effect::IO));
-static_assert(!L::contains(row_descriptor_v<Row<Effect::Alloc, Effect::IO>>, Effect::Bg));
+static_assert(L::contains(row_descriptor(^^Row<Effect::Alloc, Effect::IO>), Effect::IO));
+static_assert(!L::contains(row_descriptor(^^Row<Effect::Alloc, Effect::IO>), Effect::Bg));
 static_assert(L::contains(e_top, Effect::Init));
 static_assert(!L::contains(e_bot, Effect::Init));
-static_assert(L::contains(row_descriptor_v<Row<Effect::Bg>>, Effect::Bg)
+static_assert(L::contains(row_descriptor(^^Row<Effect::Bg>), Effect::Bg)
               == row_contains(^^Row<Effect::Bg>, Effect::Bg));
-static_assert(L::contains(row_descriptor_v<Row<Effect::Bg>>, Effect::IO)
+static_assert(L::contains(row_descriptor(^^Row<Effect::Bg>), Effect::IO)
               == row_contains(^^Row<Effect::Bg>, Effect::IO));
 
 // The membership-based subrow test and the bitmask-based order must
 // give the same answer at every query site.  A disagreement would let
 // the two surfaces classify the same pair of rows differently.
-static_assert(L::leq(row_descriptor_v<Row<>>, row_descriptor_v<Row<Effect::Alloc>>)
+static_assert(L::leq(row_descriptor(^^Row<>), row_descriptor(^^Row<Effect::Alloc>))
               == is_subrow(^^Row<>, ^^Row<Effect::Alloc>));
 
-static_assert(L::leq(row_descriptor_v<Row<Effect::Alloc>>, row_descriptor_v<Row<Effect::Alloc, Effect::IO>>)
+static_assert(L::leq(row_descriptor(^^Row<Effect::Alloc>), row_descriptor(^^Row<Effect::Alloc, Effect::IO>))
               == is_subrow(^^Row<Effect::Alloc>, ^^Row<Effect::Alloc, Effect::IO>));
 
-static_assert(L::leq(row_descriptor_v<Row<Effect::Alloc, Effect::IO>>, row_descriptor_v<Row<Effect::Alloc>>)
+static_assert(L::leq(row_descriptor(^^Row<Effect::Alloc, Effect::IO>), row_descriptor(^^Row<Effect::Alloc>))
               == is_subrow(^^Row<Effect::Alloc, Effect::IO>, ^^Row<Effect::Alloc>));
 
-static_assert(L::leq(row_descriptor_v<Row<Effect::IO>>, row_descriptor_v<Row<Effect::Alloc>>)
+static_assert(L::leq(row_descriptor(^^Row<Effect::IO>), row_descriptor(^^Row<Effect::Alloc>))
               == is_subrow(^^Row<Effect::IO>, ^^Row<Effect::Alloc>));
 
 }  // namespace detail::effect_row_lattice_self_test
@@ -419,9 +419,9 @@ static_assert(bits_from_row<Row<Effect::Bg, Effect::Alloc>>() == bits_from_row<R
               "federation peers that project two orders of one row must compute one cache key.");
 
 // The mask and the row descriptor are one encoding.
-static_assert(bits_from_row<Row<>>().raw() == row_descriptor_v<Row<>>);
+static_assert(bits_from_row<Row<>>().raw() == row_descriptor(^^Row<>));
 static_assert(bits_from_row<Row<Effect::Bg, Effect::Alloc>>().raw()
-              == row_descriptor_v<Row<Effect::Bg, Effect::Alloc>>);
+              == row_descriptor(^^Row<Effect::Bg, Effect::Alloc>));
 static_assert(bits_from_row<every_effect_row>().raw() == EffectRowLattice::top());
 static_assert(bits_from_row<Row<Effect::IO> const&>() == bits_from_row<Row<Effect::IO>>());
 
