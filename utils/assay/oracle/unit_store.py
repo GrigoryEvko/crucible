@@ -152,7 +152,9 @@ WHAT THE STORE DOES NOT STORE
       compiler or linker identity that changed during the unit.
     - A compile or a link with an exit code that is not 0 or 1, because a
       signal or an internal error can give a different result on the next
-      run.
+      run.  Also a compile or a link whose output tells that a signal
+      stopped the compiler or the linker, such as the kill of the CPU limit
+      of a test: the driver then exits 1 (is_storable_compile()).
     - A link that writes no dependency file that reads (THE LINKER).
     - A run that ended by a signal or by its time limit, and a run with a
       result that the caller calls unstable.  The run of a program can
@@ -214,8 +216,14 @@ SOURCES_IN_USE_S = 2 * cache_root.TOUCH_INTERVAL
 SOURCE_LOCK_SUFFIX = ".lock"
 # The file name of the digest memo of one caller, in the memo directory of the store.
 DIGEST_MEMO_NAME = "units-{}.digests"
-# The time limit of the run of a program, in seconds.
-RUN_TIMEOUT_S = 600
+# The words of a line of the GCC driver and of collect2 for a compiler or a linker that a signal stopped, such as
+# "g++: fatal error: Killed signal terminated program cc1plus" and "collect2: fatal error: ld terminated with signal 9".
+KILLED_WORDS = (compile_store.KILLED_COMPILER, "terminated with signal")
+# The time limit of each compile, link and run of a unit, in seconds.  It judges no unit, and it only bounds a hang,
+# above the wall guard of a test of the gate (THE HANG GUARD of assay.loop.gate).  In a test, the CPU limit of each
+# process judges a compile or a run that runs away (THE CPU LIMIT OF A TEST of assay.loop.teststep).  A loaded host then
+# makes a unit slower, but it does not make the unit fail.
+RUN_TIMEOUT_S = proc.BUILD_S
 # The environment variables that the C library reads in the run of a program.
 RUN_ENVIRONMENT = frozenset({"LANG", "TZ"})
 RUN_ENVIRONMENT_PREFIXES = ("LD_", "LC_", "GLIBC_", "MALLOC_")
@@ -443,6 +451,15 @@ def _removed_orphan(lock: Path) -> bool:
 def _kept(data: bytes) -> str:
     """Return the output of a tool as text that keeps each byte that is not UTF-8, so a path still names its file."""
     return proc.decoded(data, "surrogateescape")
+
+
+def is_storable_compile(completed: proc.Completed) -> bool:
+    """Tell if the store can keep the result of a compile or a link (WHAT THE STORE DOES NOT STORE).
+
+    The exit is 0 or 1, and no line tells that a signal stopped the compiler or the linker.  When the CPU limit of a
+    test kills cc1plus or ld, the driver or collect2 exits 1 and writes such a line (KILLED_WORDS).
+    """
+    return completed.exit in (0, 1) and not any(words in completed.err for words in KILLED_WORDS)
 
 
 def _encode(stdout: str, stderr: str) -> str:
@@ -863,7 +880,7 @@ class UnitStore:
         """
         depfile = Path(argv[-1])
         depfile.unlink(missing_ok=True)
-        completed = proc.run(proc.Command(argv, timeout_s=proc.TOOL_S, cwd=directory, env=self.environment))
+        completed = proc.run(proc.Command(argv, timeout_s=RUN_TIMEOUT_S, cwd=directory, env=self.environment))
         if self.store is None:
             return completed, None
         inputs = _Inputs()
@@ -1012,7 +1029,7 @@ class UnitStore:
         if unit.kind == "static":
             completed, inputs = self._compile(unit.compiles[0], unit.directory, unit.sources[0], unit.work)
             result = UnitResult(completed.exit, _kept(completed.stdout), _kept(completed.stderr))
-            is_storable = completed.exit in (0, 1)
+            is_storable = is_storable_compile(completed)
         else:
             result, inputs, is_storable = self._build_program(unit)
         if inputs is not None:
@@ -1071,12 +1088,12 @@ class UnitStore:
                 inputs.add(compiled)
         failed = next((completed for completed, _ in built if completed.exit != 0), None)
         if failed is not None:
-            is_storable = all(completed.exit in (0, 1) for completed, _ in built)
+            is_storable = all(is_storable_compile(completed) for completed, _ in built)
             return UnitResult(failed.exit, _kept(failed.stdout), _kept(failed.stderr)), inputs, is_storable
         dependency_file = work / LINK_DEPENDENCIES
         dependency_file.unlink(missing_ok=True)
         with self._slots:
-            linked = proc.run(proc.Command(link, timeout_s=proc.TOOL_S, cwd=directory, env=self.environment))
+            linked = proc.run(proc.Command(link, timeout_s=RUN_TIMEOUT_S, cwd=directory, env=self.environment))
         if inputs is not None:
             try:
                 text: str | None = dependency_file.read_text(errors="surrogateescape")
@@ -1090,7 +1107,8 @@ class UnitStore:
             else:
                 inputs.add(linked_inputs)
         if linked.exit != 0:
-            return UnitResult(linked.exit, _kept(linked.stdout), _kept(linked.stderr)), inputs, linked.exit == 1
+            failed_link = UnitResult(linked.exit, _kept(linked.stdout), _kept(linked.stderr))
+            return failed_link, inputs, is_storable_compile(linked)
         if inputs is not None:
             loaded = self._loaded(program, directory)
             if loaded is None:

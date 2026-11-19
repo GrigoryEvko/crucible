@@ -183,6 +183,21 @@ THE MEASURED RULES
     over its budget therefore does not fail.  No test of the tree has
     WILL_FAIL at this time.
 
+THE CPU LIMIT OF A TEST
+    A test whose program is no file of the build, such as a script test,
+    gets TEST_CPU_LIMIT_S for each of its processes (RLIMIT_CPU, THE CPU
+    LIMIT of assay.core.meter).  Such a test starts compilers and tools,
+    and the limit judges one that runs away, as COMPILE_CPU_LIMIT_S of
+    assay.loop.step judges a compile of the build.  On 2026-11-19 the
+    heaviest such test used 297 s of CPU in all of its processes together.
+    A process at the limit ends on SIGKILL, the test is red, and the
+    launcher writes a line.  So a command in such a test needs no wall limit
+    of its own: a loaded host makes it slower, but not red, and the guard of
+    ctest bounds a hang (THE HANG GUARD of assay.loop.gate).  A program of
+    the build gets no limit, because a test that waits for a different
+    thread in a loop runs more instructions on a busy host (THE MEASURED
+    RULES).  On a GitHub runner the meter sets no limit.
+
 THE VERSION
     The version of a test is a digest of the words of its command and of the
     files of the test (version_of()).  The trace of the read set uses it
@@ -257,6 +272,8 @@ ROWS = (cost_budget.STEP_MEMORY, cost_budget.STEP_COST)
 TEST_KIND = cost_budget.TEST_KIND
 # The instructions in one G.
 GIGA = 1e9
+# The CPU limit of each process of a test whose program is no file of the build, in seconds (THE CPU LIMIT OF A TEST).
+TEST_CPU_LIMIT_S = 600
 REGISTRY_ENV = "CRUCIBLE_TEST_REGISTRY"
 LEDGERS_ENV = "CRUCIBLE_TEST_LEDGERS"
 CORES_ENV = "CRUCIBLE_TEST_CORES"
@@ -912,13 +929,22 @@ def main(argv: list[str]) -> int:
     plan = None if traced_dir is None else safely(lambda: traced_run(traced_dir, name, command, version, clean), None)
     if plan is not None:
         os.environ[TRACED_ENV] = "1"
+    cpu_limit_s = None if is_built else TEST_CPU_LIMIT_S
     try:
-        run = cost_meter.measure(command, count_instructions=True, supervisor=None if plan is None else plan.tracer)
+        run = cost_meter.measure(
+            command, cpu_limit_s=cpu_limit_s, count_instructions=True, supervisor=None if plan is None else plan.tracer
+        )
     except OSError as error:
         print(f"loop test-step: the test {command[0]} cannot start: {error}", file=sys.stderr)
         sys.exit(127)
     if plan is not None:
         safely(lambda: plan.save(run.exit_code), None)
+    if run.reached_cpu_limit:
+        print(
+            f"loop test-step: a process of the test {name} ran to the CPU limit of {run.cpu_limit_s} s of each process "
+            f"(THE CPU LIMIT OF A TEST), and the kernel stopped it",
+            file=sys.stderr,
+        )
     emulator = command[0] if program_at > 0 else None
     status = judge_and_record(name, program, place, build_dir, run, budget, emulator)
     stop_core_dumps()

@@ -594,6 +594,32 @@ def spelled_root_group(expect: testing.Expect) -> None:
             spelled_root_cases(expect, cxx, Path(scratch))
 
 
+def storable_cases(expect: testing.Expect) -> None:
+    """Hold WHAT THE STORE DOES NOT STORE for a compile or a link that a signal stopped, with planted results.
+
+    When the CPU limit of a test kills cc1plus or ld, the driver or collect2 exits 1, as for an error of the source.  The
+    store must keep no such result, because the next run can give a different one.
+    """
+    command = proc.Command(["g++", "-c", "a.cpp"], timeout_s=proc.QUICK_S)
+
+    def completed(status: int, err: str) -> proc.Completed:
+        return proc.Completed(command, status << 8, b"", err.encode(), 0.0, 0.0, 0.0, 0)
+
+    storable = unit_store_module.is_storable_compile
+    verdicts = [
+        storable(completed(0, "")),
+        storable(completed(1, "a.cpp:1:1: error: x\n")),
+        storable(completed(4, "")),
+        storable(completed(1, "g++: fatal error: Killed signal terminated program cc1plus\n")),
+        storable(completed(1, "collect2: fatal error: ld terminated with signal 9 [Killed]\n")),
+    ]
+    expect(
+        f"the store keeps a clean compile and an error of the source, and no internal error and no compiler or linker "
+        f"that a signal stopped: {verdicts}",
+        verdicts == [True, True, False, False, False],
+    )
+
+
 def main(argv: list[str]) -> int:
     """Run the cases of one part, and write one line for each (THE PARTS)."""
     module = __name__.removeprefix("assay.")
@@ -608,5 +634,5 @@ def main(argv: list[str]) -> int:
     if index == oracle_parts.role_part(oracle_parts.ROOTS_PART, count):
         groups.append(spelled_root_group)
     if index == count - 1:
-        groups.extend((sweep_cases, slot_group))
+        groups.extend((sweep_cases, storable_cases, slot_group))
     return testing.run(module, [], groups)

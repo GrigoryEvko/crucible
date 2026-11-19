@@ -335,6 +335,35 @@ class Planted:
             and frozenset(string.ascii_letters + string.digits + "_.-") == test_launcher.NAME_CHARACTERS,
         )
 
+    def cpu_limit_cases(self, expect: testing.Expect) -> None:
+        """Check THE CPU LIMIT OF A TEST: a script test gets TEST_CPU_LIMIT_S for each process, a program of the build none.
+
+        Each test compares its own `ulimit -t` with the limit that it must have, and its status gives the verdict.  The
+        limit of a program of the build is the limit of this process, because the launcher sets none for it.  A run of
+        this test by the launcher has the limit of a script test already, and the limit of a script test is then the
+        smaller of the two.
+        """
+        import resource
+
+        self.budget(2000)
+        soft, hard = resource.getrlimit(resource.RLIMIT_CPU)
+        inherited = "unlimited" if soft == resource.RLIM_INFINITY else str(soft)
+        limit = test_launcher.TEST_CPU_LIMIT_S
+        if hard != resource.RLIM_INFINITY:
+            limit = min(limit, hard)
+        status, said = self.launch_script("planted_limited", "sh", "-c", f'test "$(ulimit -t)" = {limit}')
+        expect(
+            f"a script test and each of its processes run with the CPU limit of {limit} s: status {status} {said}",
+            status == 0,
+        )
+        built = self.plant_test("test_planted_unlimited", f'#!/bin/sh\ntest "$(ulimit -t)" = {inherited}\n')
+        status, said = self.launch(built)
+        expect(
+            f"a program of the build gets no CPU limit from the launcher, because a test that waits in a loop runs more "
+            f"on a busy host, so it keeps the limit {inherited} of its caller: status {status} {said}",
+            status == 0,
+        )
+
     def launch_emulated(self, words: str, target: Path, *args: str) -> tuple[int, str]:
         """Run the launcher on one planted test behind the planted emulator, as CMake starts a test of a cross build.
 
@@ -1089,6 +1118,7 @@ def main(argv: list[str]) -> int:
         (
             planted_group(Planted.status_cases),
             planted_group(Planted.script_cases),
+            planted_group(Planted.cpu_limit_cases),
             planted_group(Planted.limit_cases),
             planted_group(Planted.count_cases),
             planted_group(Planted.ledger_cases),

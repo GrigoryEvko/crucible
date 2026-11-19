@@ -217,6 +217,10 @@ from assay.guard.engines.elf import runner
 from assay.readers import compdb, objdump, tsast
 
 RULE = "codegen-shapes"
+# The time limit of one compile of the rule, in seconds.  It judges no compile, and it only bounds a hang, above the wall
+# guard of a test of the gate (THE HANG GUARD of assay.loop.gate).  In a test, the CPU limit of each process judges a
+# compile that runs away (THE CPU LIMIT OF A TEST of assay.loop.teststep), so a loaded host does not make the rule fail.
+COMPILE_LIMIT_S = proc.BUILD_S
 CORE = "core"
 CONSTANT_TIME = "constant-time"
 PARTS = (CORE, CONSTANT_TIME)
@@ -1949,7 +1953,7 @@ def compiled_functions(
     with tempfile.TemporaryDirectory(prefix="codegen-shapes-") as scratch:
         obj = Path(scratch) / "core_shapes.o"
         words = command_words(entry, obj, with_sanitizers, target)
-        result = proc.run(proc.Command(words, timeout_s=proc.TOOL_S, cwd=Path(entry.directory)))
+        result = proc.run(proc.Command(words, timeout_s=COMPILE_LIMIT_S, cwd=Path(entry.directory)))
         if result.exit != 0:
             named = "" if target is None else f" for -march={target}"
             raise CompileFailed(f"the compile of {entry.file}{named} fails:\n{result.err[-2000:]}")
@@ -2294,7 +2298,7 @@ def wrapper_results(plan: Plan, source: Path, expected: Mapping[str, bool], incl
             "-o",
             str(obj),
         ]
-        result = proc.run(proc.Command(command, timeout_s=proc.TOOL_S))
+        result = proc.run(proc.Command(command, timeout_s=COMPILE_LIMIT_S))
         if result.exit != 0:
             raise CompileFailed(
                 f"the compile of the wrappers fails for {target}: {shlex.join(command)[:300]}: {result.err[-1500:]}"
