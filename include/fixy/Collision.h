@@ -1216,8 +1216,9 @@ struct binding_verdict {
         for (std::size_t place = 0; place < rule_count; ++place) {
             if ((tripped >> place & 1U) == 0) continue;
             if (!text.empty()) text += ", ";
-            for (const char letter : rule_row_of(static_cast<RuleCode>(place), premises).code)
-                text += letter;
+            for (char const* letter = rule_row_of(static_cast<RuleCode>(place), premises).code; *letter != '\0';
+                 ++letter)
+                text += *letter;
         }
         return std::define_static_string(text);
     }

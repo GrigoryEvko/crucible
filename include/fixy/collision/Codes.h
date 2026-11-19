@@ -11,7 +11,6 @@
 // corpus with the rules that the build compiles.
 
 #include <fixy/Axis.h>
-#include <foundation/core/Text.h>
 #include <foundation/reflect/Anchor.h>
 
 #include <array>
@@ -204,10 +203,15 @@ struct rule_premises {
 // with a designated initializer, because a call with a constant argument
 // in a consteval function that is not a template runs in each unit that
 // includes this header.
+//
+// The code and the theorem are string literals, held by their first
+// character, and a zero ends each one.  A TextView takes the length of the
+// literal in its type, so each theorem of a distinct length would
+// instantiate one more constructor in each unit that includes this header.
 struct rule_row {
     bool trips = false;
-    ::foundation::core::TextView code{};
-    ::foundation::core::TextView theorem{};
+    char const* code = "";
+    char const* theorem = "";
 };
 
 #pragma GCC diagnostic push

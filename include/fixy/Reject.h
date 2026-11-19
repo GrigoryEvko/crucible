@@ -469,8 +469,7 @@ template <class T, class... Atoms>
                 const auto code = static_cast<::fixy::collision::RuleCode>(place);
                 if (verdict.admits(code)) continue;
                 text += "  ";
-                for (const char letter : ::fixy::collision::rule_row_of(code, verdict.premises).theorem)
-                    text += letter;
+                text += ::fixy::collision::rule_row_of(code, verdict.premises).theorem;
             }
         }
         return std::define_static_string(text);
