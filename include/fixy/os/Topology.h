@@ -223,15 +223,11 @@ public:
     }
 
     // The id of the node whose CPUs hold the CPU, or no value when no node
-    // of this host holds it.  Complexity: O(CPUs of the host).
-    [[nodiscard]] Option<int> numa_node_of_cpu(int cpu) const noexcept {
-        for (std::size_t position = 0; position < numa_node_ids_.size(); ++position) {
-            for (const int core : cores_on_node_[position]) {
-                if (core == cpu) return Option<int>::some(numa_node_ids_[position]);
-            }
-        }
-        return none;
-    }
+    // of this host holds it.  The call is out of line in
+    // src/fixy/os/Topology.cpp, so a caller of another library, such as the
+    // warden, compiles no access of the vectors of the topology.  Complexity:
+    // O(CPUs of the host).
+    [[nodiscard]] Option<int> numa_node_of_cpu(int cpu) const noexcept;
 
     [[nodiscard]] Source source() const noexcept { return source_; }
 
@@ -324,6 +320,17 @@ private:
     // The packages of packages(): the first package_count_ slots.
     Package packages_[package_capacity]{};
     std::size_t package_count_ = 0;
+
+    // The walk of numa_node_of_cpu over the CPUs of each node.  Complexity:
+    // O(CPUs of the host).
+    [[nodiscard]] Option<int> find_numa_node_of_cpu_(int cpu) const noexcept {
+        for (std::size_t position = 0; position < numa_node_ids_.size(); ++position) {
+            for (const int core : cores_on_node_[position]) {
+                if (core == cpu) return Option<int>::some(numa_node_ids_[position]);
+            }
+        }
+        return none;
+    }
 
     // The position of a node id.  Complexity: logarithmic in the node
     // count, because the ids are sorted.

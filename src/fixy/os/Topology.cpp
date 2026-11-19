@@ -818,6 +818,8 @@ Result<TextView, Full<char>> Topology::format_summary(FixedText<summary_capacity
                   largest_l3_group_cpus(), numa_nodes(), page_size_, hugepage_2mb_ ? TextView{"yes"} : TextView{"no"});
 }
 
+Option<int> Topology::numa_node_of_cpu(int cpu) const noexcept { return find_numa_node_of_cpu_(cpu); }
+
 void Topology::log_summary() const noexcept {
     // A truncated summary keeps its first characters in the text, and the
     // report writes them.
