@@ -30,9 +30,9 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/PermissionedChannel.h>
-#include <fixy/os/OwnedThread.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Linear.h>
+#include <foundation/core/Record.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
@@ -53,7 +53,6 @@ using Starter = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::All
 using Item = std::uint64_t;
 
 constexpr std::size_t kCapacity = 4096;
-constexpr std::size_t kMaxWorkers = 3;
 constexpr std::uint64_t kWindowNs = 500000000;
 constexpr std::size_t kLatencySamples = 1000000;
 constexpr std::size_t kLatencyWarmup = 10000;
@@ -101,16 +100,13 @@ using ThreadCount = ::fixy::Id<ThreadCountTag, std::uint32_t>;
     return spread.of_slot(slot).expect("a row has at most the slots of the spread");
 }
 
-// Starts the worker of a slot on the CPU of the slot.
-template <class Body>
-[[nodiscard]] ::fixy::thread::OwnedThread start_worker(bench::Spread const& spread, bench::ThreadSlot slot,
-                                                       Body body) noexcept {
-    ::fixy::thread::ThreadOptions const options{
+// The options of the worker of a slot: its name and the CPU of the slot.
+[[nodiscard]] ::fixy::thread::ThreadOptions worker_options(bench::Spread const& spread,
+                                                           bench::ThreadSlot slot) noexcept {
+    return ::fixy::thread::ThreadOptions{
         .name = "channel-worker",
         .affinity = ::fixy::AffinityMask::single(static_cast<std::uint16_t>(cpu_of(spread, slot).raw())),
     };
-    return ::fixy::thread::mint_owned_thread(Starter{eff::testing::bg()}, options, std::move(body))
-        .expect("the thread door starts a worker of a row");
 }
 
 // A push that waits while the ring is full.  The wait stops when the row stops.
@@ -167,8 +163,7 @@ struct RowResult {
 
 // The two phases of the main thread (THE PHASES OF A ROW).  The workers of
 // the row run already, one for each thread apart from the main thread, and
-// the caller stops and joins them after the call.  The run gives the name of
-// the row.
+// they stop when the call stops the row.  The run gives the name of the row.
 template <class Op>
 [[nodiscard]] RowResult measure_main(RowControl& control, bench::Spread const& spread, ThreadCount threads,
                                      bench::Run run, Op const& op) {
@@ -215,6 +210,45 @@ template <class Op>
     return result;
 }
 
+// Runs the measure of the main thread with one worker for each body, on the
+// slots from the first slot on, in the order of the bodies.  Each worker runs
+// beside the main thread through run_beside, and the continuation of each
+// call starts the next worker, so the measure runs in the continuation of the
+// last one.  Each worker owns the end of its channel, and it moves the end
+// onto its own stack, so no object that the main thread writes shares a
+// cache line with it.  A worker reaches the state of the row only through
+// atomics.  The call returns when the measure
+// returns and each worker has joined.
+template <class Measure>
+[[nodiscard]] RowResult run_beside_workers(bench::Spread const& /*spread*/, bench::ThreadSlot /*slot*/,
+                                           Measure& measure) noexcept {
+    return measure();
+}
+
+template <class Measure, class Body, class... Rest>
+[[nodiscard]] RowResult run_beside_workers(bench::Spread const& spread, bench::ThreadSlot slot, Measure& measure,
+                                           Body body, Rest... rest) noexcept {
+    bench::ThreadSlot const next{slot.raw() + 1};
+    auto values = ::fixy::thread::run_beside(Starter{eff::testing::bg()}, worker_options(spread, slot), std::move(body),
+                                             [&spread, next, &measure, ... moved = std::move(rest)]() mutable noexcept {
+                                                 return run_beside_workers(spread, next, measure, std::move(moved)...);
+                                             })
+                      .expect("the thread door starts a worker of a row");
+    return std::move(values.at(::foundation::core::index<1>()));
+}
+
+// The body of a worker that pops each item of its consumer end until the row
+// stops, and then ends the end.
+template <class Consumer>
+[[nodiscard]] auto make_popper(RowControl& control, Consumer&& consumer) noexcept {
+    return [&control, owned = std::move(consumer)]() mutable noexcept {
+        auto end = std::move(owned);
+        run_worker(control,
+                   [&control, &end]() noexcept { pop_one(control, [&end]() noexcept { return end.try_pop(); }); });
+        ::foundation::linear::drop(std::move(end));
+    };
+}
+
 // spsc push: the main thread pushes, and the worker of slot 1 pops.
 [[nodiscard]] RowResult spsc_push_row(bench::Spread const& spread) {
     auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, SpscBenchTag>>();
@@ -224,18 +258,14 @@ template <class Op>
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(std::move(root));
     auto producer = channel.producer(std::move(producer_perm));
-    auto consumer = channel.consumer(std::move(consumer_perm));
-    ::fixy::thread::OwnedThread worker = start_worker(spread, bench::ThreadSlot{1}, [&control, &consumer]() noexcept {
-        run_worker(control, [&control, &consumer]() noexcept {
-            pop_one(control, [&consumer]() noexcept { return consumer.try_pop(); });
-        });
-    });
     Item next = 0;
-    RowResult result = measure_main(control, spread, ThreadCount{2}, bench::Run{"spsc push, 2 threads"},
-                                    [&control, &producer, &next]() noexcept { push_one(control, producer, ++next); });
-    std::move(worker).join();
+    auto push = [&control, &producer, &next]() noexcept { push_one(control, producer, ++next); };
+    auto measure = [&control, &spread, &push]() noexcept {
+        return measure_main(control, spread, ThreadCount{2}, bench::Run{"spsc push, 2 threads"}, push);
+    };
+    RowResult result = run_beside_workers(spread, bench::ThreadSlot{1}, measure,
+                                          make_popper(control, channel.consumer(std::move(consumer_perm))));
     ::foundation::linear::drop(std::move(producer));
-    ::foundation::linear::drop(std::move(consumer));
     return result;
 }
 
@@ -247,17 +277,21 @@ template <class Op>
     Spsc channel{};
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(std::move(root));
-    auto producer = channel.producer(std::move(producer_perm));
     auto consumer = channel.consumer(std::move(consumer_perm));
-    ::fixy::thread::OwnedThread worker = start_worker(spread, bench::ThreadSlot{1}, [&control, &producer]() noexcept {
-        Item next = 0;
-        run_worker(control, [&control, &producer, &next]() noexcept { push_one(control, producer, ++next); });
-    });
-    RowResult result = measure_main(
-        control, spread, ThreadCount{2}, bench::Run{"spsc pop, 2 threads"},
-        [&control, &consumer]() noexcept { pop_one(control, [&consumer]() noexcept { return consumer.try_pop(); }); });
-    std::move(worker).join();
-    ::foundation::linear::drop(std::move(producer));
+    auto pop = [&control, &consumer]() noexcept {
+        pop_one(control, [&consumer]() noexcept { return consumer.try_pop(); });
+    };
+    auto measure = [&control, &spread, &pop]() noexcept {
+        return measure_main(control, spread, ThreadCount{2}, bench::Run{"spsc pop, 2 threads"}, pop);
+    };
+    RowResult result = run_beside_workers(
+        spread, bench::ThreadSlot{1}, measure,
+        [&control, owned = channel.producer(std::move(producer_perm))]() mutable noexcept {
+            auto end = std::move(owned);
+            Item next = 0;
+            run_worker(control, [&control, &end, &next]() noexcept { push_one(control, end, ++next); });
+            ::foundation::linear::drop(std::move(end));
+        });
     ::foundation::linear::drop(std::move(consumer));
     return result;
 }
@@ -270,58 +304,54 @@ template <class Channel>
     return channel.producer().expect("the channel lends a producer while no exclusive is out");
 }
 
-// mpsc push: the main thread and the workers of slots 1 to threads - 2 push,
-// and the worker of the last slot pops.
-[[nodiscard]] RowResult mpsc_push_row(bench::Spread const& spread, ThreadCount threads, bench::Run run) {
-    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::merge, MpscBenchTag>>();
-    using Mpsc = cc::channel_t<Item, kCapacity, decltype(root)>;
-    RowControl control{};
-    auto [producer_root, consumer_perm] =
-        perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(std::move(root));
-    Mpsc channel{std::move(producer_root)};
-    auto consumer = channel.consumer(std::move(consumer_perm));
-    eff::cap::Nondet const merge = eff::testing::test().nondet;
-    ::fixy::FixedList<::fixy::thread::OwnedThread, kMaxWorkers> workers{};
-    std::uint32_t const consumer_slot = threads.raw() - 1;
-    for (std::uint32_t slot = 1; slot < consumer_slot; ++slot) {
-        static_cast<void>(workers
-                              .append(start_worker(spread, bench::ThreadSlot{slot},
-                                                   [&control, &channel]() noexcept {
-                                                       Mpsc::ProducerHandle producer = lend(channel);
-                                                       Item next = 0;
-                                                       run_worker(control, [&control, &producer, &next]() noexcept {
-                                                           push_one(control, producer, ++next);
-                                                       });
-                                                   }))
-                              .expect("a row has at most kMaxWorkers workers"));
-    }
-    static_cast<void>(workers
-                          .append(start_worker(spread, bench::ThreadSlot{consumer_slot},
-                                               [&control, &consumer, merge]() noexcept {
-                                                   run_worker(control, [&control, &consumer, merge]() noexcept {
-                                                       pop_one(control, [&consumer, merge]() noexcept {
-                                                           return consumer.try_pop(merge);
-                                                       });
-                                                   });
-                                               }))
-                          .expect("a row has at most kMaxWorkers workers"));
-    RowResult result{};
-    {
-        Mpsc::ProducerHandle producer = lend(channel);
+// The body of a worker that pushes into its producer end until the row
+// stops.  The end goes back to the pool of the channel when the body ends.
+template <class Producer>
+[[nodiscard]] auto make_pusher(RowControl& control, Producer&& producer) noexcept {
+    return [&control, owned = std::move(producer)]() mutable noexcept {
+        auto end = std::move(owned);
         Item next = 0;
-        result = measure_main(control, spread, threads, std::move(run),
-                              [&control, &producer, &next]() noexcept { push_one(control, producer, ++next); });
-    }
-    for (::fixy::thread::OwnedThread& worker : workers) {
-        std::move(worker).join();
-    }
-    ::foundation::linear::drop(std::move(consumer));
-    return result;
+        run_worker(control, [&control, &end, &next]() noexcept { push_one(control, end, ++next); });
+    };
 }
 
-// mpsc pop: the main thread pops, and the workers of slots 1 to threads - 1
-// push.
-[[nodiscard]] RowResult mpsc_pop_row(bench::Spread const& spread, ThreadCount threads, bench::Run run) {
+// mpsc push: the main thread and the workers of slots 1 to Threads - 2 push,
+// and the worker of the last slot pops.  The main thread lends the end of
+// each producer worker before the workers start.
+template <std::uint32_t Threads, std::size_t... Producers>
+[[nodiscard]] RowResult mpsc_push_row(bench::Spread const& spread, bench::Run run,
+                                      std::index_sequence<Producers...> /*producers*/) {
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::merge, MpscBenchTag>>();
+    using Mpsc = cc::channel_t<Item, kCapacity, decltype(root)>;
+    RowControl control{};
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(std::move(root));
+    Mpsc channel{std::move(producer_root)};
+    eff::cap::Nondet const merge = eff::testing::test().nondet;
+    Mpsc::ProducerHandle producer = lend(channel);
+    Item next = 0;
+    auto push = [&control, &producer, &next]() noexcept { push_one(control, producer, ++next); };
+    auto measure = [&control, &spread, &run, &push]() noexcept {
+        return measure_main(control, spread, ThreadCount{Threads}, std::move(run), push);
+    };
+    auto popper = [&control, owned = channel.consumer(std::move(consumer_perm)), merge]() mutable noexcept {
+        auto end = std::move(owned);
+        run_worker(control, [&control, &end, merge]() noexcept {
+            pop_one(control, [&end, merge]() noexcept { return end.try_pop(merge); });
+        });
+        ::foundation::linear::drop(std::move(end));
+    };
+    return run_beside_workers(spread, bench::ThreadSlot{1}, measure,
+                              make_pusher(control, (static_cast<void>(Producers), lend(channel)))...,
+                              std::move(popper));
+}
+
+// mpsc pop: the main thread pops, and the workers of slots 1 to Threads - 1
+// push.  The main thread lends the end of each worker before the workers
+// start.
+template <std::uint32_t Threads, std::size_t... Producers>
+[[nodiscard]] RowResult mpsc_pop_row(bench::Spread const& spread, bench::Run run,
+                                     std::index_sequence<Producers...> /*producers*/) {
     auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::merge, MpscBenchTag>>();
     using Mpsc = cc::channel_t<Item, kCapacity, decltype(root)>;
     RowControl control{};
@@ -330,25 +360,14 @@ template <class Channel>
     Mpsc channel{std::move(producer_root)};
     auto consumer = channel.consumer(std::move(consumer_perm));
     eff::cap::Nondet const merge = eff::testing::test().nondet;
-    ::fixy::FixedList<::fixy::thread::OwnedThread, kMaxWorkers> workers{};
-    for (std::uint32_t slot = 1; slot < threads.raw(); ++slot) {
-        static_cast<void>(workers
-                              .append(start_worker(spread, bench::ThreadSlot{slot},
-                                                   [&control, &channel]() noexcept {
-                                                       Mpsc::ProducerHandle producer = lend(channel);
-                                                       Item next = 0;
-                                                       run_worker(control, [&control, &producer, &next]() noexcept {
-                                                           push_one(control, producer, ++next);
-                                                       });
-                                                   }))
-                              .expect("a row has at most kMaxWorkers workers"));
-    }
-    RowResult result = measure_main(control, spread, threads, std::move(run), [&control, &consumer, merge]() noexcept {
+    auto pop = [&control, &consumer, merge]() noexcept {
         pop_one(control, [&consumer, merge]() noexcept { return consumer.try_pop(merge); });
-    });
-    for (::fixy::thread::OwnedThread& worker : workers) {
-        std::move(worker).join();
-    }
+    };
+    auto measure = [&control, &spread, &run, &pop]() noexcept {
+        return measure_main(control, spread, ThreadCount{Threads}, std::move(run), pop);
+    };
+    RowResult result = run_beside_workers(spread, bench::ThreadSlot{1}, measure,
+                                          make_pusher(control, (static_cast<void>(Producers), lend(channel)))...);
     ::foundation::linear::drop(std::move(consumer));
     return result;
 }
@@ -384,11 +403,13 @@ int run_bench() {
     ::fixy::report(::fixy::Sink::Out, "\n=== spsc pop ===\n");
     print_row(spsc_pop_row(spread));
     ::fixy::report(::fixy::Sink::Out, "\n=== mpsc push: the last thread is the one consumer ===\n");
-    print_row(mpsc_push_row(spread, ThreadCount{2}, bench::Run{"mpsc push, 2 threads"}));
-    if (has_four) print_row(mpsc_push_row(spread, ThreadCount{4}, bench::Run{"mpsc push, 4 threads"}));
+    print_row(mpsc_push_row<2>(spread, bench::Run{"mpsc push, 2 threads"}, std::make_index_sequence<0>{}));
+    if (has_four) {
+        print_row(mpsc_push_row<4>(spread, bench::Run{"mpsc push, 4 threads"}, std::make_index_sequence<2>{}));
+    }
     ::fixy::report(::fixy::Sink::Out, "\n=== mpsc pop: the main thread is the one consumer ===\n");
-    print_row(mpsc_pop_row(spread, ThreadCount{2}, bench::Run{"mpsc pop, 2 threads"}));
-    if (has_four) print_row(mpsc_pop_row(spread, ThreadCount{4}, bench::Run{"mpsc pop, 4 threads"}));
+    print_row(mpsc_pop_row<2>(spread, bench::Run{"mpsc pop, 2 threads"}, std::make_index_sequence<1>{}));
+    if (has_four) print_row(mpsc_pop_row<4>(spread, bench::Run{"mpsc pop, 4 threads"}, std::make_index_sequence<3>{}));
     return 0;
 }
 
