@@ -4,7 +4,6 @@
 // join, and the end of an Option that holds the owner.  The tsan preset runs
 // the same binary.
 
-#include <fixy/Borrowed.h>
 #include <fixy/os/OwnedThread.h>
 
 #include <foundation/Platform.h>
@@ -62,16 +61,39 @@ using StarterCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::
 
 constinit thread_local bool is_main_thread = false;
 
+// The cells that the bodies of the cases write.  The owned thread escapes the
+// frame that starts it, so a body captures nothing of that frame and writes
+// only these cells of static storage.  Each case first resets the cells that
+// it reads, and the cases run one after another.
+constinit Atomic<bool> has_run{false};
+constinit Atomic<bool> ran_on_main{true};
+constinit Atomic<bool> may_finish{false};
+constinit Atomic<bool> has_finished{false};
+constinit Atomic<bool> may_read{false};
+constinit Atomic<std::uint64_t> seen_low{0};
+constinit Atomic<std::uint64_t> seen_high{0};
+constinit Atomic<std::uint32_t> body_ends{0};
+
+void reset_cells() noexcept {
+    has_run.store_release(false);
+    ran_on_main.store_release(true);
+    may_finish.store_release(false);
+    has_finished.store_release(false);
+    may_read.store_release(false);
+    seen_low.store_release(0);
+    seen_high.store_release(0);
+    body_ends.store_release(0);
+}
+
 [[nodiscard]] OwnedThread start_or_end(::foundation::core::Result<OwnedThread, Errno>&& started) noexcept {
     return std::move(started).expect("the thread door starts a thread with the default options");
 }
 
 // The body runs on a thread of its own, and the join waits for its end.
 void test_join_waits_for_the_body() {
-    Atomic<bool> has_run{false};
-    Atomic<bool> ran_on_main{true};
+    reset_cells();
     OwnedThread thread =
-        start_or_end(::fixy::thread::mint_owned_thread(StarterCtx{eff::testing::bg()}, ThreadOptions{}, [&]() noexcept {
+        start_or_end(::fixy::thread::mint_owned_thread(StarterCtx{eff::testing::bg()}, ThreadOptions{}, []() noexcept {
             ran_on_main.store_release(is_main_thread);
             has_run.store_release(true);
         }));
@@ -84,11 +106,10 @@ void test_join_waits_for_the_body() {
 // The body waits for the main thread, so the thread still runs when the
 // mint returns.  The end of the owner joins it.
 void test_end_of_the_owner_joins() {
-    Atomic<bool> may_finish{false};
-    Atomic<bool> has_finished{false};
+    reset_cells();
     {
         OwnedThread thread = start_or_end(
-            ::fixy::thread::mint_owned_thread(StarterCtx{eff::testing::bg()}, ThreadOptions{}, [&]() noexcept {
+            ::fixy::thread::mint_owned_thread(StarterCtx{eff::testing::bg()}, ThreadOptions{}, []() noexcept {
                 while (!may_finish.load_acquire())
                     CRUCIBLE_SPIN_PAUSE;
                 has_finished.store_release(true);
@@ -102,10 +123,9 @@ void test_end_of_the_owner_joins() {
 // A move gives the thread to the target and leaves the source empty.  A join
 // of the empty source ends the process.
 void test_move_takes_the_source_first() {
-    Atomic<bool> may_finish{false};
-    Atomic<bool> has_finished{false};
+    reset_cells();
     OwnedThread source =
-        start_or_end(::fixy::thread::mint_owned_thread(StarterCtx{eff::testing::bg()}, ThreadOptions{}, [&]() noexcept {
+        start_or_end(::fixy::thread::mint_owned_thread(StarterCtx{eff::testing::bg()}, ThreadOptions{}, []() noexcept {
             while (!may_finish.load_acquire())
                 CRUCIBLE_SPIN_PAUSE;
             has_finished.store_release(true);
@@ -121,11 +141,11 @@ void test_move_takes_the_source_first() {
 // An Option of the owner takes the thread with no move assignment of the
 // owner, and the end of the Option joins the thread.
 void test_option_holds_the_owner() {
-    Atomic<bool> has_finished{false};
+    reset_cells();
     {
         ::foundation::core::Option<OwnedThread> slot{};
         slot = ::foundation::core::Option<OwnedThread>::some(start_or_end(::fixy::thread::mint_owned_thread(
-            StarterCtx{eff::testing::bg()}, ThreadOptions{}, [&]() noexcept { has_finished.store_release(true); })));
+            StarterCtx{eff::testing::bg()}, ThreadOptions{}, []() noexcept { has_finished.store_release(true); })));
         CRUCIBLE_FATAL_INVARIANT(slot.is_some());
     }
     CRUCIBLE_FATAL_INVARIANT(has_finished.load_acquire());
@@ -134,54 +154,51 @@ void test_option_holds_the_owner() {
 // The frame keeps a copy of the name, so the thread takes its name after
 // the options of the call end.
 void test_name_outlives_the_options() {
-    Atomic<bool> may_read{false};
-    NameWords seen{};
-    OwnedThread thread = [&]() noexcept {
+    reset_cells();
+    OwnedThread thread = []() noexcept {
         ThreadOptions const options{.name = "owned-probe"};
-        return start_or_end(::fixy::thread::mint_owned_thread(StarterCtx{eff::testing::bg()}, options, [&]() noexcept {
+        return start_or_end(::fixy::thread::mint_owned_thread(StarterCtx{eff::testing::bg()}, options, []() noexcept {
             while (!may_read.load_acquire())
                 CRUCIBLE_SPIN_PAUSE;
-            seen = read_calling_thread_name();
+            NameWords const seen = read_calling_thread_name();
+            seen_low.store_release(seen.low);
+            seen_high.store_release(seen.high);
         }));
     }();
     may_read.store_release(true);
     std::move(thread).join();
-    CRUCIBLE_FATAL_INVARIANT(seen.low == 0x72702d64656e776fULL);  // "owned-pr"
-    CRUCIBLE_FATAL_INVARIANT(seen.high == 0x000000000065626fULL);  // "obe"
+    CRUCIBLE_FATAL_INVARIANT(seen_low.load_acquire() == 0x72702d64656e776fULL);  // "owned-pr"
+    CRUCIBLE_FATAL_INVARIANT(seen_high.load_acquire() == 0x000000000065626fULL);  // "obe"
 }
 
-// The body that a refused start never runs.  The mint ends it one time.
+// The body that a refused start never runs.  The mint ends it one time.  A
+// moved-from body is not live, so only the last body of a chain of moves
+// counts its end.
 struct CountedBody {
-    ::fixy::WeakRef<Atomic<bool>> has_run{};
-    ::fixy::WeakRef<Atomic<std::uint32_t>> ends{};
+    bool is_live = true;
 
-    CountedBody(Atomic<bool>& run_flag, Atomic<std::uint32_t>& end_count) noexcept
-        : has_run{run_flag}, ends{end_count} {}
-    CountedBody(CountedBody&& other) noexcept : has_run{other.has_run}, ends{other.ends} {
-        other.has_run = ::fixy::WeakRef<Atomic<bool>>{};
-        other.ends = ::fixy::WeakRef<Atomic<std::uint32_t>>{};
-    }
+    CountedBody() noexcept = default;
+    CountedBody(CountedBody&& other) noexcept : is_live{other.is_live} { other.is_live = false; }
     CountedBody(CountedBody const&) = delete("the test counts each body that ends");
     CountedBody& operator=(CountedBody const&) = delete("the test counts each body that ends");
     CountedBody& operator=(CountedBody&&) = delete("the test counts each body that ends");
     ~CountedBody() {
-        if (ends.has_value()) static_cast<void>(ends->fetch_add_acq_rel(1));
+        if (is_live) static_cast<void>(body_ends.fetch_add_acq_rel(1));
     }
 
-    void operator()() noexcept { has_run->store_release(true); }
+    void operator()() noexcept { has_run.store_release(true); }
 };
 
 // An option that is not valid is the error of the mint.  No thread runs,
 // and the body ends one time.
 void test_refused_start_runs_no_body() {
-    Atomic<bool> has_run{false};
-    Atomic<std::uint32_t> ends{0};
+    reset_cells();
     auto const refused = ::fixy::thread::mint_owned_thread(StarterCtx{eff::testing::bg()},
-                                                           ThreadOptions{.guard_bytes = 0}, CountedBody{has_run, ends});
+                                                           ThreadOptions{.guard_bytes = 0}, CountedBody{});
     CRUCIBLE_FATAL_INVARIANT(refused.is_err());
     CRUCIBLE_FATAL_INVARIANT(refused.err().value_or(Errno::eperm) == Errno::einval);
     CRUCIBLE_FATAL_INVARIANT(!has_run.load_acquire());
-    CRUCIBLE_FATAL_INVARIANT(ends.load_acquire() == 1);
+    CRUCIBLE_FATAL_INVARIANT(body_ends.load_acquire() == 1);
 }
 
 }  // namespace
