@@ -114,10 +114,12 @@ THE REPORT
     and it removes the older ones.
 
 Usage
-    loop nightly [--budget-s SECONDS] [-j N] [--plan]
-    loop release [--budget-s SECONDS] [-j N] [--plan]
+    loop nightly [--budget-s SECONDS] [-j N] [--plan] [--only NAME]...
+    loop release [--budget-s SECONDS] [-j N] [--plan] [--only NAME]...
 
     --plan  Print the jobs of a run, and run nothing
+    --only  Run only each job with the name NAME: a preset, a step or a class of evidence.  A name of no job of the
+            tier is a usage error
 
 Exit 1 when a job fails or an item has a kept failure, else 0.  Exit 2 on a usage error or in a heavy step.  Exit 3
 when the plan or the registry does not read, or when a preset has a problem.
@@ -856,6 +858,7 @@ def main(tier: tiers.Tier, argv: list[str]) -> int:
     parser.add_argument("--budget-s", type=float, default=DEFAULT_BUDGET_S[tier])
     parser.add_argument("-j", "--jobs", type=int, default=proc.DEFAULT_JOBS)
     parser.add_argument("--plan", action="store_true", dest="is_plan_only")
+    parser.add_argument("--only", action="append", default=[], dest="names", metavar="NAME")
     options = parser.parse_args(argv)
     program = tiers.ENTRIES[tier]
     if options.budget_s <= 0 or options.jobs < 1:
@@ -879,6 +882,16 @@ def main(tier: tiers.Tier, argv: list[str]) -> int:
     if blocking:
         return ExitCode.MISSING_INPUT
     jobs = jobs_of(found, presets, tier)
+    if options.names:
+        unknown = sorted(set(options.names) - {job.name for job in jobs})
+        if unknown:
+            names = ", ".join(sorted({job.name for job in jobs}))
+            check_report.write_line(
+                f"{program}: --only names no job of the tier {tier}: {', '.join(unknown)}.  The jobs are: {names}",
+                is_error=True,
+            )
+            return ExitCode.USAGE
+        jobs = [job for job in jobs if job.name in options.names]
     if options.is_plan_only:
         for job in jobs:
             check_report.write_line(job.title)

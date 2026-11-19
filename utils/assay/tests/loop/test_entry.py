@@ -7,7 +7,8 @@ The cases hold the scope of each tier, and the jobs of a planted plan in their s
 runner of evidence, the stop of a run at its deadline, and a step that cannot run.  They hold a job of tests in its
 heavy step, which must not wait for its own lock.  They also hold the text of the report and the usage of the command.
 A run removes each report other than the last ones of its tier.  A step of cmake builds the build of its preset with
-no test, so the nightly entry compiles the aarch64 build and only the release entry runs its tests.
+no test, so the nightly entry compiles the aarch64 build and only the release entry runs its tests.  --only keeps the
+jobs of its names.
 """
 
 import os
@@ -377,6 +378,12 @@ def usage_cases(expect: testing.Expect) -> None:
             os.environ[heavy.STEP_VARIABLE] = saved
     expect("the entry refuses to run in a heavy step", refused == ExitCode.USAGE)
     expect("--plan prints the jobs of this tree and runs nothing", planned == ExitCode.OK)
+    only, printed = testing.captured(lambda: entry.main(NIGHTLY, ["--plan", "--only", "aarch64-compile"]))
+    unknown, _ = testing.captured(lambda: entry.main(NIGHTLY, ["--plan", "--only", "no-such-job"]))
+    expect(
+        f"--only keeps only the jobs of its names, and a name of no job is a usage error: {printed!r}",
+        only == ExitCode.OK and printed.split("\n")[0] == "step aarch64-compile" and unknown == ExitCode.USAGE,
+    )
 
 
 def main(argv: list[str]) -> int:
