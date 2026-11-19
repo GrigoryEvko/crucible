@@ -5,6 +5,6 @@
 
 namespace crucible::test {
 
-KernelDigests kernel_digests_of_v4_unit() noexcept { return kernel_digests_of_this_unit(); }
+KernelDigests kernel_digests_of_v4_unit() noexcept { return kernel_digests_of_this_unit<KernelUnit::V4>(); }
 
 }  // namespace crucible::test

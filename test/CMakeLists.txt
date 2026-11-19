@@ -271,18 +271,32 @@ crucible_test(test_merkle_links)
 crucible_test(test_merkle_loop)
 crucible_test(test_memory_plan)
 # The kernels of the CPU reference backend against the oracles of
-# test/exact_sum.h and test/product_rig.h.  On x86_64 two more units of the
-# levels x86-64-v3 and x86-64-v4 compute the digests of the kernels with
-# their own bodies.  The unit of the test comes first on the link line, so the
-# link keeps its copy of each shared body.
+# test/exact_sum.h and test/product_rig.h.  On x86_64 the units of the levels
+# x86-64-v3 and x86-64-v4 compute the digests of the kernels with their own
+# bodies.  The build compiles the units of a level only when the level of the
+# build is a different level: the units of the test take the level of the
+# build, so the units of that level would compile the same bodies again.  The
+# kernel scale_product_of_difference has a unit of its own for each target,
+# because its walk has the most machine code (mimic_cpu_kernel_forms.h).  The
+# units of the test come first on the link line, so the link keeps their copy
+# of each shared body.
+set(_kernel_units test_mimic_cpu_kernels.cpp mimic_cpu_kernel_unit_scaled.cpp)
+set(_kernel_has_v3_unit 0)
+set(_kernel_has_v4_unit 0)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-  crucible_test(test_mimic_cpu_kernels test_mimic_cpu_kernels.cpp mimic_cpu_kernel_unit_v3.cpp
-                mimic_cpu_kernel_unit_v4.cpp)
-  set_source_files_properties(mimic_cpu_kernel_unit_v3.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v3)
-  set_source_files_properties(mimic_cpu_kernel_unit_v4.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v4)
-else()
-  crucible_test(test_mimic_cpu_kernels)
+  foreach(_kernel_level v3 v4)
+    if(NOT "${CRUCIBLE_X86_LEVEL}" STREQUAL "${_kernel_level}")
+      set(_kernel_has_${_kernel_level}_unit 1)
+      set(_kernel_level_units mimic_cpu_kernel_unit_${_kernel_level}.cpp
+                              mimic_cpu_kernel_unit_${_kernel_level}_scaled.cpp)
+      list(APPEND _kernel_units ${_kernel_level_units})
+      set_source_files_properties(${_kernel_level_units} PROPERTIES COMPILE_OPTIONS -march=x86-64-${_kernel_level})
+    endif()
+  endforeach()
 endif()
+crucible_test(test_mimic_cpu_kernels ${_kernel_units})
+target_compile_definitions(test_mimic_cpu_kernels PRIVATE CRUCIBLE_TEST_HAS_V3_UNIT=${_kernel_has_v3_unit}
+                                                          CRUCIBLE_TEST_HAS_V4_UNIT=${_kernel_has_v4_unit})
 # The DetSafe gate CLAUDE.md §XIII names first.  Labelled so it can be run
 # on its own against a build whose codegen changed — a profile-guided build
 # is the case that motivated it — and so that the reason a red line matters

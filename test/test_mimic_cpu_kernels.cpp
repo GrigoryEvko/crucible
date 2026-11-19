@@ -16,7 +16,8 @@
 //     the bound, and the mean of the squared differences of the loss within
 //     its composite bound
 //   - the digests of the fixed draws hold in this unit and in the units of
-//     x86-64-v3 and x86-64-v4
+//     x86-64-v3 and x86-64-v4 that the build has: the units of each level
+//     other than the level of the build (mimic_cpu_kernel_units.h)
 // The inputs come from fixed Philox seeds, with the hard cases: the two
 // zeros, the subnormal values, the infinities, NaNs with payloads, and
 // cancellations.
@@ -51,6 +52,7 @@ using ::crucible::test::element_at;
 using ::crucible::test::ExactSum;
 using ::crucible::test::KernelCtx;
 using ::crucible::test::KernelDigests;
+using ::crucible::test::KernelUnit;
 using ::crucible::test::Layout;
 using ::crucible::test::make_matrix;
 using ::crucible::test::Matrix;
@@ -305,9 +307,10 @@ void test_the_rounded_element_kernels() {
     with_kernel_context([&](KernelCtx const& ctx) noexcept {
         run_into(ctx, squares, cpu::square_difference, ::fixy::side_as<cpu::side::Minuend>(lefts.view()),
                  ::fixy::side_as<cpu::side::Subtrahend>(rights.view()));
-        run_into(ctx, scaled, cpu::scale_product_of_difference, ::fixy::side_as<cpu::side::Minuend>(lefts.view()),
-                 ::fixy::side_as<cpu::side::Subtrahend>(rights.view()), ::fixy::side_as<cpu::side::Scale>(scale),
-                 ::fixy::side_as<cpu::side::Factor>(broadcast_row(factor, 8)));
+        ::crucible::test::run_scale_product_of_difference<KernelUnit::Build>(
+            ctx, scaled, ::fixy::side_as<cpu::side::Minuend>(lefts.view()),
+            ::fixy::side_as<cpu::side::Subtrahend>(rights.view()), ::fixy::side_as<cpu::side::Scale>(scale),
+            ::fixy::side_as<cpu::side::Factor>(broadcast_row(factor, 8)));
         run_into(ctx, quotients, cpu::divide_in_place, ::fixy::side_as<cpu::side::Denominator>(denominator));
     });
     BoundRecord record{};
@@ -421,18 +424,26 @@ inline constexpr KernelDigests kDigests{9627877481138780042u, 128288402776903639
 }
 
 void test_the_digests_hold() {
-    assert(agree_with_the_constants(::crucible::test::kernel_digests_of_this_unit()));
+    assert(agree_with_the_constants(::crucible::test::kernel_digests_of_this_unit<KernelUnit::Build>()));
     std::size_t units = 1;
 #if defined(__x86_64__)
     namespace os = ::foundation::os;
+    // The build compiles the units of each level other than the level of the
+    // build (test/CMakeLists.txt).
+    constexpr bool has_v3_unit = CRUCIBLE_TEST_HAS_V3_UNIT != 0;
+    constexpr bool has_v4_unit = CRUCIBLE_TEST_HAS_V4_UNIT != 0;
     os::X86Level const host = os::x86_level_of(os::read_x86_feature_words());
-    if (host >= os::X86Level::v3) {
-        assert(agree_with_the_constants(::crucible::test::kernel_digests_of_v3_unit()));
-        ++units;
+    if constexpr (has_v3_unit) {
+        if (host >= os::X86Level::v3) {
+            assert(agree_with_the_constants(::crucible::test::kernel_digests_of_v3_unit()));
+            ++units;
+        }
     }
-    if (host >= os::X86Level::v4) {
-        assert(agree_with_the_constants(::crucible::test::kernel_digests_of_v4_unit()));
-        ++units;
+    if constexpr (has_v4_unit) {
+        if (host >= os::X86Level::v4) {
+            assert(agree_with_the_constants(::crucible::test::kernel_digests_of_v4_unit()));
+            ++units;
+        }
     }
 #endif
     ::crucible::test::pass("test_mimic_cpu_kernels: the digests of the kernels hold in {} units\n", units);

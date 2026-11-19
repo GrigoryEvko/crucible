@@ -7,6 +7,11 @@
 // include this header.  Each name is in an unnamed namespace, so each unit
 // keeps its own body, compiled for its own target.  The kernels state each
 // order, so each unit gives the same digest.
+//
+// The walk of scale_product_of_difference has four inputs, and it has more
+// machine code than each other kernel together.  Thus each unit of a level
+// has a second unit for that kernel alone, which gives the function
+// scale_product_of_difference_in_*_unit below.
 
 #include <crucible/mimic/cpu/Kernels.h>
 #include <fixy/Core.h>
@@ -34,13 +39,40 @@ struct KernelDigests {
 // The brand of the kernel contexts of the tests.
 struct KernelTestBrand final {};
 
+// The units of test_mimic_cpu_kernels: the unit of the test, which takes the
+// level of the build, and the units of the levels x86-64-v3 and x86-64-v4.
+enum class KernelUnit : std::uint8_t {
+    Build,
+    V3,
+    V4,
+};
+
+using KernelCtx = ::fixy::Kernel<KernelTestBrand, ::foundation::core::kFpModeIeee>;
+
+// The inputs of scale_product_of_difference, in their roles.
+using ScaledMinuend = ::fixy::Side<::crucible::mimic::cpu::side::Minuend, ::fixy::StridedView<float const, 2>>;
+using ScaledSubtrahend = ::fixy::Side<::crucible::mimic::cpu::side::Subtrahend, ::fixy::StridedView<float const, 2>>;
+using ScaledScale = ::fixy::Side<::crucible::mimic::cpu::side::Scale, float>;
+using ScaledFactor = ::fixy::Side<::crucible::mimic::cpu::side::Factor, ::fixy::StridedView<float const, 2>>;
+
+// The kernel scale_product_of_difference into out under ctx, in the unit of
+// the build and in the units of the levels.  Each body is in a unit of its
+// own, with the target of its unit.
+void scale_product_of_difference_in_build_unit(KernelCtx const& ctx, Matrix<float>& out, ScaledMinuend minuend,
+                                               ScaledSubtrahend subtrahend, ScaledScale scale,
+                                               ScaledFactor factor) noexcept;
+void scale_product_of_difference_in_v3_unit(KernelCtx const& ctx, Matrix<float>& out, ScaledMinuend minuend,
+                                            ScaledSubtrahend subtrahend, ScaledScale scale,
+                                            ScaledFactor factor) noexcept;
+void scale_product_of_difference_in_v4_unit(KernelCtx const& ctx, Matrix<float>& out, ScaledMinuend minuend,
+                                            ScaledSubtrahend subtrahend, ScaledScale scale,
+                                            ScaledFactor factor) noexcept;
+
 namespace {
 
 namespace cpu = ::crucible::mimic::cpu;
 namespace core = ::foundation::core;
 namespace os = ::foundation::os;
-
-using KernelCtx = ::fixy::Kernel<KernelTestBrand, core::kFpModeIeee>;
 
 // Runs body with a kernel context of the IEEE mode on the calling thread.
 template <class Body>
@@ -76,8 +108,23 @@ void run_into_row(KernelCtx const& ctx, Matrix<float>& out, Kernel const& kernel
     });
 }
 
+// The kernel scale_product_of_difference into out under ctx, with the body of
+// the unit Unit.
+template <KernelUnit Unit>
+void run_scale_product_of_difference(KernelCtx const& ctx, Matrix<float>& out, ScaledMinuend minuend,
+                                     ScaledSubtrahend subtrahend, ScaledScale scale, ScaledFactor factor) noexcept {
+    if constexpr (Unit == KernelUnit::V3) {
+        scale_product_of_difference_in_v3_unit(ctx, out, minuend, subtrahend, scale, factor);
+    } else if constexpr (Unit == KernelUnit::V4) {
+        scale_product_of_difference_in_v4_unit(ctx, out, minuend, subtrahend, scale, factor);
+    } else {
+        scale_product_of_difference_in_build_unit(ctx, out, minuend, subtrahend, scale, factor);
+    }
+}
+
 // The view of a row of N elements broadcast to the sizes [rows, N].
-[[nodiscard]] ::fixy::StridedView<float const, 2> broadcast_row(Matrix<float> const& row, std::size_t rows) noexcept {
+[[nodiscard]] inline ::fixy::StridedView<float const, 2> broadcast_row(Matrix<float> const& row,
+                                                                       std::size_t rows) noexcept {
     ::fixy::FixedArray<std::size_t, 1> const sizes{row.shape.columns};
     ::fixy::FixedArray<std::size_t, 1> const strides{row.place.column_stride};
     ::fixy::FixedArray<std::size_t, 2> const target{rows, row.shape.columns};
@@ -99,7 +146,9 @@ template <class Value>
 }
 
 // The digests of each kernel on fixed draws in the shapes of the first
-// model: a batch of 8, a layer of 16 to 24 and a layer of 24 to 4.
+// model: a batch of 8, a layer of 16 to 24 and a layer of 24 to 4, with the
+// bodies of the unit Unit.
+template <KernelUnit Unit>
 [[nodiscard]] KernelDigests kernel_digests_of_this_unit() noexcept {
     PhiloxStream stream{0x6E1C000000000001u};
     KernelDigests digests{kDigestOffset, kDigestOffset, kDigestOffset};
@@ -136,9 +185,10 @@ template <class Value>
                  ::fixy::side_as<cpu::side::Gate>(forward.view()), ::fixy::side_as<cpu::side::Threshold>(0.0f));
         run_into(ctx, squares, cpu::square_difference, ::fixy::side_as<cpu::side::Minuend>(forward.view()),
                  ::fixy::side_as<cpu::side::Subtrahend>(gradient.view()));
-        run_into(ctx, scaled, cpu::scale_product_of_difference, ::fixy::side_as<cpu::side::Minuend>(forward.view()),
-                 ::fixy::side_as<cpu::side::Subtrahend>(gradient.view()), ::fixy::side_as<cpu::side::Scale>(0.0625f),
-                 ::fixy::side_as<cpu::side::Factor>(broadcast_row(bias, 8)));
+        run_scale_product_of_difference<Unit>(ctx, scaled, ::fixy::side_as<cpu::side::Minuend>(forward.view()),
+                                              ::fixy::side_as<cpu::side::Subtrahend>(gradient.view()),
+                                              ::fixy::side_as<cpu::side::Scale>(0.0625f),
+                                              ::fixy::side_as<cpu::side::Factor>(broadcast_row(bias, 8)));
         updated.values =
             ::fixy::mint_heap_array_copy<float>(rig_alloc(), ::fixy::View<float const>{weight.values.view()});
         run_into(ctx, updated, cpu::add_scaled_in_place, ::fixy::side_as<cpu::side::Scale>(-0.01f),
