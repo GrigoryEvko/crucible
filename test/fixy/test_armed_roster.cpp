@@ -50,7 +50,6 @@ struct RegionTag {
 };
 struct RegionBrand {};
 using RegionToken = fp::Permission<RegionTag, RegionBrand>;
-struct GlobalTag {};
 struct Plain {
     int value = 0;
 };
@@ -70,20 +69,6 @@ struct Publisher {
 struct Loader {
     int load() const noexcept { return 0; }
 };
-// Two dispatch families: one names a noexcept signature, one names data.
-struct NamesNoexceptSignature {
-    using signature = void(void*) noexcept;
-};
-struct NamesDataSignature {
-    using signature = int;
-};
-// Two grades that name no wait strategy: an atom on the axis with no
-// member, and a type whose member is not a WaitStrategy.
-struct NamesNoStrategy final : at::atom_of<::fixy::Axis::Synchronization> {};
-struct NamesIntStrategy {
-    static constexpr int strategy = 0;
-};
-
 using BgCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg>>;
 using BgIoCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::IO>>;
 using NvEnd = sess::VendorPinned<::foundation::algebra::lattices::VendorBackend::NV, sess::End>;
@@ -298,9 +283,10 @@ struct foundation::contracts::armed_cell<::fixy::detail::is_throws_atom> {
 
 // ── fixy: the grade readers of the collision rules ──────────────────
 //
-// Each grade reader of fixy/Collision.h is a concept or a function that is
-// not a template, so it holds no armed cell.  The check file of
-// fixy/Collision.h holds the cells of both directions of each reader.
+// Each reader of fixy/Collision.h is a concept or a function, so it holds no
+// armed cell, and the walk of this file does not find it.  The check file of
+// fixy/Collision.h holds a cell of both directions for each reader, and its
+// own walk refuses a reader with no cell.
 
 // ── fixy: concurrency handles and pipelines ─────────────────────────
 

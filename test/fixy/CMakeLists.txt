@@ -751,6 +751,12 @@ fixy_neg_compile_test(neg_collision_protocol_reading_refused
 fixy_neg_compile_test(neg_collision_trust_level_refused
   "static assertion failed: fixy/Collision\\.h: the Trust grade of this binding has no level in fixy::collision::detail::trust_level_of_"
   "trust_level_or_refuse_\\(\\) \\[with G = fixture::unlisted_trust;")
+# The check file of fixy/Collision.h walks each reader of the two namespaces
+# of the header and asks for a cell.  The fixture plants a reader with no cell
+# before the check file, and the check names it.
+fixy_neg_compile_test(neg_collision_reader_without_cell
+  "static assertion failed: fixy/Collision\\.h: these readers have no cell that holds: .*HasPlantedReading.* \\(no cell\\)"
+  "checks/fixy/Collision\\.cpp:")
 # The check file of fixy/collision/Report.h walks each declaration of the
 # spawn family, which is a sample set outside the roster.  The fixture plants
 # a template with no reading before the check file, and the check names it.
