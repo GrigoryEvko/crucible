@@ -158,8 +158,8 @@ include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 1 | ABI: libbpf opened the descriptor of the BPF map, and the map door maps it | libbpf gives the descriptor of a BPF map as a raw int, and map_foreign_region is the door that maps a descriptor that a C library opened
-include/fixy/ | base-std-entity | 288 | - | -
-include/fixy/ | base-std-object | 165 | - | -
+include/fixy/ | base-std-entity | 287 | - | -
+include/fixy/ | base-std-object | 162 | - | -
 include/fixy/ | replace-pending:<array> | 4 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/ | replace-pending:<bit> | 2 | - | -
@@ -186,8 +186,8 @@ include/fixy/channels/ | replace-pending:<optional> | 1 | - | -
 include/fixy/channels/ | replace-pending:<source_location> | 1 | - | -
 include/fixy/channels/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/channels/ | replace-pending:<tuple> | 1 | - | -
-include/fixy/collision/ | base-std-entity | 54 | - | -
-include/fixy/collision/ | base-std-object | 40 | - | -
+include/fixy/collision/ | base-std-entity | 41 | - | -
+include/fixy/collision/ | base-std-object | 35 | - | -
 include/fixy/collision/ | replace-pending:<array> | 1 | - | -
 include/fixy/collision/ | replace-pending:<string> | 1 | - | -
 include/fixy/collision/ | replace-pending:<string_view> | 1 | - | -
@@ -430,11 +430,11 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2395 | - | -
+test/fixy/ | std-entity | 2394 | - | -
 test/fixy/ | std-object | 857 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
-test/fixy/neg/ | detail-use | 290 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | detail-use | 297 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -483,7 +483,7 @@ test/fixy/neg/ | region | 2 | PROBE: the fixture needs a borrowed range of the l
 test/fixy/neg/ | region | 1 | PROBE: the fixture plants a corpus entry template of the base | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 35 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/neg/ | region | 1 | PROBE: the fixture plants a spawn template of the base with no reading | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/fixy/neg/ | region | 7 | PROBE: the fixture specializes a trait of the base, and the compiler refuses it | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/neg/ | region | 10 | PROBE: the fixture specializes a trait of the base, and the compiler refuses it | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member mint with a target type | only a pointer to member takes the address of a member mint, and the result of the admittance is a std::pair
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
@@ -646,7 +646,7 @@ test/layer/checks/fixy/ | std-entity | 124 | - | -
 test/layer/checks/fixy/ | std-object | 12 | - | -
 test/layer/checks/fixy/atoms/ | std-entity | 24 | - | -
 test/layer/checks/fixy/atoms/ | std-object | 11 | - | -
-test/layer/checks/fixy/collision/ | std-entity | 17 | - | -
+test/layer/checks/fixy/collision/ | std-entity | 16 | - | -
 test/layer/checks/fixy/collision/ | std-object | 7 | - | -
 test/layer/checks/fixy/concurrent/ | c-array-object | 3 | - | -
 test/layer/checks/fixy/concurrent/ | raw-pointer-object | 2 | - | -
