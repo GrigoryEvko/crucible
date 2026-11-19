@@ -216,44 +216,63 @@ struct FlowAnswer {
     for (const FlowAnswer& known : answered) {
         if (known.protocol == node && known.ps == set && known.loop_ps == loop_set) return known.closes;
     }
+    namespace tr = ::fixy::session::transition;
+    // The walk reads each node through the registry, so the note of a
+    // choice is no branch, and a combinator is known here when the fold
+    // knows it.  A combinator that is not plain belongs to an extension that
+    // the handle does not run (a crash stop, a checkpoint primitive), and
+    // the walk refuses it.
+    // The walk reads the node now, with no cell of the node for each type.
+    // The answers of the walk already keep each node of one walk, and the
+    // read of a cell costs more than the read of the node here.
+    const tr::node view = tr::detail::decompose_now(protocol_registry, node);
     bool closes = false;
-    if (node == ^^End) {
-        closes = std::meta::extract<bool>(std::meta::substitute(^^perm_set_admits_close_v, {set}));
-    } else if (node == ^^Continue) {
-        // The parentheses end the reflection, so && is not a part of its type.
-        closes = loop_set != (^^void)&&::foundation::permissions::perm_set_equal(set, loop_set);
-    } else if (std::meta::has_template_arguments(node)) {
-        const std::meta::info head = std::meta::template_of(node);
-        const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(node);
-        if (head == ^^Send) {
-            closes = std::meta::extract<bool>(std::meta::substitute(^^handle_admits_send_v, {set, arguments[0]}))
-                  && walk_flow(arguments[1], std::meta::substitute(^^perm_set_after_send_t, {set, arguments[0]}),
-                               loop_set, answered);
-        } else if (head == ^^Recv) {
-            closes = std::meta::extract<bool>(std::meta::substitute(^^handle_admits_recv_v, {set, arguments[0]}))
-                  && walk_flow(arguments[1], std::meta::substitute(^^perm_set_after_recv_t, {set, arguments[0]}),
-                               loop_set, answered);
-        } else if (head == ^^Select || head == ^^Offer) {
-            // Each branch closes from the same sets.  The walk stops at the
-            // first branch that does not close.
-            closes = true;
-            bool is_first = true;
-            for (const std::meta::info branch : arguments) {
-                // The Sender note of an Offer names a role, and it is no branch.
-                const bool is_sender_note = is_first && head == ^^Offer&& std::meta::has_template_arguments(branch)
-                                         && std::meta::template_of(branch) == ^^Sender;
-                is_first = false;
-                closes = closes && (is_sender_note || walk_flow(branch, set, loop_set, answered));
-            }
-        } else if (head == ^^Loop) {
-            closes = walk_flow(arguments[0], set, set, answered);
-        } else if (head == ^^VendorPinned) {
-            closes = walk_flow(arguments[1], set, loop_set, answered);
-        } else if (head == ^^Named) {
-            // The protocol of a name is closed, so a Continue in it binds a
-            // Loop in it, and the walk enters it outside every Loop.
-            const std::meta::info body = ::fixy::session::transition::decompose(protocol_registry, node).next;
-            closes = body != std::meta::info{} && walk_flow(body, set, ^^void, answered);
+    if (view.is_registered && view.entry.is_plain) {
+        switch (view.entry.kind) {
+            case tr::shape_kind::terminal:
+                closes = std::meta::extract<bool>(std::meta::substitute(^^perm_set_admits_close_v, {set}));
+                break;
+            case tr::shape_kind::back:
+                // The parentheses end the reflection, so && is not a part of
+                // its type.
+                closes = loop_set != (^^void)&&::foundation::permissions::perm_set_equal(set, loop_set);
+                break;
+            case tr::shape_kind::step:
+                // A step whose payload is a protocol hands off or takes an
+                // endpoint, and no handle has a step for it.
+                if (view.entry.payload_is_protocol) break;
+                if (view.entry.direction == tr::polarity::output) {
+                    closes =
+                        std::meta::extract<bool>(std::meta::substitute(^^handle_admits_send_v, {set, view.payload}))
+                        && walk_flow(view.next, std::meta::substitute(^^perm_set_after_send_t, {set, view.payload}),
+                                     loop_set, answered);
+                } else if (view.entry.direction == tr::polarity::input) {
+                    closes =
+                        std::meta::extract<bool>(std::meta::substitute(^^handle_admits_recv_v, {set, view.payload}))
+                        && walk_flow(view.next, std::meta::substitute(^^perm_set_after_recv_t, {set, view.payload}),
+                                     loop_set, answered);
+                }
+                break;
+            case tr::shape_kind::choice:
+                // Each branch closes from the same sets.  The walk stops at
+                // the first branch that does not close.
+                closes = true;
+                for (const std::meta::info branch : view.branches)
+                    closes = closes && walk_flow(branch, set, loop_set, answered);
+                break;
+            case tr::shape_kind::binder:
+                closes = walk_flow(view.next, set, set, answered);
+                break;
+            case tr::shape_kind::wrapper:
+                closes = walk_flow(view.next, set, loop_set, answered);
+                break;
+            case tr::shape_kind::named:
+                // The protocol of a name is closed, so a Continue in it binds
+                // a Loop in it, and the walk enters it outside every Loop.
+                closes = walk_flow(view.next, set, ^^void, answered);
+                break;
+            default:
+                break;
         }
     }
     push(answered, FlowAnswer{node, set, loop_set, closes});
