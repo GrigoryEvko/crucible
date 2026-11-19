@@ -1,5 +1,5 @@
 // The Check family of fixy/check/Check.h: pass, CRUCIBLE_TEST_ASSERT and
-// expect_dies.  A death test passes for a body that ends by SIGABRT with the
+// expect_dies, and run_of of fixy/check/Fixture.h.  A death test passes for a body that ends by SIGABRT with the
 // expected text, and it ends the test for each other end: an exit, a
 // different text, and an end by a different signal.  Each such refusal runs
 // inside an outer expect_dies, which requires the report of the inner one.
@@ -7,8 +7,11 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
 #include <fixy/os/Process.h>
 #include <foundation/effects/Effect.h>
+
+#include <cstdint>
 
 namespace {
 
@@ -93,6 +96,22 @@ void exit_with_text_is_refused(::fixy::TestRunnerCtx const& test) {
     pass(test, "  exit_with_text_is_refused: PASSED\n");
 }
 
+// run_of gives a new array of the arena that holds the values in order.  Each
+// value after the first converts to the type of the first.
+void run_of_holds_the_values(::fixy::TestRunnerCtx const& test) {
+    ::fixy::BumpArena arena{1 << 12};
+    ::fixy::View<std::uint32_t> const run =
+        ::fixy::check::run_of(test, test.cap().alloc, arena, std::uint32_t{7}, 9, 11);
+    CRUCIBLE_TEST_ASSERT(test, run.size() == 3);
+    CRUCIBLE_TEST_ASSERT(test, *run.get(0).expect("the run holds three values") == 7);
+    CRUCIBLE_TEST_ASSERT(test, *run.get(1).expect("the run holds three values") == 9);
+    CRUCIBLE_TEST_ASSERT(test, *run.get(2).expect("the run holds three values") == 11);
+    ::fixy::View<std::uint32_t> const single = ::fixy::check::run_of(test, test.cap().alloc, arena, std::uint32_t{5});
+    CRUCIBLE_TEST_ASSERT(test, single.size() == 1);
+    CRUCIBLE_TEST_ASSERT(test, *single.get(0).expect("the run holds one value") == 5);
+    pass(test, "  run_of_holds_the_values: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -104,6 +123,7 @@ int main() {
     exit_is_refused(test);
     other_text_is_refused(test);
     exit_with_text_is_refused(test);
+    run_of_holds_the_values(test);
     pass(test, "test_check_family: PASSED\n");
     return 0;
 }
