@@ -5952,6 +5952,18 @@ fixy_neg_compile_test(neg_thread_raw_probe_reason_of_no_literal
   "no matching function for call to .run_joined_raw_probe"
   "cannot convert .built. \\(type .const foundation::core::TextView.\\) to type .fixy::thread::RawProbeReason.")
 # The value of a body is Sendable.
+# Beside the caller, a borrow to const of a plain int is refused, and so is an
+# owned View of const ints, because the continuation can write the ints while
+# the body reads them.
+fixy_neg_compile_test(neg_thread_run_beside_reads_through_a_const_borrow
+  "static assertion failed: run_beside: the body captures .read_limit. \\(field [_a-z]+, type const int&\\)"
+  "The caller runs at the same time as the body")
+fixy_neg_compile_test(neg_thread_run_beside_each_writes_a_plain_int
+  "static assertion failed: run_beside_each: the body captures .count. \\(field [_a-z]+, type int&\\)"
+  "The caller runs at the same time as the body")
+fixy_neg_compile_test(neg_thread_run_beside_owns_a_view_of_the_frame
+  "static assertion failed: run_beside: the body captures .reads. \\(field [_a-z]+, type foundation::core::View<const int, 2>\\)"
+  "its type is not SendableBeside")
 fixy_neg_compile_test(neg_thread_run_joined_body_gives_an_owner_thread_value
   "no matching function for call to .run_joined"
   "the expression .\\(JoinedBody<Bodies, Ctx> && \\.\\.\\.\\) \\[with Bodies = \\{main::")

@@ -113,10 +113,59 @@
 //     testing door of foundation/effects/Effect.h gives, so code that ships
 //     cannot call it.  The reason is a string literal, which names the probe
 //     at the call.
+//
+// THE THREAD BESIDE THE CALLER
+//     run_beside starts one thread that runs the body, runs the continuation
+//     on the calling thread at the same time, and joins the thread when the
+//     continuation returns.  So the body ends before the call returns, and it
+//     can borrow the locals of the caller.  The continuation gets no owner of
+//     the thread, so no thread leaves the call.  The door takes the body and
+//     the continuation by value, so the continuation cannot reach the object
+//     of the body while the thread calls it.  The body takes no argument
+//     or the context of the call, as a body of run_joined does, and the
+//     values of the body and of the continuation come back as THE RESULTS
+//     tell.
+//
+//     The policy of the body is BesideCaller (foundation/Closure.h, rule 8),
+//     which is stricter than the policy of run_joined.  In run_joined the
+//     caller waits, so a body can read a Shareable object through a reference
+//     to const.  Beside the caller, the continuation runs at the same time
+//     and can write each object of the frame, also one that the body reads
+//     through a reference to const, and the check cannot see that alias.  So
+//     each borrow of the body is Synchronized, such as an Atomic, and each
+//     value of the body is SendableBeside (foundation/Transfer.h): a value
+//     that refers to an object of the frame, such as a View, refers only to a
+//     Synchronized object.  The end of a channel moves into the body, and the
+//     body ends it.  The door checks its body with check_closure under
+//     beside_caller_policy, and the verdict is the message of a refusal.
+//
+//     run_beside_each is the counted form.  It starts count threads, and each
+//     thread calls one shared body with its index, from 0 to count less one.
+//     The continuation runs on the calling thread at the same time, and the
+//     door joins each thread when the continuation returns.  The threads call
+//     one object at the same time, so the policy beside_each_policy also asks
+//     each value of the body to be Shareable, and a linear body is refused
+//     because the door calls it more than one time.  A body that owns a
+//     linear value, such as the one consumer of a channel, goes to run_beside,
+//     and the continuation of that call can run the counted form.  The body
+//     gives no value: a thread writes its result into a Synchronized object.
+//     The bound of the count is a template argument, and the frame of the door
+//     holds a task and a frame for each thread up to that bound, so the door
+//     allocates nothing.  The options of the call are the options of each
+//     thread.  With OneCpuEach, the thread of index k takes the CPU k of the
+//     mask in ascending order of the CPUs (THE OPTIONS), and not the CPU of
+//     some other order of the caller.  So a caller with threads that have one
+//     role each gives each role a call of its own.  The errors are THE
+//     ERRORS: a first start that fails is the error of the call, and then the
+//     continuation does not run.
 
 #include <foundation/algebra/lattices/AffinityLattice.h>
+#include <foundation/Closure.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Convert.h>
+#include <foundation/core/Id.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Region.h>
@@ -245,6 +294,17 @@ struct thread_task {
 // Complexity: one start and one join for each task.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 run_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions const& options) noexcept;
+
+// Starts one thread for each task with the options, and keeps the handle of
+// each thread in its task (THE ERRORS).  The tasks live until
+// join_thread_tasks returns for them.  Complexity: one start for each task.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+start_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions const& options) noexcept;
+
+// Joins the thread of each task that start_thread_tasks started, in the
+// order of the tasks.  A join that fails ends the process.  Complexity: one
+// join for each task.
+void join_thread_tasks(::foundation::core::View<thread_task> tasks) noexcept;
 
 // Starts one thread that runs the task with the options, and gives the
 // handle of the thread (THE OWNED THREAD).  The caller writes the frame, the
@@ -394,6 +454,170 @@ template <typename Ctx, typename... Bodies>
 [[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
 run_joined(Ctx const& ctx, ThreadOptions const& options, Bodies&... bodies) noexcept {
     return detail::run_joined_(ctx, options, std::index_sequence_for<Bodies...>{}, bodies...);
+}
+
+namespace detail {
+
+// Ends a body or a continuation that run_beside owns.  A linear one ends
+// through the drop door, after its one call, or with no call when the start
+// failed.  Another one ends with the frame of the door.
+template <typename Part>
+constexpr void end_beside_part_(Part&& part) noexcept {
+    if constexpr (::foundation::linear::LinearValue<Part>) ::foundation::linear::drop(static_cast<Part&&>(part));
+}
+
+// The value of a continuation: what it gives, or Unit when it gives nothing.
+template <typename Continuation>
+using beside_result_t_ = std::conditional_t<std::is_void_v<std::invoke_result_t<Continuation&>>,
+                                            ::foundation::core::Unit, std::invoke_result_t<Continuation&>>;
+
+}  // namespace detail
+
+// A continuation of run_beside: an object that is not const, that runs with
+// no argument on the calling thread, and whose value can sit in the result
+// (THE THREAD BESIDE THE CALLER).
+template <typename Continuation>
+concept BesideContinuation = !std::is_const_v<Continuation> && std::is_nothrow_invocable_v<Continuation&>
+                          && ::foundation::core::RecordElement<detail::beside_result_t_<Continuation>>;
+
+// The value of a call of run_beside (THE RESULTS): Unit when neither the body
+// nor the continuation gives a value, else a Record of the value of the body
+// and the value of the continuation.
+template <typename Ctx, typename Body, typename Continuation>
+using beside_values_t = std::conditional_t<
+    std::is_void_v<detail::raw_joined_result_t_<Ctx, Body>> && std::is_void_v<std::invoke_result_t<Continuation&>>,
+    ::foundation::core::Unit,
+    ::foundation::core::Record<detail::joined_result_t_<Ctx, Body>, detail::beside_result_t_<Continuation>>>;
+
+// The policy of a body of run_beside (THE THREAD BESIDE THE CALLER).
+inline constexpr ::foundation::closure::DoorPolicy beside_caller_policy{::foundation::closure::Crossing::BesideCaller,
+                                                                        ::foundation::closure::QttGrade::One, false};
+
+// Runs the body on a thread of its own with the options, runs the
+// continuation on the calling thread at the same time, and joins the thread
+// when the continuation returns (THE THREAD BESIDE THE CALLER).  A start that
+// fails is the error of the call, and the continuation does not run then.
+template <typename Ctx, typename Body, typename Continuation>
+    requires CtxStartsThreads<Ctx> && JoinedBody<Body, Ctx> && BesideContinuation<Continuation>
+[[nodiscard]] ::foundation::core::Result<beside_values_t<Ctx, Body, Continuation>, ::foundation::os::Errno>
+run_beside(Ctx const& ctx, ThreadOptions const& options, Body body, Continuation continuation) noexcept {
+    constexpr ::foundation::closure::ClosureVerdict verdict =
+        ::foundation::closure::check_closure(^^Body, beside_caller_policy, "run_beside");
+    static_assert(verdict.is_admitted(), verdict);
+    using Values = beside_values_t<Ctx, Body, Continuation>;
+    using Beside = ::foundation::core::Result<Values, ::foundation::os::Errno>;
+    ::foundation::core::Option<detail::joined_result_t_<Ctx, Body>> slot{};
+    detail::joined_body_ joined{&body, &ctx, &slot};
+    detail::thread_task task{&joined, &detail::run_joined_body_<Ctx, Body>};
+    ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> started =
+        detail::start_thread_task(task, options);
+    if (started.is_err()) {
+        detail::end_beside_part_(std::move(body));
+        detail::end_beside_part_(std::move(continuation));
+        return Beside{::foundation::core::err(std::move(started).err().expect("a refused start holds its error"))};
+    }
+    std::uint64_t const handle = std::move(started).expect("a start that is no error holds its handle");
+    if constexpr (std::is_void_v<std::invoke_result_t<Continuation&>>) {
+        continuation();
+        detail::join_thread_task(handle);
+        detail::end_beside_part_(std::move(body));
+        detail::end_beside_part_(std::move(continuation));
+        if constexpr (std::same_as<Values, ::foundation::core::Unit>) {
+            return Beside{::foundation::core::Unit{}};
+        } else {
+            return Beside{
+                Values{std::move(slot).expect("the body of the thread ran one time"), ::foundation::core::Unit{}}};
+        }
+    } else {
+        detail::beside_result_t_<Continuation> continued = continuation();
+        detail::join_thread_task(handle);
+        detail::end_beside_part_(std::move(body));
+        detail::end_beside_part_(std::move(continuation));
+        return Beside{Values{std::move(slot).expect("the body of the thread ran one time"), std::move(continued)}};
+    }
+}
+
+// The index of the thread of a body of run_beside_each, from 0 to the count
+// less one (THE THREAD BESIDE THE CALLER).
+using BesideIndex = ::foundation::core::Id<struct BesideIndexTag, std::uint32_t>;
+
+// A count of the threads of run_beside_each, from 0 to Max.
+template <std::size_t Max>
+using BesideCount = ::foundation::core::Index<Max + 1>;
+
+// The policy of a body of run_beside_each: beside the caller, more than one
+// call, and one object that many threads call at the same time (THE THREAD
+// BESIDE THE CALLER).
+inline constexpr ::foundation::closure::DoorPolicy beside_each_policy{::foundation::closure::Crossing::BesideCaller,
+                                                                      ::foundation::closure::QttGrade::Omega, true};
+
+// A body of run_beside_each: each thread calls it through a reference to
+// const with the index of the thread, and it gives nothing.
+template <typename Body>
+concept BesideEachBody = std::is_nothrow_invocable_v<Body const&, BesideIndex>
+                      && std::is_void_v<std::invoke_result_t<Body const&, BesideIndex>>;
+
+namespace detail {
+
+// What the thread of one index reads: the shared body and the index.  The
+// frames live in the frame of run_beside_each, which joins each thread before
+// it returns.
+template <typename Body>
+struct beside_each_frame_ {
+    Body const* body = nullptr;
+    BesideIndex index{0};
+};
+
+template <typename Body>
+void run_beside_each_body_(void* frame) noexcept {
+    beside_each_frame_<Body> const& source = *static_cast<beside_each_frame_<Body> const*>(frame);
+    (*source.body)(source.index);
+}
+
+}  // namespace detail
+
+// Starts count threads with the options, and each calls the body with its
+// index.  The continuation runs on the calling thread at the same time, and
+// the door joins each thread when the continuation returns (THE THREAD BESIDE
+// THE CALLER).  The call gives the value of the continuation, or Unit when it
+// gives nothing.  A first start that fails is the error of the call, and then
+// no body and no continuation run (THE ERRORS).  Complexity: one start and one
+// join for each thread, and a frame that holds Bound tasks.
+template <typename Ctx, std::size_t Bound, typename Body, typename Continuation>
+    requires CtxStartsThreads<Ctx> && BesideEachBody<Body> && BesideContinuation<Continuation>
+[[nodiscard]] ::foundation::core::Result<detail::beside_result_t_<Continuation>, ::foundation::os::Errno>
+run_beside_each(Ctx const& /*ctx*/, ThreadOptions const& options, ::foundation::core::Index<Bound> count, Body body,
+                Continuation continuation) noexcept {
+    constexpr ::foundation::closure::ClosureVerdict verdict =
+        ::foundation::closure::check_closure(^^Body, beside_each_policy, "run_beside_each");
+    static_assert(verdict.is_admitted(), verdict);
+    using Continued = ::foundation::core::Result<detail::beside_result_t_<Continuation>, ::foundation::os::Errno>;
+    using Slot = ::foundation::core::Index<Bound>;
+    ::foundation::core::FixedArray<detail::beside_each_frame_<Body>, Bound> frames{};
+    ::foundation::core::FixedArray<detail::thread_task, Bound> tasks{};
+    for (Slot const slot : ::foundation::core::IndexRange<Bound>{}) {
+        if (slot.raw() >= count.raw()) break;
+        BesideIndex const index{::foundation::core::narrow<std::uint32_t>(slot.raw())
+                                    .expect("run_beside_each: the index of a thread fits in 32 bits")};
+        frames.at(slot) = detail::beside_each_frame_<Body>{&body, index};
+        tasks.at(slot) = detail::thread_task{&frames.at(slot), &detail::run_beside_each_body_<Body>};
+    }
+    ::foundation::core::View<detail::thread_task> const started_tasks = ::foundation::core::detail::view_over_(
+        &tasks.at(Slot::check(0).expect("a bound holds the index 0")), count.raw());
+    ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
+        detail::start_thread_tasks(started_tasks, options);
+    if (started.is_err()) {
+        return Continued{::foundation::core::err(std::move(started).err().expect("a refused start holds its error"))};
+    }
+    if constexpr (std::is_void_v<std::invoke_result_t<Continuation&>>) {
+        continuation();
+        detail::join_thread_tasks(started_tasks);
+        return Continued{::foundation::core::Unit{}};
+    } else {
+        detail::beside_result_t_<Continuation> continued = continuation();
+        detail::join_thread_tasks(started_tasks);
+        return Continued{std::move(continued)};
+    }
 }
 
 // The reason of a raw probe (THE RAW PROBE).  Only a string literal that is

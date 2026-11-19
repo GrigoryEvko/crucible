@@ -140,33 +140,43 @@ void name_calling_thread(ThreadName const& name) noexcept {
 }
 
 ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-run_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions const& options) noexcept {
+start_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions const& options) noexcept {
     if (options.guard_bytes == 0) return ::foundation::core::err(::foundation::os::Errno::einval);
-    {
-        StartAttributes attributes{options};
-        if (attributes.code() != 0) return ::foundation::core::err(error_of(attributes.code()));
-        std::size_t started = 0;
-        for (thread_task& task : tasks) {
-            task.name = &options.name;
-            ::pthread_t handle{};
-            int code = attributes.place_task(options, TaskPosition{started});
-            if (code == 0) code = ::pthread_create(&handle, attributes.attributes(), &start_task, &task);
-            if (code != 0) [[unlikely]] {
-                if (started == 0) return ::foundation::core::err(error_of(code));
-                ::foundation::core::fatal(
-                    "run_thread_tasks: a thread did not start after other threads of the call started, with the code "
-                    "{}.  A started task can wait for a task that did not start, so a join can wait forever, and "
-                    "the process ends",
-                    code);
-            }
-            task.handle = handle;
-            ++started;
+    StartAttributes attributes{options};
+    if (attributes.code() != 0) return ::foundation::core::err(error_of(attributes.code()));
+    std::size_t started = 0;
+    for (thread_task& task : tasks) {
+        task.name = &options.name;
+        ::pthread_t handle{};
+        int code = attributes.place_task(options, TaskPosition{started});
+        if (code == 0) code = ::pthread_create(&handle, attributes.attributes(), &start_task, &task);
+        if (code != 0) [[unlikely]] {
+            if (started == 0) return ::foundation::core::err(error_of(code));
+            ::foundation::core::fatal(
+                "start_thread_tasks: a thread did not start after other threads of the call started, with the code "
+                "{}.  A started task can wait for a task that did not start, so a join can wait forever, and the "
+                "process ends",
+                code);
         }
+        task.handle = handle;
+        ++started;
     }
+    return ::foundation::core::Unit{};
+}
+
+void join_thread_tasks(::foundation::core::View<thread_task> tasks) noexcept {
     for (thread_task& task : tasks) {
         join_thread_task(task.handle);
         task.handle = 0;
     }
+}
+
+::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+run_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions const& options) noexcept {
+    ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
+        start_thread_tasks(tasks, options);
+    if (started.is_err()) return started;
+    join_thread_tasks(tasks);
     return ::foundation::core::Unit{};
 }
 

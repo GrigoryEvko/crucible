@@ -153,6 +153,83 @@ void test_each_body_gives_its_value() {
     static_assert(!::fixy::thread::JoinedBody<decltype(gives_a_view), WorkerCtx>);
 }
 
+// The body runs on a thread of its own beside the continuation, which runs on
+// the calling thread at the same time.  Each waits for the other, so the call
+// ends only if the two run at the same time.  The values of the two come
+// back.  A refused option is the error of the call, and then neither runs.
+void test_a_body_runs_beside_the_continuation() {
+    WorkerCtx const ctx{eff::testing::bg()};
+    Atomic<bool> has_body_arrived{false};
+    Atomic<bool> has_continuation_arrived{false};
+    auto body = [&has_body_arrived, &has_continuation_arrived]() noexcept {
+        has_body_arrived.store_release(true);
+        while (!has_continuation_arrived.load_acquire())
+            CRUCIBLE_SPIN_PAUSE;
+        return !is_main_thread;
+    };
+    auto continuation = [&has_body_arrived, &has_continuation_arrived]() noexcept {
+        has_continuation_arrived.store_release(true);
+        while (!has_body_arrived.load_acquire())
+            CRUCIBLE_SPIN_PAUSE;
+        return is_main_thread;
+    };
+    auto [was_body_off_main, was_continuation_on_main] =
+        ::fixy::thread::run_beside(ctx, ThreadOptions{}, body, continuation)
+            .expect("the door starts a thread beside the caller with the default options");
+    CRUCIBLE_FATAL_INVARIANT(was_body_off_main && was_continuation_on_main);
+
+    Atomic<bool> has_run{false};
+    auto marks = [&has_run]() noexcept { has_run.store_release(true); };
+    auto also_marks = [&has_run]() noexcept { has_run.store_release(true); };
+    static_assert(std::is_same_v<::fixy::thread::beside_values_t<WorkerCtx, decltype(marks), decltype(also_marks)>,
+                                 ::foundation::core::Unit>);
+    auto const refused = ::fixy::thread::run_beside(ctx, ThreadOptions{.guard_bytes = 0}, marks, also_marks);
+    CRUCIBLE_FATAL_INVARIANT(refused.err().value_or(Errno::eperm) == Errno::einval);
+    CRUCIBLE_FATAL_INVARIANT(!has_run.load_acquire());
+}
+
+// The counted form starts one thread for each index, and each calls the one
+// body with its index.  The continuation waits until each body arrived, so
+// the call ends only if the bodies run beside it.  A count of zero runs the
+// continuation alone, and a refused option runs nothing.
+void test_each_index_runs_beside_the_continuation() {
+    WorkerCtx const ctx{eff::testing::bg()};
+    Atomic<std::uint32_t> arrived{0};
+    Atomic<std::uint32_t> index_sum{0};
+    Atomic<bool> ran_on_main{false};
+    auto body = [&arrived, &index_sum, &ran_on_main](::fixy::thread::BesideIndex index) noexcept {
+        static_cast<void>(index_sum.fetch_add_acq_rel(index.raw()));
+        if (is_main_thread) ran_on_main.store_release(true);
+        static_cast<void>(arrived.fetch_add_acq_rel(1));
+    };
+    auto waits_for_three = [&arrived]() noexcept {
+        while (arrived.load_acquire() < 3)
+            CRUCIBLE_SPIN_PAUSE;
+        return is_main_thread;
+    };
+    using Count = ::fixy::thread::BesideCount<4>;
+    bool const was_continuation_on_main =
+        ::fixy::thread::run_beside_each(ctx, ThreadOptions{}, Count::check(3).expect("3 is at most 4"), body,
+                                        waits_for_three)
+            .expect("the door starts three threads beside the caller with the default options");
+    CRUCIBLE_FATAL_INVARIANT(was_continuation_on_main);
+    CRUCIBLE_FATAL_INVARIANT(index_sum.load_acquire() == 0 + 1 + 2);
+    CRUCIBLE_FATAL_INVARIANT(!ran_on_main.load_acquire());
+
+    Atomic<bool> has_continued{false};
+    auto marks = [&has_continued]() noexcept { has_continued.store_release(true); };
+    ::fixy::thread::run_beside_each(ctx, ThreadOptions{}, Count::check(0).expect("0 is at most 4"), body, marks)
+        .expect("a count of zero starts no thread");
+    CRUCIBLE_FATAL_INVARIANT(has_continued.load_acquire() && arrived.load_acquire() == 3);
+
+    Atomic<bool> has_refused_run{false};
+    auto refused_mark = [&has_refused_run]() noexcept { has_refused_run.store_release(true); };
+    auto const refused = ::fixy::thread::run_beside_each(ctx, ThreadOptions{.guard_bytes = 0},
+                                                         Count::check(2).expect("2 is at most 4"), body, refused_mark);
+    CRUCIBLE_FATAL_INVARIANT(refused.err().value_or(Errno::eperm) == Errno::einval);
+    CRUCIBLE_FATAL_INVARIANT(!has_refused_run.load_acquire() && arrived.load_acquire() == 3);
+}
+
 // The default options: a stack of 8 MiB, a guard of at least 4 KiB, the
 // name and the CPUs of the thread that starts the thread.
 void test_default_options() {
@@ -263,6 +340,8 @@ int main() {
     test_each_body_runs_on_a_thread_of_its_own();
     test_a_body_takes_the_context_of_the_call();
     test_each_body_gives_its_value();
+    test_a_body_runs_beside_the_continuation();
+    test_each_index_runs_beside_the_continuation();
     test_default_options();
     test_each_option_reaches_each_thread();
     test_one_cpu_each();
