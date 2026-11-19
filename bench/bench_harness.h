@@ -87,6 +87,7 @@
 #include <fixy/os/Process.h>
 #include <fixy/os/Sched.h>
 #include <fixy/os/Time.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Sort.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Directory.h>
@@ -1612,7 +1613,11 @@ struct WindowSpread {
 
 // ── Report ────────────────────────────────────────────────────────
 
-struct Report {
+// A report owns each of its parts: the name and the samples own their bytes,
+// and each other part is a plain value.  So a report moves to another
+// thread, and it states sendable (foundation/Transfer.h), which the pointers
+// of the name and of the samples hide.
+struct[[= ::foundation::transfer::sendable{}]] Report {
     std::string name;
     size_t batch = 1;  // > 1 → pct over batch means  // TODO: strong type
     CpuId pinned_cpu{};  // CpuId::none() = -1 / no pin, or a Run::fan_out measurement
