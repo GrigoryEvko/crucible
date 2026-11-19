@@ -1065,6 +1065,12 @@ witness <foundation/diag/RowHash.h> private | foundation::diag::detail::canonica
 # exists only at compile time, so the construction stands in an operand of
 # sizeof.
 witness <fixy/Collision.h> private | fixy::collision::verdict_cell | sizeof(fixy::collision::verdict_cell{})
+# The cells of the record of a pack, of the premises of a pack and of the
+# premises of a payload each hold the value and the key that it answers.
+# Only the build of each cell makes one.
+witness <fixy/Collision.h> private | fixy::collision::detail::pack_record_cell | sizeof(fixy::collision::detail::pack_record_cell{})
+witness <fixy/Collision.h> private | fixy::collision::detail::pack_premises_cell | sizeof(fixy::collision::detail::pack_premises_cell{})
+witness <fixy/Collision.h> private | fixy::collision::detail::payload_premises_cell | sizeof(fixy::collision::detail::payload_premises_cell{})
 
 # -- Interaction nets ------------------------------------------------
 # A sealed net holds the fault of the wiring of its own copy of a net, so

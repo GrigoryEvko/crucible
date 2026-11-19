@@ -59,7 +59,7 @@ crucible/warden/Quarantine.cpp | 0.5 | ::foundation::permissions::permission_row
 fixy/Atom.cpp | 2.2 | unknown
 fixy/Bands.cpp | 1.6 | ::fixy::alloc_class, ::fixy::cipher_tier, ::fixy::det_safe, ::fixy::numerical_tier, ::fixy::opaque_lifetime, ::fixy::residency_heat, ::fixy::scoped_fence, ::fixy::vendor, ::fixy::wait
 fixy/CanonicalOrder.cpp | 0.2 | ::fixy::tags::admitted_retags
-fixy/Collision.cpp | 13.1 | unknown
+fixy/Collision.cpp | 13.1 | ::fixy::collision, ::fixy::collision::detail, unknown
 fixy/Corpus.cpp | 1.8 | ::fixy::corpus, ::fixy::tags::secret_policy, unknown
 fixy/Fn.cpp | 7.2 | ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
 fixy/Machine.cpp | 0.0 | ::fixy::machine::no_edges, unknown

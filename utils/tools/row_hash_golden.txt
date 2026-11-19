@@ -1,8 +1,8 @@
 # row_hash cross-build witness
 # format-version:  1
-# matrix-size:     56
+# matrix-size:     59
 # fold-seed:       0xf0117a11eda11a5e
-# fold-anchor:     0x45b8cbf7694b815f
+# fold-anchor:     0xb844f87cf80a3e62
 # toolchain-tag:   0x531f2bb4b45652c8
 # (a diff means a row_hash_contribution specialisation moved. Name the ceremony in the commit message and recapture this golden.)
 # (the R** lines fold no reflected name and are portable across toolchains. Every other line is not.)
@@ -42,6 +42,9 @@ L01_FnFutexCall          0xe7537d36eb539822
 L02_FnPark               0x4aaa19843f09cbb3
 L03_FnProcessStateRead   0x5a0c5e091a36155e
 L04_FnStderrWrite        0xa0fe4f9f6c49785b
+O01_FnSurfaceIo          0x37c7d2225b3d266a
+O02_FnSurfaceAllocIo     0x4dd47a083f097871
+O03_FnSurfaceUnion       0x4dd47a083f097871
 G10_EpochVersioned       0xe3543c60534b7736
 G11_Budgeted             0xdefcdb2e9f0ea002
 K02_OnDualGeneration     0x9e071212337c3790

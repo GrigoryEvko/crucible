@@ -102,6 +102,21 @@
       "constructor": "\\bClockSource\\("
     },
     {
+      "name": "neg_witness_collision_detail_pack_premises_cell_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bpack_premises_cell\\("
+    },
+    {
+      "name": "neg_witness_collision_detail_pack_record_cell_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bpack_record_cell\\("
+    },
+    {
+      "name": "neg_witness_collision_detail_payload_premises_cell_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bpayload_premises_cell\\("
+    },
+    {
       "name": "neg_witness_collision_verdict_cell_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bverdict_cell\\("
@@ -2085,6 +2100,18 @@
     },
     {
       "type": "fixy::collision::verdict_cell",
+      "header": "fixy/Collision.h"
+    },
+    {
+      "type": "fixy::collision::detail::pack_record_cell",
+      "header": "fixy/Collision.h"
+    },
+    {
+      "type": "fixy::collision::detail::pack_premises_cell",
+      "header": "fixy/Collision.h"
+    },
+    {
+      "type": "fixy::collision::detail::payload_premises_cell",
       "header": "fixy/Collision.h"
     },
     {
