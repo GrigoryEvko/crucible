@@ -230,7 +230,7 @@ include/fixy/os/ | replace-pending:<string> | 1 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 426 | - | -
+include/fixy/session/ | base-std-entity | 414 | - | -
 include/fixy/session/ | base-std-object | 177 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
@@ -453,6 +453,7 @@ test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges a Send whose message_
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges a SessionHandleBase that marks a live handle consumed | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges a global Branch whose next member disagrees with its argument | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges a partial specialization of BoundedAbove | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/neg/ | opted-out | 3 | PROBE: the fixture forges a second pole table for one pole of a bridged channel | a fixture plants a second pole table for one pole of a bridged channel in a probe region, and the reader of the tables refuses the second table
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges stdio::write with the axis Usage for a private stream | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges the call operator of InRange<1, 9> for int | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges the protocol of one end of a channel | The fixture forges the protocol of the producer end of a channel in a probe region, which the rule specialization-home admits.  On a header that lets a unit specialize the protocol of one end, it compiles, and on the alias of the bridge it does not
@@ -482,6 +483,7 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture forges a Send whose message_typ
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges a SessionHandleBase that marks a live handle consumed | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges a global Branch whose next member disagrees with its argument | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges a partial specialization of BoundedAbove | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/neg/ | region | 1 | PROBE: the fixture forges a second pole table for one pole of a bridged channel | a fixture plants a second pole table for one pole of a bridged channel in a probe region, and the reader of the tables refuses the second table
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges stdio::write with the axis Usage for a private stream | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges the call operator of InRange<1, 9> for int | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges the protocol of one end of a channel | The fixture forges the protocol of the producer end of a channel in a probe region, which the rule specialization-home admits.  On a header that lets a unit specialize the protocol of one end, it compiles, and on the alias of the bridge it does not

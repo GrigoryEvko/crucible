@@ -214,7 +214,7 @@ that the axis does not apply to the row.
 | `mint_reader_runtime_session` | `include/fixy/channels/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_recording_endpoint` | `include/fixy/channels/EndpointMint.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_stage_from_endpoints` | `include/fixy/channels/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_substrate_session` | `include/fixy/channels/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
+| `mint_substrate_session` | `include/fixy/channels/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_swmr_reader` | `include/fixy/channels/SwmrSession.h` | Y | - | Y | Y | token | · | HS14: 4 |
 | `mint_swmr_stage_from_endpoint` | `include/fixy/channels/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_swmr_writer` | `include/fixy/channels/SwmrSession.h` | Y | - | Y | Y | token | · | HS14: 4 |
@@ -277,10 +277,10 @@ that the axis does not apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_atomic_session` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
-| `mint_checkpoint_session` | `include/fixy/session/Checkpoint.h` | Y | Y | Y | Y | ctx | Y | HS14: 10 |
+| `mint_checkpoint_session` | `include/fixy/session/Checkpoint.h` | Y | Y | Y | Y | ctx | Y | HS14: 11 |
 | `mint_crash_reporter` | `include/fixy/session/CrashTransport.h` | Y | - | Y | · | token | · | HS14: 3 |
-| `mint_crash_session` | `include/fixy/session/CrashTransport.h` | Y | - | Y | Y | ctx | Y | HS14: 26 |
-| `mint_crash_writer` | `include/fixy/session/CrashTransport.h` | Y | - | Y | Y | token | · | HS14: 29 |
+| `mint_crash_session` | `include/fixy/session/CrashTransport.h` | Y | - | Y | Y | ctx | Y | HS14: 27 |
+| `mint_crash_writer` | `include/fixy/session/CrashTransport.h` | Y | - | Y | Y | token | · | HS14: 30 |
 | `mint_delegated_session` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_forked_async_channel` | `include/fixy/session/AsyncChannel.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
 | `mint_forked_channel` | `include/fixy/session/Mint.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
@@ -288,7 +288,7 @@ that the axis does not apply to the row.
 | `mint_permission_hold` | `include/fixy/session/Flow.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_permissioned_session` | `include/fixy/session/Mint.h` | Y | Y | Y | Y | ctx | Y | HS14: 12 |
 | `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | HS14: 8 |
-| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | HS14: 69 |
+| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | HS14: 71 |
 | `mint_session_event_writer` | `include/fixy/session/EventLog.h` | Y | - | Y | · | token | · | HS14: 11 |
 | `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_test_channel` | `include/fixy/session/Mint.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
@@ -374,9 +374,9 @@ that the axis does not apply to the row.
 | `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 204 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 210 |
 | `mint_permission_share` | `include/foundation/permissions/SharedPermission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 28 |
+| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 33 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |
 | `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 
