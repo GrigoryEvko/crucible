@@ -143,6 +143,14 @@ namespace fixy::session {
 
 namespace detail {
 
+// The site of a mint of a channel, which each side of a forked channel
+// keeps.  A source_location names strings of static storage that no thread
+// writes, so the site moves to the thread of its side (foundation/Transfer.h).
+// The fork asks only that fact.
+struct[[= ::foundation::transfer::sendable{}]] mint_site_ {
+    std::source_location loc{};
+};
+
 // Names the wrapper class alone, without its template arguments.
 // Several distinct wrappers share one SessionHandleBase specialization
 // for a given Proto, so a diagnostic that prints only Proto cannot say
@@ -2285,7 +2293,7 @@ class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
     struct forked_endpoint_ {
         Resource resource;
         Body body;
-        std::source_location loc;
+        detail::mint_site_ site;
         // The record the channel mint claimed for this end, linked to the
         // record of the other end.
         watch::endpoint_id endpoint = watch::endpoint_id::none;
@@ -2294,7 +2302,7 @@ class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
         void operator()(View const& view, Ctx const& ctx) noexcept {
             auto head = HandleFactory::open_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
                                              detail::brand_ctx_t<Body>>(
-                SessionOpenKey{}, std::forward<Resource>(resource), no_slots_{}, loc, endpoint);
+                SessionOpenKey{}, std::forward<Resource>(resource), no_slots_{}, site.loc, endpoint);
             auto at_end = std::invoke(std::move(body), std::move(head), view, ctx);
             static_cast<void>(std::move(at_end).close());
         }
@@ -2362,8 +2370,10 @@ public:
             detail::claim_channel_<SelfProto, PeerProto, Policy, session_priority(^^ResourceSelf)>(loc);
         return ::fixy::concurrent::mint_permission_fork<SelfTag, PeerTag>(
             ctx, std::move(parent),
-            SelfSide{std::forward<ResourceSelf>(self_resource), std::move(self_body), loc, self_endpoint},
-            PeerSide{std::forward<ResourcePeer>(peer_resource), std::move(peer_body), loc, peer_endpoint});
+            SelfSide{std::forward<ResourceSelf>(self_resource), std::move(self_body), detail::mint_site_{loc},
+                     self_endpoint},
+            PeerSide{std::forward<ResourcePeer>(peer_resource), std::move(peer_body), detail::mint_site_{loc},
+                     peer_endpoint});
     }
 
     // mint_test_channel: the two endpoints of one channel to one caller, for
