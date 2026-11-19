@@ -4226,6 +4226,17 @@ crucible_neg_compile_test(neg_metalog_consumer_append
     "has no member named .try_append."
     ".class crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ConsumerHandle. has no member")
 
+# Only the producer claim of the Vigils makes the proof of the record path, so
+# a caller outside the claim builds none, and the claim of another brand gives
+# a proof that the trace ring and the metadata log refuse.
+crucible_neg_compile_test(neg_record_proof_outside_claim
+    "is private within this context"
+    "SoleWriterProof<Owner, Role>::SoleWriterProof\\(\\) .with Owner = foundation::effects::host::ProducerClaim<crucible::Vigil>. Role = crucible::RecordProducerRole."
+    "neg_record_proof_outside_claim.cpp:15")
+crucible_neg_compile_test(neg_record_proof_other_brand
+    "cannot convert .foundation::SoleWriterProof<foundation::effects::host::ProducerClaim<neg_fixture::Stranger>, crucible::RecordProducerRole>."
+    "to .const crucible::RecordProof&.")
+
 # No reader gets a reference into a slot of the log.  The producer writes a new
 # record into a slot after the consumer releases it, so a reader copies.
 crucible_neg_compile_test(neg_meta_log_reference_read

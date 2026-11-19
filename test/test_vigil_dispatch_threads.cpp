@@ -132,6 +132,29 @@ void test_cold_gates_reject_a_context_on_another_thread(::fixy::TestRunnerCtx co
     ::fixy::check::pass(test, "  test_cold_gates_reject_a_context_on_another_thread: PASSED\n");
 }
 
+// record_op publishes the heads of the ring and of the log with the proof of
+// the record path, and the claim makes the proof only from the context that
+// it minted for the calling thread.  An intruder thread gets no context, so it
+// gets no proof: the claim ends the process before the record reaches the
+// ring.  The claiming thread records with the proof.
+void test_second_producer_gets_no_proof(::fixy::TestRunnerCtx const& test) {
+    expect_gate_refuses_the_intruder(
+        test,
+        [](Vigil& vigil, VigilFgCtx const&) noexcept {
+            auto second = make_op(0, 1);
+            static_cast<void>(
+                vigil.record_op(crucible::test::certify_synthetic_op(second.entry, second.metas, second.n_metas)));
+        },
+        kNotTheHolder);
+
+    Vigil vigil;
+    auto first = make_op(0, 0);
+    const bool took = vigil.record_op(crucible::test::certify_synthetic_op(first.entry, first.metas, first.n_metas));
+    CRUCIBLE_TEST_ASSERT(test, took);
+
+    ::fixy::check::pass(test, "  test_second_producer_gets_no_proof: PASSED\n");
+}
+
 // A brand of this test.  Its claim obeys the rule of each brand, and the
 // Vigil holds the same claim for its own brand.  Two live claims of this
 // brand hold no metadata log, and two live Vigils hold two logs of 176 MB.

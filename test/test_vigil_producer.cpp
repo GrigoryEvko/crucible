@@ -55,6 +55,36 @@ void test_producer_surface_takes_the_claim_context() {
     crucible::test::pass("  test_producer_surface_takes_the_claim_context: PASSED\n");
 }
 
+// record_op publishes the heads of the ring and of the log with the proof of
+// the claim, and the producer surface publishes them with the checked form
+// (THE TWO PUBLISHES of crucible/TraceRing.h).  The two forms keep one copy
+// of each head on the line of the producer, and the checked publish compares
+// the head with that copy.  A proven publish that left the copy behind ends the
+// process at the next checked publish, and the count of the ring shows a lost
+// or a doubled op.
+void test_two_publishes_keep_one_copy_of_the_head() {
+    crucible::Vigil vigil;
+    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+    crucible::TraceRing& ring = vigil.ring(fg);
+    crucible::MetaLog& meta_log = vigil.meta_log(fg);
+    const uint64_t first_produced = ring.total_produced();
+
+    constexpr uint32_t kRounds = 64;
+    for (uint32_t round = 0; round < kRounds; ++round) {
+        auto proven = divrig::op_at(round, 0);
+        assert(vigil.record_op(crucible::test::certify_synthetic_op(proven.entry, proven.metas, proven.n_metas)));
+        auto checked = divrig::op_at(round, 1);
+        const crucible::MetaIndex meta_start =
+            meta_log.try_append(crucible::test::records_of(checked.metas, checked.n_metas));
+        assert(meta_start.is_valid() && "the log has room for the records of the checked append");
+        assert(ring.try_append(checked.entry, meta_start) && "the ring has room for the checked append");
+    }
+
+    assert(ring.total_produced() == first_produced + 2 * kRounds
+           && "each proven and each checked publish moved the head by one op");
+    crucible::test::pass("  test_two_publishes_keep_one_copy_of_the_head: PASSED\n");
+}
+
 // The foreground reads the count of iterations while the detect stage writes
 // it.  After the flush, the test records two more regions and reads the count
 // until it moves, with no other synchronization with the pipeline.  A count

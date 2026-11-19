@@ -378,9 +378,7 @@ void test_build_and_release_pass_two_to_the_32() {
 
     // No other thread uses the log, which is the condition of the reset.
     constexpr uint32_t BELOW_WRAP = 0xFFFFFFFEu;
-    metalog->head.reset_under_quiescence(BELOW_WRAP);
-    metalog->tail.reset_under_quiescence(BELOW_WRAP);
-    metalog->cached_tail_.reset_under_quiescence(BELOW_WRAP);
+    metalog->reset_at(MetaIndex{BELOW_WRAP});
 
     constexpr uint32_t OPS = 4;
     Work work;

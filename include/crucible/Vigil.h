@@ -101,6 +101,23 @@ namespace crucible {
         [] noexcept { return false; });
 }
 
+// Records one op as record_into above does, with the proof of the record path.
+// The two publishes load nothing from the heads (THE TWO PUBLISHES of
+// crucible/TraceRing.h).  Only the producer claim of the Vigils makes the
+// proof, so Vigil is the one caller.
+[[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool record_into(TraceRing& ring, MetaLog& log,
+                                                                       RecordProof const& proof, const ValidatedOp& op,
+                                                                       ScopeHash scope_hash, CallsiteHash callsite_hash,
+                                                                       OpDepth depth) noexcept {
+    return ring.try_reserve().match(
+        [&](TraceRing::Reservation reserved) noexcept {
+            const MetaIndex meta_start = log.try_append_proven(proof, op.metas());
+            ring.commit_proven(proof, std::move(reserved), op.entry(), meta_start, scope_hash, callsite_hash, depth);
+            return true;
+        },
+        [] noexcept { return false; });
+}
+
 class Vigil {
 public:
     // The mode types live in a smaller header, so an observer names them
@@ -264,9 +281,9 @@ public:
     // dispatch_op.
     [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_op(const ValidatedOp& op, ScopeHash scope_hash = {},
                                                            CallsiteHash callsite_hash = {}, OpDepth depth = {}) {
-        (void)assert_producer_thread_();
+        const VigilFgCtx fg = assert_producer_thread_();
         op_record_stack_.note_given(depth);
-        return record_into(*ring_, *meta_log_, op, scope_hash, callsite_hash, depth);
+        return record_proven_(fg, op, scope_hash, callsite_hash, depth);
     }
 
     // Called once per op by the adapter.  A RECORD action means the caller
@@ -338,7 +355,7 @@ public:
         if (pending_region_.load_acquire().is_some() || pending_activation_) [[unlikely]]
             return dispatch_transition_(fg, op, scope_hash, callsite_hash, depth);
 
-        (void)record_into(*ring_, *meta_log_, op, scope_hash, callsite_hash, depth);
+        (void)record_proven_(fg, op, scope_hash, callsite_hash, depth);
         return {
             .action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {}, .op_index = OpIndex{}};
     }
@@ -799,6 +816,17 @@ private:
         return producer_claim_.mint_producer_context();
     }
 
+    // Records one op with the proof of the record path, which the claim makes
+    // from the context of the caller.  Each caller minted that context in the
+    // same call (assert_producer_thread_), so the record reads the thread one
+    // time.
+    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_proven_(VigilFgCtx const& fg, const ValidatedOp& op,
+                                                                ScopeHash scope_hash, CallsiteHash callsite_hash,
+                                                                OpDepth depth) noexcept {
+        const RecordProof proof = producer_claim_.prove_sole_writer<RecordProducerRole>(fg);
+        return record_into(*ring_, *meta_log_, proof, op, scope_hash, callsite_hash, depth);
+    }
+
     // The body of active_region.  The producer thread is the one writer of
     // the requested reset, so on that thread the comparison cannot race it.
     [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode>> newest_region_() const noexcept {
@@ -1144,7 +1172,7 @@ private:
             try_align_(fg, entry.schema_hash, entry.shape_hash);
             enters_region = replay_.context().is_compiled();
         } else {
-            (void)record_into(*ring_, *meta_log_, op, scope_hash, callsite_hash, depth);
+            (void)record_proven_(fg, op, scope_hash, callsite_hash, depth);
         }
         publish_held_regions_();
 

@@ -8,13 +8,17 @@
 // write over each other. A ring entry then names a metadata index whose
 // contents belong to a different op.
 //
-// Vigil owns the enforcement, and TraceRing.h states the rule in full.
+// Vigil owns the enforcement, and TraceRing.h states the rule in full.  The
+// log has the two publishes of the ring (THE TWO PUBLISHES of TraceRing.h):
+// try_append checks the head at each publish, and try_append_proven takes the
+// proof of the record path and loads nothing from the head.
 
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
+#include <crucible/ForegroundCtx.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/warden/Registry.h>
@@ -52,10 +56,11 @@ struct CRUCIBLE_OWNER MetaLog {
     // AtomicMonotonic carries its own alignas(64) and is 64 bytes wide, so
     // head fills bytes 0 through 63 by itself. An append therefore touches
     // two of the producer's lines, not one: head's, and the line after it
-    // that holds cached_tail_ and the buffer owner with its base. The
-    // consumer's counter starts at byte 128 and sits alone, which is the
+    // that holds cached_tail_, own_head_ and the buffer owner with its base.
+    // The consumer's counter starts at byte 128 and sits alone, which is the
     // part that matters — neither thread ever invalidates a line the other
-    // is reading.
+    // is reading.  The producer reads its position from own_head_, so an
+    // append with the proof only stores to the line of head.
     //
     // A thread reading its own counter needs no ordering, because coherence
     // already orders its own accesses. Publishing the counter with a release
@@ -78,6 +83,9 @@ struct CRUCIBLE_OWNER MetaLog {
     // free space, so acting on it is safe. The type enforces the direction,
     // since a value that moved backwards would mean a lost acquire.
     ::fixy::Monotonic<uint64_t> cached_tail_ = ::fixy::mint_monotonic<uint64_t>(0);
+    // The copy of the head of the producer.  It holds the value of the head
+    // after each publish.
+    ::fixy::Monotonic<uint64_t> own_head_ = ::fixy::mint_monotonic<uint64_t>(0);
     // The buffer owns the records, at the alignment of a huge page.
     ::fixy::HeapArray<TensorMeta, crucible::warden::kHugePageBytes> entries_buffer_;
     // The View of the CAPACITY records of the buffer.  Its count is in its
@@ -156,66 +164,31 @@ struct CRUCIBLE_OWNER MetaLog {
     // or no index if the buffer is full or the run is empty. Only the
     // producing thread writes the counter or the slots it is about to fill,
     // which the thread-safety analysis cannot express, so it is suppressed
-    // here.
+    // here.  The check of the publish loads the head.
     [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(::fixy::View<const TensorMeta> metas) CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(metas.size() <= CAPACITY);
-        // The count and the positions below have the width of a View count
-        // (64 bits on each supported platform), so the test of the run and
-        // the check of each window compare the same values, and the
-        // optimizer removes the checks.  A violation of the precondition
-        // ends the process, so the count is at most CAPACITY below, and the
-        // window of the second run of a wrap fits.
-        const uint64_t n = metas.size();
-        [[assume(n <= CAPACITY)]];
-        if (n == 0) [[unlikely]]
-            return MetaIndex::none();
+        return fill_run_(metas).match(
+            [&](MetaIndex start) noexcept {
+                // This release publishes the copy of fill_run_ to the consumer.
+                const uint64_t h = start.raw();
+                head.advance_sole_writer_from(h, h + metas.size());
+                own_head_.advance(h + metas.size());
+                return start;
+            },
+            [] noexcept { return MetaIndex::none(); });
+    }
 
-        const uint64_t h = head.peek_relaxed();
-
-        // A private view that says there is room is always right, because the
-        // real counter only ever frees more. Only the other answer needs the
-        // cross-core read.
-        if (h - cached_tail_.get() + n > CAPACITY) [[unlikely]] {
-            cached_tail_.advance(tail.get());
-            if (h - cached_tail_.get() + n > CAPACITY) [[unlikely]] {
-                return MetaIndex::none();
-            }
-        }
-
-        const uint64_t start_pos = h & MASK;
-
-        if (n <= CAPACITY - start_pos) [[likely]] {
-            write_records_(start_pos, metas, 0, n);
-        } else {
-            // The run wraps the end of the buffer, so it splits in two.
-            const uint64_t first_chunk = CAPACITY - start_pos;
-            write_records_(start_pos, metas, 0, first_chunk);
-            write_records_(0, metas, first_chunk, n - first_chunk);
-        }
-
-        // One record spans three cache lines, hence three prefetches. The
-        // sizes, the strides and the data pointer start at the offsets 0, 64
-        // and 128 of a record. Issuing them before the publishing store
-        // rather than after gives them the whole of the caller's remaining
-        // work to complete in. The prefetch itself has no bearing on when
-        // the copy above becomes visible.  Each prefetch prepares a write, and
-        // the locality 3 keeps the line in each level of the cache.
-        {
-            const TensorMeta& next_record = record_at_(h + n);
-            constexpr ::fixy::PrefetchAccess write_access = ::fixy::PrefetchAccess::write;
-            ::fixy::prefetch<write_access, 3>(next_record.sizes);
-            ::fixy::prefetch<write_access, 3>(next_record.strides);
-            ::fixy::prefetch<write_access, 3>(next_record.data_ptr);
-        }
-
-        // This release publishes the copy above to the consumer.
-        head.advance_sole_writer_from(h, h + n);
-        const MetaIndex result{h};
-        // The index returned is the one from before the advance. Returning the
-        // one after it would name the slot past the block just written, and
-        // every reader would skip the block.
-        CRUCIBLE_POST(result, !result.is_valid() || result.raw() == h);
-        return result;
+    // The append of the producer of the Vigils, which holds the proof of the
+    // record path.  The type proves the one writer, so the publish loads
+    // nothing from the head.
+    [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append_proven(RecordProof const& proof,
+                                                              ::fixy::View<const TensorMeta> metas)
+        CRUCIBLE_NO_THREAD_SAFETY {
+        return fill_run_(metas).match(
+            [&](MetaIndex start) noexcept {
+                head.advance_sole_writer_by_proof(proof, own_head_, start.raw() + metas.size());
+                return start;
+            },
+            [] noexcept { return MetaIndex::none(); });
     }
 
     // Preferred at new call sites: appending touches memory only, so the row
@@ -280,16 +253,91 @@ struct CRUCIBLE_OWNER MetaLog {
     // Valid only once both threads have stopped. Every counter here moves
     // backwards, which the monotonicity contract otherwise forbids, so the
     // caller must have joined the producer and the consumer first.
-    void reset() CRUCIBLE_NO_THREAD_SAFETY {
-        head.reset_under_quiescence();
-        tail.reset_under_quiescence();
-        cached_tail_.reset_under_quiescence();
-        CRUCIBLE_POST(0, head.get() == 0);
-        CRUCIBLE_POST(0, tail.get() == 0);
-        CRUCIBLE_POST(0, cached_tail_.get() == 0);
+    void reset() CRUCIBLE_NO_THREAD_SAFETY { reset_at(MetaIndex{0}); }
+
+    // reset with each counter at the index: the log is empty, and the next
+    // record takes the index.  The same condition holds.  The copy of the head
+    // of the producer takes the index too, so the next publish finds the head
+    // and the copy equal.  A test puts the counters near the end of the
+    // buffer, or near the wrap of 32 bits, with it.
+    void reset_at(MetaIndex position) CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(position.is_valid());
+        head.reset_under_quiescence(position.raw());
+        tail.reset_under_quiescence(position.raw());
+        cached_tail_.reset_under_quiescence(position.raw());
+        own_head_.reset_under_quiescence(position.raw());
+        CRUCIBLE_POST(0, head.get() == position.raw());
+        CRUCIBLE_POST(0, tail.get() == position.raw());
+        CRUCIBLE_POST(0, cached_tail_.get() == position.raw());
+        CRUCIBLE_POST(0, own_head_.get() == position.raw());
     }
 
 private:
+    // Writes the run of records at the head, and gives the index of its first
+    // record, or no value if the buffer is full or the run is empty.  The two
+    // appends share this body and then publish the head past the run.  An
+    // Option and not the index none, so the optimizer folds the test of each
+    // append into the branch that wrote the run.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<MetaIndex> fill_run_(::fixy::View<const TensorMeta> metas)
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(metas.size() <= CAPACITY);
+        // The count and the positions below have the width of a View count
+        // (64 bits on each supported platform), so the test of the run and
+        // the check of each window compare the same values, and the
+        // optimizer removes the checks.  A violation of the precondition
+        // ends the process, so the count is at most CAPACITY below, and the
+        // window of the second run of a wrap fits.
+        const uint64_t n = metas.size();
+        [[assume(n <= CAPACITY)]];
+        if (n == 0) [[unlikely]]
+            return ::fixy::none;
+
+        const uint64_t h = own_head_.get();
+
+        // A private view that says there is room is always right, because the
+        // real counter only ever frees more. Only the other answer needs the
+        // cross-core read.
+        if (h - cached_tail_.get() + n > CAPACITY) [[unlikely]] {
+            cached_tail_.advance(tail.get());
+            if (h - cached_tail_.get() + n > CAPACITY) [[unlikely]] {
+                return ::fixy::none;
+            }
+        }
+
+        const uint64_t start_pos = h & MASK;
+
+        if (n <= CAPACITY - start_pos) [[likely]] {
+            write_records_(start_pos, metas, 0, n);
+        } else {
+            // The run wraps the end of the buffer, so it splits in two.
+            const uint64_t first_chunk = CAPACITY - start_pos;
+            write_records_(start_pos, metas, 0, first_chunk);
+            write_records_(0, metas, first_chunk, n - first_chunk);
+        }
+
+        // One record spans three cache lines, hence three prefetches. The
+        // sizes, the strides and the data pointer start at the offsets 0, 64
+        // and 128 of a record. Issuing them before the publishing store
+        // rather than after gives them the whole of the caller's remaining
+        // work to complete in. The prefetch itself has no bearing on when
+        // the copy above becomes visible.  Each prefetch prepares a write, and
+        // the locality 3 keeps the line in each level of the cache.
+        {
+            const TensorMeta& next_record = record_at_(h + n);
+            constexpr ::fixy::PrefetchAccess write_access = ::fixy::PrefetchAccess::write;
+            ::fixy::prefetch<write_access, 3>(next_record.sizes);
+            ::fixy::prefetch<write_access, 3>(next_record.strides);
+            ::fixy::prefetch<write_access, 3>(next_record.data_ptr);
+        }
+
+        const MetaIndex result{h};
+        // The index is the one from before the publish. The one after it
+        // would name the slot past the block just written, and every reader
+        // would skip the block.
+        CRUCIBLE_POST(result, result.raw() == h);
+        return ::fixy::Option<MetaIndex>::some(result);
+    }
+
     // The record in the slot of index: the index masked by MASK.  The mask
     // keeps the slot below CAPACITY, so the check of the slot folds away.
     [[nodiscard]] TensorMeta const& record_at_(uint64_t index) const noexcept {

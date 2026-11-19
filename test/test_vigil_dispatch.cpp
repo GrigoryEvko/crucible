@@ -148,6 +148,7 @@ int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_second_producer_is_rejected(test);
     test_cold_gates_reject_a_context_on_another_thread(test);
+    test_second_producer_gets_no_proof(test);
     test_second_thread_cannot_claim_the_brand(test);
     test_released_claim_lets_another_thread_claim(test);
     test_dispatch_basic();

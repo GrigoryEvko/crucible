@@ -110,15 +110,13 @@ static void test_reset_zeroes_both_pointers() {
 
 static void test_copy_run_across_the_end() {
     MetaLog log{::foundation::effects::testing::test().alloc};
-    // The three counters start three slots from the end of the ring.  The
+    // The counters start three slots from the end of the ring.  The
     // next append then passes the end.  A fill and a drain of the ring hold a
     // second buffer of 176 MB, and the ring holds 176 MB too.  The
     // reset is correct only when no other thread uses the log, and this test
     // has one thread.
     const uint32_t near_end = MetaLog::CAPACITY - 3;
-    log.head.reset_under_quiescence(near_end);
-    log.tail.reset_under_quiescence(near_end);
-    log.cached_tail_.reset_under_quiescence(near_end);
+    log.reset_at(MetaIndex{near_end});
     assert(log.size().peek() == 0);
 
     // Five entries into three remaining slots: the batch straddles the
@@ -157,9 +155,7 @@ static void test_counters_pass_two_to_the_32() {
     MetaLog log{::foundation::effects::testing::test().alloc};
     // No other thread uses the log, which is the condition of the reset.
     constexpr uint32_t BELOW_WRAP = 0xFFFFFFF0u;
-    log.head.reset_under_quiescence(BELOW_WRAP);
-    log.tail.reset_under_quiescence(BELOW_WRAP);
-    log.cached_tail_.reset_under_quiescence(BELOW_WRAP);
+    log.reset_at(MetaIndex{BELOW_WRAP});
 
     ::fixy::FixedArray<TensorMeta, 32> run{};
     for (uint32_t i = 0; i < 32; ++i) {

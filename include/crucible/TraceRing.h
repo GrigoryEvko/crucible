@@ -18,6 +18,18 @@
 // caller that reaches this class through Vigil::ring() instead carries the
 // obligation itself.
 //
+// THE TWO PUBLISHES
+//   The producer keeps its own copy of the head on its private line, and it
+//   reads its position there.  The consumer polls the head, so a load of the
+//   head by the producer can wait for a transfer of its line.  commit checks
+//   the head against the copy at each publish, so a second producer ends the
+//   process at the next publish of the first one.  That check loads the head
+//   one time.  commit_proven takes the proof of the record path (RecordProof
+//   of crucible/ForegroundCtx.h), which only the producer claim of the Vigils
+//   makes.  The type proves the one writer, so that publish loads nothing
+//   from the head.  The Vigil records each op with the proof.  A test and a
+//   bench drive a ring of their own with the checked form.
+//
 // Single-producer is also what makes the recorded op order reproducible. The
 // order is the trace's identity: it fixes the region content hash, the memory
 // plan and the replay order. An order that two threads interleaved is a
@@ -38,6 +50,7 @@
 #include <cstdint>
 #include <type_traits>
 
+#include <crucible/ForegroundCtx.h>
 #include <crucible/Types.h>
 #include <crucible/warden/Registry.h>
 
@@ -221,11 +234,11 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 
     // head and tail are each written by one thread and read by the other, so
     // they sit on separate cache lines: sharing one line would make every
-    // producer write invalidate the consumer's copy and back again.
-    // advance_sole_writer_from() publishes with release and get() reads with
-    // acquire, which is the edge that makes the slot writes visible across
-    // the pair. A thread reading its own counter uses peek_relaxed and needs
-    // no ordering.
+    // producer write invalidate the consumer's copy and back again.  The
+    // publish of the head (advance_sole_writer_from or
+    // advance_sole_writer_by_proof) releases and get() acquires, which is the
+    // edge that makes the slot writes visible across the pair.  The producer
+    // reads its own position from own_head_ (THE TWO PUBLISHES).
     alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> head =
         ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
 
@@ -255,6 +268,9 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // consumer has not read. Monotonic enforces the direction: tail only ever
     // advances, so an observation that moved backwards is a lost acquire.
     alignas(64)::fixy::Monotonic<uint64_t> cached_tail_ = ::fixy::mint_monotonic<uint64_t>(0);
+    // The copy of the head of the producer, on the same private line (THE TWO
+    // PUBLISHES).  It holds the value of the head after each publish.
+    ::fixy::Monotonic<uint64_t> own_head_ = ::fixy::mint_monotonic<uint64_t>(0);
 
     alignas(64)::fixy::FixedArray<Entry, CAPACITY> entries{};
     ::fixy::FixedArray<MetaIndex, CAPACITY> meta_starts{};
@@ -285,8 +301,8 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     //
     // The producer commits a token before it reserves again.  The ring has
     // one producer, so no other append can move the head between the two
-    // calls.  A token that names an old head trips the check of the head in
-    // a Debug build.
+    // calls.  A token that names an old head fails the step check of each
+    // commit, in each build.
     class [[nodiscard]] Reservation {
     public:
         Reservation(const Reservation&) = delete("one reservation fills one slot of the ring");
@@ -313,7 +329,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // The ring does not change: the head moves in commit.
     [[nodiscard, gnu::hot]] CRUCIBLE_INLINE ::fixy::Option<Reservation> try_reserve() noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
-        const uint64_t h = head.peek_relaxed();
+        const uint64_t h = own_head_.get();
 
         // Refreshing from the consumer's atomic is the slow path, taken only
         // once the private view says the ring is full.
@@ -341,34 +357,27 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 
     // Writes the entry into the reserved slot, and moves the head past it.
     // The consumer then sees the entry.  Each argument has no default, so a
-    // caller cannot drop a field of the slot.
+    // caller cannot drop a field of the slot.  The release of the publish
+    // carries the five slot writes to the consumer, and its check loads the
+    // head (THE TWO PUBLISHES).
     [[gnu::hot]] CRUCIBLE_INLINE void commit(Reservation reserved, const Entry& e, MetaIndex meta_start,
                                              ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
-        const uint64_t h = reserved.head_;
-        const RingSlot slot = mask_slot_(h);
-        entries.at(slot) = e;
-        meta_starts.at(slot) = meta_start;
-        scope_hashes.at(slot) = scope_hash;
-        callsite_hashes.at(slot) = callsite_hash;
-        depths.at(slot) = depth;
-
-        // Warm the destination of the following append while the caller is
-        // still busy with its own post-append work.  One line of the depths
-        // holds the depths of 32 slots, so the prefetch of that line warms
-        // the next 31 appends too.
-        {
-            const RingSlot next_slot = mask_slot_(h + 1);
-            constexpr ::fixy::PrefetchAccess write_access = ::fixy::PrefetchAccess::write;
-            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(entries.at(next_slot));
-            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(meta_starts.at(next_slot));
-            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(scope_hashes.at(next_slot));
-            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(callsite_hashes.at(next_slot));
-            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(depths.at(next_slot));
-        }
-
-        // This release publishes all five slot writes above to the consumer.
+        const uint64_t h = fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
         head.advance_sole_writer_from(h, h + 1);
+        own_head_.advance(h + 1);
+    }
+
+    // The commit of the producer of the Vigils, which holds the proof of the
+    // record path.  The type proves the one writer, so the publish loads
+    // nothing from the head (THE TWO PUBLISHES).  A token that names an old
+    // head fails the step check of the publish in each build.
+    [[gnu::hot]] CRUCIBLE_INLINE void commit_proven(RecordProof const& proof, Reservation reserved, const Entry& e,
+                                                    MetaIndex meta_start, ScopeHash scope_hash,
+                                                    CallsiteHash callsite_hash, OpDepth depth) noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
+        const uint64_t h = fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
+        head.advance_sole_writer_by_proof(proof, own_head_, h + 1);
     }
 
     // Preferred at new call sites: appending touches memory only, so the row
@@ -585,10 +594,42 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         tail.reset_under_quiescence();
         consumer_tail_ = 0;
         cached_tail_.reset_under_quiescence();
+        own_head_.reset_under_quiescence();
         CRUCIBLE_POST(0, head.get() == 0);
         CRUCIBLE_POST(0, tail.get() == 0);
         CRUCIBLE_POST(0, consumer_tail_ == 0);
         CRUCIBLE_POST(0, cached_tail_.get() == 0);
+        CRUCIBLE_POST(0, own_head_.get() == 0);
+    }
+
+private:
+    // Writes the entry and its four parallel slots into the reserved slot,
+    // and warms the slot of the next append.  Gives the head of the
+    // reservation, which each commit publishes.  The two commits share this
+    // body, so they write the same slot.
+    [[gnu::hot]] CRUCIBLE_INLINE uint64_t fill_slot_(Reservation const& reserved, const Entry& e, MetaIndex meta_start,
+                                                     ScopeHash scope_hash, CallsiteHash callsite_hash,
+                                                     OpDepth depth) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        const uint64_t h = reserved.head_;
+        const RingSlot slot = mask_slot_(h);
+        entries.at(slot) = e;
+        meta_starts.at(slot) = meta_start;
+        scope_hashes.at(slot) = scope_hash;
+        callsite_hashes.at(slot) = callsite_hash;
+        depths.at(slot) = depth;
+
+        // Warm the destination of the following append while the caller is
+        // still busy with its own post-append work.  One line of the depths
+        // holds the depths of 32 slots, so the prefetch of that line warms
+        // the next 31 appends too.
+        const RingSlot next_slot = mask_slot_(h + 1);
+        constexpr ::fixy::PrefetchAccess write_access = ::fixy::PrefetchAccess::write;
+        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(entries.at(next_slot));
+        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(meta_starts.at(next_slot));
+        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(scope_hashes.at(next_slot));
+        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(callsite_hashes.at(next_slot));
+        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(depths.at(next_slot));
+        return h;
     }
 };
 

@@ -51,7 +51,7 @@ that the axis does not apply to the row.
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | HS14: 4 |
 | `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | HS14: 7 |
 | `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | HS14: 2 |
-| `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | HS14: 2 |
+| `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | HS14: 3 |
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | HS14: 8 |
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
@@ -346,7 +346,7 @@ that the axis does not apply to the row.
 | `Computation::mint_computation` | `include/foundation/effects/Computation.h` | Y | Y | Y | · | token | · | HS14: 10 |
 | `Computation::mint_computation_in_ctx` | `include/foundation/effects/Computation.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 | `InitOwner::mint_init_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | · | token | · | HS14: 3 |
-| `ProducerClaim::mint_producer_context` | `include/foundation/effects/Ctx.h` | Y | - | Y | · | member | · | HS14: 4 |
+| `ProducerClaim::mint_producer_context` | `include/foundation/effects/Ctx.h` | Y | - | Y | · | member | · | HS14: 5 |
 | `mint_cap` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | token | · | HS14: 11 |
 | `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | HS14: 4 |
