@@ -337,6 +337,7 @@ using ::foundation::core::NamesOneField;
 using ::foundation::core::PackedLayout;
 using ::foundation::core::PackedWord;
 
+using ::foundation::core::as_const;
 using ::foundation::core::exchange;
 using ::foundation::core::Exchangeable;
 

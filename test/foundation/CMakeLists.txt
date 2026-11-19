@@ -3177,6 +3177,9 @@ foundation_neg_compile_test(neg_core_scalar_exchange_pinned
 foundation_neg_compile_test(neg_core_scalar_swap_const
   "no match for call to .\\(const foundation::core::detail::SwapValues\\) \\(const int&, const int&\\)."
   "required for the satisfaction of .Exchangeable<T>. \\[with T = const int\\]")
+foundation_neg_compile_test(neg_core_values_as_const_temporary
+  "use of deleted function .void foundation::core::as_const\\(const T&&\\) \\[with T = int\\]."
+  "as_const of a temporary gives a reference that dangles at the end of the full expression")
 
 # An Id holds an unsigned word of a tag class, with no default constructor
 # and no arithmetic.  Its highest word is the niche of its Option.

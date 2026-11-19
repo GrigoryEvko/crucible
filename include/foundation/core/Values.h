@@ -1,10 +1,18 @@
 #pragma once
 
-// The Scalar family: the exchange and the swap of two values.
+// The Scalar family: the exchange and the swap of two values, and a const
+// view of one object.
 //
 //   exchange(slot, value)  puts value into slot, and gives the old value of
 //                          slot
 //   swap(left, right)      exchanges the values of two objects of one type
+//   as_const(object)       gives a const reference to object
+//
+// A lambda that only reads a local captures it as [&x = as_const(x)].  The
+// field of the capture is then a const reference, so a door that runs the
+// body on another thread asks only that two threads can read the object.
+// as_const of a temporary is refused, because its reference would dangle at
+// the end of the full expression.
 //
 // The type moves with no throw, so no operation leaves a value half moved,
 // and a type that does not move, such as a Pinned type, is refused.  A
@@ -42,6 +50,15 @@ template <Exchangeable T>
     slot = static_cast<T&&>(value);
     return old;
 }
+
+template <class T>
+[[nodiscard]] constexpr T const& as_const(T& object) noexcept {
+    return object;
+}
+
+template <class T>
+void as_const(T const&&) = delete("as_const of a temporary gives a reference that dangles at the end of the full "
+                                  "expression");
 
 namespace detail {
 

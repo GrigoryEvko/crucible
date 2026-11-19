@@ -70,4 +70,20 @@ static_assert(exchanges_a_value_that_only_moves());
 }
 static_assert(swaps_two_values());
 
+// as_const gives a const reference to the same object, from a const object
+// too.  The fixture neg_core_values_as_const_temporary holds that it refuses
+// a temporary.
+static_assert(std::is_same_v<decltype(as_const(std::declval<int&>())), int const&>);
+static_assert(std::is_same_v<decltype(as_const(std::declval<int const&>())), int const&>);
+static_assert(std::is_same_v<decltype(as_const(std::declval<Anchored&>())), Anchored const&>);
+static_assert(noexcept(as_const(std::declval<OnlyMoves&>())));
+
+[[nodiscard]] consteval bool views_the_same_object() {
+    int count = 4;
+    int const& view = as_const(count);
+    count = 9;
+    return &view == &count && view == 9;
+}
+static_assert(views_the_same_object());
+
 }  // namespace foundation::core::detail::values_checks

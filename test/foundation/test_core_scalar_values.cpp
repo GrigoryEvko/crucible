@@ -1,7 +1,8 @@
 // Tests of foundation/core/Values.h at run time: exchange gives the old
 // value and puts the new one, and swap exchanges two values, for words, for
 // a class of two members and for a class that only moves.  A count of the
-// moves shows that each operation moves each value and copies none.
+// moves shows that each operation moves each value and copies none.  as_const
+// gives a view of the object itself.
 
 #include <foundation/core/Values.h>
 
@@ -93,11 +94,28 @@ void test_each_value_moves_and_none_copies() {
     CRUCIBLE_FATAL_INVARIANT(left.moves() == 1 && right.moves() == 2);
 }
 
+// as_const reads the object itself: a write after the call shows through
+// the view, and a class that only moves gives its view with no move.
+void test_as_const_views_the_object() {
+    std::uint64_t count = opaque(std::uint64_t{5});
+    std::uint64_t const& view = core::as_const(count);
+    count = opaque(std::uint64_t{8});
+    CRUCIBLE_FATAL_INVARIANT(view == 8);
+    Tracked held{opaque(std::uint64_t{66})};
+    Tracked const& held_view = core::as_const(held);
+    CRUCIBLE_FATAL_INVARIANT(held_view.value() == 66 && held_view.moves() == 0 && held_view.is_held());
+    // A lambda that captures the view reads the local after a later write.
+    auto const read = [&seen = core::as_const(count)] { return seen; };
+    count = opaque(std::uint64_t{13});
+    CRUCIBLE_FATAL_INVARIANT(read() == 13);
+}
+
 }  // namespace
 
 int main() {
     test_exchange_and_swap_of_words();
     test_exchange_and_swap_of_a_class();
     test_each_value_moves_and_none_copies();
+    test_as_const_views_the_object();
     return 0;
 }
