@@ -13,10 +13,12 @@
 #include <foundation/Simd.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Float.h>
+#include <foundation/core/KeyedHash.h>
 #include <foundation/core/Reduce.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/core/Scan.h>
+#include <foundation/core/StorageFloat.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -45,6 +47,13 @@ inline constexpr std::size_t target_unit_run = 1000;
     return ::foundation::core::bit_cast<std::uint32_t>(sum);
 }
 
+// The keyed hash of the message under the key of the probe, by a call that
+// this unit compiles.
+[[nodiscard]] ::foundation::core::Hash256
+keyed_hash_of_this_unit(::foundation::core::View<std::byte const> message) noexcept {
+    return ::foundation::core::keyed_hash(target_probe_key(), message);
+}
+
 // The record of this unit, as a constant.  Each address comes from the compile
 // of this unit, so two units that share one body give one address.
 [[nodiscard]] consteval TargetUnitBodies bodies_of_this_unit() noexcept {
@@ -57,6 +66,10 @@ inline constexpr std::size_t target_unit_run = 1000;
         .fma_exact_body = &::foundation::core::detail::fma_by_integers_<double>,
         .vector_bytes = &::foundation::simd::native_vector_bytes,
         .sum_bits_body = &sum_bits_of_this_unit,
+        .keyed_hash_body = &keyed_hash_of_this_unit,
+        .widen_f16_body = &::foundation::core::widen<float, ::foundation::core::f16>,
+        .round_f16_body = &::foundation::core::round_nonsaturating<::foundation::core::f16, float>,
+        .round_f16_saturating_body = &::foundation::core::round_saturating<::foundation::core::f16, float>,
     };
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
