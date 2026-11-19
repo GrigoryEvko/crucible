@@ -19,11 +19,17 @@ namespace {
 // the fallback text of the longest row.
 constexpr std::size_t kLineCapacity = 512;
 
-// The text of a string literal of a row, up to its zero.  Complexity: linear
-// in the length of the text.
+// The longest text of a row that the report reads, without its zero.  The
+// longest fallback text of flag_floor holds about 160 characters.
+constexpr std::size_t kRowTextBound = kLineCapacity;
+
+// The text of a string literal of a row, up to its zero or kRowTextBound
+// characters.  The bound also keeps the optimizer from making the walk a call
+// of strlen of the C library, which the base does not import.  Complexity:
+// linear in the length of the text.
 [[nodiscard]] core::TextView text_of_row(char const* literal) noexcept {
     std::size_t size = 0;
-    while (literal[size] != '\0') {
+    while (size < kRowTextBound && literal[size] != '\0') {
         ++size;
     }
     return core::detail::text_over_(literal, size);
