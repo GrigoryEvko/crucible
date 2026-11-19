@@ -99,7 +99,7 @@ CROSS_CONFIGURE = ("--program-suffix=-16p", "--enable-languages=c,c++,lto", "--d
 COMPILER = Path("usr") / "bin" / "g++-16p"
 # The install prefix of the patched GCC below the home directory, when the environment names none.  The name holds
 # the count of the patches, as the default of cmake/Toolchain-gcc16.cmake does.
-HOME_PREFIX = Path(".local") / "gcc16-patched-p7"
+HOME_PREFIX = Path(".local") / "gcc16-patched-p8"
 # The time limit of one step of the build (run), in seconds.  With 8 jobs the build takes approximately 8 minutes,
 # but with one job on a slow host it can take some hours.
 STEP_TIMEOUT_S = 6 * 3600.0
@@ -148,7 +148,7 @@ CROSS_TARGETS = {
          CrossPackage("libbpf-devel-aarch64", True)),
         Path("usr") / "aarch64-redhat-linux" / "sys-root" / "fc44",
         "CRUCIBLE_GCC16_AARCH64_PREFIX",
-        Path(".local") / "gcc16-patched-aarch64-p7-san"),
+        Path(".local") / "gcc16-patched-aarch64-p8-san"),
 }
 # The pins of the packages of each cross target.  The rule tool-pins holds them (assay.setup.pins).
 CROSS_PINS = frozenset(package.pin for target in CROSS_TARGETS.values() for package in target.packages)

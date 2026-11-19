@@ -171,7 +171,6 @@ function(crucible_patched_gcc_problem cxx out_var)
   crucible_run_gcc_probe("${cxx}" sarif_context.cpp exit_code probe_output
                          "-fdiagnostics-add-output=sarif:file=${sarif}")
   crucible_sarif_has_constraint_context("${sarif}" has_context)
-  file(REMOVE_RECURSE "${sarif_directory}")
   if(exit_code EQUAL 0 OR NOT has_context)
     string(APPEND problems "\n- The fix that writes the C++ context of a diagnostic to the SARIF output")
     string(APPEND problems " (utils/toolchain/gcc/patches/0003-*.patch) is missing.  That compiler writes")
@@ -238,6 +237,25 @@ function(crucible_patched_gcc_problem cxx out_var)
     string(APPEND problems " foundation/reflect/TypeComponents.h and of the headers that read closures fail.")
     string(APPEND problems "  The probe cmake/probes/closure_captures.cpp gave the exit status '${exit_code}' and")
     string(APPEND problems " this output:\n${probe_output}")
+  endif()
+
+  # With -fannotations-on-definition-only, the patched compiler refuses an
+  # annotation on a declaration of a class that is not its definition, and
+  # its SARIF log holds the error.  The stock compiler refuses the unknown
+  # option, so the probe reads the error of the log and not the exit status.
+  set(sarif "${sarif_directory}/annotation_definition.sarif")
+  crucible_run_gcc_probe("${cxx}" annotation_definition.cpp exit_code probe_output -freflection
+                         -fannotations-on-definition-only "-fdiagnostics-add-output=sarif:file=${sarif}")
+  crucible_sarif_has_error("${sarif}" "^annotation on a declaration of .forward_declared. that is not its definition$"
+                           has_annotation_error)
+  file(REMOVE_RECURSE "${sarif_directory}")
+  if(exit_code EQUAL 0 OR NOT has_annotation_error)
+    string(APPEND problems "\n- The refusal of an annotation on a declaration of a class that is not its definition")
+    string(APPEND problems " (utils/toolchain/gcc/patches/0007-*.patch) is missing.  That compiler has no option")
+    string(APPEND problems " -fannotations-on-definition-only, so a forward declaration in one unit can give a type")
+    string(APPEND problems " an annotation, such as linear or authority, that only that unit sees.")
+    string(APPEND problems "  The probe cmake/probes/annotation_definition.cpp gave the exit status '${exit_code}',")
+    string(APPEND problems " and its SARIF log has no error for the forward declaration.  The output:\n${probe_output}")
   endif()
 
   if(problems STREQUAL "")

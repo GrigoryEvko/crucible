@@ -1,0 +1,725 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Grigory Evko <grigory@evko.io>
+Date: Thu, 19 Nov 2026 18:41:39 +0000
+Subject: [PATCH] c++: add -fannotations-on-definition-only
+
+An annotation on a declaration of a class or enumeration that is not its
+definition can count as an annotation of the type: a forward declaration
+before the definition, an opaque enumeration declaration before the
+definition, a declaration of a class template before or after its
+definition, a declaration of a partial specialization after its
+definition, an explicit instantiation, and the declaration of a nested
+class or of a member class template in its class.  Such a declaration
+changes what std::meta::annotations_of gives for the type, but only in
+the translation units that contain it.  Two units can then see different
+annotations of the same type, and a unit can give a type an annotation
+that its definition does not have.
+
+The new option -fannotations-on-definition-only makes an annotation on
+each declaration of a class or enumeration that is not its definition an
+error, before and after the definition: an elaborated-type-specifier
+(also in a friend declaration, a typedef, a parameter or a template
+argument), an opaque-enum-specifier, and an attribute before or after the
+decl-specifiers of a declaration with no declarator.  The diagnostic is
+an error, so no diagnostic pragma can turn it off, and -fpermissive does
+not change it.
+
+With the option, the definition of an enumeration after an opaque
+declaration also carries its annotations.  Without the option,
+decl_attributes ignores each type attribute of that definition with
+-Wattributes, because the opaque declaration completed the type.  An
+opaque declaration in one unit then removes the annotations of the type
+in that unit.
+
+Without the option the compiler behaves as before.  The option does not
+change an annotation on a function, a variable, a data member, a
+parameter, a namespace or a type alias.
+
+gcc/c-family/ChangeLog:
+
+	* c.opt (fannotations-on-definition-only): New option.
+
+gcc/cp/ChangeLog:
+
+	* cp-tree.h (diagnose_annotation_on_declaration): Declare.
+	* decl.cc (diagnose_annotation_on_declaration): New function.
+	(check_tag_decl): Refuse an annotation of a declaration with no
+	declarator that does not define its type.
+	(attach_definition_annotations): New function.
+	(start_enum): Use it for the definition of an enumeration that an
+	opaque declaration completed.
+	* parser.cc (cp_parser_elaborated_type_specifier): Refuse an
+	annotation.
+	(cp_parser_enum_specifier): Refuse an annotation of an
+	opaque-enum-specifier.
+
+gcc/ChangeLog:
+
+	* doc/invoke.texi (C++ Dialect Options): Document
+	-fannotations-on-definition-only.
+
+gcc/testsuite/ChangeLog:
+
+	* g++.dg/reflect/annotation_definition1.C: New test.
+	* g++.dg/reflect/annotation_definition2.C: New test.
+	* g++.dg/reflect/annotation_definition3.C: New test.
+	* g++.dg/reflect/annotation_definition4.C: New test.
+	* g++.dg/reflect/annotation_definition5.C: New test.
+---
+ gcc/c-family/c.opt                            |   4 +
+ gcc/cp/cp-tree.h                              |   1 +
+ gcc/cp/decl.cc                                | 101 ++++++++++++-
+ gcc/cp/parser.cc                              |  26 ++++
+ gcc/doc/invoke.texi                           |  26 ++++
+ .../g++.dg/reflect/annotation_definition1.C   |  83 +++++++++++
+ .../g++.dg/reflect/annotation_definition2.C   | 140 ++++++++++++++++++
+ .../g++.dg/reflect/annotation_definition3.C   |  75 ++++++++++
+ .../g++.dg/reflect/annotation_definition4.C   |  20 +++
+ .../g++.dg/reflect/annotation_definition5.C   |  27 ++++
+ 10 files changed, 502 insertions(+), 1 deletion(-)
+ create mode 100644 gcc/testsuite/g++.dg/reflect/annotation_definition1.C
+ create mode 100644 gcc/testsuite/g++.dg/reflect/annotation_definition2.C
+ create mode 100644 gcc/testsuite/g++.dg/reflect/annotation_definition3.C
+ create mode 100644 gcc/testsuite/g++.dg/reflect/annotation_definition4.C
+ create mode 100644 gcc/testsuite/g++.dg/reflect/annotation_definition5.C
+
+diff --git a/gcc/c-family/c.opt b/gcc/c-family/c.opt
+index 3d96a73ec..9a08a0fa9 100644
+--- a/gcc/c-family/c.opt
++++ b/gcc/c-family/c.opt
+@@ -1741,6 +1741,10 @@ falt-external-templates
+ C++ ObjC++ WarnRemoved
+ No longer supported.
+ 
++fannotations-on-definition-only
++C++ ObjC++ Var(flag_annotations_on_definition_only) Init(0)
++Reject an annotation on a declaration of a class or enumeration that is not its definition.
++
+ fasm
+ C ObjC C++ ObjC++ Var(flag_no_asm, 0)
+ Recognize the \"asm\" keyword.
+diff --git a/gcc/cp/cp-tree.h b/gcc/cp/cp-tree.h
+index c4e1d74a4..6ba2ec613 100644
+--- a/gcc/cp/cp-tree.h
++++ b/gcc/cp/cp-tree.h
+@@ -7616,6 +7616,7 @@ extern tree push_library_fn			(tree, tree, tree, int);
+ extern tree push_throw_library_fn		(tree, tree);
+ extern void warn_misplaced_attr_for_class_type  (location_t location,
+ 						 tree class_type);
++extern bool diagnose_annotation_on_declaration	(location_t, tree, tree);
+ extern tree check_tag_decl			(cp_decl_specifier_seq *, bool);
+ extern tree shadow_tag				(cp_decl_specifier_seq *);
+ extern tree groktypename			(cp_decl_specifier_seq *, const cp_declarator *, bool);
+diff --git a/gcc/cp/decl.cc b/gcc/cp/decl.cc
+index d6164fead..032bcb27f 100644
+--- a/gcc/cp/decl.cc
++++ b/gcc/cp/decl.cc
+@@ -6261,6 +6261,40 @@ warn_misplaced_attr_for_class_type (location_t location,
+ 	    class_type, class_key_or_enum_as_string (class_type));
+ }
+ 
++/* With -fannotations-on-definition-only, give an error at LOCATION if the
++   attribute list ATTRS of a declaration of the class or enumeration TYPE
++   holds an annotation.  The caller calls this only for a declaration that
++   is not the definition of TYPE.  Return true if it gave the error.
++
++   Without the option, an annotation on such a declaration before the
++   definition counts as an annotation of TYPE, but only in the translation
++   units that contain the declaration, so a forward declaration can change
++   what std::meta::annotations_of gives for a type defined elsewhere.  */
++
++bool
++diagnose_annotation_on_declaration (location_t location, tree attrs,
++				    tree type)
++{
++  if (!flag_annotations_on_definition_only)
++    return false;
++  for (tree attr = attrs; attr; attr = TREE_CHAIN (attr))
++    if (annotation_p (attr))
++      {
++	auto_diagnostic_group d;
++	/* %qT and not %q#T: the class-key of a new type is not known yet.  */
++	if (processing_explicit_instantiation)
++	  error_at (location, "annotation on an explicit instantiation of %qT",
++		    type);
++	else
++	  error_at (location, "annotation on a declaration of %qT that is "
++		    "not its definition", type);
++	inform (location, "%<-fannotations-on-definition-only%> accepts an "
++		"annotation of a class or enumeration only on its definition");
++	return true;
++      }
++  return false;
++}
++
+ /* Returns the cv-qualifiers that apply to the type specified
+    by the DECLSPECS.  */
+ 
+@@ -6415,7 +6449,21 @@ check_tag_decl (cp_decl_specifier_seq *declspecs,
+ 		  "%qs cannot be used for type declarations", "consteval");
+     }
+ 
+-  if (declspecs->attributes && warn_attributes && declared_type)
++  /* A declaration with no declarator that does not define its type is not
++     the definition of that type, so -fannotations-on-definition-only refuses
++     an annotation before or after its decl-specifiers.  */
++  bool annotation_refused_p
++    = (declared_type
++       && !declspecs->type_definition_p
++       && (diagnose_annotation_on_declaration
++	     (declspecs->locations[ds_attribute], declspecs->attributes,
++	      declared_type)
++	   || diagnose_annotation_on_declaration
++		(declspecs->locations[ds_std_attribute],
++		 declspecs->std_attributes, declared_type)));
++
++  if (declspecs->attributes && warn_attributes && declared_type
++      && !annotation_refused_p)
+     {
+       location_t loc;
+       if (!CLASS_TYPE_P (declared_type)
+@@ -6447,6 +6495,7 @@ check_tag_decl (cp_decl_specifier_seq *declspecs,
+ 
+   if (declspecs->std_attributes
+       && declared_type
++      && !annotation_refused_p
+       && any_nonignored_attribute_p (declspecs->std_attributes))
+     {
+       auto_diagnostic_group d;
+@@ -18870,6 +18919,46 @@ copy_type_enum (tree dst, tree src)
+     }
+ }
+ 
++/* Give each annotation of the attribute list ATTRS of the definition of
++   ENUMTYPE to that type, and return the other attributes of ATTRS in their
++   order.  An opaque-enum-specifier completed ENUMTYPE before its definition,
++   so decl_attributes would ignore the annotations.  The annotations go to
++   the type as decl_attributes gives them to an incomplete type: each one in
++   turn, through the handler of its attribute, to the front of the list of
++   the main variant and of each other variant.  */
++
++static tree
++attach_definition_annotations (tree enumtype, tree attrs)
++{
++  gcc_checking_assert (enumtype == TYPE_MAIN_VARIANT (enumtype));
++  tree others = NULL_TREE;
++  for (tree attr = attrs; attr; attr = TREE_CHAIN (attr))
++    {
++      if (!annotation_p (attr))
++	{
++	  others = tree_cons (TREE_PURPOSE (attr), TREE_VALUE (attr), others);
++	  continue;
++	}
++      const attribute_spec *spec = lookup_attribute_spec (TREE_PURPOSE (attr));
++      tree args = TREE_VALUE (attr);
++      bool no_add_attrs = false;
++      spec->handler (&enumtype, get_attribute_name (attr), args, 0,
++		     &no_add_attrs);
++      if (no_add_attrs)
++	continue;
++      tree old_attrs = TYPE_ATTRIBUTES (enumtype);
++      tree attached = tree_cons (TREE_PURPOSE (attr), args, old_attrs);
++      for (tree variant = enumtype; variant;
++	   variant = TYPE_NEXT_VARIANT (variant))
++	if (TYPE_ATTRIBUTES (variant) == old_attrs)
++	  TYPE_ATTRIBUTES (variant) = attached;
++	else
++	  TYPE_ATTRIBUTES (variant) = tree_cons (TREE_PURPOSE (attr), args,
++						 TYPE_ATTRIBUTES (variant));
++    }
++  return nreverse (others);
++}
++
+ /* Begin compiling the definition of an enumeration type.
+    NAME is its name,
+ 
+@@ -19014,6 +19103,16 @@ start_enum (tree name, tree enumtype, tree underlying_type,
+ 
+   SET_SCOPED_ENUM_P (enumtype, scoped_enum_p);
+ 
++  /* With -fannotations-on-definition-only, the parser refuses an annotation
++     on an opaque-enum-specifier, so each annotation here comes from the
++     definition.  An opaque-enum-specifier before it completed the type, and
++     decl_attributes ignores a type attribute of a complete type, so the
++     annotations of the definition go to the type here.  */
++  if (flag_annotations_on_definition_only
++      && COMPLETE_TYPE_P (enumtype)
++      && !processing_template_decl)
++    attributes = attach_definition_annotations (enumtype, attributes);
++
+   cplus_decl_attributes (&enumtype, attributes, (int)ATTR_FLAG_TYPE_IN_PLACE);
+ 
+   if (underlying_type)
+diff --git a/gcc/cp/parser.cc b/gcc/cp/parser.cc
+index e793ef411..986f04d15 100644
+--- a/gcc/cp/parser.cc
++++ b/gcc/cp/parser.cc
+@@ -23763,6 +23763,13 @@ cp_parser_elaborated_type_specifier (cp_parser* parser,
+   if (type == error_mark_node)
+     return error_mark_node;
+ 
++  /* An elaborated-type-specifier is never the definition of its type.  With
++     -fannotations-on-definition-only, an annotation here is an error, and
++     the other attributes of the list then have no effect.  */
++  if (attributes
++      && diagnose_annotation_on_declaration (key_loc, attributes, type))
++    attributes = NULL_TREE;
++
+   /* Allow attributes on forward declarations of classes.  */
+   if (attributes)
+     {
+@@ -24040,6 +24047,21 @@ cp_parser_enum_specifier (cp_parser* parser)
+ 	push_nested_namespace (nested_name_specifier);
+     }
+ 
++  /* An opaque-enum-specifier is not the definition of its enumeration.  With
++     -fannotations-on-definition-only, its attributes do not reach start_enum
++     when they hold an annotation, and the error follows once start_enum
++     gives the type.  */
++  tree refused_attributes = NULL_TREE;
++  if (flag_annotations_on_definition_only
++      && !cp_lexer_next_token_is (parser->lexer, CPP_OPEN_BRACE))
++    for (tree attr = attributes; attr; attr = TREE_CHAIN (attr))
++      if (annotation_p (attr))
++	{
++	  refused_attributes = attributes;
++	  attributes = NULL_TREE;
++	  break;
++	}
++
+   /* Issue an error message if type-definitions are forbidden here.  */
+   if (!cp_parser_check_type_definition (parser))
+     type = error_mark_node;
+@@ -24050,6 +24072,10 @@ cp_parser_enum_specifier (cp_parser* parser)
+     type = start_enum (identifier, type, underlying_type,
+ 		       attributes, scoped_enum_p, &is_new_type);
+ 
++  if (refused_attributes && type != error_mark_node)
++    diagnose_annotation_on_declaration (type_start_token->location,
++					refused_attributes, type);
++
+   /* If the next token is not '{' it is an opaque-enum-specifier or an
+      elaborated-type-specifier.  */
+   if (cp_lexer_next_token_is (parser->lexer, CPP_OPEN_BRACE))
+diff --git a/gcc/doc/invoke.texi b/gcc/doc/invoke.texi
+index 81213fca9..d94d54781 100644
+--- a/gcc/doc/invoke.texi
++++ b/gcc/doc/invoke.texi
+@@ -217,6 +217,7 @@ in the following sections.
+ @gccoptlist{--compile-std-module
+ -fabi-compat-version=@var{n}  -fabi-version=@var{n}
+ -fno-access-control  -faligned-new=@r{[}@var{n}@r{]}
++-fannotations-on-definition-only
+ -fno-assume-sane-operators-new-delete
+ -fchar8_t  -fcheck-new
+ -fconcepts  -fconcepts-diagnostics-depth=@var{n}
+@@ -3150,6 +3151,31 @@ but few users will need to override the default of
+ 
+ This flag is enabled by default for @option{-std=c++17}.
+ 
++@opindex fannotations-on-definition-only
++@opindex fno-annotations-on-definition-only
++@item -fannotations-on-definition-only
++Reject an annotation on a declaration of a class, union or enumeration
++that is not its definition.  Without this option, an annotation on a
++forward declaration, on an opaque enumeration declaration, on a
++declaration of a class template or of a partial specialization, or on
++an explicit instantiation can add an annotation that
++@code{std::meta::annotations_of} then gives for the type, and it does
++so only in the translation units that contain that declaration.  With
++this option, an annotation on each declaration of a class or
++enumeration that is not its definition is an error, before and after
++the definition.  The error is not a warning, so no diagnostic pragma
++can turn it off, and @option{-fpermissive} does not change it.
++
++An annotation on the definition of a class or enumeration counts.  This
++holds also for the definition of an enumeration after an opaque
++enumeration declaration.  Without this option, that definition ignores
++each of its type attributes with a @option{-Wattributes} warning, so an
++opaque declaration in one translation unit removes the annotations of
++the type in that unit.  An annotation on a function, a variable, a data
++member, a parameter, a namespace or a type alias is not affected, so
++the option has no effect on a translation unit with no annotation of a
++class or enumeration, at each @option{-std} level.
++
+ @opindex fno-assume-sane-operators-new-delete
+ @opindex fassume-sane-operators-new-delete
+ @item -fno-assume-sane-operators-new
+diff --git a/gcc/testsuite/g++.dg/reflect/annotation_definition1.C b/gcc/testsuite/g++.dg/reflect/annotation_definition1.C
+new file mode 100644
+index 000000000..3d2edc727
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/reflect/annotation_definition1.C
+@@ -0,0 +1,83 @@
++// { dg-do compile { target c++26 } }
++// { dg-additional-options "-freflection -fannotations-on-definition-only" }
++// With -fannotations-on-definition-only, an annotation on a declaration of a
++// class or enumeration that is not its definition is an error, before and
++// after the definition.
++
++struct A { int v; };
++
++struct [[=A{1}]] C1;			// { dg-error "annotation on a declaration of 'C1' that is not its definition" }
++struct [[=A{2}]] C1;			// { dg-error "annotation on a declaration of 'C1' that is not its definition" }
++struct C1 {};
++struct [[=A{3}]] C1;			// { dg-error "annotation on a declaration of 'C1' that is not its definition" }
++
++class [[=A{1}]] K1;			// { dg-error "annotation on a declaration of 'K1' that is not its definition" }
++class K1 {};
++
++union [[=A{1}]] U1;			// { dg-error "annotation on a declaration of 'U1' that is not its definition" }
++union U1 { int i; };
++
++template <typename T>
++struct [[=A{1}]] T1;			// { dg-error "annotation on a declaration of 'T1<T>' that is not its definition" }
++template <typename T>
++struct T1 {};
++template <typename T>
++struct [[=A{2}]] T1;			// { dg-error "annotation on a declaration of 'T1<T>' that is not its definition" }
++
++template <typename T>
++struct S1 {};
++template <>
++struct [[=A{1}]] S1<int>;		// { dg-error "annotation on a declaration of 'S1<int>' that is not its definition" }
++template <>
++struct S1<int> {};
++template <>
++struct [[=A{2}]] S1<int>;		// { dg-error "annotation on a declaration of 'S1<int>' that is not its definition" }
++template <>
++struct [[=A{3}]] S1<char>;		// { dg-error "annotation on a declaration of 'S1<char>' that is not its definition" }
++
++template <typename T>
++struct [[=A{1}]] S1<T *>;		// { dg-error "annotation on a declaration of 'S1<T\\*>' that is not its definition" }
++template <typename T>
++struct S1<T *> {};
++template <typename T>
++struct [[=A{2}]] S1<T *>;		// { dg-error "annotation on a declaration of 'S1<T\\*>' that is not its definition" }
++
++template struct [[=A{1}]] S1<long>;	// { dg-error "annotation on an explicit instantiation of 'S1<long int>'" }
++extern template struct [[=A{1}]] S1<short>; // { dg-error "annotation on an explicit instantiation of 'S1<short int>'" }
++
++enum class [[=A{1}]] E1 : int;		// { dg-error "annotation on a declaration of 'E1' that is not its definition" }
++enum class E1 : int { a };
++enum class [[=A{2}]] E1 : int;		// { dg-error "annotation on a declaration of 'E1' that is not its definition" }
++enum [[=A{1}]] E2 : int;		// { dg-error "annotation on a declaration of 'E2' that is not its definition" }
++enum E2 : int { b };
++
++struct F
++{
++  friend struct [[=A{1}]] P1;		// { dg-error "annotation on a declaration of 'P1' that is not its definition" }
++  template <typename T>
++  friend struct [[=A{1}]] P2;		// { dg-error "annotation on a declaration of 'P2<T>' that is not its definition" }
++  struct [[=A{1}]] N1;			// { dg-error "annotation on a declaration of 'F::N1' that is not its definition" }
++  template <typename T>
++  struct [[=A{1}]] N2;			// { dg-error "annotation on a declaration of 'F::N2<T>' that is not its definition" }
++};
++struct P1 {};
++struct F::N1 {};
++template <typename T>
++struct F::N2 {};
++
++struct [[=A{1}]] P3 *p3;		// { dg-error "annotation on a declaration of 'P3' that is not its definition" }
++void g (struct [[=A{1}]] P4 *);		// { dg-error "annotation on a declaration of 'P4' that is not its definition" }
++typedef struct [[=A{1}]] P5 P5_t;	// { dg-error "annotation on a declaration of 'P5' that is not its definition" }
++template <typename T>
++struct H {};
++H<struct [[=A{1}]] P6> *h;		// { dg-error "annotation on a declaration of 'P6' that is not its definition" }
++
++[[=A{1}]] struct P7;			// { dg-error "annotation on a declaration of 'P7' that is not its definition" }
++struct P8 [[=A{1}]];			// { dg-error "annotation on a declaration of 'P8' that is not its definition" }
++
++void
++local ()
++{
++  struct [[=A{1}]] L;			// { dg-error "annotation on a declaration of 'local\\(\\)::L' that is not its definition" }
++  struct L {};
++}
+diff --git a/gcc/testsuite/g++.dg/reflect/annotation_definition2.C b/gcc/testsuite/g++.dg/reflect/annotation_definition2.C
+new file mode 100644
+index 000000000..3401a0156
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/reflect/annotation_definition2.C
+@@ -0,0 +1,140 @@
++// { dg-do compile { target c++26 } }
++// { dg-additional-options "-freflection -fannotations-on-definition-only" }
++// With -fannotations-on-definition-only, an annotation on the definition of a
++// class or enumeration counts.  The option does not change an annotation on a
++// function, a variable, a data member, a parameter, a namespace or a type
++// alias, nor an attribute that is not an annotation.
++
++#include <meta>
++
++struct A { int v; };
++
++consteval std::size_t
++count (std::meta::info r)
++{
++  return std::meta::annotations_of (r).size ();
++}
++
++struct C1;
++struct [[=A{1}]] C1 {};
++static_assert (count (^^C1) == 1);
++
++struct [[=A{1}, =A{2}]] C2 {} c2;
++static_assert (count (^^C2) == 2);
++
++typedef struct [[=A{1}]] C3 {} C3_t;
++static_assert (count (^^C3) == 1);
++
++class [[=A{1}]] K1 {};
++static_assert (count (^^K1) == 1);
++
++union U1;
++union [[=A{1}]] U1 { int i; };
++static_assert (count (^^U1) == 1);
++
++template <typename T>
++struct T1;
++template <typename T>
++struct [[=A{1}]] T1 {};
++static_assert (count (^^T1<int>) == 1);
++
++template <typename T>
++struct S1 {};
++template <>
++struct S1<int>;
++template <>
++struct [[=A{1}]] S1<int> {};
++static_assert (count (^^S1<int>) == 1);
++template <typename T>
++struct S1<T *>;
++template <typename T>
++struct [[=A{1}]] S1<T *> {};
++static_assert (count (^^S1<int *>) == 1);
++static_assert (count (^^S1<long>) == 0);
++template struct S1<char>;
++extern template struct S1<short>;
++
++enum class E1 : int;
++enum class [[=A{1}]] E1 : int { a };
++static_assert (count (^^E1) == 1);
++enum [[=A{1}]] E2 { b };
++static_assert (count (^^E2) == 1);
++enum E3 : int;
++enum [[=A{1}]] E3 : int { c };
++static_assert (count (^^E3) == 1);
++
++struct O
++{
++  struct I;
++  template <typename T>
++  struct J;
++  struct [[=A{1}]] K {};
++};
++struct [[=A{1}]] O::I {};
++template <typename T>
++struct [[=A{1}]] O::J {};
++static_assert (count (^^O::I) == 1);
++static_assert (count (^^O::J<int>) == 1);
++static_assert (count (^^O::K) == 1);
++
++/* An attribute that is not an annotation keeps its effect on a declaration
++   that is not the definition.  */
++struct [[deprecated]] D1;
++struct D1 {};
++D1 *d1;					// { dg-warning "'D1' is deprecated" }
++enum class [[deprecated]] D2 : int;
++enum class D2 : int { d };
++D2 *d2;					// { dg-warning "'D2' is deprecated" }
++
++/* The definition of an enumeration after an opaque declaration carries
++   its annotations, in their order, and so does each variant of the type
++   that a use before the definition made.  */
++enum class E4 : int;
++void use_e4 (const E4 &);
++enum class [[=A{4}, =A{5}]] E4 : int { e };
++static_assert (count (^^E4) == 2);
++static_assert ([: std::meta::constant_of (std::meta::annotations_of (^^E4)[0]) :].v == 4);
++static_assert ([: std::meta::constant_of (std::meta::annotations_of (^^E4)[1]) :].v == 5);
++static_assert (count (^^const E4) == 2);
++
++/* Functions, variables, data members, parameters, namespaces and type
++   aliases keep each annotation of each declaration.  */
++[[=A{1}]] void f1 ();
++void f1 () {}
++static_assert (count (^^f1) == 1);
++
++[[=A{1}]] extern int v1;
++int v1;
++static_assert (count (^^v1) == 1);
++
++struct M
++{
++  [[=A{1}]] void m ();
++  [[=A{1}]] static int s;
++  [[=A{1}]] int d;
++};
++void M::m () {}
++int M::s;
++static_assert (count (^^M::m) == 1);
++static_assert (count (^^M::s) == 1);
++static_assert (count (^^M::d) == 1);
++
++void p1 ([[=A{1}]] int);
++void p1 (int) {}
++static_assert (count (std::meta::parameters_of (^^p1)[0]) == 1);
++
++namespace N1 {}
++namespace [[=A{1}]] N1 {}
++static_assert (count (^^N1) == 1);
++
++using Al = C1;
++using Al [[=A{1}]] = C1;
++static_assert (count (^^Al) == 1);
++
++void
++local ()
++{
++  struct L;
++  struct [[=A{1}]] L {};
++  static_assert (count (^^L) == 1);
++}
+diff --git a/gcc/testsuite/g++.dg/reflect/annotation_definition3.C b/gcc/testsuite/g++.dg/reflect/annotation_definition3.C
+new file mode 100644
+index 000000000..447df4e02
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/reflect/annotation_definition3.C
+@@ -0,0 +1,75 @@
++// { dg-do compile { target c++26 } }
++// { dg-additional-options "-freflection" }
++// Without -fannotations-on-definition-only, an annotation on a declaration of
++// a class or enumeration that is not its definition can count as an
++// annotation of the type, and an annotation on the definition of an
++// enumeration after an opaque declaration does not count.  The test pins
++// that behavior, which annotation_definition1.C and annotation_definition2.C
++// change with the option.
++
++#include <meta>
++
++struct A { int v; };
++
++consteval std::size_t
++count (std::meta::info r)
++{
++  return std::meta::annotations_of (r).size ();
++}
++
++struct [[=A{1}]] C1;
++struct [[=A{2}]] C1;
++struct C1 {};
++struct [[=A{3}]] C1;			// { dg-warning "type attributes ignored after type is already defined" }
++static_assert (count (^^C1) == 2);
++
++union [[=A{1}]] U1;
++union U1 { int i; };
++static_assert (count (^^U1) == 1);
++
++template <typename T>
++struct [[=A{1}]] T1;
++template <typename T>
++struct T1 {};
++template <typename T>
++struct [[=A{2}]] T1;
++static_assert (count (^^T1<int>) == 2);
++
++template <typename T>
++struct S1 {};
++template <>
++struct [[=A{1}]] S1<int>;		// { dg-warning "attributes ignored on template instantiation" }
++template <>
++struct S1<int> {};
++static_assert (count (^^S1<int>) == 0);
++template <typename T>
++struct S1<T *> {};
++template <typename T>
++struct [[=A{1}]] S1<T *>;
++static_assert (count (^^S1<int *>) == 1);
++template struct [[=A{1}]] S1<long>;
++static_assert (count (^^S1<long>) == 1);
++extern template struct [[=A{1}]] S1<short>;
++static_assert (count (^^S1<short>) == 1);
++
++enum class [[=A{1}]] E1 : int;
++enum class E1 : int { a };
++enum class [[=A{2}]] E1 : int;		// { dg-warning "type attributes ignored after type is already defined" }
++static_assert (count (^^E1) == 1);
++enum class E2 : int;
++enum class [[=A{1}]] E2 : int { b };	// { dg-warning "type attributes ignored after type is already defined" }
++static_assert (count (^^E2) == 0);
++
++struct F
++{
++  friend struct [[=A{1}]] P1;		// { dg-warning "attribute ignored" }
++  struct [[=A{1}]] N1;
++};
++struct P1 {};
++struct F::N1 {};
++static_assert (count (^^P1) == 0);
++static_assert (count (^^F::N1) == 1);
++
++struct [[=A{1}]] P3 *p3;		// { dg-warning "attributes ignored on elaborated-type-specifier that is not a forward declaration" }
++struct P3 {};
++static_assert (count (^^P3) == 0);
+diff --git a/gcc/testsuite/g++.dg/reflect/annotation_definition4.C b/gcc/testsuite/g++.dg/reflect/annotation_definition4.C
+new file mode 100644
+index 000000000..1e391c44f
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/reflect/annotation_definition4.C
+@@ -0,0 +1,20 @@
++// { dg-do compile { target c++26 } }
++// { dg-additional-options "-freflection -fannotations-on-definition-only -fpermissive" }
++// The diagnostic of -fannotations-on-definition-only is an error and not a
++// warning: a diagnostic pragma does not turn it off, and -fpermissive does
++// not make it a warning.  A note names the rule.
++
++#pragma GCC diagnostic ignored "-Wattributes"
++
++struct A { int v; };
++
++struct [[=A{1}]] C1;	// { dg-error "annotation on a declaration of 'C1' that is not its definition" }
++// { dg-message "'-fannotations-on-definition-only' accepts an annotation of a class or enumeration only on its definition" "" { target *-*-* } .-1 }
++struct C1 {};
++
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wpedantic"
++enum class [[=A{1}]] E1 : int;	// { dg-error "annotation on a declaration of 'E1' that is not its definition" }
++// { dg-message "'-fannotations-on-definition-only' accepts an annotation of a class or enumeration only on its definition" "" { target *-*-* } .-1 }
++#pragma GCC diagnostic pop
++enum class E1 : int { a };
+diff --git a/gcc/testsuite/g++.dg/reflect/annotation_definition5.C b/gcc/testsuite/g++.dg/reflect/annotation_definition5.C
+new file mode 100644
+index 000000000..0b94a441f
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/reflect/annotation_definition5.C
+@@ -0,0 +1,27 @@
++// { dg-do compile }
++// { dg-additional-options "-fannotations-on-definition-only" }
++// -fannotations-on-definition-only changes no declaration without an
++// annotation, at each -std level, so a build can give it to each unit.
++
++struct C1;
++struct C1 { int i; };
++union U1;
++union U1 { int i; };
++template <typename T>
++struct T1;
++template <typename T>
++struct T1 { T t; };
++template <>
++struct T1<int>;
++template <>
++struct T1<int> { int i; };
++template struct T1<long>;
++enum E1 { a };
++struct F
++{
++  friend struct P1;
++  struct N1;
++};
++struct F::N1 {};
++struct __attribute__ ((aligned (8))) G1;
++struct G1 { int i; };
+-- 
+2.56.0
+

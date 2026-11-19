@@ -57,7 +57,7 @@ add_executable(ct_dudect EXCLUDE_FROM_ALL dudect.cpp ${CRUCIBLE_HANDLER_SOURCES}
 target_include_directories(ct_dudect PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_options(ct_dudect PRIVATE
   -O3 -march=native -DNDEBUG -fno-sanitize=all
-  -freflection -fcontracts -fcontract-evaluation-semantic=observe)
+  -freflection -fcontracts -fannotations-on-definition-only -fcontract-evaluation-semantic=observe)
 crucible_release_code_target(ct_dudect)
 target_link_options(ct_dudect PRIVATE -fno-sanitize=all)
 
@@ -92,7 +92,7 @@ endif()
 
 set(CRUCIBLE_CT_TAINT_FLAGS
   -march=x86-64-v3 -DNDEBUG -g -fno-sanitize=all
-  -freflection -fcontracts -fcontract-evaluation-semantic=observe)
+  -freflection -fcontracts -fannotations-on-definition-only -fcontract-evaluation-semantic=observe)
 
 # One taint test per source and optimization level.  The same binary also
 # runs the two leaking controls, which pass only when memcheck reports the

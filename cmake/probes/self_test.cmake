@@ -5,8 +5,8 @@
 # and the configure must stop.  A ccache link must resolve to the compiler
 # that ccache runs.
 #
-# The compiler of the build must pass every probe.  Eleven stub compilers in
-# WORK must each get the result that their behaviour calls for:
+# The compiler of the build must pass every probe.  Fourteen stub compilers
+# in WORK must each get the result that their behaviour calls for:
 #   - A stub that accepts every file stands for a compiler without the
 #     contract fix.  The probes must refuse it.
 #   - A stub that refuses every file with a different error stands for a
@@ -33,6 +33,15 @@
 #     compiler with only the first four patches.  That compiler has no event
 #     for a folded initializer or for a trivial assignment of an empty class.
 #     The probes must refuse it.
+#   - A stub that refuses the probe of the closure captures stands for a
+#     compiler with only the first five patches.  That compiler shows no
+#     capture of a closure.  The probes must refuse it.
+#   - A stub that refuses the probe of the annotations for the unknown option
+#     stands for a compiler with only the first six patches.  That compiler
+#     has no -fannotations-on-definition-only.  The probes must refuse it.
+#   - A stub that writes the error of the annotation probe to its SARIF log
+#     as a warning, and gives the exit status 0, must be refused.  A diagnostic
+#     pragma can turn a warning off.
 #   - A stub that does what the patched compiler does must pass.
 cmake_minimum_required(VERSION 3.25)
 include("${CMAKE_CURRENT_LIST_DIR}/../PatchedGccProbe.cmake")
@@ -58,6 +67,15 @@ set(slots_error "plugin_events.cpp:43:39: error: 'plugin_name_use_slot' was not 
 set(initializer_events_error
   "plugin_initializer_events.cpp:17:22: error: 'PLUGIN_FOLDED_INITIALIZER_text' was not declared in this scope")
 set(closure_captures_error "closure_captures.cpp:11:15: error: static assertion failed")
+set(annotation_option_error "g++-16p: error: unrecognized command-line option -fannotations-on-definition-only")
+set(annotation_error
+  "annotation_definition.cpp:9:1: error: annotation on a declaration of forward_declared that is not its definition")
+# The SARIF log of the annotation probe, and the log of a compiler that gives
+# the same diagnostic as a warning.
+set(annotation_log
+  "{\"runs\": [{\"results\": [{\"ruleId\": \"error\", \"message\": {\"text\": \"annotation on a declaration of \\u0027forward_declared\\u0027 that is not its definition\"}}]}]}")
+set(annotation_warning_log
+  "{\"runs\": [{\"results\": [{\"ruleId\": \"warning\", \"message\": {\"text\": \"annotation on a declaration of \\u0027forward_declared\\u0027 that is not its definition\"}}]}]}")
 # The SARIF log of the probe with the constraint line, and the log that a
 # compiler without the SARIF fix writes.
 set(sarif_with_context
@@ -95,6 +113,16 @@ contract_case(patched_contract_case "${contract_log}" 1)
 contract_case(warned_contract_case "${contract_log}" 0)
 contract_case(noted_contract_case "${contract_note_log}" 1)
 
+# The line of a stub that refuses the annotation probe, writes the log LOG and
+# gives the exit status STATUS.
+function(annotation_case out_var log status)
+  set(${out_var}
+      "*annotation_definition.cpp) echo \"${annotation_error}\" >&2; printf '%s\\n' '${log}' > \"$sarif\"; exit ${status} ;;\n"
+      PARENT_SCOPE)
+endfunction()
+annotation_case(patched_annotation_case "${annotation_log}" 1)
+annotation_case(warned_annotation_case "${annotation_warning_log}" 0)
+
 write_stub(accepts_all "exit 0\n")
 write_stub(refuses_all "echo 'probe.cpp:1:1: error: unrelated' >&2\nexit 1\n")
 write_stub(warns_only "case \"$probe\" in\n${warned_contract_case}${patched_sarif_case}esac\nexit 0\n")
@@ -111,8 +139,13 @@ write_stub(lacks_direct_events
 write_stub(lacks_initializer_events
   "case \"$probe\" in\n${patched_contract_case}*plugin_initializer_events.cpp) echo \"${initializer_events_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
 write_stub(lacks_closure_captures
-  "case \"$probe\" in\n${patched_contract_case}*closure_captures.cpp) echo \"${closure_captures_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
-write_stub(acts_patched "case \"$probe\" in\n${patched_contract_case}${patched_sarif_case}esac\nexit 0\n")
+  "case \"$probe\" in\n${patched_contract_case}*closure_captures.cpp) echo \"${closure_captures_error}\" >&2; exit 1 ;;\n${patched_sarif_case}${patched_annotation_case}esac\nexit 0\n")
+write_stub(lacks_annotation_rule
+  "case \"$probe\" in\n${patched_contract_case}*annotation_definition.cpp) echo \"${annotation_option_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
+write_stub(warns_on_annotation
+  "case \"$probe\" in\n${patched_contract_case}${patched_sarif_case}${warned_annotation_case}esac\nexit 0\n")
+write_stub(acts_patched
+  "case \"$probe\" in\n${patched_contract_case}${patched_sarif_case}${patched_annotation_case}esac\nexit 0\n")
 
 function(expect_pass cxx label)
   crucible_patched_gcc_problem("${cxx}" problem)
@@ -136,6 +169,7 @@ set(sarif_reason "context of a diagnostic to the SARIF output")
 set(events_reason "plugin events of the C\\+\\+ front end")
 set(initializer_events_reason "plugin events of the folded initializers")
 set(closure_captures_reason "capture fields of a closure")
+set(annotation_definition_reason "annotation on a declaration of a class that is not its definition")
 
 # A ccache masquerade link resolves to the program of the same name that PATH
 # holds outside the directory of the link.  Any other compiler is itself.
@@ -176,6 +210,11 @@ expect_refusal("${WORK}/lacks_initializer_events" "a stub with only the first fo
                "${initializer_events_reason}")
 expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${closure_captures_reason}")
 expect_refusal("${WORK}/lacks_closure_captures" "a stub with only the first five patches" "${closure_captures_reason}")
+expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${annotation_definition_reason}")
+expect_refusal("${WORK}/accepts_all" "a stub that accepts every file" "${annotation_definition_reason}")
+expect_refusal("${WORK}/lacks_annotation_rule" "a stub with only the first six patches" "${annotation_definition_reason}")
+expect_refusal("${WORK}/warns_on_annotation" "a stub that gives the annotation diagnostic as a warning"
+               "${annotation_definition_reason}")
 
 # A configure of the tree, without the toolchain file, with a compiler that
 # lacks a fix, stops at the check after project().  The wrapper runs the

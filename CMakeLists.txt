@@ -529,9 +529,19 @@ target_link_libraries(crucible PUBLIC fixy)
 
 # C++26-only flags — applied at target level where -std=c++26 is active
 # (applying them in CMAKE_CXX_FLAGS would poison CMake's compiler-probe).
+#
+# -fannotations-on-definition-only (utils/toolchain/gcc/patches/0007-*.patch)
+# makes an annotation on a declaration of a class or enumeration that is not
+# its definition an error.  Without it, a forward declaration in one unit can
+# add an annotation, such as linear or authority, to a type that a header
+# defines, and only that unit then sees the annotation.  The flag is here and
+# not in the toolchain file, so a configure without the toolchain file also
+# gets it, and the probe cmake/probes/annotation_definition.cpp refuses a
+# compiler without it.
 target_compile_options(crucible_dialect INTERFACE
   -freflection
   -fcontracts
+  -fannotations-on-definition-only
 )
 
 # CRUCIBLE_CONTRACT_IGNORE_OPTIONS: the one list that takes a translation unit

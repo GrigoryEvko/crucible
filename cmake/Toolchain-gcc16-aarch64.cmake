@@ -10,14 +10,14 @@
 #
 # The order of the prefix:
 #   1. CRUCIBLE_GCC16_AARCH64_PREFIX, the install prefix of the cross compiler
-#   2. $HOME/.local/gcc16-patched-aarch64-p7-san, the install of the six
+#   2. $HOME/.local/gcc16-patched-aarch64-p8-san, the install of the seven
 #      patches with the sanitizer libraries of the target.
 #
 # A plugin of the cross compiler is code of the host, so the patched g++ of the
 # host compiles the quarantine plugin (THE COMPILER OF THE PLUGIN of
 # utils/tools/quarantine/Quarantine.cmake).  CRUCIBLE_PLUGIN_BUILD_CXX names
 # that g++, with the order of cmake/Toolchain-gcc16.cmake: CRUCIBLE_CXX, then
-# CRUCIBLE_GCC16_PREFIX, then $HOME/.local/gcc16-patched-p7.
+# CRUCIBLE_GCC16_PREFIX, then $HOME/.local/gcc16-patched-p8.
 #
 # CMake runs a program of a configure check and each test through
 # CMAKE_CROSSCOMPILING_EMULATOR: qemu-aarch64-static with the sysroot, when the
@@ -33,7 +33,7 @@ set(CMAKE_SYSTEM_PROCESSOR aarch64)
 if(DEFINED ENV{CRUCIBLE_GCC16_AARCH64_PREFIX} AND NOT "$ENV{CRUCIBLE_GCC16_AARCH64_PREFIX}" STREQUAL "")
   set(_crucible_cross_prefix "$ENV{CRUCIBLE_GCC16_AARCH64_PREFIX}")
 else()
-  set(_crucible_cross_prefix "$ENV{HOME}/.local/gcc16-patched-aarch64-p7-san")
+  set(_crucible_cross_prefix "$ENV{HOME}/.local/gcc16-patched-aarch64-p8-san")
 endif()
 set(_crucible_cross_bindir "${_crucible_cross_prefix}/usr/bin")
 set(_crucible_cross_triplet "aarch64-linux-gnu")
@@ -57,7 +57,7 @@ if(DEFINED ENV{CRUCIBLE_CXX} AND NOT "$ENV{CRUCIBLE_CXX}" STREQUAL "")
 elseif(DEFINED ENV{CRUCIBLE_GCC16_PREFIX} AND NOT "$ENV{CRUCIBLE_GCC16_PREFIX}" STREQUAL "")
   set(_crucible_host_cxx "$ENV{CRUCIBLE_GCC16_PREFIX}/usr/bin/g++-16p")
 else()
-  set(_crucible_host_cxx "$ENV{HOME}/.local/gcc16-patched-p7/usr/bin/g++-16p")
+  set(_crucible_host_cxx "$ENV{HOME}/.local/gcc16-patched-p8/usr/bin/g++-16p")
 endif()
 if(NOT EXISTS "${_crucible_host_cxx}")
   message(FATAL_ERROR
