@@ -4,12 +4,20 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include "entry_arrays.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Fixture.h>
 #include "tensor_data.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 // The views of the replay chain are minted on the thread that holds a
 // Vigil's producer claim.  These tests run the chain without a Vigil, so
@@ -93,7 +101,7 @@ static void test_linear_match() {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{100 + i};
         op.shape_hash = ShapeHash{200 + i};
-        set_output_slots(op, crucible::test::run_of(test.alloc, arena, SlotId{i}));
+        set_output_slots(op, ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{i}));
     }
 
     RegionNode region{};
@@ -109,34 +117,34 @@ static void test_linear_match() {
     engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
 
-    assert(engine.is_initialized());
-    assert(engine.num_ops() == 3);
-    assert(engine.ops_matched() == 0);
-    assert(!engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.is_initialized());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.num_ops() == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, !engine.is_complete());
 
     // Every op but the last reports MATCH and the last reports COMPLETE,
     // which is why the final step is unrolled out of the loop.
     for (uint32_t i = 0; i < 2; i++) {
         auto status = engine.advance(SchemaHash{100 + i}, ShapeHash{200 + i}, av);
-        assert(status == ReplayStatus::MATCH);
-        assert(engine.ops_matched() == i + 1);
-        assert(engine.matched_op_index().value() == OpIndex{i});
+        CRUCIBLE_TEST_ASSERT(kTest, status == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == i + 1);
+        CRUCIBLE_TEST_ASSERT(kTest, engine.matched_op_index().value() == OpIndex{i});
 
         const ::fixy::Option<::fixy::RunAddress> ptr = engine.output_ptr(0, av);
-        assert(ptr == pool.slot_ptr(SlotId{i}, pv));
+        CRUCIBLE_TEST_ASSERT(kTest, ptr == pool.slot_ptr(SlotId{i}, pv));
     }
 
     {
         auto status = engine.advance(SchemaHash{102}, ShapeHash{202}, av);
-        assert(status == ReplayStatus::COMPLETE);
-        assert(engine.ops_matched() == 3);
-        assert(engine.matched_op_index().value() == OpIndex{2});
+        CRUCIBLE_TEST_ASSERT(kTest, status == ReplayStatus::COMPLETE);
+        CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 3);
+        CRUCIBLE_TEST_ASSERT(kTest, engine.matched_op_index().value() == OpIndex{2});
         const ::fixy::Option<::fixy::RunAddress> ptr = engine.output_ptr(0, av);
-        assert(ptr == pool.slot_ptr(SlotId{2}, pv));
+        CRUCIBLE_TEST_ASSERT(kTest, ptr == pool.slot_ptr(SlotId{2}, pv));
     }
-    assert(engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.is_complete());
 
-    crucible::test::pass("  test_linear_match: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_linear_match: PASSED\n");
 }
 
 static void test_schema_divergence() {
@@ -161,18 +169,18 @@ static void test_schema_divergence() {
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
-    assert(engine.advance(SchemaHash{100}, ShapeHash{200}, av) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{100}, ShapeHash{200}, av) == ReplayStatus::MATCH);
 
-    assert(engine.advance(SchemaHash{999}, ShapeHash{200}, av) == ReplayStatus::DIVERGED);
-    assert(engine.diverged_op_index_tagged().value() == OpIndex{1});
-    assert(engine.ops_matched() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{999}, ShapeHash{200}, av) == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.diverged_op_index_tagged().value() == OpIndex{1});
+    CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 1);
 
     // The position stays on the diverged op, so a second advance
     // diverges again instead of stepping over it.
-    assert(engine.advance(SchemaHash{999}, ShapeHash{200}, av) == ReplayStatus::DIVERGED);
-    assert(engine.diverged_op_index_tagged().value() == OpIndex{1});
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{999}, ShapeHash{200}, av) == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.diverged_op_index_tagged().value() == OpIndex{1});
 
-    crucible::test::pass("  test_schema_divergence: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_schema_divergence: PASSED\n");
 }
 
 static void test_shape_divergence() {
@@ -197,14 +205,14 @@ static void test_shape_divergence() {
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
-    assert(engine.advance(SchemaHash{100}, ShapeHash{200}, av) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{100}, ShapeHash{200}, av) == ReplayStatus::MATCH);
 
     // The schema still matches here, so only the shape can be the cause
     // of the divergence.
-    assert(engine.advance(SchemaHash{101}, ShapeHash{999}, av) == ReplayStatus::DIVERGED);
-    assert(engine.diverged_op_index_tagged().value() == OpIndex{1});
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{101}, ShapeHash{999}, av) == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.diverged_op_index_tagged().value() == OpIndex{1});
 
-    crucible::test::pass("  test_shape_divergence: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_shape_divergence: PASSED\n");
 }
 
 static void test_reset() {
@@ -229,19 +237,19 @@ static void test_reset() {
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
-    assert(engine.advance(SchemaHash{10}, ShapeHash{20}, av) == ReplayStatus::MATCH);
-    assert(engine.advance(SchemaHash{11}, ShapeHash{21}, av) == ReplayStatus::COMPLETE);
-    assert(engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{10}, ShapeHash{20}, av) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{11}, ShapeHash{21}, av) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.is_complete());
 
     engine.reset(av);
-    assert(!engine.is_complete());
-    assert(engine.ops_matched() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, !engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 0);
 
-    assert(engine.advance(SchemaHash{10}, ShapeHash{20}, av) == ReplayStatus::MATCH);
-    assert(engine.advance(SchemaHash{11}, ShapeHash{21}, av) == ReplayStatus::COMPLETE);
-    assert(engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{10}, ShapeHash{20}, av) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{11}, ShapeHash{21}, av) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.is_complete());
 
-    crucible::test::pass("  test_reset: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_reset: PASSED\n");
 }
 
 // Op 1 reads the slot op 0 writes, so the two ops alias one pool
@@ -272,16 +280,16 @@ static void test_input_ptr() {
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
-    assert(engine.advance(SchemaHash{50}, ShapeHash{60}, av) == ReplayStatus::MATCH);
-    assert(engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{50}, ShapeHash{60}, av) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
 
-    assert(engine.advance(SchemaHash{51}, ShapeHash{61}, av) == ReplayStatus::COMPLETE);
-    assert(engine.output_ptr(0, av) == pool.slot_ptr(SlotId{1}, pv));
-    assert(engine.input_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{51}, ShapeHash{61}, av) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(0, av) == pool.slot_ptr(SlotId{1}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.input_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
 
-    assert(engine.input_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.input_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
 
-    crucible::test::pass("  test_input_ptr: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_input_ptr: PASSED\n");
 }
 
 static void test_invalid_slot() {
@@ -303,12 +311,12 @@ static void test_invalid_slot() {
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
-    assert(engine.advance(SchemaHash{77}, ShapeHash{88}, av) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{77}, ShapeHash{88}, av) == ReplayStatus::COMPLETE);
 
-    assert(engine.output_ptr(0, av).is_some());
-    assert(engine.output_ptr(1, av).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(0, av).is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(1, av).is_none());
 
-    crucible::test::pass("  test_invalid_slot: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_invalid_slot: PASSED\n");
 }
 
 static void test_current_entry() {
@@ -335,13 +343,13 @@ static void test_current_entry() {
     auto av = engine.mint_active_view(kVigilForeground);
     for (uint32_t i = 0; i < 3; i++) {
         auto s = engine.advance(SchemaHash{300 + i}, ShapeHash{400 + i}, av);
-        assert(s == (i < 2 ? ReplayStatus::MATCH : ReplayStatus::COMPLETE));
+        CRUCIBLE_TEST_ASSERT(kTest, s == (i < 2 ? ReplayStatus::MATCH : ReplayStatus::COMPLETE));
         const auto& entry = engine.current_entry();
-        assert(entry.schema_hash == SchemaHash{300 + i});
-        assert(entry.shape_hash == ShapeHash{400 + i});
+        CRUCIBLE_TEST_ASSERT(kTest, entry.schema_hash == SchemaHash{300 + i});
+        CRUCIBLE_TEST_ASSERT(kTest, entry.shape_hash == ShapeHash{400 + i});
     }
 
-    crucible::test::pass("  test_current_entry: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_current_entry: PASSED\n");
 }
 
 // The reset at the end of an iteration keeps the matched op, so the matched
@@ -374,7 +382,7 @@ static void test_matched_index_after_reset() {
     CRUCIBLE_FATAL_INVARIANT(engine.current_entry().schema_hash == SchemaHash{502});
     CRUCIBLE_FATAL_INVARIANT(engine.diverged_op_index_tagged().value() == OpIndex{0});
 
-    crucible::test::pass("  test_matched_index_after_reset: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_matched_index_after_reset: PASSED\n");
 }
 
 // The matched index and the matched entry of a three-op region name one op.
@@ -422,7 +430,7 @@ static void test_matched_index_follows_the_cursor() {
     CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{999}, ShapeHash{801}, av) == ReplayStatus::DIVERGED);
     require_matched(engine, 0);
 
-    crucible::test::pass("  test_matched_index_follows_the_cursor: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_matched_index_follows_the_cursor: PASSED\n");
 }
 
 // A rewind from the middle of a region abandons the iteration, so no op stays
@@ -458,7 +466,7 @@ static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx
     CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{700}, ShapeHash{800}, av) == ReplayStatus::MATCH);
     require_matched(engine, 0);
 
-    crucible::test::pass("  test_rewind_in_the_middle_drops_the_matched_op: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_rewind_in_the_middle_drops_the_matched_op: PASSED\n");
 }
 
 // The cursor never leaves the region: an advance after the last op, with no
@@ -485,7 +493,7 @@ static void test_advance_past_the_end_aborts(::fixy::TestRunnerCtx const& test) 
         test, [&engine, &av] noexcept { static_cast<void>(engine.advance(SchemaHash{999}, ShapeHash{999}, av)); },
         ::fixy::TextView{"a read through the end cursor of a View"});
 
-    crucible::test::pass("  test_advance_past_the_end_aborts: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_advance_past_the_end_aborts: PASSED\n");
 }
 
 // A slot id of the region past the count of the plan is a defect of the
@@ -511,7 +519,7 @@ static void test_slot_id_past_the_table_aborts_init(::fixy::TestRunnerCtx const&
         test, [&engine, &region, &pool] noexcept { engine.init(region, ReplayEngine::PoolBorrow{pool}); },
         ::fixy::TextView{"op 1 has the input slot id 5"});
 
-    crucible::test::pass("  test_slot_id_past_the_table_aborts_init: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_slot_id_past_the_table_aborts_init: PASSED\n");
 }
 
 // The plan here comes from the real sweep-line planner rather than the
@@ -596,32 +604,32 @@ static void test_integration_with_pool() {
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
-    assert(engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}, av) == ReplayStatus::MATCH);
-    assert(engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}, av) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
     // The external slot resolves to registered storage, not into the pool.
-    assert(crucible::test::host_ptr(engine.input_ptr(0, av)) == fake_param);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::test::host_ptr(engine.input_ptr(0, av)) == fake_param);
 
     std::memset(crucible::test::host_ptr(engine.output_ptr(0, av)), 0x11, 512);
 
-    assert(engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}, av) == ReplayStatus::COMPLETE);
-    assert(engine.output_ptr(0, av) == pool.slot_ptr(SlotId{1}, pv));
-    assert(engine.input_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}, av) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(0, av) == pool.slot_ptr(SlotId{1}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.input_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
 
     // Reading op 1's input back finds op 0's fill, which is what proves
     // the two entries name the same pool bytes.
     auto* p = crucible::test::host_ptr<uint8_t>(engine.input_ptr(0, av));
     for (uint32_t i = 0; i < 512; i++)
-        assert(p[i] == 0x11);
+        CRUCIBLE_TEST_ASSERT(kTest, p[i] == 0x11);
 
-    assert(engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.is_complete());
 
     engine.reset(av);
-    assert(!engine.is_complete());
-    assert(engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}, av) == ReplayStatus::MATCH);
-    assert(engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}, av) == ReplayStatus::COMPLETE);
-    assert(engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, !engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}, av) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}, av) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.is_complete());
 
-    crucible::test::pass("  test_integration_with_pool: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_integration_with_pool: PASSED\n");
 }
 
 int main() {
@@ -642,6 +650,6 @@ int main() {
     test_advance_past_the_end_aborts(test);
     test_slot_id_past_the_table_aborts_init(test);
     test_integration_with_pool();
-    crucible::test::pass("test_replay_engine: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_replay_engine: all tests passed\n");
     return 0;
 }

@@ -13,7 +13,17 @@
 
 #include <cstdint>
 #include <cstdio>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -84,6 +94,6 @@ int main() {
         return 1;
     }
 
-    crucible::test::pass("perf::SenseHubV2 layout smoke OK\n");
+    ::fixy::check::pass(kTest, "perf::SenseHubV2 layout smoke OK\n");
     return 0;
 }

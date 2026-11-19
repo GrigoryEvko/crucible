@@ -20,9 +20,19 @@
 
 #include <crucible/Vigil.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 using namespace test_resnet;
@@ -38,10 +48,10 @@ int main() {
                    static_cast<unsigned long long>(net.params), static_cast<uint32_t>(net.np - 1),
                    static_cast<uint32_t>(net.na));
 
-    assert(net.ops.size() == 175 && "the forward pass is 175 operations");
-    assert(net.params == 25557032
-           && "the parameter count must match the "
-              "reference implementation");
+    CRUCIBLE_TEST_ASSERT(kTest, net.ops.size() == 175 && "the forward pass is 175 operations");
+    CRUCIBLE_TEST_ASSERT(kTest, net.params == 25557032
+                                    && "the parameter count must match the "
+                                       "reference implementation");
 
     Vigil vigil;
 
@@ -51,7 +61,7 @@ int main() {
     flush_and_wait_region_published(vigil);
 
     const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
-    assert(region->plan.is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_some());
     const ::fixy::Ref<MemoryPlan const> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
     ::fixy::report(::fixy::Sink::Out, "  region: {} ops, pool {} B, {} slots ({} ext)\n", region->num_ops(),
                    static_cast<unsigned long long>(plan->pool_bytes), plan->num_slots(), plan->num_external);
@@ -60,6 +70,6 @@ int main() {
     run_compiled_iterations(vigil, net.ops);
     verify_data_flow(vigil, net.ops);
 
-    crucible::test::pass("test_resnet: PASSED\n");
+    ::fixy::check::pass(kTest, "test_resnet: PASSED\n");
     return 0;
 }

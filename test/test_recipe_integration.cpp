@@ -12,8 +12,15 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
+#include <fixy/check/Check.h>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -84,12 +91,12 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
             reg_b.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");
 
         // Two pools, two addresses.
-        assert(!::fixy::same_object(a, b));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::same_object(a, b));
         // One name, one hash, whichever pool interned it.
-        assert(a->hash == b->hash);
-        assert(a->accum_dtype == b->accum_dtype);
-        assert(a->out_dtype == b->out_dtype);
-        assert(a->determinism == b->determinism);
+        CRUCIBLE_TEST_ASSERT(kTest, a->hash == b->hash);
+        CRUCIBLE_TEST_ASSERT(kTest, a->accum_dtype == b->accum_dtype);
+        CRUCIBLE_TEST_ASSERT(kTest, a->out_dtype == b->out_dtype);
+        CRUCIBLE_TEST_ASSERT(kTest, a->determinism == b->determinism);
     }
 
     // Two regions with byte-identical ops but different recipes must hash
@@ -117,14 +124,14 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
 
         // Three recipe pins, counting the unpinned baseline, give three
         // hashes.
-        assert(region_tc.content_hash != region_strict.content_hash);
-        assert(region_tc.content_hash != region_none.content_hash);
-        assert(region_strict.content_hash != region_none.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, region_tc.content_hash != region_strict.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, region_tc.content_hash != region_none.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, region_strict.content_hash != region_none.content_hash);
 
         // A hash of zero would mean the mix collapsed.
-        assert(region_tc.content_hash.raw() != 0);
-        assert(region_strict.content_hash.raw() != 0);
-        assert(region_none.content_hash.raw() != 0);
+        CRUCIBLE_TEST_ASSERT(kTest, region_tc.content_hash.raw() != 0);
+        CRUCIBLE_TEST_ASSERT(kTest, region_strict.content_hash.raw() != 0);
+        CRUCIBLE_TEST_ASSERT(kTest, region_none.content_hash.raw() != 0);
     }
 
     // A recovery process loads a persisted blob and must recover the
@@ -158,14 +165,14 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         RecipeRegistry::RecipeRef const recovered =
             registry.by_hash(kPure, persisted_recipe_hash).expect("the persisted hash resolves");
         // Recovery inside one process lands on the canonical pointer.
-        assert(&*recovered == recipe_orig);
-        assert(recovered->hash == persisted_recipe_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, &*recovered == recipe_orig);
+        CRUCIBLE_TEST_ASSERT(kTest, recovered->hash == persisted_recipe_hash);
 
         // Rebuilding the region with the recovered recipe reproduces the
         // original content hash, which is the end-to-end claim.
         const crucible::RegionNode& region_recovered =
             *crucible::make_region(alloc_cap(), arena, ops.view(), *recovered);
-        assert(region_recovered.content_hash == persisted_content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, region_recovered.content_hash == persisted_content_hash);
     }
 
     // A fresh process must not produce a different content hash for the
@@ -196,9 +203,9 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         RecipeRegistry::RecipeRef const rec_b =
             reg_b.by_name(kPure, names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
         // Different pointers, so the two pools really are independent.
-        assert(!::fixy::same_object(rec_a, rec_b));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::same_object(rec_a, rec_b));
         // One hash, which is the identity that crosses them.
-        assert(rec_a->hash == rec_b->hash);
+        CRUCIBLE_TEST_ASSERT(kTest, rec_a->hash == rec_b->hash);
 
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops_b{};
         mk_ops(ops_b);
@@ -207,7 +214,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
 
         // The content hashes agree although no pointer is shared, which is
         // what makes a persisted hash a valid cache key in any process.
-        assert(hash_in_proc_a == hash_in_proc_b);
+        CRUCIBLE_TEST_ASSERT(kTest, hash_in_proc_a == hash_in_proc_b);
     }
 
     // A cache filled while training under one recipe would hand those
@@ -236,9 +243,9 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
             *crucible::make_region(alloc_cap(), arena, ops.view(), *rec_bf16_tc);
 
         // Three hashes, so three cache slots.
-        assert(region_tc.content_hash != region_ord.content_hash);
-        assert(region_tc.content_hash != region_bf16_tc.content_hash);
-        assert(region_ord.content_hash != region_bf16_tc.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, region_tc.content_hash != region_ord.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, region_tc.content_hash != region_bf16_tc.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, region_ord.content_hash != region_bf16_tc.content_hash);
 
         KernelCache cache{alloc_cap()};
         using crucible::RowHash;
@@ -252,7 +259,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         };
         FakeKernel kernel_tc{"f16_tc-compiled"};
         auto ins = cache.insert(g_test.nondet, region_tc.content_hash, RowHash{0}, kernel_ref(kernel_tc));
-        assert(ins.is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, ins.is_ok());
         CRUCIBLE_FATAL_INVARIANT(is_found(cache.lookup(g_test.nondet, region_tc.content_hash, RowHash{0}), kernel_tc));
 
         // A lookup under the second recipe must miss.  Were the two sharing
@@ -270,7 +277,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         // through its own key.
         FakeKernel kernel_ord{"f16_ordered-compiled"};
         auto ins2 = cache.insert(g_test.nondet, region_ord.content_hash, RowHash{0}, kernel_ref(kernel_ord));
-        assert(ins2.is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, ins2.is_ok());
         CRUCIBLE_FATAL_INVARIANT(is_found(cache.lookup(g_test.nondet, region_tc.content_hash, RowHash{0}), kernel_tc));
         CRUCIBLE_FATAL_INVARIANT(
             is_found(cache.lookup(g_test.nondet, region_ord.content_hash, RowHash{0}), kernel_ord));
@@ -304,10 +311,10 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
             crucible::make_region(alloc_cap(), arena, entry.view(), *pool.intern(alloc_cap(), zero_bytes))
                 ->content_hash;
         const ContentHash with_no_recipe = crucible::make_region(alloc_cap(), arena, entry.view())->content_hash;
-        assert(with_recipe != with_no_recipe);
-        assert(with_recipe.raw() != 0);
+        CRUCIBLE_TEST_ASSERT(kTest, with_recipe != with_no_recipe);
+        CRUCIBLE_TEST_ASSERT(kTest, with_recipe.raw() != 0);
     }
 
-    crucible::test::pass("test_recipe_integration: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_recipe_integration: all tests passed\n");
     return 0;
 }

@@ -27,10 +27,17 @@
 #include <foundation/effects/Effect.h>
 
 #include <array>
-#include "test_assert.h"
+#include <fixy/check/Check.h>
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -394,14 +401,14 @@ int main() {
         bool covered[kExpectedCategorizationSize]{};
         for (const auto& cat : kCategorization) {
             const auto idx = static_cast<std::size_t>(cat.id);
-            assert(idx < kExpectedCategorizationSize);
-            assert(!covered[idx] && "duplicate CKernelId in kCategorization");
+            CRUCIBLE_TEST_ASSERT(kTest, idx < kExpectedCategorizationSize);
+            CRUCIBLE_TEST_ASSERT(kTest, !covered[idx] && "duplicate CKernelId in kCategorization");
             covered[idx] = true;
         }
         for (std::size_t i = 0; i < kExpectedCategorizationSize; ++i) {
             if (!covered[i]) {
                 std::fprintf(stderr, "CKernelId value %zu has no row in kCategorization\n", i);
-                assert(false && "missing CKernelId categorization");
+                CRUCIBLE_TEST_ASSERT(kTest, false && "missing CKernelId categorization");
             }
         }
     }
@@ -415,8 +422,8 @@ int main() {
             if (cell.covered) {
                 RecipeRegistry::RecipeRef const rec =
                     registry.by_name(kPure, cell.starter_name).expect("a claimed-covered starter is in the registry");
-                assert(rec->out_dtype == cell.out_dtype);
-                assert(rec->determinism == cell.det);
+                CRUCIBLE_TEST_ASSERT(kTest, rec->out_dtype == cell.out_dtype);
+                CRUCIBLE_TEST_ASSERT(kTest, rec->determinism == cell.det);
             } else {
                 // A recipe added for a pair marked unserved should be caught here.
                 // The match below does nothing, because two starters differing only
@@ -444,7 +451,7 @@ int main() {
             else
                 ++vacuous;
         }
-        assert(relevant + vacuous == static_cast<int>(kExpectedCategorizationSize));
+        CRUCIBLE_TEST_ASSERT(kTest, relevant + vacuous == static_cast<int>(kExpectedCategorizationSize));
 
         // The table classifies 72 ops as recipe-relevant, of which 56 reduce,
         // nine use softmax, three use random state, three are reducing
@@ -454,8 +461,8 @@ int main() {
         // The bounds allow five either way, so recategorising an op or two is
         // free while a sweeping misclassification, such as flipping every
         // activation to reducing, still trips them.
-        assert(relevant >= 67 && relevant <= 77);
-        assert(vacuous >= 70 && vacuous <= 80);
+        CRUCIBLE_TEST_ASSERT(kTest, relevant >= 67 && relevant <= 77);
+        CRUCIBLE_TEST_ASSERT(kTest, vacuous >= 70 && vacuous <= 80);
     }
 
     // The summary below asserts nothing. It exists so that whoever runs the
@@ -536,6 +543,6 @@ int main() {
                        sync, covered_cells, gap_cells, structural_gaps);
     }
 
-    crucible::test::pass("test_recipe_coverage: all assertions passed\n");
+    ::fixy::check::pass(kTest, "test_recipe_coverage: all assertions passed\n");
     return 0;
 }

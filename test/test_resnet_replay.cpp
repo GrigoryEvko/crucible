@@ -6,7 +6,10 @@
 
 #include <crucible/Vigil.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "tensor_data.h"
 #include <chrono>
 #include <cstddef>
@@ -14,6 +17,13 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -27,14 +37,14 @@ void align_and_complete_iteration(Vigil& vigil, const std::vector<OpDef>& ops) {
     for (uint32_t i = 0; i < AK; i++) {
         auto ap = build_pkt(ops[i], 3);
         auto ar = crucible::test::dispatch_synthetic(vigil, ap.entry, ap.metas, ap.n_metas);
-        assert(ar.action == DispatchResult::Action::RECORD);
+        CRUCIBLE_TEST_ASSERT(kTest, ar.action == DispatchResult::Action::RECORD);
     }
-    assert(vigil.context().is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled());
     // The rest of the same iteration runs compiled.
     for (size_t i = AK; i < ops.size(); i++) {
         auto ap = build_pkt(ops[i], 3);
         auto ar = crucible::test::dispatch_synthetic(vigil, ap.entry, ap.metas, ap.n_metas);
-        assert(ar.action == DispatchResult::Action::COMPILED);
+        CRUCIBLE_TEST_ASSERT(kTest, ar.action == DispatchResult::Action::COMPILED);
     }
     std::printf("  aligned (%u ops) + partial iteration compiled\n", AK);
 }
@@ -48,7 +58,7 @@ void run_compiled_iterations(Vigil& vigil, const std::vector<OpDef>& ops) {
             // The timed loop calls dispatch_op directly, so the time is that
             // of the inlined hot path and not that of a helper call.
             auto r = vigil.dispatch_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas));
-            assert(r.action == DispatchResult::Action::COMPILED);
+            CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
         }
     }
 
@@ -59,8 +69,8 @@ void run_compiled_iterations(Vigil& vigil, const std::vector<OpDef>& ops) {
 
     std::printf("  %llu dispatches in %lld us (%.1f ns/op)\n", static_cast<unsigned long long>(total),
                 static_cast<long long>(us), ns_op);
-    assert(vigil.compiled_iterations() == 1001);  // 1 partial + 1000 full
-    assert(vigil.diverged_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.compiled_iterations() == 1001);  // 1 partial + 1000 full
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.diverged_count() == 0);
 }
 
 void verify_data_flow(Vigil& vigil, const std::vector<OpDef>& ops) {
@@ -70,12 +80,12 @@ void verify_data_flow(Vigil& vigil, const std::vector<OpDef>& ops) {
     // planned to coincide.
     auto p0 = build_pkt(ops[0], 9999);
     auto r0 = crucible::test::dispatch_synthetic(vigil, p0.entry, p0.metas, p0.n_metas);
-    assert(r0.action == DispatchResult::Action::COMPILED);
+    CRUCIBLE_TEST_ASSERT(kTest, r0.action == DispatchResult::Action::COMPILED);
     std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), 0)), 0xAB, 64);
 
     auto p1 = build_pkt(ops[1], 9999);
     auto r1 = crucible::test::dispatch_synthetic(vigil, p1.entry, p1.metas, p1.n_metas);
-    assert(r1.action == DispatchResult::Action::COMPILED);
+    CRUCIBLE_TEST_ASSERT(kTest, r1.action == DispatchResult::Action::COMPILED);
 
     auto* d = crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), 0));
     bool flow_ok = true;
@@ -92,7 +102,7 @@ void verify_data_flow(Vigil& vigil, const std::vector<OpDef>& ops) {
     }
 
     std::printf("  data_flow: %s\n", flow_ok ? "VERIFIED" : "FAILED");
-    assert(flow_ok);
+    CRUCIBLE_TEST_ASSERT(kTest, flow_ok);
 }
 
 }  // namespace test_resnet

@@ -4,11 +4,21 @@
 
 #include <crucible/Vigil.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -191,21 +201,22 @@ OpPacket build_pkt(const OpDef& op, uint32_t iter) {
     pkt.entry.num_outputs = op.n_out;
     pkt.n_metas = uint16_t(op.n_in + op.n_out);
     for (uint8_t i = 0; i < pkt.n_metas; i++)
-        crucible::test::element_at(pkt.metas, i) = make_meta(op.t[i], iter);
+        *pkt.metas.get(i).expect("a test reads an element at or past the count of its array") =
+            make_meta(op.t[i], iter);
     return pkt;
 }
 
 void feed_iter(Vigil& v, const std::vector<OpDef>& ops, uint32_t iter) {
     for (const auto& op : ops) {
         auto p = build_pkt(op, iter);
-        assert(v.record_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas)));
+        CRUCIBLE_TEST_ASSERT(kTest, v.record_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas)));
     }
 }
 
 void feed_trigger(Vigil& v, const std::vector<OpDef>& ops, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K && i < ops.size(); i++) {
         auto p = build_pkt(ops[i], iter);
-        assert(v.record_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas)));
+        CRUCIBLE_TEST_ASSERT(kTest, v.record_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas)));
     }
 }
 

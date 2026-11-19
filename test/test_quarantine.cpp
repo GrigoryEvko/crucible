@@ -4,10 +4,19 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/reflect/EnumName.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cog = crucible::cog;
 namespace fe = ::foundation::effects;
@@ -58,90 +67,98 @@ static void test_names() {
     static_assert(::foundation::reflect::enum_name(warden::QuarantineSignal::OperatorOverride) == "OperatorOverride");
     static_assert(::foundation::reflect::enum_name(static_cast<warden::QuarantineState>(0xFF))
                   == "<unknown QuarantineState>");
-    crucible::test::pass("  test_names:                              PASSED\n");
+    ::fixy::check::pass(kTest, "  test_names:                              PASSED\n");
 }
 
 static void test_health_hysteresis() {
     auto policy = warden::mint_quarantine_policy<4>(init_ctx(), test_config());
     auto target = peer(1);
 
-    assert(policy.on_health_event(bg_ctx(), target, health(850, topology::HealthState::Suspect, 1), 100));
-    assert(policy.state(target) == warden::QuarantineState::Suspect);
-    assert(policy.current(target).admitted_load_ppm == 300000);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         policy.on_health_event(bg_ctx(), target, health(850, topology::HealthState::Suspect, 1), 100));
+    CRUCIBLE_TEST_ASSERT(kTest, policy.state(target) == warden::QuarantineState::Suspect);
+    CRUCIBLE_TEST_ASSERT(kTest, policy.current(target).admitted_load_ppm == 300000);
 
-    assert(policy.on_health_event(bg_ctx(), target, health(400, topology::HealthState::Quarantined, 2), 200));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, policy.on_health_event(bg_ctx(), target, health(400, topology::HealthState::Quarantined, 2), 200));
     auto snapshot = policy.current(target);
-    assert(snapshot.state == warden::QuarantineState::Quarantined);
-    assert(snapshot.admitted_load_ppm == 0);
-    assert(snapshot.quarantine_since_ns == 200);
-    assert(policy.transition_event_count() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.state == warden::QuarantineState::Quarantined);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.admitted_load_ppm == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.quarantine_since_ns == 200);
+    CRUCIBLE_TEST_ASSERT(kTest, policy.transition_event_count() == 2);
 
-    assert(policy.on_health_event(bg_ctx(), target, health(1000, topology::HealthState::Healthy, 3), 300));
-    assert(policy.state(target) == warden::QuarantineState::Quarantined);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, policy.on_health_event(bg_ctx(), target, health(1000, topology::HealthState::Healthy, 3), 300));
+    CRUCIBLE_TEST_ASSERT(kTest, policy.state(target) == warden::QuarantineState::Quarantined);
 
     // A fact whose sequence goes backward is refused and changes nothing.
-    assert(!policy.on_health_event(bg_ctx(), target, health(100, topology::HealthState::Quarantined, 1), 400));
-    assert(policy.transition_event_count() == 2);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !policy.on_health_event(bg_ctx(), target, health(100, topology::HealthState::Quarantined, 1), 400));
+    CRUCIBLE_TEST_ASSERT(kTest, policy.transition_event_count() == 2);
 
-    crucible::test::pass("  test_health_hysteresis:                  PASSED\n");
+    ::fixy::check::pass(kTest, "  test_health_hysteresis:                  PASSED\n");
 }
 
 static void test_asymmetric_failure_policy() {
     auto policy = warden::mint_quarantine_policy<4>(init_ctx(), test_config());
 
     auto tx = peer(2);
-    assert(policy.on_asymmetric_failure(bg_ctx(), tx, topology::FailureClass::TxBroken, 100, 1));
-    assert(policy.state(tx) == warden::QuarantineState::Suspect);
-    assert(policy.current(tx).signals.test(warden::QuarantineSignal::AsymmetricSuspect));
+    CRUCIBLE_TEST_ASSERT(kTest, policy.on_asymmetric_failure(bg_ctx(), tx, topology::FailureClass::TxBroken, 100, 1));
+    CRUCIBLE_TEST_ASSERT(kTest, policy.state(tx) == warden::QuarantineState::Suspect);
+    CRUCIBLE_TEST_ASSERT(kTest, policy.current(tx).signals.test(warden::QuarantineSignal::AsymmetricSuspect));
 
     auto dead = peer(3);
-    assert(policy.on_asymmetric_failure(bg_ctx(), dead, topology::FailureClass::BidiFailed, 100, 2));
-    assert(policy.state(dead) == warden::QuarantineState::Quarantined);
-    assert(policy.current(dead).signals.test(warden::QuarantineSignal::AsymmetricDead));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         policy.on_asymmetric_failure(bg_ctx(), dead, topology::FailureClass::BidiFailed, 100, 2));
+    CRUCIBLE_TEST_ASSERT(kTest, policy.state(dead) == warden::QuarantineState::Quarantined);
+    CRUCIBLE_TEST_ASSERT(kTest, policy.current(dead).signals.test(warden::QuarantineSignal::AsymmetricDead));
 
-    crucible::test::pass("  test_asymmetric_failure_policy:          PASSED\n");
+    ::fixy::check::pass(kTest, "  test_asymmetric_failure_policy:          PASSED\n");
 }
 
 static void test_recovery_canary() {
     auto policy = warden::mint_quarantine_policy<4>(init_ctx(), test_config());
     auto target = peer(4);
 
-    assert(policy.on_health_event(bg_ctx(), target, health(100, topology::HealthState::Quarantined, 1), 100));
-    assert(policy.record_recovery_probe(bg_ctx(), target, probe(true, 2), 200));
-    assert(policy.record_recovery_probe(bg_ctx(), target, probe(true, 3), 300));
-    assert(policy.state(target) == warden::QuarantineState::Quarantined);
-    assert(policy.record_recovery_probe(bg_ctx(), target, probe(true, 4), 400));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, policy.on_health_event(bg_ctx(), target, health(100, topology::HealthState::Quarantined, 1), 100));
+    CRUCIBLE_TEST_ASSERT(kTest, policy.record_recovery_probe(bg_ctx(), target, probe(true, 2), 200));
+    CRUCIBLE_TEST_ASSERT(kTest, policy.record_recovery_probe(bg_ctx(), target, probe(true, 3), 300));
+    CRUCIBLE_TEST_ASSERT(kTest, policy.state(target) == warden::QuarantineState::Quarantined);
+    CRUCIBLE_TEST_ASSERT(kTest, policy.record_recovery_probe(bg_ctx(), target, probe(true, 4), 400));
 
     auto snapshot = policy.current(target);
-    assert(snapshot.state == warden::QuarantineState::Recovered);
-    assert(snapshot.consecutive_recovery_probes == 3);
-    assert(snapshot.admitted_load_ppm == 20000);
-    assert(snapshot.signals.test(warden::QuarantineSignal::RecoveryThresholdMet));
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.state == warden::QuarantineState::Recovered);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.consecutive_recovery_probes == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.admitted_load_ppm == 20000);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.signals.test(warden::QuarantineSignal::RecoveryThresholdMet));
 
-    assert(policy.on_health_event(bg_ctx(), target, health(1000, topology::HealthState::Healthy, 5), 500));
-    assert(policy.state(target) == warden::QuarantineState::Healthy);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, policy.on_health_event(bg_ctx(), target, health(1000, topology::HealthState::Healthy, 5), 500));
+    CRUCIBLE_TEST_ASSERT(kTest, policy.state(target) == warden::QuarantineState::Healthy);
 
-    crucible::test::pass("  test_recovery_canary:                    PASSED\n");
+    ::fixy::check::pass(kTest, "  test_recovery_canary:                    PASSED\n");
 }
 
 static void test_permanent_requires_operator_permission() {
     auto policy = warden::mint_quarantine_policy<4>(init_ctx(), test_config());
     auto target = peer(5);
 
-    assert(policy.on_health_event(bg_ctx(), target, health(100, topology::HealthState::Quarantined, 1), 100));
-    assert(policy.check_permanent_deadline(bg_ctx(), target, 1200, 2));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, policy.on_health_event(bg_ctx(), target, health(100, topology::HealthState::Quarantined, 1), 100));
+    CRUCIBLE_TEST_ASSERT(kTest, policy.check_permanent_deadline(bg_ctx(), target, 1200, 2));
     auto blocked = policy.current(target);
-    assert(blocked.state == warden::QuarantineState::Quarantined);
-    assert(blocked.signals.test(warden::QuarantineSignal::PermanentRequiresOperator));
+    CRUCIBLE_TEST_ASSERT(kTest, blocked.state == warden::QuarantineState::Quarantined);
+    CRUCIBLE_TEST_ASSERT(kTest, blocked.signals.test(warden::QuarantineSignal::PermanentRequiresOperator));
 
     auto authority = perm::mint_permission_root<warden::quarantine_tag::OperatorOverride>(init_ctx());
     authority =
         policy.operator_override(init_ctx(), std::move(authority), target, warden::QuarantineState::Permanent, 1300, 3);
-    assert(policy.state(target) == warden::QuarantineState::Permanent);
-    assert(policy.current(target).signals.test(warden::QuarantineSignal::OperatorOverride));
+    CRUCIBLE_TEST_ASSERT(kTest, policy.state(target) == warden::QuarantineState::Permanent);
+    CRUCIBLE_TEST_ASSERT(kTest, policy.current(target).signals.test(warden::QuarantineSignal::OperatorOverride));
     ::foundation::linear::drop(std::move(authority));
 
-    crucible::test::pass("  test_permanent_requires_operator_permission: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_permanent_requires_operator_permission: PASSED\n");
 }
 
 static void test_event_ring_wrap_chronological_order() {
@@ -159,29 +176,29 @@ static void test_event_ring_wrap_chronological_order() {
     }
     ::foundation::linear::drop(std::move(authority));
 
-    assert(policy.transition_event_count() == 4u);
+    CRUCIBLE_TEST_ASSERT(kTest, policy.transition_event_count() == 4u);
 
     auto const oldest = policy.transition_event_at(0).expect("the ring keeps four events");
     auto const newest = policy.transition_event_at(3).expect("the ring keeps four events");
     // Slot zero holds event five, which overwrote it, so reading the
     // storage positionally answers with the wrong event.
-    assert(oldest.sequence == 3u);
-    assert(newest.sequence == 6u);
+    CRUCIBLE_TEST_ASSERT(kTest, oldest.sequence == 3u);
+    CRUCIBLE_TEST_ASSERT(kTest, newest.sequence == 6u);
     // Odd sequences quarantine and even ones return to healthy.
-    assert(oldest.to == warden::QuarantineState::Quarantined);
-    assert(newest.to == warden::QuarantineState::Healthy);
+    CRUCIBLE_TEST_ASSERT(kTest, oldest.to == warden::QuarantineState::Quarantined);
+    CRUCIBLE_TEST_ASSERT(kTest, newest.to == warden::QuarantineState::Healthy);
 
     std::uint64_t prev = 0;
     for (std::size_t k = 0; k < policy.transition_event_count(); ++k) {
         auto const event = policy.transition_event_at(k).expect("k is below the count of events");
-        assert(event.sequence > prev);
+        CRUCIBLE_TEST_ASSERT(kTest, event.sequence > prev);
         prev = event.sequence;
     }
-    assert(prev == 6u);
+    CRUCIBLE_TEST_ASSERT(kTest, prev == 6u);
 
-    assert(policy.transition_event_at(4).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, policy.transition_event_at(4).is_none());
 
-    crucible::test::pass("  test_event_ring_wrap_chronological_order: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_event_ring_wrap_chronological_order: PASSED\n");
 }
 
 int main() {
@@ -205,6 +222,6 @@ int main() {
     test_recovery_canary();
     test_permanent_requires_operator_permission();
     test_event_ring_wrap_chronological_order();
-    crucible::test::pass("test_quarantine: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_quarantine: all PASSED\n");
     return 0;
 }

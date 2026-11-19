@@ -3,12 +3,21 @@
 #include <fixy/Core.h>
 #include <fixy/fp/Polynomial.h>
 
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 using ::fixy::band_tier_v;
@@ -56,7 +65,7 @@ static void test_generate_det_bit_equal_to_raw() {
 
     for (const auto& ctr : ctrs) {
         for (const auto& key : keys) {
-            assert(Philox4x32::generate(ctr, key) == Philox::generate_det(ctr, key).peek());
+            CRUCIBLE_TEST_ASSERT(kTest, Philox4x32::generate(ctr, key) == Philox::generate_det(ctr, key).peek());
         }
     }
 
@@ -65,7 +74,7 @@ static void test_generate_det_bit_equal_to_raw() {
 
     for (uint64_t offset : offsets) {
         for (uint64_t key : key64s) {
-            assert(Philox4x32::generate(offset, key) == Philox::generate_det(offset, key).peek());
+            CRUCIBLE_TEST_ASSERT(kTest, Philox4x32::generate(offset, key) == Philox::generate_det(offset, key).peek());
         }
     }
 }
@@ -80,10 +89,10 @@ static void test_to_uniform_det_bit_equal() {
         // Compare the bytes, not the values.  A determinism claim is a
         // claim about bits, and two floats can compare equal without
         // carrying the same bit pattern.
-        assert(std::bit_cast<uint32_t>(Philox::to_uniform(x))
-               == std::bit_cast<uint32_t>(Philox::to_uniform_det(x).peek()));
-        assert(std::bit_cast<uint64_t>(Philox::to_uniform_d(x))
-               == std::bit_cast<uint64_t>(Philox::to_uniform_d_det(x).peek()));
+        CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uint32_t>(Philox::to_uniform(x))
+                                        == std::bit_cast<uint32_t>(Philox::to_uniform_det(x).peek()));
+        CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uint64_t>(Philox::to_uniform_d(x))
+                                        == std::bit_cast<uint64_t>(Philox::to_uniform_d_det(x).peek()));
     }
 }
 
@@ -99,8 +108,8 @@ static void test_box_muller_polynomial_det_bit_equal() {
     for (auto [u1, u2] : pairs) {
         const auto [raw_first, raw_second] = ::fixy::fp::box_muller_polynomial(u1, u2);
         const auto [pinned_first, pinned_second] = Philox::box_muller_polynomial_det(u1, u2).peek();
-        assert(std::bit_cast<uint32_t>(raw_first) == std::bit_cast<uint32_t>(pinned_first));
-        assert(std::bit_cast<uint32_t>(raw_second) == std::bit_cast<uint32_t>(pinned_second));
+        CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uint32_t>(raw_first) == std::bit_cast<uint32_t>(pinned_first));
+        CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uint32_t>(raw_second) == std::bit_cast<uint32_t>(pinned_second));
     }
 }
 
@@ -117,7 +126,7 @@ static void test_op_key_det_bit_equal() {
     for (uint64_t m : masters) {
         for (uint32_t op : op_indices) {
             for (auto ch : content_hashes) {
-                assert(reference_op_key(m, op, ch) == Philox::op_key_det(m, op, ch).peek());
+                CRUCIBLE_TEST_ASSERT(kTest, reference_op_key(m, op, ch) == Philox::op_key_det(m, op, ch).peek());
             }
         }
     }
@@ -220,8 +229,8 @@ static void test_chain_composition() {
     static_assert(band_tier_v<decltype(rng)> == DetSafeTier_v::PhiloxRng);
 
     const uint64_t key_bytes_raw = reference_op_key(0xCAFEBABEDEADBEEFull, 42u, ContentHash{0xDEADBEEFCAFEBABEull});
-    assert(key_bytes == key_bytes_raw);
-    assert(rng.peek() == Philox4x32::generate(uint64_t{0}, key_bytes_raw));
+    CRUCIBLE_TEST_ASSERT(kTest, key_bytes == key_bytes_raw);
+    CRUCIBLE_TEST_ASSERT(kTest, rng.peek() == Philox4x32::generate(uint64_t{0}, key_bytes_raw));
 }
 
 // Each wrapper here except box_muller_polynomial_det is constexpr, and
@@ -350,11 +359,11 @@ static void test_move_semantics_through_wrapper() {
                   "DetSafe::consume() && MUST return T by value (move).");
 
     Counter extracted = std::move(rng).consume();
-    assert(extracted == Philox4x32::generate(uint64_t{1}, uint64_t{2}));
+    CRUCIBLE_TEST_ASSERT(kTest, extracted == Philox4x32::generate(uint64_t{1}, uint64_t{2}));
 
     auto key_pure = Philox::op_key_det(0xCAFEull, 7u, ContentHash{0xBEEFull});
     uint64_t key_extracted = std::move(key_pure).consume();
-    assert(key_extracted == reference_op_key(0xCAFEull, 7u, ContentHash{0xBEEFull}));
+    CRUCIBLE_TEST_ASSERT(kTest, key_extracted == reference_op_key(0xCAFEull, 7u, ContentHash{0xBEEFull}));
 }
 
 // One overload takes the key still wrapped, so the key's tier reaches
@@ -413,9 +422,9 @@ static void test_typed_chain_bit_equal_to_peek_chain() {
     const auto rng_form3 =
         Philox::generate_det(offset, mint_band<DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>>(key_raw));
 
-    assert(rng_form1.peek() == rng_form2.peek());
-    assert(rng_form1.peek() == rng_form3.peek());
-    assert(rng_form1.peek() == Philox4x32::generate(offset, key_raw));
+    CRUCIBLE_TEST_ASSERT(kTest, rng_form1.peek() == rng_form2.peek());
+    CRUCIBLE_TEST_ASSERT(kTest, rng_form1.peek() == rng_form3.peek());
+    CRUCIBLE_TEST_ASSERT(kTest, rng_form1.peek() == Philox4x32::generate(offset, key_raw));
 }
 
 // The same chain again, with the wrapped-key overload in place of the
@@ -435,7 +444,7 @@ static void test_e2e_typed_chain() {
     static_assert(band_tier_v<decltype(rng)> == DetSafeTier_v::PhiloxRng);
 
     const uint64_t key_bytes_raw = reference_op_key(0xCAFEBABEDEADBEEFull, 42u, ContentHash{0xDEADBEEFCAFEBABEull});
-    assert(rng.peek() == Philox4x32::generate(uint64_t{0}, key_bytes_raw));
+    CRUCIBLE_TEST_ASSERT(kTest, rng.peek() == Philox4x32::generate(uint64_t{0}, key_bytes_raw));
 }
 
 int main() {

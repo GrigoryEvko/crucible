@@ -9,10 +9,19 @@
 #include <foundation/Simd.h>
 
 #include <array>
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 using namespace crucible::detail;
@@ -76,7 +85,7 @@ void test_all_zeros() {
     std::array<Counter, 8> counters{};  // value-initialized to zero
     std::array<Key, 8> keys{};
     check_equivalence(counters, keys, "all-zeros");
-    crucible::test::pass("  test_all_zeros: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_all_zeros: PASSED\n");
 }
 
 void test_all_ones() {
@@ -87,7 +96,7 @@ void test_all_ones() {
         keys[i] = {0xFFFFFFFFu, 0xFFFFFFFFu};
     }
     check_equivalence(counters, keys, "all-ones");
-    crucible::test::pass("  test_all_ones: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_all_ones: PASSED\n");
 }
 
 void test_streaming_counters() {
@@ -102,7 +111,7 @@ void test_streaming_counters() {
         keys[i] = shared_key;
     }
     check_equivalence(counters, keys, "streaming-counters");
-    crucible::test::pass("  test_streaming_counters: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_streaming_counters: PASSED\n");
 }
 
 void test_heterogeneous_keys() {
@@ -117,7 +126,7 @@ void test_heterogeneous_keys() {
         keys[i] = {0x10000000u + iu * 0x11111111u, 0xFEDCBA98u + iu};
     }
     check_equivalence(counters, keys, "heterogeneous-keys");
-    crucible::test::pass("  test_heterogeneous_keys: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_heterogeneous_keys: PASSED\n");
 }
 
 void test_boundary_values() {
@@ -146,7 +155,7 @@ void test_boundary_values() {
         Key{0xA5A5A5A5u, 0x5A5A5A5Au},
     };
     check_equivalence(counters, keys, "boundary-values");
-    crucible::test::pass("  test_boundary_values: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_boundary_values: PASSED\n");
 }
 
 void test_per_lane_independence() {
@@ -177,16 +186,16 @@ void test_per_lane_independence() {
 
     // Equal outputs from different inputs are possible in principle
     // and vanishingly unlikely here.
-    assert(at(a.r0, 0) != at(b.r0, 0) && "lane 0 must change when its input changes");
+    CRUCIBLE_TEST_ASSERT(kTest, at(a.r0, 0) != at(b.r0, 0) && "lane 0 must change when its input changes");
 
     for (std::size_t lane = 1; lane < 8; ++lane) {
-        assert(at(a.r0, lane) == at(b.r0, lane) && "non-perturbed lane must not change");
-        assert(at(a.r1, lane) == at(b.r1, lane));
-        assert(at(a.r2, lane) == at(b.r2, lane));
-        assert(at(a.r3, lane) == at(b.r3, lane));
+        CRUCIBLE_TEST_ASSERT(kTest, at(a.r0, lane) == at(b.r0, lane) && "non-perturbed lane must not change");
+        CRUCIBLE_TEST_ASSERT(kTest, at(a.r1, lane) == at(b.r1, lane));
+        CRUCIBLE_TEST_ASSERT(kTest, at(a.r2, lane) == at(b.r2, lane));
+        CRUCIBLE_TEST_ASSERT(kTest, at(a.r3, lane) == at(b.r3, lane));
     }
 
-    crucible::test::pass("  test_per_lane_independence: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_per_lane_independence: PASSED\n");
 }
 
 void test_known_vector_lane0() {
@@ -206,12 +215,12 @@ void test_known_vector_lane0() {
 
     auto batch = batch_of(counters, keys);
 
-    assert(at(batch.r0, 0) == 0x6627E8D5u);
-    assert(at(batch.r1, 0) == 0xE169C58Du);
-    assert(at(batch.r2, 0) == 0xBC57AC4Cu);
-    assert(at(batch.r3, 0) == 0x9B00DBD8u);
+    CRUCIBLE_TEST_ASSERT(kTest, at(batch.r0, 0) == 0x6627E8D5u);
+    CRUCIBLE_TEST_ASSERT(kTest, at(batch.r1, 0) == 0xE169C58Du);
+    CRUCIBLE_TEST_ASSERT(kTest, at(batch.r2, 0) == 0xBC57AC4Cu);
+    CRUCIBLE_TEST_ASSERT(kTest, at(batch.r3, 0) == 0x9B00DBD8u);
 
-    crucible::test::pass("  test_known_vector_lane0: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_known_vector_lane0: PASSED\n");
 }
 
 }  // namespace
@@ -227,6 +236,6 @@ int main() {
     test_per_lane_independence();
     test_known_vector_lane0();
 
-    crucible::test::pass("test_philox_simd: ALL PASSED\n");
+    ::fixy::check::pass(kTest, "test_philox_simd: ALL PASSED\n");
     return 0;
 }

@@ -12,7 +12,16 @@
 #include <cstdio>
 #include <cstdlib>
 #include <utility>
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -140,6 +149,6 @@ int main() {
     test_bit_determinism();
     test_finite_output();
     test_statistical_sanity();
-    crucible::test::pass("box_muller_polynomial: PASS\n");
+    ::fixy::check::pass(kTest, "box_muller_polynomial: PASS\n");
     return 0;
 }

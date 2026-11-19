@@ -17,7 +17,17 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -43,9 +53,9 @@ namespace {
     in_meta.device_type = crucible::DeviceType::CPU;
     in_meta.device_idx = -1;
     in_meta.layout = crucible::Layout::Strided;
-    op.set_inputs(crucible::test::run_of(bg.alloc, dag_arena, in_meta),
-                  crucible::test::run_of(bg.alloc, dag_arena, crucible::OpIndex{0}),
-                  crucible::test::run_of(bg.alloc, dag_arena, crucible::SlotId{}));
+    op.set_inputs(::fixy::check::run_of(kTest, bg.alloc, dag_arena, in_meta),
+                  ::fixy::check::run_of(kTest, bg.alloc, dag_arena, crucible::OpIndex{0}),
+                  ::fixy::check::run_of(kTest, bg.alloc, dag_arena, crucible::SlotId{}));
 
     const ::fixy::Ref<crucible::RegionNode> region = crucible::make_region(bg.alloc, dag_arena, ops);
     return crucible::serialize_region(crucible::SerializedRegion{*region}, out_buf);
@@ -178,6 +188,6 @@ constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
         }
     }
 
-    crucible::test::pass("OK: all trust-boundary enum gates reject malformed wire bytes\n");
+    ::fixy::check::pass(kTest, "OK: all trust-boundary enum gates reject malformed wire bytes\n");
     return 0;
 }

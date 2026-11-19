@@ -15,7 +15,6 @@
 // The last case is the run-time witness of the rule static-tls.
 
 #include "process_wide_libraries.h"
-#include "test_assert.h"
 
 #include <crucible/CKernel.h>
 #include <fixy/Core.h>
@@ -36,6 +35,13 @@
 
 namespace {
 
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
+
+namespace {
+
 namespace pwl = process_wide_libraries;
 
 // One library, loaded as the vessel libraries are loaded.  The handle is
@@ -46,14 +52,14 @@ struct Library {
 
     explicit Library(const char* path, bool is_required = true) noexcept : handle{dlopen(path, RTLD_NOW | RTLD_LOCAL)} {
         if (handle == nullptr) std::fprintf(stderr, "dlopen of %s failed: %s\n", path, dlerror());
-        assert(handle != nullptr || !is_required);
+        CRUCIBLE_TEST_ASSERT(kTest, handle != nullptr || !is_required);
     }
 
     template <class Function>
     [[nodiscard]] Function* symbol(const char* name) const noexcept {
         void* const address = dlsym(handle, name);
         if (address == nullptr) std::fprintf(stderr, "dlsym of %s failed: %s\n", name, dlerror());
-        assert(address != nullptr);
+        CRUCIBLE_TEST_ASSERT(kTest, address != nullptr);
         return std::bit_cast<Function*>(address);
     }
 };
@@ -62,7 +68,7 @@ struct Library {
 // printed first.
 void require(bool is_holding, const char* claim) {
     if (!is_holding) std::fprintf(stderr, "  FAILED: %s\n", claim);
-    assert(is_holding);
+    CRUCIBLE_TEST_ASSERT(kTest, is_holding);
 }
 
 template <class Body>
@@ -143,18 +149,18 @@ void test_each_object_has_one_address(const Library& writer, const Library& read
         if (writer_address(index) != reader_address(index))
             std::fprintf(stderr, "  object %u: the writer sees %p, the reader sees %p\n", index, writer_address(index),
                          reader_address(index));
-        assert(writer_address(index) == reader_address(index));
+        CRUCIBLE_TEST_ASSERT(kTest, writer_address(index) == reader_address(index));
         ++index;
     }
-    assert(reader_address(index) == nullptr);
-    assert(index > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, reader_address(index) == nullptr);
+    CRUCIBLE_TEST_ASSERT(kTest, index > 0);
 
     auto* const writer_control = writer.symbol<decltype(process_wide_control_address)>("process_wide_control_address");
     auto* const reader_control = reader.symbol<decltype(process_wide_control_address)>("process_wide_control_address");
     for (unsigned control = 0; writer_control(control) != nullptr; ++control)
         require(writer_control(control) != reader_control(control),
                 "an object with no marker has a copy in each library, so the two libraries are loaded apart");
-    crucible::test::pass("  test_each_object_has_one_address: PASSED ({} objects)\n", index);
+    ::fixy::check::pass(kTest, "  test_each_object_has_one_address: PASSED ({} objects)\n", index);
 }
 
 // A marked thread_local object is one object for each thread, whatever
@@ -199,7 +205,7 @@ void test_each_thread_object_is_one_for_the_thread(const Library& writer, const 
             "a second thread has objects of its own, one address in the two libraries, and sees its own writes");
     require(reader_value(0) == 7 && reader_value(1) == 7,
             "the write of the second thread did not reach the main thread");
-    crucible::test::pass("  test_each_thread_object_is_one_for_the_thread: PASSED ({} objects)\n", count);
+    ::fixy::check::pass(kTest, "  test_each_thread_object_is_one_for_the_thread: PASSED ({} objects)\n", count);
 }
 
 void test_the_reader_sees_each_write(const Library& writer, const Library& reader) {
@@ -213,7 +219,7 @@ void test_the_reader_sees_each_write(const Library& writer, const Library& reade
             "the reader library sees the kernel that the writer registered");
     require(schema_name(pwl::kNamedHash) == ::fixy::TextView{pwl::kSchemaName},
             "the reader library sees the schema name that the writer registered");
-    crucible::test::pass("  test_the_reader_sees_each_write: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_the_reader_sees_each_write: PASSED\n");
 }
 
 // The second claim ends the process, so it runs on a second thread of a
@@ -252,7 +258,7 @@ void test_static_tls_holds_the_rule_threshold() {
     const Library plant{STATIC_TLS_PLANT_PATH, false};
     require(plant.handle == nullptr,
             "dlopen refuses a library whose initial-exec block is larger than the free static TLS of glibc");
-    crucible::test::pass("  test_static_tls_holds_the_rule_threshold: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_static_tls_holds_the_rule_threshold: PASSED\n");
 }
 
 }  // namespace

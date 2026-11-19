@@ -17,10 +17,19 @@
 #include <crucible/Vigil.h>
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <bit>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -64,10 +73,12 @@ OpData make_op(const ShapeHash* shapes, uint32_t variant, uint32_t iter, uint32_
     uint16_t idx = 0;
     if (op_idx > 0) {
         int64_t in_sz = tensor_size(variant, op_idx - 1);
-        crucible::test::element_at(d.metas, idx++) = make_meta(fake_ptr(variant, iter, op_idx - 1), in_sz);
+        *d.metas.get(idx++).expect("a test reads an element at or past the count of its array") =
+            make_meta(fake_ptr(variant, iter, op_idx - 1), in_sz);
     }
     int64_t out_sz = tensor_size(variant, op_idx);
-    crucible::test::element_at(d.metas, idx++) = make_meta(fake_ptr(variant, iter, op_idx), out_sz);
+    *d.metas.get(idx++).expect("a test reads an element at or past the count of its array") =
+        make_meta(fake_ptr(variant, iter, op_idx), out_sz);
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
@@ -90,14 +101,15 @@ void align_and_activate(Vigil& vigil, const ShapeHash* shapes, uint32_t variant,
     for (uint32_t i = 0; i < K; i++) {
         auto d = make_op(shapes, variant, iter, i);
         auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::RECORD && "alignment ops should return RECORD");
+        CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::RECORD && "alignment ops should return RECORD");
     }
-    assert(vigil.context().is_compiled() && "CrucibleContext should be compiled after K alignment ops");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.context().is_compiled() && "CrucibleContext should be compiled after K alignment ops");
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(shapes, variant, iter, i);
         auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
+        CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
     }
 }
 
@@ -107,40 +119,40 @@ void test_cache_dedup_and_cap() {
     auto test = ::foundation::effects::testing::test();
     RegionCache cache;
 
-    assert(cache.size() == 0);
-    assert(cache.empty());
+    CRUCIBLE_TEST_ASSERT(kTest, cache.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, cache.empty());
 
     ::fixy::BumpArena arena(4096);
     const auto region = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
     region->content_hash = ContentHash{0x1234};
 
     cache.insert(*region);
-    assert(cache.size() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, cache.size() == 1);
 
     // One content hash occupies one slot however often it is inserted.
     cache.insert(*region);
-    assert(cache.size() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, cache.size() == 1);
 
     for (uint32_t i = 1; i < RegionCache::CAP; i++) {
         const auto r = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
         r->content_hash = ContentHash{0x1234 + i};
         cache.insert(*r);
     }
-    assert(cache.size() == RegionCache::CAP);
+    CRUCIBLE_TEST_ASSERT(kTest, cache.size() == RegionCache::CAP);
 
     // Insertion past the capacity evicts the oldest entry instead of
     // growing.
     const auto overflow = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
     overflow->content_hash = ContentHash{0xFFFF};
     cache.insert(*overflow);
-    assert(cache.size() == RegionCache::CAP);
+    CRUCIBLE_TEST_ASSERT(kTest, cache.size() == RegionCache::CAP);
 
-    assert(cache.find(ContentHash{0xFFFF}).has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, cache.find(ContentHash{0xFFFF}).has_value());
 
     // 0x1234 went in first, so it is the one that leaves.
-    assert(!cache.find(ContentHash{0x1234}).has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, !cache.find(ContentHash{0x1234}).has_value());
 
-    crucible::test::pass("  test_cache_dedup_and_cap: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_cache_dedup_and_cap: PASSED\n");
 }
 
 // find_alternate reads the plan off the region, not off a snapshot taken
@@ -172,17 +184,17 @@ void test_find_alternate_tracks_live_plan() {
     op1.shape_hash = ShapeHash{0x903};
 
     const auto region = make_region(test.alloc, arena, ops.view());
-    assert(region->plan.is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_none());
 
     cache.insert(*region);
-    assert(cache.size() == 1);
-    assert(cache.find(region->content_hash).try_get() == &*region
-           && "a planless region is still cached and still findable by hash");
+    CRUCIBLE_TEST_ASSERT(kTest, cache.size() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, cache.find(region->content_hash).try_get() == &*region
+                                    && "a planless region is still cached and still findable by hash");
 
     // Not eligible to switch to: without a plan the context cannot enter
     // compiled mode, so offering it would strand the caller.
-    assert(!cache.find_alternate(0, op0.schema_hash, op0.shape_hash).has_value());
-    assert(!cache.find_alternate(1, op1.schema_hash, op1.shape_hash).has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, !cache.find_alternate(0, op0.schema_hash, op0.shape_hash).has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, !cache.find_alternate(1, op1.schema_hash, op1.shape_hash).has_value());
 
     // The plan arrives after the insert. No second call into the cache.
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
@@ -196,21 +208,22 @@ void test_find_alternate_tracks_live_plan() {
     plan->pool_bytes = 4096;
     region->plan = make_plan_link(*plan);
 
-    assert(cache.find_alternate(0, op0.schema_hash, op0.shape_hash).try_get() == &*region
-           && "a region cached before its plan existed stayed unfindable after the plan "
-              "arrived: find_alternate is reading an insert-time snapshot again, and the "
-              "repair path for it has no caller");
-    assert(cache.find_alternate(1, op1.schema_hash, op1.shape_hash).try_get() == &*region);
+    CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(0, op0.schema_hash, op0.shape_hash).try_get() == &*region
+                                    && "a region cached before its plan existed stayed unfindable after the plan "
+                                       "arrived: find_alternate is reading an insert-time snapshot again, and the "
+                                       "repair path for it has no caller");
+    CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(1, op1.schema_hash, op1.shape_hash).try_get() == &*region);
 
     // The position bound now means one thing: how many ops the region has.
-    assert(!cache.find_alternate(2, op1.schema_hash, op1.shape_hash).has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, !cache.find_alternate(2, op1.schema_hash, op1.shape_hash).has_value());
     // A matching position with the wrong shape is still a miss.
-    assert(!cache.find_alternate(0, op0.schema_hash, ShapeHash{0xDEAD}).has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, !cache.find_alternate(0, op0.schema_hash, ShapeHash{0xDEAD}).has_value());
     // And exclude still excludes.
-    assert(!cache.find_alternate(0, op0.schema_hash, op0.shape_hash, ::fixy::WeakRef<const RegionNode>{*region})
-                .has_value());
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !cache.find_alternate(0, op0.schema_hash, op0.shape_hash, ::fixy::WeakRef<const RegionNode>{*region})
+                    .has_value());
 
-    crucible::test::pass("  test_find_alternate_tracks_live_plan: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_find_alternate_tracks_live_plan: PASSED\n");
 }
 
 }  // namespace
@@ -226,6 +239,6 @@ int main() {
     test_cache_switch_mid_iter();
     test_cache_data_migration();
     test_cache_repeated_switching();
-    crucible::test::pass("test_region_cache: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_region_cache: all tests passed\n");
     return 0;
 }

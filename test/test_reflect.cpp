@@ -7,11 +7,20 @@
 #include <fixy/Core.h>
 #include <fixy/Protocol.h>
 #include <foundation/Platform.h>
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
 #include <unordered_set>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 struct[[= ::fixy::derive_protocol{}]] Point {
     int32_t x;
@@ -85,18 +94,18 @@ int main() {
     uint64_t h2 = hash_of(p2);
     uint64_t h3 = hash_of(p3);
 
-    assert(h1 == h2);
+    CRUCIBLE_TEST_ASSERT(kTest, h1 == h2);
     // Distinct inputs colliding is possible in principle.  The mixing
     // function makes it unlikely enough to assert against.
-    assert(h1 != h3);
-    assert(h1 != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, h1 != h3);
+    CRUCIBLE_TEST_ASSERT(kTest, h1 != 0);
 
     Dims d1{{1, 2, 3, 4}, 4};
     Dims d2{{1, 2, 3, 4}, 4};
     Dims d3{{1, 2, 3, 5}, 4};
 
-    assert(hash_of(d1) == hash_of(d2));
-    assert(hash_of(d1) != hash_of(d3));
+    CRUCIBLE_TEST_ASSERT(kTest, hash_of(d1) == hash_of(d2));
+    CRUCIBLE_TEST_ASSERT(kTest, hash_of(d1) != hash_of(d3));
 
     // The hash of a Guard is a part of the merkle hash of each branch, and
     // the store keeps that hash.  So these values are frozen: a change of the
@@ -118,12 +127,12 @@ int main() {
         by_all.op_index = crucible::OpIndex{7};
         by_all.arg_index = 3;
         by_all.dim_index = 2;
-        assert(hash_of(crucible::Guard{}) == 0x4038B42334584479ULL);
-        assert(hash_of(by_kind) == 0xF13EEE04DEC598B4ULL);
-        assert(hash_of(by_op) == 0x933B5CA50B01183DULL);
-        assert(hash_of(by_arg) == 0xBA8B5554228EA232ULL);
-        assert(hash_of(by_dim) == 0x579A8AC20EC6AAA4ULL);
-        assert(hash_of(by_all) == 0x416F8BAE8D65F697ULL);
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(crucible::Guard{}) == 0x4038B42334584479ULL);
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(by_kind) == 0xF13EEE04DEC598B4ULL);
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(by_op) == 0x933B5CA50B01183DULL);
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(by_arg) == 0xBA8B5554228EA232ULL);
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(by_dim) == 0x579A8AC20EC6AAA4ULL);
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(by_all) == 0x416F8BAE8D65F697ULL);
     }
 
     // A FixedArray field folds as its elements, with the reduction of a C
@@ -132,9 +141,9 @@ int main() {
     {
         const FixedDims f1{{1, 2, 3, 4}, 4};
         const FixedDims f3{{1, 2, 3, 5}, 4};
-        assert(hash_of(f1) != hash_of(f3));
-        assert(hash_of(f1) == hash_of(d1));
-        assert(hash_of(f3) == hash_of(d3));
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(f1) != hash_of(f3));
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(f1) == hash_of(d1));
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(f3) == hash_of(d3));
     }
 
     // Two values that differ only in a field of a base give two hashes.  The
@@ -144,20 +153,20 @@ int main() {
     {
         const WithBase low_one{{1}, 7};
         const WithBase low_two{{2}, 7};
-        assert(hash_of(low_one) != hash_of(low_two));
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(low_one) != hash_of(low_two));
 
         const WithTwoBases high_two{{1}, {2}, 7};
         const WithTwoBases high_three{{1}, {3}, 7};
         const WithTwoBases swapped{{2}, {1}, 7};
-        assert(hash_of(high_two) != hash_of(high_three));
-        assert(hash_of(high_two) != hash_of(swapped));
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(high_two) != hash_of(high_three));
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(high_two) != hash_of(swapped));
 
         const WithPrivateBase private_one{1, 7};
         const WithPrivateBase private_two{2, 7};
-        assert(hash_of(private_one) != hash_of(private_two));
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(private_one) != hash_of(private_two));
 
         const WithLeadingMember member_one{{1}, 7};
-        assert(hash_of(low_one) == hash_of(member_one));
+        CRUCIBLE_TEST_ASSERT(kTest, hash_of(low_one) == hash_of(member_one));
     }
 
     // The remaining cases use production types rather than fixtures, so the
@@ -172,9 +181,9 @@ int main() {
     crucible::Guard g3 = g1;
     g3.dim_index = 4;
 
-    assert(hash_of(g1) == hash_of(g2));
-    assert(hash_of(g1) != hash_of(g3));
-    assert(::fixy::equal(g1, g2) && !::fixy::equal(g1, g3));
+    CRUCIBLE_TEST_ASSERT(kTest, hash_of(g1) == hash_of(g2));
+    CRUCIBLE_TEST_ASSERT(kTest, hash_of(g1) != hash_of(g3));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(g1, g2) && !::fixy::equal(g1, g3));
 
     // A slot of a memory plan holds strong ids, enumerations, a bool and two
     // pads, and no pointer.
@@ -185,8 +194,8 @@ int main() {
     crucible::TensorSlot s2 = s1;
     crucible::TensorSlot s3 = s1;
     s3.is_external = true;
-    assert(hash_of(s1) == hash_of(s2));
-    assert(hash_of(s1) != hash_of(s3));
+    CRUCIBLE_TEST_ASSERT(kTest, hash_of(s1) == hash_of(s2));
+    CRUCIBLE_TEST_ASSERT(kTest, hash_of(s1) != hash_of(s3));
 
     // The gates.  A non-class type has no parts to walk, so the hash takes
     // it only as a part of a class.
@@ -233,11 +242,11 @@ int main() {
         const double mean_flips = static_cast<double>(total_flips) / (64 * 4);
         // Half of 64 output bits is 32.  The window of six bits either
         // side absorbs the noise of a 256-sample mean.
-        assert(mean_flips > 26.0 && mean_flips < 38.0);
+        CRUCIBLE_TEST_ASSERT(kTest, mean_flips > 26.0 && mean_flips < 38.0);
         // A field that barely reached the output would show up as a
         // perturbation that changes almost nothing.
-        assert(min_flips >= 16);
-        assert(max_flips <= 50);
+        CRUCIBLE_TEST_ASSERT(kTest, min_flips >= 16);
+        CRUCIBLE_TEST_ASSERT(kTest, max_flips <= 50);
     }
 
     // A thousand distinct inputs must give a thousand distinct
@@ -256,9 +265,9 @@ int main() {
                 ~iu,
             };
             const auto [it, inserted] = seen.insert(hash_of(s));
-            assert(inserted && "hash collision in 1024-input grid");
+            CRUCIBLE_TEST_ASSERT(kTest, inserted && "hash collision in 1024-input grid");
         }
-        assert(seen.size() == N);
+        CRUCIBLE_TEST_ASSERT(kTest, seen.size() == N);
     }
 
     // The hash is pure, so a fixed input gives identical bytes on every
@@ -268,7 +277,7 @@ int main() {
         const Point p{42, -7, 3.14159f};
         const uint64_t h0 = hash_of(p);
         for (int i = 0; i < 1000; ++i) {
-            assert(hash_of(p) == h0);
+            CRUCIBLE_TEST_ASSERT(kTest, hash_of(p) == h0);
         }
     }
 
@@ -276,18 +285,19 @@ int main() {
     // These boundary cases are the part of the contract that survives
     // any change to the bit pattern.
     {
-        assert(crucible::feedback_signature({}) == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::feedback_signature({}) == 0);
         const ::foundation::core::FixedArray<crucible::FeedbackEdge, 1> one{crucible::FeedbackEdge{0, 1}};
-        assert(crucible::feedback_signature(one.view()) != 0);
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::feedback_signature(one.view()) != 0);
         // The edge count is folded in, so repeating one edge signs
         // differently from having it once.
         const ::foundation::core::FixedArray<crucible::FeedbackEdge, 2> two_same{{0, 1}, {0, 1}};
-        assert(crucible::feedback_signature(one.view()) != crucible::feedback_signature(two_same.view()));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             crucible::feedback_signature(one.view()) != crucible::feedback_signature(two_same.view()));
         // The fold is not commutative, so reordering the edges
         // changes the signature.
         const ::foundation::core::FixedArray<crucible::FeedbackEdge, 2> ab{{1, 2}, {3, 4}};
         const ::foundation::core::FixedArray<crucible::FeedbackEdge, 2> ba{{3, 4}, {1, 2}};
-        assert(crucible::feedback_signature(ab.view()) != crucible::feedback_signature(ba.view()));
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::feedback_signature(ab.view()) != crucible::feedback_signature(ba.view()));
     }
 
     // Each of the three termination fields must move the hash on its
@@ -302,17 +312,17 @@ int main() {
 
         crucible::LoopNode alt_kind = base;
         alt_kind.term_kind = crucible::LoopTermKind::UNTIL;
-        assert(crucible::loopterm_hash(alt_kind) != h_base);
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::loopterm_hash(alt_kind) != h_base);
 
         crucible::LoopNode alt_count = base;
         alt_count.repeat_count = 101;
-        assert(crucible::loopterm_hash(alt_count) != h_base);
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::loopterm_hash(alt_count) != h_base);
 
         crucible::LoopNode alt_eps = base;
         alt_eps.epsilon = 0.002f;
-        assert(crucible::loopterm_hash(alt_eps) != h_base);
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::loopterm_hash(alt_eps) != h_base);
     }
 
-    crucible::test::pass("test_reflect: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_reflect: all tests passed\n");
     return 0;
 }

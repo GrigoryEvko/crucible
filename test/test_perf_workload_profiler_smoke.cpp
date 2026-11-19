@@ -9,7 +9,15 @@
 #include <type_traits>
 #include <utility>
 #include "perf_capabilities.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -304,7 +312,7 @@ int main() {
     }
 
     if (failures == 0) {
-        crucible::test::pass("perf::WorkloadProfiler smoke OK\n");
+        ::fixy::check::pass(kTest, "perf::WorkloadProfiler smoke OK\n");
     }
     return failures == 0 ? 0 : 1;
 }

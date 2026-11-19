@@ -5,9 +5,19 @@
 
 #include <crucible/Vigil.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -47,7 +57,7 @@ void test_cache_repeated_switching() {
     flush_and_wait_region_published(vigil);
     align_and_activate(vigil, SHAPE_B, 1, 17);
 
-    assert(vigil.region_cache().size() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.region_cache().size() == 2);
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_B, 1, 18, i);
@@ -62,21 +72,22 @@ void test_cache_repeated_switching() {
         for (uint32_t i = 0; i < 3; i++) {
             auto d = make_op(active_shapes, variant, iter, i);
             auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::COMPILED);
+            CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
         }
 
         auto d3 = make_op(active_shapes, variant, iter, 3);
         auto r3 = crucible::test::dispatch_synthetic(vigil, d3.entry, d3.metas, d3.n_metas);
-        assert(r3.action == DispatchResult::Action::COMPILED && "Cache switch failed during repeated alternation");
+        CRUCIBLE_TEST_ASSERT(kTest, r3.action == DispatchResult::Action::COMPILED
+                                        && "Cache switch failed during repeated alternation");
 
         for (uint32_t i = 4; i < NUM_OPS; i++) {
             auto d = make_op(active_shapes, variant, iter, i);
             auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::COMPILED);
+            CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
         }
     }
 
-    crucible::test::pass("  test_cache_repeated_switching: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_cache_repeated_switching: PASSED\n");
 }
 
 }  // namespace test_region_cache

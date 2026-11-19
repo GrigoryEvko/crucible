@@ -11,7 +11,16 @@
 #include <crucible/perf/detail/BpfLoader.h>
 #include <fixy/Core.h>
 
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace detail = crucible::perf::detail;
 
@@ -36,12 +45,12 @@ inline constexpr std::size_t kElfHeadBytes = 20;
 // they do not start with the head of an ELF object of the BPF machine.
 void expect_bpf_object(::fixy::TextView name, detail::ForeignBytes bytes) noexcept {
     ::fixy::View<unsigned char const> const view = detail::view_bytes(bytes);
-    assert(view.size() > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, view.size() > 0);
     bool const is_bpf_object = view.window<kElfHeadBytes>(0).match(
         [](::fixy::View<unsigned char const, kElfHeadBytes> head) noexcept { return is_bpf_elf_head(head); },
         []() noexcept { return false; });
-    assert(is_bpf_object);
-    crucible::test::pass("  {}: {} bytes\n", name, view.size());
+    CRUCIBLE_TEST_ASSERT(kTest, is_bpf_object);
+    ::fixy::check::pass(kTest, "  {}: {} bytes\n", name, view.size());
 }
 
 void test_perf_programs() {
@@ -52,7 +61,7 @@ void test_perf_programs() {
     expect_bpf_object("syscall_latency", detail::syscall_latency_bpf_object());
     expect_bpf_object("sched_tp_btf", detail::sched_tp_btf_bpf_object());
     expect_bpf_object("syscall_tp_btf", detail::syscall_tp_btf_bpf_object());
-    crucible::test::pass("  test_perf_programs: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_perf_programs: PASSED\n");
 }
 
 void test_continuous_monitoring_stubs() {
@@ -83,7 +92,7 @@ void test_continuous_monitoring_stubs() {
     expect_bpf_object("observe_ecn_sample", detail::observe_ecn_sample_bpf_object());
     expect_bpf_object("cog_nic_cog_probe", detail::cog_nic_cog_probe_bpf_object());
     expect_bpf_object("cog_offload_cap_probe", detail::cog_offload_cap_probe_bpf_object());
-    crucible::test::pass("  test_continuous_monitoring_stubs: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_continuous_monitoring_stubs: PASSED\n");
 }
 
 }  // namespace
@@ -92,6 +101,6 @@ int main() {
     ::fixy::report(::fixy::Sink::Out, "test_perf_bpf_objects:\n");
     test_perf_programs();
     test_continuous_monitoring_stubs();
-    crucible::test::pass("test_perf_bpf_objects: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_perf_bpf_objects: all PASSED\n");
     return 0;
 }

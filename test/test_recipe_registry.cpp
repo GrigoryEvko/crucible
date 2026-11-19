@@ -23,7 +23,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
-#include "test_assert.h"
+#include <fixy/check/Check.h>
 #include <cinttypes>
 #include <cstdio>
 #include <span>
@@ -31,6 +31,13 @@
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -108,21 +115,21 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
-        assert(entries_view(reg).size() == RecipeRegistry::STARTER_COUNT);
-        assert(pool.size() == RecipeRegistry::STARTER_COUNT);
+        CRUCIBLE_TEST_ASSERT(kTest, entries_view(reg).size() == RecipeRegistry::STARTER_COUNT);
+        CRUCIBLE_TEST_ASSERT(kTest, pool.size() == RecipeRegistry::STARTER_COUNT);
 
         for (const auto& e : entries_view(reg)) {
-            assert(e.name.size() != 0);
+            CRUCIBLE_TEST_ASSERT(kTest, e.name.size() != 0);
             // The stored hash must be the one its own fields produce, not a
             // value copied in from the specification.
-            assert(e.recipe->hash == crucible::compute_recipe_hash(*e.recipe));
-            assert(e.recipe->accum_dtype == ScalarType::Float);
+            CRUCIBLE_TEST_ASSERT(kTest, e.recipe->hash == crucible::compute_recipe_hash(*e.recipe));
+            CRUCIBLE_TEST_ASSERT(kTest, e.recipe->accum_dtype == ScalarType::Float);
             // FP16 and BF16 tensor-core fragments are not bit-identical
             // across vendors, so no such recipe claims a bit-exact tier.
             bool const is_half_output =
                 e.recipe->out_dtype == ScalarType::Half || e.recipe->out_dtype == ScalarType::BFloat16;
-            assert(!is_half_output || !crucible::permits_tensor_cores(e.recipe->determinism)
-                   || !crucible::is_bitexact(e.recipe->determinism));
+            CRUCIBLE_TEST_ASSERT(kTest, !is_half_output || !crucible::permits_tensor_cores(e.recipe->determinism)
+                                            || !crucible::is_bitexact(e.recipe->determinism));
         }
     }
 
@@ -135,7 +142,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
         for (const auto& e : entries_view(reg)) {
             entry_ptrs.insert(&*e.recipe);
         }
-        assert(entry_ptrs.size() == RecipeRegistry::STARTER_COUNT);
+        CRUCIBLE_TEST_ASSERT(kTest, entry_ptrs.size() == RecipeRegistry::STARTER_COUNT);
 
         const ::fixy::TextView known_names[] = {
             names::kF32Strict,
@@ -152,14 +159,14 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
             RecipeRegistry::RecipeRef const r = reg.by_name(kPure, n).expect("a starter recipe lookup hits");
             // Lookup by name must land on a pointer the pool already owns,
             // not on a fresh copy of the same recipe.
-            assert(entry_ptrs.contains(&*r));
+            CRUCIBLE_TEST_ASSERT(kTest, entry_ptrs.contains(&*r));
         }
 
         RecipeRegistry::RecipeRef const first =
             reg.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");
         RecipeRegistry::RecipeRef const second =
             reg.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");
-        assert(::fixy::same_object(first, second));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(first, second));
     }
 
     // Lookup by name is exact and case-sensitive, so the near-misses
@@ -183,8 +190,8 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
 
         for (auto n : missing) {
             auto r = reg.by_name(kPure, n);
-            assert(r.is_err() && "missing recipe must not hit");
-            assert(std::move(r).err().expect("the lookup missed") == RecipeError::NameNotFound);
+            CRUCIBLE_TEST_ASSERT(kTest, r.is_err() && "missing recipe must not hit");
+            CRUCIBLE_TEST_ASSERT(kTest, std::move(r).err().expect("the lookup missed") == RecipeError::NameNotFound);
         }
     }
 
@@ -200,14 +207,14 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
             auto r = reg.by_name(kPure, names::kF32Strict);
             RecipeRegistry::RecipeRef const recipe = std::move(r).expect("the starter is present");
             const auto& x = *recipe;
-            assert(x.accum_dtype == ScalarType::Float);
-            assert(x.out_dtype == ScalarType::Float);
-            assert(x.determinism == ReductionDeterminism::BITEXACT_STRICT);
-            assert(x.scale_policy == ScalePolicy::NONE);
-            assert(x.softmax == SoftmaxRecurrence::ONLINE_LSE);
-            assert(crucible::is_bitexact(x.determinism));
+            CRUCIBLE_TEST_ASSERT(kTest, x.accum_dtype == ScalarType::Float);
+            CRUCIBLE_TEST_ASSERT(kTest, x.out_dtype == ScalarType::Float);
+            CRUCIBLE_TEST_ASSERT(kTest, x.determinism == ReductionDeterminism::BITEXACT_STRICT);
+            CRUCIBLE_TEST_ASSERT(kTest, x.scale_policy == ScalePolicy::NONE);
+            CRUCIBLE_TEST_ASSERT(kTest, x.softmax == SoftmaxRecurrence::ONLINE_LSE);
+            CRUCIBLE_TEST_ASSERT(kTest, crucible::is_bitexact(x.determinism));
             // The strictest determinism tier rules tensor cores out.
-            assert(!crucible::permits_tensor_cores(x.determinism));
+            CRUCIBLE_TEST_ASSERT(kTest, !crucible::permits_tensor_cores(x.determinism));
         }
 
         // FP16 and BF16 tensor-core fragments give different bits on
@@ -216,45 +223,45 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
             auto r = reg.by_name(kPure, names::kF16F32AccumTc);
             RecipeRegistry::RecipeRef const recipe = std::move(r).expect("the starter is present");
             const auto& x = *recipe;
-            assert(x.accum_dtype == ScalarType::Float);
-            assert(x.out_dtype == ScalarType::Half);
-            assert(x.determinism == ReductionDeterminism::UNORDERED);
-            assert(!crucible::is_bitexact(x.determinism));
-            assert(crucible::permits_tensor_cores(x.determinism));
+            CRUCIBLE_TEST_ASSERT(kTest, x.accum_dtype == ScalarType::Float);
+            CRUCIBLE_TEST_ASSERT(kTest, x.out_dtype == ScalarType::Half);
+            CRUCIBLE_TEST_ASSERT(kTest, x.determinism == ReductionDeterminism::UNORDERED);
+            CRUCIBLE_TEST_ASSERT(kTest, !crucible::is_bitexact(x.determinism));
+            CRUCIBLE_TEST_ASSERT(kTest, crucible::permits_tensor_cores(x.determinism));
         }
 
         {
             auto r = reg.by_name(kPure, names::kBf16F32AccumTc);
             RecipeRegistry::RecipeRef const recipe = std::move(r).expect("the starter is present");
             const auto& x = *recipe;
-            assert(x.accum_dtype == ScalarType::Float);
-            assert(x.out_dtype == ScalarType::BFloat16);
-            assert(x.determinism == ReductionDeterminism::UNORDERED);
-            assert(!crucible::is_bitexact(x.determinism));
+            CRUCIBLE_TEST_ASSERT(kTest, x.accum_dtype == ScalarType::Float);
+            CRUCIBLE_TEST_ASSERT(kTest, x.out_dtype == ScalarType::BFloat16);
+            CRUCIBLE_TEST_ASSERT(kTest, x.determinism == ReductionDeterminism::UNORDERED);
+            CRUCIBLE_TEST_ASSERT(kTest, !crucible::is_bitexact(x.determinism));
         }
 
         {
             auto r = reg.by_name(kPure, names::kFp8E4m3F32AccumMxOrd);
             RecipeRegistry::RecipeRef const recipe = std::move(r).expect("the starter is present");
             const auto& x = *recipe;
-            assert(x.accum_dtype == ScalarType::Float);
-            assert(x.out_dtype == ScalarType::Float8_e4m3fn);
-            assert(x.scale_policy == ScalePolicy::PER_BLOCK_MX);
-            assert(x.softmax == SoftmaxRecurrence::NAIVE);
-            assert(x.determinism == ReductionDeterminism::ORDERED);
+            CRUCIBLE_TEST_ASSERT(kTest, x.accum_dtype == ScalarType::Float);
+            CRUCIBLE_TEST_ASSERT(kTest, x.out_dtype == ScalarType::Float8_e4m3fn);
+            CRUCIBLE_TEST_ASSERT(kTest, x.scale_policy == ScalePolicy::PER_BLOCK_MX);
+            CRUCIBLE_TEST_ASSERT(kTest, x.softmax == SoftmaxRecurrence::NAIVE);
+            CRUCIBLE_TEST_ASSERT(kTest, x.determinism == ReductionDeterminism::ORDERED);
             // A block-scaled format cannot reach a bit-exact tier, because
             // the scale factor is itself derived per block.
-            assert(!crucible::is_bitexact(x.determinism));
-            assert(crucible::allows_block_scaled_formats(x.determinism));
+            CRUCIBLE_TEST_ASSERT(kTest, !crucible::is_bitexact(x.determinism));
+            CRUCIBLE_TEST_ASSERT(kTest, crucible::allows_block_scaled_formats(x.determinism));
         }
 
         {
             auto r = reg.by_name(kPure, names::kFp8E5m2F32AccumMxOrd);
             RecipeRegistry::RecipeRef const recipe = std::move(r).expect("the starter is present");
             const auto& x = *recipe;
-            assert(x.out_dtype == ScalarType::Float8_e5m2);
-            assert(x.scale_policy == ScalePolicy::PER_BLOCK_MX);
-            assert(x.determinism == ReductionDeterminism::ORDERED);
+            CRUCIBLE_TEST_ASSERT(kTest, x.out_dtype == ScalarType::Float8_e5m2);
+            CRUCIBLE_TEST_ASSERT(kTest, x.scale_policy == ScalePolicy::PER_BLOCK_MX);
+            CRUCIBLE_TEST_ASSERT(kTest, x.determinism == ReductionDeterminism::ORDERED);
         }
     }
 
@@ -272,7 +279,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
             for (const auto& other : entries_view(reg)) {
                 matches += other.name == e.name ? 1u : 0u;
             }
-            assert(matches == 1 && "starter recipe name collision");
+            CRUCIBLE_TEST_ASSERT(kTest, matches == 1 && "starter recipe name collision");
         }
     }
 
@@ -289,13 +296,13 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
 
         for (const auto& e : entries_view(reg)) {
             const auto [it_p, inserted_p] = ptrs.insert(&*e.recipe);
-            assert(inserted_p && "two starter recipes intern to the same pointer");
+            CRUCIBLE_TEST_ASSERT(kTest, inserted_p && "two starter recipes intern to the same pointer");
             const auto [it_h, inserted_h] = hashes.insert(e.recipe->hash.raw());
-            assert(inserted_h && "two starter recipes share a Family-A hash");
+            CRUCIBLE_TEST_ASSERT(kTest, inserted_h && "two starter recipes share a Family-A hash");
         }
 
-        assert(ptrs.size() == RecipeRegistry::STARTER_COUNT);
-        assert(hashes.size() == RecipeRegistry::STARTER_COUNT);
+        CRUCIBLE_TEST_ASSERT(kTest, ptrs.size() == RecipeRegistry::STARTER_COUNT);
+        CRUCIBLE_TEST_ASSERT(kTest, hashes.size() == RecipeRegistry::STARTER_COUNT);
     }
 
     // Persisted entries refer to a recipe by its hash, so these values
@@ -338,7 +345,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
             std::fprintf(stderr, "  update the pinned golden hashes\n"
                                  "  audit every persisted consumer of the drifted hashes\n"
                                  "  consider bumping the persisted-format version\n");
-            assert(!any_drift && "recipe-hash golden mismatch");
+            CRUCIBLE_TEST_ASSERT(kTest, !any_drift && "recipe-hash golden mismatch");
         }
     }
 
@@ -355,10 +362,10 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
             // pointer already stored by the registry.
             RecipeRegistry::RecipeRef const via_pool = pool.intern(alloc_cap(), spec.fields);
             RecipeRegistry::RecipeRef const via_reg = reg.by_name(kPure, spec.name).expect("each starter is present");
-            assert(::fixy::same_object(via_pool, via_reg));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(via_pool, via_reg));
         }
         // An unchanged pool size is what proves every intern was a hit.
-        assert(pool.size() == RecipeRegistry::STARTER_COUNT);
+        CRUCIBLE_TEST_ASSERT(kTest, pool.size() == RecipeRegistry::STARTER_COUNT);
     }
 
     // Lookup by hash is how a persisted entry finds its recipe again, so
@@ -371,10 +378,10 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
         for (const auto& entry : entries_view(reg)) {
             RecipeRegistry::RecipeRef const via_hash =
                 reg.by_hash(kPure, entry.recipe->hash).expect("each hash resolves");
-            assert(::fixy::same_object(via_hash, entry.recipe));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(via_hash, entry.recipe));
 
             RecipeRegistry::RecipeRef const via_name = reg.by_name(kPure, entry.name).expect("each name resolves");
-            assert(::fixy::same_object(via_hash, via_name));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(via_hash, via_name));
         }
 
         // The two misses report different errors on purpose.  A name miss
@@ -388,13 +395,15 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
             crucible::RecipeHash{0xFFFFFFFFFFFFFFFEULL},
         };
         for (auto h : bogus_hashes) {
-            assert(reg.by_hash(kPure, h).err().expect("a bogus hash misses") == RecipeError::HashNotFound);
+            CRUCIBLE_TEST_ASSERT(kTest, reg.by_hash(kPure, h).err().expect("a bogus hash misses")
+                                            == RecipeError::HashNotFound);
         }
 
         // The sentinel value marks the end of a region, so a real recipe
         // resolving to it would make a region terminate early.
-        assert(reg.by_hash(kPure, crucible::RecipeHash::sentinel()).err().expect("the sentinel misses")
-               == RecipeError::HashNotFound);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             reg.by_hash(kPure, crucible::RecipeHash::sentinel()).err().expect("the sentinel misses")
+                                 == RecipeError::HashNotFound);
     }
 
     // Identity is per pool and equality is by content.  Two registries
@@ -412,11 +421,11 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
             reg_a.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");
         RecipeRegistry::RecipeRef const b =
             reg_b.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");
-        assert(!::fixy::same_object(a, b));
-        assert(a->hash == b->hash);
-        assert(a->out_dtype == b->out_dtype);
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::same_object(a, b));
+        CRUCIBLE_TEST_ASSERT(kTest, a->hash == b->hash);
+        CRUCIBLE_TEST_ASSERT(kTest, a->out_dtype == b->out_dtype);
     }
 
-    crucible::test::pass("test_recipe_registry: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_recipe_registry: all tests passed\n");
     return 0;
 }

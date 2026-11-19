@@ -11,12 +11,20 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <cinttypes>
 #include <cstdio>
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -92,8 +100,8 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
     {
         BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
-        assert(pool.size() == 0);
-        assert(pool.capacity() == 32);
+        CRUCIBLE_TEST_ASSERT(kTest, pool.size() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, pool.capacity() == 32);
     }
 
     {
@@ -104,13 +112,13 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
 
         const RecipeRef a = pool.intern(alloc_cap(), fields);
         const RecipeRef b = pool.intern(alloc_cap(), fields);
-        assert(::fixy::same_object(a, b));
-        assert(pool.size() == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(a, b));
+        CRUCIBLE_TEST_ASSERT(kTest, pool.size() == 1);
 
-        assert(a->hash == crucible::compute_recipe_hash(fields));
-        assert(a->accum_dtype == ScalarType::Float);
-        assert(a->out_dtype == ScalarType::Half);
-        assert(a->determinism == ReductionDeterminism::BITEXACT_TC);
+        CRUCIBLE_TEST_ASSERT(kTest, a->hash == crucible::compute_recipe_hash(fields));
+        CRUCIBLE_TEST_ASSERT(kTest, a->accum_dtype == ScalarType::Float);
+        CRUCIBLE_TEST_ASSERT(kTest, a->out_dtype == ScalarType::Half);
+        CRUCIBLE_TEST_ASSERT(kTest, a->determinism == ReductionDeterminism::BITEXACT_TC);
     }
 
     {
@@ -124,10 +132,10 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
         const RecipeRef r_bf16_ordered =
             pool.intern(alloc_cap(), mk(ScalarType::Float, ScalarType::BFloat16, ReductionDeterminism::ORDERED));
 
-        assert(!::fixy::same_object(r_f32_strict, r_f16_tc));
-        assert(!::fixy::same_object(r_f32_strict, r_bf16_ordered));
-        assert(!::fixy::same_object(r_f16_tc, r_bf16_ordered));
-        assert(pool.size() == 3);
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::same_object(r_f32_strict, r_f16_tc));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::same_object(r_f32_strict, r_bf16_ordered));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::same_object(r_f16_tc, r_bf16_ordered));
+        CRUCIBLE_TEST_ASSERT(kTest, pool.size() == 3);
     }
 
     {
@@ -140,8 +148,8 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
         const RecipeRef r = pool.intern(alloc_cap(), poisoned);
         // Stored hash is compute_recipe_hash of the semantic fields,
         // NOT the poisoned value supplied by the caller.
-        assert(r->hash == crucible::compute_recipe_hash(poisoned));
-        assert(r->hash != RecipeHash{0xDEADBEEFCAFEBABEULL});
+        CRUCIBLE_TEST_ASSERT(kTest, r->hash == crucible::compute_recipe_hash(poisoned));
+        CRUCIBLE_TEST_ASSERT(kTest, r->hash != RecipeHash{0xDEADBEEFCAFEBABEULL});
     }
 
     // The probe comparison looks at the semantic fields only.  A refactor
@@ -157,8 +165,8 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
         poisoned.hash = RecipeHash{0xFFFFFFFFFFFFFFFFULL};
         const RecipeRef b = pool.intern(alloc_cap(), poisoned);
 
-        assert(::fixy::same_object(a, b));
-        assert(pool.size() == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(a, b));
+        CRUCIBLE_TEST_ASSERT(kTest, pool.size() == 1);
     }
 
     // Arena-owned recipes never move, so a Ref captured before a grow
@@ -167,7 +175,7 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
     {
         BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 8};
-        assert(pool.capacity() == 8);
+        CRUCIBLE_TEST_ASSERT(kTest, pool.capacity() == 8);
 
         constexpr unsigned N = 10;
         const NumericalRecipe keys[N] = {
@@ -190,23 +198,23 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
                 interned.append(pool.intern(alloc_cap(), key)).expect("the list holds one Ref for each key"));
         }
 
-        assert(pool.capacity() >= 32);
-        assert(pool.size() == N);
+        CRUCIBLE_TEST_ASSERT(kTest, pool.capacity() >= 32);
+        CRUCIBLE_TEST_ASSERT(kTest, pool.size() == N);
 
         for (unsigned i = 0; i < N; ++i) {
             for (unsigned j = i + 1; j < N; ++j) {
-                assert(!::fixy::same_object(*interned.get(i).expect("each key has a Ref"),
-                                            *interned.get(j).expect("each key has a Ref")));
+                CRUCIBLE_TEST_ASSERT(kTest, !::fixy::same_object(*interned.get(i).expect("each key has a Ref"),
+                                                                 *interned.get(j).expect("each key has a Ref")));
             }
         }
 
         unsigned position = 0;
         for (const NumericalRecipe& key : keys) {
             const RecipeRef re = pool.intern(alloc_cap(), key);
-            assert(::fixy::same_object(re, *interned.get(position).expect("each key has a Ref")));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(re, *interned.get(position).expect("each key has a Ref")));
             ++position;
         }
-        assert(pool.size() == N);  // no new entries on hits
+        CRUCIBLE_TEST_ASSERT(kTest, pool.size() == N);  // no new entries on hits
     }
 
     // The 5 × 5 × 4 × 4 grid of dtype, dtype, determinism and scale gives
@@ -244,17 +252,17 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
                         // different key, so the pool aliased two keys.
                         const bool holds_the_fields = p->accum_dtype == accum && p->out_dtype == out
                                                    && p->determinism == det && p->scale_policy == sp;
-                        assert(holds_the_fields && "pool aliased two distinct recipes");
+                        CRUCIBLE_TEST_ASSERT(kTest, holds_the_fields && "pool aliased two distinct recipes");
                         const auto [it_h, inserted_h] = seen_hashes.insert(p->hash.raw());
-                        assert(inserted_h && "two distinct recipes share a hash");
+                        CRUCIBLE_TEST_ASSERT(kTest, inserted_h && "two distinct recipes share a hash");
                     }
                 }
             }
         }
 
-        assert(pool.size() == 400);
-        assert(seen_hashes.size() == 400);
-        assert(pool.capacity() >= 1024);  // 400 @ 50% load requires capacity >= 800 → next pow2
+        CRUCIBLE_TEST_ASSERT(kTest, pool.size() == 400);
+        CRUCIBLE_TEST_ASSERT(kTest, seen_hashes.size() == 400);
+        CRUCIBLE_TEST_ASSERT(kTest, pool.capacity() >= 1024);  // 400 @ 50% load requires capacity >= 800 → next pow2
     }
 
     // The identity of a recipe is a per-pool invariant, not a global one:
@@ -270,9 +278,9 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
         const RecipeRef a = pool_a.intern(alloc_cap(), fields);
         const RecipeRef b = pool_b.intern(alloc_cap(), fields);
 
-        assert(!::fixy::same_object(a, b));
-        assert(a->hash == b->hash);
-        assert(a->accum_dtype == b->accum_dtype);
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::same_object(a, b));
+        CRUCIBLE_TEST_ASSERT(kTest, a->hash == b->hash);
+        CRUCIBLE_TEST_ASSERT(kTest, a->accum_dtype == b->accum_dtype);
     }
 
     {
@@ -282,9 +290,9 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
             pool.intern(alloc_cap(), mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::ORDERED));
         static_assert(std::is_same_v<decltype(r), const RecipeRef>,
                       "RecipePool::intern gives a Ref, which is never null");
-        assert(r->determinism == ReductionDeterminism::ORDERED);
+        CRUCIBLE_TEST_ASSERT(kTest, r->determinism == ReductionDeterminism::ORDERED);
     }
 
-    crucible::test::pass("test_recipe_pool: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_recipe_pool: all tests passed\n");
     return 0;
 }

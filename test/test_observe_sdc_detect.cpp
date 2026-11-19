@@ -6,7 +6,17 @@
 #include <limits>
 #include <type_traits>
 #include <utility>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -213,6 +223,6 @@ int main() {
              test_insufficient_replicas_and_observation_publication);
     run_test("sampling_decision_is_deterministic", test_sampling_decision_is_deterministic);
 
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
+    ::fixy::check::pass(kTest, "\n{} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

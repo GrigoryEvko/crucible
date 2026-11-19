@@ -8,7 +8,9 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/reflect/EnumName.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <cstdint>
@@ -16,6 +18,13 @@
 #include <span>
 #include <string_view>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cog = crucible::cog;
 namespace reflect = ::foundation::reflect;
@@ -39,15 +48,16 @@ static void check_enum_names(std::underlying_type_t<E> unheld_value) {
     reflect::for_each_enumerator<E>([&](E value, std::string_view declared) {
         volatile auto runtime_value = value;
         const std::string_view name = reflect::enum_name(static_cast<E>(runtime_value));
-        assert(!name.empty());
-        assert(name == declared);
-        assert(name != reflect::unknown_enum_sentinel<E>);
+        CRUCIBLE_TEST_ASSERT(kTest, !name.empty());
+        CRUCIBLE_TEST_ASSERT(kTest, name == declared);
+        CRUCIBLE_TEST_ASSERT(kTest, name != reflect::unknown_enum_sentinel<E>);
         ++walked;
     });
-    assert(walked == reflect::enum_count<E>);
+    CRUCIBLE_TEST_ASSERT(kTest, walked == reflect::enum_count<E>);
 
     volatile auto runtime_unheld = unheld_value;
-    assert(reflect::enum_name(static_cast<E>(runtime_unheld)) == reflect::unknown_enum_sentinel<E>);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         reflect::enum_name(static_cast<E>(runtime_unheld)) == reflect::unknown_enum_sentinel<E>);
 }
 
 static void test_enum_names() {
@@ -64,7 +74,7 @@ static void test_enum_names() {
     static_assert(reflect::enum_name(cog::GpuOpcode::Conv2D) == "Conv2D");
     static_assert(reflect::enum_name(cog::MessageSizeBucket::M64B) == "M64B");
     static_assert(reflect::unknown_enum_sentinel<cog::SizeBucket> == "<unknown SizeBucket>");
-    crucible::test::pass("  test_enum_names:                      PASSED\n");
+    ::fixy::check::pass(kTest, "  test_enum_names:                      PASSED\n");
 }
 
 static void test_latency_quantiles_ordered_construction() {
@@ -72,13 +82,13 @@ static void test_latency_quantiles_ordered_construction() {
     volatile auto p50 = quantiles.value().p50_ns;
     volatile auto p99 = quantiles.value().p99_ns;
     volatile auto p999 = quantiles.value().p999_ns;
-    assert(p50 == 100u);
-    assert(p99 == 500u);
-    assert(p999 == 2000u);
+    CRUCIBLE_TEST_ASSERT(kTest, p50 == 100u);
+    CRUCIBLE_TEST_ASSERT(kTest, p99 == 500u);
+    CRUCIBLE_TEST_ASSERT(kTest, p999 == 2000u);
 
     // Equal quantiles are the boundary of the ordering invariant.
     const cog::OrderedLatencyQuantiles flat = ordered(42u, 42u, 42u);
-    assert(flat.value().p50_ns == 42u);
+    CRUCIBLE_TEST_ASSERT(kTest, flat.value().p50_ns == 42u);
 
     // The predicate itself, which the ledger also reads.
     static_assert(cog::quantile_ordered(cog::LatencyQuantiles{1u, 2u, 3u}));
@@ -87,7 +97,7 @@ static void test_latency_quantiles_ordered_construction() {
 
     static_assert(sizeof(cog::OrderedLatencyQuantiles) == sizeof(cog::LatencyQuantiles));
 
-    crucible::test::pass("  test_latency_quantiles_construction:  PASSED\n");
+    ::fixy::check::pass(kTest, "  test_latency_quantiles_construction:  PASSED\n");
 }
 
 static void test_gpu_opcode_table_construction() {
@@ -138,46 +148,46 @@ static void test_gpu_opcode_table_construction() {
     };
 
     volatile auto sz = table.size();
-    assert(sz == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, sz == 3);
     volatile bool empty = table.empty();
-    assert(!empty);
+    CRUCIBLE_TEST_ASSERT(kTest, !empty);
 
     auto found = table.lookup_by_opcode(cog::GpuOpcode::AllReduceRing).expect("the table holds an AllReduceRing row");
-    assert(found.message_size_bucket == cog::MessageSizeBucket::M4M);
+    CRUCIBLE_TEST_ASSERT(kTest, found.message_size_bucket == cog::MessageSizeBucket::M4M);
 
     auto missing = table.lookup_by_opcode(cog::GpuOpcode::Conv2D);
-    assert(missing.is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, missing.is_none());
 
     auto fullkey =
         table.latency_for_size_bucket(cog::GpuOpcode::GemmPlain, cog::SizeBucket::S4096, cog::DtypeBucket::Fp16)
             .expect("the table holds the Fp16 GEMM row");
-    assert(fullkey.dtype_bucket == cog::DtypeBucket::Fp16);
+    CRUCIBLE_TEST_ASSERT(kTest, fullkey.dtype_bucket == cog::DtypeBucket::Fp16);
 
     // Throughput envelope sums both GEMM rows.
     volatile double envelope = table.throughput_envelope(cog::GpuOpcode::GemmPlain);
-    assert(envelope > 1.5e15);
-    assert(envelope < 2.5e15);
+    CRUCIBLE_TEST_ASSERT(kTest, envelope > 1.5e15);
+    CRUCIBLE_TEST_ASSERT(kTest, envelope < 2.5e15);
 
     cog::OpcodeLatencyTable<cog::CogKind::Gpu> empty_table{};
-    assert(empty_table.empty());
-    assert(empty_table.size() == 0);
-    assert(empty_table.lookup_by_opcode(cog::GpuOpcode::GemmPlain).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, empty_table.empty());
+    CRUCIBLE_TEST_ASSERT(kTest, empty_table.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, empty_table.lookup_by_opcode(cog::GpuOpcode::GemmPlain).is_none());
 
     // A never-calibrated table must report infinite staleness, not
     // zero.  A zero reading looks fresh to a drift detector, which
     // then never schedules recalibration.
     volatile bool default_is_infinite = empty_table.calibration_age_seconds.is_infinite();
-    assert(default_is_infinite);
+    CRUCIBLE_TEST_ASSERT(kTest, default_is_infinite);
     volatile bool default_is_finite = empty_table.calibration_age_seconds.is_finite();
-    assert(!default_is_finite);
+    CRUCIBLE_TEST_ASSERT(kTest, !default_is_finite);
 
     // sample_count == 0 marks an uncalibrated row.  Consumers trust
     // no other field of an entry until sample_count is positive.
     cog::OpcodeLatencyEntry<cog::CogKind::Gpu> default_entry{};
     volatile auto default_sample_count = default_entry.sample_count.value();
-    assert(default_sample_count == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, default_sample_count == 0);
 
-    crucible::test::pass("  test_gpu_opcode_table_construction:   PASSED\n");
+    ::fixy::check::pass(kTest, "  test_gpu_opcode_table_construction:   PASSED\n");
 }
 
 static void test_nic_opcode_table_construction() {
@@ -220,18 +230,18 @@ static void test_nic_opcode_table_construction() {
                                               cog::TransposeMode::Nn, cog::MessageSizeBucket::M64B)
                      .expect("the table holds the row of the 64-byte bucket");
     volatile auto small_p99 = small.latency.value().p99_ns;
-    assert(small_p99 == 2500u);
+    CRUCIBLE_TEST_ASSERT(kTest, small_p99 == 2500u);
 
     auto big = table
                    .latency_for_size_bucket(cog::NicOpcode::RdmaWrite, cog::SizeBucket::None, cog::DtypeBucket::None,
                                             cog::TransposeMode::Nn, cog::MessageSizeBucket::M4M)
                    .expect("the table holds the row of the 4 MiB bucket");
     volatile auto big_p99 = big.latency.value().p99_ns;
-    assert(big_p99 == 450000u);
+    CRUCIBLE_TEST_ASSERT(kTest, big_p99 == 450000u);
 
-    assert(table.calibration_age_seconds.is_fresh());
+    CRUCIBLE_TEST_ASSERT(kTest, table.calibration_age_seconds.is_fresh());
 
-    crucible::test::pass("  test_nic_opcode_table_construction:   PASSED\n");
+    ::fixy::check::pass(kTest, "  test_nic_opcode_table_construction:   PASSED\n");
 }
 
 static void test_opcodes_for_binding() {
@@ -262,9 +272,9 @@ static void test_opcodes_for_binding() {
         query.template operator()<cog::CogKind::Gpu>() + query.template operator()<cog::CogKind::NicPort>()
         + query.template operator()<cog::CogKind::NvSwitch>() + query.template operator()<cog::CogKind::CpuCore>()
         + query.template operator()<cog::CogKind::CpuSocket>() + query.template operator()<cog::CogKind::DramChannel>();
-    assert(total == 6);
+    CRUCIBLE_TEST_ASSERT(kTest, total == 6);
 
-    crucible::test::pass("  test_opcodes_for_binding:             PASSED\n");
+    ::fixy::check::pass(kTest, "  test_opcodes_for_binding:             PASSED\n");
 }
 
 int main() {
@@ -274,6 +284,6 @@ int main() {
     test_gpu_opcode_table_construction();
     test_nic_opcode_table_construction();
     test_opcodes_for_binding();
-    crucible::test::pass("test_opcode_latency_table: 5 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_opcode_latency_table: 5 groups, all passed\n");
     return 0;
 }

@@ -1,12 +1,22 @@
 #include <crucible/Serialize.h>
 #include <foundation/effects/Effect.h>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
 #include <bit>
 #include <cinttypes>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 // A drift in this hash means the wire format changed, which requires a
 // CDAG_VERSION bump.
@@ -99,7 +109,7 @@ static void check_descriptor_images_agree() {
     ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::UncheckedTensorMeta>> fields_image{};
     ::fixy::encode(meta, meta_image.view());
     ::fixy::encode(fields, fields_image.view());
-    assert(meta_image == fields_image && "the image of a descriptor is the image of its fields");
+    CRUCIBLE_TEST_ASSERT(kTest, meta_image == fields_image && "the image of a descriptor is the image of its fields");
 
     // The reader decodes the image, so the local parts of the fields come
     // back as zero.
@@ -108,13 +118,14 @@ static void check_descriptor_images_agree() {
         ::fixy::decode<crucible::UncheckedTensorMeta>(written.view())
             .match([](crucible::UncheckedTensorMeta value) noexcept { return value; },
                    [](::fixy::DecodeFault) noexcept { return crucible::UncheckedTensorMeta{.ndim = 0xFF}; });
-    assert(read.pad0 == 0 && read.grad_fn_hash == 0 && "the image holds no local part");
+    CRUCIBLE_TEST_ASSERT(kTest, read.pad0 == 0 && read.grad_fn_hash == 0 && "the image holds no local part");
     const crucible::TensorMeta back =
         crucible::decode_tensor_meta(read, crucible::external_data_ptr(nullptr)).expect("the image holds a descriptor");
     crucible::TensorMeta expected = meta;
     expected.data_ptr = crucible::external_data_ptr(nullptr);
     expected.grad_fn_hash = crucible::grad_fn_hash(0);
-    assert(back == expected && "the door gives the descriptor back with no data pointer and no grad_fn");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         back == expected && "the door gives the descriptor back with no data pointer and no grad_fn");
 }
 
 [[gnu::cold]] int main() {
@@ -152,95 +163,112 @@ static void check_descriptor_images_agree() {
         crucible::TensorMeta large_input = make_meta(4, 8);
         large_input.storage_nbytes = kLargeStorageBytes;
         op.set_inputs(
-            crucible::test::run_of(test.alloc, dag_arena, large_input, make_meta(4, 8)),
-            crucible::test::run_of(test.alloc, dag_arena, (i > 0) ? crucible::OpIndex{i - 1} : crucible::OpIndex{},
-                                   crucible::OpIndex{}),
-            crucible::test::run_of(test.alloc, dag_arena, (i > 0) ? crucible::SlotId{(i - 1) * 10} : crucible::SlotId{},
-                                   crucible::SlotId{}));
-        op.set_outputs(crucible::test::run_of(test.alloc, dag_arena, make_meta(4, 8)),
-                       crucible::test::run_of(test.alloc, dag_arena, crucible::SlotId{i * 10}));
-        op.set_scalar_args(crucible::test::run_of(test.alloc, dag_arena, static_cast<int64_t>(i * 42)));
+            ::fixy::check::run_of(kTest, test.alloc, dag_arena, large_input, make_meta(4, 8)),
+            ::fixy::check::run_of(kTest, test.alloc, dag_arena,
+                                  (i > 0) ? crucible::OpIndex{i - 1} : crucible::OpIndex{}, crucible::OpIndex{}),
+            ::fixy::check::run_of(kTest, test.alloc, dag_arena,
+                                  (i > 0) ? crucible::SlotId{(i - 1) * 10} : crucible::SlotId{}, crucible::SlotId{}));
+        op.set_outputs(::fixy::check::run_of(kTest, test.alloc, dag_arena, make_meta(4, 8)),
+                       ::fixy::check::run_of(kTest, test.alloc, dag_arena, crucible::SlotId{i * 10}));
+        op.set_scalar_args(::fixy::check::run_of(kTest, test.alloc, dag_arena, static_cast<int64_t>(i * 42)));
     }
 
     const ::fixy::Ref<crucible::RegionNode> region = crucible::make_region(test.alloc, dag_arena, ops);
-    assert(region->num_ops() == NUM_OPS);
+    CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == NUM_OPS);
 
     const crucible::ContentHash original_content_hash = region->content_hash;
     const crucible::MerkleHash original_merkle_hash = region->merkle_hash;
-    assert(static_cast<bool>(original_content_hash));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(original_content_hash));
 
     ::fixy::HeapArray<std::byte> buf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
     const size_t n = crucible::serialize_region(crucible::SerializedRegion{*region}, buf.view());
-    assert(n > 0 && "serialize_region returned 0 — buffer too small or bad region");
+    CRUCIBLE_TEST_ASSERT(kTest, n > 0 && "serialize_region returned 0 — buffer too small or bad region");
     const ::fixy::View<const std::byte> wire = buf.view().window(0, n).expect("the writer writes inside its image");
 
     ::fixy::BumpArena arena2{1 << 16};
     const crucible::RegionNode& loaded =
         *crucible::deserialize_region(test.alloc, wire, arena2).expect("deserialize_region returns the region").value();
 
-    assert(loaded.content_hash == original_content_hash);
-    assert(loaded.merkle_hash == original_merkle_hash);
-    assert(loaded.num_ops() == NUM_OPS);
-    assert(loaded.kind == crucible::TraceNodeKind::REGION);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.content_hash == original_content_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.merkle_hash == original_merkle_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.num_ops() == NUM_OPS);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.kind == crucible::TraceNodeKind::REGION);
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         const crucible::TraceEntry& loaded_op = loaded.op_at(i);
         const crucible::TraceEntry& source_op = *ops.get(i).expect("i is below NUM_OPS");
-        assert(loaded_op.schema_hash == source_op.schema_hash);
-        assert(loaded_op.shape_hash == source_op.shape_hash);
-        assert(loaded_op.scope_hash == source_op.scope_hash);
-        assert(loaded_op.num_inputs() == source_op.num_inputs());
-        assert(loaded_op.num_outputs() == source_op.num_outputs());
-        assert(loaded_op.num_scalar_args() == source_op.num_scalar_args());
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.schema_hash == source_op.schema_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.shape_hash == source_op.shape_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.scope_hash == source_op.scope_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.num_inputs() == source_op.num_inputs());
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.num_outputs() == source_op.num_outputs());
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.num_scalar_args() == source_op.num_scalar_args());
 
         // These five fields share one packed byte on the wire.
-        assert(loaded_op.grad_enabled == source_op.grad_enabled);
-        assert(loaded_op.inference_mode == source_op.inference_mode);
-        assert(loaded_op.is_mutable == source_op.is_mutable);
-        assert(loaded_op.training_phase == source_op.training_phase);
-        assert(loaded_op.torch_function == source_op.torch_function);
-        assert(loaded_op.depth == source_op.depth && "the store keeps the nesting depth of each op");
-        assert(loaded_op.scalar_kinds == source_op.scalar_kinds
-               && "the store keeps the tag and the role of each scalar");
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.grad_enabled == source_op.grad_enabled);
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.inference_mode == source_op.inference_mode);
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.is_mutable == source_op.is_mutable);
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.training_phase == source_op.training_phase);
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.torch_function == source_op.torch_function);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             loaded_op.depth == source_op.depth && "the store keeps the nesting depth of each op");
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.scalar_kinds == source_op.scalar_kinds
+                                        && "the store keeps the tag and the role of each scalar");
 
         for (uint16_t j = 0; j < source_op.num_inputs(); j++) {
-            const crucible::TensorMeta& loaded_meta = crucible::test::element_at(loaded_op.input_metas(), j);
-            const crucible::TensorMeta& source_meta = crucible::test::element_at(source_op.input_metas(), j);
-            assert(loaded_meta.data_ptr.value() == nullptr && "data_ptr must be null after deserialization");
-            assert(crucible::raw_grad_fn_hash(source_meta) != 0
-                   && "test fixture must exercise non-zero Family-B input");
-            assert(crucible::raw_grad_fn_hash(loaded_meta) == 0 && "grad_fn_hash must be zero after deserialization");
-            assert(loaded_meta.ndim == source_meta.ndim);
-            assert(loaded_meta.dtype == source_meta.dtype);
-            assert(crucible::raw_tensor_dim(loaded_meta.sizes[0]) == crucible::raw_tensor_dim(source_meta.sizes[0]));
-            assert(crucible::raw_tensor_dim(loaded_meta.sizes[1]) == crucible::raw_tensor_dim(source_meta.sizes[1]));
-            assert(crucible::raw_tensor_dim(loaded_meta.strides[0])
-                   == crucible::raw_tensor_dim(source_meta.strides[0]));
-            assert(crucible::raw_tensor_dim(loaded_meta.strides[1])
-                   == crucible::raw_tensor_dim(source_meta.strides[1]));
+            const crucible::TensorMeta& loaded_meta =
+                *loaded_op.input_metas().get(j).expect("a test reads an element at or past the count of its View");
+            const crucible::TensorMeta& source_meta =
+                *source_op.input_metas().get(j).expect("a test reads an element at or past the count of its View");
+            CRUCIBLE_TEST_ASSERT(kTest, loaded_meta.data_ptr.value() == nullptr
+                                            && "data_ptr must be null after deserialization");
+            CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_grad_fn_hash(source_meta) != 0
+                                            && "test fixture must exercise non-zero Family-B input");
+            CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_grad_fn_hash(loaded_meta) == 0
+                                            && "grad_fn_hash must be zero after deserialization");
+            CRUCIBLE_TEST_ASSERT(kTest, loaded_meta.ndim == source_meta.ndim);
+            CRUCIBLE_TEST_ASSERT(kTest, loaded_meta.dtype == source_meta.dtype);
+            CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_tensor_dim(loaded_meta.sizes[0])
+                                            == crucible::raw_tensor_dim(source_meta.sizes[0]));
+            CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_tensor_dim(loaded_meta.sizes[1])
+                                            == crucible::raw_tensor_dim(source_meta.sizes[1]));
+            CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_tensor_dim(loaded_meta.strides[0])
+                                            == crucible::raw_tensor_dim(source_meta.strides[0]));
+            CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_tensor_dim(loaded_meta.strides[1])
+                                            == crucible::raw_tensor_dim(source_meta.strides[1]));
         }
         for (uint16_t j = 0; j < source_op.num_outputs(); j++) {
-            const crucible::TensorMeta& loaded_meta = crucible::test::element_at(loaded_op.output_metas(), j);
-            const crucible::TensorMeta& source_meta = crucible::test::element_at(source_op.output_metas(), j);
-            assert(loaded_meta.data_ptr.value() == nullptr);
-            assert(crucible::raw_grad_fn_hash(source_meta) != 0);
-            assert(crucible::raw_grad_fn_hash(loaded_meta) == 0);
+            const crucible::TensorMeta& loaded_meta =
+                *loaded_op.output_metas().get(j).expect("a test reads an element at or past the count of its View");
+            const crucible::TensorMeta& source_meta =
+                *source_op.output_metas().get(j).expect("a test reads an element at or past the count of its View");
+            CRUCIBLE_TEST_ASSERT(kTest, loaded_meta.data_ptr.value() == nullptr);
+            CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_grad_fn_hash(source_meta) != 0);
+            CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_grad_fn_hash(loaded_meta) == 0);
         }
 
-        assert(crucible::test::element_at(loaded_op.input_metas(), 0).storage_nbytes == kLargeStorageBytes
-               && "a storage size above 4 GiB must keep each of its 64 bits");
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.input_metas()
+                                                .get(0)
+                                                .expect("a test reads an element at or past the count of its View")
+                                                ->storage_nbytes
+                                            == kLargeStorageBytes
+                                        && "a storage size above 4 GiB must keep each of its 64 bits");
 
-        assert(crucible::test::element_at(loaded_op.scalar_args(), 0)
-               == crucible::test::element_at(source_op.scalar_args(), 0));
+        CRUCIBLE_TEST_ASSERT(
+            kTest,
+            *loaded_op.scalar_args().get(0).expect("a test reads an element at or past the count of its View")
+                == *source_op.scalar_args().get(0).expect("a test reads an element at or past the count of its View"));
 
-        assert(crucible::test::element_at(loaded_op.input_trace_indices(), 0)
-               == crucible::test::element_at(source_op.input_trace_indices(), 0));
-        assert(::fixy::equal(loaded_op.input_slot_ids(), source_op.input_slot_ids()));
-        assert(::fixy::equal(loaded_op.output_slot_ids(), source_op.output_slot_ids()));
+        CRUCIBLE_TEST_ASSERT(kTest, *loaded_op.input_trace_indices().get(0).expect(
+                                        "a test reads an element at or past the count of its View")
+                                        == *source_op.input_trace_indices().get(0).expect(
+                                            "a test reads an element at or past the count of its View"));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(loaded_op.input_slot_ids(), source_op.input_slot_ids()));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(loaded_op.output_slot_ids(), source_op.output_slot_ids()));
     }
 
     const crucible::ContentHash recomputed = crucible::compute_content_hash(loaded.ops);
-    assert(recomputed == original_content_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, recomputed == original_content_hash);
 
     // Catches an uninitialised byte reaching the wire, which the
     // structural round-trip above cannot see.  Each call writes a
@@ -251,11 +279,12 @@ static void check_descriptor_images_agree() {
 
         const size_t na = crucible::serialize_region(crucible::SerializedRegion{*region}, buf_a.view());
         const size_t nb = crucible::serialize_region(crucible::SerializedRegion{*region}, buf_b.view());
-        assert(na == nb && "serialize_region byte count must be deterministic");
-        assert(na > 0);
-        assert(::fixy::equal(buf_a.view().window(0, na).expect("the writer writes inside its image"),
-                             buf_b.view().window(0, nb).expect("the writer writes inside its image"))
-               && "serialize_region bytes must be deterministic — uninit-memory leak?");
+        CRUCIBLE_TEST_ASSERT(kTest, na == nb && "serialize_region byte count must be deterministic");
+        CRUCIBLE_TEST_ASSERT(kTest, na > 0);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             ::fixy::equal(buf_a.view().window(0, na).expect("the writer writes inside its image"),
+                                           buf_b.view().window(0, nb).expect("the writer writes inside its image"))
+                                 && "serialize_region bytes must be deterministic — uninit-memory leak?");
     }
 
     // Wire bytes are cross-process stable by construction: data_ptr is
@@ -304,18 +333,19 @@ static void check_descriptor_images_agree() {
                          "  EXPECTED_WIRE_HASH in test_serialize.cpp, and\n"
                          "  verify CDAG_VERSION was bumped in Serialize.h.\n",
                          n, wire_hash, EXPECTED_WIRE_BYTES, EXPECTED_WIRE_HASH);
-            assert(false && "wire-byte golden mismatch");
+            CRUCIBLE_TEST_ASSERT(kTest, false && "wire-byte golden mismatch");
         }
     }
 
     ::fixy::HeapArray<std::byte> tiny_buf = ::fixy::mint_heap_array(test.alloc, 4, std::byte{0});
     const size_t n_tiny = crucible::serialize_region(crucible::SerializedRegion{*region}, tiny_buf.view());
-    assert(n_tiny == 0 && "serialize_region must return 0 on buffer overflow");
+    CRUCIBLE_TEST_ASSERT(kTest, n_tiny == 0 && "serialize_region must return 0 on buffer overflow");
 
     ::fixy::BumpArena arena3{1 << 16};
     auto bad_region =
         crucible::deserialize_region(test.alloc, wire.window(0, 10).expect("the image holds ten bytes"), arena3);
-    assert(reason_of(bad_region) == crucible::LoadError::truncated && "a cut header must refuse as truncated");
+    CRUCIBLE_TEST_ASSERT(kTest, reason_of(bad_region) == crucible::LoadError::truncated
+                                    && "a cut header must refuse as truncated");
 
     // Each fault of an image gives its own reason, and an image with two
     // faults gives the reason of the first.  The offsets: 0..3 the magic,
@@ -335,33 +365,36 @@ static void check_descriptor_images_agree() {
         };
         using crucible::LoadError;
         const ::fixy::View<const std::byte> cut = wire.window(0, n - 1).expect("the image holds its last byte");
-        assert(reason_of(crucible::deserialize_region(test.alloc, cut, reason_arena)) == LoadError::truncated);
-        assert(reason_with_byte(0, flipped_at(0)) == LoadError::bad_magic);
-        assert(reason_with_byte(4, flipped_at(4)) == LoadError::version_mismatch);
-        assert(reason_with_byte(8, std::byte{static_cast<uint8_t>(crucible::TraceNodeKind::BRANCH)})
-               == LoadError::wrong_kind);
-        assert(reason_with_byte(8, std::byte{0xFF}) == LoadError::field_out_of_range);
-        assert(reason_with_byte(9, std::byte{1}) == LoadError::field_out_of_range);
-        assert(reason_with_byte(24, flipped_at(24)) == LoadError::content_hash_mismatch);
-        assert(reason_with_byte(36, flipped_at(36)) == LoadError::first_schema_mismatch);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_region(test.alloc, cut, reason_arena))
+                                        == LoadError::truncated);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_with_byte(0, flipped_at(0)) == LoadError::bad_magic);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_with_byte(4, flipped_at(4)) == LoadError::version_mismatch);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             reason_with_byte(8, std::byte{static_cast<uint8_t>(crucible::TraceNodeKind::BRANCH)})
+                                 == LoadError::wrong_kind);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_with_byte(8, std::byte{0xFF}) == LoadError::field_out_of_range);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_with_byte(9, std::byte{1}) == LoadError::field_out_of_range);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_with_byte(24, flipped_at(24)) == LoadError::content_hash_mismatch);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_with_byte(36, flipped_at(36)) == LoadError::first_schema_mismatch);
 
         // The ops start at 61, after the fields of the region and its plan
         // flag.  Op 0 holds its count of scalars at 97..98 and the word of
         // its tags and data slots at 104..105.  Op 0 holds one scalar, so the
         // bit 11 of the word is the data bit of slot 1, past the count.
-        assert(static_cast<uint8_t>(*wire.get(97).expect("the byte is inside the image")) == 1
-               && "op 0 holds one scalar");
-        assert(reason_with_byte(105, std::byte{0x08}) == LoadError::field_out_of_range
-               && "a data slot past the count is not an image of the writer");
+        CRUCIBLE_TEST_ASSERT(kTest, static_cast<uint8_t>(*wire.get(97).expect("the byte is inside the image")) == 1
+                                        && "op 0 holds one scalar");
+        CRUCIBLE_TEST_ASSERT(kTest, reason_with_byte(105, std::byte{0x08}) == LoadError::field_out_of_range
+                                        && "a data slot past the count is not an image of the writer");
 
         // A bad magic number and a bad kind byte: the magic comes first.
         const ::fixy::HeapArray<std::byte> bad_kind = with_byte(test.alloc, wire, 8, std::byte{0xFF});
         const ::fixy::HeapArray<std::byte> two_faults = with_byte(test.alloc, bad_kind.view(), 0, std::byte{0});
-        assert(reason_of(crucible::deserialize_region(test.alloc, two_faults.view(), reason_arena))
-               == LoadError::bad_magic);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_region(test.alloc, two_faults.view(), reason_arena))
+                                        == LoadError::bad_magic);
 
         // The loader of a branch refuses the image of a region by its kind.
-        assert(reason_of(crucible::deserialize_branch(test.alloc, wire, reason_arena)) == LoadError::wrong_kind);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_branch(test.alloc, wire, reason_arena))
+                                        == LoadError::wrong_kind);
     }
 
     // The image of a branch whose arms are out of the order of their values,
@@ -376,16 +409,16 @@ static void check_descriptor_images_agree() {
         branch.arms().get(1).expect("the branch holds two arms")->value = 1;
         ::fixy::HeapArray<std::byte> branch_buf = ::fixy::mint_heap_array(test.alloc, 256, std::byte{0});
         const size_t branch_bytes = crucible::serialize_branch(crucible::SerializedBranch{branch}, branch_buf.view());
-        assert(branch_bytes > 0);
+        CRUCIBLE_TEST_ASSERT(kTest, branch_bytes > 0);
         const ::fixy::View<const std::byte> branch_image =
             branch_buf.view().window(0, branch_bytes).expect("the writer writes inside its image");
-        assert(reason_of(crucible::deserialize_branch(test.alloc, branch_image, branch_arena))
-               == crucible::LoadError::arms_unsorted);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_branch(test.alloc, branch_image, branch_arena))
+                                        == crucible::LoadError::arms_unsorted);
         const ::fixy::HeapArray<std::byte> many_arms = with_byte(test.alloc, branch_image, 47, std::byte{0xFF});
-        assert(reason_of(crucible::deserialize_branch(test.alloc, many_arms.view(), branch_arena))
-               == crucible::LoadError::count_above_limit);
-        assert(reason_of(crucible::deserialize_region(test.alloc, branch_image, branch_arena))
-               == crucible::LoadError::wrong_kind);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_branch(test.alloc, many_arms.view(), branch_arena))
+                                        == crucible::LoadError::count_above_limit);
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_region(test.alloc, branch_image, branch_arena))
+                                        == crucible::LoadError::wrong_kind);
     }
 
     // A header claiming 0xFFFFFFFF ops would otherwise drive an
@@ -400,12 +433,12 @@ static void check_descriptor_images_agree() {
                                            crucible::ContentHash{});
         const uint32_t bogus_num_ops = 0xFFFFFFFFu;
         adv_writer.w(bogus_num_ops);
-        assert(adv_writer.has_room && adv_writer.pos == 36);
+        CRUCIBLE_TEST_ASSERT(kTest, adv_writer.has_room && adv_writer.pos == 36);
 
         ::fixy::BumpArena arena4{1 << 16};
         auto adversarial_region = crucible::deserialize_region(test.alloc, adv.view(), arena4);
-        assert(reason_of(adversarial_region) == crucible::LoadError::count_above_limit
-               && "deserialize_region must reject num_ops > CDAG_MAX_OPS");
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(adversarial_region) == crucible::LoadError::count_above_limit
+                                        && "deserialize_region must reject num_ops > CDAG_MAX_OPS");
     }
 
     // A loaded slot_id indexes a slot table sized to the plan's
@@ -422,11 +455,11 @@ static void check_descriptor_images_agree() {
 
         ::fixy::HeapArray<std::byte> pbuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
         const size_t pn = crucible::serialize_region(crucible::SerializedRegion{*region}, pbuf.view());
-        assert(pn > 0 && "plan-bearing serialize failed");
+        CRUCIBLE_TEST_ASSERT(kTest, pn > 0 && "plan-bearing serialize failed");
         ::fixy::BumpArena parena{1 << 16};
         auto ok_loaded = crucible::deserialize_region(
             test.alloc, pbuf.view().window(0, pn).expect("the writer writes inside its image"), parena);
-        assert(ok_loaded.is_ok() && "plan-bearing region with in-range slot_ids must load");
+        CRUCIBLE_TEST_ASSERT(kTest, ok_loaded.is_ok() && "plan-bearing region with in-range slot_ids must load");
 
         crucible::MemoryPlan bad_plan{};
         bad_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 3, crucible::TensorSlot{});
@@ -434,12 +467,12 @@ static void check_descriptor_images_agree() {
 
         ::fixy::HeapArray<std::byte> nbuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
         const size_t nn = crucible::serialize_region(crucible::SerializedRegion{*region}, nbuf.view());
-        assert(nn > 0 && "plan-bearing (oob) serialize failed");
+        CRUCIBLE_TEST_ASSERT(kTest, nn > 0 && "plan-bearing (oob) serialize failed");
         ::fixy::BumpArena narena{1 << 16};
         auto bad_loaded = crucible::deserialize_region(
             test.alloc, nbuf.view().window(0, nn).expect("the writer writes inside its image"), narena);
-        assert(reason_of(bad_loaded) == crucible::LoadError::slot_out_of_range
-               && "deserialize_region must reject slot_id >= plan->num_slots");
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(bad_loaded) == crucible::LoadError::slot_out_of_range
+                                        && "deserialize_region must reject slot_id >= plan->num_slots");
 
         region->plan = ::fixy::none;  // nothing later depends on this.
     }
@@ -458,12 +491,12 @@ static void check_descriptor_images_agree() {
 
         ::fixy::HeapArray<std::byte> obuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
         const size_t on = crucible::serialize_region(crucible::SerializedRegion{*region}, obuf.view());
-        assert(on > 0 && "over-pool_bytes serialize failed");
+        CRUCIBLE_TEST_ASSERT(kTest, on > 0 && "over-pool_bytes serialize failed");
         ::fixy::BumpArena oarena{1 << 16};
         auto over_loaded = crucible::deserialize_region(
             test.alloc, obuf.view().window(0, on).expect("the writer writes inside its image"), oarena);
-        assert(reason_of(over_loaded) == crucible::LoadError::plan_unservable
-               && "deserialize_region must reject pool_bytes > kMaxPoolBytes");
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(over_loaded) == crucible::LoadError::plan_unservable
+                                        && "deserialize_region must reject pool_bytes > kMaxPoolBytes");
 
         crucible::MemoryPlan at_plan{};
         at_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
@@ -472,11 +505,11 @@ static void check_descriptor_images_agree() {
 
         ::fixy::HeapArray<std::byte> abuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
         const size_t an = crucible::serialize_region(crucible::SerializedRegion{*region}, abuf.view());
-        assert(an > 0 && "at-cap pool_bytes serialize failed");
+        CRUCIBLE_TEST_ASSERT(kTest, an > 0 && "at-cap pool_bytes serialize failed");
         ::fixy::BumpArena aarena{1 << 16};
         auto at_loaded = crucible::deserialize_region(
             test.alloc, abuf.view().window(0, an).expect("the writer writes inside its image"), aarena);
-        assert(at_loaded.is_ok() && "pool_bytes == kMaxPoolBytes must be accepted (inclusive)");
+        CRUCIBLE_TEST_ASSERT(kTest, at_loaded.is_ok() && "pool_bytes == kMaxPoolBytes must be accepted (inclusive)");
 
         region->plan = ::fixy::none;  // restore.
     }
@@ -497,7 +530,7 @@ static void check_descriptor_images_agree() {
 
         ::fixy::HeapArray<std::byte> image_buf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
         const size_t image_bytes = crucible::serialize_region(crucible::SerializedRegion{*region}, image_buf.view());
-        assert(image_bytes > 0 && "pad-probe serialize failed");
+        CRUCIBLE_TEST_ASSERT(kTest, image_bytes > 0 && "pad-probe serialize failed");
         const ::fixy::View<const std::byte> image =
             image_buf.view().window(0, image_bytes).expect("the writer writes inside its image");
 
@@ -522,13 +555,13 @@ static void check_descriptor_images_agree() {
                 ++marker_count;
             }
         }
-        assert(marker_count == 1 && "the marker slot id must occur once in the image");
+        CRUCIBLE_TEST_ASSERT(kTest, marker_count == 1 && "the marker slot id must occur once in the image");
         const size_t pad_at = marker_at - 3;
         const size_t pad2_at = marker_at + sizeof(kMarkerSlotId);
 
         ::fixy::BumpArena clean_arena{1 << 16};
         auto clean = crucible::deserialize_region(test.alloc, image, clean_arena);
-        assert(clean.is_ok() && "the unmodified pad-probe image must load");
+        CRUCIBLE_TEST_ASSERT(kTest, clean.is_ok() && "the unmodified pad-probe image must load");
 
         const auto refuses_with_byte_set_at = [&](size_t at) {
             ::fixy::HeapArray<std::byte> corrupt = ::fixy::mint_heap_array(test.alloc, image_bytes, std::byte{0});
@@ -539,10 +572,12 @@ static void check_descriptor_images_agree() {
                 == crucible::LoadError::field_out_of_range;
         };
         for (size_t byte = 0; byte < 4; ++byte) {
-            assert(refuses_with_byte_set_at(pad2_at + byte) && "a non-zero byte in pad2 must refuse the image");
+            CRUCIBLE_TEST_ASSERT(kTest, refuses_with_byte_set_at(pad2_at + byte)
+                                            && "a non-zero byte in pad2 must refuse the image");
         }
         for (size_t byte = 0; byte < 3; ++byte) {
-            assert(refuses_with_byte_set_at(pad_at + byte) && "a non-zero byte in the slot pad must refuse the image");
+            CRUCIBLE_TEST_ASSERT(kTest, refuses_with_byte_set_at(pad_at + byte)
+                                            && "a non-zero byte in the slot pad must refuse the image");
         }
 
         region->plan = ::fixy::none;
@@ -557,13 +592,14 @@ static void check_descriptor_images_agree() {
             scalar_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
         crucible::TraceEntry& scalar_op = *scalar_ops.get(0).expect("the region holds one op");
         scalar_op.schema_hash = crucible::SchemaHash{0x77};
-        scalar_op.set_scalar_args(crucible::test::run_of(test.alloc, scalar_arena, int64_t{5}, int64_t{6}));
+        scalar_op.set_scalar_args(::fixy::check::run_of(kTest, test.alloc, scalar_arena, int64_t{5}, int64_t{6}));
         const crucible::RegionNode& scalar_region = *crucible::make_region(test.alloc, scalar_arena, scalar_ops);
 
         ::fixy::HeapArray<std::byte> scalar_buf = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
         const size_t scalar_bytes =
             crucible::serialize_region(crucible::SerializedRegion{scalar_region}, scalar_buf.view());
-        assert(scalar_bytes > 0 && "the region of an op with scalars and no tensors must serialize");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             scalar_bytes > 0 && "the region of an op with scalars and no tensors must serialize");
         ::fixy::BumpArena load_arena{1 << 16};
         const crucible::RegionNode& loaded_scalars =
             *crucible::deserialize_region(
@@ -572,8 +608,8 @@ static void check_descriptor_images_agree() {
                  .expect("the region of an op with scalars and no tensors must load back")
                  .value();
         const crucible::TraceEntry& loaded_op = loaded_scalars.op_at(0);
-        assert(loaded_op.num_inputs() == 0 && loaded_op.num_outputs() == 0);
-        assert(::fixy::equal(loaded_op.scalar_args(), scalar_op.scalar_args()));
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_op.num_inputs() == 0 && loaded_op.num_outputs() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(loaded_op.scalar_args(), scalar_op.scalar_args()));
     }
 
     // A region of the background pipeline holds the numerics hash that its
@@ -585,7 +621,7 @@ static void check_descriptor_images_agree() {
             policy_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
         crucible::TraceEntry& policy_op = *policy_ops.get(0).expect("the region holds one op");
         policy_op.schema_hash = crucible::SchemaHash{0x78};
-        policy_op.set_scalar_args(crucible::test::run_of(test.alloc, policy_arena, int64_t{7}));
+        policy_op.set_scalar_args(::fixy::check::run_of(kTest, test.alloc, policy_arena, int64_t{7}));
         crucible::NumericsPolicy strict{};
         strict.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
         const crucible::NumericsHash numerics = crucible::compute_numerics_hash(strict, crucible::EagerNumerics{});
@@ -596,7 +632,7 @@ static void check_descriptor_images_agree() {
         ::fixy::HeapArray<std::byte> policy_buf = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
         const size_t policy_bytes =
             crucible::serialize_region(crucible::SerializedRegion{policy_region}, policy_buf.view());
-        assert(policy_bytes > 0);
+        CRUCIBLE_TEST_ASSERT(kTest, policy_bytes > 0);
         ::fixy::BumpArena policy_load{1 << 16};
         const crucible::RegionNode& loaded_policy =
             *crucible::deserialize_region(
@@ -604,7 +640,8 @@ static void check_descriptor_images_agree() {
                  policy_load)
                  .expect("a region under a policy loads back")
                  .value();
-        assert(loaded_policy.numerics == numerics && loaded_policy.content_hash == policy_region.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, loaded_policy.numerics == numerics
+                                        && loaded_policy.content_hash == policy_region.content_hash);
 
         // The numerics hash follows the first schema, after the 32 bytes of
         // the header and the count of the ops.
@@ -619,11 +656,11 @@ static void check_descriptor_images_agree() {
                 static_cast<std::byte>((ordered.raw() >> (8 * byte)) & 0xFF);
         }
         ::fixy::BumpArena other_load{1 << 16};
-        assert(reason_of(crucible::deserialize_region(test.alloc, other.view(), other_load))
-                   == crucible::LoadError::content_hash_mismatch
-               && "the ops of the image do not hash to its content hash under another policy");
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_region(test.alloc, other.view(), other_load))
+                                            == crucible::LoadError::content_hash_mismatch
+                                        && "the ops of the image do not hash to its content hash under another policy");
     }
 
-    crucible::test::pass("test_serialize: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_serialize: all tests passed\n");
     return 0;
 }

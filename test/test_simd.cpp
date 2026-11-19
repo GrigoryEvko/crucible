@@ -7,7 +7,10 @@
 #include <crucible/DimHash.h>
 #include <crucible/MerkleDag.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <bit>
@@ -17,6 +20,13 @@
 #include <memory>
 #include <type_traits>
 
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
+
 namespace simd = foundation::simd;
 
 static void test_type_aliases() {
@@ -24,15 +34,15 @@ static void test_type_aliases() {
     static_assert(simd::u64x8::size() == 8);
     static_assert(simd::i32x16::size() == 16);
     static_assert(simd::u8x32::size() == 32);
-    crucible::test::pass("  test_type_aliases: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_type_aliases: PASSED\n");
 }
 
 static void test_iota() {
     auto indices = simd::iota_v<simd::i64x8>();
     for (int lane = 0; lane < static_cast<int>(simd::i64x8::size()); ++lane) {
-        assert(indices[lane] == static_cast<int64_t>(lane));
+        CRUCIBLE_TEST_ASSERT(kTest, indices[lane] == static_cast<int64_t>(lane));
     }
-    crucible::test::pass("  test_iota: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_iota: PASSED\n");
 }
 
 static void test_prefix_mask() {
@@ -40,17 +50,17 @@ static void test_prefix_mask() {
     // because an off-by-one implementation passes the middle case.
     auto mask0 = simd::prefix_mask<simd::i64x8>(0);
     for (int lane = 0; lane < static_cast<int>(simd::i64x8::size()); ++lane) {
-        assert(!mask0[lane]);
+        CRUCIBLE_TEST_ASSERT(kTest, !mask0[lane]);
     }
     auto mask5 = simd::prefix_mask<simd::i64x8>(5);
     for (int lane = 0; lane < 5; ++lane)
-        assert(mask5[lane]);
+        CRUCIBLE_TEST_ASSERT(kTest, mask5[lane]);
     for (int lane = 5; lane < 8; ++lane)
-        assert(!mask5[lane]);
+        CRUCIBLE_TEST_ASSERT(kTest, !mask5[lane]);
     auto mask8 = simd::prefix_mask<simd::i64x8>(8);
     for (int lane = 0; lane < 8; ++lane)
-        assert(mask8[lane]);
-    crucible::test::pass("  test_prefix_mask: PASSED\n");
+        CRUCIBLE_TEST_ASSERT(kTest, mask8[lane]);
+    ::fixy::check::pass(kTest, "  test_prefix_mask: PASSED\n");
 }
 
 static void test_det_safe_simd_concept() {
@@ -69,16 +79,16 @@ static void test_det_safe_simd_concept() {
     static_assert(!simd::DetSafeSimd<f64x4>);
 
     static_assert(!simd::DetSafeSimd<int64_t>);
-    crucible::test::pass("  test_det_safe_simd_concept: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_det_safe_simd_concept: PASSED\n");
 }
 
 static void test_load() {
     std::array<int64_t, 8> source{10, 20, 30, 40, 50, 60, 70, 80};
     auto v = simd::load<simd::i64x8>(source.data());
     for (int lane = 0; lane < 8; ++lane) {
-        assert(v[lane] == source[static_cast<size_t>(lane)]);
+        CRUCIBLE_TEST_ASSERT(kTest, v[lane] == source[static_cast<size_t>(lane)]);
     }
-    crucible::test::pass("  test_load: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_load: PASSED\n");
 }
 
 // A load from the bytes of one register gives each lane its little-endian
@@ -90,11 +100,11 @@ static void test_load_bytes() {
         bytes.at(index) = static_cast<std::byte>(index.raw() + 1);
     }
     auto const v = simd::load<simd::u64x4>(bytes.view().window<32>(1).expect("32 bytes fit after the first"));
-    assert(v[0] == 0x0908070605040302ULL);
-    assert(v[1] == 0x11100F0E0D0C0B0AULL);
-    assert(v[2] == 0x1918171615141312ULL);
-    assert(v[3] == 0x21201F1E1D1C1B1AULL);
-    crucible::test::pass("  test_load_bytes: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, v[0] == 0x0908070605040302ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, v[1] == 0x11100F0E0D0C0B0AULL);
+    CRUCIBLE_TEST_ASSERT(kTest, v[2] == 0x1918171615141312ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, v[3] == 0x21201F1E1D1C1B1AULL);
+    ::fixy::check::pass(kTest, "  test_load_bytes: PASSED\n");
 }
 
 // A load from the lanes of one register gives each lane its element, the
@@ -107,9 +117,9 @@ static void test_load_lanes() {
     }
     auto const v = simd::load<simd::i64x8>(lanes.view().window<8>(1).expect("8 lanes fit after the first"));
     for (int lane = 0; lane < 8; ++lane) {
-        assert(v[lane] == static_cast<int64_t>(lane + 1) * -3);
+        CRUCIBLE_TEST_ASSERT(kTest, v[lane] == static_cast<int64_t>(lane + 1) * -3);
     }
-    crucible::test::pass("  test_load_lanes: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_load_lanes: PASSED\n");
 }
 
 // A store into the bytes of one register writes each lane as its
@@ -122,12 +132,12 @@ static void test_store_bytes_and_bit_cast() {
     simd::store(v, bytes.view().window<32>(1).expect("32 bytes fit after the first"));
     for (auto index : bytes.indices()) {
         auto const expected = index.raw() == 0 || index.raw() == 33 ? 0U : index.raw();
-        assert(bytes.at(index) == static_cast<std::byte>(expected));
+        CRUCIBLE_TEST_ASSERT(kTest, bytes.at(index) == static_cast<std::byte>(expected));
     }
     auto const halves = simd::bit_cast<simd::vec<std::uint32_t, 8>>(v);
-    assert(halves[0] == 0x04030201U && halves[1] == 0x08070605U && halves[7] == 0x201F1E1DU);
-    assert(simd::bit_cast<simd::u64x4>(halves)[2] == v[2]);
-    crucible::test::pass("  test_store_bytes_and_bit_cast: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, halves[0] == 0x04030201U && halves[1] == 0x08070605U && halves[7] == 0x201F1E1DU);
+    CRUCIBLE_TEST_ASSERT(kTest, simd::bit_cast<simd::u64x4>(halves)[2] == v[2]);
+    ::fixy::check::pass(kTest, "  test_store_bytes_and_bit_cast: PASSED\n");
 }
 
 // The sign bit and the equal bit of each lane, at one width.  One lane at a
@@ -141,18 +151,18 @@ static void check_collect_bits() {
     std::uint64_t const every_lane = Lanes == 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << Lanes) - 1;
     Bytes const tags{std::int8_t{0x42}};
     Bytes const empty{std::int8_t{-128}};
-    assert(simd::collect_sign_bits(tags) == 0);
-    assert(simd::collect_sign_bits(empty) == every_lane);
-    assert(simd::collect_equal_bits(tags, tags) == every_lane);
+    CRUCIBLE_TEST_ASSERT(kTest, simd::collect_sign_bits(tags) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, simd::collect_sign_bits(empty) == every_lane);
+    CRUCIBLE_TEST_ASSERT(kTest, simd::collect_equal_bits(tags, tags) == every_lane);
     for (int lane = 0; lane < Lanes; ++lane) {
         Bytes const one_empty([lane](auto index) noexcept {
             return decltype(index)::value == lane ? std::int8_t{-128} : std::int8_t{0x42};
         });
         std::uint64_t const bit = std::uint64_t{1} << lane;
-        assert(simd::collect_sign_bits(one_empty) == bit);
-        assert(simd::collect_sign_bits(one_empty == empty) == bit);
-        assert(simd::collect_equal_bits(one_empty, empty) == bit);
-        assert(simd::collect_equal_bits(one_empty, tags) == (every_lane & ~bit));
+        CRUCIBLE_TEST_ASSERT(kTest, simd::collect_sign_bits(one_empty) == bit);
+        CRUCIBLE_TEST_ASSERT(kTest, simd::collect_sign_bits(one_empty == empty) == bit);
+        CRUCIBLE_TEST_ASSERT(kTest, simd::collect_equal_bits(one_empty, empty) == bit);
+        CRUCIBLE_TEST_ASSERT(kTest, simd::collect_equal_bits(one_empty, tags) == (every_lane & ~bit));
     }
 }
 
@@ -160,7 +170,7 @@ static void test_collect_bits() {
     check_collect_bits<16>();
     check_collect_bits<32>();
     check_collect_bits<64>();
-    crucible::test::pass("  test_collect_bits: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_collect_bits: PASSED\n");
 }
 
 // The register runs of two Views of one count: each whole run once, in
@@ -179,13 +189,13 @@ static void test_for_each_register_run() {
             simd::store(simd::load<Bytes>(in), out);
             ++runs;
         });
-    assert(runs == 2);
-    assert(target_rest.size() == 5 && source_rest.size() == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, runs == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, target_rest.size() == 5 && source_rest.size() == 5);
     for (auto index : target.indices()) {
         auto const expected = index.raw() < 32 ? index.raw() + 1 : 0U;
-        assert(target.at(index) == static_cast<std::byte>(expected));
+        CRUCIBLE_TEST_ASSERT(kTest, target.at(index) == static_cast<std::byte>(expected));
     }
-    crucible::test::pass("  test_for_each_register_run: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_for_each_register_run: PASSED\n");
 }
 
 static void test_reduce_xor_sum() {
@@ -201,26 +211,26 @@ static void test_reduce_xor_sum() {
 
     int64_t xor_got = simd::reduce_xor(input);
     int64_t sum_got = simd::reduce_add(input);
-    assert(xor_got == xor_expected);
-    assert(sum_got == sum_expected);
-    crucible::test::pass("  test_reduce_xor_sum: PASSED (xor={} sum={})\n", static_cast<long long>(xor_got),
-                         static_cast<long long>(sum_got));
+    CRUCIBLE_TEST_ASSERT(kTest, xor_got == xor_expected);
+    CRUCIBLE_TEST_ASSERT(kTest, sum_got == sum_expected);
+    ::fixy::check::pass(kTest, "  test_reduce_xor_sum: PASSED (xor={} sum={})\n", static_cast<long long>(xor_got),
+                        static_cast<long long>(sum_got));
 }
 
 static void test_reduce_or_and() {
     std::array<uint64_t, 8> values{0x01ULL, 0x02ULL, 0x04ULL, 0x08ULL, 0x10ULL, 0x20ULL, 0x40ULL, 0x80ULL};
     auto input = simd::load<simd::u64x8>(values.data());
-    assert(simd::reduce_or(input) == 0xFFULL);
-    assert(simd::reduce_and(input) == 0ULL);
-    crucible::test::pass("  test_reduce_or_and: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, simd::reduce_or(input) == 0xFFULL);
+    CRUCIBLE_TEST_ASSERT(kTest, simd::reduce_and(input) == 0ULL);
+    ::fixy::check::pass(kTest, "  test_reduce_or_and: PASSED\n");
 }
 
 static void test_reduce_max_min() {
     std::array<int64_t, 8> values{-5, 100, 33, -200, 7, 42, 999, 0};
     auto input = simd::load<simd::i64x8>(values.data());
-    assert(simd::reduce_max(input) == 999);
-    assert(simd::reduce_min(input) == -200);
-    crucible::test::pass("  test_reduce_max_min: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, simd::reduce_max(input) == 999);
+    CRUCIBLE_TEST_ASSERT(kTest, simd::reduce_min(input) == -200);
+    ::fixy::check::pass(kTest, "  test_reduce_max_min: PASSED\n");
 }
 
 static void test_select() {
@@ -232,22 +242,22 @@ static void test_select() {
 
     auto mask = simd::prefix_mask<simd::i64x8>(4);
     auto out = simd::select(mask, t_v, f_v);
-    assert(out[0] == 100);
-    assert(out[1] == 200);
-    assert(out[2] == 300);
-    assert(out[3] == 400);
-    assert(out[4] == 5);
-    assert(out[5] == 6);
-    assert(out[6] == 7);
-    assert(out[7] == 8);
+    CRUCIBLE_TEST_ASSERT(kTest, out[0] == 100);
+    CRUCIBLE_TEST_ASSERT(kTest, out[1] == 200);
+    CRUCIBLE_TEST_ASSERT(kTest, out[2] == 300);
+    CRUCIBLE_TEST_ASSERT(kTest, out[3] == 400);
+    CRUCIBLE_TEST_ASSERT(kTest, out[4] == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, out[5] == 6);
+    CRUCIBLE_TEST_ASSERT(kTest, out[6] == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, out[7] == 8);
 
     // The two operands are re-read afterwards: a select that wrote
     // into one of them would still produce the right result above.
     for (int lane = 0; lane < 8; ++lane) {
-        assert(t_v[lane] == on_true[static_cast<size_t>(lane)]);
-        assert(f_v[lane] == on_false[static_cast<size_t>(lane)]);
+        CRUCIBLE_TEST_ASSERT(kTest, t_v[lane] == on_true[static_cast<size_t>(lane)]);
+        CRUCIBLE_TEST_ASSERT(kTest, f_v[lane] == on_false[static_cast<size_t>(lane)]);
     }
-    crucible::test::pass("  test_select: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_select: PASSED\n");
 }
 
 // This is the shape the dimension hash uses: one masked reduction over
@@ -269,10 +279,11 @@ static void test_masked_reduce_for_dim_hash_pattern() {
         scalar_result ^= sizes[static_cast<size_t>(d)] * mix_lo[static_cast<size_t>(d)];
     }
 
-    assert(simd_result == scalar_result);
-    crucible::test::pass("  test_masked_reduce_for_dim_hash_pattern: PASSED "
-                         "(simd={} scalar={})\n",
-                         static_cast<long long>(simd_result), static_cast<long long>(scalar_result));
+    CRUCIBLE_TEST_ASSERT(kTest, simd_result == scalar_result);
+    ::fixy::check::pass(kTest,
+                        "  test_masked_reduce_for_dim_hash_pattern: PASSED "
+                        "(simd={} scalar={})\n",
+                        static_cast<long long>(simd_result), static_cast<long long>(scalar_result));
 }
 
 static void test_microarch_detection() {
@@ -286,14 +297,14 @@ static void test_microarch_detection() {
 #if defined(__x86_64__) || defined(__i386__)
     bool any_runtime =
         simd::runtime_supports_sse42() || simd::runtime_supports_avx2() || simd::runtime_supports_avx512();
-    assert(any_runtime && "no SIMD ISA detected at runtime on x86-64");
+    CRUCIBLE_TEST_ASSERT(kTest, any_runtime && "no SIMD ISA detected at runtime on x86-64");
 #endif
-    crucible::test::pass("  test_microarch_detection: PASSED "
-                         "(compile: sse42={} avx2={} avx512={} neon={}; "
-                         "runtime: sse42={} avx2={} avx512={})\n",
-                         simd::kSse42Available, simd::kAvx2Available, simd::kAvx512Available, simd::kNeonAvailable,
-                         simd::runtime_supports_sse42(), simd::runtime_supports_avx2(),
-                         simd::runtime_supports_avx512());
+    ::fixy::check::pass(kTest,
+                        "  test_microarch_detection: PASSED "
+                        "(compile: sse42={} avx2={} avx512={} neon={}; "
+                        "runtime: sse42={} avx2={} avx512={})\n",
+                        simd::kSse42Available, simd::kAvx2Available, simd::kAvx512Available, simd::kNeonAvailable,
+                        simd::runtime_supports_sse42(), simd::runtime_supports_avx2(), simd::runtime_supports_avx512());
 }
 
 // The shapes below are chosen by hand, one per structural case the
@@ -303,7 +314,7 @@ static crucible::TensorMeta make_meta(std::initializer_list<int64_t> sizes, std:
                                       crucible::ScalarType dtype = crucible::ScalarType::Float) {
     crucible::TensorMeta meta{};
     meta.ndim = static_cast<uint8_t>(sizes.size());
-    assert(strides.size() == sizes.size());
+    CRUCIBLE_TEST_ASSERT(kTest, strides.size() == sizes.size());
     auto size_it = sizes.begin();
     auto stride_it = strides.begin();
     for (uint8_t d = 0; d < meta.ndim; ++d) {
@@ -321,18 +332,19 @@ static void test_dim_hash_equivalence_handcoded() {
     // must agree that the answer is zero rather than an identity that
     // leaked out of the reduction.
     auto m_empty = make_meta({}, {});
-    assert(dim_hash_scalar(m_empty) == 0);
-    assert(dim_hash_simd(m_empty) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, dim_hash_scalar(m_empty) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, dim_hash_simd(m_empty) == 0);
     static_assert(std::is_same_v<decltype(dim_hash_scalar_det(m_empty)), crucible::DimHashDet>);
     static_assert(std::is_same_v<decltype(dim_hash_simd_det(m_empty)), crucible::DimHashDet>);
-    assert(crucible::raw_dim_hash(dim_hash_scalar_det(m_empty)) == 0);
-    assert(crucible::raw_dim_hash(dim_hash_simd_det(m_empty)) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_dim_hash(dim_hash_scalar_det(m_empty)) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_dim_hash(dim_hash_simd_det(m_empty)) == 0);
 
     // The two paths agree on one shape, as raw hashes and as typed hashes.
     // The lambda keeps one copy of the inlined hash code in this test.
     const auto expect_agree = [](const crucible::TensorMeta& meta) {
-        assert(dim_hash_simd(meta) == dim_hash_scalar(meta));
-        assert(crucible::raw_dim_hash(dim_hash_simd_det(meta)) == crucible::raw_dim_hash(dim_hash_scalar_det(meta)));
+        CRUCIBLE_TEST_ASSERT(kTest, dim_hash_simd(meta) == dim_hash_scalar(meta));
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_dim_hash(dim_hash_simd_det(meta))
+                                        == crucible::raw_dim_hash(dim_hash_scalar_det(meta)));
     };
 
     auto m_1d = make_meta({4096}, {1});
@@ -368,19 +380,20 @@ static void test_dim_hash_equivalence_handcoded() {
             break;
         }
     }
-    assert(chosen != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, chosen != 0);
     auto* unaligned =
         std::construct_at(std::bit_cast<crucible::TensorMeta*>(chosen), make_meta({16, 32, 64}, {2048, 64, 1}));
-    assert(!::fixy::address_of(::fixy::to(unaligned->sizes.lanes().at(::fixy::index<0>()))).is_aligned<64>());
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !::fixy::address_of(::fixy::to(unaligned->sizes.lanes().at(::fixy::index<0>()))).is_aligned<64>());
     expect_agree(*unaligned);
     std::destroy_at(unaligned);
 
     // Agreement alone would be satisfied by a hash that returned a
     // constant, so two different shapes are required to differ.
-    assert(dim_hash_scalar(m_1d) != dim_hash_scalar(m_2d));
-    assert(dim_hash_simd(m_1d) != dim_hash_simd(m_2d));
+    CRUCIBLE_TEST_ASSERT(kTest, dim_hash_scalar(m_1d) != dim_hash_scalar(m_2d));
+    CRUCIBLE_TEST_ASSERT(kTest, dim_hash_simd(m_1d) != dim_hash_simd(m_2d));
 
-    crucible::test::pass("  test_dim_hash_equivalence_handcoded: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_dim_hash_equivalence_handcoded: PASSED\n");
 }
 
 int main() {
@@ -401,6 +414,6 @@ int main() {
     test_masked_reduce_for_dim_hash_pattern();
     test_microarch_detection();
     test_dim_hash_equivalence_handcoded();
-    crucible::test::pass("test_simd: ALL PASSED\n");
+    ::fixy::check::pass(kTest, "test_simd: ALL PASSED\n");
     return 0;
 }

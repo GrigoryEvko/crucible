@@ -13,10 +13,19 @@
 #include <crucible/Vigil.h>
 #include <fixy/Core.h>
 
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "test_harness.h"
 
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::MetaIndex;
 using crucible::MetaLog;
@@ -62,7 +71,7 @@ FillRun& fill_run() {
 [[nodiscard]] MetaIndex drain_meta_start(TraceRing& ring, TraceRing::Entry& out_entry) {
     ::fixy::FixedArray<TraceRing::Entry, 1> entries{};
     ::fixy::FixedArray<MetaIndex, 1> meta_starts{};
-    assert(ring.drain(entries.view(), meta_starts.view()) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ring.drain(entries.view(), meta_starts.view()) == 1);
     out_entry = entries.at(::fixy::index<0>());
     return meta_starts.at(::fixy::index<0>());
 }
@@ -76,11 +85,11 @@ void test_full_ring_leaves_no_record_in_the_log() {
 
     // No consumer drains the ring, so CAPACITY entries fill it.
     for (uint32_t i = 0; i < TraceRing::CAPACITY; ++i)
-        assert(ring.try_append(entry_with_two_tensors(0x100)));
+        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(entry_with_two_tensors(0x100)));
 
-    assert(!record(ring, log, entry_with_two_tensors(0x200), metas) && "a full ring took an op");
-    assert(log.head.get() == 0 && "the full ring refused the op, and the log took its records");
-    assert(ring.total_produced() == TraceRing::CAPACITY);
+    CRUCIBLE_TEST_ASSERT(kTest, !record(ring, log, entry_with_two_tensors(0x200), metas) && "a full ring took an op");
+    CRUCIBLE_TEST_ASSERT(kTest, log.head.get() == 0 && "the full ring refused the op, and the log took its records");
+    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == TraceRing::CAPACITY);
 }
 
 void test_dropped_reservation_leaves_the_ring() {
@@ -91,20 +100,20 @@ void test_dropped_reservation_leaves_the_ring() {
 
     {
         const ::fixy::Option<TraceRing::Reservation> reserved = ring.try_reserve();
-        assert(reserved.is_some() && "an empty ring refused a reservation");
+        CRUCIBLE_TEST_ASSERT(kTest, reserved.is_some() && "an empty ring refused a reservation");
     }
-    assert(ring.total_produced() == 0 && "a dropped reservation moved the head");
+    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == 0 && "a dropped reservation moved the head");
 
     // The slot of the dropped reservation takes the next op.
     const OpMetas metas{};
     const TraceRing::Entry entry = entry_with_two_tensors(0x300);
-    assert(record(ring, log, entry, metas));
-    assert(ring.total_produced() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, record(ring, log, entry, metas));
+    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == 1);
     TraceRing::Entry drained{};
     const MetaIndex meta_start = drain_meta_start(ring, drained);
-    assert(drained.schema_hash == entry.schema_hash);
-    assert(meta_start.is_valid() && meta_start.raw() == 0 && "the op did not name its records");
-    assert(log.head.get() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, drained.schema_hash == entry.schema_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, meta_start.is_valid() && meta_start.raw() == 0 && "the op did not name its records");
+    CRUCIBLE_TEST_ASSERT(kTest, log.head.get() == 2);
 }
 
 void test_op_names_the_records_it_appended() {
@@ -115,12 +124,13 @@ void test_op_names_the_records_it_appended() {
     const OpMetas metas{};
 
     for (uint64_t op = 0; op < 3; ++op)
-        assert(record(ring, log, entry_with_two_tensors(0x400 + op), metas));
+        CRUCIBLE_TEST_ASSERT(kTest, record(ring, log, entry_with_two_tensors(0x400 + op), metas));
     for (uint64_t op = 0; op < 3; ++op) {
         TraceRing::Entry drained{};
         const MetaIndex meta_start = drain_meta_start(ring, drained);
-        assert(drained.schema_hash == crucible::SchemaHash{0x400 + op});
-        assert(meta_start.is_valid() && meta_start.raw() == 2 * op && "an op named the records of another op");
+        CRUCIBLE_TEST_ASSERT(kTest, drained.schema_hash == crucible::SchemaHash{0x400 + op});
+        CRUCIBLE_TEST_ASSERT(kTest, meta_start.is_valid() && meta_start.raw() == 2 * op
+                                        && "an op named the records of another op");
     }
 }
 
@@ -133,14 +143,15 @@ void test_full_log_records_the_op_with_no_index() {
     // No consumer releases the log, so the appends fill it.
     FillRun& run = fill_run();
     for (uint32_t i = 0; i < MetaLog::CAPACITY / FillRun::size(); ++i)
-        assert(log.try_append(run.view()).is_valid());
-    assert(log.size().peek() == MetaLog::CAPACITY);
+        CRUCIBLE_TEST_ASSERT(kTest, log.try_append(run.view()).is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == MetaLog::CAPACITY);
 
     const OpMetas metas{};
-    assert(record(ring, log, entry_with_two_tensors(0x500), metas) && "a full log made the ring refuse the op");
+    CRUCIBLE_TEST_ASSERT(kTest, record(ring, log, entry_with_two_tensors(0x500), metas)
+                                    && "a full log made the ring refuse the op");
     TraceRing::Entry drained{};
-    assert(!drain_meta_start(ring, drained).is_valid() && "an op of a full log named records");
-    assert(drained.schema_hash == crucible::SchemaHash{0x500});
+    CRUCIBLE_TEST_ASSERT(kTest, !drain_meta_start(ring, drained).is_valid() && "an op of a full log named records");
+    CRUCIBLE_TEST_ASSERT(kTest, drained.schema_hash == crucible::SchemaHash{0x500});
 }
 
 }  // namespace

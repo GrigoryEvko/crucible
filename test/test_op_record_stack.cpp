@@ -8,9 +8,18 @@
 #include <crucible/ValidatedOp.h>
 #include <fixy/Core.h>
 
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -47,35 +56,37 @@ void test_a_nested_frame_keeps_the_records_of_the_outer_frame() {
     write_ranks(slots_of(outer), 1);
     {
         const crucible::OpRecordFrame inner{stack, 2};
-        assert(inner.is_open() && "a frame of two slots fits past a frame of three");
+        CRUCIBLE_TEST_ASSERT(kTest, inner.is_open() && "a frame of two slots fits past a frame of three");
         write_ranks(slots_of(inner), 5);
-        assert(has_ranks(slots_of(inner), 5) && "the inner frame reads its own records");
+        CRUCIBLE_TEST_ASSERT(kTest, has_ranks(slots_of(inner), 5) && "the inner frame reads its own records");
         {
             const crucible::OpRecordFrame innermost{stack, 4};
             write_ranks(slots_of(innermost), 7);
-            assert(stack.held() == 9 && "the three open frames hold their slots");
+            CRUCIBLE_TEST_ASSERT(kTest, stack.held() == 9 && "the three open frames hold their slots");
         }
-        assert(has_ranks(slots_of(inner), 5) && "a nested frame writes no slot of the frame around it");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             has_ranks(slots_of(inner), 5) && "a nested frame writes no slot of the frame around it");
     }
-    assert(has_ranks(slots_of(outer), 1) && "a nested frame writes no slot of the frame around it");
-    assert(stack.held() == 3 && "a closed frame gives its slots back");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         has_ranks(slots_of(outer), 1) && "a nested frame writes no slot of the frame around it");
+    CRUCIBLE_TEST_ASSERT(kTest, stack.held() == 3 && "a closed frame gives its slots back");
 }
 
 // Each frame opens at the top of the stack, and the close of a frame gives
 // the top back.  The next op then uses the same slots again.
 void test_a_closed_frame_gives_its_slots_back() {
     crucible::OpRecordStack stack{};
-    assert(stack.held() == 0 && "a new stack holds no slot");
+    CRUCIBLE_TEST_ASSERT(kTest, stack.held() == 0 && "a new stack holds no slot");
     {
         const crucible::OpRecordFrame first{stack, 5};
         write_ranks(slots_of(first), 1);
-        assert(stack.held() == 5 && "an open frame holds its slots");
+        CRUCIBLE_TEST_ASSERT(kTest, stack.held() == 5 && "an open frame holds its slots");
     }
-    assert(stack.held() == 0 && "a closed frame gives its slots back");
+    CRUCIBLE_TEST_ASSERT(kTest, stack.held() == 0 && "a closed frame gives its slots back");
     const crucible::OpRecordFrame second{stack, 2};
-    assert(slots_of(second).size() == 2 && "a frame gives exactly its count of slots");
+    CRUCIBLE_TEST_ASSERT(kTest, slots_of(second).size() == 2 && "a frame gives exactly its count of slots");
     write_ranks(slots_of(second), 3);
-    assert(has_ranks(slots_of(second), 3) && "the next op writes the same slots again");
+    CRUCIBLE_TEST_ASSERT(kTest, has_ranks(slots_of(second), 3) && "the next op writes the same slots again");
 }
 
 // A frame that does not fit the free slots holds no slot.  It gives no
@@ -85,20 +96,21 @@ void test_a_frame_that_does_not_fit_holds_no_slot() {
     crucible::OpRecordStack stack{};
     {
         const crucible::OpRecordFrame too_large{stack, crucible::kMaxOpRecords + 1};
-        assert(!too_large.is_open() && "a frame past the slots of the stack does not open");
-        assert(too_large.slots().is_none() && "a frame that is not open gives no slot");
-        assert(stack.held() == 0 && "a frame that is not open holds no slot");
+        CRUCIBLE_TEST_ASSERT(kTest, !too_large.is_open() && "a frame past the slots of the stack does not open");
+        CRUCIBLE_TEST_ASSERT(kTest, too_large.slots().is_none() && "a frame that is not open gives no slot");
+        CRUCIBLE_TEST_ASSERT(kTest, stack.held() == 0 && "a frame that is not open holds no slot");
     }
     const crucible::OpRecordFrame whole{stack, crucible::kMaxOpRecords};
-    assert(whole.is_open() && "a frame of each slot fits an empty stack");
+    CRUCIBLE_TEST_ASSERT(kTest, whole.is_open() && "a frame of each slot fits an empty stack");
     {
         const crucible::OpRecordFrame one_more{stack, 1};
-        assert(!one_more.is_open() && "a full stack has no slot for a frame of one");
+        CRUCIBLE_TEST_ASSERT(kTest, !one_more.is_open() && "a full stack has no slot for a frame of one");
         const crucible::OpRecordFrame empty{stack, 0};
-        assert(empty.is_open() && "a frame of no slot fits a full stack");
-        assert(slots_of(empty).size() == 0 && "a frame of no slot gives an empty View");
+        CRUCIBLE_TEST_ASSERT(kTest, empty.is_open() && "a frame of no slot fits a full stack");
+        CRUCIBLE_TEST_ASSERT(kTest, slots_of(empty).size() == 0 && "a frame of no slot gives an empty View");
     }
-    assert(stack.held() == crucible::kMaxOpRecords && "the frames that did not fit gave nothing back");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         stack.held() == crucible::kMaxOpRecords && "the frames that did not fit gave nothing back");
 }
 
 }  // namespace
@@ -107,6 +119,6 @@ int main() {
     test_a_nested_frame_keeps_the_records_of_the_outer_frame();
     test_a_closed_frame_gives_its_slots_back();
     test_a_frame_that_does_not_fit_holds_no_slot();
-    crucible::test::pass("test_op_record_stack: PASS\n");
+    ::fixy::check::pass(kTest, "test_op_record_stack: PASS\n");
     return 0;
 }

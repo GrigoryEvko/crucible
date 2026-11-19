@@ -17,7 +17,16 @@
 
 #include <cstdint>
 
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -77,23 +86,25 @@ void test_swapped_wiring_hashes_apart() {
     const Region forward{0, 1, 4, OpDepth{}};
     const Region again{0, 1, 4, OpDepth{}};
     const Region swapped{1, 0, 4, OpDepth{}};
-    assert(forward.hash() == again.hash() && "one region hashes the same each time");
-    assert(!(forward.hash() == swapped.hash()) && "the producer of each input folds into the region hash");
-    crucible::test::pass("  test_swapped_wiring_hashes_apart: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, forward.hash() == again.hash() && "one region hashes the same each time");
+    CRUCIBLE_TEST_ASSERT(kTest, !(forward.hash() == swapped.hash())
+                                    && "the producer of each input folds into the region hash");
+    ::fixy::check::pass(kTest, "  test_swapped_wiring_hashes_apart: PASSED\n");
 }
 
 void test_output_metadata_hashes_apart() {
     const Region narrow{0, 1, 4, OpDepth{}};
     const Region wide{0, 1, 8, OpDepth{}};
-    assert(!(narrow.hash() == wide.hash()) && "the metadata of each output folds into the region hash");
-    crucible::test::pass("  test_output_metadata_hashes_apart: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !(narrow.hash() == wide.hash()) && "the metadata of each output folds into the region hash");
+    ::fixy::check::pass(kTest, "  test_output_metadata_hashes_apart: PASSED\n");
 }
 
 void test_nesting_hashes_apart() {
     const Region after{0, 1, 4, OpDepth{}};
     const Region inside{0, 1, 4, OpDepth{1}};
-    assert(!(after.hash() == inside.hash()) && "the depth of each op folds into the region hash");
-    crucible::test::pass("  test_nesting_hashes_apart: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, !(after.hash() == inside.hash()) && "the depth of each op folds into the region hash");
+    ::fixy::check::pass(kTest, "  test_nesting_hashes_apart: PASSED\n");
 }
 
 }  // namespace
@@ -102,6 +113,6 @@ int main() {
     test_swapped_wiring_hashes_apart();
     test_output_metadata_hashes_apart();
     test_nesting_hashes_apart();
-    crucible::test::pass("test_region_hash_wiring: ALL PASSED\n");
+    ::fixy::check::pass(kTest, "test_region_hash_wiring: ALL PASSED\n");
     return 0;
 }

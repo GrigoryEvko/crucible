@@ -15,11 +15,18 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
+#include <fixy/check/Check.h>
 #include <array>
 #include <cstdio>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -79,19 +86,19 @@ template <class Found>
     {
         NumericalRecipe r_pairwise{};
         r_pairwise.reduction_algo = ReductionAlgo::PAIRWISE;
-        assert(recipe_family_of(r_pairwise) == RecipeFamily::Pairwise);
+        CRUCIBLE_TEST_ASSERT(kTest, recipe_family_of(r_pairwise) == RecipeFamily::Pairwise);
 
         NumericalRecipe r_linear{};
         r_linear.reduction_algo = ReductionAlgo::LINEAR;
-        assert(recipe_family_of(r_linear) == RecipeFamily::Linear);
+        CRUCIBLE_TEST_ASSERT(kTest, recipe_family_of(r_linear) == RecipeFamily::Linear);
 
         NumericalRecipe r_kahan{};
         r_kahan.reduction_algo = ReductionAlgo::KAHAN;
-        assert(recipe_family_of(r_kahan) == RecipeFamily::Kahan);
+        CRUCIBLE_TEST_ASSERT(kTest, recipe_family_of(r_kahan) == RecipeFamily::Kahan);
 
         NumericalRecipe r_block{};
         r_block.reduction_algo = ReductionAlgo::BLOCK_STABLE;
-        assert(recipe_family_of(r_block) == RecipeFamily::BlockStable);
+        CRUCIBLE_TEST_ASSERT(kTest, recipe_family_of(r_block) == RecipeFamily::BlockStable);
 
         static_assert(noexcept(recipe_family_of(std::declval<const NumericalRecipe&>())));
     }
@@ -104,10 +111,10 @@ template <class Found>
         auto found = reg.by_name_spec(kPure, names::kF32Strict);
         static_assert(std::is_same_v<decltype(found), ::fixy::Result<RecipeSpec<RecipeRef>, RecipeError>>);
         auto const spec = hit(std::move(found));
-        assert(spec.peek()->determinism == ReductionDeterminism::BITEXACT_STRICT);
-        assert(spec.peek()->reduction_algo == ReductionAlgo::PAIRWISE);
-        assert(::fixy::tolerance_of(spec) == Tolerance::BITEXACT);
-        assert(::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
+        CRUCIBLE_TEST_ASSERT(kTest, spec.peek()->determinism == ReductionDeterminism::BITEXACT_STRICT);
+        CRUCIBLE_TEST_ASSERT(kTest, spec.peek()->reduction_algo == ReductionAlgo::PAIRWISE);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::tolerance_of(spec) == Tolerance::BITEXACT);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
     }
 
     // The lookup pairs the recipe with its two axes and transforms neither, so
@@ -115,15 +122,15 @@ template <class Found>
     {
         for (const auto& entry : entries_view(reg)) {
             auto const spec = hit(reg.by_name_spec(kPure, entry.name));
-            assert(::fixy::same_object(spec.peek(), entry.recipe));
-            assert(::fixy::tolerance_of(spec) == tolerance_of(*entry.recipe));
-            assert(::fixy::recipe_family_of(spec) == recipe_family_of(*entry.recipe));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(spec.peek(), entry.recipe));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::tolerance_of(spec) == tolerance_of(*entry.recipe));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::recipe_family_of(spec) == recipe_family_of(*entry.recipe));
         }
     }
 
     // The spec is an additive overlay on the plain lookup, so an unknown key
     // surfaces the lookup error before either axis is examined.
-    { assert(miss(reg.by_name_spec(kPure, "nonexistent_recipe")) == RecipeError::NameNotFound); }
+    { CRUCIBLE_TEST_ASSERT(kTest, miss(reg.by_name_spec(kPure, "nonexistent_recipe")) == RecipeError::NameNotFound); }
 
     // FP16 tensor-core fragments give different bits on different vendors, so
     // this recipe is UNORDERED and lands at the bottom of the lattice.
@@ -131,14 +138,14 @@ template <class Found>
         const RecipeHash hash = hit(reg.by_name(kPure, names::kF16F32AccumTc))->hash;
 
         auto const spec = hit(reg.by_hash_spec(kPure, hash));
-        assert(spec.peek()->hash == hash);
-        assert(::fixy::tolerance_of(spec) == Tolerance::RELAXED);
-        assert(::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
+        CRUCIBLE_TEST_ASSERT(kTest, spec.peek()->hash == hash);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::tolerance_of(spec) == Tolerance::RELAXED);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
     }
 
     {
         const RecipeHash bogus{0xFEEDFACEDEADBEEFULL};
-        assert(miss(reg.by_hash_spec(kPure, bogus)) == RecipeError::HashNotFound);
+        CRUCIBLE_TEST_ASSERT(kTest, miss(reg.by_hash_spec(kPure, bogus)) == RecipeError::HashNotFound);
     }
 
     // A recovery path resolves by hash while a live registry resolves by name.
@@ -148,10 +155,10 @@ template <class Found>
         for (const auto& entry : entries_view(reg)) {
             auto const by_n = hit(reg.by_name_spec(kPure, entry.name));
             auto const by_h = hit(reg.by_hash_spec(kPure, entry.recipe->hash));
-            assert(::fixy::same_object(by_n.peek(), by_h.peek()));
-            assert(::fixy::tolerance_of(by_n) == ::fixy::tolerance_of(by_h));
-            assert(::fixy::recipe_family_of(by_n) == ::fixy::recipe_family_of(by_h));
-            assert(same_spec(by_n, by_h));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(by_n.peek(), by_h.peek()));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::tolerance_of(by_n) == ::fixy::tolerance_of(by_h));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::recipe_family_of(by_n) == ::fixy::recipe_family_of(by_h));
+            CRUCIBLE_TEST_ASSERT(kTest, same_spec(by_n, by_h));
         }
     }
 
@@ -160,37 +167,37 @@ template <class Found>
         auto spec = hit(reg.by_name_spec(kPure, names::kF32Strict));
 
         // Exact match on both axes.
-        assert(::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Pairwise));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Pairwise));
 
         // A weaker tolerance request: ULP_FP8 sits below BITEXACT on the chain.
-        assert(::fixy::admits(spec, Tolerance::ULP_FP8, RecipeFamily::Pairwise));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(spec, Tolerance::ULP_FP8, RecipeFamily::Pairwise));
 
         // None is the family bottom, so a consumer that pins no family is
         // admitted by any producer.
-        assert(::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::None));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::None));
     }
 
     // The named families are siblings, incomparable in the partial order, so
     // agreeing on tolerance is not enough to be admitted.
     {
         auto spec = hit(reg.by_name_spec(kPure, names::kF32Strict));
-        assert(::fixy::tolerance_of(spec) == Tolerance::BITEXACT);
-        assert(::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::tolerance_of(spec) == Tolerance::BITEXACT);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
 
-        assert(!::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Kahan));
-        assert(!::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::BlockStable));
-        assert(!::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Linear));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Kahan));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::BlockStable));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Linear));
     }
 
     // The mirror case: a relaxed producer sits below a bit-exact request on the
     // tolerance chain, so agreeing on family is not enough either.
     {
         auto spec = hit(reg.by_name_spec(kPure, names::kF32Ordered));
-        assert(::fixy::tolerance_of(spec) == Tolerance::RELAXED);
-        assert(::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::tolerance_of(spec) == Tolerance::RELAXED);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
 
-        assert(!::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Pairwise));
-        assert(!::fixy::admits(spec, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Pairwise));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(spec, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
     }
 
     {
@@ -198,17 +205,17 @@ template <class Found>
         // synthesized. This one sits at the family bottom.
         RecipeSpec<const NumericalRecipe*> bottom_spec =
             ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::RELAXED, RecipeFamily::None);
-        assert(::fixy::admits(bottom_spec, Tolerance::RELAXED, RecipeFamily::None));
-        assert(!::fixy::admits(bottom_spec, Tolerance::RELAXED, RecipeFamily::Pairwise));
-        assert(!::fixy::admits(bottom_spec, Tolerance::ULP_FP16, RecipeFamily::None));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(bottom_spec, Tolerance::RELAXED, RecipeFamily::None));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(bottom_spec, Tolerance::RELAXED, RecipeFamily::Pairwise));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(bottom_spec, Tolerance::ULP_FP16, RecipeFamily::None));
 
         // And this one at the family top.
         RecipeSpec<const NumericalRecipe*> top_spec =
             ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, RecipeFamily::Any);
-        assert(::fixy::admits(top_spec, Tolerance::BITEXACT, RecipeFamily::Pairwise));
-        assert(::fixy::admits(top_spec, Tolerance::BITEXACT, RecipeFamily::Kahan));
-        assert(::fixy::admits(top_spec, Tolerance::BITEXACT, RecipeFamily::BlockStable));
-        assert(::fixy::admits(top_spec, Tolerance::ULP_FP8, RecipeFamily::Linear));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(top_spec, Tolerance::BITEXACT, RecipeFamily::Pairwise));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(top_spec, Tolerance::BITEXACT, RecipeFamily::Kahan));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(top_spec, Tolerance::BITEXACT, RecipeFamily::BlockStable));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(top_spec, Tolerance::ULP_FP8, RecipeFamily::Linear));
     }
 
     // The join is idempotent on both axes.
@@ -216,8 +223,8 @@ template <class Found>
         auto a = hit(reg.by_name_spec(kPure, names::kF32Strict));
         auto b = hit(reg.by_name_spec(kPure, names::kF32Strict));
         auto c = a.compose(b);
-        assert(::fixy::tolerance_of(c) == Tolerance::BITEXACT);
-        assert(::fixy::recipe_family_of(c) == RecipeFamily::Pairwise);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::tolerance_of(c) == Tolerance::BITEXACT);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::recipe_family_of(c) == RecipeFamily::Pairwise);
     }
 
     // The composition of two specs claims what both claim: the looser tier,
@@ -231,10 +238,10 @@ template <class Found>
             ::fixy::mint_recipe_spec(a.peek(), Tolerance::ULP_FP16, RecipeFamily::Kahan);
 
         auto composed = a.compose(synth_kahan);
-        assert(::fixy::tolerance_of(composed) == Tolerance::ULP_FP16);
-        assert(::fixy::recipe_family_of(composed) == RecipeFamily::None);
-        assert(!::fixy::admits(composed, Tolerance::BITEXACT, RecipeFamily::None));
-        assert(!::fixy::admits(composed, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::tolerance_of(composed) == Tolerance::ULP_FP16);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::recipe_family_of(composed) == RecipeFamily::None);
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(composed, Tolerance::BITEXACT, RecipeFamily::None));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(composed, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
     }
 
     // Both axes are runtime data, so neither can collapse away. One byte per
@@ -251,10 +258,10 @@ template <class Found>
         RecipeRef const expected_ref = hit(reg.by_name(kPure, names::kF32Strict));
 
         auto spec = hit(reg.by_name_spec(kPure, names::kF32Strict));
-        assert(::fixy::same_object(spec.peek(), expected_ref));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(spec.peek(), expected_ref));
 
         RecipeRef const moved = std::move(spec).consume();
-        assert(::fixy::same_object(moved, expected_ref));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(moved, expected_ref));
     }
 
     // Two specs are the same when the pointer and both axes agree. Repeated
@@ -264,13 +271,13 @@ template <class Found>
         auto s1 = hit(reg.by_name_spec(kPure, names::kBf16F32AccumTc));
         auto s2 = hit(reg.by_name_spec(kPure, names::kBf16F32AccumTc));
         auto s3 = hit(reg.by_hash_spec(kPure, s1.peek()->hash));
-        assert(same_spec(s1, s2));
-        assert(same_spec(s1, s3));
+        CRUCIBLE_TEST_ASSERT(kTest, same_spec(s1, s2));
+        CRUCIBLE_TEST_ASSERT(kTest, same_spec(s1, s3));
 
         // A different recipe must compare unequal, or the comparison would be
         // vacuous.
         auto s4 = hit(reg.by_name_spec(kPure, names::kF32Strict));
-        assert(!same_spec(s1, s4));
+        CRUCIBLE_TEST_ASSERT(kTest, !same_spec(s1, s4));
     }
 
     // Every cell of the grid is checked against the pointwise ordering on each
@@ -298,12 +305,12 @@ template <class Found>
                     const bool tier_ok = ToleranceLattice::leq(req_tier, spec_tier);
                     const bool fam_ok = RecipeFamilyLattice::leq(req_fam, spec_fam);
                     const bool expected = tier_ok && fam_ok;
-                    assert(::fixy::admits(spec, req_tier, req_fam) == expected);
+                    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(spec, req_tier, req_fam) == expected);
                     ++total_decisions;
                 }
             }
         }
-        assert(total_decisions == 8 * 7 * 4);
+        CRUCIBLE_TEST_ASSERT(kTest, total_decisions == 8 * 7 * 4);
     }
 
     // Every unordered pair of distinct named families, taken in both
@@ -324,12 +331,12 @@ template <class Found>
                     ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, kFamilies[i]);
                 RecipeSpec<const NumericalRecipe*> spec_j =
                     ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, kFamilies[j]);
-                assert(!::fixy::admits(spec_i, Tolerance::BITEXACT, kFamilies[j]));
-                assert(!::fixy::admits(spec_j, Tolerance::BITEXACT, kFamilies[i]));
+                CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(spec_i, Tolerance::BITEXACT, kFamilies[j]));
+                CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(spec_j, Tolerance::BITEXACT, kFamilies[i]));
                 rejection_count += 2;
             }
         }
-        assert(rejection_count == 12);
+        CRUCIBLE_TEST_ASSERT(kTest, rejection_count == 12);
     }
 
     // Every sibling pair composes to a spec that names no family, and the
@@ -350,12 +357,12 @@ template <class Found>
                 RecipeSpec<RecipeRef> spec_i = ::fixy::mint_recipe_spec(base_recipe, Tolerance::ULP_FP16, kFamilies[i]);
                 RecipeSpec<RecipeRef> spec_j = ::fixy::mint_recipe_spec(base_recipe, Tolerance::ULP_FP16, kFamilies[j]);
                 auto composed = spec_i.compose(spec_j);
-                assert(::fixy::tolerance_of(composed) == Tolerance::ULP_FP16);
-                assert(::fixy::recipe_family_of(composed) == RecipeFamily::None);
+                CRUCIBLE_TEST_ASSERT(kTest, ::fixy::tolerance_of(composed) == Tolerance::ULP_FP16);
+                CRUCIBLE_TEST_ASSERT(kTest, ::fixy::recipe_family_of(composed) == RecipeFamily::None);
                 ++join_count;
             }
         }
-        assert(join_count == 6);  // one per unordered pair of four families
+        CRUCIBLE_TEST_ASSERT(kTest, join_count == 6);  // one per unordered pair of four families
     }
 
     // The two caps of the family axis: the wildcard admits every named family,
@@ -371,16 +378,16 @@ template <class Found>
         RecipeSpec<const NumericalRecipe*> any_spec =
             ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, RecipeFamily::Any);
         for (auto fam : kFamilies) {
-            assert(::fixy::admits(any_spec, Tolerance::BITEXACT, fam));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(any_spec, Tolerance::BITEXACT, fam));
         }
-        assert(::fixy::admits(any_spec, Tolerance::BITEXACT, RecipeFamily::None));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(any_spec, Tolerance::BITEXACT, RecipeFamily::None));
 
         RecipeSpec<const NumericalRecipe*> none_spec =
             ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, RecipeFamily::None);
         for (auto fam : kFamilies) {
-            assert(!::fixy::admits(none_spec, Tolerance::BITEXACT, fam));
+            CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(none_spec, Tolerance::BITEXACT, fam));
         }
-        assert(::fixy::admits(none_spec, Tolerance::BITEXACT, RecipeFamily::None));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(none_spec, Tolerance::BITEXACT, RecipeFamily::None));
     }
 
     // A spec recovered from nothing but a persisted hash must admit exactly
@@ -410,12 +417,12 @@ template <class Found>
             auto const live_spec = hit(reg.by_name_spec(kPure, entry.name));
             auto const recovered = hit(reg2.by_hash_spec(kPure, persisted));
 
-            assert(::fixy::tolerance_of(live_spec) == ::fixy::tolerance_of(recovered));
-            assert(::fixy::recipe_family_of(live_spec) == ::fixy::recipe_family_of(recovered));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::tolerance_of(live_spec) == ::fixy::tolerance_of(recovered));
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::recipe_family_of(live_spec) == ::fixy::recipe_family_of(recovered));
 
             for (auto t : kTiers) {
                 for (auto f : kFamilies) {
-                    assert(::fixy::admits(live_spec, t, f) == ::fixy::admits(recovered, t, f));
+                    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(live_spec, t, f) == ::fixy::admits(recovered, t, f));
                 }
             }
         }
@@ -444,13 +451,13 @@ template <class Found>
         // The composition keeps the looser tier and the shared family, and it
         // keeps the left carrier.
         auto composed = std::move(a).compose(b);
-        assert(::fixy::tolerance_of(composed) == Tolerance::ULP_FP16);
-        assert(::fixy::recipe_family_of(composed) == RecipeFamily::Kahan);
-        assert(composed.peek().v == 42);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::tolerance_of(composed) == Tolerance::ULP_FP16);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::recipe_family_of(composed) == RecipeFamily::Kahan);
+        CRUCIBLE_TEST_ASSERT(kTest, composed.peek().v == 42);
 
-        assert(::fixy::admits(composed, Tolerance::ULP_FP8, RecipeFamily::Kahan));
-        assert(!::fixy::admits(composed, Tolerance::BITEXACT, RecipeFamily::Kahan));
-        assert(!::fixy::admits(composed, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(composed, Tolerance::ULP_FP8, RecipeFamily::Kahan));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(composed, Tolerance::BITEXACT, RecipeFamily::Kahan));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(composed, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
     }
 
     // The sentinels on the request side, rather than on the spec side. A None
@@ -459,10 +466,10 @@ template <class Found>
     // nothing but itself, so only a wildcard spec admits it.
     {
         auto strict_spec = hit(reg.by_name_spec(kPure, names::kF32Strict));
-        assert(::fixy::recipe_family_of(strict_spec) == RecipeFamily::Pairwise);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::recipe_family_of(strict_spec) == RecipeFamily::Pairwise);
 
-        assert(::fixy::admits(strict_spec, Tolerance::BITEXACT, RecipeFamily::None));
-        assert(!::fixy::admits(strict_spec, Tolerance::BITEXACT, RecipeFamily::Any));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(strict_spec, Tolerance::BITEXACT, RecipeFamily::None));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(strict_spec, Tolerance::BITEXACT, RecipeFamily::Any));
 
         int none_admits = 0;
         int any_rejects = 0;
@@ -473,21 +480,21 @@ template <class Found>
             if (::fixy::admits(spec, ::fixy::tolerance_of(spec), RecipeFamily::None)) ++none_admits;
             if (!::fixy::admits(spec, ::fixy::tolerance_of(spec), RecipeFamily::Any)) ++any_rejects;
         }
-        assert(none_admits == int{RecipeRegistry::STARTER_COUNT});
-        assert(any_rejects == int{RecipeRegistry::STARTER_COUNT});
+        CRUCIBLE_TEST_ASSERT(kTest, none_admits == int{RecipeRegistry::STARTER_COUNT});
+        CRUCIBLE_TEST_ASSERT(kTest, any_rejects == int{RecipeRegistry::STARTER_COUNT});
 
         // A wildcard spec admits both sentinel requests.
         RecipeSpec<const NumericalRecipe*> wildcard_spec =
             ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, RecipeFamily::Any);
-        assert(::fixy::admits(wildcard_spec, Tolerance::BITEXACT, RecipeFamily::None));
-        assert(::fixy::admits(wildcard_spec, Tolerance::BITEXACT, RecipeFamily::Any));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(wildcard_spec, Tolerance::BITEXACT, RecipeFamily::None));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(wildcard_spec, Tolerance::BITEXACT, RecipeFamily::Any));
 
         // A bottom spec admits only the bottom request. An Any request is above
         // it, and the ordering runs from request to spec, so it is rejected.
         RecipeSpec<const NumericalRecipe*> none_spec =
             ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, RecipeFamily::None);
-        assert(::fixy::admits(none_spec, Tolerance::BITEXACT, RecipeFamily::None));
-        assert(!::fixy::admits(none_spec, Tolerance::BITEXACT, RecipeFamily::Any));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::admits(none_spec, Tolerance::BITEXACT, RecipeFamily::None));
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(none_spec, Tolerance::BITEXACT, RecipeFamily::Any));
     }
 
     std::puts("ok");

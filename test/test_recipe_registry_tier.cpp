@@ -11,10 +11,17 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
+#include <fixy/check/Check.h>
 #include <cstdio>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -86,27 +93,27 @@ template <class Found>
         NumericalRecipe r_strict{};
         r_strict.determinism = ReductionDeterminism::BITEXACT_STRICT;
         r_strict.out_dtype = ScalarType::Float;
-        assert(tolerance_of(r_strict) == Tolerance::BITEXACT);
+        CRUCIBLE_TEST_ASSERT(kTest, tolerance_of(r_strict) == Tolerance::BITEXACT);
 
         NumericalRecipe r_tc_fp16{};
         r_tc_fp16.determinism = ReductionDeterminism::BITEXACT_TC;
         r_tc_fp16.out_dtype = ScalarType::Half;
-        assert(tolerance_of(r_tc_fp16) == Tolerance::ULP_FP16);
+        CRUCIBLE_TEST_ASSERT(kTest, tolerance_of(r_tc_fp16) == Tolerance::ULP_FP16);
 
         NumericalRecipe r_tc_bf16{};
         r_tc_bf16.determinism = ReductionDeterminism::BITEXACT_TC;
         r_tc_bf16.out_dtype = ScalarType::BFloat16;
-        assert(tolerance_of(r_tc_bf16) == Tolerance::ULP_FP16);
+        CRUCIBLE_TEST_ASSERT(kTest, tolerance_of(r_tc_bf16) == Tolerance::ULP_FP16);
 
         NumericalRecipe r_ordered{};
         r_ordered.determinism = ReductionDeterminism::ORDERED;
         r_ordered.out_dtype = ScalarType::Float;
-        assert(tolerance_of(r_ordered) == Tolerance::RELAXED);
+        CRUCIBLE_TEST_ASSERT(kTest, tolerance_of(r_ordered) == Tolerance::RELAXED);
 
         NumericalRecipe r_unordered{};
         r_unordered.determinism = ReductionDeterminism::UNORDERED;
         r_unordered.out_dtype = ScalarType::Float;
-        assert(tolerance_of(r_unordered) == Tolerance::RELAXED);
+        CRUCIBLE_TEST_ASSERT(kTest, tolerance_of(r_unordered) == Tolerance::RELAXED);
     }
 
     BumpArena arena{};
@@ -117,13 +124,13 @@ template <class Found>
         auto pinned = reg.by_name_pinned<Tolerance::BITEXACT>(kPure, names::kF32Strict);
         static_assert(std::is_same_v<decltype(pinned), PinnedLookup<Tolerance::BITEXACT>>);
         auto const tier = hit(std::move(pinned));
-        assert(tier.peek()->determinism == ReductionDeterminism::BITEXACT_STRICT);
+        CRUCIBLE_TEST_ASSERT(kTest, tier.peek()->determinism == ReductionDeterminism::BITEXACT_STRICT);
     }
 
     // A recipe admits at any pin weaker than its own class.
     {
         auto pinned = reg.by_name_pinned<Tolerance::RELAXED>(kPure, names::kF32Strict);
-        assert(pinned.is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, pinned.is_ok());
         static_assert(std::is_same_v<decltype(pinned), PinnedLookup<Tolerance::RELAXED>>);
     }
 
@@ -131,8 +138,8 @@ template <class Found>
     // recipe, several ULP wide, reaching a consumer that was written
     // against bit-exact results.
     {
-        assert(miss(reg.by_name_pinned<Tolerance::BITEXACT>(kPure, names::kF32Ordered))
-               == RecipeError::ToleranceMismatch);
+        CRUCIBLE_TEST_ASSERT(kTest, miss(reg.by_name_pinned<Tolerance::BITEXACT>(kPure, names::kF32Ordered))
+                                        == RecipeError::ToleranceMismatch);
     }
 
     // The name is the primary key and the tolerance is a second gate
@@ -140,14 +147,16 @@ template <class Found>
     // pin strength.  Pinning only adds a gate, it never changes what
     // the unpinned lookup would have reported.
     {
-        assert(miss(reg.by_name_pinned<Tolerance::RELAXED>(kPure, "nonexistent_recipe")) == RecipeError::NameNotFound);
-        assert(miss(reg.by_name_pinned<Tolerance::BITEXACT>(kPure, "does_not_exist")) == RecipeError::NameNotFound);
+        CRUCIBLE_TEST_ASSERT(kTest, miss(reg.by_name_pinned<Tolerance::RELAXED>(kPure, "nonexistent_recipe"))
+                                        == RecipeError::NameNotFound);
+        CRUCIBLE_TEST_ASSERT(kTest, miss(reg.by_name_pinned<Tolerance::BITEXACT>(kPure, "does_not_exist"))
+                                        == RecipeError::NameNotFound);
     }
 
     {
         const RecipeHash hash = hit(reg.by_name(kPure, names::kF32Strict))->hash;
         auto const tier = hit(reg.by_hash_pinned<Tolerance::BITEXACT>(kPure, hash));
-        assert(tier.peek()->hash == hash);
+        CRUCIBLE_TEST_ASSERT(kTest, tier.peek()->hash == hash);
     }
 
     // This recipe is ordered, so its class is the weakest one, not the
@@ -155,14 +164,16 @@ template <class Found>
     // pin is therefore up the lattice and rejects.
     {
         const RecipeHash hash = hit(reg.by_name(kPure, names::kF16F32AccumOrdered))->hash;
-        assert(miss(reg.by_hash_pinned<Tolerance::ULP_FP16>(kPure, hash)) == RecipeError::ToleranceMismatch);
+        CRUCIBLE_TEST_ASSERT(kTest, miss(reg.by_hash_pinned<Tolerance::ULP_FP16>(kPure, hash))
+                                        == RecipeError::ToleranceMismatch);
     }
 
     // A hash no recipe carries reports as a missing hash, never as a
     // tolerance mismatch: there is no recipe to compare a class against.
     {
         const RecipeHash bogus{0xDEADBEEFCAFEBABEULL};
-        assert(miss(reg.by_hash_pinned<Tolerance::RELAXED>(kPure, bogus)) == RecipeError::HashNotFound);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             miss(reg.by_hash_pinned<Tolerance::RELAXED>(kPure, bogus)) == RecipeError::HashNotFound);
     }
 
     {
@@ -170,13 +181,13 @@ template <class Found>
             // RELAXED is the bottom of the lattice, so every recipe
             // satisfies it.
             auto relaxed_pin = reg.by_name_pinned<Tolerance::RELAXED>(kPure, entry.name);
-            assert(relaxed_pin.is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, relaxed_pin.is_ok());
 
             // BITEXACT is the top, so only a strictly bit-exact recipe
             // satisfies it.
             auto bitexact_pin = reg.by_name_pinned<Tolerance::BITEXACT>(kPure, entry.name);
             const bool is_strict = entry.recipe->determinism == ReductionDeterminism::BITEXACT_STRICT;
-            assert(bitexact_pin.is_ok() == is_strict);
+            CRUCIBLE_TEST_ASSERT(kTest, bitexact_pin.is_ok() == is_strict);
         }
     }
 
@@ -186,7 +197,7 @@ template <class Found>
             auto pinned = reg.by_name_pinned<Tolerance::RELAXED>(kPure, entry.name);
             if (pinned.is_ok()) ++admits;
         }
-        assert(admits == int{RecipeRegistry::STARTER_COUNT});
+        CRUCIBLE_TEST_ASSERT(kTest, admits == int{RecipeRegistry::STARTER_COUNT});
     }
 
     // Exactly one starter recipe is strictly bit-exact, which is where
@@ -197,7 +208,7 @@ template <class Found>
             auto pinned = reg.by_name_pinned<Tolerance::BITEXACT>(kPure, entry.name);
             if (pinned.is_ok()) ++strict_admits;
         }
-        assert(strict_admits == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, strict_admits == 1);
     }
 
     {
@@ -213,10 +224,10 @@ template <class Found>
         RecipeRef const expected_ref = hit(reg.by_name(kPure, names::kF32Strict));
 
         auto pinned = hit(reg.by_name_pinned<Tolerance::BITEXACT>(kPure, names::kF32Strict));
-        assert(::fixy::same_object(pinned.peek(), expected_ref));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(pinned.peek(), expected_ref));
 
         RecipeRef const moved = std::move(pinned).consume();
-        assert(::fixy::same_object(moved, expected_ref));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(moved, expected_ref));
     }
 
     // The runtime rejection above has a compile-time counterpart: a
@@ -252,7 +263,7 @@ template <class Found>
         static_assert(std::is_same_v<decltype(relaxed), NumericalTier<Tolerance::RELAXED, int>>);
 
         int v = std::move(relaxed).consume();
-        assert(v == 42);
+        CRUCIBLE_TEST_ASSERT(kTest, v == 42);
     }
 
     // The band traits must report the tier that the grade of the type
@@ -293,8 +304,8 @@ template <class Found>
         static_assert(std::is_same_v<decltype(by_name_pin), decltype(by_hash_pin)>);
         auto const name_tier = hit(std::move(by_name_pin));
         auto const hash_tier = hit(std::move(by_hash_pin));
-        assert(::fixy::same_object(name_tier.peek(), hash_tier.peek()));
-        assert(::fixy::same_object(name_tier.peek(), base));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(name_tier.peek(), hash_tier.peek()));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(name_tier.peek(), base));
     }
 
     {
@@ -387,7 +398,7 @@ template <class Found>
         auto relaxed = ::fixy::relax<Tolerance::RELAXED>(std::move(src));
         static_assert(std::is_same_v<decltype(relaxed), NumericalTier<Tolerance::RELAXED, MoveOnlyT>>);
         MoveOnlyT v = std::move(relaxed).consume();
-        assert(v.v == 77);
+        CRUCIBLE_TEST_ASSERT(kTest, v.v == 77);
     }
 
     // The pool interns recipes, so the same name always resolves to the
@@ -396,18 +407,18 @@ template <class Found>
     {
         auto const pin1 = hit(reg.by_name_pinned<Tolerance::BITEXACT>(kPure, names::kF32Strict));
         auto const pin2 = hit(reg.by_name_pinned<Tolerance::BITEXACT>(kPure, names::kF32Strict));
-        assert(::fixy::same_object(pin1.peek(), pin2.peek()));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(pin1.peek(), pin2.peek()));
 
         auto const pin3 = hit(reg.by_name_pinned<Tolerance::ULP_FP32>(kPure, names::kF32Strict));
-        assert(::fixy::same_object(pin3.peek(), pin1.peek()));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(pin3.peek(), pin1.peek()));
         static_assert(!std::is_same_v<decltype(pin1), decltype(pin3)>);
 
         // The rejecting path is stateless too, so a repeat rejects again
         // rather than returning a wrapper left over from an earlier call.
-        assert(miss(reg.by_name_pinned<Tolerance::BITEXACT>(kPure, names::kF32Ordered))
-               == RecipeError::ToleranceMismatch);
-        assert(miss(reg.by_name_pinned<Tolerance::BITEXACT>(kPure, names::kF32Ordered))
-               == RecipeError::ToleranceMismatch);
+        CRUCIBLE_TEST_ASSERT(kTest, miss(reg.by_name_pinned<Tolerance::BITEXACT>(kPure, names::kF32Ordered))
+                                        == RecipeError::ToleranceMismatch);
+        CRUCIBLE_TEST_ASSERT(kTest, miss(reg.by_name_pinned<Tolerance::BITEXACT>(kPure, names::kF32Ordered))
+                                        == RecipeError::ToleranceMismatch);
     }
 
     std::puts("ok");

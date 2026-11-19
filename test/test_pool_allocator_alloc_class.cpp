@@ -7,13 +7,23 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/warden/Registry.h>
 #include <fixy/Bands.h>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <bit>
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::PoolAllocator;
 using crucible::MemoryPlan;
@@ -73,8 +83,8 @@ static void test_slot_ptr_pinned_bit_equality() {
     auto pinned_1 = pool.slot_ptr_pinned(SlotId{1}, pv);
 
     // The wrapper preserves the underlying address and its device.
-    assert(std::move(pinned_0).consume() == raw_0);
-    assert(std::move(pinned_1).consume() == raw_1);
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(pinned_0).consume() == raw_0);
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(pinned_1).consume() == raw_1);
 
     pool.destroy();
 }
@@ -165,12 +175,12 @@ static void test_pool_base_pinned_small_pool() {
     static_assert(std::is_same_v<decltype(pinned), PoolAllocator::PinnedAddress>);
 
     const ::fixy::Option<::fixy::RunAddress> raw = pool.pool_base();
-    assert(std::move(pinned).consume() == raw);
-    assert(raw.is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(pinned).consume() == raw);
+    CRUCIBLE_TEST_ASSERT(kTest, raw.is_some());
 
     // The pool base is aligned at least to the allocator's own
     // granularity, whatever the pool size.
-    assert(pool.pool_base().expect("the pool holds bytes").is_aligned<PoolAllocator::ALIGNMENT>());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.pool_base().expect("the pool holds bytes").is_aligned<PoolAllocator::ALIGNMENT>());
 
     pool.destroy();
 }
@@ -192,9 +202,9 @@ static void test_pool_base_huge_pinned() {
 
     const ::fixy::Option<::fixy::RunAddress> raw = pool.pool_base();
     const ::fixy::Option<::fixy::RunAddress> wrapped = std::move(pinned).consume();
-    assert(wrapped == raw);
-    assert(raw.is_some());
-    assert(pool.pool_base().expect("the pool holds bytes").is_aligned<HP>());
+    CRUCIBLE_TEST_ASSERT(kTest, wrapped == raw);
+    CRUCIBLE_TEST_ASSERT(kTest, raw.is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.pool_base().expect("the pool holds bytes").is_aligned<HP>());
 
     pool.destroy();
 }
@@ -251,7 +261,7 @@ static void test_e2e_fence_checked_consumer() {
 
     auto slot_pinned = pool.slot_ptr_pinned(SlotId{0}, pv);
     const ::fixy::Option<::fixy::RunAddress> data = pool_consumer(std::move(slot_pinned));
-    assert(data.is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, data.is_some());
 
     pool.destroy();
 }
@@ -276,8 +286,8 @@ static void test_pool_base_pinned_with_huge_alignment() {
 
     const ::fixy::Option<::fixy::RunAddress> p1 = std::move(pool_pinned).consume();
     const ::fixy::Option<::fixy::RunAddress> p2 = std::move(huge_pinned).consume();
-    assert(p1 == p2);
-    assert(pool.pool_base().expect("the pool holds bytes").is_aligned<HP>());
+    CRUCIBLE_TEST_ASSERT(kTest, p1 == p2);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.pool_base().expect("the pool holds bytes").is_aligned<HP>());
 
     pool.destroy();
 }

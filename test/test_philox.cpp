@@ -2,11 +2,20 @@
 #include <fixy/Core.h>
 
 #include <array>
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <random>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -28,13 +37,13 @@ static void test_reference_vectors() {
     {
         auto r = Philox4x32::generate({0, 0, 0, 0}, {0, 0});
         Counter const expected{0x6627E8D5, 0xE169C58D, 0xBC57AC4C, 0x9B00DBD8};
-        assert(r == expected);
+        CRUCIBLE_TEST_ASSERT(kTest, r == expected);
     }
 
     {
         auto r = Philox4x32::generate({0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}, {0xFFFFFFFF, 0xFFFFFFFF});
         Counter const expected{0x408F276D, 0x41C83B0E, 0xA20BC7C6, 0x6D5451FD};
-        assert(r == expected);
+        CRUCIBLE_TEST_ASSERT(kTest, r == expected);
     }
 
     // This input has no published vector, so the only claims available
@@ -42,9 +51,9 @@ static void test_reference_vectors() {
     {
         auto r = Philox4x32::generate({243, 0, 0, 0}, {17, 0});
         auto r2 = Philox4x32::generate({243, 0, 0, 0}, {17, 0});
-        assert(r == r2);
+        CRUCIBLE_TEST_ASSERT(kTest, r == r2);
         Counter const zero{};
-        assert(r != zero);
+        CRUCIBLE_TEST_ASSERT(kTest, r != zero);
     }
 }
 
@@ -54,18 +63,18 @@ static void test_determinism() {
     for (uint64_t offset = 0; offset < 1000; offset++) {
         auto a = Philox4x32::generate(offset, 0xDEADBEEF);
         auto b = Philox4x32::generate(offset, 0xDEADBEEF);
-        assert(a == b);
+        CRUCIBLE_TEST_ASSERT(kTest, a == b);
     }
 
     // Two distinct inputs could in principle collide on all four words.
     // The probability is small enough to assert against.
     auto a = Philox4x32::generate(0ULL, 42ULL);
     auto b = Philox4x32::generate(1ULL, 42ULL);
-    assert(a != b);
+    CRUCIBLE_TEST_ASSERT(kTest, a != b);
 
     auto c = Philox4x32::generate(0ULL, 1ULL);
     auto d = Philox4x32::generate(0ULL, 2ULL);
-    assert(c != d);
+    CRUCIBLE_TEST_ASSERT(kTest, c != d);
 }
 
 static void test_uniform() {
@@ -78,7 +87,7 @@ static void test_uniform() {
     for (int i = 0; i < N; i++) {
         auto r = Philox4x32::generate(static_cast<uint64_t>(i), 0x12345678ULL);
         float u = Philox::to_uniform(r.at(::fixy::index<0>()));
-        assert(u >= 0.0f && u < 1.0f);
+        CRUCIBLE_TEST_ASSERT(kTest, u >= 0.0f && u < 1.0f);
         int bin = static_cast<int>(u * BINS);
         if (bin >= BINS) bin = BINS - 1;
         counts[bin]++;
@@ -96,7 +105,7 @@ static void test_uniform() {
     // failure here means a real distribution defect rather than an
     // unlucky run.
     std::printf("    chi2 = %.1f (99 dof, critical@0.001 = 148.2)\n", chi2);
-    assert(chi2 < 148.2 && "uniform distribution failed chi-squared test");
+    CRUCIBLE_TEST_ASSERT(kTest, chi2 < 148.2 && "uniform distribution failed chi-squared test");
 
     // The histogram above only ever reads the first word, so the other
     // three are range-checked separately.
@@ -104,7 +113,7 @@ static void test_uniform() {
         auto r = Philox4x32::generate(static_cast<uint64_t>(i), 0xABCDEF00ULL);
         for (uint32_t const word : r) {
             float u = Philox::to_uniform(word);
-            assert(u >= 0.0f && u < 1.0f);
+            CRUCIBLE_TEST_ASSERT(kTest, u >= 0.0f && u < 1.0f);
         }
     }
 }
@@ -134,13 +143,13 @@ static void test_normal() {
     // At this sample count the sample mean stays inside about 0.01 of
     // zero and the sample deviation inside about 0.01 of one, so the
     // bound is set at twice that.
-    assert(std::abs(mean) < 0.02 && "normal mean too far from 0");
-    assert(std::abs(stddev - 1.0) < 0.02 && "normal stddev too far from 1");
+    CRUCIBLE_TEST_ASSERT(kTest, std::abs(mean) < 0.02 && "normal mean too far from 0");
+    CRUCIBLE_TEST_ASSERT(kTest, std::abs(stddev - 1.0) < 0.02 && "normal stddev too far from 1");
 
     for (int i = 0; i < 1000; i++) {
         auto r = Philox4x32::generate(static_cast<uint64_t>(i), 0ULL);
         auto [n0, n1] = Philox::box_muller_polynomial_det(r.at(::fixy::index<0>()), r.at(::fixy::index<1>())).peek();
-        assert(std::isfinite(n0) && std::isfinite(n1));
+        CRUCIBLE_TEST_ASSERT(kTest, std::isfinite(n0) && std::isfinite(n1));
     }
 
     // The transform shifts its first input by one before taking a
@@ -152,8 +161,8 @@ static void test_normal() {
     for (uint32_t u1 : {0u, UINT32_MAX}) {
         for (uint32_t u2 : {0u, UINT32_MAX}) {
             auto [c0, c1] = Philox::box_muller_polynomial_det(u1, u2).peek();
-            assert(std::isfinite(c0) && std::isfinite(c1)
-                   && "box_muller boundary corner must be finite (log(0) guard)");
+            CRUCIBLE_TEST_ASSERT(kTest, std::isfinite(c0) && std::isfinite(c1)
+                                            && "box_muller boundary corner must be finite (log(0) guard)");
         }
     }
 }
@@ -169,17 +178,17 @@ static void test_op_keys() {
 
     uint64_t k0 = philox_key(master, 0, hash_a);
     uint64_t k1 = philox_key(master, 1, hash_a);
-    assert(k0 != k1);
+    CRUCIBLE_TEST_ASSERT(kTest, k0 != k1);
 
     uint64_t ka = philox_key(master, 0, hash_a);
     uint64_t kb = philox_key(master, 0, hash_b);
-    assert(ka != kb);
+    CRUCIBLE_TEST_ASSERT(kTest, ka != kb);
 
     uint64_t km0 = philox_key(0, 0, hash_a);
     uint64_t km1 = philox_key(1, 0, hash_a);
-    assert(km0 != km1);
+    CRUCIBLE_TEST_ASSERT(kTest, km0 != km1);
 
-    assert(philox_key(master, 5, hash_a) == philox_key(master, 5, hash_a));
+    CRUCIBLE_TEST_ASSERT(kTest, philox_key(master, 5, hash_a) == philox_key(master, 5, hash_a));
 }
 
 static void test_pipeline() {
@@ -195,7 +204,7 @@ static void test_pipeline() {
             for (uint64_t elem = 0; elem < 1000; elem++) {
                 auto r = Philox4x32::generate(elem, key);
                 auto r2 = Philox4x32::generate(elem, key);
-                assert(r == r2);
+                CRUCIBLE_TEST_ASSERT(kTest, r == r2);
             }
         }
     }
@@ -206,7 +215,7 @@ static void test_pipeline() {
     uint64_t k1 = philox_key(1, 0, content_hashes[0]);
     auto r0 = Philox4x32::generate(42ULL, k0);
     auto r1 = Philox4x32::generate(42ULL, k1);
-    assert(r0 != r1);
+    CRUCIBLE_TEST_ASSERT(kTest, r0 != r1);
 
     std::printf("    2 iters × 3 ops × 1000 elems: all deterministic\n");
 }
@@ -249,14 +258,14 @@ static void test_std_philox_equivalence() {
     {
         auto cru = Philox4x32::generate({0, 0, 0, 0}, {0, 0});
         auto stl = run_std(0, {0, 0, 0, 0});
-        assert(cru == stl && "zero/zero block must match std::philox4x32");
+        CRUCIBLE_TEST_ASSERT(kTest, cru == stl && "zero/zero block must match std::philox4x32");
     }
 
     {
         Counter ctr{0xDEADBEEF, 0x12345678, 0xCAFEBABE, 0x87654321};
         auto cru = Philox4x32::generate(ctr, {0xA5A5A5A5, 0});
         auto stl = run_std(0xA5A5A5A5, ctr);
-        assert(cru == stl && "k1=0 case must be bit-equivalent");
+        CRUCIBLE_TEST_ASSERT(kTest, cru == stl && "k1=0 case must be bit-equivalent");
     }
 
     // The seed is fixed, so a failing trial is reproducible.
@@ -268,7 +277,7 @@ static void test_std_philox_equivalence() {
             uint32_t k0 = static_cast<uint32_t>(rng());
             auto cru = Philox4x32::generate(ctr, {k0, 0});
             auto stl = run_std(k0, ctr);
-            assert(cru == stl && "random (counter, k0, 0) trial must be bit-equivalent");
+            CRUCIBLE_TEST_ASSERT(kTest, cru == stl && "random (counter, k0, 0) trial must be bit-equivalent");
         }
     }
 
@@ -280,11 +289,11 @@ static void test_std_philox_equivalence() {
         Counter ctr{1, 2, 3, 4};
         auto cru = Philox4x32::generate(ctr, {0xAAAA, 0xBBBB});
         auto stl = run_std(0xAAAA, ctr);
-        assert(cru != stl
-               && "a non-zero second key word must NOT match a seed of the "
-                  "first word alone. If this assertion fails, the standard "
-                  "engine has gained a way to set the second key word and "
-                  "the substitution question is worth revisiting.");
+        CRUCIBLE_TEST_ASSERT(kTest, cru != stl
+                                        && "a non-zero second key word must NOT match a seed of the "
+                                           "first word alone. If this assertion fails, the standard "
+                                           "engine has gained a way to set the second key word and "
+                                           "the substitution question is worth revisiting.");
     }
 
     std::printf("    block cipher matches; k1=0 fully equivalent; "
