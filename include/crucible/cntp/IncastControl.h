@@ -19,7 +19,6 @@
 namespace crucible::cntp {
 
 enum class IncastError : std::uint8_t {
-    InvalidSocketFd,
     InvalidCreditBytes,
     InvalidRtoMin,
     InvalidSenderCount,

@@ -36,7 +36,6 @@ enum class Qdisc : std::uint8_t {
 
 enum class PacingError : std::uint8_t {
     InvalidInterfaceName,
-    InvalidSocketFd,
     InvalidPacingRate,
     NetlinkOpenFailed,
     NetlinkSendFailed,

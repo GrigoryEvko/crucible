@@ -32,7 +32,6 @@ enum class CongestionMode : std::uint8_t {
 };
 
 enum class TelemetryError : std::uint8_t {
-    InvalidSocketFd,
     InvalidNicCog,
     GetTcpInfoFailed,
     GetCcInfoFailed,
