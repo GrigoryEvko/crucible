@@ -508,6 +508,16 @@ static_assert(::foundation::transfer::Sendable<View<int const, 4>>);
 static_assert(!::foundation::transfer::Sendable<View<int>> && !::foundation::transfer::Shareable<View<int>>);
 static_assert(::foundation::transfer::Sendable<View<int const> const&>);
 
+// foreign_first gives the address of the first element of a view, and a view
+// of const elements gives a pointer to const.
+consteval bool gives_the_first_address() {
+    FixedArray<int, 3> values{};
+    View<int const, 3> const read = static_cast<FixedArray<int, 3> const&>(values).view();
+    return foreign_first(values.view()) == &values.view().at(index<0>()) && foreign_first(read) == &read.at(index<0>());
+}
+static_assert(gives_the_first_address());
+static_assert(std::is_same_v<decltype(foreign_first(std::declval<View<int const>>())), int const*>);
+
 }  // namespace detail::region_checks
 
 }  // namespace foundation::core

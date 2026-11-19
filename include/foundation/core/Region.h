@@ -82,9 +82,13 @@
 //                       characters
 //   foreign_c_str(text)   the address of the first character of a CText,
 //                       for a foreign reader that reads up to the zero
+//   foreign_first(view)   the address of the first element of a View, for a
+//                       raw loop: a foreign reader, or the measured loop of a
+//                       bench
 // The two mints check the count, the null pointer and the alignment, and
 // they cannot prove that the run lives.  A call of each door stands only at
-// the edge of a foreign ABI, in an opt-out region of the class ABI.
+// the edge of a foreign ABI, in an opt-out region of the class ABI, or in the
+// measured loop of a bench, in an opt-out region of the class MEASURE.
 //
 // get(position) gives an Option of a Ref, so this header includes the Ref
 // family and defines the body of get itself.  A unit that includes only
@@ -971,6 +975,18 @@ template <class T>
 // alive while the foreign side reads.  A call stands only at the edge of a
 // foreign ABI, in an opt-out region of the class ABI.
 [[nodiscard]] inline char const* foreign_c_str(CText text) noexcept { return detail::c_text_first_(text); }
+
+// The address of the first element of a view, for a raw loop at the edge of
+// the base: a reader of a foreign ABI, or the measured loop of a bench, which
+// indexes the run as the hardware sees it.  The address borrows the owner of
+// the run, and it carries no bound.  So the caller keeps the owner alive while
+// it reads, reads only the count of the view, and stands in an opt-out region
+// of the class ABI or MEASURE.  An empty view gives its address, which no
+// reader reads.
+template <class T, std::size_t Extent>
+[[nodiscard]] constexpr T* foreign_first(View<T, Extent> view) noexcept {
+    return first_of_(detail::ViewDoor::key(), view);
+}
 
 namespace detail {
 
