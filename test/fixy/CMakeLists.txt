@@ -1583,6 +1583,16 @@ fixy_neg_compile_test(neg_secret_length_policy_releases_payload
   "conversion from .* to non-scalar type .std::array<unsigned char, 16>. requested"
   "conversion from .long unsigned int. to non-scalar type")
 
+# The door of a call takes a call with no argument and no throw, which gives
+# a prvalue of an object type.  A call that gives a reference, and a call
+# that can throw, do not satisfy the concept of the mint.
+fixy_neg_compile_test(neg_secret_mint_from_call_reference_result
+  "no matching function for call to .mint_secret_from_call"
+  "the expression .is_object_v<typename std::invoke_result<Make&&>::type> .with Make = .* evaluated to .false.")
+fixy_neg_compile_test(neg_secret_mint_from_call_throwing_call
+  "no matching function for call to .mint_secret_from_call"
+  "the expression .is_nothrow_invocable_v<Make&&> .with Make = .* evaluated to .false.")
+
 # ── Stale, OwnedRegion, Borrowed, ScopedView, Machine ─────────────────
 fixy_test(test_stale)
 fixy_test(test_versioned_budgeted)

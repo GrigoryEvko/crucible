@@ -141,11 +141,11 @@ bool test_each_pair_of_the_three_layers_mints_checked() {
         fx::mint_refined<secret_key_has_eight_bytes>(fx::mint_secret<EightByteKey>());
     static_assert(co::CanonicallyOrdered<decltype(refined_secret)>);
 
-    // Secret<Linear<T>> is in order too.  Its one mint builds the payload
-    // in place from arguments that a closure takes by reference, and the
-    // rule linear-capture refuses such a capture of a Linear, so this file
-    // names the stack and mints none.
-    static_assert(co::CanonicallyOrdered<fx::Secret<fx::Linear<int>>>);
+    // Secret<Linear<T>> is in order too.  The door of a call builds the
+    // Linear in its place in the Secret, so no closure holds it by reference.
+    fx::Secret<fx::Linear<int>> secret_linear =
+        fx::mint_secret_from_call([]() noexcept { return fx::mint_linear<int>(9); });
+    static_assert(co::CanonicallyOrdered<decltype(secret_linear)>);
 
     static_assert(!co::CanonicallyOrdered<fx::Linear<fx::Refined<fx::positive, int>>>);
     static_assert(!co::CanonicallyOrdered<fx::Secret<fx::Refined<fx::positive, int>>>);
@@ -154,7 +154,9 @@ bool test_each_pair_of_the_three_layers_mints_checked() {
     const bool is_linear_held = refined_linear.value().peek() == 7;
     const bool is_key_held = secret_key_has_eight_bytes(refined_secret.value());
     const int consumed = std::move(refined_linear).into().consume();
-    return is_linear_held && is_key_held && consumed == 7;
+    const int released =
+        std::move(secret_linear).template declassify<fx::tags::secret_policy::AuthorizedReplay>().consume();
+    return is_linear_held && is_key_held && consumed == 7 && released == 9;
 }
 
 }  // namespace

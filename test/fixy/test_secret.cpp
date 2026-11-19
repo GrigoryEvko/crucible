@@ -5,8 +5,10 @@
 // of a container leaves only through the LengthOnly policy, and that
 // policy releases the length and never the payload.
 
+#include <fixy/Qtt.h>
 #include <fixy/Secret.h>
 
+#include <foundation/Linear.h>
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/diag/FailClosed.h>
 
@@ -26,6 +28,7 @@ using ::fixy::AdmittedDeclassification;
 using ::fixy::DeclassificationPolicy;
 using ::fixy::LengthDeclassification;
 using ::fixy::mint_secret;
+using ::fixy::mint_secret_from_call;
 using ::fixy::PayloadDeclassification;
 using ::fixy::Secret;
 
@@ -84,6 +87,32 @@ static_assert(minted_and_declassified == 7);
 constexpr std::uint64_t built_in_place =
     std::move(mint_secret<CardNumber>(std::uint64_t{4242})).template declassify<secret_policy::UserDisplay>().digits;
 static_assert(built_in_place == 4242);
+
+// The door of a payload that a call builds takes a call with no argument
+// and no throw, which gives a prvalue of an object type.
+constexpr std::uint64_t built_by_call =
+    std::move(mint_secret_from_call([]() noexcept { return CardNumber{std::uint64_t{4343}}; }))
+        .template declassify<secret_policy::UserDisplay>()
+        .digits;
+static_assert(built_by_call == 4343);
+
+struct OuterCard {
+    CardNumber card{};
+    [[nodiscard]] CardNumber& operator()() noexcept { return card; }
+};
+struct ThrowingCall {
+    [[nodiscard]] CardNumber operator()() const { return CardNumber{}; }
+};
+struct CallWithArgument {
+    [[nodiscard]] CardNumber operator()(int digits) const noexcept {
+        return CardNumber{static_cast<std::uint64_t>(digits)};
+    }
+};
+static_assert(::fixy::SecretPayloadCall<decltype([]() noexcept { return 1; })>);
+static_assert(!::fixy::SecretPayloadCall<OuterCard>, "a reference result would copy an object outside the Secret");
+static_assert(!::fixy::SecretPayloadCall<ThrowingCall>, "the mint does not throw");
+static_assert(!::fixy::SecretPayloadCall<CallWithArgument>, "the mint calls with no argument");
+static_assert(!::fixy::SecretPayloadCall<decltype([]() noexcept { return 1; }) const>);
 
 // ── The length of a classified container ────────────────────────────
 
@@ -259,6 +288,18 @@ int check_move_transfer() {
     return 0;
 }
 
+// A linear payload enters through the door of a call: the call builds the
+// Linear in its place in the Secret, and no closure holds it by reference.
+// The Secret is linear by its payload, so the cell ends it through a
+// declassification and a consume.
+int check_linear_payload() {
+    Secret<::fixy::Linear<int>> handle = mint_secret_from_call([]() noexcept { return ::fixy::mint_linear<int>(61); });
+    static_assert(::foundation::linear::is_linear_type(^^Secret<::fixy::Linear<int>>));
+    Secret<::fixy::Linear<int>> moved = std::move(handle);
+    if (std::move(moved).declassify<secret_policy::AuthorizedReplay>().consume() != 61) return 60;
+    return 0;
+}
+
 // Declassification routes through a substrate path distinct from the
 // ordinary read and consume paths, and each policy names its own edge.
 // A divergence between the compile-time and the run-time behaviour of
@@ -295,6 +336,7 @@ int main() {
     if (int rc = check_length_release(); rc != 0) return rc;
     if (int rc = check_zeroize(); rc != 0) return rc;
     if (int rc = check_move_transfer(); rc != 0) return rc;
+    if (int rc = check_linear_payload(); rc != 0) return rc;
 
     return 0;
 }

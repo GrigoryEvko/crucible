@@ -5,7 +5,13 @@
 // classification, and the single exit is a named declassification
 // whose policy tag is the audit trail.
 //
-// The one door is mint_secret<T>(args...).  Classification is
+// The two doors are mint_secret<T>(args...) and mint_secret_from_call(make).
+// The first builds the payload from arguments.  The second builds the
+// payload in its place as the prvalue of a call, so no argument holds a
+// copy of it.  A linear payload, such as a Linear<T>, takes the second
+// door: the first reads its arguments through a closure that captures them
+// by reference, and the rule linear-capture refuses such a capture of a
+// linear object.  Classification is
 // deliberately open to enter and audited to leave: declassification is
 // the only way to get the value back out, deriving keeps the
 // classification, and zeroizing destroys it.  That asymmetry, not the
@@ -146,6 +152,20 @@ template <typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
 [[nodiscard]] constexpr Secret<T> mint_secret(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>);
 
+// A call that builds the payload of a Secret: an object that moves with no
+// throw, and that the mint calls one time as an rvalue, with no argument
+// and no throw.  The call gives a prvalue of an object type with no cv
+// qualifier, which becomes the payload in its place.  A call that gives a
+// reference would copy an object that stays outside the Secret.
+template <typename Make>
+concept SecretPayloadCall =
+    std::is_object_v<Make> && !std::is_const_v<Make> && std::is_nothrow_move_constructible_v<Make>
+    && std::is_nothrow_invocable_v<Make&&> && std::is_object_v<std::invoke_result_t<Make&&>>
+    && std::same_as<std::invoke_result_t<Make&&>, std::remove_cv_t<std::invoke_result_t<Make&&>>>;
+
+template <SecretPayloadCall Make>
+[[nodiscard]] constexpr Secret<std::invoke_result_t<Make&&>> mint_secret_from_call(Make make) noexcept;
+
 template <typename T>
 class [[nodiscard]] Secret
     : public graded_facade<
@@ -220,6 +240,9 @@ private:
     template <typename U, typename... Args>
         requires std::is_constructible_v<U, Args...>
     friend constexpr Secret<U> mint_secret(Args&&... args) noexcept(std::is_nothrow_constructible_v<U, Args...>);
+
+    template <SecretPayloadCall Make>
+    friend constexpr Secret<std::invoke_result_t<Make&&>> mint_secret_from_call(Make make) noexcept;
 
     // transform() derives a Secret<R> from a Secret<T>, so each
     // specialization constructs its siblings.
@@ -414,6 +437,16 @@ template <typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
 [[nodiscard]] constexpr Secret<T> mint_secret(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
     return Secret<T>{std::in_place, std::forward<Args>(args)...};
+}
+
+// The door of a payload that a call builds.  The mint takes the call by
+// value and calls it one time as an rvalue.  The payload is the prvalue of
+// the call, so it is built in its place in the Secret.  A call that builds
+// the payload in its return statement, as mint_linear does, leaves no copy
+// of the payload outside the Secret.
+template <SecretPayloadCall Make>
+[[nodiscard]] constexpr Secret<std::invoke_result_t<Make&&>> mint_secret_from_call(Make make) noexcept {
+    return Secret<std::invoke_result_t<Make&&>>{::foundation::algebra::graded_from_call, std::move(make)};
 }
 
 // True when T, with its references and qualifiers removed, is a Secret.
