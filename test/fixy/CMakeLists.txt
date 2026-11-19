@@ -138,6 +138,30 @@ fixy_neg_compile_test(neg_returned_failure_of_specialized
   "template-id .returned_failure_of<>. for .consteval fixy::collision::detail::ReturnedFailure fixy::collision::detail::returned_failure_of\\(std::meta::info\\). does not match any template declaration"
   "neg_returned_failure_of_specialized\\.cpp:12:[0-9]+: error:")
 
+# The thrown failure and the payload after its bands are functions, and the
+# read of the instruction tier is a concept.  The old class spellings
+# compile on the tree before them, in a PROBE region, and they name no
+# class template on this tree.  An explicit specialization of a function
+# matches no template, and a concept has no specialization.
+fixy_neg_compile_test(neg_thrown_failure_specialized
+  ".thrown_failure_. is not a class template"
+  "neg_thrown_failure_specialized\\.cpp:13:[0-9]+: error:")
+fixy_neg_compile_test(neg_thrown_failure_of_specialized
+  "template-id .thrown_failure_of<>. for .consteval fixy::collision::detail::ReturnedFailure fixy::collision::detail::thrown_failure_of\\(std::meta::info\\). does not match any template declaration"
+  "neg_thrown_failure_of_specialized\\.cpp:11:[0-9]+: error:")
+fixy_neg_compile_test(neg_unbanded_specialized
+  ".unbanded_. is not a class template"
+  "neg_unbanded_specialized\\.cpp:13:[0-9]+: error:")
+fixy_neg_compile_test(neg_unbanded_of_specialized
+  "template-id .unbanded_of<>. for .consteval std::meta::info fixy::collision::detail::unbanded_of\\(std::meta::info\\). does not match any template declaration"
+  "neg_unbanded_of_specialized\\.cpp:11:[0-9]+: error:")
+fixy_neg_compile_test(neg_hw_at_or_above_specialized
+  ".is_hw_at_or_above_. is not a class template"
+  "neg_hw_at_or_above_specialized\\.cpp:15:[0-9]+: error:")
+fixy_neg_compile_test(neg_hw_tier_at_or_above_specialized
+  ".HasHwTierAtOrAbove. is not a class template"
+  "neg_hw_tier_at_or_above_specialized\\.cpp:13:[0-9]+: error:")
+
 # The strict pole of each axis is its weakest claim.  A Fact pole that
 # states a fact, and a Right pole that claims nothing, are refused.
 fixy_neg_compile_test(neg_axis_fact_pole_claims_a_fact

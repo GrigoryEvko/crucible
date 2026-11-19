@@ -384,6 +384,45 @@ static_assert(
     "a handle at End takes no step");
 }  // namespace session_cells
 
+// The three closed reads of the failure rules and of the instruction tier.
+// Each is a concept or a function that is not a template, so no unit can
+// change an answer.  The cells pin both directions of each read.
+namespace closed_read_cells {
+namespace at = ::fixy::atom;
+namespace cd = ::fixy::collision::detail;
+using Tier = at::hw::HwInstruction;
+
+// A tier at or above its floor answers true.  An atom of another axis that
+// carries a member named tier, and a type with no tier, answer false.
+static_assert(cd::HasHwTierAtOrAbove<at::hw::privileged_msr, Tier::NonDeterministicTsc>);
+static_assert(cd::HasHwTierAtOrAbove<at::hw::scalar, Tier::Scalar>);
+static_assert(!cd::HasHwTierAtOrAbove<at::hw::vectorizable, Tier::PrivilegedMsr>);
+static_assert(!cd::HasHwTierAtOrAbove<int, Tier::Scalar>);
+static_assert(!cd::HasHwTierAtOrAbove<at::barrier::full_fence, Tier::Scalar>);
+
+// Only ctrl::throws throws.  Its error is the exception family, and a Secret
+// family keeps the error classified.
+struct plain_error final {};
+static_assert(cd::thrown_failure_of(^^at::ctrl::throws<>).fails);
+static_assert(cd::thrown_failure_of(^^at::ctrl::throws<plain_error>).carries_error);
+static_assert(!cd::thrown_failure_of(^^at::ctrl::throws<plain_error>).error_is_secret);
+static_assert(cd::thrown_failure_of(^^at::ctrl::throws<::fixy::Secret<plain_error>>).error_is_secret);
+static_assert(!cd::thrown_failure_of(^^at::ctrl::coroutine<at::ctrl::async_task>).fails);
+static_assert(!cd::thrown_failure_of(axis_record(Axis::ControlFlow).strict).fails,
+              "the strict ControlFlow pole throws nothing");
+
+// The read goes through each band, and it stops at the first type that is
+// not a band.  A wrapper that is not a band stays in place.
+static_assert(cd::unbanded_of(^^::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::foundation::core::Option<int>>)
+              == ^^::foundation::core::Option<int>);
+static_assert(
+    cd::unbanded_of(^^::fixy::Vendor<::fixy::VendorBackend_v::NV, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>)
+    == ^^int);
+static_assert(cd::unbanded_of(^^int) == ^^int);
+static_assert(cd::unbanded_of(^^::fixy::Secret<int>) == ^^::fixy::Secret<int>,
+              "a Secret is no band, so its value stays inside it");
+}  // namespace closed_read_cells
+
 }  // namespace detail::collision_self_test
 
 }  // namespace fixy

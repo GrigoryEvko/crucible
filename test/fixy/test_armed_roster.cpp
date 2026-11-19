@@ -455,18 +455,9 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::control_flow
 
 // The floor readers take a value and a grade, so each has an instance
 // cell.  An atom of a different axis carries a member of the same name,
-// and the type check of each reader refuses it.
-template <>
-struct foundation::contracts::armed_instances<^^::fixy::collision::detail::is_hw_at_or_above_> {
-    using Tier = ::fixy::atom::hw::HwInstruction;
-    using accepts =
-        witnesses<::fixy::collision::detail::is_hw_at_or_above_<Tier::NonDeterministicTsc, at::hw::privileged_msr>,
-                  ::fixy::collision::detail::is_hw_at_or_above_<Tier::Scalar, at::hw::scalar>>;
-    using refuses = witnesses<::fixy::collision::detail::is_hw_at_or_above_<Tier::PrivilegedMsr, at::hw::vectorizable>,
-                              ::fixy::collision::detail::is_hw_at_or_above_<Tier::Scalar, int>,
-                              ::fixy::collision::detail::is_hw_at_or_above_<Tier::Scalar, at::barrier::full_fence>>;
-};
-
+// and the type check of each reader refuses it.  The read of the
+// instruction tier is a concept, and the check file of fixy/Collision.h
+// holds its cells.
 template <>
 struct foundation::contracts::armed_instances<^^::fixy::collision::detail::is_barrier_at_or_above_> {
     using Strength = ::foundation::algebra::lattices::BarrierStrength;

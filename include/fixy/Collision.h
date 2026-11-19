@@ -476,18 +476,18 @@ struct observability_parts_ {
 template <class G>
 using observability_row_t = decltype(observability_parts_::row_of(static_cast<const G*>(nullptr)));
 
-// The hardware-instruction tier, read against a floor.  The primary is
-// false because the strict pole of HwInstruction is Unconstrained: a
-// binding that names no tier makes no claim about instruction classes,
-// so neither V201 nor V202 fires on it.  The chain order comes from
-// fixy/atoms/Hw.h's own at_or_above, so a rule and the atom header
-// cannot disagree about which way the ladder runs.
-template <::fixy::atom::hw::HwInstruction Floor, class G>
-struct is_hw_at_or_above_ : std::false_type {};
-template <::fixy::atom::hw::HwInstruction Floor, class G>
-    requires requires { G::tier; }
-          && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>, ::fixy::atom::hw::HwInstruction>
-struct is_hw_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::hw::at_or_above(G::tier, Floor)> {};
+// The hardware-instruction tier, read against a floor.  A grade with no
+// tier does not satisfy the concept, because the strict pole of
+// HwInstruction is Unconstrained: a binding that names no tier makes no
+// claim about instruction classes, so neither V201 nor V202 fires on it.
+// The chain order comes from fixy/atoms/Hw.h's own at_or_above, so a rule
+// and the atom header cannot disagree about which way the ladder runs.
+// The read is a concept, and a concept has no specialization, so no unit
+// can give a grade another tier.
+template <class G, ::fixy::atom::hw::HwInstruction Floor>
+concept HasHwTierAtOrAbove =
+    requires { G::tier; } && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>, ::fixy::atom::hw::HwInstruction>
+    && ::fixy::atom::hw::at_or_above(G::tier, Floor);
 
 // The provided fence strength, read against a floor.  The primary is
 // false: a binding that names no strength provides no fence, so there
@@ -495,10 +495,9 @@ struct is_hw_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::hw::at_or
 // fixy/atoms/Barrier.h's own at_or_above, which is the lattice's leq in
 // its admission direction, so a rule cannot invert it.  The order is not
 // a chain: an acquire load is not at or above a release floor, nor the
-// reverse, so a floor on either tag admits only its own tag and above.  Both
-// this and is_hw_at_or_above_ read a member named `tier`; the type check
-// in the constraint is what keeps each from answering for the other's
-// atoms.
+// reverse, so a floor on either tag admits only its own tag and above.  This
+// and HasHwTierAtOrAbove both read a member named `tier`.  The type check
+// in each constraint keeps each from answering for the atoms of the other.
 template <::foundation::algebra::lattices::BarrierStrength Floor, class G>
 struct is_barrier_at_or_above_ : std::false_type {};
 template <::foundation::algebra::lattices::BarrierStrength Floor, class G>
@@ -795,15 +794,16 @@ struct can_spawn_outlive_the_frame_ : std::bool_constant<spawn_outlives_frame_<G
 // — ctrl::any_exception, the family a bare throws<> names — is not
 // Secret, which is the answer that refuses rather than the one that
 // admits.
-template <class Payload>
-struct unbanded_ {
-    using type = Payload;
-};
-template <class Payload>
-    requires ::fixy::IsBand<Payload>
-struct unbanded_<Payload> {
-    using type = typename unbanded_<::fixy::band_value_t<Payload>>::type;
-};
+
+// The payload after each of its bands, as a type and never an alias.  The
+// function is not a template, so no other file can give a band another
+// value.  Complexity: the depth of the stack of bands.
+[[nodiscard]] consteval std::meta::info unbanded_of(std::meta::info payload) {
+    std::meta::info named = std::meta::dealias(payload);
+    while (std::meta::extract<bool>(std::meta::substitute(^^::fixy::IsBand, {named})))
+        named = std::meta::dealias(std::meta::substitute(^^::fixy::band_value_t, {named}));
+    return named;
+}
 
 // The failure that a payload returns.
 struct ReturnedFailure {
@@ -852,18 +852,19 @@ using expected_error_t = typename Payload::error_type;
     return ReturnedFailure{.fails = true, .carries_error = true, .error_is_secret = is_secret_type_(error)};
 }
 
-template <class G>
-struct thrown_failure_ {
-    static constexpr bool fails = false;
-    static constexpr bool carries_error = false;
-    static constexpr bool error_is_secret = false;
-};
-template <class ExceptionFamily>
-struct thrown_failure_<::fixy::atom::ctrl::throws<ExceptionFamily>> {
-    static constexpr bool fails = true;
-    static constexpr bool carries_error = true;
-    static constexpr bool error_is_secret = ::fixy::IsSecret<ExceptionFamily>;
-};
+// The failure that a ControlFlow grade throws, in the same three answers.
+// Only ctrl::throws<E> throws, and its error is the exception family E.
+// The function is not a template, so no other file can give a grade
+// another failure.
+[[nodiscard]] consteval ReturnedFailure thrown_failure_of(std::meta::info grade) {
+    const std::meta::info named = std::meta::dealias(grade);
+    if (!std::meta::has_template_arguments(named) || std::meta::template_of(named) != ^^::fixy::atom::ctrl::throws) {
+        return ReturnedFailure{};
+    }
+    // The exception family is the one argument of throws.
+    const std::meta::info family = std::meta::template_arguments_of(named)[0];
+    return ReturnedFailure{.fails = true, .carries_error = true, .error_is_secret = is_secret_type_(family)};
+}
 
 // The class of the Security grade, read so that a grade the closed
 // relation in fixy/Atom.h does not name stops the build with one message.
@@ -937,7 +938,7 @@ template <class Payload>
 
 template <class Payload>
 struct is_live_handle_payload_
-    : std::bool_constant<payload_owes_a_protocol_<std::remove_cvref_t<typename unbanded_<Payload>::type>>()> {};
+    : std::bool_constant<payload_owes_a_protocol_<std::remove_cvref_t<typename[:unbanded_of(^^Payload):]>>()> {};
 
 // Whether ControlFlow states a suspension.  ctrl::coroutine<Policy> is
 // the same suspension that atom::coroutine states on Reentrancy, written
@@ -1024,7 +1025,7 @@ template <class... Atoms>
     using Protocol = grade_on_t<Axis::Protocol, Atoms...>;
     using Security = grade_on_t<Axis::Security, Atoms...>;
     using Observability = grade_on_t<Axis::Observability, Atoms...>;
-    using thrown_failure = thrown_failure_<ControlFlow>;
+    constexpr ReturnedFailure thrown = thrown_failure_of(pack.grade[std::to_underlying(Axis::ControlFlow)]);
     namespace fe = ::foundation::effects;
     namespace lat = ::foundation::algebra::lattices;
 
@@ -1106,8 +1107,8 @@ template <class... Atoms>
     premise.states_a_wait = has_wait_strategy_<Synchronization>::value;
 
     premise.hw_nondeterministic =
-        is_hw_at_or_above_<::fixy::atom::hw::HwInstruction::NonDeterministicTsc, HwInstruction>::value;
-    premise.hw_privileged = is_hw_at_or_above_<::fixy::atom::hw::HwInstruction::PrivilegedMsr, HwInstruction>::value;
+        HasHwTierAtOrAbove<HwInstruction, ::fixy::atom::hw::HwInstruction::NonDeterministicTsc>;
+    premise.hw_privileged = HasHwTierAtOrAbove<HwInstruction, ::fixy::atom::hw::HwInstruction::PrivilegedMsr>;
     premise.barrier_seq_cst_or_above = is_barrier_at_or_above_<lat::BarrierStrength::SeqCst, BarrierStrength>::value;
     premise.barrier_acq_rel_or_above = is_barrier_at_or_above_<lat::BarrierStrength::AcqRel, BarrierStrength>::value;
     premise.scope_cluster_or_above = is_scope_at_or_above_<lat::MemoryScope::Cluster, MemoryScope>::value;
@@ -1135,8 +1136,8 @@ template <class... Atoms>
     premise.session_protocol = is_session_protocol_<Protocol>::value;
     premise.has_live_handle = is_live_handle_grade_<Protocol>::value;
 
-    premise.fails = thrown_failure::fails;
-    premise.fails_with_plain_error = thrown_failure::carries_error && !thrown_failure::error_is_secret;
+    premise.fails = thrown.fails;
+    premise.fails_with_plain_error = thrown.carries_error && !thrown.error_is_secret;
     return premise;
 }
 
@@ -1159,7 +1160,7 @@ template <class Payload>
                             .claims_no_allocation = claims_no_allocation_v_<Payload>,
                             .claims_user_space_wait = claims_user_space_wait_v_<Payload>,
                             .owes_a_protocol = is_live_handle_payload_<Payload>::value,
-                            .returned_failure = returned_failure_of(^^typename unbanded_<Payload>::type)};
+                            .returned_failure = returned_failure_of(unbanded_of(^^Payload))};
 }
 
 template <class Payload>

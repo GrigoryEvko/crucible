@@ -1124,7 +1124,7 @@ struct attack_owner {
 
 // A grade of a different axis that carries a member of the same name is
 // refused by the type check of each floor reader.
-static_assert(!col::detail::is_hw_at_or_above_<at::hw::HwInstruction::Scalar, at::barrier::full_fence>::value);
+static_assert(!col::detail::HasHwTierAtOrAbove<at::barrier::full_fence, at::hw::HwInstruction::Scalar>);
 static_assert(!col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::None,
                                                     at::hw::privileged_msr>::value);
 // A host scope is not at or above an accelerator floor.
