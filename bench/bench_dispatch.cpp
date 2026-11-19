@@ -276,7 +276,7 @@ int main() {
     std::printf("  sizeof(TensorMeta)       : %zu B\n\n", sizeof(TensorMeta));
 
     // The 16 rows below.
-    ::fixy::FixedList<bench::Report, 16> reports{};
+    ::fixy::FixedList<bench::Report, 17> reports{};
 
     // ── Sub-component baselines ────────────────────────────────────
     std::printf("--- sub-component baselines ---\n");
@@ -589,6 +589,25 @@ int main() {
                 auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
                 bench::do_not_optimize(r);
             }
+        });
+    }());
+
+    // Each body dispatches the op after the matched position of the last
+    // result, so each body waits for that position.  The row times the path
+    // of the position from the guard to the result.
+    bench::add_report(reports, [&] {
+        using OpSlot = ::fixy::Index<NUM_OPS>;
+        Vigil vigil;
+        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
+        ::fixy::FixedArray<OpData, NUM_OPS> ops{};
+        for (uint32_t i = 0; i < NUM_OPS; i++)
+            ops.at(OpSlot::check(i).expect("the loop stays below NUM_OPS")) = make_op(10, i);
+
+        OpSlot next = ::fixy::index<0>();
+        return bench::run("dispatch_op [COMPILED, chained position]", [&] {
+            const OpData& d = ops.at(next);
+            const DispatchResult r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+            next = OpSlot::check((r.op_index.raw() + 1) % NUM_OPS).expect("the remainder is below NUM_OPS");
         });
     }());
 
