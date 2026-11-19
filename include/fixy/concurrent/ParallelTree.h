@@ -394,9 +394,9 @@ void sum_segments_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::View<T
         ctx, detail::budget_of_<T>(elements.size(), sums.size()),
         ::fixy::mint_owned_region(base, sums.size(),
                                   ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>()),
-        [elements, offsets, base](auto& shard) noexcept {
+        [elements, offsets, base = static_cast<T const*>(base)](auto& shard) noexcept {
             if (shard.size() == 0) return;
-            std::size_t const first = detail::first_slot_(shard, static_cast<T const*>(base));
+            std::size_t const first = detail::first_slot_(shard, base);
             ::foundation::core::View<std::size_t const> const own_offsets =
                 offsets.window(first, shard.size() + 1).expect("the offsets of a shard fit the checked offsets");
             static_cast<void>(
