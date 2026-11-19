@@ -7,7 +7,8 @@
 #include <fixy/Ctx.h>
 #include <fixy/os/Process.h>
 
-#include "test_assert.h"
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -20,6 +21,13 @@
 #include <unistd.h>
 #include <utility>
 #include <vector>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -48,7 +56,7 @@ static std::string write_tmp(const void* data, size_t n) {
     char buf[64];
     std::snprintf(buf, sizeof(buf), "/tmp/crtrace-%d-%d.bin", ::getpid(), ++ctr);
     std::FILE* f = std::fopen(buf, "wb");
-    assert(f);
+    CRUCIBLE_TEST_ASSERT(kTest, f);
     std::fwrite(data, 1, n, f);
     std::fclose(f);
     return buf;
@@ -68,16 +76,16 @@ static bool is_refused_as(::fixy::Result<LoadedTrace, TraceLoadError> const& loa
 }
 
 static void test_missing_file() {
-    assert(is_refused_as(load_trace(kTestIo, sanitized("/definitely/does/not/exist.crtrace")),
-                         TraceLoadError::OpenFailed));
-    crucible::test::pass("  test_missing_file:              PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, sanitized("/definitely/does/not/exist.crtrace")),
+                                              TraceLoadError::OpenFailed));
+    ::fixy::check::pass(kTest, "  test_missing_file:              PASSED\n");
 }
 
 static void test_empty_file() {
     std::string path = write_tmp("", 0);
-    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::HeaderTruncated));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::HeaderTruncated));
     std::remove(path.c_str());
-    crucible::test::pass("  test_empty_file:                PASSED\n");
+    ::fixy::check::pass(kTest, "  test_empty_file:                PASSED\n");
 }
 
 static void test_bad_magic() {
@@ -89,9 +97,9 @@ static void test_bad_magic() {
         uint32_t n_metas;
     } hdr{.magic = {'X', 'X', 'X', 'X'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::WrongMagic));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::WrongMagic));
     std::remove(path.c_str());
-    crucible::test::pass("  test_bad_magic:                 PASSED\n");
+    ::fixy::check::pass(kTest, "  test_bad_magic:                 PASSED\n");
 }
 
 static void test_wrong_version() {
@@ -102,18 +110,18 @@ static void test_wrong_version() {
         uint32_t n_metas;
     } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 99, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::WrongVersion));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::WrongVersion));
     std::remove(path.c_str());
-    crucible::test::pass("  test_wrong_version:             PASSED\n");
+    ::fixy::check::pass(kTest, "  test_wrong_version:             PASSED\n");
 }
 
 static void test_truncated_header() {
     // Eight bytes, so the two count fields are missing.
     char buf[8] = {'C', 'R', 'T', 'R', 1, 0, 0, 0};
     std::string path = write_tmp(buf, sizeof(buf));
-    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::HeaderTruncated));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::HeaderTruncated));
     std::remove(path.c_str());
-    crucible::test::pass("  test_truncated_header:          PASSED\n");
+    ::fixy::check::pass(kTest, "  test_truncated_header:          PASSED\n");
 }
 
 static void test_truncated_op_records() {
@@ -129,9 +137,9 @@ static void test_truncated_op_records() {
     std::memcpy(buf, &hdr, sizeof(hdr));
     std::string path = write_tmp(buf, sizeof(buf));
     // The size check refuses the counts before the loader reads a record.
-    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::CountPastFile));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::CountPastFile));
     std::remove(path.c_str());
-    crucible::test::pass("  test_truncated_ops:             PASSED\n");
+    ::fixy::check::pass(kTest, "  test_truncated_ops:             PASSED\n");
 }
 
 static void test_happy_path_zero_ops() {
@@ -145,11 +153,11 @@ static void test_happy_path_zero_ops() {
     } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
     const LoadedTrace t = load_trace(kTestIo, sanitized(path)).expect("a header with zero counts loads");
-    assert(t.num_ops == 0);
-    assert(t.num_metas == 0);
-    assert(t.entries.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, t.num_ops == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, t.num_metas == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, t.entries.size() == 0);
     std::remove(path.c_str());
-    crucible::test::pass("  test_happy_path_empty:          PASSED\n");
+    ::fixy::check::pass(kTest, "  test_happy_path_empty:          PASSED\n");
 }
 
 static void test_adversarial_num_ops_rejected() {
@@ -162,9 +170,9 @@ static void test_adversarial_num_ops_rejected() {
         uint32_t n_metas;
     } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0xFFFFFFFFu, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::CountPastLimit));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::CountPastLimit));
     std::remove(path.c_str());
-    crucible::test::pass("  test_adversarial_counts:        PASSED\n");
+    ::fixy::check::pass(kTest, "  test_adversarial_counts:        PASSED\n");
 }
 
 static void test_round_trip_single_op() {
@@ -192,13 +200,13 @@ static void test_round_trip_single_op() {
     std::string path = write_tmp(buf, sizeof(buf));
     const LoadedTrace t = load_trace(kTestIo, sanitized(path)).expect("a trace of one op loads");
     std::remove(path.c_str());
-    assert(t.num_ops == 1);
-    assert(t.entries.get(0).expect("the trace holds one op")->schema_hash.raw() == schema);
-    assert(t.entries.get(0).expect("the trace holds one op")->shape_hash.raw() == shape);
-    assert(t.scope_hashes.get(0).expect("the trace holds one op")->raw() == scope);
-    assert(t.callsite_hashes.get(0).expect("the trace holds one op")->raw() == callsite);
-    assert(t.depths.get(0).expect("the trace holds one op")->is_top());
-    crucible::test::pass("  test_round_trip_single_op:      PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, t.num_ops == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, t.entries.get(0).expect("the trace holds one op")->schema_hash.raw() == schema);
+    CRUCIBLE_TEST_ASSERT(kTest, t.entries.get(0).expect("the trace holds one op")->shape_hash.raw() == shape);
+    CRUCIBLE_TEST_ASSERT(kTest, t.scope_hashes.get(0).expect("the trace holds one op")->raw() == scope);
+    CRUCIBLE_TEST_ASSERT(kTest, t.callsite_hashes.get(0).expect("the trace holds one op")->raw() == callsite);
+    CRUCIBLE_TEST_ASSERT(kTest, t.depths.get(0).expect("the trace holds one op")->is_top());
+    ::fixy::check::pass(kTest, "  test_round_trip_single_op:      PASSED\n");
 }
 
 // The three encoders of the writer give a file that the loader reads back
@@ -240,7 +248,7 @@ static void test_encoders_round_trip_through_the_loader() {
     for (const std::byte byte : meta_bytes.view()
                                     .window<sizeof(uint64_t)>(offsetof(TensorMeta, data_ptr))
                                     .expect("the data pointer lies inside the record")) {
-        assert(byte == std::byte{0});
+        CRUCIBLE_TEST_ASSERT(kTest, byte == std::byte{0});
     }
 
     // The header, one op, one meta, and a name table of no name.
@@ -272,44 +280,46 @@ static void test_encoders_round_trip_through_the_loader() {
                                         return ::fixy::fs::write_full(kTestIo, file.ref(), image.view()).is_ok();
                                     },
                                     [](::foundation::os::Errno) noexcept { return false; });
-    assert(is_written);
+    CRUCIBLE_TEST_ASSERT(kTest, is_written);
     const LoadedTrace trace = load_trace(kTestIo, checked(kFileName.view())).expect("an encoded trace loads");
-    assert(::fixy::fs::unlink_at(kTestIo, here.ref(), kFileName).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fs::unlink_at(kTestIo, here.ref(), kFileName).is_ok());
 
-    assert(trace.num_ops == 1);
-    assert(trace.num_metas == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, trace.num_ops == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, trace.num_metas == 1);
     const TraceRing::Entry& entry = *trace.entries.get(0).expect("the trace holds one op");
-    assert(entry.schema_hash == record.schema_hash);
-    assert(entry.shape_hash == record.shape_hash);
-    assert(entry.num_inputs == 1);
-    assert(entry.num_outputs == 0);
-    assert(entry.num_scalar_args == 1);
-    assert(entry.scalar_values.at(::fixy::index<0>()) == -9);
-    assert((entry.op_flags & op_flag::GRAD_ENABLED) != 0);
-    assert(*trace.scope_hashes.get(0).expect("the trace holds one op") == record.scope_hash);
-    assert(*trace.callsite_hashes.get(0).expect("the trace holds one op") == record.callsite_hash);
-    assert(*trace.depths.get(0).expect("the trace holds one op") == record.depth);
-    assert(entry.packed_scalar_types() == record.scalar_types);
-    assert(entry.get_scalar_type(0) == ScalarType2::FLOAT && entry.get_scalar_type(4) == ScalarType2::NONE);
-    assert((entry.op_flags & op_flag::GRAD_ENABLED) != 0 && "the tag of slot 4 keeps the other op flags");
-    assert(entry.data_slots()
-                   .expect("the loader keeps a word of the inline slots")
-                   .role(crucible::ScalarSlot{::fixy::index<0>()})
-               == crucible::ScalarRole::DATA
-           && "the loader keeps the role");
+    CRUCIBLE_TEST_ASSERT(kTest, entry.schema_hash == record.schema_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.shape_hash == record.shape_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.num_inputs == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.num_outputs == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.num_scalar_args == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.scalar_values.at(::fixy::index<0>()) == -9);
+    CRUCIBLE_TEST_ASSERT(kTest, (entry.op_flags & op_flag::GRAD_ENABLED) != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, *trace.scope_hashes.get(0).expect("the trace holds one op") == record.scope_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, *trace.callsite_hashes.get(0).expect("the trace holds one op") == record.callsite_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, *trace.depths.get(0).expect("the trace holds one op") == record.depth);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.packed_scalar_types() == record.scalar_types);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.get_scalar_type(0) == ScalarType2::FLOAT
+                                    && entry.get_scalar_type(4) == ScalarType2::NONE);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         (entry.op_flags & op_flag::GRAD_ENABLED) != 0 && "the tag of slot 4 keeps the other op flags");
+    CRUCIBLE_TEST_ASSERT(kTest, entry.data_slots()
+                                            .expect("the loader keeps a word of the inline slots")
+                                            .role(crucible::ScalarSlot{::fixy::index<0>()})
+                                        == crucible::ScalarRole::DATA
+                                    && "the loader keeps the role");
 
     const TensorMeta& loaded = *trace.metas.get(0).expect("the trace holds one meta");
-    assert(loaded.ndim == 2);
-    assert(loaded.sizes[0].value() == 3 && loaded.sizes[1].value() == 4);
-    assert(loaded.strides[0].value() == 4 && loaded.strides[1].value() == 1);
-    assert(loaded.dtype == ScalarType::Float);
-    assert(loaded.requires_grad);
-    assert(loaded.output_nr == 1);
-    assert(loaded.storage_offset == 5);
-    assert(loaded.version == 7);
-    assert(loaded.storage_nbytes == 64);
-    assert(loaded.data_ptr.value() == nullptr);
-    crucible::test::pass("  test_encoders_round_trip:       PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.ndim == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.sizes[0].value() == 3 && loaded.sizes[1].value() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.strides[0].value() == 4 && loaded.strides[1].value() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.dtype == ScalarType::Float);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.requires_grad);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.output_nr == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.storage_offset == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.version == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.storage_nbytes == 64);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.data_ptr.value() == nullptr);
+    ::fixy::check::pass(kTest, "  test_encoders_round_trip:       PASSED\n");
 }
 
 // The load of a trace of one op record with no tensor and an empty name
@@ -338,9 +348,9 @@ static ::fixy::Result<LoadedTrace, TraceLoadError> load_one_op(TraceOpRecord con
                                         return ::fixy::fs::write_full(kTestIo, file.ref(), image.view()).is_ok();
                                     },
                                     [](::foundation::os::Errno) noexcept { return false; });
-    assert(is_written);
+    CRUCIBLE_TEST_ASSERT(kTest, is_written);
     ::fixy::Result<LoadedTrace, TraceLoadError> loaded = load_trace(kTestIo, checked(kFileName.view()));
-    assert(::fixy::fs::unlink_at(kTestIo, here.ref(), kFileName).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fs::unlink_at(kTestIo, here.ref(), kFileName).is_ok());
     return loaded;
 }
 
@@ -353,23 +363,25 @@ static void test_op_with_scalars_past_the_slots_is_refused() {
     TraceOpRecord record{};
     record.schema_hash = SchemaHash{0x5CA1A2ULL};
     record.num_scalars = 6;
-    assert(is_refused_as(load_one_op(record), TraceLoadError::OpCorrupt));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_one_op(record), TraceLoadError::OpCorrupt));
 
     record.num_scalars = 1;
     record.data_slots = 0b10;
-    assert(is_refused_as(load_one_op(record), TraceLoadError::OpCorrupt) && "a data slot past the count");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         is_refused_as(load_one_op(record), TraceLoadError::OpCorrupt) && "a data slot past the count");
     record.data_slots = 0b100000;
-    assert(is_refused_as(load_one_op(record), TraceLoadError::OpCorrupt) && "a bit past the inline slots");
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_one_op(record), TraceLoadError::OpCorrupt)
+                                    && "a bit past the inline slots");
 
     record.data_slots = 0b1;
     const LoadedTrace trace = load_one_op(record).expect("a data slot below the count loads");
     const TraceRing::Entry& entry = *trace.entries.get(0).expect("the trace holds one op");
-    assert(entry.num_scalar_args == 1);
-    assert(entry.data_slots()
-               .expect("the loader keeps a word of the inline slots")
-               .role(crucible::ScalarSlot{::fixy::index<0>()})
-           == crucible::ScalarRole::DATA);
-    crucible::test::pass("  test_op_scalars_past_the_slots: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, entry.num_scalar_args == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.data_slots()
+                                        .expect("the loader keeps a word of the inline slots")
+                                        .role(crucible::ScalarSlot{::fixy::index<0>()})
+                                    == crucible::ScalarRole::DATA);
+    ::fixy::check::pass(kTest, "  test_op_scalars_past_the_slots: PASSED\n");
 }
 
 // The trailing schema-name section of the file carries a length field
@@ -421,7 +433,7 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
                                                          ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(
                                                              ::fixy::TextView{"aten::held"}))
                                         .is_ok();
-        assert(was_registered);
+        CRUCIBLE_TEST_ASSERT(kTest, was_registered);
     }
 
     const ::fixy::process::ChildReport report =
@@ -440,15 +452,17 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
                 })
                 .expect("the test starts a child"))
             .expect("the test waits for its child");
-    assert(report.is_exit_with(0));
-    assert(::fixy::find(report.output(),
-                        ::fixy::TextView{"load_trace: the trace gives the schema hash 13527480966017541734 the name "
-                                         "aten::mul, and the schema table holds a different name of that hash"})
-               .is_some());
-    assert(is_named(global_schema_table().lookup(kHeldHash), "aten::held"));
+    CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0));
+    CRUCIBLE_TEST_ASSERT(
+        kTest,
+        ::fixy::find(report.output(),
+                     ::fixy::TextView{"load_trace: the trace gives the schema hash 13527480966017541734 the name "
+                                      "aten::mul, and the schema table holds a different name of that hash"})
+            .is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(kHeldHash), "aten::held"));
 
     global_schema_table().clear(::foundation::effects::testing::test());
-    crucible::test::pass("  test_schema_name_table_collision_is_refused: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_schema_name_table_collision_is_refused: PASSED\n");
 }
 
 // The trace of trace_path gives aten::add, aten::mul and aten::matmul to
@@ -469,10 +483,10 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
                                                              ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(
                                                                  ::fixy::TextView{"aten::filler"}))
                                             .is_ok();
-            assert(was_registered);
+            CRUCIBLE_TEST_ASSERT(kTest, was_registered);
         }
     }
-    assert(global_schema_table().count() == SCHEMA_TABLE_CAP - 1);
+    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == SCHEMA_TABLE_CAP - 1);
 
     const ::fixy::process::ChildReport report =
         ::fixy::process::wait(
@@ -491,14 +505,15 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
                 })
                 .expect("the test starts a child"))
             .expect("the test waits for its child");
-    assert(report.is_exit_with(0));
-    assert(::fixy::find(report.output(),
-                        ::fixy::TextView{"load_trace: the schema table holds 512 names, so it refuses the name "
-                                         "aten::mul of the schema hash 13527480966017541734"})
-               .is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, ::fixy::find(report.output(),
+                            ::fixy::TextView{"load_trace: the schema table holds 512 names, so it refuses the name "
+                                             "aten::mul of the schema hash 13527480966017541734"})
+                   .is_some());
 
     global_schema_table().clear(::foundation::effects::testing::test());
-    crucible::test::pass("  test_schema_name_table_full_is_refused: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_schema_name_table_full_is_refused: PASSED\n");
 }
 
 static void test_schema_name_table_round_trip() {
@@ -521,26 +536,27 @@ static void test_schema_name_table_round_trip() {
     std::string path = write_tmp(buf.data(), buf.size());
 
     // A load with no producer context reads the names and registers none.
-    assert(load_trace(kTestIo, sanitized(path)).is_ok());
-    assert(global_schema_table().count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, load_trace(kTestIo, sanitized(path)).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);
 
     const LoadedTrace t = load_trace(kTestIo, kVigilForeground, sanitized(path)).expect("a trace with names loads");
 
-    assert(t.num_ops == 0);
-    assert(t.num_metas == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, t.num_ops == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, t.num_metas == 0);
 
-    assert(is_named(global_schema_table().lookup(SchemaHash{0xAAAA111122223333ULL}), "aten::add"));
-    assert(is_named(global_schema_table().lookup(SchemaHash{0xBBBB444455556666ULL}), "aten::mul"));
-    assert(is_named(global_schema_table().lookup(SchemaHash{0xCCCC777788889999ULL}), "aten::matmul"));
+    CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(SchemaHash{0xAAAA111122223333ULL}), "aten::add"));
+    CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(SchemaHash{0xBBBB444455556666ULL}), "aten::mul"));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         is_named(global_schema_table().lookup(SchemaHash{0xCCCC777788889999ULL}), "aten::matmul"));
 
-    assert(missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFULL})));
+    CRUCIBLE_TEST_ASSERT(kTest, missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFULL})));
 
     test_schema_name_table_collision_is_refused(sanitized(path));
     test_schema_name_table_full_is_refused(sanitized(path));
     std::remove(path.c_str());
 
     global_schema_table().clear(::foundation::effects::testing::test());
-    crucible::test::pass("  test_schema_name_table_round_trip: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_schema_name_table_round_trip: PASSED\n");
 }
 
 static void test_schema_name_table_corrupt_zero_len() {
@@ -561,15 +577,15 @@ static void test_schema_name_table_corrupt_zero_len() {
     const LoadedTrace t =
         load_trace(kTestIo, kVigilForeground, sanitized(path)).expect("a name of length zero ends the table only");
     std::remove(path.c_str());
-    assert(t.num_ops == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, t.num_ops == 0);
 
     // The guard fired before the registration, so the hash never
     // reached the table.
-    assert(missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFCAFEBABEULL})));
-    assert(global_schema_table().count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFCAFEBABEULL})));
+    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);
 
     global_schema_table().clear(::foundation::effects::testing::test());
-    crucible::test::pass("  test_schema_name_table_corrupt_zero_len: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_schema_name_table_corrupt_zero_len: PASSED\n");
 }
 
 static void test_schema_name_table_corrupt_oversize_len() {
@@ -596,15 +612,15 @@ static void test_schema_name_table_corrupt_oversize_len() {
     const LoadedTrace t = load_trace(kTestIo, kVigilForeground, sanitized(path))
                               .expect("a name past the length bound ends the table only");
     std::remove(path.c_str());
-    assert(t.num_ops == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, t.num_ops == 0);
 
     // The guard fired before the length was refined, which under
     // enforced contracts would otherwise abort.
-    assert(missing(global_schema_table().lookup(SchemaHash{0xFEEDFACEBAADF00DULL})));
-    assert(global_schema_table().count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, missing(global_schema_table().lookup(SchemaHash{0xFEEDFACEBAADF00DULL})));
+    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);
 
     global_schema_table().clear(::foundation::effects::testing::test());
-    crucible::test::pass("  test_schema_name_table_corrupt_oversize_len: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_schema_name_table_corrupt_oversize_len: PASSED\n");
 }
 
 // The loader builds each op's meta start from a running cursor over its
@@ -634,22 +650,23 @@ static void test_meta_overrun_rejected() {
     // Op claims 5 tensors (3 in + 2 out) but only 2 metas exist — the
     // running meta cursor would overrun the metas vector.  Reject.
     std::string path = write_one_op_trace(/*n_metas=*/2, /*in=*/3, /*out=*/2);
-    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::MetaRunPastCount));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::MetaRunPastCount));
     std::remove(path.c_str());
-    crucible::test::pass("  test_meta_overrun_rejected:     PASSED\n");
+    ::fixy::check::pass(kTest, "  test_meta_overrun_rejected:     PASSED\n");
 }
 
 static void test_meta_exact_count_loads() {
     // Op claims exactly 5 tensors and 5 metas exist — in bounds, loads.
     std::string path = write_one_op_trace(/*n_metas=*/5, /*in=*/3, /*out=*/2);
     const LoadedTrace t = load_trace(kTestIo, sanitized(path)).expect("an op whose metadata fits the count loads");
-    assert(t.num_ops == 1);
-    assert(t.num_metas == 5);
-    assert(t.entries.get(0).expect("the trace holds one op")->num_inputs == 3);
-    assert(t.entries.get(0).expect("the trace holds one op")->num_outputs == 2);
-    assert(t.meta_starts.get(0).expect("the trace holds one op")->raw() == 0);  // sole op starts at metas[0]
+    CRUCIBLE_TEST_ASSERT(kTest, t.num_ops == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, t.num_metas == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, t.entries.get(0).expect("the trace holds one op")->num_inputs == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, t.entries.get(0).expect("the trace holds one op")->num_outputs == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, t.meta_starts.get(0).expect("the trace holds one op")->raw()
+                                    == 0);  // sole op starts at metas[0]
     std::remove(path.c_str());
-    crucible::test::pass("  test_meta_exact_count_loads:    PASSED\n");
+    ::fixy::check::pass(kTest, "  test_meta_exact_count_loads:    PASSED\n");
 }
 
 static void test_meta_count_uint16_overflow_rejected() {
@@ -657,9 +674,9 @@ static void test_meta_count_uint16_overflow_rejected() {
     // in 32 bits it is a real claim of 65536 tensors, and the file holds
     // two metas.
     std::string path = write_one_op_trace(/*n_metas=*/2, /*in=*/65535, /*out=*/1);
-    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::MetaRunPastCount));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::MetaRunPastCount));
     std::remove(path.c_str());
-    crucible::test::pass("  test_meta_uint16_overflow:      PASSED\n");
+    ::fixy::check::pass(kTest, "  test_meta_uint16_overflow:      PASSED\n");
 }
 
 // The peak resident size of this process, in kilobytes.  It only grows,
@@ -681,12 +698,12 @@ static void test_counts_past_the_file_allocate_nothing() {
         std::memcpy(buf.data() + 8, &claimed_ops, 4);
         std::memcpy(buf.data() + 12, &claimed_metas, 4);
         std::string path = write_tmp(buf.data(), buf.size());
-        assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::CountPastFile));
+        CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::CountPastFile));
         std::remove(path.c_str());
     }
     const long growth_kb = peak_resident_kb() - peak_before_kb;
-    assert(growth_kb < 64 * 1024);
-    crucible::test::pass("  test_counts_past_the_file:      PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, growth_kb < 64 * 1024);
+    ::fixy::check::pass(kTest, "  test_counts_past_the_file:      PASSED\n");
 }
 
 // One metadata record as the file carries it.  A record of zeros is a
@@ -716,7 +733,7 @@ static bool loads_with_meta(const MetaRecord& record) {
     std::remove(path.c_str());
     // Only the metadata record differs from a valid trace, so a refusal has
     // the one reason of a corrupt record.
-    assert(loaded.is_ok() || is_refused_as(loaded, TraceLoadError::MetaCorrupt));
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.is_ok() || is_refused_as(loaded, TraceLoadError::MetaCorrupt));
     return loaded.is_ok();
 }
 
@@ -728,37 +745,38 @@ static bool loads_with_meta_field(std::size_t field_offset, Field value) {
 }
 
 static void test_meta_bytes_break_no_claim_of_the_type() {
-    assert(loads_with_meta(MetaRecord{}));
+    CRUCIBLE_TEST_ASSERT(kTest, loads_with_meta(MetaRecord{}));
 
     // A bool that holds any byte but zero or one is undefined to read.
-    assert(!loads_with_meta_field(offsetof(TensorMeta, requires_grad), uint8_t{2}));
-    assert(loads_with_meta_field(offsetof(TensorMeta, requires_grad), uint8_t{1}));
+    CRUCIBLE_TEST_ASSERT(kTest, !loads_with_meta_field(offsetof(TensorMeta, requires_grad), uint8_t{2}));
+    CRUCIBLE_TEST_ASSERT(kTest, loads_with_meta_field(offsetof(TensorMeta, requires_grad), uint8_t{1}));
 
     // A size lane inside the rank must fit the extent bound.
     {
         MetaRecord rank_one{};
         set_meta_field(rank_one, offsetof(TensorMeta, ndim), uint8_t{1});
         set_meta_field(rank_one, offsetof(TensorMeta, sizes), kMaxTensorDimExtent);
-        assert(loads_with_meta(rank_one));
+        CRUCIBLE_TEST_ASSERT(kTest, loads_with_meta(rank_one));
         set_meta_field(rank_one, offsetof(TensorMeta, sizes), std::numeric_limits<int64_t>::max());
-        assert(!loads_with_meta(rank_one));
+        CRUCIBLE_TEST_ASSERT(kTest, !loads_with_meta(rank_one));
     }
 
     // A lane past the rank holds zero, so equal descriptors write equal
     // bytes.
-    assert(!loads_with_meta_field(offsetof(TensorMeta, sizes) + sizeof(int64_t) * 3, int64_t{5}));
-    assert(!loads_with_meta_field(offsetof(TensorMeta, strides) + sizeof(int64_t) * 7, int64_t{1}));
+    CRUCIBLE_TEST_ASSERT(kTest, !loads_with_meta_field(offsetof(TensorMeta, sizes) + sizeof(int64_t) * 3, int64_t{5}));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !loads_with_meta_field(offsetof(TensorMeta, strides) + sizeof(int64_t) * 7, int64_t{1}));
 
     // A flag bit that no meta_flags constant names is reserved.
-    assert(!loads_with_meta_field(offsetof(TensorMeta, flags), uint8_t{0x40}));
-    assert(loads_with_meta_field(offsetof(TensorMeta, flags), meta_flags::IS_CONJ));
+    CRUCIBLE_TEST_ASSERT(kTest, !loads_with_meta_field(offsetof(TensorMeta, flags), uint8_t{0x40}));
+    CRUCIBLE_TEST_ASSERT(kTest, loads_with_meta_field(offsetof(TensorMeta, flags), meta_flags::IS_CONJ));
 
     // A device index below the host is not a device.
-    assert(!loads_with_meta_field(offsetof(TensorMeta, device_idx), int8_t{-2}));
+    CRUCIBLE_TEST_ASSERT(kTest, !loads_with_meta_field(offsetof(TensorMeta, device_idx), int8_t{-2}));
 
     // A rank past the bound is refused before a lane is read.
-    assert(!loads_with_meta_field(offsetof(TensorMeta, ndim), uint8_t{9}));
-    crucible::test::pass("  test_meta_bytes_checked:        PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, !loads_with_meta_field(offsetof(TensorMeta, ndim), uint8_t{9}));
+    ::fixy::check::pass(kTest, "  test_meta_bytes_checked:        PASSED\n");
 }
 
 static void test_names_on_a_sealed_table_are_skipped() {
@@ -777,13 +795,13 @@ static void test_names_on_a_sealed_table_are_skipped() {
     const bool is_loaded = load_trace(kTestIo, kVigilForeground, sanitized(path)).is_ok();
     std::remove(path.c_str());
 
-    assert(is_loaded);
-    assert(global_schema_table().is_sealed());
-    assert(global_schema_table().count() == 0);
-    assert(missing(global_schema_table().lookup(SchemaHash{0x5EA1ED0000000001ULL})));
+    CRUCIBLE_TEST_ASSERT(kTest, is_loaded);
+    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().is_sealed());
+    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, missing(global_schema_table().lookup(SchemaHash{0x5EA1ED0000000001ULL})));
 
     global_schema_table().clear(::foundation::effects::testing::test());
-    crucible::test::pass("  test_names_on_sealed_table:     PASSED\n");
+    ::fixy::check::pass(kTest, "  test_names_on_sealed_table:     PASSED\n");
 }
 
 int main() {
@@ -807,6 +825,6 @@ int main() {
     test_meta_count_uint16_overflow_rejected();
     test_meta_bytes_break_no_claim_of_the_type();
     test_names_on_a_sealed_table_are_skipped();
-    crucible::test::pass("test_trace_loader: 19 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_trace_loader: 19 groups, all passed\n");
     return 0;
 }

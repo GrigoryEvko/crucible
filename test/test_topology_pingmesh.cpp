@@ -1,7 +1,10 @@
 #include <crucible/topology/Pingmesh.h>
 #include <foundation/reflect/EnumName.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <bit>
@@ -9,6 +12,13 @@
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cog = crucible::cog;
 namespace eff = ::fixy;
@@ -44,8 +54,9 @@ static void test_names() {
     static_assert(enum_name(topology::PingmeshProbeStatus::Delivered) == "Delivered");
     static_assert(enum_name(topology::PingmeshError::Full) == "Full");
     volatile auto error = topology::PingmeshError::LatencyOutOfRange;
-    assert(enum_name(static_cast<topology::PingmeshError>(error)) == std::string_view{"LatencyOutOfRange"});
-    crucible::test::pass("  test_names:                         PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name(static_cast<topology::PingmeshError>(error))
+                                    == std::string_view{"LatencyOutOfRange"});
+    ::fixy::check::pass(kTest, "  test_names:                         PASSED\n");
 }
 
 using ::fixy::index;
@@ -55,26 +66,31 @@ static void test_register_and_record_pairs() {
     ::foundation::core::FixedArray<cog::CogIdentity, 3> const peers{peer(1), peer(2), peer(3)};
     cog::CogIdentity const& first = peers.at(index<0>());
     cog::CogIdentity const& second = peers.at(index<1>());
-    assert(mesh.start_probing(init_ctx(), peers.view()) == topology::PingmeshError::None);
-    assert(mesh.start_probing(init_ctx(), peers.view()) == topology::PingmeshError::DuplicatePeer);
-    assert(mesh.enable_pair(init_ctx(), first.uuid, second.uuid) == topology::PingmeshError::None);
-    assert(mesh.enable_pair(init_ctx(), first.uuid, first.uuid) == topology::PingmeshError::SelfPair);
-    assert(mesh.enable_pair(init_ctx(), first.uuid, peer(9).uuid) == topology::PingmeshError::UnknownPeer);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.start_probing(init_ctx(), peers.view()) == topology::PingmeshError::None);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.start_probing(init_ctx(), peers.view()) == topology::PingmeshError::DuplicatePeer);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.enable_pair(init_ctx(), first.uuid, second.uuid) == topology::PingmeshError::None);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         mesh.enable_pair(init_ctx(), first.uuid, first.uuid) == topology::PingmeshError::SelfPair);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.enable_pair(init_ctx(), first.uuid, peer(9).uuid)
+                                    == topology::PingmeshError::UnknownPeer);
 
-    assert(mesh.record_measurement(bg_ctx(), measurement(first, second, 1000, 1)) == topology::PingmeshError::None);
-    assert(mesh.record_measurement(bg_ctx(), measurement(first, second, 2000, 2)) == topology::PingmeshError::None);
-    assert(mesh.record_measurement(bg_ctx(), measurement(first, second, 3000, 3)) == topology::PingmeshError::None);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.record_measurement(bg_ctx(), measurement(first, second, 1000, 1))
+                                    == topology::PingmeshError::None);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.record_measurement(bg_ctx(), measurement(first, second, 2000, 2))
+                                    == topology::PingmeshError::None);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.record_measurement(bg_ctx(), measurement(first, second, 3000, 3))
+                                    == topology::PingmeshError::None);
 
     auto const stats = mesh.pair_stats(first.uuid, second.uuid);
-    assert(stats.sent == 3);
-    assert(stats.delivered == 3);
-    assert(stats.lost == 0);
-    assert(stats.last_sequence == 3);
-    assert(stats.p50_latency_ns != 0);
-    assert(stats.p99_latency_ns != 0);
-    assert(mesh.per_pair_latency(first.uuid, second.uuid).is_some());
-    assert(mesh.per_pair_latency(second.uuid, second.uuid).is_none());
-    crucible::test::pass("  test_register_and_record_pairs:      PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, stats.sent == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.delivered == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.lost == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.last_sequence == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.p50_latency_ns != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.p99_latency_ns != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.per_pair_latency(first.uuid, second.uuid).is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.per_pair_latency(second.uuid, second.uuid).is_none());
+    ::fixy::check::pass(kTest, "  test_register_and_record_pairs:      PASSED\n");
 }
 
 static void test_loss_and_rejection_accounting() {
@@ -82,25 +98,27 @@ static void test_loss_and_rejection_accounting() {
     ::foundation::core::FixedArray<cog::CogIdentity, 2> const peers{peer(4), peer(5)};
     cog::CogIdentity const& first = peers.at(index<0>());
     cog::CogIdentity const& second = peers.at(index<1>());
-    assert(mesh.start_probing(init_ctx(), peers.view()) == topology::PingmeshError::None);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.start_probing(init_ctx(), peers.view()) == topology::PingmeshError::None);
 
-    assert(mesh.record_measurement(bg_ctx(), measurement(first, second, 1, 10, topology::PingmeshProbeStatus::Lost))
-           == topology::PingmeshError::None);
-    assert(mesh.record_measurement(bg_ctx(), measurement(first, second, 1, 11, topology::PingmeshProbeStatus::Rejected))
-           == topology::PingmeshError::None);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, mesh.record_measurement(bg_ctx(), measurement(first, second, 1, 10, topology::PingmeshProbeStatus::Lost))
+                   == topology::PingmeshError::None);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.record_measurement(bg_ctx(), measurement(first, second, 1, 11,
+                                                                              topology::PingmeshProbeStatus::Rejected))
+                                    == topology::PingmeshError::None);
 
     auto const stats = mesh.pair_stats(first.uuid, second.uuid);
-    assert(stats.sent == 2);
-    assert(stats.delivered == 0);
-    assert(stats.lost == 1);
-    assert(stats.rejected == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.sent == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.delivered == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.lost == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.rejected == 1);
 
     auto const report = mesh.detect_anomalies();
-    assert(report.entries.size() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, report.entries.size() == 1);
     topology::PingmeshAnomaly const& anomaly = *report.entries.get(0).expect("the report holds one anomaly");
-    assert(anomaly.anomalous);
-    assert(anomaly.stats.lost == 1);
-    crucible::test::pass("  test_loss_and_rejection_accounting:  PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, anomaly.anomalous);
+    CRUCIBLE_TEST_ASSERT(kTest, anomaly.stats.lost == 1);
+    ::fixy::check::pass(kTest, "  test_loss_and_rejection_accounting:  PASSED\n");
 }
 
 static void test_unknown_and_out_of_range_rejected() {
@@ -109,16 +127,16 @@ static void test_unknown_and_out_of_range_rejected() {
     cog::CogIdentity const& first = peers.at(index<0>());
     cog::CogIdentity const& second = peers.at(index<1>());
     auto missing = peer(8);
-    assert(mesh.start_probing(init_ctx(), peers.view()) == topology::PingmeshError::None);
-    assert(mesh.record_measurement(bg_ctx(), measurement(first, missing, 1, 1))
-           == topology::PingmeshError::UnknownPeer);
-    assert(mesh.record_measurement(bg_ctx(), measurement(first, second, 2000, 2))
-           == topology::PingmeshError::LatencyOutOfRange);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.start_probing(init_ctx(), peers.view()) == topology::PingmeshError::None);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.record_measurement(bg_ctx(), measurement(first, missing, 1, 1))
+                                    == topology::PingmeshError::UnknownPeer);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.record_measurement(bg_ctx(), measurement(first, second, 2000, 2))
+                                    == topology::PingmeshError::LatencyOutOfRange);
     auto const stats = mesh.pair_stats(first.uuid, second.uuid);
-    assert(stats.sent == 1);
-    assert(stats.delivered == 0);
-    assert(stats.rejected == 1);
-    crucible::test::pass("  test_unknown_and_out_of_range_rejected: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, stats.sent == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.delivered == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.rejected == 1);
+    ::fixy::check::pass(kTest, "  test_unknown_and_out_of_range_rejected: PASSED\n");
 }
 
 // enable_pair admits a pair of two registered peers, and refuses a self
@@ -128,11 +146,13 @@ static void test_enable_pair() {
     ::foundation::core::FixedArray<cog::CogIdentity, 2> const peers{peer(9), peer(10)};
     cog::CogIdentity const& first = peers.at(index<0>());
     cog::CogIdentity const& second = peers.at(index<1>());
-    assert(mesh.start_probing(init_ctx(), peers.view()) == topology::PingmeshError::None);
-    assert(mesh.enable_pair(init_ctx(), first.uuid, second.uuid) == topology::PingmeshError::None);
-    assert(mesh.enable_pair(init_ctx(), first.uuid, first.uuid) == topology::PingmeshError::SelfPair);
-    assert(mesh.enable_pair(init_ctx(), first.uuid, peer(11).uuid) == topology::PingmeshError::UnknownPeer);
-    crucible::test::pass("  test_enable_pair:                   PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.start_probing(init_ctx(), peers.view()) == topology::PingmeshError::None);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.enable_pair(init_ctx(), first.uuid, second.uuid) == topology::PingmeshError::None);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         mesh.enable_pair(init_ctx(), first.uuid, first.uuid) == topology::PingmeshError::SelfPair);
+    CRUCIBLE_TEST_ASSERT(kTest, mesh.enable_pair(init_ctx(), first.uuid, peer(11).uuid)
+                                    == topology::PingmeshError::UnknownPeer);
+    ::fixy::check::pass(kTest, "  test_enable_pair:                   PASSED\n");
 }
 
 // The pair counters are cache-line aligned, so an array of them must place
@@ -148,13 +168,13 @@ static void test_pair_counter_layout_invariants() {
     constexpr std::uintptr_t LINE = 64;
     for (std::size_t i = 0; i < grid.size(); ++i) {
         auto const addr = std::bit_cast<std::uintptr_t>(&grid[i]);
-        assert((addr % LINE) == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, (addr % LINE) == 0);
         if (i > 0) {
             auto const prev_addr = std::bit_cast<std::uintptr_t>(&grid[i - 1]);
-            assert(addr - prev_addr >= LINE);
+            CRUCIBLE_TEST_ASSERT(kTest, addr - prev_addr >= LINE);
         }
     }
-    crucible::test::pass("  test_pair_counter_layout_invariants: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_pair_counter_layout_invariants: PASSED\n");
 }
 
 int main() {
@@ -171,6 +191,6 @@ int main() {
     test_unknown_and_out_of_range_rejected();
     test_enable_pair();
     test_pair_counter_layout_invariants();
-    crucible::test::pass("test_topology_pingmesh: all passed\n");
+    ::fixy::check::pass(kTest, "test_topology_pingmesh: all passed\n");
     return 0;
 }

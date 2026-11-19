@@ -8,9 +8,19 @@
 
 #include <crucible/Vigil.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -25,13 +35,13 @@ void test_dispatch_pure_matches_dispatch_op() {
         auto d0 = make_op(0, 0);
         auto r0 = crucible::test::dispatch_pure_synthetic(vigil, vigil.mint_producer_context(), d0.entry, d0.metas,
                                                           d0.n_metas);
-        assert(r0.action == DispatchResult::Action::RECORD);
+        CRUCIBLE_TEST_ASSERT(kTest, r0.action == DispatchResult::Action::RECORD);
 
         const VigilFgCtx fg = vigil.mint_producer_context();
         for (uint32_t i = 1; i < 5; ++i) {
             auto d = make_op(0, i);
             auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::RECORD);
+            CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::RECORD);
         }
     }
 
@@ -47,7 +57,7 @@ void test_dispatch_pure_matches_dispatch_op() {
                 r = crucible::test::dispatch_pure_synthetic(vigil, vigil.mint_producer_context(), d.entry, d.metas,
                                                             d.n_metas);
             }
-            assert(r.action == DispatchResult::Action::RECORD);
+            CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::RECORD);
         }
     }
 
@@ -62,24 +72,26 @@ void test_dispatch_pure_matches_dispatch_op() {
         for (uint32_t i = 0; i < K; ++i) {
             auto d = make_op(3, i);
             auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::RECORD && "alignment via _pure should still RECORD");
+            CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::RECORD
+                                            && "alignment via _pure should still RECORD");
         }
-        assert(vigil.context().is_compiled() && "CrucibleContext should be compiled after K _pure aligns");
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled()
+                                        && "CrucibleContext should be compiled after K _pure aligns");
 
         for (uint32_t i = K; i < NUM_OPS; ++i) {
             auto d = make_op(3, i);
             auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::COMPILED);
+            CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
         }
 
         for (uint32_t i = 0; i < NUM_OPS; ++i) {
             auto d = make_op(4, i);
             auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::COMPILED);
+            CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
         }
     }
 
-    crucible::test::pass("  test_dispatch_pure_matches_dispatch_op: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_dispatch_pure_matches_dispatch_op: PASSED\n");
 }
 
 }  // namespace test_vigil_dispatch

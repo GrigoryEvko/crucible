@@ -5,9 +5,19 @@
 
 #include <crucible/Vigil.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -32,8 +42,8 @@ void test_dispatch_pure_divergence_and_recovery() {
         for (uint32_t i = 0; i < 3; ++i) {
             auto d = make_op(4, i);
             auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::COMPILED);
-            assert(r.status == ReplayStatus::MATCH);
+            CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
+            CRUCIBLE_TEST_ASSERT(kTest, r.status == ReplayStatus::MATCH);
         }
 
         // The shape still matches, so only the schema trips the guard.
@@ -47,14 +57,14 @@ void test_dispatch_pure_divergence_and_recovery() {
         bad_metas.at(::fixy::index<1>()) = make_meta(fake_ptr(4, 3));
 
         auto rdiv = crucible::test::dispatch_pure_synthetic(vigil, fg, bad_entry, bad_metas, 2);
-        assert(rdiv.action == DispatchResult::Action::RECORD);
-        assert(rdiv.status == ReplayStatus::DIVERGED);
-        assert(vigil.diverged_count() == 1);
-        assert(!vigil.context().is_compiled());
+        CRUCIBLE_TEST_ASSERT(kTest, rdiv.action == DispatchResult::Action::RECORD);
+        CRUCIBLE_TEST_ASSERT(kTest, rdiv.status == ReplayStatus::DIVERGED);
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.diverged_count() == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled());
 
         auto d = make_op(4, 4);
         auto r2 = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
-        assert(r2.action == DispatchResult::Action::RECORD);
+        CRUCIBLE_TEST_ASSERT(kTest, r2.action == DispatchResult::Action::RECORD);
     }
 
     // Divergence and recovery end to end.
@@ -75,9 +85,9 @@ void test_dispatch_pure_divergence_and_recovery() {
 
         const VigilFgCtx fg = vigil.mint_producer_context();
         auto rdiv = crucible::test::dispatch_pure_synthetic(vigil, fg, bad, bad_meta, 1);
-        assert(rdiv.action == DispatchResult::Action::RECORD);
-        assert(rdiv.status == ReplayStatus::DIVERGED);
-        assert(!vigil.context().is_compiled());
+        CRUCIBLE_TEST_ASSERT(kTest, rdiv.action == DispatchResult::Action::RECORD);
+        CRUCIBLE_TEST_ASSERT(kTest, rdiv.status == ReplayStatus::DIVERGED);
+        CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled());
 
         // Six clean iterations, for the same reason the non-wrapper
         // recovery test needs six: the ring still holds the alignment
@@ -93,20 +103,20 @@ void test_dispatch_pure_divergence_and_recovery() {
         for (uint32_t i = 0; i < K; ++i) {
             auto d = make_op(17, i);
             auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::RECORD);
+            CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::RECORD);
         }
-        assert(vigil.context().is_compiled());
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled());
 
         for (uint32_t i = K; i < NUM_OPS; ++i) {
             auto d = make_op(17, i);
             auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::COMPILED);
+            CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
         }
 
         for (uint32_t i = 0; i < NUM_OPS; ++i) {
             auto d = make_op(18, i);
             auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::COMPILED);
+            CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
         }
     }
 
@@ -125,13 +135,13 @@ void test_dispatch_pure_divergence_and_recovery() {
             for (uint32_t i = 0; i < NUM_OPS; ++i) {
                 auto d = make_op(iter, i);
                 auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
-                assert(r.action == DispatchResult::Action::COMPILED);
-                assert(r.status == ReplayStatus::MATCH || r.status == ReplayStatus::COMPLETE);
+                CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
+                CRUCIBLE_TEST_ASSERT(kTest, r.status == ReplayStatus::MATCH || r.status == ReplayStatus::COMPLETE);
             }
         }
     }
 
-    crucible::test::pass("  test_dispatch_pure_divergence_and_recovery: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_dispatch_pure_divergence_and_recovery: PASSED\n");
 }
 
 }  // namespace test_vigil_dispatch

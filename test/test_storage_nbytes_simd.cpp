@@ -7,7 +7,10 @@
 #include <crucible/Types.h>
 
 #include <array>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -18,6 +21,13 @@
 #include <random>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 using namespace crucible::detail;
@@ -33,8 +43,8 @@ static_assert(sizeof(StorageNbytesDet) == sizeof(::fixy::Saturated<uint64_t>));
 
 [[nodiscard]] static TensorMeta make_meta(std::initializer_list<int64_t> sizes, std::initializer_list<int64_t> strides,
                                           ScalarType dtype = ScalarType::Float) noexcept {
-    assert(sizes.size() == strides.size());
-    assert(sizes.size() <= 8);
+    CRUCIBLE_TEST_ASSERT(kTest, sizes.size() == strides.size());
+    CRUCIBLE_TEST_ASSERT(kTest, sizes.size() <= 8);
 
     TensorMeta meta{};
     meta.ndim = static_cast<uint8_t>(sizes.size());
@@ -63,8 +73,8 @@ static void check_equiv(const TensorMeta& meta, const char* what) noexcept {
     const auto simd_v = compute_storage_nbytes_simd(external);
     const auto scalar_det = compute_storage_nbytes_scalar_det(external);
     const auto simd_det = compute_storage_nbytes_simd_det(external);
-    assert(scalar_det.peek() == scalar);
-    assert(simd_det.peek() == simd_v);
+    CRUCIBLE_TEST_ASSERT(kTest, scalar_det.peek() == scalar);
+    CRUCIBLE_TEST_ASSERT(kTest, simd_det.peek() == simd_v);
     if (scalar != simd_v) {
         std::fprintf(stderr,
                      "[%s] MISMATCH: scalar=%llu(clamped=%d) simd=%llu(clamped=%d)\n"
@@ -91,7 +101,8 @@ static void test_scalar_tensor() {
     meta.ndim = 0;
     meta.dtype = ScalarType::Float;
     check_equiv(meta, "scalar-float");
-    assert(compute_storage_nbytes_simd(external_meta(meta)) == element_size(ScalarType::Float).raw());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         compute_storage_nbytes_simd(external_meta(meta)) == element_size(ScalarType::Float).raw());
 
     meta.dtype = ScalarType::Double;
     check_equiv(meta, "scalar-double");
@@ -99,14 +110,14 @@ static void test_scalar_tensor() {
     meta.dtype = ScalarType::Byte;
     check_equiv(meta, "scalar-byte");
 
-    crucible::test::pass("  test_scalar_tensor: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_scalar_tensor: PASSED\n");
 }
 
 static void test_zero_size_tensor() {
     // A zero in any dimension takes the whole tensor to zero bytes.  The
     // lambda keeps one copy of the inlined vector path in this test.
     const auto expect_zero_bytes = [](const TensorMeta& meta) {
-        assert(compute_storage_nbytes_simd(external_meta(meta)) == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(meta)) == 0);
     };
 
     auto m1 = make_meta({0}, {1});
@@ -121,20 +132,20 @@ static void test_zero_size_tensor() {
     expect_zero_bytes(m3);
     check_equiv(m3, "zero-trailing-3d");
 
-    crucible::test::pass("  test_zero_size_tensor: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_zero_size_tensor: PASSED\n");
 }
 
 static void test_common_shapes() {
     // 4096 floats at four bytes each make 16384 bytes.
     auto m1d = make_meta({4096}, {1});
     check_equiv(m1d, "1D-contig");
-    assert(compute_storage_nbytes_simd(external_meta(m1d)) == 16384);
+    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(m1d)) == 16384);
 
     // 128 by 256 is 32768 elements, which at four bytes each make
     // 131072 bytes.
     auto m2d = make_meta({128, 256}, {256, 1});
     check_equiv(m2d, "2D-matrix");
-    assert(compute_storage_nbytes_simd(external_meta(m2d)) == 131072);
+    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(m2d)) == 131072);
 
     auto mnchw = make_meta({32, 64, 224, 224}, {64 * 224 * 224, 224 * 224, 224, 1});
     check_equiv(mnchw, "4D-NCHW");
@@ -142,7 +153,7 @@ static void test_common_shapes() {
     auto m8d = make_meta({2, 3, 5, 7, 11, 13, 17, 19}, {1, 2, 3, 4, 5, 6, 7, 8});
     check_equiv(m8d, "8D");
 
-    crucible::test::pass("  test_common_shapes: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_common_shapes: PASSED\n");
 }
 
 static void test_natural_tensor_meta_alignment() {
@@ -159,14 +170,15 @@ static void test_natural_tensor_meta_alignment() {
             break;
         }
     }
-    assert(chosen != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, chosen != 0);
 
     auto* meta = std::construct_at(std::bit_cast<TensorMeta*>(chosen), make_meta({16, 32, 64}, {2048, 64, 1}));
-    assert(!::fixy::address_of(::fixy::to(meta->sizes.lanes().at(::fixy::index<0>()))).is_aligned<64>());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !::fixy::address_of(::fixy::to(meta->sizes.lanes().at(::fixy::index<0>()))).is_aligned<64>());
     check_equiv(*meta, "natural-align-not-vector-align");
     std::destroy_at(meta);
 
-    crucible::test::pass("  test_natural_tensor_meta_alignment: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_natural_tensor_meta_alignment: PASSED\n");
 }
 
 static void test_negative_strides() {
@@ -184,7 +196,7 @@ static void test_negative_strides() {
     auto m4 = make_meta({3, 4, 5, 6}, {-120, 30, -6, 1});
     check_equiv(m4, "neg-multi-4d");
 
-    crucible::test::pass("  test_negative_strides: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_negative_strides: PASSED\n");
 }
 
 static void test_stride_zero() {
@@ -199,7 +211,7 @@ static void test_stride_zero() {
     auto m3 = make_meta({3, 4, 5}, {0, 0, 1});
     check_equiv(m3, "stride0-multi");
 
-    crucible::test::pass("  test_stride_zero: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_stride_zero: PASSED\n");
 }
 
 static void test_dtype_variations() {
@@ -213,10 +225,10 @@ static void test_dtype_variations() {
         m.dtype = dt;
         check_equiv(m, "dtype-variation");
         const uint64_t expected = element_size(dt).times(uint64_t{12});
-        assert(compute_storage_nbytes_simd(external_meta(m)) == expected);
+        CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(m)) == expected);
     }
 
-    crucible::test::pass("  test_dtype_variations: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_dtype_variations: PASSED\n");
 }
 
 // These inputs overflow int64 in the (size - 1) times stride step.  Both
@@ -228,13 +240,13 @@ static void test_overflow_multiply() {
     auto m1 = make_meta({(int64_t{1} << 32) + 2}, {int64_t{1} << 32});
     {
         const auto sc = compute_storage_nbytes_scalar(external_meta(m1));
-        assert(sc.value() == UINT64_MAX);
-        assert(sc.was_clamped());
+        CRUCIBLE_TEST_ASSERT(kTest, sc.value() == UINT64_MAX);
+        CRUCIBLE_TEST_ASSERT(kTest, sc.was_clamped());
     }
     {
         const auto sv = compute_storage_nbytes_simd(external_meta(m1));
-        assert(sv.value() == UINT64_MAX);
-        assert(sv.was_clamped());
+        CRUCIBLE_TEST_ASSERT(kTest, sv.value() == UINT64_MAX);
+        CRUCIBLE_TEST_ASSERT(kTest, sv.was_clamped());
     }
     check_equiv(m1, "overflow-mul-1d");
 
@@ -243,7 +255,7 @@ static void test_overflow_multiply() {
     auto m2 = make_meta({3, (int64_t{1} << 32) + 1}, {1, int64_t{1} << 31});
     check_equiv(m2, "overflow-mul-2d");
 
-    crucible::test::pass("  test_overflow_multiply: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_overflow_multiply: PASSED\n");
 }
 
 // Here the multiply stays in range and the additive fold across the
@@ -258,7 +270,7 @@ static void test_overflow_add_fold() {
                         int64_t{1} << 29, int64_t{1} << 29, int64_t{1} << 29});
     check_equiv(m, "overflow-add-fold-8d");
 
-    crucible::test::pass("  test_overflow_add_fold: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_overflow_add_fold: PASSED\n");
 }
 
 // INT64_MIN is the boundary case for the absolute value the pre-screen
@@ -270,7 +282,7 @@ static void test_int64_min_stride() {
     auto m = make_meta({2}, {INT64_MIN});
     check_equiv(m, "int64-min-stride");
 
-    crucible::test::pass("  test_int64_min_stride: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_int64_min_stride: PASSED\n");
 }
 
 // A negative size is not a valid extent, but a hostile descriptor can hold
@@ -292,9 +304,9 @@ static void test_negative_size() {
     // one keeps the product in range, so the span is one past INT64_MAX: it
     // saturates.
     const auto saturated = compute_storage_nbytes_scalar(external_meta(make_meta({INT64_MIN}, {1})));
-    assert(saturated.was_clamped());
+    CRUCIBLE_TEST_ASSERT(kTest, saturated.was_clamped());
 
-    crucible::test::pass("  test_negative_size: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_negative_size: PASSED\n");
 }
 
 // The lanes past ndim take part in every vector operation, and a hostile
@@ -315,9 +327,9 @@ static void test_dead_lanes_hold_extremes() {
     // Three steps of eight elements past the first, plus the first, of four
     // bytes each.
     const auto span = compute_storage_nbytes_simd(external_meta(m));
-    assert(!span.was_clamped() && span.value() == 100);
+    CRUCIBLE_TEST_ASSERT(kTest, !span.was_clamped() && span.value() == 100);
 
-    crucible::test::pass("  test_dead_lanes_hold_extremes: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_dead_lanes_hold_extremes: PASSED\n");
 }
 
 // These bounds keep every generated input on the vector fast path, so
@@ -341,7 +353,7 @@ static void test_random_well_bounded() {
         check_equiv(m, "random-bounded");
     }
 
-    crucible::test::pass("  test_random_well_bounded: PASSED ({} trials)\n", N_TRIALS);
+    ::fixy::check::pass(kTest, "  test_random_well_bounded: PASSED ({} trials)\n", N_TRIALS);
 }
 
 // These bounds are wide enough to fail the pre-screen, so this case
@@ -365,7 +377,7 @@ static void test_random_extreme() {
         check_equiv(m, "random-extreme");
     }
 
-    crucible::test::pass("  test_random_extreme: PASSED ({} trials)\n", N_TRIALS);
+    ::fixy::check::pass(kTest, "  test_random_extreme: PASSED ({} trials)\n", N_TRIALS);
 }
 
 int main() {
@@ -386,6 +398,6 @@ int main() {
     test_random_well_bounded();
     test_random_extreme();
 
-    crucible::test::pass("test_storage_nbytes_simd: ALL PASSED\n");
+    ::fixy::check::pass(kTest, "test_storage_nbytes_simd: ALL PASSED\n");
     return 0;
 }

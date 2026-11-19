@@ -29,7 +29,6 @@
 #include <memory>
 #include <thread>
 #include <type_traits>
-#include "test_assert.h"
 
 using crucible::SchemaHash;
 using crucible::ShapeHash;
@@ -83,8 +82,11 @@ OpData op_at(uint32_t iter, uint32_t op_idx) {
     made.entry.num_inputs = (op_idx == 0) ? 0 : 1;
     made.entry.num_outputs = 1;
     uint16_t idx = 0;
-    if (op_idx > 0) crucible::test::element_at(made.metas, idx++) = meta_at(fake_ptr(iter, op_idx - 1));
-    crucible::test::element_at(made.metas, idx++) = meta_at(fake_ptr(iter, op_idx));
+    if (op_idx > 0)
+        *made.metas.get(idx++).expect("a test reads an element at or past the count of its array") =
+            meta_at(fake_ptr(iter, op_idx - 1));
+    *made.metas.get(idx++).expect("a test reads an element at or past the count of its array") =
+        meta_at(fake_ptr(iter, op_idx));
     made.n_metas = static_cast<uint16_t>(made.entry.num_inputs + made.entry.num_outputs);
     return made;
 }

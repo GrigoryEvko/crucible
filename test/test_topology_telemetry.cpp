@@ -4,11 +4,19 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
 #include <cmath>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace topology = crucible::topology;
 namespace eff = ::fixy;
@@ -63,10 +71,11 @@ error_of(::fixy::Result<T, topology::NicTelemetryError> const& result) {
 
 static void test_enumerator_names() {
     using ::foundation::reflect::enum_name;
-    assert(enum_name(topology::NicTelemetryError::InvalidNicCog) == std::string_view{"InvalidNicCog"});
-    assert(enum_name(static_cast<topology::NicTelemetryError>(0xFF))
-           == std::string_view{"<unknown NicTelemetryError>"});
-    crucible::test::pass("  test_enumerator_names:                PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         enum_name(topology::NicTelemetryError::InvalidNicCog) == std::string_view{"InvalidNicCog"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name(static_cast<topology::NicTelemetryError>(0xFF))
+                                    == std::string_view{"<unknown NicTelemetryError>"});
+    ::fixy::check::pass(kTest, "  test_enumerator_names:                PASSED\n");
 }
 
 static void test_parsers_and_drop_rate() {
@@ -79,16 +88,16 @@ static void test_parsers_and_drop_rate() {
                                         "rx_fifo_errors: 1\n";
     auto const counters =
         topology::parse_netdev_counters(topology::tag_external_telemetry_text(netdev)).expect("the netdev text parses");
-    assert(counters.value().rx_bytes == 1000);
-    assert(topology::netdev_drop_ppm(counters.value()) == 15000);
+    CRUCIBLE_TEST_ASSERT(kTest, counters.value().rx_bytes == 1000);
+    CRUCIBLE_TEST_ASSERT(kTest, topology::netdev_drop_ppm(counters.value()) == 15000);
 
     constexpr ::fixy::TextView qdisc = "backlog: 4096b 7p\n"
                                        "drops: 3\n"
                                        "overlimits: 4\n";
     auto const backlog =
         topology::parse_qdisc_backlog(topology::tag_external_telemetry_text(qdisc)).expect("the qdisc text parses");
-    assert(backlog.value().backlog_bytes == 4096);
-    assert(backlog.value().backlog_packets == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, backlog.value().backlog_bytes == 4096);
+    CRUCIBLE_TEST_ASSERT(kTest, backlog.value().backlog_packets == 7);
 
     constexpr ::fixy::TextView sysctl = "net.core.rmem_max = 67108864\n"
                                         "net.core.wmem_max = 67108864\n"
@@ -97,16 +106,16 @@ static void test_parsers_and_drop_rate() {
                                         "net.ipv4.tcp_wmem_max = 33554432\n";
     auto const sys =
         topology::parse_sysctl_snapshot(topology::tag_external_telemetry_text(sysctl)).expect("the sysctl text parses");
-    assert(sys.value().rmem_max_bytes == 67108864);
-    assert(sys.value().busy_poll_us == 50);
+    CRUCIBLE_TEST_ASSERT(kTest, sys.value().rmem_max_bytes == 67108864);
+    CRUCIBLE_TEST_ASSERT(kTest, sys.value().busy_poll_us == 50);
 
     auto empty = topology::parse_netdev_counters(topology::tag_external_telemetry_text("  \n"));
-    assert(empty.is_err());
-    assert(error_of(empty) == topology::NicTelemetryError::EmptyInput);
+    CRUCIBLE_TEST_ASSERT(kTest, empty.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(empty) == topology::NicTelemetryError::EmptyInput);
     auto unknown = topology::parse_sysctl_snapshot(topology::tag_external_telemetry_text("net.core.other = 1\n"));
-    assert(unknown.is_err());
-    assert(error_of(unknown) == topology::NicTelemetryError::MissingRequiredField);
-    crucible::test::pass("  test_parsers_and_drop_rate:           PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, unknown.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(unknown) == topology::NicTelemetryError::MissingRequiredField);
+    ::fixy::check::pass(kTest, "  test_parsers_and_drop_rate:           PASSED\n");
 }
 
 static void test_snapshot_mint() {
@@ -117,27 +126,27 @@ static void test_snapshot_mint() {
         topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
                                               tcp_sample(80000000000ull, 1000, 1000), samples.thermal, sampler, at_one)
             .expect("a nic gives a snapshot");
-    assert(first.nic_uuid() == nic().uuid);
-    assert(first.sequence() == 1);
-    assert(first.line_rate_bps().value() == 100000000000ull);
-    assert(first.tcp().peek().value().btl_bw_bps.value() == 80000000000ull);
+    CRUCIBLE_TEST_ASSERT(kTest, first.nic_uuid() == nic().uuid);
+    CRUCIBLE_TEST_ASSERT(kTest, first.sequence() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, first.line_rate_bps().value() == 100000000000ull);
+    CRUCIBLE_TEST_ASSERT(kTest, first.tcp().peek().value().btl_bw_bps.value() == 80000000000ull);
     auto const recomputed = topology::compute_effective_bandwidth(first);
-    assert(std::fabs(recomputed.value() - first.effective_bandwidth_bps().value()) < 1.0);
+    CRUCIBLE_TEST_ASSERT(kTest, std::fabs(recomputed.value() - first.effective_bandwidth_bps().value()) < 1.0);
 
     auto gpu = nic();
     gpu.kind = cog::CogKind::Gpu;
     auto wrong_kind = topology::mint_nic_telemetry_snapshot(gpu, 1, samples.counters, samples.backlog, samples.sysctl,
                                                             tcp_sample(1, 1, 0), samples.thermal, sampler, at_one);
-    assert(wrong_kind.is_err());
-    assert(error_of(wrong_kind) == topology::NicTelemetryError::InvalidNicCog);
+    CRUCIBLE_TEST_ASSERT(kTest, wrong_kind.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(wrong_kind) == topology::NicTelemetryError::InvalidNicCog);
 
     auto zero = nic();
     zero.uuid = cog::Uuid{};
     auto zero_uuid = topology::mint_nic_telemetry_snapshot(zero, 1, samples.counters, samples.backlog, samples.sysctl,
                                                            tcp_sample(1, 1, 0), samples.thermal, sampler, at_one);
-    assert(zero_uuid.is_err());
-    assert(error_of(zero_uuid) == topology::NicTelemetryError::InvalidNicCog);
-    crucible::test::pass("  test_snapshot_mint:                   PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, zero_uuid.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(zero_uuid) == topology::NicTelemetryError::InvalidNicCog);
+    ::fixy::check::pass(kTest, "  test_snapshot_mint:                   PASSED\n");
 }
 
 // The grade of each sample of a snapshot is the distance from its stamp to
@@ -156,29 +165,30 @@ static void test_snapshot_grade_comes_from_the_sampler() {
                              nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
                              tcp_sample(80000000000ull, 1000, 1000), samples.thermal, sampler, sampler.stamp())
                              .expect("a nic gives a snapshot");
-    assert(current.sequence() == 7);
-    assert(current.netdev().is_fresh() && current.qdisc().is_fresh() && current.sysctl().is_fresh());
-    assert(current.tcp().is_fresh() && current.thermal().is_fresh());
+    CRUCIBLE_TEST_ASSERT(kTest, current.sequence() == 7);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         current.netdev().is_fresh() && current.qdisc().is_fresh() && current.sysctl().is_fresh());
+    CRUCIBLE_TEST_ASSERT(kTest, current.tcp().is_fresh() && current.thermal().is_fresh());
 
     auto const older =
         topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
                                               tcp_sample(80000000000ull, 1000, 1000), samples.thermal, sampler, at_five)
             .expect("a nic gives a snapshot");
-    assert(older.sequence() == 5);
-    assert(older.netdev().staleness().value == 2 && older.tcp().staleness().value == 2);
-    assert(older.thermal().staleness().value == 2);
-    crucible::test::pass("  test_snapshot_grade_comes_from_the_sampler: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, older.sequence() == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, older.netdev().staleness().value == 2 && older.tcp().staleness().value == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, older.thermal().staleness().value == 2);
+    ::fixy::check::pass(kTest, "  test_snapshot_grade_comes_from_the_sampler: PASSED\n");
 }
 
 static void test_effective_bandwidth_and_history() {
     auto init = init_ctx();
     auto bg = bg_ctx();
     auto history = topology::mint_nic_telemetry_history<4>(init);
-    assert(history.count(init) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, history.count(init) == 0);
     auto empty = history.current_snapshot(bg);
-    assert(empty.is_err());
-    assert(error_of(empty) == topology::NicTelemetryError::EmptyHistory);
-    assert(history.detect_drift(bg).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, empty.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(empty) == topology::NicTelemetryError::EmptyHistory);
+    CRUCIBLE_TEST_ASSERT(kTest, history.detect_drift(bg).is_err());
 
     Samples samples{};
     ::fixy::SequenceSource sampler = ::fixy::mint_sequence_source(init);
@@ -192,13 +202,13 @@ static void test_effective_bandwidth_and_history() {
         topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
                                               tcp_sample(50000000000ull, 1000, 1000), samples.thermal, sampler, at_two)
             .expect("a nic gives a snapshot");
-    assert(first.effective_bandwidth_bps().value() > second.effective_bandwidth_bps().value());
+    CRUCIBLE_TEST_ASSERT(kTest, first.effective_bandwidth_bps().value() > second.effective_bandwidth_bps().value());
 
-    assert(history.record(bg, first) == topology::NicTelemetryError::None);
-    assert(history.record(bg, second) == topology::NicTelemetryError::None);
-    assert(history.count(bg) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, history.record(bg, first) == topology::NicTelemetryError::None);
+    CRUCIBLE_TEST_ASSERT(kTest, history.record(bg, second) == topology::NicTelemetryError::None);
+    CRUCIBLE_TEST_ASSERT(kTest, history.count(bg) == 2);
     auto const current = history.current_snapshot(init).expect("the history holds two snapshots");
-    assert(current.sequence() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, current.sequence() == 2);
 
     auto const drift = history
                            .detect_drift(bg,
@@ -208,9 +218,9 @@ static void test_effective_bandwidth_and_history() {
                                              .min_drift_samples = 2,
                                          })
                            .expect("the history holds two snapshots");
-    assert(drift.degraded);
-    assert(drift.bandwidth_drop_ppm > 300000);
-    assert(drift.nic_uuid == nic().uuid);
+    CRUCIBLE_TEST_ASSERT(kTest, drift.degraded);
+    CRUCIBLE_TEST_ASSERT(kTest, drift.bandwidth_drop_ppm > 300000);
+    CRUCIBLE_TEST_ASSERT(kTest, drift.nic_uuid == nic().uuid);
 
     // The ring keeps the last four, so the oldest after five records is
     // the second one.
@@ -220,15 +230,16 @@ static void test_effective_bandwidth_and_history() {
                               nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
                               tcp_sample(50000000000ull, 1000, 1000), samples.thermal, sampler, sampled)
                               .expect("a nic gives a snapshot");
-        assert(next.sequence() == sequence);
-        assert(history.record(bg, next) == topology::NicTelemetryError::None);
+        CRUCIBLE_TEST_ASSERT(kTest, next.sequence() == sequence);
+        CRUCIBLE_TEST_ASSERT(kTest, history.record(bg, next) == topology::NicTelemetryError::None);
     }
-    assert(history.count(bg) == 4);
-    assert(history.current_snapshot(bg).expect("the history holds four snapshots").sequence() == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, history.count(bg) == 4);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         history.current_snapshot(bg).expect("the history holds four snapshots").sequence() == 5);
     auto const steady = history.detect_drift(bg).expect("the history holds four snapshots");
-    assert(!steady.degraded);
-    assert(steady.bandwidth_drop_ppm == 0);
-    crucible::test::pass("  test_effective_bandwidth_and_history: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, !steady.degraded);
+    CRUCIBLE_TEST_ASSERT(kTest, steady.bandwidth_drop_ppm == 0);
+    ::fixy::check::pass(kTest, "  test_effective_bandwidth_and_history: PASSED\n");
 }
 
 static void test_static_gates() {
@@ -251,7 +262,7 @@ static void test_static_gates() {
     // The per-socket sample and the health class of a link have two names,
     // so the telemetry headers and the graph header build in one TU.
     static_assert(std::is_enum_v<topology::CongestionState> && std::is_class_v<topology::CongestionSample>);
-    crucible::test::pass("  test_static_gates:                     PASSED\n");
+    ::fixy::check::pass(kTest, "  test_static_gates:                     PASSED\n");
 }
 
 int main() {
@@ -262,6 +273,6 @@ int main() {
     test_snapshot_grade_comes_from_the_sampler();
     test_effective_bandwidth_and_history();
     test_static_gates();
-    crucible::test::pass("test_topology_telemetry: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_topology_telemetry: all PASSED\n");
     return 0;
 }

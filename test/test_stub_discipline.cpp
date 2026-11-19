@@ -24,9 +24,18 @@
 #include <fixy/Tags.h>
 #include <foundation/effects/Ctx.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 static_assert(crucible::cntp::data_plane_implemented == false,
               "data_plane_implemented flipped to true. Rewrite the live-tier "
@@ -89,7 +98,7 @@ void test_mtls_stub_returns_backend_unavailable() {
         cntp::SocketFd, cntp::DeclaredMtlsConfig const&, cntp::MtlsDnsName, cntp::MtlsCertificateFingerprint) noexcept;
     constexpr ConnectFn p = &cntp::connect_mtls;
     (void)p;
-    crucible::test::pass("  test_mtls_stub_returns_backend_unavailable: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_mtls_stub_returns_backend_unavailable: PASSED\n");
 }
 
 void test_nic_apply_returns_privileged_deferred() {
@@ -100,8 +109,8 @@ void test_nic_apply_returns_privileged_deferred() {
     ethtool.interface = cntp::NicInterfaceName::from("lo").expect("lo is an interface name");
     auto declared = nic::declare_ethtool_config(ethtool).expect("an ethtool configuration of lo is valid");
     auto applied = nic::apply_ethtool(declared);
-    assert(applied.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
-    crucible::test::pass("  test_nic_apply_returns_privileged_deferred: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, applied.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
+    ::fixy::check::pass(kTest, "  test_nic_apply_returns_privileged_deferred: PASSED\n");
 }
 
 void test_sriov_query_returns_query_deferred() {
@@ -114,8 +123,8 @@ void test_sriov_query_returns_query_deferred() {
     physical.kind = cog::CogKind::NicPort;
     auto iface = cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
     auto query = sriov::query_current(physical, iface);
-    assert(query.err() == ::fixy::some(sriov::SrIovError::QueryDeferred));
-    crucible::test::pass("  test_sriov_query_returns_query_deferred: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, query.err() == ::fixy::some(sriov::SrIovError::QueryDeferred));
+    ::fixy::check::pass(kTest, "  test_sriov_query_returns_query_deferred: PASSED\n");
 }
 
 void test_roce_dcqcn_state_unavailable() {
@@ -123,11 +132,11 @@ void test_roce_dcqcn_state_unavailable() {
 
     auto iface = cntp::NicInterfaceName::from("lo").expect("lo is an interface name");
     auto state = cntp::query_dcqcn_state(iface);
-    assert(state == cntp::DcqcnState::BackendUnavailable);
+    CRUCIBLE_TEST_ASSERT(kTest, state == cntp::DcqcnState::BackendUnavailable);
 
     auto verify = cntp::verify_dcqcn_active(iface);
-    assert(verify.err() == ::fixy::some(cntp::RoceError::DcqcnStatusUnavailable));
-    crucible::test::pass("  test_roce_dcqcn_state_unavailable: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, verify.err() == ::fixy::some(cntp::RoceError::DcqcnStatusUnavailable));
+    ::fixy::check::pass(kTest, "  test_roce_dcqcn_state_unavailable: PASSED\n");
 }
 
 void test_tcam_force_returns_vendor_unavailable() {
@@ -144,7 +153,7 @@ void test_tcam_force_returns_vendor_unavailable() {
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
     auto declared_plan = tcam::mint_tcam_table(init, nic, caps, tcam::admit_tcam_entries(4).expect("4 entries fit"));
     tcam::DeclaredTcamTable const plan = std::move(declared_plan).expect("the plan fits the caps");
-    assert(!plan.value().backend_ready());
+    CRUCIBLE_TEST_ASSERT(kTest, !plan.value().backend_ready());
 
     tcam::TcamFlowRule rule{};
     rule.rule_id = tcam::admit_tcam_rule_id(1).expect("the rule id is not zero");
@@ -152,8 +161,8 @@ void test_tcam_force_returns_vendor_unavailable() {
     tcam::DeclaredTcamFlowRule const declared_rule = tcam::declare_tcam_rule(rule).expect("the rule is valid");
 
     auto force = tcam::force_tcam_backend_boundary(plan, declared_rule);
-    assert(force.err() == ::fixy::some(tcam::TcamError::VendorBackendUnavailable));
-    crucible::test::pass("  test_tcam_force_returns_vendor_unavailable: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, force.err() == ::fixy::some(tcam::TcamError::VendorBackendUnavailable));
+    ::fixy::check::pass(kTest, "  test_tcam_force_returns_vendor_unavailable: PASSED\n");
 }
 
 #pragma GCC diagnostic pop
@@ -167,6 +176,6 @@ int main() {
     test_sriov_query_returns_query_deferred();
     test_roce_dcqcn_state_unavailable();
     test_tcam_force_returns_vendor_unavailable();
-    crucible::test::pass("test_stub_discipline: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_stub_discipline: all PASSED\n");
     return 0;
 }

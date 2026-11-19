@@ -1,10 +1,20 @@
 #include <crucible/topology/Health.h>
 #include <foundation/reflect/EnumName.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
 #include <string_view>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cog = crucible::cog;
 namespace eff = ::fixy;
@@ -59,93 +69,108 @@ static ::fixy::SequenceSource& advance_to(::fixy::SequenceSource& sequences, std
 static void test_name_accessors() {
     static_assert(::foundation::reflect::enum_name(topology::HealthState::Quarantined) == "Quarantined");
     static_assert(::foundation::reflect::enum_name(topology::HealthIssue::DropRateCritical) == "DropRateCritical");
-    crucible::test::pass("  test_name_accessors:              PASSED\n");
+    ::fixy::check::pass(kTest, "  test_name_accessors:              PASSED\n");
 }
 
 static void test_healthy_snapshot_is_stale_wrapped() {
     auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 4, 4>(
         eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(1);
-    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
-    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
-    assert(scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 topology::ThermalSample{
-                                     .temperature_millicelsius = 45000,
-                                     .clock_degraded_pct = 0,
-                                     .sequence = 3,
-                                 }));
-    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 4)));
-    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 5)));
-    assert(scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                              topology::WearSample{.used_ppm = 100000, .sequence = 6}));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
+    CRUCIBLE_TEST_ASSERT(kTest, scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                      topology::ThermalSample{
+                                                          .temperature_millicelsius = 45000,
+                                                          .clock_degraded_pct = 0,
+                                                          .sequence = 3,
+                                                      }));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 4)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 5)));
+    CRUCIBLE_TEST_ASSERT(kTest, scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                   topology::WearSample{.used_ppm = 100000, .sequence = 6}));
 
     ::fixy::SequenceSource sequences =
         ::fixy::mint_sequence_source(eff::ColdInitCtx{::foundation::effects::testing::init()});
     auto snapshot = scorer.compute(p, 2500, advance_to(sequences, 7));
-    assert(snapshot.peek().state == topology::HealthState::Healthy);
-    assert(snapshot.peek().score.raw() > 900);
-    assert(snapshot.peek().phi.raw() < test_policy().suspect_phi.raw());
-    assert(snapshot.peek().issues.none());
-    assert(snapshot.is_fresh());
-    assert(snapshot.peek().sequence == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().state == topology::HealthState::Healthy);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().score.raw() > 900);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().phi.raw() < test_policy().suspect_phi.raw());
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().issues.none());
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.is_fresh());
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().sequence == 7);
     auto current = scorer.current(p, advance_to(sequences, 9));
-    assert(current.peek().state == topology::HealthState::Healthy);
-    assert(current.staleness().value == 2);
-    crucible::test::pass("  test_healthy_snapshot_is_stale_wrapped: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, current.peek().state == topology::HealthState::Healthy);
+    CRUCIBLE_TEST_ASSERT(kTest, current.staleness().value == 2);
+    ::fixy::check::pass(kTest, "  test_healthy_snapshot_is_stale_wrapped: PASSED\n");
 }
 
 static void test_phi_delay_drives_suspect_state() {
     auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(
         eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(2);
-    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
-    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
-    assert(scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 topology::ThermalSample{.temperature_millicelsius = 40000, .sequence = 3}));
-    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 4)));
-    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 5)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                     topology::ThermalSample{.temperature_millicelsius = 40000, .sequence = 3}));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 4)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 5)));
 
     ::fixy::SequenceSource sequences =
         ::fixy::mint_sequence_source(eff::ColdInitCtx{::foundation::effects::testing::init()});
     auto snapshot = scorer.compute(p, 7000, advance_to(sequences, 6));
-    assert(snapshot.peek().phi.raw() >= test_policy().suspect_phi.raw());
-    assert(snapshot.peek().state == topology::HealthState::Suspect
-           || snapshot.peek().state == topology::HealthState::Quarantined);
-    assert(snapshot.peek().issues.test(topology::HealthIssue::PhiSuspect)
-           || snapshot.peek().issues.test(topology::HealthIssue::PhiQuarantine));
-    assert(scorer.transition_event_count() == 1);
-    assert(scorer.transition_events().get(0).expect("the scorer recorded one transition")->from
-           == topology::HealthState::Healthy);
-    crucible::test::pass("  test_phi_delay_drives_suspect_state: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().phi.raw() >= test_policy().suspect_phi.raw());
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().state == topology::HealthState::Suspect
+                                    || snapshot.peek().state == topology::HealthState::Quarantined);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().issues.test(topology::HealthIssue::PhiSuspect)
+                                    || snapshot.peek().issues.test(topology::HealthIssue::PhiQuarantine));
+    CRUCIBLE_TEST_ASSERT(kTest, scorer.transition_event_count() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, scorer.transition_events().get(0).expect("the scorer recorded one transition")->from
+                                    == topology::HealthState::Healthy);
+    ::fixy::check::pass(kTest, "  test_phi_delay_drives_suspect_state: PASSED\n");
 }
 
 static void test_thermal_ecc_and_drops_degrade_score() {
     auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(
         eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(3);
-    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
-    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
-    assert(scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 topology::ThermalSample{
-                                     .temperature_millicelsius = 82000,
-                                     .clock_degraded_pct = 12,
-                                     .sequence = 3,
-                                 }));
-    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 4)));
-    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(8, 0, 5)));
-    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 6)));
-    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(200000, 1200, 7)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
+    CRUCIBLE_TEST_ASSERT(kTest, scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                      topology::ThermalSample{
+                                                          .temperature_millicelsius = 82000,
+                                                          .clock_degraded_pct = 12,
+                                                          .sequence = 3,
+                                                      }));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 4)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(8, 0, 5)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 6)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(200000, 1200, 7)));
 
     ::fixy::SequenceSource sequences =
         ::fixy::mint_sequence_source(eff::ColdInitCtx{::foundation::effects::testing::init()});
     auto snapshot = scorer.compute(p, 2200, advance_to(sequences, 8));
-    assert(snapshot.peek().score.raw() < 900);
-    assert(snapshot.peek().drop_rate_ppm >= test_policy().drop_critical_ppm);
-    assert(snapshot.peek().issues.test(topology::HealthIssue::ThermalWarn));
-    assert(snapshot.peek().issues.test(topology::HealthIssue::ClockDegraded));
-    assert(snapshot.peek().issues.test(topology::HealthIssue::CorrectedEccTrend));
-    assert(snapshot.peek().issues.test(topology::HealthIssue::DropRateCritical));
-    crucible::test::pass("  test_thermal_ecc_and_drops_degrade_score: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().score.raw() < 900);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().drop_rate_ppm >= test_policy().drop_critical_ppm);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().issues.test(topology::HealthIssue::ThermalWarn));
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().issues.test(topology::HealthIssue::ClockDegraded));
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().issues.test(topology::HealthIssue::CorrectedEccTrend));
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().issues.test(topology::HealthIssue::DropRateCritical));
+    ::fixy::check::pass(kTest, "  test_thermal_ecc_and_drops_degrade_score: PASSED\n");
 }
 
 static void test_counter_regression_is_rejected() {
@@ -153,42 +178,55 @@ static void test_counter_regression_is_rejected() {
         eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(33);
 
-    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(10, 0, 1)));
-    assert(!scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(9, 0, 2)));
-    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(11, 0, 2)));
-    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 10, 3)));
-    assert(!scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(90000, 10, 4)));
-    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(110000, 10, 4)));
-    assert(!scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                               topology::WearSample{.used_ppm = 1000001, .sequence = 5}));
-    assert(scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                              topology::WearSample{.used_ppm = 900000, .sequence = 5}));
-    crucible::test::pass("  test_counter_regression_is_rejected: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(10, 0, 1)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(9, 0, 2)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(11, 0, 2)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 10, 3)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(90000, 10, 4)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(110000, 10, 4)));
+    CRUCIBLE_TEST_ASSERT(kTest, !scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                    topology::WearSample{.used_ppm = 1000001, .sequence = 5}));
+    CRUCIBLE_TEST_ASSERT(kTest, scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                   topology::WearSample{.used_ppm = 900000, .sequence = 5}));
+    ::fixy::check::pass(kTest, "  test_counter_regression_is_rejected: PASSED\n");
 }
 
 static void test_permanent_fault_is_sticky() {
     auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(
         eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(4);
-    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
-    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
-    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 3)));
-    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 1, 4)));
-    assert(scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 topology::ThermalSample{.temperature_millicelsius = 40000, .sequence = 5}));
-    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 6)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 3)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 1, 4)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                     topology::ThermalSample{.temperature_millicelsius = 40000, .sequence = 5}));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 6)));
 
     ::fixy::SequenceSource sequences =
         ::fixy::mint_sequence_source(eff::ColdInitCtx{::foundation::effects::testing::init()});
     auto failed = scorer.compute(p, 2500, advance_to(sequences, 7));
-    assert(failed.peek().state == topology::HealthState::Permanent);
-    assert(failed.peek().issues.test(topology::HealthIssue::UncorrectedEcc));
+    CRUCIBLE_TEST_ASSERT(kTest, failed.peek().state == topology::HealthState::Permanent);
+    CRUCIBLE_TEST_ASSERT(kTest, failed.peek().issues.test(topology::HealthIssue::UncorrectedEcc));
 
-    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 1, 8)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 1, 8)));
     auto still_failed = scorer.compute(p, 2600, advance_to(sequences, 9));
-    assert(still_failed.peek().state == topology::HealthState::Permanent);
-    assert(scorer.transition_event_count() == 1);
-    crucible::test::pass("  test_permanent_fault_is_sticky:    PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, still_failed.peek().state == topology::HealthState::Permanent);
+    CRUCIBLE_TEST_ASSERT(kTest, scorer.transition_event_count() == 1);
+    ::fixy::check::pass(kTest, "  test_permanent_fault_is_sticky:    PASSED\n");
 }
 
 // The score of a peer whose only weighted risk is the trend of its corrected
@@ -200,12 +238,14 @@ static std::uint16_t score_after_corrected_delta(std::uint64_t delta) {
     auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(
         eff::ColdInitCtx{::foundation::effects::testing::init()}, policy);
     auto const p = peer(5);
-    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 1)));
-    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(delta, 0, 2)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 1)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(delta, 0, 2)));
     ::fixy::SequenceSource sequences =
         ::fixy::mint_sequence_source(eff::ColdInitCtx{::foundation::effects::testing::init()});
     auto snapshot = scorer.compute(p, 2000, advance_to(sequences, 3));
-    assert(snapshot.peek().issues.test(topology::HealthIssue::CorrectedEccTrend));
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.peek().issues.test(topology::HealthIssue::CorrectedEccTrend));
     return snapshot.peek().score.raw();
 }
 
@@ -215,15 +255,15 @@ static std::uint16_t score_after_corrected_delta(std::uint64_t delta) {
 // high score.
 static void test_large_corrected_delta_gives_full_risk() {
     // 400 + 10 * d passes 2^32 at d = 429,496,690, and its low 32 bits are 4.
-    assert(score_after_corrected_delta(429496689) == 0);
-    assert(score_after_corrected_delta(429496690) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, score_after_corrected_delta(429496689) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, score_after_corrected_delta(429496690) == 0);
     // 10 * 2^63 wraps to 0 in 64 bits, so the wrapped risk is 400.
-    assert(score_after_corrected_delta(std::uint64_t{1} << 63) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, score_after_corrected_delta(std::uint64_t{1} << 63) == 0);
     // 10 * (2^64 - 1) wraps to 2^64 - 10, and 400 more wraps to 390.
-    assert(score_after_corrected_delta(~std::uint64_t{0}) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, score_after_corrected_delta(~std::uint64_t{0}) == 0);
     // A delta at the threshold of the policy gives 400 + 40.
-    assert(score_after_corrected_delta(4) == 1000 - 440);
-    crucible::test::pass("  test_large_corrected_delta_gives_full_risk: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, score_after_corrected_delta(4) == 1000 - 440);
+    ::fixy::check::pass(kTest, "  test_large_corrected_delta_gives_full_risk: PASSED\n");
 }
 
 // Only the source grades a snapshot.  A peer with no sample, and a sample of a
@@ -237,16 +277,17 @@ static void test_grade_comes_from_the_source() {
     advance_to(sequences, 3);
 
     auto const unknown = scorer.current(peer(40), sequences);
-    assert(unknown.peek().issues.test(topology::HealthIssue::MissingSample));
-    assert(unknown.is_infinite());
-    assert(unknown.peek().sequence == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, unknown.peek().issues.test(topology::HealthIssue::MissingSample));
+    CRUCIBLE_TEST_ASSERT(kTest, unknown.is_infinite());
+    CRUCIBLE_TEST_ASSERT(kTest, unknown.peek().sequence == 3);
 
     auto const p = peer(41);
-    assert(scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 topology::ThermalSample{.temperature_millicelsius = 40000, .sequence = 5}));
-    assert(scorer.current(p, sequences).is_infinite());
-    assert(scorer.current(p, advance_to(sequences, 6)).staleness().value == 1);
-    crucible::test::pass("  test_grade_comes_from_the_source:  PASSED\n");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                     topology::ThermalSample{.temperature_millicelsius = 40000, .sequence = 5}));
+    CRUCIBLE_TEST_ASSERT(kTest, scorer.current(p, sequences).is_infinite());
+    CRUCIBLE_TEST_ASSERT(kTest, scorer.current(p, advance_to(sequences, 6)).staleness().value == 1);
+    ::fixy::check::pass(kTest, "  test_grade_comes_from_the_source:  PASSED\n");
 }
 
 int main() {
@@ -265,6 +306,6 @@ int main() {
     test_permanent_fault_is_sticky();
     test_large_corrected_delta_gives_full_risk();
     test_grade_comes_from_the_source();
-    crucible::test::pass("test_topology_health: all passed\n");
+    ::fixy::check::pass(kTest, "test_topology_health: all passed\n");
     return 0;
 }

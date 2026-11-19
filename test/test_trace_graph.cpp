@@ -2,11 +2,19 @@
 #include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -29,7 +37,7 @@ static void test_empty_graph() {
     build_csr(t.alloc, arena, g, ::fixy::View<const Edge>{}, 0);
     static_assert(std::is_same_v<TraceGraph::BuiltCount, ::fixy::WriteOnce<uint32_t>>);
     CRUCIBLE_FATAL_INVARIANT(g.num_edges.get() == 0);
-    crucible::test::pass("  test_empty:                     PASSED\n");
+    ::fixy::check::pass(kTest, "  test_empty:                     PASSED\n");
 }
 
 static void test_single_edge_fwd_rev() {
@@ -39,13 +47,13 @@ static void test_single_edge_fwd_rev() {
     const ::fixy::FixedArray<Edge, 1> edges{E(0, 1)};
     build_csr(t.alloc, arena, g, edges.view(), /*num_ops=*/2);
     CRUCIBLE_FATAL_INVARIANT(g.num_edges.get() == 1);
-    assert(g.out_degree(OpIndex{0}) == 1);
-    assert(g.out_degree(OpIndex{1}) == 0);
-    assert(first_of(g.fwd_of(OpIndex{0})).dst == OpIndex{1});
-    assert(g.in_degree(OpIndex{0}) == 0);
-    assert(g.in_degree(OpIndex{1}) == 1);
-    assert(first_of(g.rev_of(OpIndex{1})).src == OpIndex{0});
-    crucible::test::pass("  test_single_edge:               PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{0}) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{1}) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, first_of(g.fwd_of(OpIndex{0})).dst == OpIndex{1});
+    CRUCIBLE_TEST_ASSERT(kTest, g.in_degree(OpIndex{0}) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, g.in_degree(OpIndex{1}) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, first_of(g.rev_of(OpIndex{1})).src == OpIndex{0});
+    ::fixy::check::pass(kTest, "  test_single_edge:               PASSED\n");
 }
 
 static void test_counting_sort_groups_by_src() {
@@ -56,16 +64,16 @@ static void test_counting_sort_groups_by_src() {
     const ::fixy::FixedArray<Edge, 6> edges{E(2, 3), E(0, 1), E(2, 4), E(1, 2), E(0, 2), E(2, 5)};
     build_csr(t.alloc, arena, g, edges.view(), /*num_ops=*/6);
 
-    assert(g.out_degree(OpIndex{0}) == 2);
-    assert(g.out_degree(OpIndex{1}) == 1);
-    assert(g.out_degree(OpIndex{2}) == 3);
-    assert(g.out_degree(OpIndex{3}) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{0}) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{1}) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{2}) == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{3}) == 0);
 
     // All fwd edges with src=0 must come before any with src=1, etc.
     for (uint32_t op = 0; op < 6; ++op) {
         const OpIndex oi{op};
         for (const Edge& e : g.fwd_of(oi)) {
-            assert(e.src == oi);
+            CRUCIBLE_TEST_ASSERT(kTest, e.src == oi);
         }
     }
 
@@ -73,10 +81,10 @@ static void test_counting_sort_groups_by_src() {
     for (uint32_t op = 0; op < 6; ++op) {
         const OpIndex oi{op};
         for (const Edge& e : g.rev_of(oi)) {
-            assert(e.dst == oi);
+            CRUCIBLE_TEST_ASSERT(kTest, e.dst == oi);
         }
     }
-    crucible::test::pass("  test_counting_sort:             PASSED\n");
+    ::fixy::check::pass(kTest, "  test_counting_sort:             PASSED\n");
 }
 
 static void test_edge_kind_preserved() {
@@ -89,7 +97,7 @@ static void test_edge_kind_preserved() {
         E(0, 2, EdgeKind::CONTROL_FLOW),
     };
     build_csr(t.alloc, arena, g, edges.view(), /*num_ops=*/3);
-    assert(g.out_degree(OpIndex{0}) == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{0}) == 3);
 
     bool saw_df = false, saw_alias = false, saw_cf = false;
     const OpIndex oi0{0};
@@ -98,8 +106,8 @@ static void test_edge_kind_preserved() {
         if (e.kind == EdgeKind::ALIAS) saw_alias = true;
         if (e.kind == EdgeKind::CONTROL_FLOW) saw_cf = true;
     }
-    assert(saw_df && saw_alias && saw_cf);
-    crucible::test::pass("  test_edge_kind_preserved:       PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, saw_df && saw_alias && saw_cf);
+    ::fixy::check::pass(kTest, "  test_edge_kind_preserved:       PASSED\n");
 }
 
 static void test_offsets_prefix_sum_invariant() {
@@ -114,14 +122,14 @@ static void test_offsets_prefix_sum_invariant() {
     }
     build_csr(t.alloc, arena, g, edges.view(), /*num_ops=*/10);
 
-    assert(g.fwd_offsets.size() == 11 && g.rev_offsets.size() == 11);
+    CRUCIBLE_TEST_ASSERT(kTest, g.fwd_offsets.size() == 11 && g.rev_offsets.size() == 11);
     for (uint32_t i = 1; i <= 10; ++i) {
-        assert(offset_at(g.fwd_offsets, i) >= offset_at(g.fwd_offsets, i - 1));
-        assert(offset_at(g.rev_offsets, i) >= offset_at(g.rev_offsets, i - 1));
+        CRUCIBLE_TEST_ASSERT(kTest, offset_at(g.fwd_offsets, i) >= offset_at(g.fwd_offsets, i - 1));
+        CRUCIBLE_TEST_ASSERT(kTest, offset_at(g.rev_offsets, i) >= offset_at(g.rev_offsets, i - 1));
     }
-    assert(offset_at(g.fwd_offsets, 10) == 9);
-    assert(offset_at(g.rev_offsets, 10) == 9);
-    crucible::test::pass("  test_prefix_sum:                PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, offset_at(g.fwd_offsets, 10) == 9);
+    CRUCIBLE_TEST_ASSERT(kTest, offset_at(g.rev_offsets, 10) == 9);
+    ::fixy::check::pass(kTest, "  test_prefix_sum:                PASSED\n");
 }
 
 static void test_fanout_node_has_multiple_edges() {
@@ -135,13 +143,13 @@ static void test_fanout_node_has_multiple_edges() {
     }
     build_csr(t.alloc, arena, g, edges.view(), /*num_ops=*/10);
 
-    assert(g.out_degree(OpIndex{0}) == 9);
+    CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{0}) == 9);
     for (uint32_t i = 1; i < 10; ++i) {
         const OpIndex oi{i};
-        assert(g.in_degree(oi) == 1);
-        assert(first_of(g.rev_of(oi)).src == OpIndex{0});
+        CRUCIBLE_TEST_ASSERT(kTest, g.in_degree(oi) == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, first_of(g.rev_of(oi)).src == OpIndex{0});
     }
-    crucible::test::pass("  test_fanout:                    PASSED\n");
+    ::fixy::check::pass(kTest, "  test_fanout:                    PASSED\n");
 }
 
 [[gnu::cold]] int main() {
@@ -151,6 +159,6 @@ static void test_fanout_node_has_multiple_edges() {
     test_edge_kind_preserved();
     test_offsets_prefix_sum_invariant();
     test_fanout_node_has_multiple_edges();
-    crucible::test::pass("test_trace_graph: 6 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_trace_graph: 6 groups, all passed\n");
     return 0;
 }

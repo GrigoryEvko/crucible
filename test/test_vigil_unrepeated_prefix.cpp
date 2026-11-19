@@ -16,10 +16,18 @@
 #include <fixy/Ctx.h>
 #include <fixy/os/Time.h>
 
-#include "test_assert.h"
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "test_harness.h"
 #include <bit>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::BackgroundThread;
 using crucible::IterationDetector;
@@ -120,9 +128,9 @@ void test_prefix_that_never_recurs_publishes_a_region() {
     // region comes a few iterations after the loop starts.
     Vigil vigil;
     const uint32_t iterations = iterations_to_region(vigil, 5);
-    assert(iterations != 0 && "the loop after the prefix published no region");
-    assert(iterations <= 8);
-    assert(vigil.bg_detector_boundaries() > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, iterations != 0 && "the loop after the prefix published no region");
+    CRUCIBLE_TEST_ASSERT(kTest, iterations <= 8);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.bg_detector_boundaries() > 0);
 }
 
 void test_prefix_of_more_records_than_the_log_publishes_a_region() {
@@ -132,8 +140,8 @@ void test_prefix_of_more_records_than_the_log_publishes_a_region() {
     // when the loop starts, and the loop publishes its region.
     Vigil vigil;
     const uint32_t iterations = iterations_to_region(vigil, 600000);
-    assert(iterations != 0 && "the loop after 1.2 M records of a prefix published no region");
-    assert(iterations <= 8);
+    CRUCIBLE_TEST_ASSERT(kTest, iterations != 0 && "the loop after 1.2 M records of a prefix published no region");
+    CRUCIBLE_TEST_ASSERT(kTest, iterations <= 8);
 }
 
 void test_log_that_fills_is_released_again() {
@@ -148,11 +156,12 @@ void test_log_that_fills_is_released_again() {
         if (record_wide(vigil, 0x5000000 + i, 0x6000000 + i, 0x10000000 + i * 0x200)) ++refused_ops;
         if ((i & 0x3fff) == 0) wait_for_pipeline(vigil);
     }
-    assert(refused_ops > 0 && "the prefix did not fill the metadata log");
+    CRUCIBLE_TEST_ASSERT(kTest, refused_ops > 0 && "the prefix did not fill the metadata log");
     const uint32_t iterations = iterations_of_loop_to_region(vigil);
-    assert(iterations != 0 && "the loop after a full metadata log published no region");
+    CRUCIBLE_TEST_ASSERT(kTest, iterations != 0 && "the loop after a full metadata log published no region");
     const crucible::MetaLog& log = vigil.meta_log(vigil.mint_producer_context());
-    assert(log.head.get() - log.tail.get() < MetaLog::CAPACITY / 2 && "the log stayed full after the loop");
+    CRUCIBLE_TEST_ASSERT(kTest, log.head.get() - log.tail.get() < MetaLog::CAPACITY / 2
+                                    && "the log stayed full after the loop");
 }
 
 // The trace ring and the metadata log of the pipeline test.  Each is a
@@ -188,8 +197,9 @@ void test_detect_stage_holds_a_bounded_trace() {
     const uint64_t target = ring.total_produced();
     while (bt.total_processed.load_acquire() < target)
         (void)pause.sleep_for(kPollNanos);
-    assert(bt.pending_op_count() <= IterationDetector::HISTORY_MAX_CAPACITY / 2 + IterationDetector::K);
-    assert(bt.detector.pos_ - bt.detector.base_ <= IterationDetector::HISTORY_MAX_CAPACITY);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         bt.pending_op_count() <= IterationDetector::HISTORY_MAX_CAPACITY / 2 + IterationDetector::K);
+    CRUCIBLE_TEST_ASSERT(kTest, bt.detector.pos_ - bt.detector.base_ <= IterationDetector::HISTORY_MAX_CAPACITY);
     bt.stop();
 }
 

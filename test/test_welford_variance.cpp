@@ -26,7 +26,17 @@
 #include <cstdlib>
 #include <type_traits>
 #include <vector>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -168,7 +178,7 @@ int main() {
     test_welford_deterministic();
 
     if (g_failures == 0) {
-        crucible::test::pass("Welford variance sentinel: PASS\n");
+        ::fixy::check::pass(kTest, "Welford variance sentinel: PASS\n");
         return 0;
     }
     std::fprintf(stderr,

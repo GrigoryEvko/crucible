@@ -16,7 +16,9 @@
 #include <fixy/check/Check.h>
 #include <fixy/os/Process.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -24,6 +26,13 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::SchemaHash;
 using crucible::ShapeHash;
@@ -75,7 +84,7 @@ static void test_store_that_does_not_open_gives_no_store() {
     if (vigil.has_store() || static_cast<bool>(vigil.head_hash()) || vigil.persist(ctx)) {
         ::fixy::fatal("a store path under /dev/null gave a Vigil with a store");
     }
-    crucible::test::pass("  store_that_does_not_open_gives_no_store: PASSED\n");
+    ::fixy::check::pass(kTest, "  store_that_does_not_open_gives_no_store: PASSED\n");
 }
 
 // The head of a store names an object that the store does not hold, so a
@@ -111,11 +120,15 @@ static void test_refused_load_reports_its_reason(::fixy::TextView directory) {
                                                            })
                                   .expect("the test starts a child"))
             .expect("the test waits for its child");
-    assert(report.is_exit_with(0));
-    assert(::fixy::find(report.output(), ::fixy::TextView{"[crucible] the Cipher store gives no region of its head: "})
-               .is_some());
-    assert(::fixy::find(report.output(), crucible::load_error_text(crucible::LoadError::file_open_failed)).is_some());
-    crucible::test::pass("  refused_load_reports_its_reason: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0));
+    CRUCIBLE_TEST_ASSERT(
+        kTest,
+        ::fixy::find(report.output(), ::fixy::TextView{"[crucible] the Cipher store gives no region of its head: "})
+            .is_some());
+    CRUCIBLE_TEST_ASSERT(
+        kTest,
+        ::fixy::find(report.output(), crucible::load_error_text(crucible::LoadError::file_open_failed)).is_some());
+    ::fixy::check::pass(kTest, "  refused_load_reports_its_reason: PASSED\n");
 }
 
 // A Vigil hashes each region that it publishes under the numerics policy and
@@ -138,14 +151,16 @@ static void test_region_hashes_under_the_numerics_of_the_config() {
         ordered.active_region().expect("the flush published a region");
     crucible::NumericsPolicy strict_policy{};
     strict_policy.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
-    assert(strict_region->numerics
-           == crucible::compute_numerics_hash(
-               strict_policy, crucible::EagerNumerics{.bits = crucible::EagerNumerics::FLUSH_DENORMAL}));
-    assert(ordered_region->numerics
-           == crucible::compute_numerics_hash(crucible::NumericsPolicy{}, crucible::EagerNumerics{}));
-    assert(strict_region->content_hash != ordered_region->content_hash
-           && "the numerics of the run separate two regions of the same ops");
-    crucible::test::pass("  region_hashes_under_the_numerics_of_the_config: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, strict_region->numerics
+                   == crucible::compute_numerics_hash(
+                       strict_policy, crucible::EagerNumerics{.bits = crucible::EagerNumerics::FLUSH_DENORMAL}));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ordered_region->numerics
+                             == crucible::compute_numerics_hash(crucible::NumericsPolicy{}, crucible::EagerNumerics{}));
+    CRUCIBLE_TEST_ASSERT(kTest, strict_region->content_hash != ordered_region->content_hash
+                                    && "the numerics of the run separate two regions of the same ops");
+    ::fixy::check::pass(kTest, "  region_hashes_under_the_numerics_of_the_config: PASSED\n");
 }
 
 // The Config of a Vigil whose store is the directory numerics under directory,
@@ -180,21 +195,21 @@ static void test_region_of_other_numerics_does_not_replay(::fixy::TextView direc
             auto aligned = divrig::op_at(3, i);
             (void)crucible::test::dispatch_synthetic(recorder, aligned.entry, aligned.metas, aligned.n_metas);
         }
-        assert(recorder.context().is_compiled() && "the recorder replays its region");
-        assert(recorder.persist(ctx) && "the recorder stores its region");
+        CRUCIBLE_TEST_ASSERT(kTest, recorder.context().is_compiled() && "the recorder replays its region");
+        CRUCIBLE_TEST_ASSERT(kTest, recorder.persist(ctx) && "the recorder stores its region");
     }
 
     crucible::NumericsPolicy strict{};
     strict.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
     crucible::Vigil other{config_with_store(directory, strict)};
-    assert(other.load(ctx, ctx.cap().alloc) && "the store gives the region of its head");
-    assert(!other.context().is_compiled() && "a region of other numerics must not replay");
-    assert(!other.is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, other.load(ctx, ctx.cap().alloc) && "the store gives the region of its head");
+    CRUCIBLE_TEST_ASSERT(kTest, !other.context().is_compiled() && "a region of other numerics must not replay");
+    CRUCIBLE_TEST_ASSERT(kTest, !other.is_compiled());
 
     crucible::Vigil same{config_with_store(directory, crucible::NumericsPolicy{})};
-    assert(same.load(ctx, ctx.cap().alloc) && "the store gives the region of its head");
-    assert(same.context().is_compiled() && "the region replays under its own numerics");
-    crucible::test::pass("  region_of_other_numerics_does_not_replay: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, same.load(ctx, ctx.cap().alloc) && "the store gives the region of its head");
+    CRUCIBLE_TEST_ASSERT(kTest, same.context().is_compiled() && "the region replays under its own numerics");
+    ::fixy::check::pass(kTest, "  region_of_other_numerics_does_not_replay: PASSED\n");
 }
 
 // Repeated loads of one head keep only the regions that the foreground can
@@ -216,7 +231,7 @@ static void test_repeated_loads_keep_a_bounded_heap(::fixy::TextView directory) 
     }
     CRUCIBLE_TEST_ASSERT(ctx, loader.context().is_compiled());
     CRUCIBLE_TEST_ASSERT(ctx, loader.kept_load_count(fg) == 3);
-    crucible::test::pass("  repeated_loads_keep_a_bounded_heap: PASSED\n");
+    ::fixy::check::pass(kTest, "  repeated_loads_keep_a_bounded_heap: PASSED\n");
 }
 
 // A change of the eager word stops the replay of the region of the old word,
@@ -237,39 +252,44 @@ static void test_eager_word_change_is_a_divergence() {
             crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
         if (result.enters_region) {
             ++entries;
-            assert((i + 1 == divrig::K || i + 1 == divrig::NUM_OPS)
-                   && "only the activation and the completion of the region report an entry");
+            CRUCIBLE_TEST_ASSERT(kTest, (i + 1 == divrig::K || i + 1 == divrig::NUM_OPS)
+                                            && "only the activation and the completion of the region report an entry");
         }
     }
-    assert(entries == 2 && "the activation and the completion each report a region entry");
-    assert(vigil.context().is_compiled() && "the foreground replays the region of the attach word");
+    CRUCIBLE_TEST_ASSERT(kTest, entries == 2 && "the activation and the completion each report a region entry");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.context().is_compiled() && "the foreground replays the region of the attach word");
     const crucible::ContentHash attach_hash =
         vigil.active_region().expect("the flush published a region")->content_hash;
     const uint32_t diverged = vigil.diverged_count();
 
     vigil.observe_eager_numerics(fg, crucible::EagerNumerics{});
-    assert(vigil.context().is_compiled() && vigil.diverged_count() == diverged && "the same word changes nothing");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled() && vigil.diverged_count() == diverged
+                                    && "the same word changes nothing");
 
     const crucible::EagerNumerics flushing{.bits = crucible::EagerNumerics::FLUSH_DENORMAL};
     vigil.observe_eager_numerics(fg, flushing);
-    assert(!vigil.context().is_compiled() && !vigil.is_compiled() && "a changed word stops the replay");
-    assert(vigil.diverged_count() == diverged + 1 && "a changed word counts one divergence");
-    assert(vigil.eager_numerics() == flushing);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !vigil.context().is_compiled() && !vigil.is_compiled() && "a changed word stops the replay");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.diverged_count() == diverged + 1 && "a changed word counts one divergence");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.eager_numerics() == flushing);
 
     divrig::feed_one_region(vigil, 4);
     crucible::test::flush_and_wait_region_published(vigil);
     const ::fixy::Ref<const crucible::RegionNode> flushed =
         vigil.active_region().expect("the pipeline published a region after the change");
-    assert(flushed->numerics == crucible::compute_numerics_hash(crucible::NumericsPolicy{}, flushing)
-           && "the region after the change holds the hash of the new word");
-    assert(flushed->content_hash != attach_hash && "the new word gives the region a new content hash");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         flushed->numerics == crucible::compute_numerics_hash(crucible::NumericsPolicy{}, flushing)
+                             && "the region after the change holds the hash of the new word");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         flushed->content_hash != attach_hash && "the new word gives the region a new content hash");
     for (uint32_t i = 0; i < divrig::NUM_OPS; i++) {
         auto aligned = divrig::op_at(7, i);
         (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
     }
-    assert(vigil.context().is_compiled() && "the region of the new word replays");
-    assert(vigil.diverged_count() == diverged + 1);
-    crucible::test::pass("  eager_word_change_is_a_divergence: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled() && "the region of the new word replays");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.diverged_count() == diverged + 1);
+    ::fixy::check::pass(kTest, "  eager_word_change_is_a_divergence: PASSED\n");
 }
 
 int main() {
@@ -303,7 +323,7 @@ int main() {
 
     char tmpdir[] = "/tmp/crucible_vigil_XXXXXX";
     char* dir = mkdtemp(tmpdir);
-    assert(dir != nullptr);
+    CRUCIBLE_TEST_ASSERT(kTest, dir != nullptr);
 
     // The text of the path copies each character of the directory.
     crucible::Vigil::Config cfg;
@@ -318,9 +338,9 @@ int main() {
     });
     crucible::Vigil vigil(std::move(cfg));
 
-    assert(!vigil.is_compiled());
-    assert(vigil.current_step() == 0);
-    assert(vigil.active_region().is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.active_region().is_none());
 
     // Fifteen ops, as three repeats of the same five schema hashes. The
     // detector needs a signature of five, then a first match, then a second
@@ -337,7 +357,7 @@ int main() {
         for (int j = 0; j < 5; j++) {
             auto e = make_entry(schemas[j]);
             const bool ok = vigil.record_op(crucible::test::certify_synthetic_op(e, io_metas, 2));
-            assert(ok && "record_op must succeed (ring not full)");
+            CRUCIBLE_TEST_ASSERT(kTest, ok && "record_op must succeed (ring not full)");
         }
     }
 
@@ -346,30 +366,32 @@ int main() {
     // A published region is not a replay. The mode turns COMPILED only when
     // the foreground aligns to the region and activates the context, and
     // this test dispatches nothing after the flush.
-    assert(vigil.has_pending_region());
-    assert(!vigil.is_compiled() && "publication alone must not report a replay");
-    assert(!vigil.context().is_compiled());
-    assert(vigil.active_region().is_some());
-    assert(vigil.current_step() >= 1);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.has_pending_region());
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.is_compiled() && "publication alone must not report a replay");
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.active_region().is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() >= 1);
     const ::fixy::Ref<const crucible::RegionNode> active_region =
         vigil.active_region().expect("the flush published a region");
     const auto object_path = object_path_for(dir, active_region->content_hash);
-    assert(!std::filesystem::exists(object_path) && "background Vigil callback must not pre-store Cipher objects");
-    assert(!std::filesystem::exists(std::string(dir) + "/HEAD")
-           && "background Vigil callback must not advance Cipher HEAD");
+    CRUCIBLE_TEST_ASSERT(kTest, !std::filesystem::exists(object_path)
+                                    && "background Vigil callback must not pre-store Cipher objects");
+    CRUCIBLE_TEST_ASSERT(kTest, !std::filesystem::exists(std::string(dir) + "/HEAD")
+                                    && "background Vigil callback must not advance Cipher HEAD");
 
     // The store writes and flushes files, so persist takes a context whose row
     // admits IO and Block.
     const bool persisted = vigil.persist(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
-    assert(persisted && "persist() must succeed with a cipher_path set");
-    assert(static_cast<bool>(vigil.head_hash()) && "Cipher HEAD must be non-zero after persist()");
-    assert(std::filesystem::exists(object_path) && "foreground persist() must be the direct Cipher object writer");
+    CRUCIBLE_TEST_ASSERT(kTest, persisted && "persist() must succeed with a cipher_path set");
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(vigil.head_hash()) && "Cipher HEAD must be non-zero after persist()");
+    CRUCIBLE_TEST_ASSERT(kTest, std::filesystem::exists(object_path)
+                                    && "foreground persist() must be the direct Cipher object writer");
 
     std::ifstream hf(std::string(dir) + "/HEAD");
-    assert(hf.is_open() && "HEAD file must exist on disk after persist()");
+    CRUCIBLE_TEST_ASSERT(kTest, hf.is_open() && "HEAD file must exist on disk after persist()");
     std::string head_hex;
     std::getline(hf, head_hex);
-    assert(!head_hex.empty() && "HEAD file must be non-empty");
+    CRUCIBLE_TEST_ASSERT(kTest, !head_hex.empty() && "HEAD file must be non-empty");
 
     int region_exec_count = 0;
     const crucible::RegionNode* exec_region_ptr = nullptr;
@@ -383,34 +405,39 @@ int main() {
             exec_region_ptr = &r;
         });
 
-    assert(replayed && "replay() must return true for a linear region");
-    assert(region_exec_count == 1 && "RegionExec must be called exactly once for a single-region DAG");
-    assert(exec_region_ptr == &*vigil.active_region().expect("the flush published a region")
-           && "replay() must execute the active region");
+    CRUCIBLE_TEST_ASSERT(kTest, replayed && "replay() must return true for a linear region");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         region_exec_count == 1 && "RegionExec must be called exactly once for a single-region DAG");
+    CRUCIBLE_TEST_ASSERT(kTest, exec_region_ptr == &*vigil.active_region().expect("the flush published a region")
+                                    && "replay() must execute the active region");
 
     // The stored region has no memory plan: its tensors have no data.  A load
     // of it while the context replays a different region stops that replay,
     // because the loaded region is the active region and cannot replay.
     const crucible::ContentHash stored_hash = active_region->content_hash;
-    assert(active_region->plan.is_none() && "the stored region must have no memory plan");
+    CRUCIBLE_TEST_ASSERT(kTest, active_region->plan.is_none() && "the stored region must have no memory plan");
     divrig::feed_one_region(vigil, 0);
     crucible::test::flush_and_wait_region_published(vigil);
     for (uint32_t i = 0; i < divrig::NUM_OPS; i++) {
         auto aligned = divrig::op_at(3, i);
         (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
     }
-    assert(vigil.context().is_compiled() && "the foreground must align on the region with tensors");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.context().is_compiled() && "the foreground must align on the region with tensors");
 
-    assert(vigil.load(::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
-                      ::foundation::effects::testing::test().alloc)
-           && "load() must find the stored head");
-    assert(vigil.active_region().expect("the load made a region active")->content_hash == stored_hash
-           && "load() must make the stored region active");
-    assert(!vigil.context().is_compiled() && "the context replays a region that is not the active region");
-    assert(!vigil.is_compiled() && "the mode reports a replay of a region that is not the active region");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.load(::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+                                           ::foundation::effects::testing::test().alloc)
+                                    && "load() must find the stored head");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.active_region().expect("the load made a region active")->content_hash == stored_hash
+                             && "load() must make the stored region active");
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled()
+                                    && "the context replays a region that is not the active region");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !vigil.is_compiled() && "the mode reports a replay of a region that is not the active region");
 
     std::filesystem::remove_all(dir);
 
-    crucible::test::pass("test_vigil: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_vigil: all tests passed\n");
     return 0;
 }

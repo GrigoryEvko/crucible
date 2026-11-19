@@ -24,9 +24,17 @@
 #include <fixy/os/Process.h>
 #include <fixy/os/Time.h>
 
-#include "test_assert.h"
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "test_harness.h"
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::BackgroundThread;
 using crucible::MetaIndex;
@@ -136,7 +144,7 @@ void check_idle_count(fixy::TestRunnerCtx const& runner,
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring, test_log());
     for (uint64_t index = 0; index < kPeriod * kIterations; ++index)
-        assert(record(ring, index));
+        CRUCIBLE_TEST_ASSERT(kTest, record(ring, index));
     wait_for_pipeline(bt, ring);
     idle_for(kSettleSleeps);
     const uint64_t before = fixy::perf::read_count(runner, counter).expect("the counter of the process gives a count");
@@ -151,7 +159,8 @@ void check_idle_count(fixy::TestRunnerCtx const& runner,
     ::fixy::report(::fixy::Sink::Out,
                    "  the idle pipeline and the test thread ran {} user instructions in {} sleeps of 1 ms\n", count,
                    kCountedSleeps);
-    assert(count < kCountedSleeps * kInstructionsPerSleep && "the idle pipeline ran too many instructions");
+    CRUCIBLE_TEST_ASSERT(kTest, count < kCountedSleeps * kInstructionsPerSleep
+                                    && "the idle pipeline ran too many instructions");
 }
 
 void test_idle_pipeline_runs_few_instructions() {
@@ -165,7 +174,9 @@ void test_idle_pipeline_runs_few_instructions() {
                 check_idle_count(runner, counter.ref());
             },
             [](foundation::os::Errno error) noexcept {
-                assert(is_refusal(error) && "the kernel refused the counter for a cause that is not a host setting");
+                CRUCIBLE_TEST_ASSERT(kTest,
+                                     is_refusal(error)
+                                         && "the kernel refused the counter for a cause that is not a host setting");
                 ::fixy::report(::fixy::Sink::Out, "[skipped] the host refused the instruction counter (errno {})\n",
                                foundation::os::error_number(error));
             });
@@ -181,13 +192,13 @@ void test_parked_pipeline_publishes_a_region() {
         record_iteration(vigil);
         vigil.flush();
     }
-    assert(vigil.current_step() != 0 && "a parked pipeline published no region");
-    assert(iteration <= 8);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() != 0 && "a parked pipeline published no region");
+    CRUCIBLE_TEST_ASSERT(kTest, iteration <= 8);
 
     // A job of the owner runs on the publish stage, which parks while the
     // pipeline idles.  The timed park lets the stage serve the job.
     idle_for(20);
-    assert(vigil.region_store_count() > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.region_store_count() > 0);
 }
 
 }  // namespace

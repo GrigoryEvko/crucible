@@ -3,11 +3,19 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
 #include <concepts>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 // Every sriov::enable, configure_vf, disable and query_current entry point
 // carries [[deprecated("CRUCIBLE_STUB:...")]] while no CAP_NET_ADMIN backend
@@ -52,48 +60,49 @@ sriov::DeclaredSrIovPlan two_vf_plan(bool allow_privileged_apply = false) {
 
 void test_admission() {
     auto count = sriov::admit_vf_count(8);
-    assert(count.is_ok());
-    assert(std::move(count).expect("8 functions fit").value() == 8);
+    CRUCIBLE_TEST_ASSERT(kTest, count.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(count).expect("8 functions fit").value() == 8);
 
     auto zero_count = sriov::admit_vf_count(0);
-    assert(zero_count.is_err());
-    assert(zero_count.err() == ::fixy::some(sriov::SrIovError::InvalidVfCount));
+    CRUCIBLE_TEST_ASSERT(kTest, zero_count.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_count.err() == ::fixy::some(sriov::SrIovError::InvalidVfCount));
 
     auto index = sriov::admit_vf_index(4095);
-    assert(index.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, index.is_ok());
     auto bad_index = sriov::admit_vf_index(4096);
-    assert(bad_index.is_err());
-    assert(bad_index.err() == ::fixy::some(sriov::SrIovError::InvalidVfIndex));
+    CRUCIBLE_TEST_ASSERT(kTest, bad_index.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, bad_index.err() == ::fixy::some(sriov::SrIovError::InvalidVfIndex));
 
     auto vlan = sriov::admit_vlan(4094);
-    assert(vlan.is_ok());
-    assert(std::move(vlan).expect("4094 is a VLAN id").value() == 4094);
+    CRUCIBLE_TEST_ASSERT(kTest, vlan.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(vlan).expect("4094 is a VLAN id").value() == 4094);
 
     auto bad_vlan = sriov::admit_vlan(4095);
-    assert(bad_vlan.is_err());
-    assert(bad_vlan.err() == ::fixy::some(sriov::SrIovError::InvalidVlan));
+    CRUCIBLE_TEST_ASSERT(kTest, bad_vlan.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, bad_vlan.err() == ::fixy::some(sriov::SrIovError::InvalidVlan));
 
     auto bad_rate = sriov::admit_rate_limit_mbps(1000000001ull);
-    assert(bad_rate.is_err());
-    assert(bad_rate.err() == ::fixy::some(sriov::SrIovError::InvalidRateLimit));
+    CRUCIBLE_TEST_ASSERT(kTest, bad_rate.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, bad_rate.err() == ::fixy::some(sriov::SrIovError::InvalidRateLimit));
 
     auto bad_limit = sriov::admit_resource_limit(1000001);
-    assert(bad_limit.is_err());
-    assert(bad_limit.err() == ::fixy::some(sriov::SrIovError::InvalidResourceLimit));
+    CRUCIBLE_TEST_ASSERT(kTest, bad_limit.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, bad_limit.err() == ::fixy::some(sriov::SrIovError::InvalidResourceLimit));
 
     auto mac = sriov::admit_mac(sriov::MacAddress::locally_administered(7));
-    assert(mac.is_ok());
-    assert(std::move(mac).expect("the address is unicast").value().bytes.at(::fixy::index<5>()) == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, mac.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         std::move(mac).expect("the address is unicast").value().bytes.at(::fixy::index<5>()) == 7);
 
     auto multicast = sriov::admit_mac(sriov::MacAddress{{0x01, 0, 0, 0, 0, 1}});
-    assert(multicast.is_err());
-    assert(multicast.err() == ::fixy::some(sriov::SrIovError::InvalidMac));
+    CRUCIBLE_TEST_ASSERT(kTest, multicast.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, multicast.err() == ::fixy::some(sriov::SrIovError::InvalidMac));
 
     auto zero_mac = sriov::admit_mac(sriov::MacAddress{});
-    assert(zero_mac.is_err());
-    assert(zero_mac.err() == ::fixy::some(sriov::SrIovError::InvalidMac));
+    CRUCIBLE_TEST_ASSERT(kTest, zero_mac.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_mac.err() == ::fixy::some(sriov::SrIovError::InvalidMac));
 
-    crucible::test::pass("  test_admission: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_admission: PASSED\n");
 }
 
 void test_mint_and_handles() {
@@ -108,72 +117,72 @@ void test_mint_and_handles() {
                                        sriov::admit_vf_count(4).expect("4 functions fit"), config)
                     .expect("a NicPort with SR-IOV and a named interface make a plan");
     static_assert(std::same_as<decltype(plan), sriov::DeclaredSrIovPlan>);
-    assert(plan.value().num_vfs.value() == 4);
-    assert(plan.value().default_vf.vlan.value() == 42);
+    CRUCIBLE_TEST_ASSERT(kTest, plan.value().num_vfs.value() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, plan.value().default_vf.vlan.value() == 42);
 
     // Six slots hold the four handles, so the View of the handles is the
     // first four slots.
     ::foundation::core::FixedArray<sriov::VfHandle, 6> handles{};
     auto materialized = sriov::materialize_vf_handles(plan, handles.view()).expect("six slots hold four handles");
-    assert(materialized.size() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, materialized.size() == 4);
     sriov::VfHandle const& first = handles.at(::fixy::index<0>());
     sriov::VfHandle const& second_slot = handles.at(::fixy::index<1>());
-    assert(first.parent_uuid() == nic_identity().uuid);
-    assert(first.identity().kind == cog::CogKind::NicPort);
-    assert(first.identity().uuid != second_slot.identity().uuid);
-    assert(handles.at(::fixy::index<3>()).index().value() == 3);
-    assert(handles.at(::fixy::index<4>()).identity().uuid.is_zero());
+    CRUCIBLE_TEST_ASSERT(kTest, first.parent_uuid() == nic_identity().uuid);
+    CRUCIBLE_TEST_ASSERT(kTest, first.identity().kind == cog::CogKind::NicPort);
+    CRUCIBLE_TEST_ASSERT(kTest, first.identity().uuid != second_slot.identity().uuid);
+    CRUCIBLE_TEST_ASSERT(kTest, handles.at(::fixy::index<3>()).index().value() == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, handles.at(::fixy::index<4>()).identity().uuid.is_zero());
     std::uint16_t expected_index = 0;
     for (sriov::VfHandle const& handle : materialized) {
-        assert(handle.index().value() == expected_index);
+        CRUCIBLE_TEST_ASSERT(kTest, handle.index().value() == expected_index);
         ++expected_index;
     }
 
     auto second = sriov::vf_handle_at(plan, sriov::admit_vf_index(1).expect("1 is a function index"))
                       .expect("index 1 is below the count of four");
-    assert(second.index().value() == 1);
-    assert(second.identity().uuid == second_slot.identity().uuid);
+    CRUCIBLE_TEST_ASSERT(kTest, second.index().value() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, second.identity().uuid == second_slot.identity().uuid);
 
     auto out_of_range = sriov::vf_handle_at(plan, sriov::admit_vf_index(4).expect("4 is a function index"));
-    assert(out_of_range.err() == ::fixy::some(sriov::SrIovError::VfIndexOutOfRange));
+    CRUCIBLE_TEST_ASSERT(kTest, out_of_range.err() == ::fixy::some(sriov::SrIovError::VfIndexOutOfRange));
 
     ::foundation::core::FixedArray<sriov::VfHandle, 2> small{};
     auto too_small = sriov::materialize_vf_handles(plan, small.view());
-    assert(too_small.err() == ::fixy::some(sriov::SrIovError::InsufficientHandleCapacity));
+    CRUCIBLE_TEST_ASSERT(kTest, too_small.err() == ::fixy::some(sriov::SrIovError::InsufficientHandleCapacity));
 
     // An empty slot names no function.
     sriov::VfHandle empty{};
-    assert(empty.parent_uuid().is_zero());
-    assert(empty.identity().uuid.is_zero());
+    CRUCIBLE_TEST_ASSERT(kTest, empty.parent_uuid().is_zero());
+    CRUCIBLE_TEST_ASSERT(kTest, empty.identity().uuid.is_zero());
 
-    crucible::test::pass("  test_mint_and_handles: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_mint_and_handles: PASSED\n");
 }
 
 void test_identity_and_capability_gates() {
     auto zero = sriov::mint_sriov_plan(init_ctx(), cog::CogIdentity{}, sriov_caps(), iface(),
                                        sriov::admit_vf_count(1).expect("1 function fits"));
-    assert(zero.err() == ::fixy::some(sriov::SrIovError::ZeroCog));
+    CRUCIBLE_TEST_ASSERT(kTest, zero.err() == ::fixy::some(sriov::SrIovError::ZeroCog));
 
     auto gpu = nic_identity();
     gpu.kind = cog::CogKind::Gpu;
     auto wrong_kind = sriov::mint_sriov_plan(init_ctx(), gpu, sriov_caps(), iface(),
                                              sriov::admit_vf_count(1).expect("1 function fits"));
-    assert(wrong_kind.err() == ::fixy::some(sriov::SrIovError::NonNicCog));
+    CRUCIBLE_TEST_ASSERT(kTest, wrong_kind.err() == ::fixy::some(sriov::SrIovError::NonNicCog));
 
     auto caps = sriov_caps();
     caps.features.unset(cog::NicFeature::SrIov);
     auto missing_cap = sriov::mint_sriov_plan(init_ctx(), nic_identity(), caps, iface(),
                                               sriov::admit_vf_count(1).expect("1 function fits"));
-    assert(missing_cap.err() == ::fixy::some(sriov::SrIovError::MissingSrIovCapability));
+    CRUCIBLE_TEST_ASSERT(kTest, missing_cap.err() == ::fixy::some(sriov::SrIovError::MissingSrIovCapability));
 
     auto no_name = sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), cntp::NicInterfaceName{},
                                           sriov::admit_vf_count(1).expect("1 function fits"));
-    assert(no_name.err() == ::fixy::some(sriov::SrIovError::InvalidInterfaceName));
+    CRUCIBLE_TEST_ASSERT(kTest, no_name.err() == ::fixy::some(sriov::SrIovError::InvalidInterfaceName));
 
     auto query = sriov::query_current(nic_identity(), iface());
-    assert(query.err() == ::fixy::some(sriov::SrIovError::QueryDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, query.err() == ::fixy::some(sriov::SrIovError::QueryDeferred));
 
-    crucible::test::pass("  test_identity_and_capability_gates: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_identity_and_capability_gates: PASSED\n");
 }
 
 void test_privileged_boundaries() {
@@ -181,24 +190,25 @@ void test_privileged_boundaries() {
 
     ::foundation::core::FixedArray<sriov::VfHandle, 2> handles{};
     auto enable = sriov::enable(plan, handles.view());
-    assert(enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
 
     auto privileged = two_vf_plan(true);
     auto privileged_enable = sriov::enable(privileged, handles.view());
-    assert(privileged_enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedBackendUnavailable));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         privileged_enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedBackendUnavailable));
 
     auto handle = sriov::vf_handle_at(plan, sriov::first_vf_index).expect("index 0 is below the count of two");
     auto cfg = sriov::declare_vf_config(sriov::VfConfig{});
     auto configure = sriov::configure_vf(handle, cfg);
-    assert(configure.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, configure.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
 
     auto empty_configure = sriov::configure_vf(sriov::VfHandle{}, cfg);
-    assert(empty_configure.err() == ::fixy::some(sriov::SrIovError::ZeroCog));
+    CRUCIBLE_TEST_ASSERT(kTest, empty_configure.err() == ::fixy::some(sriov::SrIovError::ZeroCog));
 
     auto disable = sriov::disable(plan);
-    assert(disable.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, disable.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
 
-    crucible::test::pass("  test_privileged_boundaries: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_privileged_boundaries: PASSED\n");
 }
 
 // The distinction these assertions defend is between a substrate that reports
@@ -216,32 +226,35 @@ void test_apply_paths_are_stubbed() {
 
     ::foundation::core::FixedArray<sriov::VfHandle, 2> handles{};
     auto deferred = sriov::enable(plan, handles.view());
-    assert(deferred.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, deferred.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
 
     auto requested = two_vf_plan(true);
     auto requested_enable = sriov::enable(requested, handles.view());
-    assert(requested_enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedBackendUnavailable));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         requested_enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedBackendUnavailable));
 
     auto requested_disable = sriov::disable(requested);
-    assert(requested_disable.err() == ::fixy::some(sriov::SrIovError::PrivilegedBackendUnavailable));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         requested_disable.err() == ::fixy::some(sriov::SrIovError::PrivilegedBackendUnavailable));
 
     auto handle = sriov::vf_handle_at(plan, sriov::first_vf_index).expect("index 0 is below the count of two");
     auto cfg = sriov::declare_vf_config(sriov::VfConfig{});
     auto configure = sriov::configure_vf(handle, cfg);
-    assert(configure.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, configure.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
 
     auto query = sriov::query_current(nic_identity(), iface());
-    assert(query.err() == ::fixy::some(sriov::SrIovError::QueryDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, query.err() == ::fixy::some(sriov::SrIovError::QueryDeferred));
 
-    crucible::test::pass("  test_apply_paths_are_stubbed: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_apply_paths_are_stubbed: PASSED\n");
 }
 
 void test_enumerator_names() {
     using ::foundation::reflect::enum_name;
-    assert(enum_name(sriov::SrIovError::QueryDeferred) == std::string_view{"QueryDeferred"});
-    assert(enum_name(static_cast<sriov::SrIovError>(0xFF)) == std::string_view{"<unknown SrIovError>"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name(sriov::SrIovError::QueryDeferred) == std::string_view{"QueryDeferred"});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         enum_name(static_cast<sriov::SrIovError>(0xFF)) == std::string_view{"<unknown SrIovError>"});
 
-    crucible::test::pass("  test_enumerator_names: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_enumerator_names: PASSED\n");
 }
 
 }  // namespace
@@ -276,7 +289,7 @@ int main() {
     test_privileged_boundaries();
     test_apply_paths_are_stubbed();
     test_enumerator_names();
-    crucible::test::pass("test_sriov: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_sriov: all PASSED\n");
     return 0;
 }
 

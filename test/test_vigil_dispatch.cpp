@@ -28,10 +28,18 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
 #include <bit>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -62,8 +70,11 @@ OpData make_op(uint32_t iter, uint32_t op_idx) {
     d.entry.num_outputs = 1;
 
     uint16_t idx = 0;
-    if (op_idx > 0) crucible::test::element_at(d.metas, idx++) = make_meta(fake_ptr(iter, op_idx - 1));
-    crucible::test::element_at(d.metas, idx++) = make_meta(fake_ptr(iter, op_idx));
+    if (op_idx > 0)
+        *d.metas.get(idx++).expect("a test reads an element at or past the count of its array") =
+            make_meta(fake_ptr(iter, op_idx - 1));
+    *d.metas.get(idx++).expect("a test reads an element at or past the count of its array") =
+        make_meta(fake_ptr(iter, op_idx));
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
@@ -86,19 +97,21 @@ void align_and_activate(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < K; i++) {
         // The mode reports the replay, not the publication, so it stays
         // RECORDING through every alignment op before the last one.
-        assert(!vigil.is_compiled() && "the mode must not report a replay before the context activates");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             !vigil.is_compiled() && "the mode must not report a replay before the context activates");
         auto d = make_op(iter, i);
         auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::RECORD && "alignment ops should return RECORD");
+        CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::RECORD && "alignment ops should return RECORD");
         CRUCIBLE_FATAL_INVARIANT(!r.op_index.is_valid());
     }
-    assert(vigil.context().is_compiled() && "CrucibleContext should be compiled after K alignment ops");
-    assert(vigil.is_compiled() && "the mode must report the replay once the context activates");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.context().is_compiled() && "CrucibleContext should be compiled after K alignment ops");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.is_compiled() && "the mode must report the replay once the context activates");
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
         auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
+        CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
         CRUCIBLE_FATAL_INVARIANT(r.compiled_op_index() == OpIndex{i});
     }
 }
@@ -162,6 +175,6 @@ int main() {
     test_dispatch_pure_matches_dispatch_op();
     test_dispatch_pure_divergence_and_recovery();
     test_dispatch_binds_each_data_scalar();
-    crucible::test::pass("test_vigil_dispatch: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_vigil_dispatch: all tests passed\n");
     return 0;
 }

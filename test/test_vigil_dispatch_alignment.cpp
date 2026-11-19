@@ -7,8 +7,18 @@
 
 #include <crucible/Vigil.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -86,19 +96,21 @@ void test_alignment_continues_inside_the_matched_ops() {
     (void)dispatch_bordered(vigil, 3, 0);
     for (uint32_t i = 0; i < BORDER_RUN; i++) {
         const DispatchResult result = dispatch_bordered(vigil, 3, i);
-        assert(result.action == DispatchResult::Action::RECORD && "an alignment op returns RECORD");
-        assert(!vigil.is_compiled() && "no replay before the head of the region is complete");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             result.action == DispatchResult::Action::RECORD && "an alignment op returns RECORD");
+        CRUCIBLE_TEST_ASSERT(kTest, !vigil.is_compiled() && "no replay before the head of the region is complete");
     }
     (void)dispatch_bordered(vigil, 3, BORDER_RUN);
-    assert(vigil.context().is_compiled() && "the B after the fifth A completes the head A A A A B");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.context().is_compiled() && "the B after the fifth A completes the head A A A A B");
 
     for (uint32_t i = BORDER_RUN + 1; i < NUM_OPS; i++) {
         const DispatchResult result = dispatch_bordered(vigil, 3, i);
-        assert(result.action == DispatchResult::Action::COMPILED);
+        CRUCIBLE_TEST_ASSERT(kTest, result.action == DispatchResult::Action::COMPILED);
     }
-    assert(vigil.compiled_iterations() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.compiled_iterations() == 1);
 
-    crucible::test::pass("  test_alignment_continues_inside_the_matched_ops: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_alignment_continues_inside_the_matched_ops: PASSED\n");
 }
 
 // A stream that does not hold the region ends the alignment after
@@ -116,14 +128,17 @@ void test_alignment_ends_after_its_bound() {
     const uint32_t bound = Vigil::alignment_bound(NUM_OPS);
     for (uint32_t i = 0; i < bound; i++) {
         const DispatchResult result = dispatch_foreign(vigil, 3);
-        assert(result.action == DispatchResult::Action::RECORD && "an alignment op returns RECORD");
-        assert(vigil.ring_total_produced() == produced && "an op of the alignment goes to no ring");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             result.action == DispatchResult::Action::RECORD && "an alignment op returns RECORD");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             vigil.ring_total_produced() == produced && "an op of the alignment goes to no ring");
     }
     (void)dispatch_foreign(vigil, 3);
-    assert(vigil.ring_total_produced() == produced + 1 && "the op after the bound goes to the ring");
-    assert(!vigil.is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.ring_total_produced() == produced + 1 && "the op after the bound goes to the ring");
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.is_compiled());
 
-    crucible::test::pass("  test_alignment_ends_after_its_bound: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_alignment_ends_after_its_bound: PASSED\n");
 }
 
 // The stream changes to a new trace while the region of the old trace waits
@@ -143,25 +158,27 @@ void test_alignment_bound_returns_to_replay() {
     uint32_t index = 0;
     for (; index < first_detection; index++) {
         const DispatchResult result = dispatch_new_trace(vigil, index);
-        assert(result.action == DispatchResult::Action::RECORD && "no replay before a region of the new trace");
+        CRUCIBLE_TEST_ASSERT(kTest, result.action == DispatchResult::Action::RECORD
+                                        && "no replay before a region of the new trace");
     }
     flush_and_wait_region_published(vigil);
 
-    assert(vigil.active_region().is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.active_region().is_some());
     const RegionNode& region = *vigil.active_region().expect("the flush published a region");
-    assert(region.num_ops() == NUM_OPS && "the region holds one iteration of the new trace");
+    CRUCIBLE_TEST_ASSERT(kTest, region.num_ops() == NUM_OPS && "the region holds one iteration of the new trace");
     for (const crucible::TraceEntry& op : region.ops) {
         const uint64_t schema = op.schema_hash.raw();
-        assert(schema >= 0xA00 && schema < 0xA00 + NUM_OPS && "each op of the region is an op of the new trace");
+        CRUCIBLE_TEST_ASSERT(kTest, schema >= 0xA00 && schema < 0xA00 + NUM_OPS
+                                        && "each op of the region is an op of the new trace");
     }
 
     const uint32_t replay_end = index + 3 * NUM_OPS;
     for (; index < replay_end; index++)
         (void)dispatch_new_trace(vigil, index);
-    assert(vigil.is_compiled() && "replay starts on the region of the new trace");
-    assert(vigil.compiled_iterations() >= 1);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.is_compiled() && "replay starts on the region of the new trace");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.compiled_iterations() >= 1);
 
-    crucible::test::pass("  test_alignment_bound_returns_to_replay: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_alignment_bound_returns_to_replay: PASSED\n");
 }
 
 }  // namespace test_vigil_dispatch

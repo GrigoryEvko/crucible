@@ -5,9 +5,19 @@
 
 #include <crucible/Vigil.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdio>
 #include <thread>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace test_vigil {
 
@@ -21,19 +31,22 @@ namespace test_vigil {
 // op stream stays single-threaded throughout.
 void test_record_op_claims_the_producer_role() {
     crucible::Vigil vigil;
-    assert(vigil.is_producer_thread() && "an unclaimed Vigil admits the first thread that arrives");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.is_producer_thread() && "an unclaimed Vigil admits the first thread that arrives");
 
     std::thread claimer([&vigil] {
         auto first = divrig::op_at(0, 0);
-        assert(vigil.record_op(crucible::test::certify_synthetic_op(first.entry, first.metas, first.n_metas)));
-        assert(vigil.is_producer_thread() && "the thread that claimed the role holds it");
+        CRUCIBLE_TEST_ASSERT(
+            kTest, vigil.record_op(crucible::test::certify_synthetic_op(first.entry, first.metas, first.n_metas)));
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.is_producer_thread() && "the thread that claimed the role holds it");
     });
     claimer.join();
 
-    assert(!vigil.is_producer_thread()
-           && "record_op must claim the producer role, which makes every later thread a second producer");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !vigil.is_producer_thread()
+                   && "record_op must claim the producer role, which makes every later thread a second producer");
 
-    crucible::test::pass("  test_record_op_claims_the_producer_role: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_record_op_claims_the_producer_role: PASSED\n");
 }
 
 // The producer surface of the ring and of the metadata log takes the context
@@ -42,17 +55,18 @@ void test_record_op_claims_the_producer_role() {
 void test_producer_surface_takes_the_claim_context() {
     crucible::Vigil vigil;
     auto first = divrig::op_at(0, 0);
-    assert(vigil.record_op(crucible::test::certify_synthetic_op(first.entry, first.metas, first.n_metas)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, vigil.record_op(crucible::test::certify_synthetic_op(first.entry, first.metas, first.n_metas)));
 
     const crucible::VigilFgCtx fg = vigil.mint_producer_context();
     const crucible::TraceRing& ring = vigil.ring(fg);
     const crucible::MetaLog& meta_log = vigil.meta_log(fg);
-    assert(ring.total_produced() == vigil.ring_total_produced());
-    assert(ring.total_produced() >= 1 && "the recorded op reached the ring");
-    assert(meta_log.size().peek() == vigil.meta_log_size().peek());
-    assert(&vigil.ring(fg) == &ring && "every call opens the same ring");
+    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == vigil.ring_total_produced());
+    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() >= 1 && "the recorded op reached the ring");
+    CRUCIBLE_TEST_ASSERT(kTest, meta_log.size().peek() == vigil.meta_log_size().peek());
+    CRUCIBLE_TEST_ASSERT(kTest, &vigil.ring(fg) == &ring && "every call opens the same ring");
 
-    crucible::test::pass("  test_producer_surface_takes_the_claim_context: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_producer_surface_takes_the_claim_context: PASSED\n");
 }
 
 // record_op publishes the heads of the ring and of the log with the proof of
@@ -72,17 +86,19 @@ void test_two_publishes_keep_one_copy_of_the_head() {
     constexpr uint32_t kRounds = 64;
     for (uint32_t round = 0; round < kRounds; ++round) {
         auto proven = divrig::op_at(round, 0);
-        assert(vigil.record_op(crucible::test::certify_synthetic_op(proven.entry, proven.metas, proven.n_metas)));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, vigil.record_op(crucible::test::certify_synthetic_op(proven.entry, proven.metas, proven.n_metas)));
         auto checked = divrig::op_at(round, 1);
         const crucible::MetaIndex meta_start =
             meta_log.try_append(crucible::test::records_of(checked.metas, checked.n_metas));
-        assert(meta_start.is_valid() && "the log has room for the records of the checked append");
-        assert(ring.try_append(checked.entry, meta_start) && "the ring has room for the checked append");
+        CRUCIBLE_TEST_ASSERT(kTest, meta_start.is_valid() && "the log has room for the records of the checked append");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             ring.try_append(checked.entry, meta_start) && "the ring has room for the checked append");
     }
 
-    assert(ring.total_produced() == first_produced + 2 * kRounds
-           && "each proven and each checked publish moved the head by one op");
-    crucible::test::pass("  test_two_publishes_keep_one_copy_of_the_head: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == first_produced + 2 * kRounds
+                                    && "each proven and each checked publish moved the head by one op");
+    ::fixy::check::pass(kTest, "  test_two_publishes_keep_one_copy_of_the_head: PASSED\n");
 }
 
 // The foreground reads the count of iterations while the detect stage writes
@@ -94,7 +110,7 @@ void test_foreground_reads_the_iteration_count() {
     divrig::feed_one_region(vigil, 0);
     vigil.flush();
     const uint32_t after_flush = vigil.bg_iterations_completed();
-    assert(after_flush > 0 && "one region needs at least one iteration");
+    CRUCIBLE_TEST_ASSERT(kTest, after_flush > 0 && "one region needs at least one iteration");
 
     divrig::feed_one_region(vigil, 4);
     divrig::feed_one_region(vigil, 8);
@@ -104,10 +120,11 @@ void test_foreground_reads_the_iteration_count() {
 
     vigil.flush();
     const uint32_t after_all = vigil.bg_iterations_completed();
-    assert(after_all > after_flush && "the two regions after the flush add iterations");
+    CRUCIBLE_TEST_ASSERT(kTest, after_all > after_flush && "the two regions after the flush add iterations");
 
-    crucible::test::pass("  test_foreground_reads_the_iteration_count: PASSED (after the flush {}, at the end {})\n",
-                         after_flush, after_all);
+    ::fixy::check::pass(kTest,
+                        "  test_foreground_reads_the_iteration_count: PASSED (after the flush {}, at the end {})\n",
+                        after_flush, after_all);
 }
 
 }  // namespace test_vigil

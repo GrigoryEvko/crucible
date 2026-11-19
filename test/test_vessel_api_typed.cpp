@@ -18,7 +18,16 @@
 #include <cstring>
 #include <type_traits>
 #include <utility>
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -757,6 +766,6 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    crucible::test::pass("test_vessel_api_typed: PASS\n");
+    ::fixy::check::pass(kTest, "test_vessel_api_typed: PASS\n");
     return EXIT_SUCCESS;
 }

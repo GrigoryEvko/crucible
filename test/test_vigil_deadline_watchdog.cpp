@@ -1,9 +1,19 @@
 #include <crucible/Vigil.h>
 #include <crucible/warden/DeadlineWatchdog.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::SchemaHash;
 using crucible::ShapeHash;
@@ -55,7 +65,7 @@ void drive_one_region(crucible::Vigil& vigil) {
         for (int j = 0; j < 5; j++) {
             auto e = make_entry(schemas[j]);
             const bool ok = vigil.record_op(crucible::test::certify_synthetic_op(e, io_metas, 2));
-            assert(ok && "record_op must succeed (ring not full)");
+            CRUCIBLE_TEST_ASSERT(kTest, ok && "record_op must succeed (ring not full)");
         }
     }
     crucible::test::flush_and_wait_region_published(vigil);
@@ -67,22 +77,23 @@ void test_disabled_watchdog() {
     cfg.enable_deadline_watchdog = false;
     crucible::Vigil vigil(std::move(cfg));
 
-    assert(!vigil.watchdog_enabled() && "default Config disables the watchdog");
-    assert(vigil.last_watchdog_verdict() == ::crucible::warden::WatchdogVerdict::InsufficientData
-           && "default verdict on disabled watchdog is InsufficientData");
-    assert(vigil.watchdog_healthy_count() == 0);
-    assert(vigil.watchdog_downgrade_count() == 0);
-    assert(vigil.watchdog_insufficient_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.watchdog_enabled() && "default Config disables the watchdog");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.last_watchdog_verdict() == ::crucible::warden::WatchdogVerdict::InsufficientData
+                                    && "default verdict on disabled watchdog is InsufficientData");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.watchdog_healthy_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.watchdog_downgrade_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.watchdog_insufficient_count() == 0);
 
     drive_one_region(vigil);
 
     // The region callback ran on the background thread and skipped the
     // watchdog, so every counter must still read zero.
-    assert(!vigil.watchdog_enabled());
-    assert(vigil.watchdog_healthy_count() == 0 && "disabled watchdog must not increment any counter");
-    assert(vigil.watchdog_downgrade_count() == 0);
-    assert(vigil.watchdog_insufficient_count() == 0);
-    assert(vigil.last_watchdog_verdict() == ::crucible::warden::WatchdogVerdict::InsufficientData);
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.watchdog_enabled());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.watchdog_healthy_count() == 0 && "disabled watchdog must not increment any counter");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.watchdog_downgrade_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.watchdog_insufficient_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.last_watchdog_verdict() == ::crucible::warden::WatchdogVerdict::InsufficientData);
 
     // Reaching scope end without a crash is itself a claim: the
     // background thread joins before the members it borrows die.
@@ -94,12 +105,13 @@ void test_enabled_watchdog() {
     // The default policy allows ten misses over a sixty-second window.
     crucible::Vigil vigil(std::move(cfg));
 
-    assert(vigil.watchdog_enabled() && "enable_deadline_watchdog=true must construct senses_ + wd_");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.watchdog_enabled() && "enable_deadline_watchdog=true must construct senses_ + wd_");
 
-    assert(vigil.watchdog_healthy_count() == 0);
-    assert(vigil.watchdog_downgrade_count() == 0);
-    assert(vigil.watchdog_insufficient_count() == 0);
-    assert(vigil.last_watchdog_verdict() == ::crucible::warden::WatchdogVerdict::InsufficientData);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.watchdog_healthy_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.watchdog_downgrade_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.watchdog_insufficient_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.last_watchdog_verdict() == ::crucible::warden::WatchdogVerdict::InsufficientData);
 
     drive_one_region(vigil);
 
@@ -110,7 +122,7 @@ void test_enabled_watchdog() {
     const uint32_t insufficient = vigil.watchdog_insufficient_count();
     const uint32_t total = healthy + downgrade + insufficient;
 
-    assert(total >= 1 && "at least one observe() must have run during flush");
+    CRUCIBLE_TEST_ASSERT(kTest, total >= 1 && "at least one observe() must have run during flush");
 
     // Which verdict comes back is deliberately not asserted.  The
     // policy window is sixty seconds and this test runs in well under
@@ -121,15 +133,15 @@ void test_enabled_watchdog() {
     const bool legal_verdict = (v == ::crucible::warden::WatchdogVerdict::InsufficientData)
                             || (v == ::crucible::warden::WatchdogVerdict::Healthy)
                             || (v == ::crucible::warden::WatchdogVerdict::Downgrade);
-    assert(legal_verdict && "verdict must be a legal enum value");
+    CRUCIBLE_TEST_ASSERT(kTest, legal_verdict && "verdict must be a legal enum value");
 
     // The first observation only captures a baseline, so it always
     // reports InsufficientData.  That makes a floor of one the safe
     // assertion, while leaving room for the other two counters to move
     // on a slower run.
-    assert(insufficient >= 1
-           && "first observation always returns InsufficientData "
-              "(baseline-capture or window-not-elapsed)");
+    CRUCIBLE_TEST_ASSERT(kTest, insufficient >= 1
+                                    && "first observation always returns InsufficientData "
+                                       "(baseline-capture or window-not-elapsed)");
 
     // The watchdog borrows a pointer into a sibling member.  Reaching
     // scope end cleanly claims that the background thread joins, and
@@ -141,6 +153,6 @@ void test_enabled_watchdog() {
 int main() {
     test_disabled_watchdog();
     test_enabled_watchdog();
-    crucible::test::pass("test_vigil_deadline_watchdog: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_vigil_deadline_watchdog: all tests passed\n");
     return 0;
 }

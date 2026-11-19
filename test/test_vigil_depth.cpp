@@ -15,10 +15,20 @@
 
 #include <crucible/ValidatedOp.h>
 #include <crucible/Vigil.h>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "test_harness.h"
 
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace test_vigil {
 
@@ -33,7 +43,7 @@ using divrig::NUM_OPS;
 constexpr ::fixy::FixedArray<uint16_t, NUM_OPS> DEPTH{1, 0, 2, 1, 0, 0, 1, 0};
 
 [[nodiscard]] crucible::OpDepth depth_of(uint32_t op_idx) noexcept {
-    return crucible::OpDepth{crucible::test::element_at(DEPTH, op_idx)};
+    return crucible::OpDepth{*DEPTH.get(op_idx).expect("a test reads an element at or past the count of its array")};
 }
 
 void dispatch_with_depth(crucible::Vigil& vigil, uint32_t iter, uint32_t op_idx) {
@@ -41,7 +51,7 @@ void dispatch_with_depth(crucible::Vigil& vigil, uint32_t iter, uint32_t op_idx)
     const crucible::DispatchResult result =
         vigil.dispatch_op(crucible::test::certify_synthetic_op(made.entry, made.metas, made.n_metas),
                           crucible::ScopeHash{}, crucible::CallsiteHash{}, depth_of(op_idx));
-    assert(result.action == crucible::DispatchResult::Action::RECORD);
+    CRUCIBLE_TEST_ASSERT(kTest, result.action == crucible::DispatchResult::Action::RECORD);
 }
 
 }  // namespace
@@ -60,13 +70,14 @@ void test_region_keeps_the_depth_of_each_op() {
     crucible::test::flush_and_wait_region_published(vigil);
 
     const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
-    assert(region->num_ops() == NUM_OPS);
+    CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == NUM_OPS);
     for (uint32_t op = 0; op < NUM_OPS; ++op) {
-        assert(region->op_at(op).schema_hash == divrig::SCHEMA[op]);
-        assert(region->op_at(op).depth == depth_of(op) && "the region holds the depth that the dispatch gave");
+        CRUCIBLE_TEST_ASSERT(kTest, region->op_at(op).schema_hash == divrig::SCHEMA[op]);
+        CRUCIBLE_TEST_ASSERT(kTest, region->op_at(op).depth == depth_of(op)
+                                        && "the region holds the depth that the dispatch gave");
     }
 
-    crucible::test::pass("  test_region_keeps_the_depth_of_each_op: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_region_keeps_the_depth_of_each_op: PASSED\n");
 }
 
 // A period of more ops than the first capacity of the ops that the detect
@@ -83,7 +94,7 @@ void test_region_keeps_the_depth_past_a_growth_of_the_held_ops() {
         const crucible::DispatchResult result =
             vigil.dispatch_op(crucible::test::certify_synthetic_op(entry), crucible::ScopeHash{},
                               crucible::CallsiteHash{}, crucible::OpDepth{static_cast<uint16_t>(op % kDepths)});
-        assert(result.action == crucible::DispatchResult::Action::RECORD);
+        CRUCIBLE_TEST_ASSERT(kTest, result.action == crucible::DispatchResult::Action::RECORD);
     };
     for (uint32_t iter = 0; iter < 2; ++iter) {
         for (uint32_t op = 0; op < kLongPeriod; ++op)
@@ -94,44 +105,44 @@ void test_region_keeps_the_depth_past_a_growth_of_the_held_ops() {
     crucible::test::flush_and_wait_region_published(vigil);
 
     const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
-    assert(region->num_ops() == kLongPeriod);
+    CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == kLongPeriod);
     for (uint32_t op = 0; op < kLongPeriod; ++op) {
-        assert(region->op_at(op).schema_hash == crucible::SchemaHash{0x10000 + op});
-        assert(region->op_at(op).depth == crucible::OpDepth{static_cast<uint16_t>(op % kDepths)}
-               && "the growth of the held ops keeps the depth of each op");
+        CRUCIBLE_TEST_ASSERT(kTest, region->op_at(op).schema_hash == crucible::SchemaHash{0x10000 + op});
+        CRUCIBLE_TEST_ASSERT(kTest, region->op_at(op).depth == crucible::OpDepth{static_cast<uint16_t>(op % kDepths)}
+                                        && "the growth of the held ops keeps the depth of each op");
     }
 
-    crucible::test::pass("  test_region_keeps_the_depth_past_a_growth_of_the_held_ops: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_region_keeps_the_depth_past_a_growth_of_the_held_ops: PASSED\n");
 }
 
 void test_op_nest_counts_the_open_records() {
     crucible::Vigil vigil;
     crucible::OpRecordStack& stack = vigil.op_record_stack(vigil.mint_producer_context());
-    assert(stack.depth().is_top());
+    CRUCIBLE_TEST_ASSERT(kTest, stack.depth().is_top());
     {
         const crucible::OpNest outer{stack};
-        assert(outer.depth() == crucible::OpDepth{0});
-        assert(stack.depth() == crucible::OpDepth{1});
+        CRUCIBLE_TEST_ASSERT(kTest, outer.depth() == crucible::OpDepth{0});
+        CRUCIBLE_TEST_ASSERT(kTest, stack.depth() == crucible::OpDepth{1});
         {
             const crucible::OpNest middle{stack};
             const crucible::OpNest inner{stack};
-            assert(middle.depth() == crucible::OpDepth{1});
-            assert(inner.depth() == crucible::OpDepth{2});
-            assert(stack.depth() == crucible::OpDepth{3});
+            CRUCIBLE_TEST_ASSERT(kTest, middle.depth() == crucible::OpDepth{1});
+            CRUCIBLE_TEST_ASSERT(kTest, inner.depth() == crucible::OpDepth{2});
+            CRUCIBLE_TEST_ASSERT(kTest, stack.depth() == crucible::OpDepth{3});
         }
         // A nest that opens after two nests closed takes the depth that they
         // took first.
         const crucible::OpNest sibling{stack};
-        assert(sibling.depth() == crucible::OpDepth{1});
+        CRUCIBLE_TEST_ASSERT(kTest, sibling.depth() == crucible::OpDepth{1});
     }
-    assert(stack.depth().is_top() && "each close gives back the depth of its open");
+    CRUCIBLE_TEST_ASSERT(kTest, stack.depth().is_top() && "each close gives back the depth of its open");
 
     // The count stops at the largest value of its word.
     const crucible::OpDepth deepest{UINT16_MAX};
-    assert(deepest.nested() == deepest);
-    assert(crucible::OpDepth{}.nested() == crucible::OpDepth{1});
+    CRUCIBLE_TEST_ASSERT(kTest, deepest.nested() == deepest);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::OpDepth{}.nested() == crucible::OpDepth{1});
 
-    crucible::test::pass("  test_op_nest_counts_the_open_records: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_op_nest_counts_the_open_records: PASSED\n");
 }
 
 namespace {
@@ -166,13 +177,13 @@ void test_unrecorded_nest_gives_its_closing_entry() {
         const crucible::VigilOpNest raised{vigil, fg};
         give_op_at(vigil, 0x300, child);
     }
-    assert(stack.given() == given + 2 && stack.last_given_depth() == top
-           && "a raise after a child gives the closing entry at the depth of the op");
+    CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given + 2 && stack.last_given_depth() == top
+                                    && "a raise after a child gives the closing entry at the depth of the op");
 
     // The op raises before an op inside it reached the Vigil: no entry.
     given = stack.given();
     { const crucible::VigilOpNest raised{vigil, fg}; }
-    assert(stack.given() == given && "a raise with no child gives no entry");
+    CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given && "a raise with no child gives no entry");
 
     // A child raises after its own child reached the Vigil, and the unwind
     // passes through the parent: one entry at each depth, the child first.
@@ -183,11 +194,11 @@ void test_unrecorded_nest_gives_its_closing_entry() {
             const crucible::VigilOpNest raised{vigil, fg};
             give_op_at(vigil, 0x301, grandchild);
         }
-        assert(stack.given() == given + 2 && stack.last_given_depth() == child
-               && "the child gives its entry at its own depth");
+        CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given + 2 && stack.last_given_depth() == child
+                                        && "the child gives its entry at its own depth");
     }
-    assert(stack.given() == given + 3 && stack.last_given_depth() == top
-           && "the parent gives its entry after the entry of the child");
+    CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given + 3 && stack.last_given_depth() == top
+                                    && "the parent gives its entry after the entry of the child");
 
     // The parent catches the raise of the child and reaches the Vigil: the
     // child gives its entry, and the parent gives none.
@@ -200,15 +211,15 @@ void test_unrecorded_nest_gives_its_closing_entry() {
         }
         give_op_at(vigil, 0x303, top);
     }
-    assert(stack.given() == given + 3 && stack.last_given_depth() == top
-           && "a parent that reaches the Vigil gives no closing entry");
+    CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given + 3 && stack.last_given_depth() == top
+                                    && "a parent that reaches the Vigil gives no closing entry");
 
     // An op of a larger depth that reached the Vigil before the nest opened
     // does not count for the nest.
     give_op_at(vigil, 0x304, crucible::OpDepth{3});
     given = stack.given();
     { const crucible::VigilOpNest raised{vigil, fg}; }
-    assert(stack.given() == given && "an op given before the open does not count for the nest");
+    CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given && "an op given before the open does not count for the nest");
 
     // An op that reaches the Vigil after its child gives no entry.
     given = stack.given();
@@ -217,9 +228,9 @@ void test_unrecorded_nest_gives_its_closing_entry() {
         give_op_at(vigil, 0x305, child);
         give_op_at(vigil, 0x306, top);
     }
-    assert(stack.given() == given + 2 && "a recorded op gives no closing entry");
+    CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given + 2 && "a recorded op gives no closing entry");
 
-    crucible::test::pass("  test_unrecorded_nest_gives_its_closing_entry: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_unrecorded_nest_gives_its_closing_entry: PASSED\n");
 }
 
 namespace {
@@ -256,9 +267,10 @@ void test_unrecorded_nest_keeps_the_loop_eager() {
         for (uint32_t iter = 0; iter < kIterations; ++iter)
             give_iteration(vigil, true);
         vigil.flush();
-        assert(vigil.flush_complete() && "flush() returned but bg thread did not finish processing");
-        assert(!vigil.has_pending_region() && vigil.active_region().is_none()
-               && "a region that holds the closing entry of a nest must not build");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             vigil.flush_complete() && "flush() returned but bg thread did not finish processing");
+        CRUCIBLE_TEST_ASSERT(kTest, !vigil.has_pending_region() && vigil.active_region().is_none()
+                                        && "a region that holds the closing entry of a nest must not build");
     }
     {
         crucible::Vigil vigil;
@@ -267,7 +279,7 @@ void test_unrecorded_nest_keeps_the_loop_eager() {
         crucible::test::flush_and_wait_region_published(vigil);
     }
 
-    crucible::test::pass("  test_unrecorded_nest_keeps_the_loop_eager: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_unrecorded_nest_keeps_the_loop_eager: PASSED\n");
 }
 
 namespace {
@@ -345,18 +357,19 @@ private:
 // that took the close with no compare would stay compiled until op 4.
 void give_raise_to_a_replayed_loop(NestedLoop& loop) {
     loop.give_iterations_until_replay();
-    assert(loop.vigil.is_compiled() && loop.vigil.diverged_count() == 0 && "the loop replays before the raise");
+    CRUCIBLE_TEST_ASSERT(kTest, loop.vigil.is_compiled() && loop.vigil.diverged_count() == 0
+                                    && "the loop replays before the raise");
     // The replay of the next iteration starts at op 0 of the region.
     loop.give_iteration(NestEnd::RECORDED);
-    assert(loop.vigil.is_compiled() && loop.vigil.diverged_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, loop.vigil.is_compiled() && loop.vigil.diverged_count() == 0);
 
     bool is_close_checked = false;
     loop.give_iteration(NestEnd::RAISED, [&loop, &is_close_checked] {
-        assert(!loop.vigil.is_compiled() && loop.vigil.diverged_count() == 1
-               && "the replay diverges at the close of the nest");
+        CRUCIBLE_TEST_ASSERT(kTest, !loop.vigil.is_compiled() && loop.vigil.diverged_count() == 1
+                                        && "the replay diverges at the close of the nest");
         is_close_checked = true;
     });
-    assert(is_close_checked);
+    CRUCIBLE_TEST_ASSERT(kTest, is_close_checked);
 }
 
 }  // namespace
@@ -370,12 +383,13 @@ void test_replay_diverges_at_the_close_of_a_nest() {
     give_raise_to_a_replayed_loop(loop);
 
     loop.give_iterations_until_replay();
-    assert(loop.vigil.is_compiled() && "the loop replays again after the divergence");
+    CRUCIBLE_TEST_ASSERT(kTest, loop.vigil.is_compiled() && "the loop replays again after the divergence");
     const ::fixy::Ref<const crucible::RegionNode> region = loop.vigil.active_region().expect("a region replays");
-    assert(region->num_ops() == NUM_OPS && "the region holds the ops of one iteration");
+    CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == NUM_OPS && "the region holds the ops of one iteration");
     for (uint32_t op = 0; op < NUM_OPS; ++op) {
-        assert(region->op_at(op).schema_hash == divrig::SCHEMA[(kFirstOpAfterTheClose + op) % NUM_OPS]
-               && "the region starts at the first op that the loop recorded after the close");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             region->op_at(op).schema_hash == divrig::SCHEMA[(kFirstOpAfterTheClose + op) % NUM_OPS]
+                                 && "the region starts at the first op that the loop recorded after the close");
     }
 
     constexpr uint32_t kReplayed = 3;
@@ -383,9 +397,10 @@ void test_replay_diverges_at_the_close_of_a_nest() {
     const uint32_t replayed = loop.vigil.compiled_iterations();
     for (uint32_t step = 0; step < kReplayed; ++step)
         loop.give_iteration(NestEnd::RECORDED);
-    assert(loop.vigil.diverged_count() == 1 && loop.vigil.compiled_iterations() == replayed + kReplayed);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         loop.vigil.diverged_count() == 1 && loop.vigil.compiled_iterations() == replayed + kReplayed);
 
-    crucible::test::pass("  test_replay_diverges_at_the_close_of_a_nest: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_replay_diverges_at_the_close_of_a_nest: PASSED\n");
 }
 
 // A loop whose op 3 raises in each iteration after the divergence gives the
@@ -398,11 +413,11 @@ void test_raise_in_each_iteration_after_a_replay_keeps_the_loop_eager() {
     for (uint32_t step = 0; step < kReplayBound; ++step) {
         loop.give_iteration(NestEnd::RAISED);
         loop.vigil.flush();
-        assert(!loop.vigil.is_compiled() && "a loop that raises in each iteration stays eager");
+        CRUCIBLE_TEST_ASSERT(kTest, !loop.vigil.is_compiled() && "a loop that raises in each iteration stays eager");
     }
-    assert(loop.vigil.diverged_count() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, loop.vigil.diverged_count() == 1);
 
-    crucible::test::pass("  test_raise_in_each_iteration_after_a_replay_keeps_the_loop_eager: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_raise_in_each_iteration_after_a_replay_keeps_the_loop_eager: PASSED\n");
 }
 
 }  // namespace test_vigil

@@ -13,7 +13,6 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
-#include "test_assert.h"
 #include "thread_bound_probe.h"
 #include <thread>
 

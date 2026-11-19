@@ -5,11 +5,21 @@
 
 #include <crucible/Vigil.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "tensor_data.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -32,20 +42,20 @@ void test_dispatch_data_flow() {
 
     auto d0 = make_op(4, 0);
     auto r0 = crucible::test::dispatch_synthetic(vigil, d0.entry, d0.metas, d0.n_metas);
-    assert(r0.action == DispatchResult::Action::COMPILED);
-    assert(r0.status == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, r0.action == DispatchResult::Action::COMPILED);
+    CRUCIBLE_TEST_ASSERT(kTest, r0.status == ReplayStatus::MATCH);
     std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), 0)), 0x42, 4096);
 
     for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
         auto d = make_op(4, i);
         auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
-        assert(r.status == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
+        CRUCIBLE_TEST_ASSERT(kTest, r.status == ReplayStatus::MATCH);
 
         auto* in_data = crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), 0));
         uint8_t expected = static_cast<uint8_t>(0x42 + i - 1);
         for (uint32_t b = 0; b < 4096; b++)
-            assert(in_data[b] == expected);
+            CRUCIBLE_TEST_ASSERT(kTest, in_data[b] == expected);
 
         std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), 0)),
                     static_cast<int>(0x42 + i), 4096);
@@ -53,18 +63,18 @@ void test_dispatch_data_flow() {
 
     auto d7 = make_op(4, NUM_OPS - 1);
     auto r7 = crucible::test::dispatch_synthetic(vigil, d7.entry, d7.metas, d7.n_metas);
-    assert(r7.action == DispatchResult::Action::COMPILED);
-    assert(r7.status == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, r7.action == DispatchResult::Action::COMPILED);
+    CRUCIBLE_TEST_ASSERT(kTest, r7.status == ReplayStatus::COMPLETE);
 
     auto* in_last = crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), 0));
     uint8_t expected_last = static_cast<uint8_t>(0x42 + NUM_OPS - 2);
     for (uint32_t b = 0; b < 4096; b++)
-        assert(in_last[b] == expected_last);
+        CRUCIBLE_TEST_ASSERT(kTest, in_last[b] == expected_last);
 
     // One iteration from the alignment helper, one from the loop above.
-    assert(vigil.compiled_iterations() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.compiled_iterations() == 2);
 
-    crucible::test::pass("  test_dispatch_data_flow: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_dispatch_data_flow: PASSED\n");
 }
 
 void test_dispatch_pool_bounds() {
@@ -78,8 +88,8 @@ void test_dispatch_pool_bounds() {
     align_and_activate(vigil, 3);
 
     auto& pool = vigil.context().pool();
-    assert(pool.is_initialized());
-    assert(pool.pool_bytes() > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.is_initialized());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.pool_bytes() > 0);
 
     auto* pool_base = crucible::test::host_ptr<uint8_t>(pool.pool_base());
     uint64_t pool_bytes = pool.pool_bytes();
@@ -87,17 +97,17 @@ void test_dispatch_pool_bounds() {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(4, i);
         auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
+        CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
 
         auto* p = crucible::test::host_ptr<uint8_t>(vigil.output_ptr(vigil.mint_producer_context(), 0));
-        assert(p >= pool_base);
-        assert(p + 4096 <= pool_base + pool_bytes);
+        CRUCIBLE_TEST_ASSERT(kTest, p >= pool_base);
+        CRUCIBLE_TEST_ASSERT(kTest, p + 4096 <= pool_base + pool_bytes);
     }
 
-    assert(vigil.compiled_iterations() == 2);
-    assert(pool.num_external() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.compiled_iterations() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.num_external() == 0);
 
-    crucible::test::pass("  test_dispatch_pool_bounds: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_dispatch_pool_bounds: PASSED\n");
 }
 
 }  // namespace test_vigil_dispatch

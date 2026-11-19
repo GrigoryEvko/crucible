@@ -19,7 +19,16 @@
 #include <type_traits>
 #include <utility>
 #include "perf_capabilities.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 // The two constants below are asserted here because this file is
 // their only consumer, and an unused constant is an error under the
@@ -283,7 +292,7 @@ int main() {
     }
 
     if (failures == 0) {
-        crucible::test::pass("warden::DeadlineWatchdog smoke OK\n");
+        ::fixy::check::pass(kTest, "warden::DeadlineWatchdog smoke OK\n");
     }
     return failures == 0 ? 0 : 1;
 }

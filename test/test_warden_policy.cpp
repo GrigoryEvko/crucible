@@ -34,7 +34,16 @@
 #include <foundation/os/Auxiliary.h>
 
 #include "padding_bytes.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -792,7 +801,7 @@ int main() {
     test_revert_keeps_a_prior_thp_refusal(topology);
 
     if (failures == 0) {
-        crucible::test::pass("test_warden_policy: OK\n");
+        ::fixy::check::pass(kTest, "test_warden_policy: OK\n");
         return 0;
     }
     std::fprintf(stderr, "test_warden_policy: %d FAILURES\n", failures);

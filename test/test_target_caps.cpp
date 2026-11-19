@@ -10,13 +10,23 @@
 #include <foundation/reflect/EnumName.h>
 
 #include "padding_bytes.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cog = crucible::cog;
 namespace fr = ::foundation::reflect;
@@ -40,8 +50,8 @@ static void check_every_name_at_run_time() {
     fr::for_each_enumerator<E>([](E value, std::string_view identifier) {
         volatile E runtime_value = value;
         const std::string_view name = fr::enum_name(static_cast<E>(runtime_value));
-        assert(name == identifier);
-        assert(name != fr::unknown_enum_sentinel<E>);
+        CRUCIBLE_TEST_ASSERT(kTest, name == identifier);
+        CRUCIBLE_TEST_ASSERT(kTest, name != fr::unknown_enum_sentinel<E>);
     });
 }
 
@@ -59,7 +69,7 @@ static void test_names_at_run_time() {
     check_every_name_at_run_time<cog::SwitchFeature>();
     check_every_name_at_run_time<cog::CpuFeature>();
     check_every_name_at_run_time<cog::DramFeature>();
-    crucible::test::pass("  test_names_at_run_time:               PASSED\n");
+    ::fixy::check::pass(kTest, "  test_names_at_run_time:               PASSED\n");
 }
 
 // The underlying value of each PCIe generation is the generation number,
@@ -69,31 +79,31 @@ static void test_pcie_gen_value_is_generation() {
         volatile auto runtime_value = static_cast<std::uint8_t>(gen);
         const std::uint8_t value = runtime_value;
         if (identifier == "None") {
-            assert(value == 0);
+            CRUCIBLE_TEST_ASSERT(kTest, value == 0);
         } else {
-            assert(identifier.size() == 4 && identifier.starts_with("Gen"));
-            assert(value == static_cast<std::uint8_t>(identifier[3] - '0'));
+            CRUCIBLE_TEST_ASSERT(kTest, identifier.size() == 4 && identifier.starts_with("Gen"));
+            CRUCIBLE_TEST_ASSERT(kTest, value == static_cast<std::uint8_t>(identifier[3] - '0'));
         }
     });
-    crucible::test::pass("  test_pcie_gen_value_is_generation:    PASSED\n");
+    ::fixy::check::pass(kTest, "  test_pcie_gen_value_is_generation:    PASSED\n");
 }
 
 static void test_gpu_feature_runtime() {
     ::fixy::Bits<cog::GpuFeature> all_set{};
     fr::for_each_enumerator<cog::GpuFeature>([&](cog::GpuFeature flag, std::string_view) { all_set.set(flag); });
-    assert(all_set.popcount() == static_cast<int>(fr::enum_count<cog::GpuFeature>));
-    assert(all_set.test(cog::GpuFeature::Tma));
-    assert(all_set.test(cog::GpuFeature::Fp8));
+    CRUCIBLE_TEST_ASSERT(kTest, all_set.popcount() == static_cast<int>(fr::enum_count<cog::GpuFeature>));
+    CRUCIBLE_TEST_ASSERT(kTest, all_set.test(cog::GpuFeature::Tma));
+    CRUCIBLE_TEST_ASSERT(kTest, all_set.test(cog::GpuFeature::Fp8));
 
     // A bitset over a second enum appears here to show the two
     // instantiations keep separate storage.  The type system already
     // forbids confusing them; this only confirms the counts.
     ::fixy::Bits<cog::NicFeature> nic_bits{};
     nic_bits.set(cog::NicFeature::Tso);
-    assert(nic_bits.popcount() == 1);
-    assert(!nic_bits.test(cog::NicFeature::Roce));
+    CRUCIBLE_TEST_ASSERT(kTest, nic_bits.popcount() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, !nic_bits.test(cog::NicFeature::Roce));
 
-    crucible::test::pass("  test_gpu_feature_runtime:             PASSED\n");
+    ::fixy::check::pass(kTest, "  test_gpu_feature_runtime:             PASSED\n");
 }
 
 static void test_gpu_target_caps_construction() {
@@ -113,17 +123,17 @@ static void test_gpu_target_caps_construction() {
     caps.features.set(cog::GpuFeature::Bf16);
 
     volatile auto sm = caps.sm_count.value();
-    assert(sm == 132);
+    CRUCIBLE_TEST_ASSERT(kTest, sm == 132);
     // Float equality is a hard error under the project warning flags, so
     // the comparison goes through the bit pattern.  The value was stored
     // verbatim, so the bits have to come back unchanged.
     volatile auto fp16 = caps.tflops_fp16.value();
     float fp16_seen = fp16;
-    assert(std::bit_cast<std::uint32_t>(fp16_seen) == std::bit_cast<std::uint32_t>(989.0f));
-    assert(caps.features.test(cog::GpuFeature::Tma));
-    assert(!caps.features.test(cog::GpuFeature::ClusterLaunch));
+    CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<std::uint32_t>(fp16_seen) == std::bit_cast<std::uint32_t>(989.0f));
+    CRUCIBLE_TEST_ASSERT(kTest, caps.features.test(cog::GpuFeature::Tma));
+    CRUCIBLE_TEST_ASSERT(kTest, !caps.features.test(cog::GpuFeature::ClusterLaunch));
 
-    crucible::test::pass("  test_gpu_target_caps_construction:    PASSED\n");
+    ::fixy::check::pass(kTest, "  test_gpu_target_caps_construction:    PASSED\n");
 }
 
 static void test_nic_port_target_caps_construction() {
@@ -139,14 +149,14 @@ static void test_nic_port_target_caps_construction() {
     caps.features.set(cog::NicFeature::XdpNative);
 
     volatile auto qp = caps.max_qp_count.value();
-    assert(qp == 262144);
+    CRUCIBLE_TEST_ASSERT(kTest, qp == 262144);
     volatile auto tcam = caps.tcam_entries.value();
-    assert(tcam == 65536);
+    CRUCIBLE_TEST_ASSERT(kTest, tcam == 65536);
     volatile auto eff = caps.effective_bandwidth_bytes_per_sec.value();
-    assert(eff < caps.line_rate_bytes_per_sec.value());
-    assert(caps.features.test(cog::NicFeature::Roce));
+    CRUCIBLE_TEST_ASSERT(kTest, eff < caps.line_rate_bytes_per_sec.value());
+    CRUCIBLE_TEST_ASSERT(kTest, caps.features.test(cog::NicFeature::Roce));
 
-    crucible::test::pass("  test_nic_port_target_caps_construction: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_nic_port_target_caps_construction: PASSED\n");
 }
 
 static void test_nvswitch_target_caps_construction() {
@@ -157,10 +167,10 @@ static void test_nvswitch_target_caps_construction() {
     caps.features.set(cog::SwitchFeature::Ecn);
 
     volatile auto pc = caps.port_count.value();
-    assert(pc == 64);
-    assert(caps.features.test(cog::SwitchFeature::Sharp));
+    CRUCIBLE_TEST_ASSERT(kTest, pc == 64);
+    CRUCIBLE_TEST_ASSERT(kTest, caps.features.test(cog::SwitchFeature::Sharp));
 
-    crucible::test::pass("  test_nvswitch_target_caps_construction: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_nvswitch_target_caps_construction: PASSED\n");
 }
 
 static void test_cpu_target_caps_construction() {
@@ -182,10 +192,10 @@ static void test_cpu_target_caps_construction() {
     socket.features = core.features;
 
     volatile auto cores = socket.core_count.value();
-    assert(cores == 56);
-    assert(socket.representative_core.features.test(cog::CpuFeature::Amx));
+    CRUCIBLE_TEST_ASSERT(kTest, cores == 56);
+    CRUCIBLE_TEST_ASSERT(kTest, socket.representative_core.features.test(cog::CpuFeature::Amx));
 
-    crucible::test::pass("  test_cpu_target_caps_construction:    PASSED\n");
+    ::fixy::check::pass(kTest, "  test_cpu_target_caps_construction:    PASSED\n");
 }
 
 static void test_dram_target_caps_construction() {
@@ -198,10 +208,10 @@ static void test_dram_target_caps_construction() {
     caps.features.set(cog::DramFeature::OnDieEcc);
 
     volatile auto bw = caps.bandwidth_bytes_per_sec.value();
-    assert(bw > 0);
-    assert(caps.features.test(cog::DramFeature::Ecc));
+    CRUCIBLE_TEST_ASSERT(kTest, bw > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, caps.features.test(cog::DramFeature::Ecc));
 
-    crucible::test::pass("  test_dram_target_caps_construction:   PASSED\n");
+    ::fixy::check::pass(kTest, "  test_dram_target_caps_construction:   PASSED\n");
 }
 
 static void test_caps_for_binding() {
@@ -233,9 +243,9 @@ static void test_caps_for_binding() {
         query.template operator()<cog::CogKind::Gpu>() + query.template operator()<cog::CogKind::NicPort>()
         + query.template operator()<cog::CogKind::NvSwitch>() + query.template operator()<cog::CogKind::CpuCore>()
         + query.template operator()<cog::CogKind::CpuSocket>() + query.template operator()<cog::CogKind::DramChannel>();
-    assert(total == 6);
+    CRUCIBLE_TEST_ASSERT(kTest, total == 6);
 
-    crucible::test::pass("  test_caps_for_binding:                PASSED\n");
+    ::fixy::check::pass(kTest, "  test_caps_for_binding:                PASSED\n");
 }
 
 // Each node fact of a discovery snapshot holds one NIC port schema, and each
@@ -243,7 +253,7 @@ static void test_caps_for_binding() {
 // initialization of an automatic snapshot (padding_bytes.h).
 static void test_nic_port_target_caps_has_no_padding_byte() {
     crucible::test::expect_no_padding_byte<^^cog::NicPortTargetCaps>();
-    crucible::test::pass("  test_nic_port_target_caps_has_no_padding_byte: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_nic_port_target_caps_has_no_padding_byte: PASSED\n");
 }
 
 int main() {
@@ -258,6 +268,6 @@ int main() {
     test_dram_target_caps_construction();
     test_caps_for_binding();
     test_nic_port_target_caps_has_no_padding_byte();
-    crucible::test::pass("test_target_caps: 10 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_target_caps: 10 groups, all passed\n");
     return 0;
 }

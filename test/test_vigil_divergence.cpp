@@ -6,10 +6,19 @@
 #include <crucible/Vigil.h>
 #include <fixy/check/Check.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <bit>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace divrig {
 
@@ -42,8 +51,11 @@ OpData op_at(uint32_t iter, uint32_t op_idx) {
     made.entry.num_outputs = 1;
 
     uint16_t idx = 0;
-    if (op_idx > 0) crucible::test::element_at(made.metas, idx++) = meta_at(fake_ptr(iter, op_idx - 1));
-    crucible::test::element_at(made.metas, idx++) = meta_at(fake_ptr(iter, op_idx));
+    if (op_idx > 0)
+        *made.metas.get(idx++).expect("a test reads an element at or past the count of its array") =
+            meta_at(fake_ptr(iter, op_idx - 1));
+    *made.metas.get(idx++).expect("a test reads an element at or past the count of its array") =
+        meta_at(fake_ptr(iter, op_idx));
     made.n_metas = static_cast<uint16_t>(made.entry.num_inputs + made.entry.num_outputs);
     return made;
 }
@@ -81,27 +93,29 @@ void test_divergence_drops_the_unobserved_region() {
     for (uint32_t i = 0; i < K; i++) {
         auto recorded = op_at(3, i);
         auto result = crucible::test::dispatch_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
-        assert(result.action == DispatchResult::Action::RECORD && "alignment ops return RECORD");
+        CRUCIBLE_TEST_ASSERT(kTest, result.action == DispatchResult::Action::RECORD && "alignment ops return RECORD");
     }
-    assert(vigil.context().is_compiled() && "the context must be compiled after K alignment ops");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled() && "the context must be compiled after K alignment ops");
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto recorded = op_at(3, i);
         auto result = crucible::test::dispatch_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
-        assert(result.action == DispatchResult::Action::COMPILED);
+        CRUCIBLE_TEST_ASSERT(kTest, result.action == DispatchResult::Action::COMPILED);
     }
 
     const uint64_t step_after_first = vigil.current_step();
-    assert(step_after_first >= 1 && "the background thread must have published one region");
+    CRUCIBLE_TEST_ASSERT(kTest, step_after_first >= 1 && "the background thread must have published one region");
 
     // Phase 2: open the window.  These entries reach the ring while the
     // context is compiled, so the region the background thread publishes for
     // them lands in a slot the replay branch of dispatch_op never reads.
     feed_one_region(vigil, 4);
     vigil.flush();
-    assert(vigil.flush_complete() && "flush() returned before the background thread finished");
-    assert(vigil.current_step() > step_after_first
-           && "the background thread must have published a second region into the unobserved slot");
-    assert(vigil.context().is_compiled() && "the foreground must still be compiled: it never read the slot");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush_complete() && "flush() returned before the background thread finished");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.current_step() > step_after_first
+                             && "the background thread must have published a second region into the unobserved slot");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled()
+                                    && "the foreground must still be compiled: it never read the slot");
 
     // Phase 3: diverge.  The diverging op is not recorded, and the ring is
     // empty, so the background thread cannot publish anything between here
@@ -111,10 +125,11 @@ void test_divergence_drops_the_unobserved_region() {
     foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
     auto result_diverged =
         crucible::test::dispatch_synthetic(vigil, foreign_op.entry, foreign_op.metas, foreign_op.n_metas);
-    assert(result_diverged.action == DispatchResult::Action::RECORD && "a divergence falls back to recording");
-    assert(result_diverged.status == ReplayStatus::DIVERGED);
-    assert(vigil.diverged_count() > diverged_before);
-    assert(!vigil.context().is_compiled() && "the context must be deactivated by the divergence");
+    CRUCIBLE_TEST_ASSERT(kTest, result_diverged.action == DispatchResult::Action::RECORD
+                                    && "a divergence falls back to recording");
+    CRUCIBLE_TEST_ASSERT(kTest, result_diverged.status == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.diverged_count() > diverged_before);
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled() && "the context must be deactivated by the divergence");
 
     // The claim.  The next op belongs to a trace the background thread has
     // not seen yet, so it must reach the ring.  If the unobserved region is
@@ -124,12 +139,13 @@ void test_divergence_drops_the_unobserved_region() {
     auto after_divergence = op_at(7, 0);
     auto result_after = crucible::test::dispatch_synthetic(vigil, after_divergence.entry, after_divergence.metas,
                                                            after_divergence.n_metas);
-    assert(result_after.action == DispatchResult::Action::RECORD);
-    assert(vigil.ring_total_produced() == produced_before + 1
-           && "the first op after a divergence must be recorded, not aligned against the region the "
-              "background thread published while the context was compiled");
+    CRUCIBLE_TEST_ASSERT(kTest, result_after.action == DispatchResult::Action::RECORD);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.ring_total_produced() == produced_before + 1
+                             && "the first op after a divergence must be recorded, not aligned against the region the "
+                                "background thread published while the context was compiled");
 
-    crucible::test::pass("  test_divergence_drops_the_unobserved_region: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_divergence_drops_the_unobserved_region: PASSED\n");
 }
 
 // The same claim, with ops in flight in the background pipeline at the
@@ -157,7 +173,7 @@ void test_divergence_drops_the_regions_of_the_backlog() {
         auto aligned = op_at(3, i);
         (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
     }
-    assert(vigil.context().is_compiled() && "the foreground must align on the first region");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled() && "the foreground must align on the first region");
 
     for (uint32_t iter = 4; iter < 4 + BACKLOG_ITERATIONS; iter++) {
         for (uint32_t i = 0; i < NUM_OPS; i++) {
@@ -171,22 +187,23 @@ void test_divergence_drops_the_regions_of_the_backlog() {
     foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
     auto result_diverged =
         crucible::test::dispatch_synthetic(vigil, foreign_op.entry, foreign_op.metas, foreign_op.n_metas);
-    assert(result_diverged.status == ReplayStatus::DIVERGED);
-    assert(!vigil.context().is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, result_diverged.status == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled());
 
     vigil.flush();
-    assert(vigil.flush_complete() && "flush() returned before the background thread finished");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush_complete() && "flush() returned before the background thread finished");
 
     const uint64_t produced_before = vigil.ring_total_produced();
     auto after_divergence = op_at(5 + BACKLOG_ITERATIONS, 0);
     auto result_after = crucible::test::dispatch_synthetic(vigil, after_divergence.entry, after_divergence.metas,
                                                            after_divergence.n_metas);
-    assert(result_after.action == DispatchResult::Action::RECORD);
-    assert(vigil.ring_total_produced() == produced_before + 1
-           && "the first op after a divergence must be recorded, not aligned against a region of ops recorded "
-              "before the divergence");
+    CRUCIBLE_TEST_ASSERT(kTest, result_after.action == DispatchResult::Action::RECORD);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, vigil.ring_total_produced() == produced_before + 1
+                   && "the first op after a divergence must be recorded, not aligned against a region of ops recorded "
+                      "before the divergence");
 
-    crucible::test::pass("  test_divergence_drops_the_regions_of_the_backlog: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_divergence_drops_the_regions_of_the_backlog: PASSED\n");
 }
 
 // The other half of the same defect: the alignment walk, rather than the
@@ -217,26 +234,27 @@ void test_divergence_drops_a_half_finished_alignment() {
 
     feed_one_region(vigil, 4);
     vigil.flush();
-    assert(vigil.current_step() > step_after_first && "a second region must be published");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() > step_after_first && "a second region must be published");
 
     // Open a walk two ops deep and stop.  K is 5, so this does not activate.
     for (uint32_t i = 0; i < 2; i++) {
         auto recorded = op_at(8, i);
         auto result = crucible::test::dispatch_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
-        assert(result.action == DispatchResult::Action::RECORD);
+        CRUCIBLE_TEST_ASSERT(kTest, result.action == DispatchResult::Action::RECORD);
     }
-    assert(!vigil.context().is_compiled() && "two ops are short of the K that activates");
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled() && "two ops are short of the K that activates");
 
     // Compile the context out from under the open walk.
-    assert(vigil.rollback() && "rollback() needs the superseded transaction the second region left");
-    assert(vigil.context().is_compiled() && "rollback() must activate the restored region");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.rollback() && "rollback() needs the superseded transaction the second region left");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled() && "rollback() must activate the restored region");
 
     OpData foreign_op = op_at(9, 0);
     foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
     auto result_diverged =
         crucible::test::dispatch_synthetic(vigil, foreign_op.entry, foreign_op.metas, foreign_op.n_metas);
-    assert(result_diverged.status == ReplayStatus::DIVERGED);
-    assert(!vigil.context().is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, result_diverged.status == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled());
 
     // The claim.  This op continues the abandoned walk if the walk is still
     // open, and reaches the ring if it is not.
@@ -244,12 +262,13 @@ void test_divergence_drops_a_half_finished_alignment() {
     auto after_divergence = op_at(9, 2);
     auto result_after = crucible::test::dispatch_synthetic(vigil, after_divergence.entry, after_divergence.metas,
                                                            after_divergence.n_metas);
-    assert(result_after.action == DispatchResult::Action::RECORD);
-    assert(vigil.ring_total_produced() == produced_before + 1
-           && "the first op after a divergence must be recorded, not fed to an alignment walk the "
-              "divergence abandoned");
+    CRUCIBLE_TEST_ASSERT(kTest, result_after.action == DispatchResult::Action::RECORD);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.ring_total_produced() == produced_before + 1
+                             && "the first op after a divergence must be recorded, not fed to an alignment walk the "
+                                "divergence abandoned");
 
-    crucible::test::pass("  test_divergence_drops_a_half_finished_alignment: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_divergence_drops_a_half_finished_alignment: PASSED\n");
 }
 
 namespace {
@@ -285,7 +304,8 @@ void publish_planless_then_planned(crucible::Vigil& vigil) {
     const uint64_t step_after_planless = vigil.current_step();
     divrig::feed_one_region(vigil, 0);
     vigil.flush();
-    assert(vigil.current_step() > step_after_planless && "the region with tensors must be published");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.current_step() > step_after_planless && "the region with tensors must be published");
 }
 
 }  // namespace
@@ -301,22 +321,24 @@ void test_rollback_drops_the_region_in_the_slot() {
 
     crucible::Vigil vigil;
     publish_planless_then_planned(vigil);
-    assert(vigil.has_pending_region());
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.has_pending_region());
 
-    assert(vigil.rollback() && "the second region left a superseded transaction");
-    assert(!vigil.context().is_compiled() && "a region with no memory plan cannot replay");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.rollback() && "the second region left a superseded transaction");
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled() && "a region with no memory plan cannot replay");
 
     const uint64_t produced_before = vigil.ring_total_produced();
     for (uint32_t i = 0; i < K; i++) {
         auto recorded = op_at(3, i);
         auto result = crucible::test::dispatch_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
-        assert(result.action == DispatchResult::Action::RECORD);
+        CRUCIBLE_TEST_ASSERT(kTest, result.action == DispatchResult::Action::RECORD);
     }
-    assert(!vigil.context().is_compiled() && "the foreground replays the region that the rollback rolled back");
-    assert(vigil.ring_total_produced() == produced_before + K
-           && "each op after a rollback must reach the ring, not an alignment on a region cut before it");
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled()
+                                    && "the foreground replays the region that the rollback rolled back");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, vigil.ring_total_produced() == produced_before + K
+                   && "each op after a rollback must reach the ring, not an alignment on a region cut before it");
 
-    crucible::test::pass("  test_rollback_drops_the_region_in_the_slot: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_rollback_drops_the_region_in_the_slot: PASSED\n");
 }
 
 // A rollback closes an open alignment walk.
@@ -333,24 +355,27 @@ void test_rollback_closes_an_open_alignment() {
     for (uint32_t i = 0; i < 2; i++) {
         auto recorded = op_at(3, i);
         auto result = crucible::test::dispatch_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
-        assert(result.action == DispatchResult::Action::RECORD);
+        CRUCIBLE_TEST_ASSERT(kTest, result.action == DispatchResult::Action::RECORD);
     }
-    assert(!vigil.has_pending_region() && "the first dispatch takes the region and opens the walk");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !vigil.has_pending_region() && "the first dispatch takes the region and opens the walk");
 
-    assert(vigil.rollback() && "the second region left a superseded transaction");
-    assert(!vigil.context().is_compiled() && "a region with no memory plan cannot replay");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.rollback() && "the second region left a superseded transaction");
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled() && "a region with no memory plan cannot replay");
 
     const uint64_t produced_before = vigil.ring_total_produced();
     for (uint32_t i = 2; i < K; i++) {
         auto recorded = op_at(3, i);
         auto result = crucible::test::dispatch_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
-        assert(result.action == DispatchResult::Action::RECORD);
+        CRUCIBLE_TEST_ASSERT(kTest, result.action == DispatchResult::Action::RECORD);
     }
-    assert(!vigil.context().is_compiled() && "the walk that the rollback abandoned activated its region");
-    assert(vigil.ring_total_produced() == produced_before + (K - 2)
-           && "each op after a rollback must reach the ring, not the walk that the rollback abandoned");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !vigil.context().is_compiled() && "the walk that the rollback abandoned activated its region");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, vigil.ring_total_produced() == produced_before + (K - 2)
+                   && "each op after a rollback must reach the ring, not the walk that the rollback abandoned");
 
-    crucible::test::pass("  test_rollback_closes_an_open_alignment: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_rollback_closes_an_open_alignment: PASSED\n");
 }
 
 namespace {
@@ -405,7 +430,7 @@ void test_region_store_stays_bounded() {
             OpData aligned = cycle_op(cycle, base + 3, i);
             (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
         }
-        assert(vigil.context().is_compiled() && "each cycle aligns on its region");
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled() && "each cycle aligns on its region");
 
         feed_cycle_region(vigil, cycle, base + 4);
         vigil.flush();
@@ -413,19 +438,19 @@ void test_region_store_stays_bounded() {
         foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
         auto diverged =
             crucible::test::dispatch_synthetic(vigil, foreign_op.entry, foreign_op.metas, foreign_op.n_metas);
-        assert(diverged.status == crucible::ReplayStatus::DIVERGED);
+        CRUCIBLE_TEST_ASSERT(kTest, diverged.status == crucible::ReplayStatus::DIVERGED);
         base += 8;
     }
     vigil.flush();
 
     const uint32_t stored = vigil.region_store_count();
     const uint64_t dropped = vigil.region_store_drops();
-    assert(vigil.current_step() >= 2 * CYCLES && "the run published too few regions");
-    assert(dropped == 0 && "a full region store discarded a published region");
-    assert(stored <= MAX_HELD && "the region store kept a region that no holder names");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() >= 2 * CYCLES && "the run published too few regions");
+    CRUCIBLE_TEST_ASSERT(kTest, dropped == 0 && "a full region store discarded a published region");
+    CRUCIBLE_TEST_ASSERT(kTest, stored <= MAX_HELD && "the region store kept a region that no holder names");
 
-    crucible::test::pass("  test_region_store_stays_bounded: PASSED (published={}, stored={})\n",
-                         static_cast<unsigned long long>(vigil.current_step()), stored);
+    ::fixy::check::pass(kTest, "  test_region_store_stays_bounded: PASSED (published={}, stored={})\n",
+                        static_cast<unsigned long long>(vigil.current_step()), stored);
 }
 
 // A Vigil gives the limits of its Config to its pipeline.  The uncompiled
@@ -465,25 +490,30 @@ void test_divergence_leaves_no_stale_active_region() {
         OpData aligned = cycle_op(0, 3, i);
         (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
     }
-    assert(vigil.context().is_compiled() && "the foreground aligns on the region of the first cycle");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.context().is_compiled() && "the foreground aligns on the region of the first cycle");
     const crucible::ContentHash replayed_hash = vigil.context().active_region()->content_hash;
-    assert(vigil.active_region().expect("the first cycle published a region")->content_hash == replayed_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.active_region().expect("the first cycle published a region")->content_hash
+                                    == replayed_hash);
 
     const uint64_t step_before = vigil.current_step();
     feed_cycle_region(vigil, 1, 4);
     vigil.flush();
-    assert(vigil.current_step() > step_before && "the region of the second cycle must be published");
-    assert(vigil.active_region().expect("the second cycle published a region")->content_hash != replayed_hash
-           && "the slot holds the newest region");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.current_step() > step_before && "the region of the second cycle must be published");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.active_region().expect("the second cycle published a region")->content_hash
+                                        != replayed_hash
+                                    && "the slot holds the newest region");
 
     OpData foreign_op = op_at(7, 0);
     foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
     auto diverged = crucible::test::dispatch_synthetic(vigil, foreign_op.entry, foreign_op.metas, foreign_op.n_metas);
-    assert(diverged.status == crucible::ReplayStatus::DIVERGED);
-    assert(vigil.active_region().expect("the producer took a region")->content_hash == replayed_hash
-           && "the active region names the region of ops recorded before the divergence");
+    CRUCIBLE_TEST_ASSERT(kTest, diverged.status == crucible::ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.active_region().expect("the producer took a region")->content_hash == replayed_hash
+                             && "the active region names the region of ops recorded before the divergence");
 
-    crucible::test::pass("  test_divergence_leaves_no_stale_active_region: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_divergence_leaves_no_stale_active_region: PASSED\n");
 }
 
 // A newer region with the same ops keeps an open alignment walk.
@@ -502,7 +532,7 @@ void test_same_region_keeps_the_alignment() {
         OpData aligned = op_at(3, i);
         (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
     }
-    assert(!vigil.context().is_compiled() && "two ops are short of the K that activates");
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled() && "two ops are short of the K that activates");
 
     const uint64_t step_before = vigil.current_step();
     for (uint32_t i = K; i < NUM_OPS; i++) {
@@ -514,16 +544,17 @@ void test_same_region_keeps_the_alignment() {
         (void)vigil.record_op(crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
     }
     vigil.flush();
-    assert(vigil.current_step() > step_before && "the second region must be published");
-    assert(vigil.has_pending_region());
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() > step_before && "the second region must be published");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.has_pending_region());
 
     for (uint32_t i = 2; i < K; i++) {
         OpData aligned = op_at(3, i);
         (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
     }
-    assert(vigil.context().is_compiled() && "a region with the same ops restarted the walk from zero");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.context().is_compiled() && "a region with the same ops restarted the walk from zero");
 
-    crucible::test::pass("  test_same_region_keeps_the_alignment: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_same_region_keeps_the_alignment: PASSED\n");
 }
 
 }  // namespace test_vigil

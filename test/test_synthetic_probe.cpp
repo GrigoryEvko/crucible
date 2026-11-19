@@ -1,12 +1,22 @@
 #include <crucible/observe/SyntheticProbe.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cog = crucible::cog;
 namespace eff = ::fixy;
@@ -21,11 +31,11 @@ static cog::CogIdentity peer(std::uint64_t lo) {
 }
 
 static void test_name_accessors() {
-    assert(observe::transport_probe_kind_name(observe::TransportProbeKind::FederationMtls)
-           == ::fixy::TextView{"FederationMtls"});
-    assert(observe::synthetic_probe_failure_name(observe::SyntheticProbeFailureClass::Completion)
-           == ::fixy::TextView{"Completion"});
-    crucible::test::pass("  test_name_accessors:            PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, observe::transport_probe_kind_name(observe::TransportProbeKind::FederationMtls)
+                                    == ::fixy::TextView{"FederationMtls"});
+    CRUCIBLE_TEST_ASSERT(kTest, observe::synthetic_probe_failure_name(observe::SyntheticProbeFailureClass::Completion)
+                                    == ::fixy::TextView{"Completion"});
+    ::fixy::check::pass(kTest, "  test_name_accessors:            PASSED\n");
 }
 
 static void test_register_and_record_success() {
@@ -39,36 +49,37 @@ static void test_register_and_record_success() {
         observe::TransportProbeKind::TcpBbr3,
     };
     auto const p = peer(1);
-    assert(runner.register_peer(p, kinds));
-    assert(!runner.register_peer(p, kinds));
-    assert(runner.enabled(p, observe::TransportProbeKind::FederationMtls));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.register_peer(p, kinds));
+    CRUCIBLE_TEST_ASSERT(kTest, !runner.register_peer(p, kinds));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.enabled(p, observe::TransportProbeKind::FederationMtls));
 
     // The dispatch counter has to be bumped before the outcome is reported.
     // Recording an outcome does not bump it, because doing so would make the
     // lost-probe signal identically zero.
-    assert(runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 observe::TransportProbeKind::FederationMtls));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                      observe::TransportProbeKind::FederationMtls));
 
     observe::ObservationSnapshot observations;
-    assert(runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 observe::ProbeOutcome{
-                                     .kind = observe::TransportProbeKind::FederationMtls,
-                                     .failure = observe::SyntheticProbeFailureClass::None,
-                                     .latency_ns = 11000,
-                                     .bytes_transferred = 256,
-                                     .sequence = 9,
-                                 },
-                                 observations));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                      observe::ProbeOutcome{
+                                                          .kind = observe::TransportProbeKind::FederationMtls,
+                                                          .failure = observe::SyntheticProbeFailureClass::None,
+                                                          .latency_ns = 11000,
+                                                          .bytes_transferred = 256,
+                                                          .sequence = 9,
+                                                      },
+                                                      observations));
 
     auto const stats = runner.stats(p, observe::TransportProbeKind::FederationMtls);
-    assert(stats.scheduled == 1);
-    assert(stats.succeeded == 1);
-    assert(stats.failed == 0);
-    assert(stats.bytes_transferred == 256);
-    assert(stats.last_latency_ns == 11000);
-    assert(stats.last_sequence == 9);
-    assert(observe::latest_observation(observations).kind == observe::ObservationKind::BitsTransferred);
-    crucible::test::pass("  test_register_and_record_success: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, stats.scheduled == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.succeeded == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.failed == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.bytes_transferred == 256);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.last_latency_ns == 11000);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.last_sequence == 9);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         observe::latest_observation(observations).kind == observe::ObservationKind::BitsTransferred);
+    ::fixy::check::pass(kTest, "  test_register_and_record_success: PASSED\n");
 }
 
 static void test_failure_accounting() {
@@ -76,29 +87,29 @@ static void test_failure_accounting() {
         observe::mint_synthetic_probes<eff::ColdInitCtx, 2>(eff::ColdInitCtx{::foundation::effects::testing::init()});
     auto const p = peer(2);
     ::fixy::Bits<observe::TransportProbeKind> kinds{observe::TransportProbeKind::RdmaRead};
-    assert(runner.register_peer(p, kinds));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.register_peer(p, kinds));
 
     // Dispatched separately from the outcome, because a probe that times out
     // still counts as dispatched.
-    assert(runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 observe::TransportProbeKind::RdmaRead));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                      observe::TransportProbeKind::RdmaRead));
 
-    assert(runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 observe::ProbeOutcome{
-                                     .kind = observe::TransportProbeKind::RdmaRead,
-                                     .failure = observe::SyntheticProbeFailureClass::Timeout,
-                                     .latency_ns = 1000000,
-                                     .bytes_transferred = 0,
-                                     .sequence = 3,
-                                 }));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                      observe::ProbeOutcome{
+                                                          .kind = observe::TransportProbeKind::RdmaRead,
+                                                          .failure = observe::SyntheticProbeFailureClass::Timeout,
+                                                          .latency_ns = 1000000,
+                                                          .bytes_transferred = 0,
+                                                          .sequence = 3,
+                                                      }));
 
     auto const stats = runner.stats(p, observe::TransportProbeKind::RdmaRead);
-    assert(stats.scheduled == 1);
-    assert(stats.succeeded == 0);
-    assert(stats.failed == 1);
-    assert(stats.timed_out == 1);
-    assert(stats.last_failure == observe::SyntheticProbeFailureClass::Timeout);
-    crucible::test::pass("  test_failure_accounting:        PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, stats.scheduled == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.succeeded == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.failed == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.timed_out == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, stats.last_failure == observe::SyntheticProbeFailureClass::Timeout);
+    ::fixy::check::pass(kTest, "  test_failure_accounting:        PASSED\n");
 }
 
 static void test_rejects_unregistered_or_disabled() {
@@ -107,14 +118,16 @@ static void test_rejects_unregistered_or_disabled() {
     auto const p = peer(3);
     auto const missing = peer(4);
     ::fixy::Bits<observe::TransportProbeKind> kinds{observe::TransportProbeKind::TcpCubic};
-    assert(runner.register_peer(p, kinds));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.register_peer(p, kinds));
 
-    assert(!runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, missing,
-                                  observe::ProbeOutcome{.kind = observe::TransportProbeKind::TcpCubic}));
-    assert(!runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                  observe::ProbeOutcome{.kind = observe::TransportProbeKind::FederationMtls}));
-    assert(runner.stats(missing, observe::TransportProbeKind::TcpCubic).scheduled == 0);
-    crucible::test::pass("  test_rejects_unregistered_or_disabled: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, missing,
+                                                observe::ProbeOutcome{.kind = observe::TransportProbeKind::TcpCubic}));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                      observe::ProbeOutcome{.kind = observe::TransportProbeKind::FederationMtls}));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.stats(missing, observe::TransportProbeKind::TcpCubic).scheduled == 0);
+    ::fixy::check::pass(kTest, "  test_rejects_unregistered_or_disabled: PASSED\n");
 }
 
 // The dispatch and outcome counters are independent, and the loss rate is
@@ -128,65 +141,66 @@ static void test_schedule_record_separation() {
         observe::mint_synthetic_probes<eff::ColdInitCtx, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()});
     auto const p = peer(5);
     ::fixy::Bits<observe::TransportProbeKind> kinds{observe::TransportProbeKind::FederationMtls};
-    assert(runner.register_peer(p, kinds));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.register_peer(p, kinds));
 
     // Recording alone.
-    assert(runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 observe::ProbeOutcome{
-                                     .kind = observe::TransportProbeKind::FederationMtls,
-                                     .failure = observe::SyntheticProbeFailureClass::None,
-                                     .latency_ns = 1000,
-                                     .bytes_transferred = 64,
-                                     .sequence = 1,
-                                 }));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                      observe::ProbeOutcome{
+                                                          .kind = observe::TransportProbeKind::FederationMtls,
+                                                          .failure = observe::SyntheticProbeFailureClass::None,
+                                                          .latency_ns = 1000,
+                                                          .bytes_transferred = 64,
+                                                          .sequence = 1,
+                                                      }));
     auto stats_a = runner.stats(p, observe::TransportProbeKind::FederationMtls);
-    assert(stats_a.scheduled == 0);
-    assert(stats_a.succeeded == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, stats_a.scheduled == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, stats_a.succeeded == 1);
 
     // Dispatching alone, twice, against one recorded outcome.
-    assert(runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 observe::TransportProbeKind::FederationMtls));
-    assert(runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 observe::TransportProbeKind::FederationMtls));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                      observe::TransportProbeKind::FederationMtls));
+    CRUCIBLE_TEST_ASSERT(kTest, runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                      observe::TransportProbeKind::FederationMtls));
     auto stats_b = runner.stats(p, observe::TransportProbeKind::FederationMtls);
-    assert(stats_b.scheduled == 2);
-    assert(stats_b.succeeded == 1);
-    assert(stats_b.failed == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, stats_b.scheduled == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, stats_b.succeeded == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, stats_b.failed == 0);
     auto const inflight_b = stats_b.scheduled - stats_b.succeeded - stats_b.failed;
-    assert(inflight_b == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, inflight_b == 1);
 
     // Every dispatch resolved by exactly one outcome, so the gap closes.
     auto runner2 =
         observe::mint_synthetic_probes<eff::ColdInitCtx, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()});
     auto const q = peer(6);
-    assert(runner2.register_peer(q, kinds));
+    CRUCIBLE_TEST_ASSERT(kTest, runner2.register_peer(q, kinds));
     for (std::uint64_t i = 0; i < 5; ++i) {
-        assert(runner2.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, q,
-                                      observe::TransportProbeKind::FederationMtls));
-        assert(runner2.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, q,
-                                      observe::ProbeOutcome{
-                                          .kind = observe::TransportProbeKind::FederationMtls,
-                                          .failure = (i % 2) == 0 ? observe::SyntheticProbeFailureClass::None
-                                                                  : observe::SyntheticProbeFailureClass::Timeout,
-                                          .latency_ns = 500,
-                                          .bytes_transferred = 32,
-                                          .sequence = i,
-                                      }));
+        CRUCIBLE_TEST_ASSERT(kTest, runner2.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, q,
+                                                           observe::TransportProbeKind::FederationMtls));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, runner2.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, q,
+                                          observe::ProbeOutcome{
+                                              .kind = observe::TransportProbeKind::FederationMtls,
+                                              .failure = (i % 2) == 0 ? observe::SyntheticProbeFailureClass::None
+                                                                      : observe::SyntheticProbeFailureClass::Timeout,
+                                              .latency_ns = 500,
+                                              .bytes_transferred = 32,
+                                              .sequence = i,
+                                          }));
     }
     auto const stats_c = runner2.stats(q, observe::TransportProbeKind::FederationMtls);
-    assert(stats_c.scheduled == 5);
-    assert(stats_c.succeeded == 3);
-    assert(stats_c.failed == 2);
-    assert(stats_c.scheduled == stats_c.succeeded + stats_c.failed);
+    CRUCIBLE_TEST_ASSERT(kTest, stats_c.scheduled == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, stats_c.succeeded == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, stats_c.failed == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, stats_c.scheduled == stats_c.succeeded + stats_c.failed);
 
     // Dispatch refuses an unregistered peer and a disabled kind on the same
     // terms recording does.
     auto const missing = peer(7);
-    assert(!runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, missing,
-                                  observe::TransportProbeKind::FederationMtls));
-    assert(!runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                  observe::TransportProbeKind::TcpBbr3));
-    crucible::test::pass("  test_schedule_record_separation:  PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, !runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, missing,
+                                                       observe::TransportProbeKind::FederationMtls));
+    CRUCIBLE_TEST_ASSERT(kTest, !runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                                       observe::TransportProbeKind::TcpBbr3));
+    ::fixy::check::pass(kTest, "  test_schedule_record_separation:  PASSED\n");
 }
 
 // The stats grid is indexed by peer and by transport kind, and both indices
@@ -204,16 +218,16 @@ static void test_probe_stats_layout_invariants() {
     for (std::size_t p = 0; p < grid.size(); ++p) {
         for (std::size_t k = 0; k < grid[p].size(); ++k) {
             auto const addr = std::bit_cast<std::uintptr_t>(&grid[p][k]);
-            assert((addr % LINE) == 0);
+            CRUCIBLE_TEST_ASSERT(kTest, (addr % LINE) == 0);
             if (p > 0 || k > 0) {
                 std::size_t const prev_p = (k == 0) ? p - 1 : p;
                 std::size_t const prev_k = (k == 0) ? grid[p].size() - 1 : k - 1;
                 auto const prev_addr = std::bit_cast<std::uintptr_t>(&grid[prev_p][prev_k]);
-                assert(addr - prev_addr >= LINE);
+                CRUCIBLE_TEST_ASSERT(kTest, addr - prev_addr >= LINE);
             }
         }
     }
-    crucible::test::pass("  test_probe_stats_layout_invariants: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_probe_stats_layout_invariants: PASSED\n");
 }
 
 // Two different triples of a peer, a kind and a lane never share an id of
@@ -242,11 +256,12 @@ static void test_metric_ids_are_injective() {
         auto const other_lane = static_cast<observe::detail::ProbeMetricLane>((word2 >> 30u) & 1u);
         std::uint32_t const base = word3;
         std::uint32_t const id = observe::detail::metric_id_for(base, peer_index, kind, lane);
-        assert(id != observe::detail::metric_id_for(base, flipped, kind, lane));
+        CRUCIBLE_TEST_ASSERT(kTest, id != observe::detail::metric_id_for(base, flipped, kind, lane));
         bool const is_same_triple = peer_index == other && kind == other_kind && lane == other_lane;
-        assert(is_same_triple == (id == observe::detail::metric_id_for(base, other, other_kind, other_lane)));
+        CRUCIBLE_TEST_ASSERT(kTest, is_same_triple
+                                        == (id == observe::detail::metric_id_for(base, other, other_kind, other_lane)));
     }
-    crucible::test::pass("  test_metric_ids_are_injective: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_metric_ids_are_injective: PASSED\n");
 }
 
 int main() {
@@ -263,6 +278,6 @@ int main() {
     test_schedule_record_separation();
     test_probe_stats_layout_invariants();
     test_metric_ids_are_injective();
-    crucible::test::pass("test_synthetic_probe: all passed\n");
+    ::fixy::check::pass(kTest, "test_synthetic_probe: all passed\n");
     return 0;
 }

@@ -6,13 +6,18 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
-
 #include <bit>
 #include <compare>
 #include <cstdint>
 #include <cstdio>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -35,28 +40,28 @@ static void test_layout_and_trivial_relocatability() {
     static_assert(std::is_trivially_copyable_v<SchemaHash>);
     static_assert(std::is_standard_layout_v<OpIndex>);
     static_assert(std::is_standard_layout_v<SchemaHash>);
-    crucible::test::pass("  test_layout:                    PASSED\n");
+    ::fixy::check::pass(kTest, "  test_layout:                    PASSED\n");
 }
 
 static void test_default_ctor_is_sentinel() {
     OpIndex o{};
-    assert(!o.is_valid());
-    assert(o.raw() == UINT32_MAX);
-    assert(!static_cast<bool>(o));
-    assert(o == OpIndex::none());
+    CRUCIBLE_TEST_ASSERT(kTest, !o.is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, o.raw() == UINT32_MAX);
+    CRUCIBLE_TEST_ASSERT(kTest, !static_cast<bool>(o));
+    CRUCIBLE_TEST_ASSERT(kTest, o == OpIndex::none());
 
     SchemaHash h{};
-    assert(!static_cast<bool>(h));
-    assert(h.raw() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, !static_cast<bool>(h));
+    CRUCIBLE_TEST_ASSERT(kTest, h.raw() == 0);
 
-    crucible::test::pass("  test_default_sentinel:          PASSED\n");
+    ::fixy::check::pass(kTest, "  test_default_sentinel:          PASSED\n");
 }
 
 static void test_explicit_construction() {
     OpIndex o{42};
-    assert(o.raw() == 42);
-    assert(o.is_valid());
-    assert(static_cast<bool>(o));
+    CRUCIBLE_TEST_ASSERT(kTest, o.raw() == 42);
+    CRUCIBLE_TEST_ASSERT(kTest, o.is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(o));
 
     static_assert(!std::is_convertible_v<uint32_t, OpIndex>);
     static_assert(!std::is_convertible_v<OpIndex, uint32_t>);
@@ -66,29 +71,29 @@ static void test_explicit_construction() {
     static_assert(!std::is_convertible_v<SlotId, OpIndex>);
     static_assert(!std::is_convertible_v<SchemaHash, ShapeHash>);
 
-    crucible::test::pass("  test_explicit_construction:     PASSED\n");
+    ::fixy::check::pass(kTest, "  test_explicit_construction:     PASSED\n");
 }
 
 static void test_three_way_compare() {
     OpIndex a{1}, b{2}, a2{1};
-    assert(a < b);
-    assert(b > a);
-    assert(a == a2);
-    assert(a != b);
-    assert((a <=> b) == std::strong_ordering::less);
-    assert((a <=> a2) == std::strong_ordering::equal);
-    crucible::test::pass("  test_compare:                   PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, a < b);
+    CRUCIBLE_TEST_ASSERT(kTest, b > a);
+    CRUCIBLE_TEST_ASSERT(kTest, a == a2);
+    CRUCIBLE_TEST_ASSERT(kTest, a != b);
+    CRUCIBLE_TEST_ASSERT(kTest, (a <=> b) == std::strong_ordering::less);
+    CRUCIBLE_TEST_ASSERT(kTest, (a <=> a2) == std::strong_ordering::equal);
+    ::fixy::check::pass(kTest, "  test_compare:                   PASSED\n");
 }
 
 static void test_hash_sentinel_distinct_from_default() {
     SchemaHash def{};
     SchemaHash sent = SchemaHash::sentinel();
-    assert(def != sent);
-    assert(!def.is_sentinel());
-    assert(sent.is_sentinel());
-    assert(def.raw() == 0);
-    assert(sent.raw() == UINT64_MAX);
-    crucible::test::pass("  test_hash_sentinel:             PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, def != sent);
+    CRUCIBLE_TEST_ASSERT(kTest, !def.is_sentinel());
+    CRUCIBLE_TEST_ASSERT(kTest, sent.is_sentinel());
+    CRUCIBLE_TEST_ASSERT(kTest, def.raw() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, sent.raw() == UINT64_MAX);
+    ::fixy::check::pass(kTest, "  test_hash_sentinel:             PASSED\n");
 }
 
 // A usable cache key is not zero and not the sentinel.  Each of the two
@@ -129,7 +134,7 @@ static void test_hash_sentinel_under_decide() {
     static_assert(is_admissible_cache_key(ContentHash{0xCAFEBABEULL}));
     static_assert(is_admissible_cache_key(ContentHash{ContentHash::sentinel().raw() - 1}));
 
-    crucible::test::pass("  test_hash_sentinel_decide:      PASSED\n");
+    ::fixy::check::pass(kTest, "  test_hash_sentinel_decide:      PASSED\n");
 }
 
 static void test_noexcept_ctors_propagate() {
@@ -143,7 +148,7 @@ static void test_noexcept_ctors_propagate() {
     static_assert(noexcept(SchemaHash{0xDEADBEEFULL}));
     static_assert(noexcept(OpIndex::none()));
     static_assert(noexcept(SchemaHash::sentinel()));
-    crucible::test::pass("  test_noexcept:                  PASSED\n");
+    ::fixy::check::pass(kTest, "  test_noexcept:                  PASSED\n");
 }
 
 // Each value of the underlying type that no enumerator names reaches the
@@ -169,18 +174,18 @@ static void expect_element_size_ends_the_process_outside_the_enumerators(::fixy:
 static void test_scalar_type_element_sizes(::fixy::TestRunnerCtx const& test) {
     // element_size returns a strong type, so a bare integer literal does not
     // compare against it. The expected sizes are written as ElementBytes.
-    assert(element_size(ScalarType::Bool) == ElementBytes{1});
-    assert(element_size(ScalarType::Byte) == ElementBytes{1});
-    assert(element_size(ScalarType::Half) == ElementBytes{2});
-    assert(element_size(ScalarType::BFloat16) == ElementBytes{2});
-    assert(element_size(ScalarType::Int) == ElementBytes{4});
-    assert(element_size(ScalarType::Float) == ElementBytes{4});
-    assert(element_size(ScalarType::Long) == ElementBytes{8});
-    assert(element_size(ScalarType::Double) == ElementBytes{8});
-    assert(element_size(ScalarType::ComplexFloat) == ElementBytes{8});
-    assert(element_size(ScalarType::ComplexDouble) == ElementBytes{16});
-    assert(element_size(ScalarType::Float8_e4m3fn) == ElementBytes{1});
-    assert(element_size(ScalarType::Undefined).is_zero());
+    CRUCIBLE_TEST_ASSERT(kTest, element_size(ScalarType::Bool) == ElementBytes{1});
+    CRUCIBLE_TEST_ASSERT(kTest, element_size(ScalarType::Byte) == ElementBytes{1});
+    CRUCIBLE_TEST_ASSERT(kTest, element_size(ScalarType::Half) == ElementBytes{2});
+    CRUCIBLE_TEST_ASSERT(kTest, element_size(ScalarType::BFloat16) == ElementBytes{2});
+    CRUCIBLE_TEST_ASSERT(kTest, element_size(ScalarType::Int) == ElementBytes{4});
+    CRUCIBLE_TEST_ASSERT(kTest, element_size(ScalarType::Float) == ElementBytes{4});
+    CRUCIBLE_TEST_ASSERT(kTest, element_size(ScalarType::Long) == ElementBytes{8});
+    CRUCIBLE_TEST_ASSERT(kTest, element_size(ScalarType::Double) == ElementBytes{8});
+    CRUCIBLE_TEST_ASSERT(kTest, element_size(ScalarType::ComplexFloat) == ElementBytes{8});
+    CRUCIBLE_TEST_ASSERT(kTest, element_size(ScalarType::ComplexDouble) == ElementBytes{16});
+    CRUCIBLE_TEST_ASSERT(kTest, element_size(ScalarType::Float8_e4m3fn) == ElementBytes{1});
+    CRUCIBLE_TEST_ASSERT(kTest, element_size(ScalarType::Undefined).is_zero());
     expect_element_size_ends_the_process_outside_the_enumerators(test);
     ::fixy::check::pass(test, "  test_element_size:              PASSED\n");
 }
@@ -190,14 +195,14 @@ static void test_bit_cast_round_trip() {
     // that integer and back is the identity.
     OpIndex in{0x12345678u};
     auto raw = std::bit_cast<uint32_t>(in);
-    assert(raw == 0x12345678u);
+    CRUCIBLE_TEST_ASSERT(kTest, raw == 0x12345678u);
     auto back = std::bit_cast<OpIndex>(raw);
-    assert(back == in);
+    CRUCIBLE_TEST_ASSERT(kTest, back == in);
 
     SchemaHash h_in{0xDEADBEEFCAFEBABEULL};
     auto h_raw = std::bit_cast<uint64_t>(h_in);
-    assert(h_raw == 0xDEADBEEFCAFEBABEULL);
-    crucible::test::pass("  test_bit_cast:                  PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, h_raw == 0xDEADBEEFCAFEBABEULL);
+    ::fixy::check::pass(kTest, "  test_bit_cast:                  PASSED\n");
 }
 
 int main() {

@@ -9,10 +9,19 @@
 #include <crucible/Vigil.h>
 #include <fixy/Core.h>
 
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "test_harness.h"
 
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::MetaLog;
 using crucible::TraceRing;
@@ -36,22 +45,22 @@ void test_count_that_disagrees_with_the_entry_is_refused() {
     ::fixy::FixedArray<crucible::TensorMeta, 3> metas{};
 
     // A count that agrees records the op, and claims this thread.
-    assert(vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, 2)));
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, 2)));
     const MetaLog& log = vigil.meta_log(vigil.mint_producer_context());
     const uint64_t head_before = log.head.get();
     const uint64_t ring_before = vigil.ring_total_produced();
 
     // One record too many, one too few, and no record for an op with two
     // tensors.  The door gives no op, so no call of record_op exists.
-    assert(is_refused(entry, crucible::test::records_of(metas, 3)));
-    assert(is_refused(entry, crucible::test::records_of(metas, 1)));
-    assert(is_refused(entry, ::fixy::View<const crucible::TensorMeta>{}));
-    assert(log.head.get() == head_before && "a refused op put records in the metadata log");
-    assert(vigil.ring_total_produced() == ring_before && "a refused op reached the trace ring");
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused(entry, crucible::test::records_of(metas, 3)));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused(entry, crucible::test::records_of(metas, 1)));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused(entry, ::fixy::View<const crucible::TensorMeta>{}));
+    CRUCIBLE_TEST_ASSERT(kTest, log.head.get() == head_before && "a refused op put records in the metadata log");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.ring_total_produced() == ring_before && "a refused op reached the trace ring");
 
     // The op with a count that agrees records again.
-    assert(vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, 2)));
-    assert(log.head.get() == head_before + 2);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, 2)));
+    CRUCIBLE_TEST_ASSERT(kTest, log.head.get() == head_before + 2);
 }
 
 void test_op_with_no_tensors_takes_no_records() {
@@ -59,8 +68,8 @@ void test_op_with_no_tensors_takes_no_records() {
     entry.schema_hash = crucible::SchemaHash{0x53};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> metas{};
 
-    assert(!is_refused(entry, ::fixy::View<const crucible::TensorMeta>{}));
-    assert(is_refused(entry, metas.view()) && "an op with no tensors took a record");
+    CRUCIBLE_TEST_ASSERT(kTest, !is_refused(entry, ::fixy::View<const crucible::TensorMeta>{}));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused(entry, metas.view()) && "an op with no tensors took a record");
 }
 
 }  // namespace

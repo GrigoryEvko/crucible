@@ -28,7 +28,16 @@
 
 #include <cstdint>
 
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -89,12 +98,12 @@ void test_fitting_operation_keeps_its_scalars() {
         bounded.push(value, ScalarType2::INT, kStructural);
     TraceRing::Entry plain{};
     write_scalar_slots(plain, bounded);
-    assert(plain.num_scalar_args == kInlineScalars);
+    CRUCIBLE_TEST_ASSERT(kTest, plain.num_scalar_args == kInlineScalars);
 
     TraceRing::Entry const digested = entry_of(kInlineScalars, kInlineScalars, InputOverflow{});
-    assert(same_slots(plain, digested));
-    assert(digested.num_scalar_args == kInlineScalars);
-    assert(digested.scalar_values.at(::fixy::index<kInlineScalars - 1>()) == kInlineScalars);
+    CRUCIBLE_TEST_ASSERT(kTest, same_slots(plain, digested));
+    CRUCIBLE_TEST_ASSERT(kTest, digested.num_scalar_args == kInlineScalars);
+    CRUCIBLE_TEST_ASSERT(kTest, digested.scalar_values.at(::fixy::index<kInlineScalars - 1>()) == kInlineScalars);
 }
 
 void test_scalar_past_the_slots_reaches_the_digest() {
@@ -102,17 +111,19 @@ void test_scalar_past_the_slots_reaches_the_digest() {
     TraceRing::Entry const first = entry_of(kStepSizes, 7, InputOverflow{});
     TraceRing::Entry const second = entry_of(kStepSizes, 8, InputOverflow{});
     TraceRing::Entry const again = entry_of(kStepSizes, 7, InputOverflow{});
-    assert(first.num_scalar_args == kInlineScalars);
-    assert(!same_slots(first, second));
-    assert(same_slots(first, again));
+    CRUCIBLE_TEST_ASSERT(kTest, first.num_scalar_args == kInlineScalars);
+    CRUCIBLE_TEST_ASSERT(kTest, !same_slots(first, second));
+    CRUCIBLE_TEST_ASSERT(kTest, same_slots(first, again));
     for (uint16_t slot = 0; slot + 1 < kInlineScalars; slot++)
-        assert(crucible::test::element_at(first.scalar_values, slot) == static_cast<int64_t>(slot) + 1);
+        CRUCIBLE_TEST_ASSERT(
+            kTest, *first.scalar_values.get(slot).expect("a test reads an element at or past the count of its array")
+                       == static_cast<int64_t>(slot) + 1);
 }
 
 void test_scalar_count_reaches_the_digest() {
     TraceRing::Entry const shorter = entry_of(6, 6, InputOverflow{});
     TraceRing::Entry const longer = entry_of(7, 6, InputOverflow{});
-    assert(!same_slots(shorter, longer));
+    CRUCIBLE_TEST_ASSERT(kTest, !same_slots(shorter, longer));
 }
 
 // The integer 1 and the smallest positive double have one bit pattern.  The
@@ -135,17 +146,19 @@ void test_tag_tells_an_integer_from_a_double() {
     }
     write_scalar_slots(integer, integer_scalars);
     write_scalar_slots(floating, floating_scalars);
-    assert(integer.scalar_values == floating.scalar_values);
-    assert(!same_slots(integer, floating) && "the tag of slot 4 tells the two entries apart");
-    assert(floating.get_scalar_type(kInlineScalars - 1) == ScalarType2::FLOAT);
-    assert(integer.get_scalar_type(kInlineScalars - 1) == ScalarType2::INT);
-    assert((floating.op_flags & static_cast<uint8_t>(~crucible::op_flag::SCALAR4_TYPE_MASK)) == kOtherFlags);
+    CRUCIBLE_TEST_ASSERT(kTest, integer.scalar_values == floating.scalar_values);
+    CRUCIBLE_TEST_ASSERT(kTest, !same_slots(integer, floating) && "the tag of slot 4 tells the two entries apart");
+    CRUCIBLE_TEST_ASSERT(kTest, floating.get_scalar_type(kInlineScalars - 1) == ScalarType2::FLOAT);
+    CRUCIBLE_TEST_ASSERT(kTest, integer.get_scalar_type(kInlineScalars - 1) == ScalarType2::INT);
+    CRUCIBLE_TEST_ASSERT(kTest, (floating.op_flags & static_cast<uint8_t>(~crucible::op_flag::SCALAR4_TYPE_MASK))
+                                    == kOtherFlags);
 
     constexpr uint32_t kStepSizes = 40;
     TraceRing::Entry const past_integer = entry_of(kStepSizes, kOneBits, InputOverflow{}, ScalarType2::INT);
     TraceRing::Entry const past_floating = entry_of(kStepSizes, kOneBits, InputOverflow{}, ScalarType2::FLOAT);
-    assert(!same_slots(past_integer, past_floating) && "the digest folds the tag of each scalar");
-    assert(past_integer.get_scalar_type(kInlineScalars - 1) == ScalarType2::INT && "the digest slot is an integer");
+    CRUCIBLE_TEST_ASSERT(kTest, !same_slots(past_integer, past_floating) && "the digest folds the tag of each scalar");
+    CRUCIBLE_TEST_ASSERT(kTest, past_integer.get_scalar_type(kInlineScalars - 1) == ScalarType2::INT
+                                    && "the digest slot is an integer");
 }
 
 // An argument that boxes into None takes one slot with the value zero and
@@ -162,12 +175,12 @@ void test_absent_optional_takes_a_slot() {
     TraceRing::Entry second{};
     write_scalar_slots(first, min_only);
     write_scalar_slots(second, max_only);
-    assert(first.num_scalar_args == 2 && second.num_scalar_args == 2);
-    assert(second.scalar_values.at(::fixy::index<0>()) == 0);
-    assert(second.get_scalar_type(0) == ScalarType2::NONE);
-    assert(role_of<0>(second) == kStructural && "an absent optional is structural");
-    assert(role_of<1>(second) == kData);
-    assert(!same_slots(first, second));
+    CRUCIBLE_TEST_ASSERT(kTest, first.num_scalar_args == 2 && second.num_scalar_args == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, second.scalar_values.at(::fixy::index<0>()) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, second.get_scalar_type(0) == ScalarType2::NONE);
+    CRUCIBLE_TEST_ASSERT(kTest, role_of<0>(second) == kStructural && "an absent optional is structural");
+    CRUCIBLE_TEST_ASSERT(kTest, role_of<1>(second) == kData);
+    CRUCIBLE_TEST_ASSERT(kTest, !same_slots(first, second));
 }
 
 void test_input_past_the_limit_reaches_the_digest() {
@@ -178,12 +191,13 @@ void test_input_past_the_limit_reaches_the_digest() {
 
     TraceRing::Entry const first = entry_of(2, 2, narrow);
     TraceRing::Entry const second = entry_of(2, 2, wide);
-    assert(first.num_scalar_args == 3);
-    assert(first.scalar_values.at(::fixy::index<0>()) == 1 && first.scalar_values.at(::fixy::index<1>()) == 2);
-    assert(!same_slots(first, second));
+    CRUCIBLE_TEST_ASSERT(kTest, first.num_scalar_args == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, first.scalar_values.at(::fixy::index<0>()) == 1
+                                    && first.scalar_values.at(::fixy::index<1>()) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, !same_slots(first, second));
 
     TraceRing::Entry const no_scalars = entry_of(0, 0, narrow);
-    assert(no_scalars.num_scalar_args == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, no_scalars.num_scalar_args == 1);
 }
 
 // The input tensor of rank one with extent 4 on the device of the type and
@@ -678,6 +692,6 @@ int main() {
     test_guard_word_reads_no_data_value();
     test_overflow_keeps_the_first_data_slots();
     test_is_structural_scalar_reads_each_row();
-    crucible::test::pass("test_vessel_entry_slots: PASS\n");
+    ::fixy::check::pass(kTest, "test_vessel_entry_slots: PASS\n");
     return 0;
 }
