@@ -132,7 +132,9 @@ compiler error.  The exit status is then the only sign of the internal
 compiler error.  With no earlier error, the log holds a record of it
 (assay.readers.sarif, THE INTERNAL COMPILER ERROR), and the message of the
 fixture gives its text.  A signal that stops the driver of a compile is the
-same case.
+same case.  So is a signal that stops the compiler that the driver started,
+such as the kill of the CPU limit of run_compile(): the driver then exits 1
+and writes the line of KILLED_COMPILER.
 
 Such a compile fails its fixture, and the message names the internal
 compiler error.  The store keeps no such result, and a stored result of it
@@ -706,6 +708,9 @@ _SUCCEEDED = "the compile succeeded, and its census reads the object of a new co
 PASS_EXIT_CODES = "-pass-exit-codes"
 # The status of cc1plus for an internal compiler error: ICE_EXIT_CODE of gcc/system.h.
 ICE_EXIT_CODE = 4
+# The words of the line of the GCC driver for a compiler that a signal stopped, such as "g++: fatal error: Killed signal
+# terminated program cc1plus" (execute() of gcc/gcc.cc).
+KILLED_COMPILER = "signal terminated program"
 
 
 def internal_error(result: CompileResult) -> str:
@@ -714,9 +719,12 @@ def internal_error(result: CompileResult) -> str:
     A compile has an internal compiler error when it gives one of three signs
     (The internal compiler error).  The signs are the exit status
     ICE_EXIT_CODE, a signal that stopped the driver, and a record of the kind
-    internal compiler error in the log.  The text gives the message of the
-    first such record, and else the exit status.  The cost is O(n) in the
-    records of the log.
+    internal compiler error in the log.  A signal that stopped the compiler
+    that the driver started, such as the kill of the CPU limit, is one more
+    sign: the driver then exits 1, also with PASS_EXIT_CODES, and it writes
+    the line of KILLED_COMPILER.  The text gives the message of the first
+    record, and else the exit status or the line.  The cost is O(n) in the
+    records of the log and in the bytes of the output.
     """
     records = result.log.diagnostics if result.log is not None else ()
     record = next((item for item in records if item.kind is sarif.Kind.ICE), None)
@@ -727,6 +735,9 @@ def internal_error(result: CompileResult) -> str:
         return f"the compile ended in an internal compiler error (the exit status {ICE_EXIT_CODE} of {PASS_EXIT_CODES})"
     if result.returncode < 0:
         return f"the signal {-result.returncode} stopped the compiler driver"
+    killed = next((line.strip() for line in result.output.splitlines() if KILLED_COMPILER in line), None)
+    if killed is not None:
+        return f"a signal stopped the compiler: {killed}"
     return ""
 
 
@@ -1015,19 +1026,31 @@ def run_compile(argv: list[str], directory: Path, env: Mapping[str, str]) -> Com
     each process that it waited for.  The instruction counter counts the
     compile and each process that it starts, and not the driver.
 
+    The driver and each process that it starts get the CPU limit
+    COMPILE_CPU_LIMIT_S of assay.loop.step, as each compile of the build does.
+    That limit judges a compile that runs away: the kernel kills the
+    compiler, and internal_error() names the kill, so the fixture fails.  The
+    driver has one thread, so the limit of the process is the limit of the
+    driver, and the driver itself uses less than a second.  The compile has
+    no wall limit of its own: proc.BUILD_S only bounds a hang, above the wall
+    guard of each test (THE HANG GUARD of assay.loop.gate).  A loaded host
+    makes a compile slower, but it does not make a fixture red.
+
     Raises:
-        proc.ToolFailed: If the compiler cannot start, or the compile runs past the limit TOOL_S of assay.core.proc.
-            The fixture then fails, because a compile that did not end proves no rejection
+        proc.ToolFailed: If the compiler cannot start, or the compile runs past proc.BUILD_S.  The fixture then fails,
+            because a compile that did not end proves no rejection
     """
     import resource
 
     from assay.core import proc
+    from assay.loop import step as compile_step
 
     meter = _cost_meter_module()
+    meter.limit_cpu(compile_step.COMPILE_CPU_LIMIT_S)
     counter = meter.open_instruction_counter()
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
     try:
-        done = proc.run(proc.Command(argv, timeout_s=proc.TOOL_S, cwd=directory, env=dict(env)))
+        done = proc.run(proc.Command(argv, timeout_s=proc.BUILD_S, cwd=directory, env=dict(env)))
     except BaseException:
         if counter is not None:
             os.close(counter)

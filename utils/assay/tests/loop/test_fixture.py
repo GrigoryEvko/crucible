@@ -596,6 +596,48 @@ class StoreTest:
                     f"the next run compiles again, and it does not give the internal compiler error from the store: "
                     f"{second[0]} {second[3]}")
 
+    def check_cpu_limit(self) -> None:
+        """The compile of a fixture runs with the CPU limit of a compile of the build (COMPILE_CPU_LIMIT_S).
+
+        A wrapper compiler writes its own limit, `ulimit -t`, and then runs the compiler.  The limit judges a compile
+        that runs away, so the compile needs no wall limit of its own.  On a GitHub runner the meter sets no limit.
+        """
+        import resource
+
+        from assay.core import meter
+        from assay.loop import step as compile_step
+
+        written = self.root / "cpu-limit.txt"
+        self.plant_compiler("cpu_limit.sh", f'#!/bin/sh\nulimit -t > "{written}"\nexec "{self.cxx}" "$@"\n')
+        limited = self.run("neg_convert", *CONVERT)
+        held = written.read_text().strip() if written.is_file() else ""
+        _, hard = resource.getrlimit(resource.RLIMIT_CPU)
+        bound = compile_step.COMPILE_CPU_LIMIT_S
+        if hard != resource.RLIM_INFINITY:
+            bound = min(bound, hard)
+        wanted = "unlimited" if meter.is_github_actions() else str(bound)
+        self.expect(limited[0] == 0 and held == wanted,
+                    f"the compile of a fixture runs with the CPU limit {wanted}: it has {held!r}, and the fixture "
+                    f"gives {limited[0]}")
+
+    def check_killed_compiler(self) -> None:
+        """A compile whose compiler a signal stopped fails its fixture, and the store keeps no result of it.
+
+        A wrapper compiler runs the compiler, and then exits as the driver of GCC exits when the CPU limit kills
+        cc1plus: the status 1, also with GCC_PASS_EXIT_CODES, and the line of a killed program.  The fixture must not
+        count that status 1 as the rejection of the fixture.
+        """
+        self.plant_compiler("killed.sh", f'#!/bin/sh\ncase " $* " in *" -c "*) ;; *) exec "{self.cxx}" "$@";; esac\n'
+                                         f'"{self.cxx}" "$@"\n'
+                                         'echo "g++: fatal error: Killed signal terminated program cc1plus" >&2\n'
+                                         'exit 1\n')
+        killed = self.run("neg_convert", *CONVERT)
+        self.expect(killed[0] == 1 and "a signal stopped the compiler" in killed[2],
+                    f"a compile whose compiler a signal stopped fails its fixture, also when each regex matches: "
+                    f"{killed[0]} {killed[2]}")
+        self.expect(self.has(killed[3], "not stored (a signal stopped the compiler"),
+                    f"the store keeps no result of a compile whose compiler a signal stopped: {killed[3]}")
+
     def check_store_off(self) -> None:
         """With CRUCIBLE_NEG_CACHE=0 or CRUCIBLE_CACHE_DIR=off, the driver compiles and writes no entry."""
         off = self.run("neg_convert", *CONVERT, CRUCIBLE_NEG_CACHE="0")
@@ -1458,6 +1500,8 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_identity_change,
     StoreTest.check_missing_log,
     StoreTest.check_internal_compiler_error,
+    StoreTest.check_cpu_limit,
+    StoreTest.check_killed_compiler,
     StoreTest.check_store_off,
     StoreTest.check_stored_output_is_evaluated,
     StoreTest.check_eviction,
@@ -1652,6 +1696,9 @@ def check_internal_errors(failures: list[str]) -> None:
          f"the exit status {store.ICE_EXIT_CODE}"),
         (store.CompileResult(-9, "", 0.1, 0.0, None), "the signal 9 stopped the compiler driver"),
         (store.CompileResult(1, "", 0.1, 0.0, None, log=sarif.Log("cc1plus", (error,))), ""),
+        (store.CompileResult(1, "a.cpp:1:1: error: x\ng++-16p: fatal error: Killed signal terminated program cc1plus\n",
+                             0.1, 0.0, None),
+         "a signal stopped the compiler: g++-16p: fatal error: Killed signal terminated program cc1plus"),
     )
     for result, text in cases:
         found = store.internal_error(result)
