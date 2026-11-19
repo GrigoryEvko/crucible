@@ -130,6 +130,12 @@ static_assert(Synchronized<::foundation::core::Atomic<int, ::foundation::core::C
 static_assert(Synchronized<CountWithLimit> && Synchronized<::foundation::core::Atomic<int>[4]>);
 static_assert(!Synchronized<int> && !Synchronized<CountWithPlainLimit> && !Synchronized<CountWithReference>);
 static_assert(!Synchronized<MutableCount> && Synchronized<MutableAtomic>);
+// The refusal names the first part that refuses: a scalar, or the class that
+// holds a reference.
+static_assert((first_synchronized_refusal(^^int) == ^^int)&&(first_synchronized_refusal(^^CountWithPlainLimit)
+                                                             == ^^int));
+static_assert(first_synchronized_refusal(^^CountWithReference) == ^^CountWithReference);
+static_assert(first_synchronized_refusal(^^CountWithLimit) == std::meta::info{});
 
 // An empty base, such as the Pinned mark of a class that does not move, holds
 // no state, so it does not stop the shared write of the class.

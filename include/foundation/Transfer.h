@@ -205,9 +205,12 @@ private:
     return std::meta::is_class_type(type) || std::meta::is_union_type(type);
 }
 
-// True when two threads can write an object of the type at the same time
-// (THE SHARED WRITE).  Complexity: linear in the number of distinct parts.
-[[nodiscard]] consteval bool is_shared_writable(std::meta::info root) {
+// The first type that two threads cannot write at the same time, or a null
+// reflection when two threads can write an object of the root (THE SHARED
+// WRITE).  A class answers for a member that refuses, so the answer names
+// the class that holds a reference, or the class of a const member that is
+// not Shareable.  Complexity: linear in the number of distinct parts.
+[[nodiscard]] consteval std::meta::info first_shared_write_refusal(std::meta::info root) {
     namespace refl = ::foundation::reflect;
     GoalList pending;
     pending.push(Goal{refl::bare_type(root), Property::Share});
@@ -221,26 +224,32 @@ private:
             pending.push(Goal{refl::bare_type(std::meta::remove_all_extents(type)), Property::Share});
             continue;
         }
-        if (!is_class_or_union(type) || !std::meta::is_complete_type(type)) return false;
-        if (states(type, ^^not_shareable) || states(type, ^^thread_bound)) return false;
+        if (!is_class_or_union(type) || !std::meta::is_complete_type(type)) return type;
+        if (states(type, ^^not_shareable) || states(type, ^^thread_bound)) return type;
         if (states(type, ^^shareable)) continue;
         bool has_part = false;
         for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{type, true})) {
             has_part = true;
             // A member that is a reference is not held by value.
-            if (!part.is_held_by_value) return false;
+            if (!part.is_held_by_value) return type;
             // No write reaches a const member, so a read is all it must allow.
             if (part.was_const) {
-                if (!::foundation::transfer::holds(part.type, Property::Share)) return false;
+                if (!::foundation::transfer::holds(part.type, Property::Share)) return type;
                 continue;
             }
             pending.push(Goal{part.type, Property::Share});
         }
         // An empty class holds no state that a write can change.  A class that
         // is not empty and shows no part holds state that the walk cannot read.
-        if (!has_part && !std::meta::is_empty_type(type)) return false;
+        if (!has_part && !std::meta::is_empty_type(type)) return type;
     }
-    return true;
+    return std::meta::info{};
+}
+
+// True when two threads can write an object of the type at the same time
+// (THE SHARED WRITE).
+[[nodiscard]] consteval bool is_shared_writable(std::meta::info root) {
+    return first_shared_write_refusal(root) == std::meta::info{};
 }
 
 // The goal that rule 1 asks of a reference to the type of the node.  A
@@ -373,6 +382,13 @@ struct ReferenceAnswer {
 // True when two threads can write one object of the type through a reference
 // that is not const at the same time (THE SHARED WRITE).
 [[nodiscard]] consteval bool is_synchronized(std::meta::info type) { return detail::is_shared_writable(type); }
+
+// The first type that two threads cannot write at the same time, or a null
+// reflection when the type is Synchronized (THE SHARED WRITE).  A message
+// names the part that refuses with it.
+[[nodiscard]] consteval std::meta::info first_synchronized_refusal(std::meta::info type) {
+    return detail::first_shared_write_refusal(type);
+}
 
 // A value of T can move to another thread.
 template <class T>
