@@ -94,7 +94,7 @@ struct CrucibleContext {
     [[nodiscard]] bool activate(const RegionNode& region) CRUCIBLE_NO_THREAD_SAFETY {
         if (region.plan.is_none()) [[unlikely]]
             return false;
-        const ::fixy::Ref<MemoryPlan> plan = PlanLink{region.plan}.expect("the test above found the plan");
+        const ::fixy::Ref<MemoryPlan const> plan = PlanLink{region.plan}.expect("the test above found the plan");
 
         if (mode_ == ContextMode::COMPILED) deactivate();
 
@@ -166,7 +166,7 @@ struct CrucibleContext {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         if (alt.plan.is_none()) [[unlikely]]
             return false;
-        const ::fixy::Ref<MemoryPlan> new_plan = PlanLink{alt.plan}.expect("the test above found the plan");
+        const ::fixy::Ref<MemoryPlan const> new_plan = PlanLink{alt.plan}.expect("the test above found the plan");
 
         if (div_pos == 0) return activate(alt);
 

@@ -102,7 +102,7 @@ namespace {
     assert(::fixy::same_object(loop.expect_loop(), ::fixy::to(loop)));
 
     // The arms keep their targets, and resolved_target gives the node.
-    const crucible::BranchNode::Arm& first_arm = *branch.arms.get(0).expect("the branch holds two arms");
+    crucible::BranchNode::Arm& first_arm = *branch.arms.get(0).expect("the branch holds two arms");
     const crucible::BranchNode::Arm& second_arm = *branch.arms.get(1).expect("the branch holds two arms");
     assert(crucible::is_link_to(first_arm.target, region_a));
     assert(crucible::is_link_to(second_arm.target, region_b));

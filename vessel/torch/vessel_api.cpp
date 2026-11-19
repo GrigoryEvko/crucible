@@ -664,7 +664,7 @@ uint32_t crucible_active_region_slots(CrucibleHandle h, CrucibleSlot* out, uint3
     CRUCIBLE_PRE((std::bit_cast<std::uintptr_t>(out) & (alignof(CrucibleSlot) - 1U)) == 0U);
     auto vigil_typed = crucible::vessel::as_vigil_typed(h);
     for (const ::fixy::Ref<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
-        for (const ::fixy::Ref<crucible::MemoryPlan> plan : region->plan) {
+        for (const ::fixy::Ref<crucible::MemoryPlan const> plan : region->plan) {
             uint32_t written = 0;
             for (const crucible::TensorSlot& slot : plan->slots) {
                 if (written == capacity) break;
@@ -698,7 +698,7 @@ uint64_t crucible_active_pool_bytes(CrucibleHandle h) noexcept {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto vigil_typed = crucible::vessel::as_vigil_typed(h);
     for (const ::fixy::Ref<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
-        for (const ::fixy::Ref<crucible::MemoryPlan> plan : region->plan) {
+        for (const ::fixy::Ref<crucible::MemoryPlan const> plan : region->plan) {
             return plan->pool_bytes;
         }
     }

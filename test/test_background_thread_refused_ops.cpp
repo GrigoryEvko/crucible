@@ -39,7 +39,7 @@ constexpr uint64_t kPollNanos = 100000;
 // so it holds each region after the gap and the regions just before it.
 constexpr uint64_t kIterationsAfterGap = 40;
 
-[[nodiscard]] bool is_one_iteration(::fixy::View<crucible::TraceEntry> ops) noexcept {
+[[nodiscard]] bool is_one_iteration(::fixy::View<crucible::TraceEntry const> ops) noexcept {
     if (ops.size() != kPeriod) return false;
     bool is_first = true;
     uint64_t expected = 0;

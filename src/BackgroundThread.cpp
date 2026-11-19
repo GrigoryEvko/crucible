@@ -598,7 +598,8 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
         // The sweep gives a Ref of the storage of the plan.  A refused plan
         // leaves the region with no plan, so the region stays on eager.
         publish_scratch_.with_epoch([&]() noexcept {
-            region.plan = compute_memory_plan(bg.alloc, plan_storage, publish_scratch_, memory.parts.slots.view()).ok();
+            region.plan = make_plan_link(
+                compute_memory_plan(bg.alloc, plan_storage, publish_scratch_, memory.parts.slots.view()).ok());
         });
     }
 

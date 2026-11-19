@@ -436,7 +436,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
     // keeps one test of the plan.
     const PlanLink plan_link = region->plan;
     w.w(plan_link.is_some());
-    for (const ::fixy::Ref<MemoryPlan>& plan_ref : plan_link) {
+    for (const ::fixy::Ref<MemoryPlan const>& plan_ref : plan_link) {
         const MemoryPlan& plan = *plan_ref;
         w.w(plan.pool_bytes);
         w.w(plan.num_slots());
@@ -562,8 +562,9 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         if (!r.has_remaining(num_slots, kTensorSlotWireBytes)) {
             return ::fixy::err(r.reason_or(LoadError::truncated));
         }
-        loaded_plan->slots = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
-        for (TensorSlot& slot : loaded_plan->slots) {
+        const ::fixy::View<TensorSlot> slots = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
+        loaded_plan->slots = slots;
+        for (TensorSlot& slot : slots) {
             slot = r.read_image(TensorSlot{});
             // The pool allocator aborts on a slot it cannot serve, so a
             // loaded plan holds only slots that it can serve.
@@ -723,7 +724,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     // least zero, so the advance does not go back.  A value of zero means
     // that no variant was selected when the region was written.
     node->variant_id.advance(variant_id);
-    node->plan = plan;
+    node->plan = make_plan_link(plan);
     // The node is rebuilt from Cipher bytes, and the fold above matched the
     // content hash that the image records, so it crosses the edge to Loaded.
     return ::fixy::mint_tagged<::fixy::tags::source::Replayed>(node).retag<::fixy::tags::source::Loaded>();
@@ -738,7 +739,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     // A branch node repurposes the header's content-hash field to hold the
     // merkle hash of the continuation, the suffix the arms merge back into.
     const MerkleHash cont_hash = branch->next.match(
-        [](::fixy::Ref<TraceNode> const& continuation) noexcept { return continuation->merkle_hash; },
+        [](::fixy::Ref<TraceNode const> const& continuation) noexcept { return continuation->merkle_hash; },
         []() noexcept { return MerkleHash{}; });
     write_header(w, TraceNodeKind::BRANCH, branch->merkle_hash, ContentHash{cont_hash.raw()});
 

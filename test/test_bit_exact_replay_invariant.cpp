@@ -216,7 +216,7 @@ struct Built {
     out.head_content_hash = head->content_hash.raw();
     out.tail_content_hash = tail->content_hash.raw();
     out.merkle_hash = head->merkle_hash.raw();
-    for (const ::fixy::Ref<MemoryPlan>& plan : head->plan) {
+    for (const ::fixy::Ref<MemoryPlan const>& plan : head->plan) {
         out.pool_bytes = plan->pool_bytes;
         out.num_slots = plan->num_slots();
         out.num_external = plan->num_external;

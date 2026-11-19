@@ -39,7 +39,7 @@ void test_pipeline_basic() {
     assert(region->kind == TraceNodeKind::REGION);
     assert(region->num_ops() == NUM_OPS);
     assert(region->plan.is_some());
-    for (const ::fixy::Ref<MemoryPlan>& plan : region->plan) {
+    for (const ::fixy::Ref<MemoryPlan const>& plan : region->plan) {
         assert(plan->pool_bytes > 0);
         assert(plan->num_slots() > 0);
     }

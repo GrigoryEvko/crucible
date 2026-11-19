@@ -2,6 +2,8 @@
 
 #include <crucible/MerkleDag.h>
 
+#include <foundation/Transfer.h>
+
 #include <type_traits>
 
 namespace crucible {
@@ -45,5 +47,14 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(FeedbackEdge);
 // one cache line.  An arena ends no node.
 static_assert(sizeof(LoopNode) == 72, "LoopNode must be 72 bytes");
 static_assert(std::is_trivially_destructible_v<LoopNode>, "an arena ends no LoopNode");
+
+// A region of the pipeline does not change after its publication, so two
+// threads can read one through a reference to const.  The pin holds each part
+// that a reader reaches: the continuation through a const Link, the ops and
+// the plan as const, the runs of each op as const, and the kernel as a
+// compiled kernel of const, whose statement MerkleDag.h gives.
+static_assert(::foundation::transfer::Shareable<RegionNode const>);
+static_assert(::foundation::transfer::Shareable<TraceEntry const>
+              && ::foundation::transfer::Shareable<MemoryPlan const>);
 
 }  // namespace crucible

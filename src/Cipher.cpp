@@ -550,7 +550,7 @@ struct IndexLine {
 ::fixy::Positive<std::size_t> estimate_serial_size(RegionNode const& region) {
     size_t sz = 64;  // header
     sz += 32;  // region fixed fields
-    for (const ::fixy::Ref<MemoryPlan>& plan : region.plan) {
+    for (const ::fixy::Ref<MemoryPlan const>& plan : region.plan) {
         sz += 64 + plan->num_slots() * sizeof(TensorSlot);
     }
     for (const TraceEntry& te : region.ops) {

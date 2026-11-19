@@ -22,7 +22,7 @@
 namespace crucible::fuzz::boundary {
 
 inline void claim_region_trusted(const char* harness, const RegionNode& region) {
-    for (const ::fixy::Ref<MemoryPlan>& plan_ref : region.plan) {
+    for (const ::fixy::Ref<MemoryPlan const>& plan_ref : region.plan) {
         const MemoryPlan& plan = *plan_ref;
         CRUCIBLE_FUZZ_CLAIM(harness, plan.pool_bytes <= PoolAllocator::kMaxPoolBytes);
         CRUCIBLE_FUZZ_CLAIM(harness, plan.num_external <= plan.num_slots());
@@ -52,10 +52,18 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
 
 // A region the way the recorder builds one: two operations with one input
 // and one output each, and with a plan of two slots when with_plan is set.
+// The fault of the second slot of a seed plan, which the region holds as
+// const once it links the plan.
+enum class SeedSlotFault : std::uint8_t {
+    none,
+    past_pool,
+    misaligned
+};
+
 // The ops, their arrays, the region and the slots of the plan are in
 // dag_arena.
 [[nodiscard]] inline RegionNode* build_seed_region(::fixy::BumpArena& arena, ::fixy::BumpArena& dag_arena,
-                                                   bool with_plan) {
+                                                   bool with_plan, SeedSlotFault fault = SeedSlotFault::none) {
     const auto alloc = test_alloc();
     constexpr std::uint32_t kOps = 2;
     const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(alloc, kOps, TraceEntry{});
@@ -77,15 +85,19 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
         plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
         plan->num_external = 0;
         plan->device_type = DeviceType::CPU;
-        plan->slots = dag_arena.array<TensorSlot>(alloc, 2, TensorSlot{});
+        const ::fixy::View<TensorSlot> slots = dag_arena.array<TensorSlot>(alloc, 2, TensorSlot{});
         std::uint32_t slot_index = 0;
-        for (TensorSlot& slot : plan->slots) {
+        for (TensorSlot& slot : slots) {
             slot.offset_bytes = slot_index * PoolAllocator::ALIGNMENT;
             slot.nbytes = 64;
             slot.dtype = ScalarType::Float;
             slot.slot_id = SlotId{slot_index};
             ++slot_index;
         }
+        TensorSlot& second = *slots.get(1).expect("the seed plan holds two slots");
+        if (fault == SeedSlotFault::past_pool) second.nbytes = std::uint64_t{1} << 40;
+        if (fault == SeedSlotFault::misaligned) second.offset_bytes += 8;
+        plan->slots = slots;
         region->plan = make_plan_link(*plan);
     }
     return &*region;
@@ -126,14 +138,8 @@ inline constexpr std::size_t kImageHasPlanOffset = 52;
 
     // A slot reaches past the pool, and a slot starts off the alignment.
     // The pool allocator aborts on either one.
-    RegionNode* past_pool = build_seed_region(arena, dag_arena, true);
-    const ::fixy::Ref<MemoryPlan> past_pool_plan = PlanLink{past_pool->plan}.expect("the seed region has a plan");
-    past_pool_plan->slots.get(1).expect("the seed plan holds two slots")->nbytes = std::uint64_t{1} << 40;
-    seeds.push_back(region_image(past_pool));
-    RegionNode* misaligned = build_seed_region(arena, dag_arena, true);
-    const ::fixy::Ref<MemoryPlan> misaligned_plan = PlanLink{misaligned->plan}.expect("the seed region has a plan");
-    misaligned_plan->slots.get(1).expect("the seed plan holds two slots")->offset_bytes += 8;
-    seeds.push_back(region_image(misaligned));
+    seeds.push_back(region_image(build_seed_region(arena, dag_arena, true, SeedSlotFault::past_pool)));
+    seeds.push_back(region_image(build_seed_region(arena, dag_arena, true, SeedSlotFault::misaligned)));
     return seeds;
 }
 

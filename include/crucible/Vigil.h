@@ -1373,7 +1373,7 @@ private:
         list_external_reads_(region, resume_op);
         list_bound_scalars_(region, resume_op);
         if (region.plan.is_none()) return;
-        const ::fixy::Ref<MemoryPlan> plan = PlanLink{region.plan}.expect("the test above found the plan");
+        const ::fixy::Ref<MemoryPlan const> plan = PlanLink{region.plan}.expect("the test above found the plan");
 
         for (const TensorSlot& slot : plan->slots) {
             if (!slot.is_external) continue;
@@ -1413,7 +1413,7 @@ private:
     // fill, so the list takes one allocation.
     [[gnu::cold]] void list_external_reads_(const RegionNode& region, uint32_t resume_op) {
         ::fixy::View<const TensorSlot> plan_slots{};
-        for (const ::fixy::Ref<MemoryPlan> plan : region.plan)
+        for (const ::fixy::Ref<MemoryPlan const> plan : region.plan)
             plan_slots = plan->slots;
         const auto each_read = [&region, plan_slots](auto&& on_read) {
             for (uint32_t i = 0; i < region.num_ops(); i++) {

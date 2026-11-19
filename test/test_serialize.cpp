@@ -489,8 +489,10 @@ static void check_descriptor_images_agree() {
         constexpr uint32_t kMarkerSlotId = 0x5A5A5A5Au;
         ::fixy::BumpArena slot_arena{1 << 16};
         crucible::MemoryPlan pad_plan{};
-        pad_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
-        pad_plan.slots.get(20).expect("the pad plan holds 21 slots")->slot_id = crucible::SlotId{kMarkerSlotId};
+        const ::fixy::View<crucible::TensorSlot> pad_slots =
+            slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
+        pad_slots.get(20).expect("the pad plan holds 21 slots")->slot_id = crucible::SlotId{kMarkerSlotId};
+        pad_plan.slots = pad_slots;
         region->plan = crucible::make_plan_link(pad_plan);
 
         ::fixy::HeapArray<std::byte> image_buf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});

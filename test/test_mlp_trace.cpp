@@ -57,7 +57,7 @@ int main() {
     std::printf("   BackgroundThread built RegionNode with %u ops\n", region->num_ops());
 
     assert(region->plan.is_some());
-    const ::fixy::Ref<MemoryPlan> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
+    const ::fixy::Ref<MemoryPlan const> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
 
     std::printf("\n── Memory Plan ──\n");
     std::printf("   Pool size: %llu bytes\n", static_cast<unsigned long long>(plan->pool_bytes));
