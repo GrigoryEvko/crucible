@@ -351,42 +351,49 @@ constexpr fixy::concurrent::HostFacts kHugeCaches{
     return 0;
 }
 
-// The thread each shard ran on, for a region with one element per shard.
-// Element i holds i, so a body learns its shard from its element.
+// The record of one shard: the thread that ran it and the count of its runs.
+struct ShardRecord {
+    std::thread::id thread{};
+    int runs = 0;
+};
+
+// The thread each shard ran on, for a region with one record per shard.
+// Each shard writes the records of its own part of the region, so no two
+// shards share a record, and the body captures nothing.
 template <std::size_t Shards>
 struct ShardThreads {
-    std::array<std::uint32_t, Shards> storage{};
-    std::array<std::thread::id, Shards> thread_of_shard{};
-    std::array<int, Shards> runs_of_shard{};
+    std::array<ShardRecord, Shards> records{};
 
     // Runs the shards under one budget and records who ran each one.
     void run(fixy::concurrent::WorkBudget budget) noexcept {
-        for (std::uint32_t index = 0; index < Shards; ++index) {
-            storage[index] = index;
-        }
         BgCtx ctx{eff::testing::bg()};
-        auto region = fixy::mint_owned_region(storage.data(), Shards, perm::mint_permission_root<RegionWhole>());
+        auto region = fixy::mint_owned_region(records.data(), Shards, perm::mint_permission_root<RegionWhole>());
         auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, Shards>(
-            ctx, budget, std::move(region), [this](auto& shard) noexcept {
-                for (const std::uint32_t index : shard) {
-                    thread_of_shard[index] = std::this_thread::get_id();
-                    ++runs_of_shard[index];
+            ctx, budget, std::move(region), [](auto& shard) noexcept {
+                for (ShardRecord& record : shard) {
+                    record.thread = std::this_thread::get_id();
+                    ++record.runs;
                 }
             });
         (void)whole;
     }
 
     [[nodiscard]] bool every_shard_ran_once() const noexcept {
-        return std::all_of(runs_of_shard.begin(), runs_of_shard.end(), [](int runs) noexcept { return runs == 1; });
+        return std::all_of(records.begin(), records.end(),
+                           [](ShardRecord const& record) noexcept { return record.runs == 1; });
     }
 
     [[nodiscard]] std::size_t distinct_threads() const noexcept {
-        std::set<std::thread::id> threads(thread_of_shard.begin(), thread_of_shard.end());
+        std::set<std::thread::id> threads{};
+        for (ShardRecord const& record : records) {
+            threads.insert(record.thread);
+        }
         return threads.size();
     }
 
     [[nodiscard]] bool ran_on(std::thread::id thread) const noexcept {
-        return std::find(thread_of_shard.begin(), thread_of_shard.end(), thread) != thread_of_shard.end();
+        return std::any_of(records.begin(), records.end(),
+                           [thread](ShardRecord const& record) noexcept { return record.thread == thread; });
     }
 };
 
