@@ -250,6 +250,30 @@ static_assert(!Encodable<HoldsPart<FixedText<0x100000000>>>);
 }
 static_assert(reads_the_lists());
 
+// A class with a heap part has an image of run-time size, and no image of
+// fixed size.  The element of a HeapArray has an image of one byte or more.
+// A sum and a bounded list of a heap part have no image.  decode needs a
+// default constructor with no throw for each element and for the class.
+struct[[= derive_protocol{}]] Empty {};
+
+struct[[= derive_protocol{}]] HoldsText {
+    HeapText text = freeze(mint_grow_text(0));
+};
+
+struct[[= derive_protocol{}]] HoldsHeapClass {
+    HoldsPart<HeapArray<std::uint8_t>> inner{};
+    std::uint8_t tail = 0;
+};
+
+static_assert(HeapEncodable<HoldsPart<HeapArray<std::uint32_t>>> && HeapDecodable<HoldsPart<HeapArray<std::uint32_t>>>);
+static_assert(!Encodable<HoldsPart<HeapArray<std::uint32_t>>> && !HeapEncodable<Leaves>);
+static_assert(HeapEncodable<HoldsText> && HeapDecodable<HoldsText>);
+static_assert(HeapEncodable<HoldsHeapClass> && HeapDecodable<HoldsHeapClass>);
+static_assert(!HeapEncodable<HoldsPart<HeapArray<Unmarked>>> && !HeapEncodable<HoldsPart<HeapArray<Empty>>>);
+static_assert(HeapEncodable<HoldsPart<HeapArray<NoDefault>>> && !HeapDecodable<HoldsPart<HeapArray<NoDefault>>>);
+static_assert(!HeapEncodable<HoldsPart<Option<HeapArray<std::uint8_t>>>>
+              && !Encodable<HoldsPart<Option<HeapArray<std::uint8_t>>>>);
+
 }  // namespace detail::protocol_checks
 
 }  // namespace foundation::core

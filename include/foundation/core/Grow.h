@@ -605,6 +605,12 @@ public:
     void
     begin() const&& = delete("a cursor of a temporary HeapText points into storage that the full expression frees");
     void end() const&& = delete("a cursor of a temporary HeapText points into storage that the full expression frees");
+
+    // True when the two texts hold the same characters.  Complexity: one
+    // compare for each character.
+    [[nodiscard]] friend constexpr bool operator==(HeapText const& left, HeapText const& right) noexcept {
+        return left.view() == right.view();
+    }
 };
 
 class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] GrowText final

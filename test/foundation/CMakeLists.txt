@@ -2526,6 +2526,10 @@ foundation_test(test_core_record_oracle)
 # refuses a pointer, a base with one, and a part with no annotation.  decode
 # refuses a const member.
 foundation_test(test_core_protocol)
+# The heap parts of the family: the image of a class with a HeapArray and a
+# HeapText part against a hand image, its hash against a hand fold, each
+# refusal of decode with its offset, and the format.
+foundation_test(test_core_protocol_heap)
 # keyed_hash against the vectors of the official BLAKE3, at run time and in a
 # constant evaluation.
 foundation_test(test_core_keyed_hash)

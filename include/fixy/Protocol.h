@@ -26,9 +26,12 @@ using ::foundation::core::DecodeFault;
 using ::foundation::core::DecodeRefusal;
 using ::foundation::core::Encodable;
 using ::foundation::core::encode;
+using ::foundation::core::encoded_size;
 using ::foundation::core::encoded_size_v;
 using ::foundation::core::format;
 using ::foundation::core::hash;
 using ::foundation::core::Hashable;
+using ::foundation::core::HeapDecodable;
+using ::foundation::core::HeapEncodable;
 
 }  // namespace fixy

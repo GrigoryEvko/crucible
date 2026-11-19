@@ -88,6 +88,33 @@
 //   An image holds at most 2^32 - 1 bytes, so the offset of each fault fits
 //   the 32 bits of a DecodeFault.
 //
+// THE HEAP PARTS
+//   A HeapArray of elements with an image of one byte or more, and a
+//   HeapText (foundation/core/Array.h and Grow.h), have an image whose size
+//   is known only at run time: the count of the elements in 8 bytes, in
+//   little-endian order, and then the image of each element in order.  A
+//   class with the annotation derive_protocol whose parts have an image, and
+//   whose parts hold one or more heap parts, is HeapEncodable.  It is not
+//   Encodable, so each type has one image.  Its image holds its parts one
+//   after the other, in the order of THE IMAGE, and a part with an image of
+//   fixed size takes the bytes of THE IMAGE.
+//
+//   encoded_size(value) gives the count of bytes of the image.  encode writes
+//   the image into a View of exactly that count, and an image of more than
+//   2^32 - 1 bytes or a View of a different size ends the process.  decode
+//   takes the allocation capability and the bytes.  It refuses each fault of
+//   THE CODEC, bytes that end inside a part, bytes after the end of the
+//   image, and more than 2^32 - 1 bytes.  decode compares each count with the
+//   bytes that remain before it allocates, so the count of elements is at
+//   most the count of those bytes divided by the bytes of one element.  A
+//   fault after an allocation gives the storage back.  An element needs a
+//   default constructor with no throw, and no element is linear.
+//
+//   The hash folds the image as THE HASH folds an image, and then one block
+//   with the count of the bytes of the image in its low word.  A GrowList
+//   and a GrowText are builders, and no part: freeze a GrowText into a
+//   HeapText first.
+//
 // THE CODEC
 //   encode writes the image into a View of exactly encoded_size_v<T> bytes,
 //   so it cannot fail.  decode reads such a View into a T.  It refuses a
@@ -108,10 +135,10 @@
 //   float as the text of report(), an enumerator of a scoped enumeration as
 //   its name, an array as `[a, b, c]`, an Option as `some(a)` or `none`, a
 //   Result as `ok(a)` or `err(e)`, a OneOf as the index of its alternative
-//   and its value, `#1(a)`, a FixedList as `[a, b]`, and a FixedText between
-//   two quotes, with a backslash before each quote and each backslash of the
-//   text.  A local part and a pad part are not written.  format is no part
-//   of a hot path.
+//   and its value, `#1(a)`, a FixedList and a HeapArray as `[a, b]`, and a
+//   FixedText and a HeapText between two quotes, with a backslash before each
+//   quote and each backslash of the text.  A local part and a pad part are
+//   not written.  format is no part of a hot path.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Arithmetic.h>
@@ -119,6 +146,8 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Equatable.h>
 #include <foundation/core/Format.h>
+#include <foundation/core/Grow.h>
+#include <foundation/core/Heap.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/List.h>
 #include <foundation/core/OneOf.h>
@@ -153,6 +182,14 @@ enum class DecodeRefusal : std::uint8_t {
     // The count of a bounded list is more than its capacity (THE BOUNDED
     // LISTS).
     list_count,
+    // The bytes end inside a part of an image of run-time size (THE HEAP
+    // PARTS).
+    image_end,
+    // A byte follows the end of an image of run-time size (THE HEAP PARTS).
+    trailing_byte,
+    // An image of run-time size holds more than 2^32 - 1 bytes (THE HEAP
+    // PARTS).
+    image_size,
 };
 
 // The first fault of an image: the reason, and the byte offset of the part
@@ -467,6 +504,99 @@ template <class T>
     } else {
         return __builtin_bit_cast(LeafWord<T>, value);
     }
+}
+
+// ── The walk of the heap parts ──────────────────────────────────────────
+
+// The bytes of the count of a heap part (THE HEAP PARTS).
+inline constexpr std::size_t heap_count_bytes = 8;
+
+// True for a HeapArray and for a HeapText.  An alias reads as the type that
+// it names.
+[[nodiscard]] consteval bool is_heap_array_at(std::meta::info spelled) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    return std::meta::is_class_type(type) && std::meta::has_template_arguments(type)
+        && std::meta::template_of(type) == ^^HeapArray;
+}
+
+[[nodiscard]] consteval bool is_heap_text_at(std::meta::info spelled) {
+    return std::meta::remove_cv(std::meta::dealias(spelled)) == ^^HeapText;
+}
+
+// The element of a heap part: the element of a HeapArray, and char for a
+// HeapText.
+[[nodiscard]] consteval std::meta::info heap_element_at(std::meta::info spelled) {
+    if (is_heap_text_at(spelled)) return ^^char;
+    return std::meta::template_arguments_of(std::meta::remove_cv(std::meta::dealias(spelled)))[0];
+}
+
+// True for a class of the family whose image has a run-time size: no image
+// of fixed size, and each part with an image of either size.
+[[nodiscard]] consteval bool has_heap_image_at(std::meta::info spelled, int depth);
+
+// True when each part of a class has an image of fixed size or of run-time
+// size.
+[[nodiscard]] consteval bool parts_have_heap_images_at(std::meta::info type, int depth) {
+    std::size_t const bases = base_count(type);
+    std::size_t const members = member_count(type);
+    for (std::size_t index = 0; index < bases; ++index) {
+        std::meta::info const base = base_type_at(type, index);
+        if (!has_image_at(base, depth + 1) && !has_heap_image_at(base, depth + 1)) return false;
+    }
+    for (std::size_t index = 0; index < members; ++index) {
+        if (member_carries_at(type, index, ^^local_part)) continue;
+        std::meta::info const member = member_type_at(type, index);
+        if (member_is_bit_field_at(type, index)) return false;
+        if (!has_image_at(member, depth + 1) && !has_heap_image_at(member, depth + 1)) return false;
+    }
+    return true;
+}
+
+// A heap part, or a class of the family with no image of fixed size whose
+// parts have images.  The element of a HeapArray has an image of one byte
+// or more, so a count of elements needs as many bytes or more.  Linear in
+// the number of parts that the walk reaches.
+[[nodiscard]] consteval bool has_heap_image_at(std::meta::info spelled, int depth) {
+    if (depth > max_protocol_depth) return false;
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    if (is_heap_text_at(type)) return true;
+    if (is_heap_array_at(type)) {
+        std::meta::info const element = heap_element_at(type);
+        if (!has_image_at(element, depth + 1)) return false;
+        std::size_t const bytes = image_bytes_at(element);
+        return bytes >= 1 && bytes <= max_image_bytes;
+    }
+    if (!derives_protocol_at(type) || has_image_at(type, depth)) return false;
+    return parts_have_heap_images_at(type, depth);
+}
+
+// True when decode can build each heap part and write each other part of a
+// type with an image of run-time size: an element of a HeapArray has a
+// default constructor with no throw, a decode and no linear marker, and no
+// class carries a const member or the annotation no_start_over_bytes.
+[[nodiscard]] consteval bool heap_decodes_at(std::meta::info spelled) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    if (is_heap_text_at(type)) return true;
+    if (is_heap_array_at(type)) {
+        std::meta::info const element = heap_element_at(type);
+        return std::meta::is_nothrow_default_constructible_type(element) && decodes_at(element)
+            && !::foundation::linear::is_linear_type(element);
+    }
+    if (!derives_protocol_at(type) || has_image_at(type, 0)) return decodes_at(type);
+    if (!std::meta::annotations_of_with_type(type, ^^::foundation::lifetime::no_start_over_bytes).empty()) {
+        return false;
+    }
+    std::size_t const bases = base_count(type);
+    std::size_t const members = member_count(type);
+    for (std::size_t index = 0; index < bases; ++index) {
+        if (!heap_decodes_at(base_type_at(type, index))) return false;
+    }
+    for (std::size_t index = 0; index < members; ++index) {
+        if (member_carries_at(type, index, ^^local_part)) continue;
+        std::meta::info const member = member_type_at(type, index);
+        if (std::meta::is_const_type(member) || !heap_decodes_at(member)) return false;
+    }
+    return true;
 }
 
 // ── The codec ───────────────────────────────────────────────────────────
@@ -1108,6 +1238,312 @@ constexpr void hash_run_(HashState& state, T const* first, std::size_t count) no
     state.fold_block();
 }
 
+// ── The heap parts ──────────────────────────────────────────────────────
+
+// The count of bytes of the image of one part of a value with an image of
+// run-time size (THE HEAP PARTS).  Complexity: one step for each part of
+// the walk, and none for each element.
+template <class T>
+[[nodiscard]] constexpr std::size_t heap_size_(T const& part) noexcept;
+
+template <class T, std::size_t... Bases, std::size_t... Members>
+[[nodiscard]] constexpr std::size_t heap_parts_size_([[maybe_unused]] T const& object,
+                                                     std::index_sequence<Bases...> /*bases*/,
+                                                     std::index_sequence<Members...> /*members*/) noexcept {
+    return (std::size_t{0} + ... + detail::heap_size_(detail::base_at_<Bases>(object)))
+         + (std::size_t{0} + ... + detail::heap_size_(detail::member_at_<Members>(object)));
+}
+
+template <class T>
+[[nodiscard]] constexpr std::size_t heap_size_(T const& part) noexcept {
+    using Bare = std::remove_cv_t<T>;
+    if constexpr (is_heap_text_at(^^Bare)) {
+        return heap_count_bytes + part.size();
+    } else if constexpr (is_heap_array_at(^^Bare)) {
+        return heap_count_bytes + part.size() * image_bytes_at(heap_element_at(^^Bare));
+    } else if constexpr (has_heap_image_at(^^Bare, 0)) {
+        constexpr std::meta::info type = std::meta::dealias(^^Bare);
+        return detail::heap_parts_size_(part, std::make_index_sequence<base_count(type)>{},
+                                        image_member_sequence_<Bare>{});
+    } else {
+        return image_bytes_at(^^Bare);
+    }
+}
+
+// Writes the image of one part from first, and gives the first byte after
+// it.  A part with an image of fixed size writes THE IMAGE.  Complexity: one
+// store for each byte of the image.
+template <class T>
+constexpr std::byte* encode_heap_part_(T const& part, std::byte* first) noexcept;
+
+template <class T, std::size_t... Bases, std::size_t... Members>
+constexpr std::byte* encode_heap_parts_([[maybe_unused]] T const& object, std::byte* first,
+                                        std::index_sequence<Bases...> /*bases*/,
+                                        std::index_sequence<Members...> /*members*/) noexcept {
+    ((first = detail::encode_heap_part_(detail::base_at_<Bases>(object), first)), ...);
+    ((first = detail::encode_heap_part_(detail::member_at_<Members>(object), first)), ...);
+    return first;
+}
+
+template <class T>
+constexpr std::byte* encode_heap_part_(T const& part, std::byte* first) noexcept {
+    using Bare = std::remove_cv_t<T>;
+    if constexpr (is_heap_text_at(^^Bare)) {
+        detail::put_count_<heap_count_bytes>(first, part.size());
+        std::byte* at = first + heap_count_bytes;
+        for (char const character : part.view()) {
+            *at = static_cast<std::byte>(static_cast<unsigned char>(character));
+            ++at;
+        }
+        return at;
+    } else if constexpr (is_heap_array_at(^^Bare)) {
+        constexpr std::size_t step = image_bytes_at(heap_element_at(^^Bare));
+        detail::put_count_<heap_count_bytes>(first, part.size());
+        std::byte* at = first + heap_count_bytes;
+        for (auto const& element : part.view()) {
+            detail::encode_part_(element, at);
+            at += step;
+        }
+        return at;
+    } else if constexpr (has_heap_image_at(^^Bare, 0)) {
+        constexpr std::meta::info type = std::meta::dealias(^^Bare);
+        return detail::encode_heap_parts_(part, first, std::make_index_sequence<base_count(type)>{},
+                                          image_member_sequence_<Bare>{});
+    } else {
+        detail::encode_part_(part, first);
+        return first + image_bytes_at(^^Bare);
+    }
+}
+
+// The place of the decode in the bytes of an image of run-time size: the
+// next byte, the count of the bytes after it, and its offset in the image.
+struct HeapCursor final {
+    std::byte const* first = nullptr;
+    std::size_t remaining = 0;
+    std::size_t offset = 0;
+
+    constexpr void advance(std::size_t bytes) noexcept {
+        first += bytes;
+        remaining -= bytes;
+        offset += bytes;
+    }
+};
+
+template <class T, class Marker>
+[[nodiscard]] bool decode_heap_part_(T& part, Marker allocation, HeapCursor& cursor, DecodeFault& fault) noexcept;
+
+// Reads the count of a heap part, and refuses bytes that end before the
+// count or before the elements of the count, each of step bytes.  Gives
+// the count and moves the cursor past it.
+[[nodiscard]] inline bool read_heap_count_(HeapCursor& cursor, std::size_t step, std::uint64_t& count,
+                                           DecodeFault& fault) noexcept {
+    if (cursor.remaining < heap_count_bytes) {
+        fault = fault_at_(DecodeRefusal::image_end, cursor.offset);
+        return false;
+    }
+    count = detail::read_count_<heap_count_bytes>(cursor.first);
+    if (count > (cursor.remaining - heap_count_bytes) / step) {
+        fault = fault_at_(DecodeRefusal::image_end, cursor.offset);
+        return false;
+    }
+    cursor.advance(heap_count_bytes);
+    return true;
+}
+
+template <class T, std::size_t Index, class Marker>
+[[nodiscard]] bool decode_heap_member_(T& object, Marker allocation, HeapCursor& cursor, DecodeFault& fault) noexcept {
+    constexpr std::meta::info type = ^^T;
+    if constexpr (member_carries_at(type, Index, ^^local_part)) {
+        return true;
+    } else {
+        if constexpr (member_carries_at(type, Index, ^^pad_part)) {
+            constexpr std::size_t bytes = image_bytes_at(member_type_at(type, Index));
+            if (cursor.remaining >= bytes && !are_zero_bytes_(cursor.first, bytes)) {
+                fault = fault_at_(DecodeRefusal::pad_byte, cursor.offset);
+                return false;
+            }
+        }
+        return detail::decode_heap_part_(detail::member_mut_at_<Index>(object), allocation, cursor, fault);
+    }
+}
+
+template <class T, class Marker, std::size_t... Bases, std::size_t... Members>
+[[nodiscard]] bool decode_heap_parts_([[maybe_unused]] T& object, [[maybe_unused]] Marker allocation,
+                                      [[maybe_unused]] HeapCursor& cursor, [[maybe_unused]] DecodeFault& fault,
+                                      std::index_sequence<Bases...> /*bases*/,
+                                      std::index_sequence<Members...> /*members*/) noexcept {
+    return (detail::decode_heap_part_(detail::base_mut_at_<Bases>(object), allocation, cursor, fault) && ...)
+        && (detail::decode_heap_member_<T, Members>(object, allocation, cursor, fault) && ...);
+}
+
+// The count characters of the bytes from first, in a GrowText of at most
+// count characters.  The text comes out as a value, so a freeze takes it
+// with no cast of the text.  The caller checked that the bytes hold count
+// characters.  Complexity: one copy for each character, and one append for
+// each 64 characters.
+template <class Marker>
+[[nodiscard]] GrowText grow_text_of_(Marker allocation, std::byte const* first, std::uint64_t count) noexcept {
+    GrowText text = mint_grow_text(count);
+    FixedText<64> chunk{};
+    for (std::uint64_t index = 0; index < count; ++index) {
+        if (chunk.size() == chunk.capacity) {
+            if (text.append(allocation, chunk.view()).is_err()) ::foundation::core::unreachable();
+            chunk.clear();
+        }
+        if (chunk.append(static_cast<char>(static_cast<unsigned char>(first[index]))).is_err()) {
+            ::foundation::core::unreachable();
+        }
+    }
+    if (text.append(allocation, chunk.view()).is_err()) ::foundation::core::unreachable();
+    return text;
+}
+
+// Reads one part at the cursor, and moves the cursor past it.  Gives false,
+// with the fault written, at the first part that holds no value.  A heap
+// part allocates only after its count passed the check of the bytes that
+// remain.  An array that a later fault drops gives its storage back at the
+// end of its scope.  Complexity: one load for each byte of the image, and
+// one allocation for each heap part.
+template <class T, class Marker>
+[[nodiscard]] bool decode_heap_part_(T& part, Marker allocation, HeapCursor& cursor, DecodeFault& fault) noexcept {
+    using Bare = std::remove_cv_t<T>;
+    if constexpr (is_heap_text_at(^^Bare)) {
+        std::uint64_t count = 0;
+        if (!detail::read_heap_count_(cursor, 1, count, fault)) return false;
+        part = freeze(detail::grow_text_of_(allocation, cursor.first, count));
+        cursor.advance(count);
+        return true;
+    } else if constexpr (is_heap_array_at(^^Bare)) {
+        using Element = typename[:heap_element_at(^^Bare):];
+        constexpr std::size_t step = image_bytes_at(^^Element);
+        constexpr std::size_t align =
+            std::meta::extract<std::size_t>(std::meta::template_arguments_of(std::meta::dealias(^^Bare))[1]);
+        std::uint64_t count = 0;
+        if (!detail::read_heap_count_(cursor, step, count, fault)) return false;
+        auto build = [](std::size_t /*position*/) noexcept { return Element{}; };
+        Bare array = mint_heap_array_with<Element, align>(allocation, count, build);
+        for (Element& element : array.view()) {
+            if (!detail::decode_part_(element, cursor.first, cursor.offset, fault)) return false;
+            cursor.advance(step);
+        }
+        part = static_cast<Bare&&>(array);
+        return true;
+    } else if constexpr (has_heap_image_at(^^Bare, 0)) {
+        constexpr std::meta::info type = std::meta::dealias(^^Bare);
+        return detail::decode_heap_parts_(part, allocation, cursor, fault, std::make_index_sequence<base_count(type)>{},
+                                          std::make_index_sequence<member_count(type)>{});
+    } else {
+        constexpr std::size_t bytes = image_bytes_at(^^Bare);
+        if (cursor.remaining < bytes) {
+            fault = fault_at_(DecodeRefusal::image_end, cursor.offset);
+            return false;
+        }
+        if (!detail::decode_part_(part, cursor.first, cursor.offset, fault)) return false;
+        cursor.advance(bytes);
+        return true;
+    }
+}
+
+// The fold of an image of run-time size (THE HEAP PARTS): the state of THE
+// HASH, the position in its block, and the count of the bytes that it took.
+struct HeapFold final {
+    HashState state{};
+    std::size_t position = 0;
+    std::size_t total = 0;
+
+    constexpr void put_byte(std::byte byte) noexcept {
+        detail::put_byte_(state, position, byte);
+        ++total;
+    }
+
+    // Puts the Width bytes of a leaf word at the position.  A leaf of 1, 2, 4
+    // or 8 bytes at a position that is a multiple of its width lies inside
+    // one word of the block, so it takes one shift and one or.  Each other
+    // leaf takes one step for each byte.
+    template <std::size_t Width>
+    constexpr void put_leaf(std::uint64_t word) noexcept {
+        if constexpr (Width == 1 || Width == 2 || Width == 4 || Width == 8) {
+            if (position % Width == 0) {
+                if (position < sizeof(std::uint64_t)) {
+                    state.low |= word << (8 * position);
+                } else {
+                    state.high |= word << (8 * (position - sizeof(std::uint64_t)));
+                }
+                position += Width;
+                total += Width;
+                if (position == hash_block_bytes) {
+                    state.fold_block();
+                    position = 0;
+                }
+                return;
+            }
+        }
+        for (std::size_t index = 0; index < Width; ++index) {
+            put_byte(static_cast<std::byte>(static_cast<std::uint8_t>(word >> (8 * index))));
+        }
+    }
+};
+
+// The fold of a part with an image of fixed size: a leaf of at most 8 bytes
+// as its word, and each other part as the bytes of its image.
+template <class T>
+constexpr void fold_fixed_part_(HeapFold& fold, T const& part) noexcept {
+    using Bare = std::remove_cv_t<T>;
+    if constexpr (is_hash_leaf_<Bare> && sizeof(Bare) <= sizeof(std::uint64_t)) {
+        fold.put_leaf<sizeof(Bare)>(static_cast<std::uint64_t>(detail::leaf_word_(part)));
+    } else {
+        constexpr std::size_t bytes = image_bytes_at(^^Bare);
+        FixedArray<std::byte, bytes> image{};
+        detail::encode_part_(part, first_of_(detail::ViewDoor::key(), image.view()));
+        for (std::byte const byte : image.view()) {
+            fold.put_byte(byte);
+        }
+    }
+}
+
+template <class T>
+constexpr void fold_heap_part_(HeapFold& fold, T const& part) noexcept;
+
+template <class T, std::size_t... Bases, std::size_t... Members>
+constexpr void fold_heap_parts_([[maybe_unused]] HeapFold& fold, [[maybe_unused]] T const& object,
+                                std::index_sequence<Bases...> /*bases*/,
+                                std::index_sequence<Members...> /*members*/) noexcept {
+    (detail::fold_heap_part_(fold, detail::base_at_<Bases>(object)), ...);
+    (detail::fold_heap_part_(fold, detail::member_at_<Members>(object)), ...);
+}
+
+// Folds the image of one part, byte for byte as encode_heap_part_ writes it.
+// Complexity: one step for each leaf, and one fold for each 16 bytes.
+template <class T>
+constexpr void fold_heap_part_(HeapFold& fold, T const& part) noexcept {
+    using Bare = std::remove_cv_t<T>;
+    if constexpr (is_heap_text_at(^^Bare)) {
+        fold.put_leaf<heap_count_bytes>(static_cast<std::uint64_t>(part.size()));
+        for (char const character : part.view()) {
+            fold.put_leaf<1>(static_cast<std::uint64_t>(static_cast<unsigned char>(character)));
+        }
+    } else if constexpr (is_heap_array_at(^^Bare)) {
+        fold.put_leaf<heap_count_bytes>(static_cast<std::uint64_t>(part.size()));
+        for (auto const& element : part.view()) {
+            detail::fold_fixed_part_(fold, element);
+        }
+    } else if constexpr (has_heap_image_at(^^Bare, 0)) {
+        constexpr std::meta::info type = std::meta::dealias(^^Bare);
+        detail::fold_heap_parts_(fold, part, std::make_index_sequence<base_count(type)>{},
+                                 image_member_sequence_<Bare>{});
+    } else {
+        detail::fold_fixed_part_(fold, part);
+    }
+}
+
+// Ends the process: encode of an image of run-time size got a View of a
+// different size, or the image holds more bytes than the cap.
+[[noreturn]] CRUCIBLE_COLD inline void refuse_heap_encode_(std::size_t given, std::size_t needed) noexcept {
+    fatal("encode got a View of {} bytes for an image of {} bytes, and an image of run-time size holds at most {} "
+          "bytes",
+          given, needed, max_image_bytes);
+}
+
 // ── The format ──────────────────────────────────────────────────────────
 
 // The name of the member at Index, with static storage.
@@ -1210,9 +1646,21 @@ template <std::size_t Capacity, class T>
     return detail::put_text_(out, "]");
 }
 
+// The characters of a text between two quotes, with a backslash before each
+// quote and each backslash (THE FORMAT).
+template <std::size_t Capacity>
+[[nodiscard]] bool put_quoted_(FixedText<Capacity>& out, TextView text) noexcept {
+    if (!detail::put_text_(out, "\"")) return false;
+    for (char const character : text) {
+        bool const needs_escape = character == '"' || character == '\\';
+        if (needs_escape && !detail::put_text_(out, "\\")) return false;
+        if (out.append(character).is_err()) return false;
+    }
+    return detail::put_text_(out, "\"");
+}
+
 // The text of a bounded list (THE FORMAT): the elements of a FixedList as
-// [a, b], and the characters of a FixedText between two quotes, with a
-// backslash before each quote and each backslash.
+// [a, b], and the characters of a FixedText between two quotes.
 template <std::size_t Capacity, class T, std::size_t N>
 [[nodiscard]] bool put_list_(FixedText<Capacity>& out, FixedList<T, N> const& part) noexcept {
     return detail::put_sequence_(out, part.view());
@@ -1220,13 +1668,7 @@ template <std::size_t Capacity, class T, std::size_t N>
 
 template <std::size_t Capacity, std::size_t Size>
 [[nodiscard]] bool put_list_(FixedText<Capacity>& out, FixedText<Size> const& part) noexcept {
-    if (!detail::put_text_(out, "\"")) return false;
-    for (char const character : part.view()) {
-        bool const needs_escape = character == '"' || character == '\\';
-        if (needs_escape && !detail::put_text_(out, "\\")) return false;
-        if (out.append(character).is_err()) return false;
-    }
-    return detail::put_text_(out, "\"");
+    return detail::put_quoted_(out, part.view());
 }
 
 // Writes one part (THE FORMAT).  Complexity: linear in the length of the
@@ -1242,6 +1684,10 @@ template <std::size_t Capacity, class T>
         return detail::put_sum_(out, part);
     } else if constexpr (is_bounded_list_at(^^Bare)) {
         return detail::put_list_(out, part);
+    } else if constexpr (is_heap_array_at(^^Bare)) {
+        return detail::put_sequence_(out, part.view());
+    } else if constexpr (is_heap_text_at(^^Bare)) {
+        return detail::put_quoted_(out, part.view());
     } else if constexpr (derives_protocol_at(^^Bare)) {
         bool is_first = true;
         return detail::put_text_(out, "{") && detail::put_inline_parts_(out, part, is_first)
@@ -1331,17 +1777,84 @@ template <Decodable T>
     return value;
 }
 
+// A class with the annotation derive_protocol whose image has a run-time
+// size (THE HEAP PARTS): one or more of its parts is a HeapArray or a
+// HeapText, and each other part has an image.  No type is Encodable and
+// HeapEncodable at the same time.
+template <class T>
+concept HeapEncodable = detail::derives_protocol_at(^^T) && detail::has_heap_image_at(^^T, 0);
+
+// A HeapEncodable class that decode builds: it has a default constructor
+// with no throw, an element of each HeapArray has one too and is not linear,
+// and no class of it carries a const member or the annotation
+// no_start_over_bytes.
+template <class T>
+concept HeapDecodable = HeapEncodable<T> && std::is_nothrow_default_constructible_v<T> && detail::heap_decodes_at(^^T);
+
+// The count of bytes of the image of the value (THE HEAP PARTS).
+// Complexity: one step for each part, and none for each element.
+template <HeapEncodable T>
+[[nodiscard]] constexpr std::size_t encoded_size(T const& value) noexcept {
+    return detail::heap_size_(value);
+}
+
+// Writes the image of the value into out (THE HEAP PARTS).  out holds
+// exactly encoded_size(value) bytes, and the image holds at most
+// max_image_bytes bytes, or the process ends.  Complexity: one store for
+// each byte of the image.
+template <HeapEncodable T>
+constexpr void encode(T const& value, View<std::byte> out) noexcept {
+    std::size_t const needed = detail::heap_size_(value);
+    if (out.size() != needed || needed > detail::max_image_bytes) [[unlikely]] {
+        detail::refuse_heap_encode_(out.size(), needed);
+    }
+    if (needed != 0) detail::encode_heap_part_(value, first_of_(detail::ViewDoor::key(), out));
+}
+
+// The hash of the value (THE HEAP PARTS): the fold of its image, and then
+// one block with the count of the bytes of the image.  Complexity: one step
+// for each leaf, and one fold for each 16 bytes of the image.
+template <HeapEncodable T>
+[[nodiscard]] constexpr Digest<T> hash(T const& value) noexcept {
+    detail::HeapFold fold{};
+    detail::fold_heap_part_(fold, value);
+    if (fold.position != 0) fold.state.fold_block();
+    fold.state.low = static_cast<std::uint64_t>(fold.total);
+    fold.state.fold_block();
+    return Digest<T>{fold.state.accumulator};
+}
+
+// The T of an image of run-time size, or the first fault of the bytes (THE
+// HEAP PARTS).  Each heap part allocates through the capability.
+// Complexity: one pass over the bytes, and one allocation for each heap
+// part.
+template <HeapDecodable T, class Marker>
+    requires AllocationCapability<Marker>
+[[nodiscard]] Result<T, DecodeFault> decode(Marker allocation, View<std::byte const> bytes) noexcept {
+    if (bytes.size() > detail::max_image_bytes) {
+        return err(detail::fault_at_(DecodeRefusal::image_size, detail::max_image_bytes));
+    }
+    T value{};
+    detail::HeapCursor cursor{bytes.size() == 0 ? nullptr : first_of_(detail::ViewDoor::key(), bytes), bytes.size(), 0};
+    DecodeFault fault{DecodeRefusal::bool_byte, 0};
+    if (!detail::decode_heap_part_(value, allocation, cursor, fault)) return err(fault);
+    if (cursor.remaining != 0) return err(detail::fault_at_(DecodeRefusal::trailing_byte, cursor.offset));
+    return value;
+}
+
 // Writes each part of the value with its name into out, from its start
 // (THE FORMAT).  Gives the text, or Full<char> when the text needs more than
 // the capacity of out.  On Full<char>, out holds a prefix of the text.
-template <std::size_t Capacity, Encodable T>
+template <std::size_t Capacity, class T>
+    requires(Encodable<T> || HeapEncodable<T>)
 [[nodiscard]] Result<TextView, Full<char>> format(FixedText<Capacity>& out, T const& value) noexcept {
     detail::text_resize_(out, 0);
     if (!detail::put_part_(out, value)) return err(Full<char>{});
     return out.view();
 }
 
-template <std::size_t Capacity, Encodable T>
+template <std::size_t Capacity, class T>
+    requires(Encodable<T> || HeapEncodable<T>)
 void format(FixedText<Capacity>&& out, T const& value) =
     delete("format() gives a view of its FixedText, and a temporary FixedText ends with the full expression");
 
