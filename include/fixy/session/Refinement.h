@@ -33,7 +33,9 @@ namespace detail {
 
 [[nodiscard]] consteval bool ask(std::meta::info predicate, const std::vector<std::meta::info>& arguments) {
     if (predicate == std::meta::info{}) return false;
-    if (!std::meta::can_substitute(predicate, arguments)) return false;
+    // A concept takes each type argument, so its substitution needs no test
+    // before it.
+    if (!std::meta::is_concept(predicate) && !std::meta::can_substitute(predicate, arguments)) return false;
     return std::meta::extract<bool>(std::meta::substitute(predicate, arguments));
 }
 
