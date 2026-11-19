@@ -125,9 +125,10 @@ concept WideAtomicValue =
 
 // The cell of 128 bits through the instructions of the core (THE TWO FORMS).
 // Each step of a cell is atomic, so two threads read and write one cell at the
-// same time (foundation/Transfer.h).
+// same time.  A value that one thread stores, another loads, so the cell is a
+// cell of its payload (foundation/Transfer.h).
 template <WideAtomicValue T>
-class[[= ::foundation::transfer::shareable{}]] WideAtomicByInstruction
+class[[= ::foundation::transfer::payload_cell{}]] WideAtomicByInstruction
     : ::foundation::Pinned<WideAtomicByInstruction<T>> {
     // A load through a compare-and-swap writes the value that the cell holds
     // back to the cell, so a const cell writes its word.  The word is mutable
@@ -222,9 +223,10 @@ public:
 #endif
 
 // The cell of 128 bits through a lock (THE TWO FORMS).  Each step takes the
-// lock, so two threads read and write one cell at the same time.
+// lock, so two threads read and write one cell at the same time.  It is a
+// cell of its payload (foundation/Transfer.h).
 template <WideAtomicValue T>
-class[[= ::foundation::transfer::shareable{}]] WideAtomicByLock : ::foundation::Pinned<WideAtomicByLock<T>> {
+class[[= ::foundation::transfer::payload_cell{}]] WideAtomicByLock : ::foundation::Pinned<WideAtomicByLock<T>> {
     alignas(16) detail::WideWord word_ = 0;
     // 0 when no thread holds the lock, and 1 when a thread holds it.  A load
     // takes the lock, so a const cell writes the lock word.

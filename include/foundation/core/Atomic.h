@@ -488,9 +488,11 @@ private:
 // The writer of a cell: void for a cell that each thread can write, Counter
 // for a count that each thread adds to, or a SoleWriter for a cell of one
 // writer.  Each step of a cell is atomic, so two threads read and write one
-// cell at the same time (foundation/Transfer.h).
+// cell at the same time.  A value that one thread stores, another loads, so
+// the cell is a cell of its payload: it holds each transfer property when T
+// is Sendable (foundation/Transfer.h).
 template <AtomicValue T, class Writer>
-class[[= ::foundation::transfer::shareable{}]] Atomic : ::foundation::Pinned<Atomic<T, Writer>> {
+class[[= ::foundation::transfer::payload_cell{}]] Atomic : ::foundation::Pinned<Atomic<T, Writer>> {
     static_assert(std::is_void_v<Writer>,
                   "Atomic<T, Writer>: the writer is void, for a cell that each thread can write, Counter, for a "
                   "count that each thread adds to, or SoleWriter<Role, Brand>, for a cell of one writer.");
@@ -627,8 +629,11 @@ template <class Role, class... Arguments, class Brand>
 // The cell of one writer (THE CELL OF ONE WRITER).  The parameter of the
 // brand has the name Identity, so the rule erased-brand reads no brand of the
 // primary template here.
+//
+// The cell hands its value to each reader, so it is a cell of its payload
+// (foundation/Transfer.h).
 template <AtomicValue T, class Role, class Identity>
-class[[= ::foundation::transfer::shareable{}]]
+class[[= ::foundation::transfer::payload_cell{}]]
     Atomic<T, SoleWriter<Role, Identity>> : ::foundation::Pinned<Atomic<T, SoleWriter<Role, Identity>>> {
     static_assert(detail::SoleWriterRole<Role>, "Atomic<T, SoleWriter<Role, Brand>>: the role names a kind of cell.  "
                                                 "It must be an empty class that is not cv-qualified.");
@@ -696,9 +701,10 @@ public:
 };
 
 // The cell of a count (THE COUNT).  An integer is its own word, so the cell
-// holds the value with no codec.
+// holds the value with no codec.  It is a cell of its payload
+// (foundation/Transfer.h).
 template <AtomicValue T>
-class[[= ::foundation::transfer::shareable{}]] Atomic<T, Counter> : ::foundation::Pinned<Atomic<T, Counter>> {
+class[[= ::foundation::transfer::payload_cell{}]] Atomic<T, Counter> : ::foundation::Pinned<Atomic<T, Counter>> {
     static_assert(AtomicCount<T>, "Atomic<T, Counter>: a count is an integer that is not bool, because only an "
                                   "integer has an addition.");
 

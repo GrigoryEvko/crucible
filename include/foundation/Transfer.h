@@ -100,9 +100,16 @@
 //     value does not move to another thread, and no other thread writes it.
 //     The class then is not Sendable and two threads cannot write it, but it
 //     is Shareable when its parts are, because a read through a reference to
-//     const can be safe on each thread, as the read of a timing sink is.  Each
-//     statement is a claim that the code of the class makes true, and the
-//     comment beside it gives the reason.
+//     const can be safe on each thread, as the read of a timing sink is.
+//     payload_cell{} states that the class is a cell that hands values of its
+//     first type argument from one thread to another, as the Atomic of the
+//     base does.  Each step of the cell is atomic, but a value that one thread
+//     stores, another thread loads.  So the class holds each property, the
+//     shared write included, exactly when that argument is Sendable
+//     (SendableBeside for SendableBeside).  A cell of a reference to an
+//     object of one owner thread thus moves no such object.  Each statement is
+//     a claim that the code of the class makes true, and the comment beside
+//     it gives the reason.
 //
 // What the walk cannot see, stated rather than implied: a value behind type
 // erasure, and a capture of a lambda on a compiler that shows no field of a
@@ -132,6 +139,7 @@ struct by_arguments final {};
 struct refers final {};
 struct refers_unique final {};
 struct thread_bound final {};
+struct payload_cell final {};
 
 // The properties that first_refusal walks (THE THREE PROPERTIES and THE
 // VALUE BESIDE ITS SENDER).  The shared write has a walk of its own,
@@ -233,6 +241,16 @@ private:
     return std::meta::is_class_type(type) || std::meta::is_union_type(type);
 }
 
+// The first type argument of a cell of a payload (THE ANNOTATIONS), or a null
+// reflection when the class names no type argument.
+[[nodiscard]] consteval std::meta::info payload_of_cell(std::meta::info cell) {
+    namespace refl = ::foundation::reflect;
+    if (!std::meta::has_template_arguments(cell)) return std::meta::info{};
+    const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{cell, true});
+    if (arguments.empty() || arguments.begin()->is_value_argument) return std::meta::info{};
+    return arguments.begin()->type;
+}
+
 // The first type that two threads cannot write at the same time, or a null
 // reflection when two threads can write an object of the root (THE SHARED
 // WRITE).  A class answers for a member that refuses, so the answer names
@@ -254,6 +272,12 @@ private:
         }
         if (!is_class_or_union(type) || !std::meta::is_complete_type(type)) return type;
         if (states(type, ^^not_shareable) || states(type, ^^thread_bound)) return type;
+        // A cell of a payload (THE ANNOTATIONS).
+        if (states(type, ^^payload_cell)) {
+            const std::meta::info payload = payload_of_cell(type);
+            if (payload == std::meta::info{} || !::foundation::transfer::holds(payload, Property::Send)) return type;
+            continue;
+        }
         if (states(type, ^^shareable)) continue;
         bool has_part = false;
         for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{type, true})) {
@@ -368,6 +392,14 @@ struct ReferenceAnswer {
         // Rule 5.  A class of one owner thread moves to no other thread.
         if (detail::states(bare, detail::refusing_annotation(goal.property))) return bare;
         if (goal.property != Property::Share && detail::states(bare, ^^thread_bound)) return bare;
+        // A cell of a payload holds each property when its payload moves.
+        if (detail::states(bare, ^^payload_cell)) {
+            const std::meta::info payload = detail::payload_of_cell(bare);
+            if (payload == std::meta::info{}) return bare;
+            const Property moved = goal.property == Property::SendBeside ? Property::SendBeside : Property::Send;
+            pending.push(detail::Goal{payload, moved, true});
+            continue;
+        }
         if (detail::states(bare, detail::stating_annotation(goal.property))) continue;
         const bool is_specialization = std::meta::has_template_arguments(bare);
         // Rule 1, a class that refers to the object of its first argument.

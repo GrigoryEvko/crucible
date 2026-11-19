@@ -8,3 +8,4 @@ rule header-alone
 include/foundation/Closure.h | foundation | 3.597 | - | the check of a closure reads the transfer walk, the type walk, the test of a context and the QTT grades, and each is a header of the base
 include/foundation/permissions/Permission.h | foundation | 3.504 | - | the permission reads the init door of foundation/effects/Effect.h, whose report of the fallback rows of the kernel floor reads foundation/os/KernelFloor.h and its <compare>.  A raise of a size limit for a correct change, owner decision of 2026-11-15
 include/foundation/permissions/ReadView.h | foundation | 3.501 | - | the read view reads the shared permission, which reads the transfer walk with its four properties, and the record and the type walk
+include/foundation/permissions/SharedPermission.h | foundation | 3.501 | - | the shared permission reads the transfer walk with its statements of a cell of a payload and of a value beside its sender, and the record and the type walk

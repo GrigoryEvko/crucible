@@ -179,6 +179,15 @@ struct WritesOwnerThreadCount {
     OwnerThreadCount& written;
 };
 static_assert(!Sendable<OwnerThreadCount> && Shareable<OwnerThreadCount> && !Synchronized<OwnerThreadCount>);
+
+// An Atomic is a cell of its payload: it holds each property, the shared
+// write included, exactly when its payload is Sendable.  So a cell of an
+// address of a plain object, or of a reference to an object of one owner
+// thread, moves no such object to another thread.
+static_assert(Synchronized<::foundation::core::Atomic<int>> && Sendable<::foundation::core::Atomic<int>>);
+static_assert(!Synchronized<::foundation::core::Atomic<int*>> && !Shareable<::foundation::core::Atomic<int*>>
+              && !Sendable<::foundation::core::Atomic<int*>>);
+static_assert(!SendableBeside<::foundation::core::Atomic<int*>> && SendableBeside<::foundation::core::Atomic<int>>);
 static_assert(!Sendable<HoldsOwnerThreadCount> && Shareable<HoldsOwnerThreadCount>);
 static_assert(!Synchronized<HoldsOwnerThreadCount>);
 static_assert(Sendable<ReadsOwnerThreadCount> && !Sendable<WritesOwnerThreadCount>);
