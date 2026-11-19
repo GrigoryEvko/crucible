@@ -139,6 +139,30 @@ struct PinnedCount : EmptyMark {
 };
 static_assert(Synchronized<EmptyMark> && Synchronized<PinnedCount>);
 
+// A class of one owner thread does not move and is not a target of a shared
+// write, but a read through a reference to const is safe when its parts are.
+// The same holds for a class that holds it.  A reference to const of it is
+// Sendable, and a reference that is not const is not.
+struct[[= thread_bound{}]] OwnerThreadCount {
+    ::foundation::core::Atomic<int> count{0};
+};
+struct HoldsOwnerThreadCount {
+    OwnerThreadCount owned{};
+};
+struct ReadsOwnerThreadCount {
+    OwnerThreadCount const& read;
+};
+struct WritesOwnerThreadCount {
+    OwnerThreadCount& written;
+};
+static_assert(!Sendable<OwnerThreadCount> && Shareable<OwnerThreadCount> && !Synchronized<OwnerThreadCount>);
+static_assert(!Sendable<HoldsOwnerThreadCount> && Shareable<HoldsOwnerThreadCount>);
+static_assert(!Synchronized<HoldsOwnerThreadCount>);
+static_assert(Sendable<ReadsOwnerThreadCount> && !Sendable<WritesOwnerThreadCount>);
+
+// The Tally of the base holds a count cell, so two threads can add to it.
+static_assert(Synchronized<::foundation::core::Tally> && Sendable<::foundation::core::Tally const&>);
+
 // A tag type that is only declared holds each property as a type argument.
 struct DeclaredTag;
 template <class Tag>

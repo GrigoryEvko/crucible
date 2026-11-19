@@ -117,6 +117,17 @@ static_assert(!std::is_trivially_copyable_v<host::ProducerClaim<BrandWitness>>
               "No producer claim is built from bytes or started over a buffer.");
 static_assert(!std::is_constructible_v<ctx_cap::Fg, const ctx_cap::BrandedFg<BrandWitness>&>,
               "A branded source does not become the unbranded source.");
+// A producer claim belongs to the thread that holds it, and so does each
+// state that holds one: neither moves to another thread or takes the write of
+// another thread.
+struct HoldsAClaim {
+    host::ProducerClaim<BrandWitness> claim;
+};
+static_assert(!::foundation::transfer::Sendable<host::ProducerClaim<BrandWitness>>
+                  && !::foundation::transfer::Synchronized<host::ProducerClaim<BrandWitness>>,
+              "A producer claim moves to no other thread and takes no write of another thread.");
+static_assert(!::foundation::transfer::Sendable<HoldsAClaim> && !::foundation::transfer::Synchronized<HoldsAClaim>,
+              "A state that holds a producer claim moves to no other thread.");
 
 // Every axis defaults to the claim-nothing end of its range.
 static_assert(std::is_same_v<typename ExecCtx<>::cap_type, ctx_cap::Fg>);

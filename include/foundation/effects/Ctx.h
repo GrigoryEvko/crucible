@@ -572,8 +572,13 @@ private:
 // single-producer state S holds a ProducerClaim<S>, so a context branded
 // S is evidence that its holder runs on the thread that owns an S.  A
 // thread that holds the claim of another state passes no gate of S.
+//
+// The claim belongs to the thread that holds it, so a claim, and each state
+// that holds one, moves to no other thread and takes no write of another
+// thread (thread_bound of foundation/Transfer.h).  A read through a reference
+// to const, such as is_claimable_by_caller, is safe on each thread.
 template <class Brand>
-class ProducerClaim {
+class[[= ::foundation::transfer::thread_bound{}]] ProducerClaim {
 public:
     ProducerClaim(const ProducerClaim&) = delete("a claim names one owner of single-producer state");
     ProducerClaim& operator=(const ProducerClaim&) = delete("a claim names one owner of single-producer state");

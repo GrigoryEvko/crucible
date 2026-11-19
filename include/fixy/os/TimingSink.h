@@ -25,6 +25,7 @@
 
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
@@ -51,9 +52,12 @@ template <std::size_t Slots>
     requires IsTimingSlotCount<Slots>
 [[nodiscard]] TimingSink<Slots> mint_timing_sink() noexcept;
 
+// Only the owner thread writes the sink, so a sink takes no write of another
+// thread (thread_bound of foundation/Transfer.h).  A read through a reference
+// to const is safe on each thread.
 template <std::size_t Slots>
     requires IsTimingSlotCount<Slots>
-class TimingSink {
+class[[= ::foundation::transfer::thread_bound{}]] TimingSink {
 public:
     using Slot = ::foundation::core::Index<Slots>;
 

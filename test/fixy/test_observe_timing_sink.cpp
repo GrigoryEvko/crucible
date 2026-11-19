@@ -44,6 +44,13 @@ static_assert(std::is_invocable_v<decltype(&Sink::read), Sink const&, eff::cap::
 static_assert(!std::is_copy_constructible_v<Sink> && !std::is_move_constructible_v<Sink>);
 static_assert(!std::is_copy_constructible_v<Sink::Span> && !std::is_move_constructible_v<Sink::Span>);
 
+// The sink belongs to its owner thread: no other thread writes it through a
+// reference that is not const, and each thread reads it through a reference
+// to const (foundation/Transfer.h).
+static_assert(!::foundation::transfer::Sendable<Sink> && !::foundation::transfer::Synchronized<Sink>);
+static_assert(::foundation::transfer::Shareable<Sink> && ::foundation::transfer::Sendable<Sink const&>);
+static_assert(!::foundation::transfer::Sendable<Sink&>);
+
 // A kernel times itself.  It marks one slot and holds a span over a short
 // loop of the other.  It reads no count back.
 void timed_kernel(KernelCall const&, Sink& sink, ::fixy::View<std::uint64_t, 4> out) noexcept {

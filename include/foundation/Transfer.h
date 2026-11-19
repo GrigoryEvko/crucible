@@ -34,7 +34,8 @@
 //        else holds the object.
 //     4. An array holds a property when its element holds it.
 //     5. A class or a union that states a property holds it or not as it
-//        states (THE ANNOTATIONS).
+//        states (THE ANNOTATIONS).  A class that states thread_bound{} is not
+//        Sendable.
 //     6. A class that states by_arguments{} holds a property when each of its
 //        type arguments holds it, and the walk reads no member of it.
 //     7. A class that holds state that the walk cannot read holds no property.
@@ -52,7 +53,8 @@
 // THE SHARED WRITE
 //     T is Synchronized when T is a class that states shareable{}, such as
 //     the Atomic of the base, an array of such a type, or a class whose each
-//     base and each member is Synchronized or is const and Shareable.  No
+//     base and each member is Synchronized or is const and Shareable.  A class
+//     that states thread_bound{} is not Synchronized.  No
 //     write reaches a const member, so a read is all it must allow.  A member
 //     that is a reference makes the class not Synchronized.  A scalar is not
 //     Synchronized: two plain writes of one scalar race.  An atomic of the
@@ -70,7 +72,12 @@
 //     threads can write an object of the class at the same time.
 //     by_arguments{} states that the class owns the objects of its type
 //     arguments behind its pointers.  refers{} states that the class refers to
-//     the object of its first type argument, as a reference does.  Each
+//     the object of its first type argument, as a reference does.
+//     thread_bound{} states that the class belongs to one owner thread: a
+//     value does not move to another thread, and no other thread writes it.
+//     The class then is not Sendable and two threads cannot write it, but it
+//     is Shareable when its parts are, because a read through a reference to
+//     const can be safe on each thread, as the read of a timing sink is.  Each
 //     statement is a claim that the code of the class makes true, and the
 //     comment beside it gives the reason.
 //
@@ -100,6 +107,7 @@ struct shareable final {};
 struct not_shareable final {};
 struct by_arguments final {};
 struct refers final {};
+struct thread_bound final {};
 
 // The two properties that first_refusal walks (THE THREE PROPERTIES).  The
 // shared write has a walk of its own, is_synchronized.
@@ -214,7 +222,7 @@ private:
             continue;
         }
         if (!is_class_or_union(type) || !std::meta::is_complete_type(type)) return false;
-        if (states(type, ^^not_shareable)) return false;
+        if (states(type, ^^not_shareable) || states(type, ^^thread_bound)) return false;
         if (states(type, ^^shareable)) continue;
         bool has_part = false;
         for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{type, true})) {
@@ -317,8 +325,9 @@ struct ReferenceAnswer {
             if (goal.is_argument) continue;
             return bare;
         }
-        // Rule 5.
+        // Rule 5.  A class of one owner thread moves to no other thread.
         if (detail::states(bare, detail::refusing_annotation(goal.property))) return bare;
+        if (goal.property == Property::Send && detail::states(bare, ^^thread_bound)) return bare;
         if (detail::states(bare, detail::stating_annotation(goal.property))) continue;
         const bool is_specialization = std::meta::has_template_arguments(bare);
         // Rule 1, a class that refers to the object of its first argument.
