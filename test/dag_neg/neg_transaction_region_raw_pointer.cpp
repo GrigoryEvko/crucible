@@ -10,6 +10,7 @@
 
 #include <crucible/Transaction.h>
 #include <fixy/Ctx.h>
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 
 // A valid owner, so the commit is refused for its region argument alone.
@@ -28,7 +29,9 @@ int main() {
     crucible::TransactionLog<16, Owner> log{};
     // The log stamps with its own count, so no call takes a tag.
     auto& tx = log.begin_tx(owner, 1);
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it")
     crucible::RegionNode* region = nullptr;
     (void)log.commit(owner, tx, region, crucible::ContentHash{}, crucible::MerkleHash{1});
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return 0;
 }

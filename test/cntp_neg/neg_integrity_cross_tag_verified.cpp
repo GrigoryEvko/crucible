@@ -4,14 +4,14 @@
 // must unwrap a matching hash first.
 
 #include <crucible/cntp/Integrity.h>
+#include <fixy/Core.h>
 #include <fixy/Qtt.h>
 #include <fixy/Tagged.h>
 
-#include <array>
 #include <cstddef>
 #include <utility>
 
-using Payload = std::array<std::byte, 8>;
+using Payload = ::fixy::FixedArray<std::byte, 8>;
 
 namespace {
 

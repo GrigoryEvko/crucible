@@ -1,6 +1,7 @@
 #include <crucible/cntp/PathSwap.h>
 #include <fixy/Ctx.h>
 #include <fixy/session/Entry.h>
+#include <foundation/Quarantine.h>
 
 // A value resource that can be copied must be self-contained.  A resource
 // that holds a raw pointer reaches outside itself, so a copy of it is a
@@ -14,9 +15,11 @@ struct Wire {
     int id = 0;
 };
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture gives the swap a resource that holds a raw pointer")
 struct PointerWire {
     int* peer = nullptr;
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     namespace cntp = crucible::cntp;

@@ -32,8 +32,8 @@
 // to consumer pattern.
 template <typename Slot>
     requires(::fixy::satisfies_v<Slot, ::fixy::AllocClassTag_v::Pool>)
-static void* hot_path_slot_consumer(Slot slot) noexcept {
-    return std::move(slot).consume();
+static void hot_path_slot_consumer(Slot slot) noexcept {
+    static_cast<void>(std::move(slot).consume());
 }
 
 int main() {
@@ -44,7 +44,6 @@ int main() {
     // Pool and excludes the overload.
     auto heap_value = ::fixy::mint_band<::fixy::alloc_class::Heap<int*>>(&storage);
 
-    void* result = hot_path_slot_consumer(std::move(heap_value));
-    (void)result;
+    hot_path_slot_consumer(std::move(heap_value));
     return 0;
 }

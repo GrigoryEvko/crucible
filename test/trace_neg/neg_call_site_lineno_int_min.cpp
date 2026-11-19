@@ -10,14 +10,14 @@
 
 #include <crucible/CallSiteTable.h>
 
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 
 #include <cstdint>
-#include <limits>
 
 int main() {
     constexpr crucible::CallSiteTable::Lineno bad =
-        ::fixy::mint_refined<::fixy::non_negative>(std::numeric_limits<int32_t>::min());
+        ::fixy::mint_refined<::fixy::non_negative>(::fixy::min_of<std::int32_t>);
     (void)bad;
     return 0;
 }

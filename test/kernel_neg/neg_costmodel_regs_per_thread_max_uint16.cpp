@@ -10,14 +10,14 @@
 
 #include <crucible/CostModel.h>
 
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 
 #include <cstdint>
-#include <limits>
 
 int main() {
     constexpr crucible::ValidRegsPerThread bad =
-        ::fixy::mint_refined<crucible::valid_regs_per_thread>(std::numeric_limits<uint16_t>::max());
+        ::fixy::mint_refined<crucible::valid_regs_per_thread>(::fixy::max_of<std::uint16_t>);
     (void)bad;
     return 0;
 }

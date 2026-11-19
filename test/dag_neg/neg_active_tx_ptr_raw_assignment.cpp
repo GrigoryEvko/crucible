@@ -11,6 +11,7 @@
 
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Quarantine.h>
 
 namespace crucible {
 struct FakeTransaction {
@@ -22,9 +23,11 @@ int main() {
     using ActiveTxPtr = ::fixy::Tagged<crucible::FakeTransaction*, ::fixy::tags::source::Ring>;
 
     crucible::FakeTransaction tx{};
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it")
     crucible::FakeTransaction* raw_ptr = &tx;
 
     ActiveTxPtr field = raw_ptr;
     (void)field;
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return 0;
 }

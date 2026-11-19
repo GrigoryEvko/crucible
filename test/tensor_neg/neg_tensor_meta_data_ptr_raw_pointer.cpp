@@ -13,12 +13,15 @@
 //   * Companion: wrong Tagged provenance rejected at the same surface.
 
 #include <crucible/TensorMeta.h>
+#include <foundation/Quarantine.h>
 
 int main() {
     crucible::TensorMeta meta{};
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it")
     void* raw = nullptr;
 
     // MUST fail: data_ptr is ExternalDataPtr, not a raw void*.
     meta.data_ptr = raw;
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return 0;
 }

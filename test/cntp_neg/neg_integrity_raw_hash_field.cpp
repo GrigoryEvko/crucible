@@ -5,13 +5,13 @@
 // door, so the hash field is the only reason for the refusal.
 
 #include <crucible/cntp/Integrity.h>
+#include <fixy/Core.h>
 #include <fixy/Qtt.h>
 
-#include <array>
 #include <cstddef>
 
 int main() {
-    using Payload = std::array<std::byte, 1>;
+    using Payload = ::fixy::FixedArray<std::byte, 1>;
     crucible::cntp::IntegrityWrappedMessage<crucible::cntp::IntegrityOwnedPayload<Payload>> message{
         .payload = ::fixy::mint_linear<Payload>(Payload{std::byte{0x42}}),
         .hash = 1,

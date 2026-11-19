@@ -16,6 +16,7 @@
 
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Quarantine.h>
 
 namespace crucible {
 struct FakeRegionNode {
@@ -27,11 +28,13 @@ int main() {
     using ActiveRegionPtr = ::fixy::Tagged<const crucible::FakeRegionNode*, ::fixy::tags::source::Vigil>;
 
     crucible::FakeRegionNode region{};
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it")
     const crucible::FakeRegionNode* raw_ptr = &region;
 
     // Should FAIL: no conversion from a raw pointer to the tagged
     // pointer; the provenance is written only through mint_tagged.
     ActiveRegionPtr field = raw_ptr;
     (void)field;
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return 0;
 }

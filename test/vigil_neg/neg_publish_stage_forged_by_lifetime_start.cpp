@@ -10,11 +10,14 @@
 
 #include <crucible/BackgroundThread.h>
 #include <foundation/Lifetime.h>
+#include <foundation/Quarantine.h>
 
 int main() {
     using Stage = crucible::BackgroundThread::PublishStage;
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture starts the lifetime of an object in raw bytes")
     alignas(Stage) unsigned char storage[1]{};
     auto forged = ::foundation::lifetime::start_as_array<Stage>(storage, 1);
     (void)forged;
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return 0;
 }

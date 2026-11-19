@@ -13,6 +13,7 @@
 
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Quarantine.h>
 
 namespace crucible {
 struct FakeTraceEntry {
@@ -24,9 +25,11 @@ int main() {
     using OpsPtr = ::fixy::Tagged<const crucible::FakeTraceEntry*, ::fixy::tags::source::RegionOps>;
 
     crucible::FakeTraceEntry entry{};
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it")
     const crucible::FakeTraceEntry* raw_ops = &entry;
 
     OpsPtr field = raw_ops;
     (void)field;
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return 0;
 }

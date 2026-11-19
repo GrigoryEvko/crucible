@@ -1871,7 +1871,7 @@ crucible_neg_compile_test(neg_call_site_lineno_negative
   "mint_refined<IsNonNegative\\(\\), int>\\(-1\\)")
 crucible_neg_compile_test(neg_call_site_lineno_int_min
   "__builtin_trap.*is not a constant expression"
-  "mint_refined<IsNonNegative\\(\\), int>\\(std::numeric_limits<int>::min\\(\\)\\)")
+  "mint_refined<IsNonNegative\\(\\), int>\\(\\(\\(int\\)foundation::core::min_of<int>\\)\\)")
 
 # CallSiteTable::Entry stores its filename and funcname as InternedName,
 # a fixy::Tagged<fixy::GrowText, source::Interned>.  The table keeps one copy
@@ -2000,7 +2000,7 @@ crucible_neg_compile_test(neg_publish_static_ckernel_table_temporary
 #     as source::External.
 crucible_neg_compile_test(neg_schema_table_lookup_raw_const_char
   "cannot convert .foundation::core::Option<fixy::Tagged<foundation::core::CText, fixy::tags::source::Interned> >. to .const char\\*. in initialization"
-  "neg_schema_table_lookup_raw_const_char.cpp:17")
+  "neg_schema_table_lookup_raw_const_char.cpp:19")
 crucible_neg_compile_test(neg_schema_table_lookup_cross_tag
   "conversion from .Option<Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>>. to non-scalar type .Option<Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>>. requested"
   "neg_schema_table_lookup_cross_tag.cpp:23")
@@ -2052,7 +2052,7 @@ crucible_neg_compile_test(neg_transaction_log_capacity_two
 # under the Loaded tag, the tag of a loaded region, both fail at the commit
 # boundary.
 crucible_neg_compile_test(neg_transaction_region_raw_pointer
-  "neg_transaction_region_raw_pointer.cpp:32:33: error: cannot convert .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion."
+  "neg_transaction_region_raw_pointer.cpp:34:33: error: cannot convert .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion."
   "\\{aka .fixy::Tagged<foundation::core::Ref<const crucible::RegionNode>, fixy::tags::source::Arena>.\\}")
 crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
   "neg_transaction_region_loaded_cross_tag.cpp:37:33: error: cannot convert"
@@ -2079,7 +2079,7 @@ crucible_neg_compile_test(neg_transaction_log_rollback_without_owner
   "neg_transaction_log_rollback_without_owner.cpp:[0-9]+:[0-9]+: error: no matching function for call to .crucible::TransactionLog<16, Owner>::rollback\\(\\)."
   "candidate expects 1 argument, 0 provided")
 crucible_neg_compile_test(neg_transaction_log_copyable_owner
-  "neg_transaction_log_copyable_owner.cpp:16:47: error: template constraint failure for .template<unsigned int N, class Owner>  requires  OwnerProof<Owner> class crucible::TransactionLog."
+  "neg_transaction_log_copyable_owner.cpp:16:68: error: template constraint failure for .template<unsigned int N, class Owner>  requires  OwnerProof<Owner> class crucible::TransactionLog."
   "the expression .!\\(is_copy_constructible_v<P>\\) \\[with P = CopyableOwner\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_publish_stage_built_outside
   "is private within this context"
@@ -2152,7 +2152,7 @@ crucible_neg_compile_test(neg_cdag_version_external_cross_tag
 #     pass as source::External.
 crucible_neg_compile_test(neg_deserialize_region_raw_region_ptr
   "cannot convert .fixy::Tagged<foundation::core::Ref<crucible::RegionNode>, fixy::tags::source::Loaded>. to .crucible::RegionNode\\*. in initialization"
-  "neg_deserialize_region_raw_region_ptr.cpp:22")
+  "neg_deserialize_region_raw_region_ptr.cpp:24")
 crucible_neg_compile_test(neg_deserialize_region_cross_tag
   "conversion from .Tagged<\\[...\\],fixy::tags::source::Loaded>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::External>. requested"
   "neg_deserialize_region_cross_tag.cpp:27")
@@ -2977,8 +2977,8 @@ crucible_neg_compile_test(neg_connection_pool_lease_rewrite
 #     IntegrityHash admission.
 #   * neg_integrity_non_contiguous_wrap: payloads must be byte-contiguous.
 crucible_neg_compile_test(neg_integrity_raw_payload_as_verified
-  "could not convert .payload. from .Payload. .aka .std::array<std::byte, 8>.."
-  "to .crucible::cntp::IntegrityVerifiedPayload<std::array<std::byte, 8> >.")
+  "could not convert .payload. from .Payload. .aka .foundation::core::FixedArray<std::byte, 8>.."
+  "to .crucible::cntp::IntegrityVerifiedPayload<foundation::core::FixedArray<std::byte, 8> >.")
 crucible_neg_compile_test(neg_integrity_cross_tag_verified
   "could not convert .std::move<fixy::Tagged<.*fixy::tags::source::External>&>\\(external\\). from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
   "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::IntegrityVerified>.")
@@ -3206,7 +3206,7 @@ crucible_neg_compile_test(neg_content_hash_default_construct
 #   * neg_active_tx_ptr_cross_source_assignment: a pointer under the Arena
 #     tag does not convert, because no retag edge joins the two tags.
 crucible_neg_compile_test(neg_active_tx_ptr_raw_assignment
-  "neg_active_tx_ptr_raw_assignment.cpp:27:25: error: conversion from .crucible::FakeTransaction\\*. to non-scalar type"
+  "neg_active_tx_ptr_raw_assignment.cpp:29:25: error: conversion from .crucible::FakeTransaction\\*. to non-scalar type"
   "\\{aka .fixy::Tagged<crucible::FakeTransaction\\*, fixy::tags::source::Ring>.\\} requested")
 crucible_neg_compile_test(neg_active_tx_ptr_cross_source_assignment
   "neg_active_tx_ptr_cross_source_assignment.cpp:27:20: error: conversion from"
@@ -3249,7 +3249,7 @@ crucible_neg_compile_test(neg_device_capability_cross_source_assignment
 #   * neg_region_ops_ptr_cross_source_assignment: a pointer under the Arena
 #     tag does not convert, because no retag edge joins the two tags.
 crucible_neg_compile_test(neg_region_ops_ptr_raw_assignment
-  "neg_region_ops_ptr_raw_assignment.cpp:29:20: error: conversion from .const crucible::FakeTraceEntry\\*. to non-scalar type"
+  "neg_region_ops_ptr_raw_assignment.cpp:31:20: error: conversion from .const crucible::FakeTraceEntry\\*. to non-scalar type"
   "\\{aka .fixy::Tagged<const crucible::FakeTraceEntry\\*, fixy::tags::source::RegionOps>.\\} requested")
 crucible_neg_compile_test(neg_region_ops_ptr_cross_source_assignment
   "neg_region_ops_ptr_cross_source_assignment.cpp:28:26: error: conversion from"
@@ -3274,7 +3274,7 @@ crucible_neg_compile_test(neg_costmodel_regs_per_thread_overflow
   "mint_refined<BoundedAbove<255>\\(\\), short unsigned int>\\(256\\)")
 crucible_neg_compile_test(neg_costmodel_regs_per_thread_max_uint16
   "__builtin_trap.*is not a constant expression"
-  "mint_refined<BoundedAbove<255>\\(\\), short unsigned int>\\(std::numeric_limits<short unsigned int>::max\\(\\)\\)")
+  "mint_refined<BoundedAbove<255>\\(\\), short unsigned int>\\(\\(\\(short unsigned int\\)foundation::core::max_of<short unsigned int>\\)\\)")
 crucible_neg_compile_test(neg_costmodel_warp_size_not_power_of_two
   "__builtin_trap.*is not a constant expression"
   "mint_refined<refined_algebra::AllOf<IsPowerOfTwo\\(\\), BoundedAbove<128>\\(\\)>\\(\\), short unsigned int>\\(33\\)")
@@ -3495,7 +3495,7 @@ crucible_neg_compile_test(neg_swiss_bitmask_one_past_group_mask
 crucible_neg_compile_test(neg_swiss_bitmask_wide_miss
   "__builtin_trap.*is not a constant expression|requires a group width below 64"
   "fixy::mint_refined<BoundedAbove<[0-9]+>\\(\\), long unsigned int>\\(raw_mask\\)|requires a group width below 64"
-  "BitMask::BitMask\\(std::numeric_limits<long unsigned int>::max\\(\\)\\)|requires a group width below 64")
+  "BitMask::BitMask\\(\\(\\(long unsigned int\\)foundation::core::max_of<long unsigned int>\\)\\)|requires a group width below 64")
 
 # kGroupWidth is a fixy::PowerOfTwo<size_t>, and the checked mint is its
 # only door.  The two fixtures give the mint zero and a value that is not
@@ -3672,7 +3672,7 @@ crucible_neg_compile_test(neg_mimic_semaphore_default_construct
 # both refused at the init boundary.
 crucible_neg_compile_test(neg_replay_engine_pool_raw_pointer
   "cannot convert .const crucible::PoolAllocator\\*. to .crucible::ReplayEngine::PoolBorrow."
-  "neg_replay_engine_pool_raw_pointer.cpp:15")
+  "neg_replay_engine_pool_raw_pointer.cpp:17")
 crucible_neg_compile_test(neg_replay_engine_pool_wrong_borrow
   "cannot convert .BorrowedRef<crucible::RegionNode>. to .BorrowedRef<const crucible::PoolAllocator>."
   "neg_replay_engine_pool_wrong_borrow.cpp:15")

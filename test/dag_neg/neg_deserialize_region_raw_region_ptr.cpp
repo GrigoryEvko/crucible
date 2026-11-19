@@ -12,13 +12,16 @@
 //   * Companion: a Loaded region does not pass as an External one.
 
 #include <crucible/Serialize.h>
+#include <foundation/Quarantine.h>
 
 int main() {
     ::fixy::BumpArena arena{1024};
     ::fixy::View<const std::byte> bytes{};
 
     // MUST fail: the region of the Result is a LoadedRegionNode.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture reads a typed result into a raw pointer")
     crucible::RegionNode* raw = crucible::deserialize_region(::foundation::effects::testing::test().alloc, bytes, arena)
                                     .expect("the fixture names the type of a loaded region");
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return raw == nullptr ? 0 : 1;
 }

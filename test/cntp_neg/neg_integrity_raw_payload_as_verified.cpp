@@ -4,11 +4,11 @@
 // requires successful end-to-end integrity verification.
 
 #include <crucible/cntp/Integrity.h>
+#include <fixy/Core.h>
 
-#include <array>
 #include <cstddef>
 
-using Payload = std::array<std::byte, 8>;
+using Payload = ::fixy::FixedArray<std::byte, 8>;
 
 namespace {
 

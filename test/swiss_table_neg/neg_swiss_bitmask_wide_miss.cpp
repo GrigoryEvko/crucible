@@ -5,9 +5,9 @@
 // catches a regression where the mask falls back to a raw uint64_t.
 
 #include <crucible/SwissTable.h>
+#include <fixy/Core.h>
 
 #include <cstdint>
-#include <limits>
 
 // ISA DEPENDENCE.  kGroupWidth is 64 on AVX512BW, 32 on AVX2 and 16 on the
 // other arms.  At width 64 the ceiling is UINT64_MAX, so no uint64_t value is
@@ -18,7 +18,7 @@
 static_assert(crucible::detail::group_width() < 64, "the bitmask ceiling fixture requires a group width below 64");
 #else
 int main() {
-    constexpr crucible::detail::BitMask bad{std::numeric_limits<uint64_t>::max()};
+    constexpr crucible::detail::BitMask bad{::fixy::max_of<std::uint64_t>};
     (void)bad;
 }
 #endif
