@@ -8,15 +8,17 @@
 // budget, which spins.  The two runs give the same values, bit for bit.
 
 #include <fixy/Ctx.h>
-#include <fixy/concurrent/SpscRing.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/os/SpinBudget.h>
 #include <fixy/os/ThreadTasks.h>
 #include <fixy/os/Time.h>
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/SpinHint.h>
+#include <foundation/permissions/Permission.h>
 
 #include "../foundation/philox_stream.h"
 
@@ -24,9 +26,11 @@
 
 namespace {
 
+namespace cc = ::fixy::concurrent;
 namespace eff = ::foundation::effects;
 namespace core = ::foundation::core;
 namespace os = ::foundation::os;
+namespace perm = ::foundation::permissions;
 namespace spin = ::fixy::time;
 using spin::CounterTicks;
 using spin::SpanNanos;
@@ -135,15 +139,18 @@ struct Received {
     std::uint64_t sleeps = 0;
 };
 
-// A producer pushes the values of a Philox stream, with a pause of some
-// turns before each push.  The consumer polls the ring.  After each empty
-// poll it spins with BUDGET, and when the budget passes it sleeps for
-// kSleepNanos and polls again.
-[[nodiscard]] Received receive_the_stream(::fixy::BgLoadCtx const& ctx, SpinBudget budget) {
-    eff::cap::Nondet const nondet = eff::extract_bare_from_ctx<eff::Effect::Nondet>(ctx);
-    ::fixy::concurrent::SpscRing<std::uint64_t, 64> ring{};
-    Received received{};
-    auto producer = [&]() noexcept {
+// The tag of the channel of the stream.
+struct StreamTag {};
+
+// The producer of the stream, on a thread of its own.  It pushes the values
+// of a Philox stream, with a pause of some turns before each push.  The end
+// of its handle ends the stream.
+template <class Producer>
+struct StreamFeed {
+    Producer handle;
+
+    void operator()() noexcept {
+        Producer local = std::move(handle);
         ::crucible::test::PhiloxStream stream{kSeed};
         ::crucible::test::PhiloxStream delays{kSeed + 1};
         for (std::uint32_t index = 0; index < kValues; ++index) {
@@ -151,29 +158,60 @@ struct Received {
             for (std::uint64_t turn = delays.below(2000); turn > 0; --turn) {
                 CRUCIBLE_SPIN_PAUSE;
             }
-            while (!ring.try_push(value)) {
+            while (!local.try_push(value)) {
                 CRUCIBLE_SPIN_PAUSE;
             }
         }
-    };
-    auto consumer = [&](::fixy::BgLoadCtx const& thread_ctx) noexcept {
+        ::foundation::linear::drop(std::move(local));
+    }
+};
+
+// The consumer of the stream, on a thread of its own.  It polls the channel.
+// After each empty poll it spins with its budget, and when the budget passes
+// it sleeps for kSleepNanos and polls again.  It keeps its result, which the
+// caller reads after the join.
+template <class Consumer>
+struct StreamDrain {
+    Consumer handle;
+    SpinBudget budget{};
+    Received received{};
+
+    StreamDrain(Consumer&& consumer, SpinBudget spin_budget) noexcept
+        : handle{std::move(consumer)}, budget{spin_budget} {}
+
+    void operator()(::fixy::BgLoadCtx const& thread_ctx) noexcept {
+        eff::cap::Nondet const nondet = eff::extract_bare_from_ctx<eff::Effect::Nondet>(thread_ctx);
         auto const sleeper = spin::mint_bounded_sleep<kSleepNanos>(thread_ctx);
         for (std::uint32_t index = 0; index < kValues; ++index) {
-            core::Option<std::uint64_t> item = ring.try_pop();
+            core::Option<std::uint64_t> item = handle.try_pop();
             while (item.is_none()) {
                 SpinDeadline const deadline = SpinDeadline::after(nondet, budget);
                 if (!spin::spin_until(nondet, deadline,
-                                      [&ring, nondet]() noexcept { return !ring.empty_approx(nondet); })) {
+                                      [this, nondet]() noexcept { return !handle.empty_approx(nondet); })) {
                     sleeper.sleep_for(kSleepNanos).expect("a sleep on the monotonic clock is valid");
                     ++received.sleeps;
                 }
-                item = ring.try_pop();
+                item = handle.try_pop();
             }
             received.hash = fold(received.hash, std::move(item).expect("the loop ends with an item"));
         }
-    };
-    CRUCIBLE_FATAL_INVARIANT(
-        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, producer, consumer).is_ok());
+    }
+};
+
+// A producer and a consumer of the stream, each with one end of a wire
+// channel, with the consumer budget BUDGET.
+[[nodiscard]] Received receive_the_stream(::fixy::BgLoadCtx const& ctx, SpinBudget budget) {
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, StreamTag>>();
+    using Stream = cc::channel_t<std::uint64_t, 64, decltype(root)>;
+    Stream channel{};
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<Stream::producer_tag, Stream::consumer_tag>(std::move(root));
+    StreamFeed feed{channel.producer(std::move(producer_perm))};
+    StreamDrain drain{channel.consumer(std::move(consumer_perm)), budget};
+    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, feed, drain).is_ok());
+    Received const received = drain.received;
+    ::foundation::linear::drop(std::move(feed));
+    ::foundation::linear::drop(std::move(drain));
     return received;
 }
 
