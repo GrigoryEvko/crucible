@@ -940,7 +940,7 @@ void test_sums_refuse_each_byte_that_names_no_value() {
 
     SumImage none_with_payload = encoded(WithSums{});
     none_with_payload.at(index<4>()) = std::byte{1};
-    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(none_with_payload) == DecodeFault{DecodeRefusal::sum_tail, 3}));
+    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(none_with_payload) == DecodeFault{DecodeRefusal::tail_byte, 3}));
 
     SumImage bad_result_tag = clean;
     bad_result_tag.at(index<7>()) = std::byte{2};
@@ -948,7 +948,7 @@ void test_sums_refuse_each_byte_that_names_no_value() {
 
     SumImage error_with_tail = clean;
     error_with_tail.at(index<9>()) = std::byte{1};
-    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(error_with_tail) == DecodeFault{DecodeRefusal::sum_tail, 9}));
+    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(error_with_tail) == DecodeFault{DecodeRefusal::tail_byte, 9}));
 
     SumImage bad_error = clean;
     bad_error.at(index<8>()) = std::byte{3};
@@ -960,7 +960,7 @@ void test_sums_refuse_each_byte_that_names_no_value() {
 
     SumImage narrow_with_tail = encoded(WithSums{});
     narrow_with_tail.at(index<13>()) = std::byte{1};
-    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(narrow_with_tail) == DecodeFault{DecodeRefusal::sum_tail, 12}));
+    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(narrow_with_tail) == DecodeFault{DecodeRefusal::tail_byte, 12}));
 }
 
 void test_sums_format_their_alternative() {
@@ -979,6 +979,183 @@ void test_sums_format_their_alternative() {
             .match([&empty_expected](TextView text) noexcept { return text == empty_expected; },
                    [](::foundation::core::Full<char>) noexcept { return false; });
     CRUCIBLE_FATAL_INVARIANT(is_empty_expected);
+}
+
+// ── The bounded lists ────────────────────────────────────────────────────
+
+using Words = ::foundation::core::FixedList<std::uint16_t, 3>;
+using Name = FixedText<5>;
+
+// The image: head at 0, the list of words at 1 (its rooms at 2 to 7), and the
+// text at 8 (its rooms at 9 to 13).
+struct[[= derive_protocol{}]] WithLists {
+    std::uint8_t head = 0;
+    Words words{};
+    Name name{};
+};
+
+using ListImage = FixedArray<std::byte, encoded_size_v<WithLists>>;
+
+[[nodiscard]] WithLists sample_with_lists() noexcept {
+    WithLists value{};
+    value.head = 7;
+    bool const is_built = value.words.append(std::uint16_t{0x0A0B}).is_ok()
+                       && value.words.append(std::uint16_t{0x0C0D}).is_ok()
+                       && value.name.append(TextView{"a\"b"}).is_ok();
+    CRUCIBLE_FATAL_INVARIANT(is_built);
+    return value;
+}
+
+[[nodiscard]] DecodeFault list_fault_of(ListImage const& image) noexcept {
+    return decode<WithLists>(image.view())
+        .match([](WithLists) noexcept { return DecodeFault{DecodeRefusal::bool_byte, 9999}; },
+               [](DecodeFault fault) noexcept { return fault; });
+}
+
+// The image of each list is its count, its elements, and zero bytes in each
+// other room.
+void test_lists_encode_their_count_and_elements() {
+    static_assert(encoded_size_v<WithLists> == 14);
+    ListImage const image = encoded(sample_with_lists());
+    constexpr FixedArray<std::uint8_t, 14> expected{0x07, 0x02, 0x0B, 0x0A, 0x0D, 0x0C, 0x00,
+                                                    0x00, 0x03, 'a',  '"',  'b',  0x00, 0x00};
+    std::size_t at = 0;
+    for (std::byte const byte : image) {
+        CRUCIBLE_FATAL_INVARIANT(static_cast<std::uint8_t>(byte)
+                                 == expected.at(Index<14>::check(at).expect("14 bytes")));
+        ++at;
+    }
+    for (std::byte const byte : encoded(WithLists{})) {
+        CRUCIBLE_FATAL_INVARIANT(byte == std::byte{0});
+    }
+}
+
+// decode gives back random lists, the hash of each is the hand fold of its
+// image, and the bytes of a text past its count take no part.
+void test_lists_decode_back_and_hash_their_image() {
+    ::crucible::test::PhiloxStream stream{0x4C49535453524F55ULL};
+    for (int round = 0; round < 4096; ++round) {
+        std::uint64_t const word = stream.next_word();
+        WithLists value{};
+        value.head = static_cast<std::uint8_t>(word);
+        std::uint64_t const word_count = (word >> 8) % 4;
+        std::uint64_t const name_count = (word >> 16) % 6;
+        std::uint64_t const letters = stream.next_word();
+        bool is_built = true;
+        for (std::uint64_t index = 0; index < word_count; ++index) {
+            is_built = is_built && value.words.append(static_cast<std::uint16_t>(letters >> (16 * index))).is_ok();
+        }
+        for (std::uint64_t index = 0; index < name_count; ++index) {
+            is_built = is_built && value.name.append(static_cast<char>(letters >> (8 * index))).is_ok();
+        }
+        CRUCIBLE_FATAL_INVARIANT(is_built);
+        CRUCIBLE_FATAL_INVARIANT(decodes_back(value));
+        CRUCIBLE_FATAL_INVARIANT(hash(value).raw() == hand_hash_of_image(encoded(value)));
+    }
+
+    WithLists reused = sample_with_lists();
+    reused.name.clear();
+    WithLists fresh = sample_with_lists();
+    fresh.name = Name{};
+    bool const is_built = reused.name.append('x').is_ok() && fresh.name.append('x').is_ok();
+    CRUCIBLE_FATAL_INVARIANT(is_built);
+    CRUCIBLE_FATAL_INVARIANT(encoded(reused) == encoded(fresh) && hash(reused) == hash(fresh));
+    CRUCIBLE_FATAL_INVARIANT(equal(reused, fresh));
+}
+
+// decode refuses a count above the capacity at the offset of the count, and
+// a byte of a room past the count at the offset of the first such room.
+void test_lists_refuse_each_byte_that_names_no_value() {
+    ListImage const clean = encoded(sample_with_lists());
+
+    ListImage too_many_words = clean;
+    too_many_words.at(index<1>()) = std::byte{4};
+    CRUCIBLE_FATAL_INVARIANT((list_fault_of(too_many_words) == DecodeFault{DecodeRefusal::list_count, 1}));
+
+    ListImage word_tail = clean;
+    word_tail.at(index<7>()) = std::byte{1};
+    CRUCIBLE_FATAL_INVARIANT((list_fault_of(word_tail) == DecodeFault{DecodeRefusal::tail_byte, 6}));
+
+    ListImage too_long_name = clean;
+    too_long_name.at(index<8>()) = std::byte{6};
+    CRUCIBLE_FATAL_INVARIANT((list_fault_of(too_long_name) == DecodeFault{DecodeRefusal::list_count, 8}));
+
+    ListImage name_tail = clean;
+    name_tail.at(index<13>()) = std::byte{1};
+    CRUCIBLE_FATAL_INVARIANT((list_fault_of(name_tail) == DecodeFault{DecodeRefusal::tail_byte, 12}));
+
+    // A count at the capacity takes each room, so no byte is a tail.
+    ListImage full_name = clean;
+    full_name.at(index<8>()) = std::byte{5};
+    full_name.at(index<12>()) = std::byte{'c'};
+    full_name.at(index<13>()) = std::byte{'d'};
+    CRUCIBLE_FATAL_INVARIANT(decode<WithLists>(full_name.view()).is_ok());
+}
+
+// The texts at 4 to 71 are a long array of lists at an offset that is a
+// multiple of the image of one list.  The words at 73 are a list image of
+// 21 bytes at an odd offset.  The ratios at 94 are a list of floats.
+struct[[= derive_protocol{}]] WithListArrays {
+    std::uint32_t head = 0;
+    FixedArray<FixedText<3>, 17> names{};
+    std::uint8_t odd = 0;
+    ::foundation::core::FixedList<std::uint32_t, 5> words{};
+    ::foundation::core::FixedList<float, 2> ratios{};
+};
+
+// The hash of each list is the hand fold of its image, also as an element of
+// a long array and at an odd offset.  equal of two lists of floats agrees
+// with the equality of their images, so +0 and -0 differ.
+void test_lists_hash_as_array_elements_at_each_offset() {
+    static_assert(encoded_size_v<WithListArrays> == 4 + 17 * 4 + 1 + 21 + 9);
+    FixedArray<float, 4> const ratios{0.0f, -0.0f, bit_cast<float>(std::uint32_t{0x7FC00001U}), 1.5f};
+    ::crucible::test::PhiloxStream stream{0x4C49535441525241ULL};
+    WithListArrays last{};
+    for (int round = 0; round < 1024; ++round) {
+        std::uint64_t const word = stream.next_word();
+        std::uint64_t const letters = stream.next_word();
+        WithListArrays value{};
+        value.head = static_cast<std::uint32_t>(word);
+        value.odd = static_cast<std::uint8_t>(word >> 32);
+        bool is_built = true;
+        for (auto const index : decltype(value.names)::indices()) {
+            std::uint64_t const count = (letters >> (2 * index.raw())) % 4;
+            for (std::uint64_t letter = 0; letter < count; ++letter) {
+                is_built =
+                    is_built && value.names.at(index).append(static_cast<char>('a' + letter + index.raw())).is_ok();
+            }
+        }
+        for (std::uint64_t index = 0; index < (word >> 40) % 6; ++index) {
+            is_built = is_built && value.words.append(static_cast<std::uint32_t>(letters >> index)).is_ok();
+        }
+        for (std::uint64_t index = 0; index < (word >> 48) % 3; ++index) {
+            float const ratio = ratios.at(Index<4>::check((word >> (52 + 2 * index)) % 4).expect("4 ratios"));
+            is_built = is_built && value.ratios.append(ratio).is_ok();
+        }
+        CRUCIBLE_FATAL_INVARIANT(is_built);
+        CRUCIBLE_FATAL_INVARIANT(decodes_back(value));
+        CRUCIBLE_FATAL_INVARIANT(hash(value).raw() == hand_hash_of_image(encoded(value)));
+        bool const has_equal_images = encoded(value) == encoded(last);
+        CRUCIBLE_FATAL_INVARIANT(equal(value, last) == has_equal_images);
+        CRUCIBLE_FATAL_INVARIANT((hash(value) == hash(last)) == has_equal_images);
+        last = value;
+    }
+
+    WithListArrays positive{};
+    WithListArrays negative{};
+    bool const is_built = positive.ratios.append(0.0f).is_ok() && negative.ratios.append(-0.0f).is_ok();
+    CRUCIBLE_FATAL_INVARIANT(is_built);
+    CRUCIBLE_FATAL_INVARIANT(!equal(positive, negative) && encoded(positive) != encoded(negative));
+    CRUCIBLE_FATAL_INVARIANT(hash(positive) != hash(negative));
+}
+
+void test_lists_format_their_elements() {
+    FixedText<128> out{};
+    TextView const expected{"{head = 7, words = [2571, 3085], name = \"a\\\"b\"}"};
+    bool const is_expected = format(out, sample_with_lists())
+                                 .match([&expected](TextView text) noexcept { return text == expected; },
+                                        [](::foundation::core::Full<char>) noexcept { return false; });
+    CRUCIBLE_FATAL_INVARIANT(is_expected);
 }
 
 }  // namespace
@@ -1002,5 +1179,10 @@ int main() {
     test_sums_obey_the_float_rule();
     test_sums_refuse_each_byte_that_names_no_value();
     test_sums_format_their_alternative();
+    test_lists_encode_their_count_and_elements();
+    test_lists_decode_back_and_hash_their_image();
+    test_lists_refuse_each_byte_that_names_no_value();
+    test_lists_hash_as_array_elements_at_each_offset();
+    test_lists_format_their_elements();
     return 0;
 }

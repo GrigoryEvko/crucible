@@ -23,8 +23,9 @@
 // THE IMAGE
 //   A value has a byte image when each part has one: an integer, a bool, a
 //   character, an enumeration, a float or a double, a bounded C array or a
-//   FixedArray of such parts, a sum of such parts (THE SUMS), and a class with
-//   the annotation derive_protocol.  The walk refuses a pointer, a reference, a union, a
+//   FixedArray of such parts, a sum of such parts (THE SUMS), a FixedList of
+//   such parts and a FixedText (THE BOUNDED LISTS), and a class with the
+//   annotation derive_protocol.  The walk refuses a pointer, a reference, a union, a
 //   named bit-field and each other class, as decode of the Scalar family
 //   does.  A local part has no place in the image.  The image holds no
 //   padding byte: each part takes the bytes of its value and no more, in
@@ -73,13 +74,28 @@
 //   constructor with no throw, and it refuses a tag of no alternative and a
 //   byte after the active alternative that is not zero.
 //
+// THE BOUNDED LISTS
+//   A FixedList of N elements with an image, and a FixedText of N characters
+//   (foundation/core/List.h and Text.h), have an image too: the count, and
+//   then room for N elements.  The count takes the smallest width of 1, 2, 4
+//   or 8 bytes that holds N, in little-endian order.  The first count rooms
+//   hold the images of the elements in order, and each byte of the other
+//   rooms is zero, so one value gives one image.  decode builds the list
+//   through its default constructor and its append, so an element needs a
+//   default constructor with no throw.  It refuses a count above N and a
+//   byte after the last element that is not zero.
+//
+//   An image holds at most 2^32 - 1 bytes, so the offset of each fault fits
+//   the 32 bits of a DecodeFault.
+//
 // THE CODEC
 //   encode writes the image into a View of exactly encoded_size_v<T> bytes,
 //   so it cannot fail.  decode reads such a View into a T.  It refuses a
 //   bool byte other than 0 and 1, an enumeration value that names no
 //   enumerator, a byte of a pad part that is not zero, a part that declares a
-//   niche and holds its empty value, and a sum of THE SUMS with a tag or a
-//   tail byte that holds no value.  The DecodeFault names the
+//   niche and holds its empty value, a sum of THE SUMS with a tag or a tail
+//   byte that holds no value, and a list of THE BOUNDED LISTS with a count or
+//   a tail byte that holds no value.  The DecodeFault names the
 //   reason and the byte offset of the part in the image.  The first fault in
 //   the order of the parts wins.  A local part of the result keeps the value
 //   of the default constructor of T.  Decodable refuses a class with a const
@@ -91,9 +107,11 @@
 //   first.  An integer is written in decimal, a bool as true or false, a
 //   float as the text of report(), an enumerator of a scoped enumeration as
 //   its name, an array as `[a, b, c]`, an Option as `some(a)` or `none`, a
-//   Result as `ok(a)` or `err(e)`, and a OneOf as the index of its
-//   alternative and its value, `#1(a)`.  A local part and a pad part are not
-//   written.  format is no part of a hot path.
+//   Result as `ok(a)` or `err(e)`, a OneOf as the index of its alternative
+//   and its value, `#1(a)`, a FixedList as `[a, b]`, and a FixedText between
+//   two quotes, with a backslash before each quote and each backslash of the
+//   text.  A local part and a pad part are not written.  format is no part
+//   of a hot path.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Arithmetic.h>
@@ -102,6 +120,7 @@
 #include <foundation/core/Equatable.h>
 #include <foundation/core/Format.h>
 #include <foundation/core/Id.h>
+#include <foundation/core/List.h>
 #include <foundation/core/OneOf.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Scalar.h>
@@ -128,8 +147,12 @@ enum class DecodeRefusal : std::uint8_t {
     empty_niche,
     // The tag byte of a sum names no alternative (THE SUMS).
     sum_tag,
-    // A byte after the active alternative of a sum is not zero (THE SUMS).
-    sum_tail,
+    // A byte after the active alternative of a sum, or after the last
+    // element of a bounded list, is not zero (THE SUMS, THE BOUNDED LISTS).
+    tail_byte,
+    // The count of a bounded list is more than its capacity (THE BOUNDED
+    // LISTS).
+    list_count,
 };
 
 // The first fault of an image: the reason, and the byte offset of the part
@@ -194,6 +217,38 @@ namespace detail {
     return std::meta::template_arguments_of(std::meta::remove_cv(std::meta::dealias(spelled)))[index];
 }
 
+// True for a list of THE BOUNDED LISTS: a FixedList or a FixedText.  An
+// alias reads as the type that it names.
+[[nodiscard]] consteval bool is_bounded_list_at(std::meta::info spelled) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    if (!std::meta::is_class_type(type) || !std::meta::has_template_arguments(type)) return false;
+    std::meta::info const family = std::meta::template_of(type);
+    return family == ^^FixedList || family == ^^FixedText;
+}
+
+// The element and the capacity of a bounded list.  The argument of a
+// FixedText is its capacity, a value, and its element is char.
+[[nodiscard]] consteval std::meta::info bounded_element_at(std::meta::info spelled) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    if (std::meta::template_of(type) == ^^FixedText) return ^^char;
+    return std::meta::template_arguments_of(type)[0];
+}
+
+[[nodiscard]] consteval std::size_t bounded_capacity_at(std::meta::info spelled) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    std::size_t const position = std::meta::template_of(type) == ^^FixedText ? 0 : 1;
+    return std::meta::extract<std::size_t>(std::meta::template_arguments_of(type)[position]);
+}
+
+// The width in bytes of the count of a bounded list of the capacity: the
+// smallest of 1, 2, 4 and 8 that holds the capacity.
+[[nodiscard]] consteval std::size_t count_bytes_for(std::size_t capacity) {
+    if (capacity <= 0xFFU) return 1;
+    if (capacity <= 0xFFFFU) return 2;
+    if (capacity <= 0xFFFFFFFFU) return 4;
+    return 8;
+}
+
 // True when a value of the type has a byte image (THE IMAGE).  Linear in the
 // number of parts that the walk reaches.
 [[nodiscard]] consteval bool has_image_at(std::meta::info spelled, int depth) {
@@ -212,6 +267,7 @@ namespace detail {
         }
         return true;
     }
+    if (is_bounded_list_at(type)) return has_image_at(bounded_element_at(type), depth + 1);
     if (!derives_protocol_at(type)) return false;
     std::size_t const bases = base_count(type);
     std::size_t const members = member_count(type);
@@ -241,6 +297,10 @@ namespace detail {
         }
         return true;
     }
+    if (is_bounded_list_at(type)) {
+        std::meta::info const element = bounded_element_at(type);
+        return std::meta::is_nothrow_default_constructible_type(element) && decodes_at(element);
+    }
     if (!derives_protocol_at(type)) return true;
     if (!std::meta::annotations_of_with_type(type, ^^::foundation::lifetime::no_start_over_bytes).empty()) {
         return false;
@@ -258,31 +318,57 @@ namespace detail {
     return true;
 }
 
-// The count of bytes of the image of a type with an image.
+// An image holds at most this count of bytes (THE BOUNDED LISTS).  The walk
+// keeps each count above it at max_image_bytes + 1, so no sum and no product
+// of two counts wraps.
+inline constexpr std::size_t max_image_bytes = 0xFFFFFFFFU;
+
+[[nodiscard]] consteval std::size_t clamp_image_bytes_(std::size_t bytes) {
+    return bytes > max_image_bytes ? max_image_bytes + 1 : bytes;
+}
+
+// The bytes of count images of the given bytes each, clamped.  bytes is at
+// most max_image_bytes + 1.
+[[nodiscard]] consteval std::size_t image_product_(std::size_t count, std::size_t bytes) {
+    if (bytes != 0 && count > max_image_bytes / bytes) return max_image_bytes + 1;
+    return count * bytes;
+}
+
+// The count of bytes of the image of a type with an image, or
+// max_image_bytes + 1 when the image holds more bytes than the cap.
 [[nodiscard]] consteval std::size_t image_bytes_at(std::meta::info spelled) {
     std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
     if (std::meta::is_array_type(type)) {
         std::meta::info const element = std::meta::remove_extent(type);
-        return (std::meta::size_of(type) / std::meta::size_of(element)) * image_bytes_at(element);
+        return image_product_(std::meta::size_of(type) / std::meta::size_of(element), image_bytes_at(element));
     }
-    if (is_fixed_array_at(type)) return fixed_array_count_at(type) * image_bytes_at(fixed_array_element_at(type));
+    if (is_fixed_array_at(type)) {
+        return image_product_(fixed_array_count_at(type), image_bytes_at(fixed_array_element_at(type)));
+    }
     if (is_sum_at(type)) {
         std::size_t largest = 0;
         for (std::size_t index = 0; index < sum_alternative_count_at(type); ++index) {
             std::size_t const bytes = image_bytes_at(sum_alternative_at(type, index));
             if (bytes > largest) largest = bytes;
         }
-        return 1 + largest;
+        return clamp_image_bytes_(1 + largest);
+    }
+    if (is_bounded_list_at(type)) {
+        std::size_t const capacity = bounded_capacity_at(type);
+        return clamp_image_bytes_(count_bytes_for(capacity)
+                                  + image_product_(capacity, image_bytes_at(bounded_element_at(type))));
     }
     if (!derives_protocol_at(type)) return std::meta::size_of(type);
     std::size_t total = 0;
     std::size_t const bases = base_count(type);
     std::size_t const members = member_count(type);
     for (std::size_t index = 0; index < bases; ++index) {
-        total += image_bytes_at(base_type_at(type, index));
+        total = clamp_image_bytes_(total + image_bytes_at(base_type_at(type, index)));
     }
     for (std::size_t index = 0; index < members; ++index) {
-        if (!member_carries_at(type, index, ^^local_part)) total += image_bytes_at(member_type_at(type, index));
+        if (!member_carries_at(type, index, ^^local_part)) {
+            total = clamp_image_bytes_(total + image_bytes_at(member_type_at(type, index)));
+        }
     }
     return total;
 }
@@ -430,6 +516,52 @@ constexpr void encode_sum_(OneOf<Ts...> const& part, std::byte* first) noexcept 
     part.match(((void)sizeof(Ts), write)...);
 }
 
+// Writes count in Width bytes from first, in little-endian order.
+template <std::size_t Width>
+constexpr void put_count_(std::byte* first, std::size_t count) noexcept {
+    for (std::size_t index = 0; index < Width; ++index) {
+        first[index] =
+            static_cast<std::byte>(static_cast<std::uint8_t>(static_cast<std::uint64_t>(count) >> (8 * index)));
+    }
+}
+
+// The first element of a bounded list, or no element of an empty list.  The
+// caller reads only the elements below the count.
+template <class T, std::size_t N>
+[[nodiscard]] constexpr T const* list_first_(FixedList<T, N> const& list) noexcept {
+    return first_of_(detail::ViewDoor::key(), list.view());
+}
+
+template <std::size_t N>
+[[nodiscard]] constexpr char const* list_first_(FixedText<N> const& text) noexcept {
+    return detail::text_first_(text.view());
+}
+
+// The image of a bounded list: its count, the image of each element, and
+// zero bytes in each other room (THE BOUNDED LISTS).  The loop runs over the
+// rooms of the capacity, a bound that the compiler knows, and it reads no
+// element past the count.  Complexity: one store for each byte of the image.
+template <class List>
+constexpr void encode_list_(List const& part, std::byte* first) noexcept {
+    constexpr std::meta::info type = ^^List;
+    constexpr std::size_t capacity = bounded_capacity_at(type);
+    constexpr std::size_t count_bytes = count_bytes_for(capacity);
+    constexpr std::size_t step = image_bytes_at(bounded_element_at(type));
+    std::size_t const count = part.size();
+    detail::put_count_<count_bytes>(first, count);
+    auto const* const elements = detail::list_first_(part);
+    for (std::size_t index = 0; index < capacity; ++index) {
+        std::byte* const room = first + count_bytes + index * step;
+        if (index < count) {
+            detail::encode_part_(elements[index], room);
+        } else {
+            for (std::size_t at = 0; at < step; ++at) {
+                room[at] = std::byte{0};
+            }
+        }
+    }
+}
+
 template <class T, std::size_t... Bases, std::size_t... Members>
 constexpr void encode_parts_([[maybe_unused]] T const& object, [[maybe_unused]] std::byte* first,
                              std::index_sequence<Bases...> /*bases*/,
@@ -458,6 +590,8 @@ constexpr void encode_part_(T const& part, std::byte* first) noexcept {
         }
     } else if constexpr (is_sum_at(^^Bare)) {
         detail::encode_sum_(part, first);
+    } else if constexpr (is_bounded_list_at(^^Bare)) {
+        detail::encode_list_(part, first);
     } else if constexpr (derives_protocol_at(^^Bare)) {
         constexpr std::meta::info type = std::meta::dealias(^^Bare);
         detail::encode_parts_(part, first, std::make_index_sequence<base_count(type)>{},
@@ -542,7 +676,7 @@ template <class Sum, class Alt>
     constexpr std::size_t taken = image_bytes_at(^^Alt);
     if (!detail::decode_part_(value, first + 1, offset + 1, fault)) return false;
     if (!are_zero_bytes_(first + 1 + taken, room - taken)) {
-        fault = fault_at_(DecodeRefusal::sum_tail, offset + 1 + taken);
+        fault = fault_at_(DecodeRefusal::tail_byte, offset + 1 + taken);
         return false;
     }
     return true;
@@ -554,7 +688,7 @@ template <class T>
     std::uint8_t const tag = static_cast<std::uint8_t>(first[0]);
     if (tag == 0) {
         if (!are_zero_bytes_(first + 1, image_bytes_at(^^T))) {
-            fault = fault_at_(DecodeRefusal::sum_tail, offset + 1);
+            fault = fault_at_(DecodeRefusal::tail_byte, offset + 1);
             return false;
         }
         part = Option<T>{none};
@@ -620,6 +754,64 @@ template <class... Ts>
     return detail::decode_one_of_<OneOf<Ts...>>(part, tag, first, offset, fault, std::index_sequence_for<Ts...>{});
 }
 
+// Reads Width bytes from first as a count, in little-endian order.
+template <std::size_t Width>
+[[nodiscard]] constexpr std::uint64_t read_count_(std::byte const* first) noexcept {
+    std::uint64_t count = 0;
+    for (std::size_t index = 0; index < Width; ++index) {
+        count |= static_cast<std::uint64_t>(static_cast<std::uint8_t>(first[index])) << (8 * index);
+    }
+    return count;
+}
+
+// Puts one decoded element after the last element of a list.  The caller
+// read a count of at most the capacity, so the list has room.
+template <class T, std::size_t N>
+constexpr void put_element_(FixedList<T, N>& list, T&& element) noexcept {
+    bool const is_put = list.append(static_cast<T&&>(element)).is_ok();
+    if (!is_put) ::foundation::core::unreachable();
+}
+
+template <std::size_t N>
+constexpr void put_element_(FixedText<N>& text, char&& element) noexcept {
+    bool const is_put = text.append(element).is_ok();
+    if (!is_put) ::foundation::core::unreachable();
+}
+
+// Reads a bounded list: its count, each element in order, and zero bytes in
+// each other room (THE BOUNDED LISTS).  The list grows through its append,
+// and part takes it at the end.  Complexity: one load for each byte of the
+// image, and one append for each element.
+template <class List>
+[[nodiscard]] constexpr bool decode_list_(List& part, std::byte const* first, std::size_t offset,
+                                          DecodeFault& fault) noexcept {
+    constexpr std::meta::info type = ^^List;
+    constexpr std::size_t capacity = bounded_capacity_at(type);
+    constexpr std::size_t count_bytes = count_bytes_for(capacity);
+    constexpr std::size_t total = image_bytes_at(type);
+    using Element = typename[:bounded_element_at(type):];
+    constexpr std::size_t step = image_bytes_at(^^Element);
+    std::uint64_t const count = detail::read_count_<count_bytes>(first);
+    if (count > capacity) {
+        fault = fault_at_(DecodeRefusal::list_count, offset);
+        return false;
+    }
+    List list{};
+    std::size_t at = count_bytes;
+    for (std::uint64_t index = 0; index < count; ++index) {
+        Element element{};
+        if (!detail::decode_part_(element, first + at, offset + at, fault)) return false;
+        detail::put_element_(list, static_cast<Element&&>(element));
+        at += step;
+    }
+    if (!are_zero_bytes_(first + at, total - at)) {
+        fault = fault_at_(DecodeRefusal::tail_byte, offset + at);
+        return false;
+    }
+    part = static_cast<List&&>(list);
+    return true;
+}
+
 template <class T, std::size_t... Bases, std::size_t... Members>
 [[nodiscard]] constexpr bool decode_parts_([[maybe_unused]] T& object, [[maybe_unused]] std::byte const* first,
                                            [[maybe_unused]] std::size_t offset, [[maybe_unused]] DecodeFault& fault,
@@ -656,6 +848,8 @@ template <class T>
         return true;
     } else if constexpr (is_sum_at(^^Bare)) {
         return detail::decode_sum_(part, first, offset, fault);
+    } else if constexpr (is_bounded_list_at(^^Bare)) {
+        return detail::decode_list_(part, first, offset, fault);
     } else if constexpr (derives_protocol_at(^^Bare)) {
         constexpr std::meta::info type = std::meta::dealias(^^Bare);
         if (!detail::decode_parts_(part, first, offset, fault, std::make_index_sequence<base_count(type)>{},
@@ -810,10 +1004,11 @@ constexpr void fill_block_(HashState& state, Element const* first, std::index_se
      ...);
 }
 
-// True for a leaf: a part that is no array and no class of the family.
+// True for a leaf of THE IMAGE: an integer, a bool, a character, a float, a
+// double or an enumeration.  Each other part with an image is an array, a
+// sum, a list or a class, and its bytes are no leaf word.
 template <class T>
-inline constexpr bool is_hash_leaf_ =
-    !std::is_array_v<T> && !is_fixed_array_at(^^T) && !is_sum_at(^^T) && !derives_protocol_at(^^T);
+inline constexpr bool is_hash_leaf_ = std::is_arithmetic_v<T> || std::is_enum_v<T>;
 
 // The fold of Count elements from first, at the byte Offset of the image.
 // A short array folds each element at its offset.  A long array of leaves
@@ -859,15 +1054,15 @@ constexpr void hash_part_(HashState& state, T const& part) noexcept {
     } else if constexpr (is_fixed_array_at(^^Bare)) {
         detail::hash_array_<Offset, typename[:fixed_array_element_at(^^Bare):], fixed_array_count_at(^^Bare)>(
             state, first_of_(detail::ViewDoor::key(), part.view()));
-    } else if constexpr (is_sum_at(^^Bare)) {
-        // The active alternative is known only at run time, so the fold
-        // writes the image of the sum and folds its bytes.
-        FixedArray<std::byte, image_bytes_at(^^Bare)> image{};
-        detail::encode_part_(part, first_of_(detail::ViewDoor::key(), image.view()));
-        std::size_t position = Offset % hash_block_bytes;
-        for (std::byte const byte : image.view()) {
-            detail::put_byte_(state, position, byte);
-        }
+    } else if constexpr (is_sum_at(^^Bare) || is_bounded_list_at(^^Bare)) {
+        // The active alternative of a sum and the count of a list are known
+        // only at run time, so the fold writes the image of the part on the
+        // stack and folds it as an array of bytes at the same offset.
+        constexpr std::size_t bytes = image_bytes_at(^^Bare);
+        FixedArray<std::byte, bytes> image{};
+        std::byte* const first = first_of_(detail::ViewDoor::key(), image.view());
+        detail::encode_part_(part, first);
+        detail::hash_array_<Offset, std::byte, bytes>(state, first);
     } else if constexpr (derives_protocol_at(^^Bare)) {
         constexpr std::meta::info type = std::meta::dealias(^^Bare);
         detail::hash_parts_<Offset>(state, part, std::make_index_sequence<base_count(type)>{},
@@ -1015,6 +1210,25 @@ template <std::size_t Capacity, class T>
     return detail::put_text_(out, "]");
 }
 
+// The text of a bounded list (THE FORMAT): the elements of a FixedList as
+// [a, b], and the characters of a FixedText between two quotes, with a
+// backslash before each quote and each backslash.
+template <std::size_t Capacity, class T, std::size_t N>
+[[nodiscard]] bool put_list_(FixedText<Capacity>& out, FixedList<T, N> const& part) noexcept {
+    return detail::put_sequence_(out, part.view());
+}
+
+template <std::size_t Capacity, std::size_t Size>
+[[nodiscard]] bool put_list_(FixedText<Capacity>& out, FixedText<Size> const& part) noexcept {
+    if (!detail::put_text_(out, "\"")) return false;
+    for (char const character : part.view()) {
+        bool const needs_escape = character == '"' || character == '\\';
+        if (needs_escape && !detail::put_text_(out, "\\")) return false;
+        if (out.append(character).is_err()) return false;
+    }
+    return detail::put_text_(out, "\"");
+}
+
 // Writes one part (THE FORMAT).  Complexity: linear in the length of the
 // text.
 template <std::size_t Capacity, class T>
@@ -1026,6 +1240,8 @@ template <std::size_t Capacity, class T>
         return detail::put_sequence_(out, part.view());
     } else if constexpr (is_sum_at(^^Bare)) {
         return detail::put_sum_(out, part);
+    } else if constexpr (is_bounded_list_at(^^Bare)) {
+        return detail::put_list_(out, part);
     } else if constexpr (derives_protocol_at(^^Bare)) {
         bool is_first = true;
         return detail::put_text_(out, "{") && detail::put_inline_parts_(out, part, is_first)
@@ -1050,9 +1266,11 @@ template <std::size_t Capacity, class T>
 }  // namespace detail
 
 // A class with the annotation derive_protocol whose value has a byte image
-// (THE IMAGE).  hash, encode and format take it.
+// (THE IMAGE) of at most max_image_bytes bytes.  hash, encode and format
+// take it.
 template <class T>
-concept Encodable = detail::derives_protocol_at(^^T) && detail::has_image_at(^^T, 0);
+concept Encodable = detail::derives_protocol_at(^^T) && detail::has_image_at(^^T, 0)
+                 && detail::image_bytes_at(^^T) <= detail::max_image_bytes;
 
 // An Encodable class that decode builds: it has a default constructor, no
 // member of its image is const, and no class of it carries the annotation

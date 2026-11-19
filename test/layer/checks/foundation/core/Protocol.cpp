@@ -201,6 +201,55 @@ static_assert(Encodable<HoldsPart<Option<Sealed>>> && !Decodable<HoldsPart<Optio
 }
 static_assert(reads_the_sums());
 
+// A bounded list takes its count in the smallest width that holds its
+// capacity, and room for each element.  A list of elements with no image has
+// no image, and an element with no default constructor gives no decode.  An
+// image of more than max_image_bytes bytes has no image.
+struct[[= derive_protocol{}]] HoldsLists {
+    FixedList<std::uint16_t, 3> words{};
+    FixedText<300> name{};
+};
+
+static_assert(Encodable<HoldsLists> && Decodable<HoldsLists>);
+static_assert(encoded_size_v<HoldsLists> == (1 + 3 * 2) + (2 + 300));
+static_assert(!Encodable<HoldsPart<FixedList<Unmarked, 2>>>);
+static_assert(Encodable<HoldsPart<FixedList<NoDefault, 2>>> && !Decodable<HoldsPart<FixedList<NoDefault, 2>>>);
+static_assert(Encodable<HoldsPart<FixedText<0xFFFFFFFB>>>
+              && encoded_size_v<HoldsPart<FixedText<0xFFFFFFFB>>> == 0xFFFFFFFF);
+static_assert(!Encodable<HoldsPart<FixedText<0x100000000>>>);
+
+// The image of a list is its count, its elements and zero bytes, also in a
+// constant evaluation.  decode gives the lists back, and refuses a count
+// above the capacity and a byte of a room past the count.
+[[nodiscard]] consteval bool reads_the_lists() {
+    HoldsLists lists{};
+    bool const is_built =
+        lists.words.append(std::uint16_t{0x0102}).is_ok() && lists.name.append(TextView{"ab"}).is_ok();
+    FixedArray<std::byte, encoded_size_v<HoldsLists>> image{};
+    encode(lists, image.view());
+    FixedArray<std::byte, encoded_size_v<HoldsLists>> const& read = image;
+    bool const is_back = decode<HoldsLists>(read.view())
+                             .match([&lists](HoldsLists back) noexcept { return equal(back, lists); },
+                                    [](DecodeFault) noexcept { return false; });
+    bool const has_counts = image.at(index<0>()) == std::byte{1} && image.at(index<1>()) == std::byte{0x02}
+                         && image.at(index<7>()) == std::byte{2} && image.at(index<8>()) == std::byte{0}
+                         && image.at(index<9>()) == std::byte{'a'} && image.at(index<11>()) == std::byte{0};
+    image.at(index<0>()) = std::byte{4};
+    bool const is_count_refused =
+        decode<HoldsLists>(read.view())
+            .match([](HoldsLists) noexcept { return false; },
+                   [](DecodeFault fault) noexcept { return fault == DecodeFault{DecodeRefusal::list_count, 0}; });
+    image.at(index<0>()) = std::byte{1};
+    image.at(index<4>()) = std::byte{1};
+    bool const is_tail_refused =
+        decode<HoldsLists>(read.view())
+            .match([](HoldsLists) noexcept { return false; },
+                   [](DecodeFault fault) noexcept { return fault == DecodeFault{DecodeRefusal::tail_byte, 3}; });
+    return is_built && is_back && has_counts && is_count_refused && is_tail_refused
+        && hash(lists) != hash(HoldsLists{});
+}
+static_assert(reads_the_lists());
+
 }  // namespace detail::protocol_checks
 
 }  // namespace foundation::core

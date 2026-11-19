@@ -320,6 +320,12 @@ public:
         size_ += count;
         return Unit{};
     }
+
+    // True when the two buffers hold the same characters.  The bytes after
+    // the count take no part.  Complexity: one compare for each character.
+    [[nodiscard]] friend constexpr bool operator==(FixedText const& left, FixedText const& right) noexcept {
+        return left.view() == right.view();
+    }
 };
 
 namespace detail {
