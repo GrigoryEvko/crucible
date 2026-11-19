@@ -607,17 +607,15 @@ void test_fan_out_keeps_the_worker_affinity() {
 // CRUCIBLE_BENCH_CORE names a third core, and a core that the affinity holds
 // is taken as asked.  The masks are planted, so the test reads no affinity of
 // the host.
-// Runs a body on a thread of its own, through the owned thread of the base,
-// and joins the thread.  The join orders each write of the body before the
-// return.
+// Runs a body on a thread of its own, through the joined thread door of the
+// base, and joins the thread.  The join orders each write of the body before
+// the return, so the body can borrow the locals of its caller.
 template <class Body>
 void run_on_own_thread(Body body) {
     namespace eff = ::foundation::effects;
-    using Starter = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
-    std::move(
-        ::fixy::thread::mint_owned_thread(Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, std::move(body))
-            .expect("the thread door starts a thread with the default options"))
-        .join();
+    using Starter = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>>;
+    ::fixy::thread::run_joined(Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, body)
+        .expect("the thread door starts a thread with the default options");
 }
 
 // The cores of a planted run: the isolated CPUs of the affinity, in the order
