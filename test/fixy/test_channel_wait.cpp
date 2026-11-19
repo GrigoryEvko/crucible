@@ -2,15 +2,15 @@
 // receive_waiting waits by its policy while the channel is empty and open,
 // and it gives each item in order and then the end.  The producers push on
 // threads of their own with a random delay of a Philox stream, and they
-// notify the event count after each push and after their close.  The
-// consumer receives on the calling thread.  A lost wake leaves the consumer
+// notify the event count after each push and after their close.  Each
+// producer runs beside the consumer through run_beside of fixy/os/ThreadTasks.h,
+// and the consumer receives on the calling thread.  A lost wake leaves the consumer
 // parked, and the test then fails at the timeout of the test preset.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/EventCount.h>
 #include <fixy/concurrent/PermissionedChannel.h>
-#include <fixy/os/OwnedThread.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
@@ -28,9 +28,6 @@ namespace eff = ::foundation::effects;
 namespace cc = ::fixy::concurrent;
 namespace perm = ::foundation::permissions;
 
-// The context that starts the producers: Bg for the threads, Alloc for their
-// frames.
-using Starter = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 using ParkAtOnce = cc::SpinThenPark<0>;
 using SpinFirst = cc::SpinThenPark<2000>;
 using Item = std::uint64_t;
@@ -64,29 +61,25 @@ enum class Lane : std::uint8_t {
     second = 1,
 };
 
-// Starts a producer of kItems items on a thread of its own.  The thread owns
-// the handle, pushes each item, notifies after each push, and closes the
-// stream at its end.  The item is its count shifted left by one, with the bit
-// of the lane.
+// The body of a producer of kItems items.  The body owns the handle, pushes
+// each item, notifies after each push, and closes the stream at its end.  The
+// item is its count shifted left by one, with the bit of the lane.  It takes
+// the context of the call of run_beside.
 template <class Producer>
-[[nodiscard]] ::fixy::thread::OwnedThread start_producer(::fixy::BgLoadCtx const& ctx, cc::EventCount& events,
-                                                         Producer&& producer, Lane lane, std::uint64_t seed) noexcept {
-    return ::fixy::thread::mint_owned_thread(
-               Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{},
-               [&ctx, &events, lane, seed, handle = std::move(producer)]() mutable noexcept {
-                   auto const lane_bit = static_cast<Item>(lane);
-                   ::crucible::test::PhiloxStream delays{seed + lane_bit};
-                   for (Item item = 0; item < kItems; ++item) {
-                       delay(delays);
-                       while (!handle.try_push((item << 1) | lane_bit)) {
-                           CRUCIBLE_SPIN_PAUSE;
-                       }
-                       events.notify_one(ctx);
-                   }
-                   std::move(handle).close();
-                   events.notify_one(ctx);
-               })
-        .expect("the thread door starts a producer");
+[[nodiscard]] auto make_producer(cc::EventCount& events, Producer&& producer, Lane lane, std::uint64_t seed) noexcept {
+    return [&events, lane, seed, handle = std::move(producer)](::fixy::BgLoadCtx const& ctx) mutable noexcept {
+        auto const lane_bit = static_cast<Item>(lane);
+        ::crucible::test::PhiloxStream delays{seed + lane_bit};
+        for (Item item = 0; item < kItems; ++item) {
+            delay(delays);
+            while (!handle.try_push((item << 1) | lane_bit)) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
+            events.notify_one(ctx);
+        }
+        std::move(handle).close();
+        events.notify_one(ctx);
+    };
 }
 
 // The result of the consumer of a test.
@@ -133,13 +126,44 @@ void expect_each_item_then_the_end_of_a_wire(::fixy::BgLoadCtx const& ctx, std::
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<Wire::producer_tag, Wire::consumer_tag>(std::move(root));
     typename Wire::ConsumerHandle consumer = channel.consumer(std::move(consumer_perm));
-    ::fixy::thread::OwnedThread producer =
-        start_producer(ctx, events, channel.producer(std::move(producer_perm)), Lane::first, seed);
-    Received const received = receive_each<Policy>(ctx, events, consumer);
-    std::move(producer).join();
+    auto values =
+        ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{},
+                                   make_producer(events, channel.producer(std::move(producer_perm)), Lane::first, seed),
+                                   [&ctx, &events, owned = std::move(consumer)]() mutable noexcept {
+                                       Received const got = receive_each<Policy>(ctx, events, owned);
+                                       ::foundation::linear::drop(std::move(owned));
+                                       return got;
+                                   })
+            .expect("the thread door starts a producer");
+    Received const received = values.at(::fixy::index<1>());
     CRUCIBLE_FATAL_INVARIANT(received.is_ordered);
     CRUCIBLE_FATAL_INVARIANT(received.count == kItems);
-    ::foundation::linear::drop(std::move(consumer));
+}
+
+// Receives each item of a merge beside its second producer, which runs
+// through run_beside, and ends the consumer end.
+template <class Consumer, class Producer>
+[[nodiscard]] Received receive_beside(::fixy::BgLoadCtx const& ctx, cc::EventCount& events, Consumer&& consumer,
+                                      eff::cap::Nondet merge, Producer&& producer) noexcept {
+    auto values =
+        ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, std::move(producer),
+                                   [&ctx, &events, receiving = std::move(consumer), merge]() mutable noexcept {
+                                       Received const got = receive_each<ParkAtOnce>(ctx, events, receiving, merge);
+                                       ::foundation::linear::drop(std::move(receiving));
+                                       return got;
+                                   })
+            .expect("the thread door starts the second producer");
+    return values.at(::fixy::index<1>());
+}
+
+// The continuation of the first producer of a merge: it owns the consumer end
+// and the second producer, and it receives beside the second producer.
+template <class Consumer, class Producer>
+[[nodiscard]] auto make_receive_beside(::fixy::BgLoadCtx const& ctx, cc::EventCount& events, Consumer&& consumer,
+                                       eff::cap::Nondet merge, Producer&& producer) noexcept {
+    return [&ctx, &events, owned = std::move(consumer), merge, second = std::move(producer)]() mutable noexcept {
+        return receive_beside(ctx, events, std::move(owned), merge, std::move(second));
+    };
 }
 
 // A merge of 8 cells: two producers, one consumer, each item of each producer
@@ -157,14 +181,15 @@ void expect_each_item_then_the_end_of_a_merge(::fixy::BgLoadCtx const& ctx, std:
     eff::cap::Nondet const merge = eff::extract_bare_from_ctx<eff::Effect::Nondet>(ctx);
     typename Merge::ProducerHandle first_producer = channel.producer().expect("the pool lends a producer");
     typename Merge::ProducerHandle second_producer = channel.producer().expect("the pool lends a producer");
-    ::fixy::thread::OwnedThread first = start_producer(ctx, events, std::move(first_producer), Lane::first, seed);
-    ::fixy::thread::OwnedThread second = start_producer(ctx, events, std::move(second_producer), Lane::second, seed);
-    Received const received = receive_each<ParkAtOnce>(ctx, events, consumer, merge);
-    std::move(first).join();
-    std::move(second).join();
+    auto receive_beside_second = make_receive_beside(
+        ctx, events, std::move(consumer), merge, make_producer(events, std::move(second_producer), Lane::second, seed));
+    auto values = ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{},
+                                             make_producer(events, std::move(first_producer), Lane::first, seed),
+                                             std::move(receive_beside_second))
+                      .expect("the thread door starts the first producer");
+    Received const received = values.at(::fixy::index<1>());
     CRUCIBLE_FATAL_INVARIANT(received.is_ordered);
     CRUCIBLE_FATAL_INVARIANT(received.count == 2 * kItems);
-    ::foundation::linear::drop(std::move(consumer));
 }
 
 }  // namespace
