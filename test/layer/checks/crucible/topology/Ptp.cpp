@@ -14,7 +14,6 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
 static_assert(std::atomic<std::int64_t>::is_always_lock_free, "std::atomic<int64_t> must be lock-free on this target");
 static_assert(std::atomic<bool>::is_always_lock_free, "std::atomic<bool> must be lock-free on this target");
 
-static_assert(sizeof(PtpClockFd) == sizeof(int));
 static_assert(sizeof(PtpTimestampNs) == sizeof(std::uint64_t));
 static_assert(sizeof(PtpDeviceIndex) == sizeof(std::uint16_t));
 static_assert(sizeof(DeclaredPtpDaemonReport) == sizeof(PtpDaemonReport));
@@ -30,7 +29,10 @@ static_assert(CtxFitsPtpMint<::fixy::ColdInitCtx>);
 static_assert(!CtxFitsPtpRecord<::fixy::HotFgCtx>);
 static_assert(CtxFitsPtpRecord<::fixy::BgDrainCtx>);
 static_assert(std::is_base_of_v<::foundation::Pinned<PtpHandle>, PtpHandle>);
-static_assert(!std::is_constructible_v<PtpHandle, cog::CogIdentity, PtpClockFd, PtpStatus const&>,
+static_assert(!std::is_constructible_v<PtpHandle, cog::CogIdentity, PtpClockReader, PtpStatus const&>,
               "a PTP handle is reached only through mint_ptp_handle");
+// The handle takes the reader of its clock, and no number of a descriptor
+// converts to a reader.
+static_assert(!std::is_constructible_v<PtpClockReader, int>);
 
 }  // namespace crucible::topology

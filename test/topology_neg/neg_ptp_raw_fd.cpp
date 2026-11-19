@@ -1,7 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// A PTP handle takes an admitted PtpClockFd.  A raw int does not convert
-// to it, so an unchecked descriptor cannot name the clock of a handle.
+// A PTP handle takes the reader of the clock of its NIC.  A raw int does
+// not convert to a reader, so the number of a descriptor cannot name the
+// clock of a handle.
 
 #include <crucible/topology/Ptp.h>
 

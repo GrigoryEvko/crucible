@@ -455,6 +455,12 @@ private:
 template <typename Ctx>
 concept CtxFitsPtpClockReaderMint = CtxFitsMonotonicClock<Ctx> && ::fixy::fs::CtxAdmitsFs<Ctx>;
 
+// The reader of no device is for a test of the code that holds a reader, on
+// a host with no /dev/ptpN.  So only a context that owns the Test capability
+// gets one.
+template <typename Ctx>
+concept CtxFitsEmptyPtpClockReaderMint = eff::CtxOwnsCapability<Ctx, eff::Effect::Test>;
+
 // The index of a /dev/ptpN device.  The kernel numbers PTP clocks from
 // zero, and the bound keeps the device path in the fixed buffer that the
 // mint builds it in.
@@ -552,16 +558,24 @@ private:
 };
 
 // The door to the open of a /dev/ptpN node.  No object of it exists.  Its
-// member is private, and its one friend is mint_ptp_clock_reader.
-// A Handle and PtpClockReader befriend this class, so a
-// descriptor of a PTP device and its reader come only from that mint,
-// after its gate.  The door builds the device path from the index itself,
-// so a caller cannot point it at a file that is not a PTP device node.
+// members are private, and its friends are mint_ptp_clock_reader and
+// mint_empty_ptp_clock_reader.  A Handle and PtpClockReader befriend this
+// class, so a descriptor of a PTP device and its reader come only from
+// that mint, after its gate.  The door builds the device path from the index
+// itself, so a caller cannot point it at a file that is not a PTP device
+// node.
 class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
     template <eff::IsExecCtx Ctx>
         requires CtxFitsPtpClockReaderMint<Ctx>
     friend ::foundation::core::Result<PtpClockReader, ::foundation::os::Errno>
     mint_ptp_clock_reader(Ctx const&, PtpDeviceIndex) noexcept;
+
+    template <eff::IsExecCtx Ctx>
+        requires CtxFitsEmptyPtpClockReaderMint<Ctx>
+    friend PtpClockReader mint_empty_ptp_clock_reader(Ctx const&) noexcept;
+
+    // The reader of the empty handle, which names no device.
+    [[nodiscard]] static PtpClockReader empty_() noexcept { return PtpClockReader{PtpClockHandle{}}; }
 
     // Opens /dev/ptpN read-only and gives the reader that owns its
     // descriptor, or the error of a failed open.
@@ -678,6 +692,15 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] ::foundation::core::Result<PtpClockReader, ::foundation::os::Errno>
 mint_ptp_clock_reader(Ctx const&, PtpDeviceIndex index) noexcept {
     return PtpDeviceDoor::open_(index);
+}
+
+// The reader of no device.  It is the state of a reader that a move emptied:
+// each call gives ebadf and makes no system call.  A test of the code that
+// holds a reader takes it on a host with no /dev/ptpN.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsEmptyPtpClockReaderMint<Ctx>
+[[nodiscard]] PtpClockReader mint_empty_ptp_clock_reader(Ctx const&) noexcept {
+    return PtpDeviceDoor::empty_();
 }
 
 }  // namespace fixy::time

@@ -5114,6 +5114,15 @@ fixy_neg_compile_test(neg_os_ptp_clock_reader_ctx_lacks_block
   "required for the satisfaction of .CtxAdmitsFs<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO, foundation::effects::Effect::Nondet> >\\]"
   "required for the satisfaction of .CtxFitsPtpClockReaderMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO, foundation::effects::Effect::Nondet> >\\]"
   "Es = \\{foundation::effects::Effect::IO, foundation::effects::Effect::Block\\}\\]. evaluated to .false.")
+# The reader of no device.  Only a context that owns Test gets one, so an
+# init context and a background context that opens files are refused at the
+# mint.  The first regex names the call, and the second names the gate.
+fixy_neg_compile_test(neg_os_empty_ptp_clock_reader_init_ctx
+  "no matching function for call to .mint_empty_ptp_clock_reader\\(const fixy::ColdInitCtx&\\)"
+  "required for the satisfaction of .CtxFitsEmptyPtpClockReaderMint<Ctx>.")
+fixy_neg_compile_test(neg_os_empty_ptp_clock_reader_bg_ctx
+  "no matching function for call to .mint_empty_ptp_clock_reader\\(const \\{anonymous\\}::BackgroundFsCtx&\\)"
+  "required for the satisfaction of .CtxFitsEmptyPtpClockReaderMint<Ctx>.")
 fixy_test(test_os_sched)
 fixy_test(test_os_pages)
 # qemu-user has no mlock2, and it refuses the THP options of prctl with

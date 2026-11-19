@@ -1665,7 +1665,8 @@ crucible_neg_compile_test(neg_pingmesh_zero_peer_capacity
 #     private, so the mint is the only door.
 #   * neg_ptp_record_fg_ctx — the foreground context cannot record into a
 #     handle.
-#   * neg_ptp_raw_fd — a raw int does not name the clock of a handle.
+#   * neg_ptp_raw_fd — a raw int does not convert to the reader of the
+#     clock of a handle.
 #   * neg_ptp_raw_timestamp — a raw nanosecond count is not a PTP
 #     timestamp.
 #   * neg_ptp_open_raw_device_index — a raw int does not name /dev/ptpN.
@@ -1682,13 +1683,13 @@ crucible_neg_compile_test(neg_ptp_mint_bg_ctx
     "required for the satisfaction of .CtxFitsPtpMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
 crucible_neg_compile_test(neg_ptp_handle_direct_construct
     "is private within this context"
-    "crucible::topology::PtpHandle::PtpHandle\\(crucible::cog::CogIdentity, crucible::topology::PtpClockFd, const crucible::topology::PtpStatus&\\)")
+    "crucible::topology::PtpHandle::PtpHandle\\(crucible::cog::CogIdentity, crucible::topology::PtpClockReader, const crucible::topology::PtpStatus&\\)")
 crucible_neg_compile_test(neg_ptp_record_fg_ctx
     "no matching function for call to .crucible::topology::PtpHandle::record_timestamp\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&"
     "required for the satisfaction of .CtxFitsPtpRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 crucible_neg_compile_test(neg_ptp_raw_fd
     "no matching function for call to .mint_ptp_handle\\(fixy::ColdInitCtx&, crucible::cog::CogIdentity&, int\\)"
-    "cannot convert .3. \\(type .int.\\) to type .crucible::topology::PtpClockFd.")
+    "cannot convert .3. \\(type .int.\\) to type .crucible::topology::PtpClockReader.")
 crucible_neg_compile_test(neg_ptp_raw_timestamp
     "could not convert .42. from .unsigned int. to .crucible::topology::PtpTimestampNs."
     "fixy::Tagged<long unsigned int, fixy::tags::source::Ptp>")

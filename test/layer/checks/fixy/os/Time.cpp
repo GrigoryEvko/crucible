@@ -129,6 +129,10 @@ static_assert(std::is_nothrow_move_constructible_v<PtpClockReader>);
 static_assert(CtxFitsPtpClockReaderMint<BackgroundFsCtx>);
 static_assert(!CtxFitsPtpClockReaderMint<BackgroundCtx>);
 static_assert(!CtxFitsPtpClockReaderMint<ForegroundCtx>);
+// The reader of no device goes only to a context that owns Test.
+static_assert(CtxFitsEmptyPtpClockReaderMint<eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>>);
+static_assert(!CtxFitsEmptyPtpClockReaderMint<BackgroundFsCtx>);
+static_assert(!CtxFitsEmptyPtpClockReaderMint<InitCtx>);
 static_assert(sizeof(PtpClockCaps) == 28 && std::is_trivially_copyable_v<PtpClockCaps>,
               "the capabilities of a PTP clock are six counts, three flags and one named byte, with no padding");
 static_assert(!std::is_default_constructible_v<PtpDeviceDoor> && !std::is_copy_constructible_v<PtpDeviceDoor>

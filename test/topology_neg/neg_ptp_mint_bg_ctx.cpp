@@ -9,9 +9,9 @@ int main() {
     crucible::cog::CogIdentity nic{};
     nic.uuid = crucible::cog::Uuid{0x129, 1};
     nic.kind = crucible::cog::CogKind::NicPort;
-    auto fd = crucible::topology::admit_ptp_clock_fd(4).expect("4 is not negative");
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     ::fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
-    auto handle = crucible::topology::mint_ptp_handle(bg, nic, fd);
+    auto handle = crucible::topology::mint_ptp_handle(bg, nic, ::fixy::time::mint_empty_ptp_clock_reader(test));
     (void)handle;
     return 0;
 }

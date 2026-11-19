@@ -4,9 +4,10 @@
 // daemons report it, and the socket timestamping path.
 //
 // The clock itself is read through fixy::time::PtpClockReader.  The
-// reader owns the /dev/ptpN descriptor and is the only code that stamps a
-// value as a PHC reading, so this header reads the clock and queries its
-// capabilities only through a reader.
+// reader owns the handle of the /dev/ptpN device and is the only code that
+// stamps a value as a PHC reading, so this header reads the clock and
+// queries its capabilities only through a reader.  A PTP handle owns the
+// reader of the clock of its NIC.
 
 #include <crucible/cntp/Pacing.h>
 #include <crucible/cog/CogIdentity.h>
@@ -29,9 +30,6 @@
 
 namespace crucible::topology {
 
-// The descriptor that names the clock of a PTP handle.  The handle keeps
-// it as an identity and never reads through it.
-using PtpClockFd = ::fixy::NonNegative<int>;
 using PtpTimestampNs = ::fixy::Tagged<std::uint64_t, ::fixy::tags::source::Ptp>;
 using PositivePtpSkewBoundNs = ::fixy::Positive<std::uint64_t>;
 using PositivePtpPathDelayNs = ::fixy::Positive<std::uint64_t>;
@@ -41,12 +39,11 @@ using PtpDeviceIndex = ::fixy::time::PtpDeviceIndex;
 using PtpClockCaps = ::fixy::time::PtpClockCaps;
 
 // foundation::reflect::enum_name gives the log spelling of the three enums
-// below.
+// below.  Each error keeps a fixed number, and no error has the number 3.
 enum class PtpError : std::uint8_t {
     None = 0,
     ZeroNic = 1,
     NonNicCog = 2,
-    InvalidClockFd = 3,
     NoTimestamp = 4,
     Degraded = 5,
     InvalidDeviceIndex = 6,
@@ -146,10 +143,6 @@ concept CtxFitsPtpRecord =
     ::foundation::effects::IsExecCtx<Ctx>
     && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
-[[nodiscard]] constexpr ::fixy::Result<PtpClockFd, PtpError> admit_ptp_clock_fd(int fd) noexcept {
-    return ::fixy::admit_refined<::fixy::non_negative>(fd, PtpError::InvalidClockFd);
-}
-
 [[nodiscard]] constexpr ::fixy::Result<PtpDeviceIndex, PtpError> admit_ptp_device_index(std::uint16_t index) noexcept {
     return ::fixy::admit_refined<::fixy::bounded_above<std::uint16_t{255}>>(index, PtpError::InvalidDeviceIndex);
 }
@@ -215,17 +208,25 @@ ptp_diagnostic_from_daemon_report(DeclaredPtpDaemonReport const& report) noexcep
 
 class PtpHandle;
 
-// The only door into a PTP handle.  An Init-row context mints it; a
-// background worker then records status and timestamps into it.
+// The only door into a PTP handle.  An Init-row context mints it, and the
+// handle takes the reader of the clock of the NIC.  A background worker then
+// records status and timestamps into it.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsPtpMint<Ctx>
-[[nodiscard]] PtpHandle mint_ptp_handle(Ctx const&, cog::CogIdentity nic, PtpClockFd clock_fd,
+[[nodiscard]] PtpHandle mint_ptp_handle(Ctx const&, cog::CogIdentity nic, PtpClockReader clock,
                                         PtpStatus initial_status = {}) noexcept;
 
+// The state of the PTP clock of one NIC.  The handle owns the reader of the
+// clock, so the /dev/ptpN device stays open for the life of the handle, and
+// the clock of a handle is the device that the reader opened.
 class PtpHandle : public ::foundation::Pinned<PtpHandle> {
 public:
     [[nodiscard]] cog::CogIdentity nic() const noexcept { return nic_; }
-    [[nodiscard]] PtpClockFd clock_fd() const noexcept { return clock_fd_; }
+
+    // The reader of the clock of the NIC, for ptp_now and
+    // query_ptp_clock_caps.  The reader lives as long as the handle.
+    [[nodiscard]] PtpClockReader const& clock() const& noexcept { return clock_; }
+    void clock() const&& = delete("the reader of a temporary handle ends with the full expression");
 
     // Every value that store_status writes comes from a positive field, and
     // the cells start positive, so each cell holds a positive value at
@@ -287,11 +288,11 @@ public:
 private:
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsPtpMint<Ctx>
-    friend PtpHandle mint_ptp_handle(Ctx const&, cog::CogIdentity nic, PtpClockFd clock_fd,
+    friend PtpHandle mint_ptp_handle(Ctx const&, cog::CogIdentity nic, PtpClockReader clock,
                                      PtpStatus initial_status) noexcept;
 
-    PtpHandle(cog::CogIdentity nic, PtpClockFd clock_fd, PtpStatus const& initial_status) noexcept
-        : nic_{nic}, clock_fd_{clock_fd} {
+    PtpHandle(cog::CogIdentity nic, PtpClockReader clock, PtpStatus const& initial_status) noexcept
+        : nic_{nic}, clock_{std::move(clock)} {
         store_status(initial_status);
     }
 
@@ -310,7 +311,7 @@ private:
     }
 
     cog::CogIdentity nic_{};
-    PtpClockFd clock_fd_ = ::fixy::mint_refined<::fixy::non_negative>(0);
+    PtpClockReader clock_;
     ::fixy::Atomic<std::uint64_t> status_epoch_{};
     ::fixy::Atomic<PtpServoState> servo_{PtpServoState::Unknown};
     ::fixy::Atomic<std::int64_t> offset_from_master_ns_{};
@@ -325,11 +326,11 @@ private:
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsPtpMint<Ctx>
-[[nodiscard]] PtpHandle mint_ptp_handle(Ctx const&, cog::CogIdentity nic, PtpClockFd clock_fd,
+[[nodiscard]] PtpHandle mint_ptp_handle(Ctx const&, cog::CogIdentity nic, PtpClockReader clock,
                                         PtpStatus initial_status) noexcept {
     CRUCIBLE_PRE(!nic.uuid.is_zero());
     CRUCIBLE_PRE(ptp_capable_cog(nic));
-    return PtpHandle{nic, clock_fd, initial_status};
+    return PtpHandle{nic, std::move(clock), initial_status};
 }
 
 // Opens /dev/ptpN through the reader's mint.  The gate is the reader's: a

@@ -47,7 +47,7 @@ static cog::CogIdentity nic(std::uint64_t lo) {
 // The log spelling of the three enums comes from reflection.
 static void test_name_accessors() {
     using ::foundation::reflect::enum_name;
-    static_assert(enum_name(topology::PtpError::InvalidClockFd) == "InvalidClockFd");
+    static_assert(enum_name(topology::PtpError::NonNicCog) == "NonNicCog");
     static_assert(enum_name(topology::PtpServoState::Slave) == "Slave");
     static_assert(enum_name(topology::PtpDegradationReason::ExcessiveSkew) == "ExcessiveSkew");
     volatile auto error = topology::PtpError::TimestampOverflow;
@@ -55,14 +55,12 @@ static void test_name_accessors() {
     crucible::test::pass("  test_name_accessors:        PASSED\n");
 }
 
-static void test_fd_and_nic_admission() {
-    auto bad_fd = topology::admit_ptp_clock_fd(-1);
-    assert(bad_fd.is_err());
-    assert(bad_fd.err() == ::fixy::some(topology::PtpError::InvalidClockFd));
+// The reader of no device, for a handle on a host with no /dev/ptpN.
+[[nodiscard]] static topology::PtpClockReader empty_clock() {
+    return ::fixy::time::mint_empty_ptp_clock_reader(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
+}
 
-    auto fd = topology::admit_ptp_clock_fd(7);
-    assert(fd.is_ok());
-    assert(std::move(fd).expect("7 is not negative").value() == 7);
+static void test_nic_and_device_admission() {
     assert(topology::ptp_capable_cog(nic(1)));
 
     auto gpu = nic(2);
@@ -75,12 +73,22 @@ static void test_fd_and_nic_admission() {
     auto too_high = topology::admit_ptp_device_index(256);
     assert(too_high.is_err());
     assert(too_high.err() == ::fixy::some(topology::PtpError::InvalidDeviceIndex));
-    crucible::test::pass("  test_fd_and_nic_admission:  PASSED\n");
+    crucible::test::pass("  test_nic_and_device_admission: PASSED\n");
+}
+
+// A handle owns the reader of its clock, and the clock of the handle is
+// that reader.  The reader of no device refuses each read and each query of
+// the capabilities.
+static void test_handle_owns_its_clock() {
+    auto const handle =
+        topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(5), empty_clock());
+    assert(topology::ptp_now(handle.clock(), ::foundation::effects::testing::test().nondet).is_err());
+    assert(error_of(topology::query_ptp_clock_caps(handle.clock())) == topology::PtpError::ClockCapsUnavailable);
+    assert(handle.nic().uuid == nic(5).uuid);
+    crucible::test::pass("  test_handle_owns_its_clock: PASSED\n");
 }
 
 static void test_handle_status_and_timestamp() {
-    auto fd = topology::admit_ptp_clock_fd(9);
-    assert(fd.is_ok());
     topology::PtpStatus status{
         .servo = topology::PtpServoState::Slave,
         .offset_from_master_ns = 12,
@@ -90,7 +98,7 @@ static void test_handle_status_and_timestamp() {
         .sequence = 4,
     };
     auto handle = topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(3),
-                                            std::move(fd).expect("9 is not negative"), status);
+                                            empty_clock(), status);
     assert(handle.status().synchronized());
     assert(error_of(handle.latest_timestamp()) == topology::PtpError::NoTimestamp);
 
@@ -141,10 +149,8 @@ static bool status_is_self_consistent(topology::PtpStatus const& observed) noexc
 }
 
 static void test_status_seqlock_never_tears() {
-    auto fd = topology::admit_ptp_clock_fd(11);
-    assert(fd.is_ok());
     auto handle = topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(4),
-                                            std::move(fd).expect("11 is not negative"), status_at_tick(0));
+                                            empty_clock(), status_at_tick(0));
 
     constexpr std::uint64_t ticks = 200000;
     std::atomic<bool> writer_done{false};
@@ -258,11 +264,12 @@ static void test_linux_boundaries_if_available() {
     assert(index0.is_ok());
     auto clock = topology::open_ptp_clock(bg_fs, std::move(index0).expect("0 is a device index"));
     if (clock.is_ok()) {
-        topology::PtpClockReader const reader = std::move(clock).expect("the clock opened");
-        auto stamp = topology::ptp_now(reader, ::foundation::effects::testing::test().nondet);
+        auto const handle = topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(6),
+                                                      std::move(clock).expect("the clock opened"));
+        auto stamp = topology::ptp_now(handle.clock(), ::foundation::effects::testing::test().nondet);
         assert(stamp.is_ok() || error_of(stamp) == topology::PtpError::ClockReadFailed
                || error_of(stamp) == topology::PtpError::TimestampOverflow);
-        auto caps = topology::query_ptp_clock_caps(reader);
+        auto caps = topology::query_ptp_clock_caps(handle.clock());
         assert(caps.is_ok() || error_of(caps) == topology::PtpError::ClockCapsUnavailable);
     } else {
         assert(error_of(clock) == topology::PtpError::OpenClockFailed);
@@ -374,9 +381,10 @@ int main() {
     static_assert(!::fixy::time::CtxFitsPtpClockReaderMint<eff::BgDrainCtx>,
                   "opening /dev/ptpN blocks on the file system, so a context without Block is refused");
 
-    ::fixy::report(::fixy::Sink::Out, "test_topology_ptp: 9 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_topology_ptp: 10 groups\n");
     test_name_accessors();
-    test_fd_and_nic_admission();
+    test_nic_and_device_admission();
+    test_handle_owns_its_clock();
     test_handle_status_and_timestamp();
     test_status_seqlock_never_tears();
     test_daemon_report_boundary();
