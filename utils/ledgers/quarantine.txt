@@ -104,6 +104,8 @@ bench/ | opted-out | 2 | MEASURE: the doors of the pinned reference of the hash 
 bench/ | opted-out | 11 | MEASURE: the doors of the pinned references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 6 | MEASURE: the forced arm is the naive baseline of one std::jthread for each worker | the forced arm of bench_no_regression is the naive baseline of the rule arm: one std::jthread for each worker, as a caller with no rule writes it
 bench/ | opted-out | 11 | MEASURE: the kernels index their runs as the memory hierarchy sees them, with no check | the kernels of bench_no_regression index their runs through raw pointers in the order of the memory hierarchy, so each row measures the hierarchy and not the checks of the base
+bench/ | opted-out | 3 | MEASURE: the pinned MPMCQueue of Erik Rigtorp is the reference of the MPSC ring | the reference rows of bench_thread_scaling: the pinned SPSCQueue and MPMCQueue of Erik Rigtorp (utils/pins.txt) in two regions, each with the wrapper that gives the rows of its ring the same calls, a raw measurement of a bench of the class MEASURE
+bench/ | opted-out | 5 | MEASURE: the pinned SPSCQueue of Erik Rigtorp is the reference of the SPSC ring | the reference rows of bench_thread_scaling: the pinned SPSCQueue and MPMCQueue of Erik Rigtorp (utils/pins.txt) in two regions, each with the wrapper that gives the rows of its ring the same calls, a raw measurement of a bench of the class MEASURE
 bench/ | opted-out | 9 | MEASURE: the pinned fluxsort is the stable reference of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 4 | MEASURE: the pinned rapidhash is the reference of the hash of the Protocol family | the reference rows of bench_reflect: the pinned rapidhash of Nicolas De Carli (utils/pins.txt), its door unit, and the bytes of a batch that go to the door, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 15 | MEASURE: the pinned x86-simd-sort is the speed roof of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
@@ -128,6 +130,8 @@ bench/ | region | 1 | MEASURE: the doors of the pinned reference of the hash of 
 bench/ | region | 1 | MEASURE: the doors of the pinned references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 1 | MEASURE: the forced arm is the naive baseline of one std::jthread for each worker | the forced arm of bench_no_regression is the naive baseline of the rule arm: one std::jthread for each worker, as a caller with no rule writes it
 bench/ | region | 1 | MEASURE: the kernels index their runs as the memory hierarchy sees them, with no check | the kernels of bench_no_regression index their runs through raw pointers in the order of the memory hierarchy, so each row measures the hierarchy and not the checks of the base
+bench/ | region | 1 | MEASURE: the pinned MPMCQueue of Erik Rigtorp is the reference of the MPSC ring | the reference rows of bench_thread_scaling: the pinned SPSCQueue and MPMCQueue of Erik Rigtorp (utils/pins.txt) in two regions, each with the wrapper that gives the rows of its ring the same calls, a raw measurement of a bench of the class MEASURE
+bench/ | region | 1 | MEASURE: the pinned SPSCQueue of Erik Rigtorp is the reference of the SPSC ring | the reference rows of bench_thread_scaling: the pinned SPSCQueue and MPMCQueue of Erik Rigtorp (utils/pins.txt) in two regions, each with the wrapper that gives the rows of its ring the same calls, a raw measurement of a bench of the class MEASURE
 bench/ | region | 1 | MEASURE: the pinned fluxsort is the stable reference of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 1 | MEASURE: the pinned rapidhash is the reference of the hash of the Protocol family | the reference rows of bench_reflect: the pinned rapidhash of Nicolas De Carli (utils/pins.txt), its door unit, and the bytes of a batch that go to the door, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 2 | MEASURE: the pinned x86-simd-sort is the speed roof of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
@@ -139,8 +143,8 @@ bench/ | region | 1 | MEASURE: the raw loop over two strides is the baseline of 
 bench/ | region | 1 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
-bench/ | std-entity | 530 | - | -
-bench/ | std-object | 173 | - | -
+bench/ | std-entity | 519 | - | -
+bench/ | std-object | 167 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
 examples/fn/ | raw-pointer-object | 7 | - | -
@@ -187,15 +191,15 @@ include/fixy/collision/ | replace-pending:<string> | 1 | - | -
 include/fixy/collision/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/collision/ | replace-pending:<vector> | 1 | - | -
 include/fixy/concurrent/ | base-c-library-call | 4 | - | -
-include/fixy/concurrent/ | base-std-entity | 107 | - | -
-include/fixy/concurrent/ | base-std-object | 33 | - | -
+include/fixy/concurrent/ | base-std-entity | 106 | - | -
+include/fixy/concurrent/ | base-std-object | 28 | - | -
 include/fixy/concurrent/ | replace-pending:<array> | 6 | - | -
-include/fixy/concurrent/ | replace-pending:<atomic> | 2 | - | -
+include/fixy/concurrent/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<bit> | 3 | - | -
 include/fixy/concurrent/ | replace-pending:<cstring> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<limits> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<optional> | 1 | - | -
-include/fixy/concurrent/ | replace-pending:<span> | 3 | - | -
+include/fixy/concurrent/ | replace-pending:<span> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<string> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<tuple> | 3 | - | -
@@ -422,8 +426,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2470 | - | -
-test/fixy/ | std-object | 882 | - | -
+test/fixy/ | std-entity | 2460 | - | -
+test/fixy/ | std-object | 875 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 284 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
