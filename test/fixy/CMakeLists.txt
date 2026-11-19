@@ -6079,6 +6079,10 @@ fixy_neg_compile_test(neg_permission_fork_without_bg
   "constraints not satisfied"
   "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
   "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")
+# The value of a body of the fork on threads is Sendable.
+fixy_neg_compile_test(neg_permission_fork_body_gives_an_owner_thread_value
+  "no matching function for call to .mint_permission_fork<"
+  "the expression .\\(ThreadForkValue<typename std::invoke_result<")
 
 # The body of the fork is a private member of PermissionForkThreads, and
 # the mint is its only friend: no other scope calls it, derives from the

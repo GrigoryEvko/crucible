@@ -245,6 +245,8 @@ inline constexpr std::meta::info open_templates[] = {
     ^^fp::can_split_into_pack,
     ^^fp::has_split_pack_authoring_witness,
     ^^fp::tag::FederatedPeer,
+    ^^fp::detail::fork_pack_,
+    ^^fp::detail::fork_result_,
 };
 
 struct ForgeVerdict {

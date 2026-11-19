@@ -39,6 +39,18 @@
 
 namespace fixy::concurrent {
 
+namespace detail {
+
+// A type that a body of the fork on threads can give (THE VALUE OF A BODY of
+// foundation/permissions/PermissionFork.h): a value that the borrow takes,
+// and that crosses from the thread of its body to the fork.
+template <typename Given>
+concept ThreadForkValue =
+    std::is_void_v<Given>
+    || (::foundation::permissions::detail::LentValue<Given> && ::foundation::transfer::Sendable<Given>);
+
+}  // namespace detail
+
 // The fit of the arm that starts threads: the fit of the inline arm, and a
 // context that owns the background effect.
 template <typename Ctx, typename Parent, typename... Children>
@@ -55,7 +67,11 @@ concept CtxFitsPermissionFork = ::foundation::permissions::CtxFitsPermissionFork
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsPermissionFork<Ctx, Parent, Children...> && (sizeof...(Children) == sizeof...(Callables))
           && (::foundation::permissions::detail::PermissionForkBody<Callables, Children, Brand, Ctx> && ...)
-[[nodiscard]] ::foundation::permissions::Permission<Parent, Brand>
+          && (detail::ThreadForkValue<::foundation::permissions::detail::lent_result_t<Callables, Children, Brand, Ctx>>
+              && ...)
+[[nodiscard]] ::foundation::permissions::fork_result_t<
+    Ctx, Parent, Brand, ::foundation::permissions::detail::fork_pack_<Children...>,
+    ::foundation::permissions::detail::fork_pack_<std::decay_t<Callables>...>>
 mint_permission_fork(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                      Callables&&... callables) noexcept;
 
@@ -70,7 +86,12 @@ class PermissionForkThreads final : ::foundation::NoObject<PermissionForkThreads
     template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
         requires CtxFitsPermissionFork<Ctx, Parent, Children...> && (sizeof...(Children) == sizeof...(Callables))
               && (::foundation::permissions::detail::PermissionForkBody<Callables, Children, Brand, Ctx> && ...)
-    friend ::foundation::permissions::Permission<Parent, Brand>
+              && (detail::ThreadForkValue<
+                      ::foundation::permissions::detail::lent_result_t<Callables, Children, Brand, Ctx>>
+                  && ...)
+    friend ::foundation::permissions::fork_result_t<
+        Ctx, Parent, Brand, ::foundation::permissions::detail::fork_pack_<Children...>,
+        ::foundation::permissions::detail::fork_pack_<std::decay_t<Callables>...>>
     mint_permission_fork(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                          Callables&&... callables) noexcept;
 
@@ -79,18 +100,23 @@ class PermissionForkThreads final : ::foundation::NoObject<PermissionForkThreads
     // in the join, so it does not touch them while the thread reads them.
     template <typename Child, typename Brand, typename Ctx, typename Body>
     struct child_frame_ {
+        using Value = ::foundation::permissions::detail::fork_value_t<Body, Child, Brand, Ctx>;
+
         ::foundation::permissions::Permission<Child, Brand>* child = nullptr;
         Ctx const* ctx = nullptr;
         Body* body = nullptr;
+        ::foundation::core::Option<Value>* value = nullptr;
 
         // Runs on the thread of the child.  The thread moves the body out
         // of the fork and copies the context, so each lives on the thread
-        // and ends there.
+        // and ends there.  The value of the body goes into the slot of the
+        // child, which the join orders before the read of the fork.
         static void run(void* frame) noexcept {
             child_frame_ const& source = *static_cast<child_frame_ const*>(frame);
             Body moved_body = std::move(*source.body);
             Ctx const child_ctx = *source.ctx;
-            *source.child = ::foundation::permissions::with_write_view(child_ctx, std::move(*source.child), moved_body);
+            *source.child = ::foundation::permissions::detail::lend_into_(child_ctx, std::move(*source.child),
+                                                                          moved_body, *source.value);
         }
     };
 
@@ -119,9 +145,11 @@ class PermissionForkThreads final : ::foundation::NoObject<PermissionForkThreads
     // the calling thread in child order, as the inline arm does.
     template <typename Brand, typename Ctx, typename... Children, typename... Bodies>
     struct fork_bodies_<Brand, Ctx, pack_<Children...>, pack_<Bodies...>> {
-        fork_bodies_(Ctx const& ctx, ::foundation::permissions::Permission<Children, Brand>&... children,
-                     Bodies... bodies) noexcept {
-            start_and_join_(child_frame_<Children, Brand, Ctx, Bodies>{&children, &ctx, &bodies}...);
+        fork_bodies_(Ctx const& ctx,
+                     ::foundation::core::Option<
+                         ::foundation::permissions::detail::fork_value_t<Bodies, Children, Brand, Ctx>>&... values,
+                     ::foundation::permissions::Permission<Children, Brand>&... children, Bodies... bodies) noexcept {
+            start_and_join_(child_frame_<Children, Brand, Ctx, Bodies>{&children, &ctx, &bodies, &values}...);
         }
     };
 
@@ -129,23 +157,42 @@ class PermissionForkThreads final : ::foundation::NoObject<PermissionForkThreads
     // bodies, and the combine carries it back out, so the region that
     // returns is the one that went in.
     template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
-    static ::foundation::permissions::Permission<Parent, Brand>
+    static ::foundation::permissions::fork_result_t<
+        Ctx, Parent, Brand, ::foundation::permissions::detail::fork_pack_<Children...>,
+        ::foundation::permissions::detail::fork_pack_<std::decay_t<Callables>...>>
     run_(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
          Callables&&... callables) noexcept {
+        using Result = ::foundation::permissions::fork_result_t<
+            Ctx, Parent, Brand, ::foundation::permissions::detail::fork_pack_<Children...>,
+            ::foundation::permissions::detail::fork_pack_<std::decay_t<Callables>...>>;
         ::foundation::permissions::detail::permission_fork_check_<true, Children...>();
         auto&& [... child] = ::foundation::permissions::mint_permission_split_n<Children...>(ctx, std::move(parent));
+        ::foundation::core::Record<::foundation::core::Option<
+            ::foundation::permissions::detail::fork_value_t<std::decay_t<Callables>, Children, Brand, Ctx>>...>
+            values{};
+        auto& [... value] = values;
         static_cast<void>(fork_bodies_<Brand, Ctx, pack_<Children...>, pack_<std::decay_t<Callables>...>>{
-            ctx, child..., std::forward<Callables>(callables)...});
+            ctx, value..., child..., std::forward<Callables>(callables)...});
         // The children never left this frame.  The combine consumes each
         // of them, and it checks the manifest and the brand again.
-        return ::foundation::permissions::mint_permission_combine_n<Parent>(ctx, std::move(child)...);
+        if constexpr (std::same_as<Result, ::foundation::permissions::Permission<Parent, Brand>>) {
+            return ::foundation::permissions::mint_permission_combine_n<Parent>(ctx, std::move(child)...);
+        } else {
+            return ::foundation::permissions::detail::fork_values_<Result>(
+                values, ::foundation::permissions::mint_permission_combine_n<Parent>(ctx, std::move(child)...),
+                std::index_sequence_for<Children...>{});
+        }
     }
 };
 
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsPermissionFork<Ctx, Parent, Children...> && (sizeof...(Children) == sizeof...(Callables))
           && (::foundation::permissions::detail::PermissionForkBody<Callables, Children, Brand, Ctx> && ...)
-[[nodiscard]] ::foundation::permissions::Permission<Parent, Brand>
+          && (detail::ThreadForkValue<::foundation::permissions::detail::lent_result_t<Callables, Children, Brand, Ctx>>
+              && ...)
+[[nodiscard]] ::foundation::permissions::fork_result_t<
+    Ctx, Parent, Brand, ::foundation::permissions::detail::fork_pack_<Children...>,
+    ::foundation::permissions::detail::fork_pack_<std::decay_t<Callables>...>>
 mint_permission_fork(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                      Callables&&... callables) noexcept {
     return PermissionForkThreads::run_<Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);

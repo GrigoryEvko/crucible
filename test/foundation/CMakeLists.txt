@@ -549,6 +549,9 @@ foundation_neg_compile_test(neg_permission_forged_without_key
 # that asks for its token is refused at the door, a body that keeps its
 # view past its frame is refused at the copy, and a body that asks for the
 # view of another region of the tag is refused at the door.
+foundation_neg_compile_test(neg_permission_fork_body_gives_a_borrow
+  "no matching function for call to .mint_permission_fork_inline<"
+  "the expression .\\(LentValue<typename std::invoke_result<")
 foundation_neg_compile_test(neg_permission_fork_body_takes_the_token
   "constraints not satisfied"
   "each_body_takes_its_child\\(.*\\^\\^ std::tuple<Callables \\.\\.\\.>\\) \\[with .*evaluated to .false.")

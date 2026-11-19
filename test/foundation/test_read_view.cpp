@@ -200,6 +200,31 @@ void test_fork_inline_inside_the_door(::fixy::TestRunnerCtx const& test) {
     ::foundation::linear::drop(std::move(config_back));
 }
 
+// A body of a borrow and of a fork gives its value back (THE VALUE OF A
+// BODY): the borrow gives the value beside the token, and the fork gives the
+// value of each body in child order, with Unit for a body that gives
+// nothing, and the parent last.
+void test_fork_gives_the_value_of_each_body(::fixy::TestRunnerCtx const& test) {
+    auto left = mint_permission_root<fork_tags::Left>();
+    using LeftBrand = ::foundation::brand::brand_of_t<decltype(left)>;
+    auto [lent_value, left_back] =
+        with_write_view(eff::testing::foreground(), std::move(left),
+                        [](WriteView<fork_tags::Left, LeftBrand> const&, HotFgCtx const&) noexcept { return 7; });
+    CRUCIBLE_TEST_ASSERT(test, lent_value == 7);
+    ::foundation::linear::drop(std::move(left_back));
+
+    auto whole = mint_permission_root<fork_tags::Whole>();
+    using WholeBrand = ::foundation::brand::brand_of_t<decltype(whole)>;
+    int order = 0;
+    auto [left_order, right_unit, rebuilt] = mint_permission_fork_inline<fork_tags::Left, fork_tags::Right>(
+        eff::testing::foreground(), std::move(whole),
+        [&order](WriteView<fork_tags::Left, WholeBrand> const&, HotFgCtx const&) noexcept { return ++order; },
+        [&order](WriteView<fork_tags::Right, WholeBrand> const&, HotFgCtx const&) noexcept { ++order; });
+    static_assert(std::is_same_v<decltype(right_unit), ::foundation::core::Unit>);
+    CRUCIBLE_TEST_ASSERT(test, left_order == 1 && order == 2);
+    ::foundation::linear::drop(std::move(rebuilt));
+}
+
 // A view from a live share.  The door holds the guard while the body
 // runs and hands it back, so the share stays counted throughout, and
 // the pool cannot upgrade until the guard ends.
@@ -289,6 +314,7 @@ int main() {
     test_door_lends_the_view_of_the_source_brand(test);
     pass(test, "  test_door_lends_the_view_of_the_source_brand: PASSED\n");
     test_fork_inline_inside_the_door(test);
+    test_fork_gives_the_value_of_each_body(test);
     pass(test, "  test_fork_inline_inside_the_door: PASSED\n");
     test_door_over_a_share_guard(test);
     pass(test, "  test_door_over_a_share_guard: PASSED\n");

@@ -297,7 +297,8 @@ template <BodyCoupling Coupling, typename... Children, typename Ctx, typename Pa
           typename... Callables>
     requires CtxFitsSpawn<Ctx, Parent, Brand, ::foundation::reflect::Pack<Children...>,
                           ::foundation::reflect::Pack<std::decay_t<Callables>...>>
-[[nodiscard]] perm::Permission<Parent, Brand>
+[[nodiscard]] perm::fork_result_t<Ctx, Parent, Brand, perm::detail::fork_pack_<Children...>,
+                                  perm::detail::fork_pack_<std::decay_t<Callables>...>>
 spawn_on_host_(Ctx const& ctx, ::fixy::concurrent::HostFacts const& host, ::fixy::concurrent::WorkBudget budget,
                perm::Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept {
     // Design note 1.  The clause above has already checked each callable's
@@ -308,6 +309,11 @@ spawn_on_host_(Ctx const& ctx, ::fixy::concurrent::HostFacts const& host, ::fixy
                   "mint_spawn: a callable's type carries fixy::atom::ctrl::throws. A noexcept declaration is "
                   "a promise the callable can still break, and a throw out of a child tears through the join "
                   "instead of unwinding it. Remove the atom from the callable's type, or do not spawn it.");
+    static_assert(
+        (::fixy::concurrent::detail::ThreadForkValue<perm::detail::lent_result_t<Callables, Children, Brand, Ctx>>
+         && ...),
+        "mint_spawn: the value of a body crosses from the thread of the body to the caller.  So it holds no "
+        "borrow, an Option takes it by assignment, and it is Sendable (foundation/Transfer.h).");
     if constexpr (Coupling == BodyCoupling::Independent) {
         if (choose_spawn_arm(Coupling, host, budget) == SpawnArm::Inline) {
             return perm::mint_permission_fork_inline<Children...>(ctx, std::move(parent),
@@ -332,9 +338,10 @@ template <BodyCoupling Coupling, typename... Children, typename Ctx, typename Pa
           typename... Callables>
     requires CtxFitsSpawn<Ctx, Parent, Brand, ::foundation::reflect::Pack<Children...>,
                           ::foundation::reflect::Pack<std::decay_t<Callables>...>>
-[[nodiscard]] perm::Permission<Parent, Brand> mint_spawn(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,
-                                                         perm::Permission<Parent, Brand>&& parent,
-                                                         Callables&&... callables) noexcept {
+[[nodiscard]] perm::fork_result_t<Ctx, Parent, Brand, perm::detail::fork_pack_<Children...>,
+                                  perm::detail::fork_pack_<std::decay_t<Callables>...>>
+mint_spawn(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, perm::Permission<Parent, Brand>&& parent,
+           Callables&&... callables) noexcept {
     return detail::spawn_on_host_<Coupling, Children...>(ctx, ::fixy::concurrent::ParallelismRule::host_facts(), budget,
                                                          std::move(parent), std::forward<Callables>(callables)...);
 }
@@ -345,7 +352,8 @@ template <BodyCoupling Coupling, typename... Children, typename Ctx, typename Te
           typename... Callables>
     requires CtxFitsSpawnOnHost<Ctx, TestCtx, Parent, Brand, ::foundation::reflect::Pack<Children...>,
                                 ::foundation::reflect::Pack<std::decay_t<Callables>...>>
-[[nodiscard]] perm::Permission<Parent, Brand>
+[[nodiscard]] perm::fork_result_t<Ctx, Parent, Brand, perm::detail::fork_pack_<Children...>,
+                                  perm::detail::fork_pack_<std::decay_t<Callables>...>>
 mint_spawn_on_host(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::HostFacts const& host,
                    ::fixy::concurrent::WorkBudget budget, perm::Permission<Parent, Brand>&& parent,
                    Callables&&... callables) noexcept {
