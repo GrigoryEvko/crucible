@@ -2,8 +2,8 @@
 
 // One producer thread is the sole writer of head_, of own_head_, of
 // cached_tail_ and of the slots in [tail, head).  One consumer thread is
-// the sole writer of tail_, of own_tail_ and of cached_head_, and the sole
-// reader of those slots.  A second producer or a second consumer corrupts
+// the sole writer of tail_, of own_tail_, of cached_head_ and of
+// deferred_pops_, and the sole reader of those slots.  A second producer or a second consumer corrupts
 // the ring.  The checked calls compare the published index with the copy of
 // their side at each publish, so a second writer of one side ends the
 // process at the next publish of the first writer.  A new owner of a side
@@ -44,6 +44,25 @@
 //   bench, GCC kept the push as an out-of-line call, and that call decreased
 //   the throughput in one L3 cache by approximately 14%.  The checked calls
 //   showed no such loss, so the compiler decides for them.
+//
+// THE DEFERRED TAIL
+//   try_pop_deferred moves only the copy of the tail of the consumer, and it
+//   counts its pops on the private line of the consumer.  The pop that makes
+//   the count equal to its Interval publishes the tail with one release
+//   store, and publish_tail publishes it at any time.  Each publish checks
+//   the published tail against the copy minus the count, so a second
+//   consumer ends the process at the next publish.  The producer sees the
+//   free cells of a pop only after the publish of the tail.  When the ring is
+//   full, a pop with a publish moves the line of the tail two times, and the
+//   push after it reads that line again.  So a consumer that pops a full ring
+//   publishes one time for each Interval pops, and the producer then reads
+//   the line of the tail one time for Interval free cells.  This is the batch
+//   update of the read index of MCRingBuffer (Lee, Bu and Chandranmenon,
+//   2010).  A snapshot reads the published tail, so it counts the deferred
+//   pops as items of the ring.  A pop of another form takes its own copy of
+//   the tail as the published tail.  So after a deferred pop, publish_tail
+//   runs before each pop of another form, or the check of that pop ends the
+//   process.  A deferred pop can follow a pop of another form.
 
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/RingValue.h>
@@ -156,6 +175,43 @@ public:
         const T result = buffer_[t & MASK];
         tail_.advance_sole_writer_by_proof(proof, own_tail_, t + 1);
         return ::foundation::core::Option<T>::some(result);
+    }
+
+    // The pop of THE DEFERRED TAIL.  It reads the cell as try_pop does, and it
+    // moves only the copy of the tail.  It publishes the tail at each
+    // Interval deferred pops, so the producer waits for at most Interval - 1
+    // pops that the consumer took.  An Interval of 1 publishes at each pop,
+    // as try_pop does.
+    template <std::size_t Interval>
+    [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop_deferred() noexcept {
+        static_assert(std::has_single_bit(Interval) && Interval <= Capacity,
+                      "fixy::concurrent::SpscRing::try_pop_deferred: the interval of the publish is a power of two "
+                      "and at most the capacity.  A larger interval would hold free cells of a full ring until the "
+                      "ring is empty.");
+        const std::uint64_t t = own_tail_.get();
+        if (cached_head_.get() <= t) [[unlikely]] {
+            if (items_after_head_load_() == 0) return ::foundation::core::none;
+        }
+        const T result = buffer_[t & MASK];
+        own_tail_.advance(t + 1);
+        const std::uint64_t deferred = deferred_pops_ + 1;
+        if (deferred == Interval) [[unlikely]] {
+            tail_.advance_sole_writer_from(t + 1 - Interval, t + 1);
+            deferred_pops_ = 0;
+        } else {
+            deferred_pops_ = deferred;
+        }
+        return ::foundation::core::Option<T>::some(result);
+    }
+
+    // Publishes the copy of the tail, when a deferred pop moved it since the
+    // last publish (THE DEFERRED TAIL).  The producer then sees each cell that
+    // the consumer freed.  Only the consumer calls it.
+    void publish_tail() noexcept {
+        if (deferred_pops_ == 0) return;
+        const std::uint64_t t = own_tail_.get();
+        tail_.advance_sole_writer_from(t - deferred_pops_, t);
+        deferred_pops_ = 0;
     }
 
     // The bulk copies go through std::memcpy rather than a std::simd
@@ -301,9 +357,12 @@ private:
     ::fixy::Monotonic<std::uint64_t> cached_tail_ = ::fixy::mint_monotonic<std::uint64_t>(0);
     ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> tail_ =
         ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
-    // The consumer is the one reader and the one writer of the two.
+    // The consumer is the one reader and the one writer of the three.  The
+    // count of the deferred pops is the copy of the tail minus the published
+    // tail (THE DEFERRED TAIL), and it is zero after each pop of another form.
     alignas(64)::fixy::Monotonic<std::uint64_t> own_tail_ = ::fixy::mint_monotonic<std::uint64_t>(0);
     ::fixy::Monotonic<std::uint64_t> cached_head_ = ::fixy::mint_monotonic<std::uint64_t>(0);
+    std::uint64_t deferred_pops_ = 0;
 
     alignas(64) std::array<T, Capacity> buffer_{};
 };

@@ -9,6 +9,7 @@
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/concurrent/EventCount.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/SpscRing.h>
@@ -325,6 +326,63 @@ using MpscWide = c::MpscRing<int, 128>;
     return 0;
 }
 
+// The deferred pop publishes the tail at each Interval pops, and publish_tail
+// publishes it at any time (THE DEFERRED TAIL of fixy/concurrent/SpscRing.h).
+// The producer sees the free cells only after a publish, and a snapshot
+// counts the deferred pops as items.  A deferred pop can follow a plain pop.
+[[nodiscard]] int spsc_deferred_tail_follows_its_publishes() {
+    constexpr std::size_t kInterval = 4;
+    c::SpscRing<int, 8> ring{};
+    const auto fail = [](fixy::TextView what) {
+        fixy::report(fixy::Sink::Err, "SPSC deferred tail: {}\n", what);
+        return 1;
+    };
+    for (int i = 0; i < 8; ++i) {
+        if (!ring.try_push(i)) return fail(fixy::TextView{"a push below capacity was refused"});
+    }
+    // Three deferred pops publish no tail, so the full ring refuses a push.
+    for (int i = 0; i < 3; ++i) {
+        if (ring.try_pop_deferred<kInterval>().value_or(-1) != i) return fail(fixy::TextView{"a deferred pop"});
+    }
+    if (ring.try_push(99)) return fail(fixy::TextView{"a push saw a cell before the publish of the tail"});
+    if (ring.size_approx(kNondet) != 8) return fail(fixy::TextView{"a snapshot did not count the deferred pops"});
+    // The fourth pop publishes the tail, and the four cells take four pushes.
+    if (ring.try_pop_deferred<kInterval>().value_or(-1) != 3) return fail(fixy::TextView{"the fourth deferred pop"});
+    for (int i = 8; i < 12; ++i) {
+        if (!ring.try_push(i)) return fail(fixy::TextView{"a push missed a cell of the publish at the interval"});
+    }
+    if (ring.try_push(99)) return fail(fixy::TextView{"a push into a ring full again was accepted"});
+    // publish_tail publishes one deferred pop, and a second call has no pop
+    // to publish.
+    if (ring.try_pop_deferred<kInterval>().value_or(-1) != 4) return fail(fixy::TextView{"a deferred pop"});
+    ring.publish_tail();
+    ring.publish_tail();
+    if (!ring.try_push(12)) return fail(fixy::TextView{"a push missed the cell of publish_tail"});
+    // A plain pop after the publish, and a deferred pop after the plain pop.
+    if (ring.try_pop().value_or(-1) != 5) return fail(fixy::TextView{"a plain pop after publish_tail"});
+    for (int i = 6; i < 13; ++i) {
+        if (ring.try_pop_deferred<kInterval>().value_or(-1) != i) {
+            return fail(fixy::TextView{"a deferred pop after a plain pop"});
+        }
+    }
+    if (ring.try_pop_deferred<kInterval>().is_some()) return fail(fixy::TextView{"an empty ring gave an item"});
+    ring.publish_tail();
+    if (!ring.empty_approx(kNondet) || ring.size_approx(kNondet) != 0) {
+        return fail(fixy::TextView{"a snapshot after publish_tail counted an item"});
+    }
+    return 0;
+}
+
+// A plain pop after a deferred pop with no publish_tail takes the copy of the
+// tail as the published tail, and its check ends the process.
+void plain_pop_after_a_deferred_pop() noexcept {
+    c::SpscRing<int, 8> ring{};
+    static_cast<void>(ring.try_push(1));
+    static_cast<void>(ring.try_push(2));
+    static_cast<void>(ring.try_pop_deferred<4>());
+    static_cast<void>(ring.try_pop());
+}
+
 // The pop of the consumer of a threaded SPSC case: an item, or the end of its
 // one producer.  The read of the end comes before the pop, so a pop after an
 // end that it read finds each item that the producer pushed.  A consumer that
@@ -385,6 +443,52 @@ template <class Pop>
                          next_expected);
             return 1;
         }
+    }
+    return ring.empty_approx(kNondet) ? 0 : 1;
+}
+
+// One producer and one consumer of deferred pops (THE DEFERRED TAIL of
+// fixy/concurrent/SpscRing.h).  The consumer publishes its tail before each
+// wait, so the producer sees each cell that the consumer freed.  The stream
+// keeps its order and loses no item.  Under TSan, a deferred publish that does
+// not order the reads of the cells before the next writes is a data race.
+[[nodiscard]] int spsc_deferred_two_threads() {
+    constexpr int kItems = 20000;
+    constexpr std::size_t kInterval = 16;
+    c::SpscRing<int, 64> ring{};
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    Waits waits{};
+    ::fixy::Atomic<bool> has_producer_ended{false};
+    int next_expected = 0;
+    auto producer = [&ring, &waits, &has_producer_ended](::fixy::BgLoadCtx const& bg) noexcept {
+        for (int i = 0; i < kItems; ++i) {
+            if (!push_waiting(bg, waits, [&ring, i]() noexcept { return ring.try_push(i); })) break;
+        }
+        has_producer_ended.store_release(true);
+        waits.items.notify_all(bg);
+    };
+    auto consumer = [&ring, &waits, &next_expected, &has_producer_ended](::fixy::BgLoadCtx const& bg) noexcept {
+        while (next_expected < kItems) {
+            ::fixy::Option<int> item = pop_or_end(bg, waits, has_producer_ended, [&ring]() noexcept {
+                ::fixy::Option<int> popped = ring.try_pop_deferred<kInterval>();
+                if (popped.is_none()) ring.publish_tail();
+                return popped;
+            });
+            if (std::move(item).value_or(-1) != next_expected) {
+                waits.stop(bg);
+                return;
+            }
+            ++next_expected;
+        }
+        ring.publish_tail();
+    };
+    ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+                                         "the bare ring is the state under test", ::fixy::thread::ThreadOptions{},
+                                         producer, consumer)
+        .expect("the thread door starts the producer and the consumer");
+    if (next_expected != kItems) {
+        fixy::report(fixy::Sink::Err, "SPSC deferred pops lost item {} or gave it out of order\n", next_expected);
+        return 1;
     }
     return ring.empty_approx(kNondet) ? 0 : 1;
 }
@@ -999,9 +1103,15 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     if (const int rc = spsc_single_threaded(); rc != 0) return rc;
     if (const int rc = spsc_caches_follow_the_other_side(); rc != 0) return rc;
+    if (const int rc = spsc_deferred_tail_follows_its_publishes(); rc != 0) return rc;
+    // The death case runs while the process has one thread.
+    ::fixy::check::expect_dies(test, plain_pop_after_a_deferred_pop,
+                               ::fixy::TextView{"!Cmp{}(current, stored) && !Cmp{}(stored, current)"});
     if (const int rc = spsc_roles_move_between_threads(); rc != 0) return rc;
+    if (const int rc = spsc_deferred_two_threads(); rc != 0) return rc;
     if (const int rc = spsc_proven_and_checked_calls_share_one_ring(); rc != 0) return rc;
     if (const int rc = spsc_proven_two_threads(); rc != 0) return rc;
     if (const int rc = mpsc_single_threaded(); rc != 0) return rc;
