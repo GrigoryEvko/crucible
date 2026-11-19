@@ -987,9 +987,10 @@ witness <fixy/os/Io.h> deleted | fixy::io::IoRingDoor | fixy::io::IoRingDoor{}
 witness <fixy/os/Handle.h> private | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>{3}
 witness <fixy/os/Handle.h> private | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<int>()}
 # A foreign ref names the descriptor of a socket that a Handle owns or that
-# a C library opened.  Its constructor from a number is private, and its
-# one friend is the door that share_socket and admit_foreign_socket call.
-witness <fixy/os/Socket.h> private | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read> | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read>{forge::rvalue<int>()}
+# a C library opened, with the generation of its number.  Its constructor
+# from a number and a generation is private, and its one friend is the door
+# that share_socket and admit_foreign_socket call.
+witness <fixy/os/Socket.h> private | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read> | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read>{forge::rvalue<int>(), forge::rvalue<std::uint32_t>()}
 # The four doors of a descriptor handle.  No object of a door exists, its
 # members are private, and its friends are the gated mints that open a
 # descriptor.

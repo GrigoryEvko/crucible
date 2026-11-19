@@ -245,6 +245,7 @@ that the axis does not apply to the row.
 | `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 | `mint_durable_append_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
+| `mint_empty_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
 | `mint_file_at` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_io_uring_ring` | `include/fixy/os/Io.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
@@ -377,4 +378,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 80 | 46 | 25 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 153 | 59 | 90 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 154 | 60 | 90 | 4 | 0 | 3 |
