@@ -4563,6 +4563,10 @@ fixy_test(test_channel_wait)
 fixy_neg_compile_test(neg_channel_receive_waiting_park_from_the_foreground
   "template constraint failure|constraints not satisfied|no matching function"
   "CtxFitsWaitPolicy")
+# The producer handle refuses a park to the foreground in the same way.
+fixy_neg_compile_test(neg_channel_push_waiting_park_from_the_foreground
+  "template constraint failure|constraints not satisfied|no matching function"
+  "CtxFitsWaitPolicy")
 
 # A handle owns a linear token or a pool share; copying it would
 # duplicate the one and double-count the other.

@@ -222,6 +222,16 @@ public:
             return ::foundation::core::Option<value_type>::some(open_(word));
         }
 
+        // Gives the object of the Box to the ring, with the wait of
+        // push_waiting of the channel of the words while the ring is full.
+        // The word of the Box is sealed one time, so a wait moves no Box.
+        template <WaitPolicy Policy, class Ctx>
+            requires CtxFitsWaitPolicy<Ctx, Policy>
+        void push_waiting(Ctx const& ctx, EventCount& room, value_type&& box) noexcept {
+            word_type const word = seal_(std::move(box));
+            cells_.template push_waiting<Policy>(ctx, room, word);
+        }
+
         [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
             return cells_.empty_approx(nondet);
         }

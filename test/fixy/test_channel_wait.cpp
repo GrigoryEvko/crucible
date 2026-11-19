@@ -7,7 +7,9 @@
 // and the consumer receives on the calling thread.  A lost wake leaves the consumer
 // parked, and the test then fails at the timeout of the test preset.  A lanes
 // channel gives the same stream under the schedule of each seed: the order of
-// its lanes.
+// its lanes.  The wait of the producer handle, push_waiting, waits by its
+// policy while the channel is full, on a room count that a slow consumer
+// notifies after each receive.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -173,6 +175,63 @@ template <class Consumer, class Producer, typename... PopTag>
     };
 }
 
+// The gate of the wait of a push: a hot context takes Spin and no policy that
+// parks.
+template <class Handle, class Policy, class Ctx>
+concept CanPushWaiting = requires(Handle& handle, Ctx const& ctx, cc::EventCount& room, Item const& item) {
+    handle.template push_waiting<Policy>(ctx, room, item);
+};
+
+// A wire of 4 cells with a slow consumer: the producer waits for room with
+// push_waiting, on the room count that the consumer notifies after each
+// receive.  Each item comes in order, and then the end.  A lost wake of the
+// producer leaves it parked, and the test then fails at the timeout of the
+// test preset.
+template <class Policy>
+void expect_each_item_through_a_full_wire(::fixy::BgLoadCtx const& ctx, std::uint64_t seed) {
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, WireTag>>();
+    using Wire = cc::channel_t<Item, 4, decltype(root)>;
+    static_assert(CanPushWaiting<typename Wire::ProducerHandle, cc::Spin, ::fixy::HotFgCtx>);
+    static_assert(!CanPushWaiting<typename Wire::ProducerHandle, ParkAtOnce, ::fixy::HotFgCtx>);
+    static_assert(CanPushWaiting<typename Wire::ProducerHandle, ParkAtOnce, ::fixy::BgLoadCtx>);
+    Wire channel{};
+    cc::EventCount items{};
+    cc::EventCount room{};
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<Wire::producer_tag, Wire::consumer_tag>(std::move(root));
+    typename Wire::ConsumerHandle consumer = channel.consumer(std::move(consumer_perm));
+    auto producer = [&items, &room, handle = channel.producer(std::move(producer_perm))](
+                        ::fixy::BgLoadCtx const& bg) mutable noexcept {
+        for (Item item = 0; item < kItems; ++item) {
+            handle.template push_waiting<Policy>(bg, room, item);
+            items.notify_one(bg);
+        }
+        std::move(handle).close();
+        items.notify_one(bg);
+    };
+    auto values = ::fixy::thread::run_beside(
+                      ctx, ::fixy::thread::ThreadOptions{}, std::move(producer),
+                      [&ctx, &items, &room, seed, owned = std::move(consumer)]() mutable noexcept {
+                          ::crucible::test::PhiloxStream delays{seed};
+                          Received result{};
+                          for (;;) {
+                              ::fixy::Result<Item, cc::NoItem> got = owned.template receive_waiting<Policy>(ctx, items);
+                              room.notify_one(ctx);
+                              if (got.is_err()) break;
+                              result.is_ordered = result.is_ordered
+                                               && std::move(got).expect("the test above found an item") == result.count;
+                              ++result.count;
+                              delay(delays);
+                          }
+                          ::foundation::linear::drop(std::move(owned));
+                          return result;
+                      })
+                      .expect("the thread door starts a producer");
+    Received const received = values.at(::fixy::index<1>());
+    CRUCIBLE_FATAL_INVARIANT(received.is_ordered);
+    CRUCIBLE_FATAL_INVARIANT(received.count == kItems);
+}
+
 // A merge of 8 cells: two producers, one consumer, each item of each producer
 // in the order of that producer, then the end when both producers closed.
 // Both producers open the channel before their threads start, so the channel
@@ -236,6 +295,8 @@ int main() {
     expect_each_item_then_the_end_of_a_wire<ParkAtOnce>(ctx, 11);
     expect_each_item_then_the_end_of_a_wire<SpinFirst>(ctx, 12);
     expect_each_item_then_the_end_of_a_wire<cc::Spin>(ctx, 13);
+    expect_each_item_through_a_full_wire<ParkAtOnce>(ctx, 14);
+    expect_each_item_through_a_full_wire<SpinFirst>(ctx, 15);
     expect_each_item_then_the_end_of_a_merge(ctx, 21);
     // Each seed gives the threads another schedule, and each gives one stream.
     for (std::uint64_t seed = 31; seed < 35; ++seed) {

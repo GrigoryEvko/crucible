@@ -327,23 +327,15 @@ struct BackgroundThread::Pipeline {
     };
 
     // Pushes the Box into the channel of producer, and notifies the items
-    // count of the channel, which wakes the consumer only when it parks.  A
-    // full channel gives the Box back, and the producer waits by StagePolicy
-    // on the room count of the channel until the push goes in.  The consumer
-    // notifies the room count after each receive, and the push in the
-    // condition of the wait comes after the entry of a park in the count, so
-    // the producer loses no wake.
+    // count of the channel, which wakes the consumer only when it parks.
+    // While the channel is full, the producer waits by StagePolicy on the
+    // room count of the channel (push_waiting of the channel).  The consumer
+    // notifies the room count after each receive, so the producer loses no
+    // wake.
     template <class Producer, class T>
     static void push_pipeline(::fixy::BgLoadCtx const& ctx, detail::bg_pipeline::ChannelWaits& waits,
                               Producer& producer, ::fixy::Box<T>&& value) {
-        ::fixy::Box<T> pending = std::move(value);
-        ::fixy::concurrent::wait_for<detail::bg_pipeline::StagePolicy>(
-            ctx, waits.room, [&producer, &pending]() noexcept {
-                ::fixy::Option<::fixy::Box<T>> kept = producer.try_push(std::move(pending));
-                if (kept.is_none()) return true;
-                pending = std::move(kept).expect("a full channel gives the Box back");
-                return false;
-            });
+        producer.template push_waiting<detail::bg_pipeline::StagePolicy>(ctx, waits.room, std::move(value));
         waits.items.notify_one(ctx);
     }
 

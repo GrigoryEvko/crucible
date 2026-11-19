@@ -476,6 +476,21 @@ public:
             }
         }
 
+        // Pushes item.  While the channel is full, the call waits by Policy
+        // (THE POLICY of fixy/concurrent/EventCount.h): Spin spins, and
+        // SpinThenPark spins for its budget and then parks on room.  The
+        // condition of the wait is a push, so the push after the entry of a
+        // park in the count takes each cell that a pop freed before the entry.
+        // A consumer that notifies room after each receive then loses no wake
+        // of this producer.  The gate of the policy refuses a policy that
+        // parks to a context of the hot path, because that context owns no
+        // Block.
+        template <WaitPolicy Policy, class Ctx>
+            requires CtxFitsWaitPolicy<Ctx, Policy>
+        void push_waiting(Ctx const& ctx, EventCount& room, T const& item) noexcept {
+            wait_for<Policy>(ctx, room, [this, &item]() noexcept { return try_push(item); });
+        }
+
         // The lane of this producer of the lanes form.
         [[nodiscard]] constexpr lane_index lane() const noexcept
             requires(Form == ChannelForm::lanes)
