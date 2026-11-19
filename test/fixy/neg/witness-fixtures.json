@@ -1223,8 +1223,8 @@
       "header": "fixy/concurrent/EventCount.h"
     },
     {
-      "type": "fixy::SoleWriterProof<forge::brand, forge::brand>",
-      "header": "fixy/Mutation.h"
+      "type": "foundation::SoleWriterProof<forge::brand, forge::brand>",
+      "header": "foundation/SoleWriterProof.h"
     },
     {
       "type": "foundation::os::FpScope<foundation::core::kFpModeIeee>",

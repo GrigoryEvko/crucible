@@ -1,5 +1,5 @@
 // Only the owner of a counter makes the proof of its one writer (THE PROOF OF
-// THE ONE WRITER of fixy/Mutation.h).  A type that is not the owner tries to
+// THE ONE WRITER of foundation/SoleWriterProof.h).  A type that is not the owner tries to
 // make the proof of the producer of a ring of the owner, so it would publish
 // with no check while a second producer writes the same index.
 

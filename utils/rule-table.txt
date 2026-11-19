@@ -256,7 +256,7 @@
 #   and for one PATH the row of the scope include decides.
 
 layer F0_floor 0 include/foundation/Platform.h include/foundation/Pinned.h include/foundation/Quarantine.h include/foundation/OpenExtension.h
-layer F0_core 1 include/foundation/reflect/ include/foundation/contracts/ include/foundation/Brand.h include/foundation/Lifetime.h include/foundation/ByteSeal.h include/foundation/Linear.h include/foundation/Transfer.h include/foundation/diag/FailClosed.h include/foundation/NoObject.h
+layer F0_core 1 include/foundation/reflect/ include/foundation/contracts/ include/foundation/Brand.h include/foundation/Lifetime.h include/foundation/ByteSeal.h include/foundation/SoleWriterProof.h include/foundation/Linear.h include/foundation/Transfer.h include/foundation/diag/FailClosed.h include/foundation/NoObject.h
 layer F0_os 2 include/foundation/os/Syscall.h include/foundation/os/KernelFloor.h include/foundation/os/PipeSignal.h include/foundation/os/OpenFlags.h include/foundation/os/FutexWords.h include/foundation/os/MapWords.h include/foundation/os/SchedWords.h include/foundation/os/MemoryPolicyWords.h src/foundation/os/Syscall.cpp src/foundation/os/Intercepted.h src/foundation/os/Intercepted.cpp
 layer F0_primitives 3 include/foundation/core/ include/foundation/Simd.h include/foundation/AlignedBytes.h include/foundation/SwissTableBuffer.h include/foundation/ThreadLocalRef.h include/foundation/ChannelBinding.h src/foundation/core/
 layer F0_doors 4 include/foundation/os/ src/foundation/os/
@@ -583,7 +583,7 @@ witness <fixy/os/SpinBudget.h> private | fixy::time::SpinDeadline | fixy::time::
 witness <fixy/concurrent/EventCount.h> private | fixy::concurrent::EventWait | fixy::concurrent::EventWait{forge::lvalue<fixy::concurrent::EventCount>(), std::uint32_t{0}}
 # A proof of the one writer of a counter comes only from the owner of the
 # counter, the one friend of the proof.
-witness <fixy/Mutation.h> private | fixy::SoleWriterProof<forge::brand, forge::brand> | fixy::SoleWriterProof<forge::brand, forge::brand>{}
+witness <foundation/SoleWriterProof.h> private | foundation::SoleWriterProof<forge::brand, forge::brand> | foundation::SoleWriterProof<forge::brand, forge::brand>{}
 # An FP scope comes only from mint_fp_scope, and a word of the FP control
 # register only from a read of the register or from a word and a mode.
 witness <foundation/os/FpControl.h> private | foundation::os::FpScope<foundation::core::kFpModeIeee> | foundation::os::FpScope<foundation::core::kFpModeIeee>{}

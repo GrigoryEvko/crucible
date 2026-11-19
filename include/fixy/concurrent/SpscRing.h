@@ -35,7 +35,7 @@
 //
 // THE PROVEN FORM
 //   A ring with an Owner also gives try_push_proven and try_pop_proven.
-//   Each takes a SoleWriterProof of fixy/Mutation.h for its side, and only
+//   Each takes a SoleWriterProof of foundation/SoleWriterProof.h for its side, and only
 //   Owner makes one: the type proves the one writer, so the publish loads
 //   nothing from the published index (advance_sole_writer_by_proof).  A ring
 //   with no Owner has no proven form.  The two forms keep the same copies,
