@@ -83,6 +83,7 @@
 // bf16 and the two fp8 formats use the portable code on each target, and
 // aarch64 uses it for f16 too.  THE DISPATCH below gives the reasons.
 
+#include <foundation/Platform.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Number.h>
 
@@ -353,6 +354,14 @@ using HardwareHalfLanes [[gnu::vector_size(16)]] = short;
 //
 // AVX-512 BF16 has no arm: vcvtneps2bf16 flushes each binary32 subnormal to
 // a zero with its sign, which the round to nearest even does not.
+//
+// The arm follows F16C of the target, so widen_bits, round_bits and the
+// three conversions that call them are in the target namespace (THE TARGET
+// NAMESPACE of foundation/Platform.h).  A unit of x86-64 and a unit of
+// x86-64-v3 in one program then keep their own bodies, and the link cannot
+// give the body of F16C to the unit of x86-64.  Each arm gives the same bits.
+inline namespace CRUCIBLE_SIMD_TARGET {
+
 template <class Format>
 [[nodiscard]] constexpr std::uint32_t widen_bits(typename Format::Word word) noexcept {
 #if defined(__x86_64__) && defined(__F16C__)
@@ -381,6 +390,8 @@ template <class Format, Saturation Mode>
     return round_portable<Format, Mode>(bits);
 }
 
+}  // namespace CRUCIBLE_SIMD_TARGET
+
 // The binary64 bits of binary32 bits, with integer operations only, so a
 // subnormal and a signaling NaN keep their value and their bits.
 [[nodiscard]] constexpr std::uint64_t widen_binary32_bits(std::uint32_t bits) noexcept {
@@ -400,6 +411,10 @@ template <class Format, Saturation Mode>
 }
 
 }  // namespace detail
+
+// The three conversions call the arm of the target (THE DISPATCH), so they
+// are in the target namespace too.
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 template <Float To, StorageFloat From>
 [[nodiscard]] constexpr To widen(From value) noexcept {
@@ -422,5 +437,7 @@ template <StorageFloat To, std::same_as<float> From>
     return To::from_bits(detail::round_bits<typename To::FormatType, detail::Saturation::saturating>(
         __builtin_bit_cast(std::uint32_t, value)));
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 }  // namespace foundation::core
