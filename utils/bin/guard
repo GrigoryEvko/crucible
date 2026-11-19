@@ -50,6 +50,8 @@ SUBCOMMANDS = {
     "bom": ("assay.guard.bom", "print the five layers of one artifact: guard bom --build-dir DIR ARTIFACT"),
     "asm-compare": ("assay.guard.asm_compare",
                     "print the instruction difference of functions: guard asm-compare --function NAME --objects A B"),
+    "merge-ledger": ("assay.guard.merge_ledger",
+                     "merge a ledger by its rows, as the merge driver of git: guard merge-ledger BASE OURS THEIRS PATH"),
 }
 
 if __name__ == "__main__":

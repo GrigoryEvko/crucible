@@ -11,6 +11,7 @@ from dataclasses import replace
 from functools import partial
 from pathlib import Path
 
+from assay.core import git
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -585,6 +586,68 @@ def max_merge_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> Non
     )
 
 
+def count_text(counts: dict[str, int]) -> str:
+    """Return the planted ledger of the rule count-rule with the count of each path, sorted."""
+    entries = "".join(f"{path} | kind | {count} | - | -\n" for path, count in sorted(counts.items()))
+    return f"format 1\nrule count-rule\n{entries}"
+
+
+def rebased(work: Path, ledgers: tuple[str, str, str], driver: str) -> tuple[int, str]:
+    """Rebase a planted branch onto a planted main, and return the exit of the rebase and the ledger of the work tree.
+
+    The three texts are the ledger of count-rule in the base, on main and on the branch.  The repository has the
+    attribute merge=ledger for its ledgers, and the configuration of the driver is `driver`, or none for "".
+    """
+    root = work / "repo"
+    root.mkdir()
+    git.init(root)
+    ledger_file = root / rule_ledger.shown_path("count-rule")
+    ledger_file.parent.mkdir(parents=True)
+    (root / rule_registry.REGISTRY_PATH).write_text(rule_registry.planted([COUNT_RULE]), encoding="utf-8")
+    (root / ".gitattributes").write_text("utils/ledgers/*.txt merge=ledger\n", encoding="utf-8")
+    ledger_file.write_text(ledgers[0], encoding="utf-8")
+    base = git.commit_all(root, "Plant the base")
+    main_branch = git.run(root, "rev-parse", "--abbrev-ref", "HEAD").decode().strip()
+    ledger_file.write_text(ledgers[2], encoding="utf-8")
+    git.run(root, "add", "-A")
+    tree = git.run(root, "write-tree").decode().strip()
+    topic = git.run(root, "commit-tree", tree, "-p", base, "-m", "Change the branch", extra=git.SCRATCH_IDENTITY)
+    git.run(root, "update-ref", "refs/heads/topic", topic.decode().strip())
+    ledger_file.write_text(ledgers[1], encoding="utf-8")
+    git.commit_all(root, "Change main")
+    configured = ("-c", f"merge.ledger.driver={driver}") if driver else ()
+    completed = git.run_any_exit(root, *configured, "rebase", main_branch, "topic", extra=git.SCRATCH_IDENTITY)
+    return completed.exit, ledger_file.read_text(encoding="utf-8")
+
+
+def driver_cases(expect: Expect) -> None:
+    """Check the merge driver of git in a planted rebase (THE DRIVER of assay.guard.merge_ledger)."""
+    guard = Path(__file__).resolve().parents[3] / "bin" / "guard"
+    driver = f"{sys.executable} {guard} merge-ledger %O %A %B %P %S %X %Y"
+    base = count_text({"a.py": 4, "b.py": 2, "c.py": 1})
+    adjacent = (base, count_text({"a.py": 5, "b.py": 2, "c.py": 1}), count_text({"a.py": 4, "b.py": 3, "c.py": 1}))
+    with tempfile.TemporaryDirectory(prefix="ledger-driver-") as work:
+        status, text = rebased(Path(work), adjacent, driver)
+        expect(
+            "in a rebase with the driver, changes of adjacent keys merge by the keys, and the rebase ends",
+            status == 0 and text == count_text({"a.py": 5, "b.py": 3, "c.py": 1}),
+        )
+    with tempfile.TemporaryDirectory(prefix="ledger-driver-") as work:
+        status, text = rebased(Path(work), adjacent, "")
+        expect(
+            "with the attribute and no configuration of the driver, git merges the ledger by its lines, and the "
+            "adjacent changes conflict",
+            status != 0 and "<<<<<<<" in text,
+        )
+    summed = (base, count_text({"a.py": 5, "b.py": 2, "c.py": 1}), count_text({"a.py": 7, "b.py": 2, "c.py": 1}))
+    with tempfile.TemporaryDirectory(prefix="ledger-driver-") as work:
+        status, text = rebased(Path(work), summed, driver)
+        expect(
+            "the driver refuses a key whose counts merge by a sum, and it leaves the conflict markers of git",
+            status != 0 and "<<<<<<<" in text and "a.py | kind | 7" in text and "a.py | kind | 5" in text,
+        )
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and print one line for each.
 
@@ -610,6 +673,7 @@ def main(argv: list[str]) -> int:
     reduce_cases(expect, table)
     admit_row_cases(expect, table)
     merge_cases(expect, table)
+    driver_cases(expect)
     if failures:
         print(f"tests.core.test_ledger: FAILED, {len(failures)} case(s) did not hold")
         return 1

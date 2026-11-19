@@ -14,3 +14,8 @@ include/crucible/perf/bpf/vmlinux.h linguist-generated=true linguist-vendored=tr
 # The PyTorch tables of the storage float test, which
 # test/fixy/storage_float/make_torch_tables.py writes.  Each one is binary.
 test/fixy/storage_float/*.bin binary linguist-generated=true
+
+# The ledgers merge by the keys of their rows in a rebase, through the merge
+# driver `guard merge-ledger` (THE ACTIVATION of utils/assay/guard/merge_ledger.py).
+# A repository with no configuration of the driver merges them by their lines.
+utils/ledgers/*.txt merge=ledger
