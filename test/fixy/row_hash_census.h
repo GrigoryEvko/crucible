@@ -921,6 +921,8 @@ inline constexpr StatedZero kZeros[] = {
      "the marker of an owner state: a member type that opts a state in to the owner core, and never a value"},
     {^^::foundation::core::OwnerHomes,
      "the list of the home namespaces of a roster of owner states: it lives at compile time, and holds nothing"},
+    {^^::foundation::core::OwnerCore,
+     "the protected base of an owner of storage: it holds the state of its owner, and is never a value of its own"},
     {^^::foundation::core::Box,
      "an owned allocation of one object: it holds storage and makes no claim about what the object holds"},
     {^^::foundation::core::Hole,

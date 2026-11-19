@@ -38,6 +38,7 @@
 #include <foundation/core/List.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/OneOf.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/PackedWord.h>
 #include <foundation/core/Parse.h>
 #include <foundation/core/Philox.h>
@@ -118,6 +119,12 @@ using ::foundation::core::local_part;
 using ::foundation::core::order;
 using ::foundation::core::Orderable;
 using ::foundation::core::pad_part;
+
+// The core of an owner of storage, and the marker that its state carries.
+// An owner of each layer derives from the core (foundation/core/Owner.h).
+using ::foundation::core::OwnerCore;
+using ::foundation::core::OwnerState;
+using ::foundation::core::OwnerStateMark;
 
 using ::foundation::core::Box;
 using ::foundation::core::box_word_key;

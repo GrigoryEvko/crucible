@@ -117,6 +117,10 @@ static_assert(!OwnerState<owner::CheckStateWithCopy> && MarksOwnerState<owner::C
 static_assert(!OwnerState<int>);
 static_assert(std::is_empty_v<OwnerStateMark>);
 
+// The core is a public name of foundation::core, so an owner of each layer
+// names it with no use of a detail namespace.
+static_assert(std::meta::parent_of(^^OwnerCore) == ^^::foundation::core);
+
 // The core adds no byte to the state, and an owner on it moves and does not
 // copy.
 static_assert(sizeof(OwnerCore<owner::CheckState>) == sizeof(owner::CheckState));

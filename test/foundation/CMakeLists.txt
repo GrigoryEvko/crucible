@@ -3491,10 +3491,10 @@ target_link_libraries(test_core_owner_probe PRIVATE fixy)
 # and the operations of the core.  A record with no marker, and a marked
 # record with no release, do not compile as the state of an owner.
 foundation_neg_compile_test(neg_core_owner_state_no_mark
-  "template constraint failure for .template<class State>  requires  OwnerState<State> class foundation::core::detail::OwnerCore."
+  "template constraint failure for .template<class State>  requires  OwnerState<State> class foundation::core::OwnerCore."
   "required for the satisfaction of .MarksOwnerState<State>. \\[with State = <unnamed>::RecordWithNoMark\\]")
 foundation_neg_compile_test(neg_core_owner_state_mark_no_release
-  "template constraint failure for .template<class State>  requires  OwnerState<State> class foundation::core::detail::OwnerCore."
+  "template constraint failure for .template<class State>  requires  OwnerState<State> class foundation::core::OwnerCore."
   "required for the satisfaction of .GivesOwnerOperations<State>. \\[with State = <unnamed>::MarkedRecordWithNoRelease\\]")
 
 # A FixedList holds at most N elements, and an append into a full list

@@ -559,7 +559,7 @@ template <class T, std::size_t Align = alignof(T)>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
                    [[= ::foundation::transfer::by_arguments{}]] HeapArray final
-    : public detail::OwnerCore<detail::owner::HeapArrayState<T, Align>> {
+    : public OwnerCore<detail::owner::HeapArrayState<T, Align>> {
     using State = detail::owner::HeapArrayState<T, Align>;
 
 public:
@@ -871,7 +871,7 @@ concept CanMintMaskedArray = OwnedElement<T> && detail::HeapArrayAlignment<T, Al
 template <class T, std::size_t Align = alignof(T)>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]] MaskedArray final
-    : public detail::OwnerCore<detail::owner::MaskedArrayState<T, Align>> {
+    : public OwnerCore<detail::owner::MaskedArrayState<T, Align>> {
     using State = detail::owner::MaskedArrayState<T, Align>;
 
     // The first element.  A default or moved-from array holds no storage.

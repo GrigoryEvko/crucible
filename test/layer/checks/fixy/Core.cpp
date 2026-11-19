@@ -30,6 +30,18 @@ static_assert(std::is_same_v<::fixy::pack_concat_t<::fixy::Pack<int>, ::fixy::Pa
 static_assert(std::is_same_v<::fixy::pack_apply_t<::fixy::Record, ::fixy::Pack<int, long>>, ::fixy::Record<int, long>>);
 static_assert(::fixy::pack_unique_v<::fixy::Pack<int, long>>);
 static_assert(std::is_same_v<::fixy::Box<int>, ::foundation::core::Box<int>>);
+// A state with the marker and the two functions of the owner core.
+struct CoreCheckOwnerState {
+    using owner_state_mark = ::fixy::OwnerStateMark;
+
+    [[nodiscard]] static constexpr CoreCheckOwnerState emptied(CoreCheckOwnerState const& /*state*/) noexcept {
+        return CoreCheckOwnerState{};
+    }
+    static constexpr void release(CoreCheckOwnerState const& /*state*/) noexcept {}
+};
+static_assert(::fixy::OwnerState<CoreCheckOwnerState>);
+static_assert(
+    std::is_same_v<::fixy::OwnerCore<CoreCheckOwnerState>, ::foundation::core::OwnerCore<CoreCheckOwnerState>>);
 struct CoreCheckBrand {};
 // An object for the unevaluated operands below, with no definition.
 extern int core_number;

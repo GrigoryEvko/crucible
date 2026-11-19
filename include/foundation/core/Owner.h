@@ -68,20 +68,6 @@ struct OwnerHomes final {
     static constexpr std::size_t count = sizeof...(Homes);
 };
 
-}  // namespace foundation::core
-
-namespace foundation::core::detail {
-
-// The home of each state type of an owner of foundation.
-namespace owner {}
-
-// The class or the class template that a type names: a specialization gives
-// its template.
-[[nodiscard]] consteval std::meta::info owner_entity_of_(std::meta::info type) {
-    std::meta::info const bare = std::meta::dealias(type);
-    return std::meta::has_template_arguments(bare) ? std::meta::template_of(bare) : bare;
-}
-
 // The state opts in to the core with the marker.  Each clause is its own
 // concept, so a refusal names the clause that failed.
 template <class State>
@@ -138,6 +124,20 @@ protected:
         State::release(held);
     }
 };
+
+}  // namespace foundation::core
+
+namespace foundation::core::detail {
+
+// The home of each state type of an owner of foundation.
+namespace owner {}
+
+// The class or the class template that a type names: a specialization gives
+// its template.
+[[nodiscard]] consteval std::meta::info owner_entity_of_(std::meta::info type) {
+    std::meta::info const bare = std::meta::dealias(type);
+    return std::meta::has_template_arguments(bare) ? std::meta::template_of(bare) : bare;
+}
 
 // The result of a roster check: the classes and class templates of the home
 // namespace, the members that exactly one owner covers, and the owners that
@@ -265,8 +265,7 @@ inline constexpr std::meta::info owner_state_home = ^^detail::owner;
 
 template <detail::OwnerHomeList HomeList, class... Owners>
 [[nodiscard]] consteval std::size_t count_owner_roster_gaps() {
-    detail::OwnerRosterVerdict const verdict =
-        detail::verdict_of_owner_roster<HomeList, ^^detail::OwnerCore, Owners...>();
+    detail::OwnerRosterVerdict const verdict = detail::verdict_of_owner_roster<HomeList, ^^OwnerCore, Owners...>();
     return (verdict.roster - verdict.covered) + verdict.stale;
 }
 

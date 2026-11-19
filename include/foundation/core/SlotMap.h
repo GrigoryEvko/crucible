@@ -322,9 +322,9 @@ template <class T, class Tag, class Generation = std::uint32_t>
     requires SlotMapElement<T> && std::is_class_v<Tag> && SlotGeneration<Generation>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
                    [[= ::foundation::lifetime::no_start_over_bytes{}]] SlotMap final
-    : public detail::OwnerCore<detail::owner::SlotMapState<T, Generation>> {
+    : public OwnerCore<detail::owner::SlotMapState<T, Generation>> {
     using State = detail::owner::SlotMapState<T, Generation>;
-    using Core = detail::OwnerCore<State>;
+    using Core = OwnerCore<State>;
 
     // The slots of a mint.  Only the mint calls it.
     constexpr explicit SlotMap(State const& state) noexcept : Core{state} {}

@@ -718,9 +718,9 @@ public:
 template <BoxPayload T>
 class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box_payload<T>()>]]
                    [[= ::foundation::transfer::by_arguments{}]] Box final
-    : public detail::OwnerCore<detail::owner::BoxState<T>> {
+    : public OwnerCore<detail::owner::BoxState<T>> {
     using State = detail::owner::BoxState<T>;
-    using Core = detail::OwnerCore<State>;
+    using Core = OwnerCore<State>;
 
     // A moved-from or consumed Box holds no object.  The use-after-move
     // guard refuses a use of it that it can see, and each build tests it
@@ -883,9 +883,9 @@ template <BoxPayload T, class Authority>
 template <std::size_t Size, std::size_t Align>
     requires HoleShape<Size, Align>
 class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] Hole final
-    : public detail::OwnerCore<detail::owner::HoleState<Size, Align>> {
+    : public OwnerCore<detail::owner::HoleState<Size, Align>> {
     using State = detail::owner::HoleState<Size, Align>;
-    using Core = detail::OwnerCore<State>;
+    using Core = OwnerCore<State>;
 
     template <BoxPayload T>
     friend class Box;

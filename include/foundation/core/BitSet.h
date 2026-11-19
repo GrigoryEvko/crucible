@@ -630,9 +630,9 @@ template <class Tag, class Marker>
 template <class Tag>
     requires std::is_class_v<Tag>
 class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] HeapBitSet final
-    : public detail::OwnerCore<detail::owner::HeapBitSetState> {
+    : public OwnerCore<detail::owner::HeapBitSetState> {
     using State = detail::owner::HeapBitSetState;
-    using Core = detail::OwnerCore<State>;
+    using Core = OwnerCore<State>;
 
     // The words of a count of ids.  Only the mint calls it.
     constexpr explicit HeapBitSet(State const& state) noexcept : Core{state} {}

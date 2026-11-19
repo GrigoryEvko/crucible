@@ -143,7 +143,7 @@ struct AlignedBytesState {
 
 // The core of foundation/core/Owner.h gives the moves and the end of a
 // block.
-class [[nodiscard]] AlignedBytes final : public core::detail::OwnerCore<core::detail::owner::AlignedBytesState> {
+class [[nodiscard]] AlignedBytes final : public core::OwnerCore<core::detail::owner::AlignedBytesState> {
     using State = core::detail::owner::AlignedBytesState;
 
 public:

@@ -17,7 +17,7 @@ struct RecordWithNoMark {
     static constexpr void release(RecordWithNoMark const& /*state*/) noexcept {}
 };
 
-struct OwnerOfRecord final : ::foundation::core::detail::OwnerCore<RecordWithNoMark> {};
+struct OwnerOfRecord final : ::foundation::core::OwnerCore<RecordWithNoMark> {};
 
 }  // namespace
 
