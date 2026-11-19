@@ -29,9 +29,6 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <limits>
 #include <string_view>
 #include <type_traits>
 
@@ -49,16 +46,20 @@ namespace fl = ::foundation::algebra::lattices;
 namespace fd = ::foundation::diag;
 namespace fe = ::foundation::effects;
 
-constexpr std::uint64_t kMax = std::numeric_limits<std::uint64_t>::max();
+constexpr std::uint64_t kMax = ::fixy::max_of<std::uint64_t>;
 
 // Read at run time, so the compiler cannot fold the attacks away.
 volatile std::uint64_t g_seed = 7;
 
 int g_failures = 0;
 
-void expect(bool holds, char const* what) {
+// The words of a count or of a clock, one word for each slot.
+template <std::size_t Count>
+using SlotWords = ::fixy::FixedArray<std::uint64_t, Count>;
+
+void expect(bool holds, ::fixy::TextView what) {
     if (!holds) {
-        std::fprintf(stderr, "test_counter_clock_attacks: FAILED: %s\n", what);
+        ::fixy::report(::fixy::Sink::Err, "test_counter_clock_attacks: FAILED: {}\n", what);
         ++g_failures;
     }
 }
@@ -81,14 +82,14 @@ using IoCtx = fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO>>;
 // is the only way a test reaches a count or a clock at a number of its
 // choice, and it goes through the one door that reads bytes.
 template <typename L, std::size_t Words>
-typename L::image_type image_with(std::uint64_t axis, std::array<std::uint64_t, Words> const& words) {
+typename L::image_type image_with(std::uint64_t axis, ::fixy::FixedArray<std::uint64_t, Words> const& words) {
     typename L::image_type image{};
     static_assert(image.size() == 8 * (Words + 1));
     for (std::size_t i = 0; i < 8; ++i)
         image[i] = static_cast<std::byte>((axis >> (8 * i)) & 0xFFu);
-    for (std::size_t w = 0; w < Words; ++w) {
+    for (::fixy::Index<Words> const w : ::fixy::IndexRange<Words>{}) {
         for (std::size_t i = 0; i < 8; ++i) {
-            image[8 * (w + 1) + i] = static_cast<std::byte>((words[w] >> (8 * i)) & 0xFFu);
+            image[8 * (w.raw() + 1) + i] = static_cast<std::byte>((words.at(w) >> (8 * i)) & 0xFFu);
         }
     }
     return image;
@@ -97,16 +98,16 @@ typename L::image_type image_with(std::uint64_t axis, std::array<std::uint64_t, 
 template <typename L>
 typename L::element_type count_at(std::uint64_t count) {
     IoCtx const ctx{fe::testing::test()};
-    auto const read = fe::mint_from_image<L>(ctx, image_with<L, 1>(L::image_axis(), {count}));
-    if (!read) std::abort();
+    auto const read = fe::mint_from_image<L>(ctx, image_with<L, 1>(L::image_axis(), SlotWords<1>{count}));
+    CRUCIBLE_TEST_ASSERT(kTest, read.has_value());
     return *read;
 }
 
 template <typename HB>
-typename HB::element_type clock_at(std::array<std::uint64_t, HB::process_count> const& slots) {
+typename HB::element_type clock_at(SlotWords<HB::process_count> const& slots) {
     IoCtx const ctx{fe::testing::test()};
     auto const read = fe::mint_from_image<HB>(ctx, image_with<HB, HB::process_count>(HB::image_axis(), slots));
-    if (!read) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, read.has_value());
     return *read;
 }
 
@@ -116,7 +117,7 @@ typename HB::element_type clock_at(std::array<std::uint64_t, HB::process_count> 
 // names it as its top.  A version axis has no top, because its newest count
 // would then exist with no successor step and win each join.
 template <typename L>
-void attack_counter_top(char const* axis) {
+void attack_counter_top(::fixy::TextView axis) {
     using E = typename L::element_type;
     std::uint64_t const s = g_seed;
     E const top = count_at<L>(kMax);
@@ -248,17 +249,17 @@ void attack_clock_single_slot() {
     // One slot is a scalar clock: every pair is ordered, none concurrent.
     for (std::uint64_t i = 0; i < 16; ++i) {
         for (std::uint64_t j = 0; j < 16; ++j) {
-            HB::element_type const a = clock_at<HB>({s * i});
-            HB::element_type const b = clock_at<HB>({s * j});
+            HB::element_type const a = clock_at<HB>(SlotWords<1>{s * i});
+            HB::element_type const b = clock_at<HB>(SlotWords<1>{s * j});
             expect(HB::comparable(a, b) && !HB::is_concurrent(a, b), "one slot is total");
             expect(HB::happens_before(a, b) == (s * i < s * j), "one slot orders by the count");
         }
     }
     // The clock has no top, and the largest clock comes from a checked read.
-    HB::element_type const largest = clock_at<HB>({kMax});
-    HB::element_type const near_top = clock_at<HB>({kMax - 1});
+    HB::element_type const largest = clock_at<HB>(SlotWords<1>{kMax});
+    HB::element_type const near_top = clock_at<HB>(SlotWords<1>{kMax - 1});
     expect(HB::successor_at(near_top, 0) == largest, "one step below the largest clock reaches it");
-    expect(HB::causal_merge(clock_at<HB>({3}), near_top, 0) == largest,
+    expect(HB::causal_merge(clock_at<HB>(SlotWords<1>{3}), near_top, 0) == largest,
            "a merge that lands on the largest clock is still a successor of both inputs");
 }
 
@@ -329,13 +330,16 @@ void attack_clock_against_the_causal_order() {
     constexpr std::size_t kProcesses = 4;
     constexpr std::size_t kEvents = 144;
     using HB = fl::HappensBeforeLattice<kProcesses>;
+    using Process = ::fixy::Index<kProcesses>;
+    using Event = ::fixy::Index<kEvents>;
+    using Events = ::fixy::IndexRange<kEvents>;
 
-    std::array<HB::element_type, kEvents> clock_of{};
-    std::array<std::array<bool, kEvents>, kEvents> precedes{};
+    ::fixy::FixedArray<HB::element_type, kEvents> clock_of{};
+    ::fixy::FixedArray<::fixy::FixedArray<bool, kEvents>, kEvents> precedes{};
 
-    std::array<HB::element_type, kProcesses> now{};
-    std::array<std::size_t, kProcesses> last_event{};
-    std::array<bool, kProcesses> has_event{};
+    ::fixy::FixedArray<HB::element_type, kProcesses> now{};
+    ::fixy::FixedArray<std::size_t, kProcesses> last_event{};
+    ::fixy::FixedArray<bool, kProcesses> has_event{};
 
     // A message in flight carries the clock and the index of its send.
     struct Message {
@@ -344,9 +348,16 @@ void attack_clock_against_the_causal_order() {
         std::size_t to = 0;
         bool in_flight = false;
     };
-    std::array<Message, kEvents> mailbox{};
+    ::fixy::FixedArray<Message, kEvents> mailbox{};
     std::size_t mailbox_used = 0;
     std::size_t receive_count = 0;
+
+    // Each event number that the run stores is the number of an earlier
+    // event, or a count of sends that is at most the count of events before
+    // it, so each check passes.
+    auto event_at = [](std::size_t number) noexcept {
+        return Event::check(number).expect("a stored event number is below the event count");
+    };
 
     std::uint64_t state = g_seed * 0x9E3779B97F4A7C15ULL + 1;
     auto next_random = [&state]() {
@@ -354,54 +365,56 @@ void attack_clock_against_the_causal_order() {
         return state >> 33;
     };
 
-    for (std::size_t e = 0; e < kEvents; ++e) {
-        std::size_t const p = next_random() % kProcesses;
+    for (Event const e : Events{}) {
+        Process const p = Process::check(next_random() % kProcesses).expect("a remainder of the count is below it");
         std::uint64_t const kind = next_random() % 3;
-        if (has_event[p]) precedes[last_event[p]][e] = true;
+        if (has_event.at(p)) precedes.at(event_at(last_event.at(p))).at(e) = true;
 
         // Receive the oldest message addressed to p, if one waits.
         bool received = false;
         if (kind == 2) {
-            for (std::size_t m = 0; m < mailbox_used; ++m) {
-                if (mailbox[m].in_flight && mailbox[m].to == p) {
-                    now[p] = HB::causal_merge(now[p], mailbox[m].clock, p);
-                    precedes[mailbox[m].send_event][e] = true;
-                    mailbox[m].in_flight = false;
+            for (Event const m : Events{}) {
+                if (m.raw() >= mailbox_used) break;
+                Message& message = mailbox.at(m);
+                if (message.in_flight && message.to == p.raw()) {
+                    now.at(p) = HB::causal_merge(now.at(p), message.clock, p.raw());
+                    precedes.at(event_at(message.send_event)).at(e) = true;
+                    message.in_flight = false;
                     received = true;
                     ++receive_count;
                     break;
                 }
             }
         }
-        if (!received) now[p] = HB::successor_at(now[p], p);
+        if (!received) now.at(p) = HB::successor_at(now.at(p), p.raw());
 
         // A send is a local event whose clock travels with the message.
         if (kind == 1) {
-            std::size_t const to = (p + 1 + next_random() % (kProcesses - 1)) % kProcesses;
-            mailbox[mailbox_used++] = Message{now[p], e, to, true};
+            std::size_t const to = (p.raw() + 1 + next_random() % (kProcesses - 1)) % kProcesses;
+            mailbox.at(event_at(mailbox_used++)) = Message{now.at(p), e.raw(), to, true};
         }
-        clock_of[e] = now[p];
-        last_event[p] = e;
-        has_event[p] = true;
+        clock_of.at(e) = now.at(p);
+        last_event.at(p) = e.raw();
+        has_event.at(p) = true;
     }
 
-    for (std::size_t k = 0; k < kEvents; ++k) {
-        for (std::size_t i = 0; i < kEvents; ++i) {
-            if (!precedes[i][k]) continue;
-            for (std::size_t j = 0; j < kEvents; ++j) {
-                if (precedes[k][j]) precedes[i][j] = true;
+    for (Event const k : Events{}) {
+        for (Event const i : Events{}) {
+            if (!precedes.at(i).at(k)) continue;
+            for (Event const j : Events{}) {
+                if (precedes.at(k).at(j)) precedes.at(i).at(j) = true;
             }
         }
     }
 
     std::size_t concurrent_pairs = 0;
-    for (std::size_t i = 0; i < kEvents; ++i) {
-        for (std::size_t j = 0; j < kEvents; ++j) {
-            if (i == j) continue;
-            bool const by_clock = HB::happens_before(clock_of[i], clock_of[j]);
-            expect(by_clock == precedes[i][j], "the clock agrees with the causal order");
-            if (!precedes[i][j] && !precedes[j][i]) {
-                expect(HB::is_concurrent(clock_of[i], clock_of[j]), "unrelated events are concurrent");
+    for (Event const i : Events{}) {
+        for (Event const j : Events{}) {
+            if (i.raw() == j.raw()) continue;
+            bool const by_clock = HB::happens_before(clock_of.at(i), clock_of.at(j));
+            expect(by_clock == precedes.at(i).at(j), "the clock agrees with the causal order");
+            if (!precedes.at(i).at(j) && !precedes.at(j).at(i)) {
+                expect(HB::is_concurrent(clock_of.at(i), clock_of.at(j)), "unrelated events are concurrent");
                 ++concurrent_pairs;
             }
         }
@@ -453,7 +466,7 @@ using Dual = fl::DualLattice<L>;
 
 // Graded refuses a version counter in its numeric order, and the version
 // axes go in through their duals.  A use counter goes in as it is.
-constexpr std::array<std::uint64_t, 13> kIdentities = {
+constexpr ::fixy::FixedArray<std::uint64_t, 13> kIdentities{
     fd::row_hash_contribution_v<OnAxis<Dual<fl::EpochLattice>>>,
     fd::row_hash_contribution_v<OnAxis<Dual<fl::GenerationLattice>>>,
     fd::row_hash_contribution_v<OnAxis<fl::PeakBytesLattice>>,
@@ -495,11 +508,11 @@ static_assert(!can_grade<Dual<fl::PeakBytesLattice>> && !can_grade<Dual<fl::Bits
 static_assert(fa::claim_orientation_t<fl::HappensBeforeLattice<4>>::value == fa::ClaimOrientation::stronger_is_higher);
 static_assert(!can_grade<fl::HappensBeforeLattice<4>> && can_grade<Dual<fl::HappensBeforeLattice<4>>>);
 
-[[nodiscard]] consteval bool all_distinct_and_nonzero(std::array<std::uint64_t, 13> const& values) {
-    for (std::size_t i = 0; i < values.size(); ++i) {
-        if (values[i] == 0 || values[i] == kMax) return false;
-        for (std::size_t j = i + 1; j < values.size(); ++j) {
-            if (values[i] == values[j]) return false;
+[[nodiscard]] consteval bool all_distinct_and_nonzero(::fixy::FixedArray<std::uint64_t, 13> const& values) {
+    for (::fixy::Index<13> const i : ::fixy::IndexRange<13>{}) {
+        if (values.at(i) == 0 || values.at(i) == kMax) return false;
+        for (::fixy::Index<13> const j : ::fixy::IndexRange<13>{}) {
+            if (j.raw() > i.raw() && values.at(i) == values.at(j)) return false;
         }
     }
     return true;
@@ -523,26 +536,25 @@ static_assert(fd::row_hash_contribution_v<OnAxis<fl::PeakBytesLattice>>
 // removes the entry and lowers the bound.  The bound only goes down.
 
 struct KnownLimit {
-    std::string_view name;
-    std::string_view why_it_stays_open;
+    ::fixy::TextView name;
+    ::fixy::TextView why_it_stays_open;
 };
 
-inline constexpr KnownLimit kLedger[] = {
-    {"an image written by hand under a context that owns IO",
-     "A count that crosses a wire or goes to storage must come back, so a read from bytes exists, and the bytes that "
-     "storage returns are whatever was written. The read names the axis and needs IO, so no integer and no count of "
-     "another axis reaches it, and an image of one axis does not read as another. A program that writes an image of "
-     "an axis on purpose is the author of that record, and only an authenticated store, not a type, can tell that "
-     "record from one the owner wrote."},
-};
-static_assert(std::size(kLedger) <= 1, "the ledger only shrinks");
+inline constexpr ::fixy::FixedArray<KnownLimit, 1> kLedger{KnownLimit{
+    "an image written by hand under a context that owns IO",
+    "A count that crosses a wire or goes to storage must come back, so a read from bytes exists, and the bytes that "
+    "storage returns are whatever was written. The read names the axis and needs IO, so no integer and no count of "
+    "another axis reaches it, and an image of one axis does not read as another. A program that writes an image of "
+    "an axis on purpose is the author of that record, and only an authenticated store, not a type, can tell that "
+    "record from one the owner wrote."}};
+static_assert(kLedger.size() <= 1, "the ledger only shrinks");
 
 void reproduce_the_ledger() {
     std::uint64_t const s = g_seed;
     fl::Epoch const epoch = count_at<fl::EpochLattice>(s + 40);
     IoCtx const ctx{fe::testing::test()};
     auto const authored = fe::mint_from_image<fl::GenerationLattice>(
-        ctx, image_with<fl::GenerationLattice, 1>(fl::GenerationLattice::image_axis(), {epoch.raw()}));
+        ctx, image_with<fl::GenerationLattice, 1>(fl::GenerationLattice::image_axis(), SlotWords<1>{epoch.raw()}));
     expect(authored.has_value() && authored->raw() == epoch.raw(),
            "ledger: an image written by hand under IO still loads as a count of any axis");
 }
@@ -618,7 +630,7 @@ int main() {
         expect(identity != 0, "an identity reached run time as zero");
 
     if (g_failures != 0) {
-        std::fprintf(stderr, "test_counter_clock_attacks: %d case(s) failed\n", g_failures);
+        ::fixy::report(::fixy::Sink::Err, "test_counter_clock_attacks: {} case(s) failed\n", g_failures);
         return 1;
     }
     ::fixy::check::pass(kTest, "test_counter_clock_attacks: ok\n");
