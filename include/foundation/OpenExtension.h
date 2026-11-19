@@ -9,21 +9,22 @@
 // the home of the template, the file that defines it
 // (utils/tools/quarantine/specialization.cpp).  A template that the design
 // extends from each file, such as a trait that a type states beside its own
-// definition, carries one P3394 annotation on its primary declaration, with
-// its reason:
+// definition, carries one P3394 annotation on the definition of its primary
+// template, with its reason:
 //
 //     template <class T>
-//     struct [[= ::foundation::open_extension{"a type states its trait beside its own definition"}]] trait;
+//     struct [[= ::foundation::open_extension{"a type states its trait beside its own definition"}]] trait {};
 //
 // Reflection reads the annotation through std::meta::annotations_of, and the
 // plugin reads the same annotation in the tree of GCC.  No macro writes the
 // annotation, so a build with no plugin reads it too.
 //
-// GCC merges the annotation of a second declaration into the template, and
-// an annotation keeps no location.  So a file can add the mark to a template
-// of a different file.  The ledger utils/ledgers/specialization-home.txt
-// holds each marked template with its reason, and the rule refuses a mark
-// that no row admits.
+// The flag -fannotations-on-definition-only of the seventh GCC patch refuses
+// an annotation on a declaration of a class template that is not its
+// definition, so no second declaration in a different file can add the mark.
+// An annotation keeps no location.  The ledger
+// utils/ledgers/specialization-home.txt holds each marked template with its
+// reason, and the rule refuses a mark that no row admits.
 
 #include <cstddef>
 #include <meta>

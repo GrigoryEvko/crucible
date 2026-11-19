@@ -161,11 +161,22 @@ namespace foundation::core {
 template <class T>
 class atomic_word_key;
 
+namespace detail {
+
+// The annotation of the primary template of atomic_word.  A specialization
+// does not carry it.
+struct UndeclaredWord final {};
+
+}  // namespace detail
+
 // The word protocol of a value (THE WORD OF A VALUE).  The primary template
-// has no definition, so a type with no specialization has no word.
+// is empty and carries the annotation UndeclaredWord, so a type with no
+// specialization has no word.  The open mark is on the definition, because
+// the seventh GCC patch refuses an annotation on a declaration of a class
+// that is not its definition.
 template <class T>
-struct[[= ::foundation::open_extension{
-    "a type that keeps an invariant states the word of its atomic cell beside its own definition"}]] atomic_word;
+struct[[= detail::UndeclaredWord{}]][[= ::foundation::open_extension{
+    "a type that keeps an invariant states the word of its atomic cell beside its own definition"}]] atomic_word {};
 
 namespace detail {
 
@@ -187,9 +198,10 @@ concept AtomicBitsValue = std::is_trivially_copyable_v<T> && std::has_unique_obj
 template <class W>
 concept AtomicWordType = AtomicBitsValue<W> && (std::is_integral_v<W> || std::is_enum_v<W> || std::is_pointer_v<W>);
 
-// A type with a specialization of atomic_word.
+// A type with a specialization of atomic_word: its atomic_word does not
+// carry the annotation of the primary template.
 template <class T>
-concept HasAtomicWord = requires { sizeof(atomic_word<T>); };
+concept HasAtomicWord = !::foundation::linear::carries_annotation(^^atomic_word<T>, ^^UndeclaredWord);
 
 // The members of a word protocol.  empty_word is a constant of the word
 // type.  from_word takes the key of T, and no from_word takes the word
