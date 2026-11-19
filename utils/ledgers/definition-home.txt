@@ -14,5 +14,7 @@ include/fixy/os/ | elsewhere | 6 | - | -
 include/fixy/os/ | friend | 1 | - | -
 include/fixy/session/ | elsewhere | 9 | - | -
 include/foundation/core/ | elsewhere | 1 | - | -
+include/foundation/diag/ | undefined | 2 | - | each deduction of a statement of an identity and of a pointer to member is declared and never defined, because only an unevaluated decltype reads its return type
 include/foundation/effects/ | elsewhere | 4 | - | -
 include/foundation/permissions/ | elsewhere | 2 | - | -
+include/foundation/reflect/ | undefined | 1 | - | each deduction of a statement of an identity and of a pointer to member is declared and never defined, because only an unevaluated decltype reads its return type
