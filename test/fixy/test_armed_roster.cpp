@@ -959,7 +959,7 @@ struct OpenRelation {
 
 // Each entry names an open relation and the reason that its openness grants
 // nothing.  The list holds no entry: each relation has a seal.
-inline constexpr std::array<OpenRelation, 0> open_relations{};
+inline constexpr ::fixy::View<const OpenRelation> open_relations{};
 
 consteval void collect_relations(std::meta::info ns, std::vector<std::meta::info>& found) {
     bool holds_an_edge = false;
