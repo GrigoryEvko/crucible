@@ -5822,8 +5822,12 @@ fixy_test(test_concurrent_parallel_tree_reduce)
 fixy_test(test_net_reductions_match_parallel)
 
 # The parallel form of the pointwise walk against write_pointwise on the
-# calling thread, bit for bit, for 1, 2, 3, 4 and 8 shards.
-fixy_test(test_concurrent_parallel_pointwise)
+# calling thread, bit for bit, for 1, 2, 3, 4 and 8 shards.  Each element type
+# and op costs much machine code, so the test compiles in five units
+# (parallel_pointwise_rig.h).
+fixy_test(test_concurrent_parallel_pointwise test_concurrent_parallel_pointwise.cpp
+          parallel_pointwise_unit_double.cpp parallel_pointwise_unit_other_ranks.cpp
+          parallel_pointwise_unit_multiply_add_float.cpp parallel_pointwise_unit_multiply_add_double.cpp)
 
 # test_os_thread_tasks starts threads through the door of
 # fixy/os/ThreadTasks.h with each option, and reads each option back from
