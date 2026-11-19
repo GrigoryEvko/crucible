@@ -4833,8 +4833,12 @@ fixy_test(test_strided_view)
 
 # The pointwise walk of foundation/core/Pointwise.h against walk() with the op
 # on scalars, bit for bit, for each loop of a view, the masked blocks, the
-# in-place form and an input that overlaps the output.
-fixy_test(test_pointwise)
+# in-place form and an input that overlaps the output.  Each element type and
+# op costs much machine code, so the tests compile in eight units
+# (pointwise_rig.h).
+fixy_test(test_pointwise test_pointwise.cpp pointwise_unit_float.cpp pointwise_unit_float_multiply_add.cpp
+          pointwise_unit_double.cpp pointwise_unit_double_multiply_add.cpp pointwise_unit_integer.cpp
+          pointwise_unit_uint64_multiply_add.cpp pointwise_unit_rows.cpp)
 
 # The property tests of fixy/check/Property.h: a property that holds, the
 # determinism and the ranges of the draws, the shrink of a failure to its
