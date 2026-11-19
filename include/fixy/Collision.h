@@ -1364,6 +1364,7 @@ using binding_row_of_key_t = ::fixy::atom::binding_row_of_t<grade_on_t<Axis::Eff
     // reads the mask.
     const fe::EffectRowLattice::element_type effects = fe::row_descriptor(row);
     premise.row_bg = fe::EffectRowLattice::contains(effects, fe::Effect::Bg);
+    premise.row_io = fe::EffectRowLattice::contains(effects, fe::Effect::IO);
     premise.row_observable = names_observable_effect_without_bg_(row);
     premise.allocates = fe::EffectRowLattice::contains(effects, fe::Effect::Alloc);
     premise.row_alloc_or_io = premise.allocates || fe::EffectRowLattice::contains(effects, fe::Effect::IO);
@@ -1475,16 +1476,26 @@ using binding_row_of_key_t = ::fixy::atom::binding_row_of_t<grade_on_t<Axis::Eff
     // its policy names, in fixy/Atom.h.  The send is an export through IO.  No
     // policy licenses the failure channel.
     premise.constant_time = pole.constant_time;
+    premise.internal = pole.internal;
     premise.classified_on_send = pole.classified_on_send;
+    premise.classified_on_bg = pole.classified_on_bg;
+    premise.classified_on_staleness = pole.classified_on_staleness;
     premise.classified_on_failure = pole.classified_on_failure;
     if (reads(Axis::Security)) {
         const std::meta::info security = grade_of_(pack, Axis::Security);
         if (!satisfies_(^^at::IsSecurityGrade, security)) a_security_grade_has_no_class_in_security_class_of_();
-        premise.constant_time = at::security_class_of(security) == at::SecurityClass::ConstantTime;
+        const at::SecurityClass security_class = at::security_class_of(security);
+        premise.constant_time = security_class == at::SecurityClass::ConstantTime;
+        // The Internal tier sits below the strict pole, and it carries no
+        // declassification, so no mask reaches it.
+        premise.internal = security_class == at::SecurityClass::Internal;
         premise.classified_on_send = satisfies_at_(^^at::IsClassifiedOn, security, at::DischargeAxis::IO);
+        premise.classified_on_bg = satisfies_at_(^^at::IsClassifiedOn, security, at::DischargeAxis::Bg);
+        premise.classified_on_staleness = satisfies_at_(^^at::IsClassifiedOn, security, at::DischargeAxis::Staleness);
         premise.classified_on_failure = satisfies_at_(^^at::IsClassifiedOn, security, at::DischargeAxis::Failure);
     }
     premise.states_staleness = names_axis_(pack, Axis::Staleness);
+    premise.stale = is_grade_of_family_(grade_of_(pack, Axis::Staleness), ^^at::stale_to);
     premise.session_protocol = is_session_protocol_(grade_of_(pack, Axis::Protocol));
     // The Protocol grade states that the frame holds a live handle.
     premise.has_live_handle = is_grade_of_family_(grade_of_(pack, Axis::Protocol), ^^at::session::live_handle);

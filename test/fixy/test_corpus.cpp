@@ -4,7 +4,7 @@
 // policies say, and the strings exist at runtime.
 //
 // The witnesses go through the entries' own matchers and through
-// corpus::is_in_corpus_v rather than through fn, for the reason the
+// corpus::IsInCorpus rather than through fn, for the reason the
 // collision test gives: fn would refuse to compile, and a refusal that
 // is only observable as a build failure cannot be tested.  The gate is
 // checked through IsAccepted, which is the concept fn asserts.
@@ -65,17 +65,24 @@ static_assert(corpus::corpus_is_joined<corpus_test_site>());
 // about the same pack, so a witness that two entries match is caught
 // rather than counted for the one it was written for.
 
+// Each matcher reads the premises of a binding, so the test asks it about
+// the premises of the pack.  No matcher reads a premise of the payload.
+template <class Entry, class... Atoms>
+[[nodiscard]] consteval bool matches_pack() noexcept {
+    return Entry::matches(::fixy::collision::pack_verdict_v<Atoms...>.premises);
+}
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 template <class Entry, class... Atoms>
 [[nodiscard]] consteval bool only_this_entry_matches() noexcept {
-    const bool self = Entry::template matches<int, Atoms...>();
+    const bool self = matches_pack<Entry, Atoms...>();
     bool others = false;
     template for (constexpr auto entry :
                   std::define_static_array(std::meta::template_arguments_of(std::meta::dealias(^^corpus::Entries)))) {
         using Other = [:entry:];
         if constexpr (!std::is_same_v<Other, Entry>) {
-            if (Other::template matches<int, Atoms...>()) others = true;
+            if (matches_pack<Other, Atoms...>()) others = true;
         }
     }
     return self && !others;
@@ -94,23 +101,23 @@ static_assert(only_this_entry_matches<corpus::internal_bg_without_declassify, at
 // so an effect row with no Security atom is a classified value on an
 // observable channel.
 
-static_assert(corpus::classified_io_without_declassify::matches<int, at::with_io>());
-static_assert(corpus::classified_bg_without_declassify::matches<int, at::with_bg>());
-static_assert(corpus::staleness_secret_without_declassify::matches<int, at::stale_to<100>>());
+static_assert(matches_pack<corpus::classified_io_without_declassify, at::with_io>());
+static_assert(matches_pack<corpus::classified_bg_without_declassify, at::with_bg>());
+static_assert(matches_pack<corpus::staleness_secret_without_declassify, at::stale_to<100>>());
 
 // The public and unclassified grades sit below the carrier.
-static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_public, at::with_io>());
-static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_unclassified, at::with_io>());
-static_assert(!corpus::classified_bg_without_declassify::matches<int, at::as_public, at::with_bg>());
+static_assert(!matches_pack<corpus::classified_io_without_declassify, at::as_public, at::with_io>());
+static_assert(!matches_pack<corpus::classified_io_without_declassify, at::as_unclassified, at::with_io>());
+static_assert(!matches_pack<corpus::classified_bg_without_declassify, at::as_public, at::with_bg>());
 
 // A declassification licenses the channels its policy names and no
 // other.  Each export policy licenses IO.
 static_assert(
-    !corpus::classified_io_without_declassify::matches<int, at::declassify<policy::WireSerialize>, at::with_io>());
+    !matches_pack<corpus::classified_io_without_declassify, at::declassify<policy::WireSerialize>, at::with_io>());
 static_assert(
-    !corpus::classified_io_without_declassify::matches<int, at::declassify<policy::AuditedLogging>, at::with_io>());
+    !matches_pack<corpus::classified_io_without_declassify, at::declassify<policy::AuditedLogging>, at::with_io>());
 static_assert(
-    !corpus::classified_io_without_declassify::matches<int, at::declassify<policy::UserDisplay>, at::with_io>());
+    !matches_pack<corpus::classified_io_without_declassify, at::declassify<policy::UserDisplay>, at::with_io>());
 // A policy that names no channel, or another channel, leaves IO
 // classified.
 static_assert(only_this_entry_matches<corpus::classified_io_without_declassify,
@@ -118,34 +125,34 @@ static_assert(only_this_entry_matches<corpus::classified_io_without_declassify,
 static_assert(only_this_entry_matches<corpus::classified_io_without_declassify, at::declassify<policy::LengthOnly>,
                                       at::with_io>());
 static_assert(
-    corpus::classified_io_without_declassify::matches<int, at::declassify<policy::HashForCompare>, at::with_io>());
+    matches_pack<corpus::classified_io_without_declassify, at::declassify<policy::HashForCompare>, at::with_io>());
 // No policy licenses Bg, so every declassification leaves Bg classified.
 static_assert(only_this_entry_matches<corpus::classified_bg_without_declassify, at::declassify<policy::AuditedLogging>,
                                       at::with_bg>());
 static_assert(
-    corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::WireSerialize>, at::with_bg>());
+    matches_pack<corpus::classified_bg_without_declassify, at::declassify<policy::WireSerialize>, at::with_bg>());
 static_assert(
-    corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::LengthOnly>, at::with_bg>());
+    matches_pack<corpus::classified_bg_without_declassify, at::declassify<policy::LengthOnly>, at::with_bg>());
 static_assert(
-    corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::AuthorizedReplay>, at::with_bg>());
+    matches_pack<corpus::classified_bg_without_declassify, at::declassify<policy::AuthorizedReplay>, at::with_bg>());
 
 // Internal is not classified, and classified is not internal.
-static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_internal, at::with_io>());
-static_assert(!corpus::internal_io_without_declassify::matches<int, at::as_classified, at::with_io>());
-static_assert(!corpus::internal_io_without_declassify::matches<int, at::with_io>());
+static_assert(!matches_pack<corpus::classified_io_without_declassify, at::as_internal, at::with_io>());
+static_assert(!matches_pack<corpus::internal_io_without_declassify, at::as_classified, at::with_io>());
+static_assert(!matches_pack<corpus::internal_io_without_declassify, at::with_io>());
 
 // Each IO or Bg entry needs its own effect.
-static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_secret>());
-static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_secret, at::with_bg>());
-static_assert(!corpus::classified_bg_without_declassify::matches<int, at::as_secret, at::with_io>());
-static_assert(!corpus::internal_bg_without_declassify::matches<int, at::as_internal, at::with_alloc>());
-static_assert(!corpus::internal_io_without_declassify::matches<int, at::as_internal, at::with<>>());
+static_assert(!matches_pack<corpus::classified_io_without_declassify, at::as_secret>());
+static_assert(!matches_pack<corpus::classified_io_without_declassify, at::as_secret, at::with_bg>());
+static_assert(!matches_pack<corpus::classified_bg_without_declassify, at::as_secret, at::with_io>());
+static_assert(!matches_pack<corpus::internal_bg_without_declassify, at::as_internal, at::with_alloc>());
+static_assert(!matches_pack<corpus::internal_io_without_declassify, at::as_internal, at::with<>>());
 
 // A row that names several effects is read for each.
 static_assert(
-    corpus::classified_io_without_declassify::matches<int, at::as_secret, at::with<Eff::Bg, Eff::Alloc, Eff::IO>>());
+    matches_pack<corpus::classified_io_without_declassify, at::as_secret, at::with<Eff::Bg, Eff::Alloc, Eff::IO>>());
 static_assert(
-    corpus::classified_bg_without_declassify::matches<int, at::as_secret, at::with<Eff::Bg, Eff::Alloc, Eff::IO>>());
+    matches_pack<corpus::classified_bg_without_declassify, at::as_secret, at::with<Eff::Bg, Eff::Alloc, Eff::IO>>());
 
 // The row an entry reads is the row of the binding: the Effect grade
 // joined with the lifts of the atoms.  A system call that lifts IO opens
@@ -157,51 +164,51 @@ using FutexCall = at::syscall::per<at::syscall::SyscallId::futex>;
 static_assert(only_this_entry_matches<corpus::classified_io_without_declassify, ProcessStateRead>());
 static_assert(only_this_entry_matches<corpus::classified_io_without_declassify, at::as_secret, FileWrite>());
 static_assert(only_this_entry_matches<corpus::internal_io_without_declassify, at::as_internal, FileWrite>());
-static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_public, FileWrite>());
+static_assert(!matches_pack<corpus::classified_io_without_declassify, at::as_public, FileWrite>());
 static_assert(
-    !corpus::classified_io_without_declassify::matches<int, at::declassify<policy::WireSerialize>, FileWrite>());
-static_assert(!corpus::classified_io_without_declassify::matches<int, FutexCall>(), "a futex call lifts Block alone");
+    !matches_pack<corpus::classified_io_without_declassify, at::declassify<policy::WireSerialize>, FileWrite>());
+static_assert(!matches_pack<corpus::classified_io_without_declassify, FutexCall>(), "a futex call lifts Block alone");
 using StderrWrite = at::stdio::write<at::stdio::streams::Stderr>;
 static_assert(only_this_entry_matches<corpus::classified_io_without_declassify, StderrWrite>(),
               "a stdio write lifts IO, so a classified value written to a stream needs a declassification");
-static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_public, StderrWrite>());
-static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, at::sync::park>(),
+static_assert(!matches_pack<corpus::classified_io_without_declassify, at::as_public, StderrWrite>());
+static_assert(matches_pack<corpus::ghost_runtime_observable, at::ghost, at::as_public, at::sync::park>(),
               "a park lifts Block, which is emitted code");
-static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, FutexCall>());
-static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, at::sync::spin_pause>(),
+static_assert(matches_pack<corpus::ghost_runtime_observable, at::ghost, at::as_public, FutexCall>());
+static_assert(matches_pack<corpus::ghost_runtime_observable, at::ghost, at::as_public, at::sync::spin_pause>(),
               "a spin with no exit lifts Div, which is observable");
-static_assert(!corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, at::sync::bounded_spin>(),
+static_assert(!matches_pack<corpus::ghost_runtime_observable, at::ghost, at::as_public, at::sync::bounded_spin>(),
               "a bounded spin lifts Nondet, which elision can drop");
 
 // ---------------------------------------------------------------------
 // Staleness: the discharge must match the axis.  A value declassified
 // for export is still a secret where replay is concerned.
 
-static_assert(corpus::staleness_secret_without_declassify::matches<int, at::as_secret, at::stale_to<5>>());
-static_assert(corpus::staleness_secret_without_declassify::matches<int, at::as_classified, at::stale_to<5>>());
-static_assert(corpus::staleness_secret_without_declassify::matches<int, at::declassify<policy::AuditedLogging>,
-                                                                   at::stale_to<5>>());
-static_assert(corpus::staleness_secret_without_declassify::matches<int, at::declassify<policy::WireSerialize>,
-                                                                   at::stale_to<5>>());
-static_assert(!corpus::staleness_secret_without_declassify::matches<int, at::declassify<policy::AuthorizedReplay>,
-                                                                    at::stale_to<5>>());
-static_assert(!corpus::staleness_secret_without_declassify::matches<int, at::as_public, at::stale_to<5>>());
-static_assert(!corpus::staleness_secret_without_declassify::matches<int, at::as_internal, at::stale_to<5>>());
-static_assert(!corpus::staleness_secret_without_declassify::matches<int, at::as_secret>());
+static_assert(matches_pack<corpus::staleness_secret_without_declassify, at::as_secret, at::stale_to<5>>());
+static_assert(matches_pack<corpus::staleness_secret_without_declassify, at::as_classified, at::stale_to<5>>());
+static_assert(matches_pack<corpus::staleness_secret_without_declassify, at::declassify<policy::AuditedLogging>,
+                           at::stale_to<5>>());
+static_assert(matches_pack<corpus::staleness_secret_without_declassify, at::declassify<policy::WireSerialize>,
+                           at::stale_to<5>>());
+static_assert(!matches_pack<corpus::staleness_secret_without_declassify, at::declassify<policy::AuthorizedReplay>,
+                            at::stale_to<5>>());
+static_assert(!matches_pack<corpus::staleness_secret_without_declassify, at::as_public, at::stale_to<5>>());
+static_assert(!matches_pack<corpus::staleness_secret_without_declassify, at::as_internal, at::stale_to<5>>());
+static_assert(!matches_pack<corpus::staleness_secret_without_declassify, at::as_secret>());
 
 // ---------------------------------------------------------------------
 // Ghost: the observable set is the one foundation declares.
 
-static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::with_io>());
-static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::with_bg>());
-static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::with_block>());
-static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::with_alloc>());
-static_assert(!corpus::ghost_runtime_observable::matches<int, at::ghost, at::with_init>());
-static_assert(!corpus::ghost_runtime_observable::matches<int, at::ghost, at::with_test>());
-static_assert(!corpus::ghost_runtime_observable::matches<int, at::ghost, at::with<>>());
-static_assert(!corpus::ghost_runtime_observable::matches<int, at::ghost>());
-static_assert(!corpus::ghost_runtime_observable::matches<int, at::as_public, at::with_io>());
-static_assert(!corpus::ghost_runtime_observable::matches<int, at::affine, at::as_public, at::with_io>());
+static_assert(matches_pack<corpus::ghost_runtime_observable, at::ghost, at::with_io>());
+static_assert(matches_pack<corpus::ghost_runtime_observable, at::ghost, at::with_bg>());
+static_assert(matches_pack<corpus::ghost_runtime_observable, at::ghost, at::with_block>());
+static_assert(matches_pack<corpus::ghost_runtime_observable, at::ghost, at::with_alloc>());
+static_assert(!matches_pack<corpus::ghost_runtime_observable, at::ghost, at::with_init>());
+static_assert(!matches_pack<corpus::ghost_runtime_observable, at::ghost, at::with_test>());
+static_assert(!matches_pack<corpus::ghost_runtime_observable, at::ghost, at::with<>>());
+static_assert(!matches_pack<corpus::ghost_runtime_observable, at::ghost>());
+static_assert(!matches_pack<corpus::ghost_runtime_observable, at::as_public, at::with_io>());
+static_assert(!matches_pack<corpus::ghost_runtime_observable, at::affine, at::as_public, at::with_io>());
 
 // ---------------------------------------------------------------------
 // The discharge masks are what the policies say: the replay policy names

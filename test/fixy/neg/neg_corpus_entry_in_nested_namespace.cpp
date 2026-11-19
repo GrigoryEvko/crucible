@@ -11,10 +11,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base
 namespace fixy::corpus::extra {
 
 struct nested_entry final : ::foundation::diag::tag_base {
-    template <class Type, class... Atoms>
-    [[nodiscard]] static consteval bool matches() noexcept {
-        return true;
-    }
+    [[nodiscard]] static constexpr bool matches(const ::fixy::collision::rule_premises&) noexcept { return true; }
 };
 
 }  // namespace fixy::corpus::extra

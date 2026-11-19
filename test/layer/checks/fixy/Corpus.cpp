@@ -9,36 +9,52 @@ static_assert(detail::non_none_policy_count_() == 4,
               "AuditedLogging, WireSerialize and UserDisplay for IO.  A policy that licenses a channel needs a "
               "line in discharge_mask_of, a pin that names the channel, and a change of this count.");
 
-namespace detail {
+// Each matcher reads the premises of the binding.  The ghost entry reads each
+// observable effect of the row through the premises row_observable and
+// row_bg, and Effect.h decides which effects count.  A stated with<IO>
+// answers as the row Row<IO> does.
+namespace premise_cells {
+using ::fixy::collision::pack_verdict_v;
+namespace at = ::fixy::atom;
+using Effect = ::foundation::effects::Effect;
 
-static_assert(!is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::Init>>::value,
+template <Effect... Es>
+inline constexpr bool ghost_with_row_matches =
+    ghost_runtime_observable::matches(pack_verdict_v<at::ghost, at::with<Es...>>.premises);
+
+static_assert(!ghost_with_row_matches<Effect::Init>,
               "Init must stay outside the observable set.  Moving it in rejects every ghost binding that "
               "participates in initialization, so it needs its own corpus entry naming the contradiction it "
               "catches.");
-static_assert(!is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::Test>>::value,
+static_assert(!ghost_with_row_matches<Effect::Test>,
               "Test must stay outside the observable set.  A specification evaluated under a test harness is "
               "legitimate ghost code.");
-static_assert(is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::Alloc>>::value,
-              "Alloc must stay inside the observable set.");
-static_assert(is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::IO>>::value,
-              "IO must stay inside the observable set.");
-static_assert(is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::Block>>::value,
-              "Block must stay inside the observable set.");
-static_assert(is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::Bg>>::value,
-              "Bg must stay inside the observable set.");
-
-// The reader reads the row of an Effect grade through the closed relation
-// of fixy/Atom.h.  A stated with<IO> answers as the row Row<IO> does, and a
-// type that is not an Effect grade has no answer.
-static_assert(is_row_observable_<::fixy::atom::with_io>::value,
+static_assert(ghost_with_row_matches<Effect::Alloc>, "Alloc must stay inside the observable set.");
+static_assert(ghost_with_row_matches<Effect::IO>, "IO must stay inside the observable set.");
+static_assert(ghost_with_row_matches<Effect::Block>, "Block must stay inside the observable set.");
+static_assert(ghost_with_row_matches<Effect::Bg>, "Bg must stay inside the observable set.");
+static_assert(ghost_with_row_matches<Effect::Init, Effect::Block>, "one observable effect is enough");
+static_assert(!ghost_with_row_matches<>, "the empty grade names no effect");
+static_assert(ghost_runtime_observable::matches(pack_verdict_v<at::ghost, at::with_io>.premises),
               "a stated with<IO> names the observable effect IO, as the row Row<IO> does");
-static_assert(!is_row_observable_<::fixy::atom::with<>>::value, "the empty grade names no effect");
-static_assert(!std::meta::can_substitute(^^is_row_observable_, {^^int}),
-              "a type that is not an Effect grade has no row to read");
-static_assert(!std::meta::can_substitute(^^is_row_observable_, {^^::fixy::atom::ghost}),
-              "an atom of another axis has no row to read");
+static_assert(!ghost_runtime_observable::matches(pack_verdict_v<at::with_io>.premises), "a binding with no ghost");
 
-}  // namespace detail
+// The Internal tier, a stale_to grade and the ghost grade, as the matchers
+// read them.  A carrier, a public value and a constant-time value are not
+// Internal.
+static_assert(pack_verdict_v<at::as_internal>.premises.internal && !pack_verdict_v<at::as_secret>.premises.internal
+              && !pack_verdict_v<at::as_public>.premises.internal
+              && !pack_verdict_v<at::constant_time>.premises.internal && !pack_verdict_v<>.premises.internal);
+static_assert(pack_verdict_v<at::stale_to<5>>.premises.stale && !pack_verdict_v<at::ghost>.premises.stale
+              && !pack_verdict_v<>.premises.stale);
+static_assert(pack_verdict_v<at::ghost>.premises.ghost && !pack_verdict_v<at::copy>.premises.ghost);
+static_assert(pack_verdict_v<at::as_secret>.premises.classified_on_bg
+              && !pack_verdict_v<at::as_public>.premises.classified_on_bg);
+static_assert(
+    pack_verdict_v<at::as_secret>.premises.classified_on_staleness
+    && !pack_verdict_v<at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>.premises.classified_on_staleness);
+static_assert(pack_verdict_v<at::with_io>.premises.row_io && !pack_verdict_v<at::with_bg>.premises.row_io);
+}  // namespace premise_cells
 
 namespace detail {
 struct corpus_header_site_ final {};
@@ -80,21 +96,21 @@ static_assert(every_entry_is_well_formed_(),
 
 // The shortest binding is not in the corpus: every axis at its strict
 // pole names no effect and no replay window.
-static_assert(!is_in_corpus_v<int>);
+static_assert(!IsInCorpus<int>);
 static_assert(std::is_same_v<matched_entry_or_void_t<int>, void>);
 
 // Reject by default on the Security axis.  An IO row with no Security
 // atom is a classified value on an observable channel, and is refused;
 // the same pack naming the public grade is admitted.
-static_assert(is_in_corpus_v<int, ::fixy::atom::with_io>);
+static_assert(IsInCorpus<int, ::fixy::atom::with_io>);
 static_assert(std::is_same_v<matched_entry_or_void_t<int, ::fixy::atom::with_io>, classified_io_without_declassify>);
-static_assert(!is_in_corpus_v<int, ::fixy::atom::with_io, ::fixy::atom::as_public>);
+static_assert(!IsInCorpus<int, ::fixy::atom::with_io, ::fixy::atom::as_public>);
 
 // A declassification licenses the channels its policy names, and no
 // other.  The wire policy licenses IO.  The replay policy does not, so
 // the same IO row under it is classified IO.  No policy licenses Bg.
 static_assert(
-    !is_in_corpus_v<int, ::fixy::atom::with_io, ::fixy::atom::declassify<::fixy::tags::secret_policy::WireSerialize>>);
+    !IsInCorpus<int, ::fixy::atom::with_io, ::fixy::atom::declassify<::fixy::tags::secret_policy::WireSerialize>>);
 static_assert(
     std::is_same_v<matched_entry_or_void_t<int, ::fixy::atom::with_io,
                                            ::fixy::atom::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>,
@@ -106,10 +122,10 @@ static_assert(
 
 // An export policy leaves the value a secret where replay is concerned,
 // and only the replay policy discharges the axis.
-static_assert(is_in_corpus_v<int, ::fixy::atom::declassify<::fixy::tags::secret_policy::AuditedLogging>,
-                             ::fixy::atom::stale_to<5>>);
-static_assert(!is_in_corpus_v<int, ::fixy::atom::declassify<::fixy::tags::secret_policy::AuthorizedReplay>,
-                              ::fixy::atom::stale_to<5>>);
+static_assert(
+    IsInCorpus<int, ::fixy::atom::declassify<::fixy::tags::secret_policy::AuditedLogging>, ::fixy::atom::stale_to<5>>);
+static_assert(!IsInCorpus<int, ::fixy::atom::declassify<::fixy::tags::secret_policy::AuthorizedReplay>,
+                          ::fixy::atom::stale_to<5>>);
 
 // The name and the diagnostic read off a matched pack, and are empty
 // off an admitted one.

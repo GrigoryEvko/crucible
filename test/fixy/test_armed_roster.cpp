@@ -374,33 +374,9 @@ struct foundation::contracts::armed_cell<::fixy::is_already_consume_disciplined>
     using refuses = witnesses<int, void*, std::unique_ptr<int>>;
 };
 
-template <>
-struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_internal_> {
-    using accepts = witnesses<at::as_internal>;
-    using refuses = witnesses<int, at::as_secret, at::as_public, at::constant_time>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_stale_> {
-    using accepts = witnesses<at::stale_to<5>>;
-    using refuses = witnesses<int, at::ghost>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_ghost_> {
-    using accepts = witnesses<at::ghost>;
-    using refuses = witnesses<int, at::copy>;
-};
-
-// Init and Test stay outside the observable set.  The reader reads an
-// Effect grade through the closed relation of fixy/Atom.h, so a stated
-// grade answers as its row does.  A type that is not an Effect grade has
-// no answer, so no such type is a witness.
-template <>
-struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_row_observable_> {
-    using accepts = witnesses<Row<Effect::IO>, Row<Effect::Alloc>, Row<Effect::Init, Effect::Block>, at::with_io>;
-    using refuses = witnesses<Row<Effect::Init>, Row<Effect::Test>, Row<>, at::with_init, at::with<>>;
-};
+// The matchers of the corpus of fixy/Corpus.h read the premises of
+// fixy/Collision.h.  The check file of fixy/Corpus.h holds the witnesses of
+// the Internal tier, the stale grade, the ghost grade and the observable row.
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::is_fn> {

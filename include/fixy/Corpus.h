@@ -23,14 +23,15 @@
 // Security atoms, so the collision rules read the same masks.  No policy
 // licenses Bg.
 //
-// Over grades, not over the pack
-// ------------------------------
-// Each matcher reads collision::grades<Atoms...>::on<Axis> (Collision.h),
-// the same resolved grade fn::grade_on gives, computed from the pack
-// alone so that no entry completes fn and recurses through the gate.
-// The effect row is read one step further: an entry that reads IO, Bg or
-// an observable effect reads the row of the binding, which joins the
-// Effect grade with the lifts of the atoms.
+// Over the premises, not over the pack
+// ------------------------------------
+// Each matcher reads the premises of the binding, from the sealed verdict
+// cell of fixy/Collision.h, computed from the payload and the pack alone so
+// that no entry completes fn and recurses through the gate.  An entry that
+// reads IO, Bg or an observable effect reads the row of the binding, which
+// joins the Effect grade with the lifts of the atoms.  Each matcher is a
+// static member function that is not a template, so no unit can give an
+// entry another answer.
 //
 // One axis carries one grade, so "classified on a channel" is one
 // question about the Security grade and the channel: the grade is a
@@ -40,6 +41,7 @@
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
 #include <fixy/Collision.h>
+#include <fixy/Predicates.h>
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/Tag.h>
@@ -93,70 +95,21 @@ template <class Anchor = void>
 }  // namespace detail
 
 // ---------------------------------------------------------------------
-// Reading a grade.
+// Reading a binding.
+//
+// Each matcher reads the premises of the binding: the sealed record of
+// fixy/Collision.h that the collision rules read.  The premises read the
+// Security grade through the one closed relation that fixy/Atom.h declares
+// beside the Security atoms: a carrier is classified on each channel, and a
+// declassification on each channel that the mask of its policy does not
+// name.  So an export policy leaves the value a secret where replay or a
+// background crossing is concerned, and the replay policy leaves it a secret
+// on the way out.  The premises read IO, Bg and an observable effect from the
+// row of the binding, so a system call that lifts IO opens the same channel
+// as a stated with<IO>.  Which effects count as observable is decided in
+// foundation/effects/Effect.h, where the effect atoms are declared.
 
 namespace detail {
-
-// The grade on one axis, resolved from the pack alone.
-template <Axis A, class... Atoms>
-using grade_on = typename ::fixy::collision::grades<Atoms...>::template on<A>;
-
-// The row of the binding: the Effect grade joined with the lifts of the
-// atoms, through the relation of fixy/Atom.h that fixy/Fn.h and the
-// collision rules also read.  An entry that reads IO, Bg or an observable
-// effect reads this row, so a system call that lifts IO opens the same
-// channel as a stated with<IO>.
-template <class... Atoms>
-using binding_row_on = ::fixy::atom::binding_row_of_t<grade_on<Axis::Effect, Atoms...>, Atoms...>;
-
-// The Security readings, each a reading of the one closed relation that
-// fixy/Atom.h declares beside the Security atoms.  Whether the value is
-// classified on one channel is ::fixy::atom::IsClassifiedOn: a carrier is
-// classified on each channel, and a declassification on each channel that
-// the mask of its policy does not name.  So an export policy leaves the
-// value a secret where replay or a background crossing is concerned, and
-// the replay policy leaves it a secret on the way out.  Every Security
-// atom IS a Security grade, which fixy/Atom.h's roster walk proves, so a
-// new point on the axis cannot fall through to a false answer and pass as
-// public.
-
-// The Internal tier sits below the strict pole, so a binding reaches it
-// only by writing as_internal.  It carries no declassification, so no
-// mask reaches it.
-template <class G>
-struct is_internal_ : std::false_type {};
-template <::fixy::atom::IsSecurityGrade G>
-struct is_internal_<G>
-    : std::bool_constant<::fixy::atom::security_class_of(^^G) == ::fixy::atom::SecurityClass::Internal> {};
-
-// Which effects count as observable is decided where the effect atoms
-// are declared, not here.  Deferring keeps a newly added atom from
-// defaulting to unobservable, which would widen what ghost code is
-// allowed to request without anyone deciding to widen it.  The entry
-// reads the row of the binding, which binding_row_on above gives as a
-// canonical Row.
-//
-// The reader takes an Effect grade and reads its row through the closed
-// relation of fixy/Atom.h, so a stated with<IO> answers as the row Row<IO>
-// does.  A type that is not an Effect grade has no row, and the constraint
-// refuses it.  It does not read as a row with no observable effect.
-template <::foundation::effects::Effect... Es>
-[[nodiscard]] consteval bool names_observable_effect_(::foundation::effects::Row<Es...>) noexcept {
-    return (::foundation::effects::is_observable<Es>() || ...);
-}
-
-template <::fixy::atom::IsEffectGrade G>
-struct is_row_observable_ : std::bool_constant<names_observable_effect_(::fixy::atom::effect_row_of_t<G>{})> {};
-
-template <class G>
-struct is_stale_ : std::false_type {};
-template <auto TauMax>
-struct is_stale_<::fixy::atom::stale_to<TauMax>> : std::true_type {};
-
-template <class G>
-struct is_ghost_ : std::false_type {};
-template <>
-struct is_ghost_<::fixy::atom::ghost> : std::true_type {};
 
 // The compile-time text search that the checks of this header read
 // lives in fixy/Axis.h, because Collision.h needs it too and sits below
@@ -197,13 +150,8 @@ struct classified_io_without_declassify final : ::foundation::diag::tag_base {
         "atom::as_unclassified, or name atom::declassify<Policy> with a policy whose mask licenses IO: "
         "AuditedLogging, WireSerialize or UserDisplay.";
 
-    template <class Type, class... Atoms>
-    [[nodiscard]] static consteval bool matches() noexcept {
-        using Security = detail::grade_on<Axis::Security, Atoms...>;
-        using Effects = detail::binding_row_on<Atoms...>;
-        const bool classified_on_io = ::fixy::atom::IsClassifiedOn<Security, ::fixy::atom::DischargeAxis::IO>;
-        const bool has_io = ::foundation::effects::row_contains(^^Effects, ::foundation::effects::Effect::IO);
-        return classified_on_io && has_io;
+    [[nodiscard]] static constexpr bool matches(const ::fixy::collision::rule_premises& premise) noexcept {
+        return premise.classified_on_send && premise.row_io;
     }
 
     [[nodiscard]] static constexpr std::string_view cite() noexcept {
@@ -230,13 +178,8 @@ struct classified_bg_without_declassify final : ::foundation::diag::tag_base {
         "project Security below the classified carrier: atom::as_public or atom::as_unclassified.  No "
         "policy licenses the Bg channel, so a declassification does not either.";
 
-    template <class Type, class... Atoms>
-    [[nodiscard]] static consteval bool matches() noexcept {
-        using Security = detail::grade_on<Axis::Security, Atoms...>;
-        using Effects = detail::binding_row_on<Atoms...>;
-        const bool classified_on_bg = ::fixy::atom::IsClassifiedOn<Security, ::fixy::atom::DischargeAxis::Bg>;
-        const bool has_bg = ::foundation::effects::row_contains(^^Effects, ::foundation::effects::Effect::Bg);
-        return classified_on_bg && has_bg;
+    [[nodiscard]] static constexpr bool matches(const ::fixy::collision::rule_premises& premise) noexcept {
+        return premise.classified_on_bg && premise.row_bg;
     }
 
     [[nodiscard]] static constexpr std::string_view cite() noexcept {
@@ -262,14 +205,8 @@ struct staleness_secret_without_declassify final : ::foundation::diag::tag_base 
         "carries Staleness; or drop the stale_to<N> atom, so Staleness returns to Fresh; or project "
         "Security below the carrier.";
 
-    template <class Type, class... Atoms>
-    [[nodiscard]] static consteval bool matches() noexcept {
-        using Security = detail::grade_on<Axis::Security, Atoms...>;
-        using Staleness = detail::grade_on<Axis::Staleness, Atoms...>;
-        const bool classified_on_replay =
-            ::fixy::atom::IsClassifiedOn<Security, ::fixy::atom::DischargeAxis::Staleness>;
-        const bool has_stale = detail::is_stale_<Staleness>::value;
-        return classified_on_replay && has_stale;
+    [[nodiscard]] static constexpr bool matches(const ::fixy::collision::rule_premises& premise) noexcept {
+        return premise.classified_on_staleness && premise.stale;
     }
 
     [[nodiscard]] static constexpr std::string_view cite() noexcept {
@@ -307,13 +244,11 @@ struct ghost_runtime_observable final : ::foundation::diag::tag_base {
         "effects.  A declassification does not apply: this is a ghost-versus-runtime category error, not an "
         "information-flow channel.";
 
-    template <class Type, class... Atoms>
-    [[nodiscard]] static consteval bool matches() noexcept {
-        using Usage = detail::grade_on<Axis::Usage, Atoms...>;
-        using Effects = detail::binding_row_on<Atoms...>;
-        const bool has_ghost = detail::is_ghost_<Usage>::value;
-        const bool has_observable = detail::is_row_observable_<Effects>::value;
-        return has_ghost && has_observable;
+    // The observable set of P010 leaves Bg out, and this entry reads Bg too.
+    // Effect.h makes Bg observable, so the two premises give each observable
+    // effect of the row through the one reader of fixy/Collision.h.
+    [[nodiscard]] static constexpr bool matches(const ::fixy::collision::rule_premises& premise) noexcept {
+        return premise.ghost && (premise.row_observable || premise.row_bg);
     }
 
     [[nodiscard]] static constexpr std::string_view cite() noexcept {
@@ -345,13 +280,8 @@ struct internal_io_without_declassify final : ::foundation::diag::tag_base {
     // cannot both sit on Security, and no mask reaches this entry.  A
     // binding that exports an internal value names the policy instead of
     // as_internal, and classified_io_without_declassify reads that grade.
-    template <class Type, class... Atoms>
-    [[nodiscard]] static consteval bool matches() noexcept {
-        using Security = detail::grade_on<Axis::Security, Atoms...>;
-        using Effects = detail::binding_row_on<Atoms...>;
-        const bool has_internal = detail::is_internal_<Security>::value;
-        const bool has_io = ::foundation::effects::row_contains(^^Effects, ::foundation::effects::Effect::IO);
-        return has_internal && has_io;
+    [[nodiscard]] static constexpr bool matches(const ::fixy::collision::rule_premises& premise) noexcept {
+        return premise.internal && premise.row_io;
     }
 
     [[nodiscard]] static constexpr std::string_view cite() noexcept {
@@ -377,13 +307,8 @@ struct internal_bg_without_declassify final : ::foundation::diag::tag_base {
         "Drop the Bg atom and run the body on the foreground thread, where scheduling is deterministic, or "
         "project Security to atom::as_public or atom::as_unclassified.  No policy licenses the Bg channel.";
 
-    template <class Type, class... Atoms>
-    [[nodiscard]] static consteval bool matches() noexcept {
-        using Security = detail::grade_on<Axis::Security, Atoms...>;
-        using Effects = detail::binding_row_on<Atoms...>;
-        const bool has_internal = detail::is_internal_<Security>::value;
-        const bool has_bg = ::foundation::effects::row_contains(^^Effects, ::foundation::effects::Effect::Bg);
-        return has_internal && has_bg;
+    [[nodiscard]] static constexpr bool matches(const ::fixy::collision::rule_premises& premise) noexcept {
+        return premise.internal && premise.row_bg;
     }
 
     [[nodiscard]] static constexpr std::string_view cite() noexcept {
@@ -441,9 +366,10 @@ namespace detail {
 
 // An entry is a diagnostic tag with a matcher over a pack.
 template <class Candidate>
-concept IsCorpusEntry = std::derived_from<Candidate, ::foundation::diag::tag_base> && requires {
-    { Candidate::template matches<int>() } -> std::same_as<bool>;
-};
+concept IsCorpusEntry = std::derived_from<Candidate, ::foundation::diag::tag_base>
+                     && requires(const ::fixy::collision::rule_premises& premise) {
+                            { Candidate::matches(premise) } -> std::same_as<bool>;
+                        };
 
 [[nodiscard]] consteval bool is_in_entries_(std::meta::info candidate) {
     for (const std::meta::info entry : std::meta::template_arguments_of(std::meta::dealias(^^Entries))) {
@@ -515,42 +441,51 @@ template <class Site>
 
 namespace detail {
 
-// The first entry the pack matches, as a reflection, or the reflection
-// of void when none does.  void is not an entry, so it cannot collide
-// with a real answer.
-template <class Type, class... Atoms>
-[[nodiscard]] consteval std::meta::info first_match_() noexcept {
-    std::meta::info found = ^^void;
-    static constexpr auto entries =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Type, std::vector<std::meta::info>>>(
-            std::meta::template_arguments_of(std::meta::dealias(^^Entries))));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto entry : entries) {
-        using Entry = [:entry:];
-        // The comparison is parenthesised because `^^void && x` lexes as
-        // the reflection of the type void&&.
-        if ((found == ^^void)&&Entry::template matches<Type, Atoms...>()) {
-            found = entry;
-        }
+// The answer of the matcher of an entry to the premises of a binding.  The
+// matcher is a static member function that is not a template, and the read
+// is a concept, so no unit can give an entry another answer.  The premises
+// are a structural value, so they can be an argument of the concept.
+template <class Entry, ::fixy::collision::rule_premises Premises>
+concept MatchesPremises = Entry::matches(Premises);
+
+// The first entry of the list whose matcher holds of the premises, as a
+// reflection, or the reflection of void when none does.  void is not an
+// entry, so it cannot collide with a real answer.  The function is not a
+// template, so no unit can specialize it.  The gate gives it the list
+// Entries.  Complexity: the size of the corpus.
+[[nodiscard]] consteval std::meta::info first_match_of_(const ::fixy::collision::rule_premises& premise,
+                                                        std::meta::info entries) {
+    const std::meta::info list = std::meta::dealias(entries);
+    const std::size_t count = ::fixy::refined::argument_count_of(list);
+    for (std::size_t index = 0; index < count; ++index) {
+        const std::meta::info entry = ::fixy::refined::argument_of(list, index);
+        if (std::meta::extract<bool>(
+                std::meta::substitute(^^MatchesPremises, {entry, std::meta::reflect_constant(premise)})))
+            return entry;
     }
-#pragma GCC diagnostic pop
-    return found;
+    return ^^void;
 }
 
 }  // namespace detail
 
+// True when the binding matches an entry of the corpus.  The read is a
+// concept over the sealed premises of the binding and the closed matchers of
+// the entries, so no unit can change an answer.
 template <class Type, class... Atoms>
-[[nodiscard]] consteval bool is_in_corpus() noexcept {
-    return detail::first_match_<Type, Atoms...>() != ^^void;
-}
-
-template <class Type, class... Atoms>
-inline constexpr bool is_in_corpus_v = is_in_corpus<Type, Atoms...>();
+concept IsInCorpus =
+    detail::first_match_of_(::fixy::collision::read_verdict(::fixy::collision::verdict_cell_v<Type, Atoms...>,
+                                                            ^^::fixy::collision::verdict_key<Type, Atoms...>)
+                                .premises,
+                            ^^Entries)
+    != ^^void;
 
 // The entry a refused pack matched, or void when none did.
 template <class Type, class... Atoms>
-using matched_entry_or_void_t = [:detail::first_match_<Type, Atoms...>():];
+using matched_entry_or_void_t = [:detail::first_match_of_(
+                                      ::fixy::collision::read_verdict(::fixy::collision::verdict_cell_v<Type, Atoms...>,
+                                                                      ^^::fixy::collision::verdict_key<Type, Atoms...>)
+                                          .premises,
+                                      ^^Entries):];
 
 namespace detail {
 

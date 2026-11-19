@@ -134,6 +134,7 @@ struct rule_premises {
     bool may_run_unbounded{};
     // The row of the binding: the Effect grade joined with the lifts.
     bool row_bg{};
+    bool row_io{};
     bool row_observable{};
     bool row_alloc_or_io{};
     bool row_init{};
@@ -172,11 +173,17 @@ struct rule_premises {
     bool fp_flushes_denormal_inputs{};
     bool fp_flushes_subnormal_results{};
     bool fp_rewrites_without_bound{};
-    // The Security grade, the staleness and the session.
+    // The Security grade, the staleness and the session.  The corpus of
+    // fixy/Corpus.h reads the Internal tier, the classification on Bg and on
+    // Staleness, and a stale_to grade.
     bool constant_time{};
+    bool internal{};
     bool classified_on_send{};
+    bool classified_on_bg{};
+    bool classified_on_staleness{};
     bool classified_on_failure{};
     bool states_staleness{};
+    bool stale{};
     bool session_protocol{};
     bool has_live_handle{};
     // The failure path, from the payload or from a throw.

@@ -157,6 +157,14 @@ fixy_neg_compile_test(neg_collision_payload_premises_cell_of_another_payload
 fixy_neg_compile_test(neg_collision_payload_premises_value_forged
   "payload_premises_cell::payload_premises_cell\\(\\). is private within this context"
   "neg_collision_payload_premises_value_forged\\.cpp:18:[0-9]+: error:")
+# The corpus gate reads the sealed premises of a binding with its key, and
+# each matcher of the corpus is a member function that is not a template.
+fixy_neg_compile_test(neg_corpus_verdict_cell_of_another_binding
+  "a_verdict_cell_stands_for_another_binding"
+  "neg_corpus_verdict_cell_of_another_binding\\.cpp:18:[0-9]+: error:")
+fixy_neg_compile_test(neg_corpus_open_reader_removed
+  "is_in_corpus_v. has not been declared in .fixy::corpus."
+  "neg_corpus_open_reader_removed\\.cpp:11:[0-9]+: error:")
 fixy_neg_compile_test(neg_collision_binding_premises_specialized
   "binding_premises_v. has not been declared in .fixy::collision."
   "neg_collision_binding_premises_specialized\\.cpp:10:[0-9]+: error:")

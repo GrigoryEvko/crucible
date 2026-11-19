@@ -136,7 +136,7 @@ concept ValidComposition = ::fixy::collision::read_verdict(::fixy::collision::ve
 // reads the same resolved grades a rule does, and never fn, for the
 // same reason.
 template <class T, class... Atoms>
-concept NotInCorpus = !::fixy::corpus::is_in_corpus_v<T, Atoms...>;
+concept NotInCorpus = !::fixy::corpus::IsInCorpus<T, Atoms...>;
 
 // The payload half of a refinement.  refined_with<Pred> states that Pred
 // holds for the payload, and the mint of fixy/Fn.h checks that claim with a
@@ -385,7 +385,11 @@ template <class T, class... Atoms>
     } else if constexpr (failed == Tier::Duplicate) {
         return duplicate_tag_or_void_<Atoms...>();
     } else if constexpr (failed == Tier::Composition) {
-        return ::fixy::corpus::detail::first_match_<T, Atoms...>();
+        return ::fixy::corpus::detail::first_match_of_(
+            ::fixy::collision::read_verdict(::fixy::collision::verdict_cell_v<T, Atoms...>,
+                                            ^^::fixy::collision::verdict_key<T, Atoms...>)
+                .premises,
+            ^^::fixy::corpus::Entries);
     } else {
         return ^^void;
     }

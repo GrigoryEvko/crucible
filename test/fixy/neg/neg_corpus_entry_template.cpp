@@ -13,10 +13,7 @@ namespace fixy::corpus {
 
 template <int Variant>
 struct generated_entry final : ::foundation::diag::tag_base {
-    template <class Type, class... Atoms>
-    [[nodiscard]] static consteval bool matches() noexcept {
-        return true;
-    }
+    [[nodiscard]] static constexpr bool matches(const ::fixy::collision::rule_premises&) noexcept { return true; }
 };
 
 }  // namespace fixy::corpus
