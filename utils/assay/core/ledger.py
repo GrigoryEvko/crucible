@@ -142,17 +142,18 @@ THE MERGE
 
     A row of a max ledger keeps the largest value of its item: a write of
     the policy max lowers no kept value and removes no row (THE WRITE of
-    assay.core.budget).  When the two sides change one such row, and each
-    side keeps a row with a value at or above the value of the base, the
-    merged row is the row of the larger value, with the reason of its side.
+    assay.core.budget).  When the two sides change one such row, each side
+    keeps a row with a value at or above the value of the base, and one
+    side or the two raise the value, the merged row is the row of the
+    larger value, with the reason of its side.
     On equal values, ours gives the row.  The gate then judges the composed
     tree against that row, as it judges each other row.  Such a key is not
     a summed key.
 
     Each other change of one key by the two sides is a conflict: a value
     that is not a count, a reason, a row of a max ledger that one side
-    lowers or removes, and a row of a ledger of the policy admit or
-    baseline.  A conflict raises LedgerError, and the landing refuses the
+    lowers or removes or whose reason the two sides change with no raise,
+    and a row of a ledger of the policy admit or baseline.  A conflict raises LedgerError, and the landing refuses the
     patch.
 
 `guard write --rule ID` writes the ledger of a rule.  `guard selftest
@@ -751,19 +752,25 @@ def summed_entry(key: Key, entries: RowSides, where: str) -> Entry | None:
 def largest_entry(key: Key, entries: RowSides, where: str) -> Entry:
     """Return the row of the larger value of two changes of one row of a max ledger (THE MERGE).
 
-    Each side keeps a row with a value at or above the value of the base.  On equal values, ours gives the row.
+    Each side keeps a row with a value at or above the value of the base, and one side or the two raise the value.  On
+    equal values, ours gives the row.
 
     Raises:
-        LedgerError: If a side removes the row, or keeps a value below the value of the base
+        LedgerError: If a side removes the row, keeps a value below the value of the base, or no side raises the value,
+            so the two sides change only the reason, in different ways
     """
     base, ours, theirs = entries
     if ours is None or theirs is None:
         raise LedgerError(f"one side removes {where}, and the other side changes it")
-    if base is not None and min(float(ours.value), float(theirs.value)) < float(base.value):
-        raise LedgerError(
-            f"one side lowers {where} below its value {value_text(base.value)} in the base, and the other side changes "
-            f"it.  A write of the policy max lowers no value"
-        )
+    if base is not None:
+        floor = float(base.value)
+        if min(float(ours.value), float(theirs.value)) < floor:
+            raise LedgerError(
+                f"one side lowers {where} below its value {value_text(base.value)} in the base, and the other side "
+                f"changes it.  A write of the policy max lowers no value"
+            )
+        if max(float(ours.value), float(theirs.value)) <= floor:
+            raise LedgerError(f"the two sides change the reason of {where} differently, and no side raises its value")
     chosen = theirs if float(theirs.value) > float(ours.value) else ours
     return Entry(key, chosen.value, chosen.reason)
 

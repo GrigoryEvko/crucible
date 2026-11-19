@@ -566,6 +566,11 @@ def max_merge_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> Non
         "two raises of one row to the same value take the reason of ours",
         "a.o | kind | 12 | - | ours a" in (tie.text or ""),
     )
+    reasons = (base, max_text({"a.o": ("10", "ours a"), **kept}), max_text({"a.o": ("10", "theirs a"), **kept}))
+    expect(
+        "two changes of only the reason of one max row, with no raise, are a conflict, as in the other policies",
+        refuses(partial(rule_ledger.merge, rule, reasons, "x"), rule_ledger.LedgerError),
+    )
     added = rule_ledger.merge(rule, (None, max_text({"a.o": ("3", "ours")}), max_text({"a.o": ("4", "theirs")})), "x")
     expect("two new rows of one key merge to the larger value", added.text == max_text({"a.o": ("4", "theirs")}))
     lowered = max_text({"a.o": ("9", "a fall"), **kept})
