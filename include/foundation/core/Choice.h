@@ -1674,9 +1674,29 @@ public:
 // fact to the rule linear-forge, which reads an annotation and not a
 // destructor.  The slot counts its lends (THE LEND COUNT), and a moved slot
 // starts with none.
+//
+// THE ZERO WORDS OF AN ENDED PAYLOAD
+//   A clear ends the payload, and GCC then takes the bytes of the payload as
+//   dead.  Where GCC cannot prove that the destructor of the slot does not
+//   end the payload a second time, -Wmaybe-uninitialized reports a read in
+//   that second end.  GCC 16 gave that report at -O3 with ASan at the end of
+//   an Option of a lanes producer handle of 24 bytes, after expect.  Only a
+//   destructor that is not trivial reads the bytes of a payload.  So the
+//   clear of such a payload of at most one cache line builds a third
+//   alternative of zero words in the storage, as the empty alternative of a
+//   small plain sum does (SumSlotOf).  The slot tells its state by its flag,
+//   so the third alternative is one more empty state.  A payload with a
+//   trivial destructor, such as the reservation of the trace ring, and a
+//   larger payload keep a clear with no write, as the reset of
+//   std::optional.
 template <class T>
 class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionForm::owning> {
-    Alternatives<NoPayload, T> storage_{AlternativeAt<0>{}, NoPayload{}};
+    static constexpr std::size_t word_width_ = alignof(T) < 8 ? alignof(T) : 8;
+    using EndedWords = ZeroWords<typename WordOf<word_width_>::type, sizeof(T) / word_width_>;
+    using Storage = Alternatives<NoPayload, T, EndedWords>;
+    static constexpr bool writes_zero_words_ = !std::is_trivially_destructible_v<T> && sizeof(T) <= 64;
+
+    Storage storage_{AlternativeAt<0>{}, NoPayload{}};
     bool is_engaged_ = false;
     mutable unsigned char lend_count_ = 0;
 
@@ -1699,6 +1719,11 @@ class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionFor
         detail::refuse_lent_write_(lend_count_);
         if (is_engaged_) {
             storage_.destroy_(1);
+            if constexpr (writes_zero_words_) {
+                if !consteval {
+                    ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<2>{}, EndedWords{});
+                }
+            }
             is_engaged_ = false;
         }
     }
