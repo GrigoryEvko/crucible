@@ -2,11 +2,12 @@
 //
 // The caller gives the checkpoint check of the pair below a bound of work
 // far past the operation limit of a constant evaluation.  The pair is a loop
-// over ten chains of a hundred sends, so its check meets the operation limit
-// before its bound in each build.  (A walk of eight chains fits the limit in
-// a Release build.)  The refusal names the operation limit and the flag
-// that raises it, and not only the failure of the substitution of the cache
-// of the verdict.
+// over twelve chains of a hundred sends.  Its walk needs about 1.5 times the
+// operation limit, so its check meets the limit before its bound.  The walk
+// counts the same operations in each build (test/compile_cost/
+// check_ceilings.py), so it meets the limit in each build.  The refusal
+// names the operation limit and the flag that raises it, and not only the
+// failure of the substitution of the cache of the verdict.
 //
 // Expected diagnostic: the operation count of a constant evaluation exceeds
 // its limit.
@@ -46,7 +47,7 @@ struct chain_pair {
     using sender = ::fixy::session::Loop<::fixy::session::Select<typename chain_sends<Branch, 0>::type...>>;
     using receiver = ::fixy::session::Loop<::fixy::session::Offer<typename chain_receives<Branch, 0>::type...>>;
 };
-using ChainPair = chain_pair<0, 1, 2, 3, 4, 5, 6, 7, 8, 9>;
+using ChainPair = chain_pair<0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11>;
 using Sender = ChainPair::sender;
 using Receiver = ChainPair::receiver;
 

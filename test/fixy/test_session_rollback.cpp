@@ -232,9 +232,10 @@ static_assert(!s::CtxFitsCheckpointSession<int, Decide, Follow, IoWire>, "an int
 // The gate asks the verdict of one pair in each of its clauses.  Here one
 // side loops over a Select of eight branches, and each branch sends forty
 // words of its own type.  The pair has 321 configurations.  One walk of it
-// stays in the operation limit of a constant evaluation, and eight walks
-// pass the limit.  So one evaluation that asks the verdict eight times
-// compiles only when each ask after the first reads the cache.
+// costs about 13 % of the operation limit of a constant evaluation, so
+// sixteen walks pass the limit two times over.  So one evaluation that asks
+// the verdict sixteen times compiles only when each ask after the first reads
+// the cache.
 
 inline constexpr int kWordsInABranch = 40;
 
@@ -271,15 +272,15 @@ using BudgetPair = budget_pair<0, 1, 2, 3, 4, 5, 6, 7>;
 using BudgetSender = BudgetPair::sender;
 using BudgetReceiver = BudgetPair::receiver;
 
-[[nodiscard]] consteval bool asks_the_verdict_eight_times() {
-    for (int ask = 0; ask < 8; ++ask) {
+[[nodiscard]] consteval bool asks_the_verdict_sixteen_times() {
+    for (int ask = 0; ask < 16; ++ask) {
         if (s::checkpoint_verdict_of(^^BudgetSender, ^^BudgetReceiver) != s::CheckpointVerdict::Compliant) {
             return false;
         }
     }
     return true;
 }
-static_assert(asks_the_verdict_eight_times(), "each ask after the first reads the cache of the verdict");
+static_assert(asks_the_verdict_sixteen_times(), "each ask after the first reads the cache of the verdict");
 
 // ── The runtime ─────────────────────────────────────────────────────
 

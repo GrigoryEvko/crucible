@@ -30,9 +30,30 @@ THE COUNT
     so.  A host with no exact counter, and a build with no REFERENCE_UNIT,
     give the exit SKIPPED.
 
+THE OPERATIONS
+    A probe with the line "// operations: N" also states that its heaviest
+    constant evaluation counts the same operations under the flags of each
+    build.  The verdict of a gate at the operation limit of a constant
+    evaluation (-fconstexpr-ops-limit) then does not depend on the build.  A
+    gate that runs a body of the standard library that a macro of the build
+    changes breaks that: the sanitizer guards of each std::vector operation in
+    the Debug build with AddressSanitizer cost the checkpoint walk of
+    fixy/session/Checkpoint.h about 3 % more operations, so one pair met the
+    limit in Debug and not in Release.  The check finds the count of the probe
+    under the flags of this build, the smallest limit at which the probe
+    compiles, and then compiles the probe under the plain flags at that count
+    and one below it.  The plain flags are the flags of this build with no
+    sanitizer, no macro of the library checks, no NDEBUG and no contract
+    semantic (PLAIN_DROPPED).  Each build runs the check, so each build must
+    count what the plain flags count.  N is the count when the probe was
+    written.  A probe whose count moved still passes, after a search of its
+    count, and the check prints the new count for its line.  This check needs
+    no instruction counter.
+
 --measure prints the count of each probe and judges no ceiling.  Exit 0 when
-each probe is at or below its ceiling, 1 when one is above it or does not
-compile, 2 on a usage error, 77 for a skip.
+each probe is at or below its ceiling and counts the same operations under
+the plain flags, 1 when one is above it, counts a different number of
+operations or does not compile, 2 on a usage error, 77 for a skip.
 """
 
 from __future__ import annotations
@@ -58,6 +79,16 @@ OK, FAILED, USAGE, SKIPPED = 0, 1, 2, 77
 # The words that the compile of a probe drops, and the words whose next word it drops too (THE COMPILE).
 DROPPED_WORDS = frozenset({"-c", "-MD", "-MMD"})
 DROPPED_PAIRS = frozenset({"-o", "-MF", "-MT", "-MQ"})
+# The line of a probe that gives the operations of its heaviest constant evaluation (THE OPERATIONS).
+OPERATIONS_LINE = re.compile(r"^// operations: ([0-9]+)$", re.MULTILINE)
+# The prefix of the operation limit of a compile, and a word of the refusal of a compile that meets it.
+LIMIT_PREFIX = "-fconstexpr-ops-limit="
+LIMIT_WORD = "constexpr-ops-limit"
+# The prefixes of the words that the plain flags drop, and the word that they add (THE OPERATIONS).
+PLAIN_DROPPED = ("-fsanitize=", "-fno-sanitize-recover", "-D_GLIBCXX_ASSERTIONS", "-D_GLIBCXX_SANITIZE_VECTOR",
+                 "-DNDEBUG", "-UNDEBUG", "-fcontract-evaluation-semantic=", "-DCRUCIBLE_CONTRACT_SEMANTIC_IGNORE",
+                 LIMIT_PREFIX)
+PLAIN_ADDED = "-D_GLIBCXX_NO_ASSERTIONS"
 
 
 def reference_command(build: Path) -> tuple[list[str], str, str] | None:
@@ -107,8 +138,79 @@ def counted_compile(command: list[str], directory: str) -> tuple[int | None, str
     return count, ""
 
 
+class ProbeError(Exception):
+    """A compile of a probe that fails for a reason other than the operation limit."""
+
+
+def fits(command: list[str], directory: str, limit: int) -> bool:
+    """Compile under one operation limit: True when the probe compiles, False when it meets the limit."""
+    try:
+        done = subprocess.run([*command, f"{LIMIT_PREFIX}{limit}"], cwd=directory, capture_output=True, text=True,
+                              timeout=COMPILE_S, check=False)
+    except subprocess.TimeoutExpired as error:
+        raise ProbeError(f"the compile ran for more than {COMPILE_S} s") from error
+    if done.returncode == 0:
+        return True
+    if LIMIT_WORD in done.stderr:
+        return False
+    raise ProbeError(done.stderr[-4000:])
+
+
+def operation_count(command: list[str], directory: str, hint: int) -> int:
+    """Return the smallest operation limit at which the probe compiles: two compiles when it is the hint.
+
+    Complexity: two compiles, or a doubling search and a binary search of about thirty compiles when the count
+    moved from the hint.
+    """
+    if fits(command, directory, hint) and not fits(command, directory, hint - 1):
+        return hint
+    # The search keeps a limit that the probe meets at low and a limit at which it fits at high.  No limit is
+    # zero, and the search treats zero as a limit that each probe meets.
+    low, high = 0, max(hint, 1)
+    while not fits(command, directory, high):
+        low, high = high, high * 2
+    while low == 0 and high > 1:
+        half = high // 2
+        if not fits(command, directory, half):
+            low = half
+            break
+        high = half
+    while high - low > 1:
+        middle = (low + high) // 2
+        if fits(command, directory, middle):
+            high = middle
+        else:
+            low = middle
+    return high
+
+
+def plain_command(command: list[str]) -> list[str]:
+    """Return the compile under the plain flags (THE OPERATIONS)."""
+    return [word for word in command if not word.startswith(PLAIN_DROPPED)] + [PLAIN_ADDED]
+
+
+def judge_operations(command: list[str], directory: str, probe: Path, hint: int) -> bool:
+    """Compare the operations of the probe under the flags of this build and under the plain flags."""
+    own = [word for word in command if not word.startswith(LIMIT_PREFIX)]
+    plain = plain_command(own)
+    try:
+        count = operation_count(own, directory, hint)
+        is_same = fits(plain, directory, count) and not fits(plain, directory, count - 1)
+        plain_count = count if is_same else operation_count(plain, directory, count)
+    except ProbeError as error:
+        print(f"check_ceilings: {probe.name} does not compile: {error}")
+        return False
+    moved = "" if count == hint else f"; the line says {hint}, so write '// operations: {count}'"
+    if count != plain_count:
+        print(f"check_ceilings: {probe.name}: {count} operations under the flags of this build and {plain_count} "
+              f"under the plain flags, so a verdict at the operation limit depends on the build{moved}")
+        return False
+    print(f"check_ceilings: {probe.name}: {count} operations, the same under the plain flags{moved}")
+    return True
+
+
 def main(argv: list[str]) -> int:
-    """Compile each probe, and judge its count against its ceiling (THE PROBES)."""
+    """Compile each probe, and judge its count against its ceiling (THE PROBES) and its operations."""
     if len(argv) not in (2, 3) or (len(argv) == 3 and argv[2] != "--measure"):
         print(__doc__.splitlines()[2], file=sys.stderr)
         return USAGE
@@ -121,7 +223,13 @@ def main(argv: list[str]) -> int:
         return SKIPPED
     words, directory, source = found
     failures = 0
-    for probe in sorted(Path(__file__).resolve().parent.glob("probe_*.cpp")):
+    probes = sorted(Path(__file__).resolve().parent.glob("probe_*.cpp"))
+    for probe in probes:
+        operations = OPERATIONS_LINE.search(probe.read_text(encoding="utf-8"))
+        if operations is not None and not is_measure:
+            failures += int(not judge_operations(probe_command(words, source, probe), directory, probe,
+                                                 int(operations.group(1))))
+    for probe in probes:
         measured = MEASURED_LINE.search(probe.read_text(encoding="utf-8"))
         if measured is None and not is_measure:
             print(f"check_ceilings: {probe.name} has no line '// measured: N G instructions'")

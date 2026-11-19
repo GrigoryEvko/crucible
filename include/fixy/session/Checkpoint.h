@@ -264,17 +264,21 @@ enum class CheckpointVerdict : std::uint8_t {
 // larger pair gives the gate and the mint a larger bound, the template
 // argument WorkBound.
 //
-// The default is below the operation limit of a constant evaluation
-// (-fconstexpr-ops-limit=33554432 in this project) for the shapes that the
-// tests try: a chain, a row of wide choices and a row of shared arms.  A
-// count of configurations cannot do that: a chain of eight branches meets
-// the limit near 800 configurations, and a row of choices with 150 labels
-// that are each an edge of their own near 120.  (A label whose branches are
-// those of the label before it is no edge of its own.)  The work of each of
-// these at the limit is more than 360000
-// units, and the pair of 321 configurations of the tests needs 116132.  A
-// bound past the operation limit gives the error of the operation limit,
-// which names the flag that raises it.
+// The default keeps the shapes that the tests try below the operation limit
+// of a constant evaluation (-fconstexpr-ops-limit=33554432 in this project):
+// a chain, a row of wide choices and a row of shared arms.  At the default
+// bound, the walk of a loop over eight chains of a hundred sends stops after
+// about 5.9 million operations, and the walk of a row of 120 choices with 150
+// labels that are each an edge of their own after about 11.1 million.  (A
+// label whose branches are those of the label before it is no edge of its
+// own.)  A count of configurations cannot bound both, because one
+// configuration of the row admits an edge for each label, and one
+// configuration of the chain admits one edge.  The chain of about 800
+// configurations needs 479548 units, and the pair of 321 configurations of
+// the tests needs 116188.  The walk counts the same operations in each build
+// (the section on the head of a position below).  A bound past the
+// operation limit gives the error of the operation limit, which names the
+// flag that raises it.
 inline constexpr std::size_t checkpoint_work_bound = 196608;
 
 namespace detail::checkpoint {
@@ -308,23 +312,67 @@ inline constexpr std::size_t admit_work = 64;
 inline constexpr int unfold_bound = 64;
 inline constexpr int depth_bound = 256;
 
-// The type under each VendorPinned and each named state at the head.
+// ── The reads of a position ─────────────────────────────────────────
+//
+// The model reads a position in two ways.  The kind of the node under each
+// vendor pin and each named state comes from its shape, which the builtins
+// of <meta> give.  The parts of that node, its payload, its next node and the
+// branches of a choice, come from the kept node of its type in the registry
+// (decompose of fixy/session/Fold.h), and the note of a choice is no branch
+// of that node.  So the walk itself makes no vector, and it runs no body of
+// the standard library that a macro of the build changes, such as the
+// sanitizer guards of a vector in the Debug build.  The count of operations
+// of the walk in a constant evaluation is then the same in each build, and so
+// is each verdict at the operation limit (test/compile_cost/check_ceilings.py
+// compares the counts).  The first read of a type runs in the evaluation of
+// its kept node, which has a count of its own.  The check of the shape reads
+// the kept node of each node that has parts, and it refuses a node that the
+// registry does not know, so the walk after it reads only known nodes.
+
+// The kind of a registered shape, or Unknown for each shape that the model
+// does not know.
+consteval Kind kind_of_shape(info shape) {
+    if (shape == ^^End) return Kind::End;
+    if (shape == ^^Continue) return Kind::Continue;
+    if (shape == ^^Roll) return Kind::Roll;
+    if (shape == ^^Abort) return Kind::Abort;
+    if (shape == ^^Send) return Kind::Send;
+    if (shape == ^^Recv) return Kind::Recv;
+    if (shape == ^^Select) return Kind::Select;
+    if (shape == ^^Offer) return Kind::Offer;
+    if (shape == ^^Loop) return Kind::Loop;
+    if (shape == ^^Commit) return Kind::Commit;
+    return Kind::Unknown;
+}
+
+// The type under each vendor pin and each named state of `type`.  The
+// builtins of <meta> tell a pin or a name, so a type that is neither, such as
+// a payload, takes no kept node.  The protocol under a pin or a name is the
+// next node of its kept node.  A name with no protocol has none, so it stays,
+// and its kind is Unknown.  A cycle of names has no node under it, and the
+// read stops at depth_bound.  The gate refuses each cycle of names first,
+// with Protocol_Named_State_Cycle.
 consteval info strip(info type) {
     type = std::meta::dealias(type);
-    for (;;) {
-        if (!std::meta::has_template_arguments(type)) return type;
+    for (int depth = 0; depth < depth_bound; ++depth) {
+        if (!std::meta::is_type(type) || !std::meta::has_template_arguments(type)) return type;
         const info family = std::meta::template_of(type);
-        if (family == ^^VendorPinned) {
-            type = std::meta::dealias(std::meta::template_arguments_of(type)[1]);
-        } else if (family == ^^Named) {
-            const info body = tr::protocol_under_name(protocol_registry, type);
-            if (body == info{}) return type;
-            type = body;
-        } else {
-            return type;
-        }
+        if (family != ^^VendorPinned&& family != ^^Named) return type;
+        const info under = tr::decompose(protocol_registry, type).next;
+        if (under == info{}) return type;
+        type = under;
     }
+    return type;
 }
+
+// The kind of a type under its pins and names, from its shape.
+consteval Kind kind_of(info node) {
+    if (!std::meta::is_type(node)) return Kind::Unknown;
+    return kind_of_shape(std::meta::has_template_arguments(node) ? std::meta::template_of(node) : node);
+}
+
+// The kept node of a type under its pins and names, for its parts.
+consteval tr::node node_of(info node) { return tr::decompose(protocol_registry, node); }
 
 // The type under each vendor pin and each named state of P.  The door and
 // the recorder read a branch through it, so they see the primitive that the
@@ -332,60 +380,26 @@ consteval info strip(info type) {
 template <typename P>
 using bare_t = typename[:strip(^^P):];
 
-consteval Kind kind_of(info type) {
-    type = strip(type);
-    if (type == ^^End) return Kind::End;
-    if (type == ^^Continue) return Kind::Continue;
-    if (type == ^^Roll) return Kind::Roll;
-    if (type == ^^Abort) return Kind::Abort;
-    if (!std::meta::has_template_arguments(type)) return Kind::Unknown;
-    const info family = std::meta::template_of(type);
-    if (family == ^^Send) return Kind::Send;
-    if (family == ^^Recv) return Kind::Recv;
-    if (family == ^^Select) return Kind::Select;
-    if (family == ^^Offer) return Kind::Offer;
-    if (family == ^^Loop) return Kind::Loop;
-    if (family == ^^Commit) return Kind::Commit;
-    return Kind::Unknown;
-}
-
-consteval info argument(info type, std::size_t index) {
-    return strip(std::meta::template_arguments_of(strip(type))[index]);
-}
-
-// The template arguments of a Select or an Offer.  The real branches start
-// at `first_`, because a Sender tag is not a branch.  A reader reads the
-// branches through the pointer of data().  No walk changes the vector.
-class BranchList {
-public:
-    consteval explicit BranchList(info choice) : arguments_{std::meta::template_arguments_of(strip(choice))} {
-        if (!arguments_.empty()) {
-            const info head = std::meta::dealias(arguments_.data()[0]);
-            if (std::meta::has_template_arguments(head) && std::meta::template_of(head) == ^^Sender) {
-                first_ = 1;
-            }
-        }
-    }
-
-    [[nodiscard]] consteval const info* data() const { return arguments_.data() + first_; }
-    [[nodiscard]] consteval std::size_t size() const { return arguments_.size() - first_; }
-
-private:
-    std::vector<info> arguments_;
-    std::size_t first_ = 0;
-};
-
-consteval BranchList branches_of(info type) { return BranchList{type}; }
-
 // A rollback cannot recall a delegated endpoint that the peer already
 // holds, so a checkpoint session carries no delegation either.  The
 // question is the one a crash session asks, through the same walk of
 // fixy/session/Crash.h.  The walk takes a reflection, so it reaches the
 // plain-payload concept through a substitution, which also keeps the
-// named diagnostic of a payload that it cannot read.
-consteval bool payload_admitted(info payload) {
+// named diagnostic of a payload that it cannot read.  The answer of a
+// payload is a kept answer in a variable of its own, because the facts of a
+// payload come from the value argument of their cell, a read that makes a
+// vector.  So the walk that asks makes no vector.
+consteval bool payload_admitted_now(info payload) {
     return std::meta::extract<bool>(std::meta::substitute(^^is_plain_payload_v, {payload}))
         && !crash::is_crash_payload_type(payload) && !crash::conveys_delegation(payload);
+}
+
+template <info Payload>
+inline constexpr bool payload_admitted_v = payload_admitted_now(Payload);
+
+consteval bool payload_admitted(info payload) {
+    return std::meta::extract<bool>(
+        std::meta::substitute(^^payload_admitted_v, {std::meta::reflect_constant(payload)}));
 }
 
 consteval bool is_primitive(Kind kind) { return kind == Kind::Commit || kind == Kind::Roll || kind == Kind::Abort; }
@@ -447,6 +461,12 @@ consteval bool shaped(info type, bool at_branch, int depth, ShapeCheck& check) {
     }
     check.work += admit_work;
     if (depth > depth_bound || check.work > check.bound) return false;
+    // The kept node of a node with parts.  A node with no parts, and a node
+    // of a shape that the model does not know, reads none.
+    const bool has_parts = kind == Kind::Send || kind == Kind::Recv || kind == Kind::Select || kind == Kind::Offer
+                        || kind == Kind::Loop || kind == Kind::Commit;
+    const tr::node view = has_parts ? node_of(node) : tr::node{};
+    if (has_parts && !view.is_registered) return false;
     bool is_shaped = false;
     switch (kind) {
         case Kind::End:
@@ -455,13 +475,12 @@ consteval bool shaped(info type, bool at_branch, int depth, ShapeCheck& check) {
             break;
         case Kind::Send:
         case Kind::Recv:
-            is_shaped = payload_admitted(argument(node, 0)) && shaped(argument(node, 1), false, depth + 1, check);
+            is_shaped = payload_admitted(strip(view.payload)) && shaped(view.next, false, depth + 1, check);
             break;
         case Kind::Select:
         case Kind::Offer: {
-            const BranchList branches = branches_of(node);
-            const info* const branch = branches.data();
-            const std::size_t branch_count = branches.size();
+            const info* const branch = view.branches.begin();
+            const std::size_t branch_count = view.branches.size();
             is_shaped = branch_count != 0;
             info previous = ^^void;
             for (std::size_t place = 0; is_shaped && place < branch_count; ++place) {
@@ -476,10 +495,10 @@ consteval bool shaped(info type, bool at_branch, int depth, ShapeCheck& check) {
             break;
         }
         case Kind::Loop:
-            is_shaped = shaped(argument(node, 0), false, depth + 1, check);
+            is_shaped = shaped(view.next, false, depth + 1, check);
             break;
         case Kind::Commit:
-            is_shaped = at_branch && shaped(argument(node, 0), false, depth + 1, check);
+            is_shaped = at_branch && shaped(view.next, false, depth + 1, check);
             break;
         case Kind::Roll:
         case Kind::Abort:
@@ -530,15 +549,16 @@ consteval bool same_configuration(const Configuration& lhs, const Configuration&
 // Resolves Loop and Continue at the head, as the handle does.
 consteval bool unfold(Party& party) {
     for (int step = 0; step < unfold_bound; ++step) {
-        const Kind kind = kind_of(party.position);
+        const info node = strip(party.position);
+        const Kind kind = kind_of(node);
         if (kind == Kind::Loop) {
-            party.loop = strip(party.position);
-            party.position = argument(party.position, 0);
+            party.loop = node;
+            party.position = node_of(node).next;
         } else if (kind == Kind::Continue) {
             if (party.loop == ^^void) return false;
-            party.position = argument(party.loop, 0);
+            party.position = node_of(party.loop).next;
         } else {
-            party.position = strip(party.position);
+            party.position = node;
             return true;
         }
     }
@@ -600,8 +620,8 @@ consteval CheckpointVerdict exchange(Exploration& run, Party active, Party passi
     }
     switch (active_kind) {
         case Kind::Commit: {
-            const info active_next = argument(active_branch, 0);
-            const info passive_next = argument(passive_branch, 0);
+            const info active_next = strip(node_of(active_branch).next);
+            const info passive_next = strip(node_of(passive_branch).next);
             active.checkpoint = active_next;
             active.checkpoint_loop = active.loop;
             active.is_imposed = false;
@@ -645,12 +665,12 @@ consteval CheckpointVerdict exchange(Exploration& run, Party active, Party passi
 
 consteval CheckpointVerdict choose(Exploration& run, const Party& active, const Party& passive,
                                    const Party& active_start, const Party& passive_start, bool active_is_left) {
-    const BranchList labels = branches_of(active.position);
-    const BranchList accepted = branches_of(passive.position);
+    const tr::static_run<info> labels = node_of(active.position).branches;
+    const tr::static_run<info> accepted = node_of(passive.position).branches;
     const std::size_t label_count = labels.size();
     if (label_count > accepted.size()) return CheckpointVerdict::LabelOutOfRange;
-    const info* const label = labels.data();
-    const info* const acceptance = accepted.data();
+    const info* const label = labels.begin();
+    const info* const acceptance = accepted.begin();
     for (std::size_t index = 0; index < label_count; ++index) {
         // A label whose branch and accepted branch are those of the label
         // before it is the same edge, with the same verdict and the same next
@@ -689,17 +709,15 @@ consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol, 
         const Kind left = kind_of(here.left.position);
         const Kind right = kind_of(here.right.position);
         if (left == Kind::End && right == Kind::End) continue;
-        if (left == Kind::Send && right == Kind::Recv) {
-            if (argument(here.left.position, 0) != argument(here.right.position, 0)) return CheckpointVerdict::Stuck;
+        const bool is_message =
+            (left == Kind::Send && right == Kind::Recv) || (left == Kind::Recv && right == Kind::Send);
+        if (is_message) {
+            const tr::node left_node = node_of(here.left.position);
+            const tr::node right_node = node_of(here.right.position);
+            if (strip(left_node.payload) != strip(right_node.payload)) return CheckpointVerdict::Stuck;
             Configuration next = here;
-            next.left.position = argument(here.left.position, 1);
-            next.right.position = argument(here.right.position, 1);
-            admit(run, next);
-        } else if (left == Kind::Recv && right == Kind::Send) {
-            if (argument(here.left.position, 0) != argument(here.right.position, 0)) return CheckpointVerdict::Stuck;
-            Configuration next = here;
-            next.left.position = argument(here.left.position, 1);
-            next.right.position = argument(here.right.position, 1);
+            next.left.position = left_node.next;
+            next.right.position = right_node.next;
             admit(run, next);
         } else if (left == Kind::Select && right == Kind::Offer) {
             const CheckpointVerdict step = choose(run, here.left, here.right, left_start, right_start, true);
@@ -752,7 +770,7 @@ consteval CheckpointVerdict cached_verdict_of(info left_protocol, info right_pro
         return verdict_of(left_protocol, right_protocol, bound);
     }
     const info cell = std::meta::substitute(^^verdict_cached, {left_protocol, right_protocol, bound_value});
-    return std::meta::extract<CheckpointVerdict>(argument(cell, 0));
+    return std::meta::extract<CheckpointVerdict>(std::meta::template_arguments_of(std::meta::dealias(cell))[0]);
 }
 
 // The refusal of a pair whose check needs more work than its bound.  The
