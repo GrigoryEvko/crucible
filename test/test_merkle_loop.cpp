@@ -103,12 +103,12 @@ using crucible::SchemaHash;
     // count regions share one closure type of counter_of, so the unit
     // compiles two instantiations of replay and not one for each call.
     auto never_diverges = [](const crucible::Guard&) -> int64_t { return 0; };
-    auto counter_of = [](uint32_t& count) { return [&count](crucible::RegionNode&) { ++count; }; };
+    auto counter_of = [](uint32_t& count) { return [&count](crucible::RegionNode const&) { ++count; }; };
 
     uint32_t exec_count = 0;
     std::vector<ContentHash> replay_log;
     replay_log.reserve(16);
-    bool replay_ok = crucible::replay(loop, never_diverges, [&](crucible::RegionNode& r) {
+    bool replay_ok = crucible::replay(loop, never_diverges, [&](crucible::RegionNode const& r) {
         replay_log.push_back(r.content_hash);
         exec_count++;
     });

@@ -323,10 +323,10 @@ void transaction_stamps_read_no_clock(Tally& tally) {
         }
     }
     const auto commit = [&log, &owner](crucible::Transaction* tx, crucible::RegionNode* region) {
-        return log.commit(
-            owner, *tx,
-            ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Ref<crucible::RegionNode>{::fixy::to(*region)}),
-            region->content_hash, region->merkle_hash);
+        return log.commit(owner, *tx,
+                          ::fixy::mint_tagged<::fixy::tags::source::Arena>(
+                              ::fixy::Ref<crucible::RegionNode const>{::fixy::to(*region)}),
+                          region->content_hash, region->merkle_hash);
     };
 
     give_each_read(7, 0);

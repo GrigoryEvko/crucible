@@ -483,17 +483,8 @@ public:
     // writes the regions that the foreground holds, and the publish stage can
     // then release the region.  No region before the first publication.
     [[nodiscard]] ::fixy::Option<::fixy::Ref<const RegionNode>> active_region() const noexcept {
-        for (const ::fixy::Ref<RegionNode> region : newest_region_()) {
-            return ::fixy::some(::fixy::Ref<const RegionNode>{region});
-        }
-        return ::fixy::none;
+        return newest_region_();
     }
-
-    // replay needs a writable view, because the caller's execution lambda
-    // mutates the region as it writes outputs.  The const accessor above
-    // serves introspection, and its rule for a read of the region applies
-    // here too.
-    [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode>> active_region_mut() noexcept { return newest_region_(); }
 
     // Advanced only by the background thread, once per region transition.
     [[nodiscard]] uint64_t current_step() const noexcept { return step_.get(); }
@@ -548,7 +539,7 @@ public:
     // with no guard mismatch.
     template <typename GuardEval, typename RegionExec>
     [[nodiscard]] bool replay(GuardEval&& eval_guard, RegionExec&& exec_region) {
-        for (const ::fixy::Ref<RegionNode> region : active_region_mut()) {
+        for (const ::fixy::Ref<const RegionNode> region : newest_region_()) {
             return crucible::replay(*region, std::forward<GuardEval>(eval_guard),
                                     std::forward<RegionExec>(exec_region));
         }
@@ -830,19 +821,21 @@ private:
 
     // The body of active_region.  The producer thread is the one writer of
     // the requested reset, so on that thread the comparison cannot race it.
-    [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode>> newest_region_() const noexcept {
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<const RegionNode>> newest_region_() const noexcept {
         const PendingRegion pending = pending_region_.load_acquire();
         for (const auto& published : pending) {
-            if (published->reset_point == bg_.requested_reset()) return region_of_(published->region);
+            if (published->reset_point == bg_.requested_reset())
+                return region_of_(::fixy::WeakRef<const RegionNode>{published->region.get()});
         }
         return region_of_(taken_region_.load_acquire());
     }
 
     // The region of a slot that can be empty, or no region for an empty
-    // slot.
-    [[nodiscard]] static ::fixy::Option<::fixy::Ref<RegionNode>> region_of_(::fixy::WeakRef<RegionNode> slot) noexcept {
+    // slot.  The foreground reads a region of the pipeline only as const.
+    [[nodiscard]] static ::fixy::Option<::fixy::Ref<const RegionNode>>
+    region_of_(::fixy::WeakRef<const RegionNode> slot) noexcept {
         if (!slot.has_value()) return ::fixy::none;
-        return ::fixy::some(::fixy::Ref<RegionNode>{::fixy::to(slot.get())});
+        return ::fixy::some(::fixy::Ref<const RegionNode>{::fixy::to(slot.get())});
     }
 
     // The store parts of persist and load.  The store is a template
@@ -897,7 +890,7 @@ private:
     // stale.  The region in the slot goes to the cache, the alignment walk
     // closes, and the context replays the region, or records when the region
     // has no memory plan.  The body is in src/Vigil.cpp.
-    [[gnu::cold]] void adopt_region_(VigilFgCtx const& fg, RegionNode& region);
+    [[gnu::cold]] void adopt_region_(VigilFgCtx const& fg, RegionNode const& region);
 
     // Writes the regions that the foreground holds into held_regions_: the
     // region of the alignment walk, the region of the replay context, the
@@ -910,8 +903,7 @@ private:
         held_regions_.sequence.store_release(before + 1);
         held_regions_.cells.at(::fixy::index<0>()).store_release(pending_activation_);
         held_regions_.cells.at(::fixy::index<1>()).store_release(replay_.context().active_region());
-        held_regions_.cells.at(::fixy::index<2>())
-            .store_release(::fixy::WeakRef<const RegionNode>::from_raw(taken_region_.load_acquire().try_get()));
+        held_regions_.cells.at(::fixy::index<2>()).store_release(taken_region_.load_acquire());
         for (uint32_t age = 0; age < RegionCache::CAP; ++age) {
             held_regions_.cells
                 .at(::fixy::Index<HeldRegions::CAP>::check(3 + age).expect("the cells hold each age of the cache"))
@@ -1233,7 +1225,7 @@ private:
             region_cache_.insert(*published.region);
             return;
         }
-        taken_region_.store_release(published.region);
+        taken_region_.store_release(::fixy::WeakRef<const RegionNode>{published.region.get()});
         if (published.region->num_ops() == 0) return;
 
         // A newer region that holds the ops of an open walk takes the walk
@@ -1570,7 +1562,7 @@ private:
     alignas(64)::fixy::Atomic<PendingRegion> pending_region_{};
     // The region that the producer thread took last (active_region).  Only
     // the producer thread writes it, and a reader on another thread loads it.
-    ::fixy::Atomic<::fixy::WeakRef<RegionNode>> taken_region_{};
+    ::fixy::Atomic<::fixy::WeakRef<const RegionNode>> taken_region_{};
     // The five below are foreground-only.
     ::fixy::WeakRef<const RegionNode> pending_activation_{};
     AlignmentPos alignment_pos_ = alignment_pos_at(0);

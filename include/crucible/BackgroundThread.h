@@ -27,8 +27,10 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <fixy/handle/OneShotFlag.h>
+#include <fixy/handle/Published.h>
 #include <fixy/handle/PublishCommit.h>
 #include <fixy/os/OwnedThread.h>
+#include <foundation/Closure.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/contracts/Pre.h>
@@ -67,6 +69,12 @@ struct PipelineLimits {
     ::fixy::Quantity<::fixy::unit::Element, uint32_t> region_store{DEFAULT_REGION_STORE};
     ::fixy::Quantity<::fixy::unit::Element, uint32_t> uncompiled_queue{DEFAULT_UNCOMPILED_QUEUE};
 };
+
+// The policy of a job of run_on_publish_stage (THE CLOSURE OF A JOB of
+// BackgroundThread): the caller waits while the job runs on the thread of the
+// publish stage, and the door calls the job one time.
+inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundation::closure::Crossing::SoleThread,
+                                                                      ::foundation::closure::QttGrade::One, false};
 
 // Drains the ring buffer, detects iteration boundaries and builds a trace
 // graph per iteration.
@@ -173,6 +181,11 @@ struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
         friend struct BackgroundThread;
 
     public:
+        // The publish stage writes a region for the last time before it makes
+        // the region visible, so its proof mints a Published region
+        // (fixy/handle/Published.h) that names a region no code writes.
+        using published_type = RegionNode;
+
         PublishStage(const PublishStage&) = delete("the publish-stage proof stays on the thread that owns the state");
         PublishStage(PublishStage&&) = delete("the publish-stage proof stays on the thread that owns the state");
         PublishStage&
@@ -253,31 +266,81 @@ struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
         ::fixy::Atomic<bool> done{};
     };
 
-    // Runs job on the thread that owns the publish-stage state, and returns
-    // when it has run.  While the publish stage runs, that thread is the
-    // publish stage, which runs the job between two publications.  While
-    // no publish stage runs, the state has no other writer, and the caller
-    // runs the job itself.  Either way, the job and the region callback
-    // never overlap.
+    // Runs job on the thread that owns the publish-stage state, and gives
+    // back the value of the job when it has run.  While the publish stage
+    // runs, that thread is the publish stage, which runs the job between two
+    // publications.  While no publish stage runs, the state has no other
+    // writer, and the caller runs the job itself.  Either way, the job and
+    // the region callback never overlap.
     //
     // The job takes this BackgroundThread and the PublishStage token as its
     // parameters.  The token is the proof of the fields of the publish stage,
     // and the door hands the borrow of this object on the thread that owns
     // those fields.  So a job captures no `this` and no BackgroundThread.
-    // The door checks no closure of the job yet.  The job of a rollback gives
-    // a region of the pipeline to the foreground, and a region has no
-    // transfer fact until a published form of a region holds one.
+    //
+    // THE CLOSURE OF A JOB.  The door checks the closure of the job under
+    // publish_job_policy (foundation/Closure.h).  The caller waits while the
+    // job runs, so the job is the one user of each borrow that it captures.
+    // Each value that the job holds crosses to the thread of the stage, so it
+    // is Sendable, and a capture of `this` of an owner, a plain address,
+    // refuses.  The value of the job crosses back to the caller, so it is
+    // Sendable too.
+    //
+    // THE LIFE OF A REGION.  The job of a rollback gives the restored region
+    // to the foreground as a Published region, which holds no claim on the
+    // memory of the region.  No sweep frees the region between the end of
+    // the job and the write of the holders of the foreground, by this order:
+    //   - The job calls keep_region, which marks the region NOT_LEFT.
+    //   - sweep_regions_ only records the generation of the foreground for a
+    //     region that it finds NOT_LEFT, and it frees a region only at a later
+    //     generation of the foreground, which a later write of the holders of
+    //     the foreground gives.
+    //   - The foreground writes no holder between the end of the job and
+    //     adopt_region_.  adopt_region_ stores taken_region_ before
+    //     publish_held_regions_, which reads taken_region_ into its third
+    //     cell.  So the first write of the holders after the job names the
+    //     region.
+    //   - The log also holds the region for two more publications: begin_tx
+    //     keeps the slot of the active transaction and of the rollback target.
     //
     // Cold path.  The caller spins while the publish stage finishes the
     // publication in hand, which is bounded by one region build.  A thread
     // that holds the stage already, in a region callback or in a job, must
     // not call this: it would wait on itself, so the contract stops it.
+    //
+    // A job that gives a value gives one that the door can build empty and
+    // then assign, such as an Option.
     template <typename Job>
         requires std::is_nothrow_invocable_v<Job&, BackgroundThread&, PublishStage const&>
-    void run_on_publish_stage(Job&& job) noexcept {
+              && (std::is_void_v<std::invoke_result_t<Job&, BackgroundThread&, PublishStage const&>>
+                  || std::is_nothrow_default_constructible_v<
+                      std::invoke_result_t<Job&, BackgroundThread&, PublishStage const&>>)
+    std::invoke_result_t<Job&, BackgroundThread&, PublishStage const&> run_on_publish_stage(Job&& job) noexcept {
+        using Value = std::invoke_result_t<Job&, BackgroundThread&, PublishStage const&>;
+        constexpr ::foundation::closure::ClosureVerdict verdict = ::foundation::closure::check_closure(
+            ^^std::remove_cvref_t<Job>, publish_job_policy, "run_on_publish_stage");
+        static_assert(verdict.is_admitted(), verdict);
+        static_assert(std::is_void_v<Value> || ::foundation::transfer::Sendable<Value>,
+                      "run_on_publish_stage: the value of the job crosses from the thread of the publish stage to the "
+                      "caller, so it is Sendable");
+        if constexpr (std::is_void_v<Value>) {
+            auto with_owner = [&job, this](PublishStage const& stage) noexcept { job(*this, stage); };
+            post_owner_job_(with_owner);
+        } else {
+            Value value{};
+            auto with_owner = [&job, &value, this](PublishStage const& stage) noexcept { value = job(*this, stage); };
+            post_owner_job_(with_owner);
+            return value;
+        }
+    }
+
+private:
+    // Posts the call to the mailbox of the publish stage and waits for it, or
+    // runs it on the caller while no publish stage runs (run_on_publish_stage).
+    template <typename Call>
+    void post_owner_job_(Call& call) noexcept {
         CRUCIBLE_PRE(stage_held_by_this_thread_ != ::fixy::WeakRef<const BackgroundThread>{*this});
-        auto with_owner = [&job, this](PublishStage const& stage) noexcept { job(*this, stage); };
-        OwnerJob request{.call = OwnerJobCall{with_owner}};
+        OwnerJob request{.call = OwnerJobCall{call}};
         const ::fixy::WeakRef<OwnerJob> posted{request};
         while (true) {
             const ::fixy::WeakRef<OwnerJob> seen = owner_mailbox_.load_acquire();
@@ -306,6 +369,7 @@ struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
         }
     }
 
+public:
     IterationDetector detector;
 
     // The ops that the detect stage holds, from the oldest op that a future

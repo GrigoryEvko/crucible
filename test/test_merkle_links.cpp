@@ -166,7 +166,7 @@ namespace {
     auto replay_with = [&](crucible::TraceNode& first, int64_t guard_value, uint32_t& ran_a, uint32_t& ran_b) {
         return crucible::replay(
             first, [guard_value](const crucible::Guard&) noexcept { return guard_value; },
-            [&](crucible::RegionNode& ran) noexcept {
+            [&](crucible::RegionNode const& ran) noexcept {
                 if (::fixy::same_object(::fixy::to(ran), ::fixy::to(region_a))) ++ran_a;
                 if (::fixy::same_object(::fixy::to(ran), ::fixy::to(region_b))) ++ran_b;
             });

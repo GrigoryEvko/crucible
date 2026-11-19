@@ -11,6 +11,7 @@
 #include <crucible/Cipher.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/DeadlineWatchdog.h>
+#include <fixy/handle/Published.h>
 #include <fixy/Core.h>
 
 #include <utility>
@@ -86,42 +87,45 @@ bool Vigil::rollback() {
     // No op reaches the ring while this thread rolls back, so this is the
     // point of the rollback.
     const uint64_t ops_before = ring_total_produced();
-    bool restored_one = false;
-    ::fixy::WeakRef<RegionNode> restored{};
-    bg_.run_on_publish_stage([&restored_one, &restored, &tx_log = tx_log_,
-                              ops_before](BackgroundThread& bg, BackgroundThread::PublishStage const& stage) noexcept {
-        restored_one = tx_log.rollback(stage);
-        if (!restored_one) return;
-        // The job runs between two publications, so each publication after
-        // it reads the mark, and none gives the foreground a region cut
-        // before the rollback.
-        bg.request_mark(ops_before);
-        const ::fixy::WeakRef<Transaction> active = tx_log.active(stage);
-        if (!active.has_value()) return;
-        for (const ::fixy::Ref<RegionNode>& region : active->region.value()) {
-            restored = ::fixy::WeakRef<RegionNode>{*region};
-            // The foreground gets the region outside the publication slot,
-            // so the store keeps it until the foreground writes its holders
-            // again.
-            bg.keep_region(stage, ::fixy::WeakRef<const RegionNode>{*region});
-        }
-    });
-    if (!restored_one) return false;
-    // The restored transaction was active before, and only a commit with a
-    // region makes a transaction active.
-    CRUCIBLE_FATAL_INVARIANT(restored.has_value());
-    adopt_region_(fg, restored.get());
-    return true;
+    const ::fixy::Option<::fixy::handle::Published<RegionNode>> restored = bg_.run_on_publish_stage(
+        [&tx_log = tx_log_, ops_before](BackgroundThread& bg, BackgroundThread::PublishStage const& stage) noexcept
+            -> ::fixy::Option<::fixy::handle::Published<RegionNode>> {
+            if (!tx_log.rollback(stage)) return ::fixy::none;
+            // The job runs between two publications, so each publication after
+            // it reads the mark, and none gives the foreground a region cut
+            // before the rollback.
+            bg.request_mark(ops_before);
+            // The restored transaction was active before, and only a commit
+            // with a region makes a transaction active.
+            const ::fixy::WeakRef<Transaction> active = tx_log.active(stage);
+            CRUCIBLE_FATAL_INVARIANT(active.has_value());
+            ::fixy::Option<::fixy::handle::Published<RegionNode>> region_of_rollback{};
+            for (const ::fixy::Ref<RegionNode const>& region : active->region.value()) {
+                region_of_rollback = ::fixy::some(::fixy::handle::mint_published(stage, *region));
+                // The foreground gets the region outside the publication slot,
+                // so the store keeps it until the foreground writes its holders
+                // again (THE LIFE OF A REGION of BackgroundThread.h).
+                bg.keep_region(stage, ::fixy::WeakRef<const RegionNode>{*region});
+            }
+            CRUCIBLE_FATAL_INVARIANT(region_of_rollback.is_some());
+            return region_of_rollback;
+        });
+    return restored.match(
+        [this, &fg](::fixy::handle::Published<RegionNode> const& region) {
+            adopt_region_(fg, region.get());
+            return true;
+        },
+        []() { return false; });
 }
 
-void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode& region) {
+void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode const& region) {
     // No op reached the ring after the mark, so the pipeline cut each region
     // that the slot can hold before the mark.
     cache_pending_region_();
     pending_activation_.reset();
     alignment_pos_ = alignment_pos_at(0);
     alignment_ops_ = 0;
-    taken_region_.store_release(::fixy::WeakRef<RegionNode>{region});
+    taken_region_.store_release(::fixy::WeakRef<const RegionNode>{region});
     if (replay_.activate(region)) {
         // A rollback or a load resumes the replay at the first op.
         register_inputs_from_region_(fg, region, 0);
@@ -144,9 +148,9 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // The merkle root goes through the checked accessor so the non-zero
     // invariant is witnessed at this call site: its precondition fires
     // here if the hash was never recomputed.
-    (void)tx_log_.commit(stage, tx,
-                         ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Ref<RegionNode>{::fixy::to(region)}),
-                         region.content_hash, ::crucible::make_merkle_root(region.computed_merkle_hash()));
+    (void)tx_log_.commit(
+        stage, tx, ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Ref<RegionNode const>{::fixy::to(region)}),
+        region.content_hash, ::crucible::make_merkle_root(region.computed_merkle_hash()));
     (void)tx_log_.activate(stage, tx);
 
     // Publishing the region signals the foreground, which picks it up

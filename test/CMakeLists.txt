@@ -2077,6 +2077,9 @@ crucible_neg_compile_test(neg_transaction_log_copyable_owner
 crucible_neg_compile_test(neg_publish_stage_built_outside
   "is private within this context"
   ".crucible::BackgroundThread::PublishStage::PublishStage\\(\\). is private within this context")
+crucible_neg_compile_test(neg_publish_job_captures_this
+  "static assertion failed: run_on_publish_stage: the body captures .this. \\(field __this, type \\{anonymous\\}::Owner\\*\\)"
+  "Capture the parts that the body uses, not the whole object")
 crucible_neg_compile_test(neg_publish_stage_forged_by_bit_cast
   "no matching function for call to .bit_cast<crucible::BackgroundThread::PublishStage>\\(char\\)."
   ".crucible::BackgroundThread::PublishStage. is not trivially copyable")

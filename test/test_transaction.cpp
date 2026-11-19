@@ -77,7 +77,8 @@ static_assert(std::is_invocable_v<decltype(&Log::rollback), Log&, SoloOwner cons
 static_assert(std::is_default_constructible_v<Log>);
 
 [[nodiscard]] crucible::Transaction::ArenaRegion arena_region(crucible::RegionNode& region) {
-    return ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Ref<crucible::RegionNode>{::fixy::to(region)});
+    return ::fixy::mint_tagged<::fixy::tags::source::Arena>(
+        ::fixy::Ref<crucible::RegionNode const>{::fixy::to(region)});
 }
 
 // A commit takes a Ref, so it cannot take a null region.  A slot that no

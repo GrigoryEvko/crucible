@@ -233,9 +233,11 @@ void test_publish_stage_releases_in_order() {
     assert(overflowed.is_err());
     assert(metalog->tail.get() == 0u);
 
+    // The job takes the region of the build, which moves to the thread of the
+    // publish stage, and not the build, which borrows the graph of the caller.
+    BackgroundThread::BuiltRegion first_region = std::move(built).expect("the first work builds").region;
     bt.run_on_publish_stage([&](BackgroundThread& owner, BackgroundThread::PublishStage const& stage) noexcept {
-        owner.publish_region(bg, stage, std::move(built).expect("the first work builds").region,
-                             BackgroundThread::StreamPoint{});
+        owner.publish_region(bg, stage, std::move(first_region), BackgroundThread::StreamPoint{});
         assert(owner.meta_log.get()->tail.get() == 0u && "the publish of a region moved the tail");
         owner.release_meta_log(stage, first_end);
         assert(owner.meta_log.get()->tail.get() == first_end);

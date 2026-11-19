@@ -1253,12 +1253,23 @@ inline void recompute_merkle(TraceNode& node) {
     return merge;
 }
 
-// GuardEval is int64_t(const Guard&) and RegionExec is void(RegionNode&).
+// The node of a link, as const.  A walk that only reads takes it.
+[[nodiscard]] inline ::fixy::Option<::fixy::Ref<TraceNode const>> read_link(TraceLink const& link) noexcept {
+    return link.match(
+        [](::fixy::Ref<TraceNode> const& node) noexcept { return ::fixy::some(::fixy::Ref<TraceNode const>{node}); },
+        []() noexcept { return ::fixy::Option<::fixy::Ref<TraceNode const>>{}; });
+}
+
+// GuardEval is int64_t(const Guard&) and RegionExec is void(RegionNode
+// const&).  A replay reproduces a recorded execution, so it only reads the
+// DAG.
 template <typename GuardEval, typename RegionExec>
-[[nodiscard, gnu::flatten]] inline bool replay(TraceNode& first, GuardEval&& eval_guard, RegionExec&& exec_region) {
-    TraceLink walk = make_link(first);
+[[nodiscard, gnu::flatten]] inline bool replay(TraceNode const& first, GuardEval&& eval_guard,
+                                               RegionExec&& exec_region) {
+    ::fixy::Option<::fixy::Ref<TraceNode const>> walk = ::fixy::some(::fixy::Ref<TraceNode const>{::fixy::to(first)});
     while (walk.is_some()) {
-        const ::fixy::Ref<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
+        const ::fixy::Ref<TraceNode const> node =
+            ::fixy::Option<::fixy::Ref<TraceNode const>>{walk}.expect("the condition of the loop tests the link");
         switch (node->kind) {
             case TraceNodeKind::REGION: {
                 exec_region(*node->expect_region());
@@ -1267,12 +1278,12 @@ template <typename GuardEval, typename RegionExec>
             }
 
             case TraceNodeKind::BRANCH: {
-                const ::fixy::Ref<BranchNode> branch = node->expect_branch();
+                const ::fixy::Ref<BranchNode const> branch = node->expect_branch();
                 int64_t val = eval_guard(branch->guard);
 
                 CRUCIBLE_FATAL_INVARIANT(branch->are_arms_sorted_by_value());
 
-                TraceLink arm{};
+                ::fixy::Option<::fixy::Ref<TraceNode const>> arm{};
                 {
                     const ::fixy::View<const BranchNode::Arm> arms = branch->arms;
                     uint32_t lo = 0, hi = branch->num_arms();
@@ -1285,7 +1296,7 @@ template <typename GuardEval, typename RegionExec>
                         else if (mid_arm.value > val)
                             hi = mid;
                         else {
-                            arm = mid_arm.target;
+                            arm = read_link(mid_arm.target);
                             break;
                         }
                     }
@@ -1295,7 +1306,7 @@ template <typename GuardEval, typename RegionExec>
                 // falls back to recording.
                 if (arm.is_none()) return false;
 
-                for (const ::fixy::Ref<TraceNode>& target : arm)
+                for (const ::fixy::Ref<TraceNode const>& target : arm)
                     if (!replay(*target, eval_guard, exec_region)) return false;
 
                 walk = branch->next.option();
@@ -1303,7 +1314,7 @@ template <typename GuardEval, typename RegionExec>
             }
 
             case TraceNodeKind::LOOP: {
-                const ::fixy::Ref<LoopNode> loop = node->expect_loop();
+                const ::fixy::Ref<LoopNode const> loop = node->expect_loop();
                 // Armed in release. An empty body does not fault: the loop
                 // below makes no turn and reports a successful replay of a
                 // body that never ran. A wrong answer is worse than a trap,
@@ -1331,7 +1342,7 @@ template <typename GuardEval, typename RegionExec>
                 // because it would skip the body and report success.
                 CRUCIBLE_FATAL_INVARIANT(loop->term_kind != LoopTermKind::UNTIL || loop->repeat_count > 0u);
                 for (uint32_t i = 0; i < loop->repeat_count; i++) {
-                    for (const ::fixy::Ref<TraceNode>& body : loop->body)
+                    for (const ::fixy::Ref<TraceNode const>& body : read_link(loop->body))
                         if (!replay(*body, eval_guard, exec_region)) return false;
                 }
                 walk = node->next.option();

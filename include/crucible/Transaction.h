@@ -17,6 +17,7 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
@@ -42,12 +43,13 @@ enum class TxStatus : uint8_t {
 
 struct Transaction {
     // The region of a commit: a Ref of a region in the arena, which is
-    // never null.
-    using ArenaRegion = ::fixy::Tagged<::fixy::Ref<RegionNode>, ::fixy::tags::source::Arena>;
+    // never null.  The log holds a region and gives it to its owner, and it
+    // writes no region, so it holds a region of const.
+    using ArenaRegion = ::fixy::Tagged<::fixy::Ref<RegionNode const>, ::fixy::tags::source::Arena>;
     // The region of a transaction, or no region before its commit.
-    using ArenaRegionLink = ::fixy::Tagged<::fixy::Option<::fixy::Ref<RegionNode>>, ::fixy::tags::source::Arena>;
+    using ArenaRegionLink = ::fixy::Tagged<::fixy::Option<::fixy::Ref<RegionNode const>>, ::fixy::tags::source::Arena>;
 
-    static_assert(sizeof(ArenaRegionLink) == sizeof(::fixy::Option<::fixy::Ref<RegionNode>>),
+    static_assert(sizeof(ArenaRegionLink) == sizeof(::fixy::Option<::fixy::Ref<RegionNode const>>),
                   "the tag adds no byte to the link, and the empty link is the null pointer");
 
     // Replay determinism rests on this, so the type rejects a write that goes
@@ -81,7 +83,7 @@ struct Transaction {
 // A transaction with no region holds no region.
 [[nodiscard]] inline bool holds_region(Transaction const& tx, ::fixy::Ref<const RegionNode> region) noexcept {
     return tx.region.value().is_some_and(
-        [region](::fixy::Ref<RegionNode> const& held) noexcept { return ::fixy::same_object(held, region); });
+        [region](::fixy::Ref<RegionNode const> const& held) noexcept { return ::fixy::same_object(held, region); });
 }
 
 // A proof that the caller is the one thread that owns some state. It is
@@ -116,8 +118,17 @@ concept OwnerProof =
 // valid while the transaction keeps its role.  A claim does not change the
 // rollback target.
 
+// THE TRANSFER FACT.  The log states sendable{} (foundation/Transfer.h).  The
+// walk of its fields refuses one of them: active_tx_, the address of a slot of
+// ring_.  It names a slot of the log itself, so a thread that uses the log
+// uses the slot with it.  A transaction holds its region as const.
+// Each member of the log takes the proof of its owner, and the proof stays on
+// the thread that owns the log (OwnerProof).  So a borrow of the log that a
+// job uses on the thread of its owner while the caller waits has one user at
+// a time.  No field is bound to one thread: the log holds no claim and no
+// cell of a thread.
 template <uint32_t N, OwnerProof Owner>
-class TransactionLog {
+class[[= ::foundation::transfer::sendable{}]] TransactionLog {
     static_assert((N & (N - 1)) == 0, "N must be a power of 2");
     // A claim in a full ring keeps two slots: the slot of the active
     // transaction and the slot of the rollback target.  The ring must hold
@@ -195,7 +206,7 @@ public:
         }
         // The region came in under the Arena tag, so the link keeps it.
         tx.region = ::fixy::mint_tagged<::fixy::tags::source::Arena>(
-            ::fixy::Option<::fixy::Ref<RegionNode>>::some(region.value()));
+            ::fixy::Option<::fixy::Ref<RegionNode const>>::some(region.value()));
         tx.content_hash = content_hash;
         tx.merkle_root = merkle_root;
         tx.status = TxStatus::COMMITTED;
@@ -312,7 +323,7 @@ public:
     void for_each_region(Owner const&, Visit&& visit) const {
         for (typename Ring::size_type i = 0; i < ring_.size(); i++) {
             const Transaction& entry = ring_.recent(i);
-            for (const ::fixy::Ref<RegionNode>& region : entry.region.value())
+            for (const ::fixy::Ref<RegionNode const>& region : entry.region.value())
                 visit(::fixy::WeakRef<const RegionNode>{*region});
         }
     }
