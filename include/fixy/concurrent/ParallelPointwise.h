@@ -79,8 +79,16 @@ template <typename Ctx>
 concept CtxFitsParallelPointwise = ::foundation::effects::IsExecCtx<Ctx>
                                 && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>;
 
+// The view of const elements of the plain view of an input, which each shard
+// copies and only reads.
+template <class T, std::size_t Rank>
+[[nodiscard]] constexpr ::foundation::core::StridedView<T const, Rank>
+read_only_(::foundation::core::StridedView<T, Rank> const& view) noexcept {
+    return ::foundation::core::StridedView<T const, Rank>{view};
+}
+
 // The tag of the region of the shards of one walk: one slot for each shard,
-// which holds the first position of the shard on the first axis.
+// which holds the rows of out of the shard on the first axis, or no rows.
 struct ParallelPointwiseShards {
     using permission_row = ::foundation::effects::Row<>;
 };
@@ -139,28 +147,39 @@ write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::Stri
             return core::write_pointwise(out, op, inputs...);
         }
 
-        core::FixedArray<std::size_t, Shards> starts{};
+        // The rows of out are a region of one part for each shard, so the
+        // split of the door gives shard s the rows s and no other.  A shard
+        // with no positions gets no rows.  No body holds the whole view of
+        // out, which writes.  Each body holds a copy of a view of const
+        // elements of each input, because an input can be a view that writes.
+        using Rows = core::StridedView<T, Rank>;
+        core::FixedArray<core::Option<Rows>, Shards> parts{};
         for (std::size_t shard = 0; shard < Shards; ++shard) {
-            *starts.get(shard).expect("each shard has a slot") = ::fixy::detail::shard_start(positions, Shards, shard);
+            std::size_t const first = ::fixy::detail::shard_start(positions, Shards, shard);
+            std::size_t const count = ::fixy::detail::shard_start(positions, Shards, shard + 1) - first;
+            if (count == 0) continue;
+            *parts.get(shard).expect("each shard has a part") = core::Option<Rows>::some(
+                whole.slice(first_axis, first, count, 1).expect("the positions of a shard lie inside out"));
         }
         auto const ruled = core::detail::ruled_op_<T>(op);
         ::foundation::linear::drop(launch(
             budget,
             ::fixy::mint_owned_region(
-                first_of_(core::detail::ViewDoor::key(), starts.view()), Shards,
+                first_of_(core::detail::ViewDoor::key(), parts.view()), Shards,
                 ::foundation::permissions::mint_permission_root<detail::ParallelPointwiseShards>()),
-            [&](auto& shard) noexcept {
+            [&ruled, &apart, ... reads = detail::read_only_(core::detail::plain_view_of_(inputs)), first_axis,
+             positions](auto& shard) noexcept {
                 constexpr std::size_t index = std::remove_cvref_t<decltype(shard)>::tag_type::index;
-                std::size_t const first = *shard.data();
+                CRUCIBLE_FATAL_INVARIANT(shard.size() == 1);
+                core::Option<Rows> own = std::move(*shard.data());
+                if (own.is_none()) return;
+                std::size_t const first = ::fixy::detail::shard_start(positions, Shards, index);
                 std::size_t const count = ::fixy::detail::shard_start(positions, Shards, index + 1) - first;
-                if (count == 0) return;
-                core::StridedView<T, Rank> const rows =
-                    whole.slice(first_axis, first, count, 1).expect("the positions of a shard lie inside out");
+                Rows const rows = std::move(own).expect("a shard with positions has its rows");
                 bool const is_written =
                     core::detail::write_pointwise_(
                         ruled, Sequence{}, apart, rows,
-                        core::detail::plain_view_of_(inputs)
-                            .slice(first_axis, first, count, 1)
+                        reads.slice(first_axis, first, count, 1)
                             .expect("an input has the sizes of out, so the positions of a shard lie inside it")...)
                         .is_ok();
                 if (!is_written) [[unlikely]] {

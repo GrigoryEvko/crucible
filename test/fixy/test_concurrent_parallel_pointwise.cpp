@@ -123,6 +123,44 @@ void shape_mismatch(::fixy::TestRunnerCtx const& test, BgCtx const& ctx) noexcep
     pass(test, "  shape_mismatch: PASSED\n");
 }
 
+// An input that is a view that writes, of a frame other than the frame of
+// out, gives the bits of write_pointwise.  Each shard of the parallel form
+// reads the input through a view of const elements.
+void writing_input(::fixy::TestRunnerCtx const& test, BgCtx const& ctx) noexcept {
+    auto const alloc = eff::testing::test().alloc;
+    auto const fill = [](std::size_t position) noexcept { return value_at<float>(position); };
+    Plane const layout{.sizes = {64, 96}, .strides = {96, 1}, .offset = 0};
+    std::size_t const total = 64 * 96;
+    auto [is_same, source] =
+        ::fixy::with_mut(::fixy::mint_heap_array_with<float>(alloc, total, fill), [&](auto source_run) noexcept {
+            auto input = ::fixy::mint_strided_view_mut(std::move(source_run), layout.sizes.view(),
+                                                       layout.strides.view(), layout.offset)
+                             .expect("the input has no overlap");
+            auto const negate = [&](bool is_parallel) noexcept {
+                auto [is_written, out_run] = ::fixy::with_mut(
+                    ::fixy::mint_heap_array_with<float>(alloc, total, fill), [&](auto frame_run) noexcept {
+                        auto out = ::fixy::mint_strided_view_mut(std::move(frame_run), layout.sizes.view(),
+                                                                 layout.strides.view(), layout.offset)
+                                       .expect("the output has no overlap");
+                        if (is_parallel) {
+                            return ::fixy::concurrent::write_pointwise_in_parallel<BodyCoupling::WaitOnEachOther, 4>(
+                                       ctx, out, Negate{}, input)
+                                .is_ok();
+                        }
+                        return ::foundation::core::write_pointwise(out, Negate{}, input).is_ok();
+                    });
+                CRUCIBLE_FATAL_INVARIANT(is_written);
+                return std::move(out_run);
+            };
+            ::fixy::HeapArray<float> const parallel = negate(true);
+            ::fixy::HeapArray<float> const single = negate(false);
+            return same_bits(::fixy::View<float const>{parallel.view()}, ::fixy::View<float const>{single.view()});
+        });
+    static_cast<void>(source);
+    CRUCIBLE_TEST_ASSERT(test, is_same);
+    pass(test, "  writing_input: PASSED\n");
+}
+
 // The form with the options of the threads: four shards that wait on each
 // other, each on its own CPU of the affinity of the test under the placement
 // OneCpuEach, write the bits of write_pointwise on the calling thread.
@@ -171,6 +209,7 @@ int main() {
     other_shapes(test, ctx);
     past_private_cache(test, ctx);
     shape_mismatch(test, ctx);
+    writing_input(test, ctx);
     placed_shards(test, ctx);
     ::fixy::report(::fixy::Sink::Out, "test_concurrent_parallel_pointwise: all tests passed\n");
     return 0;

@@ -129,7 +129,8 @@ constexpr RosterEntry kEmptyRowRoster[] = {
      "mint_parallel_for gives each shard its part, and the root never leaves the call"},
     {"fixy::concurrent::detail::ParallelPointwiseShards",
      "the tag of the slots of the shards of one call of the parallel pointwise walk: the form mints the root in its "
-     "body, the split of mint_parallel_for gives each shard its slot, and the root never leaves the call"},
+     "body, the split of mint_parallel_for gives each shard its slot with its rows of the output, and the root "
+     "never leaves the call"},
     {"fixy::channels::swmr_session::detail::swmr_session_witness::WriterTag",
      "a witness tag of fixy/channels/SwmrSession.h"},
     {"fixy::channels::swmr_session::detail::swmr_session_witness::ReaderTag",
