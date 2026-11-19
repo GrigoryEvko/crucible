@@ -925,8 +925,10 @@ foundation_neg_compile_test(neg_fail_closed_admits_specialized
 # A derived permission tag has the row of its parent.  An edge in
 # permission_rows, or a permission_row member, that gives a shard a row of
 # its own is refused, so a shard of an IO region cannot claim the empty row.
+# The seal of permission_rows refuses the planted edge.
 foundation_neg_compile_test(neg_permission_row_edge_for_a_derived_tag
-  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .permission_row: a derived tag declares a row of its own"
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::edges_of\\(\\^\\^foundation::permissions::permission_rows\\)."
   "using foundation::permissions::permission_row_t = .* \\[with Tag = user_code::shard\\]")
 foundation_neg_compile_test(neg_permission_row_member_for_a_derived_tag
   "uncaught exception of type .std::meta::exception.. .what\\(\\).: .permission_row: a derived tag declares a row of its own"
@@ -1544,10 +1546,12 @@ foundation_neg_compile_test(neg_permission_row_undeclared_tag
   "static assertion failed: mint_permission_root<Tag>: no effect row is declared for Tag"
   "foundation::permissions::has_permission_row\\(\\^\\^\\{anonymous\\}::Undeclared\\). evaluates to false")
 
-# One row has one source.
+# One row has one source.  The seal of permission_rows refuses an edge that
+# another file plants, before the row is read twice.
 foundation_neg_compile_test(neg_permission_row_declared_twice
-  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .permission_row: a tag declares its row twice"
-  "neg_permission_row_declared_twice\\.cpp:20:[0-9]+: error: non-constant condition for static assertion")
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::edges_of\\(\\^\\^foundation::permissions::permission_rows\\)."
+  "neg_permission_row_declared_twice\\.cpp:22:[0-9]+: error: non-constant condition for static assertion")
 
 # The public row alias refuses a tag with no row, rather than read as
 # void, and it refuses a member that names a type which is not a row.

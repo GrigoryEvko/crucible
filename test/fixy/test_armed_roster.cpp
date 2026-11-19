@@ -957,12 +957,9 @@ struct OpenRelation {
     std::string_view reason;
 };
 
-inline constexpr OpenRelation open_relations[] = {
-    {^^::foundation::permissions::permission_rows,
-     "the effect row of each permission tag, which a tag registers beside its own declaration.  A tag has one "
-     "row: unique_target refuses a second edge from one tag, an edge beside a permission_row member is refused, "
-     "and a derived tag, which has its parent's row, may declare neither"},
-};
+// Each entry names an open relation and the reason that its openness grants
+// nothing.  The list holds no entry: each relation has a seal.
+inline constexpr std::array<OpenRelation, 0> open_relations{};
 
 consteval void collect_relations(std::meta::info ns, std::vector<std::meta::info>& found) {
     bool holds_an_edge = false;

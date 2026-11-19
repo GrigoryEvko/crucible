@@ -1,6 +1,8 @@
 // One row has one source.  A tag that declares a row as an edge and
-// again as a member is refused when the row is first read, so two
-// sources that disagree cannot each answer at different sites.
+// again as a member would have two sources that can disagree.  The seal of
+// permission_rows counts its members, so an edge that another file plants
+// stops the build at the first read of a row, before the row is read
+// twice.
 
 #include <foundation/Quarantine.h>
 #include <foundation/permissions/Permission.h>

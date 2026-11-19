@@ -1,11 +1,13 @@
 // An edge in permission_rows for a tag that derives its row from a
 // parent.
 //
-// The shard's parent does IO, so the shard does IO.  The relation is
-// open, and its edge took precedence over the parent, so an edge for
-// the shard with the empty row gave the shard a row lighter than its
-// parent's, and its permission could be minted under a context that
-// admits no IO.  A derived tag declares no row of its own.
+// The shard's parent does IO, so the shard does IO.  An edge for the shard
+// with the empty row would give the shard a row lighter than its parent's,
+// and its permission could then be minted under a context that admits no
+// IO.  The seal of permission_rows counts its members, so the planted edge
+// stops the build at the first read of a row.  The fixture
+// neg_permission_row_member_for_a_derived_tag refuses the member form of
+// the same claim.
 
 #include <foundation/Quarantine.h>
 #include <foundation/permissions/Permission.h>

@@ -196,8 +196,10 @@ concept DistinctTags = tags_are_distinct({^^Tags...});
 // Three sources, in this order of precedence:
 //   1. an edge `edge<Tag, Row<...>>` in permission_rows, the enumerable
 //      form, which every_class_in_has_edge audits for the canonical tags.
-//      Only this header holds a declaration in the namespace.  The rule
-//      home of the quarantine plugin refuses one in each other file;
+//      Only this header holds a declaration in the namespace.  The seal
+//      of the namespace stops the build at the first read after a member
+//      that another file adds, and the rule home of the quarantine plugin
+//      refuses such a member in each other file;
 //   2. `using permission_row = Row<...>;` inside the tag, for a tag
 //      template such as a channel's Whole<UserTag>, whose instances
 //      cannot each be an edge;
@@ -224,6 +226,10 @@ inline constexpr ::foundation::fail_closed::edge<tag::GpuMemoryTag,
 inline constexpr ::foundation::fail_closed::edge<tag::NetworkBufferTag,
                                                  ::foundation::effects::Row<::foundation::effects::Effect::IO>>
     network_buffer{};
+
+// Every read counts the members against this seal, so a member that
+// another file adds stops the build rather than giving a tag a row.
+inline constexpr ::foundation::fail_closed::seal sealed{.members = 5};
 
 }  // namespace permission_rows
 
