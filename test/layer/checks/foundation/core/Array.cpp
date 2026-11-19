@@ -410,6 +410,11 @@ static_assert(std::is_nothrow_move_constructible_v<MaskedArray<int>>
               && std::is_nothrow_move_assignable_v<MaskedArray<int>>);
 static_assert(!std::is_copy_constructible_v<MaskedArray<int>> && !std::is_copy_assignable_v<MaskedArray<int>>);
 static_assert(!std::is_trivially_copyable_v<MaskedArray<int>>);
+// The array owns its elements alone, so it moves between threads as its
+// element does, and a pointer element refuses.
+static_assert(::foundation::transfer::Sendable<MaskedArray<int>>
+              && ::foundation::transfer::Shareable<MaskedArray<int>>);
+static_assert(!::foundation::transfer::Sendable<MaskedArray<int*>>);
 static_assert(CanMintMaskedArray<int, alignof(int), Alloc>);
 static_assert(CanMintMaskedArray<PinnedElement, 64, Alloc>);
 static_assert(CanMintMaskedArray<MoveOnlyElement, alignof(MoveOnlyElement), Alloc>);

@@ -867,10 +867,13 @@ concept CanMintMaskedArray = OwnedElement<T> && detail::HeapArrayAlignment<T, Al
 // and leaves the source empty, and the destructor ends each element and gives
 // the storage back.  An empty array, the default one and a moved-from one,
 // holds no storage.  at_masked of an empty array ends the process through
-// fatal(), so no read goes through the null address.
+// fatal(), so no read goes through the null address.  The array owns its
+// elements alone, so it moves between threads as its element does
+// (foundation/Transfer.h).
 template <class T, std::size_t Align = alignof(T)>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
-class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]] MaskedArray final
+class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
+                   [[= ::foundation::transfer::by_arguments{}]] MaskedArray final
     : public OwnerCore<detail::owner::MaskedArrayState<T, Align>> {
     using State = detail::owner::MaskedArrayState<T, Align>;
 
