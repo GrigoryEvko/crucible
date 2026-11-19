@@ -34,7 +34,7 @@
 #include <crucible/perf/SenseHub.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/CpuPinned.h>
-#include <fixy/os/OwnedThread.h>
+#include <fixy/os/ThreadTasks.h>
 #include <fixy/os/Sched.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
 
@@ -1143,40 +1143,42 @@ void test_planted_pause_is_caught() {
     ::fixy::Atomic<bool> is_hog_asked{false};
     ::fixy::Atomic<bool> is_hog_pinned{false};
     ::fixy::Atomic<bool> is_hog_done{false};
-    ::fixy::thread::OwnedThread hog =
-        ::fixy::thread::mint_owned_thread(
-            Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{},
-            [&is_hog_asked, &is_hog_pinned, &is_hog_done, first_cpu]() noexcept {
-                const ::fixy::InitLoadCtx startup{eff::testing::init()};
-                const auto sleeper = ::fixy::time::mint_bounded_sleep<kPollNs>(startup);
-                while (!is_hog_asked.load_acquire()) {
-                    static_cast<void>(sleeper.sleep_for(kPollNs));
+    // The hog runs beside the measure, and it reaches the measure only
+    // through the three atomic cells.
+    auto hog = [&is_hog_asked, &is_hog_pinned, &is_hog_done, first_cpu]() noexcept {
+        const ::fixy::InitLoadCtx startup{eff::testing::init()};
+        const auto sleeper = ::fixy::time::mint_bounded_sleep<kPollNs>(startup);
+        while (!is_hog_asked.load_acquire()) {
+            static_cast<void>(sleeper.sleep_for(kPollNs));
+        }
+        is_hog_pinned.store_release(bench::pin_calling_thread_to(bench::CpuId{first_cpu}).is_ok());
+        const auto cpu = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::ThreadCpu>(startup);
+        const auto now = [&cpu]() noexcept {
+            return cpu.read(eff::testing::test().nondet).expect("the read of the CPU time of the thread").peek();
+        };
+        const std::uint64_t start = now();
+        while (now() - start < kHogNs) {}
+        is_hog_done.store_release(true);
+    };
+    auto measure = [&is_hog_asked, &is_hog_done, first_cpu]() noexcept {
+        std::uint32_t calls = 0;
+        bench::Report report =
+            bench::Run("planted pause").core(first_cpu).samples(200).warmup(1).batch(1).measure([&]() noexcept {
+                ++calls;
+                if (calls != kTriggerCall) return;
+                is_hog_asked.store_release(true);
+                while (!is_hog_done.load_acquire()) {
+                    CRUCIBLE_SPIN_PAUSE;
                 }
-                is_hog_pinned.store_release(bench::pin_calling_thread_to(bench::CpuId{first_cpu}).is_ok());
-                const auto cpu = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::ThreadCpu>(startup);
-                const auto now = [&cpu]() noexcept {
-                    return cpu.read(eff::testing::test().nondet)
-                        .expect("the read of the CPU time of the thread")
-                        .peek();
-                };
-                const std::uint64_t start = now();
-                while (now() - start < kHogNs) {}
-                is_hog_done.store_release(true);
-            })
-            .expect("the thread door starts the thread of the planted pause");
-    std::uint32_t calls = 0;
-    const bench::Report paused =
-        bench::Run("planted pause").core(first_cpu).samples(200).warmup(1).batch(1).measure([&]() noexcept {
-            ++calls;
-            if (calls != kTriggerCall) return;
-            is_hog_asked.store_release(true);
-            while (!is_hog_done.load_acquire()) {
-                CRUCIBLE_SPIN_PAUSE;
-            }
-        });
-    // A body that never asked for the hog lets it end here, so the join ends.
-    is_hog_asked.store_release(true);
-    std::move(hog).join();
+            });
+        // A body that never asked for the hog lets it end here, so the join
+        // after the measure ends.
+        is_hog_asked.store_release(true);
+        return report;
+    };
+    auto values = ::fixy::thread::run_beside(Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, hog, measure)
+                      .expect("the thread door starts the thread of the planted pause");
+    const bench::Report& paused = values.at(::fixy::index<1>());
     if (!paused.pinned_cpu.is_valid()) return;
     CHECK(is_hog_pinned.load_acquire() && is_hog_done.load_acquire());
     // A launcher that counts instructions, as `loop test-step` does, gives the
