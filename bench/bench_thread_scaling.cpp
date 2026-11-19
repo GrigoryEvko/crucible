@@ -253,7 +253,8 @@ inline constexpr bool kIsSpsc = Kind == OpKind::SpscPush || Kind == OpKind::Spsc
 
 // The items of one op.
 template <OpKind Kind>
-inline constexpr std::uint64_t kItemsPerOp = Kind == OpKind::MpscBatchPush || Kind == OpKind::SpscBatchPush ? kBatch : 1;
+inline constexpr std::uint64_t kItemsPerOp =
+    Kind == OpKind::MpscBatchPush || Kind == OpKind::SpscBatchPush ? kBatch : 1;
 
 // Where the consumer of a row runs (THE PLACES OF THE CONSUMER).
 enum class ConsumerPlace : std::uint8_t {
@@ -383,8 +384,8 @@ template <OpKind Kind>
     } else if constexpr (Kind == OpKind::SpscPush) {
         push_waiting(state, [&state]() noexcept { return state.spsc.try_push(Item{1}); });
     } else if constexpr (Kind == OpKind::SpscProvenPush) {
-        push_waiting(state,
-                     [&state]() noexcept { return state.spsc_proven.try_push_proven(ProvenOwner::producer(), Item{1}); });
+        push_waiting(
+            state, [&state]() noexcept { return state.spsc_proven.try_push_proven(ProvenOwner::producer(), Item{1}); });
     } else if constexpr (Kind == OpKind::SpscBatchPush) {
         push_spsc_batch(state);
     } else {
@@ -574,8 +575,9 @@ template <OpKind Kind>
     ::fixy::TextView const where =
         place == ConsumerPlace::OtherL3 ? ::fixy::TextView{", consumer in another L3"} : ::fixy::TextView{};
     ::fixy::FixedText<96> name{};
-    static_cast<void>(::fixy::format(name, "{} [latency of one op, {} threads{}]", name_of<Kind>(), threads.raw(), where)
-                          .expect("the name of a latency report fits in 96 characters"));
+    static_cast<void>(
+        ::fixy::format(name, "{} [latency of one op, {} threads{}]", name_of<Kind>(), threads.raw(), where)
+            .expect("the name of a latency report fits in 96 characters"));
     return bench::Run{name};
 }
 

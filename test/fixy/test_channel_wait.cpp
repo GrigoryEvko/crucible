@@ -92,7 +92,8 @@ void expect_each_item_then_the_end_of_a_wire(::fixy::BgLoadCtx const& ctx, std::
             ++received;
         }
     };
-    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, produce, consume).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(
+        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, produce, consume).is_ok());
     CRUCIBLE_FATAL_INVARIANT(is_ordered);
     CRUCIBLE_FATAL_INVARIANT(received == kItems);
     ::foundation::linear::drop(std::move(consumer));

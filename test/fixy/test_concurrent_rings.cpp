@@ -316,8 +316,8 @@ struct ProvenOwner final {
     int next_out = 0;
     for (int round = 0; round < 5; ++round) {
         for (int i = 0; i < 8; ++i) {
-            const bool is_pushed = (i % 2 == 0) ? ring.try_push_proven(ProvenOwner::producer(), next_in)
-                                                : ring.try_push(next_in);
+            const bool is_pushed =
+                (i % 2 == 0) ? ring.try_push_proven(ProvenOwner::producer(), next_in) : ring.try_push(next_in);
             if (!is_pushed) return fail(fixy::TextView{"a push below capacity was refused"});
             ++next_in;
         }

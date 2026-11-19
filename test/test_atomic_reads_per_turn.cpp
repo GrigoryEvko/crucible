@@ -59,7 +59,8 @@ struct ProbeTag final {};
 // is the relaxed read of the cell.
 struct ProbeWriter final {
     template <class Cell>
-    [[nodiscard, gnu::always_inline, gnu::no_instrument_function]] static std::uint64_t peek(Cell const& cell) noexcept {
+    [[nodiscard, gnu::always_inline, gnu::no_instrument_function]] static std::uint64_t
+    peek(Cell const& cell) noexcept {
         return cell.peek_relaxed();
     }
 };
