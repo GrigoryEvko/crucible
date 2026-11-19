@@ -271,6 +271,15 @@ THE COMPILER HEAL
     record of its compiler heals one time and builds nothing again.  A build
     directory with no graph of Ninja takes step 1 of THE RUN OF A
     CONFIGURATION as it is.
+    `loop test` of each configuration of objects also parses each
+    configured parse build of the warm tree (THE PARSE BUILDS of
+    assay.loop.affected), also when the plan runs no parse configuration.
+    Thus, before the runs start, the gate heals each configured parse build
+    that no run of the plan configures, in the same way
+    (Step.heal_parse_builds()).  On 2026-11-19, after the switch to a new
+    patch of GCC, the parse builds of three lanes kept the old compiler, and
+    each landing with no parse configuration in those lanes was refused as
+    a red main.
     Outside the gate, cmake/StaleCompiler.cmake refuses such a cache in each
     configure, with the command that heals it.
 
@@ -1728,6 +1737,7 @@ class Gate:
             )
         step = Step(self, candidate, environment)
         try:
+            step.heal_parse_builds(plan)
             if is_each:
                 step.always_ready.set()
 
@@ -1991,6 +2001,37 @@ class Step:
         if self.run_logged(words, log, share, CONFIGURE_S) != 0:
             return f"{configuration.name}: the configure gives an error, see {self.gate.logs / log}"
         return None
+
+    def heal_parse_builds(self, plan: Sequence[Run]) -> None:
+        """Configure again each configured parse build whose compiler is stale and that no run of the plan configures.
+
+        `loop test` of each configuration of objects parses each configured parse build of the warm tree (THE PARSE
+        BUILDS of assay.loop.affected), also when the plan runs no parse configuration.  A parse build that keeps the
+        compiler of its first configure then makes cmake/StaleCompiler.cmake refuse that parse (THE COMPILER HEAL).  A
+        parse build with no graph of Ninja stays as it is, because `loop test` does not parse it.
+
+        Raises:
+            GateError: If `loop heal` of the warm tree gives an error, or the configure of a parse build fails
+            Stopped: If the stop event is set before the lease of a configure holds a slot
+        """
+        planned = {run.configuration.name for run in plan}
+        for configuration in CONFIGURATIONS:
+            if not configuration.is_parse or configuration.name in planned:
+                continue
+            build = build_directory(self.gate.tree, configuration)
+            if not ninja_reader.graph_file(build).is_file():
+                continue
+            line = self.heal_line(configuration, build)
+            if not line:
+                continue
+            self.say(line)
+            log = log_name(configuration, "configure.log", False)
+            words = [*configure_words(self.gate.tree, configuration), FRESH_WORD]
+            with self.leased() as share:
+                if self.run_logged(words, log, share, CONFIGURE_S) != 0:
+                    raise GateError(
+                        f"{configuration.name}: the configure of the heal fails, see {self.gate.logs / log}"
+                    )
 
     def heal_line(self, configuration: Configuration, build: Path) -> str:
         """Return the line of `loop heal` of the warm tree for a build directory, or an empty line (THE COMPILER HEAL).

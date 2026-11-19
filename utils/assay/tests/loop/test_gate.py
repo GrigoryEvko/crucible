@@ -108,7 +108,19 @@ COUNTED_REGISTRY = (
     "rule mint engine=plugin scope=include/ ledger=admit kinds=mint doc=XXI | a mint | shape the mint\n"
     "rule padded-list engine=plugin scope=include/ ledger=count kinds=padded-member doc=XV.7 | a list | add a member\n"
 )
-# The planted master loop: `syntax --changed` names no preset, `heal BUILD NAME` finds no stale compiler, and `test
+# The planted cmake on PATH for a configure: `cmake --preset NAME -B BUILD [--fresh]` writes its words to
+# configures.txt of the build, and removes stale.txt of the build, as a configure that heals the cache.
+CONFIGURE_CMAKE = """import pathlib
+import sys
+
+words = sys.argv[1:]
+build = pathlib.Path(words[words.index("-B") + 1])
+with open(build / "configures.txt", "a", encoding="utf-8") as handle:
+    handle.write(" ".join(words) + "\\n")
+(build / "stale.txt").unlink(missing_ok=True)
+"""
+# The planted master loop: `syntax --changed` names no preset, `heal BUILD NAME` finds a stale compiler only in a build
+# with stale.txt, and `test
 # BUILD` writes the report of the mode of the build directory.  The mode build gives a build that fails, and the mode late gives an error after a green run.  The
 # master writes MAKEFLAGS to makeflags.txt, and the times of its start and its end to times.txt.  The mode hang runs
 # until a stop ends it.  The mode plugin makes the test guard_plugin red.
@@ -158,6 +170,8 @@ words = sys.argv[1:]
 if words[:2] == ["syntax", "--changed"]:
     sys.exit(0)
 if words[0] == "heal":
+    if (pathlib.Path(words[1]) / "stale.txt").is_file():
+        print(f"the cache of {words[1]} names a stale compiler")
     sys.exit(0)
 if words[0] == "derive":
     build = pathlib.Path(words[words.index("--build-dir") + 1])
@@ -731,6 +745,50 @@ def plan_cases(expect: testing.Expect) -> None:
         expect(
             "a line of the heal gives the configure with --fresh, and the gate writes the line",
             gate.configure_plan(tree, default, heal_of("planted line")) == ([*words, gate.FRESH_WORD], "planted line"),
+        )
+
+
+def parse_heal_cases(expect: testing.Expect) -> None:
+    """Hold the heal of the parse builds: the gate configures a stale parse build that `loop test` parses (THE COMPILER
+    HEAL).
+
+    A change of a text file runs only default, and `loop test` of default parses each configured parse build.  The
+    first parse build has a graph and a stale compiler, and the second has no graph.  The gate must configure the first
+    one again with --fresh before the runs, and leave the second one as it is.
+    """
+    with tempfile.TemporaryDirectory(prefix="gate-parse-heal-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root)
+        commit = commit_change(root, "notes.txt", "a change of the notes\n")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        stale_parse, unconfigured_parse = (item for item in gate.CONFIGURATIONS if item.is_parse)
+        planted = planted_gate(work, root, tree, "clean", {stale_parse.build: "clean"})
+        stale_build = tree / stale_parse.build
+        (stale_build / "stale.txt").write_text("1\n", encoding="utf-8")
+        unconfigured = tree / unconfigured_parse.build
+        unconfigured.mkdir(parents=True)
+        bin_directory = work / "bin"
+        bin_directory.mkdir()
+        testing.planted_program(bin_directory, "cmake", CONFIGURE_CMAKE)
+
+        def run() -> gate.Verdict:
+            with testing.environment_variable("PATH", f"{bin_directory}{os.pathsep}{os.environ.get('PATH', '')}"):
+                return planted.check(gate.Candidate(head, commit, ("notes.txt",)), False)
+
+        verdict, output = testing.captured(run)
+        configures = stale_build / "configures.txt"
+        lines = configures.read_text(encoding="utf-8").splitlines() if configures.is_file() else []
+        expect(
+            f"a run with no parse configuration configures a stale parse build again with --fresh before the runs, "
+            f"writes the line of the heal, and leaves a parse build with no graph as it is: {lines}, "
+            f"{verdict.configurations}",
+            lines == [f"--preset {stale_parse.name} -B {stale_build} {gate.FRESH_WORD}"]
+            and f"the cache of {stale_build} names a stale compiler" in output
+            and not (unconfigured / "configures.txt").exists()
+            and verdict.is_accepted
+            and verdict.configurations == ("default",),
         )
 
 
@@ -2443,6 +2501,7 @@ def main(argv: list[str]) -> int:
             tree_cases,
             repair_cases,
             plan_cases,
+            parse_heal_cases,
             change_cases,
             run_cases,
             reduce_cases,
