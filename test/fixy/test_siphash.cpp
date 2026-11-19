@@ -91,7 +91,7 @@ inline constexpr fc::FixedArray<std::uint64_t, kVectorCount> kReferenceTags{
 [[nodiscard]] constexpr SipTag signed_tag_of(std::size_t length) noexcept {
     fc::FixedArray<std::byte, kVectorCount> const message = reference_message();
     auto signed_message = sh::sign(mint_secret<SipKeyBytes>(reference_key()), prefix(message, length));
-    return signed_message.second;
+    return signed_message.at(fc::index<1>());
 }
 
 // The hash runs at compile time, so the empty message, the worked example of

@@ -198,7 +198,7 @@ using HandshakeMessage = ::foundation::core::FixedArray<std::byte, handshake_mes
 // shares with the local organization.  The key comes back beside it.
 template <typename Org>
     requires FederationOrgTag<Org>
-[[nodiscard]] constexpr std::pair<Secret<::foundation::core::SipKeyBytes>, FederationHandshake>
+[[nodiscard]] constexpr ::fixy::Record<Secret<::foundation::core::SipKeyBytes>, FederationHandshake>
 sign_handshake(Secret<::foundation::core::SipKeyBytes>&& key, PeerKeyFingerprint peer_key_fingerprint,
                Nonce nonce) noexcept {
     OrgId const org_id = federation_org_id<Org>;

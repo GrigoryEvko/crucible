@@ -17,6 +17,7 @@
 #include <fixy/ConstantTime.h>
 #include <fixy/Secret.h>
 #include <fixy/Tags.h>
+#include <foundation/core/Record.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/SipHash.h>
 
@@ -26,7 +27,7 @@
 namespace fixy::siphash {
 
 // Computes the tag of the message and gives the key back beside it.
-[[nodiscard]] constexpr std::pair<Secret<::foundation::core::SipKeyBytes>, ::foundation::core::SipTag>
+[[nodiscard]] constexpr ::foundation::core::Record<Secret<::foundation::core::SipKeyBytes>, ::foundation::core::SipTag>
 sign(Secret<::foundation::core::SipKeyBytes>&& key, ::foundation::core::View<std::byte const> message) noexcept {
     Secret<::foundation::core::SipTag> tag = mint_secret<::foundation::core::SipTag>();
     Secret<::foundation::core::SipKeyBytes> kept =
@@ -39,7 +40,7 @@ sign(Secret<::foundation::core::SipKeyBytes>&& key, ::foundation::core::View<std
 
 // Gives the key back beside the answer to one question: does the tag
 // authenticate the message under this key?
-[[nodiscard]] constexpr std::pair<Secret<::foundation::core::SipKeyBytes>, bool>
+[[nodiscard]] constexpr ::foundation::core::Record<Secret<::foundation::core::SipKeyBytes>, bool>
 verify(Secret<::foundation::core::SipKeyBytes>&& key, ::foundation::core::View<std::byte const> message,
        ::foundation::core::SipTag const& tag) noexcept {
     Secret<bool> matches = mint_secret<bool>(false);
