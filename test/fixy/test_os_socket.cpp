@@ -265,7 +265,7 @@ struct LinkDumpRequest final {
 }
 
 // A shared ref that outlives its Handle fails closed.  The close of the Handle
-// advances the generation of its number, so the ref stops being current.  The
+// advances the generation of its number, so the ref is not current after it.  The
 // kernel gives the lowest free number to the next socket, so a second socket
 // takes the number of the first one.  A door of the stale ref then gives
 // ebadf and makes no call on the second socket, which keeps its congestion

@@ -273,8 +273,8 @@ public:
     // leaves this Handle empty (THE ABI DESCRIPTOR).  The one caller is a C
     // ABI that takes the ownership of a descriptor, such as a link of libbpf,
     // inside an opt-out region of the class ABI.  An empty Handle gives -1.
-    // The base stops owning the number, so its generation advances, and each
-    // ForeignSocketRef of the number stops being current.
+    // The base gives up the number, so its generation advances, and no
+    // ForeignSocketRef of the number is current after the release.
     [[nodiscard]] int release_to_abi() && noexcept {
         ::fixy::fs::detail::advance_descriptor_generation_(descriptor_);
         return std::exchange(descriptor_, -1);
