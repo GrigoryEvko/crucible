@@ -23,6 +23,8 @@
 #include <foundation/core/FpMode.h>
 #include <foundation/os/FpControl.h>
 
+#include "../thread_bound_probe.h"
+
 #include <cstddef>
 #include <cstdint>
 
@@ -158,15 +160,20 @@ void test_the_token_gives_the_checked_context(TestRunnerCtx const& test) {
     ::fixy::check::pass(test, "the token of a call gives the context that run_kernel checked\n");
 }
 
-// A context that a body takes to another thread names a scope that the
-// register of that thread does not hold, so the run of the kernel there ends
-// the process.
+// A context that reaches another thread names a scope that the register of
+// that thread does not hold, so the run of the kernel there ends the process.
+// The thread doors refuse a body that captures a context, so the probe gives
+// the other thread the address of the context as an integer
+// (test/thread_bound_probe.h).
 void a_context_on_another_thread() {
     os::FpScope<core::kFpModeFlushToZero> const scope = os::mint_fp_scope<core::kFpModeFlushToZero>();
     KernelCtx<core::kFpModeFlushToZero> const ctx = ::fixy::mint_kernel_context<KernelBrand>(scope);
     ::fixy::BgLoadCtx const bg{eff::testing::bg()};
-    auto body = [&ctx]() noexcept {
-        ::fixy::run_kernel(ctx, [](KernelCall<core::kFpModeFlushToZero> const&) noexcept {});
+    ::fixy::Atomic<std::uint64_t> address{::crucible::test::address_of_thread_bound(ctx)};
+    auto body = [&address]() noexcept {
+        auto const& carried =
+            ::crucible::test::thread_bound_at<KernelCtx<core::kFpModeFlushToZero> const>(address.load_acquire());
+        ::fixy::run_kernel(carried, [](KernelCall<core::kFpModeFlushToZero> const&) noexcept {});
     };
     static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body));
 }

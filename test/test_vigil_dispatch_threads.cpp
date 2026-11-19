@@ -14,6 +14,7 @@
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
 #include "test_assert.h"
+#include "thread_bound_probe.h"
 #include <thread>
 
 using namespace crucible;
@@ -206,7 +207,10 @@ void run_on_another_thread(Body body) noexcept {
 
 // A claim that its thread gives up (release_claim) leaves the record of the
 // brand, so a second thread claims the brand while the first object lives,
-// and it claims that object itself too.  A release of a claim of another
+// and it claims that object itself too.  The claim and the Vigil belong to
+// one owner thread in their types, so the thread doors refuse a body that
+// captures them.  The probe of the run-time claim gives the other thread the
+// address of each as an integer (test/thread_bound_probe.h).  A release of a claim of another
 // thread ends the process, and a release with no claim changes nothing.
 void test_released_claim_lets_another_thread_claim(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(
@@ -214,7 +218,10 @@ void test_released_claim_lets_another_thread_claim(::fixy::TestRunnerCtx const& 
         [] noexcept {
             ClaimBrand first;
             static_cast<void>(first.claim.mint_producer_context());
-            run_on_another_thread([&first] noexcept { first.claim.release_claim(); });
+            ::fixy::Atomic<std::uint64_t> address{::crucible::test::address_of_thread_bound(first)};
+            run_on_another_thread([&address] noexcept {
+                ::crucible::test::thread_bound_at<ClaimBrand>(address.load_acquire()).claim.release_claim();
+            });
         },
         ::fixy::TextView{
             "foundation: fatal invariant failed: holder == detail::producer_claim::calling_thread_identity()"});
@@ -226,13 +233,15 @@ void test_released_claim_lets_another_thread_claim(::fixy::TestRunnerCtx const& 
     first.claim.release_claim();
     bool is_brand_claimed = false;
     bool is_first_claimed = false;
-    run_on_another_thread([&first, &is_brand_claimed, &is_first_claimed] noexcept {
+    ::fixy::Atomic<std::uint64_t> first_address{::crucible::test::address_of_thread_bound(first)};
+    run_on_another_thread([&first_address, &is_brand_claimed, &is_first_claimed] noexcept {
+        ClaimBrand& carried = ::crucible::test::thread_bound_at<ClaimBrand>(first_address.load_acquire());
         ClaimBrand second;
         static_cast<void>(second.claim.mint_producer_context());
         is_brand_claimed = second.claim.is_claimable_by_caller();
-        static_cast<void>(first.claim.mint_producer_context());
-        is_first_claimed = first.claim.is_claimable_by_caller();
-        first.claim.release_claim();
+        static_cast<void>(carried.claim.mint_producer_context());
+        is_first_claimed = carried.claim.is_claimable_by_caller();
+        carried.claim.release_claim();
     });
     CRUCIBLE_TEST_ASSERT(test, is_brand_claimed && is_first_claimed && "the released claim leaves the brand free");
     CRUCIBLE_TEST_ASSERT(test, first.claim.is_claimable_by_caller() && "the other thread gave the claim up again");
@@ -244,10 +253,12 @@ void test_released_claim_lets_another_thread_claim(::fixy::TestRunnerCtx const& 
     static_cast<void>(crucible::test::dispatch_synthetic(vigil, op.entry, op.metas, op.n_metas));
     vigil.release_producer_claim();
     DispatchResult::Action action = DispatchResult::Action::COMPILED;
-    run_on_another_thread([&vigil, &action] noexcept {
+    ::fixy::Atomic<std::uint64_t> vigil_address{::crucible::test::address_of_thread_bound(vigil)};
+    run_on_another_thread([&vigil_address, &action] noexcept {
+        Vigil& carried = ::crucible::test::thread_bound_at<Vigil>(vigil_address.load_acquire());
         auto next = make_op(0, 1);
-        action = crucible::test::dispatch_synthetic(vigil, next.entry, next.metas, next.n_metas).action;
-        vigil.release_producer_claim();
+        action = crucible::test::dispatch_synthetic(carried, next.entry, next.metas, next.n_metas).action;
+        carried.release_producer_claim();
     });
     CRUCIBLE_TEST_ASSERT(test, action == DispatchResult::Action::RECORD);
 

@@ -15,6 +15,8 @@
 #include <foundation/effects/Capability.h>
 #include <foundation/os/FpControl.h>
 
+#include "../thread_bound_probe.h"
+
 #include <cstdint>
 #include <type_traits>
 
@@ -81,10 +83,16 @@ void test_a_kernel_writes_and_a_test_reads(TestRunnerCtx const& test) {
 }
 
 // A mark from a thread that is not the owner of the sink ends the process.
+// The thread doors refuse a body that captures the sink, so the probe gives
+// the other thread the address of the sink as an integer
+// (test/thread_bound_probe.h).
 void a_mark_from_another_thread() {
     Sink sink = observe::mint_timing_sink<2>();
     ::fixy::BgLoadCtx const bg{eff::testing::bg()};
-    auto body = [&sink]() noexcept { sink.mark(kMarkSlot); };
+    ::fixy::Atomic<std::uint64_t> address{::crucible::test::address_of_thread_bound(sink)};
+    auto body = [&address]() noexcept {
+        ::crucible::test::thread_bound_at<Sink>(address.load_acquire()).mark(kMarkSlot);
+    };
     static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body));
 }
 
