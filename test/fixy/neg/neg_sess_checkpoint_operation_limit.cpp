@@ -2,8 +2,9 @@
 //
 // The caller gives the checkpoint check of the pair below a bound of work
 // far past the operation limit of a constant evaluation.  The pair is a loop
-// over eight chains of a hundred sends, so its check meets the operation
-// limit before its bound.  The refusal names the operation limit and the flag
+// over ten chains of a hundred sends, so its check meets the operation limit
+// before its bound in each build.  (A walk of eight chains fits the limit in
+// a Release build.)  The refusal names the operation limit and the flag
 // that raises it, and not only the failure of the substitution of the cache
 // of the verdict.
 //
@@ -45,7 +46,7 @@ struct chain_pair {
     using sender = ::fixy::session::Loop<::fixy::session::Select<typename chain_sends<Branch, 0>::type...>>;
     using receiver = ::fixy::session::Loop<::fixy::session::Offer<typename chain_receives<Branch, 0>::type...>>;
 };
-using ChainPair = chain_pair<0, 1, 2, 3, 4, 5, 6, 7>;
+using ChainPair = chain_pair<0, 1, 2, 3, 4, 5, 6, 7, 8, 9>;
 using Sender = ChainPair::sender;
 using Receiver = ChainPair::receiver;
 

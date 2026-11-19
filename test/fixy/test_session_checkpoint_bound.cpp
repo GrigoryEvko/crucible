@@ -71,38 +71,60 @@ struct indices_to<1> {
     using type = indices<0>;
 };
 
-// The label that rolls back, one for each index.
+// The label that rolls back or aborts, one for each index.  Two labels next
+// to each other differ, so each label is an edge of its own.  The walk admits
+// a label one time when its branches are those of the label before it, so a
+// row of one repeated Roll is two edges for each choice.
+template <int Index, bool IsEven = Index % 2 == 0>
+struct roll_or_abort_of {
+    using type = s::Roll;
+};
+template <int Index>
+struct roll_or_abort_of<Index, false> {
+    using type = s::Abort;
+};
+template <int Index>
+using roll_or_abort_at = typename roll_or_abort_of<Index>::type;
 template <int Index>
 using roll_at = s::Roll;
 
-// A choice that commits to Next with its first label and rolls back with
-// each other label.  Each choice is one type, with no type for a part of
-// its labels.
-template <typename Next, typename Labels>
+// A choice that commits to Next with its first label and rolls back or
+// aborts with each other label.  Each choice is one type, with no type for a
+// part of its labels.
+template <typename Next, typename Labels, template <int> class Label>
 struct rolling_choice;
-template <typename Next, int... Index>
-struct rolling_choice<Next, indices<Index...>> {
-    using select = s::Select<s::Commit<typename Next::decider>, roll_at<Index>...>;
-    using offer = s::Offer<s::Commit<typename Next::follower>, roll_at<Index>...>;
+template <typename Next, int... Index, template <int> class Label>
+struct rolling_choice<Next, indices<Index...>, Label> {
+    using select = s::Select<s::Commit<typename Next::decider>, Label<Index>...>;
+    using offer = s::Offer<s::Commit<typename Next::follower>, Label<Index>...>;
 };
 
 // A row of 120 choices.  Each choice commits to the next one, and its 149
-// other labels roll back to the checkpoint, which the walk has seen.  So
-// the pair has about 120 configurations and 18000 edges.
-template <int Steps, int Width>
+// other labels go back to the checkpoint or to the start, which the walk has
+// seen.  So the pair has about 120 configurations and 18000 edges.  The
+// check of the shape finds the answer of a Roll or an Abort deeper in its
+// kept answers at each row, and it passes the bound first.
+template <int Steps, int Width, template <int> class Label>
 struct rolling_pair {
-    using choice = rolling_choice<rolling_pair<Steps - 1, Width>, typename indices_to<Width - 1>::type>;
+    using choice = rolling_choice<rolling_pair<Steps - 1, Width, Label>, typename indices_to<Width - 1>::type, Label>;
     using decider = typename choice::select;
     using follower = typename choice::offer;
 };
-template <int Width>
-struct rolling_pair<0, Width> {
+template <int Width, template <int> class Label>
+struct rolling_pair<0, Width, Label> {
     using decider = s::End;
     using follower = s::End;
 };
-using RollingPair = rolling_pair<120, 150>;
+using RollingPair = rolling_pair<120, 150, roll_or_abort_at>;
 static_assert(s::checkpoint_verdict_of(^^RollingPair::decider, ^^RollingPair::follower)
               == s::CheckpointVerdict::TooManyConfigurations);
+
+// A row of 20 such choices with one repeated label has two edges for each
+// choice, so its walk fits the bound.  A walk that admitted each label would
+// admit 3000 edges, and their work would pass the bound.
+using RepeatedRollPair = rolling_pair<20, 150, roll_at>;
+static_assert(s::checkpoint_verdict_of(^^RepeatedRollPair::decider, ^^RepeatedRollPair::follower)
+              == s::CheckpointVerdict::Compliant);
 
 }  // namespace
 

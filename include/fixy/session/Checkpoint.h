@@ -269,7 +269,9 @@ enum class CheckpointVerdict : std::uint8_t {
 // tests try: a chain, a row of wide choices and a row of shared arms.  A
 // count of configurations cannot do that: a chain of eight branches meets
 // the limit near 800 configurations, and a row of choices with 150 labels
-// near 120.  The work of each of these at the limit is more than 360000
+// that are each an edge of their own near 120.  (A label whose branches are
+// those of the label before it is no edge of its own.)  The work of each of
+// these at the limit is more than 360000
 // units, and the pair of 321 configurations of the tests needs 116132.  A
 // bound past the operation limit gives the error of the operation limit,
 // which names the flag that raises it.
@@ -296,7 +298,7 @@ enum class Kind : std::uint8_t {
 
 // The work of one walk.  The walk admits each edge of the model, and the
 // admit compares the next configuration with each configuration that the
-// walk saw.  One compare is one unit of work, and one admit is admit_work
+// walk saw.  Two labels of one choice with the same branches are one edge.  One compare is one unit of work, and one admit is admit_work
 // units more, for its unfold, its reads of the protocol and its label
 // exchange.  So the work grows with the edges times the configurations, and
 // a wide choice costs as much as a long chain.  A walk past its bound
@@ -433,9 +435,12 @@ consteval bool shaped(info type, bool at_branch, int depth, ShapeCheck& check) {
     const Kind kind = kind_of(node);
     const bool is_kept = at_branch || kind == Kind::Select || kind == Kind::Offer;
     if (is_kept) {
+        // A search that passes the bound ends the check, so a row of choices
+        // whose branches each find an old answer stays in the bound too.
         const ShapeAnswer* const known = check.answered.items;
         for (std::size_t place = check.answered.top; place != 0; --place) {
             ++check.work;
+            if (check.work > check.bound) return false;
             const ShapeAnswer& answer = known[place - 1];
             if (answer.node == node && answer.is_at_branch == at_branch) return answer.is_shaped;
         }
@@ -460,6 +465,9 @@ consteval bool shaped(info type, bool at_branch, int depth, ShapeCheck& check) {
             is_shaped = branch_count != 0;
             info previous = ^^void;
             for (std::size_t place = 0; is_shaped && place < branch_count; ++place) {
+                // A branch that is the branch before it has its answer, so the
+                // check reads no name and no vendor pin of it again.
+                if (place != 0 && branch[place] == branch[place - 1]) continue;
                 const info arm = strip(branch[place]);
                 if (place != 0 && arm == previous) continue;
                 previous = arm;
@@ -566,9 +574,12 @@ consteval void admit(Exploration& run, Configuration next) {
         run.verdict = CheckpointVerdict::LoopUnresolved;
         return;
     }
+    // The scan reads the newest configuration first.  The labels of one
+    // choice that share an arm admit the configuration that the first of them
+    // admitted last, so the scan finds it at once.
     const Configuration* const known = run.seen.items;
-    for (std::size_t place = 0; place < run.seen.top; ++place) {
-        if (same_configuration(known[place], next)) return;
+    for (std::size_t place = run.seen.top; place != 0; --place) {
+        if (same_configuration(known[place - 1], next)) return;
     }
     tr::push(run.seen, next);
     tr::push(run.pending, next);
@@ -641,6 +652,10 @@ consteval CheckpointVerdict choose(Exploration& run, const Party& active, const 
     const info* const label = labels.data();
     const info* const acceptance = accepted.data();
     for (std::size_t index = 0; index < label_count; ++index) {
+        // A label whose branch and accepted branch are those of the label
+        // before it is the same edge, with the same verdict and the same next
+        // configuration, so the walk admits it one time.
+        if (index != 0 && label[index] == label[index - 1] && acceptance[index] == acceptance[index - 1]) continue;
         const CheckpointVerdict step = exchange(run, active, passive, label[index], acceptance[index], active_start,
                                                 passive_start, active_is_left);
         if (step != CheckpointVerdict::Compliant) return step;
