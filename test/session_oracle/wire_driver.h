@@ -17,7 +17,15 @@
 //   ok       both endpoints stopped
 //   abort    a handle aborted: a word named no branch or no label
 //   desync   a Recv of a value read a word that is no value
-//   stuck    an endpoint waited two seconds for a word that never came
+//   stuck    both endpoints wait for a word, and no word and no close can
+//            come: each direction is empty and open
+//
+// The verdict stuck reads no clock.  The two directions of the wire share
+// one lock, and an endpoint that waits for a word counts as waiting under
+// that lock.  The last endpoint that starts to wait then sees the state of
+// both directions, so a slow host cannot look like a deadlock.  A run that
+// never stops and never gets to that state ends at the time limit of the
+// test run.
 //
 // The handles use check::Off, so an endpoint may stop before End.  The test
 // process starts no thread, so the child of each run may start the two
@@ -32,11 +40,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/os/ChildProcess.h>
 
-#include <unistd.h>
-
-#include <chrono>
 #include <condition_variable>
-#include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -67,49 +71,92 @@ enum class exit_code : int {
 
 struct Wire {};
 
-class Queue {
+// The side of an endpoint on the line.  Each side reads the direction that
+// carries words to it.
+enum class Side : unsigned char {
+    left = 0,
+    right = 1
+};
+
+[[nodiscard]] constexpr Side peer_of(Side const side) noexcept { return side == Side::left ? Side::right : Side::left; }
+
+// The two directions of the wire between the two endpoints, under one lock.
+class Line {
 public:
-    void push(std::uint64_t word) {
+    // Put a word into the direction that the side `to` reads.
+    void push(Side const to, std::uint64_t word) {
         {
             const std::lock_guard lock{mutex_};
-            words_.push_back(word);
+            direction(to).words.push_back(word);
+            ++in_flight_;
         }
         ready_.notify_all();
     }
 
-    void close() {
+    // Close the direction that the side `to` reads: no word comes after the
+    // words in it.
+    void close(Side const to) {
         {
             const std::lock_guard lock{mutex_};
-            closed_ = true;
+            direction(to).is_closed = true;
         }
         ready_.notify_all();
     }
 
-    // The next word, or false when the writer closed and no word is left.
-    // A wait longer than two seconds ends the process as stuck.
-    [[nodiscard]] bool pop(std::uint64_t& word) {
+    // The next word for the side `self`, or false when its peer closed the
+    // direction and no word is left.  The wait ends the process as stuck
+    // when both endpoints wait and each direction is empty and open.
+    [[nodiscard]] bool pop(Side const self, std::uint64_t& word) {
         std::unique_lock lock{mutex_};
-        const bool woke = ready_.wait_for(lock, std::chrono::seconds{2}, [&] { return !words_.empty() || closed_; });
-        if (!woke) std::_Exit(static_cast<int>(exit_code::stuck));
-        if (words_.empty()) return false;
-        word = words_.front();
-        words_.pop_front();
+        Direction& in = direction(self);
+        ++waiting_;
+        ready_.wait(lock, [&] {
+            if (!in.words.empty() || in.is_closed) return true;
+            if (is_stuck()) std::_Exit(static_cast<int>(exit_code::stuck));
+            return false;
+        });
+        --waiting_;
+        if (in.words.empty()) return false;
+        word = in.words.front();
+        in.words.pop_front();
+        --in_flight_;
         return true;
     }
 
 private:
+    struct Direction {
+        std::deque<std::uint64_t> words;
+        bool is_closed = false;
+    };
+
+    [[nodiscard]] Direction& direction(Side const to) noexcept { return to == Side::left ? to_left_ : to_right_; }
+
+    // Only the two endpoints write a direction.  When both wait under this
+    // lock on empty, open directions, no word and no close can come.  No
+    // word in flight means that each direction is empty.
+    [[nodiscard]] bool is_stuck() const noexcept {
+        return waiting_ == 2 && in_flight_ == 0 && !to_left_.is_closed && !to_right_.is_closed;
+    }
+
     std::mutex mutex_;
     std::condition_variable ready_;
-    std::deque<std::uint64_t> words_;
-    bool closed_ = false;
+    Direction to_left_;
+    Direction to_right_;
+    int waiting_ = 0;
+    // The words in the two directions together.
+    int in_flight_ = 0;
 };
 
 struct Endpoint {
-    Queue* out = nullptr;
-    Queue* in = nullptr;
+    Line* line = nullptr;
+    Side side = Side::left;
     unsigned seed = 0;
     unsigned picks = 0;
     int fuel = fuel_per_endpoint;
+
+    void send(std::uint64_t word) const { line->push(peer_of(side), word); }
+    void close_out() const { line->close(peer_of(side)); }
+    [[nodiscard]] bool receive(std::uint64_t& word) const { return line->pop(side, word); }
 };
 
 template <typename P>
@@ -149,7 +196,7 @@ void walk(H handle, Endpoint& self);
 struct WordWriter {
     Endpoint* self = nullptr;
     bool operator()(Wire&, std::size_t word) const noexcept {
-        self->out->push(word);
+        self->send(word);
         return true;
     }
 };
@@ -158,7 +205,7 @@ struct ValueWriter {
     Endpoint* self = nullptr;
     template <typename T>
     bool operator()(Wire&, T&) const noexcept {
-        self->out->push(value_word);
+        self->send(value_word);
         return true;
     }
 };
@@ -187,15 +234,15 @@ struct WalkOn {
 // and then the endpoint stops and closes its queue.
 [[gnu::noinline]] inline bool spend_fuel(Endpoint& self) {
     if (self.fuel-- > 0) return true;
-    self.out->close();
+    self.close_out();
     return false;
 }
 
 // The next word for the endpoint.  False when its peer stopped and no
 // word is left, and then the endpoint stops and closes its queue.
 [[gnu::noinline]] inline bool take_word(Endpoint& self, std::uint64_t& word) {
-    if (self.in->pop(word)) return true;
-    self.out->close();
+    if (self.receive(word)) return true;
+    self.close_out();
     return false;
 }
 
@@ -211,7 +258,7 @@ void walk(H handle, Endpoint& self) {
     static_assert(kind >= 0, "session_oracle wire: the walker has no rule for this protocol head");
     if constexpr (kind == 0) {
         (void)std::move(handle).close();
-        self.out->close();
+        self.close_out();
         return;
     } else {
         if (!spend_fuel(self)) return;
@@ -265,15 +312,9 @@ void walk_from_start(Endpoint& self) {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     // A body that returns ends the child with the exit code of ok.
     ::fixy::process::Child child = ::fixy::process::spawn_child(test, [left_start, right_start, seed] noexcept {
-                                       // The watchdog ends a child that the two-second wait did not end.
-                                       // The child can get SIG_IGN for SIGALRM from its parent, so it sets
-                                       // the action that the watchdog needs.
-                                       static_cast<void>(std::signal(SIGALRM, SIG_DFL));
-                                       ::alarm(10);
-                                       Queue a_to_b;
-                                       Queue b_to_a;
-                                       Endpoint a{&a_to_b, &b_to_a, seed};
-                                       Endpoint b{&b_to_a, &a_to_b, seed};
+                                       Line line;
+                                       Endpoint a{&line, Side::left, seed};
+                                       Endpoint b{&line, Side::right, seed};
                                        std::thread left{[&] { left_start(a); }};
                                        std::thread right{[&] { right_start(b); }};
                                        left.join();
@@ -282,7 +323,7 @@ void walk_from_start(Endpoint& self) {
     ::fixy::process::ChildReport const report =
         ::fixy::process::wait(std::move(child)).expect("session_oracle wire: the test waits for the child of a run");
     ::foundation::os::ChildEnd const end = report.end();
-    if (end.kind == ::foundation::os::ChildEndKind::signaled) return end.number == SIGALRM ? "stuck" : "abort";
+    if (end.kind == ::foundation::os::ChildEndKind::signaled) return "abort";
     switch (end.number) {
         case static_cast<int>(exit_code::ok):
             return "ok";
