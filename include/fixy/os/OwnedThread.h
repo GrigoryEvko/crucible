@@ -385,8 +385,12 @@ concept CanMintOwnerThread =
 // with no copy and no move keeps its address for its whole life, and the
 // OwnerThread ends with it.  A gate that drops StaysInPlace would let the
 // pointer name the source of a move.
+//
+// The pointer names the object that holds the OwnerThread, so the
+// OwnerThread moves and is read exactly as its owner is, and it states
+// by_arguments{} (foundation/Transfer.h).
 template <typename Owner>
-class OwnerThread final {
+class[[= ::foundation::transfer::by_arguments{}]] OwnerThread final {
 public:
     OwnerThread() noexcept = default;
     OwnerThread(OwnerThread const&) = delete("the thread borrows its owner at one address");

@@ -269,6 +269,12 @@ private:
     ::fixy::thread::OwnerThread<LoopingOwner> thread_{};
 };
 
+// The OwnerThread moves and is read exactly as its owner is, because its
+// pointer names the object that holds it (by_arguments{} of
+// foundation/Transfer.h).
+static_assert(::foundation::transfer::Sendable<LoopingOwner>
+              && ::foundation::transfer::Sendable<::fixy::thread::OwnerThread<LoopingOwner>>);
+
 // The end of an owner whose body still loops calls the stop hook and joins
 // before any other member ends, so the body sees each member alive to its
 // end.
