@@ -1037,6 +1037,11 @@
       "constructor": "\\bSharedRegion\\("
     },
     {
+      "name": "neg_witness_solewriterproof_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSoleWriterProof\\("
+    },
+    {
       "name": "neg_witness_spawn_parallelforrunner_direct_construction",
       "reason": "use of deleted function",
       "constructor": "\\bParallelForRunner\\("
@@ -1191,6 +1196,10 @@
     {
       "type": "fixy::concurrent::EventWait",
       "header": "fixy/concurrent/EventCount.h"
+    },
+    {
+      "type": "fixy::SoleWriterProof<forge::brand, forge::brand>",
+      "header": "fixy/Mutation.h"
     },
     {
       "type": "foundation::os::FpScope<foundation::core::kFpModeIeee>",

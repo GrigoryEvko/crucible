@@ -581,6 +581,9 @@ witness <fixy/os/SpinBudget.h> private | fixy::time::SpinDeadline | fixy::time::
 # The entry of a waiter in an event count comes only from prepare_wait, which
 # enters the waiter in the count before it gives the entry.
 witness <fixy/concurrent/EventCount.h> private | fixy::concurrent::EventWait | fixy::concurrent::EventWait{forge::lvalue<fixy::concurrent::EventCount>(), std::uint32_t{0}}
+# A proof of the one writer of a counter comes only from the owner of the
+# counter, the one friend of the proof.
+witness <fixy/Mutation.h> private | fixy::SoleWriterProof<forge::brand, forge::brand> | fixy::SoleWriterProof<forge::brand, forge::brand>{}
 # An FP scope comes only from mint_fp_scope, and a word of the FP control
 # register only from a read of the register or from a word and a mode.
 witness <foundation/os/FpControl.h> private | foundation::os::FpScope<foundation::core::kFpModeIeee> | foundation::os::FpScope<foundation::core::kFpModeIeee>{}

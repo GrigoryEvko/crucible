@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fixy/GradedFacade.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
@@ -721,6 +722,10 @@ template <class Owner, class Role>
 class [[nodiscard]] SoleWriterProof final {
     constexpr SoleWriterProof() noexcept = default;
     friend Owner;
+
+    // The seal refuses each byte route, such as std::bit_cast, so no bytes
+    // become a proof.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
 public:
     SoleWriterProof(SoleWriterProof const&) = delete("a proof of the one writer lives for the call of its owner");
