@@ -4405,6 +4405,11 @@ fixy_neg_compile_test(neg_session_declassify_unadmitted_policy
 fixy_test(test_concurrent_rings)
 set_tests_properties(test_concurrent_rings PROPERTIES PROCESSORS 64)
 
+# The ring of lanes gives the same merged stream under each schedule.  Each
+# run starts four producer threads and a consumer thread.
+fixy_test(test_lane_ring)
+set_tests_properties(test_lane_ring PROPERTIES PROCESSORS 5)
+
 # The Chase-Lev deque maps a position to a cell with a mask, and a thief
 # reads a cell without a lock.  So a capacity that is not a power of two
 # and a value that is not always lock-free are refused.
