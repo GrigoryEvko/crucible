@@ -1,14 +1,16 @@
 // The wait of the consumer handle of fixy/concurrent/PermissionedChannel.h:
 // receive_waiting waits by its policy while the channel is empty and open,
-// and it gives each item in order and then the end.  The producers push with
-// a random delay of a Philox stream and notify the event count after each
-// push and after their close.  A lost wake leaves the consumer parked, and
-// the test then fails at the timeout of the test preset.
+// and it gives each item in order and then the end.  The producers push on
+// threads of their own with a random delay of a Philox stream, and they
+// notify the event count after each push and after their close.  The
+// consumer receives on the calling thread.  A lost wake leaves the consumer
+// parked, and the test then fails at the timeout of the test preset.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/EventCount.h>
 #include <fixy/concurrent/PermissionedChannel.h>
+#include <fixy/os/OwnedThread.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
@@ -26,6 +28,9 @@ namespace eff = ::foundation::effects;
 namespace cc = ::fixy::concurrent;
 namespace perm = ::foundation::permissions;
 
+// The context that starts the producers: Bg for the threads, Alloc for their
+// frames.
+using Starter = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 using ParkAtOnce = cc::SpinThenPark<0>;
 using SpinFirst = cc::SpinThenPark<2000>;
 using Item = std::uint64_t;
@@ -52,6 +57,68 @@ concept CanReceiveWaiting = requires(Handle& handle, Ctx const& ctx, cc::EventCo
     handle.template receive_waiting<Policy>(ctx, events);
 };
 
+// The lane of a producer: the low bit of each item, and the stream of its
+// delays.
+enum class Lane : std::uint8_t {
+    first = 0,
+    second = 1,
+};
+
+// Starts a producer of kItems items on a thread of its own.  The thread owns
+// the handle, pushes each item, notifies after each push, and closes the
+// stream at its end.  The item is its count shifted left by one, with the bit
+// of the lane.
+template <class Producer>
+[[nodiscard]] ::fixy::thread::OwnedThread start_producer(::fixy::BgLoadCtx const& ctx, cc::EventCount& events,
+                                                         Producer&& producer, Lane lane, std::uint64_t seed) noexcept {
+    return ::fixy::thread::mint_owned_thread(
+               Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{},
+               [&ctx, &events, lane, seed, handle = std::move(producer)]() mutable noexcept {
+                   auto const lane_bit = static_cast<Item>(lane);
+                   ::crucible::test::PhiloxStream delays{seed + lane_bit};
+                   for (Item item = 0; item < kItems; ++item) {
+                       delay(delays);
+                       while (!handle.try_push((item << 1) | lane_bit)) {
+                           CRUCIBLE_SPIN_PAUSE;
+                       }
+                       events.notify_one(ctx);
+                   }
+                   std::move(handle).close();
+                   events.notify_one(ctx);
+               })
+        .expect("the thread door starts a producer");
+}
+
+// The result of the consumer of a test.
+struct Received {
+    std::uint64_t count = 0;
+    bool is_ordered = true;
+};
+
+// Receives until the end of the stream, with the tag of each pop, and checks
+// the order of each lane.
+template <class Policy, class Consumer, typename... PopTag>
+[[nodiscard]] Received receive_each(::fixy::BgLoadCtx const& ctx, cc::EventCount& events, Consumer& consumer,
+                                    PopTag... tag) noexcept {
+    Received result{};
+    ::fixy::FixedArray<Item, 2> next{};
+    bool is_open = true;
+    while (is_open) {
+        ::fixy::Result<Item, cc::NoItem> got = consumer.template receive_waiting<Policy>(ctx, events, tag...);
+        if (got.is_err()) {
+            result.is_ordered = result.is_ordered && got.err().value_or(cc::NoItem::Empty) == cc::NoItem::Closed;
+            is_open = false;
+            continue;
+        }
+        Item const value = std::move(got).expect("the test above found an item");
+        Item& expected = *next.get(value & 1).expect("a lane bit is below two");
+        result.is_ordered = result.is_ordered && (value >> 1) == expected;
+        ++expected;
+        ++result.count;
+    }
+    return result;
+}
+
 // A wire of 8 cells: one producer, one consumer, each item in order, then the
 // end of the stream.
 template <class Policy>
@@ -65,42 +132,20 @@ void expect_each_item_then_the_end_of_a_wire(::fixy::BgLoadCtx const& ctx, std::
     cc::EventCount events{};
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<Wire::producer_tag, Wire::consumer_tag>(std::move(root));
-    typename Wire::ProducerHandle producer = channel.producer(std::move(producer_perm));
     typename Wire::ConsumerHandle consumer = channel.consumer(std::move(consumer_perm));
-    std::uint64_t received = 0;
-    bool is_ordered = true;
-    auto produce = [&]() noexcept {
-        ::crucible::test::PhiloxStream delays{seed};
-        for (Item item = 0; item < kItems; ++item) {
-            delay(delays);
-            while (!producer.try_push(item)) {
-                CRUCIBLE_SPIN_PAUSE;
-            }
-            events.notify_one(ctx);
-        }
-        std::move(producer).close();
-        events.notify_one(ctx);
-    };
-    auto consume = [&]() noexcept {
-        for (;;) {
-            ::fixy::Result<Item, cc::NoItem> got = consumer.template receive_waiting<Policy>(ctx, events);
-            if (got.is_err()) {
-                is_ordered = is_ordered && got.err().value_or(cc::NoItem::Empty) == cc::NoItem::Closed;
-                return;
-            }
-            is_ordered = is_ordered && std::move(got).expect("the test above found an item") == received;
-            ++received;
-        }
-    };
-    CRUCIBLE_FATAL_INVARIANT(
-        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, produce, consume).is_ok());
-    CRUCIBLE_FATAL_INVARIANT(is_ordered);
-    CRUCIBLE_FATAL_INVARIANT(received == kItems);
+    ::fixy::thread::OwnedThread producer =
+        start_producer(ctx, events, channel.producer(std::move(producer_perm)), Lane::first, seed);
+    Received const received = receive_each<Policy>(ctx, events, consumer);
+    std::move(producer).join();
+    CRUCIBLE_FATAL_INVARIANT(received.is_ordered);
+    CRUCIBLE_FATAL_INVARIANT(received.count == kItems);
     ::foundation::linear::drop(std::move(consumer));
 }
 
 // A merge of 8 cells: two producers, one consumer, each item of each producer
 // in the order of that producer, then the end when both producers closed.
+// Both producers open the channel before their threads start, so the channel
+// closes only after the second close.
 void expect_each_item_then_the_end_of_a_merge(::fixy::BgLoadCtx const& ctx, std::uint64_t seed) {
     auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::merge, MergeTag>>();
     using Merge = cc::channel_t<Item, 8, decltype(root)>;
@@ -110,45 +155,15 @@ void expect_each_item_then_the_end_of_a_merge(::fixy::BgLoadCtx const& ctx, std:
     cc::EventCount events{};
     typename Merge::ConsumerHandle consumer = channel.consumer(std::move(consumer_perm));
     eff::cap::Nondet const merge = eff::extract_bare_from_ctx<eff::Effect::Nondet>(ctx);
-    ::fixy::FixedArray<Item, 2> next{};
-    std::uint64_t received = 0;
-    bool is_ordered = true;
-    // Both producers open the channel before the threads start, so the
-    // channel closes only after the second close.
     typename Merge::ProducerHandle first_producer = channel.producer().expect("the pool lends a producer");
     typename Merge::ProducerHandle second_producer = channel.producer().expect("the pool lends a producer");
-    auto produce = [&](typename Merge::ProducerHandle& producer, Item producer_bit, std::uint64_t stream) noexcept {
-        ::crucible::test::PhiloxStream delays{stream};
-        for (Item item = 0; item < kItems; ++item) {
-            delay(delays);
-            while (!producer.try_push((item << 1) | producer_bit)) {
-                CRUCIBLE_SPIN_PAUSE;
-            }
-            events.notify_one(ctx);
-        }
-        std::move(producer).close();
-        events.notify_one(ctx);
-    };
-    auto first = [&]() noexcept { produce(first_producer, 0, seed); };
-    auto second = [&]() noexcept { produce(second_producer, 1, seed + 1); };
-    auto consume = [&]() noexcept {
-        for (;;) {
-            ::fixy::Result<Item, cc::NoItem> got = consumer.template receive_waiting<ParkAtOnce>(ctx, events, merge);
-            if (got.is_err()) {
-                is_ordered = is_ordered && got.err().value_or(cc::NoItem::Empty) == cc::NoItem::Closed;
-                return;
-            }
-            Item const value = std::move(got).expect("the test above found an item");
-            Item& expected = *next.get(value & 1).expect("a producer bit is below two");
-            is_ordered = is_ordered && (value >> 1) == expected;
-            ++expected;
-            ++received;
-        }
-    };
-    CRUCIBLE_FATAL_INVARIANT(
-        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, first, second, consume).is_ok());
-    CRUCIBLE_FATAL_INVARIANT(is_ordered);
-    CRUCIBLE_FATAL_INVARIANT(received == 2 * kItems);
+    ::fixy::thread::OwnedThread first = start_producer(ctx, events, std::move(first_producer), Lane::first, seed);
+    ::fixy::thread::OwnedThread second = start_producer(ctx, events, std::move(second_producer), Lane::second, seed);
+    Received const received = receive_each<ParkAtOnce>(ctx, events, consumer, merge);
+    std::move(first).join();
+    std::move(second).join();
+    CRUCIBLE_FATAL_INVARIANT(received.is_ordered);
+    CRUCIBLE_FATAL_INVARIANT(received.count == 2 * kItems);
     ::foundation::linear::drop(std::move(consumer));
 }
 
