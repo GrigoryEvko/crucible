@@ -2,6 +2,8 @@
 
 #include <foundation/ThreadLocalRef.h>
 
+#include <foundation/Quarantine.h>
+
 namespace foundation {
 
 namespace detail::thread_local_ref_self_test {
@@ -56,7 +58,53 @@ struct CountsCopies {
 static_assert(NamesACell<int> && NamesACell<double> && NamesACell<unsigned long long> && NamesACell<EightBytes>);
 static_assert(!NamesACell<SixteenBytes>);
 static_assert(!NamesACell<CountsCopies>);
+
+// An enumeration, a bool and a floating-point value are zero bytes at T{}.
+enum class Shade : unsigned char {
+    dark,
+    light
+};
+struct Scalars {
+    Shade shade;
+    bool is_set;
+    unsigned short count;
+    float weight;
+};
+static_assert(NamesACell<Scalars> && NamesACell<Shade> && NamesACell<bool> && NamesACell<float>);
 static_assert(sizeof(detail::ThreadLocalTable) == thread_local_cell_count * thread_local_cell_bytes);
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the walk of a value of a cell reads raw pointers and pointers to members")
+
+// A cell starts as zero bytes, so a value whose T{} is not zero bytes has no
+// cell: a pointer to a member at each depth of the walk.  A null pointer to a
+// data member is all ones on the Itanium ABI.
+struct Holder {
+    int field;
+};
+struct HoldsMemberPointer {
+    int Holder::* member;
+};
+struct BaseHoldsMemberPointer : HoldsMemberPointer {};
+struct NestsMemberPointer {
+    HoldsMemberPointer inner;
+};
+struct NestsMemberPointerArray {
+    int Holder::* members[1];
+};
+static_assert(!NamesACell<int Holder::*>);
+static_assert(!NamesACell<HoldsMemberPointer>);
+static_assert(!NamesACell<BaseHoldsMemberPointer>);
+static_assert(!NamesACell<NestsMemberPointer>);
+static_assert(!NamesACell<NestsMemberPointerArray>);
+static_assert(!NamesACell<HoldsMemberPointer const>);
+
+// The null pointer is zero bytes, so a raw pointer has a cell.
+struct HoldsPointer {
+    Holder const* holder;
+};
+static_assert(NamesACell<HoldsPointer> && NamesACell<Holder const*>);
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 }  // namespace detail::thread_local_ref_self_test
 

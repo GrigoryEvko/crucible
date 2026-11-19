@@ -590,6 +590,7 @@ test/foundation/neg/ | opted-out | 1 | PROBE: a forged enumerate cursor shows th
 test/foundation/neg/ | opted-out | 1 | PROBE: a forged mint of a Box shows that Box has no constructor from a pointer | -
 test/foundation/neg/ | opted-out | 1 | PROBE: a forged mint shows that HeapArray has no constructor from a pointer | the forged specialization stands in a PROBE: region, so the fixture shows the error of its body and not the error of a rule
 test/foundation/neg/ | opted-out | 2 | PROBE: a forged view_over_ shows that View names it as no friend | the forged specialization stands in a PROBE: region, so the fixture shows the error of its body and not the error of a rule
+test/foundation/neg/ | opted-out | 2 | PROBE: a value of a cell holds a pointer to a member, which is not zero bytes | a PROBE region of each new fixture and of the check file of foundation/ThreadLocalRef.h holds the pointers to members and the raw pointer that the walk of a value of a cell refuses and admits
 test/foundation/neg/ | opted-out | 1 | PROBE: the fixture forges ExecCtx with a row that its source does not permit | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | opted-out | 1 | PROBE: the fixture forges ExecCtx with no capability source | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | opted-out | 1 | PROBE: the fixture forges relation_cells_at of ingest with a copy of other cells | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -612,6 +613,7 @@ test/foundation/neg/ | region | 1 | PROBE: a forged niche key shows that Text.h 
 test/foundation/neg/ | region | 1 | PROBE: a forged view_over_ shows that View names it as no friend | the forged specialization stands in a PROBE: region, so the fixture shows the error of its body and not the error of a rule
 test/foundation/neg/ | region | 1 | PROBE: a forged zip of a dynamic extent shows that a declared type sets no brand | the forged specialization stands in a PROBE: region, so the fixture shows the error of its body and not the error of a rule
 test/foundation/neg/ | region | 1 | PROBE: a forged zip of one fixed extent shows that a declared type sets no brand | the forged specialization stands in a PROBE: region, so the fixture shows the error of its body and not the error of a rule
+test/foundation/neg/ | region | 2 | PROBE: a value of a cell holds a pointer to a member, which is not zero bytes | a PROBE region of each new fixture and of the check file of foundation/ThreadLocalRef.h holds the pointers to members and the raw pointer that the walk of a value of a cell refuses and admits
 test/foundation/neg/ | region | 1 | PROBE: the fixture forges ExecCtx with a row that its source does not permit | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the fixture forges ExecCtx with no capability source | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the fixture forges relation_cells_at of ingest with a copy of other cells | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -691,7 +693,9 @@ test/layer/checks/fixy/session/ | replace-pending:std::source_location | 1 | - |
 test/layer/checks/fixy/session/ | std-entity | 2 | - | -
 test/layer/checks/fixy/session/ | std-object | 1 | - | -
 test/layer/checks/foundation/ | c-array-object | 2 | - | -
+test/layer/checks/foundation/ | opted-out | 3 | PROBE: the walk of a value of a cell reads raw pointers and pointers to members | a PROBE region of each new fixture and of the check file of foundation/ThreadLocalRef.h holds the pointers to members and the raw pointer that the walk of a value of a cell refuses and admits
 test/layer/checks/foundation/ | raw-pointer-object | 1 | - | -
+test/layer/checks/foundation/ | region | 1 | PROBE: the walk of a value of a cell reads raw pointers and pointers to members | a PROBE region of each new fixture and of the check file of foundation/ThreadLocalRef.h holds the pointers to members and the raw pointer that the walk of a value of a cell refuses and admits
 test/layer/checks/foundation/ | std-entity | 2 | - | -
 test/layer/checks/foundation/algebra/ | std-entity | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | c-array-object | 1 | - | -

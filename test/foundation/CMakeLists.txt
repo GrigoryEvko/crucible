@@ -2136,6 +2136,14 @@ foundation_neg_compile_test(neg_thread_local_ref_value_of_sixteen_bytes
 foundation_neg_compile_test(neg_thread_local_ref_value_not_trivially_copyable
   "template constraint failure for .template<class Tag, class T>  requires"
   "is_trivially_copyable_v<T> \\[with T = thread_local_ref_copy_fixture::CountsCopies\\]. evaluated to .false.")
+# A cell starts as zero bytes, so the handle refuses a value whose T{} is not
+# zero bytes: a pointer to a member in a member or in a base.
+foundation_neg_compile_test(neg_thread_local_ref_value_holds_member_pointer
+  "template constraint failure for .template<class Tag, class T>  requires"
+  "is_default_value_zero_bytes\\(.*\\[with T = thread_local_ref_member_fixture::HoldsMemberPointer\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_thread_local_ref_value_base_holds_member_pointer
+  "template constraint failure for .template<class Tag, class T>  requires"
+  "is_default_value_zero_bytes\\(.*\\[with T = thread_local_ref_base_fixture::DerivesMemberPointer\\]. evaluated to .false.")
 
 # ── The Report family: texts, reports and the fatal exit ─────────────
 #

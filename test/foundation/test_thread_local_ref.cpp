@@ -27,6 +27,23 @@ struct OtherTag {};
 template <int Index>
 struct ManyTag {};
 
+struct ScalarsTag {};
+
+enum class Shade : std::uint8_t {
+    dark,
+    light
+};
+
+// A value of a cell whose T{} is zero bytes: an enumeration, a bool, an
+// integer and a float.  A value of a cell is trivially default constructible,
+// so its members have no initializer, and T{} zero-initializes them.
+struct Scalars {
+    Shade shade;
+    bool is_set;
+    std::uint16_t count;
+    float weight;
+};
+
 }  // namespace thread_local_ref_test
 
 namespace {
@@ -78,22 +95,35 @@ using DoubleOther = fnd::ThreadLocalRef<thread_local_ref_test::OtherTag, double>
     return same_bits ? 0 : 1;
 }
 
-// A second thread starts from its own default cell, and its write does not
-// reach the cell of this thread.
+using ScalarsCell = fnd::ThreadLocalRef<thread_local_ref_test::ScalarsTag, thread_local_ref_test::Scalars>;
+
+// The first value of each cell that the worker reads.  The struct of scalars
+// gives its bytes through bit_cast, so the compare reads no equality of a
+// floating-point value.
+struct FirstValues {
+    int counter = -1;
+    std::uint64_t scalars_bits = ~std::uint64_t{0};
+};
+
+// A second thread starts each cell at T{}: an int and a struct of scalars.
+// Its write does not reach the cell of this thread.
 [[nodiscard]] int each_thread_has_its_own_cell() {
     const IntCounter counter{};
     counter.store(5);
-    int seen_by_worker = -1;
+    FirstValues seen_by_worker{};
     {
         std::jthread worker{[&seen_by_worker] {
             const IntCounter worker_counter{};
-            seen_by_worker = worker_counter.peek();
+            seen_by_worker.counter = worker_counter.peek();
+            seen_by_worker.scalars_bits = ::fixy::bit_cast<std::uint64_t>(ScalarsCell{}.peek());
             worker_counter.store(99);
         }};
     }
-    const bool isolated = seen_by_worker == 0 && counter.peek() == 5;
+    const bool isolated = seen_by_worker.counter == 0 && counter.peek() == 5;
     counter.reset();
-    return isolated ? 0 : 1;
+    if (!isolated) return 1;
+    if (seen_by_worker.scalars_bits != ::fixy::bit_cast<std::uint64_t>(thread_local_ref_test::Scalars{})) return 2;
+    return 0;
 }
 
 // Reads the cell of each tag of the family from Index to the end of the family.

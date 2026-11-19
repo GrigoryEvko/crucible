@@ -41,9 +41,16 @@
 // THE VALUES.  A cell holds bytes, so peek() copies the value out and store()
 // copies it in.  A value is trivially copyable, trivially destructible and
 // trivially default constructible, with a size and an alignment of at most
-// thread_local_cell_bytes.  A cell starts as zero bytes, which is the value
-// T{} of such a type.  A pointer to a member is not a value of a cell,
-// because its null value is not zero bytes.
+// thread_local_cell_bytes.  A cell starts as zero bytes, so the value T{} of
+// a type of a cell must be zero bytes.  T{} of such a type zero-initializes
+// each subobject, and the zero value of each scalar is zero bytes, apart from
+// a pointer to a member: its null value is not zero bytes (all ones for a
+// pointer to a data member on the Itanium ABI).  So a walk of the subobjects
+// of T refuses a pointer to a member at each depth: in a member, a base or an
+// element of an array.  The walk reads each member of a union too, although
+// T{} of a union zero-initializes only its first member, so it also refuses a
+// union whose T{} is zero bytes.  The walk runs at compile time, and peek()
+// and store() stay one copy of bytes each.
 
 #include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
@@ -51,6 +58,7 @@
 #include <foundation/core/SipHash.h>
 #include <foundation/core/StableIdentity.h>
 #include <foundation/reflect/Hash.h>
+#include <foundation/reflect/TypeComponents.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -66,10 +74,34 @@ namespace foundation {
 inline constexpr std::uint32_t thread_local_cell_count = 16;
 inline constexpr std::size_t thread_local_cell_bytes = 8;
 
+namespace detail {
+
+// True when no subobject of the type is a pointer to a member, so the value
+// T{} of a trivially default constructible type is zero bytes (THE VALUES).
+// The bases and the members come from member_components_of, the one read of
+// the members of a class.  A complete type reads its members, and so does each
+// of its by-value subobjects.  Complexity: linear in the subobject
+// declarations that the walk reaches.
+[[nodiscard]] consteval bool is_default_value_zero_bytes(std::meta::info spelled) {
+    const std::meta::info type = ::foundation::reflect::bare_type(spelled);
+    if (std::meta::is_member_pointer_type(type)) return false;
+    if (std::meta::is_array_type(type)) return is_default_value_zero_bytes(std::meta::remove_all_extents(type));
+    if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return true;
+    for (const ::foundation::reflect::TypeNode part : ::foundation::reflect::member_components_of(
+             ::foundation::reflect::TypeNode{.type = type, .may_read_members = true, .is_held_by_value = true})) {
+        if (!is_default_value_zero_bytes(part.type)) return false;
+    }
+    return true;
+}
+
+}  // namespace detail
+
+// The walk comes last, so it reads only a complete type of at most
+// thread_local_cell_bytes bytes.
 template <typename T>
 concept ThreadLocalValue = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>
-                        && std::is_trivially_default_constructible_v<T> && !std::is_member_pointer_v<T>
-                        && sizeof(T) <= thread_local_cell_bytes && alignof(T) <= thread_local_cell_bytes;
+                        && std::is_trivially_default_constructible_v<T> && sizeof(T) <= thread_local_cell_bytes
+                        && alignof(T) <= thread_local_cell_bytes && detail::is_default_value_zero_bytes(^^T);
 
 namespace detail {
 
