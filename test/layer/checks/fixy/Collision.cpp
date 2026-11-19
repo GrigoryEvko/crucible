@@ -4,13 +4,11 @@
 // The real session handles, for the cell of the payload that owes a protocol.
 #include <fixy/session/Handle.h>
 
-#include <array>
 #include <cstddef>
 #include <expected>
 #include <meta>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace fixy {
 
@@ -139,34 +137,32 @@ static_assert(atoms_without_an_answer_().empty(),
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 
-[[nodiscard]] consteval std::string poles_that_are_atoms_() {
+// The first strict pole that is an atom, or the first atom of the roster
+// that is the strict pole of its axis, or the null reflection.
+[[nodiscard]] consteval std::meta::info first_pole_that_is_an_atom_() {
     namespace cd = ::fixy::collision::detail;
-    std::string offenders;
-    for (std::size_t place = 0; place < ::fixy::axis_count; ++place) {
-        const std::meta::info strict = axis_record(static_cast<Axis>(place)).strict;
-        if (strict == std::meta::info{} || !cd::is_atom_(strict)) continue;
-        if (!offenders.empty()) offenders += ", ";
-        offenders += std::meta::display_string_of(strict);
+    template for (constexpr std::meta::info axis_member :
+                  std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis))) {
+        const std::meta::info strict = axis_record([:axis_member:]).strict;
+        if (strict != std::meta::info{} && cd::is_atom_(strict)) return strict;
     }
     template for (constexpr auto member : ::fixy::atom::detail::roster_members_v<::fixy::collision::all_atom_roster>) {
         using Atom = [:member:];
         const std::meta::info strict = axis_record(Atom::axis).strict;
-        if (strict != std::meta::info{} && std::meta::dealias(member) == std::meta::dealias(strict)) {
-            if (!offenders.empty()) offenders += ", ";
-            offenders += std::meta::display_string_of(member);
-        }
+        if (strict != std::meta::info{} && std::meta::dealias(member) == std::meta::dealias(strict)) return member;
     }
-    return offenders;
+    return {};
 }
 
 #pragma GCC diagnostic pop
 
-static_assert(poles_that_are_atoms_().empty(),
-              std::string_view{std::define_static_string(
-                  "fixy/Collision.h: these strict poles are atoms, or these atoms are the strict pole of their axis: "
-                  + poles_that_are_atoms_()
-                  + ".  A pack that names such an atom states its axis and leaves the grade at the pole, so the "
-                    "count of the atoms on an axis no longer says whether the grade is the pole.")});
+// A pack that names such an atom states its axis and leaves the grade at the
+// pole, so the count of the atoms on an axis no longer says whether the grade
+// is the pole.  The message names the pole or the atom.
+static_assert(first_pole_that_is_an_atom_() == std::meta::info{},
+              std::meta::display_string_of(first_pole_that_is_an_atom_() == std::meta::info{}
+                                               ? ^^void
+                                               : first_pole_that_is_an_atom_()));
 
 // Each Row axis of the table has an atom over a row, so the walk of a pack
 // can give the union of two atoms on it.  An axis of each other shape has
@@ -309,19 +305,20 @@ static_assert(pack_verdict_v<Session>.is_valid(), "a synchronous session sends a
 struct plain_error final {};
 using SecretError = ::fixy::Secret<plain_error>;
 using ::fixy::collision::binding_verdict_v;
+// A Result returns its failure as the std spelling does, and the cells of
+// the readers of fixy/Collision.h read the std spelling.
+using PlainResult = ::foundation::core::Result<int, plain_error>;
 
-static_assert(!binding_verdict_v<std::expected<int, plain_error>>.admits(I002),
-              "the strict Security pole is classified");
+static_assert(!binding_verdict_v<PlainResult>.admits(I002), "the strict Security pole is classified");
 static_assert(!binding_verdict_v<int, at::ctrl::throws<>>.admits(I002),
               "an exception family the reader cannot see is plain");
-static_assert(
-    !binding_verdict_v<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, std::expected<int, plain_error>>>.admits(I002),
-    "a band does not hide the failure it grades");
+static_assert(!binding_verdict_v<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, PlainResult>>.admits(I002),
+              "a band does not hide the failure it grades");
 static_assert(binding_verdict_v<std::expected<int, SecretError>>.is_valid());
 static_assert(binding_verdict_v<int, at::ctrl::throws<SecretError>>.is_valid());
-static_assert(binding_verdict_v<std::expected<int, plain_error>, at::as_public>.is_valid());
-static_assert(binding_verdict_v<std::expected<int, plain_error>, at::as_internal>.is_valid());
-static_assert(binding_verdict_v<::fixy::Secret<std::expected<int, plain_error>>>.is_valid(),
+static_assert(binding_verdict_v<PlainResult, at::as_public>.is_valid());
+static_assert(binding_verdict_v<PlainResult, at::as_internal>.is_valid());
+static_assert(binding_verdict_v<::fixy::Secret<PlainResult>>.is_valid(),
               "the error inside a Secret is secret, and the discriminant with it");
 static_assert(pack_verdict_v<at::ctrl::throws<SecretError>>.is_valid());
 static_assert(
@@ -468,7 +465,7 @@ using UnderVendor = ::fixy::Vendor<::fixy::VendorBackend_v::NV, T>;
 // The answers of one list.  A list holds when it has at least one answer
 // and each answer is the one that the list asks for.
 struct answer_list {
-    std::size_t count = 0;
+    unsigned count = 0;
     bool holds = false;
 };
 
@@ -483,7 +480,7 @@ struct reader_cell {
     answer_list refuses{};
 
     [[nodiscard]] consteval bool holds() const noexcept { return accepts.holds && refuses.holds; }
-    [[nodiscard]] consteval std::size_t answers() const noexcept { return accepts.count + refuses.count; }
+    [[nodiscard]] consteval unsigned answers() const noexcept { return accepts.count + refuses.count; }
 };
 
 struct global_tag final {};
@@ -595,9 +592,9 @@ inline constexpr reader_cell cell_read_pack_of_key_{
 inline constexpr reader_cell cell_build_pack_record_cell{
     .accepts = each_true<
         (cd::build_pack_record_cell(^^col::pack_key<at::copy>).key() == std::meta::dealias(^^col::pack_key<at::copy>)),
-        cd::build_pack_record_cell(^^col::pack_key<at::copy>).record().atoms_on[std::to_underlying(Axis::Usage)] == 1>,
+        cd::build_pack_record_cell(^^col::pack_key<at::copy>).value().atoms_on[std::to_underlying(Axis::Usage)] == 1>,
     .refuses =
-        each_false<cd::build_pack_record_cell(^^col::pack_key<>).record().atoms_on[std::to_underlying(Axis::Usage)]
+        each_false<cd::build_pack_record_cell(^^col::pack_key<>).value().atoms_on[std::to_underlying(Axis::Usage)]
                    == 1>};
 
 inline constexpr reader_cell cell_record_of_{
@@ -933,7 +930,7 @@ inline constexpr reader_cell cell_returned_failure_of{
                          cd::returned_failure_of(^^std::expected<int, plain_error>).fails,
                          cd::returned_failure_of(^^std::expected<int, SecretError>).error_is_secret>,
     .refuses = each_false<cd::returned_failure_of(^^int).fails,
-                          cd::returned_failure_of(^^::fixy::Secret<std::expected<int, plain_error>>).fails,
+                          cd::returned_failure_of(^^::fixy::Secret<::foundation::core::Result<int, plain_error>>).fails,
                           cd::returned_failure_of(^^Option).carries_error,
                           cd::returned_failure_of(^^::foundation::core::Result<int, plain_error>).error_is_secret>};
 
@@ -1066,8 +1063,8 @@ inline constexpr reader_cell cell_premises_of_pack_{
 inline constexpr reader_cell cell_build_pack_premises_cell{
     .accepts = each_true<(cd::build_pack_premises_cell(^^col::pack_key<at::borrow>).key()
                           == std::meta::dealias(^^col::pack_key<at::borrow>)),
-                         cd::build_pack_premises_cell(^^col::pack_key<at::borrow>).premises().borrow>,
-    .refuses = each_false<cd::build_pack_premises_cell(^^col::pack_key<>).premises().borrow>};
+                         cd::build_pack_premises_cell(^^col::pack_key<at::borrow>).value().borrow>,
+    .refuses = each_false<cd::build_pack_premises_cell(^^col::pack_key<>).value().borrow>};
 
 inline constexpr reader_cell cell_pack_premises_in_{
     .accepts = each_true<
@@ -1089,11 +1086,10 @@ inline constexpr reader_cell cell_premises_of_payload_{
                           cd::premises_of_payload_(^^int).returned_failure.fails>};
 
 inline constexpr reader_cell cell_build_payload_premises_cell{
-    .accepts =
-        each_true<(cd::build_payload_premises_cell(^^col::verdict_key<Pure<int>>).key()
-                   == std::meta::dealias(^^col::verdict_key<Pure<int>>)),
-                  cd::build_payload_premises_cell(^^col::verdict_key<Pure<int>>).premises().replay_deterministic>,
-    .refuses = each_false<cd::build_payload_premises_cell(^^col::verdict_key<int>).premises().replay_deterministic>};
+    .accepts = each_true<(cd::build_payload_premises_cell(^^col::verdict_key<Pure<int>>).key()
+                          == std::meta::dealias(^^col::verdict_key<Pure<int>>)),
+                         cd::build_payload_premises_cell(^^col::verdict_key<Pure<int>>).value().replay_deterministic>,
+    .refuses = each_false<cd::build_payload_premises_cell(^^col::verdict_key<int>).value().replay_deterministic>};
 
 inline constexpr reader_cell cell_payload_premises_in_{
     .accepts = each_true<cd::payload_premises_in_(cd::payload_premises_cell_v<col::verdict_key<Pure<int>>>,
@@ -1158,11 +1154,12 @@ inline constexpr reader_cell cell_read_verdict{
 // pack_key<Atoms...> names the pack-only view.
 inline constexpr reader_cell cell_verdict_of{
     .accepts = each_true<col::verdict_of(^^col::pack_key<at::borrow>).is_valid(),
-                         col::verdict_of(^^col::verdict_key<std::expected<int, SecretError>>).is_valid(),
+                         col::verdict_of(^^col::verdict_key<int, at::borrow>).is_valid(),
                          (col::verdict_of(^^col::pack_key<at::borrow, at::coroutine>).tripped
                           == pack_verdict_v<at::borrow, at::coroutine>.tripped)>,
-    .refuses = each_false<col::verdict_of(^^col::pack_key<at::borrow, at::coroutine>).is_valid(),
-                          col::verdict_of(^^col::verdict_key<std::expected<int, plain_error>>).is_valid()>};
+    .refuses =
+        each_false<col::verdict_of(^^col::pack_key<at::borrow, at::coroutine>).is_valid(),
+                   col::verdict_of(^^col::verdict_key<::foundation::core::Result<int, plain_error>>).is_valid()>};
 
 static_assert(std::is_same_v<col::pack_key<at::borrow>, col::verdict_key<void, at::borrow>>,
               "the key of the pack-only view is the key of a binding with the payload void");
@@ -1170,170 +1167,140 @@ static_assert(std::is_same_v<col::pack_key<at::borrow>, col::verdict_key<void, a
 // ── The helpers ────────────────────────────────────────────────────
 //
 // The walked entities that read no grade of their own.  Each row says why.
-inline constexpr std::array walk_helpers = {
-    // The plumbing of the pass of the premises: a grade of the record, and a
-    // concept over a grade.  Each premise cell of this file reads them.
-    ^^cd::grade_of_,
-    ^^cd::grade_is_,
-    ^^cd::satisfies_,
-    ^^cd::satisfies_floor_,
-    // The cell of the premises after the message of each grade with no
-    // reading.  A fixture holds each message.
-    ^^cd::checked_pack_premises_cell_,
-    // The slot of an axis, and the axes of a roster.  The cells of grades and
-    // of axis_has_an_atom_ read them.
-    ^^cd::axis_slot_,
-    ^^cd::roster_axes_,
-    // The pending gate.  pending_axes is empty, and this file asserts the gate.
-    ^^col::axis_is_pending,
-    ^^col::every_pending_axis_is_still_empty,
-    // Functions with no constant definition.  A call stops the build, and a
-    // fixture holds each stop that a reader can reach.
-    ^^cd::a_row_axis_has_no_family_of_atoms,
-    ^^cd::a_call_shape_grade_has_no_reading_in_call_shape_reading_,
-    ^^cd::a_protocol_grade_has_no_reading_in_protocol_reading_,
-    ^^cd::a_trust_grade_has_no_level_in_trust_level_of_,
-    ^^cd::a_security_grade_has_no_class_in_security_class_of_,
-    ^^cd::a_cache_cell_stands_for_another_key,
-    ^^col::a_verdict_cell_stands_for_another_binding,
-};
+// A row names its entity by a reflection, so a row of a name that does not
+// exist does not compile.
+[[nodiscard]] consteval bool is_helper_(std::meta::info member) {
+    return
+        // The plumbing of the pass of the premises: a grade of the record,
+        // and a concept over a grade.  Each premise cell of this file reads
+        // them.
+        member == ^^cd::grade_of_ || member == ^^cd::grade_is_ || member == ^^cd::satisfies_
+        || member == ^^cd::satisfies_floor_
+        // The cell of the premises after the message of each grade with no
+        // reading.  A fixture holds each message.
+        || member == ^^cd::checked_pack_premises_cell_
+        // The slot of an axis, and the axes of a roster.  The cells of grades
+        // and of axis_has_an_atom_ read them.
+        || member == ^^cd::axis_slot_
+        || member == ^^cd::roster_axes_
+        // The pending gate.  pending_axes is empty, and this file asserts the
+        // gate.
+        || member == ^^col::axis_is_pending
+        || member == ^^col::every_pending_axis_is_still_empty
+        // Functions with no constant definition.  A call stops the build, and
+        // a fixture holds each stop that a reader can reach.
+        || member == ^^cd::a_row_axis_has_no_family_of_atoms
+        || member == ^^cd::a_call_shape_grade_has_no_reading_in_call_shape_reading_
+        || member == ^^cd::a_protocol_grade_has_no_reading_in_protocol_reading_
+        || member == ^^cd::a_trust_grade_has_no_level_in_trust_level_of_
+        || member == ^^cd::a_security_grade_has_no_class_in_security_class_of_
+        || member == ^^cd::a_cache_cell_stands_for_another_key
+        || member == ^^col::a_verdict_cell_stands_for_another_binding;
+}
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 
-// A walked entity is a concept, a function or a function template that
-// fixy/Collision.h declares, or that a source file declares, such as a
-// fixture that plants one.  Each other header that adds to the two
-// namespaces holds its own checks.
+// A walked entity is a concept, a function or a function template of the two
+// namespaces that fixy/collision/Codes.h and fixy/collision/Report.h do not
+// declare: an entity of fixy/Collision.h, or of a source file, such as a
+// fixture that plants one.  Each of the two other headers holds its own
+// checks.
 [[nodiscard]] consteval bool is_walked_(std::meta::info member) {
+    namespace ad = ::fixy::atom::detail;
     if (!std::meta::is_concept(member) && !std::meta::is_function(member) && !std::meta::is_function_template(member)) {
         return false;
     }
-    const std::string_view file = std::meta::source_location_of(member).file_name();
-    return file.ends_with("fixy/Collision.h") || file.ends_with(".cpp");
-}
-
-// A row of the helpers names its entity by a reflection, so a row of a name
-// that does not exist does not compile.  The walk matches a row by the name
-// of the entity, because the reflection of a function template by its name
-// does not answer the queries of the walk as the member does.
-[[nodiscard]] consteval bool is_helper_(std::meta::info member) {
-    for (const std::meta::info helper : walk_helpers) {
-        if (std::meta::identifier_of(helper) == std::meta::identifier_of(member)
-            && std::meta::parent_of(helper) == std::meta::parent_of(member)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// Each walked entity of the two namespaces, with the helpers.
-[[nodiscard]] consteval std::vector<std::meta::info> walked_entities_() {
-    std::vector<std::meta::info> found;
-    for (const std::meta::info scope : {^^::fixy::collision, ^^::fixy::collision::detail}) {
-        for (const std::meta::info member : std::meta::members_of(scope, std::meta::access_context::unchecked())) {
-            if (is_walked_(member)) found.push_back(member);
-        }
-    }
-    return found;
-}
-
-// Each cell of this namespace: a variable of type reader_cell.
-[[nodiscard]] consteval std::vector<std::meta::info> cells_() {
-    std::vector<std::meta::info> found;
-    for (const std::meta::info member : std::meta::members_of(^^::fixy::detail::collision_self_test::reader_cells,
-                                                              std::meta::access_context::unchecked())) {
-        if (std::meta::is_variable(member) && std::meta::remove_cvref(std::meta::type_of(member)) == ^^reader_cell) {
-            found.push_back(member);
-        }
-    }
-    return found;
+    return !ad::same_file_(member, ^^cd::corpus_lists_)
+        && !ad::is_header_beside_(ad::declaration_file_(member), ad::declaration_file_(^^cd::corpus_lists_),
+                                  "Report.h");
 }
 
 // True when the cell is the cell of the entity: its name is cell_ and the
-// name of the entity.
+// name of the entity.  The name is the key, so the overloads of one name
+// share one cell.
 [[nodiscard]] consteval bool is_cell_of_(std::meta::info cell, std::meta::info entity) {
-    const std::string_view name = std::meta::identifier_of(cell);
-    return name.starts_with("cell_") && name.substr(5) == std::meta::identifier_of(entity);
+    return std::meta::identifier_of(cell).substr(5) == std::meta::identifier_of(entity);
 }
 
-// The cell of an entity among the cells, or the null reflection.
-// Complexity: the count of the cells.
-[[nodiscard]] consteval std::meta::info cell_of_(std::meta::info entity, const std::vector<std::meta::info>& cells) {
-    for (const std::meta::info cell : cells) {
-        if (is_cell_of_(cell, entity)) return cell;
+// The cell of an entity, or the null reflection: a variable of type
+// reader_cell of this namespace, with the name cell_NAME.  Complexity: the
+// members of this namespace.
+[[nodiscard]] consteval std::meta::info cell_of_(std::meta::info entity) {
+    // A member of a namespace has no access, so the context of this function
+    // sees each one.
+    template for (constexpr std::meta::info member : std::define_static_array(std::meta::members_of(
+                      ^^::fixy::detail::collision_self_test::reader_cells, std::meta::access_context::current()))) {
+        if constexpr (std::meta::is_variable(member)
+                      && std::meta::remove_cvref(std::meta::type_of(member)) == ^^reader_cell) {
+            if (is_cell_of_(member, entity)) return member;
+        }
     }
     return {};
 }
 
-// Each reader of the walk: each walked entity that no helper row names.
-[[nodiscard]] consteval std::vector<std::meta::info> readers_(const std::vector<std::meta::info>& walked) {
-    std::vector<std::meta::info> found;
-    for (const std::meta::info member : walked) {
-        if (!is_helper_(member)) found.push_back(member);
-    }
-    return found;
-}
-
-consteval void append_offender_(std::string& offenders, std::meta::info entity, std::string_view fault) {
-    if (!offenders.empty()) offenders += ", ";
-    offenders += std::meta::display_string_of(entity);
-    offenders += fault;
-}
-
-// The offenders of the walk, each with its fault, or an empty text.
-// Complexity: the readers times the cells, plus the helper rows times the
-// members of the two namespaces.
-[[nodiscard]] consteval std::string readers_without_a_cell_() {
-    std::string offenders;
-    const std::vector<std::meta::info> walked = walked_entities_();
-    const std::vector<std::meta::info> readers = readers_(walked);
-    const std::vector<std::meta::info> cells = cells_();
-    for (const std::meta::info reader : readers) {
-        const std::meta::info cell = cell_of_(reader, cells);
-        if (cell == std::meta::info{}) {
-            append_offender_(offenders, reader, " (no cell)");
-        } else if (!std::meta::extract<reader_cell>(cell).holds()) {
-            append_offender_(offenders, reader, " (the cell does not hold)");
+// The first walked entity of a namespace with no cell that holds, and that
+// no helper row names, or the null reflection.  Complexity: the members of
+// the namespace times the cells.
+template <std::meta::info Scope>
+[[nodiscard]] consteval std::meta::info first_reader_without_a_cell_in_() {
+    template for (constexpr std::meta::info member :
+                  std::define_static_array(std::meta::members_of(Scope, std::meta::access_context::current()))) {
+        if (is_walked_(member) && !is_helper_(member)) {
+            const std::meta::info cell = cell_of_(member);
+            if (cell == std::meta::info{} || !std::meta::extract<reader_cell>(cell).holds()) return member;
         }
     }
-    for (const std::meta::info cell : cells) {
-        bool names_a_reader = false;
-        for (const std::meta::info reader : readers) {
-            if (is_cell_of_(cell, reader)) names_a_reader = true;
-        }
-        if (!names_a_reader) append_offender_(offenders, cell, " (a cell that names no walked reader)");
-    }
-    for (const std::meta::info helper : walk_helpers) {
-        bool is_walked_helper = false;
-        for (const std::meta::info member : walked) {
-            if (std::meta::identifier_of(member) == std::meta::identifier_of(helper)
-                && std::meta::parent_of(member) == std::meta::parent_of(helper)) {
-                is_walked_helper = true;
-            }
-        }
-        if (is_walked_helper && cell_of_(helper, cells) == std::meta::info{}) continue;
-        append_offender_(offenders, helper, " (a helper row that names no walked entity, or an entity with a cell)");
-    }
-    return readers.empty() ? std::string{"(the walk found no reader)"} : offenders;
+    return {};
 }
 
-// The count of the cells and of their answers, for the report of a change.
-[[nodiscard]] consteval std::size_t answer_count_() {
-    std::size_t answers = 0;
-    for (const std::meta::info cell : cells_())
-        answers += std::meta::extract<reader_cell>(cell).answers();
-    return answers;
+// True when a walked entity of the namespace that no helper row names has the
+// cell.
+template <std::meta::info Scope>
+[[nodiscard]] consteval bool names_a_reader_in_(std::meta::info cell) {
+    template for (constexpr std::meta::info member :
+                  std::define_static_array(std::meta::members_of(Scope, std::meta::access_context::current()))) {
+        if (is_walked_(member) && !is_helper_(member) && is_cell_of_(cell, member)) return true;
+    }
+    return false;
+}
+
+// The first cell that names no walked reader, or the null reflection.
+[[nodiscard]] consteval std::meta::info first_stale_cell_() {
+    template for (constexpr std::meta::info member : std::define_static_array(std::meta::members_of(
+                      ^^::fixy::detail::collision_self_test::reader_cells, std::meta::access_context::current()))) {
+        if constexpr (std::meta::is_variable(member)
+                      && std::meta::remove_cvref(std::meta::type_of(member)) == ^^reader_cell) {
+            if (!names_a_reader_in_<^^::fixy::collision>(member)
+                && !names_a_reader_in_<^^::fixy::collision::detail>(member))
+                return member;
+        }
+    }
+    return {};
 }
 
 #pragma GCC diagnostic pop
 
-static_assert(readers_without_a_cell_().empty(),
-              std::string_view{std::define_static_string(
-                  "fixy/Collision.h: these readers have no cell that holds: " + readers_without_a_cell_()
-                  + ".  Give each reader a variable cell_NAME of type reader_cell with answers that it accepts and "
-                    "answers that it refuses in test/layer/checks/fixy/Collision.cpp, or name it in walk_helpers with "
-                    "the reason.")});
+// A reader of fixy/Collision.h with no cell that holds fails here, and the
+// message names it.  Give the reader a variable cell_NAME of type reader_cell
+// above, with answers that it accepts and answers that it refuses, or give it
+// a row of is_helper_ with the reason.  A walk that sees no reader proves
+// nothing, so the first assertion asks for the cell of a known reader.
+static_assert(is_walked_(^^cd::judge_) && cell_of_(^^cd::judge_) != std::meta::info{},
+              "the walk of the readers of fixy/Collision.h sees no reader");
+static_assert(first_reader_without_a_cell_in_<^^::fixy::collision>() == std::meta::info{},
+              std::meta::display_string_of(first_reader_without_a_cell_in_<^^::fixy::collision>() == std::meta::info{}
+                                               ? ^^void
+                                               : first_reader_without_a_cell_in_<^^::fixy::collision>()));
+static_assert(first_reader_without_a_cell_in_<^^::fixy::collision::detail>() == std::meta::info{},
+              std::meta::display_string_of(first_reader_without_a_cell_in_<^^::fixy::collision::detail>()
+                                                   == std::meta::info{}
+                                               ? ^^void
+                                               : first_reader_without_a_cell_in_<^^::fixy::collision::detail>()));
+// A cell that names no walked reader is stale: its reader went, or a helper
+// row names it.
+static_assert(first_stale_cell_() == std::meta::info{},
+              std::meta::display_string_of(first_stale_cell_() == std::meta::info{} ? ^^void : first_stale_cell_()));
 }  // namespace reader_cells
 
 }  // namespace detail::collision_self_test

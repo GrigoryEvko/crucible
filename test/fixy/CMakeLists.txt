@@ -789,7 +789,7 @@ fixy_neg_compile_test(neg_collision_trust_level_refused
 # of the header and asks for a cell.  The fixture plants a reader with no cell
 # before the check file, and the check names it.
 fixy_neg_compile_test(neg_collision_reader_without_cell
-  "static assertion failed: fixy/Collision\\.h: these readers have no cell that holds: .*HasPlantedReading.* \\(no cell\\)"
+  "static assertion failed: .*HasPlantedReading"
   "checks/fixy/Collision\\.cpp:")
 # The check file of fixy/collision/Report.h walks each declaration of the
 # spawn family, which is a sample set outside the roster.  The fixture plants

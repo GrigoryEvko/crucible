@@ -335,7 +335,7 @@ class pack_record_cell;
 class pack_record_cell {
 public:
     [[nodiscard]] consteval std::meta::info key() const noexcept { return key_; }
-    [[nodiscard]] consteval const pack_record& record() const noexcept { return record_; }
+    [[nodiscard]] consteval const pack_record& value() const noexcept { return record_; }
 
 private:
     consteval pack_record_cell() noexcept {}
@@ -363,7 +363,7 @@ inline constexpr pack_record_cell pack_record_cell_v = build_pack_record_cell(^^
 // refuses a cell that answers another pack.
 [[nodiscard]] consteval const pack_record& record_of_(const pack_record_cell& cell, std::meta::info key) {
     if (cell.key() != std::meta::dealias(key)) a_cache_cell_stands_for_another_key();
-    return cell.record();
+    return cell.value();
 }
 
 // The record of the pack that a key names, such as
@@ -1516,7 +1516,7 @@ class pack_premises_cell;
 class pack_premises_cell {
 public:
     [[nodiscard]] consteval std::meta::info key() const noexcept { return key_; }
-    [[nodiscard]] consteval const rule_premises& premises() const noexcept { return premises_; }
+    [[nodiscard]] consteval const rule_premises& value() const noexcept { return premises_; }
 
 private:
     consteval pack_premises_cell() noexcept {}
@@ -1574,7 +1574,7 @@ inline constexpr pack_premises_cell pack_premises_cell_v = checked_pack_premises
 // refuses a cell that answers another pack.
 [[nodiscard]] consteval const rule_premises& pack_premises_in_(const pack_premises_cell& cell, std::meta::info key) {
     if (cell.key() != std::meta::dealias(key)) a_cache_cell_stands_for_another_key();
-    return cell.premises();
+    return cell.value();
 }
 
 [[nodiscard]] consteval const rule_premises& pack_premises_of_key_(std::meta::info key) {
@@ -1603,7 +1603,7 @@ class payload_premises_cell;
 class payload_premises_cell {
 public:
     [[nodiscard]] consteval std::meta::info key() const noexcept { return key_; }
-    [[nodiscard]] consteval const payload_premises& premises() const noexcept { return premises_; }
+    [[nodiscard]] consteval const payload_premises& value() const noexcept { return premises_; }
 
 private:
     consteval payload_premises_cell() noexcept {}
@@ -1631,7 +1631,7 @@ inline constexpr payload_premises_cell payload_premises_cell_v = build_payload_p
 [[nodiscard]] consteval const payload_premises& payload_premises_in_(const payload_premises_cell& cell,
                                                                      std::meta::info key) {
     if (cell.key() != std::meta::dealias(key)) a_cache_cell_stands_for_another_key();
-    return cell.premises();
+    return cell.value();
 }
 
 [[nodiscard]] consteval const payload_premises& payload_premises_of_key_(std::meta::info key) {
