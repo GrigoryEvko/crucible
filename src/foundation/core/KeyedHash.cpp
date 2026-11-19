@@ -4,6 +4,11 @@
 // parents of its full subtrees.  The arm is in a source of the base, so each
 // unit that includes the header compiles only its scalar arm.  The arm gives
 // the bits of the scalar arm at each ISA level.
+//
+// The helpers of the arm follow the vector instructions of the target, so
+// they are in the target namespace.  The entry compute_keyed_hash_ is outside
+// it (THE ENTRY of the header): one symbol serves a caller of each level, and
+// it runs the arm of the level of this build.
 
 #include <foundation/core/KeyedHash.h>
 
@@ -560,11 +565,14 @@ inline constexpr std::size_t blake3_batch_chunks = 64;
     }
 }
 
-// The keyed hash of count bytes from first, at run time.  A message of one
+}  // namespace CRUCIBLE_SIMD_TARGET
+
+// The keyed hash of the bytes of message, at run time.  A message of one
 // chunk runs in the rows.  A longer message runs its chunks in the lanes, and
 // the full blocks of its last chunk run in a lane beside them.
-[[nodiscard]] Hash256 blake3_keyed_hash_rows_(KeyedHashKeyBytes const& key, std::byte const* first,
-                                              std::size_t count) noexcept {
+[[nodiscard]] Hash256 compute_keyed_hash_(KeyedHashKeyBytes const& key, View<std::byte const> message) noexcept {
+    std::byte const* const first = first_of_(ViewDoor::key(), message);
+    std::size_t const count = message.size();
     std::uint32_t key_words[8] = {};
     for (auto const index : IndexRange<8>{}) {
         key_words[index.raw()] = key.word(index);
@@ -598,7 +606,5 @@ inline constexpr std::size_t blake3_batch_chunks = 64;
     __builtin_memcpy(&out[2], &root.high, sizeof(root.high));
     return Hash256{out[0], out[1], out[2], out[3]};
 }
-
-}  // namespace CRUCIBLE_SIMD_TARGET
 
 }  // namespace foundation::core::detail

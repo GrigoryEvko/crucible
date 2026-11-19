@@ -44,6 +44,13 @@
 // instantiates wide vector code, and a build with a sanitizer compiles it in
 // that one source and not in each unit that hashes a key.
 //
+// THE ENTRY.  The library gives the run-time arm through one symbol,
+// detail::compute_keyed_hash_, whose name holds no target.  So a unit of each
+// x86 level links a call of keyed_hash, and the call runs the arm of the level
+// of the library (THE TARGET NAMESPACE of foundation/Platform.h).  The call
+// is direct, with no table and no pointer: the loader picks the library of the
+// level of the host.
+//
 // Complexity: one compression for each 64 bytes of the message and one for
 // each parent node.  The tree holds at most 54 chaining values, one for each
 // bit of the count of chunks, and a message of one chunk uses no tree.
@@ -192,16 +199,11 @@ constexpr void blake3_compress_scalar_(std::uint32_t const (&value)[8], Blake3Bl
     }
 }
 
-// The run-time arm of keyed_hash (THE ARMS), in src/foundation/core/KeyedHash.cpp:
-// the rows for a message of one chunk and the lanes for a longer one.  It
-// follows the vector instructions of the target, so it is in the target
-// namespace (THE TARGET NAMESPACE of foundation/Platform.h).  A unit that
-// includes this header compiles only the scalar arm of a constant evaluation.
-inline namespace CRUCIBLE_SIMD_TARGET {
-
-// The keyed hash of count bytes from first, at run time.
-[[nodiscard]] Hash256 blake3_keyed_hash_rows_(KeyedHashKeyBytes const& key, std::byte const* first,
-                                              std::size_t count) noexcept;
+// The keyed hash of the bytes of message under the key, at run time (THE
+// ENTRY): the rows for a message of one chunk and the lanes for a longer one,
+// in src/foundation/core/KeyedHash.cpp.  A unit that includes this header
+// compiles only the scalar arm of a constant evaluation.
+[[nodiscard]] Hash256 compute_keyed_hash_(KeyedHashKeyBytes const& key, View<std::byte const> message) noexcept;
 
 // The 16 words of a block of count bytes from first, with zero bytes after
 // them.  At run time on a little-endian host the words are the bytes.
@@ -298,21 +300,17 @@ constexpr void blake3_parent_block_(std::uint32_t const (&left)[8], std::uint32_
     }
 }
 
-}  // namespace CRUCIBLE_SIMD_TARGET
-
 }  // namespace detail
-
-inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The keyed hash of the bytes of message under the key (THE ALGORITHM):
 // BLAKE3 in its keyed mode, with 32 bytes of output.  Complexity: one
 // compression for each 64 bytes of the message and one for each parent.
 [[nodiscard]] constexpr Hash256 keyed_hash(KeyedHashKeyBytes const& key, View<std::byte const> message) noexcept {
+    if !consteval {
+        return detail::compute_keyed_hash_(key, message);
+    }
     std::byte const* const first = first_of_(detail::ViewDoor::key(), message);
     std::size_t const count = message.size();
-    if !consteval {
-        return detail::blake3_keyed_hash_rows_(key, first, count);
-    }
     std::uint32_t words[8] = {};
     for (auto const index : IndexRange<8>{}) {
         words[index.raw()] = key.word(index);
@@ -358,7 +356,5 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     };
     return Hash256{pair(0), pair(2), pair(4), pair(6)};
 }
-
-}  // namespace CRUCIBLE_SIMD_TARGET
 
 }  // namespace foundation::core

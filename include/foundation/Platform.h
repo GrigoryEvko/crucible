@@ -96,6 +96,13 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
 //   instructions of each other inline function from the flags, and no name
 //   holds that choice.  So a binary compiles each of its units for one
 //   target, and a test links two targets only to probe the namespace.
+//
+//   A function that a source of a library defines, and that a header
+//   declares for other units, is not in the namespace.  Its name then holds
+//   no target, so a unit of another level links a call of it, and the call
+//   runs the body of the level of the library.  Its body calls the helpers of
+//   its source in the namespace.  An example is detail::compute_keyed_hash_
+//   of foundation/core/KeyedHash.h.
 #if defined(__x86_64__)
 #if (defined(__AVX512BW__) && !defined(__AVX512F__)) || (defined(__AVX512F__) && !defined(__AVX2__)) \
     || (defined(__AVX2__) && !defined(__AVX__)) || (defined(__AVX__) && !defined(__SSE4_2__))        \
