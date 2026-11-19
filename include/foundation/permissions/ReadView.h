@@ -152,9 +152,10 @@ using read_view_result_t = std::invoke_result_t<Body, ReadView<Tag, Brand> const
 // through them and show no ReadView in their type.  The walk reaches a
 // function through a pointer, a reference or a pointer to a member
 // function, and the function can reach a view through state that no
-// type names.  GCC 16 reflects no capture of a lambda, so a lambda with
-// captures is a complete class that is not empty and shows no base and
-// no member.
+// type names.  A lambda is a class whose captures are its members (the
+// sixth GCC patch), so the walk reads what a lambda captures.  On a
+// compiler without the patch a lambda with captures shows no member, and
+// the walk refuses it as a class it cannot read.
 inline constexpr auto may_carry_a_read_view = [](::foundation::reflect::TypeNode node) consteval {
     const std::meta::info type = node.type;
     if (std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^ReadView) return true;

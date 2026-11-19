@@ -128,10 +128,11 @@ struct is_computation : std::false_type {};
 //
 // A class that holds state the walk cannot read is refused, because the
 // gate cannot say what that state is.  That is a class that is not empty
-// and that reflects no base and no data member, which is the shape of a
-// lambda with captures: GCC 16 reflects no capture.  A lambda that
-// captures a capability would otherwise leave through extract as a
-// plain value.
+// and that reflects no base and no data member.  A lambda is a class whose
+// captures are its members (the sixth GCC patch), so a lambda that captures
+// a capability conveys it, and a lambda that captures only plain values
+// leaves through extract.  On a compiler without the patch a lambda with
+// captures shows no member, and the gate refuses it.
 //
 // The annotation is a fact of a complete class.  The walk reaches some
 // classes through a pointer, a reference or a template argument, and it

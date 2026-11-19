@@ -23,12 +23,13 @@
 // union included, and it refuses a reference member, which no lifetime
 // start binds.
 //
-// The walk also refuses a class whose state it cannot read.  A lambda
-// with captures has a trivial copy constructor, so it is implicit-lifetime,
-// and GCC 16 reflects no capture, so the walk finds no subobject in it.  A
-// closure that captures an epoch would give an epoch that no successor step
-// made.  foundation/reflect/TypeComponents.h names the shape, and the walk
-// refuses it as a subobject at every depth.
+// The walk also refuses a class whose state it cannot read, as a subobject
+// at every depth (foundation/reflect/TypeComponents.h names the shape).  A
+// lambda with captures has a trivial copy constructor, so it is
+// implicit-lifetime, and its captures are its members (the sixth GCC
+// patch), so the walk reads them: a closure that captures an epoch is
+// refused for the epoch.  On a compiler without the patch the closure shows
+// no subobject, and the walk refuses it as a class it cannot read.
 //
 // A class can also refuse a lifetime start while it stays implicit-lifetime.
 // Such a class carries the annotation no_start_over_bytes of

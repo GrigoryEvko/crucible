@@ -227,6 +227,19 @@ function(crucible_patched_gcc_problem cxx out_var)
     string(APPEND problems " output:\n${probe_output}")
   endif()
 
+  # The patched compiler shows the field of each capture of a closure to a
+  # read with unchecked access.  The stock compiler shows no field, and the
+  # probe refuses it.
+  crucible_run_gcc_probe("${cxx}" closure_captures.cpp exit_code probe_output -freflection)
+  if(NOT exit_code EQUAL 0)
+    string(APPEND problems "\n- The capture fields of a closure (utils/toolchain/gcc/patches/0006-*.patch) are")
+    string(APPEND problems " missing.  That compiler shows no member of a closure but its call operator, so the")
+    string(APPEND problems " walks of the base cannot read what a lambda captures, and the check files of")
+    string(APPEND problems " foundation/reflect/TypeComponents.h and of the headers that read closures fail.")
+    string(APPEND problems "  The probe cmake/probes/closure_captures.cpp gave the exit status '${exit_code}' and")
+    string(APPEND problems " this output:\n${probe_output}")
+  endif()
+
   if(problems STREQUAL "")
     set(${out_var} "" PARENT_SCOPE)
     return()

@@ -746,8 +746,8 @@ static_assert(!TakesPayloadByValue<decltype([](long) noexcept { return 0; }), in
 static_assert(!TakesPayloadByValue<TwoCalls, int>);
 
 // The result of an rvalue match holds no borrow: no reference, no address,
-// and no closure whose captures reflection cannot read, also a capture by
-// value.
+// and no closure that captures by reference.  A closure that captures by
+// value holds a value, because the sixth GCC patch shows its fields.
 struct HoldsReference {
     int const& at;
 };
@@ -762,7 +762,7 @@ static_assert(HoldsNoBorrow<Option<Result<int, Code>>> && HoldsNoBorrow<Result<O
     int number = 0;
     auto const reads = [&number] noexcept { return number; };
     auto const copies = [number] noexcept { return number; };
-    return !HoldsNoBorrow<decltype(reads)> && !HoldsNoBorrow<decltype(copies)>
+    return !HoldsNoBorrow<decltype(reads)> && HoldsNoBorrow<decltype(copies)>
         && HoldsNoBorrow<decltype([] noexcept { return 0; })>;
 }
 static_assert(closure_holds_borrow());

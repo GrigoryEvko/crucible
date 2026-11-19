@@ -57,6 +57,7 @@ set(events_error "plugin_events.cpp:23:22: error: 'PLUGIN_EXPLICIT_INSTANTIATION
 set(slots_error "plugin_events.cpp:43:39: error: 'plugin_name_use_slot' was not declared in this scope")
 set(initializer_events_error
   "plugin_initializer_events.cpp:17:22: error: 'PLUGIN_FOLDED_INITIALIZER_text' was not declared in this scope")
+set(closure_captures_error "closure_captures.cpp:11:15: error: static assertion failed")
 # The SARIF log of the probe with the constraint line, and the log that a
 # compiler without the SARIF fix writes.
 set(sarif_with_context
@@ -109,6 +110,8 @@ write_stub(lacks_direct_events
   "case \"$probe\" in\n${patched_contract_case}*plugin_events.cpp) echo \"${slots_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
 write_stub(lacks_initializer_events
   "case \"$probe\" in\n${patched_contract_case}*plugin_initializer_events.cpp) echo \"${initializer_events_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
+write_stub(lacks_closure_captures
+  "case \"$probe\" in\n${patched_contract_case}*closure_captures.cpp) echo \"${closure_captures_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
 write_stub(acts_patched "case \"$probe\" in\n${patched_contract_case}${patched_sarif_case}esac\nexit 0\n")
 
 function(expect_pass cxx label)
@@ -132,6 +135,7 @@ set(memchr_reason "constant evaluation of memchr")
 set(sarif_reason "context of a diagnostic to the SARIF output")
 set(events_reason "plugin events of the C\\+\\+ front end")
 set(initializer_events_reason "plugin events of the folded initializers")
+set(closure_captures_reason "capture fields of a closure")
 
 # A ccache masquerade link resolves to the program of the same name that PATH
 # holds outside the directory of the link.  Any other compiler is itself.
@@ -170,6 +174,8 @@ expect_refusal("${WORK}/lacks_direct_events" "a stub with the previous form of t
 expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${initializer_events_reason}")
 expect_refusal("${WORK}/lacks_initializer_events" "a stub with only the first four patches"
                "${initializer_events_reason}")
+expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${closure_captures_reason}")
+expect_refusal("${WORK}/lacks_closure_captures" "a stub with only the first five patches" "${closure_captures_reason}")
 
 # A configure of the tree, without the toolchain file, with a compiler that
 # lacks a fix, stops at the check after project().  The wrapper runs the

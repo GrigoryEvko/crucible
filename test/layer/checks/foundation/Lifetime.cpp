@@ -65,21 +65,26 @@ static_assert(!ImplicitLifetimeThroughout<HoldsMarked> && !ImplicitLifetimeThrou
 }
 static_assert(refuses_a_marked_union_member(), "the marker refuses the class as a union member");
 
-// A closure with captures is implicit-lifetime, and the walk cannot read
-// what it holds, so the walk refuses it alone, as a member, as an array
-// element and as a base.  A closure with no capture holds nothing.
+// A closure with captures is implicit-lifetime, and its captures are its
+// members, so the walk reads them.  A closure that captures a marked class
+// is refused alone, as a member, as an array element and as a base, and a
+// closure that captures a plain count is not.  A closure with no capture
+// holds nothing.
 inline constexpr auto carries_a_count = [count = 7ULL] { return count; };
 inline constexpr auto carries_nothing = [] { return 7ULL; };
+inline constexpr auto carries_a_marked_count = [count = MarkedCount{}] { return sizeof(count); };
 using CountCarrier = std::remove_const_t<decltype(carries_a_count)>;
-struct HoldsCountCarrier {
-    CountCarrier carrier;
+using MarkedCarrier = std::remove_const_t<decltype(carries_a_marked_count)>;
+struct HoldsMarkedCarrier {
+    MarkedCarrier carrier;
 };
-struct DerivesCountCarrier : CountCarrier {};
-static_assert(std::is_implicit_lifetime_v<CountCarrier> && !ImplicitLifetimeThroughout<CountCarrier>,
-              "a closure with captures is implicit-lifetime, and the walk must refuse it");
-static_assert(!ImplicitLifetimeThroughout<HoldsCountCarrier> && !ImplicitLifetimeThroughout<CountCarrier[2]>
-                  && !ImplicitLifetimeThroughout<DerivesCountCarrier>,
+struct DerivesMarkedCarrier : MarkedCarrier {};
+static_assert(std::is_implicit_lifetime_v<MarkedCarrier> && !ImplicitLifetimeThroughout<MarkedCarrier>,
+              "a closure that captures a marked class is implicit-lifetime, and the walk must refuse it");
+static_assert(!ImplicitLifetimeThroughout<HoldsMarkedCarrier> && !ImplicitLifetimeThroughout<MarkedCarrier[2]>
+                  && !ImplicitLifetimeThroughout<DerivesMarkedCarrier>,
               "the walk refuses the closure as a member, as an array element and as a base");
+static_assert(ImplicitLifetimeThroughout<CountCarrier>, "a closure that captures a plain count holds a plain count");
 static_assert(ImplicitLifetimeThroughout<std::remove_const_t<decltype(carries_nothing)>>);
 
 // The element of the span is const when the storage or T is const, and

@@ -100,11 +100,9 @@ static_assert(!carries_annotation(^^lc::Conditional<false>, ^^linear));
 static_assert(carries_annotation(^^lc::end_token, ^^drop_door));
 static_assert(!carries_annotation(^^lc::end_token, ^^detach_door));
 
-// The gap that the head of the header states: GCC 16 reflects no capture
-// of a closure, so a closure that holds a linear value is not linear by
-// this trait.  The day the compiler reflects captures, this pin fails, and
-// the trait then reads the closure.
-static_assert(!is_linear_v<decltype(lc::captures_token)>);
+// A closure that holds a linear value by copy is linear: the sixth GCC
+// patch shows the field of the capture, and the trait reads it as a member.
+static_assert(is_linear_v<decltype(lc::captures_token)>);
 
 // The drop door takes a linear value as an rvalue only.
 static_assert(LinearValue<lc::Token>);

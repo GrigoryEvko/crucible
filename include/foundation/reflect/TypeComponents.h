@@ -74,12 +74,14 @@
 //     reaches other than by value, when the arguments do not also name
 //     that member;
 //   * a value behind type erasure, as in std::function or std::any, where
-//     the type of the held value is not part of the static type;
-//   * a lambda capture.  GCC 16 reflects no data member of a closure
-//     type, so a capture is not a component.  holds_unreadable_state
-//     names such a class, so that a gate can refuse it.  The check file
-//     of this header pins the gap, so the day the compiler starts to
-//     reflect captures, the pin fails and the gap closes by itself.
+//     the type of the held value is not part of the static type.
+//
+// A capture of a lambda is a member of its closure type.  The sixth GCC
+// patch (utils/toolchain/gcc/patches/) shows the field of each capture to a
+// read with unchecked access, which member_components_of does, and the check
+// file of this header pins that.  A compiler without the patch shows no
+// field, and holds_unreadable_state then names the closure, so a gate that
+// refuses an unreadable class fails closed.
 
 #include <cstddef>
 #include <meta>
@@ -254,9 +256,10 @@ enum class SpecializationRead : unsigned char {
 
 // True for a class whose state the walk cannot read: complete, not
 // empty, and with no reflected base and no reflected non-static data
-// member.  A lambda with captures has this shape, because GCC 16
-// reflects no capture.  A class that holds only unnamed bit-fields has
-// it too, because an unnamed bit-field is not a member.  A gate that
+// member.  A class that holds only unnamed bit-fields has this shape,
+// because an unnamed bit-field is not a member.  A lambda with captures
+// has it on a compiler without the sixth GCC patch, which shows no capture
+// field, so a gate that reads this fails closed there.  A gate that
 // must know what a class holds refuses such a class.  The query reads
 // members only where the node says `may_read_members`.
 //

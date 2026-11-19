@@ -232,10 +232,10 @@ inline constexpr int max_plain_depth = 64;
 // no_start_over_bytes (foundation/ByteSeal.h), whose values only its own
 // constructors make, and a class that carries the mark closed_tag
 // (Choice.h), whose bytes hold the tag of a sum.  It refuses a class whose
-// state the walk cannot read:
-// not empty, with no reflected base and no reflected member.  A lambda with
-// captures has that shape, because GCC 16 reflects no capture
-// (foundation/reflect/TypeComponents.h).  Linear in the number of subobject
+// state the walk cannot read: not empty, with no reflected base and no
+// reflected member, such as a class that holds only an unnamed bit-field.
+// A closure is a class whose captures are its members (the sixth GCC patch,
+// foundation/reflect/TypeComponents.h).  Linear in the number of subobject
 // declarations that the walk reaches.
 [[nodiscard]] consteval bool is_plain_at(std::meta::info spelled, int depth) {
     if (depth > max_plain_depth) return false;

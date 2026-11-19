@@ -47,10 +47,10 @@
 // a const Option.  The rule borrow-match of the plugin refuses an arm that
 // assigns, moves or changes the sum that it reads.
 //
-// What the trait does not see, stated rather than implied: a lambda
-// capture, because GCC 16 reflects no data member of a closure type, and a
-// value behind type erasure.  The rules of the plugin read the closure in
-// the tree.
+// The trait reads a closure as a class: the sixth GCC patch shows the field
+// of each capture, so a closure that holds a linear value by copy is linear.
+// What the trait does not see, stated rather than implied: a value behind
+// type erasure.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/reflect/TypeComponents.h>

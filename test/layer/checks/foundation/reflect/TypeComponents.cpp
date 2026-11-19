@@ -87,24 +87,29 @@ static_assert(member_pointer_member_of(^^Needle Holder::* const) == ^^Needle);
 static_assert(member_pointer_class_of(^^Needle*) == std::meta::info{});
 static_assert(member_pointer_class_of(^^Needle) == std::meta::info{});
 
-// The capture gap, pinned.  The closure holds a Needle and the walk does
-// not see it, because GCC 16 reflects no data member of a closure type.
+// A capture of a closure is a member.  The sixth GCC patch shows the field
+// of each capture to a read with unchecked access, so the walk reads a
+// closure as it reads a class: a capture by copy is a member held by value,
+// and a capture by reference is a member of reference type.
 inline constexpr auto captures_needle = [held = NeedleValue{}] { return sizeof(held); };
-static_assert(!any_component_satisfies<is_needle>(^^decltype(captures_needle)),
-              "the walk now sees a lambda capture.  The compiler reflects captures, which closes a gap: delete "
-              "this cell and the capture paragraph at the head of this header.");
+static_assert(any_component_satisfies<is_needle>(^^decltype(captures_needle)),
+              "the walk sees the capture of a closure, so the compiler of the tree has the sixth patch");
+static_assert(member_components_of(TypeNode{^^decltype(captures_needle), true}).begin()->is_held_by_value);
 
-// A gate refuses the closure instead, because its state is unreadable.
+// A gate refuses a class whose state the walk cannot read: a class that is
+// not empty and shows no member, such as a class that holds only an unnamed
+// bit-field.  A compiler without the sixth patch gives a closure with captures
+// this shape too, so the gate fails closed there.
 inline constexpr auto captures_nothing = [] { return 7; };
 struct HoldsOnlyAnUnnamedBitField {
     unsigned : 8;
 };
-static_assert(holds_unreadable_state(TypeNode{^^decltype(captures_needle), true}));
 static_assert(holds_unreadable_state(TypeNode{^^HoldsOnlyAnUnnamedBitField, true}));
+static_assert(!holds_unreadable_state(TypeNode{^^decltype(captures_needle), true}), "a capture is a member");
 static_assert(!holds_unreadable_state(TypeNode{^^decltype(captures_nothing), true}), "an empty closure holds nothing");
 static_assert(!holds_unreadable_state(TypeNode{^^HoldsNeedle, true}));
 static_assert(!holds_unreadable_state(TypeNode{^^int, true}));
-static_assert(!holds_unreadable_state(TypeNode{^^decltype(captures_needle), false}),
+static_assert(!holds_unreadable_state(TypeNode{^^HoldsOnlyAnUnnamedBitField, false}),
               "a node whose members the walk may not read is not read");
 
 static_assert(!any_component_satisfies<is_needle>(^^int));

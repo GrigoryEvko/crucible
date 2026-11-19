@@ -26,7 +26,7 @@ THE ENVIRONMENT
     AFL_BIN                      The directory of the AFL++ tools.  The default is $HOME/.local/bin
     CRUCIBLE_CXX                 The patched g++ that the compiler wrappers call, and the gcc in the same directory
     CRUCIBLE_GCC16_PREFIX        The prefix of the patched GCC, when CRUCIBLE_CXX is not set.  The default is
-                                 $HOME/.local/gcc16-patched.  cmake/Toolchain-gcc16.cmake reads the two variables
+                                 $HOME/.local/gcc16-patched-p7.  cmake/Toolchain-gcc16.cmake reads the two variables
                                  with the same rules.  The wrappers then call the compiler of the toolchain file
 
     Each instance stops with SIGINT: at the end of its time, at the limit

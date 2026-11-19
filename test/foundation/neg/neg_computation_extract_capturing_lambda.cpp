@@ -1,9 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// extract must not hand out a lambda that captures state.  GCC 16
-// reflects no capture, so the walk over components cannot say what the
-// lambda holds, and the gate refuses it.  A lambda that captures a
-// capability would otherwise leave a pure carrier as a plain value.
+// extract must not hand out a lambda that captures a capability.  The
+// captures of a lambda are its members, so the walk over components finds
+// the capability in the lambda, and the gate refuses it.  The lambda would
+// otherwise leave a pure carrier as a plain value.
 
 #include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>

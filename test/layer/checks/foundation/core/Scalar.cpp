@@ -155,6 +155,9 @@ struct WithBitField {
     std::uint32_t high : 16;
 };
 using CapturesWord = decltype([word = std::uint32_t{0}] { return word; });
+struct HoldsOnlyAnUnnamedBitField {
+    std::uint32_t : 32;
+};
 
 static_assert(DecodableFrom<bool, std::uint8_t> && DecodableFrom<Contiguous, std::uint8_t>);
 static_assert(DecodableFrom<Strong, std::uint8_t> && DecodableFrom<Switch, std::uint8_t>);
@@ -178,9 +181,11 @@ static_assert(!DecodableFrom<int Flagged::*, std::uint64_t> && !DecodableFrom<de
 static_assert(!DecodableFrom<Token, std::uint8_t> && !DecodableFrom<HoldsToken, std::uint32_t>);
 static_assert(!DecodableFrom<WithBitField, std::uint32_t>);
 // A class whose values only its constructors make, and a class whose state
-// the walk cannot read, are refused.
+// the walk cannot read, are refused.  A closure is a class whose captures are
+// its members, so a closure that holds one word by copy is plain.
 static_assert(!DecodableFrom<Annotated, std::uint32_t> && !DecodableFrom<HoldsSeal, std::uint32_t>);
-static_assert(!DecodableFrom<CapturesWord, std::uint32_t> && !DecodableFrom<std::uint32_t, CapturesWord>);
+static_assert(!DecodableFrom<HoldsOnlyAnUnnamedBitField, std::uint32_t>);
+static_assert(DecodableFrom<CapturesWord, std::uint32_t> && DecodableFrom<std::uint32_t, CapturesWord>);
 
 // The byte order of the two hosts is little-endian, so the first byte of a
 // word is its low byte.

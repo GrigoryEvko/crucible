@@ -2,6 +2,8 @@
 
 #include <foundation/effects/Computation.h>
 
+#include <foundation/effects/Capability.h>
+
 namespace foundation::effects {
 
 static_assert(std::is_same_v<typename ComputationGraded<Row<>, int>::value_type, int>);
@@ -312,12 +314,23 @@ static_assert(!detail::extract_admits_payload_v<HoldsCapabilityFactory>);
 static_assert(detail::extract_admits_payload_v<int (*)(double)>);
 static_assert(detail::extract_admits_payload_v<double AuthorityProbeHolder::*>);
 
-// A lambda with captures holds state the walk cannot read, so it is
-// refused whatever it captures.  A lambda without captures is empty.
+// A lambda is a class whose captures are its members.  A lambda that
+// captures a capability conveys it, and one that captures only an int, or
+// nothing, conveys none.  A class with state that the walk cannot read is
+// refused.
 inline constexpr auto captures_an_int = [held = 7] { return held; };
 inline constexpr auto captures_nothing = [] { return 7; };
-static_assert(!detail::extract_admits_payload_v<decltype(captures_an_int)>);
+inline auto capture_capability(Capability<Effect::IO, Bg>&& capability) {
+    return [held = std::move(capability)] { static_cast<void>(held); };
+}
+struct HoldsOnlyAnUnnamedBitField {
+    unsigned : 8;
+};
+static_assert(detail::extract_admits_payload_v<decltype(captures_an_int)>);
 static_assert(detail::extract_admits_payload_v<decltype(captures_nothing)>);
+static_assert(
+    !detail::extract_admits_payload_v<decltype(capture_capability(std::declval<Capability<Effect::IO, Bg>&&>()))>);
+static_assert(!detail::extract_admits_payload_v<HoldsOnlyAnUnnamedBitField>);
 
 // A type of a different layer conveys an authority by the annotation
 // authority of foundation/Linear.h.  A class with no annotation is the

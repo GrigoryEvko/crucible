@@ -87,8 +87,8 @@ git clone https://github.com/AFLplusplus/AFLplusplus ~/.local/src/AFLplusplus
 cd ~/.local/src/AFLplusplus
 make PREFIX=$HOME/.local afl-fuzz afl-showmap afl-tmin afl-analyze
 make -f GNUmakefile.gcc_plugin PREFIX=$HOME/.local \
-     CC=$HOME/.local/gcc16-patched/usr/bin/gcc-16p \
-     CXX=$HOME/.local/gcc16-patched/usr/bin/g++-16p
+     CC=$HOME/.local/gcc16-patched-p7/usr/bin/gcc-16p \
+     CXX=$HOME/.local/gcc16-patched-p7/usr/bin/g++-16p
 ```
 
 The top makefile builds the `afl-cc` driver only when LLVM is installed.

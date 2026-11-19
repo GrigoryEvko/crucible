@@ -1,0 +1,205 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Grigory Evko <grigory@evko.io>
+Date: Tue, 17 Nov 2026 21:19:38 +0000
+Subject: [PATCH] c++: show the capture fields of a closure to unchecked
+ reflection
+
+[meta.reflection.member.queries] leaves it implementation-defined whether
+members of a closure type other than its function call operator are
+members-of-eligible.  Make the field of each capture eligible, so that
+nonstatic_data_members_of with an unchecked access context gives one
+member for each capture, and a consteval check can read the state that a
+closure holds: a capture by copy is a field of the type of the entity, a
+capture by reference a field of reference type, [this] a field of pointer
+type and [*this] a field of the class type.  The call operator stays a
+member, and has_inaccessible_nonstatic_data_members still throws for a
+closure.
+
+is_accessible refuses a capture field to each checked access context, so
+members_of with access_context::current () or unprivileged () shows no
+capture.  The fields themselves stay public: the closure object and the
+capture proxies name them from outside the closure, a private field makes
+a closure with a capture non-structural (g++.dg/cpp2a/lambda-targ18.C
+fails), and -Wuninitialized then warns on each capture by reference.
+
+gcc/cp/ChangeLog:
+
+	* reflect.cc (members_of_representable_p): Accept the FIELD_DECL
+	of a capture of a closure type.
+	(eval_is_accessible): Refuse the field of a capture to a checked
+	access context.
+
+gcc/testsuite/ChangeLog:
+
+	* g++.dg/reflect/closure_captures1.C: New test.
+---
+ gcc/cp/reflect.cc                             |  17 ++-
+ .../g++.dg/reflect/closure_captures1.C        | 121 ++++++++++++++++++
+ 2 files changed, 137 insertions(+), 1 deletion(-)
+ create mode 100644 gcc/testsuite/g++.dg/reflect/closure_captures1.C
+
+diff --git a/gcc/cp/reflect.cc b/gcc/cp/reflect.cc
+index 119c8db16..1f587f4aa 100644
+--- a/gcc/cp/reflect.cc
++++ b/gcc/cp/reflect.cc
+@@ -6854,6 +6854,12 @@ eval_is_accessible (location_t loc, const constexpr_ctx *ctx, tree r,
+     }
+   if (scope == NULL_TREE)
+     return boolean_true_node;
++  /* The field of a capture stays public for the language: the closure
++     object and the capture proxies name it from outside the closure, and a
++     closure with a capture can be a structural type.  Reflection treats it
++     as a member that no checked access context reaches.  */
++  if (TREE_CODE (r) == FIELD_DECL && LAMBDA_TYPE_P (c))
++    return boolean_false_node;
+   if (designating_class == NULL_TREE)
+     designating_class = c;
+   if (TREE_CODE (scope) == NAMESPACE_DECL)
+@@ -6892,7 +6898,16 @@ members_of_representable_p (tree c, tree r)
+ {
+   if (TREE_CODE (r) == CONST_DECL)
+     return false;
+-  if (LAMBDA_TYPE_P (c) && !LAMBDA_FUNCTION_P (r))
++  /* It is implementation-defined whether members of a closure type other
++     than its function call operator are members-of-eligible.  The fields of
++     the captures are, so that a check can read the state of a closure: a
++     capture by copy is a field of the type of the entity, and a capture by
++     reference a field of reference type.  eval_is_accessible refuses the
++     fields to each checked access context, so only an unchecked access
++     context shows them.  */
++  if (LAMBDA_TYPE_P (c)
++      && !LAMBDA_FUNCTION_P (r)
++      && TREE_CODE (r) != FIELD_DECL)
+     return false;
+   if (TYPE_P (r))
+     {
+diff --git a/gcc/testsuite/g++.dg/reflect/closure_captures1.C b/gcc/testsuite/g++.dg/reflect/closure_captures1.C
+new file mode 100644
+index 000000000..17c04a2c5
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/reflect/closure_captures1.C
+@@ -0,0 +1,121 @@
++// { dg-do compile { target c++26 } }
++// { dg-additional-options "-freflection" }
++// The fields of the captures of a closure are members-of-eligible, so
++// nonstatic_data_members_of gives one member for each capture.
++
++#include <meta>
++
++using namespace std::meta;
++
++constexpr access_context uctx = access_context::unchecked ();
++
++consteval std::size_t
++count_fields (info closure)
++{
++  return nonstatic_data_members_of (closure, uctx).size ();
++}
++
++consteval info
++field_type (info closure, std::size_t index)
++{
++  return type_of (nonstatic_data_members_of (closure, uctx)[index]);
++}
++
++consteval bool
++has_call_operator (info closure)
++{
++  for (info member : members_of (closure, uctx))
++    if (is_function (member) && is_operator_function (member))
++      return true;
++  return false;
++}
++
++void
++captures ()
++{
++  int a = 1;
++  long b = 2;
++  int &r = a;
++
++  auto none = [] { return 0; };
++  static_assert (count_fields (^^decltype (none)) == 0);
++  static_assert (is_empty_type (^^decltype (none)));
++
++  auto by_copy = [a] { return a; };
++  static_assert (count_fields (^^decltype (by_copy)) == 1);
++  static_assert (field_type (^^decltype (by_copy), 0) == ^^int);
++  static_assert (identifier_of (nonstatic_data_members_of (^^decltype (by_copy), uctx)[0]) == "__a");
++
++  auto by_reference = [&b] { return b; };
++  static_assert (field_type (^^decltype (by_reference), 0) == ^^long &);
++
++  auto reference_by_copy = [r] { return r; };
++  static_assert (field_type (^^decltype (reference_by_copy), 0) == ^^int);
++
++  auto two = [a, &b] { return a + b; };
++  static_assert (count_fields (^^decltype (two)) == 2);
++
++  auto init = [c = 3.0] { return c; };
++  static_assert (field_type (^^decltype (init), 0) == ^^double);
++
++  auto implicit = [=] { return a + b; };
++  static_assert (count_fields (^^decltype (implicit)) == 2);
++
++  /* The call operator stays a member of the closure.  */
++  static_assert (has_call_operator (^^decltype (by_copy)));
++
++  /* Only an unchecked access context shows the fields: a query with the
++     access of this scope does not show them, and no checked access context
++     reaches a field.  */
++  static_assert (nonstatic_data_members_of (^^decltype (two),
++					    access_context::current ()).size ()
++		 == 0);
++  static_assert (!is_accessible (nonstatic_data_members_of (^^decltype (two),
++							    uctx)[0],
++				 access_context::current ()));
++  static_assert (!is_accessible (nonstatic_data_members_of (^^decltype (two),
++							    uctx)[1],
++				 access_context::unprivileged ()));
++}
++
++struct S
++{
++  int v = 0;
++  auto pointer () { return [this] { return v; }; }
++  auto copy () { return [*this] { return v; }; }
++};
++
++static_assert (count_fields (^^decltype (S {}.pointer ())) == 1);
++static_assert (field_type (^^decltype (S {}.pointer ()), 0) == ^^S *);
++static_assert (identifier_of (nonstatic_data_members_of (^^decltype (S {}.pointer ()), uctx)[0])
++	       == "__this");
++static_assert (field_type (^^decltype (S {}.copy ()), 0) == ^^S);
++
++template <typename... T>
++auto
++pack (T... values)
++{
++  return [values...] { return sizeof... (values); };
++}
++
++static_assert (count_fields (^^decltype (pack (1, 2L, 3.0))) == 3);
++static_assert (field_type (^^decltype (pack (1, 2L, 3.0)), 1) == ^^long);
++
++/* A closure keeps the error of has_inaccessible_nonstatic_data_members.  */
++consteval bool
++refuses_closure ()
++{
++  auto closure = [] {};
++  try
++    {
++      (void) has_inaccessible_nonstatic_data_members (^^decltype (closure),
++						      access_context::current ());
++    }
++  catch (std::meta::exception &)
++    {
++      return true;
++    }
++  return false;
++}
++
++static_assert (refuses_closure ());
+--
+2.56.0
+

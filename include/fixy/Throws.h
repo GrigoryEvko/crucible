@@ -35,12 +35,13 @@
 // argument and the type of each value argument, so a carrier with a
 // non-type parameter is descended like any other.  It also reads the
 // bases and the by-value members of a class, so a plain class that holds
-// a throwing wrapper in a member is found too.  The header states what
-// the walk cannot see: a lambda capture, a value behind type erasure,
-// and a member of a specialization that the walk reaches only through a
-// pointer or a template argument.  A closure that escapes the search
-// still has to satisfy the nothrow-invocable requirement at its use
-// site.
+// a throwing wrapper in a member is found too, and so is a lambda that
+// captures one, because the captures of a lambda are its members (the
+// sixth GCC patch).  The header states what the walk cannot see: a value
+// behind type erasure, and a member of a specialization that the walk
+// reaches only through a pointer or a template argument.  A closure that
+// escapes the search still has to satisfy the nothrow-invocable
+// requirement at its use site.
 
 #include <fixy/atoms/Ctrl.h>
 #include <foundation/reflect/Instance.h>

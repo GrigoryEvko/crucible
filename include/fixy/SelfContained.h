@@ -35,9 +35,9 @@
 //     and is admitted;
 //   - a pointer and a reference reach state outside the value;
 //   - a class whose storage the walk cannot account for is refused.  A
-//     lambda that captures an address is that case, because GCC 16
-//     reflects no capture as a member.  A capture of one byte cannot hold
-//     an address, so it is admitted.
+//     lambda is a class whose captures are its members (the sixth GCC
+//     patch), so a lambda that captures an address holds a pointer and is
+//     refused, and a lambda that captures one byte is admitted.
 //
 // The container rule is a closed world.  The standard specifies what each
 // of its containers owns, and a program's specialization of a standard

@@ -125,11 +125,24 @@ static_assert(std::is_same_v<payload_row_t<eff::Computation<eff::Row<eff::Effect
 struct OnlyDeclared;
 static_assert(!payload_row_is_classified<OnlyDeclared*>(),
               "a class that is only declared cannot say what it holds, so a pointer to it is refused.");
+struct HoldsOnlyAnUnnamedBitField {
+    unsigned : 8;
+};
+static_assert(!payload_row_is_classified<HoldsOnlyAnUnnamedBitField>(),
+              "a class with state that the walk cannot read is refused.");
+
+// A lambda is a class whose captures are its members, so it conveys the row
+// of what it captures.
 inline constexpr auto captures_state = [held = 7] { return held; };
 inline constexpr auto captures_nothing = [] { return 7; };
-static_assert(!payload_row_is_classified<decltype(captures_state)>(),
-              "a lambda with captures holds state the walk cannot read, so it is refused.");
+inline auto capture_capability(eff::Capability<eff::Effect::IO, eff::Bg>&& capability) {
+    return [held = std::move(capability)] { static_cast<void>(held); };
+}
+static_assert(std::is_same_v<payload_row_t<decltype(captures_state)>, eff::Row<>>);
 static_assert(std::is_same_v<payload_row_t<decltype(captures_nothing)>, eff::Row<>>);
+static_assert(std::is_same_v<
+              payload_row_t<decltype(capture_capability(std::declval<eff::Capability<eff::Effect::IO, eff::Bg>&&>()))>,
+              eff::Row<eff::Effect::IO>>);
 
 // A template the rosters do not name is refused, whatever it holds.
 template <class T>

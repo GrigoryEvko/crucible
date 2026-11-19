@@ -38,8 +38,9 @@
 //   * a class that is only declared, whose members nobody can read;
 //   * a class that holds state the walk cannot read.  That is a class
 //     that is not empty and that reflects no base and no data member,
-//     which is the shape of a lambda with captures: GCC 16 reflects no
-//     capture.
+//     such as a class that holds only an unnamed bit-field, or a lambda
+//     with captures on a compiler without the sixth GCC patch.  With the
+//     patch, a lambda is a class whose captures are its members.
 //
 // The empty row is therefore an answer the walk derives, never a default
 // it falls back to.  The diagnostic names the refused type.
@@ -382,8 +383,8 @@ template <class Anchor = void>
         "payload_row<T>: T is, or holds, a type this extractor cannot classify.  A class template "
         "specialization whose family is on none of the three payload rosters in "
         "fixy/concurrent/PayloadRow.h, and on no rule of the layer that asks, is refused, and so is a "
-        "class that is only declared, or that holds state the walk cannot read, such as a lambda with "
-        "captures.  A payload that hides "
+        "class that is only declared, or that holds state the walk cannot read, such as a class that "
+        "holds only an unnamed bit-field.  A payload that hides "
         "another type must say what it hides: add the family to transparent_payload_families if it "
         "unwraps, to row_carrying_payload_families with its rule if it carries a row of its own, or to "
         "leaf_payload_families if it holds no row at all.  Answering Row<> for an unclassified type "

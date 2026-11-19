@@ -263,12 +263,16 @@ struct ForeignBox {
     ForeignHandle<ForeignProtocol> held;
 };
 
-// A closure that owns an endpoint.  GCC 16 reflects no capture.  The
-// query cannot read what the closure holds, and it refuses the closure.
+// A closure that owns an endpoint.  A lambda is a class whose captures are
+// its members, so the query reads the endpoint in it.  A class with state
+// that the query cannot read is refused.
 [[maybe_unused]] auto capture_endpoint(Endpoint end) {
     return [held = std::move(end)]() mutable noexcept { (void)held; };
 }
 using CapturesEndpoint = decltype(capture_endpoint(std::declval<Endpoint>()));
+struct HoldsOnlyAnUnnamedBitField {
+    unsigned : 8;
+};
 
 using WatchedEndpoint = s::CrashWatched<Endpoint, Q, P, s::NoReliableRoles, BgCtx>;
 using RecordedEndpoint = s::Recorded<Endpoint>;
@@ -305,7 +309,8 @@ static_assert(carrier_of<std::unique_ptr<ForeignBox<int>>> == DelegationCarrier:
 // ill-formed: neg_sess_crash_delegation_specialized_after_query.
 static_assert(carrier_of<Mention<Delegated>> == DelegationCarrier::HandOff);
 static_assert(carrier_of<s::Transferable<Delegated, X>> == DelegationCarrier::HandOff);
-static_assert(carrier_of<CapturesEndpoint> == DelegationCarrier::UnreadableState);
+static_assert(carrier_of<CapturesEndpoint> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<HoldsOnlyAnUnnamedBitField> == DelegationCarrier::UnreadableState);
 static_assert(carrier_of<std::function<void()>> == DelegationCarrier::TypeErasure);
 static_assert(carrier_of<std::any> == DelegationCarrier::TypeErasure);
 static_assert(carrier_of<void*> == DelegationCarrier::OpaquePointer);

@@ -68,8 +68,8 @@ struct KnownLimit {
 
 inline constexpr KnownLimit kLedger[] = {
     {"a body that captures an outer object by reference stores the address of the view in it",
-     "GCC 16 reflects no capture of a lambda, and a body must be able to capture its outer state, so no check "
-     "sees a store through a capture; every later use of that address reads the released frame of the door"},
+     "a body must be able to capture its outer state by reference, and the type of a capture shows the "
+     "reference but not a store through it; every later use of that address reads the released frame of the door"},
 };
 static_assert(std::size(kLedger) <= 1, "the ledger only shrinks");
 

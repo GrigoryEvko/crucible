@@ -17,9 +17,13 @@
 #   2. CRUCIBLE_GCC16_PREFIX  — install prefix; binaries are expected at
 #                               <prefix>/usr/bin/{gcc-16p,g++-16p,...} and libs
 #                               at <prefix>/usr/lib64.
-#   3. $HOME/.local/gcc16-patched — the canonical dev-box default. Keeps
+#   3. $HOME/.local/gcc16-patched-p7 — the canonical dev-box default, the
+#                               install of the six patches of
+#                               utils/toolchain/gcc/patches.  It keeps
 #                               `cmake --preset default` working verbatim with
 #                               no environment setup on the reference machine.
+#                               The name holds the count of the patches, so a
+#                               tree of an older patch set keeps its compiler.
 #
 # Override on another machine:
 #   export CRUCIBLE_GCC16_PREFIX=/opt/gcc16-patched
@@ -59,7 +63,7 @@ else()
   if(DEFINED ENV{CRUCIBLE_GCC16_PREFIX} AND NOT "$ENV{CRUCIBLE_GCC16_PREFIX}" STREQUAL "")
     set(_crucible_prefix "$ENV{CRUCIBLE_GCC16_PREFIX}")
   else()
-    set(_crucible_prefix "$ENV{HOME}/.local/gcc16-patched")
+    set(_crucible_prefix "$ENV{HOME}/.local/gcc16-patched-p7")
   endif()
   set(_crucible_bindir "${_crucible_prefix}/usr/bin")
   set(_crucible_cxx    "${_crucible_bindir}/g++-16p")

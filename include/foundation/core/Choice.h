@@ -545,7 +545,9 @@ template <class Arm, class Payload>
 
 // True when a value of the type holds a borrow: a reference, a pointer, a
 // pointer to a member, or a class whose state reflection cannot read, such as
-// a closure with captures.  The walk reads each element of an array, and each
+// a closure with captures on a compiler without the sixth GCC patch.  A
+// closure is a class whose captures are its members.  The walk reads each
+// element of an array, and each
 // base and each non-static data member of a class or a union.  An Option and
 // a Result hold only their payloads and a tag, so the walk reads their
 // arguments and not their slots.  A OneOf holds one sum slot, and the walk

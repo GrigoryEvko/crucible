@@ -79,7 +79,7 @@ THE CHECK
   with one planted wrong row for each test must fail and name its case.
 
   To regenerate after a relation changes:
-      python3 utils/bin/loop derive session-oracle regenerate --cxx "$HOME/.local/gcc16-patched/usr/bin/g++-16p" --at HEAD --build-dir build
+      python3 utils/bin/loop derive session-oracle regenerate --cxx "$HOME/.local/gcc16-patched-p7/usr/bin/g++-16p" --at HEAD --build-dir build
 
 THE LINK OF A PROGRAM
   A program of a runtime test, and of the wire family of regenerate,

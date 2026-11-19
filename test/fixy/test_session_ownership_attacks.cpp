@@ -195,9 +195,13 @@ static_assert(refusal_of<std::function_ref<void()>> == Refusal::TypeErasure);
 static_assert(refusal_of<std::any> == Refusal::TypeErasure);
 static_assert(refusal_of<std::tuple<int, std::function<void()>>> == Refusal::TypeErasure);
 
-// Refused inside a lambda with captures: the captures cannot be read.
-// The refusal does not depend on what the lambda captures, so a lambda
-// that captures only an int is refused as well.  That is conservative.
+// A lambda is a class whose captures are its members, so the query reads
+// what it captures: a token by copy moves with the lambda, a token by
+// reference stays behind, and an int carries nothing.  A class with state
+// that the query cannot read is refused.
+struct HoldsOnlyAnUnnamedBitField {
+    unsigned : 8;
+};
 inline auto capture_by_move(TX token) {
     return [held = std::move(token)] { return held.peek(); };
 }
@@ -210,9 +214,10 @@ inline auto capture_plain(int value) {
 inline auto capture_nothing() {
     return [] { return 3; };
 }
-static_assert(refusal_of<decltype(capture_by_move(std::declval<TX>()))> == Refusal::UnreadableState);
-static_assert(refusal_of<decltype(capture_by_reference(std::declval<TX&>()))> == Refusal::UnreadableState);
-static_assert(refusal_of<decltype(capture_plain(0))> == Refusal::UnreadableState);
+static_assert(refusal_of<decltype(capture_by_move(std::declval<TX>()))> == Refusal::None);
+static_assert(refusal_of<decltype(capture_by_reference(std::declval<TX&>()))> == Refusal::TokenBehindPointer);
+static_assert(refusal_of<decltype(capture_plain(0))> == Refusal::None);
+static_assert(refusal_of<HoldsOnlyAnUnnamedBitField> == Refusal::UnreadableState);
 static_assert(refusal_of<decltype(capture_nothing())> == Refusal::None, "a lambda with no state carries nothing");
 
 // Refused as only declared: nothing says what it holds.  The public

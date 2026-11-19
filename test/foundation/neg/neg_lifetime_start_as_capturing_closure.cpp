@@ -1,9 +1,9 @@
 // A closure that captures an epoch, started over bytes.  A closure with
 // captures has a trivial copy constructor, so it is an implicit-lifetime
-// type.  GCC 16 reflects no capture, so a walk over bases and members
-// sees nothing in it.  The start would give an epoch that no successor
-// step made.  The checked start refuses a class whose state the walk
-// cannot read.
+// type.  The start would give an epoch that no successor step made.  The
+// captures of a closure are its members, so the walk of the checked start
+// reads the epoch in the closure and refuses it, as it refuses the epoch
+// alone.
 
 #include <foundation/Lifetime.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
