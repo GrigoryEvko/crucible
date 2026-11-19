@@ -71,6 +71,7 @@
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/Mint.h>
+#include <fixy/Borrowed.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/ChildProcess.h>
@@ -219,41 +220,49 @@ struct Wire {
 using Once = s::Send<Ping, s::Recv<Pong, s::End>>;
 
 struct Mailbox {
-    std::atomic<int> value{0};
-    std::atomic<bool> full{false};
+    ::fixy::Atomic<int> value{0};
+    ::fixy::Atomic<bool> full{false};
 };
 
 struct Pipe : ::foundation::Pinned<Pipe> {
     Mailbox to_left;
     Mailbox to_right;
-    std::atomic<bool> left_cancelled{false};
+    ::fixy::Atomic<bool> left_cancelled{false};
 };
 
 struct LeftEnd {
-    Pipe* pipe = nullptr;
+    ::fixy::WeakRef<Pipe> pipe{};
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 struct RightEnd {
-    Pipe* pipe = nullptr;
+    ::fixy::WeakRef<Pipe> pipe{};
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
-// The left end can cancel: it tells the right end through the pipe.
-void cancel_session(LeftEnd& end) noexcept { end.pipe->left_cancelled.store(true, std::memory_order_release); }
+// The two ends reach the pipe only through its atomics, so each end moves to
+// the thread of its side (foundation/Transfer.h).
+static_assert(::foundation::transfer::Sendable<LeftEnd> && ::foundation::transfer::Sendable<RightEnd>);
+
+// The left end can cancel: it tells the right end through the pipe.  The
+// end of a handle that gave its end away holds no pipe, and then the cancel
+// has no one to tell.
+void cancel_session(LeftEnd& end) noexcept {
+    if (end.pipe.has_value()) end.pipe.get().left_cancelled.store_release(true);
+}
 
 void put(Mailbox& box, int value) noexcept {
-    box.value.store(value, std::memory_order_relaxed);
-    box.full.store(true, std::memory_order_release);
+    box.value.store_release(value);
+    box.full.store_release(true);
 }
 
 [[nodiscard]] int take(Mailbox& box, const char* where) noexcept {
     const auto deadline = std::chrono::steady_clock::now() + kAttackDeadline;
-    while (!box.full.load(std::memory_order_acquire)) {
+    while (!box.full.load_acquire()) {
         if (std::chrono::steady_clock::now() > deadline) deadlock_detected(where);
         std::this_thread::yield();
     }
-    const int value = box.value.load(std::memory_order_relaxed);
-    box.full.store(false, std::memory_order_release);
+    const int value = box.value.load_acquire();
+    box.full.store_release(false);
     return value;
 }
 
@@ -267,12 +276,12 @@ struct PollLeftBox {
     template <typename End>
     [[nodiscard]] ::fixy::Option<Ping> operator()(End& end) const noexcept {
         Mailbox& box = end.pipe->to_left;
-        if (!box.full.load(std::memory_order_acquire)) {
+        if (!box.full.load_acquire()) {
             if (std::chrono::steady_clock::now() > deadline) deadlock_detected(where);
             return ::fixy::none;
         }
-        const int value = box.value.load(std::memory_order_relaxed);
-        box.full.store(false, std::memory_order_release);
+        const int value = box.value.load_acquire();
+        box.full.store_release(false);
         return ::fixy::some(Ping{value});
     }
 };
@@ -618,8 +627,8 @@ template <Receive How>
     Pipe pipe{};
     const BgCtx ctx{eff::testing::bg()};
     auto back = s::mint_forked_channel<LeftProto, attack_tags::Left, attack_tags::Right>(
-        ctx, perm::mint_permission_root<attack_tags::Whole>(), LeftEnd{&pipe}, RightEnd{&pipe}, TakesBothBody<How>{},
-        GiveAwayBody{});
+        ctx, perm::mint_permission_root<attack_tags::Whole>(), LeftEnd{::fixy::WeakRef<Pipe>{pipe}},
+        RightEnd{::fixy::WeakRef<Pipe>{pipe}}, TakesBothBody<How>{}, GiveAwayBody{});
     ::foundation::linear::drop(std::move(back));
     std::_Exit(kSilentExit);
 }
@@ -642,7 +651,8 @@ template <Receive How>
 [[noreturn]] void one_thread_holds_both_rewound_ends() {
     Pipe pipe{};
     const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
-    auto [left_end, right_end] = s::mint_test_channel<s::End>(ctx, LeftEnd{&pipe}, RightEnd{&pipe});
+    auto [left_end, right_end] =
+        s::mint_test_channel<s::End>(ctx, LeftEnd{::fixy::WeakRef<Pipe>{pipe}}, RightEnd{::fixy::WeakRef<Pipe>{pipe}});
     auto [left_again, right_again] =
         s::HandleFactory::rewind_channel<LeftProto, void>(std::move(left_end), std::move(right_end));
     auto right_done = std::move(right_again).send(Ping{1}, [](RightEnd&, Ping&) noexcept { return false; });
@@ -717,14 +727,14 @@ struct CycleLeftB {
     const BgCtx ctx{eff::testing::bg()};
     std::jthread run_a{[&] {
         auto back = s::mint_forked_channel<LeftProto, attack_tags::Left, attack_tags::Right>(
-            ctx, perm::mint_permission_root<attack_tags::Whole>(), LeftEnd{&pipe_a}, RightEnd{&pipe_a}, CycleLeftA{},
-            CycleRightA{});
+            ctx, perm::mint_permission_root<attack_tags::Whole>(), LeftEnd{::fixy::WeakRef<Pipe>{pipe_a}},
+            RightEnd{::fixy::WeakRef<Pipe>{pipe_a}}, CycleLeftA{}, CycleRightA{});
         ::foundation::linear::drop(std::move(back));
     }};
     std::jthread run_b{[&] {
         auto back = s::mint_forked_channel<LeftProto, attack_tags::Left2, attack_tags::Right2>(
-            ctx, perm::mint_permission_root<attack_tags::Whole2>(), LeftEnd{&pipe_b}, RightEnd{&pipe_b}, CycleLeftB{},
-            CycleRightB{});
+            ctx, perm::mint_permission_root<attack_tags::Whole2>(), LeftEnd{::fixy::WeakRef<Pipe>{pipe_b}},
+            RightEnd{::fixy::WeakRef<Pipe>{pipe_b}}, CycleLeftB{}, CycleRightB{});
         ::foundation::linear::drop(std::move(back));
     }};
     run_a.join();
@@ -800,21 +810,21 @@ using OneRead = s::Recv<int, s::End>;
         Pipe pipe{};
         std::jthread left{[&pipe] {
             const ::fixy::TestRunnerCtx left_ctx{eff::testing::test()};
-            auto handle = s::mint_session<LeftSide, s::check::Cancel>(left_ctx, LeftEnd{&pipe});
+            auto handle = s::mint_session<LeftSide, s::check::Cancel>(left_ctx, LeftEnd{::fixy::WeakRef<Pipe>{pipe}});
             (void)handle;
         }};
-        auto right = s::mint_session<s::dual_of_t<LeftSide>>(ctx, RightEnd{&pipe});
+        auto right = s::mint_session<s::dual_of_t<LeftSide>>(ctx, RightEnd{::fixy::WeakRef<Pipe>{pipe}});
         auto waits = std::move(right).send(Ping{round}, [](RightEnd& e, Ping& p) noexcept {
             put(e.pipe->to_left, p.value);
             return true;
         });
         const auto deadline = std::chrono::steady_clock::now() + kAttackDeadline;
         for (;;) {
-            if (waits.resource().pipe->to_right.full.load(std::memory_order_acquire)) {
+            if (waits.resource().pipe->to_right.full.load_acquire()) {
                 std::fprintf(stderr, "[attack] a cancelled left side sent a Pong\n");
                 std::_Exit(kSilentExit);
             }
-            if (waits.resource().pipe->left_cancelled.load(std::memory_order_acquire)) {
+            if (waits.resource().pipe->left_cancelled.load_acquire()) {
                 std::move(waits).detach(s::detach_reason::AsyncCancellation{});
                 break;
             }
@@ -823,7 +833,7 @@ using OneRead = s::Recv<int, s::End>;
             std::this_thread::yield();
         }
         left.join();
-        if (pipe.to_left.full.load(std::memory_order_acquire)) ++discarded;
+        if (pipe.to_left.full.load_acquire()) ++discarded;
     }
     std::fprintf(stderr, "[attack] cancellation raced 200 sends: every one stopped, %d Pings were discarded\n",
                  discarded);

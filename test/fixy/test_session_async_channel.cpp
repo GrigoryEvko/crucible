@@ -13,6 +13,7 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/session/AsyncChannel.h>
+#include <fixy/Borrowed.h>
 
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
@@ -68,8 +69,8 @@ struct Pong {
 constexpr auto kDeadline = std::chrono::milliseconds{2000};
 
 struct Mailbox {
-    std::atomic<int> value{0};
-    std::atomic<bool> full{false};
+    ::fixy::Atomic<int> value{0};
+    ::fixy::Atomic<bool> full{false};
 };
 
 struct Pipe : ::foundation::Pinned<Pipe> {
@@ -96,37 +97,41 @@ struct Deadline {
 
 // Puts `value` into `box` if the box is empty.
 [[nodiscard]] bool try_put(Mailbox& box, int value, const Deadline& deadline) noexcept {
-    if (box.full.load(std::memory_order_acquire)) {
+    if (box.full.load_acquire()) {
         deadline.check();
         return false;
     }
-    box.value.store(value, std::memory_order_relaxed);
-    box.full.store(true, std::memory_order_release);
+    box.value.store_release(value);
+    box.full.store_release(true);
     return true;
 }
 
 // Takes the value in `box` if the box is full.
 [[nodiscard]] ::fixy::Option<int> try_take(Mailbox& box, const Deadline& deadline) noexcept {
-    if (!box.full.load(std::memory_order_acquire)) {
+    if (!box.full.load_acquire()) {
         deadline.check();
         return ::fixy::none;
     }
-    const int value = box.value.load(std::memory_order_relaxed);
-    box.full.store(false, std::memory_order_release);
+    const int value = box.value.load_acquire();
+    box.full.store_release(false);
     return ::fixy::some(value);
 }
 
 // The two ends state the capacity of the pipe: one message each way.
 struct LeftEnd {
     static constexpr std::size_t channel_capacity = 1;
-    Pipe* pipe = nullptr;
+    ::fixy::WeakRef<Pipe> pipe{};
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 struct RightEnd {
     static constexpr std::size_t channel_capacity = 1;
-    Pipe* pipe = nullptr;
+    ::fixy::WeakRef<Pipe> pipe{};
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
+
+// The two ends reach the pipe only through its atomics, so each end moves to
+// the thread of its side (foundation/Transfer.h).
+static_assert(::foundation::transfer::Sendable<LeftEnd> && ::foundation::transfer::Sendable<RightEnd>);
 
 // Ends of a channel that holds two messages each way, and an end that
 // states nothing.  Only the gate reads them.
@@ -248,7 +253,8 @@ struct RightBody {
     const BgCtx ctx{eff::testing::bg()};
     const std::uint32_t live_before = s::watch::live_count();
     auto back = s::mint_forked_async_channel<LeftProto, RightProto, async_tags::Left, async_tags::Right>(
-        ctx, perm::mint_permission_root<async_tags::Whole>(), LeftEnd{&pipe}, RightEnd{&pipe}, LeftBody{}, RightBody{});
+        ctx, perm::mint_permission_root<async_tags::Whole>(), LeftEnd{::fixy::WeakRef<Pipe>{pipe}},
+        RightEnd{::fixy::WeakRef<Pipe>{pipe}}, LeftBody{}, RightBody{});
     ::foundation::linear::drop(std::move(back));
     if (g_left_received.load(std::memory_order_relaxed) != 22
         || g_right_received.load(std::memory_order_relaxed) != 11) {
