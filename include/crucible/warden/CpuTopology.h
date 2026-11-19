@@ -230,6 +230,22 @@ concept CtxFitsAffinityQuery = ::fixy::fs::CtxAdmitsFs<Ctx> && ::fixy::sched::Ct
 // CPU.  The owner keeps it for the life of each lend.
 using TopologyRef = ::fixy::Ref<::fixy::topology::Topology const>;
 
+// The id of a logical CPU, as the kernel numbers it.
+using CpuId = ::fixy::Id<struct CpuIdTag, std::uint32_t>;
+
+// The roles of a CpuSet in the choice of a CPU, for Side of
+// foundation/core/Side.h.  A choice that takes two sets takes each in its
+// role, so a call cannot swap them.
+namespace side {
+
+// The CPUs that the calling thread may run on.
+struct AllowedCpus final {};
+
+// The CPUs that the choice must not give.
+struct ExcludedCpus final {};
+
+}  // namespace side
+
 struct CoreSelector {
     bool prefer_isolcpu = true;
     bool prefer_p_core = true;
@@ -379,9 +395,11 @@ namespace detail {
 [[nodiscard]] int read_numa_node_of_device(::fixy::CText sysfs_numa_node_path) noexcept;
 [[nodiscard]] std::uint64_t read_cpu_cur_freq_khz(int cpu) noexcept;
 [[nodiscard]] std::uint64_t read_cpu_max_freq_khz(int cpu) noexcept;
-[[nodiscard]] int select_hot_cpu_of(CpuSet const& allowed, TopologyRef topology, CoreSelector const& sel,
-                                    CpuSet const& exclude) noexcept;
-[[nodiscard]] CpuSet select_warm_cpus_of(CpuSet const& allowed, TopologyRef topology, int hot_cpu, int count) noexcept;
+[[nodiscard]] int select_hot_cpu_of(::fixy::Side<side::AllowedCpus, CpuSet> const& allowed, TopologyRef topology,
+                                    CoreSelector const& sel,
+                                    ::fixy::Side<side::ExcludedCpus, CpuSet> const& exclude) noexcept;
+[[nodiscard]] CpuSet select_warm_cpus_of(CpuSet const& allowed, TopologyRef topology, ::fixy::Option<CpuId> hot_cpu,
+                                         ::fixy::ElementCount count) noexcept;
 
 }  // namespace detail
 
@@ -468,17 +486,20 @@ template <class Ctx>
     requires CtxFitsAffinityQuery<Ctx>
 [[nodiscard]] inline int select_hot_cpu(Ctx const& ctx, TopologyRef topology, const CoreSelector& sel,
                                         CpuSet const& exclude = CpuSet{}) noexcept {
-    return detail::select_hot_cpu_of(allowed_cpus(ctx), topology, sel, exclude);
+    return detail::select_hot_cpu_of(::fixy::side_as<side::AllowedCpus>(allowed_cpus(ctx)), topology, sel,
+                                     ::fixy::side_as<side::ExcludedCpus>(exclude));
 }
 
 // At most count companion CPUs for the supporting threads, from the CPUs
 // that the calling thread may run on.  The CPUs on the same NUMA node of
-// topology as the given CPU are chosen first, and the given CPU itself is
-// never among them.  Complexity: the allowed CPUs times the CPUs of the
-// host, with no sysfs read.
+// topology as the hot CPU are chosen first, and the hot CPU itself is never
+// among them.  With no hot CPU, each allowed CPU can be a companion, in the
+// order of the ids.  Complexity: the allowed CPUs times the CPUs of the host,
+// with no sysfs read.
 template <class Ctx>
     requires CtxFitsAffinityQuery<Ctx>
-[[nodiscard]] inline CpuSet select_warm_cpus(Ctx const& ctx, TopologyRef topology, int hot_cpu, int count) noexcept {
+[[nodiscard]] inline CpuSet select_warm_cpus(Ctx const& ctx, TopologyRef topology, ::fixy::Option<CpuId> hot_cpu,
+                                             ::fixy::ElementCount count) noexcept {
     return detail::select_warm_cpus_of(allowed_cpus(ctx), topology, hot_cpu, count);
 }
 

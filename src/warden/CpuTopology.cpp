@@ -6,8 +6,6 @@
 
 #include <crucible/warden/CpuTopology.h>
 
-#include <foundation/contracts/Decide.h>
-#include <foundation/contracts/Pre.h>
 #include <foundation/os/File.h>
 #include <foundation/os/PathText.h>
 
@@ -176,17 +174,17 @@ std::uint64_t read_cpu_max_freq_khz(int cpu) noexcept {
     return parse_file_number(text.view());
 }
 
-int select_hot_cpu_of(CpuSet const& allowed, TopologyRef topology, CoreSelector const& sel,
-                      CpuSet const& exclude) noexcept {
+int select_hot_cpu_of(::fixy::Side<side::AllowedCpus, CpuSet> const& allowed, TopologyRef topology,
+                      CoreSelector const& sel, ::fixy::Side<side::ExcludedCpus, CpuSet> const& exclude) noexcept {
     // The bonuses are multiplied by this before the CPU index is
     // subtracted, so the index can only break ties between equal
     // bonuses and never outweigh one. The scale is the capacity of a
     // CpuSet, so each CPU index is less than it.
     constexpr int kScoreScale = static_cast<int>(CpuSet::capacity);
 
-    if (allowed.is_empty()) return -1;
+    if (allowed.value().is_empty()) return -1;
 
-    if (sel.explicit_cpu >= 0 && allowed.contains(sel.explicit_cpu)) {
+    if (sel.explicit_cpu >= 0 && allowed.value().contains(sel.explicit_cpu)) {
         return sel.explicit_cpu;
     }
 
@@ -197,12 +195,12 @@ int select_hot_cpu_of(CpuSet const& allowed, TopologyRef topology, CoreSelector 
         int best = -1;
         int best_score = ::fixy::min_of<int>;
         for (const int c : pool) {
-            if (exclude.contains(c)) continue;
+            if (exclude.value().contains(c)) continue;
             if (sel.avoid_smt_sibling) {
                 const CpuSet sibs = read_smt_siblings(c);
                 bool clash = false;
                 for (const int s : sibs)
-                    if (s != c && exclude.contains(s)) {
+                    if (s != c && exclude.value().contains(s)) {
                         clash = true;
                         break;
                     }
@@ -242,37 +240,48 @@ int select_hot_cpu_of(CpuSet const& allowed, TopologyRef topology, CoreSelector 
 
     // The isolated CPUs that the task may run on come first.
     if (sel.prefer_isolcpu) {
-        const CpuSet preferred = allowed.intersection(read_isolated_cpus());
+        const CpuSet preferred = allowed.value().intersection(read_isolated_cpus());
         if (!preferred.is_empty()) {
             const int pick = try_pool(preferred);
             if (pick >= 0) return pick;
         }
     }
-    const int pick = try_pool(allowed);
+    const int pick = try_pool(allowed.value());
     if (pick >= 0) return pick;
-    for (const int c : allowed)
-        if (!exclude.contains(c)) return c;
+    for (const int c : allowed.value())
+        if (!exclude.value().contains(c)) return c;
     return -1;
 }
 
-CpuSet select_warm_cpus_of(CpuSet const& allowed, TopologyRef topology, int hot_cpu, int count) noexcept {
-    CRUCIBLE_PRE(::foundation::decide::non_negative(count));
-    const int hot_numa = (hot_cpu >= 0) ? (*topology).numa_node_of_cpu(hot_cpu).value_or(-1) : -1;
+CpuSet select_warm_cpus_of(CpuSet const& allowed, TopologyRef topology, ::fixy::Option<CpuId> hot_cpu,
+                           ::fixy::ElementCount count) noexcept {
+    // The node of the hot CPU, or no value with no hot CPU or for a CPU that
+    // the topology holds on no node.  The topology names a CPU by an int, and
+    // an id past the largest int is on no node.
+    ::fixy::Option<int> const hot_node = hot_cpu.match(
+        [topology](CpuId const cpu) noexcept -> ::fixy::Option<int> {
+            if (cpu.raw() > static_cast<std::uint32_t>(::fixy::max_of<int>)) return ::fixy::none;
+            return (*topology).numa_node_of_cpu(static_cast<int>(cpu.raw()));
+        },
+        [] noexcept -> ::fixy::Option<int> { return ::fixy::none; });
 
     CpuSet same_numa{};
     CpuSet other{};
     for (const int c : allowed) {
-        if (c == hot_cpu) continue;
-        bool const is_on_hot_node =
-            hot_numa >= 0
-            && (*topology).numa_node_of_cpu(c).is_some_and([hot_numa](int node) noexcept { return node == hot_numa; });
+        // The cursor of a CpuSet gives no negative id.
+        bool const is_hot_cpu =
+            hot_cpu.is_some_and([c](CpuId const& cpu) noexcept { return cpu.raw() == static_cast<std::uint32_t>(c); });
+        if (is_hot_cpu) continue;
+        bool const is_on_hot_node = hot_node.is_some_and([topology, c](int const& hot) noexcept {
+            return (*topology).numa_node_of_cpu(c).is_some_and([hot](int node) noexcept { return node == hot; });
+        });
         if (is_on_hot_node)
             same_numa.insert(static_cast<std::size_t>(c));
         else
             other.insert(static_cast<std::size_t>(c));
     }
     CpuSet chosen{};
-    std::size_t const wanted = static_cast<std::size_t>(count);
+    std::size_t const wanted = count.raw();
     std::size_t chosen_count = 0;
     auto choose_from = [&chosen, &chosen_count, wanted](CpuSet const& pool) noexcept {
         for (const int c : pool) {

@@ -776,7 +776,9 @@ namespace detail {
         if (allowed.contains(core.raw())) return core;
     }
     return CpuId{crucible::warden::detail::select_hot_cpu_of(
-        allowed, harness_topology(), crucible::warden::CoreSelector{}, crucible::warden::CpuSet{})};
+        ::fixy::side_as<crucible::warden::side::AllowedCpus>(allowed), harness_topology(),
+        crucible::warden::CoreSelector{},
+        ::fixy::side_as<crucible::warden::side::ExcludedCpus>(crucible::warden::CpuSet{}))};
 }
 
 // Read /sys/.../cpu<N>/cpufreq/scaling_cur_freq (kHz) → Hz, 0 on failure.

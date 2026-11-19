@@ -319,15 +319,20 @@ void test_warm_cpus_leave_out_the_hot_cpu(crucible::warden::TopologyRef topology
     using namespace crucible::warden;
 
     const CpuSet allowed = allowed_cpus(kStartup);
-    const int hot_cpu = allowed.first().value_or(-1);
-    const std::size_t others = hot_cpu >= 0 ? allowed.size() - 1 : allowed.size();
+    const int first = allowed.first().value_or(-1);
+    const ::fixy::Option<CpuId> hot_cpu =
+        allowed.first().map([](int cpu) noexcept { return CpuId{static_cast<std::uint32_t>(cpu)}; });
+    const std::size_t others = hot_cpu.is_some() ? allowed.size() - 1 : allowed.size();
 
-    const CpuSet warm = select_warm_cpus(kStartup, topology, hot_cpu, 2);
-    CHECK(!warm.contains(hot_cpu), "the hot CPU is not a companion");
+    const CpuSet warm = select_warm_cpus(kStartup, topology, hot_cpu, ::fixy::ElementCount{2});
+    CHECK(!warm.contains(first), "the hot CPU is not a companion");
     CHECK(warm.intersection(allowed) == warm, "each companion is an allowed CPU");
     CHECK(warm.size() == (others < 2 ? others : 2), "the count of the companions is the count asked for");
 
-    CHECK(select_warm_cpus(kStartup, topology, hot_cpu, 0).is_empty(), "a count of zero gives no companion");
+    CHECK(select_warm_cpus(kStartup, topology, hot_cpu, ::fixy::ElementCount{0}).is_empty(),
+          "a count of zero gives no companion");
+    CHECK(select_warm_cpus(kStartup, topology, ::fixy::none, ::fixy::ElementCount{allowed.size()}) == allowed,
+          "with no hot CPU, each allowed CPU can be a companion");
 }
 
 // The warden reads the NUMA node of a CPU from the topology that its owner
@@ -343,9 +348,11 @@ void test_choice_reads_the_node_of_the_lent_topology() {
     CpuSet allowed{};
     allowed.insert_range(0, 5);
 
-    CpuSet const same_node = detail::select_warm_cpus_of(allowed, ::fixy::to(planted), 2, 1);
+    CpuSet const same_node =
+        detail::select_warm_cpus_of(allowed, ::fixy::to(planted), ::fixy::some(CpuId{2}), ::fixy::ElementCount{1});
     CHECK(same_node.size() == 1 && same_node.contains(3), "the one companion of CPU 2 is CPU 3 of node 1");
-    CpuSet const three = detail::select_warm_cpus_of(allowed, ::fixy::to(planted), 4, 3);
+    CpuSet const three =
+        detail::select_warm_cpus_of(allowed, ::fixy::to(planted), ::fixy::some(CpuId{4}), ::fixy::ElementCount{3});
     CHECK(three.size() == 3 && three.contains(5) && three.contains(0) && three.contains(1),
           "CPU 5 of node 3 comes first, then the lowest CPUs of the other nodes");
 
@@ -355,10 +362,12 @@ void test_choice_reads_the_node_of_the_lent_topology() {
     sel.avoid_smt_sibling = false;
     sel.avoid_cpu0 = false;
     sel.numa_hint = 3;
-    CHECK(detail::select_hot_cpu_of(allowed, ::fixy::to(planted), sel, CpuSet{}) == 4,
+    auto const allowed_side = ::fixy::side_as<crucible::warden::side::AllowedCpus>(allowed);
+    auto const no_exclusion = ::fixy::side_as<crucible::warden::side::ExcludedCpus>(CpuSet{});
+    CHECK(detail::select_hot_cpu_of(allowed_side, ::fixy::to(planted), sel, no_exclusion) == 4,
           "the hint of node 3 picks CPU 4, the lowest CPU of node 3");
     sel.numa_hint = 2;
-    CHECK(detail::select_hot_cpu_of(allowed, ::fixy::to(planted), sel, CpuSet{}) == 0,
+    CHECK(detail::select_hot_cpu_of(allowed_side, ::fixy::to(planted), sel, no_exclusion) == 0,
           "a hint of a node that the topology does not name gives no bonus");
 }
 
