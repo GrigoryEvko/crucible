@@ -9,6 +9,7 @@
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/concurrent/EventCount.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/SpscRing.h>
 #include <fixy/os/OwnedThread.h>
@@ -71,6 +72,42 @@ public:
     // Each cell, for a pop.
     [[nodiscard]] ::fixy::View<T> each() noexcept { return cells_.view(); }
 };
+
+// ── The waits of the threaded cases ──────────────────────────────────
+//
+// A side that finds its ring full or empty waits by WaitPolicy: a spin of
+// kWaitSpinNanos, and then a park on an event count that the other side
+// notifies after each of its ops (fixy/concurrent/EventCount.h).  A side
+// whose peer does not run then sleeps in the kernel and runs no instruction.
+// So the work of a case is the same at each load of the host, and the count
+// of its instructions does not grow with the load.
+constexpr std::uint32_t kWaitSpinNanos = 2000;
+using WaitPolicy = c::SpinThenPark<kWaitSpinNanos>;
+
+// The two event counts of a case: a consumer waits on items, and each
+// producer notifies it after each push.  A producer waits on room, and the
+// consumer notifies it after each pop.
+struct Waits {
+    c::EventCount items{};
+    c::EventCount room{};
+};
+
+// A push that waits for room.  push gives true when its items went in.  The
+// wait ends at the first push that goes in, and then the consumer wakes.
+template <class Push>
+void push_waiting(::fixy::BgLoadCtx const& ctx, Waits& waits, Push&& push) noexcept {
+    c::wait_for<WaitPolicy>(ctx, waits.room, push);
+    waits.items.notify_one(ctx);
+}
+
+// A pop that waits for an item or for the end of the stream.  pop gives true
+// when it took an item or when the stream ended.  Then each waiting producer
+// wakes, because a pop of a batch can free room for each of them.
+template <class Pop>
+void pop_waiting(::fixy::BgLoadCtx const& ctx, Waits& waits, Pop&& pop) noexcept {
+    c::wait_for<WaitPolicy>(ctx, waits.items, pop);
+    waits.room.notify_all(ctx);
+}
 
 // ── Shape ────────────────────────────────────────────────────────────
 
@@ -249,35 +286,30 @@ using MpscWide = c::MpscRing<int, 128>;
 [[nodiscard]] int spsc_roles_move_between_threads() {
     constexpr int kPerTurn = 2000;
     constexpr int kTurns = 4;
-    using Starter = ::foundation::effects::ExecCtx<
-        ::foundation::effects::Bg,
-        ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>>;
     c::SpscRing<int, 64> ring{};
+    // The door gives each body this context, and a body waits with it.
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    Waits waits{};
     int next_expected = 0;
     for (int turn = 0; turn < kTurns; ++turn) {
         const int first = turn * kPerTurn;
-        auto producer = [&ring, first]() noexcept {
-            for (int i = first; i < first + kPerTurn;) {
-                if (ring.try_push(i)) {
-                    ++i;
-                } else {
-                    CRUCIBLE_SPIN_PAUSE;
-                }
+        auto producer = [&ring, &waits, first](::fixy::BgLoadCtx const& bg) noexcept {
+            for (int i = first; i < first + kPerTurn; ++i) {
+                push_waiting(bg, waits, [&ring, i]() noexcept { return ring.try_push(i); });
             }
         };
-        auto consumer = [&ring, &next_expected, first]() noexcept {
+        auto consumer = [&ring, &waits, &next_expected, first](::fixy::BgLoadCtx const& bg) noexcept {
             while (next_expected < first + kPerTurn) {
-                ::fixy::Option<int> item = ring.try_pop();
-                if (item.is_none()) {
-                    CRUCIBLE_SPIN_PAUSE;
-                    continue;
-                }
-                if (std::move(item).expect("the test above found an item") != next_expected) return;
+                ::fixy::Option<int> item = ::fixy::none;
+                pop_waiting(bg, waits, [&ring, &item]() noexcept {
+                    item = ring.try_pop();
+                    return item.is_some();
+                });
+                if (std::move(item).expect("the wait ends at an item") != next_expected) return;
                 ++next_expected;
             }
         };
-        ::fixy::thread::run_joined_raw_probe(Starter{::foundation::effects::testing::bg()},
-                                             ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+        ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
                                              "the bare ring is the state under test", ::fixy::thread::ThreadOptions{},
                                              producer, consumer)
             .expect("the thread door starts the producer and the consumer of a turn");
@@ -351,34 +383,31 @@ struct ProvenOwner final {
 // Under TSan, a publish that does not release the cell is a data race.
 [[nodiscard]] int spsc_proven_two_threads() {
     constexpr int kItems = 5000;
-    using Starter = ::foundation::effects::ExecCtx<
-        ::foundation::effects::Bg,
-        ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>>;
     ProvenOwner::Ring proven{};
-    auto producer = [&proven]() noexcept {
-        for (int i = 0; i < kItems;) {
-            if (proven.try_push_proven(ProvenOwner::producer(), i)) {
-                ++i;
-            } else {
-                CRUCIBLE_SPIN_PAUSE;
-            }
+    // The door gives each body this context, and a body waits with it.
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    Waits waits{};
+    auto producer = [&proven, &waits](::fixy::BgLoadCtx const& bg) noexcept {
+        for (int i = 0; i < kItems; ++i) {
+            push_waiting(bg, waits,
+                         [&proven, i]() noexcept { return proven.try_push_proven(ProvenOwner::producer(), i); });
         }
     };
     int next_expected = 0;
-    auto consumer = [&proven, &next_expected]() noexcept {
+    auto consumer = [&proven, &waits, &next_expected](::fixy::BgLoadCtx const& bg) noexcept {
         while (next_expected < kItems) {
-            fixy::Option<int> item = proven.try_pop_proven(ProvenOwner::consumer());
-            if (item.is_none()) {
-                CRUCIBLE_SPIN_PAUSE;
-                continue;
-            }
+            fixy::Option<int> item = ::fixy::none;
+            pop_waiting(bg, waits, [&proven, &item]() noexcept {
+                item = proven.try_pop_proven(ProvenOwner::consumer());
+                return item.is_some();
+            });
             if (std::move(item).value_or(-1) != next_expected) return;
             ++next_expected;
         }
     };
-    ::fixy::thread::run_joined_raw_probe(
-        Starter{::foundation::effects::testing::bg()}, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
-        "the bare ring is the state under test", ::fixy::thread::ThreadOptions{}, producer, consumer)
+    ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+                                         "the bare ring is the state under test", ::fixy::thread::ThreadOptions{},
+                                         producer, consumer)
         .expect("the thread door starts the producer and the consumer");
     if (next_expected != kItems) {
         fixy::report(fixy::Sink::Err, "SPSC proven form gave item {} out of order\n", next_expected);
@@ -570,21 +599,28 @@ template <std::size_t Capacity>
 [[nodiscard]] int spsc_two_threads() {
     constexpr int kItems = 20000;
     c::SpscRing<int, 1024> ring{};
-    std::atomic<bool> producer_done{false};
+    ::fixy::Atomic<bool> producer_done{false};
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    Waits waits{};
 
     int next_expected = 0;
     int received = 0;
 
     {
-        std::jthread producer([&ring, &producer_done] {
-            for (int i = 0; i < kItems;) {
-                if (ring.try_push(i)) ++i;
+        std::jthread producer([&ring, &producer_done, &ctx, &waits] {
+            for (int i = 0; i < kItems; ++i) {
+                push_waiting(ctx, waits, [&ring, i]() noexcept { return ring.try_push(i); });
             }
-            producer_done.store(true, std::memory_order_release);
+            producer_done.store_release(true);
+            waits.items.notify_all(ctx);
         });
 
         while (received < kItems) {
-            auto item = ring.try_pop();
+            ::fixy::Option<int> item = ::fixy::none;
+            pop_waiting(ctx, waits, [&ring, &item, &producer_done]() noexcept {
+                item = ring.try_pop();
+                return item.is_some() || (producer_done.load_acquire() && ring.empty_approx(kNondet));
+            });
             if (item.is_some()) {
                 // FIFO is a property of the ring, not of the schedule:
                 // one producer means the order is the push order.
@@ -595,7 +631,8 @@ template <std::size_t Capacity>
                 }
                 ++next_expected;
                 ++received;
-            } else if (producer_done.load(std::memory_order_acquire) && ring.empty_approx(kNondet)) {
+            } else {
+                // The wait ended at the end of the stream.
                 break;
             }
         }
@@ -614,7 +651,9 @@ template <std::size_t Capacity>
     constexpr int kTotal = static_cast<int>(kProducers) * kPerProducer;
 
     c::MpscRing<Plain, 1024> ring{};
-    std::atomic<std::uint32_t> finished{0};
+    ::fixy::Atomic<std::uint32_t> finished{0};
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    Waits waits{};
 
     // Per producer, the ring must preserve that producer's own order;
     // across producers it says nothing, and this test claims nothing.
@@ -626,16 +665,21 @@ template <std::size_t Capacity>
     {
         std::vector<std::jthread> producers;
         for (std::uint32_t p = 0; p < kProducers; ++p) {
-            producers.emplace_back([&ring, &finished, p] {
-                for (int i = 0; i < kPerProducer;) {
-                    if (ring.try_push(Plain{i, p})) ++i;
+            producers.emplace_back([&ring, &finished, &ctx, &waits, p] {
+                for (int i = 0; i < kPerProducer; ++i) {
+                    push_waiting(ctx, waits, [&ring, i, p]() noexcept { return ring.try_push(Plain{i, p}); });
                 }
-                finished.fetch_add(1, std::memory_order_release);
+                static_cast<void>(finished.fetch_add_acq_rel(1));
+                waits.items.notify_all(ctx);
             });
         }
 
         while (received < kTotal) {
-            auto popped = ring.try_pop(kNondet);
+            ::fixy::Option<Plain> popped = ::fixy::none;
+            pop_waiting(ctx, waits, [&ring, &popped, &finished]() noexcept {
+                popped = ring.try_pop(kNondet);
+                return popped.is_some() || (finished.load_acquire() == kProducers && ring.empty_approx(kNondet));
+            });
             if (popped.is_some()) {
                 const Plain item = std::move(popped).expect("the test above found an item");
                 const std::size_t who = item.producer;
@@ -650,7 +694,8 @@ template <std::size_t Capacity>
                 }
                 last_seen[who] = item.value;
                 ++received;
-            } else if (finished.load(std::memory_order_acquire) == kProducers && ring.empty_approx(kNondet)) {
+            } else {
+                // The wait ended at the end of the stream.
                 break;
             }
         }
@@ -685,6 +730,8 @@ template <std::size_t Capacity>
 
     c::MpscRing<Plain, kCapacity> ring{};
     fixy::Atomic<std::uint32_t> finished{0};
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    Waits waits{};
     Run<int, kProducers> last_seen{};
     for (std::size_t p = 0; p < kProducers; ++p)
         last_seen.at(p) = -1;
@@ -705,7 +752,7 @@ template <std::size_t Capacity>
     {
         std::vector<std::jthread> producers;
         for (std::uint32_t p = 0; p < kProducers; ++p) {
-            producers.emplace_back([&ring, &finished, p] {
+            producers.emplace_back([&ring, &finished, &ctx, &waits, p] {
                 Run<Plain, kCapacity> batch{};
                 int next = 0;
                 for (int round = 0; round < kRounds; ++round) {
@@ -713,32 +760,43 @@ template <std::size_t Capacity>
                         const std::size_t size = form == 0 ? kCapacity : kPartial;
                         for (std::size_t i = 0; i < size; ++i)
                             batch.at(i) = Plain{next + static_cast<int>(i), p};
-                        while (ring.try_push_batch(batch.first(size)) != size) {}
+                        push_waiting(ctx, waits, [&ring, &batch, size]() noexcept {
+                            return ring.try_push_batch(batch.first(size)) == size;
+                        });
                         next += static_cast<int>(size);
                     }
                 }
                 static_cast<void>(finished.fetch_add_acq_rel(1));
+                waits.items.notify_all(ctx);
             });
         }
 
         bool is_ordered = true;
         while (is_ordered && received < kTotal) {
-            auto single = ring.try_pop(kNondet);
+            ::fixy::Option<Plain> single = ::fixy::none;
+            std::size_t got = 0;
+            // The single pop comes before the batch pop, so the order of each
+            // producer runs from the single item into the batch.
+            pop_waiting(ctx, waits, [&ring, &single, &got, &drained, &finished]() noexcept {
+                single = ring.try_pop(kNondet);
+                got = ring.try_pop_batch(kNondet, drained.each());
+                return single.is_some() || got != 0
+                    || (finished.load_acquire() == kProducers && ring.empty_approx(kNondet));
+            });
             const bool has_single = single.is_some();
             if (has_single) {
                 is_ordered = take(std::move(single).expect("the test above found an item"));
             }
-            const std::size_t got = ring.try_pop_batch(kNondet, drained.each());
             for (std::size_t i = 0; is_ordered && i < got; ++i)
                 is_ordered = take(drained.at(i));
-            if (got == 0 && !has_single && finished.load_acquire() == kProducers && ring.empty_approx(kNondet)) {
-                break;
-            }
+            // The wait ended at the end of the stream.
+            if (got == 0 && !has_single) break;
         }
         if (!is_ordered) {
             // The producers wait for room, so the drain goes on until they end.
             while (finished.load_acquire() != kProducers) {
                 static_cast<void>(ring.try_pop_batch(kNondet, drained.each()));
+                waits.room.notify_all(ctx);
             }
             return 1;
         }
@@ -768,25 +826,34 @@ constexpr std::uint64_t kPushesPerProducer = 4000;
 constexpr std::size_t kBatch = 4;
 constexpr std::size_t kCapacity = std::size_t{1} << 18;
 constexpr int kRounds = 4;
+// The pushes of a producer between two wakes of the consumer.
+constexpr std::uint64_t kNotifyEvery = 64;
 static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold every push of a round");
 
 }  // namespace never_full
 
 [[nodiscard]] int mpsc_never_full_round() {
     using namespace never_full;
-    auto ring = std::make_unique<c::MpscRing<std::uint64_t, kCapacity>>();
-    std::atomic<std::uint64_t> refused{0};
-    std::atomic<std::uint64_t> accepted{0};
-    std::atomic<std::uint32_t> finished{0};
+    ::fixy::Box<c::MpscRing<std::uint64_t, kCapacity>> ring =
+        ::fixy::mint_box<c::MpscRing<std::uint64_t, kCapacity>>(::foundation::effects::testing::test().alloc);
+    ::fixy::Atomic<std::uint64_t> refused{0};
+    ::fixy::Atomic<std::uint64_t> accepted{0};
+    ::fixy::Atomic<std::uint32_t> finished{0};
     std::uint64_t received = 0;
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    Waits waits{};
 
     {
         std::array<std::jthread, kProducers> producers{};
         for (std::uint32_t p = 0; p < kProducers; ++p) {
             const bool pushes_batches = (p % 2) == 1;
-            producers[p] = std::jthread([&ring, &refused, &accepted, &finished, pushes_batches] {
+            producers[p] = std::jthread([&ring, &refused, &accepted, &finished, &ctx, &waits, pushes_batches] {
                 std::uint64_t taken = 0;
                 std::uint64_t refusals = 0;
+                // The ring is never full, so a producer never waits.  It wakes
+                // the consumer after each kNotifyEvery pushes and at its end,
+                // so the fence of a notify leaves the race on the head that the
+                // case hunts.
                 if (pushes_batches) {
                     Run<std::uint64_t, kBatch> batch{};
                     for (std::size_t i = 0; i < kBatch; ++i)
@@ -795,6 +862,7 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
                         const std::size_t pushed = ring->try_push_batch(batch.first(kBatch));
                         taken += pushed;
                         refusals += (pushed == 0) ? 1 : 0;
+                        if (i % kNotifyEvery == kNotifyEvery - 1) waits.items.notify_one(ctx);
                     }
                 } else {
                     for (std::uint64_t i = 0; i < kPushesPerProducer; ++i) {
@@ -803,32 +871,36 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
                         } else {
                             ++refusals;
                         }
+                        if (i % kNotifyEvery == kNotifyEvery - 1) waits.items.notify_one(ctx);
                     }
                 }
-                accepted.fetch_add(taken, std::memory_order_relaxed);
-                refused.fetch_add(refusals, std::memory_order_relaxed);
-                finished.fetch_add(1, std::memory_order_release);
+                static_cast<void>(accepted.fetch_add_acq_rel(taken));
+                static_cast<void>(refused.fetch_add_acq_rel(refusals));
+                static_cast<void>(finished.fetch_add_acq_rel(1));
+                waits.items.notify_all(ctx);
             });
         }
 
         for (;;) {
-            if (ring->try_pop(kNondet).is_some()) {
-                ++received;
-            } else if (finished.load(std::memory_order_acquire) == kProducers && ring->empty_approx(kNondet)) {
-                break;
-            }
+            bool has_item = false;
+            pop_waiting(ctx, waits, [&ring, &has_item, &finished]() noexcept {
+                has_item = ring->try_pop(kNondet).is_some();
+                return has_item || (finished.load_acquire() == kProducers && ring->empty_approx(kNondet));
+            });
+            if (!has_item) break;
+            ++received;
         }
     }
 
-    if (const std::uint64_t spurious = refused.load(std::memory_order_relaxed); spurious != 0) {
+    if (const std::uint64_t spurious = refused.load_acquire(); spurious != 0) {
         std::fprintf(stderr, "a never-full MPSC ring refused %llu pushes: a stale head passed for a full ring\n",
                      static_cast<unsigned long long>(spurious));
         return 1;
     }
-    if (received != accepted.load(std::memory_order_relaxed)) {
+    if (received != accepted.load_acquire()) {
         std::fprintf(stderr, "MPSC delivered %llu items of the %llu it accepted\n",
                      static_cast<unsigned long long>(received),
-                     static_cast<unsigned long long>(accepted.load(std::memory_order_relaxed)));
+                     static_cast<unsigned long long>(accepted.load_acquire()));
         return 1;
     }
     return 0;
