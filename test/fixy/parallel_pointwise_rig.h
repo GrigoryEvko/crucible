@@ -5,7 +5,8 @@
 // of shards gives the bits of write_pointwise on the calling thread.
 //
 // The compile of an op through write_pointwise gives one lane plan for each
-// class of each input, so each element type and op costs much machine code.
+// mix of the loops of its inputs, with three loops in place of four for each
+// input past the second, so each element type and op costs much machine code.
 // Thus the test compiles in more than one unit.  Each unit
 // parallel_pointwise_unit_*.cpp gives functions at the end of this header,
 // which run each_split_agrees or two_inputs for one element type, rank and

@@ -77,6 +77,10 @@
 // that the scalar step of lane 0 does not raise.  No load reads past the
 // last element of its view.
 //
+// Each mix of the loops of the first two inputs has a function of its own.  A
+// later input keeps Dense and Splat in the function, and a stride of two or
+// more picks StepTwo or General at run time.
+//
 // An op that is no lane op takes the scalar path: the same order with a call
 // of the op for each element, in loops that the optimizer can vectorize.
 //
@@ -185,6 +189,9 @@ enum class LaneClass : std::uint8_t {
     Splat,
     StepTwo,
     General,
+    // The loop of an input past the first max_lane_class_inputs inputs with a
+    // stride of two or more: the row picks StepTwo or General at run time.
+    Switched,
 };
 
 // The loops of the views of one instance of the lane path.
@@ -822,10 +829,49 @@ struct LaneRow {
     }
 };
 
+// The reads of one row of an input of the loop Switched: a stride of two
+// takes the reads of StepTwo, and each larger stride the reads of General.
+// The branch goes the same way for each read of a walk, so the predictor of
+// the core takes it with no miss.
+template <int W, class E>
+struct LaneRow<LaneClass::Switched, W, E> {
+    using V = ::foundation::simd::vec<E, W>;
+
+    E const* row = nullptr;
+    std::size_t step = 0;
+
+    [[nodiscard]] CRUCIBLE_INLINE V inner(std::size_t position) const noexcept {
+        if (step == 2) return as_<LaneClass::StepTwo>().inner(position);
+        return as_<LaneClass::General>().inner(position);
+    }
+
+    [[nodiscard]] CRUCIBLE_INLINE V full(std::size_t position) const noexcept {
+        if (step == 2) return as_<LaneClass::StepTwo>().full(position);
+        return as_<LaneClass::General>().full(position);
+    }
+
+    [[nodiscard]] CRUCIBLE_INLINE V tail(std::size_t position, std::size_t live) const noexcept {
+        if (step == 2) return as_<LaneClass::StepTwo>().tail(position, live);
+        return as_<LaneClass::General>().tail(position, live);
+    }
+
+    // The reads of the row with the loop Class as a template argument.
+    template <LaneClass Class>
+    [[nodiscard]] CRUCIBLE_INLINE LaneRow<Class, W, E> as_() const noexcept {
+        return LaneRow<Class, W, E>{row, step, V{}};
+    }
+};
+
+// The reads of a row of a view, from its element at the zero position of the
+// row and its stride on the inner axis.
 template <LaneClass Class, int W, class E>
 [[nodiscard]] CRUCIBLE_INLINE LaneRow<Class, W, E> lane_row_(E const* row, std::size_t step) noexcept {
     using V = ::foundation::simd::vec<E, W>;
-    return LaneRow<Class, W, E>{row, step, Class == LaneClass::Splat ? V{*row} : V{}};
+    if constexpr (Class == LaneClass::Switched) {
+        return LaneRow<Class, W, E>{row, step};
+    } else {
+        return LaneRow<Class, W, E>{row, step, Class == LaneClass::Splat ? V{*row} : V{}};
+    }
 }
 
 // Writes the W lanes of value from position of the output row.
@@ -1245,12 +1291,38 @@ CRUCIBLE_INLINE void choose_tile_classes_(TileClass const (&classes)[Inputs], Ne
     }
 }
 
+// The count of inputs whose four loops are template arguments of the lane
+// path.  Each later input keeps the loops Dense and Splat as template
+// arguments, and a stride of two or more takes the loop Switched, which picks
+// StepTwo or General at run time.  So a dense output of an op of k inputs has
+// 16 * 3^(k-2) instances of run_lane_plan_ in place of 4^k: 48 for three
+// inputs and 144 for four.  The loops Dense and Splat of each input keep
+// their code, and the bits do not change, because each read gives the same
+// elements.
+inline constexpr std::size_t max_lane_class_inputs = 2;
+
 // Calls next with the loops of the inputs from the index Done on, as template
-// arguments.
+// arguments.  An input past the first max_lane_class_inputs inputs takes the
+// loop Switched in place of StepTwo and General.
 template <std::size_t Done, std::size_t Inputs, LaneClass... Chosen, class Next>
 CRUCIBLE_INLINE void choose_lane_classes_(LaneClass const (&classes)[Inputs], Next const& next) noexcept {
     if constexpr (Done == Inputs) {
         next(LaneClasses<Chosen...>{});
+    } else if constexpr (Done >= max_lane_class_inputs) {
+        switch (classes[Done]) {
+            case LaneClass::Dense:
+                choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Dense>(classes, next);
+                return;
+            case LaneClass::Splat:
+                choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Splat>(classes, next);
+                return;
+            case LaneClass::StepTwo:
+            case LaneClass::General:
+                choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Switched>(classes, next);
+                return;
+            default:
+                ::foundation::core::unreachable();
+        }
     } else {
         switch (classes[Done]) {
             case LaneClass::Dense:

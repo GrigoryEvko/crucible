@@ -5,7 +5,8 @@
 // the single rounds and of the square of a difference.
 //
 // The compile of an op through write_pointwise gives one lane plan for each
-// class of each input, so each op costs much machine code.  Thus the tests
+// mix of the loops of its inputs, with three loops in place of four for each
+// input past the second, so each op costs much machine code.  Thus the tests
 // compile in more than one unit.  Each unit elementwise_unit_*.cpp of
 // test_core_elementwise gives one or two of the functions at the end of this
 // header, and each such function runs a test of this header for one element

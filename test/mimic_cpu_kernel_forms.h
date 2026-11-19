@@ -8,10 +8,10 @@
 // keeps its own body, compiled for its own target.  The kernels state each
 // order, so each unit gives the same digest.
 //
-// The walk of scale_product_of_difference has four inputs, and it has more
-// machine code than each other kernel together.  Thus each unit of a level
-// has a second unit for that kernel alone, which gives the function
-// scale_product_of_difference_in_*_unit below.
+// The walk of scale_product_of_difference has four inputs.  Each unit of a
+// level has a second unit for that kernel alone, which gives the function
+// scale_product_of_difference_in_*_unit below, so the two units compile at
+// the same time.
 
 #include <crucible/mimic/cpu/Kernels.h>
 #include <fixy/Core.h>
