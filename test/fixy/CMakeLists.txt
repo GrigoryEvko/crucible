@@ -4644,6 +4644,29 @@ fixy_neg_compile_test(neg_sess_session_over_a_held_channel_pole
 fixy_neg_compile_test(neg_sess_session_over_a_channel_binding
   "no matching function for call to .mint_session<fixy::session::Send<int, fixy::session::End> >"
   "ReachesAChannelPole<Resource>. .with Resource = binding_fixture::BindsALog<")
+# Each other door that takes a protocol from its caller refuses a pole too:
+# the permissioned mint, the callback, the test channel, the asynchronous
+# fork and the rewind of a handle at End.
+fixy_neg_compile_test(neg_sess_permissioned_session_over_a_channel_pole
+  "no matching function for call to .mint_permissioned_session<fixy::session::Loop<fixy::session::Send<long int"
+  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, permissioned_pole_fixture::Tag, foundation::permissions::._anon_[0-9]+>::ProducerHandle")
+fixy_neg_compile_test(neg_sess_callback_session_over_a_channel_pole
+  "no matching function for call to .with_session<fixy::session::End"
+  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, callback_pole_fixture::Tag, foundation::permissions::._anon_[0-9]+>::ProducerHandle")
+fixy_neg_compile_test(neg_sess_test_channel_over_channel_poles
+  "no matching function for call to .mint_test_channel<fixy::session::Loop<fixy::session::Send<long int"
+  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, test_channel_pole_fixture::Tag, foundation::permissions::._anon_[0-9]+>::ProducerHandle")
+fixy_neg_compile_test(neg_sess_async_channel_over_channel_poles
+  "no matching function for call to .mint_forked_async_channel<"
+  "ReachesAChannelPole<Resource>. .with Resource = async_pole_fixture::HeldProducer")
+fixy_neg_compile_test(neg_sess_rewind_over_a_channel_pole
+  "no matching function for call to .fixy::session::HandleFactory::rewind<fixy::session::Loop<fixy::session::Send<long int"
+  "ReachesAChannelPole<Resource>. .with Resource = rewind_pole_fixture::IntLog::ProducerHandle")
+# A pole table stands in the file of its template.  A table that names the
+# template of another header stops the build.
+fixy_neg_compile_test(neg_sess_pole_table_outside_its_template_file
+  "call to non-.constexpr. function .void fixy::session::detail::a_pole_table_stands_outside_the_file_of_its_template"
+  "no matching function for call to .mint_substrate_session<borrowed_table_fixture::Channel")
 fixy_neg_compile_test(neg_sess_crash_session_over_a_channel_pole
   "no matching function for call to .mint_crash_session<Proto, crash_pole_fixture::Alice, crash_pole_fixture::Bob>"
   "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<")
