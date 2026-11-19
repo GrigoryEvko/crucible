@@ -100,7 +100,7 @@ The six rules of the shapes read each class, signature and body that `must-consu
 
 **No external SMT dependency.** Crucible ships no Z3, no CVC5, no third-party SMT solver. At this time, the `verify` CMake preset builds Release code with every contract family armed. An internal small-SMT solver for that preset is deferred. It will discharge residual integer / Presburger obligations only — bounds, divisibility, modular arithmetic, the same narrow scope TVM Analyzer (PR #1367) uses. Its planned budget is 5 ms per query, not on the hot path. Out of scope (and never planned): kernel-optimality proofs, floating-point reasoning, cost-model decidability. Those are measurement problems for the planned cross-vendor CI harness (MIMIC.md §41), not theorem proving.
 
-**Capability tags.** `include/foundation/effects/Effect.h`, in namespace `foundation::effects`, defines three groups. The first is the `Effect` enum of six atoms (Alloc, IO, Block, Bg, Init, Test). The second is the value-level tags `cap::Alloc`, `cap::IO` and `cap::Block`, which the namespace re-exports as `Alloc`, `IO` and `Block`. The third is the context classes `Bg`, `Init` and `Test`. A context holds its value atoms as empty `[[no_unique_address]]` fields (`bg.alloc`, `bg.io`, `bg.block`), so the tags cost nothing at run time.
+**Capability tags.** `include/foundation/effects/Effect.h`, in namespace `foundation::effects`, defines three groups. The first is the `Effect` enum of eight atoms (Alloc, IO, Block, Bg, Init, Test, Nondet, Div). The second is the value-level tags `cap::Alloc`, `cap::IO`, `cap::Block` and `cap::Nondet`, which the namespace re-exports as `Alloc`, `IO`, `Block` and `Nondet`. The third is the context classes `Bg`, `Init` and `Test`. A context holds its value atoms as empty `[[no_unique_address]]` fields (`bg.alloc`, `bg.io`, `bg.block`, `bg.nondet`), so the tags cost nothing at run time.
 
 Only `mint_context<Ctx>(key)` builds a context, and only the owner of a key can build the key. The rows of the kind `door-use` in `utils/ledgers/owners.txt` list the entry points that use the two production doors. The tags and the contexts are NOT F\*X proof obligations. They are C++-level capabilities enforced at compile time. Production call sites spell them `::foundation::effects::*`.
 
@@ -732,15 +732,15 @@ void connect(uint32_t src, uint32_t dst, uint32_t slot);
 
 **Discipline:**
 - `[[nodiscard]]` on every query returning bool or pointer.
-- `(ptr, count)` pairs → `std::span` accessor. `span(nullptr, 0)` is a valid empty span.
+- `(ptr, count)` pairs → a `fixy::View<T>` accessor. A default `View<T>` is a valid empty view.
 - `alloc_array<T>(0)` returns `nullptr` AND sets count to 0 — both must agree.
-- Iterate via span, never raw `(ptr, count)` loop.
+- Iterate via the View, never raw `(ptr, count)` loop.
 - OOM → `std::abort()`. Crucible never runs on systems where OOM is recoverable.
 
 ```cpp
-// ✓ CORRECT
-[[nodiscard]] std::span<const TensorMeta> input_span() const {
-    return {input_metas, num_inputs};
+// ✓ CORRECT: inputs_ is a fixy::HeapArray<TensorMeta> that the object owns
+[[nodiscard]] fixy::View<const TensorMeta> input_view() const {
+    return inputs_.view();
 }
 
 // Boundary function: contract-enforce non-null
@@ -759,21 +759,22 @@ void process(const TraceEntry* entry) {
 **Discipline:**
 - Graph and DAG memory lives in a `BumpArena` (bump pointer, ~2 ns alloc, no fragmentation, no UAF) or in the buffers of a region. Only the end of an epoch of `with_epoch` ends the bytes of an arena before the arena ends (`include/foundation/core/BumpArena.h`).
 - No `new` / `delete`. No `malloc` / `free` on hot path.
-- No `std::shared_ptr`. No `std::unique_ptr` on hot path (only for top-level ring/MetaLog buffers).
+- No `std::shared_ptr`. No `std::unique_ptr` in new code outside the base: one owned object is a `fixy::Box<T>` from `mint_box`, and an owned buffer is a `fixy::HeapArray<T>` (the table of base types in CLAUDE.md section 3).
 - `= delete("reason")` on copy and move of non-value types. WITH a reason string.
 - `static_assert(sizeof(T) == N)` on layout-critical structs.
 - `BumpArena` builds each element with its constructor, through `make` and `array`. A lifetime start over bytes uses `foundation::lifetime::start_as_array` (`include/foundation/Lifetime.h`), which refuses a proof type — NOT `reinterpret_cast`. The rule `owners` refuses `std::start_lifetime_as` outside that header.
 
 ```cpp
-// ✓ CORRECT
-class Arena {
-    Arena(const Arena&) = delete("interior pointers would dangle");
-    Arena(Arena&&)      = delete("interior pointers would dangle");
+// ✓ CORRECT (include/foundation/core/BumpArena.h, in short)
+class BumpArena final {
+    BumpArena(BumpArena const&) = delete("a BumpArena owns its blocks alone: a copy would free them two times");
+    BumpArena(BumpArena&&) = delete("an epoch of a BumpArena names the arena: build a new arena instead");
 
-    template<typename T>
-    T* alloc_obj() {
-        void* raw = bump(sizeof(T), alignof(T));
-        return ::new (raw) T{};  // the constructor starts the lifetime, as BumpArena::make does
+    template <class T, ..., class Marker, class... Args>
+        requires(... && CanMakeInArena<T, Marker, Args...>)
+    [[nodiscard]] Ref<T, Fresh> make(Marker /*allocation*/, Args&&... args) & noexcept {
+        T* const object = ::new(bump_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...);  // the constructor starts the lifetime
+        return detail::RefDoor::lend<Fresh>(*object);
     }
 };
 ```
@@ -788,7 +789,7 @@ class Arena {
 - SPSC = one writer, one reader, per ring buffer. Never multi-producer without explicit atomic sync.
 - Document ownership in a comment at the struct level: "owned by fg thread", "owned by bg thread", "SPSC via acquire/release".
 - No shared mutable state except through atomics.
-- Arena gives out raw pointers — once given, the arena's bump cursor is opaque to the holder; no one else can reference that region.
+- `BumpArena` gives out a `Ref` from `make` and a `View` from `array` — once given, the arena's bump cursor is opaque to the holder; no one else can reference that region.
 
 ### 6. ThreadSafe — acquire/release only
 
@@ -825,7 +826,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 
 **Discipline:**
 - An arena frees its bytes all together, at the end of an epoch or at the end of the arena, and it frees no single object. The publish stage frees the buffers of a published region when the region has no holder (`src/BackgroundThread.cpp`).
-- `std::unique_ptr` for long-lived owned buffers (TraceRing, MetaLog).
+- `fixy::Box<T>` from `mint_box` for long-lived owned buffers (TraceRing, MetaLog).
 - `bg_` thread member declared LAST in containing struct — destroyed first, joins before other members die.
 - No Rc cycles (we don't use Rc anyway).
 - The Cipher (`include/crucible/Cipher.h`) is a content-addressed object store in one local directory, and it deletes no stored object. Only its in-process cache of object bytes has a limit: at most 64 entries and 8 MB. When the cache is full, it removes the entry that was used least recently. Three tiers with their own eviction are planned: hot (LRU), warm (by age) and cold (an S3 lifecycle policy).
@@ -864,7 +865,7 @@ At the end of the migration, the families of §XXII replace each row of these ta
 | On the ignorability of standard attributes | P2552R3 (DR) | Clarified attribute ignorability — predictable behavior |
 | Disallow returning ref to temporary | P2748R5 | Compile error for dangling ref |
 | Deleting ptr-to-incomplete ill-formed | P3144R2 | Compile error for silent UB |
-| Reflection | P2996R13 | `reflect_hash<T>`, auto-serializers (`-freflection`) |
+| Reflection | P2996R13 | `fixy::hash` and the other folds of the Protocol family, auto-serializers (`-freflection`) |
 | Annotations for reflection | P3394R4 | Tag fields for custom codegen |
 | Splicing a base class subobject | P3293R3 | Reflect across hierarchy |
 | Function parameter reflection | P3096R12 | Auto-generate dispatch from schema |
@@ -888,7 +889,7 @@ At the end of the migration, the families of §XXII replace each row of these ta
 
 | Feature | Paper | Usage |
 |---|---|---|
-| Explicit lifetime management | P2590R2 | `std::start_lifetime_as<T>` fixes arena type-punning UB |
+| Explicit lifetime management | P2590R2 | `foundation::lifetime::start_as_array` (`include/foundation/Lifetime.h`) starts the lifetime of objects over bytes, and refuses a type that holds a proof type or a reference. The rule `owners` refuses `std::start_lifetime_as` and `std::start_lifetime_as_array` outside that header |
 | Deducing `this` | P0847R7 | CRTP without CRTP boilerplate |
 | Portable assumptions (`[[assume]]`) | P1774R8 | Compile-time invariants to optimizer |
 | `static operator()` | P1169R4 | Stateless callable with no `this` |
@@ -901,7 +902,7 @@ At the end of the migration, the families of §XXII replace each row of these ta
 
 | Feature | Ban via | Reason |
 |---|---|---|
-| Exceptions | **not a flag** — the rule `artifact-symbols` | `-fno-exceptions` is NOT in this build and never was. No code of the tree throws through `__cxa_throw`: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard reads each static library of the tree, and it refuses a reference to `__cxa_throw` or `__cxa_rethrow`, also one that a library header makes. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and a row `throw` of `utils/ledgers/artifact-symbols.txt` admits the function of each other such throw, with its reason. Each throw helper of libstdc++, such as `std::__throw_length_error`, is a finding too. The base admits one only with a row `throw`, and each other library holds its helpers on a count that only falls (§XII) |
+| Exceptions | **not a flag** — the rule `artifact-symbols` | `-fno-exceptions` is NOT in this build and never was. No code of the tree throws through `__cxa_throw`: error paths are a `fixy::Result` (`std::expected` in code that does not use the base yet) or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard reads each static library of the tree, and it refuses a reference to `__cxa_throw` or `__cxa_rethrow`, also one that a library header makes. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and a row `throw` of `utils/ledgers/artifact-symbols.txt` admits the function of each other such throw, with its reason. Each throw helper of libstdc++, such as `std::__throw_length_error`, is a finding too. The base admits one only with a row `throw`, and each other library holds its helpers on a count that only falls (§XII) |
 | RTTI | **not a flag** — the rule `artifact-symbols` | `-fno-rtti` is NOT in this build either, and on this tree it is a no-op: zero `dynamic_cast`, zero `typeid`, zero `std::type_info`, and every `virtual` lives in a planning document. Dispatch is a `kind` enum plus `static_cast`. The guard checks that the artifact references no `__dynamic_cast` and defines no typeinfo or vtable, other than those of a class that a row `vtable` of `utils/ledgers/artifact-symbols.txt` admits: the `std::thread::_State_impl` classes that `std::jthread` uses |
 | Coroutines on hot path | discipline | Heap allocation, unpredictable latency |
 | `volatile` for concurrency | P1152R4 deprecated | `volatile` does not order; use `std::atomic` |
@@ -909,7 +910,7 @@ At the end of the migration, the families of §XXII replace each row of these ta
 | `memory_order::consume` | P3475R2 deprecated; `-Werror=deprecated-declarations` | Compilers promote to acquire anyway |
 | VLAs (`int arr[n]`) | `-Werror=vla` | Stack UB |
 | C-style casts | `-Werror=old-style-cast` | Silent UB conversions |
-| `reinterpret_cast` | The kind `reinterpret-cast` of the rule `banned` (`utils/assay/guard/engines/tsast/banned.py`) reads the parse tree of `include/`, `src/` and `vessel/`. No row of the ledger of the rule admits a cast | Use `std::bit_cast<T>` for value reinterpretation, with the limits of §IV. Use `std::start_lifetime_as<T>` for arena type-punning, and `<simd>` first-class intrinsic interop for SIMD |
+| `reinterpret_cast` | The kind `reinterpret-cast` of the rule `banned` (`utils/assay/guard/engines/tsast/banned.py`) reads the parse tree of `include/`, `src/` and `vessel/`. No row of the ledger of the rule admits a cast | Use `std::bit_cast<T>` for value reinterpretation, with the limits of §IV. Use `foundation::lifetime::start_as_array` (`include/foundation/Lifetime.h`) for a lifetime start over bytes, and `<simd>` first-class intrinsic interop for SIMD |
 | `const_cast` | `-Werror=cast-qual` | Casting away const is almost always wrong |
 | Static downcast (`static_cast<Derived*>`) | N/A — no inheritance in data types | We have no `virtual` |
 | Implicit narrowing | `-Werror=conversion -Werror=sign-conversion` | Silent truncation |
@@ -934,7 +935,7 @@ At the end of the migration, the families of §XXII replace these tables. The op
 | `std::expected<T,E>` (C++23) | Error paths without exceptions |
 | `std::flat_map` / `std::flat_set` (C++23) | Sorted vector container, cache-friendly |
 | `std::move_only_function` (C++23) | Move-only callable |
-| `std::start_lifetime_as` (C++23) | Arena type punning correctness |
+| `std::start_lifetime_as` (C++23) | Only `include/foundation/Lifetime.h` can name it, and the rule `owners` refuses each other use. A lifetime start over bytes uses `foundation::lifetime::start_as_array` of that header |
 | `std::bit_cast` (C++20) | A copy of the bits of a value into a different type. The result is undefined behavior when the bit pattern is no value of the destination type. For a `bool` from the byte 2, a constant evaluation gives `false`. At run time, `-O0` gives a value that is true in a condition and not equal to `true`, and `-O3` gives `true`. New code does not use `std::bit_cast` to make a `bool` or a value of an enumeration. In a quarantined file, the restriction `plain-result` of its admit row refuses a destination type that holds one (§XXII). A value from outside the program, such as the bytes of a file or of the wire, becomes a value of an enumeration only after a comparison with its enumerators. The Scalar family replaces `std::bit_cast` (§XXII). The admitted list keeps it until that change is on main |
 | `std::saturating_add` / `saturating_sub` / `saturating_mul` (C++26) | Saturation arithmetic at size-math sites. libstdc++ 16 declares these names in `<numeric>` and has no `std::add_sat`. Call sites use `saturating_add` / `saturating_sub` / `saturating_mul` of the Scalar family (`include/foundation/core/Arithmetic.h`), which use the overflow builtins and no `<numeric>` |
 | `std::breakpoint()` (C++26) | Hardware breakpoint for debug asserts. **libstdc++ 16 status:** the `<debugging>` header declares the symbol, and the library ships no definition — use the `foundation::detail::breakpoint*` stand-ins in `include/foundation/Platform.h` |
@@ -971,34 +972,34 @@ These C++26 library features are spec'd and the project will adopt them, but lib
 
 | Type | Why |
 |---|---|
-| `std::function` | Type-erased, heap-allocated, indirect call; use `function_ref` or templated `auto&&` |
+| `std::function` | Type-erased, heap-allocated, indirect call; use `fixy::CallRef` or templated `auto&&` |
 | `std::any` | Heap + type erasure |
 | `std::regex` | 10-100× slower than alternatives, throws, huge code size |
 | `std::async` | Launches threads, heap, ambiguous semantics |
 | `std::promise`/`std::future` | Heap + mutex; use atomic flags + SPSC signal |
 | `std::shared_mutex` | Often slower than plain mutex; we use neither on hot path |
-| `std::thread` raw | Use `std::jthread` (C++20) |
+| `std::thread` raw | Start a thread through `mint_permission_fork` or the pipeline mints (CLAUDE.md section 3) |
 | `std::endl` | Flushes; use `'\n'` |
-| `std::vector<bool>` | Proxy iterators, not really a container; use `std::bitset<N>` |
-| `std::vector::reserve` (anywhere) | **Banned** (the kind `vector-reserve` of the rule `banned` reads `include/`, `src/` and `bench/`, and a row of `utils/ledgers/banned.txt` admits a call with its reason) — signals wrong container choice. `vector::push_back` past capacity is **O(n)** (copies every existing element to the new buffer); reserve only delays the first O(n) spike, doesn't eliminate it. The "amortized O(1)" story hides three real costs: (1) **tail-latency**: each individual growth event is O(n), fatal for p99 budgets; (2) **silent perf cliff**: move-during-growth requires `noexcept` move ctors or falls back to **copy** without warning; (3) **heap churn**: every growth allocates new + frees old, fragments the allocator. Replacements: known max → `std::inplace_vector<T, N>` (compile-time bound, zero heap, true O(1) push_back, contract-checked overflow); known exact size at construction → `vector<T> v(N)` and fill by index (one allocation, no growth); truly unbounded → plain `vector<T>` and accept amortization (rare in practice; usually means you should have used arena-backed storage). Hot path: arena, never vector at all (HS10 in §XVIII) |
-| `std::vector::push_back` on growth-uncertain hot paths | Same root cause as the reserve ban — growth event is O(n) with hidden allocator interaction. Use `std::inplace_vector<T, N>` for type-encoded bounds or arena allocation for unbounded cold growth |
+| `std::vector<bool>` | Proxy iterators, not really a container; use `fixy::BitSet` or `fixy::HeapBitSet` |
+| `std::vector::reserve` (anywhere) | **Banned** (the kind `vector-reserve` of the rule `banned` reads `include/`, `src/` and `bench/`, and a row of `utils/ledgers/banned.txt` admits a call with its reason) — signals wrong container choice. `vector::push_back` past capacity is **O(n)** (copies every existing element to the new buffer); reserve only delays the first O(n) spike, doesn't eliminate it. The "amortized O(1)" story hides three real costs: (1) **tail-latency**: each individual growth event is O(n), fatal for p99 budgets; (2) **silent perf cliff**: move-during-growth requires `noexcept` move ctors or falls back to **copy** without warning; (3) **heap churn**: every growth allocates new + frees old, fragments the allocator. Replacements: known max → `fixy::FixedList<T, N>` (compile-time bound, zero heap, true O(1) append, and an append into a full list gives `Full`); known exact size at construction → a `fixy::HeapArray<T>` of N elements, filled by index (one allocation, no growth); truly unbounded → the `GrowList<T>` of `include/foundation/core/Grow.h` and accept amortization (rare in practice; usually means you should have used arena-backed storage). Hot path: arena, never vector at all (HS10 in §XVIII) |
+| `std::vector::push_back` on growth-uncertain hot paths | Same root cause as the reserve ban — growth event is O(n) with hidden allocator interaction. Use `fixy::FixedList<T, N>` for type-encoded bounds or arena allocation for unbounded cold growth |
 | `std::cout` / `std::cerr` on hot path | Synced with stdio; use `fprintf(stderr, ...)` for debug |
 | `std::printf` / `std::format` on hot path | Formatting cost; reserve for debug paths |
 | `std::rand()` / `std::srand()` | Global state, poor quality; Philox only |
 | `std::this_thread::sleep_for` | Already banned per ThreadSafe |
-| `std::string` in hot-path structs | 32 B SSO, breaks memcpy; `const char*` + explicit lifetime |
+| `std::string` in hot-path structs | 32 B SSO, breaks memcpy; `fixy::FixedText`, or a `fixy::TextView` with an explicit lifetime |
 | `std::unordered_map` | Chained buckets, pointer chasing; Swiss table open-addressing |
-| `std::map` | Red-black tree, pointer chasing; `std::flat_map` |
-| `std::shared_ptr` | Atomic refcount, heap; arena raw pointers |
+| `std::map` | Red-black tree, pointer chasing; a sorted `fixy::HeapArray` with `fixy::find_lower_bound_by_key` |
+| `std::shared_ptr` | Atomic refcount, heap; a `Ref` from a `BumpArena`, or one owner in a `fixy::Box<T>` |
 | `std::ranges` pipelines | Compile-time bloat, debug-build performance cliff |
-| `std::optional` on hot path | +1 B tag + branch; `nullptr` or `kind` enum sentinel |
+| `std::optional` on hot path | +1 B tag + branch; `fixy::Option<T>`, which reads a niche of `T` when `T` has one, or a `kind` enum sentinel |
 | `std::variant` on hot path | Visitor dispatch; `kind` enum + `static_cast` |
 | Bitfields | Often slower than manual shift+mask; manual bits |
 | `std::codecvt` | Deprecated, broken API |
 | `std::rcu` / `<hazard_pointer>` (C++26) | We publish via `AtomicSnapshot<T>` + `atomic_ref` — finer control, DetSafe-documented; stdlib variants add overhead we don't need. **libstdc++ 16.0.1 status:** not shipped (`__cpp_lib_rcu` / `__cpp_lib_hazard_pointer` undefined) — banning the policy now ensures no one reaches for them later when they do land |
 | `std::simd` FP reductions (`reduce_*` on float/double) | ISA-dependent rounding; breaks DetSafe bit-equality across platforms. Integer reductions are safe |
 | `std::linalg` (C++26) | HS9 bans vendor BLAS; `<linalg>` dispatches through one anyway. **libstdc++ 16.0.1 status:** not shipped (`__cpp_lib_linalg` undefined) — policy ban applies once it lands |
-| `std::copyable_function` (C++26) | Heap allocation risk on capture-heavy lambdas; prefer `function_ref` (borrow) + explicit owned-pointer when ownership is needed |
+| `std::copyable_function` (C++26) | Heap allocation risk on capture-heavy lambdas; prefer `fixy::CallRef` (borrow), and a `fixy::Box<T>` when ownership is needed |
 
 ---
 
@@ -2021,15 +2022,15 @@ static_assert(sizeof(TraceEntry) == 32);
 ### Arena allocation
 
 ```cpp
-template<typename T>
-[[nodiscard]] T* Arena::alloc_obj() {
-    static_assert(std::is_trivially_destructible_v<T>,
-                  "Arena does not call destructors");
-    void* raw = bump(sizeof(T), alignof(T));
-    if (!raw) [[unlikely]] std::abort();
-    auto* obj = static_cast<T*>(raw);             // the address only: the new below starts the lifetime
-    ::new (obj) T{};                              // default-init (NSDMI fires)
-    return obj;
+// include/foundation/core/BumpArena.h.  The arena ends no object, so
+// CanMakeInArena asks for a trivially destructible T that builds with no throw.
+template <class T, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND, class Marker,
+          class... Args>
+    requires(sizeof...(Refused) == 0 && CanMakeInArena<T, Marker, Args...>)
+[[nodiscard]] Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>> make(Marker /*allocation*/,
+                                                                           Args&&... args) & noexcept {
+    T* const object = ::new(bump_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...);
+    return detail::RefDoor::lend<Fresh>(*object);
 }
 ```
 
@@ -2038,11 +2039,11 @@ template<typename T>
 ```cpp
 // Boundary: contract-checked.  The checks are statements of the body, because
 // each build rejects a pre or post specifier (§XII).
-std::expected<PlanId, Error> submit_plan(PlanId id, std::span<const PatchValue> patches) {
+fixy::Result<PlanId, Error> submit_plan(PlanId id, fixy::View<const PatchValue> patches) {
     CRUCIBLE_PRE(!id.is_none());
-    CRUCIBLE_PRE(std::all_of(patches.begin(), patches.end(), valid_patch));
-    std::expected<PlanId, Error> result = runtime::submit_plan_inner(id, patches);
-    CRUCIBLE_POST(result, !result.has_value() || !result->is_none());
+    CRUCIBLE_PRE(patches.walk().all_of(valid_patch));
+    fixy::Result<PlanId, Error> result = runtime::submit_plan_inner(id, patches);
+    CRUCIBLE_POST(result, !result.is_ok_and([](PlanId const& plan) noexcept { return plan.is_none(); }));
     return result;
 }
 
@@ -2068,16 +2069,18 @@ CRUCIBLE_HOT bool try_push(const TraceEntry& entry) noexcept {
 ### Reflection-generated hash (GCC 16 only)
 
 ```cpp
-#if CRUCIBLE_HAS_REFLECTION
-template <typename T>
-[[nodiscard]] consteval uint64_t reflect_hash(const T& obj) {
-    uint64_t h = 0xcbf29ce484222325ULL;  // FNV-1a seed
-    template for (constexpr auto field : std::meta::nonstatic_data_members_of(^T)) {
-        h = detail::fmix64(h ^ hash_field(obj.[:field:]));
-    }
-    return h;
+// include/foundation/core/Protocol.h.  fixy::hash of a class that carries
+// derive_protocol folds each base and then each member, each at its offset in
+// the image of the class.  The fold of the bytes is the fold of foldhash-f.
+template <std::size_t Offset, class T, std::size_t... Bases, std::size_t... Members>
+constexpr void hash_parts_([[maybe_unused]] HashState& state, [[maybe_unused]] T const& object,
+                           std::index_sequence<Bases...> /*bases*/,
+                           std::index_sequence<Members...> /*members*/) noexcept {
+    [[maybe_unused]] constexpr std::meta::info type = ^^T;
+    (detail::hash_part_<Offset + base_image_offset_at(type, Bases)>(state, detail::base_at_<Bases>(object)), ...);
+    (detail::hash_part_<Offset + member_image_offset_at(type, Members)>(state, detail::member_at_<Members>(object)),
+     ...);
 }
-#endif
 ```
 
 ### Hot loop with all the hints
@@ -2203,7 +2206,7 @@ enum class CompileError : std::uint8_t {
 };
 
 [[nodiscard]] fixy::Result<CompiledKernel, CompileError>
-compile_kernel(::foundation::effects::Bg const& bg, Arena& arena,
+compile_kernel(::foundation::effects::Bg const& bg, fixy::BumpArena& arena,
                const KernelNode& k, const TargetCaps& caps)
 {
     CRUCIBLE_PRE(k.recipe != nullptr);
@@ -2340,7 +2343,7 @@ These tests ARE the design guarantee. If they red, the guarantee is broken — s
 | `bit_exact_recovery_invariant` — planned. No test reloads a stored region into a Vigil and compares a replay. `test_cipher` stores and loads one region, and it compares the content hash and the op count | DetSafe + MemSafe | Release gate |
 | `checkpoint_format_stability` — `test_serialize` and `test_serialize_release_gate`, label `determinism`; no `TrainingCheckpoint` type exists, so the DAG wire format is the checkpoint format | DetSafe + LeakSafe | Every PR |
 | SPSC rings under ThreadSanitizer — the `tsan` preset runs the full suite. The ring and channel tests that start threads are `test_trace_ring`, `test_trace_ring_pop_batch`, `test_meta_log`, `test_concurrent_rings` and `test_concurrent_channels` | ThreadSafe + BorrowSafe | Every PR (tsan preset) |
-| Arena lifetime under ASan — the `default` preset puts ASan on every target of the Debug build. The arena tests are `test_arena`, `test_arena_alloc_class` and, with `CRUCIBLE_FUZZ=ON`, `prop_arena_alloc_invariants` | MemSafe + LeakSafe | Every PR (default preset) |
+| Arena lifetime under ASan — the `default` preset puts ASan on every target of the Debug build. The arena tests are `test_core_bump_arena`, and in a build with AddressSanitizer `test_core_bump_arena_poison` and `test_core_bump_arena_poison_new_block` | MemSafe + LeakSafe | Every PR (default preset) |
 | Numeric checks under UBSan — the `default` preset puts UBSan on each test executable. The `ubsan-strict` preset puts the full UBSan set on every target, with signed overflow undefined. The numeric tests are `test_core_scalar_arith`, `test_saturate`, `test_saturated`, `test_checked` and, with `CRUCIBLE_FUZZ=ON`, `prop_checked_arith` and `prop_saturate_math_invariants` | TypeSafe + InitSafe | Every PR (default and ubsan-strict presets) |
 | Repeat until failure — the `stress` test preset runs the `default` suite with `repeat until-fail:50`. No CI job runs it. `loop nightly` runs each test of a program of the build again through the evidence runner of repetition, to the target of the class `stress-passes` (`utils/assay/loop/evidence/targets.py`, `utils/assay/loop/entry.py`) | ThreadSafe (race detector) | Each run of `loop nightly` and `loop release` |
 
@@ -2430,7 +2433,7 @@ Fuzzing via AFL++ / libFuzzer targets untrusted-input paths (Cipher deserialize,
 - Every public `.h` has a test.
 - Every `CRUCIBLE_PRE` / `CRUCIBLE_POST` has a test that exercises both success AND violation.
 - Every enum variant has a test (round-trip if serialized).
-- Every `std::expected` error has a test that triggers it.
+- Every error of a `fixy::Result` has a test that triggers it.
 - Every `[[assume]]` has a test that proves the condition holds at every reachable call site.
 
 No "% line coverage" number — coverage **of the 8 axioms** is the metric.
@@ -2591,7 +2594,7 @@ The other rules of the table count findings or facts, and no rule gives a warnin
 
 ### Hot path is header-only
 
-- **Hot path** (`TraceRing`, `Arena`, `Expr`, `MerkleDag`, `CKernel`, `PoolAllocator`): header-only. Enables cross-TU inlining even without LTO.
+- **Hot path** (`TraceRing`, the bump of `BumpArena`, `Expr`, `MerkleDag`, `CKernel`, `PoolAllocator`): header-only. Enables cross-TU inlining even without LTO.
 - **Cold path** (Cipher cold tier, serialization, CLI, tools): `.h` + `.cpp` split. Reduces rebuild cost when implementation changes.
 - **Templates**: always header-only (mandatory).
 - **`inline` functions**: header-only with `inline` keyword (ODR).
@@ -2738,25 +2741,26 @@ A band is an alias over `Graded<Absolute, L::At<Tier>, T>` in `include/fixy/Band
 Composition is **wrapper-nesting**, not one large product lattice. Each `Graded<Modality, Lattice, T>` instantiation is one algebraic slice, and a stack of wrappers puts several axes together, outer to inner. The order is canonical, because nesting is order-sensitive: `Stale<Tagged<T>>` and `Tagged<Stale<T>>` are two different types. The row hash folds along the stack, so a stack in a different order compiles but gets a different cache slot. `include/fixy/CanonicalOrder.h` states the order. A site that must have that order uses the concept `fixy::canonical_order::CanonicallyOrdered<Stack>` as a constraint. Review asks why a stack has a different order, unless a comment gives the reason for the separate cache slot.
 
 ```
-HotPath ⊃ DetSafe ⊃ NumericalTier ⊃ Vendor ⊃ ResidencyHeat ⊃
+DetSafe ⊃ NumericalTier ⊃ Vendor ⊃ ResidencyHeat ⊃
   CipherTier ⊃ AllocClass ⊃ Wait ⊃ Stale ⊃ Tagged ⊃ Refined ⊃
   Secret ⊃ Linear ⊃ Computation
 ```
 
-Outer wrappers carry "higher-level" properties (where in the system this runs, what tier it serves); inner wrappers are "closer to the value" (provenance tags, refinement predicates, classification, ownership). Reading example bottom-up: the value `T` is wrapped in `Computation<Row, T>` to declare its OS-effect row, then in `Linear<>` to declare exclusive ownership, then in `Secret<>` to mark as classified, and so on outward. Reading top-down: `HotPath<Hot, ...>` says "this lives on the hot path", and the rest of the stack refines what kind of hot-path value.
+The tier of the hot path is no layer of the stack. `hot_path_tier_v` of `include/fixy/Bands.h` reads it from the row of the `Computation`: a subrow of `Row<Nondet>` is Hot, a row that holds Alloc and is a subrow of `Row<Alloc, Nondet>` is Warm, and each other row is Cold.
 
-Worked example — a tensor that comes back from a Bg-context kernel, BITEXACT, NV vendor, hot-path:
+Outer wrappers carry "higher-level" properties (where in the system this runs, what tier it serves); inner wrappers are "closer to the value" (provenance tags, refinement predicates, classification, ownership). Reading example bottom-up: the value `T` is wrapped in `Computation<Row, T>` to declare its OS-effect row, then in `Linear<>` to declare exclusive ownership, then in `Secret<>` to mark as classified, and so on outward. Reading top-down: `DetSafe<Pure, ...>` says "a deterministic source produced the bytes", and the rest of the stack refines what kind of value it is.
+
+Worked example — a tensor that comes back from a Bg-context kernel, BITEXACT, NV vendor:
 
 ```cpp
-fixy::HotPath<fixy::HotPathTier_v::Hot,
-    fixy::DetSafe<fixy::DetSafeTier_v::Pure,
-        fixy::NumericalTier<fixy::Tolerance::BITEXACT,
-            fixy::Vendor<fixy::VendorBackend_v::NV,
-                foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>,
-                                                 ResultTensor>>>>>
+fixy::DetSafe<fixy::DetSafeTier_v::Pure,
+    fixy::NumericalTier<fixy::Tolerance::BITEXACT,
+        fixy::Vendor<fixy::VendorBackend_v::NV,
+            foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>,
+                                             ResultTensor>>>>
 ```
 
-Each band has a one-element grade, and the carrier `Computation<R, T>` adds no storage to `T`. The five-deep nest therefore has the size of `ResultTensor`.
+Each band has a one-element grade, and the carrier `Computation<R, T>` adds no storage to `T`. The four-deep nest therefore has the size of `ResultTensor`.
 
 **F\*-style named aliases** in `include/fixy/Aliases.h` give names to the common compositions. `Pure<T>` is `DetSafe<DetSafeTier_v::Pure, Computation<PureRow, T>>`, and `Tot<E_os, T>` is `DetSafe<DetSafeTier_v::Pure, Computation<E_os, T>>`. Use the aliases at production call sites, because the full stack is long for everyday code.
 
@@ -2879,7 +2883,7 @@ Test names (fuzzer property checks, gtest-style names) obey the same rule: `prop
 Five categories of short names are exempt because they ARE the standard vocabulary in their domain — renaming them would make the code less recognizable, not more:
 
 - **Crucible ontology primitives**: `Vigil`, `Keeper`, `Relay`, `Cipher`, `Canopy`, `Meridian`, `Observe`, `Warden`, `Vessel` are full words and fine at any length. Their short aliases in hot paths are not — use the full name.
-- **Hot-path idiomatic short names** canonical in Crucible: `op` (an operation), `args` (the arguments of an operation), `ndim` (uint8_t), `dtype` (ScalarType), `a` (the `::foundation::effects::Alloc` capability parameter of every Arena/MerkleDag allocator function), `arena` (the `Arena&` beside it), `ctx` (an execution context: `foundation::effects::ExecCtx` in a ctx-bound mint, or `CrucibleContext`), `bg` (`::foundation::effects::Bg` context — the background-thread context that holds the Alloc, IO and Block atoms), `fg` (the foreground context. Its capability type is `foundation::effects::ctx_cap::Fg`, and it permits no effect atom, because hot-path code holds no capability), `ms` (MetaIndex strong ID), `ring` (TraceRing&). Established in TraceRing.h / MerkleDag.h; rename would be churn.
+- **Hot-path idiomatic short names** canonical in Crucible: `op` (an operation), `args` (the arguments of an operation), `ndim` (uint8_t), `dtype` (ScalarType), `a` (the `::foundation::effects::Alloc` capability parameter of every BumpArena/MerkleDag allocator function), `arena` (the `BumpArena&` beside it), `ctx` (an execution context: `foundation::effects::ExecCtx` in a ctx-bound mint, or `CrucibleContext`), `bg` (`::foundation::effects::Bg` context — the background-thread context that holds the Alloc, IO and Block atoms), `fg` (the foreground context. Its capability type is `foundation::effects::ctx_cap::Fg`, and it permits no effect atom, because hot-path code holds no capability), `ms` (MetaIndex strong ID), `ring` (TraceRing&). Established in TraceRing.h / MerkleDag.h; rename would be churn.
 - **Binary-operation sides** (the FX/parser convention, preserved): `lhs` / `rhs` inside `add(lhs, rhs)`, `mul(lhs, rhs)`, `compare(lhs, rhs)`. Fine in accessors (`binop_lhs()`, `binop_rhs()`) because they project fields whose semantics are exactly "left side" / "right side".
 - **Loop induction variables** over a compile-time small range: `i`, `j`, `d` (dimension), `k` inside `for (uint8_t d = 0; d < ndim; ++d)`. `d` for dimension is idiomatic because `ndim` is the canonical spelling of the upper bound.
 - **Template type parameters** in generic code: `T`, `U`, `V`, `T1`, `T2` are canonical STL-style naming. A template parameter named `Predicate` is fine; one named `Fn` or `F` depends on role — a type-erased callable is `Callable` or `Predicate`, not `F`. Single-letter OK only for type-level `T`-style.

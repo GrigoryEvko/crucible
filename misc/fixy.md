@@ -2183,7 +2183,7 @@ The 20-dim catalog above covers wrappers that map back to FX dimensions. The act
 ```
 Crucible-native wrapper       Pinning axis                          Header
 ─────────────────────────     ──────────────────────────────────    ──────────────────────────
-HotPath<Tier, T>               hot/cold execution-tier admission     safety/HotPath.h
+hot_path_tier_v<Row>           hot/cold tier, a view of the row      fixy/Bands.h
 DetSafe<Tier, T>               determinism-axiom (axiom 8) tier      safety/DetSafe.h
 CipherTier<Tier, T>            Cipher hot/warm/cold storage tier     safety/CipherTier.h
 Vendor<Backend, T>             Mimic NV/AM/TPU/TRN/CPU backend pin   safety/Vendor.h

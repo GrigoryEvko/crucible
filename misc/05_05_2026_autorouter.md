@@ -79,7 +79,7 @@ should flag it.  The substrate's job is to make the router's job free.
 
 | Primitive | Type-level grades it carries | Router consults | Verdict |
 |---|---|---|---|
-| `HotPath<Hot, T>` | `is_hot_path_v == true` | tier-0 → never fanout | router-friendly |
+| A body whose row gives the tier Hot | `hot_path_tier_v<row> == Hot` (`fixy/Bands.h`) | tier-0 → never fanout | router-friendly |
 | `Pure` row body | `effects::is_pure_v<row> == true` | tier-0 → safe to fanout | router-friendly |
 | `ResidencyHeat<L1, T>` | `residency_tier_v == L1` | tier-0 → keep inline (cache-warm) | router-friendly |
 | `NumericalTier<BITEXACT_STRICT, T>` | deterministic order required | tier-0 → fanout disallowed | router-friendly |
@@ -325,7 +325,7 @@ std::is_nothrow_invocable_v<Body, Shard>  // false → exception path
 alignof(Body) >= 64                       // hot-path-aligned target
 
 // Crucible substrate grades:
-is_hot_path_v<HotPath<Hot, T>>            // hot path → NEVER fanout
+hot_path_tier_v<row> == HotPathTier::Hot  // hot path → NEVER fanout
 residency_tier_v<ResidencyHeat<X, T>>     // L1/L2 → seq, L3/DRAM → parallel
 vendor_v<Vendor<NV, T>>                   // NV launches batch at high latency
 numerical_tier_v<NumericalTier<X, T>>     // BITEXACT_STRICT → deterministic only
@@ -752,9 +752,9 @@ each is a measurable property:
    in `bench_auto_split_compare`, the router picks within 5% of the
    best-fixed strategy on at least 95% of cases.  Provable via the
    skill table.
-4. **Zero pessimization on hot-path bodies** — bodies tagged
-   `HotPath<Hot, T>` must NEVER be dispatched off-thread.  Static
-   assertion.
+4. **Zero pessimization on hot-path bodies** — bodies whose row
+   gives the tier Hot (`hot_path_tier_v` of `fixy/Bands.h`) must
+   NEVER be dispatched off-thread.  Static assertion.
 5. **Self-calibrating** — `dispatch_cost_ns` and `per_item_ns` derived
    from observation, not hardcoded.  EWMA tracks thermal state.
 6. **Cooperative under load** — `pool_pressure_factor()` clamps; no
