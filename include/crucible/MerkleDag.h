@@ -14,6 +14,7 @@
 #include <fixy/Saturated.h>
 #include <fixy/handle/PublishOnce.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
@@ -30,6 +31,22 @@
 namespace crucible {
 
 struct CompiledKernel;
+
+// The transfer facts of a compiled kernel, which no header defines yet (THE
+// OPAQUE TYPES of foundation/Transfer.h).  The file that defines
+// CompiledKernel must assert, beside the definition, that the definition
+// holds the statement:
+//
+//     static_assert(::foundation::transfer::holds_its_statement(^^CompiledKernel));
+//
+// A test of the check file of foundation/Transfer.h pins that a definition
+// whose walk refuses its statement fails that assertion.
+namespace transfer_facts {
+// A compiled kernel does not change after its compile, so two threads can
+// read one at the same time.
+inline constexpr ::foundation::transfer::opaque_facts compiled_kernel{.type = ^^CompiledKernel, .is_shareable = true};
+inline constexpr ::foundation::transfer::opaque_seal seal{.count = 1};
+}  // namespace transfer_facts
 
 // One slot of a memory plan.  The byte codec of the Protocol family writes
 // its 40 bytes in the image of a region: each field in declaration order,
@@ -376,9 +393,10 @@ struct RegionNode : TraceNode {
     // again to check the content hash.
     NumericsHash numerics;
     // One writer publishes the compiled kernel once and every reader
-    // acquire-loads it.  sizeof(PublishOnce<T*>) equals sizeof(atomic<T*>),
+    // acquire-loads it.  A reader only reads the kernel, so the slot holds
+    // a kernel of const.  sizeof(PublishOnce<T*>) equals sizeof(atomic<T*>),
     // so the 88-byte layout below holds.
-    ::fixy::handle::PublishOnce<CompiledKernel> compiled;
+    ::fixy::handle::PublishOnce<CompiledKernel const> compiled;
 
     // The ops are in the memory of the region, and the node only borrows them.
     ::fixy::View<TraceEntry> ops{};

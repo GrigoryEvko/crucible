@@ -6,6 +6,7 @@
 // out.
 
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/diag/tags/Aborts.h>
@@ -77,8 +78,14 @@ concept PublishOncePointee = (!std::is_pointer_v<T>) && (!std::is_reference_v<T>
 // size-locked layout that padding would break.  An embedder whose
 // neighbouring fields are written across threads applies the alignment
 // at the embed site.
+//
+// Each observer gets the pointer that the publisher stored, so the slot
+// refers to the object of T as a reference does, and it states refers{}
+// (foundation/Transfer.h).  Two threads can read a PublishOnce<T const>
+// when two threads can read a T, and a slot of a T that is not const asks
+// that two threads can write the T.
 template <typename T>
-class CRUCIBLE_OWNER PublishOnce {
+class CRUCIBLE_OWNER[[= ::foundation::transfer::refers{}]] PublishOnce {
     static_assert(PublishOncePointee<T>, "PublishOnce<T> hands off a T*, so T is the pointee.  PublishOnce<Foo*> "
                                          "publishes the address of a pointer variable, not the handle — write "
                                          "PublishOnce<Foo>.  A reference type has no pointer to form.");
