@@ -2562,6 +2562,12 @@ fixy_neg_compile_test(neg_sess_registered_class_without_definition
 fixy_neg_compile_test(neg_sess_payload_without_definition
   "a_payload_class_has_no_definition_here"
   "Declared")
+# A pointer to void reaches something that the payload walk cannot read, so
+# the walk fails closed in every session, unless the class that holds it
+# states that it is data with a payload rule of its header.
+fixy_neg_compile_test(neg_sess_payload_opaque_pointer
+  "fixy::session::diagnostic \\[Payload_Refused\\]: the payload cannot travel on a session channel, because it holds a pointer to void"
+  "The refused type: void.")
 
 # No trait of fixy/session/Protocol.h, Delegate.h, Crash.h or
 # Checkpoint.h is a template that a user can specialize.  A class
@@ -3450,7 +3456,7 @@ fixy_neg_compile_test(neg_sess_crash_delegation_behind_pointer
   "required for the satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. .with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
 fixy_neg_compile_test(neg_sess_crash_delegation_opaque_pointer
   "no matching function for call to .mint_crash_session"
-  "satisfaction of .is_delegation_free_v<Proto>. \\[with Proto = fixy::session::Offer<fixy::session::Recv<void\\*, fixy::session::End>")
+  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Offer<fixy::session::Recv<void\\*, fixy::session::End>")
 fixy_neg_compile_test(neg_sess_crash_token_not_held
   "no matching function for call to .mint_crash_session"
   "PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::Transferable<")

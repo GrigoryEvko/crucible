@@ -18,12 +18,14 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/Secret.h>
+#include <fixy/Tagged.h>
 #include <fixy/session/Classification.h>
 #include <fixy/session/Classified.h>
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Flow.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
+#include <foundation/Quarantine.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 #include <foundation/permissions/SharedPermission.h>
@@ -52,7 +54,48 @@
 namespace fp = ::foundation::permissions;
 namespace sess = ::fixy::session;
 
+// Two classes that hold an address and a size.  The second states that it
+// is data, with a payload rule of the role data: its address names bytes of
+// the process, and no token, no loan and no endpoint.
+// The address is a pointer to void from outside, in the Tagged of the base,
+// so the walk reaches the pointer through the member of the Tagged.
+namespace ownership_attacks_data {
+using Address = ::fixy::Tagged<void*, ::fixy::tags::source::External>;
+struct HoldsAddress {
+    Address base{};
+    std::size_t size = 0;
+};
+struct StatesAddress {
+    Address base{};
+    std::size_t size = 0;
+};
+// A class outside the base states that it is data with a member type of its
+// own: its address names bytes of the process.
+struct StatesByMember {
+    using session_payload_is_data = void;
+    Address base{};
+};
+// A derived class does not inherit the statement, so its own pointer counts.
+struct InheritsStatement : StatesByMember {
+    Address other{};
+};
+}  // namespace ownership_attacks_data
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test states a payload rule of the role data for a class of its own file")
+namespace fixy::session::combinators::ownership_attacks_data {
+inline constexpr ::fixy::session::transition::payload_rule states_address{
+    .shape = ^^::ownership_attacks_data::StatesAddress, .role = ::fixy::session::transition::payload_role::data};
+inline constexpr ::fixy::session::transition::seal payload_rule_seal{
+    .kind = ^^::fixy::session::transition::payload_rule, .count = 1};
+}  // namespace fixy::session::combinators::ownership_attacks_data
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 namespace ownership_attacks {
+
+using ::ownership_attacks_data::HoldsAddress;
+using ::ownership_attacks_data::InheritsStatement;
+using ::ownership_attacks_data::StatesAddress;
+using ::ownership_attacks_data::StatesByMember;
 
 struct X {
     using permission_row = ::foundation::effects::Row<>;
@@ -291,15 +334,25 @@ static_assert(refusal_of<Mentions<PlainEndpoint>> == Refusal::BareEndpoint,
               "a type that names an endpoint can hold one");
 static_assert(refusal_of<std::pair<TX, PlainEndpoint>> == Refusal::BareEndpoint,
               "a token beside an endpoint does not hide it");
-// A pointer to void and a pointer to a function name no endpoint type, as
-// an integer that holds an address names none.  A plain session admits
-// them as data, and a crash or a checkpoint session refuses them.
-static_assert(sess::is_plain_payload_v<void*>
+// A pointer to void and a pointer to a function name no endpoint type, but
+// the walk cannot read what they reach, so every session refuses them.  A
+// class that holds one is admitted when its payload rule states that it is
+// data.
+static_assert(refusal_of<void*> == Refusal::OpaquePointer
               && sess::payload_delegation_carrier_v<void*> == sess::DelegationCarrier::OpaquePointer);
-static_assert(sess::is_plain_payload_v<std::pair<int, void (*)()>>
+static_assert(!sess::is_plain_payload_v<void*>);
+static_assert(refusal_of<std::pair<int, void (*)()>> == Refusal::FunctionPointer
               && sess::payload_delegation_carrier_v<std::pair<int, void (*)()>>
                      == sess::DelegationCarrier::FunctionPointer);
-static_assert(sess::is_plain_payload_v<void (Stepper::*)() noexcept>);
+static_assert(refusal_of<void (Stepper::*)() noexcept> == Refusal::FunctionPointer);
+static_assert(refusal_of<HoldsAddress> == Refusal::OpaquePointer);
+static_assert(refusal_of<StatesAddress> == Refusal::None && sess::is_plain_payload_v<StatesAddress>
+                  && sess::payload_delegation_carrier_v<StatesAddress> == sess::DelegationCarrier::None,
+              "a class that states that it is data is read as data, and none of its members is read");
+static_assert(refusal_of<StatesByMember> == Refusal::None && sess::is_plain_payload_v<StatesByMember>,
+              "a class outside the base states that it is data with a member type of its own");
+static_assert(refusal_of<InheritsStatement> == Refusal::OpaquePointer,
+              "a derived class does not inherit the statement of its base");
 static_assert(refusal_of<Handed*> == Refusal::HandOffNotOwned);
 static_assert(refusal_of<std::optional<Handed>> == Refusal::HandOffNotOwned);
 static_assert(refusal_of<std::vector<Handed>> == Refusal::HandOffNotOwned);

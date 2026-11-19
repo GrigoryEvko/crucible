@@ -1,7 +1,8 @@
 // A pointer to void crosses a crash-aware session.  Its static type does
-// not name the object it points at, and that object can be an endpoint.
-// The query refuses a carrier with content that it cannot read, and the
-// mint refuses the payload.
+// not name the object it points at, and that object can be an endpoint or
+// a token.  The payload walk refuses it in every session, so the permission
+// flow of the protocol does not close, and the mint refuses the payload
+// before the delegation query.
 
 #include <fixy/session/CrashTransport.h>
 

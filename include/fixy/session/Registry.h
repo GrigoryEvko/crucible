@@ -351,6 +351,11 @@ template <class T>
 //   constant_time  the one place where a constant-time value travels
 //   hand_off       a live endpoint of another session, whose protocol is the
 //                  value and whose permission set is the set argument
+//   data           the named statement of a class whose members the walk
+//                  cannot read, such as a pointer to void: the class states
+//                  that it holds no token, no loan and no endpoint, and the
+//                  walk reads none of its members.  The comment beside the
+//                  rule gives the reason
 enum class payload_role : std::uint8_t {
     members,
     moves,
@@ -361,6 +366,7 @@ enum class payload_role : std::uint8_t {
     declassified,
     constant_time,
     hand_off,
+    data,
 };
 
 // The rule of one payload family.  The header that defines the family

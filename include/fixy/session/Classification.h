@@ -40,6 +40,13 @@
 //     the static type does not name what they hold
 //   * a class whose state the walk cannot read, which is the shape of a
 //     lambda with captures
+//   * a pointer to void, a pointer or a reference to a function, and a
+//     pointer to a member function, because the walk cannot read what
+//     they reach.  A class that holds one is admitted only when it states
+//     that it is data: with a payload rule of the role data in its header
+//     (fixy/session/Registry.h), or, for a class outside the base, with a
+//     member type session_payload_is_data that the class itself declares.
+//     The walk then reads none of its members
 //   * a class or a template that is only declared, behind a pointer, a
 //     reference or a template argument
 //   * one tag twice in one payload
@@ -85,10 +92,9 @@
 // and it changes no set.  The walk also refuses the carriers whose content
 // it cannot read: a type-erasure family and a lambda with captures.
 //
-// A pointer to void and a pointer to a function name no endpoint type.
-// They are in the class of an integer that holds an address, which the
-// list below states no type can refuse.  A plain session admits them, as
-// data.  Crash sessions and checkpoint sessions refuse them, and the
+// A pointer to void and a pointer to a function name no endpoint type,
+// but the walk cannot read what they reach, so every session refuses them
+// (the list above).  Crash sessions and checkpoint sessions refuse the
 // hand-off too, because their theories have no delegation.  Each of them
 // reads payload_conveys_delegation_v, so the two sessions use one
 // definition of delegation.
@@ -216,6 +222,8 @@ enum class PayloadRefusal : std::uint8_t {
     ConstantTimeBare,
     BareEndpoint,
     HandOffNotOwned,
+    OpaquePointer,
+    FunctionPointer,
 };
 
 enum class PayloadReach : std::uint8_t {
@@ -299,8 +307,36 @@ using ::fixy::session::transition::payload_role;
 // read of the registry for each shape.
 [[nodiscard]] consteval payload_lookup payload_rule_of(std::meta::info type) {
     const std::meta::info bare = std::meta::dealias(type);
-    if (!payload_is_specialization(bare) || !std::meta::is_complete_type(bare)) return {};
+    const bool is_class = std::meta::is_class_type(bare) || std::meta::is_union_type(bare);
+    if (!is_class || !std::meta::is_complete_type(bare)) return {};
     return ::fixy::session::transition::lookup_payload_rule(protocol_registry, bare);
+}
+
+// True when a complete class states that it is data with a public member
+// type of the name session_payload_is_data, which the class itself
+// declares.  A class outside the base cannot open a family of the registry,
+// so it states the role data this way, with a comment beside the member
+// that gives the reason.  A forward declaration has no member, so no unit
+// can state it for a class that it only declares, and the read takes only
+// a member of the class itself, so a derived class does not inherit the
+// statement.  Complexity: linear in the members of the class.
+[[nodiscard]] consteval bool states_data_by_member(std::meta::info type) {
+    for (const std::meta::info member : std::meta::members_of(type, std::meta::access_context::unprivileged())) {
+        if (std::meta::is_type_alias(member) && std::meta::has_identifier(member)
+            && std::meta::identifier_of(member) == "session_payload_is_data") {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when the walk reads a class as data: its payload rule has the role
+// data, or the class states it by its member.
+[[nodiscard]] consteval bool is_stated_data(std::meta::info type, const payload_lookup& rule) {
+    if (rule.is_found) return rule.entry.role == payload_role::data;
+    const std::meta::info bare = std::meta::dealias(type);
+    const bool is_class = std::meta::is_class_type(bare) || std::meta::is_union_type(bare);
+    return is_class && std::meta::is_complete_type(bare) && states_data_by_member(bare);
 }
 
 // The rule of a keyed message, or a lookup that found none.
@@ -556,12 +592,15 @@ consteval void record_payload_tag(PayloadWalk& walk, stack<std::meta::info> Payl
             return PayloadRefusal::TypeErasure;
         case DelegationCarrier::UnreadableState:
             return PayloadRefusal::UnreadableState;
-        // An opaque pointer and a function pointer name no endpoint type.
-        // They are in the class of an integer that holds an address, which
-        // no type can refuse, so a plain session admits them.  A crash and a
-        // checkpoint session refuse them through payload_conveys_delegation_v.
+        // The walk cannot read what an opaque pointer or a function pointer
+        // reaches, and it can reach a token or an endpoint, so the walk
+        // fails closed.  A class that holds one states that it is data
+        // in a payload rule of its header, and the walk then reads none of
+        // its members.
         case DelegationCarrier::OpaquePointer:
+            return PayloadRefusal::OpaquePointer;
         case DelegationCarrier::FunctionPointer:
+            return PayloadRefusal::FunctionPointer;
         case DelegationCarrier::None:
         case DelegationCarrier::HandOff:
             return PayloadRefusal::None;
@@ -714,6 +753,9 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
     const std::meta::info type = node.type;
     const PayloadReach reach = node.reach;
     const payload_lookup rule = payload_rule_of(type);
+    // A class that states that it is data holds no token, no loan and no
+    // endpoint, and the walk reads none of its members.
+    if (is_stated_data(type, rule)) return {};
     const PayloadFamily family = payload_family_of(type, rule);
     std::vector<std::meta::info> arguments;
     if (payload_is_specialization(type)) arguments = std::meta::template_arguments_of(type);
@@ -1038,6 +1080,15 @@ struct PayloadVerdict {
         case PayloadRefusal::HandOffNotOwned:
             return "it reaches a DelegatedSession through a pointer, a reference, a union or an array.  A hand-off "
                    "travels by value, one time, so that one recipient holds the endpoint and its tokens";
+        case PayloadRefusal::OpaquePointer:
+            return "it holds a pointer to void.  The walk cannot read what it points at, which can be a token or a "
+                   "session endpoint.  Send a typed value, or state the class that holds the pointer as data with a "
+                   "payload rule of the role data in its header, or with a member type session_payload_is_data";
+        case PayloadRefusal::FunctionPointer:
+            return "it holds a pointer or a reference to a function, or a pointer to a member function.  The "
+                   "recipient runs the target, which the walk cannot read, and the target can reach a token or an "
+                   "endpoint.  State the class that holds it as data with a payload rule of the role data in its "
+                   "header, or with a member type session_payload_is_data";
         default:
             break;
     }

@@ -154,6 +154,11 @@ struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_b
     // Each block also carries its own lane initializer, so a descriptor is
     // zeroed by default-construction whether or not its holder writes braces.
     // Removing the braces at a holder saves nothing.
+    // A session payload walk reads the descriptor as data: data_ptr is the
+    // cookie above, which reaches no token, no loan and no session endpoint
+    // (fixy/session/Classification.h).
+    using session_payload_is_data = void;
+
     TensorDimArray sizes{};
     TensorDimArray strides{};
     [[= ::fixy::local_part{}]] ExternalDataPtr data_ptr{};
