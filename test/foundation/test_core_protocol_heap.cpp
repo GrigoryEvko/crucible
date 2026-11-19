@@ -25,6 +25,7 @@ using ::foundation::core::encode;
 using ::foundation::core::Encodable;
 using ::foundation::core::encoded_size;
 using ::foundation::core::equal;
+using ::foundation::core::FixedArray;
 using ::foundation::core::FixedList;
 using ::foundation::core::FixedText;
 using ::foundation::core::format;
@@ -321,6 +322,100 @@ void test_heap_format_names_each_part() {
     CRUCIBLE_FATAL_INVARIANT(is_expected);
 }
 
+// ── An oracle of the heap parts ──────────────────────────────────────────
+
+[[nodiscard]] std::uint8_t byte_of(View<std::byte const> bytes, std::size_t at) noexcept {
+    return static_cast<std::uint8_t>(*bytes.get(at).expect("the offset is inside the bytes"));
+}
+
+// The little-endian count of 8 bytes from at.  The caller makes sure that
+// the bytes lie in the input.
+[[nodiscard]] std::uint64_t count_of(View<std::byte const> bytes, std::size_t at) noexcept {
+    std::uint64_t count = 0;
+    for (std::size_t index = 0; index < 8; ++index) {
+        count |= static_cast<std::uint64_t>(byte_of(bytes, at + index)) << (8 * index);
+    }
+    return count;
+}
+
+// The first fault of the bytes of a Message in the order of the parts, read
+// by the rules of THE HEAP PARTS with no call of decode, or a fault at 9999
+// when the bytes hold a value.  A part that the bytes cut names the offset
+// of its first byte.
+[[nodiscard]] DecodeFault first_heap_fault(View<std::byte const> bytes) noexcept {
+    std::size_t const size = bytes.size();
+    auto const fault = [](DecodeRefusal refusal, std::size_t offset) noexcept {
+        return DecodeFault{refusal, static_cast<std::uint32_t>(offset)};
+    };
+    std::size_t at = 0;
+    if (size - at < 4) return fault(DecodeRefusal::image_end, at);
+    at += 4;
+
+    FixedArray<std::size_t, 3> const steps{2, 1, 3};
+    for (std::size_t const step : steps) {
+        if (size - at < 8) return fault(DecodeRefusal::image_end, at);
+        std::uint64_t const count = count_of(bytes, at);
+        if (count > (size - at - 8) / step) return fault(DecodeRefusal::image_end, at);
+        at += 8;
+        for (std::uint64_t index = 0; index < count; ++index) {
+            if (step == 3 && byte_of(bytes, at + 2) > 1) return fault(DecodeRefusal::bool_byte, at + 2);
+            at += step;
+        }
+    }
+
+    if (size - at < 1) return fault(DecodeRefusal::image_end, at);
+    std::uint8_t const kind = byte_of(bytes, at);
+    if (kind != 1 && kind != 2) return fault(DecodeRefusal::enumerator, at);
+    at += 1;
+    if (at != size) return fault(DecodeRefusal::trailing_byte, at);
+    return DecodeFault{DecodeRefusal::bool_byte, 9999};
+}
+
+// decode agrees with the oracle on bytes that random cuts, growths and
+// writes change from two seeds: each fault is the fault of the oracle, and
+// an accepted value is the one value of its bytes, so encode writes the same
+// bytes back and the hash is the hand fold of the bytes.  A write that puts
+// a large byte into a count makes a count that needs more bytes than remain,
+// which decode refuses before it allocates.
+void test_heap_decode_agrees_with_an_oracle() {
+    FixedArray<Bytes, 2> const seeds{image_of(Message{}), image_of(sample_message())};
+    ::crucible::test::PhiloxStream stream{0x4845415052414E44ULL};
+    std::size_t accepted = 0;
+    for (int round = 0; round < 20000; ++round) {
+        std::uint64_t const word = stream.next_word();
+        Bytes const& seed = seeds.at(::foundation::core::Index<2>::check(word & 1U).expect("two seeds"));
+        std::size_t const seed_size = seed.size();
+        std::uint64_t const cut = (word >> 1) % 4 == 0 ? (word >> 8) % 17 : 8;
+        std::size_t const size = seed_size + 8 >= cut ? seed_size + 8 - cut : 0;
+        std::uint64_t const filler = stream.next_word();
+        Bytes bytes =
+            mint_heap_array_with<std::byte>(test_alloc(), size, [&seed, seed_size, filler](std::size_t at) noexcept {
+                if (at < seed_size) return *seed.view().get(at).expect("a byte of the seed");
+                return static_cast<std::byte>(static_cast<std::uint8_t>(filler >> (8 * (at % 8))));
+            });
+        for (std::uint64_t write = 0; size != 0 && write < ((word >> 6) & 3U); ++write) {
+            std::uint64_t const change = stream.next_word();
+            std::uint64_t const raw = (change & 1U) != 0 ? (change >> 8) % 4 : (change >> 8) & 0xFFU;
+            byte_at(bytes, (change >> 16) % size) = static_cast<std::byte>(raw);
+        }
+        Bytes const& read = bytes;
+        DecodeFault const expected = first_heap_fault(read.view());
+        bool const agrees = decode<Message>(test_alloc(), read.view())
+                                .match(
+                                    [&read, &expected, &accepted](Message value) noexcept {
+                                        ++accepted;
+                                        if (expected.offset() != 9999 || encoded_size(value) != read.size())
+                                            return false;
+                                        Bytes const again = image_of(value);
+                                        return ::foundation::core::equal(again.view(), read.view())
+                                            && hash(value).raw() == hand_heap_hash(read.view());
+                                    },
+                                    [&expected](DecodeFault fault) noexcept { return fault == expected; });
+        CRUCIBLE_FATAL_INVARIANT(agrees);
+    }
+    CRUCIBLE_FATAL_INVARIANT(accepted > 100 && accepted < 19900);
+}
+
 }  // namespace
 
 int main() {
@@ -329,5 +424,6 @@ int main() {
     test_heap_decode_refuses_each_fault();
     test_heap_hash_of_an_array_of_lists();
     test_heap_format_names_each_part();
+    test_heap_decode_agrees_with_an_oracle();
     return 0;
 }

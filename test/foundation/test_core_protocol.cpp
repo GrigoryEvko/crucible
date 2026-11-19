@@ -1158,6 +1158,116 @@ void test_lists_format_their_elements() {
     CRUCIBLE_FATAL_INVARIANT(is_expected);
 }
 
+// ── An oracle of the sums and the bounded lists ──────────────────────────
+
+using OracleEither = ::foundation::core::OneOf<std::uint8_t, std::uint64_t, bool>;
+
+// The image: head at 0 and 1, the Option of a word at 2 (its payload at 3 to
+// 6), the Result at 7 (its room at 8 and 9), the OneOf at 10 (its room at 11
+// to 18), the Option of an enumeration at 19 (its room at 20), the list of
+// words at 21 (its rooms at 22 to 25), and the text at 26 (its rooms at 27 to
+// 29).
+struct[[= derive_protocol{}]] OracleValue {
+    std::uint16_t head = 0;
+    MaybeWord maybe{};
+    Outcome outcome{std::uint16_t{0}};
+    OracleEither either{std::uint8_t{0}};
+    ::foundation::core::Option<SumFault> fault{};
+    ::foundation::core::FixedList<std::uint16_t, 2> words{};
+    FixedText<3> name{};
+};
+
+constexpr std::size_t kOracleBytes = 30;
+using OracleImage = FixedArray<std::byte, kOracleBytes>;
+
+[[nodiscard]] std::uint8_t oracle_byte(OracleImage const& image, std::size_t offset) noexcept {
+    return static_cast<std::uint8_t>(
+        image.at(Index<kOracleBytes>::check(offset).expect("the offset is inside the image")));
+}
+
+[[nodiscard]] bool are_oracle_zero(OracleImage const& image, std::size_t first, std::size_t end) noexcept {
+    for (std::size_t offset = first; offset < end; ++offset) {
+        if (oracle_byte(image, offset) != 0) return false;
+    }
+    return true;
+}
+
+// The first fault of an image in the order of the parts, read byte by byte
+// by the rules of THE SUMS and THE BOUNDED LISTS with no call of decode, or
+// a fault at 9999 when the image holds a value.
+[[nodiscard]] DecodeFault first_oracle_fault(OracleImage const& image) noexcept {
+    auto const byte = [&image](std::size_t offset) noexcept { return oracle_byte(image, offset); };
+    auto const is_fault_byte = [](std::uint8_t raw) noexcept { return raw == 1 || raw == 2; };
+    auto const at = [](DecodeRefusal refusal, std::size_t offset) noexcept {
+        return DecodeFault{refusal, static_cast<std::uint32_t>(offset)};
+    };
+
+    if (byte(2) > 1) return at(DecodeRefusal::sum_tag, 2);
+    if (byte(2) == 0 && !are_oracle_zero(image, 3, 7)) return at(DecodeRefusal::tail_byte, 3);
+
+    if (byte(7) > 1) return at(DecodeRefusal::sum_tag, 7);
+    if (byte(7) == 1 && !is_fault_byte(byte(8))) return at(DecodeRefusal::enumerator, 8);
+    if (byte(7) == 1 && byte(9) != 0) return at(DecodeRefusal::tail_byte, 9);
+
+    if (byte(10) > 2) return at(DecodeRefusal::sum_tag, 10);
+    if (byte(10) == 2 && byte(11) > 1) return at(DecodeRefusal::bool_byte, 11);
+    if (byte(10) != 1 && !are_oracle_zero(image, 12, 19)) return at(DecodeRefusal::tail_byte, 12);
+
+    if (byte(19) > 1) return at(DecodeRefusal::sum_tag, 19);
+    if (byte(19) == 0 && byte(20) != 0) return at(DecodeRefusal::tail_byte, 20);
+    if (byte(19) == 1 && !is_fault_byte(byte(20))) return at(DecodeRefusal::enumerator, 20);
+
+    if (byte(21) > 2) return at(DecodeRefusal::list_count, 21);
+    std::size_t const word_end = 22 + 2 * std::size_t{byte(21)};
+    if (!are_oracle_zero(image, word_end, 26)) return at(DecodeRefusal::tail_byte, word_end);
+
+    if (byte(26) > 3) return at(DecodeRefusal::list_count, 26);
+    std::size_t const name_end = 27 + std::size_t{byte(26)};
+    if (!are_oracle_zero(image, name_end, kOracleBytes)) return at(DecodeRefusal::tail_byte, name_end);
+    return DecodeFault{DecodeRefusal::bool_byte, 9999};
+}
+
+// decode agrees with the oracle on images that random writes change from
+// two seeds: each fault is the fault of the oracle, and an accepted image is
+// the one image of its value, so encode writes the same bytes back.  Half of
+// the writes put a small byte, which names a tag or a count more often.
+void test_decode_of_sums_and_lists_agrees_with_an_oracle() {
+    static_assert(encoded_size_v<OracleValue> == kOracleBytes);
+    OracleValue full{};
+    full.head = 0x0102;
+    full.maybe = MaybeWord::some(std::uint32_t{0x0A0B0C0D});
+    full.outcome = Outcome{::foundation::core::Err<SumFault>{SumFault::second}};
+    full.either = OracleEither{bool{true}};
+    full.fault = ::foundation::core::Option<SumFault>::some(SumFault::first);
+    bool const is_built = full.words.append(std::uint16_t{0x0102}).is_ok() && full.name.append('q').is_ok();
+    CRUCIBLE_FATAL_INVARIANT(is_built);
+    FixedArray<OracleImage, 2> const seeds{encoded(OracleValue{}), encoded(full)};
+
+    ::crucible::test::PhiloxStream stream{0x4F5241434C455331ULL};
+    std::size_t accepted = 0;
+    for (int round = 0; round < 20000; ++round) {
+        std::uint64_t const word = stream.next_word();
+        OracleImage image = seeds.at(Index<2>::check(word & 1U).expect("two seeds"));
+        for (std::uint64_t write = 0; write <= ((word >> 1) & 3U); ++write) {
+            std::uint64_t const change = stream.next_word();
+            std::uint64_t const raw = (change & 1U) != 0 ? (change >> 8) % 4 : (change >> 8) & 0xFFU;
+            image.at(Index<kOracleBytes>::check((change >> 16) % kOracleBytes).expect("an offset of the image")) =
+                static_cast<std::byte>(raw);
+        }
+        OracleImage const& read = image;
+        DecodeFault const expected = first_oracle_fault(read);
+        bool const agrees = decode<OracleValue>(read.view())
+                                .match(
+                                    [&read, &expected, &accepted](OracleValue value) noexcept {
+                                        ++accepted;
+                                        return expected.offset() == 9999 && encoded(value) == read;
+                                    },
+                                    [&expected](DecodeFault fault) noexcept { return fault == expected; });
+        CRUCIBLE_FATAL_INVARIANT(agrees);
+    }
+    CRUCIBLE_FATAL_INVARIANT(accepted > 100 && accepted < 19900);
+}
+
 }  // namespace
 
 int main() {
@@ -1184,5 +1294,6 @@ int main() {
     test_lists_refuse_each_byte_that_names_no_value();
     test_lists_hash_as_array_elements_at_each_offset();
     test_lists_format_their_elements();
+    test_decode_of_sums_and_lists_agrees_with_an_oracle();
     return 0;
 }
