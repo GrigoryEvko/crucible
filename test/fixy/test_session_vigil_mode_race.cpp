@@ -167,7 +167,8 @@ void read_each_round(vm::ModeCell const& cell, Shared& shared) noexcept {
     using ::foundation::permissions::WriteView;
     auto rebuilt = ::fixy::concurrent::mint_permission_fork<mode_race_tags::Writer, mode_race_tags::Reader>(
         BgCtx{eff::testing::bg()}, std::move(whole),
-        [&cell, &writer, &shared](WriteView<mode_race_tags::Writer, WholeBrand> const&, BgCtx const& ctx) noexcept {
+        [&cell, writer = std::move(writer), &shared](WriteView<mode_race_tags::Writer, WholeBrand> const&,
+                                                     BgCtx const& ctx) mutable noexcept {
             write_each_round(ctx, cell, std::move(writer), shared);
         },
         [&cell, &shared](WriteView<mode_race_tags::Reader, WholeBrand> const&, BgCtx const&) noexcept {
