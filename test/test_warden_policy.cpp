@@ -659,7 +659,7 @@ void test_snapshot_pairs_each_start_with_its_own_length() {
 // A snapshot returns up to 256 regions, and the registry holds a list of
 // 256 regions.  Each padding byte of a region costs one store for each
 // element of the list (padding_bytes.h).
-void test_region_has_no_padding_byte() { crucible::test::expect_no_padding_byte<^^crucible::warden::HotRegion>(); }
+void test_region_has_no_padding_byte() { crucible::test::expect_no_padding_byte<^^crucible::warden::HotRegion>(kTest); }
 
 // prefault faults in each page that holds a byte of its range.  The window
 // below holds the last byte of the first page and the first byte of the

@@ -19,6 +19,7 @@
 // traces the cycle first, and the outer wait does not take that trace for
 // its own.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/session/Entry.h>
@@ -32,7 +33,13 @@
 #include <utility>
 
 #include "../padding_bytes.h"
-#include "../test_assert.h"
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -138,12 +145,12 @@ void with_cycle(Body body) {
                       .waited_peer = waited_peer_end.watch_endpoint(),
                       .idle_waits = idle_end.watch_endpoint(),
                       .held = held_end.watch_endpoint()};
-    assert(w::is_live(cycle.waited) && w::is_live(cycle.held));
+    CRUCIBLE_TEST_ASSERT(kTest, w::is_live(cycle.waited) && w::is_live(cycle.held));
     w::link(cycle.waited, cycle.waited_peer);
     w::link(cycle.idle_waits, cycle.held);
     wd::thread_record& idle = wd::thread_at_(kIdleSlot);
     const bool is_reserved = idle.is_taken.cas_acq_rel(0, 1).is_ok();
-    assert(is_reserved);
+    CRUCIBLE_TEST_ASSERT(kTest, is_reserved);
     idle.blocked_on.store_release(index_of(cycle.idle_waits));
     wd::record_at_(index_of(cycle.idle_waits)).owner.store_release(wd::pack(kIdleSlot, kFirstGeneration));
     body(cycle);
@@ -200,16 +207,16 @@ void cycles_of_one_digest_are_no_deadlock(const Cycle& cycle) {
         w::wait_scope wait{cycle.waited};
         const std::uint64_t before_holder = state_before_holder(cycle);
         const std::uint64_t digest = wd::cycle_digest(wd::trace_chain(self, index_of(cycle.waited)));
-        assert(digest != 0);
+        CRUCIBLE_TEST_ASSERT(kTest, digest != 0);
         std::uint32_t traces = 0;
         for (std::uint32_t point = 0; traces < 3; ++point) {
-            assert(point < kMaxTracePoints);
+            CRUCIBLE_TEST_ASSERT(kTest, point < kMaxTracePoints);
             const Member member = member_like(before_holder, first, kFirstGeneration + point);
             install(cycle, member);
             const wd::wait_chain chain = wd::trace_chain(self, index_of(cycle.waited));
-            assert(chain.is_cycle && chain.count == 2);
-            assert(chain.links[0].holder == wd::pack(kIdleSlot, member.generation));
-            assert(wd::cycle_digest(chain) == digest);
+            CRUCIBLE_TEST_ASSERT(kTest, chain.is_cycle && chain.count == 2);
+            CRUCIBLE_TEST_ASSERT(kTest, chain.links[0].holder == wd::pack(kIdleSlot, member.generation));
+            CRUCIBLE_TEST_ASSERT(kTest, wd::cycle_digest(chain) == digest);
             poll_to_trace_point(wait);
             // A trace at this trace point saw this member, and no other
             // trace point saw it.
@@ -222,7 +229,7 @@ void cycles_of_one_digest_are_no_deadlock(const Cycle& cycle) {
 // `wait_epoch`: the wait traced the cycle.
 void poll_until_traced_by(w::wait_scope& wait, wd::suspect_cycle const& suspect, std::uint64_t wait_epoch) noexcept {
     for (std::uint32_t point = 0; suspect.wait_epoch != wait_epoch; ++point) {
-        assert(point < kMaxTracePoints);
+        CRUCIBLE_TEST_ASSERT(kTest, point < kMaxTracePoints);
         poll_to_trace_point(wait);
     }
 }
@@ -243,11 +250,11 @@ void one_cycle_at_two_traces_of_one_wait_is_a_deadlock(const Cycle& cycle) {
         w::wait_scope outer{cycle.waited};
         const std::uint64_t outer_epoch = me.wait_epoch.load_acquire();
         poll_to_trace_point(outer);
-        assert(outer.trace_points() == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, outer.trace_points() == 1);
         {
             w::wait_scope inner{cycle.waited};
             const std::uint64_t inner_epoch = me.wait_epoch.load_acquire();
-            assert(inner_epoch == outer_epoch + 1);
+            CRUCIBLE_TEST_ASSERT(kTest, inner_epoch == outer_epoch + 1);
             poll_until_traced_by(inner, suspect, inner_epoch);
         }
         poll_until_traced_by(outer, suspect, outer_epoch);
@@ -264,8 +271,8 @@ void one_cycle_at_two_traces_of_one_wait_is_a_deadlock(const Cycle& cycle) {
 // A chain and a suspect hold no padding byte.  The suspects of the threads
 // are a large list, and the rule padded-list refuses a padded element there.
 void chain_and_suspect_have_no_padding_byte() {
-    crucible::test::expect_no_padding_byte<^^wd::wait_chain>();
-    crucible::test::expect_no_padding_byte<^^wd::suspect_cycle>();
+    crucible::test::expect_no_padding_byte<^^wd::wait_chain>(kTest);
+    crucible::test::expect_no_padding_byte<^^wd::suspect_cycle>(kTest);
 }
 
 }  // namespace
@@ -274,6 +281,6 @@ int main() {
     chain_and_suspect_have_no_padding_byte();
     with_cycle(cycles_of_one_digest_are_no_deadlock);
     with_cycle(one_cycle_at_two_traces_of_one_wait_is_a_deadlock);
-    crucible::test::pass("test_session_watch_cycle: OK\n");
+    ::fixy::check::pass(kTest, "test_session_watch_cycle: OK\n");
     return 0;
 }

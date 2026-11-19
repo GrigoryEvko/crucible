@@ -53,6 +53,13 @@
 
 #include "../padding_bytes.h"
 
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
+
 namespace s = fixy::session;
 
 // The permission tree of the forked-channel walk.  The split manifest
@@ -1362,7 +1369,7 @@ struct LateRead {
 // link costs one store for each link at each return of trace_chain
 // (padding_bytes.h).
 [[nodiscard]] int chain_link_has_no_padding_byte() {
-    crucible::test::expect_no_padding_byte<^^s::watch::detail::chain_link>();
+    crucible::test::expect_no_padding_byte<^^s::watch::detail::chain_link>(kTest);
     return 0;
 }
 

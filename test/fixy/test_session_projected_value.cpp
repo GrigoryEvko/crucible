@@ -8,13 +8,16 @@
 // it reads.  Without the value step, a handle built from a projection
 // would put the label word on the wire and drop the value.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Global.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/Projection.h>
 
 #include <foundation/Pinned.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -25,7 +28,13 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
-#include "../test_assert.h"
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace s = ::fixy::session;
 namespace g = ::fixy::session::global;
@@ -163,6 +172,6 @@ int main() {
         std::fprintf(stderr, "test_session_projected_value: a word stayed on the channel\n");
         return 1;
     }
-    crucible::test::pass("test_session_projected_value: OK\n");
+    ::fixy::check::pass(kTest, "test_session_projected_value: OK\n");
     return 0;
 }

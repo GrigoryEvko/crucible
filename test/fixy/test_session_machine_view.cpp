@@ -5,13 +5,22 @@
 // neg_sess_machine_second_view_during_view and
 // neg_sess_machine_extract_during_view hold the refusals.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/MachineBridge.h>
 
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <utility>
-#include "../test_assert.h"
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -47,16 +56,16 @@ void view_drives_the_machine_of_the_bridge() {
     auto bridge = s::mint_session_from_machine<Twice, Ticks>();
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     bridge.with_view(ctx, plain_body);
-    assert(bridge.state().count == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, bridge.state().count == 5);
     bridge.with_view(ctx, plain_body);
     const Ticks taken = std::move(bridge).extract();
-    assert(taken.count == 10);
+    CRUCIBLE_TEST_ASSERT(kTest, taken.count == 10);
 }
 
 }  // namespace
 
 int main() {
     view_drives_the_machine_of_the_bridge();
-    crucible::test::pass("test_session_machine_view: OK\n");
+    ::fixy::check::pass(kTest, "test_session_machine_view: OK\n");
     return 0;
 }

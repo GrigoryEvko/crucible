@@ -11,12 +11,15 @@
 // receives, so a channel with no buffer deadlocks.  Every wait has a
 // deadline, so a bug aborts with a diagnostic and does not hang the run.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/AsyncChannel.h>
 #include <fixy/Borrowed.h>
 
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
 #include <atomic>
@@ -28,7 +31,13 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
-#include "../test_assert.h"
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace s = ::fixy::session;
 namespace perm = ::foundation::permissions;
@@ -274,6 +283,6 @@ struct RightBody {
 
 int main() {
     if (const int rc = run_pair_on_one_slot_channel(); rc != 0) return rc;
-    crucible::test::pass("test_session_async_channel: all checks passed\n");
+    ::fixy::check::pass(kTest, "test_session_async_channel: all checks passed\n");
     return 0;
 }

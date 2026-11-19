@@ -6,15 +6,24 @@
 // check file of Watch.h holds the size of the scope, so a scope holds no
 // wait-for chain to clear.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Watch.h>
 
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdint>
 #include <utility>
-#include "../test_assert.h"
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -68,26 +77,26 @@ template <typename Policy>
                                 })
                                 .second);
     static_cast<void>(std::move(at_end).close());
-    assert(echoed == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, echoed == 7);
     return seen;
 }
 
 void off_counts_no_trace_point() {
     const SeenByCalls seen = run_declared_calls<s::check::Off>();
-    assert(seen.write.at_entry == 0);
-    assert(seen.write.after_polls == 0);
-    assert(seen.read.at_entry == 0);
-    assert(seen.read.after_polls == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, seen.write.at_entry == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, seen.write.after_polls == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, seen.read.at_entry == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, seen.read.after_polls == 0);
 }
 
 // The positive control: the same calls under check::Enforced count the
 // first trace point, and not before it.
 void enforced_counts_the_trace_point() {
     const SeenByCalls seen = run_declared_calls<s::check::Enforced>();
-    assert(seen.write.at_entry == 0);
-    assert(seen.read.at_entry == 0);
-    assert(seen.write.after_polls == 1);
-    assert(seen.read.after_polls == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, seen.write.at_entry == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, seen.read.at_entry == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, seen.write.after_polls == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, seen.read.after_polls == 1);
 }
 
 }  // namespace
@@ -95,6 +104,6 @@ void enforced_counts_the_trace_point() {
 int main() {
     off_counts_no_trace_point();
     enforced_counts_the_trace_point();
-    crucible::test::pass("test_session_watch_cost: OK\n");
+    ::fixy::check::pass(kTest, "test_session_watch_cost: OK\n");
     return 0;
 }

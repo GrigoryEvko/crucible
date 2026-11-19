@@ -117,11 +117,11 @@ function(crucible_test name)
 
   add_executable(${name} ${CRUCIBLE_TEST_SOURCES})
   target_link_libraries(${name} PRIVATE crucible)
-  # Test binaries must keep their assertions in Release too.  CMake's
-  # Release defaults inject -DNDEBUG, and some standard headers may
-  # redefine assert() after test_assert.h in a TU.  Force the test TU
-  # itself back into assertion-enabled mode while linked libraries
-  # still use the selected build type.
+  # Test binaries keep each check in Release too.  CMake's Release
+  # defaults inject -DNDEBUG, which turns off each check that NDEBUG
+  # controls, such as the assert of a standard header.  The test TU
+  # itself stays in the checked mode, while the linked libraries keep
+  # the selected build type.
   target_compile_options(${name} PRIVATE -UNDEBUG)
 
   # UBSan on the test executable.  ASan and ThreadSanitizer come from
@@ -145,9 +145,10 @@ endfunction()
 
 # ── The output of the test harness ───────────────────────────────────
 #
-# test_assert.h gives the assert macro and the pass line of the tests.  The
-# probes of test/harness/ show what they write.  probe_report ends by SIGABRT
-# on purpose.  For that reason, ctest runs no probe as a test of its own:
+# The Check family of fixy/check/Check.h gives the assert macro and the pass
+# line of the tests.  The probes of test/harness/ show what they write.
+# probe_report ends by SIGABRT on purpose.  For that reason, ctest runs no
+# probe as a test of its own:
 # test/harness/check_output.py runs the probes and reads their outputs.
 # probe_diag writes the records and the lines of the diagnostic emitter.  In a
 # cross build, the script runs each probe through the emulator of the probe

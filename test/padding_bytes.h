@@ -23,7 +23,8 @@
 // member, so a row of utils/ledgers/owners.txt names this file.
 // The walk gives no reflection of a member to its caller.
 
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -130,9 +131,11 @@ consteval std::meta::info member_type(std::meta::info owner, std::string_view na
     throw std::meta::exception(u8"the class has no data member of that name", ^^member_type);
 }
 
-// Aborts the test when the type has a padding bit, and names the type.
+// Aborts the test when the type has a padding bit, and names the type.  The
+// check is CRUCIBLE_TEST_ASSERT of the Check family, so it takes the context
+// of the test.
 template <std::meta::info Type>
-void expect_no_padding_byte() noexcept {
+void expect_no_padding_byte(::fixy::TestRunnerCtx const& test) noexcept {
     constexpr std::size_t padding_bits = padding_bit_count(Type);
     if (padding_bits != 0u) {
         std::fprintf(stderr,
@@ -140,7 +143,7 @@ void expect_no_padding_byte() noexcept {
                      "include/crucible/cog/CogIdentity.h does with pad.\n",
                      std::define_static_string(std::meta::display_string_of(Type)), padding_bits);
     }
-    assert(padding_bits == 0u);
+    CRUCIBLE_TEST_ASSERT(test, padding_bits == 0u);
 }
 
 }  // namespace crucible::test

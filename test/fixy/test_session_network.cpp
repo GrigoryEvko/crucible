@@ -17,13 +17,23 @@
 // The file also checks the declaration of a carrier, and that a session
 // mint refuses a local type that names two peers.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/Network.h>
 #include <fixy/session/Projection.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
 #include <type_traits>
-#include "../test_assert.h"
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace session_network_test {
 
@@ -227,6 +237,6 @@ int main() {
         std::fputs("test_session_network: a network verdict differs at run time\n", stderr);
         return 1;
     }
-    crucible::test::pass("test_session_network: ok\n");
+    ::fixy::check::pass(kTest, "test_session_network: ok\n");
     return 0;
 }

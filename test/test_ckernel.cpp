@@ -10,6 +10,13 @@
 #include "padding_bytes.h"
 #include <type_traits>
 
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
+
 // Real schema hashes come from the adapter's hash function.  These are
 // arbitrary, because what is under test is the table, not the hashing.
 static const crucible::SchemaHash HASH_LINEAR{0xAAAA000000000001ULL};
@@ -222,7 +229,7 @@ int main() {
 
     // A table holds 256 entries, and each padding byte of an entry costs one
     // store at each initialization of an automatic table (padding_bytes.h).
-    crucible::test::expect_no_padding_byte<^^CKernelEntry>();
+    crucible::test::expect_no_padding_byte<^^CKernelEntry>(kTest);
 
     expect_name_of_the_count_ends_the_process(test);
 

@@ -377,7 +377,7 @@ static void test_lookup_works_post_seal() {
 // A table holds 512 entries, and each padding byte of an entry costs one
 // store at each initialization of an automatic table (padding_bytes.h).
 static void test_entry_has_no_padding_byte() {
-    crucible::test::expect_no_padding_byte<^^SchemaEntry>();
+    crucible::test::expect_no_padding_byte<^^SchemaEntry>(kTest);
     ::fixy::check::pass(kTest, "  test_entry_has_no_padding_byte: PASSED\n");
 }
 

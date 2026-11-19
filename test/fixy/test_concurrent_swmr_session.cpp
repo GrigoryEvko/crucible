@@ -4,12 +4,16 @@
 // protocol loops with no exit, so each session ends with a typed detach,
 // which releases the handle that the session owns.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
+#include <fixy/check/Check.h>
 #include <fixy/concurrent/HandleTraits.h>
 
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
 #include <array>
@@ -22,7 +26,13 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include "../test_assert.h"
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -437,6 +447,6 @@ int main() {
     run_test("sixteen_readers_stress_latest_snapshot", test_sixteen_readers_stress_latest_snapshot);
     run_test("static_shape_witnesses", test_static_shape_witnesses);
 
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
+    ::fixy::check::pass(kTest, "\n{} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

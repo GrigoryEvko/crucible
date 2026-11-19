@@ -252,7 +252,7 @@ static void test_caps_for_binding() {
 // padding byte of the schema costs one store for each of the 64 facts at each
 // initialization of an automatic snapshot (padding_bytes.h).
 static void test_nic_port_target_caps_has_no_padding_byte() {
-    crucible::test::expect_no_padding_byte<^^cog::NicPortTargetCaps>();
+    crucible::test::expect_no_padding_byte<^^cog::NicPortTargetCaps>(kTest);
     ::fixy::check::pass(kTest, "  test_nic_port_target_caps_has_no_padding_byte: PASSED\n");
 }
 

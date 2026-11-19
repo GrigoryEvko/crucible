@@ -2,6 +2,9 @@
 // gives the first handle to the caller, and with_session lends the
 // Resource to a body by move and gives it back at End.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
@@ -14,7 +17,13 @@
 #include <cstdio>
 #include <type_traits>
 #include <utility>
-#include "../test_assert.h"
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -202,6 +211,6 @@ int main() {
     if (const int rc = mint_walks_to_end(); rc != 0) return rc;
     if (const int rc = loop_head_is_the_choice(); rc != 0) return rc;
     if (const int rc = callback_lends_the_resource(); rc != 0) return rc;
-    crucible::test::pass("test_session_entry: OK\n");
+    ::fixy::check::pass(kTest, "test_session_entry: OK\n");
     return 0;
 }

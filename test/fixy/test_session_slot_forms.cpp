@@ -13,9 +13,11 @@
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
 #include <foundation/Linear.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 
@@ -23,7 +25,12 @@
 #include <type_traits>
 #include <utility>
 
-#include "../test_assert.h"
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -172,6 +179,6 @@ int main() {
     if (const int rc = move_in_a_marker<s::Transferable<int, Region>>(7); rc != 0) return rc;
     if (const int rc = move_in_a_marker<s::Returned<int, Region>>(9); rc != 0) return rc;
     if (const int rc = lend_and_release(); rc != 0) return rc;
-    crucible::test::pass("test_session_slot_forms: OK\n");
+    ::fixy::check::pass(kTest, "test_session_slot_forms: OK\n");
     return 0;
 }

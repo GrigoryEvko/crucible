@@ -7,12 +7,21 @@
 #include <crucible/MetaLog.h>
 #include <crucible/TraceRing.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
-#include "test_assert.h"
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::CallsiteHash;
 using crucible::MetaIndex;
@@ -70,10 +79,11 @@ static_assert(!::fixy::HotPathLattice::leq(HotPathTier_v::Hot, hot_path_tier_v<e
 void test_ring_append_under_the_foreground() {
     auto ring = std::make_unique<TraceRing>();
     auto const foreground = eff::testing::foreground();
-    assert(ring->try_append_pure(foreground, make_entry(1), MetaIndex::none(), ScopeHash{0}, CallsiteHash{0}));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, ring->try_append_pure(foreground, make_entry(1), MetaIndex::none(), ScopeHash{0}, CallsiteHash{0}));
     ::fixy::FixedArray<TraceRing::Entry, 4> drained{};
-    assert(ring->drain_pure(foreground, drained.view()) == 1u);
-    assert(ring->drain_pure(foreground, drained.view()) == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, ring->drain_pure(foreground, drained.view()) == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, ring->drain_pure(foreground, drained.view()) == 0u);
 }
 
 void test_log_append_under_the_foreground() {
@@ -84,8 +94,8 @@ void test_log_append_under_the_foreground() {
     meta.strides[0] = ::crucible::tensor_dim(1);
     const ::fixy::FixedArray<TensorMeta, 1> record{meta};
     MetaIndex const index = log->try_append_pure(eff::testing::foreground(), record.view());
-    assert(index.is_valid());
-    assert(index.raw() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, index.raw() == 0);
 }
 
 }  // namespace

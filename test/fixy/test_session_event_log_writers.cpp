@@ -21,11 +21,17 @@
 #include <thread>
 #include <utility>
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace test_session_event_log_writers {
 
@@ -77,7 +83,7 @@ void a_second_writer_of_one_log_ends_the_process() {
         ::fixy::TextView{"[Event_Log_Writer_Twice]: a second writer was minted for a session event log that "
                          "already has one"});
     first.record_now(s::SessionEvent::close(kLeft, kSink));
-    assert(log.size() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, log.size() == 1);
 }
 
 // Two recorded sessions on two threads, each with a log of its own.  After
@@ -92,18 +98,18 @@ void two_threads_record_into_their_own_logs() {
             std::jthread left{record_one_session, s::mint_session_event_writer(left_log), kLeft};
             std::jthread right{record_one_session, s::mint_session_event_writer(right_log), kRight};
         }
-        assert(left_log.size() == kSends + 1);
-        assert(right_log.size() == kSends + 1);
+        CRUCIBLE_TEST_ASSERT(kTest, left_log.size() == kSends + 1);
+        CRUCIBLE_TEST_ASSERT(kTest, right_log.size() == kSends + 1);
         const auto merged = s::merge_session_logs(alloc, left_log, right_log);
-        assert(merged.size() == 2 * (kSends + 1));
+        CRUCIBLE_TEST_ASSERT(kTest, merged.size() == 2 * (kSends + 1));
         for (std::size_t place = 0; place < merged.size(); ++place) {
             const s::SessionEvent& event = *merged.get(place).expect("the merge holds each event of the two logs");
             const bool is_left = place % 2 == 0;
             const bool is_last_step = place / 2 == kSends;
-            assert(event.step_id().value == place / 2 + 1);
-            assert(event.session().value == (is_left ? 1u : 2u));
-            assert(event.from_role() == (is_left ? kLeft : kRight));
-            assert(event.op() == (is_last_step ? s::SessionOp::Detach : s::SessionOp::Send));
+            CRUCIBLE_TEST_ASSERT(kTest, event.step_id().value == place / 2 + 1);
+            CRUCIBLE_TEST_ASSERT(kTest, event.session().value == (is_left ? 1u : 2u));
+            CRUCIBLE_TEST_ASSERT(kTest, event.from_role() == (is_left ? kLeft : kRight));
+            CRUCIBLE_TEST_ASSERT(kTest, event.op() == (is_last_step ? s::SessionOp::Detach : s::SessionOp::Send));
         }
     }
 }
@@ -121,10 +127,10 @@ void a_merge_keeps_the_order_of_the_arguments_for_one_step() {
     first.record_now(s::SessionEvent::close(kLeft, kSink));
     first.record_now(s::SessionEvent::close(kLeft, kSink));
     const auto merged = s::merge_session_logs(alloc, empty_log, second_log, first_log);
-    assert(merged.size() == 3);
-    assert(merged.get(0).expect("three events")->session().value == 8);
-    assert(merged.get(1).expect("three events")->session().value == 7);
-    assert(merged.get(2).expect("three events")->step_id().value == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, merged.size() == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, merged.get(0).expect("three events")->session().value == 8);
+    CRUCIBLE_TEST_ASSERT(kTest, merged.get(1).expect("three events")->session().value == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, merged.get(2).expect("three events")->step_id().value == 2);
 }
 
 }  // namespace
@@ -136,6 +142,6 @@ int main() {
     a_second_writer_of_one_log_ends_the_process();
     two_threads_record_into_their_own_logs();
     a_merge_keeps_the_order_of_the_arguments_for_one_step();
-    crucible::test::pass("test_session_event_log_writers: OK\n");
+    ::fixy::check::pass(kTest, "test_session_event_log_writers: OK\n");
     return 0;
 }

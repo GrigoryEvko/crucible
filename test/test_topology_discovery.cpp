@@ -202,9 +202,9 @@ static void test_static_gates() {
 // padding byte of one of them costs one store for each element at each
 // initialization of an automatic snapshot (padding_bytes.h).
 static void test_snapshot_elements_have_no_padding_byte() {
-    crucible::test::expect_no_padding_byte<^^cog::CogIdentity>();
-    crucible::test::expect_no_padding_byte<^^topology::DiscoveryNodeFact>();
-    crucible::test::expect_no_padding_byte<^^topology::DiscoveryEdgeFact>();
+    crucible::test::expect_no_padding_byte<^^cog::CogIdentity>(kTest);
+    crucible::test::expect_no_padding_byte<^^topology::DiscoveryNodeFact>(kTest);
+    crucible::test::expect_no_padding_byte<^^topology::DiscoveryEdgeFact>(kTest);
     ::fixy::check::pass(kTest, "  test_snapshot_elements_have_no_padding_byte: PASSED\n");
 }
 

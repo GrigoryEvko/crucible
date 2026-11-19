@@ -3,17 +3,27 @@
 // cornering that one claim.
 
 #include <crucible/TraceRing.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/Platform.h>
+#include <foundation/effects/Effect.h>
 
 #include <algorithm>
 #include <atomic>
-#include "test_assert.h"
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <random>
 #include <thread>
 #include <vector>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::SchemaHash;
 using crucible::ShapeHash;
@@ -22,7 +32,6 @@ using crucible::CallsiteHash;
 using crucible::MetaIndex;
 using crucible::OpDepth;
 using crucible::TraceRing;
-using crucible::test::element_at;
 
 // Every field of an entry is derived from the sequence number, so a
 // drained entry identifies its own position in the push order.
@@ -64,10 +73,10 @@ static void test_empty_returns_zero() {
 
     uint32_t n =
         pop_batch(*ring, out_entries.view(), out_metas.view(), out_scopes.view(), out_calls.view(), out_depths.view());
-    assert(n == 0);
-    assert(ring->size().peek() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, n == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
 
-    crucible::test::pass("  test_empty_returns_zero: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_empty_returns_zero: PASSED\n");
 }
 
 // Five empty outputs return zero and drain nothing.
@@ -76,15 +85,15 @@ static void test_max_count_zero() {
 
     // The ring is deliberately non-empty: a zero count must win over
     // available entries.
-    assert(ring->try_append(make_entry(7)));
-    assert(ring->size().peek() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(make_entry(7)));
+    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1);
 
     uint32_t n = pop_batch(*ring, ::fixy::View<TraceRing::Entry>{}, ::fixy::View<MetaIndex>{},
                            ::fixy::View<ScopeHash>{}, ::fixy::View<CallsiteHash>{}, ::fixy::View<OpDepth>{});
-    assert(n == 0);
-    assert(ring->size().peek() == 1);  // entry not drained
+    CRUCIBLE_TEST_ASSERT(kTest, n == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1);  // entry not drained
 
-    crucible::test::pass("  test_max_count_zero: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_max_count_zero: PASSED\n");
 }
 
 static void test_single_thread_fifo() {
@@ -92,9 +101,10 @@ static void test_single_thread_fifo() {
 
     constexpr uint32_t N = 100;
     for (uint64_t i = 0; i < N; ++i) {
-        assert(ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
     }
-    assert(ring->size().peek() == N);
+    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == N);
 
     ::fixy::FixedArray<TraceRing::Entry, N> out_entries{};
     ::fixy::FixedArray<MetaIndex, N> out_metas{};
@@ -104,20 +114,34 @@ static void test_single_thread_fifo() {
 
     uint32_t n =
         pop_batch(*ring, out_entries.view(), out_metas.view(), out_scopes.view(), out_calls.view(), out_depths.view());
-    assert(n == N);
-    assert(ring->size().peek() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, n == N);
+    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
 
     for (uint32_t i = 0; i < N; ++i) {
-        assert(element_at(out_entries, i).schema_hash == SchemaHash{i});
-        assert(element_at(out_entries, i).shape_hash == ShapeHash{uint64_t(i) ^ 0xDEADBEEFCAFEBABEULL});
-        assert(element_at(out_entries, i).num_inputs == (i & 0xFF));
-        assert(element_at(out_metas, i) == make_meta(i));
-        assert(element_at(out_scopes, i) == make_scope(i));
-        assert(element_at(out_calls, i) == make_callsite(i));
-        assert(element_at(out_depths, i) == make_depth(i));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, out_entries.get(i).expect("a test reads an element at or past the count of its array")->schema_hash
+                       == SchemaHash{i});
+        CRUCIBLE_TEST_ASSERT(
+            kTest, out_entries.get(i).expect("a test reads an element at or past the count of its array")->shape_hash
+                       == ShapeHash{uint64_t(i) ^ 0xDEADBEEFCAFEBABEULL});
+        CRUCIBLE_TEST_ASSERT(
+            kTest, out_entries.get(i).expect("a test reads an element at or past the count of its array")->num_inputs
+                       == (i & 0xFF));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             *out_metas.get(i).expect("a test reads an element at or past the count of its array")
+                                 == make_meta(i));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             *out_scopes.get(i).expect("a test reads an element at or past the count of its array")
+                                 == make_scope(i));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             *out_calls.get(i).expect("a test reads an element at or past the count of its array")
+                                 == make_callsite(i));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             *out_depths.get(i).expect("a test reads an element at or past the count of its array")
+                                 == make_depth(i));
     }
 
-    crucible::test::pass("  test_single_thread_fifo: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_single_thread_fifo: PASSED\n");
 }
 
 static void test_multi_batch_drain() {
@@ -125,7 +149,8 @@ static void test_multi_batch_drain() {
 
     constexpr uint32_t N = 1000;
     for (uint64_t i = 0; i < N; ++i) {
-        assert(ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
     }
 
     ::fixy::FixedArray<TraceRing::Entry, N> out_entries{};
@@ -150,14 +175,20 @@ static void test_multi_batch_drain() {
         if (total >= N) break;
     }
 
-    assert(total == N);
+    CRUCIBLE_TEST_ASSERT(kTest, total == N);
     for (uint32_t i = 0; i < N; ++i) {
-        assert(element_at(out_entries, i).schema_hash == SchemaHash{i});
-        assert(element_at(out_metas, i) == make_meta(i));
-        assert(element_at(out_depths, i) == make_depth(i));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, out_entries.get(i).expect("a test reads an element at or past the count of its array")->schema_hash
+                       == SchemaHash{i});
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             *out_metas.get(i).expect("a test reads an element at or past the count of its array")
+                                 == make_meta(i));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             *out_depths.get(i).expect("a test reads an element at or past the count of its array")
+                                 == make_depth(i));
     }
 
-    crucible::test::pass("  test_multi_batch_drain: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_multi_batch_drain: PASSED\n");
 }
 
 // Draining a run of entries that straddles the end of the ring has to
@@ -172,7 +203,7 @@ static void test_wrap_around() {
     // entries would not fit on the stack.
     constexpr uint32_t HALF = TraceRing::CAPACITY / 2;
     for (uint64_t i = 0; i < HALF; ++i) {
-        assert(ring->try_append(make_entry(i)));
+        CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(make_entry(i)));
     }
     {
         static ::fixy::FixedArray<TraceRing::Entry, HALF> half_e{};
@@ -181,15 +212,15 @@ static void test_wrap_around() {
         static ::fixy::FixedArray<CallsiteHash, HALF> half_c{};
         static ::fixy::FixedArray<OpDepth, HALF> half_d{};
         uint32_t n = pop_batch(*ring, half_e.view(), half_m.view(), half_s.view(), half_c.view(), half_d.view());
-        assert(n == HALF);
+        CRUCIBLE_TEST_ASSERT(kTest, n == HALF);
     }
 
     constexpr uint32_t WRAP_N = 1000;
     for (uint64_t i = 0; i < WRAP_N; ++i) {
         // The payloads start well above the ones drained already, so an
         // entry from the first round would be recognisable here.
-        assert(ring->try_append(make_entry(0x10000ULL + i), MetaIndex::none(), ScopeHash{}, CallsiteHash{},
-                                make_depth(i)));
+        CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(make_entry(0x10000ULL + i), MetaIndex::none(), ScopeHash{},
+                                                     CallsiteHash{}, make_depth(i)));
     }
 
     ::fixy::FixedArray<TraceRing::Entry, WRAP_N> e{};
@@ -198,14 +229,17 @@ static void test_wrap_around() {
     ::fixy::FixedArray<CallsiteHash, WRAP_N> c{};
     ::fixy::FixedArray<OpDepth, WRAP_N> d{};
     uint32_t n = pop_batch(*ring, e.view(), m.view(), s.view(), c.view(), d.view());
-    assert(n == WRAP_N);
+    CRUCIBLE_TEST_ASSERT(kTest, n == WRAP_N);
 
     for (uint32_t i = 0; i < WRAP_N; ++i) {
-        assert(element_at(e, i).schema_hash == SchemaHash{0x10000ULL + i});
-        assert(element_at(d, i) == make_depth(i));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             e.get(i).expect("a test reads an element at or past the count of its array")->schema_hash
+                                 == SchemaHash{0x10000ULL + i});
+        CRUCIBLE_TEST_ASSERT(kTest, *d.get(i).expect("a test reads an element at or past the count of its array")
+                                        == make_depth(i));
     }
 
-    crucible::test::pass("  test_wrap_around: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_wrap_around: PASSED\n");
 }
 
 // Two rings receive the same stream.  One is drained in random batch
@@ -219,8 +253,10 @@ static void test_equivalence_with_single_pop() {
 
     constexpr uint32_t N = 5000;
     for (uint64_t i = 0; i < N; ++i) {
-        assert(ring_a->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
-        assert(ring_b->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, ring_a->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, ring_b->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
     }
 
     // The outputs have static storage: the two entry arrays would not fit
@@ -247,7 +283,7 @@ static void test_equivalence_with_single_pop() {
                                a_scopes.view().window(a_total, batch).expect("the batch fits"),
                                a_calls.view().window(a_total, batch).expect("the batch fits"),
                                a_depths.view().window(a_total, batch).expect("the batch fits"));
-        assert(n == batch);  // the batch is clamped, so it always fills
+        CRUCIBLE_TEST_ASSERT(kTest, n == batch);  // the batch is clamped, so it always fills
         a_total += n;
     }
 
@@ -257,22 +293,42 @@ static void test_equivalence_with_single_pop() {
                                    b_scopes.view().window(i, 1).expect("one entry fits"),
                                    b_calls.view().window(i, 1).expect("one entry fits"),
                                    b_depths.view().window(i, 1).expect("one entry fits"));
-        assert(n == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, n == 1);
     }
 
     for (uint32_t i = 0; i < N; ++i) {
-        assert(element_at(a_entries, i).schema_hash == element_at(b_entries, i).schema_hash);
-        assert(element_at(a_entries, i).shape_hash == element_at(b_entries, i).shape_hash);
-        assert(element_at(a_entries, i).num_inputs == element_at(b_entries, i).num_inputs);
-        assert(element_at(a_entries, i).num_outputs == element_at(b_entries, i).num_outputs);
-        assert(element_at(a_metas, i) == element_at(b_metas, i));
-        assert(element_at(a_scopes, i) == element_at(b_scopes, i));
-        assert(element_at(a_calls, i) == element_at(b_calls, i));
-        assert(element_at(a_depths, i) == make_depth(i));
-        assert(element_at(b_depths, i) == make_depth(i));
+        CRUCIBLE_TEST_ASSERT(
+            kTest,
+            a_entries.get(i).expect("a test reads an element at or past the count of its array")->schema_hash
+                == b_entries.get(i).expect("a test reads an element at or past the count of its array")->schema_hash);
+        CRUCIBLE_TEST_ASSERT(
+            kTest,
+            a_entries.get(i).expect("a test reads an element at or past the count of its array")->shape_hash
+                == b_entries.get(i).expect("a test reads an element at or past the count of its array")->shape_hash);
+        CRUCIBLE_TEST_ASSERT(
+            kTest,
+            a_entries.get(i).expect("a test reads an element at or past the count of its array")->num_inputs
+                == b_entries.get(i).expect("a test reads an element at or past the count of its array")->num_inputs);
+        CRUCIBLE_TEST_ASSERT(
+            kTest,
+            a_entries.get(i).expect("a test reads an element at or past the count of its array")->num_outputs
+                == b_entries.get(i).expect("a test reads an element at or past the count of its array")->num_outputs);
+        CRUCIBLE_TEST_ASSERT(
+            kTest, *a_metas.get(i).expect("a test reads an element at or past the count of its array")
+                       == *b_metas.get(i).expect("a test reads an element at or past the count of its array"));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, *a_scopes.get(i).expect("a test reads an element at or past the count of its array")
+                       == *b_scopes.get(i).expect("a test reads an element at or past the count of its array"));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, *a_calls.get(i).expect("a test reads an element at or past the count of its array")
+                       == *b_calls.get(i).expect("a test reads an element at or past the count of its array"));
+        CRUCIBLE_TEST_ASSERT(kTest, *a_depths.get(i).expect("a test reads an element at or past the count of its array")
+                                        == make_depth(i));
+        CRUCIBLE_TEST_ASSERT(kTest, *b_depths.get(i).expect("a test reads an element at or past the count of its array")
+                                        == make_depth(i));
     }
 
-    crucible::test::pass("  test_equivalence_with_single_pop: PASSED ({} entries)\n", N);
+    ::fixy::check::pass(kTest, "  test_equivalence_with_single_pop: PASSED ({} entries)\n", N);
 }
 
 // One producer, one consumer, and a consumer that keeps changing how it
@@ -341,7 +397,9 @@ static void test_spsc_stress() {
 
             if (got > 0) {
                 for (uint32_t i = 0; i < got; ++i) {
-                    mirror.push_back(element_at(out_entries, i).schema_hash.raw());
+                    mirror.push_back(out_entries.get(i)
+                                         .expect("a test reads an element at or past the count of its array")
+                                         ->schema_hash.raw());
                 }
                 received.fetch_add(got, std::memory_order_release);
             } else if (producer_done.load(std::memory_order_acquire) && ring->size().peek() == 0) {
@@ -357,7 +415,7 @@ static void test_spsc_stress() {
     producer = std::jthread{};
     consumer = std::jthread{};
 
-    assert(mirror.size() == N);
+    CRUCIBLE_TEST_ASSERT(kTest, mirror.size() == N);
     for (uint64_t i = 0; i < N; ++i) {
         if (mirror[i] != i) {
             std::fprintf(stderr, "FIFO violation at i=%llu: expected %llu, got %llu\n",
@@ -367,8 +425,8 @@ static void test_spsc_stress() {
         }
     }
 
-    crucible::test::pass("  test_spsc_stress: PASSED ({} entries delivered in order)\n",
-                         static_cast<unsigned long long>(N));
+    ::fixy::check::pass(kTest, "  test_spsc_stress: PASSED ({} entries delivered in order)\n",
+                        static_cast<unsigned long long>(N));
 }
 
 int main() {
@@ -382,6 +440,6 @@ int main() {
     test_equivalence_with_single_pop();
     test_spsc_stress();
 
-    crucible::test::pass("test_trace_ring_pop_batch: ALL PASSED\n");
+    ::fixy::check::pass(kTest, "test_trace_ring_pop_batch: ALL PASSED\n");
     return 0;
 }
