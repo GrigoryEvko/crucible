@@ -102,13 +102,26 @@
 //   encoded_size(value) gives the count of bytes of the image.  encode writes
 //   the image into a View of exactly that count, and an image of more than
 //   2^32 - 1 bytes or a View of a different size ends the process.  decode
-//   takes the allocation capability and the bytes.  It refuses each fault of
-//   THE CODEC, bytes that end inside a part, bytes after the end of the
-//   image, and more than 2^32 - 1 bytes.  decode compares each count with the
-//   bytes that remain before it allocates, so the count of elements is at
-//   most the count of those bytes divided by the bytes of one element.  A
-//   fault after an allocation gives the storage back.  An element needs a
+//   takes the allocation capability, a budget of bytes of storage, and the
+//   bytes.  It refuses each fault of THE CODEC, bytes that end inside a part,
+//   bytes after the end of the image, more than 2^32 - 1 bytes, and heap
+//   parts that need more storage than the budget.  An element needs a
 //   default constructor with no throw, and no element is linear.
+//
+//   decode reads the count of a heap part, and does two checks before it
+//   allocates.  First, the elements of the count must fit in the bytes that
+//   remain, so the count is at most those bytes divided by the bytes of the
+//   image of one element.  Second, the storage of the part must fit in the
+//   budget that remains.  The storage is the bytes that the mint of the part
+//   allocates: the count times the size of the element, rounded up to the
+//   alignment of the array, and the count of the characters of a text.  A
+//   local part makes an element larger than its image, so only the budget
+//   bounds that storage.  Each refusal names the offset of the count.  Each
+//   heap part allocates one time, so the storage of a decode, also at its
+//   peak, is at most the budget.  A fault after an allocation gives the
+//   storage back.  A budget above the largest count of a View of bytes
+//   holds more than one allocation can hold, so decode reads it as that
+//   count.
 //
 //   The hash folds the image as THE HASH folds an image, and then one block
 //   with the count of the bytes of the image in its low word.  A GrowList
@@ -151,6 +164,7 @@
 #include <foundation/core/Id.h>
 #include <foundation/core/List.h>
 #include <foundation/core/OneOf.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/core/Text.h>
@@ -190,6 +204,9 @@ enum class DecodeRefusal : std::uint8_t {
     // An image of run-time size holds more than 2^32 - 1 bytes (THE HEAP
     // PARTS).
     image_size,
+    // The storage of a heap part needs more bytes than remain in the budget
+    // of the decode (THE HEAP PARTS).
+    allocation_budget,
 };
 
 // The first fault of an image: the reason, and the byte offset of the part
@@ -1316,11 +1333,13 @@ constexpr std::byte* encode_heap_part_(T const& part, std::byte* first) noexcept
 }
 
 // The place of the decode in the bytes of an image of run-time size: the
-// next byte, the count of the bytes after it, and its offset in the image.
+// next byte, the count of the bytes after it, its offset in the image, and
+// the bytes of storage that the heap parts can still allocate.
 struct HeapCursor final {
     std::byte const* first = nullptr;
     std::size_t remaining = 0;
     std::size_t offset = 0;
+    std::size_t budget = 0;
 
     constexpr void advance(std::size_t bytes) noexcept {
         first += bytes;
@@ -1329,21 +1348,54 @@ struct HeapCursor final {
     }
 };
 
+// The budget of a decode as a count of bytes, at most the largest count of a
+// View of bytes (THE HEAP PARTS).  A larger budget holds more bytes than one
+// allocation can give, so the mint of a part that fits it never ends the
+// process for its size.
+[[nodiscard]] constexpr std::size_t heap_budget_of_(Quantity<unit::Byte, std::size_t> budget) noexcept {
+    std::size_t const largest = max_view_count(1);
+    return budget.raw() < largest ? budget.raw() : largest;
+}
+
 template <class T, class Marker>
 [[nodiscard]] bool decode_heap_part_(T& part, Marker allocation, HeapCursor& cursor, DecodeFault& fault) noexcept;
 
-// Reads the count of a heap part, and refuses bytes that end before the
-// count or before the elements of the count, each of step bytes.  Gives
-// the count and moves the cursor past it.
-[[nodiscard]] inline bool read_heap_count_(HeapCursor& cursor, std::size_t step, std::uint64_t& count,
-                                           DecodeFault& fault) noexcept {
+// Takes the storage of count elements from the budget of the cursor: the
+// bytes that the mint of a HeapArray allocates for count elements of
+// ElementBytes bytes at the alignment Align.  That is the bytes of the
+// elements rounded up to the alignment, and zero for no element.  Gives
+// false, and takes nothing, when the storage needs more bytes than the
+// budget holds.  The first compare divides the budget, so no product
+// overflows.  Complexity: O(1), with a division by a constant.
+template <std::size_t ElementBytes, std::size_t Align>
+[[nodiscard]] constexpr bool take_heap_storage_(HeapCursor& cursor, std::uint64_t count) noexcept {
+    if (count > cursor.budget / ElementBytes) return false;
+    std::size_t const bytes = count * ElementBytes;
+    std::size_t const padding = (Align - bytes % Align) % Align;
+    if (padding > cursor.budget - bytes) return false;
+    cursor.budget -= bytes + padding;
+    return true;
+}
+
+// Reads the count of a heap part whose elements take Step bytes of the image
+// and ElementBytes bytes of storage at the alignment Align.  It refuses bytes
+// that end before the count or before the elements of the count, and then a
+// storage of the elements that needs more bytes than the budget holds.  Each
+// refusal names the offset of the count.  Gives the count, takes its storage
+// from the budget, and moves the cursor past the count.
+template <std::size_t Step, std::size_t ElementBytes, std::size_t Align>
+[[nodiscard]] constexpr bool read_heap_count_(HeapCursor& cursor, std::uint64_t& count, DecodeFault& fault) noexcept {
     if (cursor.remaining < heap_count_bytes) {
         fault = fault_at_(DecodeRefusal::image_end, cursor.offset);
         return false;
     }
     count = detail::read_count_<heap_count_bytes>(cursor.first);
-    if (count > (cursor.remaining - heap_count_bytes) / step) {
+    if (count > (cursor.remaining - heap_count_bytes) / Step) {
         fault = fault_at_(DecodeRefusal::image_end, cursor.offset);
+        return false;
+    }
+    if (!detail::take_heap_storage_<ElementBytes, Align>(cursor, count)) {
+        fault = fault_at_(DecodeRefusal::allocation_budget, cursor.offset);
         return false;
     }
     cursor.advance(heap_count_bytes);
@@ -1377,39 +1429,32 @@ template <class T, class Marker, std::size_t... Bases, std::size_t... Members>
 }
 
 // The count characters of the bytes from first, in a GrowText of at most
-// count characters.  The text comes out as a value, so a freeze takes it
-// with no cast of the text.  The caller checked that the bytes hold count
-// characters.  Complexity: one copy for each character, and one append for
-// each 64 characters.
+// count characters.  One append puts all the characters, so the text
+// allocates one time, exactly count bytes, and nothing for no character.  A
+// char reads each byte of an object, so the characters are the bytes.  The
+// text comes out as a value, so a freeze takes it with no cast of the text.
+// The caller checked that the bytes hold count characters.  Complexity: one
+// allocation and one copy of the characters.
 template <class Marker>
 [[nodiscard]] GrowText grow_text_of_(Marker allocation, std::byte const* first, std::uint64_t count) noexcept {
     GrowText text = mint_grow_text(count);
-    FixedText<64> chunk{};
-    for (std::uint64_t index = 0; index < count; ++index) {
-        if (chunk.size() == chunk.capacity) {
-            if (text.append(allocation, chunk.view()).is_err()) ::foundation::core::unreachable();
-            chunk.clear();
-        }
-        if (chunk.append(static_cast<char>(static_cast<unsigned char>(first[index]))).is_err()) {
-            ::foundation::core::unreachable();
-        }
-    }
-    if (text.append(allocation, chunk.view()).is_err()) ::foundation::core::unreachable();
+    TextView const characters = detail::text_over_(static_cast<char const*>(static_cast<void const*>(first)), count);
+    if (text.append(allocation, characters).is_err()) ::foundation::core::unreachable();
     return text;
 }
 
 // Reads one part at the cursor, and moves the cursor past it.  Gives false,
 // with the fault written, at the first part that holds no value.  A heap
 // part allocates only after its count passed the check of the bytes that
-// remain.  An array that a later fault drops gives its storage back at the
-// end of its scope.  Complexity: one load for each byte of the image, and
-// one allocation for each heap part.
+// remain and the check of the budget.  An array that a later fault drops
+// gives its storage back at the end of its scope.  Complexity: one load for
+// each byte of the image, and one allocation for each heap part.
 template <class T, class Marker>
 [[nodiscard]] bool decode_heap_part_(T& part, Marker allocation, HeapCursor& cursor, DecodeFault& fault) noexcept {
     using Bare = std::remove_cv_t<T>;
     if constexpr (is_heap_text_at(^^Bare)) {
         std::uint64_t count = 0;
-        if (!detail::read_heap_count_(cursor, 1, count, fault)) return false;
+        if (!detail::read_heap_count_<1, 1, 1>(cursor, count, fault)) return false;
         part = freeze(detail::grow_text_of_(allocation, cursor.first, count));
         cursor.advance(count);
         return true;
@@ -1419,7 +1464,7 @@ template <class T, class Marker>
         constexpr std::size_t align =
             std::meta::extract<std::size_t>(std::meta::template_arguments_of(std::meta::dealias(^^Bare))[1]);
         std::uint64_t count = 0;
-        if (!detail::read_heap_count_(cursor, step, count, fault)) return false;
+        if (!detail::read_heap_count_<step, sizeof(Element), align>(cursor, count, fault)) return false;
         auto build = [](std::size_t /*position*/) noexcept { return Element{}; };
         Bare array = mint_heap_array_with<Element, align>(allocation, count, build);
         for (Element& element : array.view()) {
@@ -1864,17 +1909,19 @@ template <HeapEncodable T>
 }
 
 // The T of an image of run-time size, or the first fault of the bytes (THE
-// HEAP PARTS).  Each heap part allocates through the capability.
-// Complexity: one pass over the bytes, and one allocation for each heap
-// part.
+// HEAP PARTS).  Each heap part allocates through the capability, and the
+// storage of all the heap parts takes at most budget bytes.  Complexity: one
+// pass over the bytes, and one allocation for each heap part.
 template <HeapDecodable T, class Marker>
     requires AllocationCapability<Marker>
-[[nodiscard]] Result<T, DecodeFault> decode(Marker allocation, View<std::byte const> bytes) noexcept {
+[[nodiscard]] Result<T, DecodeFault> decode(Marker allocation, Quantity<unit::Byte, std::size_t> budget,
+                                            View<std::byte const> bytes) noexcept {
     if (bytes.size() > detail::max_image_bytes) {
         return err(detail::fault_at_(DecodeRefusal::image_size, detail::max_image_bytes));
     }
     T value{};
-    detail::HeapCursor cursor{bytes.size() == 0 ? nullptr : first_of_(detail::ViewDoor::key(), bytes), bytes.size(), 0};
+    detail::HeapCursor cursor{bytes.size() == 0 ? nullptr : first_of_(detail::ViewDoor::key(), bytes), bytes.size(), 0,
+                              detail::heap_budget_of_(budget)};
     DecodeFault fault{DecodeRefusal::bool_byte, 0};
     if (!detail::decode_heap_part_(value, allocation, cursor, fault)) return err(fault);
     if (cursor.remaining != 0) return err(detail::fault_at_(DecodeRefusal::trailing_byte, cursor.offset));

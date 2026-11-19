@@ -118,6 +118,9 @@ struct[[= ::fixy::derive_protocol{}]] HeapBytes {
 
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
+// The budget of the decode row: one page, above the 256 bytes of the words.
+constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kDecodeBudget{4096};
+
 // The next word of a splitmix64 stream: the fields of the records of a batch.
 uint64_t next_word(uint64_t& state) noexcept {
     state += 0x9E3779B97F4A7C15ULL;
@@ -618,7 +621,8 @@ int main() {
         bench::run("decode<HeapRecord>   (64 words, 264 bytes)",
                    [&] {
                        const auto& read = heap_image;
-                       auto back = ::fixy::decode<HeapRecord>(kAlloc, ::fixy::View<std::byte const>{read.view()});
+                       auto back = ::fixy::decode<HeapRecord>(kAlloc, kDecodeBudget,
+                                                              ::fixy::View<std::byte const>{read.view()});
                        bench::do_not_optimize(back);
                    }),
         bench::run("hand decode          (the same 264 bytes)",

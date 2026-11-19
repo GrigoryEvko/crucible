@@ -2636,6 +2636,13 @@ foundation_neg_compile_test(neg_core_protocol_encode_unmarked_part
 foundation_neg_compile_test(neg_core_protocol_decode_const_member
   "no matching function for call to .decode<HoldsConst>\\(foundation::core::View<const std::byte, 4>\\)."
   "required for the satisfaction of .Decodable<T>. \\[with T = HoldsConst\\]")
+foundation_neg_compile_test(neg_core_protocol_heap_decode_without_budget
+  "no matching function for call to .decode<HoldsWords>\\(foundation::core::Alloc, foundation::core::View<const std::byte>\\)."
+  "decode\\(Marker, Quantity<unit::Byte, long unsigned int>, View<const std::byte>\\)"
+  "candidate expects 3 arguments, 2 provided")
+foundation_neg_compile_test(neg_core_protocol_heap_decode_raw_budget
+  "no matching function for call to .decode<HoldsWords>\\(foundation::core::Alloc, std::size_t, foundation::core::View<const std::byte>\\)."
+  "cannot convert .4096. \\(type .std::size_t. \\{aka .long unsigned int.\\}\\) to type .foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>.")
 
 foundation_neg_compile_test(neg_core_record_reference_part
   "template constraint failure for .template<class ... Ts>  requires \\(... && RecordElement<Ts>\\) struct foundation::core::Record."

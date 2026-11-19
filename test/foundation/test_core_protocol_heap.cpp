@@ -4,10 +4,13 @@
 
 #include <foundation/core/Protocol.h>
 
+#include <foundation/Quarantine.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Grow.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/os/GuardedRegion.h>
 
 #include "philox_stream.h"
 
@@ -67,6 +70,11 @@ static_assert(Encodable<Point> && !HeapEncodable<Point>);
 
 using Bytes = HeapArray<std::byte>;
 using HandImage = FixedList<std::byte, 128>;
+using Budget = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>;
+
+// A budget far above the storage of each value of the tests that do not test
+// the budget.
+constexpr Budget kWideBudget{std::size_t{1} << 20};
 
 [[nodiscard]] ::foundation::effects::Alloc test_alloc() noexcept {
     return ::foundation::effects::testing::test().alloc;
@@ -85,7 +93,8 @@ using HandImage = FixedList<std::byte, 128>;
 }
 
 // The image of a value, by encode, in storage of exactly its size.
-[[nodiscard]] Bytes image_of(Message const& value) noexcept {
+template <HeapEncodable T>
+[[nodiscard]] Bytes image_of(T const& value) noexcept {
     Bytes image = mint_heap_array_zeroed<std::byte>(test_alloc(), encoded_size(value));
     encode(value, image.view());
     return image;
@@ -157,18 +166,28 @@ constexpr std::uint64_t kStartSeed = 0x13198a2e03707344ULL;
     return folded_multiply(length ^ accumulator, kFoldSeed);
 }
 
-[[nodiscard]] DecodeFault fault_of(View<std::byte const> bytes) noexcept {
-    return decode<Message>(test_alloc(), bytes)
-        .match([](Message) noexcept { return DecodeFault{DecodeRefusal::bool_byte, 9999}; },
+// The fault of decode of the bytes with the budget, or a fault at 9999 when
+// the bytes hold a value.
+template <HeapDecodable T>
+[[nodiscard]] DecodeFault fault_with(Budget budget, View<std::byte const> bytes) noexcept {
+    return decode<T>(test_alloc(), budget, bytes)
+        .match([](T) noexcept { return DecodeFault{DecodeRefusal::bool_byte, 9999}; },
                [](DecodeFault fault) noexcept { return fault; });
 }
 
-[[nodiscard]] bool decodes_back(Message const& value) noexcept {
-    Bytes const image = image_of(value);
-    return decode<Message>(test_alloc(), image.view())
-        .match([&value](Message back) noexcept { return equal(back, value); },
-               [](DecodeFault) noexcept { return false; });
+[[nodiscard]] DecodeFault fault_of(View<std::byte const> bytes) noexcept {
+    return fault_with<Message>(kWideBudget, bytes);
 }
+
+// True when decode of the image of value with the budget gives value back.
+template <HeapDecodable T>
+[[nodiscard]] bool decodes_back_with(Budget budget, T const& value) noexcept {
+    Bytes const image = image_of(value);
+    return decode<T>(test_alloc(), budget, image.view())
+        .match([&value](T back) noexcept { return equal(back, value); }, [](DecodeFault) noexcept { return false; });
+}
+
+[[nodiscard]] bool decodes_back(Message const& value) noexcept { return decodes_back_with(kWideBudget, value); }
 
 // The image is each part in order: a part of fixed size takes THE IMAGE, and
 // a heap part takes its count in 8 bytes and then its elements.
@@ -304,7 +323,7 @@ void test_heap_hash_of_an_array_of_lists() {
         encode(value, image.view());
         Bytes const& read = image;
         CRUCIBLE_FATAL_INVARIANT(hash(value).raw() == hand_heap_hash(read.view()));
-        bool const is_back = decode<Tagged>(test_alloc(), read.view())
+        bool const is_back = decode<Tagged>(test_alloc(), kWideBudget, read.view())
                                  .match([&value](Tagged back) noexcept { return equal(back, value); },
                                         [](DecodeFault) noexcept { return false; });
         CRUCIBLE_FATAL_INVARIANT(is_back);
@@ -398,24 +417,38 @@ void test_heap_format_names_each_part() {
     return count;
 }
 
+// One heap part of a Message for the oracle: the bytes of the image of one
+// element, and the bytes of its storage.  Each storage is a multiple of the
+// alignment of its element, so the storage of a count is the product.
+struct HeapPartShape final {
+    std::size_t step = 0;
+    std::size_t storage = 0;
+};
+
 // The first fault of the bytes of a Message in the order of the parts, read
 // by the rules of THE HEAP PARTS with no call of decode, or a fault at 9999
 // when the bytes hold a value.  A part that the bytes cut names the offset
-// of its first byte.
-[[nodiscard]] DecodeFault first_heap_fault(View<std::byte const> bytes) noexcept {
+// of its first byte.  A heap part whose storage needs more than the budget
+// that remains names the offset of its count.
+[[nodiscard]] DecodeFault first_heap_fault(Budget budget, View<std::byte const> bytes) noexcept {
     std::size_t const size = bytes.size();
     auto const fault = [](DecodeRefusal refusal, std::size_t offset) noexcept {
         return DecodeFault{refusal, static_cast<std::uint32_t>(offset)};
     };
     std::size_t at = 0;
+    std::size_t left = budget.raw();
     if (size - at < 4) return fault(DecodeRefusal::image_end, at);
     at += 4;
 
-    FixedArray<std::size_t, 3> const steps{2, 1, 3};
-    for (std::size_t const step : steps) {
+    FixedArray<HeapPartShape, 3> const shapes{HeapPartShape{2, sizeof(std::uint16_t)}, HeapPartShape{1, 1},
+                                              HeapPartShape{3, sizeof(Point)}};
+    for (HeapPartShape const shape : shapes) {
+        std::size_t const step = shape.step;
         if (size - at < 8) return fault(DecodeRefusal::image_end, at);
         std::uint64_t const count = count_of(bytes, at);
         if (count > (size - at - 8) / step) return fault(DecodeRefusal::image_end, at);
+        if (count * shape.storage > left) return fault(DecodeRefusal::allocation_budget, at);
+        left -= count * shape.storage;
         at += 8;
         for (std::uint64_t index = 0; index < count; ++index) {
             if (step == 3 && byte_of(bytes, at + 2) > 1) return fault(DecodeRefusal::bool_byte, at + 2);
@@ -436,11 +469,13 @@ void test_heap_format_names_each_part() {
 // an accepted value is the one value of its bytes, so encode writes the same
 // bytes back and the hash is the hand fold of the bytes.  A write that puts
 // a large byte into a count makes a count that needs more bytes than remain,
-// which decode refuses before it allocates.
+// which decode refuses before it allocates.  One round in four has a budget
+// of at most 15 bytes, so decode also refuses storage past the budget.
 void test_heap_decode_agrees_with_an_oracle() {
     FixedArray<Bytes, 2> const seeds{image_of(Message{}), image_of(sample_message())};
     ::crucible::test::PhiloxStream stream{0x4845415052414E44ULL};
     std::size_t accepted = 0;
+    std::size_t over_budget = 0;
     for (int round = 0; round < 20000; ++round) {
         std::uint64_t const word = stream.next_word();
         Bytes const& seed = seeds.at(::foundation::core::Index<2>::check(word & 1U).expect("two seeds"));
@@ -458,9 +493,12 @@ void test_heap_decode_agrees_with_an_oracle() {
             std::uint64_t const raw = (change & 1U) != 0 ? (change >> 8) % 4 : (change >> 8) & 0xFFU;
             byte_at(bytes, (change >> 16) % size) = static_cast<std::byte>(raw);
         }
+        std::uint64_t const purse = stream.next_word();
+        Budget const budget = purse % 4 == 0 ? Budget{(purse >> 8) % 16} : kWideBudget;
         Bytes const& read = bytes;
-        DecodeFault const expected = first_heap_fault(read.view());
-        bool const agrees = decode<Message>(test_alloc(), read.view())
+        DecodeFault const expected = first_heap_fault(budget, read.view());
+        if (expected.refusal() == DecodeRefusal::allocation_budget) ++over_budget;
+        bool const agrees = decode<Message>(test_alloc(), budget, read.view())
                                 .match(
                                     [&read, &expected, &accepted](Message value) noexcept {
                                         ++accepted;
@@ -474,6 +512,137 @@ void test_heap_decode_agrees_with_an_oracle() {
         CRUCIBLE_FATAL_INVARIANT(agrees);
     }
     CRUCIBLE_FATAL_INVARIANT(accepted > 100 && accepted < 19900);
+    CRUCIBLE_FATAL_INVARIANT(over_budget > 100);
+}
+
+// ── The allocation budget ────────────────────────────────────────────────
+
+// An element whose image is two bytes and whose storage is 64 bytes, because
+// a local part holds a scratch area.
+struct[[= derive_protocol{}]] Sampled {
+    std::uint16_t value = 0;
+    [[= ::foundation::core::local_part{}]] FixedArray<std::uint8_t, 62> scratch{};
+};
+
+// The image: head at 0, the count of the samples at 1 and two bytes for each
+// sample, and then the count of the label and one byte for each character.
+struct[[= derive_protocol{}]] Samples {
+    std::uint8_t head = 0;
+    HeapArray<Sampled> samples{};
+    HeapText label = freeze(mint_grow_text(0));
+};
+
+// An element whose image is one byte and whose storage is more than 16 MiB,
+// because a local part holds a cache.
+struct[[= derive_protocol{}]] Cached {
+    std::uint8_t tag = 0;
+    [[= ::foundation::core::local_part{}]] FixedArray<std::byte, std::size_t{1} << 24> cache{};
+};
+
+struct[[= derive_protocol{}]] CachedList {
+    HeapArray<Cached> items{};
+};
+
+static_assert(sizeof(Sampled) == 64 && HeapDecodable<Samples> && HeapDecodable<CachedList>);
+
+// Three samples and a label of five characters: an image of 28 bytes whose
+// heap parts allocate 3 * 64 + 5 = 197 bytes.
+[[nodiscard]] Samples sample_samples() noexcept {
+    Samples value{};
+    value.head = 7;
+    value.samples = mint_heap_array_with<Sampled>(test_alloc(), 3, [](std::size_t position) noexcept {
+        Sampled sample{};
+        sample.value = static_cast<std::uint16_t>(0x0100U + position);
+        return sample;
+    });
+    value.label = text_of(TextView{"hello"});
+    return value;
+}
+
+// decode takes the storage of each heap part from the budget before it
+// allocates.  A budget of exactly the 197 bytes of the value gives the value
+// back.  Each smaller budget refuses the first heap part that does not fit,
+// at the offset of its count: the label at 15, or the samples at 1.  A value
+// with no element and no character needs no storage, so a budget of zero
+// takes it.
+void test_heap_decode_refuses_storage_past_the_budget() {
+    Samples const value = sample_samples();
+    Bytes const image = image_of(value);
+    View<std::byte const> const read = image.view();
+    CRUCIBLE_FATAL_INVARIANT(read.size() == 28);
+    CRUCIBLE_FATAL_INVARIANT(decodes_back_with(Budget{197}, value));
+    CRUCIBLE_FATAL_INVARIANT(
+        (fault_with<Samples>(Budget{196}, read) == DecodeFault{DecodeRefusal::allocation_budget, 15}));
+    CRUCIBLE_FATAL_INVARIANT(
+        (fault_with<Samples>(Budget{192}, read) == DecodeFault{DecodeRefusal::allocation_budget, 15}));
+    CRUCIBLE_FATAL_INVARIANT(
+        (fault_with<Samples>(Budget{191}, read) == DecodeFault{DecodeRefusal::allocation_budget, 1}));
+    CRUCIBLE_FATAL_INVARIANT(
+        (fault_with<Samples>(Budget{0}, read) == DecodeFault{DecodeRefusal::allocation_budget, 1}));
+    CRUCIBLE_FATAL_INVARIANT(decodes_back_with(Budget{0}, Samples{}));
+}
+
+// A heap part of a wider alignment takes the storage that its mint
+// allocates: three bytes at an alignment of 64 take one line of 64 bytes.
+struct[[= derive_protocol{}]] Lined {
+    HeapArray<std::uint8_t, 64> line{};
+};
+
+void test_heap_decode_charges_the_rounded_storage() {
+    Lined value{};
+    value.line = mint_heap_array_with<std::uint8_t, 64>(
+        test_alloc(), 3, [](std::size_t position) noexcept { return static_cast<std::uint8_t>(position + 1); });
+    Bytes const image = image_of(value);
+    CRUCIBLE_FATAL_INVARIANT(decodes_back_with(Budget{64}, value));
+    CRUCIBLE_FATAL_INVARIANT(
+        (fault_with<Lined>(Budget{63}, image.view()) == DecodeFault{DecodeRefusal::allocation_budget, 0}));
+}
+
+// A hostile input: a count of 2^23 elements of an image of one byte, which
+// the 8 MiB after the count hold, and of 16 MiB of storage each.  The storage
+// of the count is 2^47 bytes, which no allocation can give, and decode
+// refuses the count before it allocates.  One element takes its 16 MiB and
+// one byte when the budget holds them.
+void test_heap_decode_refuses_a_hostile_count() {
+    Bytes hostile = mint_heap_array_zeroed<std::byte>(test_alloc(), 8 + (std::size_t{1} << 23));
+    byte_at(hostile, 2) = std::byte{0x80};
+    Bytes const& read = hostile;
+    CRUCIBLE_FATAL_INVARIANT((fault_with<CachedList>(Budget{std::size_t{1} << 30}, read.view())
+                              == DecodeFault{DecodeRefusal::allocation_budget, 0}));
+
+    Bytes single = mint_heap_array_zeroed<std::byte>(test_alloc(), 9);
+    byte_at(single, 0) = std::byte{1};
+    byte_at(single, 8) = std::byte{0x5A};
+    Bytes const& single_read = single;
+    Budget const storage{sizeof(Cached)};
+    bool const is_taken =
+        decode<CachedList>(test_alloc(), storage, single_read.view())
+            .match(
+                [](CachedList list) noexcept {
+                    return list.items.size() == 1 && (*list.items.view().get(0).expect("one element")).tag == 0x5A;
+                },
+                [](DecodeFault) noexcept { return false; });
+    CRUCIBLE_FATAL_INVARIANT(is_taken);
+    CRUCIBLE_FATAL_INVARIANT((fault_with<CachedList>(Budget{sizeof(Cached) - 1}, single_read.view())
+                              == DecodeFault{DecodeRefusal::allocation_budget, 0}));
+}
+
+// An image holds at most 2^32 - 1 bytes, a limit of the format, so decode
+// refuses a View of 2^32 bytes before it reads a byte, and names the cap as
+// the offset.  A View of 2^32 - 1 zero bytes passes the cap: its first fault
+// is the kind of a Message at 28, which holds no enumerator.  The bytes come
+// from a map that nothing writes, so the test touches one page of the 4 GiB.
+void test_heap_decode_refuses_more_than_the_cap() {
+    constexpr std::size_t cap = 0xFFFFFFFFU;
+    ::foundation::os::GuardedRegion region =
+        ::foundation::os::map_guarded_region(cap + 1).expect("a map of 4 GiB that no page backs");
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the kernel gives the pages of a map as a pointer to raw bytes and a count")
+    View<std::byte const> const mapped = ::foundation::core::mint_foreign_view(
+        static_cast<std::byte const*>(static_cast<void const*>(region.data_mut())), cap + 1);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    CRUCIBLE_FATAL_INVARIANT((fault_of(mapped) == DecodeFault{DecodeRefusal::image_size, 0xFFFFFFFFU}));
+    CRUCIBLE_FATAL_INVARIANT((fault_of(mapped.window(0, cap).expect("the cap is inside the map"))
+                              == DecodeFault{DecodeRefusal::enumerator, 28}));
 }
 
 }  // namespace
@@ -486,5 +655,9 @@ int main() {
     test_heap_hash_of_runs_at_each_position();
     test_heap_format_names_each_part();
     test_heap_decode_agrees_with_an_oracle();
+    test_heap_decode_refuses_storage_past_the_budget();
+    test_heap_decode_charges_the_rounded_storage();
+    test_heap_decode_refuses_a_hostile_count();
+    test_heap_decode_refuses_more_than_the_cap();
     return 0;
 }
