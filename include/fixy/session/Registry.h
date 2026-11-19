@@ -14,8 +14,8 @@
 // A registry is a namespace.  Each namespace-scope variable in it whose
 // type is `combinator`, with or without const, is one registration.  A
 // variable of type `payload_rule` is one payload registration.  Every
-// other member is skipped: a function, a type, a nested namespace, or a
-// variable of a different type.  A nested namespace is not opened.
+// other member is skipped: a function, a type, or a variable of a
+// different type.
 //
 //     namespace my_protocol::combinators {
 //     inline constexpr fixy::session::transition::combinator put{
@@ -32,15 +32,58 @@
 //
 // A registration that a different header adds, in a namespace that it
 // opens again, gives a shape an answer in the translation units that see
-// that header and none in the others.  A payload with no rule is a plain
-// payload, so a payload rule that comes too late gives a different answer
-// and no error.  A layer closes both gaps with a seal.  A seal is a
-// variable of type `seal` in the namespace.  It names one kind of
-// registration and states how many registrations of that kind the
-// namespace holds.  Each read of a sealed kind counts the registrations
-// again, and it stops the build when the count differs from the seal, or
-// when the namespace holds two seals of that kind.  Each translation unit
-// that compiles then reads the same registrations of that kind.
+// that header and none in the others.  A layer closes that gap with a
+// seal.  A seal is a variable of type `seal` in the namespace.  It names
+// one kind of registration and states how many registrations of that
+// kind the namespace holds.  A read of a sealed kind counts the
+// registrations, and it stops the build when the count differs from the
+// seal, or when the namespace holds two seals of that kind.  Each
+// translation unit that compiles then reads the same registrations of
+// that kind.
+//
+// ── Families ─────────────────────────────────────────────────────────
+//
+// A registry is flat, or it is a root of families.  A flat registry holds
+// its registrations as its own members.  A root holds no registration of
+// its own.  Each namespace directly inside a root that holds a
+// registration or a seal of a kind is a family of that kind: the
+// registrations of one header, with a seal for each kind that it holds.
+// A family with a registration and no seal of its kind stops the build,
+// and so does a root that holds a registration of its own beside a
+// family.  A namespace inside a family is not opened.
+//
+//     namespace my_layer::combinators::core { ... combinator put{...}; seal ...; }
+//     namespace my_layer::combinators::crash { ... combinator stop{...}; seal ...; }
+//
+// The header that declares a shape opens the family of that shape, next
+// to the declaration.  So an extension header registers its own
+// combinators and payload rules after the core, and a unit that does not
+// include the extension reads none of them.
+//
+// The read of a root is lazy.  A query reads the families of the root
+// when it first meets a shape, and the answer for that shape holds for
+// the unit.  The registrations of one family are read one time for each
+// unit, and that read counts them against the seals of the family.  A
+// header that opens a family again after that read adds nothing that the
+// unit reads, so the unit refuses each shape of it as unregistered, and a
+// unit that reads the family later refuses the count.  No two units give
+// one shape two answers.
+//
+// The home of a registration is the file of its shape: the file of the
+// definition of a class, or the file of the first declaration of a class
+// template.  A registration that stands in a different file stops the
+// build, and so does a registration of a class that has no definition in
+// the unit.  So a unit that declares a family of templates in a different
+// file before it includes the header of the family is refused, and a
+// forward declaration cannot give a shape a second home.
+//
+// A family is a declaration of the base.  A file outside the base
+// declares nothing in a namespace of the base, and the plugin rule
+// base-namespace refuses a planted family there in each build
+// (test/fixy/neg/neg_sess_family_planted_outside_the_base.cpp).  Inside
+// the base, review and the rule definition-home are the guard: a family
+// that a header of the base plants for a shape of its own file passes the
+// checks above.
 //
 // The kind fixes the layout of the template arguments:
 //
@@ -421,15 +464,19 @@ template <class T>
     return dealiased;
 }
 
+// `registration` is the variable of the registration that the lookup
+// found, or null.
 struct combinator_lookup {
     bool is_found = false;
     std::size_t count = 0;
     combinator entry{};
+    std::meta::info registration{};
 };
 
 struct payload_lookup {
     bool is_found = false;
     payload_rule entry{};
+    std::meta::info registration{};
 };
 
 namespace detail {
@@ -445,6 +492,10 @@ void a_combinator_shape_has_two_registrations() noexcept;
 void a_payload_shape_has_two_rules() noexcept;
 void a_registration_stands_outside_its_seal() noexcept;
 void a_kind_of_registration_has_two_seals() noexcept;
+void a_family_holds_a_registration_with_no_seal() noexcept;
+void a_registry_root_holds_a_registration_of_its_own() noexcept;
+void a_registration_stands_outside_the_file_of_its_shape() noexcept;
+void a_registered_class_has_no_definition_here() noexcept;
 
 }  // namespace detail
 
@@ -510,50 +561,140 @@ consteval void require_seal_holds(std::meta::info registry, std::meta::info kind
     if (reading.fault == seal_fault::count_differs) a_registration_stands_outside_its_seal();
 }
 
+// The registrations of one kind that one namespace holds as its own
+// members, in static storage.  A namespace with a registration and no
+// seal of the kind is open.  The read counts the registrations against
+// the seal of the kind.  Complexity: linear in the members.
+[[nodiscard]] consteval static_run<std::meta::info> read_own_registrations(std::meta::info registry,
+                                                                           std::meta::info kind) {
+    require_seal_holds(registry, kind);
+    stack<std::meta::info> found{};
+    for (const std::meta::info member : std::meta::members_of(registry, std::meta::access_context::current())) {
+        if (is_registration_of(member, kind)) push(found, member);
+    }
+    return to_static_run(found);
+}
+
+// The registrations of one kind in one family, read one time for each
+// unit.  A family with a registration and no seal of the kind stops the
+// build.
+[[nodiscard]] consteval static_run<std::meta::info> read_family(std::meta::info family, std::meta::info kind) {
+    const seal_reading reading = read_seal(family, kind);
+    if (reading.found != 0 && !reading.is_sealed) a_family_holds_a_registration_with_no_seal();
+    return read_own_registrations(family, kind);
+}
+
 }  // namespace detail
 
-// Reads the registry now.  A sealed registry must hold the registrations
-// that its seal counts.  A shape with two registrations is counted in the
-// answer, and check_combinator names it.  Two registrations of a
-// different shape stop the build here: a read that is cached could not
-// see the second one.  Complexity: quadratic in the registrations of the
-// registry, which are few.
+template <std::meta::info Family, std::meta::info Kind>
+inline constexpr static_run<std::meta::info> family_registrations_v = detail::read_family(Family, Kind);
+
+namespace detail {
+
+// True when a member of a root is a family of the kind: a namespace that
+// holds a registration or a seal of the kind.
+[[nodiscard]] consteval bool is_family_of(std::meta::info member, std::meta::info kind) {
+    if (!std::meta::is_namespace(member) || std::meta::is_namespace_alias(member)) return false;
+    const seal_reading reading = read_seal(member, kind);
+    return reading.found != 0 || reading.is_sealed;
+}
+
+// Puts each registration of the kind that `registry` holds on `found`: the
+// own members of a flat registry, or the registrations of each family of a
+// root.  The families are read where the query stands, so a family that a
+// later header opens is read by each query after that header.
+// Complexity: linear in the members of the root and in the registrations.
+consteval void collect_registrations(std::meta::info registry, std::meta::info kind, stack<std::meta::info>& found) {
+    bool has_family = false;
+    bool has_own = false;
+    for (const std::meta::info member : std::meta::members_of(registry, std::meta::access_context::current())) {
+        if (is_registration_of(member, kind)) {
+            has_own = true;
+        } else if (is_family_of(member, kind)) {
+            has_family = true;
+            const static_run<std::meta::info> family = std::meta::extract<static_run<std::meta::info>>(
+                std::meta::substitute(^^family_registrations_v,
+                                      {std::meta::reflect_constant(member), std::meta::reflect_constant(kind)}));
+            for (const std::meta::info registration : family)
+                push(found, registration);
+        }
+    }
+    if (has_family && has_own) a_registry_root_holds_a_registration_of_its_own();
+    if (has_family) return;
+    for (const std::meta::info registration : read_own_registrations(registry, kind))
+        push(found, registration);
+}
+
+// True when two reflections stand in one file.
+[[nodiscard]] consteval bool is_same_file(std::meta::info left, std::meta::info right) {
+    const char* left_file = std::meta::source_location_of(left).file_name();
+    const char* right_file = std::meta::source_location_of(right).file_name();
+    for (; *left_file != '\0' && *left_file == *right_file; ++left_file, ++right_file) {}
+    return *left_file == *right_file;
+}
+
+// Stops the build when a registration stands outside the home of its
+// shape: the file of the definition of a class, or the file of the first
+// declaration of a class template.  A class with no definition here has
+// no home that the unit can read.
+consteval void require_home(std::meta::info registration, std::meta::info shape) {
+    if (std::meta::is_type(shape) && (std::meta::is_class_type(shape) || std::meta::is_union_type(shape))
+        && !std::meta::is_complete_type(shape)) {
+        a_registered_class_has_no_definition_here();
+    }
+    if (!is_same_file(registration, shape)) a_registration_stands_outside_the_file_of_its_shape();
+}
+
+}  // namespace detail
+
+// Reads the registry now.  A sealed registry or family must hold the
+// registrations that its seal counts.  A shape with two registrations is
+// counted in the answer, and check_combinator names it.  Two
+// registrations of a different shape stop the build here: a read that is
+// cached could not see the second one.  The registration that the read
+// finds must stand at the home of its shape.  Complexity: quadratic in
+// the registrations of the registry, which are few.
 [[nodiscard]] consteval combinator_lookup read_combinator(std::meta::info registry, std::meta::info shape) {
-    detail::require_seal_holds(registry, ^^combinator);
+    stack<std::meta::info> registrations{};
+    detail::collect_registrations(registry, ^^combinator, registrations);
     combinator_lookup result{};
-    std::vector<std::meta::info> other_shapes{};
-    for (const std::meta::info member : std::meta::members_of(registry, std::meta::access_context::unchecked())) {
-        if (!detail::is_registration_of(member, ^^combinator)) continue;
+    stack<std::meta::info> other_shapes{};
+    for (const std::meta::info member : registrations) {
         const combinator entry = std::meta::extract<combinator>(member);
         if (entry.shape != shape) {
             for (const std::meta::info seen : other_shapes) {
                 if (seen == entry.shape) detail::a_combinator_shape_has_two_registrations();
             }
-            other_shapes.push_back(entry.shape);
+            push(other_shapes, entry.shape);
             continue;
         }
+        detail::require_home(member, shape);
         ++result.count;
         if (!result.is_found) {
             result.is_found = true;
             result.entry = entry;
+            result.registration = member;
         }
     }
     return result;
 }
 
-// Reads the payload rule of one shape now.  A sealed registry must hold
-// the registrations that its seal counts, and two rules for one shape
-// stop the build.  Complexity: linear in the members of the registry.
+// Reads the payload rule of one shape now.  A sealed registry or family
+// must hold the registrations that its seal counts, and two rules for one
+// shape stop the build.  The rule must stand at the home of its shape.
+// Complexity: linear in the registrations of the registry.
 [[nodiscard]] consteval payload_lookup read_payload_rule(std::meta::info registry, std::meta::info shape) {
-    detail::require_seal_holds(registry, ^^payload_rule);
+    stack<std::meta::info> registrations{};
+    detail::collect_registrations(registry, ^^payload_rule, registrations);
     payload_lookup result{};
-    for (const std::meta::info member : std::meta::members_of(registry, std::meta::access_context::unchecked())) {
-        if (!detail::is_registration_of(member, ^^payload_rule)) continue;
+    for (const std::meta::info member : registrations) {
         const payload_rule entry = std::meta::extract<payload_rule>(member);
         if (entry.shape != shape) continue;
+        detail::require_home(member, shape);
         if (result.is_found) detail::a_payload_shape_has_two_rules();
         result.is_found = true;
         result.entry = entry;
+        result.registration = member;
     }
     return result;
 }
@@ -574,6 +715,16 @@ inline constexpr payload_lookup payload_lookup_v = read_payload_rule(Registry, S
     const std::meta::info shape = shape_of(payload);
     return std::meta::extract<payload_lookup>(std::meta::substitute(
         ^^payload_lookup_v, {std::meta::reflect_constant(registry), std::meta::reflect_constant(shape)}));
+}
+
+// Each registration of one kind that a registry holds, read now, for a
+// reader of a kind that names no shape, such as the axioms of a payload
+// order.  Complexity: linear in the members of the root and in the
+// registrations.
+[[nodiscard]] consteval static_run<std::meta::info> registrations_of(std::meta::info registry, std::meta::info kind) {
+    stack<std::meta::info> registrations{};
+    detail::collect_registrations(registry, kind, registrations);
+    return to_static_run(registrations);
 }
 
 // ── Coherence of one registration ─────────────────────────────────────
@@ -699,11 +850,10 @@ inline constexpr coherence_verdict coherence_v = detail::check_combinator_now(Re
         ^^coherence_v, {std::meta::reflect_constant(registry), std::meta::reflect_constant(shape)}));
 }
 
-// The first incoherent registration of the registry, or none.
-// Complexity: quadratic in the number of registrations.
+// The first incoherent registration of the registry, with each family of
+// a root, or none.  Complexity: quadratic in the number of registrations.
 [[nodiscard]] consteval coherence_verdict check_registry(std::meta::info registry) {
-    for (const std::meta::info member : std::meta::members_of(registry, std::meta::access_context::unchecked())) {
-        if (!detail::is_registration_of(member, ^^combinator)) continue;
+    for (const std::meta::info member : registrations_of(registry, ^^combinator)) {
         const coherence_verdict verdict = check_combinator(registry, std::meta::extract<combinator>(member).shape);
         if (verdict.reason != incoherence::none) return verdict;
     }

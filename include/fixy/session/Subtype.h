@@ -367,7 +367,10 @@ concept TierWeakens = tier_weakens(^^T, ^^U);
 
 }  // namespace detail::payload_order
 
-namespace payload_axioms {
+// The axioms are a root of families (fixy/session/Registry.h).  This header
+// opens the family `core`, and its seal counts its axioms.  A query of the
+// order reads the families where it stands.
+namespace payload_axioms::core {
 
 inline constexpr ::fixy::session::transition::subsort_axiom refinement_drops{
     .drops = ^^detail::payload_order::RefinementDrops, .inner = ^^detail::payload_order::refinement_value_t};
@@ -400,17 +403,7 @@ inline constexpr ::fixy::session::transition::subsort_axiom content_addressed{
 inline constexpr ::fixy::session::transition::seal axiom_seal{.kind = ^^::fixy::session::transition::subsort_axiom,
                                                               .count = 7};
 
-}  // namespace payload_axioms
-
-// The seal counts every axiom of the order.  An axiom that stands before
-// this header, in a namespace that a different header opened first,
-// makes the count differ here.
-static_assert(::fixy::session::transition::read_seal(^^::fixy::session::payload_axioms,
-                                                     ^^::fixy::session::transition::subsort_axiom)
-                      .fault
-                  == ::fixy::session::transition::seal_fault::none,
-              "fixy::session::diagnostic [Subtype_Axiom_Outside_Seal]: fixy::session::payload_axioms holds an axiom "
-              "that its seal does not count.  Every axiom of the payload order stands in fixy/session/Subtype.h.");
+}  // namespace payload_axioms::core
 
 // The value spelling of the order, for a reader that asks the question as a
 // value.  It carries no authority of its own: each gate calls

@@ -301,17 +301,14 @@ using label_of_t = typename label_of<T>::type;
 // vendor.  The mint admission, not refinement, decides which vendor a
 // context runs.
 //
-// Two seals below close the combinators and the payload rules.  A
-// combinator that a later header adds would give its shape an answer in
-// some translation units and none in others, and a second registration
-// of a shape would give that shape two answers.  A payload rule decides
-// whether a payload can be sent, whether a branch is a label, and which
-// label the branch names, so a rule that a later header adds would
-// change those answers in some translation units and not in others.
-// Every registration of the layer therefore stands here, and a
-// registration anywhere else stops the build.
+// The registry is a root of families (fixy/session/Registry.h).  This
+// header opens the family `core`, and two seals close its combinators and
+// its payload rules.  A registration that a different header adds to this
+// family makes the count differ at the first read of the family.  A
+// second registration of a shape in a different family gives that shape
+// two answers, so a query refuses it.
 
-namespace combinators {
+namespace combinators::core {
 
 // A keyed Send is a Select of one branch, and a keyed Recv is an Offer of
 // one branch (fixy/session/Fold.h, section on branches and labels).
@@ -443,7 +440,7 @@ inline constexpr ::fixy::session::transition::payload_rule labelled{.shape = ^^L
 inline constexpr ::fixy::session::transition::seal payload_rule_seal{
     .kind = ^^::fixy::session::transition::payload_rule, .count = 3};
 
-}  // namespace combinators
+}  // namespace combinators::core
 
 namespace detail {
 
@@ -1306,27 +1303,9 @@ consteval void ensure_choices_well_formed() noexcept {
                   detail::choice_fault_message<P>());
 }
 
-// The seal counts every combinator of the registry.  A registration that
-// stands before this header, in a namespace that a different header
-// opened first, makes the count differ here.  A registration after this
-// header makes it differ at the next read of a shape.
-static_assert(
-    ::fixy::session::transition::read_seal(detail::protocol_registry, ^^::fixy::session::transition::combinator).fault
-        == ::fixy::session::transition::seal_fault::none,
-    "fixy::session::diagnostic [Protocol_Combinator_Outside_Seal]: fixy::session::combinators holds a "
-    "combinator registration that its seal does not count.  Every combinator of the session layer is "
-    "registered in fixy/session/Protocol.h.");
-
-// The check file of this header checks that each registration of the
-// sealed registry is coherent.
-
-// The seal counts every payload rule of the registry.  A rule that stands
-// before this header, in a namespace that a different header opened
-// first, makes the count differ here.
-static_assert(
-    ::fixy::session::transition::read_seal(detail::protocol_registry, ^^::fixy::session::transition::payload_rule).fault
-        == ::fixy::session::transition::seal_fault::none,
-    "fixy::session::diagnostic [Protocol_Payload_Rule_Outside_Seal]: fixy::session::combinators holds a "
-    "payload rule that its seal does not count.  Every payload rule stands in fixy/session/Protocol.h.");
+// A query reads the families of the registry where it stands, and the
+// first read of the family `core` counts it against its seals
+// (fixy/session/Registry.h).  The check file of this header checks that
+// each registration of the registry is coherent.
 
 }  // namespace fixy::session

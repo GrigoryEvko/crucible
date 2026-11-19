@@ -1,25 +1,27 @@
-// The payload rules of the session layer are sealed in
-// fixy/session/Protocol.h.  A rule that a later header adds would change
-// whether a payload can be sent, and which label a branch names, in the
-// translation units that see it and not in the others.  So the next read
-// of a payload rule counts the rules again, and a count that differs
-// from the seal stops the build.
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+//
+// The payload rules of the family `core` are sealed in
+// fixy/session/Protocol.h.  A rule that a later header adds to that
+// family would change whether a payload can be sent, and which label a
+// branch names, in the translation units that see it and not in the
+// others.  So the first read of the family counts its rules, and a count
+// that differs from the seal stops the build.
+//
+// Expected diagnostic: a registration stands outside its seal.
 
 #include <fixy/session/Protocol.h>
 #include <foundation/Quarantine.h>
 
 namespace {
-
 template <class T>
 struct Opaque {};
-
 }  // namespace
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
-namespace fixy::session::combinators {
+namespace fixy::session::combinators::core {
 inline constexpr ::fixy::session::transition::payload_rule opaque{
     .shape = ^^::Opaque, .is_sendable = false, .is_label = false};
-}  // namespace fixy::session::combinators
+}  // namespace fixy::session::combinators::core
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {

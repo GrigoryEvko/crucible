@@ -2524,19 +2524,39 @@ fixy_neg_compile_test(neg_sess_compatible_client_wrong_role
 # witnesses in test/layer/checks/fixy/session/Refinement.cpp.
 fixy_neg_compile_test(neg_sess_payload_rule_after_seal
   "a_registration_stands_outside_its_seal"
-  "expansion of .fixy::session::transition::read_payload_rule")
+  "family_registrations_v<.*fixy::session::combinators::core .*payload_rule>")
 fixy_neg_compile_test(neg_sess_payload_rule_before_seal
-  "fixy::session::diagnostic \\[Protocol_Payload_Rule_Outside_Seal\\]"
-  "holds a payload rule that its seal does not count")
+  "a_registration_stands_outside_its_seal"
+  "family_registrations_v<.*fixy::session::combinators::core .*payload_rule>")
 fixy_neg_compile_test(neg_sess_axiom_after_seal
   "a_registration_stands_outside_its_seal"
-  "expansion of .fixy::session::transition::detail::subsorts_within")
+  "family_registrations_v<.*fixy::session::payload_axioms::core .*subsort_axiom>")
 fixy_neg_compile_test(neg_sess_combinator_registered_twice
-  "fixy::session::diagnostic \\[Protocol_Combinator_Outside_Seal\\]"
-  "holds a combinator registration that its seal does not count")
+  "a_registration_stands_outside_the_file_of_its_shape"
+  "combinator_lookup_v<.*fixy::session::combinators .*struct fixy::session::Send>")
 fixy_neg_compile_test(neg_sess_combinator_outside_seal
-  "a_registration_stands_outside_its_seal"
-  "expansion of .fixy::session::transition::read_combinator\\(\\^\\^fixy::session::combinators, \\^\\^.*Emit\\)")
+  "a_registry_root_holds_a_registration_of_its_own"
+  "combinator_lookup_v<.*fixy::session::combinators .*Emit>")
+
+# The registry of the session layer is a root of families
+# (fixy/session/Registry.h).  A family is a declaration of the base, so the
+# rule base-namespace refuses a family that a file outside the base plants.
+# A family holds a seal for each kind of registration that it holds.  The
+# home of a registration is the file of its shape, so a declaration of a
+# family before its header, and a registration of a class that has no
+# definition, are refused.
+fixy_neg_compile_test(neg_sess_family_planted_outside_the_base
+  "this file declares .fixy::session::combinators::planted::halt. in a namespace of the base, outside the base"
+  "a test of a planted declaration puts it in a .CRUCIBLE_I_KNOW_WHAT_IM_DOING")
+fixy_neg_compile_test(neg_sess_family_declared_before_its_header
+  "a_registration_stands_outside_the_file_of_its_shape"
+  "combinator_lookup_v<.*struct fixy::session::Send>")
+fixy_neg_compile_test(neg_sess_family_without_seal
+  "a_family_holds_a_registration_with_no_seal"
+  "family_registrations_v<.*fixy::session::combinators::unsealed .*combinator>")
+fixy_neg_compile_test(neg_sess_registered_class_without_definition
+  "a_registered_class_has_no_definition_here"
+  "combinator_lookup_v<.*Halt>")
 
 # No trait of fixy/session/Protocol.h, Delegate.h, Crash.h or
 # Checkpoint.h is a template that a user can specialize.  A class
@@ -3168,7 +3188,7 @@ fixy_neg_compile_test(neg_sess_mint_session_delegated_row_outside_ctx
 fixy_neg_compile_test(neg_sess_mint_session_payload_unclassified
   "static assertion failed: payload_row<T>: T is, or holds, a type this extractor cannot classify"
   "The refused type: unclassified_fixture::Envelope<int>"
-  "In instantiation of .struct fixy::concurrent::payload_row_under<fixy::session::Send<unclassified_fixture::Envelope<int>, fixy::session::End>, fixy::session::session_payload_families>.")
+  "In instantiation of .struct fixy::concurrent::payload_row_under<fixy::session::Send<unclassified_fixture::Envelope<int>, fixy::session::End>, fixy::session::session_payload_families<fixy::session::Send<unclassified_fixture::Envelope<int>, fixy::session::End> > >.")
 # A receive can deliver a permission, in a message or in the set of a
 # delegated endpoint.  The context must admit the row of each delivered
 # region, and a delivered tag that declares no row stops the build.

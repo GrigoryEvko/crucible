@@ -1,8 +1,8 @@
-// The axioms of the payload order are sealed in fixy/session/Subtype.h.
-// An axiom that a later header adds would widen the order in the
-// translation units that see it and not in the others.  So the next
-// query of the order counts the axioms again, and a count that differs
-// from the seal stops the build.
+// The axioms of the family `core` of the payload order are sealed in
+// fixy/session/Subtype.h.  An axiom that a later header adds to that
+// family would widen the order in the translation units that see it and
+// not in the others.  So the first query of the order counts the axioms
+// of the family, and a count that differs from the seal stops the build.
 
 #include <fixy/session/Subtype.h>
 #include <foundation/Quarantine.h>
@@ -15,9 +15,9 @@ concept LongWeakensToInt = std::is_same_v<T, long> && std::is_same_v<U, int>;
 }  // namespace
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
-namespace fixy::session::payload_axioms {
+namespace fixy::session::payload_axioms::core {
 inline constexpr ::fixy::session::transition::subsort_axiom long_to_int{.weakens = ^^::LongWeakensToInt};
-}  // namespace fixy::session::payload_axioms
+}  // namespace fixy::session::payload_axioms::core
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {

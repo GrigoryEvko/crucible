@@ -502,9 +502,16 @@ concept RewindableChannelTo =
 
 namespace detail {
 
-// The walk keeps the rules in a stack of fixy/session/Registry.h
-// and reads them through a pointer.  It makes the vector one time, at the end.
-[[nodiscard]] consteval std::vector<::fixy::concurrent::payload_family_rule> session_payload_rules() {
+// The rules of this layer, read where a query of `protocol` stands.  The
+// walk reads the families of `registry` there, so a family that a header
+// registers after this header has its rules.  The rules do not depend on
+// the protocol: the parameter only makes the read wait for the query.  The
+// registry is a parameter too, because GCC folds a read with constant
+// arguments where the body of the function stands.  The walk keeps the
+// rules in a stack of fixy/session/Registry.h and reads them through a
+// pointer.  It makes the vector one time, at the end.
+[[nodiscard]] consteval std::vector<::fixy::concurrent::payload_family_rule>
+session_payload_rules(std::meta::info registry, [[maybe_unused]] std::meta::info protocol) {
     using Rule = ::fixy::concurrent::payload_family_rule;
     constexpr std::uint64_t carries_first = std::uint64_t{1};
     constexpr std::uint64_t carries_nothing = std::uint64_t{0};
@@ -535,15 +542,9 @@ namespace detail {
         }
         return false;
     };
-    const std::vector<std::meta::info> members =
-        std::meta::members_of(protocol_registry, std::meta::access_context::current());
-    const std::meta::info* const member = members.data();
-    const std::size_t member_count = members.size();
-    for (std::size_t place = 0; place < member_count; ++place) {
-        if (!std::meta::is_variable(member[place])) continue;
-        if (std::meta::remove_cvref(std::meta::type_of(member[place])) != ^^::fixy::session::transition::combinator)
-            continue;
-        const auto entry = std::meta::extract<::fixy::session::transition::combinator>(member[place]);
+    for (const std::meta::info member :
+         ::fixy::session::transition::registrations_of(registry, ^^::fixy::session::transition::combinator)) {
+        const auto entry = std::meta::extract<::fixy::session::transition::combinator>(member);
         if (std::meta::is_class_template(entry.shape) && !has_rule(entry.shape)) {
             push(rules, Rule{entry.shape, carries_every});
         }
@@ -556,13 +557,15 @@ namespace detail {
 
 }  // namespace detail
 
-// The rules of this layer for the payload walk.
+// The rules of this layer for the payload walk of Proto, read where the
+// row of Proto is first asked.
+template <class Proto>
 inline constexpr std::span<const ::fixy::concurrent::payload_family_rule> session_payload_families =
-    std::define_static_array(detail::session_payload_rules());
+    std::define_static_array(detail::session_payload_rules(detail::protocol_registry, ^^Proto));
 
 // The union of the effect rows of the payloads of Proto.
 template <class Proto>
-using protocol_payload_row_t = ::fixy::concurrent::payload_row_under_t<Proto, session_payload_families>;
+using protocol_payload_row_t = ::fixy::concurrent::payload_row_under_t<Proto, session_payload_families<Proto>>;
 
 namespace detail {
 

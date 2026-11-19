@@ -23,11 +23,14 @@ namespace fixy::session::transition {
 
 // ── The payload preorder ──────────────────────────────────────────────
 //
-// The reflexive relation that the axioms of one namespace generate.
-// Each drop makes the subtype smaller, so the walk stops.  The depth
-// bound is a second stop for an axiom that breaks that rule.  A seal of
-// ^^subsort_axiom closes the namespace, as it closes a payload registry.
-// Complexity: linear in the number of axioms per layer of the subtype.
+// The reflexive relation that the axioms of one namespace generate, or
+// of each family of a root of axioms (fixy/session/Registry.h).  Each
+// drop makes the subtype smaller, so the walk stops.  The depth bound is
+// a second stop for an axiom that breaks that rule.  A seal of
+// ^^subsort_axiom closes a namespace or a family, as it closes a payload
+// registry.  Each step of a query reads the axioms where the query
+// stands.  Complexity: linear in the number of axioms per layer of the
+// subtype.
 
 namespace detail {
 
@@ -90,10 +93,8 @@ consteval void require_closed_axiom(const subsort_axiom& axiom) {
                                              std::size_t depth) {
     if (sub == super) return true;
     if (depth == 0) return false;
-    require_seal_holds(axioms, ^^subsort_axiom);
     std::vector<subsort_axiom> found;
-    for (const std::meta::info member : std::meta::members_of(axioms, std::meta::access_context::unchecked())) {
-        if (!is_registration_of(member, ^^subsort_axiom)) continue;
+    for (const std::meta::info member : registrations_of(axioms, ^^subsort_axiom)) {
         const subsort_axiom axiom = std::meta::extract<subsort_axiom>(member);
         // The top of a query reads each axiom, and a step below reads the
         // same namespace again.
