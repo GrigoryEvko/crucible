@@ -722,6 +722,9 @@ crucible_test(test_perf_syscall_tp_btf_smoke)
 # CRUCIBLE_HAVE_BPF registers the test.  The test loads no program.
 if(CRUCIBLE_HAVE_BPF)
   crucible_test(test_perf_bpf_objects)
+  # The BTF of each stub object agrees with the userspace mirror of each
+  # record that it shares, by name, offset and size of each member.
+  crucible_test(test_bpf_mirror_btf)
 endif()
 # warden::DeadlineWatchdog wires SchedSwitch context-
 # switch telemetry into Policy's miss-budget enforcement.  Smoke
