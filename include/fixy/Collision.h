@@ -833,6 +833,31 @@ void a_protocol_grade_has_no_reading_in_protocol_reading_() noexcept;
     return reading == ProtocolReading::Unread || reading == ProtocolReading::SpawnOutlivesTheFrame;
 }
 
+// The reading of the CallShape grade and of the Protocol grade of a binding,
+// with one message for a grade that the closed relation does not name.  The
+// pass of the premises reads each grade of the binding through them, so the
+// message names the relation to extend.  The readers above stop the build on
+// the same grade, so a specialization of a template here changes only the
+// message, and no answer.
+template <class G>
+[[nodiscard]] consteval CallShapeReading call_shape_reading_or_refuse_() noexcept {
+    static_assert(call_shape_reading_(^^G) != CallShapeReading::Unread,
+                  "fixy/Collision.h: the CallShape grade of this binding has no reading in "
+                  "fixy::collision::detail::call_shape_reading_, so D001 cannot tell whether the binding calls "
+                  "through a pointer whose callee can throw. Name the atom in the closed relation beside "
+                  "indirect_call, recurses and recurses_unbounded.");
+    return call_shape_reading_(^^G);
+}
+
+template <class G>
+[[nodiscard]] consteval ProtocolReading protocol_reading_or_refuse_() noexcept {
+    static_assert(protocol_reading_(^^G) != ProtocolReading::Unread,
+                  "fixy/Collision.h: the Protocol grade of this binding has no reading in "
+                  "fixy::collision::detail::protocol_reading_, so L003 cannot tell whether the binding spawns a "
+                  "child that can outlive its frame. Name the atom in the closed relation beside the spawn atoms.");
+    return protocol_reading_(^^G);
+}
+
 // ── The failure path, in the spellings the tree has ─────────────────
 //
 // A failure is not a row atom.  foundation/effects/Effect.h says why: an
@@ -1038,6 +1063,19 @@ concept HasTrustLevel =
 
 namespace detail {
 
+// The level of the Trust grade of a binding, with one message for a grade
+// that trust_level_of_ does not name.  The reader gives the null reflection
+// for such a grade, and T001 reads it as a grade that is not Unverified, so
+// the message is the stop.  A specialization of the template skips the
+// message and still gives no level.
+template <class G>
+[[nodiscard]] consteval std::meta::info trust_level_or_refuse_() noexcept {
+    static_assert(::fixy::collision::IsTrustGrade<G>,
+                  "fixy/Collision.h: the Trust grade of this binding has no level in "
+                  "fixy::collision::detail::trust_level_of_, so T001 cannot tell whether the binding is verified.");
+    return trust_level_of_(^^G);
+}
+
 [[nodiscard]] consteval bool names_axis_(const pack_record& pack, Axis axis) noexcept {
     return pack.names_axis[std::to_underlying(axis)];
 }
@@ -1082,10 +1120,8 @@ template <class... Atoms>
     // which on this axis is the linear grade: consumed exactly once.
     premise.linear = !names_axis_(pack, Axis::Usage);
     premise.monotonic = std::is_same_v<grade_on_t<Axis::Mutation, Atoms...>, ::fixy::atom::mut_monotonic>;
-    static_assert(::fixy::collision::IsTrustGrade<grade_on_t<Axis::Trust, Atoms...>>,
-                  "fixy/Collision.h: the Trust grade of this binding has no level in "
-                  "fixy::collision::detail::trust_level_of_, so T001 cannot tell whether the binding is verified.");
-    premise.unverified = trust_level_of_(grade_of(Axis::Trust)) == ^^::fixy::tags::trust::Unverified;
+    premise.unverified =
+        trust_level_or_refuse_<grade_on_t<Axis::Trust, Atoms...>>() == ^^::fixy::tags::trust::Unverified;
 
     // "Unstated" is the strict pole on Complexity, so an unstated cost is
     // the absence of a grade rather than a grade of its own.  A cost and a
@@ -1139,15 +1175,9 @@ template <class... Atoms>
         names_axis_(pack, Axis::MemoryScope) && !std::is_same_v<MemoryScope, ::fixy::atom::scope::thread>;
     // A CallShape grade or a Protocol grade with no reading stops the build
     // with one message, and the reader then gives the answer that refuses.
-    static_assert(call_shape_reading_(grade_of(Axis::CallShape)) != CallShapeReading::Unread,
-                  "fixy/Collision.h: the CallShape grade of this binding has no reading in "
-                  "fixy::collision::detail::call_shape_reading_, so D001 cannot tell whether the binding calls "
-                  "through a pointer whose callee can throw. Name the atom in the closed relation beside "
-                  "indirect_call, recurses and recurses_unbounded.");
-    static_assert(protocol_reading_(grade_of(Axis::Protocol)) != ProtocolReading::Unread,
-                  "fixy/Collision.h: the Protocol grade of this binding has no reading in "
-                  "fixy::collision::detail::protocol_reading_, so L003 cannot tell whether the binding spawns a "
-                  "child that can outlive its frame. Name the atom in the closed relation beside the spawn atoms.");
+    [[maybe_unused]] constexpr CallShapeReading call_shape_reading = call_shape_reading_or_refuse_<CallShape>();
+    [[maybe_unused]] constexpr ProtocolReading protocol_reading =
+        protocol_reading_or_refuse_<grade_on_t<Axis::Protocol, Atoms...>>();
     premise.indirect_call_may_throw = indirect_call_throws_(grade_of(Axis::CallShape));
     premise.spawn_outlives_the_frame = spawn_outlives_frame_(grade_of(Axis::Protocol));
     // A call through the vDSO and a deliberate leak lift the empty row, but

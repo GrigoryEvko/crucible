@@ -738,6 +738,19 @@ fixy_neg_compile_test(neg_collision_call_shape_without_reading
 fixy_neg_compile_test(neg_collision_protocol_without_reading
   "call to non-.constexpr. function .void fixy::collision::detail::a_protocol_grade_has_no_reading_in_protocol_reading_\\(\\)."
   "neg_collision_protocol_without_reading\\.cpp:16:")
+# The pass of the premises reads the CallShape, the Protocol and the Trust
+# grade of a binding through an assertion that names the relation to extend.
+# Each fixture reads the assertion directly with a type of the shape of an
+# atom, because a pack cannot hold such a type.
+fixy_neg_compile_test(neg_collision_call_shape_reading_refused
+  "static assertion failed: fixy/Collision\\.h: the CallShape grade of this binding has no reading in fixy::collision::detail::call_shape_reading_"
+  "call_shape_reading_or_refuse_\\(\\) \\[with G = fixture::virtual_dispatch\\]")
+fixy_neg_compile_test(neg_collision_protocol_reading_refused
+  "static assertion failed: fixy/Collision\\.h: the Protocol grade of this binding has no reading in fixy::collision::detail::protocol_reading_"
+  "protocol_reading_or_refuse_\\(\\) \\[with G = fixture::detached_thread\\]")
+fixy_neg_compile_test(neg_collision_trust_level_refused
+  "static assertion failed: fixy/Collision\\.h: the Trust grade of this binding has no level in fixy::collision::detail::trust_level_of_"
+  "trust_level_or_refuse_\\(\\) \\[with G = fixture::unlisted_trust;")
 # The check file of fixy/collision/Report.h walks each declaration of the
 # spawn family, which is a sample set outside the roster.  The fixture plants
 # a template with no reading before the check file, and the check names it.
