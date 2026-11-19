@@ -10,7 +10,7 @@ reason include/fixy/session/ | the session doors move each handle, value and tok
 reason src/ | each stage of the background pipeline drops its endpoint of a channel at the end of its function, and the start drops one producer
 reason test/ | the tests drop tokens and handles at the end of a test, consume a value two times to show the abort, and discard linear temporaries.  Some tests consume a token behind a test of its option
 bench/ | discarded-temporary | 2 | - | -
-bench/ | unconsumed | 7 | - | -
+bench/ | unconsumed | 6 | - | -
 include/crucible/cntp/ | unconsumed | 25 | - | -
 include/crucible/perf/detail/ | unconsumed | 1 | - | -
 include/fixy/ | unconsumed | 2 | - | -
@@ -21,7 +21,7 @@ test/ | unconsumed | 38 | - | -
 test/fixy/ | assign-over-live | 1 | - | -
 test/fixy/ | discarded-temporary | 3 | - | -
 test/fixy/ | double-consume | 5 | - | -
-test/fixy/ | unconsumed | 186 | - | -
+test/fixy/ | unconsumed | 184 | - | -
 test/foundation/ | discarded-temporary | 3 | - | -
 test/foundation/ | unconsumed | 12 | - | -
 test/foundation/ | unconsumed-on-path | 1 | - | -
