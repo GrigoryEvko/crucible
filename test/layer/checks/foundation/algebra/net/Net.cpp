@@ -943,6 +943,56 @@ static_assert(check_canonical_form(sum_of_three).is_admitted());
 // A fault of the wiring comes first.
 static_assert(find_canonical_form(fork_tree_open).fault.code == NetFaultCode::PortWithoutWire);
 
+// ── The sealed net ──────────────────────────────────────────────────────
+//
+// Each check of a sealed net gives the fault of the same check of its net,
+// and the form of a sealed net is the form of the net.  The nets below hold a
+// fault of the wiring, a fault of each body, and no fault.
+
+// Two faults hold the same code and name the same places.  The two arguments
+// can change places with no change of meaning.
+[[nodiscard]] consteval bool is_same_fault(NetFault const& one, NetFault const& other) noexcept {
+    if (one.code != other.code || one.path_count != other.path_count || one.is_path_cut != other.is_path_cut) {
+        return false;
+    }
+    if (one.type != other.type || one.kind != other.kind || one.agent != other.agent) return false;
+    if (one.port != other.port || one.wire != other.wire) return false;
+    for (std::size_t index = 0; index < max_fault_path; ++index) {
+        if (one.path[index] != other.path[index]) return false;
+    }
+    return true;
+}
+
+// Each check of the sealed net of a net agrees with the check of the net.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] consteval bool does_seal_keep_each_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    SealedNet<Types, Kinds, Agents, Wires> const sealed = seal_net(graph);
+    CanonicalNet const form = find_canonical_form(graph);
+    CanonicalNet const sealed_form = find_canonical_form(sealed);
+    return is_same_fault(sealed.wiring_fault(), find_wiring_fault(graph))
+        && is_same_fault(find_forest_fault(sealed), find_forest_fault(graph))
+        && is_same_fault(find_proof_net_fault(sealed), find_proof_net_fault(graph))
+        && is_same_fault(find_vicious_fault(sealed), find_vicious_fault(graph))
+        && is_same_fault(find_dataflow_fault(sealed), find_dataflow_fault(graph))
+        && is_same_fault(sealed_form.fault, form.fault) && sealed_form.hash == form.hash
+        && is_same_net(sealed, sealed) == is_same_net(graph, graph);
+}
+
+static_assert(does_seal_keep_each_fault(pipeline_as_built) && does_seal_keep_each_fault(pipeline_crossed));
+static_assert(does_seal_keep_each_fault(pipeline_doubled) && does_seal_keep_each_fault(pipeline_past_its_agents));
+static_assert(does_seal_keep_each_fault(pipeline_of_unknown_kind)
+              && does_seal_keep_each_fault(pipeline_past_its_ports));
+static_assert(does_seal_keep_each_fault(fork_tree_open) && does_seal_keep_each_fault(fork_tree));
+static_assert(does_seal_keep_each_fault(fork_shared_contracted) && does_seal_keep_each_fault(crossed_sessions));
+static_assert(does_seal_keep_each_fault(crossed_adds) && does_seal_keep_each_fault(spins));
+static_assert(does_seal_keep_each_fault(sum_of_three) && does_seal_keep_each_fault(sum_with_island));
+static_assert(does_seal_keep_each_fault(merged_items) && does_seal_keep_each_fault(nested_pars));
+static_assert(seal_net(fork_tree_open).wiring_fault().code == NetFaultCode::PortWithoutWire);
+static_assert(!seal_net(sum_of_three).wiring_fault().is_fault());
+static_assert(is_same_net(seal_net(sum_of_three), seal_net(renumbered_sum)));
+static_assert(!is_same_net(seal_net(sum_of_three), seal_net(swapped_sum)));
+static_assert(!is_same_net(seal_net(fork_tree_open), seal_net(fork_tree_open)));
+
 }  // namespace detail::net_self_test
 
 }  // namespace foundation::algebra::net

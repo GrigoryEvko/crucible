@@ -20,6 +20,8 @@
 //   NetFault                the fault that a check finds: a code, and the
 //                           type, the kind, the agent, the port, the wire or
 //                           the cycle that the code names
+//   SealedNet<T, K, A, W>   a copy of a net that no caller can change, and
+//                           the fault of its wiring (THE SEALED NET)
 //
 //   check_signature(signature)   the kinds are well formed
 //   check_wiring(net)            each port has exactly one wire, and each wire
@@ -44,6 +46,9 @@
 //                                or the fault that leaves it with no form
 //   check_canonical_form(net)    the consteval door of find_canonical_form
 //   is_same_net(net, net)        the two nets are the same net
+//   seal_net(net)                the sealed net of a net: its wiring checked
+//                                one time.  Each find function and
+//                                is_same_net also take a sealed net
 //
 // THE MODEL
 //   An agent has ports, and one of them is its principal port.  A rule fires
@@ -189,10 +194,28 @@
 //   compile time in a Debug unit, so a program reads the fault and makes the
 //   text in one source file.
 //
+// THE SEALED NET
+//   Each find function on a Net runs find_wiring_fault first, because each
+//   body reads each port through its one wire.  A program that runs some
+//   checks on one net at run time checks the wiring one time, at the
+//   boundary where the net comes in: seal_net copies the net into a
+//   SealedNet and finds the fault of the wiring of the copy.  No caller can
+//   change the copy, so the fault stays the fault of the net.  Each find
+//   function on a SealedNet gives that fault, or runs its body alone, as the
+//   plain form of its algorithm does.  The consteval doors check_* take a
+//   Net, and run the wiring check in each call.
+//
+//   The door is seal_net and not a door mint_*.  A mint of the base takes a
+//   context and a concept of the layer of the effects as its constraint, and
+//   this header includes no such header (THE COSTS).  allow_merge is the
+//   door of MergeDoor for the same reason.
+//
 // THE COSTS
 //   P is the count of the ports, A of the agents and W of the wires.
 //     check_signature   O(K) for K kinds
-//     check_wiring      O(A + W)
+//     check_wiring      O(K + A + W), a table of the kinds and a mask of the
+//                       used ports of each agent
+//     seal_net          O(K + A + W), a copy of the net and check_wiring
 //     check_forest      O(W a(A)), one union-find over the agents
 //     check_proof_net   O(P log P), the contraction of Danos with a union-find
 //                       and a ready queue of the pars, as probe E4 measured
@@ -201,7 +224,9 @@
 //     determinism_of    O(A)
 //     find_canonical_form, is_same_net
 //                       O(A + W), a walk with an explicit stack, and the names
-//                       of the K kinds one time
+//                       of the K kinds one time.  The hash folds in four
+//                       chains side by side
+//   A check on a sealed net costs the same, with no check_wiring.
 //   Each check reads arrays, because a read of an array costs less in constant
 //   evaluation than a read through a pointer.  The body of each check is a
 //   template on the capacity of its arrays, and it reads the first agents and
@@ -216,9 +241,10 @@
 //   on the copy, so the compiler keeps one result for each net that some
 //   checks read.  explain_fault is a template on the capacity class too, and
 //   it puts each name through helpers that are no templates.
-//   This header includes one header of the base, the mixer
-//   foundation/reflect/Mix.h, which includes no other, and no <meta>.  So a
-//   light header can include it.
+//   This header includes two headers of the base: the mixer
+//   foundation/reflect/Mix.h, which includes no other, and the seal
+//   foundation/ByteSeal.h, which includes foundation/Platform.h.  It includes
+//   no <meta>.  So a light header can include it.
 //
 // SOURCES
 //   Lafont, Interaction nets, POPL 1990.  Lafont, Interaction combinators,
@@ -227,6 +253,7 @@
 //   Jacobs, Hinrichsen and Krebbers, Deadlock-free separation logic, POPL
 //   2024, for the forest condition.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/reflect/Mix.h>
 
 #include <cstddef>
@@ -1102,53 +1129,79 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 
 namespace detail {
 
+// The type of a port as one word: the index of the type, then two bits of
+// the polarity.
+[[nodiscard]] constexpr std::uint32_t type_word_of(PortType type) noexcept {
+    return (index_of(type.type) << 2u) | static_cast<std::uint32_t>(type.polarity);
+}
+
+// The word of the dual of a type: Give and Take change places, and Meet
+// stays (dual_of).
+[[nodiscard]] constexpr std::uint32_t dual_word_of(std::uint32_t word) noexcept {
+    return (word & 2u) == 0u ? word ^ 1u : word;
+}
+
 // The body of find_wiring_fault, on the first agents and the first wires of
-// the arrays of a capacity class.
+// the arrays of a capacity class.  A table of the kinds holds the count of
+// the ports of each kind and the word of the type of each port, and a mask
+// of 8 bits holds the ports of each agent that a wire uses.  So a wire reads
+// the kinds of its two agents and two words of the table.
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
 [[nodiscard]] constexpr NetFault find_wiring_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
                                                        AgentCount agents, WireCount wires) noexcept {
     NetFault const kinds = find_signature_fault(graph.signature);
     if (kinds.is_fault()) return kinds;
+    constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
     std::uint32_t const agent_count = count_of(agents);
     std::uint32_t const wire_count = count_of(wires);
     std::uint32_t port_count[Kinds]{};
-    for (std::uint32_t kind = 0; kind < Kinds; ++kind)
-        port_count[kind] = port_count_of(graph.signature.kinds[kind]);
+    std::uint32_t type_word[Kinds * max_agent_ports]{};
+    for (std::uint32_t kind = 0; kind < Kinds; ++kind) {
+        AgentKind const& entry = graph.signature.kinds[kind];
+        port_count[kind] = port_count_of(entry);
+        for (std::uint32_t port = 0; port < port_count[kind]; ++port)
+            type_word[kind * ports + port] = type_word_of(entry.port_types[port]);
+    }
     for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
         if (index_of(graph.agents[agent]) >= Kinds) {
             return NetFault{.code = NetFaultCode::KindPastSignature, .agent = AgentId{agent}};
         }
     }
-    std::uint8_t uses[AgentCapacity * max_agent_ports]{};
+    std::uint32_t used[AgentCapacity]{};
     for (std::uint32_t index = 0; index < wire_count; ++index) {
         Wire const& wire = graph.wires[index];
+        std::uint32_t slot[2]{};
         for (std::uint32_t side = 0; side < 2u; ++side) {
             PortRef const end = side == 0u ? wire.left : wire.right;
             std::uint32_t const node = index_of(end.agent);
             if (node >= agent_count) {
                 return NetFault{.code = NetFaultCode::WireNodePastNet, .agent = end.agent, .wire = index};
             }
-            if (end.port >= port_count[index_of(graph.agents[node])]) {
+            std::uint32_t const kind = index_of(graph.agents[node]);
+            if (end.port >= port_count[kind]) {
                 return NetFault{
                     .code = NetFaultCode::WirePortPastAgent, .agent = end.agent, .port = end.port, .wire = index};
             }
-            std::uint8_t& count = uses[node * max_agent_ports + end.port];
-            if (count != 0u) {
+            std::uint32_t const bit = 1u << end.port;
+            if ((used[node] & bit) != 0u) {
                 return NetFault{
                     .code = NetFaultCode::PortWithSecondWire, .agent = end.agent, .port = end.port, .wire = index};
             }
-            count = 1;
+            used[node] |= bit;
+            slot[side] = kind * ports + end.port;
         }
-        PortType const left = kind_of_(graph, wire.left.agent).port_types[wire.left.port];
-        PortType const right = kind_of_(graph, wire.right.agent).port_types[wire.right.port];
-        if (!(right == dual_of(left))) return NetFault{.code = NetFaultCode::WireNotDual, .wire = index};
+        if (type_word[slot[1]] != dual_word_of(type_word[slot[0]])) {
+            return NetFault{.code = NetFaultCode::WireNotDual, .wire = index};
+        }
     }
     for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
-        std::uint32_t const count = port_count[index_of(graph.agents[agent])];
-        for (std::uint32_t port = 0; port < count; ++port) {
-            if (uses[agent * max_agent_ports + port] == 0u) {
-                return NetFault{.code = NetFaultCode::PortWithoutWire, .agent = AgentId{agent}, .port = port};
-            }
+        std::uint32_t const all_ports = (1u << port_count[index_of(graph.agents[agent])]) - 1u;
+        std::uint32_t const missing = all_ports & ~used[agent];
+        if (missing != 0u) {
+            std::uint32_t port = 0;
+            while (((missing >> port) & 1u) == 0u)
+                ++port;
+            return NetFault{.code = NetFaultCode::PortWithoutWire, .agent = AgentId{agent}, .port = port};
         }
     }
     return NetFault{};
@@ -1178,20 +1231,80 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
     return explain_fault(graph, find_wiring_fault(graph));
 }
 
+// ── The sealed net ──────────────────────────────────────────────────────
+
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+class SealedNet;
+
+// Seals a net (THE SEALED NET): copies it, and finds the fault of the wiring
+// of the copy one time.  Complexity: O(K + A + W), the copy and
+// find_wiring_fault.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr auto seal_net(Net<Types, Kinds, Agents, Wires> const& graph) noexcept
+    -> SealedNet<Types, Kinds, Agents, Wires>;
+
+// A net checked one time at a boundary (THE SEALED NET): a copy of the net,
+// which no caller can change, and the fault of its wiring.  seal_net is the
+// only door.  A copy of a sealed net is a sealed net, because the two
+// fields copy together.  The seal closes the two byte routes, std::bit_cast
+// and a lifetime start over bytes, so no image of bytes makes a sealed net
+// with a fault that is not the fault of its net.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+class SealedNet {
+    Net<Types, Kinds, Agents, Wires> net_{};
+    NetFault wiring_fault_{};
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr explicit SealedNet(Net<Types, Kinds, Agents, Wires> const& graph) noexcept
+        : net_{graph}, wiring_fault_{find_wiring_fault(net_)} {}
+
+    template <std::size_t SealedTypes, std::size_t SealedKinds, std::size_t SealedAgents, std::size_t SealedWires>
+    friend constexpr auto seal_net(Net<SealedTypes, SealedKinds, SealedAgents, SealedWires> const& graph) noexcept
+        -> SealedNet<SealedTypes, SealedKinds, SealedAgents, SealedWires>;
+
+public:
+    // The net that the seal holds.  The reference is const, so no caller
+    // changes the net that the fault describes.
+    [[nodiscard]] constexpr Net<Types, Kinds, Agents, Wires> const& value() const noexcept { return net_; }
+
+    // The fault of the wiring of the net, or NoFault.
+    [[nodiscard]] constexpr NetFault wiring_fault() const noexcept { return wiring_fault_; }
+};
+
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr auto seal_net(Net<Types, Kinds, Agents, Wires> const& graph) noexcept
+    -> SealedNet<Types, Kinds, Agents, Wires> {
+    return SealedNet<Types, Kinds, Agents, Wires>{graph};
+}
+
 // ── The forest ──────────────────────────────────────────────────────────
 
 namespace detail {
+
+// The first agent of a kind with a par group, or NoFault.  The agents are
+// read only when a kind of the signature has a par group.
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard]] constexpr NetFault find_par_agent_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                 AgentCount agents) noexcept {
+    bool has_par_kind = false;
+    for (AgentKind const& kind : graph.signature.kinds)
+        has_par_kind = has_par_kind || kind.par_ports != 0u;
+    if (!has_par_kind) return NetFault{};
+    for (std::uint32_t agent = 0; agent < count_of(agents); ++agent) {
+        if (kind_of_(graph, AgentId{agent}).par_ports != 0u) {
+            return NetFault{.code = NetFaultCode::ForestHasParGroup, .agent = AgentId{agent}};
+        }
+    }
+    return NetFault{};
+}
 
 // The body of find_forest_fault, on the arrays of a capacity class of a net
 // with no fault of its wiring.
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
 [[nodiscard]] constexpr NetFault find_forest_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
                                                        AgentCount agents, WireCount wires) noexcept {
-    for (std::uint32_t agent = 0; agent < count_of(agents); ++agent) {
-        if (kind_of_(graph, AgentId{agent}).par_ports != 0u) {
-            return NetFault{.code = NetFaultCode::ForestHasParGroup, .agent = AgentId{agent}};
-        }
-    }
+    NetFault const par = find_par_agent_(graph, agents);
+    if (par.is_fault()) return par;
     UnionFind<AgentCapacity> classes{};
     for (std::uint32_t index = 0; index < count_of(wires); ++index) {
         Wire const& wire = graph.wires[index];
@@ -1201,6 +1314,20 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
         static_cast<void>(classes.join_roots(left, right));
     }
     return NetFault{};
+}
+
+// The body of find_forest_fault on a net with no fault of its wiring, on the
+// arrays of its capacity class.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr NetFault find_forest_fault_of_(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    constexpr AgentCount agents{static_cast<std::uint32_t>(Agents)};
+    constexpr WireCount wires{static_cast<std::uint32_t>(Wires)};
+    if constexpr (is_small_net<Agents, Wires>) {
+        auto const small = copy_small_net_(graph);
+        return find_forest_fault_in_(small, agents, wires);
+    } else {
+        return find_forest_fault_in_(graph, agents, wires);
+    }
 }
 
 }  // namespace detail
@@ -1215,14 +1342,16 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 [[nodiscard]] constexpr NetFault find_forest_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     NetFault const wiring = find_wiring_fault(graph);
     if (wiring.is_fault()) return wiring;
-    constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
-    constexpr detail::WireCount wires{static_cast<std::uint32_t>(Wires)};
-    if constexpr (detail::is_small_net<Agents, Wires>) {
-        auto const small = detail::copy_small_net_(graph);
-        return detail::find_forest_fault_in_(small, agents, wires);
-    } else {
-        return detail::find_forest_fault_in_(graph, agents, wires);
-    }
+    return detail::find_forest_fault_of_(graph);
+}
+
+// The first fault of the forest of a sealed net: the fault of its wiring, or
+// the fault of the body alone.  Complexity: O(K + A + W a(A)), with no second
+// check of the wiring.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr NetFault find_forest_fault(SealedNet<Types, Kinds, Agents, Wires> const& sealed) noexcept {
+    if (sealed.wiring_fault().is_fault()) return sealed.wiring_fault();
+    return detail::find_forest_fault_of_(sealed.value());
 }
 
 // The check of the forest, as a verdict with the text of its fault.
@@ -1414,6 +1543,20 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
     return NetFault{};
 }
 
+// The body of find_proof_net_fault on a net with no fault of its wiring, on
+// the arrays of its capacity class.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr NetFault find_proof_net_fault_of_(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    constexpr AgentCount agents{static_cast<std::uint32_t>(Agents)};
+    constexpr WireCount wires{static_cast<std::uint32_t>(Wires)};
+    if constexpr (is_small_net<Agents, Wires>) {
+        auto const small = copy_small_net_(graph);
+        return find_proof_net_fault_in_(small, agents, wires);
+    } else {
+        return find_proof_net_fault_in_(graph, agents, wires);
+    }
+}
+
 }  // namespace detail
 
 // The first fault of the criterion of Danos and Regnier above, or NoFault.
@@ -1421,14 +1564,15 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 [[nodiscard]] constexpr NetFault find_proof_net_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     NetFault const wiring = find_wiring_fault(graph);
     if (wiring.is_fault()) return wiring;
-    constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
-    constexpr detail::WireCount wires{static_cast<std::uint32_t>(Wires)};
-    if constexpr (detail::is_small_net<Agents, Wires>) {
-        auto const small = detail::copy_small_net_(graph);
-        return detail::find_proof_net_fault_in_(small, agents, wires);
-    } else {
-        return detail::find_proof_net_fault_in_(graph, agents, wires);
-    }
+    return detail::find_proof_net_fault_of_(graph);
+}
+
+// The first fault of the criterion of a sealed net: the fault of its wiring,
+// or the fault of the body alone, with no second check of the wiring.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr NetFault find_proof_net_fault(SealedNet<Types, Kinds, Agents, Wires> const& sealed) noexcept {
+    if (sealed.wiring_fault().is_fault()) return sealed.wiring_fault();
+    return detail::find_proof_net_fault_of_(sealed.value());
 }
 
 // The criterion of Danos and Regnier, as a verdict with the text of its
@@ -1492,6 +1636,20 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
     return NetFault{};
 }
 
+// The body of find_vicious_fault on a net with no fault of its wiring, on the
+// arrays of its capacity class.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr NetFault find_vicious_fault_of_(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    constexpr AgentCount agents{static_cast<std::uint32_t>(Agents)};
+    constexpr WireCount wires{static_cast<std::uint32_t>(Wires)};
+    if constexpr (is_small_net<Agents, Wires>) {
+        auto const small = copy_small_net_(graph);
+        return find_vicious_fault_in_(small, agents, wires);
+    } else {
+        return find_vicious_fault_in_(graph, agents, wires);
+    }
+}
+
 }  // namespace detail
 
 // The first vicious circle above, or NoFault.  The fault names the first
@@ -1500,14 +1658,15 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 [[nodiscard]] constexpr NetFault find_vicious_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     NetFault const wiring = find_wiring_fault(graph);
     if (wiring.is_fault()) return wiring;
-    constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
-    constexpr detail::WireCount wires{static_cast<std::uint32_t>(Wires)};
-    if constexpr (detail::is_small_net<Agents, Wires>) {
-        auto const small = detail::copy_small_net_(graph);
-        return detail::find_vicious_fault_in_(small, agents, wires);
-    } else {
-        return detail::find_vicious_fault_in_(graph, agents, wires);
-    }
+    return detail::find_vicious_fault_of_(graph);
+}
+
+// The first vicious circle of a sealed net: the fault of its wiring, or the
+// fault of the body alone, with no second check of the wiring.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr NetFault find_vicious_fault(SealedNet<Types, Kinds, Agents, Wires> const& sealed) noexcept {
+    if (sealed.wiring_fault().is_fault()) return sealed.wiring_fault();
+    return detail::find_vicious_fault_of_(sealed.value());
 }
 
 // The check of vicious circles, as a verdict with the text of its fault.
@@ -1616,6 +1775,20 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
     return fault;
 }
 
+// The body of find_dataflow_fault on a net with no fault of its wiring, on
+// the arrays of its capacity class.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr NetFault find_dataflow_fault_of_(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    constexpr AgentCount agents{static_cast<std::uint32_t>(Agents)};
+    constexpr WireCount wires{static_cast<std::uint32_t>(Wires)};
+    if constexpr (is_small_net<Agents, Wires>) {
+        auto const small = copy_small_net_(graph);
+        return find_dataflow_fault_in_(small, agents, wires);
+    } else {
+        return find_dataflow_fault_in_(graph, agents, wires);
+    }
+}
+
 }  // namespace detail
 
 // The first fault of the dataflow above, or NoFault.  A cycle of waits names
@@ -1624,14 +1797,15 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 [[nodiscard]] constexpr NetFault find_dataflow_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     NetFault const wiring = find_wiring_fault(graph);
     if (wiring.is_fault()) return wiring;
-    constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
-    constexpr detail::WireCount wires{static_cast<std::uint32_t>(Wires)};
-    if constexpr (detail::is_small_net<Agents, Wires>) {
-        auto const small = detail::copy_small_net_(graph);
-        return detail::find_dataflow_fault_in_(small, agents, wires);
-    } else {
-        return detail::find_dataflow_fault_in_(graph, agents, wires);
-    }
+    return detail::find_dataflow_fault_of_(graph);
+}
+
+// The first fault of the dataflow of a sealed net: the fault of its wiring,
+// or the fault of the body alone, with no second check of the wiring.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr NetFault find_dataflow_fault(SealedNet<Types, Kinds, Agents, Wires> const& sealed) noexcept {
+    if (sealed.wiring_fault().is_fault()) return sealed.wiring_fault();
+    return detail::find_dataflow_fault_of_(sealed.value());
 }
 
 // The dataflow check, as a verdict with the text of its fault.
@@ -1679,34 +1853,51 @@ struct CanonicalNet {
 
 namespace detail {
 
+// The count of the ports of each kind of a signature.
+template <std::size_t Kinds>
+struct PortCounts {
+    std::uint32_t of[Kinds]{};
+};
+
+// The count of the ports of each kind.  Complexity: O(K).
+template <std::size_t Types, std::size_t Kinds>
+[[nodiscard]] constexpr PortCounts<Kinds> port_counts_of_(NetSignature<Types, Kinds> const& signature) noexcept {
+    PortCounts<Kinds> counts{};
+    for (std::uint32_t kind = 0; kind < Kinds; ++kind)
+        counts.of[kind] = port_count_of(signature.kinds[kind]);
+    return counts;
+}
+
 // The canonical numbers of the agents of a net with no fault of its wiring
 // (THE CANONICAL FORM).  number_of holds the number of each agent, or
-// no_index, and agent_at the agent of each number.  peer_agent and peer_port
-// give the other end of the wire at each port.  count is the count of the
-// numbered agents.
+// no_index, and agent_at the agent of each number.  peer holds the other end
+// of the wire at each port as one slot: its agent times max_agent_ports plus
+// its port.  A net has fewer than 2^28 agents, so a slot fits 32 bits.
+// count is the count of the numbered agents.
 template <std::size_t Agents>
 struct CanonicalOrder {
     std::uint32_t number_of[Agents]{};
     std::uint32_t agent_at[Agents]{};
-    std::uint32_t peer_agent[Agents * max_agent_ports]{};
-    std::uint32_t peer_port[Agents * max_agent_ports]{};
+    std::uint32_t peer[Agents * max_agent_ports]{};
     std::uint32_t count = 0;
 };
 
 // Writes the canonical numbers of a net with no fault of its wiring: the
 // boundary agents first in their order, then each inner agent at its first
-// visit of the walk.  Complexity: O(A + W).
+// visit of the walk.  Each entry of the stack holds an agent times 16 plus
+// its next port, so one word holds the two.  Complexity: O(K + A + W).
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
 constexpr void write_canonical_order_(Net<Types, Kinds, Agents, Wires> const& graph,
                                       CanonicalOrder<Agents>& order) noexcept {
     constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
+    constexpr std::uint32_t port_bits = 4;
+    constexpr std::uint32_t port_mask = (1u << port_bits) - 1u;
+    PortCounts<Kinds> const counts = port_counts_of_(graph.signature);
     for (Wire const& wire : graph.wires) {
         std::uint32_t const left = index_of(wire.left.agent) * ports + wire.left.port;
         std::uint32_t const right = index_of(wire.right.agent) * ports + wire.right.port;
-        order.peer_agent[left] = index_of(wire.right.agent);
-        order.peer_port[left] = wire.right.port;
-        order.peer_agent[right] = index_of(wire.left.agent);
-        order.peer_port[right] = wire.left.port;
+        order.peer[left] = right;
+        order.peer[right] = left;
     }
     for (std::uint32_t& slot : order.number_of)
         slot = no_index;
@@ -1717,27 +1908,25 @@ constexpr void write_canonical_order_(Net<Types, Kinds, Agents, Wires> const& gr
         ++order.count;
     }
     std::uint32_t const boundary_count = order.count;
-    std::uint32_t stack_agent[Agents]{};
-    std::uint32_t stack_port[Agents]{};
+    std::uint32_t stack[Agents]{};
     for (std::uint32_t root = 0; root < boundary_count; ++root) {
-        stack_agent[0] = order.agent_at[root];
-        stack_port[0] = 0;
+        stack[0] = order.agent_at[root] << port_bits;
         std::uint32_t depth = 1;
         while (depth != 0u) {
-            std::uint32_t const agent = stack_agent[depth - 1];
-            std::uint32_t const port = stack_port[depth - 1];
-            if (port == port_count_of(kind_of_(graph, AgentId{agent}))) {
+            std::uint32_t const top = stack[depth - 1];
+            std::uint32_t const agent = top >> port_bits;
+            std::uint32_t const port = top & port_mask;
+            if (port == counts.of[index_of(graph.agents[agent])]) {
                 --depth;
                 continue;
             }
-            ++stack_port[depth - 1];
-            std::uint32_t const next = order.peer_agent[agent * ports + port];
+            stack[depth - 1] = top + 1u;
+            std::uint32_t const next = order.peer[agent * ports + port] / ports;
             if (order.number_of[next] != no_index) continue;
             order.number_of[next] = order.count;
             order.agent_at[order.count] = next;
             ++order.count;
-            stack_agent[depth] = next;
-            stack_port[depth] = 0;
+            stack[depth] = next << port_bits;
             ++depth;
         }
     }
@@ -1821,39 +2010,114 @@ template <std::size_t Types, std::size_t Kinds>
     return fold_name_(fold_word(hash, FormWord{shape}), form.kind.merge.reason());
 }
 
+// The canonical form of a net with no fault of its wiring: the fault
+// AgentWithoutBoundaryPath, or the hash of its form.  The entry of each
+// number folds the hash of the form of the kind of its agent, and one word
+// for each port: the number of the peer times 8 plus the port of the peer.
+// The entry of number n folds into chain n % 4, so four chains of folds run
+// side by side.  The hash folds the count of the agents and the four chains
+// in their order.  Complexity: O(A + W), and the names of the K kinds.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr CanonicalNet find_canonical_form_of_(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
+    CanonicalOrder<Agents> order{};
+    write_canonical_order_(graph, order);
+    for (std::uint32_t agent = 0; agent < Agents; ++agent) {
+        if (order.number_of[agent] != no_index) continue;
+        return CanonicalNet{.fault = NetFault{.code = NetFaultCode::AgentWithoutBoundaryPath, .agent = AgentId{agent}}};
+    }
+    PortCounts<Kinds> const counts = port_counts_of_(graph.signature);
+    NetHash kind_hash[Kinds]{};
+    for (std::uint32_t kind = 0; kind < Kinds; ++kind)
+        kind_hash[kind] = hash_kind_form_(form_of_kind_(graph.signature, KindId{kind}));
+    auto const fold_entry = [&](NetHash chain, std::uint32_t number) constexpr noexcept {
+        std::uint32_t const agent = order.agent_at[number];
+        std::uint32_t const kind = index_of(graph.agents[agent]);
+        chain = fold_word(chain, FormWord{static_cast<std::uint64_t>(kind_hash[kind])});
+        for (std::uint32_t port = 0; port < counts.of[kind]; ++port) {
+            std::uint32_t const peer = order.peer[agent * ports + port];
+            std::uint64_t const word = (std::uint64_t{order.number_of[peer / ports]} << 3u) | (peer % ports);
+            chain = fold_word(chain, FormWord{word});
+        }
+        return chain;
+    };
+    NetHash first{};
+    NetHash second{};
+    NetHash third{};
+    NetHash fourth{};
+    std::uint32_t number = 0;
+    for (; number + 4u <= Agents; number += 4u) {
+        first = fold_entry(first, number);
+        second = fold_entry(second, number + 1u);
+        third = fold_entry(third, number + 2u);
+        fourth = fold_entry(fourth, number + 3u);
+    }
+    if (number < Agents) first = fold_entry(first, number);
+    if (number + 1u < Agents) second = fold_entry(second, number + 1u);
+    if (number + 2u < Agents) third = fold_entry(third, number + 2u);
+    NetHash hash = fold_word(NetHash{}, FormWord{Agents});
+    hash = fold_word(hash, FormWord{static_cast<std::uint64_t>(first)});
+    hash = fold_word(hash, FormWord{static_cast<std::uint64_t>(second)});
+    hash = fold_word(hash, FormWord{static_cast<std::uint64_t>(third)});
+    return CanonicalNet{.hash = fold_word(hash, FormWord{static_cast<std::uint64_t>(fourth)})};
+}
+
+// Two nets of one type with no fault of their wiring are the same net.  The
+// two arguments can change places with no change of meaning.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr bool is_same_wired_net_(Net<Types, Kinds, Agents, Wires> const& left,
+                                                Net<Types, Kinds, Agents, Wires> const& right) noexcept {
+    constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
+    CanonicalOrder<Agents> one{};
+    CanonicalOrder<Agents> other{};
+    write_canonical_order_(left, one);
+    write_canonical_order_(right, other);
+    if (one.count != Agents || other.count != Agents) return false;
+    PortCounts<Kinds> const counts = port_counts_of_(left.signature);
+    // A kind of the left net, and a kind of the right net with the same form.
+    std::uint32_t same_kind[Kinds]{};
+    for (std::uint32_t& match : same_kind)
+        match = no_index;
+    for (std::uint32_t number = 0; number < Agents; ++number) {
+        std::uint32_t const first = one.agent_at[number];
+        std::uint32_t const second = other.agent_at[number];
+        std::uint32_t const first_kind = index_of(left.agents[first]);
+        if (same_kind[first_kind] != index_of(right.agents[second])) {
+            if (!(form_of_kind_(left.signature, left.agents[first])
+                  == form_of_kind_(right.signature, right.agents[second]))) {
+                return false;
+            }
+            if (same_kind[first_kind] == no_index) same_kind[first_kind] = index_of(right.agents[second]);
+        }
+        for (std::uint32_t port = 0; port < counts.of[first_kind]; ++port) {
+            std::uint32_t const one_peer = one.peer[first * ports + port];
+            std::uint32_t const other_peer = other.peer[second * ports + port];
+            if (one.number_of[one_peer / ports] != other.number_of[other_peer / ports]) return false;
+            if (one_peer % ports != other_peer % ports) return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace detail
 
 // The canonical form of a net: the first fault of its wiring, the fault
 // AgentWithoutBoundaryPath, or the hash of its form (THE CANONICAL FORM).
-// The hash folds the count of the agents, and for each number the hash of
-// the form of the kind of its agent and the number and the port of the peer
-// of each port.  Complexity: O(A + W), and the names of the K kinds.
+// Complexity: O(A + W), and the names of the K kinds.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
 [[nodiscard]] constexpr CanonicalNet find_canonical_form(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     NetFault const wiring = find_wiring_fault(graph);
     if (wiring.is_fault()) return CanonicalNet{.fault = wiring};
-    constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
-    detail::CanonicalOrder<Agents> order{};
-    detail::write_canonical_order_(graph, order);
-    for (std::uint32_t agent = 0; agent < Agents; ++agent) {
-        if (order.number_of[agent] != detail::no_index) continue;
-        return CanonicalNet{.fault = NetFault{.code = NetFaultCode::AgentWithoutBoundaryPath, .agent = AgentId{agent}}};
-    }
-    NetHash kind_hash[Kinds]{};
-    for (std::uint32_t kind = 0; kind < Kinds; ++kind)
-        kind_hash[kind] = detail::hash_kind_form_(detail::form_of_kind_(graph.signature, KindId{kind}));
-    NetHash hash = detail::fold_word(NetHash{}, detail::FormWord{Agents});
-    for (std::uint32_t number = 0; number < Agents; ++number) {
-        std::uint32_t const agent = order.agent_at[number];
-        auto const kind_word = static_cast<std::uint64_t>(kind_hash[index_of(graph.agents[agent])]);
-        hash = detail::fold_word(hash, detail::FormWord{kind_word});
-        std::uint32_t const count = detail::port_count_of(detail::kind_of_(graph, AgentId{agent}));
-        for (std::uint32_t port = 0; port < count; ++port) {
-            hash = detail::fold_word(hash, detail::FormWord{order.number_of[order.peer_agent[agent * ports + port]]});
-            hash = detail::fold_word(hash, detail::FormWord{order.peer_port[agent * ports + port]});
-        }
-    }
-    return CanonicalNet{.hash = hash};
+    return detail::find_canonical_form_of_(graph);
+}
+
+// The canonical form of a sealed net: the fault of its wiring, or the form
+// of the body alone, with no second check of the wiring.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr CanonicalNet
+find_canonical_form(SealedNet<Types, Kinds, Agents, Wires> const& sealed) noexcept {
+    if (sealed.wiring_fault().is_fault()) return CanonicalNet{.fault = sealed.wiring_fault()};
+    return detail::find_canonical_form_of_(sealed.value());
 }
 
 // The check of the canonical form, as a verdict with the text of its fault.
@@ -1873,36 +2137,17 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 [[nodiscard]] constexpr bool is_same_net(Net<Types, Kinds, Agents, Wires> const& left,
                                          Net<Types, Kinds, Agents, Wires> const& right) noexcept {
     if (find_wiring_fault(left).is_fault() || find_wiring_fault(right).is_fault()) return false;
-    constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
-    detail::CanonicalOrder<Agents> one{};
-    detail::CanonicalOrder<Agents> other{};
-    detail::write_canonical_order_(left, one);
-    detail::write_canonical_order_(right, other);
-    if (one.count != Agents || other.count != Agents) return false;
-    // A kind of the left net, and a kind of the right net with the same form.
-    std::uint32_t same_kind[Kinds]{};
-    for (std::uint32_t& match : same_kind)
-        match = detail::no_index;
-    for (std::uint32_t number = 0; number < Agents; ++number) {
-        std::uint32_t const first = one.agent_at[number];
-        std::uint32_t const second = other.agent_at[number];
-        std::uint32_t const first_kind = index_of(left.agents[first]);
-        if (same_kind[first_kind] != index_of(right.agents[second])) {
-            if (!(detail::form_of_kind_(left.signature, left.agents[first])
-                  == detail::form_of_kind_(right.signature, right.agents[second]))) {
-                return false;
-            }
-            if (same_kind[first_kind] == detail::no_index) same_kind[first_kind] = index_of(right.agents[second]);
-        }
-        std::uint32_t const count = detail::port_count_of(detail::kind_of_(left, AgentId{first}));
-        for (std::uint32_t port = 0; port < count; ++port) {
-            std::uint32_t const at_first = first * ports + port;
-            std::uint32_t const at_second = second * ports + port;
-            if (one.number_of[one.peer_agent[at_first]] != other.number_of[other.peer_agent[at_second]]) return false;
-            if (one.peer_port[at_first] != other.peer_port[at_second]) return false;
-        }
-    }
-    return true;
+    return detail::is_same_wired_net_(left, right);
+}
+
+// Two sealed nets of one type are the same net, with no second check of the
+// wiring of either.  The two arguments can change places with no change of
+// meaning.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr bool is_same_net(SealedNet<Types, Kinds, Agents, Wires> const& left,
+                                         SealedNet<Types, Kinds, Agents, Wires> const& right) noexcept {
+    if (left.wiring_fault().is_fault() || right.wiring_fault().is_fault()) return false;
+    return detail::is_same_wired_net_(left.value(), right.value());
 }
 
 }  // namespace foundation::algebra::net

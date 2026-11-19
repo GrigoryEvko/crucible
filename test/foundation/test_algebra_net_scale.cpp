@@ -436,6 +436,28 @@ template <class Graph>
         && is_same_fault(form.fault, sum_form.fault) && form.hash == sum_form.hash;
 }
 
+// The sealed nets of the chain, of the miswired chain and of the crossed
+// chain, and of the sum tree, give the faults and the form of the compile at
+// run time.  Each net is sealed one time, and each check reads its wiring
+// fault from the seal.
+[[nodiscard]] bool do_sealed_nets_match(LineNet const& chain, LineNet const& sum) noexcept {
+    auto const sealed = seal_net(chain);
+    auto const crossed = seal_net(cross_chain(chain, crossed_stage));
+    auto const miswired = seal_net(miswire_chain(chain, miswired_stage));
+    CanonicalNet const form = find_form_at_run_time(seal_net(sum));
+    return is_same_fault(sealed.wiring_fault(), NetFault{})
+        && is_same_fault(find_at_run_time<NetCheck::Forest>(sealed), NetFault{})
+        && is_same_fault(find_at_run_time<NetCheck::ProofNet>(sealed), NetFault{})
+        && is_same_fault(find_at_run_time<NetCheck::Dataflow>(sealed), NetFault{})
+        && is_same_fault(miswired.wiring_fault(), miswired_wiring_fault)
+        && is_same_fault(find_at_run_time<NetCheck::Forest>(miswired), miswired_wiring_fault)
+        && is_same_fault(find_at_run_time<NetCheck::Forest>(crossed), crossed_forest_fault)
+        && is_same_fault(find_at_run_time<NetCheck::ProofNet>(crossed), crossed_proof_net_fault)
+        && is_same_fault(find_at_run_time<NetCheck::Vicious>(crossed), crossed_vicious_fault)
+        && is_same_fault(find_at_run_time<NetCheck::Dataflow>(crossed), crossed_dataflow_fault)
+        && is_same_fault(form.fault, sum_form.fault) && form.hash == sum_form.hash;
+}
+
 [[nodiscard]] bool do_rings_match(RingSystem const& ring, WaitingRingSystem const& waiting) noexcept {
     return is_same_fault(find_liveness_at_run_time(ring), LivenessFault{})
         && is_same_fault(find_liveness_at_run_time(waiting), waiting_ring_fault);
@@ -452,6 +474,7 @@ int main() {
     NetVerdict const empty = NetVerdict::refuse(nullptr);
     bool const is_empty_refusal = empty.size() == 0 && !empty.is_admitted();
     bool const is_run_time_same = does_fork_match(fork_of_1001) && does_chain_match(chain_of_1000)
-                               && does_sum_match(sum_of_1000) && do_rings_match(ring_of_1000, waiting_ring_of_1000);
+                               && does_sum_match(sum_of_1000) && do_rings_match(ring_of_1000, waiting_ring_of_1000)
+                               && do_sealed_nets_match(chain_of_1000, sum_of_1000);
     return is_named && is_empty_refusal && is_run_time_same ? 0 : 1;
 }

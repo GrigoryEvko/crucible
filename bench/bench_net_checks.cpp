@@ -13,11 +13,15 @@
 // loops over the wires of the chain, with no check of the wiring and no
 // fault record.  Each is the textbook form of its algorithm, linear or near
 // linear in the wires, so no known method is faster by more than a constant.
-// find_dataflow_fault runs the sort of Kahn, and find_forest_fault runs the
-// union-find, after the check of the wiring.  So the ratio of each to its
-// reference gives the cost of that check and of the fault record.  The
-// canonical form runs the check of the wiring and one walk of the net, so
-// its reference is the check of the wiring, which reads each wire one time.
+//
+// A find function on a Net runs the check of the wiring and then its body.
+// A find function on a sealed net runs only its body, because seal_net
+// checked the wiring one time (THE SEALED NET of Net.h).  So the ratio of a
+// row of a sealed net to its reference gives the cost of the body and of the
+// fault record, and the row of seal_net gives the cost at the boundary.  The
+// row of the canonical form against the check of the wiring stays, and the
+// two rows of five checks give the total for a net that a program checks one
+// time.
 //
 // Each line gives the core of its row, the percentiles of one call in
 // nanoseconds, and the coefficient of variation in thousandths.  A ratio line
@@ -300,29 +304,74 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // ── The rows ────────────────────────────────────────────────────────────
 
+// The five checks of a net, each with its own check of the wiring.
+[[nodiscard]] std::uint64_t check_five_times(LineNet const& chain) noexcept {
+    return static_cast<std::uint64_t>(net::find_forest_fault(chain).code)
+         + static_cast<std::uint64_t>(net::find_proof_net_fault(chain).code)
+         + static_cast<std::uint64_t>(net::find_vicious_fault(chain).code)
+         + static_cast<std::uint64_t>(net::find_dataflow_fault(chain).code)
+         + static_cast<std::uint64_t>(net::find_canonical_form(chain).hash);
+}
+
+// The seal of a net and the five checks of the sealed net.
+[[nodiscard]] std::uint64_t seal_and_check(LineNet const& chain) noexcept {
+    auto const sealed = net::seal_net(chain);
+    return static_cast<std::uint64_t>(net::find_forest_fault(sealed).code)
+         + static_cast<std::uint64_t>(net::find_proof_net_fault(sealed).code)
+         + static_cast<std::uint64_t>(net::find_vicious_fault(sealed).code)
+         + static_cast<std::uint64_t>(net::find_dataflow_fault(sealed).code)
+         + static_cast<std::uint64_t>(net::find_canonical_form(sealed).hash);
+}
+
 void bench_chain(LineNet const& chain) {
     if (sort_by_kahn(chain) != 1000 || join_by_union_find(chain) != 999) {
         fixy::fatal("the references read the chain as a forest with no cycle of waits");
     }
     if (net::find_canonical_form(chain).fault.is_fault()) fixy::fatal("the chain has a canonical form");
+    auto const sealed = net::seal_net(chain);
+    if (sealed.wiring_fault().is_fault()) fixy::fatal("the wiring of the chain is admitted");
+    bench::do_not_optimize(sealed);
     bench::Report const wiring =
         measure_row(bench::Run{"wiring chain"}, [&] { bench::do_not_optimize(net::find_wiring_fault(chain).code); });
     print_row("find_wiring_fault, chain of 1000", wiring);
+    print_row("seal_net, chain of 1000", measure_row(bench::Run{"seal chain"}, [&] {
+                  bench::do_not_optimize(net::seal_net(chain).wiring_fault().code);
+              }));
     bench::Report const form = measure_row(bench::Run{"canonical form chain"},
                                            [&] { bench::do_not_optimize(net::find_canonical_form(chain).hash); });
     print_row("find_canonical_form, chain of 1000", form);
+    bench::Report const sealed_form = measure_row(bench::Run{"canonical form sealed chain"}, [&] {
+        bench::do_not_optimize(net::find_canonical_form(sealed).hash);
+    });
+    print_row("find_canonical_form, sealed chain of 1000", sealed_form);
     bench::Report const forest =
         measure_row(bench::Run{"forest chain"}, [&] { bench::do_not_optimize(net::find_forest_fault(chain).code); });
     print_row("find_forest_fault, chain of 1000", forest);
+    bench::Report const sealed_forest = measure_row(
+        bench::Run{"forest sealed chain"}, [&] { bench::do_not_optimize(net::find_forest_fault(sealed).code); });
+    print_row("find_forest_fault, sealed chain of 1000", sealed_forest);
     print_row("find_proof_net_fault, chain of 1000", measure_row(bench::Run{"proof net chain"}, [&] {
                   bench::do_not_optimize(net::find_proof_net_fault(chain).code);
+              }));
+    print_row("find_proof_net_fault, sealed chain of 1000", measure_row(bench::Run{"proof net sealed chain"}, [&] {
+                  bench::do_not_optimize(net::find_proof_net_fault(sealed).code);
               }));
     print_row("find_vicious_fault, chain of 1000", measure_row(bench::Run{"vicious chain"}, [&] {
                   bench::do_not_optimize(net::find_vicious_fault(chain).code);
               }));
+    print_row("find_vicious_fault, sealed chain of 1000", measure_row(bench::Run{"vicious sealed chain"}, [&] {
+                  bench::do_not_optimize(net::find_vicious_fault(sealed).code);
+              }));
     bench::Report const dataflow = measure_row(bench::Run{"dataflow chain"},
                                                [&] { bench::do_not_optimize(net::find_dataflow_fault(chain).code); });
     print_row("find_dataflow_fault, chain of 1000", dataflow);
+    bench::Report const sealed_dataflow = measure_row(
+        bench::Run{"dataflow sealed chain"}, [&] { bench::do_not_optimize(net::find_dataflow_fault(sealed).code); });
+    print_row("find_dataflow_fault, sealed chain of 1000", sealed_dataflow);
+    print_row("five checks of the chain of 1000",
+              measure_row(bench::Run{"five checks chain"}, [&] { bench::do_not_optimize(check_five_times(chain)); }));
+    print_row("seal_net and five checks of the sealed chain of 1000",
+              measure_row(bench::Run{"seal and five checks"}, [&] { bench::do_not_optimize(seal_and_check(chain)); }));
     bench::Report const kahn =
         measure_row(bench::Run{"kahn chain"}, [&] { bench::do_not_optimize(sort_by_kahn(chain)); });
     print_row("reference sort of Kahn, chain of 1000", kahn);
@@ -332,12 +381,19 @@ void bench_chain(LineNet const& chain) {
     print_ratio("find_dataflow_fault / reference sort of Kahn", dataflow, kahn);
     print_ratio("find_forest_fault / reference union-find", forest, union_find);
     print_ratio("find_canonical_form / find_wiring_fault", form, wiring);
+    print_ratio("find_dataflow_fault sealed / reference sort of Kahn", sealed_dataflow, kahn);
+    print_ratio("find_forest_fault sealed / reference union-find", sealed_forest, union_find);
 }
 
 void bench_fork_tree(ForkNet const& tree) {
     print_row("find_proof_net_fault, fork tree of 1001", measure_row(bench::Run{"proof net fork tree"}, [&] {
                   bench::do_not_optimize(net::find_proof_net_fault(tree).code);
               }));
+    auto const sealed = net::seal_net(tree);
+    bench::do_not_optimize(sealed);
+    print_row("find_proof_net_fault, sealed fork tree of 1001",
+              measure_row(bench::Run{"proof net sealed fork tree"},
+                          [&] { bench::do_not_optimize(net::find_proof_net_fault(sealed).code); }));
 }
 
 void bench_ring(RingSystem const& ring) {
