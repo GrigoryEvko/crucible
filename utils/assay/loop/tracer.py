@@ -15,9 +15,11 @@ THE TRACE
         LD_PRELOAD does not see such a call.  The filter of the kernel sees
         each call.
       * LeakSanitizer refuses to operate when a tracer of ptrace holds the
-        process.  is_debugger_present() of the base also gives a different
-        result to a death test then.  On 2026-10-13, ptrace broke 348 of 355
-        executable tests, and the notification broke none of them.
+        process.  On 2026-10-13, ptrace broke 348 of 355 executable tests,
+        and the notification broke none of them.  A tracer does not change
+        the end of a death test: no failure arm of the base reads
+        is_debugger_present(), and each one ends by SIGABRT, also under a
+        tracer.
       * The child sets PR_SET_NO_NEW_PRIVS, because the kernel admits the
         filter of an unprivileged process only with that bit.  A test then
         gets no privileges from a set-user-ID program.
