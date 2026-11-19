@@ -219,7 +219,7 @@ template <typename... Tags>
 struct row_hash_contribution<::foundation::permissions::PermSet<Tags...>> {
     static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
         constexpr std::size_t N = sizeof...(Tags);
-        std::array<std::uint64_t, N> const ids{lattice_canonical_id(^^Tags)...};
+        std::array<std::uint64_t, N> const ids{read_canonical_id(canonical_id_cell_of<Tags>, ^^Tags)...};
         auto const sorted = detail::sorted_uints(ids);
         std::uint64_t const elements =
             detail::fmix64_fold_unique_sorted(sorted, detail::cardinality_seed(detail::unique_count_sorted(sorted)));

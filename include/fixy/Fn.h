@@ -499,7 +499,8 @@ template <class Binding>
             h = ::foundation::diag::detail::combine_ids(
                 h, ::foundation::diag::row_hash_contribution_v<atom::effect_row_of_t<Grade>>);
         } else {
-            h = ::foundation::diag::detail::combine_ids(h, ::foundation::diag::lattice_canonical_id(^^Grade));
+            h = ::foundation::diag::detail::combine_ids(
+                h, ::foundation::diag::read_canonical_id(::foundation::diag::canonical_id_cell_of<Grade>, ^^Grade));
         }
     }
     return h;

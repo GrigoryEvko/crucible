@@ -2038,6 +2038,13 @@ foundation_neg_compile_test(neg_lattice_canonical_id_specialized
   ".lattice_canonical_id. is not a class template"
   "neg_lattice_canonical_id_specialized\\.cpp:21:[0-9]+: error:")
 
+# The identity of a type is cached in a cell that only its build makes.  A
+# specialization of canonical_id_cell_of can hold the cell of another
+# type, and the read refuses that cell.
+foundation_neg_compile_test(neg_canonical_id_cell_of_another_type
+  "call to non-.constexpr. function .void foundation::diag::detail::a_canonical_id_cell_stands_for_another_type\\(\\)."
+  "neg_canonical_id_cell_of_another_type\\.cpp:27:[0-9]+: error: non-constant condition for static assertion")
+
 # The class of a pointer to member comes from the return type of a
 # deduction that is a member of a class.  The variable spelling of the old
 # answer does not exist, and an explicit specialization of the deduction

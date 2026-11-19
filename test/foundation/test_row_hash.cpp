@@ -312,6 +312,18 @@ static_assert(fd::lattice_canonical_id(^^ids::DerivedFromRenamed)
 static_assert(fd::lattice_canonical_id(^^ids::CanonicalTarget)
               == ::foundation::reflect::stable_type_id(^^ids::CanonicalTarget));
 
+// The cell of a type gives the same identity as the function, and an alias
+// names the cell of its type.  Code outside the build cannot build a cell
+// or copy one, so a specialization of canonical_id_cell_of can hold only a
+// cell that the build gives, and the read refuses the cell of another type
+// (neg_canonical_id_cell_of_another_type).
+using renamed_alias = ids::RenamedLattice;
+static_assert(fd::read_canonical_id(fd::canonical_id_cell_of<renamed_alias>, ^^renamed_alias)
+              == fd::lattice_canonical_id(^^ids::CanonicalTarget));
+using identity_cell = std::remove_cvref_t<decltype(fd::canonical_id_cell_of<ids::CanonicalTarget>)>;
+static_assert(!std::is_default_constructible_v<identity_cell>);
+static_assert(!std::is_copy_constructible_v<identity_cell>);
+
 // ── A graded wrapper with a claim its lattice does not see ───────────
 //
 // The sealed refinement is the case in the tree. Publishing

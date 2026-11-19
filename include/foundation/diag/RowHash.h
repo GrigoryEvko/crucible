@@ -374,27 +374,101 @@ void canonical_identities_form_a_cycle() noexcept;
 // The number of statements that one identity follows before it stops.
 inline constexpr std::size_t canonical_identity_depth_limit = 8;
 
+// Whether a type has the member canonical_identity.  The cell of a type
+// reads it through the concept, which GCC keeps for each type.
+enum class IdentityStatement : std::uint8_t {
+    None = 0,
+    Stated = 1,
+};
+
+// The stable id of the type that the statements of a type lead to.  The
+// caller tells whether the type itself has a statement, and the walk reads
+// the statement of each later type on the path.  Complexity: one step for
+// each statement on the path, at most canonical_identity_depth_limit, and
+// one stable id.
+[[nodiscard]] consteval std::uint64_t walk_canonical_id(std::meta::info type, IdentityStatement statement_of_type) {
+    std::meta::info named = std::meta::dealias(type);
+    bool has_statement = statement_of_type == IdentityStatement::Stated;
+    for (std::size_t depth = 0; has_statement; ++depth) {
+        const std::meta::info statement =
+            std::meta::dealias(std::meta::substitute(^^declared_canonical_identity_t, {named}));
+        if (!std::meta::has_template_arguments(statement)
+            || std::meta::template_of(statement) != ^^canonical_identity_of) {
+            a_canonical_identity_member_is_no_canonical_identity_of();
+        }
+        if (statement_owner(statement) != named) break;
+        if (depth == canonical_identity_depth_limit) canonical_identities_form_a_cycle();
+        named = statement_target(statement);
+        has_statement = std::meta::extract<bool>(std::meta::substitute(^^DeclaresCanonicalIdentity, {named}));
+    }
+    return ::foundation::reflect::stable_type_id(named);
+}
+
+// Has no constant definition.  A call to it stops the constant evaluation,
+// and the diagnostic names it.
+void a_canonical_id_cell_stands_for_another_type() noexcept;
+
+class canonical_id_cell;
+
+[[nodiscard]] consteval canonical_id_cell build_canonical_id_cell(std::meta::info type,
+                                                                  IdentityStatement statement_of_type);
+
+// The identity of one type, with the type that it answers.  The cell is the
+// value of canonical_id_cell_of, so GCC computes the walk one time for each
+// type, as it did for the old trait.  The two constructors are private and
+// user-provided, and the build is their one friend.  So a specialization
+// of canonical_id_cell_of can hold only a cell that the build gives, and
+// the read refuses the cell of another type.
+class canonical_id_cell {
+public:
+    [[nodiscard]] consteval std::meta::info type() const noexcept { return type_; }
+    [[nodiscard]] consteval std::uint64_t id() const noexcept { return id_; }
+
+private:
+    consteval canonical_id_cell() noexcept {}
+    consteval canonical_id_cell(const canonical_id_cell& other) noexcept : type_{other.type_}, id_{other.id_} {}
+
+    std::meta::info type_{};
+    std::uint64_t id_ = 0;
+
+    friend consteval canonical_id_cell build_canonical_id_cell(std::meta::info type,
+                                                               IdentityStatement statement_of_type);
+};
+
+[[nodiscard]] consteval canonical_id_cell build_canonical_id_cell(std::meta::info type,
+                                                                  IdentityStatement statement_of_type) {
+    canonical_id_cell cell{};
+    cell.type_ = std::meta::dealias(type);
+    cell.id_ = walk_canonical_id(cell.type_, statement_of_type);
+    return cell;
+}
+
 }  // namespace detail
+
+// The identity of one type, computed one time for each type.  An alias
+// names the cell of its type.
+template <typename Type>
+inline constexpr detail::canonical_id_cell canonical_id_cell_of =
+    detail::build_canonical_id_cell(^^Type, detail::DeclaresCanonicalIdentity<Type> ? detail::IdentityStatement::Stated
+                                                                                    : detail::IdentityStatement::None);
+
+// The identity in a cell, for the type that the reader asks about.  It
+// refuses a cell that answers another type.  A reader that names the type
+// reads canonical_id_cell_of<T> with no substitution.
+[[nodiscard]] consteval std::uint64_t read_canonical_id(const detail::canonical_id_cell& cell, std::meta::info type) {
+    if (cell.type() != std::meta::dealias(type)) detail::a_canonical_id_cell_stands_for_another_type();
+    return cell.id();
+}
 
 // The identity of the type in a row hash: the stable id of the type that
 // its own statements lead to.  The function is not a template, so no
-// translation unit can specialize an identity.  Complexity: one step for
-// each statement on the path, at most canonical_identity_depth_limit.
+// translation unit can specialize an identity.  It reads the cell of the
+// type.
 [[nodiscard]] consteval std::uint64_t lattice_canonical_id(std::meta::info type) {
-    std::meta::info named = std::meta::dealias(type);
-    for (std::size_t depth = 0;; ++depth) {
-        if (!std::meta::extract<bool>(std::meta::substitute(^^detail::DeclaresCanonicalIdentity, {named}))) break;
-        const std::meta::info statement =
-            std::meta::dealias(std::meta::substitute(^^detail::declared_canonical_identity_t, {named}));
-        if (!std::meta::has_template_arguments(statement)
-            || std::meta::template_of(statement) != ^^canonical_identity_of) {
-            detail::a_canonical_identity_member_is_no_canonical_identity_of();
-        }
-        if (detail::statement_owner(statement) != named) break;
-        if (depth == detail::canonical_identity_depth_limit) detail::canonical_identities_form_a_cycle();
-        named = detail::statement_target(statement);
-    }
-    return ::foundation::reflect::stable_type_id(named);
+    const std::meta::info named = std::meta::dealias(type);
+    return read_canonical_id(
+        std::meta::extract<const detail::canonical_id_cell&>(std::meta::substitute(^^canonical_id_cell_of, {named})),
+        named);
 }
 
 // A row denotes a set of atoms, and union, intersection and difference
@@ -448,9 +522,10 @@ concept GradedShaped = requires {
 // as a share whose payload is its tag's effect row, specializes
 // row_hash_contribution through this.
 template <::foundation::algebra::ModalityKind M, typename Lattice, typename Payload>
-inline constexpr std::uint64_t graded_row_hash_v = detail::combine_ids(
-    detail::combine_ids(detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(M), lattice_canonical_id(^^Lattice)),
-    row_hash_contribution_v<Payload>);
+inline constexpr std::uint64_t graded_row_hash_v =
+    detail::combine_ids(detail::combine_ids(detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(M),
+                                            read_canonical_id(canonical_id_cell_of<Lattice>, ^^Lattice)),
+                        row_hash_contribution_v<Payload>);
 
 // The one fold. Every graded wrapper in the tree reaches this, and
 // nothing else is needed for any of them.
@@ -488,9 +563,11 @@ template <GradedShaped W>
 struct row_hash_contribution<W> {
     static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
         if constexpr (requires { typename W::row_discipline; }) {
-            std::uint64_t h = detail::combine_ids(detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(W::modality),
-                                                  lattice_canonical_id(^^typename W::lattice_type));
-            h = detail::combine_ids(h, lattice_canonical_id(^^typename W::row_discipline));
+            std::uint64_t h = detail::combine_ids(
+                detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(W::modality),
+                read_canonical_id(canonical_id_cell_of<typename W::lattice_type>, ^^typename W::lattice_type));
+            h = detail::combine_ids(
+                h, read_canonical_id(canonical_id_cell_of<typename W::row_discipline>, ^^typename W::row_discipline));
             return detail::combine_ids(h, row_hash_contribution_v<typename W::value_type>);
         } else {
             return graded_row_hash_v<W::modality, typename W::lattice_type, typename W::value_type>;
@@ -550,7 +627,7 @@ struct payload_fold<row_payloads<Ps...>> {
 // published shape agree bit for bit.
 template <typename Identity, typename Payload>
 inline constexpr std::uint64_t discipline_row_hash_v = detail::payload_fold<Payload>::over(
-    detail::combine_ids(detail::WRAPPER_DISCIPLINE_TAG, lattice_canonical_id(^^Identity)));
+    detail::combine_ids(detail::WRAPPER_DISCIPLINE_TAG, read_canonical_id(canonical_id_cell_of<Identity>, ^^Identity)));
 
 // The published shape. A carrier declares its own claim in its own body:
 //
@@ -596,7 +673,8 @@ template <SteppingShaped W>
 struct row_hash_contribution<W> {
     static constexpr std::uint64_t value =
         detail::combine_ids(detail::combine_ids(detail::WRAPPER_STEPPING_TAG | static_cast<std::uint64_t>(W::modality),
-                                                lattice_canonical_id(^^typename W::protocol_type)),
+                                                read_canonical_id(canonical_id_cell_of<typename W::protocol_type>,
+                                                                  ^^typename W::protocol_type)),
                             row_hash_contribution_v<typename W::resource_type>);
 };
 

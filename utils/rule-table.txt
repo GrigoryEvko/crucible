@@ -1030,6 +1030,10 @@ witness <fixy/channels/Endpoint.h> deleted | fixy::channels::EndpointDoor | fixy
 # that it answers.  Only the walk of the order builds one.  The cell exists
 # only at compile time, so the construction stands in an operand of sizeof.
 witness <fixy/session/Refinement.h> private | fixy::session::transition::detail::subsort_cell | sizeof(fixy::session::transition::detail::subsort_cell{})
+# The cell of the identity of a type in a row hash holds the id and the type
+# that it answers.  Only the build of the cell makes one.  The cell exists
+# only at compile time, so the construction stands in an operand of sizeof.
+witness <foundation/diag/RowHash.h> private | foundation::diag::detail::canonical_id_cell | sizeof(foundation::diag::detail::canonical_id_cell{})
 
 # -- Interaction nets ------------------------------------------------
 # A sealed net holds the fault of the wiring of its own copy of a net, so
