@@ -23,11 +23,13 @@
 //      write alike: Security's strict pole is classified, so the corpus
 //      reads a classified value on an observable channel.
 //
-//   2. Any two atoms on ONE axis are refused, and refused BY TIER 4.
-//      Asserting the tier rather than the bare rejection is what makes
-//      the claim non-vacuous: a pair that happened to trip a collision
-//      rule would satisfy `!IsAccepted` while saying nothing about the
-//      one-grade-per-axis rule this walk exists to check.
+//   2. Any two atoms on ONE axis that is not a Row axis are refused, and
+//      refused BY TIER 4.  Asserting the tier rather than the bare
+//      rejection is what makes the claim non-vacuous: a pair that happened
+//      to trip a collision rule would satisfy `!IsAccepted` while saying
+//      nothing about the one-grade-per-axis rule this walk exists to
+//      check.  A Row axis takes the union of its atoms, so tier 4 passes
+//      its pair and refuses one atom of the pair stated twice.
 //
 //   3. Every atom that lifts to an effect row is admitted by a context
 //      exactly when that row is empty.  The foreground context claims
@@ -214,7 +216,8 @@ template <std::size_t First, std::size_t End>
 }
 
 // ---------------------------------------------------------------------
-// Claim 2: two atoms on one axis are refused, and refused by tier 4.
+// Claim 2: two atoms on one axis are refused, and refused by tier 4,
+// unless the axis is a Row axis, which takes their union.
 //
 // The pairs are generated: for each axis, the walk takes the first two
 // rostered atoms that name it.  Picking from the roster rather than from
@@ -245,11 +248,19 @@ template <Axis A>
 
 // For one axis: its first two atoms in a pack are refused by tier 4, and
 // each alone clears tier 4.  The second half is what stops the first
-// from passing because the atoms were malformed.
+// from passing because the atoms were malformed.  On a Row axis tier 4
+// passes the pair in each order and refuses the first atom stated twice.
 template <Axis A>
 [[nodiscard]] consteval bool axis_refuses_its_own_pair() noexcept {
     if constexpr (!axis_has_two_atoms<A>()) {
         return true;  // an axis with one atom has no pair to refuse
+    } else if constexpr (::fixy::axis_record(A).shape == ::fixy::Shape::Row) {
+        using First = [:nth_atom_on_axis<A, 0>():];
+        using Second = [:nth_atom_on_axis<A, 1>():];
+        return first_failing_tier_<int, First, Second>() != Tier::Duplicate
+            && first_failing_tier_<int, Second, First>() != Tier::Duplicate
+            && first_failing_tier_<int, First, First>() == Tier::Duplicate
+            && first_failing_tier_<int, Second, First, Second>() == Tier::Duplicate && !IsAccepted<int, First, First>;
     } else {
         using First = [:nth_atom_on_axis<A, 0>():];
         using Second = [:nth_atom_on_axis<A, 1>():];
@@ -355,8 +366,9 @@ template <std::size_t Part>
                   "disagree about the roster.");
 
     static_assert(every_axis_refuses_its_own_pair<first_axis, end_axis>(),
-                  "two atoms naming one axis must be refused by tier 4, in either order, while each alone clears "
-                  "it.  A pair that reaches tier 5 means the one-grade-per-axis rule is not what refused it.");
+                  "two atoms naming one axis that is not a Row axis must be refused by tier 4, in either order, "
+                  "while each alone clears it.  A pair that reaches tier 5 means the one-grade-per-axis rule is not "
+                  "what refused it.  On a Row axis tier 4 must pass the pair and refuse one atom stated twice.");
 
     static_assert(every_lifting_atom_needs_its_row<first_atom, end_atom>(),
                   "an atom that lifts to a non-empty effect row was admitted by the foreground context, whose "

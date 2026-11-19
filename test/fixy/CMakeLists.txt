@@ -945,6 +945,32 @@ fixy_neg_compile_test(neg_fn_tier4_duplicate_axis
   "The axis graded twice here is Usage"
   "fixy::atom::copy, fixy::atom::affine>::tier4_unique_ok_.+ evaluates to false")
 
+# The shape of an axis decides tier 4.  Each Lattice axis of fixy/Axis.h
+# carries one grade, so tier 4 refuses two atoms on it, and one fixture
+# stands on each.  The fixtures of SyscallSurface and Stdio hold the
+# refusal of two axes whose atoms can state a set, because no design for a
+# set of atoms exists.  A Row axis takes the union of its atoms, and its
+# two fixtures hold the refusal of one atom stated twice.
+foreach(_lattice_axis
+    security:Security lifetime:Lifetime provenance:Provenance trust:Trust representation:Representation
+    complexity:Complexity precision:Precision space:Space mutation:Mutation regime:Regime size:Size
+    synchronization:Synchronization fp_mode:FpMode syscall_surface:SyscallSurface control_flow:ControlFlow
+    call_shape:CallShape stack_use:StackUse global_state:GlobalState stdio:Stdio hw_instruction:HwInstruction
+    barrier_strength:BarrierStrength simd_isa:SimdIsa memory_scope:MemoryScope)
+  string(REPLACE ":" ";" _lattice_parts "${_lattice_axis}")
+  list(GET _lattice_parts 0 _lattice_file)
+  list(GET _lattice_parts 1 _lattice_name)
+  fixy_neg_compile_test(neg_fn_tier4_pair_on_${_lattice_file}
+    "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 4\\]: an axis carries one grade"
+    "The axis graded twice here is ${_lattice_name}, and fixy::duplicate_atom_on<Axis> carries its insight")
+endforeach()
+fixy_neg_compile_test(neg_fn_tier4_effect_atom_twice
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 4\\]: a Row axis takes the union of its atoms"
+  "The axis that names one atom twice here is Effect, and fixy::duplicate_atom_on<Axis> carries its insight")
+fixy_neg_compile_test(neg_fn_tier4_observability_atom_twice
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 4\\]: a Row axis takes the union of its atoms"
+  "The axis that names one atom twice here is Observability, and fixy::duplicate_atom_on<Axis> carries its insight")
+
 # The Usage grade decides the copies of a binding.  The strict pole is the
 # linear grade, so a binding with no Usage atom has no copy, and a binding
 # at the affine grade has no copy assignment.

@@ -80,24 +80,37 @@ template <Axis A>
     }
 }
 
+// The texts of a Row axis say that the axis takes the union of its atoms
+// and refuses one atom stated twice.  The texts of each other axis say that
+// the axis carries one grade.
 template <Axis A>
 [[nodiscard]] consteval std::string_view why_() noexcept {
+    constexpr bool is_row_axis = axis_record(A).shape == Shape::Row;
     ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{
-        "An axis carries one grade.  A binding that says nothing about the "};
+        is_row_axis ? "A Row axis takes the union of its atoms.  A binding that says nothing about the "
+                    : "An axis carries one grade.  A binding that says nothing about the "};
     text += ::fixy::axis_name(A);
     text += " axis takes its strict pole, ";
     text += strict_pole_name_<A>();
-    text += ", and one atom on the axis relaxes it to exactly that atom's grade.  Two atoms on the axis do not say "
-            "which grade the binding means, and the resolver cannot pick one without granting a claim nobody made.";
+    text += is_row_axis ? ", and each atom on the axis adds its effects to the grade.  A copy of an atom adds no "
+                          "effect, so a pack that names one atom twice says one thing two times, and the second "
+                          "copy usually stands where a different atom was meant."
+                        : ", and one atom on the axis relaxes it to exactly that atom's grade.  Two atoms on the "
+                          "axis do not say which grade the binding means, and the resolver cannot pick one without "
+                          "granting a claim nobody made.";
     return std::define_static_string(text);
 }
 
 template <Axis A>
 [[nodiscard]] consteval std::string_view symptom_() noexcept {
-    ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{"Two atoms from the "};
+    constexpr bool is_row_axis = axis_record(A).shape == Shape::Row;
+    ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{
+        is_row_axis ? "One atom from the " : "Two atoms from the "};
     text += ::fixy::axis_name(A);
-    text += " family in one fixy::fn pack, usually after two packs were merged, or after a role that already "
-            "names the axis was extended with a second atom on it.";
+    text += is_row_axis ? " family two times in one fixy::fn pack, usually after two packs were merged, or after a "
+                          "role that already names the atom was extended with the same atom."
+                        : " family in one fixy::fn pack, usually after two packs were merged, or after a role that "
+                          "already names the axis was extended with a second atom on it.";
     return std::define_static_string(text);
 }
 
@@ -105,6 +118,10 @@ template <Axis A>
 [[nodiscard]] consteval std::string_view correct_() noexcept {
     ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{"fixy::fn<T, atom_on_"};
     text += ::fixy::axis_name(A);
+    if constexpr (axis_record(A).shape == Shape::Row) {
+        text += ", other_atom_on_";
+        text += ::fixy::axis_name(A);
+    }
     text += ">  // or fixy::fn<T>: the strict pole ";
     text += strict_pole_name_<A>();
     text += " needs no atom";
@@ -115,9 +132,15 @@ template <Axis A>
 [[nodiscard]] consteval std::string_view violating_() noexcept {
     ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{"fixy::fn<T, atom_on_"};
     text += ::fixy::axis_name(A);
-    text += ", second_atom_on_";
-    text += ::fixy::axis_name(A);
-    text += ">  // two grades on ";
+    if constexpr (axis_record(A).shape == Shape::Row) {
+        text += ", atom_on_";
+        text += ::fixy::axis_name(A);
+        text += ">  // one atom two times on ";
+    } else {
+        text += ", second_atom_on_";
+        text += ::fixy::axis_name(A);
+        text += ">  // two grades on ";
+    }
     text += ::fixy::axis_name(A);
     return std::define_static_string(text);
 }

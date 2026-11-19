@@ -68,6 +68,19 @@
 
 namespace fixy {
 
+// The shape of an axis also decides how a pack states the grade of the
+// axis.  A Row axis takes the union of its atoms, and tier 4 of
+// fixy/Reject.h refuses only an atom that a pack names twice.  An axis of
+// each other shape carries one grade, and tier 4 refuses a second atom on
+// it.
+//
+// SyscallSurface and Stdio are Lattice axes in this table, although their
+// atoms can state a set.  The ring flags and the mapping flags of
+// fixy/atoms/Os.h stack on one primary mode, and a binding can write to two
+// streams.  A set of atoms needs its own grade carrier, its own canonical
+// order and its own fold of the federation key, and no such design exists.
+// So tier 4 refuses two atoms of SyscallSurface or Stdio, and that refusal
+// fails closed.
 enum class Shape : std::uint8_t {
     Lattice = 0,  // information flows up: join is the weakening
     Semiring = 1,  // a resource is used n times: add is choice, mul is sequence

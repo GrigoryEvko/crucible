@@ -148,6 +148,42 @@ static_assert(::fixy::collision::detail::call_shape_reading_(^^int)
 static_assert(::fixy::collision::detail::protocol_reading_(^^::fixy::atom::copy)
                   == ::fixy::collision::detail::ProtocolReading::Unread,
               "an atom on another axis has no Protocol reading");
+// Each Row axis of the table has an atom over a row, so the walk of a pack
+// can give the union of two atoms on it.  An axis of each other shape has
+// no row in the record.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
+[[nodiscard]] consteval bool every_row_axis_has_an_atom_over_its_row_() {
+    namespace cd = ::fixy::collision::detail;
+    std::size_t row_axes = 0;
+    bool is_each_answered = true;
+    template for (constexpr auto axis_member : std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis))) {
+        constexpr Axis axis = [:axis_member:];
+        if constexpr (axis_record(axis).shape == Shape::Row) {
+            ++row_axes;
+            constexpr std::meta::info empty = cd::row_axis_atom_over_(axis, ^^::foundation::effects::Row<>);
+            using Empty = [:empty:];
+            is_each_answered = is_each_answered
+                            && cd::pack_record_v<Empty>.row[std::to_underlying(axis)]
+                                   == std::meta::dealias(^^::foundation::effects::Row<>);
+        } else {
+            is_each_answered =
+                is_each_answered && cd::pack_record_v<>.row[std::to_underlying(axis)] == std::meta::info{};
+        }
+    }
+    return is_each_answered && row_axes == count_axes_of_shape(Shape::Row);
+}
+
+#pragma GCC diagnostic pop
+
+static_assert(every_row_axis_has_an_atom_over_its_row_(),
+              "fixy/Collision.h: a Row axis of fixy/Axis.h has no atom over its row in row_axis_atom_over_, or "
+              "the record holds a row for an axis that is not a Row axis.");
+static_assert(::fixy::collision::detail::row_axis_atom_over_(
+                  Axis::Effect, ^^::foundation::effects::Row<::foundation::effects::Effect::IO>)
+              == std::meta::dealias(^^::fixy::atom::with_io));
+
 static_assert(!pack_verdict_v<::fixy::atom::dispatch::recurses<4>>.premises.indirect_call_may_throw,
               "a recursion is no call through a pointer");
 static_assert(

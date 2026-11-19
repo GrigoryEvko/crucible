@@ -424,6 +424,15 @@ concept CtxAdmitsBinding =
 // promises about them: an empty stated pack and the strict pole mean the
 // same thing.
 //
+// The Effect axis is a Row axis, and so is the Observability axis.  A Row
+// axis takes the union of its atoms, and its grade is the atom over the
+// union.  So two packs that state one set of effects on a Row axis fold one
+// set, in the order of the bits of the row, whatever atoms each pack wrote.
+// The Observability axis folds the canonical identity of the surface over
+// its row, in the order of the bits of the row, and not the row hash.  B001
+// refuses a pack that names the axis with an empty surface where the pole
+// passes, so the empty surface and the pole keep two slots.
+//
 // Every other axis folds the canonical identity of its resolved grade,
 // which it reads through foundation/diag/RowHash.h's
 // lattice_canonical_id.  That function defaults to the reflected identity,
@@ -499,6 +508,12 @@ template <class Binding>
         } else if constexpr (axis == Axis::Effect) {
             h = ::foundation::diag::detail::combine_ids(
                 h, ::foundation::diag::row_hash_contribution_v<atom::effect_row_of_t<Grade>>);
+        } else if constexpr (axis == Axis::Observability && Binding::template mentions_axis<axis>) {
+            constexpr std::meta::info canonical = ::fixy::collision::canonical_surface_of(^^Grade);
+            using Canonical = [:canonical:];
+            h = ::foundation::diag::detail::combine_ids(
+                h, ::foundation::diag::read_canonical_id(::foundation::diag::canonical_id_cell_of<Canonical>,
+                                                         ^^Canonical));
         } else {
             h = ::foundation::diag::detail::combine_ids(
                 h, ::foundation::diag::read_canonical_id(::foundation::diag::canonical_id_cell_of<Grade>, ^^Grade));

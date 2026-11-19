@@ -7,7 +7,8 @@
 //
 //   1. Is the payload an object type a wrapper can hold?
 //   2. Is every entry in the pack an atom?
-//   3. Does each axis carry at most one atom?
+//   3. Does each axis carry one grade?  A Row axis takes the union of its
+//      atoms, and each other axis carries at most one atom.
 //   4. Is the combination admitted?  (A refinement that the payload can
 //      check, the Collision.h rules, the Corpus.h entries.)
 //
@@ -68,7 +69,13 @@ template <class... Atoms>
 concept AllAtomsWellFormed = (::fixy::atom::IsAtom<Atoms> && ...);
 
 // ---------------------------------------------------------------------
-// Tier 4: at most one atom per axis.
+// Tier 4: one grade on each axis.
+//
+// The shape of the axis in the table of fixy/Axis.h decides what one grade
+// is.  A Row axis takes the union of its atoms, so a pack can name several
+// atoms on it, and tier 4 refuses only an atom that the pack names twice.
+// An axis of each other shape carries one grade, and tier 4 refuses a
+// second atom on it.
 //
 // There is no tier 3.  An axis the pack says nothing about resolves to
 // its strict pole, silently, so a missing atom is not a rejection and
@@ -83,14 +90,14 @@ namespace detail::reject {
 // walk may read, so the walk counts no axis for it.  Tier 2 refuses it,
 // and tier 4 must not add a second error.
 
-// The first axis carrying more than one atom, or axis_count when every
-// axis carries at most one.  The walk is over the axes rather than over
-// the pack, so the answer is an axis and the diagnostic can name it.
-// Complexity: the axis count.
+// The first axis that the pack grades twice, or axis_count when the pack
+// grades each axis at most one time.  The walk is over the axes rather
+// than over the pack, so the answer is an axis and the diagnostic can name
+// it.  Complexity: the axis count.
 template <class... Atoms>
 [[nodiscard]] consteval std::size_t first_duplicated_axis_() noexcept {
     for (std::size_t place = 0; place < ::fixy::axis_count; ++place) {
-        if (::fixy::collision::detail::pack_record_v<Atoms...>.atoms_on[place] > 1) return place;
+        if (::fixy::collision::detail::pack_record_v<Atoms...>.is_graded_twice[place]) return place;
     }
     return ::fixy::axis_count;
 }
@@ -176,13 +183,19 @@ template <Axis A>
     return std::define_static_string(text);
 }
 
+// The texts of a Row axis say that the axis takes the union of its atoms
+// and refuses one atom stated twice.  The texts of each other axis say that
+// the axis carries one grade.
 template <Axis A>
 [[nodiscard]] consteval std::string_view duplicate_description_() {
+    constexpr bool is_row_axis = axis_record(A).shape == Shape::Row;
     ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{
-        "Two or more atoms in one fixy::fn pack name the "};
+        is_row_axis ? "One fixy::fn pack names one atom of the " : "Two or more atoms in one fixy::fn pack name the "};
     text += ::fixy::axis_name(A);
-    text += " axis.  An axis carries one grade, so the pack does not say "
-            "which of them the binding means.";
+    text += is_row_axis ? " axis twice.  A Row axis takes the union of its atoms, so the copy adds no effect, and "
+                          "the pack does not say what the second atom was meant to state."
+                        : " axis.  An axis carries one grade, so the pack does not say which of them the binding "
+                          "means.";
     return std::define_static_string(text);
 }
 
@@ -233,9 +246,12 @@ template <Axis A>
 struct duplicate_atom_on final : ::foundation::diag::tag_base {
     static constexpr std::string_view name = detail::reject::duplicate_name_<A>();
     static constexpr std::string_view description = detail::reject::duplicate_description_<A>();
-    static constexpr std::string_view remediation = "Remove every atom on the axis but the one the binding means.  "
-                                                    "An axis the pack says nothing about resolves to its strict "
-                                                    "pole, so dropping an atom never silently widens the binding.";
+    static constexpr std::string_view remediation =
+        axis_record(A).shape == Shape::Row
+            ? "Remove the copy of the atom.  A Row axis takes the union of its atoms, so two different atoms on it "
+              "state the union of their effects."
+            : "Remove every atom on the axis but the one the binding means.  An axis the pack says nothing about "
+              "resolves to its strict pole, so dropping an atom never silently widens the binding.";
 };
 
 template <class G>
@@ -394,9 +410,12 @@ template <class... Atoms>
     if constexpr (offender == ::fixy::axis_count) {
         return "fixy::fn<Type, Atoms...> [tier 4]: not reached — no axis carries two grades.";
     } else {
+        constexpr bool is_row_axis = axis_record(static_cast<Axis>(offender)).shape == Shape::Row;
         ::foundation::reflect::anchored_t<std::meta::reflect_constant(offender), std::string> text{
-            "fixy::fn<Type, Atoms...> [tier 4]: an axis carries one grade, so the pack must not "
-            "name an axis twice.  The axis graded twice here is "};
+            is_row_axis ? "fixy::fn<Type, Atoms...> [tier 4]: a Row axis takes the union of its atoms, so the pack "
+                          "must not name one atom on it twice.  The axis that names one atom twice here is "
+                        : "fixy::fn<Type, Atoms...> [tier 4]: an axis carries one grade, so the pack must not "
+                          "name an axis twice.  The axis graded twice here is "};
         text += ::fixy::axis_name(static_cast<Axis>(offender));
         text += ", and fixy::duplicate_atom_on<Axis> carries its insight.";
         return std::define_static_string(text);

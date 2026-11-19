@@ -142,45 +142,116 @@ template <class... Atoms>
     return std::define_static_array(entry_list{^^Atoms...});
 }
 
+// The row of an atom of a Row axis, and the atom of a Row axis over a row.
+//
+// Each atom of a Row axis states a set of effects as the arguments of its
+// template: with<Es...> on Effect and observe::surface<Es...> on
+// Observability.  So the row of an atom is the Row over the arguments of the
+// atom, and the union of two atoms of one such axis is the atom over the
+// union of their rows.  The functions are not templates, so no other file
+// can give a Row axis another family, or an atom another row.
+
+// Has no constant definition.  A call to it stops the constant evaluation,
+// and the diagnostic names it.
+void a_row_axis_has_no_family_of_atoms() noexcept;
+
+// The template of the atoms of a Row axis.  A Row axis that the function does
+// not name stops the walk of the pack.
+[[nodiscard]] consteval std::meta::info row_axis_family_(Axis axis) noexcept {
+    if (axis == Axis::Effect) return ^^::fixy::atom::with;
+    if (axis == Axis::Observability) return ^^::fixy::atom::observe::surface;
+    a_row_axis_has_no_family_of_atoms();
+    return {};
+}
+
+// The row of an atom of a Row axis, as a Row in the order of the arguments
+// of the atom.  An atom of another family on the axis stops the walk of the
+// pack, so it cannot read as an atom with no effect.
+[[nodiscard]] consteval std::meta::info row_of_row_atom_(Axis axis, std::meta::info atom) {
+    const std::meta::info named = std::meta::dealias(atom);
+    if (!std::meta::has_template_arguments(named) || std::meta::template_of(named) != row_axis_family_(axis)) {
+        a_row_axis_has_no_family_of_atoms();
+    }
+    return std::meta::dealias(
+        std::meta::substitute(^^::foundation::effects::Row, std::meta::template_arguments_of(named)));
+}
+
+// The atom of a Row axis over a row, in the order of the effects of the row.
+[[nodiscard]] consteval std::meta::info row_axis_atom_over_(Axis axis, std::meta::info row) {
+    return std::meta::dealias(
+        std::meta::substitute(row_axis_family_(axis), std::meta::template_arguments_of(std::meta::dealias(row))));
+}
+
 // The grades of one pack, read in one walk of the pack.
 //
-// The record has one slot for each axis.  The slot holds the grade that an
-// atom of the pack states on the axis, or the strict pole of the axis when
+// The record has one slot for each axis.  The slot holds the grade that the
+// atoms of the pack state on the axis, or the strict pole of the axis when
 // no atom of the pack names it.  Axis::Type has no pole, and its slot holds
 // void.  Each grade is a type and never an alias, so two slots hold one
 // grade exactly when their reflections are equal.
+//
+// The shape of the axis decides the grade of two atoms.  A Row axis takes
+// the union of its atoms.  The record holds the union row of each Row axis,
+// and the slot holds the atom over that row, in the order of the bits of
+// the row.  The slot of one atom holds that atom as the pack spells it, so
+// one atom keeps the grade and the key that it has alone.  An axis of each
+// other shape carries one grade, and tier 4 refuses a second atom on it.
 //
 // The record also counts the atoms on each axis and names the first entry
 // that is not an atom.  So tier 2, tier 4, the grade lookup and the
 // question whether a pack names an axis read one walk.  An entry that is
 // not an atom states no axis, and the walk does not read one from it.
-// When two atoms name one axis, the slot holds the last of them.
+// When two atoms name an axis that is not a Row axis, the slot holds the
+// last of them, and tier 4 refuses the pack.
 struct pack_record {
     std::meta::info grade[::fixy::axis_count]{};
     // True when the grade of the axis is not its strict pole.
     bool names_axis[::fixy::axis_count]{};
     std::size_t atoms_on[::fixy::axis_count]{};
+    // The union of the rows of the atoms on a Row axis, as a canonical Row.
+    // It is the pole Row<> when no atom names the axis, and null on an axis
+    // of each other shape.
+    std::meta::info row[::fixy::axis_count]{};
+    // True when tier 4 refuses the axis: a Row axis that the pack names with
+    // one atom twice, or an axis of each other shape that carries two atoms.
+    bool is_graded_twice[::fixy::axis_count]{};
     std::meta::info first_malformed = ^^void;
 };
 
 // The walk.  It runs one time for each pack, because pack_record_v keeps
-// its answer.  Complexity: the axis count plus the pack size.
+// its answer.  Complexity: the axis count plus the pack size, and the
+// square of the pack size for the copies of an atom on a Row axis.
 template <class... Atoms>
 [[nodiscard]] consteval pack_record read_pack_() noexcept {
     pack_record record{};
     std::meta::info pole[::fixy::axis_count]{};
     for (std::size_t place = 0; place < ::fixy::axis_count; ++place) {
-        const std::meta::info strict = axis_record(static_cast<Axis>(place)).strict;
-        pole[place] = strict == std::meta::info{} ? ^^void : std::meta::dealias(strict);
+        const AxisRecord axis = axis_record(static_cast<Axis>(place));
+        pole[place] = axis.strict == std::meta::info{} ? ^^void : std::meta::dealias(axis.strict);
         record.grade[place] = pole[place];
+        if (axis.shape == Shape::Row) record.row[place] = pole[place];
     }
     static constexpr auto entries = pack_entries_<Atoms...>();
     template for (constexpr auto entry : entries) {
         using Candidate = [:entry:];
         if constexpr (::fixy::atom::IsAtom<Candidate>) {
             constexpr std::size_t place = std::to_underlying(Candidate::axis);
-            record.grade[place] = std::meta::dealias(entry);
             ++record.atoms_on[place];
+            if constexpr (axis_record(Candidate::axis).shape == Shape::Row) {
+                // A copy of an atom states nothing that the atom does not
+                // state, so a pack that writes one atom twice is refused.
+                constexpr std::size_t copies = ((^^Atoms == entry ? 1U : 0U) + ...);
+                record.is_graded_twice[place] = record.is_graded_twice[place] || copies > 1;
+                record.row[place] = std::meta::dealias(
+                    std::meta::substitute(^^::foundation::effects::row_union_t,
+                                          {record.row[place], row_of_row_atom_(Candidate::axis, entry)}));
+                record.grade[place] = record.atoms_on[place] == 1
+                                        ? std::meta::dealias(entry)
+                                        : row_axis_atom_over_(Candidate::axis, record.row[place]);
+            } else {
+                record.is_graded_twice[place] = record.atoms_on[place] > 1;
+                record.grade[place] = std::meta::dealias(entry);
+            }
         } else {
             if (record.first_malformed == ^^void) record.first_malformed = entry;
         }
@@ -234,6 +305,20 @@ struct grades {
     template <Axis A>
     static constexpr bool mentions = detail::pack_record_v<Atoms...>.names_axis[detail::axis_slot_<A>()];
 };
+
+// An Observability atom in its canonical spelling: the surface over its row,
+// in the order of the bits of the row.  Two surfaces over one set of
+// effects take one spelling.  Each reader of the axis reads the surface as
+// a set: B002 reads its row as a subrow, and B001 reads only that the pack
+// names the axis.  The federation key of fixy/Fn.h folds this spelling, so
+// two spellings of one set take one slot.  The pole is no surface, and it
+// has no canonical spelling here.  The function is not a template, so no
+// other file can give a surface another spelling.
+[[nodiscard]] consteval std::meta::info canonical_surface_of(std::meta::info surface) {
+    const std::meta::info row = detail::row_of_row_atom_(Axis::Observability, surface);
+    return detail::row_axis_atom_over_(Axis::Observability, std::meta::dealias(std::meta::substitute(
+                                                                ^^::foundation::effects::canonical_row_t, {row})));
+}
 
 // ---------------------------------------------------------------------
 // Which axes an atom can actually reach.

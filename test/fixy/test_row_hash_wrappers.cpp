@@ -273,6 +273,65 @@ static_assert(::fixy::collision::pack_verdict_v<::fixy::atom::capability_usage, 
 static_assert(row_hash_contribution_v<VerifiedInt> != row_hash_contribution_v<StrictPoleInt>,
               "T001 separates trust<Verified> from the strict Trust pole, so the two are two claims");
 
+// ---------------------------------------------------------------------
+// A Row axis keys the set of its atoms.
+//
+// Effect and Observability are Row axes, and a Row axis takes the union of
+// its atoms.  Each rule reads the grade of a Row axis as a set: the row of
+// the binding joins the Effect grade, and B002 reads the surface as a
+// subrow.  So two packs that state one set on a Row axis are one claim, and
+// they reach one slot in each order of the atoms.  A part of the set is
+// another claim, and it keeps its own slot.
+namespace fe_rh = ::foundation::effects;
+using ::fixy::atom::as_public;
+using ::fixy::atom::with;
+using ::fixy::atom::observe::surface;
+
+using EffectUnionInt = ::fixy::fn<int, with<fe_rh::Effect::Bg>, with<fe_rh::Effect::Alloc>, as_public>;
+using EffectUnionSwappedInt = ::fixy::fn<int, with<fe_rh::Effect::Alloc>, with<fe_rh::Effect::Bg>, as_public>;
+using EffectOneAtomInt = ::fixy::fn<int, with<fe_rh::Effect::Alloc, fe_rh::Effect::Bg>, as_public>;
+using EffectBgPartInt = ::fixy::fn<int, with<fe_rh::Effect::Bg>, as_public>;
+using EffectAllocPartInt = ::fixy::fn<int, with<fe_rh::Effect::Alloc>, as_public>;
+static_assert(row_hash_contribution_v<EffectUnionInt> == row_hash_contribution_v<EffectUnionSwappedInt>,
+              "the union of two Effect atoms must not depend on the order of the atoms");
+static_assert(row_hash_contribution_v<EffectUnionInt> == row_hash_contribution_v<EffectOneAtomInt>,
+              "two Effect atoms and the one atom over their union state one set, so they must reach one slot");
+static_assert(row_hash_contribution_v<EffectUnionInt> == row_hash_contribution_v<BgWorkerInt>,
+              "BgWorker states the same set in its own order, so it must reach the same slot");
+static_assert(row_hash_contribution_v<EffectUnionInt> != row_hash_contribution_v<EffectBgPartInt>,
+              "the union must not take the slot of its last atom");
+static_assert(row_hash_contribution_v<EffectUnionInt> != row_hash_contribution_v<EffectAllocPartInt>,
+              "the union must not take the slot of its first atom");
+
+using SurfaceUnionInt = ::fixy::fn<int, with<fe_rh::Effect::Alloc, fe_rh::Effect::IO>, surface<fe_rh::Effect::IO>,
+                                   surface<fe_rh::Effect::Alloc>, as_public>;
+using SurfaceUnionSwappedInt = ::fixy::fn<int, with<fe_rh::Effect::Alloc, fe_rh::Effect::IO>,
+                                          surface<fe_rh::Effect::Alloc>, surface<fe_rh::Effect::IO>, as_public>;
+using SurfaceInBitOrderInt = ::fixy::fn<int, with<fe_rh::Effect::Alloc, fe_rh::Effect::IO>,
+                                        surface<fe_rh::Effect::Alloc, fe_rh::Effect::IO>, as_public>;
+using SurfaceOutOfBitOrderInt = ::fixy::fn<int, with<fe_rh::Effect::Alloc, fe_rh::Effect::IO>,
+                                           surface<fe_rh::Effect::IO, fe_rh::Effect::Alloc>, as_public>;
+using SurfacePartInt =
+    ::fixy::fn<int, with<fe_rh::Effect::Alloc, fe_rh::Effect::IO>, surface<fe_rh::Effect::IO>, as_public>;
+using EmptySurfaceInt = ::fixy::fn<int, with<fe_rh::Effect::Alloc, fe_rh::Effect::IO>, surface<>, as_public>;
+using NoSurfaceInt = ::fixy::fn<int, with<fe_rh::Effect::Alloc, fe_rh::Effect::IO>, as_public>;
+static_assert(row_hash_contribution_v<SurfaceUnionInt> == row_hash_contribution_v<SurfaceUnionSwappedInt>,
+              "the union of two surfaces must not depend on the order of the atoms");
+static_assert(row_hash_contribution_v<SurfaceUnionInt> == row_hash_contribution_v<SurfaceInBitOrderInt>,
+              "two surfaces and the one surface over their union state one set, so they must reach one slot");
+static_assert(row_hash_contribution_v<SurfaceInBitOrderInt> == row_hash_contribution_v<SurfaceOutOfBitOrderInt>,
+              "the key folds a surface in the order of the bits of its row, so its spelling must not move it");
+static_assert(row_hash_contribution_v<SurfaceUnionInt> != row_hash_contribution_v<SurfacePartInt>,
+              "the union of two surfaces must not take the slot of one of them");
+
+// B001 refuses a pack that names Observability with an empty surface where
+// the pole passes, so the empty surface and the pole are two claims.
+static_assert(!::fixy::collision::pack_verdict_v<with<fe_rh::Effect::Bg>, surface<>>.admits(B001)
+                  && ::fixy::collision::pack_verdict_v<with<fe_rh::Effect::Bg>>.admits(B001),
+              "B001 must separate the empty surface from the pole on a Bg row of unstated cost");
+static_assert(row_hash_contribution_v<EmptySurfaceInt> != row_hash_contribution_v<NoSurfaceInt>,
+              "the empty surface and the pole of Observability are two claims, so they must take two slots");
+
 }  // namespace
 
 namespace census {

@@ -8,8 +8,10 @@
 // walks.  The first walk takes each atom of fixy/Atom.h that the gate
 // admits alone, and it checks the atom against every axis.  An atom that
 // relaxes an axis other than its own fails that walk.  The second walk
-// takes each axis that carries two atoms, and it checks that the gate
-// refuses the two atoms together.
+// takes each axis that carries two atoms.  It checks that the gate refuses
+// the two atoms together on each axis that is not a Row axis, and that a
+// Row axis takes their union.  The third walk checks that the union is
+// exactly the set of the stated atoms.
 
 #include <fixy/Collision.h>
 #include <fixy/Core.h>
@@ -149,9 +151,12 @@ static_assert(the_atoms.relaxes_its_own_axis == the_atoms.admitted_alone,
 // ---------------------------------------------------------------------
 // Two atoms on one axis, on every axis that carries two.
 //
-// The walk uses the first two atoms of the whole roster on each axis.
-// Tier 4 counts the atoms on each axis and reads nothing else.  Two
-// different atoms of one axis give the same answer.
+// The walk uses the first two atoms of the whole roster on each axis.  The
+// shape of the axis decides the answer of tier 4.  A Row axis takes the
+// union of its atoms, so tier 4 admits the pair and refuses one atom of the
+// pair stated twice.  An axis of each other shape carries one grade, so
+// tier 4 refuses the pair.  Two different atoms of one axis give the same
+// answer.
 
 template <Axis A>
 [[nodiscard]] consteval std::array<std::meta::info, 2> first_two_atoms_on() noexcept {
@@ -170,6 +175,8 @@ template <Axis A>
 struct duplicate_walk {
     std::size_t axes_with_two_atoms = 0;
     std::size_t axes_that_refuse_the_pair = 0;
+    std::size_t row_axes_with_two_atoms = 0;
+    std::size_t row_axes_that_take_the_union = 0;
 };
 
 [[nodiscard]] consteval duplicate_walk walk_the_axes() noexcept {
@@ -178,12 +185,25 @@ struct duplicate_walk {
         constexpr Axis axis = [:axis_member:];
         static constexpr auto pair = first_two_atoms_on<axis>();
         if constexpr (pair[1] != std::meta::info{}) {
-            ++walk.axes_with_two_atoms;
             using First = [:pair[0]:];
             using Second = [:pair[1]:];
-            if (!::fixy::UniqueAtomPerAxis<First, Second> && !IsAccepted<int, First, Second>
-                && std::is_same_v<::fixy::duplicate_tag_or_void_t<First, Second>, ::fixy::duplicate_atom_on<axis>>) {
-                ++walk.axes_that_refuse_the_pair;
+            if constexpr (::fixy::axis_record(axis).shape == ::fixy::Shape::Row) {
+                ++walk.row_axes_with_two_atoms;
+                if (::fixy::UniqueAtomPerAxis<First, Second> && ::fixy::UniqueAtomPerAxis<Second, First>
+                    && std::is_void_v<::fixy::duplicate_tag_or_void_t<First, Second>>
+                    && !::fixy::UniqueAtomPerAxis<First, First> && !IsAccepted<int, First, First>
+                    && std::is_same_v<::fixy::duplicate_tag_or_void_t<First, First>, ::fixy::duplicate_atom_on<axis>>
+                    && std::is_same_v<::fixy::duplicate_tag_or_void_t<Second, First, Second>,
+                                      ::fixy::duplicate_atom_on<axis>>) {
+                    ++walk.row_axes_that_take_the_union;
+                }
+            } else {
+                ++walk.axes_with_two_atoms;
+                if (!::fixy::UniqueAtomPerAxis<First, Second> && !IsAccepted<int, First, Second>
+                    && std::is_same_v<::fixy::duplicate_tag_or_void_t<First, Second>,
+                                      ::fixy::duplicate_atom_on<axis>>) {
+                    ++walk.axes_that_refuse_the_pair;
+                }
             }
         }
     }
@@ -195,7 +215,171 @@ struct duplicate_walk {
 constexpr duplicate_walk the_axes = walk_the_axes();
 static_assert(the_axes.axes_with_two_atoms > 0, "no axis carries two atoms, so the walk proves nothing");
 static_assert(the_axes.axes_that_refuse_the_pair == the_axes.axes_with_two_atoms,
-              "an axis admits two atoms together, or the refusal names a different axis");
+              "an axis that is not a Row axis admits two atoms together, or the refusal names a different axis");
+static_assert(the_axes.row_axes_with_two_atoms == ::fixy::count_axes_of_shape(::fixy::Shape::Row),
+              "a Row axis has fewer than two atoms in the roster, so the union walk does not reach it");
+static_assert(the_axes.row_axes_that_take_the_union == the_axes.row_axes_with_two_atoms,
+              "a Row axis refuses two different atoms, or admits one atom stated twice");
+
+// ---------------------------------------------------------------------
+// The union of a Row axis is exactly the set of its stated atoms.
+//
+// For each pair of different atoms of the roster on a Row axis, in each
+// order, the grade of the pair is the atom over the union of the two rows,
+// in the order of the bits of the row.  The row of each atom is read in
+// the spelling of its axis: the row of the Effect grade, and the row
+// member of a surface.
+
+namespace fe = ::foundation::effects;
+
+template <Axis A, class Grade>
+[[nodiscard]] consteval std::meta::info row_of_row_atom() noexcept {
+    if constexpr (A == Axis::Effect) {
+        return std::meta::dealias(^^::fixy::atom::effect_row_of_t<Grade>);
+    } else {
+        return std::meta::dealias(^^typename Grade::row);
+    }
+}
+
+template <Axis A, class Row>
+[[nodiscard]] consteval std::meta::info row_atom_over() noexcept {
+    constexpr std::meta::info canonical = std::meta::dealias(^^fe::canonical_row_t<Row>);
+    if constexpr (A == Axis::Effect) {
+        return std::meta::dealias(
+            std::meta::substitute(^^::fixy::atom::with, std::meta::template_arguments_of(canonical)));
+    } else {
+        return std::meta::dealias(
+            std::meta::substitute(^^::fixy::atom::observe::surface, std::meta::template_arguments_of(canonical)));
+    }
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
+// The atom of the roster at a position among the atoms on one axis, or the
+// null reflection when the axis has fewer atoms.
+template <Axis A, std::size_t Position>
+[[nodiscard]] consteval std::meta::info atom_on_at() noexcept {
+    std::size_t seen = 0;
+    std::meta::info found{};
+    template for (constexpr auto member : every_atom) {
+        using Candidate = [:member:];
+        if constexpr (Candidate::axis == A) {
+            if (seen == Position) found = member;
+            ++seen;
+        }
+    }
+    return found;
+}
+
+// The walk reads the first atoms_per_row_axis atoms of the roster on each
+// Row axis, and the pin below holds each Row axis to that count.
+inline constexpr std::size_t atoms_per_row_axis = 4;
+
+struct union_walk {
+    std::size_t pairs = 0;
+    std::size_t pairs_that_take_exactly_the_union = 0;
+    bool is_each_row_atom_read = true;
+};
+
+template <Axis A, std::size_t FirstPosition, std::size_t SecondPosition>
+constexpr void walk_the_union_of(union_walk& walk) noexcept {
+    constexpr std::meta::info first = atom_on_at<A, FirstPosition>();
+    constexpr std::meta::info second = atom_on_at<A, SecondPosition>();
+    if constexpr (FirstPosition != SecondPosition && first != std::meta::info{} && second != std::meta::info{}) {
+        using First = [:first:];
+        using Second = [:second:];
+        using FirstRow = [:row_of_row_atom<A, First>():];
+        using SecondRow = [:row_of_row_atom<A, Second>():];
+        using Union = fe::row_union_t<FirstRow, SecondRow>;
+        using Grade = typename ::fixy::collision::grades<First, Second>::template on<A>;
+        ++walk.pairs;
+        if (std::meta::dealias(^^Grade) == row_atom_over<A, Union>()
+            && row_of_row_atom<A, Grade>() == std::meta::dealias(^^Union) && ::fixy::UniqueAtomPerAxis<First, Second>) {
+            ++walk.pairs_that_take_exactly_the_union;
+        }
+    }
+}
+
+[[nodiscard]] consteval union_walk walk_the_unions() noexcept {
+    union_walk walk{};
+    template for (constexpr auto axis_member : std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis))) {
+        constexpr Axis axis = [:axis_member:];
+        if constexpr (::fixy::axis_record(axis).shape == ::fixy::Shape::Row) {
+            walk.is_each_row_atom_read =
+                walk.is_each_row_atom_read && atom_on_at<axis, atoms_per_row_axis>() == std::meta::info{};
+            template for (constexpr std::size_t first : {0UZ, 1UZ, 2UZ, 3UZ}) {
+                template for (constexpr std::size_t second : {0UZ, 1UZ, 2UZ, 3UZ}) {
+                    walk_the_union_of<axis, first, second>(walk);
+                }
+            }
+        }
+    }
+    return walk;
+}
+
+#pragma GCC diagnostic pop
+
+constexpr union_walk the_unions = walk_the_unions();
+static_assert(the_unions.pairs > 0, "no Row axis has two atoms in the roster, so the union walk proves nothing");
+static_assert(the_unions.is_each_row_atom_read,
+              "a Row axis has more atoms in the roster than the union walk reads, so raise atoms_per_row_axis");
+static_assert(the_unions.pairs_that_take_exactly_the_union == the_unions.pairs,
+              "the grade of two atoms on a Row axis is not the atom over the union of their rows");
+
+// The cells of the union, by hand.  The bits of the row give the order, so
+// with<IO> and with<Bg> make with<IO, Bg> in each order.  with<IO, Bg> and
+// with<Bg, IO> are two atoms over one set, so they are no atom stated
+// twice, and their union is that set.  One atom keeps the spelling of the
+// pack.  A copy of one atom is refused, also through an alias.
+using ::fixy::atom::with;
+using ::fixy::atom::observe::surface;
+using Eff = fe::Effect;
+template <class... Atoms>
+using grades = ::fixy::collision::grades<Atoms...>;
+
+static_assert(std::is_same_v<grades<with<Eff::Bg>, with<Eff::IO>>::on<Axis::Effect>, with<Eff::IO, Eff::Bg>>);
+static_assert(std::is_same_v<grades<with<Eff::IO>, with<Eff::Bg>>::on<Axis::Effect>, with<Eff::IO, Eff::Bg>>);
+static_assert(
+    std::is_same_v<grades<with<Eff::IO, Eff::Bg>, with<Eff::Bg, Eff::IO>>::on<Axis::Effect>, with<Eff::IO, Eff::Bg>>);
+static_assert(::fixy::UniqueAtomPerAxis<with<Eff::IO, Eff::Bg>, with<Eff::Bg, Eff::IO>>);
+static_assert(std::is_same_v<grades<with<>, with<Eff::Alloc>, with<Eff::Alloc, Eff::Bg>>::on<Axis::Effect>,
+                             with<Eff::Alloc, Eff::Bg>>);
+static_assert(std::is_same_v<grades<with<Eff::Bg, Eff::IO>>::on<Axis::Effect>, with<Eff::Bg, Eff::IO>>,
+              "one atom keeps the spelling of the pack");
+static_assert(
+    std::is_same_v<grades<surface<Eff::Bg>, surface<Eff::IO>>::on<Axis::Observability>, surface<Eff::IO, Eff::Bg>>);
+static_assert(grades<with<Eff::IO>, with<Eff::Bg>>::mentions<Axis::Effect>);
+static_assert(!::fixy::UniqueAtomPerAxis<with<Eff::IO>, with<Eff::IO>>);
+static_assert(!::fixy::UniqueAtomPerAxis<::fixy::atom::with_io, with<Eff::IO>>);
+static_assert(!::fixy::UniqueAtomPerAxis<surface<Eff::IO>, with<Eff::Bg>, surface<Eff::IO>>);
+static_assert(std::is_same_v<::fixy::duplicate_tag_or_void_t<surface<Eff::IO>, surface<Eff::IO>>,
+                             ::fixy::duplicate_atom_on<Axis::Observability>>);
+
+// The two pairs of the roster that tier 4 refused before the union stay
+// refused, at tier 5.  with<IO> states IO at the classified pole of
+// Security, and the corpus refuses that.  The two surfaces observe IO and
+// Bg in a pack whose row is empty, and B002 refuses that.
+static_assert(::fixy::UniqueAtomPerAxis<with<>, with<Eff::IO>> && !IsAccepted<int, with<>, with<Eff::IO>>);
+static_assert(::fixy::UniqueAtomPerAxis<surface<Eff::IO>, surface<Eff::Bg>>
+              && !IsAccepted<int, surface<Eff::IO>, surface<Eff::Bg>>);
+static_assert(
+    !::fixy::collision::pack_verdict_v<surface<Eff::IO>, surface<Eff::Bg>>.admits(::fixy::collision::RuleCode::B002));
+
+// The row of the binding joins the union, and a context reads that row.
+static_assert(std::is_same_v<::fixy::binding_row_t<fn<int, with<Eff::IO>, with<Eff::Alloc>, ::fixy::atom::as_public>>,
+                             fe::Row<Eff::Alloc, Eff::IO>>);
+static_assert(IsAccepted<int, with<Eff::Bg>, with<Eff::Alloc>, ::fixy::atom::as_public>);
+static_assert(fn<int, with<Eff::Bg>, with<Eff::Alloc>, ::fixy::atom::as_public>::mentions_axis<Axis::Effect>);
+
+// B002 reads the union of the surfaces against the row of the binding.  The
+// union of IO and Bg is not inside an IO row, and it is inside an IO and Bg
+// row.
+static_assert(!::fixy::collision::pack_verdict_v<surface<Eff::IO>, surface<Eff::Bg>, with<Eff::IO>>.admits(
+                  ::fixy::collision::RuleCode::B002),
+              "a pack must not hide an observed effect outside its row behind a second surface");
+static_assert(::fixy::collision::pack_verdict_v<surface<Eff::IO>, surface<Eff::Bg>, with<Eff::IO, Eff::Bg>>.admits(
+    ::fixy::collision::RuleCode::B002));
 
 // The empty pack leaves every axis but Type strict, which is the same
 // claim with nothing relaxed.  Axis::Type is not an axis any atom can
