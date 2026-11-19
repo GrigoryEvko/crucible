@@ -12,12 +12,25 @@
 // that reflection reads.  Each mirror must be in at least one object, so a
 // rename of a C struct fails the test and does not skip it.
 //
-// The C structs name their padding _pad, and the mirrors name it pad, so a
-// BTF name with a leading underscore compares without that underscore.  The
-// test loads no program, so it needs no capability.
+// The 7 perf programs of include/crucible/perf/bpf/ share their records with
+// the facades of crucible/perf.  Each object of a ring must hold the header,
+// the event and the ring of its facade: the event and the header compare
+// member by member, and the ring compares with the RingLayout that the facade
+// maps.  The object of sense_hub must hold the map counters with the count of
+// the counters of crucible/perf/SenseHub.h and words of 8 bytes.
+//
+// The C structs name their padding _pad, and the mirrors name it pad or _pad,
+// so each name compares without one leading underscore.  The test loads no
+// program, so it needs no capability.
 
 #include <crucible/cntp/dataplane/NetTimeline.h>
 #include <crucible/cntp/dataplane/TcEbpf.h>
+#include <crucible/perf/LockContention.h>
+#include <crucible/perf/PmuSample.h>
+#include <crucible/perf/SchedSwitch.h>
+#include <crucible/perf/SenseHub.h>
+#include <crucible/perf/SyscallLatency.h>
+#include <crucible/perf/detail/BpfHub.h>
 #include <crucible/perf/detail/BpfLoader.h>
 #include <fixy/Core.h>
 
@@ -28,6 +41,7 @@
 #include <meta>
 
 namespace dataplane = crucible::cntp::dataplane;
+namespace facade = crucible::perf;
 namespace perf = crucible::perf::detail;
 
 namespace {
@@ -207,8 +221,10 @@ struct BtfType {
     }
 };
 
-// The largest count of the types of one stub object that the walk holds.
-inline constexpr std::size_t kMaxTypes = 512;
+// The largest count of the types of one embedded object that the walk holds.
+// A perf program that reads a kernel struct through CO-RE takes the types of
+// that struct into its BTF, so the object of sched_tp_btf holds about 500.
+inline constexpr std::size_t kMaxTypes = 2048;
 
 // The types of the BTF of one object, by id from 1.
 class BtfTypes {
@@ -274,6 +290,15 @@ template <class Mirror>
 inline constexpr std::meta::info kMembersOf = std::meta::reflect_constant_array(
     std::meta::nonstatic_data_members_of(^^Mirror, std::meta::access_context::unprivileged()));
 
+// The name without one leading underscore (the note at the top).  The walk of
+// a BTF name drops the same underscore.
+[[nodiscard]] constexpr ::fixy::TextView without_leading_underscore(::fixy::TextView name) noexcept {
+    if (!::fixy::starts_with(name, "_")) {
+        return name;
+    }
+    return name.window(1, name.size() - 1).value_or(name);
+}
+
 // True when the struct has the layout of Mirror: its size, the count of its
 // members, and the name, the byte offset and the byte size of each member in
 // order.  Reports the first difference.
@@ -287,8 +312,8 @@ template <class Mirror>
     std::size_t index = 0;
     bool is_same = true;
     template for (constexpr std::meta::info member : [:kMembersOf<Mirror>:]) {
-        constexpr ::fixy::TextView member_name{[:std::meta::reflect_constant_string(
-                                                     std::meta::identifier_of(member)):]};
+        constexpr ::fixy::TextView member_name = without_leading_underscore(
+            ::fixy::TextView{[:std::meta::reflect_constant_string(std::meta::identifier_of(member)):]});
         constexpr std::size_t member_offset = static_cast<std::size_t>(std::meta::offset_of(member).bytes);
         constexpr std::size_t member_size = std::meta::size_of(std::meta::type_of(member));
         bool const is_member_same = index < found.record_count() && found.member(index).is_named(member_name)
@@ -318,27 +343,42 @@ struct MirrorCounts {
     std::size_t timeline = 0;
 };
 
+// The first struct of name in the object, or no value.  Complexity: linear in
+// the types of the object.
+[[nodiscard]] ::fixy::Option<BtfType> find_struct(BtfTypes const& types, ::fixy::TextView name) noexcept {
+    for (std::size_t id = 1; id <= types.count(); ++id) {
+        BtfType const found = types.type(id);
+        if (found.kind() == BtfKind::structure && found.is_named(name)) {
+            return ::fixy::some(found);
+        }
+    }
+    return ::fixy::none;
+}
+
+// The types of the BTF of an embedded object.
+[[nodiscard]] BtfTypes btf_types_of(perf::ForeignBytes bytes) noexcept {
+    LittleEndian const object{perf::view_bytes(bytes)};
+    return BtfTypes{btf_section_of(object).expect("each embedded object holds a section .BTF")};
+}
+
 // The count of the objects that hold the struct of Mirror, after a compare of
 // the struct of one object when the object holds it.  Complexity: linear in
 // the types of the object.
 template <class Mirror>
 [[nodiscard]] std::size_t count_after_compare(BtfTypes const& types, ::fixy::TextView struct_name,
                                               std::size_t objects) noexcept {
-    for (std::size_t id = 1; id <= types.count(); ++id) {
-        BtfType const found = types.type(id);
-        if (found.kind() == BtfKind::structure && found.is_named(struct_name)) {
-            assert(has_layout_of<Mirror>(types, found, struct_name));
-            return objects + 1;
-        }
-    }
-    return objects;
+    return find_struct(types, struct_name)
+        .match(
+            [&types, struct_name, objects](BtfType found) noexcept {
+                assert(has_layout_of<Mirror>(types, found, struct_name));
+                return objects + 1;
+            },
+            [objects] noexcept { return objects; });
 }
 
 // Compares each mirror in the BTF of the object of name.
 void compare_object(::fixy::TextView name, perf::ForeignBytes bytes, MirrorCounts& counts) noexcept {
-    LittleEndian const object{perf::view_bytes(bytes)};
-    Bytes const section = btf_section_of(object).expect("each stub object holds a section .BTF");
-    BtfTypes const types{section};
+    BtfTypes const types = btf_types_of(bytes);
     counts.flow_key = count_after_compare<dataplane::NetFlowKey>(types, "crucible_net_flow_key", counts.flow_key);
     counts.flow_class =
         count_after_compare<dataplane::TcFlowClassRecord>(types, "crucible_tc_flow_class", counts.flow_class);
@@ -387,11 +427,164 @@ void test_each_stub_object_agrees_with_its_mirrors() {
                          counts.flow_class, counts.event, counts.timeline_header, counts.timeline);
 }
 
+// The name of the C struct of each mirror of a perf facade, in
+// include/crucible/perf/bpf/common.h.
+template <class Mirror>
+inline constexpr ::fixy::TextView kStructName{};
+template <>
+inline constexpr ::fixy::TextView kStructName<facade::TimelineHeader>{"timeline_header"};
+template <>
+inline constexpr ::fixy::TextView kStructName<facade::PmuSampleHeader>{"timeline_header"};
+template <>
+inline constexpr ::fixy::TextView kStructName<facade::TimelineSchedEvent>{"timeline_sched_event"};
+template <>
+inline constexpr ::fixy::TextView kStructName<facade::TimelineSyscallEvent>{"timeline_syscall_event"};
+template <>
+inline constexpr ::fixy::TextView kStructName<facade::TimelineLockEvent>{"timeline_lock_event"};
+template <>
+inline constexpr ::fixy::TextView kStructName<facade::PmuSampleEvent>{"pmu_sample_event"};
+
+// The name of the C struct of the ring of each event.
+template <class Event>
+inline constexpr ::fixy::TextView kRingName{};
+template <>
+inline constexpr ::fixy::TextView kRingName<facade::TimelineSchedEvent>{"sched_timeline"};
+template <>
+inline constexpr ::fixy::TextView kRingName<facade::TimelineSyscallEvent>{"syscall_timeline"};
+template <>
+inline constexpr ::fixy::TextView kRingName<facade::TimelineLockEvent>{"lock_timeline"};
+template <>
+inline constexpr ::fixy::TextView kRingName<facade::PmuSampleEvent>{"pmu_sample_timeline"};
+
+// True when the object holds the struct of Mirror with the layout of Mirror.
+// Reports a missing struct.
+template <class Mirror>
+[[nodiscard]] bool holds_struct_of(BtfTypes const& types) noexcept {
+    return find_struct(types, kStructName<Mirror>)
+        .match([&types](BtfType found) noexcept { return has_layout_of<Mirror>(types, found, kStructName<Mirror>); },
+               [] noexcept {
+                   ::fixy::report(::fixy::Sink::Err, "  the object holds no struct {}\n", kStructName<Mirror>);
+                   return false;
+               });
+}
+
+// True when the struct of a ring has the layout of detail::RingLayout of
+// crucible/perf/detail/BpfHub.h, which the facade maps: the header hdr at
+// byte 0, then the array events of Capacity events, and no other member.
+// Reports the first difference.
+template <class Header, class Event, std::uint32_t Capacity>
+[[nodiscard]] bool has_ring_layout(BtfTypes const& types, BtfType found) noexcept {
+    using Ring = perf::RingLayout<Header, Event, Capacity>;
+    if (found.record_count() != 2 || found.size_or_type() != Ring::bytes) {
+        ::fixy::report(::fixy::Sink::Err, "  {}: the struct has {} members of {} bytes, and the ring 2 of {} bytes\n",
+                       kRingName<Event>, found.record_count(), found.size_or_type(), Ring::bytes);
+        return false;
+    }
+    BtfMember const header = found.member(0);
+    BtfMember const events = found.member(1);
+    BtfType const array = types.type(events.type());
+    bool const is_header_same =
+        header.is_named("hdr") && header.bit_offset() == 0 && types.size_of_type(header.type()) == sizeof(Header);
+    bool const is_events_same = events.is_named("events") && events.bit_offset() == sizeof(Header) * 8
+                             && array.kind() == BtfKind::array && array.array_count() == Capacity
+                             && types.size_of_type(array.array_element()) == sizeof(Event);
+    if (!is_header_same || !is_events_same) {
+        ::fixy::report(::fixy::Sink::Err, "  {}: the struct is not a header of {} bytes and {} events of {} bytes\n",
+                       kRingName<Event>, sizeof(Header), Capacity, sizeof(Event));
+        return false;
+    }
+    return true;
+}
+
+// Compares the header, the event and the ring of the facade of one perf
+// program with the BTF of its object.  Complexity: linear in the types of the
+// object.
+template <class Header, class Event, std::uint32_t Capacity>
+void compare_ring_object(::fixy::TextView name, perf::ForeignBytes bytes) noexcept {
+    BtfTypes const types = btf_types_of(bytes);
+    assert(holds_struct_of<Header>(types));
+    assert(holds_struct_of<Event>(types));
+    bool const is_ring_same =
+        find_struct(types, kRingName<Event>)
+            .match([&types](BtfType found) noexcept { return has_ring_layout<Header, Event, Capacity>(types, found); },
+                   [] noexcept {
+                       ::fixy::report(::fixy::Sink::Err, "  the object holds no struct {}\n", kRingName<Event>);
+                       return false;
+                   });
+    assert(is_ring_same);
+    crucible::test::pass("  {}: {} types\n", name, types.count());
+}
+
+// The id of the type that the member of name of the definition of the map
+// counters points to, or no value.  The macros __uint and __type of
+// bpf_helpers.h write each member of the definition of a map as a pointer:
+// __uint(max_entries, N) as a pointer to an array of N, and __type(value, T)
+// as a pointer to T.  Complexity: linear in the types of the object.
+[[nodiscard]] ::fixy::Option<std::uint64_t> counters_member_target(BtfTypes const& types,
+                                                                   ::fixy::TextView member_name) noexcept {
+    for (std::size_t id = 1; id <= types.count(); ++id) {
+        BtfType const variable = types.type(id);
+        if (variable.kind() != BtfKind::variable || !variable.is_named("counters")) {
+            continue;
+        }
+        BtfType const definition = types.type(variable.size_or_type());
+        for (std::size_t index = 0; definition.kind() == BtfKind::structure && index < definition.record_count();
+             ++index) {
+            BtfMember const member = definition.member(index);
+            BtfType const pointer = types.type(member.type());
+            if (member.is_named(member_name) && pointer.kind() == BtfKind::pointer) {
+                return ::fixy::some(pointer.size_or_type());
+            }
+        }
+    }
+    return ::fixy::none;
+}
+
+// The map counters of the object of sense_hub holds NUM_COUNTERS words of 8
+// bytes, as the Snapshot of crucible/perf/SenseHub.h reads them.
+void compare_sense_hub_object() noexcept {
+    BtfTypes const types = btf_types_of(perf::sense_hub_bpf_object());
+    std::uint64_t const entries = counters_member_target(types, "max_entries")
+                                      .map([&types](std::uint64_t target) noexcept {
+                                          BtfType const array = types.type(target);
+                                          return array.kind() == BtfKind::array ? array.array_count() : 0;
+                                      })
+                                      .expect("the map counters of sense_hub states its max_entries");
+    std::uint64_t const word_bytes =
+        counters_member_target(types, "value")
+            .map([&types](std::uint64_t target) noexcept { return types.size_of_type(target); })
+            .expect("the map counters of sense_hub states its value");
+    if (entries != std::uint64_t{facade::NUM_COUNTERS} || word_bytes != sizeof(std::uint64_t)) {
+        ::fixy::report(::fixy::Sink::Err, "  counters: the map has {} entries of {} bytes, and the facade {} of {}\n",
+                       entries, word_bytes, std::uint64_t{facade::NUM_COUNTERS}, sizeof(std::uint64_t));
+    }
+    assert(entries == std::uint64_t{facade::NUM_COUNTERS} && word_bytes == sizeof(std::uint64_t));
+    crucible::test::pass("  sense_hub: {} types, {} counters\n", types.count(), entries);
+}
+
+void test_each_perf_object_agrees_with_its_facade() {
+    compare_sense_hub_object();
+    compare_ring_object<facade::TimelineHeader, facade::TimelineSchedEvent, facade::TIMELINE_CAPACITY>(
+        "sched_switch", perf::sched_switch_bpf_object());
+    compare_ring_object<facade::TimelineHeader, facade::TimelineSchedEvent, facade::TIMELINE_CAPACITY>(
+        "sched_tp_btf", perf::sched_tp_btf_bpf_object());
+    compare_ring_object<facade::TimelineHeader, facade::TimelineSyscallEvent, facade::TIMELINE_CAPACITY>(
+        "syscall_latency", perf::syscall_latency_bpf_object());
+    compare_ring_object<facade::TimelineHeader, facade::TimelineSyscallEvent, facade::TIMELINE_CAPACITY>(
+        "syscall_tp_btf", perf::syscall_tp_btf_bpf_object());
+    compare_ring_object<facade::TimelineHeader, facade::TimelineLockEvent, facade::TIMELINE_CAPACITY>(
+        "lock_contention", perf::lock_contention_bpf_object());
+    compare_ring_object<facade::PmuSampleHeader, facade::PmuSampleEvent, facade::PMU_SAMPLE_CAPACITY>(
+        "pmu_sample", perf::pmu_sample_bpf_object());
+    crucible::test::pass("  test_each_perf_object_agrees_with_its_facade: 7 objects\n");
+}
+
 }  // namespace
 
 int main() {
     ::fixy::report(::fixy::Sink::Out, "test_bpf_mirror_btf:\n");
     test_each_stub_object_agrees_with_its_mirrors();
+    test_each_perf_object_agrees_with_its_facade();
     crucible::test::pass("test_bpf_mirror_btf: all PASSED\n");
     return 0;
 }
