@@ -84,28 +84,69 @@ public:
 constexpr std::uint32_t kWaitSpinNanos = 2000;
 using WaitPolicy = c::SpinThenPark<kWaitSpinNanos>;
 
-// The two event counts of a case: a consumer waits on items, and each
-// producer notifies it after each push.  A producer waits on room, and the
-// consumer notifies it after each pop.
+// The two event counts of a case, and its stop.  A consumer waits on items,
+// and each producer notifies it after each push and at its end.  A producer
+// waits on room, and the consumer notifies it after each pop.
+//
+// THE STOP
+//   A side that finds a failure stops the case before it returns.  The stop
+//   stores its cell first and then wakes each waiter of the two counts, as
+//   the protocol of the event count asks.  Each wait also ends on the cell,
+//   and each producer loop then ends.  So a failure never leaves the other
+//   side parked, and the case ends at once with its message, not at the
+//   timeout of the test preset.  A case whose consumer runs in the scope of
+//   the threads holds a StopAtExit after them, so each path out of the scope
+//   stops the case before the joins.
 struct Waits {
     c::EventCount items{};
     c::EventCount room{};
+    ::fixy::Atomic<bool> is_stopped{false};
+
+    void stop(::fixy::BgLoadCtx const& ctx) noexcept {
+        is_stopped.store_release(true);
+        items.notify_all(ctx);
+        room.notify_all(ctx);
+    }
+
+    [[nodiscard]] bool should_stop() const noexcept { return is_stopped.load_acquire(); }
+};
+
+// Stops the case at the end of its scope (THE STOP).  The stop after the
+// last item changes nothing, because each producer pushed each of its items.
+class StopAtExit {
+public:
+    StopAtExit(::fixy::BgLoadCtx const& ctx, Waits& waits) noexcept : ctx_{ctx}, waits_{waits} {}
+    StopAtExit(StopAtExit const&) = delete("one guard stops one case");
+    StopAtExit& operator=(StopAtExit const&) = delete("one guard stops one case");
+    ~StopAtExit() { waits_.stop(ctx_); }
+
+private:
+    ::fixy::BgLoadCtx const& ctx_;
+    Waits& waits_;
 };
 
 // A push that waits for room.  push gives true when its items went in.  The
-// wait ends at the first push that goes in, and then the consumer wakes.
+// wait ends at the first push that goes in, and then the consumer wakes.  It
+// gives false when the case stopped before the push went in.
 template <class Push>
-void push_waiting(::fixy::BgLoadCtx const& ctx, Waits& waits, Push&& push) noexcept {
-    c::wait_for<WaitPolicy>(ctx, waits.room, push);
-    waits.items.notify_one(ctx);
+[[nodiscard]] bool push_waiting(::fixy::BgLoadCtx const& ctx, Waits& waits, Push&& push) noexcept {
+    bool is_pushed = false;
+    c::wait_for<WaitPolicy>(ctx, waits.room, [&push, &is_pushed, &waits]() noexcept {
+        is_pushed = push();
+        return is_pushed || waits.should_stop();
+    });
+    if (is_pushed) waits.items.notify_one(ctx);
+    return is_pushed;
 }
 
 // A pop that waits for an item or for the end of the stream.  pop gives true
 // when it took an item or when the stream ended.  Then each waiting producer
-// wakes, because a pop of a batch can free room for each of them.
+// wakes, because a pop of a batch can free room for each of them.  The wait
+// also ends when the case stopped, and the caller reads that from the state
+// of its pop.
 template <class Pop>
 void pop_waiting(::fixy::BgLoadCtx const& ctx, Waits& waits, Pop&& pop) noexcept {
-    c::wait_for<WaitPolicy>(ctx, waits.items, pop);
+    c::wait_for<WaitPolicy>(ctx, waits.items, [&pop, &waits]() noexcept { return pop() || waits.should_stop(); });
     waits.room.notify_all(ctx);
 }
 
@@ -284,6 +325,22 @@ using MpscWide = c::MpscRing<int, 128>;
     return 0;
 }
 
+// The pop of the consumer of a threaded SPSC case: an item, or the end of its
+// one producer.  The read of the end comes before the pop, so a pop after an
+// end that it read finds each item that the producer pushed.  A consumer that
+// waits for an item that the ring lost thus ends at the end of the producer.
+template <class Pop>
+[[nodiscard]] ::fixy::Option<int> pop_or_end(::fixy::BgLoadCtx const& ctx, Waits& waits,
+                                             ::fixy::Atomic<bool> const& has_producer_ended, Pop&& pop) noexcept {
+    ::fixy::Option<int> item = ::fixy::none;
+    pop_waiting(ctx, waits, [&item, &has_producer_ended, &pop]() noexcept {
+        bool const has_ended = has_producer_ended.load_acquire();
+        item = pop();
+        return item.is_some() || has_ended;
+    });
+    return item;
+}
+
 // Each role of the SPSC ring moves to a new thread after the last owner of
 // the role ended.  The new owner reads the caches that the last owner wrote,
 // and the join of the last owner orders those writes before the reads.  The
@@ -299,19 +356,23 @@ using MpscWide = c::MpscRing<int, 128>;
     int next_expected = 0;
     for (int turn = 0; turn < kTurns; ++turn) {
         const int first = turn * kPerTurn;
-        auto producer = [&ring, &waits, first](::fixy::BgLoadCtx const& bg) noexcept {
+        ::fixy::Atomic<bool> has_producer_ended{false};
+        auto producer = [&ring, &waits, &has_producer_ended, first](::fixy::BgLoadCtx const& bg) noexcept {
             for (int i = first; i < first + kPerTurn; ++i) {
-                push_waiting(bg, waits, [&ring, i]() noexcept { return ring.try_push(i); });
+                if (!push_waiting(bg, waits, [&ring, i]() noexcept { return ring.try_push(i); })) break;
             }
+            has_producer_ended.store_release(true);
+            waits.items.notify_all(bg);
         };
-        auto consumer = [&ring, &waits, &next_expected, first](::fixy::BgLoadCtx const& bg) noexcept {
+        auto consumer = [&ring, &waits, &next_expected, &has_producer_ended,
+                         first](::fixy::BgLoadCtx const& bg) noexcept {
             while (next_expected < first + kPerTurn) {
-                ::fixy::Option<int> item = ::fixy::none;
-                pop_waiting(bg, waits, [&ring, &item]() noexcept {
-                    item = ring.try_pop();
-                    return item.is_some();
-                });
-                if (std::move(item).expect("the wait ends at an item") != next_expected) return;
+                ::fixy::Option<int> item =
+                    pop_or_end(bg, waits, has_producer_ended, [&ring]() noexcept { return ring.try_pop(); });
+                if (std::move(item).value_or(-1) != next_expected) {
+                    waits.stop(bg);
+                    return;
+                }
                 ++next_expected;
             }
         };
@@ -320,7 +381,8 @@ using MpscWide = c::MpscRing<int, 128>;
                                              producer, consumer)
             .expect("the thread door starts the producer and the consumer of a turn");
         if (next_expected != first + kPerTurn) {
-            fixy::report(fixy::Sink::Err, "SPSC gave item {} out of order after a move of the roles\n", next_expected);
+            fixy::report(fixy::Sink::Err, "SPSC lost item {} or gave it out of order after a move of the roles\n",
+                         next_expected);
             return 1;
         }
     }
@@ -393,21 +455,26 @@ struct ProvenOwner final {
     // The door gives each body this context, and a body waits with it.
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
     Waits waits{};
-    auto producer = [&proven, &waits](::fixy::BgLoadCtx const& bg) noexcept {
+    ::fixy::Atomic<bool> has_producer_ended{false};
+    auto producer = [&proven, &waits, &has_producer_ended](::fixy::BgLoadCtx const& bg) noexcept {
         for (int i = 0; i < kItems; ++i) {
-            push_waiting(bg, waits,
-                         [&proven, i]() noexcept { return proven.try_push_proven(ProvenOwner::producer(), i); });
+            bool const is_pushed = push_waiting(
+                bg, waits, [&proven, i]() noexcept { return proven.try_push_proven(ProvenOwner::producer(), i); });
+            if (!is_pushed) break;
         }
+        has_producer_ended.store_release(true);
+        waits.items.notify_all(bg);
     };
     int next_expected = 0;
-    auto consumer = [&proven, &waits, &next_expected](::fixy::BgLoadCtx const& bg) noexcept {
+    auto consumer = [&proven, &waits, &next_expected, &has_producer_ended](::fixy::BgLoadCtx const& bg) noexcept {
         while (next_expected < kItems) {
-            fixy::Option<int> item = ::fixy::none;
-            pop_waiting(bg, waits, [&proven, &item]() noexcept {
-                item = proven.try_pop_proven(ProvenOwner::consumer());
-                return item.is_some();
+            fixy::Option<int> item = pop_or_end(bg, waits, has_producer_ended, [&proven]() noexcept {
+                return proven.try_pop_proven(ProvenOwner::consumer());
             });
-            if (std::move(item).value_or(-1) != next_expected) return;
+            if (std::move(item).value_or(-1) != next_expected) {
+                waits.stop(bg);
+                return;
+            }
             ++next_expected;
         }
     };
@@ -416,7 +483,7 @@ struct ProvenOwner final {
                                          producer, consumer)
         .expect("the thread door starts the producer and the consumer");
     if (next_expected != kItems) {
-        fixy::report(fixy::Sink::Err, "SPSC proven form gave item {} out of order\n", next_expected);
+        fixy::report(fixy::Sink::Err, "SPSC proven form lost item {} or gave it out of order\n", next_expected);
         return 1;
     }
     return 0;
@@ -623,11 +690,12 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
     {
         std::jthread producer([&ring, &producer_done, &ctx, &waits] {
             for (int i = 0; i < kItems; ++i) {
-                push_waiting(ctx, waits, [&ring, i]() noexcept { return ring.try_push(i); });
+                if (!push_waiting(ctx, waits, [&ring, i]() noexcept { return ring.try_push(i); })) break;
             }
             producer_done.store_release(true);
             waits.items.notify_all(ctx);
         });
+        StopAtExit const stop_at_exit{ctx, waits};
 
         while (received < kItems) {
             ::fixy::Option<int> item = ::fixy::none;
@@ -681,12 +749,15 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
         for (std::uint32_t p = 0; p < kProducers; ++p) {
             producers.emplace_back([&ring, &finished, &ctx, &waits, p] {
                 for (int i = 0; i < kPerProducer; ++i) {
-                    push_waiting(ctx, waits, [&ring, i, p]() noexcept { return ring.try_push(Plain{i, p}); });
+                    if (!push_waiting(ctx, waits, [&ring, i, p]() noexcept { return ring.try_push(Plain{i, p}); })) {
+                        break;
+                    }
                 }
                 static_cast<void>(finished.fetch_add_acq_rel(1));
                 waits.items.notify_all(ctx);
             });
         }
+        StopAtExit const stop_at_exit{ctx, waits};
 
         while (received < kTotal) {
             ::fixy::Option<Plain> popped = ::fixy::none;
@@ -769,12 +840,13 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
             producers.emplace_back([&ring, &finished, &ctx, &waits, p] {
                 Run<Plain, kCapacity> batch{};
                 int next = 0;
-                for (int round = 0; round < kRounds; ++round) {
-                    for (std::size_t form = 0; form < 2; ++form) {
+                bool is_pushed = true;
+                for (int round = 0; is_pushed && round < kRounds; ++round) {
+                    for (std::size_t form = 0; is_pushed && form < 2; ++form) {
                         const std::size_t size = form == 0 ? kCapacity : kPartial;
                         for (std::size_t i = 0; i < size; ++i)
                             batch.at(i) = Plain{next + static_cast<int>(i), p};
-                        push_waiting(ctx, waits, [&ring, &batch, size]() noexcept {
+                        is_pushed = push_waiting(ctx, waits, [&ring, &batch, size]() noexcept {
                             return ring.try_push_batch(batch.first(size)) == size;
                         });
                         next += static_cast<int>(size);
@@ -784,6 +856,7 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
                 waits.items.notify_all(ctx);
             });
         }
+        StopAtExit const stop_at_exit{ctx, waits};
 
         bool is_ordered = true;
         while (is_ordered && received < kTotal) {
@@ -806,14 +879,8 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
             // The wait ended at the end of the stream.
             if (got == 0 && !has_single) break;
         }
-        if (!is_ordered) {
-            // The producers wait for room, so the drain goes on until they end.
-            while (finished.load_acquire() != kProducers) {
-                static_cast<void>(ring.try_pop_batch(kNondet, drained.each()));
-                waits.room.notify_all(ctx);
-            }
-            return 1;
-        }
+        // The guard stops the producers that wait for room (THE STOP).
+        if (!is_ordered) return 1;
     }
 
     if (received != kTotal) {
