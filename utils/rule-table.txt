@@ -421,6 +421,29 @@ enforce src/ report
 enforce src/fixy/ error include
 enforce src/foundation/ error include
 enforce test/ report
+enforce test/bench_neg/ error
+enforce test/cipher_neg/ error
+enforce test/cntp_neg/ error
+enforce test/cog_neg/ error
+enforce test/dag_neg/ error
+enforce test/dataplane_neg/ error
+enforce test/effect_row_neg/ error
+enforce test/forge_neg/ error
+enforce test/kernel_neg/ error
+enforce test/memory_neg/ error
+enforce test/mimic_neg/ error
+enforce test/observe_neg/ error
+enforce test/perf_neg/ error
+enforce test/recipe_neg/ error
+enforce test/singleton_neg/ error
+enforce test/swiss_table_neg/ error
+enforce test/tensor_neg/ error
+enforce test/topology_neg/ error
+enforce test/trace_neg/ error
+enforce test/types_neg/ error
+enforce test/vessel_neg/ error
+enforce test/vigil_neg/ error
+enforce test/warden_neg/ error
 enforce utils/tools/ report
 enforce vessel/ report
 
