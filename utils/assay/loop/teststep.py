@@ -50,6 +50,17 @@ THE EMULATOR
     launched_program() gives the program of the command of a test to a
     reader of the tests of a build, such as assay.loop.affected.
 
+    The instruction count of a run behind an emulator holds the instructions
+    of the emulator: its translator and the host code that it makes from the
+    program.  That count does not measure the test, and a native build of the
+    same test runs a different count.  On 2026-11-19, each of the 256 parts of
+    test_core_storage_float_exhaustive ran 732 G to 744 G under qemu-aarch64,
+    above the limit of 600 G of the kind test.  Thus the launcher does not
+    judge the instruction count of a test behind an emulator, and the record
+    of the test keeps no count (emulated_run()).  So `guard write` of a cross
+    build reads no such count.  The launcher prints one line with the count
+    and the reason.  The peak memory of the run stays judged.
+
 THE LEVEL
     The configure gives a test of x86_64 the option --x86-level with the
     x86-64 level that its program needs, such as v3 for each test of the
@@ -701,6 +712,30 @@ def safely[T](action: Callable[[], T], fallback: T) -> T:
         return fallback
 
 
+def emulated_run(name: str, emulator: str, run: cost_meter.Measurement) -> cost_meter.Measurement:
+    """Return the measurement of a test behind an emulator with no count, and print the reason (THE EMULATOR).
+
+    The count of such a run holds the instructions of the emulator, so the judge and the record get no count.  The
+    other measures do not change.
+
+    Args:
+        name: The name of the test
+        emulator: The program of the emulator, the first word of the command
+        run: The measurement of the run, with its count or None
+    """
+    if run.instructions is None:
+        return run
+    print(
+        f"loop test-step: the test {name} ran behind the emulator {os.path.basename(emulator)}, so its "
+        f"{run.instructions / GIGA:.2f} G user instructions are instructions of the emulator.  The judge of "
+        f"{cost_budget.STEP_COST} reads no count of a test behind an emulator, and the record keeps none",
+        file=sys.stderr,
+    )
+    return cost_meter.Measurement(
+        run.exit_code, run.user_s, run.system_s, run.wall_s, run.peak_rss_kb, run.load, run.end, run.cpu_limit_s, None
+    )
+
+
 def judge_and_record(
     name: str,
     program: str,
@@ -708,6 +743,7 @@ def judge_and_record(
     build_dir: str | None,
     run: cost_meter.Measurement,
     budget: dict[str, float] | None = None,
+    emulator: str | None = None,
 ) -> int:
     """Judge one test, report each finding, write its record, and return the status that the test ends with.
 
@@ -722,10 +758,14 @@ def judge_and_record(
         build_dir: The build directory, or None for no record
         run: The measurement of the test, with its status
         budget: The limit of each rule, or None to read them from the registry (read_budget())
+        emulator: The program of the emulator in front of the program of the test, or None for a run with no
+            emulator (THE EMULATOR)
 
     Returns:
         The status of the test, or 1 when the judge rejects a test with the status 0
     """
+    if emulator is not None:
+        run = emulated_run(name, emulator, run)
     status = run.exit_code
     result = "passed" if status == 0 else "failed"
     thresholds = read_budget() if budget is None else budget
@@ -879,7 +919,8 @@ def main(argv: list[str]) -> int:
         sys.exit(127)
     if plan is not None:
         safely(lambda: plan.save(run.exit_code), None)
-    status = judge_and_record(name, program, place, build_dir, run, budget)
+    emulator = command[0] if program_at > 0 else None
+    status = judge_and_record(name, program, place, build_dir, run, budget, emulator)
     stop_core_dumps()
     cost_meter.end_like(status)
     return status

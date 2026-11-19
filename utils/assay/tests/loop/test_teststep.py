@@ -389,6 +389,48 @@ class Planted:
                 status == 2 and f"--emulator-words {words!r} is not a count" in said,
             )
 
+    def emulated_count_cases(self, expect: testing.Expect) -> None:
+        """Check that the launcher judges no instruction count of a test behind an emulator (THE EMULATOR).
+
+        The count of such a run holds the instructions of the emulator, so the run fails no row and no limit of the
+        kind test of step-cost, and its record keeps no count.  The peak memory of the run stays judged.
+        """
+        self.ledger("step-memory", "")
+        self.ledger("step-cost", "")
+        if not cost_meter.host_gives_counter():
+            expect("skip the cases of the count of an emulated test (this host: no counter)", True)
+            return
+        worker = self.plant_test(
+            "test_emulated_working",
+            f"#!{sys.executable} -S\ntotal = 0\nfor index in range(2_000_000):\n    total += index\n",
+        )
+        self.budget(2000, 0.0002)
+        status, said = self.launch(worker)
+        expect(
+            "the test runs above the limit of the kind test of step-cost with no emulator, and fails",
+            status == 1 and ": error: [step-cost] " in said,
+        )
+        status, said = self.launch_emulated("3", worker)
+        expect(
+            "the same test behind an emulator passes with no finding of step-cost, and one line names the emulator "
+            "and the reason",
+            status == 0
+            and "[step-cost]" not in said
+            and f"behind the emulator {self.emulator.name}" in said
+            and "instructions of the emulator" in said,
+        )
+        record = self._record_of("test_emulated_working")
+        expect(
+            "the record of the test behind an emulator keeps no instruction count, so a write of the ledger reads none",
+            record.get("result") == "passed" and self._count_of("test_emulated_working") is None,
+        )
+        self.budget(0, 0.0002)
+        status, said = self.launch_emulated("3", worker)
+        expect(
+            "a test behind an emulator above the memory limit still fails on step-memory",
+            status == 1 and ": error: [step-memory] " in said and "[step-cost]" not in said,
+        )
+
     def environment_cases(self, expect: testing.Expect) -> None:
         """Check that a test runs in the clean environment of the launcher (THE ENVIRONMENT)."""
         self.budget(2000)
@@ -1052,6 +1094,7 @@ def main(argv: list[str]) -> int:
             planted_group(Planted.ledger_cases),
             planted_group(Planted.core_cases),
             planted_group(Planted.emulator_cases),
+            planted_group(Planted.emulated_count_cases),
             planted_group(Planted.environment_cases),
             planted_group(Planted.level_cases),
             level_unit_cases,
