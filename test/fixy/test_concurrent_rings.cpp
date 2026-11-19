@@ -832,13 +832,16 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
 // The stale head needs many producers on the head line.  On the
 // development host, a gate that read a stale head as a full ring refused
 // pushes in three rounds of four with 64 producers, and almost never
-// with 8.
+// with 8.  The race is on the head, which each spacing of the cells shares,
+// so the ring takes the packed cells.  Then its 2^18 cells take 4 MB and not
+// 16 MB, and under tsan a round faults in a third of the pages.
 namespace never_full {
 
 constexpr std::uint32_t kProducers = 64;
 constexpr std::uint64_t kPushesPerProducer = 4000;
 constexpr std::size_t kBatch = 4;
 constexpr std::size_t kCapacity = std::size_t{1} << 18;
+using Ring = c::MpscRing<std::uint64_t, kCapacity, c::CellSpacing::packed>;
 constexpr int kRounds = 4;
 // The pushes of a producer between two wakes of the consumer.
 constexpr std::uint64_t kNotifyEvery = 64;
@@ -848,8 +851,7 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
 
 [[nodiscard]] int mpsc_never_full_round() {
     using namespace never_full;
-    ::fixy::Box<c::MpscRing<std::uint64_t, kCapacity>> ring =
-        ::fixy::mint_box<c::MpscRing<std::uint64_t, kCapacity>>(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<Ring> ring = ::fixy::mint_box<Ring>(::foundation::effects::testing::test().alloc);
     ::fixy::Atomic<std::uint64_t> refused{0};
     ::fixy::Atomic<std::uint64_t> accepted{0};
     ::fixy::Atomic<std::uint32_t> finished{0};
