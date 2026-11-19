@@ -5112,6 +5112,12 @@ fixy_test(test_handle_lazy_channel)
 fixy_neg_compile_test(neg_handle_lazy_channel_mint_without_context
   "no matching function for call to .fixy::channels::LazyEstablishedChannel<.*>::mint_established_session\\(int\\)."
   "IsExecCtx")
+fixy_neg_compile_test(neg_published_mint_without_a_proof
+  "required for the satisfaction of .CanPublish<Proof, T>. \\[with Proof = <unnamed>::NamesNothing. T = <unnamed>::Plain\\]"
+  "no matching function for call to .mint_published")
+fixy_neg_compile_test(neg_published_mint_of_a_shared_write
+  "required for the satisfaction of .Shareable<const T>. \\[with T = <unnamed>::HoldsBorrow\\]"
+  "no matching function for call to .mint_published")
 fixy_neg_compile_test(neg_handle_lazy_channel_mint_context_lacks_io
   "no matching function for call to .fixy::channels::LazyEstablishedChannel<.*>::mint_established_session"
   "CtxFitsSession")

@@ -235,6 +235,12 @@ that the axis does not apply to the row.
 | `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 23 |
 | `mint_swmr_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
+## include/fixy/handle/
+
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_published` | `include/fixy/handle/Published.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+
 ## include/fixy/os/
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
@@ -379,4 +385,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 80 | 46 | 25 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 155 | 61 | 90 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 156 | 61 | 91 | 4 | 0 | 3 |

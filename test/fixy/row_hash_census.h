@@ -67,6 +67,7 @@
 #include <fixy/GradedFacade.h>
 #include <fixy/handle/Once.h>
 #include <fixy/handle/PublishOnce.h>
+#include <fixy/handle/Published.h>
 #include <fixy/Insights.h>
 #include <fixy/Machine.h>
 #include <fixy/Mutation.h>
@@ -939,6 +940,11 @@ inline constexpr StatedZero kZeros[] = {
      "the blocks of an arena: it holds storage and makes no claim about the objects in it"},
     {^^::foundation::core::Ref,
      "a borrow of one object: it owns nothing and makes no claim about what the object holds"},
+    {^^::fixy::handle::published_key,
+     "the proof that mint_published builds a Published: it lives for one call, and holds nothing"},
+    {^^::fixy::handle::PublishedObject,
+     "a borrow of one object that its stage published: it owns nothing and makes no claim about what the object "
+     "holds"},
     {^^::foundation::core::Link,
      "an optional borrow of one object: it owns nothing and makes no claim about what the object holds"},
     {^^::foundation::core::LinkCursor,
