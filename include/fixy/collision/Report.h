@@ -216,97 +216,10 @@ template <class Site>
 }
 
 // ---------------------------------------------------------------------
-// The pin that reads the implementation rather than the specification.
-//
-// live_rules names one `<code>_ok` member per rule it implements.  Two
-// checks in the check file of this header walk those members: the first
-// asks that every code the corpus calls Live has one, the second that no
-// `_ok` member exists without a Live entry.  Together they bind the corpus to the code that
-// actually runs, which is the step that `live == roster - pending`
-// arithmetic skips.
-
-namespace detail {
-
-[[nodiscard]] consteval bool member_is_the_gate_for_(std::meta::info member, std::string_view code) noexcept {
-    if (!std::meta::has_identifier(member)) return false;
-    const std::string_view id = std::meta::identifier_of(member);
-    return id.size() == code.size() + 3 && id.starts_with(code) && id.ends_with("_ok");
-}
-
-template <class Anchor = void>
-[[nodiscard]] consteval std::size_t implemented_rule_count_() noexcept {
-    std::size_t found = 0;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto member : std::define_static_array(
-                      static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
-                          std::meta::members_of(^^rules_of<void>, std::meta::access_context::unchecked())))) {
-        if constexpr (std::meta::has_identifier(member)) {
-            if constexpr (std::meta::identifier_of(member).ends_with("_ok")) {
-                ++found;
-            }
-        }
-    }
-#pragma GCC diagnostic pop
-    return found;
-}
-
-template <class Anchor = void>
-[[nodiscard]] consteval bool every_live_entry_is_implemented_() noexcept {
-    for (const corpus_entry& entry : rule_corpus) {
-        if (entry.disposition != Disposition::Live) continue;
-        bool implemented = false;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-        template for (constexpr auto member : std::define_static_array(
-                          static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
-                              std::meta::members_of(^^rules_of<void>, std::meta::access_context::unchecked())))) {
-            if (member_is_the_gate_for_(member, entry.code)) implemented = true;
-        }
-#pragma GCC diagnostic pop
-        if (!implemented) return false;
-    }
-    return true;
-}
-
-}  // namespace detail
-
-// The verdict rows are the third hand-written list of the same set, and
-// two pins in the check file of this header bind it to the other two.
-// The count is against the member walk rather than against
-// live_rule_count so that a rule written with an `_ok` member and no
-// verdict row is named even before it reaches the corpus.
-namespace detail {
-
-template <class Anchor = void>
-[[nodiscard]] consteval bool every_ok_member_has_a_verdict_row_() noexcept {
-    bool all_rowed = true;
-    // The list of codes is read one time, before the walk.  A call inside
-    // the expansion statement builds the list again for each member.  The
-    // payload depends on Anchor, so only a call instantiates the class.
-    constexpr std::string_view every_live_code =
-        rules_of<::foundation::reflect::anchored_t<^^Anchor, void>>::every_code();
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto member : std::define_static_array(
-                      static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
-                          std::meta::members_of(^^rules_of<void>, std::meta::access_context::unchecked())))) {
-        if constexpr (std::meta::has_identifier(member)) {
-            constexpr std::string_view id = std::meta::identifier_of(member);
-            if constexpr (id.size() > 3 && id.ends_with("_ok")) {
-                // The trailing space is what keeps a code from matching
-                // inside a longer one.
-                std::string wanted{id.substr(0, id.size() - 3)};
-                wanted += ' ';
-                if (!::fixy::detail::text_contains(every_live_code, wanted)) all_rowed = false;
-            }
-        }
-    }
-#pragma GCC diagnostic pop
-    return all_rowed;
-}
-
-}  // namespace detail
+// The rules that run are the rows of the rule table of
+// fixy/collision/Codes.h.  The table names one row for each enumerator of
+// RuleCode, and the check file of that header binds the corpus to the
+// enumerators and the rows.  So no member walk here compares a third list.
 
 }  // namespace collision
 

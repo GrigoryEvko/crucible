@@ -189,7 +189,8 @@ public:
     // gets an answer, which the silent-default design would otherwise
     // hide.
     template <Axis A>
-    static constexpr bool mentions_axis = (detail::reject::count_on_axis_<A, Atoms...>() > 0);
+    static constexpr bool mentions_axis =
+        ::fixy::collision::detail::pack_record_v<Atoms...>.atoms_on[::fixy::collision::detail::axis_slot_<A>()] > 0;
 
     static constexpr std::size_t atom_count = sizeof...(Atoms);
 

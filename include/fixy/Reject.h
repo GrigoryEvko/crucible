@@ -78,51 +78,21 @@ concept AllAtomsWellFormed = (::fixy::atom::IsAtom<Atoms> && ...);
 
 namespace detail::reject {
 
-// An expansion statement declares its variable once per expansion, and
-// each declaration shadows the one before it.  The warning is correct
-// about the shape and wrong about the risk: the walks below read the
-// binding and never the outer one.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-
-// The pack as reflections, from the one helper in fixy/Collision.h.  An
-// empty pack gives an empty array, and each walk below does zero
-// iterations.
-using ::fixy::collision::detail::pack_entries_;
-
-// How many atoms in the pack sit on one axis.  Counting rather than
-// testing for a second lets the duplicate diagnostic say how many.
-template <Axis A, class... Atoms>
-[[nodiscard]] consteval std::size_t count_on_axis_() noexcept {
-    std::size_t count = 0;
-    static constexpr auto entries = pack_entries_<Atoms...>();
-    template for (constexpr auto entry : entries) {
-        using Candidate = [:entry:];
-        // A type that is not an atom states no axis the walk may read.
-        // Tier 2 refuses it, and this walk must not add a second error.
-        if constexpr (::fixy::atom::IsAtom<Candidate>) {
-            if constexpr (Candidate::axis == A) ++count;
-        }
-    }
-    return count;
-}
+// Both answers read the record of the pack in fixy/Collision.h, which one
+// walk of the pack gives.  A type that is not an atom states no axis the
+// walk may read, so the walk counts no axis for it.  Tier 2 refuses it,
+// and tier 4 must not add a second error.
 
 // The first axis carrying more than one atom, or axis_count when every
 // axis carries at most one.  The walk is over the axes rather than over
 // the pack, so the answer is an axis and the diagnostic can name it.
+// Complexity: the axis count.
 template <class... Atoms>
 [[nodiscard]] consteval std::size_t first_duplicated_axis_() noexcept {
-    std::size_t offender = ::fixy::axis_count;
-    using axis_list =
-        ::foundation::reflect::anchored_t<std::meta::reflect_constant(sizeof...(Atoms)), std::vector<std::meta::info>>;
-    template for (constexpr auto axis_member :
-                  std::define_static_array(static_cast<axis_list>(std::meta::enumerators_of(^^Axis)))) {
-        constexpr Axis axis = [:axis_member:];
-        if (offender == ::fixy::axis_count && count_on_axis_<axis, Atoms...>() > 1) {
-            offender = static_cast<std::size_t>(std::to_underlying(axis));
-        }
+    for (std::size_t place = 0; place < ::fixy::axis_count; ++place) {
+        if (::fixy::collision::detail::pack_record_v<Atoms...>.atoms_on[place] > 1) return place;
     }
-    return offender;
+    return ::fixy::axis_count;
 }
 
 // The first pack entry that is not an atom, as a reflection, or the
@@ -130,20 +100,8 @@ template <class... Atoms>
 // is not nameable as one, so it cannot collide with a real answer.
 template <class... Atoms>
 [[nodiscard]] consteval std::meta::info first_malformed_atom_() noexcept {
-    std::meta::info offender = ^^void;
-    static constexpr auto entries = pack_entries_<Atoms...>();
-    template for (constexpr auto entry : entries) {
-        using Candidate = [:entry:];
-        if constexpr (!::fixy::atom::IsAtom<Candidate>) {
-            if (offender == ^^void) {
-                offender = entry;
-            }
-        }
-    }
-    return offender;
+    return ::fixy::collision::detail::pack_record_v<Atoms...>.first_malformed;
 }
-
-#pragma GCC diagnostic pop
 
 }  // namespace detail::reject
 
