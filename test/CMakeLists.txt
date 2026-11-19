@@ -3333,6 +3333,17 @@ crucible_neg_compile_test(neg_types_hash_family_cross_lane
   "static assertion failed"
   "the expression .is_same_v<typename crucible::hash_family_of<[A-Za-z_][A-Za-z0-9_]*>::family, crucible::hash_family::FamilyB> .with HashT = crucible::ContentHash.. evaluated to .false.")
 
+# A forward declaration before the header of a type marks the type in that
+# unit only.  -fannotations-on-definition-only (the seventh GCC patch) makes
+# its annotation an error, so no unit can mark a type of a header linear or
+# give it the annotation authority.
+crucible_neg_compile_test(neg_types_forward_declaration_marks_linear
+  "annotation on a declaration of .* that is not its definition"
+  "annotation on a declaration of .crucible::OpDepth. that is not its definition")
+crucible_neg_compile_test(neg_types_forward_declaration_marks_authority
+  "annotation on a declaration of .* that is not its definition"
+  "annotation on a declaration of .crucible::StorageGeneration. that is not its definition")
+
 # ─── Philox op_key DetSafe gate neg-compiles (2 fixtures) ───────────
 #
 # The raw per-op key derivation API is not public.  Production callers
