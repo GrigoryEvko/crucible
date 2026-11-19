@@ -114,6 +114,7 @@ bench/ | opted-out | 25 | MEASURE: the raw forms of the state of the art are the
 bench/ | opted-out | 29 | MEASURE: the raw loop and the ranges form are the references of each walk | -
 bench/ | opted-out | 3 | MEASURE: the raw loop of the add is the reference of the parallel walk | -
 bench/ | opted-out | 3 | MEASURE: the raw loop over two strides is the baseline of the strided walk | a raw loop over two strides that it reads at run time is the baseline of the strided walk in bench_core_strided, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
+bench/ | opted-out | 11 | MEASURE: the rows of the bare rings run their workers on std::jthread | the rows of bench_thread_scaling measure the bare rings and their pinned references, whose two sides share plain positions that no type states, so their workers run on std::jthread and pin themselves
 bench/ | opted-out | 28 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
@@ -140,6 +141,7 @@ bench/ | region | 1 | MEASURE: the raw forms of the state of the art are the ref
 bench/ | region | 1 | MEASURE: the raw loop and the ranges form are the references of each walk | -
 bench/ | region | 1 | MEASURE: the raw loop of the add is the reference of the parallel walk | -
 bench/ | region | 1 | MEASURE: the raw loop over two strides is the baseline of the strided walk | a raw loop over two strides that it reads at run time is the baseline of the strided walk in bench_core_strided, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
+bench/ | region | 1 | MEASURE: the rows of the bare rings run their workers on std::jthread | the rows of bench_thread_scaling measure the bare rings and their pinned references, whose two sides share plain positions that no type states, so their workers run on std::jthread and pin themselves
 bench/ | region | 1 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -

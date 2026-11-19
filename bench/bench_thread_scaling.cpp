@@ -37,8 +37,16 @@
 //   A row of N threads runs the op on N threads at the same time, one thread
 //   on the CPU of each slot 0 to N - 1 of the spread of the run (THE SPREAD
 //   OF A RUN of bench/bench_harness.h).  Slot 0 is the main thread, a
-//   producer.  Each other slot is a worker of mint_owned_thread of
-//   fixy/os/OwnedThread.h, with the CPU of its slot as its affinity.
+//   producer.  Each other slot is a worker on a std::jthread, which pins
+//   itself to the CPU of its slot (THE RAW WORKERS).
+//
+// THE RAW WORKERS
+//   The rows measure the bare rings of fixy/concurrent/ and their pinned
+//   references.  The threads of a row share the rings of RowState, and a
+//   ring keeps plain positions that one side writes and the other reads.  No
+//   type of the base states that, so no door of the base can check the
+//   workers.  The rows thus keep the raw rings and raw threads as a
+//   measurement, in a MEASURE region.
 //
 // THE PHASES OF A ROW
 //   1. The window: each thread runs the op and counts it for kWindowNs.  The
@@ -94,13 +102,13 @@
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/SpscRing.h>
 #include <fixy/os/Args.h>
-#include <fixy/os/OwnedThread.h>
-#include <fixy/os/ThreadTasks.h>
 #include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <thread>
 #include <utility>
 
 #include "bench_harness.h"
@@ -109,8 +117,6 @@ namespace {
 
 namespace eff = ::foundation::effects;
 
-// The context that starts the workers: Bg for the threads, Alloc for their frames.
-using Starter = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 using Item = std::uint64_t;
 
 // The threads of one row, at most.  The command of the owner runs 224.
@@ -605,32 +611,58 @@ template <OpKind Kind>
     return spread.of_slot(slot).expect("a row has at most the slots of the spread");
 }
 
+}  // namespace
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the rows of the bare rings run their workers on std::jthread")
+namespace {
+
+// The workers of one row, one std::jthread for each slot from slot 1 on (THE
+// RAW WORKERS).  A worker pins itself to the CPU of its slot before it runs.
+// The join waits for each worker, and the end of the row calls it after the
+// stop.
+class RawWorkers {
+public:
+    template <OpKind Kind>
+    void start(RowState& state, bench::Spread const& spread, ThreadCount threads, ConsumerPlace place) {
+        std::uint32_t const consumer_slot = kHasConsumer<Kind> ? threads.raw() - 1 : threads.raw();
+        for (std::uint32_t slot = 1; slot < threads.raw(); ++slot) {
+            Role const role = slot == consumer_slot ? Role::Consumer : Role::Producer;
+            ThreadLine& line = line_of(state, bench::ThreadSlot{slot});
+            bench::CpuId const cpu = cpu_of_slot(spread, bench::ThreadSlot{slot}, role, place);
+            threads_[slot] = std::jthread{[&state, &line, role, cpu]() noexcept {
+                bench::CoreHold const hold{cpu};
+                if (role == Role::Consumer) {
+                    run_consumer<Kind>(state, line);
+                } else {
+                    run_producer<Kind>(state, line);
+                }
+            }};
+        }
+    }
+
+    void join() noexcept {
+        for (std::jthread& thread : threads_) {
+            if (thread.joinable()) thread.join();
+        }
+    }
+
+private:
+    std::array<std::jthread, kMaxThreads> threads_{};
+};
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+namespace {
+
 // Runs one row of an op on the first threads.count slots of the spread.
 template <OpKind Kind>
 [[nodiscard]] RowResult run_row(bench::Spread const& spread, ThreadCount threads, ConsumerPlace place) {
     RowState state{};
     for (::fixy::Index<kBatch> const index : state.batch.indices())
         state.batch.at(index) = Item{index.raw() + 1};
-    std::uint32_t const consumer_slot = kHasConsumer<Kind> ? threads.raw() - 1 : threads.raw();
-    ::fixy::FixedList<::fixy::thread::OwnedThread, kMaxThreads> workers{};
-    for (std::uint32_t slot = 1; slot < threads.raw(); ++slot) {
-        Role const role = slot == consumer_slot ? Role::Consumer : Role::Producer;
-        ThreadLine& line = line_of(state, bench::ThreadSlot{slot});
-        ::fixy::thread::ThreadOptions const options{
-            .name = "scaling-worker",
-            .affinity = ::fixy::AffinityMask::single(
-                static_cast<std::uint16_t>(cpu_of_slot(spread, bench::ThreadSlot{slot}, role, place).raw())),
-        };
-        ::fixy::thread::OwnedThread worker =
-            ::fixy::thread::mint_owned_thread(Starter{eff::testing::bg()}, options, [&state, &line, role]() noexcept {
-                if (role == Role::Consumer) {
-                    run_consumer<Kind>(state, line);
-                } else {
-                    run_producer<Kind>(state, line);
-                }
-            }).expect("the thread door starts a worker of a row");
-        static_cast<void>(workers.append(std::move(worker)).expect("a row has at most kMaxThreads threads"));
-    }
+    RawWorkers workers{};
+    workers.start<Kind>(state, spread, threads, place);
     while (state.ready.value.load_acquire() + 1 < threads.raw())
         CRUCIBLE_SPIN_PAUSE;
 
@@ -672,9 +704,7 @@ template <OpKind Kind>
                          .measure([&state, &own] { run_op<Kind>(state, own); });
     if (threads.raw() <= 16) bench::print_thread_cpus("the row");
     state.phase.phase.store_release(Phase::Stop);
-    for (::fixy::thread::OwnedThread& worker : workers) {
-        std::move(worker).join();
-    }
+    workers.join();
     return result;
 }
 
