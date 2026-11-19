@@ -2317,11 +2317,7 @@ else()
 endif()
 # qemu user mode runs no handler of the base on an overflowed thread of the
 # thread door, and the attack test accepts that only under the emulator.
-if(CMAKE_CROSSCOMPILING_EMULATOR)
-  target_compile_definitions(test_session_handle_attacks PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=1)
-else()
-  target_compile_definitions(test_session_handle_attacks PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=0)
-endif()
+crucible_test_reads_emulator(test_session_handle_attacks)
 
 # Delegation moves a live handle into a message and keeps its watch
 # record live.  The keys of the private surfaces have the sealed shape of
@@ -5137,6 +5133,10 @@ fixy_neg_compile_test(neg_handle_lazy_init_explicit_conversion
 # runtime smoke test and do not name foundation::effects::testing, so a
 # translation unit that includes one compiles no test.
 fixy_test(test_os_time)
+# Under qemu user mode, /proc/self/task/ID/syscall gives the number of the
+# host call of the emulator.  The test skips the case that reads it only
+# under the emulator.
+crucible_test_reads_emulator(test_os_time)
 
 # The gate and the clamp of the monotonic clock in fixy/os/Time.h.  A
 # clock gives a value that changes from run to run.  So only a context
@@ -5254,11 +5254,7 @@ fixy_test(test_os_sched)
 fixy_test(test_os_pages)
 # qemu-user has no mlock2, and it refuses the THP options of prctl with
 # einval.  The page test accepts those two refusals only under the emulator.
-if(CMAKE_CROSSCOMPILING_EMULATOR)
-  target_compile_definitions(test_os_pages PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=1)
-else()
-  target_compile_definitions(test_os_pages PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=0)
-endif()
+crucible_test_reads_emulator(test_os_pages)
 
 # A SCHED_DEADLINE class carries its CBS budget in the type.  A budget
 # that the kernel does not admit fails the class-body static_assert at the
@@ -5569,10 +5565,16 @@ fixy_neg_compile_test(neg_os_mmap_anon_non_ctx
 # a copy, bytes through std::bit_cast and through the checked lifetime
 # start, a shared region, and two contexts that do not own IO and Block.
 fixy_test(test_os_numa_placement)
+# qemu user mode has no get_mempolicy, and the test accepts its enosys only
+# under the emulator.
+crucible_test_reads_emulator(test_os_numa_placement)
 
 # The census of the node of each page of a range, and the allocation
-# counters of a node, run against the kernel.
+# counters of a node, run against the kernel.  qemu user mode has no
+# move_pages, and the test skips the census only on its enosys under the
+# emulator.
 fixy_test(test_os_numa_query)
+crucible_test_reads_emulator(test_os_numa_query)
 
 fixy_neg_compile_test(neg_os_numa_placement_default_ctor
   "use of deleted function"
@@ -5759,11 +5761,7 @@ fixy_test(test_os_socket)
 # qemu user mode has no SO_MAX_PACING_RATE, no SO_TIMESTAMPING and no
 # SIOCSHWTSTAMP, and it answers TCP_INFO with four bytes.  The socket test
 # accepts those answers only under the emulator.
-if(CMAKE_CROSSCOMPILING_EMULATOR)
-  target_compile_definitions(test_os_socket PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=1)
-else()
-  target_compile_definitions(test_os_socket PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=0)
-endif()
+crucible_test_reads_emulator(test_os_socket)
 fixy_neg_compile_test(neg_os_socket_ctx_lacks_block
   "no matching function for call"
   "mint_socket<fixy::net::socket_kind::NetlinkRoute>\\(\\{anonymous\\}::IoOnlyCtx&\\)")
@@ -6118,8 +6116,11 @@ fixy_neg_compile_test(neg_thread_name_holds_a_zero_byte
 # test_os_futex waits and wakes through the futex door of fixy/os/Futex.h,
 # with and with no deadline, and sends a signal to a thread that waits.  The
 # door takes a context that owns Block for a wait and for a wake, and a
-# deadline comes only from a reader of CLOCK_MONOTONIC.
+# deadline comes only from a reader of CLOCK_MONOTONIC.  Under qemu user
+# mode, /proc/self/task/ID/syscall gives the number of the host call of the
+# emulator, so the test skips the case that reads it only under the emulator.
 fixy_test(test_os_futex)
+crucible_test_reads_emulator(test_os_futex)
 
 # test_os_fp_control puts each mode into a word of the FP control register
 # and reads it back, and it runs one kernel with flush to zero and one

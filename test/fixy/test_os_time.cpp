@@ -12,6 +12,7 @@
 // of static_asserts masks the bugs that appear when a body is
 // instantiated for runtime evaluation rather than folded.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
@@ -143,6 +144,10 @@ namespace {
 using BootU64 = fixy::BootClockBytes<std::uint64_t>;
 using MonoU64 = fixy::MonotonicClockBytes<std::uint64_t>;
 using foundation::os::Errno;
+
+// True when the test runs under the emulator of a cross build, qemu user mode
+// (test/fixy/CMakeLists.txt sets the definition).
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
 
 // The read of each reader takes the bare tag of Nondet, and a test context
 // gives it.
@@ -339,6 +344,15 @@ using BgWitness = fixy::BgObserveCtx;
 // that time.  The count of the reads has a bound, so a fault fails the test
 // and does not hang it.
 [[nodiscard]] int handler_runs_during_a_sleep() {
+    // Under qemu user mode, /proc/self/task/ID/syscall gives the number of the
+    // host call of the emulator, such as 230 for the clock_nanosleep of
+    // x86_64, and not 115 of aarch64.  The signaller then never sees the
+    // sleeper asleep, and it sends no signal.  A real kernel gives the number
+    // of the call of the program.
+    if (kIsUnderEmulator) {
+        ::fixy::report(::fixy::Sink::Err, "handler_runs_during_a_sleep: SKIPPED (qemu-user)\n");
+        return 0;
+    }
     constexpr std::uint64_t sleep_nanos = 1000000000;
     using ThreadCtx = ::fixy::BgLoadCtx;
     ThreadCtx const ctx{eff::testing::bg()};

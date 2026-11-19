@@ -5,6 +5,7 @@
 // route of the primitive marks a futex wait as a blocking call (THE
 // SANITIZERS of foundation/os/Syscall.h).
 
+#include <fixy/Core.h>
 #include <fixy/os/Futex.h>
 #include <fixy/os/ThreadTasks.h>
 #include <fixy/os/Time.h>
@@ -19,6 +20,10 @@
 #include <cstdint>
 
 namespace {
+
+// True when the test runs under the emulator of a cross build, qemu user mode
+// (test/fixy/CMakeLists.txt sets the definition).
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
 
 // The count of the runs of the handler of the signal test.  A store to an
 // atomic word is safe in a handler.
@@ -286,6 +291,15 @@ int main() {
     test_a_deadline_ends_the_wait();
     test_a_wake_ends_the_wait();
     test_a_signal_reaches_a_waiter();
-    test_a_signal_interrupts_a_waiter();
+    // Under qemu user mode, /proc/self/task/ID/syscall gives the number of the
+    // host call of the emulator, such as 202 for the futex call of x86_64,
+    // and not 98 of aarch64.  The case then never sees the waiter asleep in
+    // the futex call.  A real kernel gives the number of the call of the
+    // program.
+    if (kIsUnderEmulator) {
+        ::fixy::report(::fixy::Sink::Err, "test_a_signal_interrupts_a_waiter: SKIPPED (qemu-user)\n");
+    } else {
+        test_a_signal_interrupts_a_waiter();
+    }
     return 0;
 }

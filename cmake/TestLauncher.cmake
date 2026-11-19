@@ -91,6 +91,23 @@ function(crucible_script_test)
   add_test(NAME "${_script_NAME}" COMMAND ${_script_launcher} ${_script_COMMAND} ${_script_options})
 endfunction()
 
+# crucible_test_reads_emulator(<target>)
+#
+# Give the target the definition CRUCIBLE_TEST_UNDER_EMULATOR: 1 when ctest
+# runs its test through the emulator of a cross build, such as qemu-user, and
+# 0 in each other build.  The condition is the condition of the option
+# --emulator-words of the launcher below.  A test reads the definition to
+# accept an answer that only the emulator gives, and a comment states the
+# answer and its reason.  Each other case of the test runs under the emulator.
+function(crucible_test_reads_emulator target)
+  cmake_policy(GET CMP0158 _emulator_policy)
+  if(CMAKE_CROSSCOMPILING_EMULATOR AND (CMAKE_CROSSCOMPILING OR NOT _emulator_policy STREQUAL "NEW"))
+    target_compile_definitions(${target} PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=1)
+  else()
+    target_compile_definitions(${target} PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=0)
+  endif()
+endfunction()
+
 find_program(CRUCIBLE_PYTHON3 NAMES python3 DOC "The Python interpreter of the build launcher")
 if(NOT CRUCIBLE_PYTHON3)
   message(WARNING "The test launcher `loop test-step` needs python3, and no python3 is on PATH, so no test writes a "

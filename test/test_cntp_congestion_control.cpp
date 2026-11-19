@@ -19,6 +19,23 @@ struct UserCc {
     static consteval ::fixy::TextView congestion_control_name() noexcept { return "user_cc"; }
 };
 
+// True when the test runs under the emulator of a cross build, qemu user mode
+// (test/CMakeLists.txt sets the definition).
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
+
+// True when the emulator refused the name of choice.  qemu user mode gives
+// TCP_CONGESTION the four bytes of an int, so a name of more than four
+// characters reaches the kernel cut, and the kernel answers enoent.  A real
+// kernel takes each name of its list.
+[[nodiscard]] bool is_emulator_refusal(::fixy::InitLoadCtx const& load, cntp::SocketFd fd,
+                                       cntp::DeclaredCcChoice const& choice) {
+    if (!kIsUnderEmulator) return false;
+    return ::fixy::net::set_tcp_congestion(load, fd, choice.value().kernel_name.view())
+               .err()
+               .value_or(::foundation::os::Errno{})
+        == ::foundation::os::Errno::enoent;
+}
+
 // The value of a call that succeeds in this test.
 template <class Value>
 Value take(::fixy::Result<Value, cntp::CcError> result) {
@@ -130,7 +147,13 @@ void test_live_socket_roundtrip_if_available() {
     }
     cntp::DeclaredCcChoice const chosen = take(std::move(choice));
 
-    assert(cntp::set_cc_for_socket(load, fd, chosen).is_ok());
+    auto const set = cntp::set_cc_for_socket(load, fd, chosen);
+    if (set.is_err() && is_emulator_refusal(load, fd, chosen)) {
+        ::fixy::report(::fixy::Sink::Out,
+                       "  test_live_socket_roundtrip_if_available: SKIPPED (qemu-user cuts the name to an int)\n");
+        return;
+    }
+    assert(set.is_ok());
 
     // The kernel echoes back the name it was given, and the reverse
     // mapping is one-to-one per BBR version, so the query returns the

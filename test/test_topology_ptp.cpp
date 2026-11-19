@@ -15,6 +15,10 @@ namespace cog = crucible::cog;
 namespace eff = ::fixy;
 namespace topology = crucible::topology;
 
+// True when the test runs under the emulator of a cross build, qemu user mode
+// (test/CMakeLists.txt sets the definition).
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
+
 // A background context that may block on the file system, which is what
 // opening /dev/ptpN needs, and that reads a clock and a socket.
 using BgFsCtx = ::foundation::effects::ExecCtx<
@@ -290,7 +294,19 @@ static void test_socket_calls() {
         [](::foundation::os::Errno) -> TcpSocket { return TcpSocket{}; });
     assert(tcp.is_open());
     crucible::cntp::SocketFd const sock_fd = ::fixy::net::share_socket(tcp.ref());
-    assert(topology::enable_socket_timestamping(bg_fs, sock_fd).is_ok());
+    // qemu user mode has no SO_TIMESTAMPING, and the door of the socket gives
+    // its enoprotoopt.  A real kernel takes the option.  The receive below
+    // needs no stamps, so it runs in each case.
+    auto const stamping = topology::enable_socket_timestamping(bg_fs, sock_fd);
+    bool const is_emulator_refusal =
+        kIsUnderEmulator && stamping.is_err()
+        && ::fixy::net::set_socket_timestamping(bg_fs, sock_fd).err().value_or(::foundation::os::Errno{})
+               == ::foundation::os::Errno::enoprotoopt;
+    assert(stamping.is_ok() || is_emulator_refusal);
+    if (is_emulator_refusal) {
+        ::fixy::report(::fixy::Sink::Out,
+                       "  test_socket_calls: the stamps SKIPPED (qemu-user has no SO_TIMESTAMPING)\n");
+    }
 
     crucible::cntp::NicInterfaceName const lo =
         crucible::cntp::NicInterfaceName::from("lo").expect("lo is an interface name");

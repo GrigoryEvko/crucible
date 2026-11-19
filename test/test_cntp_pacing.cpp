@@ -42,6 +42,20 @@ cntp::PacingError error_of(::fixy::Result<Value, cntp::PacingError> result) {
     return std::move(result).err().expect("the call fails in this test");
 }
 
+// True when the test runs under the emulator of a cross build, qemu user mode
+// (test/CMakeLists.txt sets the definition).
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
+
+// True when the emulator refused the pacing rate.  qemu user mode has no
+// SO_MAX_PACING_RATE, and the door of the socket gives its enoprotoopt.  A
+// real kernel takes the option.
+[[nodiscard]] bool is_emulator_refusal(::fixy::TestRunnerCtx const& test_ctx, cntp::SocketFd fd,
+                                       cntp::PositivePacingRate rate) {
+    if (!kIsUnderEmulator) return false;
+    return ::fixy::net::set_max_pacing_rate(test_ctx, fd, rate.value()).err().value_or(::foundation::os::Errno{})
+        == ::foundation::os::Errno::enoprotoopt;
+}
+
 void test_interface_name_admission() {
     cntp::NicInterfaceName const lo = take(cntp::NicInterfaceName::from("lo"));
     assert(lo.view() == "lo");
@@ -195,7 +209,13 @@ void test_live_socket_pacing_if_available() {
     cntp::SocketFd const fd = ::fixy::net::share_socket(socket.ref());
 
     cntp::PositivePacingRate const rate = take(cntp::admit_pacing_rate(1000000));
-    assert(cntp::set_socket_pacing_rate(test_ctx, fd, rate).is_ok());
+    auto const set = cntp::set_socket_pacing_rate(test_ctx, fd, rate);
+    if (set.is_err() && is_emulator_refusal(test_ctx, fd, rate)) {
+        ::fixy::report(::fixy::Sink::Out,
+                       "  test_live_socket_pacing_if_available: SKIPPED (qemu-user has no SO_MAX_PACING_RATE)\n");
+        return;
+    }
+    assert(set.is_ok());
 
     crucible::test::pass("  test_live_socket_pacing_if_available: PASSED\n");
 }

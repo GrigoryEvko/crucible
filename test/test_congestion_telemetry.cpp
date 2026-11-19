@@ -25,6 +25,10 @@ namespace {
 
 namespace layout = topology::detail;
 
+// True when the test runs under the emulator of a cross build, qemu user mode
+// (test/CMakeLists.txt sets the definition).
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
+
 // The offset and the size of a field of the decode agree with the field of
 // the kernel struct.
 template <class T>
@@ -315,10 +319,24 @@ void test_live_tcp_info() {
     TcpSocket const tcp = descriptor_of(::fixy::net::mint_socket<::fixy::net::socket_kind::TcpStream>(test_ctx));
     assert(tcp.is_open());
     cntp::SocketFd const fd = ::fixy::net::share_socket(tcp.ref());
+    ::foundation::core::FixedArray<cntp::SocketFd, 1> const fds{fd};
+    // A gpu is no nic, so the harvest refuses it before it reads a socket.
+    auto wrong_cog = topology::harvest_per_link(test_ctx, gpu(88), fds.view());
+    assert(wrong_cog.is_err());
+    assert(wrong_cog.err().expect("a gpu is no nic") == topology::TelemetryError::InvalidNicCog);
     // Reno is part of each kernel, so the harvest reads no fields of BBR or
     // of DCTCP.
     assert(::fixy::net::set_tcp_congestion(test_ctx, fd, "reno").is_ok());
-    assert(::fixy::net::set_max_pacing_rate(test_ctx, fd, 1000000).is_ok());
+    // qemu user mode has no SO_MAX_PACING_RATE, and the door gives its
+    // enoprotoopt.  The emulator also answers TCP_INFO with the four bytes of
+    // an int, so the harvest has no struct to read.  A real kernel takes the
+    // option and gives the full struct.
+    auto const pacing = ::fixy::net::set_max_pacing_rate(test_ctx, fd, 1000000);
+    if (kIsUnderEmulator && pacing.err().value_or(::foundation::os::Errno{}) == ::foundation::os::Errno::enoprotoopt) {
+        ::fixy::report(::fixy::Sink::Out, "  test_live_tcp_info: SKIPPED (qemu-user has no SO_MAX_PACING_RATE)\n");
+        return;
+    }
+    assert(pacing.is_ok());
 
     topology::TcpInfoSnapshot const snapshot =
         topology::harvest_socket(test_ctx, fd).expect("the kernel gives the TCP_INFO of a TCP socket");
@@ -328,14 +346,9 @@ void test_live_tcp_info() {
     assert(snapshot.value().max_pacing_rate_bps == 1000000);
     assert(!snapshot.value().has_bbr && !snapshot.value().has_dctcp);
 
-    ::foundation::core::FixedArray<cntp::SocketFd, 1> const fds{fd};
     auto const aggregate =
         topology::harvest_per_link(test_ctx, nic(77), fds.view()).expect("the harvest of a nic link succeeded");
     assert(aggregate.sample_count == 1);
-
-    auto wrong_cog = topology::harvest_per_link(test_ctx, gpu(88), fds.view());
-    assert(wrong_cog.is_err());
-    assert(wrong_cog.err().expect("a gpu is no nic") == topology::TelemetryError::InvalidNicCog);
     crucible::test::pass("  test_live_tcp_info: PASSED\n");
 }
 

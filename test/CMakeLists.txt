@@ -236,10 +236,17 @@ crucible_test(test_meta_log)
 crucible_test(test_cntp_backpressure)
 crucible_test(test_cntp_connection_pool)
 crucible_test(test_cntp_congestion_control)
+# qemu user mode gives TCP_CONGESTION the four bytes of an int, so a longer
+# name reaches the kernel cut, and the kernel answers enoent.  The test
+# accepts that answer only under the emulator.
+crucible_test_reads_emulator(test_cntp_congestion_control)
 crucible_test(test_cntp_incast_control)
 crucible_test(test_cntp_mtls_transport)
 crucible_test(test_cntp_path_swap)
 crucible_test(test_cntp_pacing)
+# qemu user mode has no SO_MAX_PACING_RATE, and the test accepts its
+# refusal only under the emulator.
+crucible_test_reads_emulator(test_cntp_pacing)
 crucible_test(test_cntp_roce_config)
 crucible_test(test_cntp_integrity)
 # The two tests run the kernels of cntp/Fec.h that the flags of the build
@@ -621,8 +628,15 @@ crucible_test(test_topology_graph)
 crucible_test(test_topology_health)
 crucible_test(test_topology_pingmesh)
 crucible_test(test_topology_ptp)
+# qemu user mode has no SO_TIMESTAMPING, and the test accepts its refusal
+# only under the emulator.
+crucible_test_reads_emulator(test_topology_ptp)
 crucible_test(test_topology_telemetry)
 crucible_test(test_congestion_telemetry)
+# qemu user mode has no SO_MAX_PACING_RATE, and it answers TCP_INFO with the
+# four bytes of an int.  The test skips its live socket case only under the
+# emulator.
+crucible_test_reads_emulator(test_congestion_telemetry)
 crucible_test(test_asymmetric_failure)
 crucible_test(test_computation_cache)
 crucible_test(test_computation_cache_integration)
@@ -686,11 +700,7 @@ set_tests_properties(test_warden_policy PROPERTIES ENVIRONMENT_MODIFICATION "CRU
 target_compile_definitions(test_warden_policy PRIVATE TWO_PACKAGE_SYSFS_ROOT="${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}")
 # qemu user mode refuses the THP knob with einval, and the warden test accepts
 # that refusal only under the emulator.
-if(CMAKE_CROSSCOMPILING_EMULATOR)
-  target_compile_definitions(test_warden_policy PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=1)
-else()
-  target_compile_definitions(test_warden_policy PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=0)
-endif()
+crucible_test_reads_emulator(test_warden_policy)
 # Each affinity change outside fixy/os goes through the recording door, so
 # an older pin proof stops being in force.
 crucible_test(test_pin_event_door)

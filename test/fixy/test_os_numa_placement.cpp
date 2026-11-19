@@ -47,6 +47,10 @@ using Anonymous = fixy::atom::mmap::with_share<fixy::mmap::share::Anonymous>;
 inline constexpr int kSkip = -1;
 inline constexpr fixy::NumaNodeId kNodeZero{0};
 
+// True when the test runs under the emulator of a cross build, qemu user mode
+// (test/fixy/CMakeLists.txt sets the definition).
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
+
 [[nodiscard]] std::size_t page_bytes() noexcept { return static_cast<std::size_t>(::sysconf(_SC_PAGESIZE)); }
 
 using foundation::os::Errno;
@@ -358,6 +362,12 @@ template <class Proof>
     auto first_read = fixy::numa::read_thread_memory_policy(ctx);
     if (first_read.is_err()) {
         if (error_of(first_read) == Errno::eopnotsupp) return kSkip;
+        // qemu user mode has no get_mempolicy, and it answers enosys.  A
+        // kernel of each shipped host answers the read.
+        if (kIsUnderEmulator && error_of(first_read) == Errno::enosys) {
+            fixy::report(fixy::Sink::Err, "[skipped] the read of the thread policy (qemu-user has no get_mempolicy)\n");
+            return kSkip;
+        }
         fixy::report(fixy::Sink::Err, "the read of the thread policy failed (errno {})\n",
                      foundation::os::error_number_of(first_read));
         return 1;

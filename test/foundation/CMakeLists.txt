@@ -777,6 +777,10 @@ foundation_test(test_pre_post)
 # through the bounded sleeper of fixy/os/Time.h.  So the test links fixy.
 foundation_test(test_contract_handler)
 target_link_libraries(test_contract_handler PRIVATE fixy)
+# qemu user mode writes its own line of an uncaught signal into the full pipe
+# of a blocked report, so it blocks.  The test skips the three cases of a
+# blocked report only under the emulator.
+crucible_test_reads_emulator(test_contract_handler)
 
 # CRUCIBLE_PRE under the ignore semantic must compile to the same machine
 # code as a bare [[assume]].  This target is built with -O3 and

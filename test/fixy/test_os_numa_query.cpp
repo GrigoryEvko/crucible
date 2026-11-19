@@ -44,6 +44,23 @@ template <class Owner>
 
 [[nodiscard]] std::size_t page_bytes() noexcept { return fixy::topology::Topology::instance().page_size_bytes(); }
 
+// True when the test runs under the emulator of a cross build, qemu user mode
+// (test/fixy/CMakeLists.txt sets the definition).
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
+
+// True when the emulator refused a census.  qemu user mode has no move_pages,
+// and it answers enosys.  A kernel of each shipped host answers the census.
+template <class Census>
+[[nodiscard]] bool is_emulator_refusal(Census const& census) {
+    return kIsUnderEmulator
+        && census.err().match(
+            [](fixy::numa::NumaQueryError error) {
+                return error.step == fixy::numa::NumaQueryStep::PageQuery
+                    && error.error_number == foundation::os::error_number(foundation::os::Errno::enosys);
+            },
+            [] { return false; });
+}
+
 // Writes one byte in each page of the View.
 void touch_each_page(fixy::View<std::byte> bytes) {
     std::size_t position = 0;
@@ -71,8 +88,12 @@ void test_census_of_a_written_range() {
     fixy::View<std::byte> bytes = region.view<std::byte>().expect("a mapping holds bytes");
     touch_each_page(bytes);
 
-    fixy::numa::PageNodeCensus const census =
-        fixy::numa::census_page_nodes(ctx, bytes).expect("the kernel gives the node of each page");
+    auto queried = fixy::numa::census_page_nodes(ctx, bytes);
+    if (is_emulator_refusal(queried)) {
+        crucible::test::pass("  test_census_of_a_written_range: SKIPPED (qemu-user has no move_pages)\n");
+        return;
+    }
+    fixy::numa::PageNodeCensus const census = std::move(queried).expect("the kernel gives the node of each page");
     assert(census.pages() == 4);
     assert(census.pages_without_node() == 0);
     assert(pages_on_each_node(census) == 4);
@@ -94,8 +115,13 @@ void test_census_of_untouched_and_read_ranges() {
     auto const owner = perm::mint_permission_root<ScratchRegion>();
     auto untouched_region = map_pages(ctx, owner, 3 * page_bytes());
     fixy::View<std::byte const> untouched = untouched_region.view<std::byte const>().expect("a mapping holds bytes");
+    auto untouched_queried = fixy::numa::census_page_nodes(ctx, untouched);
+    if (is_emulator_refusal(untouched_queried)) {
+        crucible::test::pass("  test_census_of_untouched_and_read_ranges: SKIPPED (qemu-user has no move_pages)\n");
+        return;
+    }
     fixy::numa::PageNodeCensus const untouched_census =
-        fixy::numa::census_page_nodes(ctx, untouched).expect("the kernel gives the node of each page");
+        std::move(untouched_queried).expect("the kernel gives the node of each page");
     assert(untouched_census.pages() == 3 && untouched_census.pages_without_node() == 3);
     assert(!untouched_census.is_all_on(fixy::numa::concrete_numa_node(0).expect("node 0 has an id")));
 
@@ -125,6 +151,11 @@ void test_census_of_empty_and_unaligned_ranges() {
     auto region = map_pages(ctx, owner, 3 * page_bytes());
     fixy::View<std::byte> bytes = region.view<std::byte>().expect("a mapping holds bytes");
     touch_each_page(bytes);
+    if (is_emulator_refusal(fixy::numa::census_page_nodes(ctx, bytes))) {
+        crucible::test::pass("  test_census_of_empty_and_unaligned_ranges: the unaligned ranges SKIPPED (qemu-user has "
+                             "no move_pages)\n");
+        return;
+    }
     std::size_t const page = page_bytes();
     auto census_of = [&ctx, &bytes](std::size_t offset, std::size_t count) {
         return fixy::numa::census_page_nodes(ctx, bytes.window(offset, count).expect("the window fits"))
