@@ -8,7 +8,7 @@
 // and the rule stands down for both.
 //
 // The replay half is read from the payload through
-// rules_of<Payload, Atoms...>, the same read V203 consumes.
+// binding_verdict_v<Payload, Atoms...>, the same read V203 consumes.
 
 #include <fixy/Bands.h>
 #include <fixy/Fn.h>

@@ -3,8 +3,8 @@
 // pending roster is exactly the axes no atom reaches; and the rules
 // reach fn's gate.
 //
-// The colliding packs are exercised through collision::live_rules and
-// collision::grades rather than through fn.  Naming fn with a colliding
+// The cells read the colliding packs through collision::pack_verdict_v and
+// collision::grades, and not through fn.  Naming fn with a colliding
 // pack is a build failure by design, so a rule that could only be
 // observed that way could not be tested at all — only the whole TU
 // failing would show it, which says nothing about which rule fired.
@@ -43,8 +43,9 @@ namespace trust_level = ::fixy::tags::trust;
 using ::fixy::Axis;
 using ::fixy::strict_pole_t;
 using col::grades;
-using col::live_rules;
-using col::rules_of;
+using col::pack_verdict_v;
+using col::binding_verdict_v;
+using enum ::fixy::collision::RuleCode;
 using Eff = ::foundation::effects::Effect;
 namespace fe = ::foundation::effects;
 
@@ -79,118 +80,121 @@ static_assert(std::is_same_v<grades<>::on<Axis::Mutation>, ::fixy::fn<int>::grad
 // ---------------------------------------------------------------------
 // Every live rule admits the strictest binding.
 
-static_assert(live_rules<>::valid);
-static_assert(live_rules<>::validate());
-static_assert(live_rules<>::L002_ok && live_rules<>::M012_ok && live_rules<>::P010_ok && live_rules<>::L007_ok
-              && live_rules<>::T001_ok && live_rules<>::R002_ok && live_rules<>::R003_ok && live_rules<>::L006_ok
-              && live_rules<>::G002_ok && live_rules<>::D002_ok && live_rules<>::P002_ok);
+static_assert(pack_verdict_v<>.is_valid());
+static_assert(pack_verdict_v<>.failing_codes().empty());
+static_assert(pack_verdict_v<>.admits(L002) && pack_verdict_v<>.admits(M012) && pack_verdict_v<>.admits(P010)
+              && pack_verdict_v<>.admits(L007) && pack_verdict_v<>.admits(T001) && pack_verdict_v<>.admits(R002)
+              && pack_verdict_v<>.admits(R003) && pack_verdict_v<>.admits(L006) && pack_verdict_v<>.admits(G002)
+              && pack_verdict_v<>.admits(D002) && pack_verdict_v<>.admits(P002));
 
 // ---------------------------------------------------------------------
 // Each rule refuses its pair and admits each half.  Both directions per
 // rule, because a rule that only ever says yes proves nothing.
 
 // L002 borrow x async
-static_assert(!live_rules<at::borrow, at::coroutine>::L002_ok);
-static_assert(!live_rules<at::borrow, at::with<Eff::Bg>>::L002_ok);
-static_assert(live_rules<at::borrow>::L002_ok);
-static_assert(live_rules<at::coroutine>::L002_ok);
+static_assert(!pack_verdict_v<at::borrow, at::coroutine>.admits(L002));
+static_assert(!pack_verdict_v<at::borrow, at::with<Eff::Bg>>.admits(L002));
+static_assert(pack_verdict_v<at::borrow>.admits(L002));
+static_assert(pack_verdict_v<at::coroutine>.admits(L002));
 
 // M012 monotonic x concurrent without an atomic representation
-static_assert(!live_rules<at::mut_monotonic, at::coroutine>::M012_ok);
-static_assert(live_rules<at::mut_monotonic>::M012_ok);
-static_assert(live_rules<at::mut_monotonic, at::coroutine, at::repr<::fixy::pole::ReprKind::Atomic>>::M012_ok);
-static_assert(!live_rules<at::mut_monotonic, at::coroutine, at::repr<::fixy::pole::ReprKind::C>>::M012_ok);
+static_assert(!pack_verdict_v<at::mut_monotonic, at::coroutine>.admits(M012));
+static_assert(pack_verdict_v<at::mut_monotonic>.admits(M012));
+static_assert(pack_verdict_v<at::mut_monotonic, at::coroutine, at::repr<::fixy::pole::ReprKind::Atomic>>.admits(M012));
+static_assert(!pack_verdict_v<at::mut_monotonic, at::coroutine, at::repr<::fixy::pole::ReprKind::C>>.admits(M012));
 
 // P010 ghost x an effect that must emit code
-static_assert(!live_rules<at::ghost, at::with<Eff::Alloc>>::P010_ok);
-static_assert(!live_rules<at::ghost, at::with<Eff::IO>>::P010_ok);
-static_assert(!live_rules<at::ghost, at::with<Eff::Block>>::P010_ok);
-static_assert(live_rules<at::ghost>::P010_ok);
-static_assert(live_rules<at::ghost, at::with<Eff::Test>>::P010_ok, "Test is not an emitted-code effect");
+static_assert(!pack_verdict_v<at::ghost, at::with<Eff::Alloc>>.admits(P010));
+static_assert(!pack_verdict_v<at::ghost, at::with<Eff::IO>>.admits(P010));
+static_assert(!pack_verdict_v<at::ghost, at::with<Eff::Block>>.admits(P010));
+static_assert(pack_verdict_v<at::ghost>.admits(P010));
+static_assert(pack_verdict_v<at::ghost, at::with<Eff::Test>>.admits(P010), "Test is not an emitted-code effect");
 
 // P010 reads the row of the binding, so an atom that lifts an observable
 // effect trips it as a stated with<> does.  A kernel wait lifts Block, a
 // futex call lifts Block and a read of process state lifts IO.  A call
 // through the vDSO lifts the empty row, so P010 admits it and P002
 // refuses it.
-static_assert(!live_rules<at::ghost, at::sync::park>::P010_ok, "a park is emitted code");
-static_assert(live_rules<at::ghost, at::sync::park>::failing_codes() == "P010",
+static_assert(!pack_verdict_v<at::ghost, at::sync::park>.admits(P010), "a park is emitted code");
+static_assert(pack_verdict_v<at::ghost, at::sync::park>.failing_codes() == "P010",
               "P002 reads the Stdio and SyscallSurface axes, and a park engages neither");
-static_assert(!live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::futex>>::P010_ok);
-static_assert(!live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::getpid>>::P010_ok);
-static_assert(!live_rules<at::ghost, at::sync::spin_pause>::P010_ok,
+static_assert(!pack_verdict_v<at::ghost, at::syscall::per<at::syscall::SyscallId::futex>>.admits(P010));
+static_assert(!pack_verdict_v<at::ghost, at::syscall::per<at::syscall::SyscallId::getpid>>.admits(P010));
+static_assert(!pack_verdict_v<at::ghost, at::sync::spin_pause>.admits(P010),
               "a spin with no exit lifts Div, and a drop of it changes whether the program ends");
-static_assert(live_rules<at::ghost, at::sync::bounded_spin>::P010_ok,
+static_assert(pack_verdict_v<at::ghost, at::sync::bounded_spin>.admits(P010),
               "a bounded spin lifts Nondet, an atom of input that elision can drop");
-static_assert(live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::clock_gettime>>::P010_ok
-              && !live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::clock_gettime>>::P002_ok);
-static_assert(live_rules<at::sync::park>::P010_ok, "not ghost, so a park is ordinary");
+static_assert(pack_verdict_v<at::ghost, at::syscall::per<at::syscall::SyscallId::clock_gettime>>.admits(P010)
+              && !pack_verdict_v<at::ghost, at::syscall::per<at::syscall::SyscallId::clock_gettime>>.admits(P002));
+static_assert(pack_verdict_v<at::sync::park>.admits(P010), "not ghost, so a park is ordinary");
 
 // L007 borrow x Bg row
-static_assert(!live_rules<at::borrow, at::with<Eff::Bg>>::L007_ok);
-static_assert(live_rules<at::borrow>::L007_ok);
-static_assert(live_rules<at::with<Eff::Bg>>::L007_ok);
+static_assert(!pack_verdict_v<at::borrow, at::with<Eff::Bg>>.admits(L007));
+static_assert(pack_verdict_v<at::borrow>.admits(L007));
+static_assert(pack_verdict_v<at::with<Eff::Bg>>.admits(L007));
 
 // T001 capability x unverified provenance.  The strict Trust pole is
 // unverified, so the rule refuses a capability with no trust grade.
-static_assert(!live_rules<at::capability_usage, at::trust<trust_level::Unverified>>::T001_ok);
-static_assert(!live_rules<at::capability_usage>::T001_ok);
-static_assert(live_rules<at::trust<trust_level::Unverified>>::T001_ok);
-static_assert(live_rules<at::capability_usage, at::trust<trust_level::Verified>>::T001_ok);
-static_assert(live_rules<at::capability_usage, at::trust<trust_level::Tested>>::T001_ok);
-static_assert(live_rules<at::capability_usage, at::trust<trust_level::External>>::T001_ok);
+static_assert(!pack_verdict_v<at::capability_usage, at::trust<trust_level::Unverified>>.admits(T001));
+static_assert(!pack_verdict_v<at::capability_usage>.admits(T001));
+static_assert(pack_verdict_v<at::trust<trust_level::Unverified>>.admits(T001));
+static_assert(pack_verdict_v<at::capability_usage, at::trust<trust_level::Verified>>.admits(T001));
+static_assert(pack_verdict_v<at::capability_usage, at::trust<trust_level::Tested>>.admits(T001));
+static_assert(pack_verdict_v<at::capability_usage, at::trust<trust_level::External>>.admits(T001));
 
 // R002 / R003 coroutine x borrow, coroutine x Bg row
-static_assert(!live_rules<at::coroutine, at::borrow>::R002_ok);
-static_assert(live_rules<at::coroutine>::R002_ok);
-static_assert(!live_rules<at::coroutine, at::with<Eff::Bg>>::R003_ok);
-static_assert(live_rules<at::coroutine>::R003_ok);
+static_assert(!pack_verdict_v<at::coroutine, at::borrow>.admits(R002));
+static_assert(pack_verdict_v<at::coroutine>.admits(R002));
+static_assert(!pack_verdict_v<at::coroutine, at::with<Eff::Bg>>.admits(R003));
+static_assert(pack_verdict_v<at::coroutine>.admits(R003));
 
 // G002 thread-local x atomic representation x no reader on another thread.
 // A per-thread counter that a monitor thread reads states the scope that
 // its stores reach, and the rule admits it.  The scope thread reaches no
 // other thread, so the rule still refuses it.
 using AtomicRepr = at::repr<::fixy::pole::ReprKind::Atomic>;
-static_assert(!live_rules<at::global::thread_local_<tls_tag>, AtomicRepr>::G002_ok);
-static_assert(!live_rules<at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::thread>::G002_ok);
-static_assert(live_rules<at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::inner>::G002_ok,
+static_assert(!pack_verdict_v<at::global::thread_local_<tls_tag>, AtomicRepr>.admits(G002));
+static_assert(!pack_verdict_v<at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::thread>.admits(G002));
+static_assert(pack_verdict_v<at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::inner>.admits(G002),
               "a per-thread counter that a monitor thread reads is observed");
 static_assert(::fixy::IsAccepted<int, at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::inner>);
 // The scope also meets V401 and V402.  The host shareability scopes are the
 // ARM trunk, so an x86 binding states the system scope, and the system
 // scope reaches past a cluster, so it states a fence at acq_rel.
-static_assert(!live_rules<at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::inner, at::simd::sse2>::V402_ok);
-static_assert(!live_rules<at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::system>::V401_ok);
+static_assert(
+    !pack_verdict_v<at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::inner, at::simd::sse2>.admits(V402));
+static_assert(!pack_verdict_v<at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::system>.admits(V401));
 static_assert(::fixy::IsAccepted<int, at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::system,
                                  at::barrier::acq_rel, at::simd::sse2>,
               "the remedy of G002 holds for a binding that pins an x86 ISA");
-static_assert(live_rules<at::global::thread_local_<tls_tag>>::G002_ok);
-static_assert(live_rules<AtomicRepr>::G002_ok);
+static_assert(pack_verdict_v<at::global::thread_local_<tls_tag>>.admits(G002));
+static_assert(pack_verdict_v<AtomicRepr>.admits(G002));
 
 // D002 unbounded recursion x an unbounded or unstated cost.  A proven depth
 // bounds the stack, so the rule admits it with each cost.
-static_assert(!live_rules<at::dispatch::recurses_unbounded, at::cost_unbounded>::D002_ok);
-static_assert(!live_rules<at::dispatch::recurses_unbounded>::D002_ok, "an unstated cost bounds nothing");
-static_assert(live_rules<at::dispatch::recurses_unbounded, at::cost_linear<4>>::D002_ok);
-static_assert(live_rules<at::dispatch::recurses<64>, at::cost_unbounded>::D002_ok,
+static_assert(!pack_verdict_v<at::dispatch::recurses_unbounded, at::cost_unbounded>.admits(D002));
+static_assert(!pack_verdict_v<at::dispatch::recurses_unbounded>.admits(D002), "an unstated cost bounds nothing");
+static_assert(pack_verdict_v<at::dispatch::recurses_unbounded, at::cost_linear<4>>.admits(D002));
+static_assert(pack_verdict_v<at::dispatch::recurses<64>, at::cost_unbounded>.admits(D002),
               "a bounded recursion has a bounded stack");
-static_assert(live_rules<at::dispatch::recurses<0>>::D002_ok);
-static_assert(live_rules<at::cost_unbounded>::D002_ok);
-static_assert(live_rules<at::dispatch::recurses<0>, at::cost_linear<4>>::D002_ok);
+static_assert(pack_verdict_v<at::dispatch::recurses<0>>.admits(D002));
+static_assert(pack_verdict_v<at::cost_unbounded>.admits(D002));
+static_assert(pack_verdict_v<at::dispatch::recurses<0>, at::cost_linear<4>>.admits(D002));
 
 // P002 ghost x an emitting surface.  A call through the vDSO lifts the
 // empty row, so P010 admits the pair and P002 refuses it, which is why
 // both exist.  A stdio write lifts IO and Block, so both rules refuse a
 // ghost write.
-static_assert(!live_rules<at::ghost, at::stdio::write<at::stdio::streams::Stdout>>::P002_ok);
-static_assert(!live_rules<at::ghost, at::stdio::write<at::stdio::streams::Stderr>>::P002_ok);
-static_assert(!live_rules<at::ghost, at::stdio::write<at::stdio::streams::Stdout>>::P010_ok,
+static_assert(!pack_verdict_v<at::ghost, at::stdio::write<at::stdio::streams::Stdout>>.admits(P002));
+static_assert(!pack_verdict_v<at::ghost, at::stdio::write<at::stdio::streams::Stderr>>.admits(P002));
+static_assert(!pack_verdict_v<at::ghost, at::stdio::write<at::stdio::streams::Stdout>>.admits(P010),
               "a stdio write lifts IO and Block, so P010 sees it in the row of the binding");
-static_assert(live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::clock_gettime>>::failing_codes() == "P002",
+static_assert(pack_verdict_v<at::ghost, at::syscall::per<at::syscall::SyscallId::clock_gettime>>.failing_codes()
+                  == "P002",
               "a call through the vDSO lifts the empty row, so P002 alone refuses a ghost call");
-static_assert(live_rules<at::ghost>::P002_ok);
-static_assert(live_rules<at::stdio::write<at::stdio::streams::Stdout>>::P002_ok);
-static_assert(live_rules<at::copy, at::stdio::write<at::stdio::streams::Stdout>>::P002_ok,
+static_assert(pack_verdict_v<at::ghost>.admits(P002));
+static_assert(pack_verdict_v<at::stdio::write<at::stdio::streams::Stdout>>.admits(P002));
+static_assert(pack_verdict_v<at::copy, at::stdio::write<at::stdio::streams::Stdout>>.admits(P002),
               "only the ghost grade makes an emitted write a contradiction");
 
 // ---------------------------------------------------------------------
@@ -212,88 +216,94 @@ static_assert(live_rules<at::copy, at::stdio::write<at::stdio::streams::Stdout>>
 // specifically, not "mentions Regime", so declaring a cold path is free.
 
 // H001 hot x an unstated or unbounded cost
-static_assert(!live_rules<at::regime::hot>::H001_ok, "hot with no Complexity grade is an unstated envelope");
-static_assert(!live_rules<at::regime::hot, at::cost_unbounded>::H001_ok);
-static_assert(live_rules<at::regime::hot, at::cost_constant>::H001_ok);
-static_assert(live_rules<at::regime::hot, at::cost_linear<8>>::H001_ok);
-static_assert(live_rules<at::cost_unbounded>::H001_ok, "an unbounded cost off the hot path is not H001's business");
-static_assert(live_rules<at::regime::warm>::H001_ok, "H001 reads hot, not any regime grade");
-static_assert(live_rules<at::regime::cold>::H001_ok);
+static_assert(!pack_verdict_v<at::regime::hot>.admits(H001), "hot with no Complexity grade is an unstated envelope");
+static_assert(!pack_verdict_v<at::regime::hot, at::cost_unbounded>.admits(H001));
+static_assert(pack_verdict_v<at::regime::hot, at::cost_constant>.admits(H001));
+static_assert(pack_verdict_v<at::regime::hot, at::cost_linear<8>>.admits(H001));
+static_assert(pack_verdict_v<at::cost_unbounded>.admits(H001),
+              "an unbounded cost off the hot path is not H001's business");
+static_assert(pack_verdict_v<at::regime::warm>.admits(H001), "H001 reads hot, not any regime grade");
+static_assert(pack_verdict_v<at::regime::cold>.admits(H001));
 
 // H002 hot x no refinement witness
-static_assert(!live_rules<at::regime::hot>::H002_ok);
-static_assert(live_rules<at::regime::hot, at::refined_with<hot_invariant>>::H002_ok);
-static_assert(live_rules<at::refined_with<hot_invariant>>::H002_ok);
-static_assert(live_rules<at::regime::warm>::H002_ok);
+static_assert(!pack_verdict_v<at::regime::hot>.admits(H002));
+static_assert(pack_verdict_v<at::regime::hot, at::refined_with<hot_invariant>>.admits(H002));
+static_assert(pack_verdict_v<at::refined_with<hot_invariant>>.admits(H002));
+static_assert(pack_verdict_v<at::regime::warm>.admits(H002));
 
 // H003 hot x Alloc or IO in the row of the binding.  The cost is not a
 // premise: a bounded allocation on the hot path is refused as an
 // unbounded one is.  The cost and refinement atoms silence H001 and
 // H002, so each pack below trips H003 alone.
 template <class... Extra>
-using hot_bounded = live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, Extra...>;
-static_assert(hot_bounded<at::with<Eff::Alloc>>::failing_codes() == "H003");
-static_assert(hot_bounded<at::with<Eff::IO>>::failing_codes() == "H003");
-static_assert(hot_bounded<at::syscall::per<at::syscall::SyscallId::getpid>>::failing_codes() == "H003",
+constexpr const ::fixy::collision::binding_verdict& hot_bounded =
+    pack_verdict_v<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, Extra...>;
+static_assert(hot_bounded<at::with<Eff::Alloc>>.failing_codes() == "H003");
+static_assert(hot_bounded<at::with<Eff::IO>>.failing_codes() == "H003");
+static_assert(hot_bounded<at::syscall::per<at::syscall::SyscallId::getpid>>.failing_codes() == "H003",
               "a read of process state lifts IO, although it cannot block");
-static_assert(hot_bounded<at::syscall::per<at::syscall::SyscallId::write>>::failing_codes() == "H003, W001",
+static_assert(hot_bounded<at::syscall::per<at::syscall::SyscallId::write>>.failing_codes() == "H003, W001",
               "a file write lifts IO and Block, so H003 and W001 each refuse it");
-static_assert(!live_rules<at::regime::hot, at::with<Eff::Alloc>, at::cost_unbounded>::H003_ok);
-static_assert(!live_rules<at::regime::hot, at::with<Eff::IO>, at::cost_unbounded>::H003_ok);
-static_assert(live_rules<at::regime::hot, at::cost_unbounded>::H003_ok, "no Alloc or IO row, so H001 not H003");
-static_assert(live_rules<at::with<Eff::Alloc>, at::cost_unbounded>::H003_ok, "not hot, so no contradiction");
+static_assert(!pack_verdict_v<at::regime::hot, at::with<Eff::Alloc>, at::cost_unbounded>.admits(H003));
+static_assert(!pack_verdict_v<at::regime::hot, at::with<Eff::IO>, at::cost_unbounded>.admits(H003));
+static_assert(pack_verdict_v<at::regime::hot, at::cost_unbounded>.admits(H003), "no Alloc or IO row, so H001 not H003");
+static_assert(pack_verdict_v<at::with<Eff::Alloc>, at::cost_unbounded>.admits(H003), "not hot, so no contradiction");
 // A read of the clock through the vDSO lifts the empty row, and a spin
 // lifts the empty row too, so H003 admits both on the hot path.
-static_assert(hot_bounded<at::syscall::per<at::syscall::SyscallId::clock_gettime>>::valid);
-static_assert(hot_bounded<at::sync::spin_pause>::valid);
+static_assert(hot_bounded<at::syscall::per<at::syscall::SyscallId::clock_gettime>>.is_valid());
+static_assert(hot_bounded<at::sync::spin_pause>.is_valid());
 // The positive controls: a warm or a cold binding with the same rows.
-static_assert(live_rules<at::regime::warm, at::cost_constant, at::with<Eff::Alloc>>::valid);
-static_assert(live_rules<at::regime::warm, at::cost_constant, at::with<Eff::IO>>::valid);
-static_assert(live_rules<at::regime::warm, at::syscall::per<at::syscall::SyscallId::getpid>>::valid);
-static_assert(live_rules<at::regime::cold, at::with<Eff::Alloc, Eff::IO>>::valid);
+static_assert(pack_verdict_v<at::regime::warm, at::cost_constant, at::with<Eff::Alloc>>.is_valid());
+static_assert(pack_verdict_v<at::regime::warm, at::cost_constant, at::with<Eff::IO>>.is_valid());
+static_assert(pack_verdict_v<at::regime::warm, at::syscall::per<at::syscall::SyscallId::getpid>>.is_valid());
+static_assert(pack_verdict_v<at::regime::cold, at::with<Eff::Alloc, Eff::IO>>.is_valid());
 // Block is deliberately outside H003: a blocking hot path is W001's
 // theorem, which cites the futex cost rather than the allocator's.  The
 // cell is here so the boundary is a decision on the record.
-static_assert(live_rules<at::regime::hot, at::with<Eff::Block>, at::cost_unbounded>::H003_ok,
+static_assert(pack_verdict_v<at::regime::hot, at::with<Eff::Block>, at::cost_unbounded>.admits(H003),
               "H003's theorem names Alloc and IO; Block on a hot path belongs to W001");
-static_assert(!live_rules<at::regime::hot, at::with<Eff::Block>, at::cost_unbounded>::W001_ok,
+static_assert(!pack_verdict_v<at::regime::hot, at::with<Eff::Block>, at::cost_unbounded>.admits(W001),
               "the other side of the boundary: W001 refuses the same pack");
 
 // H010 hot x Row<Bg>.  The cost_constant and refined_with atoms are what
 // make this cell prove H010 rather than H001 or H002 in disguise.
 static_assert(
-    !live_rules<at::regime::hot, at::with<Eff::Bg>, at::cost_constant, at::refined_with<hot_invariant>>::H010_ok);
-static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::H010_ok);
-static_assert(live_rules<at::with<Eff::Bg>>::H010_ok);
-static_assert(live_rules<at::regime::cold, at::with<Eff::Bg>>::H010_ok, "a cold background body is ordinary");
+    !pack_verdict_v<at::regime::hot, at::with<Eff::Bg>, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        H010));
+static_assert(pack_verdict_v<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>.admits(H010));
+static_assert(pack_verdict_v<at::with<Eff::Bg>>.admits(H010));
+static_assert(pack_verdict_v<at::regime::cold, at::with<Eff::Bg>>.admits(H010), "a cold background body is ordinary");
 
 // R001 coroutine x hot
-static_assert(!live_rules<at::coroutine, at::regime::hot>::R001_ok);
-static_assert(live_rules<at::coroutine>::R001_ok);
-static_assert(live_rules<at::regime::hot>::R001_ok);
-static_assert(live_rules<at::coroutine, at::regime::cold>::R001_ok);
+static_assert(!pack_verdict_v<at::coroutine, at::regime::hot>.admits(R001));
+static_assert(pack_verdict_v<at::coroutine>.admits(R001));
+static_assert(pack_verdict_v<at::regime::hot>.admits(R001));
+static_assert(pack_verdict_v<at::coroutine, at::regime::cold>.admits(R001));
 
 // S001 stdio x hot
-static_assert(!live_rules<at::stdio::write<at::stdio::streams::Stdout>, at::regime::hot>::S001_ok);
-static_assert(live_rules<at::stdio::write<at::stdio::streams::Stdout>>::S001_ok);
-static_assert(live_rules<at::regime::hot>::S001_ok);
-static_assert(live_rules<at::stdio::write<at::stdio::streams::Stdout>, at::regime::warm>::S001_ok);
+static_assert(!pack_verdict_v<at::stdio::write<at::stdio::streams::Stdout>, at::regime::hot>.admits(S001));
+static_assert(pack_verdict_v<at::stdio::write<at::stdio::streams::Stdout>>.admits(S001));
+static_assert(pack_verdict_v<at::regime::hot>.admits(S001));
+static_assert(pack_verdict_v<at::stdio::write<at::stdio::streams::Stdout>, at::regime::warm>.admits(S001));
 // A stdio write lifts IO and Block, so a hot write trips H003 and W001
 // beside S001.  A warm write trips none of the three.
-static_assert(hot_bounded<at::stdio::write<at::stdio::streams::Stderr>>::failing_codes() == "H003, S001, W001");
-static_assert(live_rules<at::stdio::write<at::stdio::streams::Stderr>, at::regime::warm, at::cost_constant>::valid);
-static_assert(std::is_same_v<live_rules<at::stdio::write<at::stdio::streams::Stderr>>::binding_row,
-                             fe::Row<Eff::IO, Eff::Block>>);
+static_assert(hot_bounded<at::stdio::write<at::stdio::streams::Stderr>>.failing_codes() == "H003, S001, W001");
+static_assert(
+    pack_verdict_v<at::stdio::write<at::stdio::streams::Stderr>, at::regime::warm, at::cost_constant>.is_valid());
+static_assert(std::is_same_v<
+              ::fixy::atom::binding_row_of_t<grades<at::stdio::write<at::stdio::streams::Stderr>>::on<Axis::Effect>,
+                                             at::stdio::write<at::stdio::streams::Stderr>>,
+              fe::Row<Eff::IO, Eff::Block>>);
 
 // The whole family stands down for a binding that claims no tier, which
 // is what keeps the axis's Unconstrained strict pole honest: most of the
 // tree is neither hot nor cold in any sense worth typing.
-static_assert(live_rules<>::H001_ok && live_rules<>::H002_ok && live_rules<>::H003_ok && live_rules<>::H010_ok
-              && live_rules<>::R001_ok && live_rules<>::S001_ok);
+static_assert(pack_verdict_v<>.admits(H001) && pack_verdict_v<>.admits(H002) && pack_verdict_v<>.admits(H003)
+              && pack_verdict_v<>.admits(H010) && pack_verdict_v<>.admits(R001) && pack_verdict_v<>.admits(S001));
 
 // A hot binding that answers every rule is accepted, so the family is a
 // gate and not a ban on the hot path.
-static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::valid);
+static_assert(pack_verdict_v<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>.is_valid());
 
 // ---------------------------------------------------------------------
 // The wait family, which reads fixy/atoms/Sync.h.
@@ -304,102 +314,119 @@ static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<ho
 // W001 hot x a kernel wait.  The three lowest grades trip it and the
 // three highest do not, which is the WaitLattice's own division.
 static_assert(
-    !live_rules<at::regime::hot, at::sync::block, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+    !pack_verdict_v<at::regime::hot, at::sync::block, at::cost_constant, at::refined_with<hot_invariant>>.admits(W001));
 static_assert(
-    !live_rules<at::regime::hot, at::sync::park, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+    !pack_verdict_v<at::regime::hot, at::sync::park, at::cost_constant, at::refined_with<hot_invariant>>.admits(W001));
 static_assert(
-    !live_rules<at::regime::hot, at::sync::acquire_wait, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+    !pack_verdict_v<at::regime::hot, at::sync::acquire_wait, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        W001));
 static_assert(
-    live_rules<at::regime::hot, at::sync::umwait_c01, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+    pack_verdict_v<at::regime::hot, at::sync::umwait_c01, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        W001));
 static_assert(
-    live_rules<at::regime::hot, at::sync::bounded_spin, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+    pack_verdict_v<at::regime::hot, at::sync::bounded_spin, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        W001));
 static_assert(
-    live_rules<at::regime::hot, at::sync::spin_pause, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+    pack_verdict_v<at::regime::hot, at::sync::spin_pause, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        W001));
 // Each half alone is fine: a cold body may block, and a hot body may wait
 // however it likes as long as it stays out of the kernel.
-static_assert(live_rules<at::sync::block>::W001_ok);
-static_assert(live_rules<at::regime::cold, at::sync::block>::W001_ok);
-static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+static_assert(pack_verdict_v<at::sync::block>.admits(W001));
+static_assert(pack_verdict_v<at::regime::cold, at::sync::block>.admits(W001));
+static_assert(pack_verdict_v<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>.admits(W001));
 
 // W001 reads the row that the whole pack lifts to, so a kernel wait is
 // one way to trip it and not the only one.  A stated Block and a system
 // call that can park the caller put Block in the same row.  The cost and
 // refinement atoms silence H001 and H002 in each cell.
 template <class... Extra>
-using hot_pack = live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, Extra...>;
+constexpr const ::fixy::collision::binding_verdict& hot_pack =
+    pack_verdict_v<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, Extra...>;
 using SyscallId = at::syscall::SyscallId;
 using SyscallFamily = at::syscall::SyscallFamily;
 
-static_assert(!hot_pack<at::with<Eff::Block>>::W001_ok);
-static_assert(!hot_pack<at::with<Eff::IO, Eff::Block>>::W001_ok);
-static_assert(!hot_pack<at::syscall::per<SyscallId::futex>>::W001_ok);
-static_assert(!hot_pack<at::syscall::per<SyscallId::sched_yield>>::W001_ok, "a yield enters the scheduler");
-static_assert(!hot_pack<at::syscall::per<SyscallId::write>>::W001_ok);
-static_assert(!hot_pack<at::syscall::per<SyscallId::recvmsg>>::W001_ok);
-static_assert(!hot_pack<at::syscall::family<SyscallFamily::ThreadSync>>::W001_ok);
-static_assert(!hot_pack<at::fs::durable<::fixy::fs::sync_op::Fsync>>::W001_ok, "an OS atom lifts Block as well");
+static_assert(!hot_pack<at::with<Eff::Block>>.admits(W001));
+static_assert(!hot_pack<at::with<Eff::IO, Eff::Block>>.admits(W001));
+static_assert(!hot_pack<at::syscall::per<SyscallId::futex>>.admits(W001));
+static_assert(!hot_pack<at::syscall::per<SyscallId::sched_yield>>.admits(W001), "a yield enters the scheduler");
+static_assert(!hot_pack<at::syscall::per<SyscallId::write>>.admits(W001));
+static_assert(!hot_pack<at::syscall::per<SyscallId::recvmsg>>.admits(W001));
+static_assert(!hot_pack<at::syscall::family<SyscallFamily::ThreadSync>>.admits(W001));
+static_assert(!hot_pack<at::fs::durable<::fixy::fs::sync_op::Fsync>>.admits(W001), "an OS atom lifts Block as well");
 
 // The waits on a descriptor, the sleeps and eventfd are ThreadSync calls,
 // so each lifts Block and W001 refuses each alone on the hot path.  A warm
 // binding with the same call is admitted.
-static_assert(hot_pack<at::syscall::per<SyscallId::poll>>::failing_codes() == "W001");
-static_assert(hot_pack<at::syscall::per<SyscallId::epoll_wait>>::failing_codes() == "W001");
-static_assert(hot_pack<at::syscall::per<SyscallId::eventfd>>::failing_codes() == "W001");
-static_assert(hot_pack<at::syscall::per<SyscallId::nanosleep>>::failing_codes() == "W001");
-static_assert(hot_pack<at::syscall::per<SyscallId::clock_nanosleep>>::failing_codes() == "W001");
-static_assert(live_rules<at::regime::warm, at::syscall::per<SyscallId::epoll_wait>>::valid);
-static_assert(live_rules<at::regime::cold, at::syscall::per<SyscallId::clock_nanosleep>>::valid);
+static_assert(hot_pack<at::syscall::per<SyscallId::poll>>.failing_codes() == "W001");
+static_assert(hot_pack<at::syscall::per<SyscallId::epoll_wait>>.failing_codes() == "W001");
+static_assert(hot_pack<at::syscall::per<SyscallId::eventfd>>.failing_codes() == "W001");
+static_assert(hot_pack<at::syscall::per<SyscallId::nanosleep>>.failing_codes() == "W001");
+static_assert(hot_pack<at::syscall::per<SyscallId::clock_nanosleep>>.failing_codes() == "W001");
+static_assert(pack_verdict_v<at::regime::warm, at::syscall::per<SyscallId::epoll_wait>>.is_valid());
+static_assert(pack_verdict_v<at::regime::cold, at::syscall::per<SyscallId::clock_nanosleep>>.is_valid());
 
 // The two fixtures' packs trip W001 and no other rule.
-static_assert(hot_pack<at::with<Eff::Block>>::failing_codes() == "W001");
-static_assert(hot_pack<at::syscall::per<SyscallId::futex>>::failing_codes() == "W001");
-static_assert(hot_pack<at::sync::acquire_wait>::failing_codes() == "W001", "and the kernel wait still does");
+static_assert(hot_pack<at::with<Eff::Block>>.failing_codes() == "W001");
+static_assert(hot_pack<at::syscall::per<SyscallId::futex>>.failing_codes() == "W001");
+static_assert(hot_pack<at::sync::acquire_wait>.failing_codes() == "W001", "and the kernel wait still does");
 
 // A call that cannot park the caller puts no Block in the row.
-static_assert(hot_pack<at::syscall::per<SyscallId::clock_gettime>>::valid, "a vDSO read enters no kernel");
-static_assert(hot_pack<at::syscall::family<SyscallFamily::VdsoOnly>>::valid);
-static_assert(hot_pack<at::syscall::per<SyscallId::getpid>>::W001_ok, "a read of process state does not park");
-static_assert(hot_pack<at::with<Eff::IO>>::W001_ok, "IO without Block is H003's premise, not W001's");
+static_assert(hot_pack<at::syscall::per<SyscallId::clock_gettime>>.is_valid(), "a vDSO read enters no kernel");
+static_assert(hot_pack<at::syscall::family<SyscallFamily::VdsoOnly>>.is_valid());
+static_assert(hot_pack<at::syscall::per<SyscallId::getpid>>.admits(W001), "a read of process state does not park");
+static_assert(hot_pack<at::with<Eff::IO>>.admits(W001), "IO without Block is H003's premise, not W001's");
 
 // The lifted row is the union of every lift in the pack.  A spin and
 // UMWAIT lift to the empty row.
-static_assert(std::is_same_v<hot_pack<at::sync::park, at::with<Eff::IO>>::lifted_row, fe::Row<Eff::IO, Eff::Block>>);
-static_assert(std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>, at::with<Eff::Alloc>>::lifted_row,
+static_assert(
+    std::is_same_v<::fixy::atom::lifted_row_of_t<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>,
+                                                 at::sync::park, at::with<Eff::IO>>,
+                   fe::Row<Eff::IO, Eff::Block>>);
+static_assert(std::is_same_v<::fixy::atom::lifted_row_of_t<at::syscall::per<SyscallId::futex>, at::with<Eff::Alloc>>,
                              fe::Row<Eff::Alloc, Eff::Block, Eff::Nondet>>);
-static_assert(std::is_same_v<live_rules<>::lifted_row, fe::Row<>>);
-static_assert(!live_rules<at::sync::spin_pause>::blocks && !live_rules<at::sync::umwait_c01>::blocks);
+static_assert(std::is_same_v<::fixy::atom::lifted_row_of_t<>, fe::Row<>>);
+static_assert(!pack_verdict_v<at::sync::spin_pause>.premises.blocks
+              && !pack_verdict_v<at::sync::umwait_c01>.premises.blocks);
 
 // The row of the binding joins the Effect grade with the lifted row.  It
 // is the row every rule reads, and it is the row fixy::binding_row_t
 // gives for context admission, so a rule and a context gate read one row.
 static_assert(
-    std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>>::binding_row, fe::Row<Eff::Block, Eff::Nondet>>);
-static_assert(std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>>::effect_row, fe::Row<>>,
-              "the Effect grade stays at the strict pole");
-static_assert(std::is_same_v<live_rules<at::with<Eff::IO>, at::sync::park>::binding_row, fe::Row<Eff::IO, Eff::Block>>);
-static_assert(std::is_same_v<live_rules<>::binding_row, fe::Row<>>);
-static_assert(std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>>::binding_row,
-                             ::fixy::binding_row_t<::fixy::fn<int, at::syscall::per<SyscallId::futex>>>>);
+    std::is_same_v<::fixy::atom::binding_row_of_t<grades<at::syscall::per<SyscallId::futex>>::on<Axis::Effect>,
+                                                  at::syscall::per<SyscallId::futex>>,
+                   fe::Row<Eff::Block, Eff::Nondet>>);
+static_assert(
+    std::is_same_v<::fixy::atom::effect_row_of_t<grades<at::syscall::per<SyscallId::futex>>::on<Axis::Effect>>,
+                   fe::Row<>>,
+    "the Effect grade stays at the strict pole");
+static_assert(std::is_same_v<::fixy::atom::binding_row_of_t<grades<at::with<Eff::IO>, at::sync::park>::on<Axis::Effect>,
+                                                            at::with<Eff::IO>, at::sync::park>,
+                             fe::Row<Eff::IO, Eff::Block>>);
+static_assert(std::is_same_v<::fixy::atom::binding_row_of_t<grades<>::on<Axis::Effect>>, fe::Row<>>);
+static_assert(
+    std::is_same_v<::fixy::atom::binding_row_of_t<grades<at::syscall::per<SyscallId::futex>>::on<Axis::Effect>,
+                                                  at::syscall::per<SyscallId::futex>>,
+                   ::fixy::binding_row_t<::fixy::fn<int, at::syscall::per<SyscallId::futex>>>>);
 
 // The positive controls: the rules admit a warm or a cold binding with
 // the same row, and a binding that states no tier.
-static_assert(live_rules<at::regime::warm, at::with<Eff::Block>>::valid);
-static_assert(live_rules<at::regime::cold, at::syscall::per<SyscallId::futex>>::valid);
-static_assert(live_rules<at::regime::warm, at::syscall::per<SyscallId::sched_yield>>::valid);
-static_assert(live_rules<at::with<Eff::Block>>::valid);
-static_assert(live_rules<at::syscall::per<SyscallId::futex>>::valid);
+static_assert(pack_verdict_v<at::regime::warm, at::with<Eff::Block>>.is_valid());
+static_assert(pack_verdict_v<at::regime::cold, at::syscall::per<SyscallId::futex>>.is_valid());
+static_assert(pack_verdict_v<at::regime::warm, at::syscall::per<SyscallId::sched_yield>>.is_valid());
+static_assert(pack_verdict_v<at::with<Eff::Block>>.is_valid());
+static_assert(pack_verdict_v<at::syscall::per<SyscallId::futex>>.is_valid());
 
 // W002 Row<Bg> x a spin that burns the core.  This is narrower than "not
 // a kernel wait" by exactly one grade, and UMWAIT is that grade: it halts
 // the core in C0.1 rather than spinning it, so a background body may use
 // it.  These three cells are the whole reason fixy/atoms/Sync.h carries
 // two predicates rather than one negating the other.
-static_assert(!live_rules<at::with<Eff::Bg>, at::sync::spin_pause>::W002_ok);
-static_assert(!live_rules<at::with<Eff::Bg>, at::sync::bounded_spin>::W002_ok);
-static_assert(live_rules<at::with<Eff::Bg>, at::sync::umwait_c01>::W002_ok,
+static_assert(!pack_verdict_v<at::with<Eff::Bg>, at::sync::spin_pause>.admits(W002));
+static_assert(!pack_verdict_v<at::with<Eff::Bg>, at::sync::bounded_spin>.admits(W002));
+static_assert(pack_verdict_v<at::with<Eff::Bg>, at::sync::umwait_c01>.admits(W002),
               "UMWAIT halts the core instead of burning it, so a background body may wait that way");
-static_assert(live_rules<at::with<Eff::Bg>, at::sync::park>::W002_ok);
-static_assert(live_rules<at::sync::spin_pause>::W002_ok, "a foreground spin is the intended hot-path wait");
+static_assert(pack_verdict_v<at::with<Eff::Bg>, at::sync::park>.admits(W002));
+static_assert(pack_verdict_v<at::sync::spin_pause>.admits(W002), "a foreground spin is the intended hot-path wait");
 
 // The lift, read through the same atoms.  A kernel wait carries
 // Effect::Block into the row a context has to admit.  A spin never carries
@@ -413,8 +440,8 @@ static_assert(std::is_same_v<fe::lift_row_t<at::sync::umwait_c01>, fe::Row<Eff::
 
 // Neither rule fires on a binding that names no strategy, which is what
 // keeps the Synchronization strict pole from meaning "spins".
-static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok
-              && live_rules<at::with<Eff::Bg>>::W002_ok);
+static_assert(pack_verdict_v<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>.admits(W001)
+              && pack_verdict_v<at::with<Eff::Bg>>.admits(W002));
 
 // ---------------------------------------------------------------------
 // The observability family, which reads fixy/atoms/Observe.h.
@@ -425,23 +452,24 @@ static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<ho
 // B002, the containment.  An observability row must be a Subrow of the
 // binding's effect row, because Observability names which PART of that row
 // is observation.  It is not a second row and cannot widen the first.
-static_assert(!live_rules<at::observe::surface<Eff::IO>>::B002_ok,
+static_assert(!pack_verdict_v<at::observe::surface<Eff::IO>>.admits(B002),
               "a surface naming IO on a binding whose effect row is empty claims an effect it never declared");
-static_assert(live_rules<at::observe::surface<Eff::IO>, at::with<Eff::IO>>::B002_ok,
+static_assert(pack_verdict_v<at::observe::surface<Eff::IO>, at::with<Eff::IO>>.admits(B002),
               "the same surface is admitted once the binding declares IO");
-static_assert(live_rules<at::observe::surface<Eff::IO>, at::with<Eff::IO, Eff::Bg>>::B002_ok,
+static_assert(pack_verdict_v<at::observe::surface<Eff::IO>, at::with<Eff::IO, Eff::Bg>>.admits(B002),
               "a proper subset is containment too");
-static_assert(!live_rules<at::observe::surface<Eff::IO, Eff::Bg>, at::with<Eff::IO>>::B002_ok,
+static_assert(!pack_verdict_v<at::observe::surface<Eff::IO, Eff::Bg>, at::with<Eff::IO>>.admits(B002),
               "one effect of the surface is outside the row, which is enough");
-static_assert(live_rules<at::observe::surface<>>::B002_ok, "the empty surface observes nothing and is contained");
+static_assert(pack_verdict_v<at::observe::surface<>>.admits(B002),
+              "the empty surface observes nothing and is contained");
 // The row that contains the surface is the row of the binding, so an
 // effect that an atom lifts is an effect the binding declared.
-static_assert(live_rules<at::observe::surface<Eff::IO>, at::syscall::per<SyscallId::getpid>>::B002_ok,
+static_assert(pack_verdict_v<at::observe::surface<Eff::IO>, at::syscall::per<SyscallId::getpid>>.admits(B002),
               "a read of process state lifts IO, so the surface names an effect the binding performs");
-static_assert(!live_rules<at::observe::surface<Eff::IO>, at::syscall::per<SyscallId::futex>>::B002_ok,
+static_assert(!pack_verdict_v<at::observe::surface<Eff::IO>, at::syscall::per<SyscallId::futex>>.admits(B002),
               "a futex call lifts Block and not IO");
-static_assert(live_rules<at::with<Eff::IO>>::B002_ok, "a binding with no surface observes nothing");
-static_assert(live_rules<>::B002_ok);
+static_assert(pack_verdict_v<at::with<Eff::IO>>.admits(B002), "a binding with no surface observes nothing");
+static_assert(pack_verdict_v<>.admits(B002));
 
 // The strict pole on this axis is derived from Effect's, which is the
 // empty row, so "observes nothing" is what a binding claims by saying
@@ -453,27 +481,30 @@ static_assert(col::grades<at::observe::surface<Eff::IO>>::mentions<Axis::Observa
 // recorded for the axis.  It is a different premise from B002's: a
 // background observable surface whose resource use is unbounded, where the
 // remedy the theorem names is space_bounded plus cost_linear.
-static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>::B001_ok,
+static_assert(!pack_verdict_v<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>.admits(B001),
               "no cost grade at all is an unstated envelope, which is one of the four unbounded readings");
-static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>>::B001_ok,
+static_assert(!pack_verdict_v<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>>.admits(B001),
               "a stated cost with no space grade states no bound on what the surface holds");
-static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_unbounded>::B001_ok);
+static_assert(!pack_verdict_v<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_unbounded>.admits(B001));
 static_assert(
-    !live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>, at::space_unbounded>::B001_ok);
+    !pack_verdict_v<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>, at::space_unbounded>.admits(
+        B001));
 static_assert(
-    live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>, at::space_bounded<4096>>::B001_ok,
+    pack_verdict_v<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>, at::space_bounded<4096>>.admits(
+        B001),
     "the remedy the theorem names: a bounded space and a linear cost");
 // Each premise alone stands down.
-static_assert(live_rules<at::with<Eff::Bg>, at::cost_unbounded>::B001_ok, "no surface, so nothing is observable");
-static_assert(live_rules<at::observe::surface<Eff::IO>, at::with<Eff::IO>, at::cost_unbounded>::B001_ok,
+static_assert(pack_verdict_v<at::with<Eff::Bg>, at::cost_unbounded>.admits(B001),
+              "no surface, so nothing is observable");
+static_assert(pack_verdict_v<at::observe::surface<Eff::IO>, at::with<Eff::IO>, at::cost_unbounded>.admits(B001),
               "an unbounded foreground surface is not a back-pressure trap: the caller is the consumer");
 
 // The two theorems are independent, which is why both codes exist. The
 // first pack trips B002 and not B001; the second trips B001 and not B002.
-static_assert(!live_rules<at::observe::surface<Eff::IO>>::B002_ok
-              && live_rules<at::observe::surface<Eff::IO>>::B001_ok);
-static_assert(live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>::B002_ok
-              && !live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>::B001_ok);
+static_assert(!pack_verdict_v<at::observe::surface<Eff::IO>>.admits(B002)
+              && pack_verdict_v<at::observe::surface<Eff::IO>>.admits(B001));
+static_assert(pack_verdict_v<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>.admits(B002)
+              && !pack_verdict_v<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>.admits(B001));
 
 // A surface atom declares no lift, so it contributes nothing to the row a
 // context must admit.  That is the whole point of the containment: the
@@ -485,33 +516,34 @@ static_assert(!fe::LiftsToRow<at::observe::surface<Eff::IO>>);
 // pair with.
 //
 // Four rules pair a grade with the payload's replay claim, and the claim
-// is the DetSafe band the payload carries.  rules_of<Payload, Atoms...>
-// reads it; live_rules<Atoms...> is the pack-only view with void for the
-// payload.  These cells are the witness that the read exists and reads
-// the right thing, ahead of any rule consuming it: a structural change
-// with nothing observable is not accepted as tested.
+// is the DetSafe band the payload carries.
+// binding_verdict_v<Payload, Atoms...> reads it.  pack_verdict_v<Atoms...>
+// is the pack-only view, with void for the payload.  These cells are the
+// witness that the read exists and reads the right thing, ahead of any
+// rule consuming it: a structural change with nothing observable is not
+// accepted as tested.
 using DetTier = ::fixy::DetSafeTier_v;
 template <DetTier Tier>
 using det = ::fixy::DetSafe<Tier, int>;
 
 // The two replay-deterministic tiers claim; the five below them do not.
-static_assert(rules_of<det<DetTier::Pure>>::replay_deterministic);
-static_assert(rules_of<det<DetTier::PhiloxRng>>::replay_deterministic);
-static_assert(!rules_of<det<DetTier::MonotonicClockRead>>::replay_deterministic,
+static_assert(binding_verdict_v<det<DetTier::Pure>>.premises.replay_deterministic);
+static_assert(binding_verdict_v<det<DetTier::PhiloxRng>>.premises.replay_deterministic);
+static_assert(!binding_verdict_v<det<DetTier::MonotonicClockRead>>.premises.replay_deterministic,
               "a monotonic clock is bounded within one run and says nothing across runs");
-static_assert(!rules_of<det<DetTier::WallClockRead>>::replay_deterministic);
-static_assert(!rules_of<det<DetTier::NonDeterministicSyscall>>::replay_deterministic);
+static_assert(!binding_verdict_v<det<DetTier::WallClockRead>>.premises.replay_deterministic);
+static_assert(!binding_verdict_v<det<DetTier::NonDeterministicSyscall>>.premises.replay_deterministic);
 
 // A payload with no band claims nothing, and so does the pack-only view.
-static_assert(!rules_of<int>::replay_deterministic);
-static_assert(!rules_of<void>::replay_deterministic);
-static_assert(!live_rules<>::replay_deterministic, "live_rules is rules_of<void, ...>");
-static_assert(std::is_same_v<live_rules<at::copy>, rules_of<void, at::copy>>);
+static_assert(!binding_verdict_v<int>.premises.replay_deterministic);
+static_assert(!binding_verdict_v<void>.premises.replay_deterministic);
+static_assert(!pack_verdict_v<>.premises.replay_deterministic, "pack_verdict_v is binding_verdict_v<void, ...>");
+static_assert(&pack_verdict_v<at::copy> == &binding_verdict_v<void, at::copy>);
 
 // The read alone refuses nothing, so a replay-deterministic payload with
 // an empty pack is accepted.  Each rule that consumes the read pairs it
 // with an atom of its own axis, and names this member.
-static_assert(rules_of<det<DetTier::Pure>>::valid);
+static_assert(binding_verdict_v<det<DetTier::Pure>>.is_valid());
 
 // ---------------------------------------------------------------------
 // The hardware-instruction family, which reads fixy/atoms/Hw.h.
@@ -526,49 +558,53 @@ static_assert(col::axis_has_an_atom<Axis::HwInstruction>);
 // above the timestamp tier, so the one clause of V201 also covers the
 // privileged tier.  The cost and refinement atoms silence H001
 // and H002; an Init row silences V202 for the privileged cell.
-static_assert(!live_rules<at::regime::hot, at::hw::non_deterministic_tsc, at::cost_constant,
-                          at::refined_with<hot_invariant>>::V201_ok);
-static_assert(!live_rules<at::regime::hot, at::hw::privileged_msr, at::with<Eff::Init>, at::cost_constant,
-                          at::refined_with<hot_invariant>>::V201_ok,
+static_assert(
+    !pack_verdict_v<at::regime::hot, at::hw::non_deterministic_tsc, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        V201));
+static_assert(!pack_verdict_v<at::regime::hot, at::hw::privileged_msr, at::with<Eff::Init>, at::cost_constant,
+                          at::refined_with<hot_invariant>>.admits(V201),
               "the privileged tier is at or above the timestamp tier, so the hot path refuses it too");
 static_assert(
-    live_rules<at::regime::hot, at::hw::vectorizable, at::cost_constant, at::refined_with<hot_invariant>>::V201_ok,
+    pack_verdict_v<at::regime::hot, at::hw::vectorizable, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        V201),
     "SIMD intrinsics sit below the timestamp tier and are what a hot path is made of");
-static_assert(live_rules<at::hw::non_deterministic_tsc>::V201_ok, "not hot, so a timestamp read is ordinary");
-static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::V201_ok);
+static_assert(pack_verdict_v<at::hw::non_deterministic_tsc>.admits(V201), "not hot, so a timestamp read is ordinary");
+static_assert(pack_verdict_v<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>.admits(V201));
 
 // V202 the PrivilegedMsr tier x an effect row with no Init.  The twin the
 // fixture names: add Init to the row and the tier is admitted.
-static_assert(!live_rules<at::hw::privileged_msr>::V202_ok);
-static_assert(!live_rules<at::hw::privileged_msr, at::with<Eff::IO>>::V202_ok, "a row without Init is not enough");
-static_assert(live_rules<at::hw::privileged_msr, at::with<Eff::Init>>::V202_ok, "the twin: reached from Init");
-static_assert(live_rules<at::hw::privileged_msr, at::with<Eff::Init, Eff::IO>>::V202_ok);
-static_assert(live_rules<at::hw::non_deterministic_tsc>::V202_ok, "only the privileged tier needs Init");
+static_assert(!pack_verdict_v<at::hw::privileged_msr>.admits(V202));
+static_assert(!pack_verdict_v<at::hw::privileged_msr, at::with<Eff::IO>>.admits(V202),
+              "a row without Init is not enough");
+static_assert(pack_verdict_v<at::hw::privileged_msr, at::with<Eff::Init>>.admits(V202), "the twin: reached from Init");
+static_assert(pack_verdict_v<at::hw::privileged_msr, at::with<Eff::Init, Eff::IO>>.admits(V202));
+static_assert(pack_verdict_v<at::hw::non_deterministic_tsc>.admits(V202), "only the privileged tier needs Init");
 
 // V203 a replay-deterministic payload x a tier at or above
 // NonDeterministicTsc.  This is the payload read consumed: the same pack
 // is refused under a Pure payload and admitted under a payload with no
 // band or under the pack-only view.
-static_assert(!rules_of<det<DetTier::Pure>, at::hw::non_deterministic_tsc>::V203_ok);
-static_assert(!rules_of<det<DetTier::PhiloxRng>, at::hw::privileged_msr, at::with<Eff::Init>>::V203_ok);
-static_assert(rules_of<det<DetTier::WallClockRead>, at::hw::non_deterministic_tsc>::V203_ok,
+static_assert(!binding_verdict_v<det<DetTier::Pure>, at::hw::non_deterministic_tsc>.admits(V203));
+static_assert(!binding_verdict_v<det<DetTier::PhiloxRng>, at::hw::privileged_msr, at::with<Eff::Init>>.admits(V203));
+static_assert(binding_verdict_v<det<DetTier::WallClockRead>, at::hw::non_deterministic_tsc>.admits(V203),
               "a payload that already admits wall-clock reads claims nothing a timestamp could break");
-static_assert(rules_of<int, at::hw::non_deterministic_tsc>::V203_ok, "no band, no claim");
-static_assert(live_rules<at::hw::non_deterministic_tsc>::V203_ok, "the pack-only view cannot see a payload");
-static_assert(rules_of<det<DetTier::Pure>, at::hw::vectorizable>::V203_ok, "below the timestamp tier");
+static_assert(binding_verdict_v<int, at::hw::non_deterministic_tsc>.admits(V203), "no band, no claim");
+static_assert(pack_verdict_v<at::hw::non_deterministic_tsc>.admits(V203), "the pack-only view cannot see a payload");
+static_assert(binding_verdict_v<det<DetTier::Pure>, at::hw::vectorizable>.admits(V203), "below the timestamp tier");
 
 // The three rules are three: each pack below trips exactly one of them.
-static_assert(!live_rules<at::regime::hot, at::hw::non_deterministic_tsc, at::cost_constant,
-                          at::refined_with<hot_invariant>>::V201_ok
-              && live_rules<at::regime::hot, at::hw::non_deterministic_tsc, at::cost_constant,
-                            at::refined_with<hot_invariant>>::V202_ok);
-static_assert(!live_rules<at::hw::privileged_msr>::V202_ok && live_rules<at::hw::privileged_msr>::V201_ok);
-static_assert(!rules_of<det<DetTier::Pure>, at::hw::non_deterministic_tsc>::V203_ok
-              && rules_of<det<DetTier::Pure>, at::hw::non_deterministic_tsc>::V201_ok);
+static_assert(!pack_verdict_v<at::regime::hot, at::hw::non_deterministic_tsc, at::cost_constant,
+                          at::refined_with<hot_invariant>>.admits(V201)
+              && pack_verdict_v<at::regime::hot, at::hw::non_deterministic_tsc, at::cost_constant,
+                            at::refined_with<hot_invariant>>.admits(V202));
+static_assert(!pack_verdict_v<at::hw::privileged_msr>.admits(V202)
+              && pack_verdict_v<at::hw::privileged_msr>.admits(V201));
+static_assert(!binding_verdict_v<det<DetTier::Pure>, at::hw::non_deterministic_tsc>.admits(V203)
+              && binding_verdict_v<det<DetTier::Pure>, at::hw::non_deterministic_tsc>.admits(V201));
 
 // The read alone still refuses nothing: a Pure payload with a tier below
 // the timestamp one is accepted through the bound view.
-static_assert(rules_of<det<DetTier::Pure>, at::hw::vectorizable>::valid);
+static_assert(binding_verdict_v<det<DetTier::Pure>, at::hw::vectorizable>.is_valid());
 
 // ---------------------------------------------------------------------
 // The barrier-strength family, which reads fixy/atoms/Barrier.h.
@@ -580,39 +616,49 @@ static_assert(col::axis_has_an_atom<Axis::BarrierStrength>);
 
 // V301 hot x a fence at or above SeqCst.
 static_assert(
-    !live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>::V301_ok);
+    !pack_verdict_v<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        V301));
 static_assert(
-    !live_rules<at::regime::hot, at::barrier::full_fence, at::cost_constant, at::refined_with<hot_invariant>>::V301_ok,
+    !pack_verdict_v<at::regime::hot, at::barrier::full_fence, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        V301),
     "the standalone fence is above seq_cst on the ladder, so the hot path refuses it too");
 static_assert(
-    live_rules<at::regime::hot, at::barrier::acq_rel, at::cost_constant, at::refined_with<hot_invariant>>::V301_ok,
+    pack_verdict_v<at::regime::hot, at::barrier::acq_rel, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        V301),
     "acq_rel is one MOV each way on x86 and is what a hot SPSC ring is made of");
-static_assert(live_rules<at::regime::hot, at::barrier::release_store, at::cost_constant,
-                         at::refined_with<hot_invariant>>::V301_ok);
-static_assert(live_rules<at::regime::hot, at::barrier::compiler_barrier, at::cost_constant,
-                         at::refined_with<hot_invariant>>::V301_ok,
-              "a compiler barrier emits no instruction");
-static_assert(live_rules<at::barrier::seq_cst>::V301_ok, "not hot, so a full fence is ordinary");
-static_assert(live_rules<at::regime::warm, at::barrier::full_fence>::V301_ok);
-static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::V301_ok,
+static_assert(
+    pack_verdict_v<at::regime::hot, at::barrier::release_store, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        V301));
+static_assert(
+    pack_verdict_v<at::regime::hot, at::barrier::compiler_barrier, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        V301),
+    "a compiler barrier emits no instruction");
+static_assert(pack_verdict_v<at::barrier::seq_cst>.admits(V301), "not hot, so a full fence is ordinary");
+static_assert(pack_verdict_v<at::regime::warm, at::barrier::full_fence>.admits(V301));
+static_assert(pack_verdict_v<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>.admits(V301),
               "no strength named: the binding provides no fence, and there is nothing to refuse");
-static_assert(live_rules<>::V301_ok);
+static_assert(pack_verdict_v<>.admits(V301));
 
 // The fixture's pack trips V301 and nothing else: the two hot rules its
 // cost and refinement atoms answer, the wait rule, and the hardware rule
 // all stand down.
 static_assert(
-    live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>::H001_ok
-    && live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>::H002_ok
-    && live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok
-    && live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>::V201_ok);
+    pack_verdict_v<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        H001)
+    && pack_verdict_v<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        H002)
+    && pack_verdict_v<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        W001)
+    && pack_verdict_v<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>.admits(
+        V201));
 
 // The two `tier` families do not answer for each other: a hardware tier
 // is not a fence strength, and a fence strength is not a hardware tier.
-static_assert(live_rules<at::regime::hot, at::hw::privileged_msr, at::with<Eff::Init>, at::cost_constant,
-                         at::refined_with<hot_invariant>>::V301_ok,
+static_assert(pack_verdict_v<at::regime::hot, at::hw::privileged_msr, at::with<Eff::Init>, at::cost_constant,
+                         at::refined_with<hot_invariant>>.admits(V301),
               "the top of the hardware ladder is not a fence");
-static_assert(live_rules<at::barrier::full_fence>::V201_ok && live_rules<at::barrier::full_fence>::V202_ok,
+static_assert(pack_verdict_v<at::barrier::full_fence>.admits(V201)
+                  && pack_verdict_v<at::barrier::full_fence>.admits(V202),
               "the top of the fence ladder is not a hardware tier");
 
 // Acquire and release are incomparable, so neither tag satisfies a floor
@@ -640,74 +686,77 @@ static_assert(col::detail::is_barrier_at_or_above_<::foundation::algebra::lattic
 static_assert(col::axis_has_an_atom<Axis::MemoryScope>);
 
 // V401 a scope at or above Cluster x a fence below AcqRel.
-static_assert(!live_rules<at::scope::cluster, at::barrier::release_store>::V401_ok);
-static_assert(!live_rules<at::scope::gpu, at::barrier::acquire_load>::V401_ok);
-static_assert(!live_rules<at::scope::system, at::barrier::compiler_barrier>::V401_ok,
+static_assert(!pack_verdict_v<at::scope::cluster, at::barrier::release_store>.admits(V401));
+static_assert(!pack_verdict_v<at::scope::gpu, at::barrier::acquire_load>.admits(V401));
+static_assert(!pack_verdict_v<at::scope::system, at::barrier::compiler_barrier>.admits(V401),
               "the shared top reaches everywhere, so it is at or above the floor");
-static_assert(!live_rules<at::scope::cluster>::V401_ok,
+static_assert(!pack_verdict_v<at::scope::cluster>.admits(V401),
               "no strength named provides no fence, which is the same trap with nothing said");
-static_assert(live_rules<at::scope::cluster, at::barrier::acq_rel>::V401_ok, "the twin: acq_rel is the floor");
-static_assert(live_rules<at::scope::gpu, at::barrier::seq_cst>::V401_ok);
-static_assert(live_rules<at::scope::system, at::barrier::full_fence>::V401_ok);
-static_assert(live_rules<at::scope::cta, at::barrier::release_store>::V401_ok, "below the cluster floor");
-static_assert(live_rules<at::scope::warp, at::barrier::none>::V401_ok);
-static_assert(live_rules<at::scope::thread>::V401_ok, "the shared bottom reaches nobody else");
-static_assert(live_rules<at::scope::inner, at::barrier::release_store>::V401_ok,
+static_assert(pack_verdict_v<at::scope::cluster, at::barrier::acq_rel>.admits(V401), "the twin: acq_rel is the floor");
+static_assert(pack_verdict_v<at::scope::gpu, at::barrier::seq_cst>.admits(V401));
+static_assert(pack_verdict_v<at::scope::system, at::barrier::full_fence>.admits(V401));
+static_assert(pack_verdict_v<at::scope::cta, at::barrier::release_store>.admits(V401), "below the cluster floor");
+static_assert(pack_verdict_v<at::scope::warp, at::barrier::none>.admits(V401));
+static_assert(pack_verdict_v<at::scope::thread>.admits(V401), "the shared bottom reaches nobody else");
+static_assert(pack_verdict_v<at::scope::inner, at::barrier::release_store>.admits(V401),
               "Inner is incomparable with Cluster, so it is not at or above it and the rule stands down");
-static_assert(live_rules<at::scope::outer>::V401_ok, "Outer is on the host trunk too");
-static_assert(live_rules<at::barrier::none>::V401_ok, "no scope named publishes to nobody in particular");
-static_assert(live_rules<>::V401_ok);
+static_assert(pack_verdict_v<at::scope::outer>.admits(V401), "Outer is on the host trunk too");
+static_assert(pack_verdict_v<at::barrier::none>.admits(V401), "no scope named publishes to nobody in particular");
+static_assert(pack_verdict_v<>.admits(V401));
 
 // V401 and V301 read the same strength axis and are two rules: the
 // fixture's pack trips V401 alone, and a hot seq_cst publication to the
 // whole system trips V301 alone.
-static_assert(live_rules<at::scope::cluster, at::barrier::release_store>::V301_ok
-              && !live_rules<at::scope::cluster, at::barrier::release_store>::V401_ok);
-static_assert(!live_rules<at::regime::hot, at::scope::system, at::barrier::seq_cst, at::cost_constant,
-                          at::refined_with<hot_invariant>>::V301_ok
-              && live_rules<at::regime::hot, at::scope::system, at::barrier::seq_cst, at::cost_constant,
-                            at::refined_with<hot_invariant>>::V401_ok);
+static_assert(pack_verdict_v<at::scope::cluster, at::barrier::release_store>.admits(V301)
+              && !pack_verdict_v<at::scope::cluster, at::barrier::release_store>.admits(V401));
+static_assert(!pack_verdict_v<at::regime::hot, at::scope::system, at::barrier::seq_cst, at::cost_constant,
+                          at::refined_with<hot_invariant>>.admits(V301)
+              && pack_verdict_v<at::regime::hot, at::scope::system, at::barrier::seq_cst, at::cost_constant,
+                            at::refined_with<hot_invariant>>.admits(V401));
 
 // ---------------------------------------------------------------------
 // The SIMD-ISA family, which reads fixy/atoms/Simd.h.
 //
 // Two trunks again, and two rules.  V101 reads the payload, so its cells
-// use rules_of; V402 reads two axes of the pack, so its use live_rules.
+// use binding_verdict_v.  V402 reads two axes of the pack, so its cells use
+// pack_verdict_v.
 
 static_assert(col::axis_has_an_atom<Axis::SimdIsa>);
 
 // V101 a replay-deterministic payload x an ISA pinned to one trunk.
-static_assert(!rules_of<det<DetTier::Pure>, at::simd::avx2>::V101_ok);
-static_assert(!rules_of<det<DetTier::Pure>, at::simd::sve2>::V101_ok, "either trunk pins a width");
-static_assert(!rules_of<det<DetTier::PhiloxRng>, at::simd::avx512bw>::V101_ok);
-static_assert(rules_of<det<DetTier::Pure>, at::simd::scalar>::V101_ok, "the shared bottom pins no trunk");
-static_assert(rules_of<det<DetTier::Pure>, at::simd::portable>::V101_ok,
+static_assert(!binding_verdict_v<det<DetTier::Pure>, at::simd::avx2>.admits(V101));
+static_assert(!binding_verdict_v<det<DetTier::Pure>, at::simd::sve2>.admits(V101), "either trunk pins a width");
+static_assert(!binding_verdict_v<det<DetTier::PhiloxRng>, at::simd::avx512bw>.admits(V101));
+static_assert(binding_verdict_v<det<DetTier::Pure>, at::simd::scalar>.admits(V101), "the shared bottom pins no trunk");
+static_assert(binding_verdict_v<det<DetTier::Pure>, at::simd::portable>.admits(V101),
               "the shared top is one kernel for every set, so it pins no trunk either");
-static_assert(rules_of<det<DetTier::WallClockRead>, at::simd::avx2>::V101_ok,
+static_assert(binding_verdict_v<det<DetTier::WallClockRead>, at::simd::avx2>.admits(V101),
               "a payload that already admits a wall-clock read claims nothing a vector width could break");
-static_assert(rules_of<int, at::simd::avx2>::V101_ok, "no band, no claim");
-static_assert(live_rules<at::simd::avx2>::V101_ok, "the pack-only view cannot see a payload");
+static_assert(binding_verdict_v<int, at::simd::avx2>.admits(V101), "no band, no claim");
+static_assert(pack_verdict_v<at::simd::avx2>.admits(V101), "the pack-only view cannot see a payload");
 
 // V402 a trunk-pinned scope x a trunk-pinned ISA that do not cohere.
-static_assert(!live_rules<at::simd::avx2, at::scope::inner>::V402_ok,
+static_assert(!pack_verdict_v<at::simd::avx2, at::scope::inner>.admits(V402),
               "the host shareability scopes are the ARM fence family, and this ISA is x86");
-static_assert(!live_rules<at::simd::avx2, at::scope::cta>::V402_ok, "an accelerator scope with a host ISA");
-static_assert(!live_rules<at::simd::sve2, at::scope::gpu>::V402_ok, "an accelerator scope with an ARM host ISA");
-static_assert(live_rules<at::simd::neon, at::scope::inner>::V402_ok, "the one coherent pairing");
-static_assert(live_rules<at::simd::sve, at::scope::outer>::V402_ok);
-static_assert(live_rules<at::simd::avx2, at::scope::thread>::V402_ok, "the shared bottom coheres with anything");
-static_assert(live_rules<at::simd::avx2, at::scope::system>::V402_ok, "and so does the shared top");
-static_assert(live_rules<at::simd::scalar, at::scope::cta>::V402_ok, "an unpinned ISA coheres with anything");
-static_assert(live_rules<at::simd::portable, at::scope::inner>::V402_ok);
-static_assert(live_rules<at::scope::cta>::V402_ok, "no ISA named");
-static_assert(live_rules<at::simd::avx2>::V402_ok, "no scope named");
-static_assert(live_rules<>::V402_ok);
+static_assert(!pack_verdict_v<at::simd::avx2, at::scope::cta>.admits(V402), "an accelerator scope with a host ISA");
+static_assert(!pack_verdict_v<at::simd::sve2, at::scope::gpu>.admits(V402),
+              "an accelerator scope with an ARM host ISA");
+static_assert(pack_verdict_v<at::simd::neon, at::scope::inner>.admits(V402), "the one coherent pairing");
+static_assert(pack_verdict_v<at::simd::sve, at::scope::outer>.admits(V402));
+static_assert(pack_verdict_v<at::simd::avx2, at::scope::thread>.admits(V402),
+              "the shared bottom coheres with anything");
+static_assert(pack_verdict_v<at::simd::avx2, at::scope::system>.admits(V402), "and so does the shared top");
+static_assert(pack_verdict_v<at::simd::scalar, at::scope::cta>.admits(V402), "an unpinned ISA coheres with anything");
+static_assert(pack_verdict_v<at::simd::portable, at::scope::inner>.admits(V402));
+static_assert(pack_verdict_v<at::scope::cta>.admits(V402), "no ISA named");
+static_assert(pack_verdict_v<at::simd::avx2>.admits(V402), "no scope named");
+static_assert(pack_verdict_v<>.admits(V402));
 
 // The one coherent pairing still answers to V401, which is the other
 // rule reading a scope: Inner is on the host trunk, so it is below the
 // cluster floor and V401 stands down whatever the fence.
-static_assert(live_rules<at::simd::neon, at::scope::inner>::V401_ok
-              && live_rules<at::simd::neon, at::scope::inner>::V402_ok);
+static_assert(pack_verdict_v<at::simd::neon, at::scope::inner>.admits(V401)
+              && pack_verdict_v<at::simd::neon, at::scope::inner>.admits(V402));
 
 // ---------------------------------------------------------------------
 // The floating-point-mode family, which reads fixy/atoms/Fp.h.
@@ -724,38 +773,42 @@ template <auto... Settings>
 using fp_mode = at::fp::mode<Settings...>;
 
 // F101 a replay-deterministic payload x reassociation permitted.
-static_assert(!rules_of<det<DetTier::Pure>, fp_mode<Reassoc::UnrestrictedRewrite>>::F101_ok);
-static_assert(!rules_of<det<DetTier::Pure>, fp_mode<Reassoc::BoundedTreeDepth>>::F101_ok,
+static_assert(!binding_verdict_v<det<DetTier::Pure>, fp_mode<Reassoc::UnrestrictedRewrite>>.admits(F101));
+static_assert(!binding_verdict_v<det<DetTier::Pure>, fp_mode<Reassoc::BoundedTreeDepth>>.admits(F101),
               "a tree of any shape but the one the source wrote is a different sum");
-static_assert(rules_of<det<DetTier::Pure>, fp_mode<Reassoc::Forbidden>>::F101_ok);
-static_assert(rules_of<det<DetTier::Pure>, fp_mode<Contract::Fast>>::F101_ok,
+static_assert(binding_verdict_v<det<DetTier::Pure>, fp_mode<Reassoc::Forbidden>>.admits(F101));
+static_assert(binding_verdict_v<det<DetTier::Pure>, fp_mode<Contract::Fast>>.admits(F101),
               "a mode that names only contraction leaves reassociation at Forbidden");
-static_assert(rules_of<det<DetTier::Pure>, fp_mode<>>::F101_ok, "the empty mode is every setting at its strict pole");
-static_assert(rules_of<int, fp_mode<Reassoc::UnrestrictedRewrite>>::F101_ok, "no band, no claim");
-static_assert(live_rules<fp_mode<Reassoc::UnrestrictedRewrite>>::F101_ok, "the pack-only view cannot see a payload");
+static_assert(binding_verdict_v<det<DetTier::Pure>, fp_mode<>>.admits(F101),
+              "the empty mode is every setting at its strict pole");
+static_assert(binding_verdict_v<int, fp_mode<Reassoc::UnrestrictedRewrite>>.admits(F101), "no band, no claim");
+static_assert(pack_verdict_v<fp_mode<Reassoc::UnrestrictedRewrite>>.admits(F101),
+              "the pack-only view cannot see a payload");
 
 // F102 a replay-deterministic payload x contraction across statements.
-static_assert(!rules_of<det<DetTier::Pure>, fp_mode<Contract::Fast>>::F102_ok);
-static_assert(rules_of<det<DetTier::Pure>, fp_mode<Contract::OnInExpr>>::F102_ok,
+static_assert(!binding_verdict_v<det<DetTier::Pure>, fp_mode<Contract::Fast>>.admits(F102));
+static_assert(binding_verdict_v<det<DetTier::Pure>, fp_mode<Contract::OnInExpr>>.admits(F102),
               "contraction within one expression is visible in the source and the same on every build");
-static_assert(rules_of<det<DetTier::Pure>, fp_mode<Contract::Off>>::F102_ok);
-static_assert(rules_of<det<DetTier::Pure>, fp_mode<Reassoc::UnrestrictedRewrite>>::F102_ok,
+static_assert(binding_verdict_v<det<DetTier::Pure>, fp_mode<Contract::Off>>.admits(F102));
+static_assert(binding_verdict_v<det<DetTier::Pure>, fp_mode<Reassoc::UnrestrictedRewrite>>.admits(F102),
               "a mode that names only reassociation leaves contraction at Off");
-static_assert(rules_of<det<DetTier::Pure>, fp_mode<>>::F102_ok);
+static_assert(binding_verdict_v<det<DetTier::Pure>, fp_mode<>>.admits(F102));
 
 // The two are two rules: a mode naming both trips both, and each of the
 // single-setting modes trips exactly one.
-static_assert(!rules_of<det<DetTier::Pure>, fp_mode<Contract::Fast, Reassoc::UnrestrictedRewrite>>::F101_ok
-              && !rules_of<det<DetTier::Pure>, fp_mode<Contract::Fast, Reassoc::UnrestrictedRewrite>>::F102_ok);
+static_assert(
+    !binding_verdict_v<det<DetTier::Pure>, fp_mode<Contract::Fast, Reassoc::UnrestrictedRewrite>>.admits(F101)
+    && !binding_verdict_v<det<DetTier::Pure>, fp_mode<Contract::Fast, Reassoc::UnrestrictedRewrite>>.admits(F102));
 
 // The settings no rule reads are admitted, which is the atom's own
 // claim: a mode may name them, and naming them refuses nothing.
-static_assert(rules_of<det<DetTier::Pure>, fp_mode<::foundation::core::FpFtz::FlushToZero>>::valid);
-static_assert(rules_of<det<DetTier::Pure>, fp_mode<::foundation::core::FpDenormalInput::DenormalsAreZero>>::valid);
+static_assert(binding_verdict_v<det<DetTier::Pure>, fp_mode<::foundation::core::FpFtz::FlushToZero>>.is_valid());
+static_assert(
+    binding_verdict_v<det<DetTier::Pure>, fp_mode<::foundation::core::FpDenormalInput::DenormalsAreZero>>.is_valid());
 
 // The read alone still refuses nothing: a Pure payload under the strict
 // mode is accepted through the bound view.
-static_assert(rules_of<det<DetTier::Pure>, fp_mode<>>::valid);
+static_assert(binding_verdict_v<det<DetTier::Pure>, fp_mode<>>.is_valid());
 
 // ---------------------------------------------------------------------
 // The capability rule, the indirect-call rule and the spawn rule.
@@ -764,16 +817,16 @@ static_assert(rules_of<det<DetTier::Pure>, fp_mode<>>::valid);
 // trip it, and a payload below the replay floor, or with no band, does
 // not.  The trust grade keeps T001 out of every cell.
 using TrustVerified = at::trust<trust_level::Verified>;
-static_assert(!rules_of<det<DetTier::Pure>, at::capability_usage, TrustVerified>::S011_ok);
-static_assert(!rules_of<det<DetTier::PhiloxRng>, at::capability_usage, TrustVerified>::S011_ok);
-static_assert(rules_of<det<DetTier::MonotonicClockRead>, at::capability_usage, TrustVerified>::S011_ok,
+static_assert(!binding_verdict_v<det<DetTier::Pure>, at::capability_usage, TrustVerified>.admits(S011));
+static_assert(!binding_verdict_v<det<DetTier::PhiloxRng>, at::capability_usage, TrustVerified>.admits(S011));
+static_assert(binding_verdict_v<det<DetTier::MonotonicClockRead>, at::capability_usage, TrustVerified>.admits(S011),
               "a payload that reads the clock claims no replay, so a capability costs it nothing");
-static_assert(rules_of<int, at::capability_usage, TrustVerified>::valid,
+static_assert(binding_verdict_v<int, at::capability_usage, TrustVerified>.is_valid(),
               "a capability with no replay claim and a verified trust trips nothing");
-static_assert(rules_of<det<DetTier::Pure>, at::copy>::valid, "a replay payload that holds no capability");
-static_assert(rules_of<det<DetTier::Pure>, at::capability_usage, TrustVerified>::T001_ok,
+static_assert(binding_verdict_v<det<DetTier::Pure>, at::copy>.is_valid(), "a replay payload that holds no capability");
+static_assert(binding_verdict_v<det<DetTier::Pure>, at::capability_usage, TrustVerified>.admits(T001),
               "S011 must be the rule that catches this pack, not T001");
-static_assert(live_rules<at::capability_usage, TrustVerified>::S011_ok, "the pack-only view claims no replay");
+static_assert(pack_verdict_v<at::capability_usage, TrustVerified>.admits(S011), "the pack-only view claims no replay");
 
 // D001 an indirect call whose family names no noexcept signature.  A free
 // function pointer, a function type and a member function pointer each
@@ -789,27 +842,27 @@ struct stated_family final {
 struct stated_throwing_family final {
     using signature = void(void*);
 };
-static_assert(!live_rules<at::dispatch::indirect_call<void (*)(int)>>::D001_ok);
-static_assert(!live_rules<at::dispatch::indirect_call<int(void*)>>::D001_ok);
-static_assert(!live_rules<at::dispatch::indirect_call<void (callback_owner::*)() const>>::D001_ok);
-static_assert(live_rules<at::dispatch::indirect_call<void (*)(int) noexcept>>::D001_ok);
-static_assert(live_rules<at::dispatch::indirect_call<void (callback_owner::*)() const noexcept>>::D001_ok);
-static_assert(!live_rules<at::dispatch::indirect_call<opaque_family>>::D001_ok,
+static_assert(!pack_verdict_v<at::dispatch::indirect_call<void (*)(int)>>.admits(D001));
+static_assert(!pack_verdict_v<at::dispatch::indirect_call<int(void*)>>.admits(D001));
+static_assert(!pack_verdict_v<at::dispatch::indirect_call<void (callback_owner::*)() const>>.admits(D001));
+static_assert(pack_verdict_v<at::dispatch::indirect_call<void (*)(int) noexcept>>.admits(D001));
+static_assert(pack_verdict_v<at::dispatch::indirect_call<void (callback_owner::*)() const noexcept>>.admits(D001));
+static_assert(!pack_verdict_v<at::dispatch::indirect_call<opaque_family>>.admits(D001),
               "a family that names no signature is read as one that throws");
-static_assert(live_rules<at::dispatch::indirect_call<stated_family>>::valid,
+static_assert(pack_verdict_v<at::dispatch::indirect_call<stated_family>>.is_valid(),
               "a tag class that names a noexcept signature is admitted");
-static_assert(!live_rules<at::dispatch::indirect_call<stated_throwing_family>>::D001_ok);
+static_assert(!pack_verdict_v<at::dispatch::indirect_call<stated_throwing_family>>.admits(D001));
 
 // L003 a borrow x a spawn no structured join reaches.  A detached child
 // and a raw clone trip it; a subprocess runs in its own copy of the
 // address space and does not; neither half alone trips it.
-static_assert(!live_rules<at::borrow, at::spawn::detach_with<"drain outlives the owner">>::L003_ok);
-static_assert(!live_rules<at::borrow, at::spawn::syscall_only<"loader needs CLONE_VM">>::L003_ok);
-static_assert(live_rules<at::borrow, at::spawn::subprocess<"exec a helper">>::valid,
+static_assert(!pack_verdict_v<at::borrow, at::spawn::detach_with<"drain outlives the owner">>.admits(L003));
+static_assert(!pack_verdict_v<at::borrow, at::spawn::syscall_only<"loader needs CLONE_VM">>.admits(L003));
+static_assert(pack_verdict_v<at::borrow, at::spawn::subprocess<"exec a helper">>.is_valid(),
               "a forked child borrows from its own copy, so the borrow cannot dangle into the parent");
-static_assert(live_rules<at::spawn::detach_with<"drain outlives the owner">>::valid);
-static_assert(live_rules<at::borrow>::L003_ok);
-static_assert(live_rules<at::borrow, at::spawn::detach_with<"drain outlives the owner">>::L002_ok,
+static_assert(pack_verdict_v<at::spawn::detach_with<"drain outlives the owner">>.is_valid());
+static_assert(pack_verdict_v<at::borrow>.admits(L003));
+static_assert(pack_verdict_v<at::borrow, at::spawn::detach_with<"drain outlives the owner">>.admits(L002),
               "L003 must be the rule that catches this pack, not L002: a detached spawn is neither a suspension "
               "nor a Bg row");
 
@@ -951,8 +1004,8 @@ static_assert(::fixy::IsAccepted<int, at::borrow>);
 static_assert(::fixy::IsAccepted<int, at::coroutine>);
 static_assert(!::fixy::IsAccepted<int, at::borrow, at::coroutine>);
 static_assert(!::fixy::IsAccepted<int, at::capability_usage, at::trust<trust_level::Unverified>>);
-static_assert(col::rules_of<int, at::copy>::valid);
-static_assert(!col::rules_of<int, at::borrow, at::coroutine>::valid);
+static_assert(col::binding_verdict_v<int, at::copy>.is_valid());
+static_assert(!col::binding_verdict_v<int, at::borrow, at::coroutine>.is_valid());
 
 // W001 reaches the gate through the lifted row.  The gate admits a cold
 // or a warm binding with the same row.
@@ -992,10 +1045,10 @@ enum class gate_fault : std::uint8_t {
 };
 using GateResult = ::foundation::core::Result<int, gate_fault>;
 using GateOption = ::foundation::core::Option<int>;
-static_assert(!rules_of<GateResult>::I002_ok && rules_of<GateResult, at::as_public>::I002_ok);
-static_assert(!rules_of<GateResult, at::constant_time>::I003_ok);
-static_assert(rules_of<GateOption>::I002_ok && rules_of<GateOption>::fails);
-static_assert(!rules_of<GateOption, at::constant_time>::I003_ok);
+static_assert(!binding_verdict_v<GateResult>.admits(I002) && binding_verdict_v<GateResult, at::as_public>.admits(I002));
+static_assert(!binding_verdict_v<GateResult, at::constant_time>.admits(I003));
+static_assert(binding_verdict_v<GateOption>.admits(I002) && binding_verdict_v<GateOption>.premises.fails);
+static_assert(!binding_verdict_v<GateOption, at::constant_time>.admits(I003));
 static_assert(!::fixy::IsAccepted<GateResult>, "I002 on the strict Security pole");
 static_assert(::fixy::IsAccepted<GateResult, at::as_public>);
 static_assert(::fixy::IsAccepted<GateOption>);
@@ -1034,25 +1087,28 @@ static_assert(!col::detail::is_replay_deterministic_<ClockOverPure>::value,
               "the outermost DetSafe band is the claim, and a weaker outer band takes the claim back");
 static_assert(!col::detail::is_replay_deterministic_<::fixy::Vendor<::fixy::VendorBackend_v::NV, int>>::value);
 
-static_assert(!rules_of<PureUnderVendor, at::fp::mode<at::fp::FpReassociate::UnrestrictedRewrite>>::F101_ok);
-static_assert(!rules_of<PureUnderArena, at::simd::avx2>::V101_ok);
-static_assert(rules_of<ClockUnderVendor, at::simd::avx2>::V101_ok);
+static_assert(
+    !binding_verdict_v<PureUnderVendor, at::fp::mode<at::fp::FpReassociate::UnrestrictedRewrite>>.admits(F101));
+static_assert(!binding_verdict_v<PureUnderArena, at::simd::avx2>.admits(V101));
+static_assert(binding_verdict_v<ClockUnderVendor, at::simd::avx2>.admits(V101));
 
 // A fine grade claims no more than the row.  A001 refuses a Pool or Stack
 // grade with Alloc in the row, and admits an Arena grade there.  W004
 // refuses a user-space wait grade with Block in the row, and admits a
 // kernel wait grade there.  Each reads the band through other bands.
-static_assert(!rules_of<::fixy::alloc_class::Stack<int>, at::with<Eff::Alloc>>::A001_ok);
-static_assert(!rules_of<::fixy::alloc_class::Pool<int>, at::with<Eff::Alloc>>::A001_ok);
-static_assert(rules_of<::fixy::alloc_class::Arena<int>, at::with<Eff::Alloc>>::A001_ok);
-static_assert(rules_of<::fixy::alloc_class::Stack<int>>::A001_ok, "a Stack grade with no Alloc in the row is true");
-static_assert(!rules_of<::fixy::Vendor<::fixy::VendorBackend_v::NV, ::fixy::alloc_class::Stack<int>>,
-                        at::with<Eff::Alloc>>::A001_ok);
-static_assert(!rules_of<::fixy::wait::SpinPause<int>, at::with<Eff::Block>>::W004_ok);
-static_assert(!rules_of<::fixy::wait::UmwaitC01<int>, at::with<Eff::Block>>::W004_ok);
-static_assert(rules_of<::fixy::wait::AcquireWait<int>, at::with<Eff::Block>>::W004_ok);
-static_assert(rules_of<::fixy::wait::SpinPause<int>>::W004_ok, "a spin grade with no Block in the row is true");
-static_assert(live_rules<at::with<Eff::Alloc>>::A001_ok && live_rules<at::with<Eff::Block>>::W004_ok,
+static_assert(!binding_verdict_v<::fixy::alloc_class::Stack<int>, at::with<Eff::Alloc>>.admits(A001));
+static_assert(!binding_verdict_v<::fixy::alloc_class::Pool<int>, at::with<Eff::Alloc>>.admits(A001));
+static_assert(binding_verdict_v<::fixy::alloc_class::Arena<int>, at::with<Eff::Alloc>>.admits(A001));
+static_assert(binding_verdict_v<::fixy::alloc_class::Stack<int>>.admits(A001),
+              "a Stack grade with no Alloc in the row is true");
+static_assert(!binding_verdict_v<::fixy::Vendor<::fixy::VendorBackend_v::NV, ::fixy::alloc_class::Stack<int>>,
+                        at::with<Eff::Alloc>>.admits(A001));
+static_assert(!binding_verdict_v<::fixy::wait::SpinPause<int>, at::with<Eff::Block>>.admits(W004));
+static_assert(!binding_verdict_v<::fixy::wait::UmwaitC01<int>, at::with<Eff::Block>>.admits(W004));
+static_assert(binding_verdict_v<::fixy::wait::AcquireWait<int>, at::with<Eff::Block>>.admits(W004));
+static_assert(binding_verdict_v<::fixy::wait::SpinPause<int>>.admits(W004),
+              "a spin grade with no Block in the row is true");
+static_assert(pack_verdict_v<at::with<Eff::Alloc>>.admits(A001) && pack_verdict_v<at::with<Eff::Block>>.admits(W004),
               "the pack-only view claims no band");
 
 // ---------------------------------------------------------------------
@@ -1075,7 +1131,8 @@ static_assert(!col::detail::is_barrier_at_or_above_<::foundation::algebra::latti
 static_assert(!col::detail::is_scope_at_or_above_<::foundation::algebra::lattices::MemoryScope::Cluster,
                                                   at::scope::outer>::value);
 // UMWAIT is neither a kernel entry nor a busy wait.
-static_assert(!live_rules<at::sync::umwait_c01>::blocks && !col::detail::is_busy_wait_<at::sync::umwait_c01>::value);
+static_assert(!pack_verdict_v<at::sync::umwait_c01>.premises.blocks
+              && !col::detail::is_busy_wait_<at::sync::umwait_c01>::value);
 // A setting of a different enum with the same underlying value is not named.
 static_assert(
     !col::detail::fp_mode_has_setting_<::foundation::core::FpFtz{}, at::fp::mode<at::fp::FpContract{}>>::value);
@@ -1097,11 +1154,11 @@ using noexcept_forms = std::tuple<void (attack_owner::*)() & noexcept, void (att
 
 template <class Forms, std::size_t... Index>
 [[nodiscard]] consteval bool every_form_refused_(std::index_sequence<Index...>) noexcept {
-    return (!live_rules<at::dispatch::indirect_call<std::tuple_element_t<Index, Forms>>>::D001_ok && ...);
+    return (!pack_verdict_v<at::dispatch::indirect_call<std::tuple_element_t<Index, Forms>>>.admits(D001) && ...);
 }
 template <class Forms, std::size_t... Index>
 [[nodiscard]] consteval bool every_form_admitted_(std::index_sequence<Index...>) noexcept {
-    return (live_rules<at::dispatch::indirect_call<std::tuple_element_t<Index, Forms>>>::D001_ok && ...);
+    return (pack_verdict_v<at::dispatch::indirect_call<std::tuple_element_t<Index, Forms>>>.admits(D001) && ...);
 }
 static_assert(every_form_refused_<throwing_forms>(std::make_index_sequence<std::tuple_size_v<throwing_forms>>{}));
 static_assert(every_form_admitted_<noexcept_forms>(std::make_index_sequence<std::tuple_size_v<noexcept_forms>>{}));
@@ -1116,11 +1173,11 @@ struct signature_is_data final {
 struct signature_is_itself final {
     using signature = signature_is_itself;
 };
-static_assert(!live_rules<at::dispatch::indirect_call<attack_owner>>::D001_ok);
-static_assert(!live_rules<at::dispatch::indirect_call<void (**)() noexcept>>::D001_ok);
-static_assert(!live_rules<at::dispatch::indirect_call<int attack_owner::*>>::D001_ok);
-static_assert(!live_rules<at::dispatch::indirect_call<signature_is_data>>::D001_ok);
-static_assert(!live_rules<at::dispatch::indirect_call<signature_is_itself>>::D001_ok);
+static_assert(!pack_verdict_v<at::dispatch::indirect_call<attack_owner>>.admits(D001));
+static_assert(!pack_verdict_v<at::dispatch::indirect_call<void (**)() noexcept>>.admits(D001));
+static_assert(!pack_verdict_v<at::dispatch::indirect_call<int attack_owner::*>>.admits(D001));
+static_assert(!pack_verdict_v<at::dispatch::indirect_call<signature_is_data>>.admits(D001));
+static_assert(!pack_verdict_v<at::dispatch::indirect_call<signature_is_itself>>.admits(D001));
 
 // ── the ledger ──────────────────────────────────────────────────────
 //

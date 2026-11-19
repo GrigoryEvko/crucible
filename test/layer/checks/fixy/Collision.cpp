@@ -21,7 +21,7 @@ static_assert(every_pending_axis_is_still_empty(),
               "pending_axes — or, since both lists are empty, a family roster under fixy/atoms/ is no longer "
               "joined into collision::all_atom_roster, which makes its axes look empty.");
 
-static_assert(live_rules<>::failing_codes().empty(),
+static_assert(pack_verdict_v<>.failing_codes().empty(),
               "fixy/Collision.h: the empty pack sits at every strict pole and must trip no rule, so the "
               "code list it produces is empty.  A non-empty answer here means a rule fires on a binding "
               "that claims nothing.");
@@ -31,11 +31,12 @@ static_assert(live_rules<>::failing_codes().empty(),
 namespace detail::collision_self_test {
 
 using ::fixy::collision::grades;
-using ::fixy::collision::live_rules;
+using ::fixy::collision::pack_verdict_v;
+using enum ::fixy::collision::RuleCode;
 
 // The empty pack trips nothing: every axis sits at its strict pole.
-static_assert(live_rules<>::valid);
-static_assert(live_rules<>::validate());
+static_assert(pack_verdict_v<>.is_valid());
+static_assert(pack_verdict_v<>.tripped == 0, "no bit of the verdict of the empty pack is set");
 
 // grades answers the same question fn::grade_on does, without fn.
 static_assert(std::is_same_v<grades<::fixy::atom::copy>::on<Axis::Usage>, ::fixy::atom::copy>);
@@ -46,23 +47,25 @@ static_assert(!grades<>::mentions<Axis::Usage>);
 // Each live rule refuses its pair and admits the halves.  Going through
 // grades rather than fn is deliberate: fn would refuse to compile, and
 // a rule that is only observable as a build failure cannot be tested.
-static_assert(!live_rules<::fixy::atom::borrow, ::fixy::atom::coroutine>::L002_ok);
-static_assert(live_rules<::fixy::atom::borrow>::L002_ok);
-static_assert(live_rules<::fixy::atom::coroutine>::L002_ok);
+static_assert(!pack_verdict_v<::fixy::atom::borrow, ::fixy::atom::coroutine>.admits(L002));
+static_assert(pack_verdict_v<::fixy::atom::borrow>.admits(L002));
+static_assert(pack_verdict_v<::fixy::atom::coroutine>.admits(L002));
 
-static_assert(!live_rules<::fixy::atom::ghost, ::fixy::atom::with<::foundation::effects::Effect::Alloc>>::P010_ok);
-static_assert(live_rules<::fixy::atom::ghost>::P010_ok);
+static_assert(
+    !pack_verdict_v<::fixy::atom::ghost, ::fixy::atom::with<::foundation::effects::Effect::Alloc>>.admits(P010));
+static_assert(pack_verdict_v<::fixy::atom::ghost>.admits(P010));
 
 // A binding that says nothing about Trust sits at the strict pole, which is
 // unverified, so T001 refuses a capability alone, as it refuses the pack
 // with trust<tags::trust::Unverified>.  A trust grade that is not Unverified
 // admits it.
 namespace trust_level = ::fixy::tags::trust;
-static_assert(!live_rules<::fixy::atom::capability_usage, ::fixy::atom::trust<trust_level::Unverified>>::T001_ok);
-static_assert(!live_rules<::fixy::atom::capability_usage>::T001_ok);
-static_assert(live_rules<::fixy::atom::capability_usage, ::fixy::atom::trust<trust_level::Verified>>::T001_ok);
-static_assert(live_rules<::fixy::atom::trust<trust_level::Unverified>>::T001_ok);
-static_assert(live_rules<>::T001_ok);
+static_assert(
+    !pack_verdict_v<::fixy::atom::capability_usage, ::fixy::atom::trust<trust_level::Unverified>>.admits(T001));
+static_assert(!pack_verdict_v<::fixy::atom::capability_usage>.admits(T001));
+static_assert(pack_verdict_v<::fixy::atom::capability_usage, ::fixy::atom::trust<trust_level::Verified>>.admits(T001));
+static_assert(pack_verdict_v<::fixy::atom::trust<trust_level::Unverified>>.admits(T001));
+static_assert(pack_verdict_v<>.admits(T001));
 
 // The level of a Trust grade is a tag of fixy/Tags.h: the level that a trust
 // atom names, Assumed for trust_assumed, and Unverified for the strict pole.
@@ -145,10 +148,10 @@ static_assert(::fixy::collision::detail::call_shape_reading_(^^int)
 static_assert(::fixy::collision::detail::protocol_reading_(^^::fixy::atom::copy)
                   == ::fixy::collision::detail::ProtocolReading::Unread,
               "an atom on another axis has no Protocol reading");
-static_assert(!live_rules<::fixy::atom::dispatch::recurses<4>>::indirect_call_may_throw,
+static_assert(!pack_verdict_v<::fixy::atom::dispatch::recurses<4>>.premises.indirect_call_may_throw,
               "a recursion is no call through a pointer");
 static_assert(
-    !live_rules<::fixy::atom::dispatch::recurses_unbounded, ::fixy::atom::cost_linear<4>>::indirect_call_may_throw,
+    !pack_verdict_v<::fixy::atom::dispatch::recurses_unbounded, ::fixy::atom::cost_linear<4>>.premises.indirect_call_may_throw,
     "a recursion with no depth bound is no call through a pointer either");
 
 // The observable reader of P010 reads the row of an Effect grade through
@@ -163,14 +166,15 @@ static_assert(!std::meta::can_substitute(^^::fixy::collision::detail::row_admits
 static_assert(!std::meta::can_substitute(^^::fixy::collision::detail::row_admits_observable_, {^^::fixy::atom::copy}),
               "an atom of another axis has no row to read");
 
-static_assert(!live_rules<::fixy::atom::coroutine, ::fixy::atom::borrow>::R002_ok);
-static_assert(!live_rules<::fixy::atom::borrow, ::fixy::atom::with<::foundation::effects::Effect::Bg>>::L007_ok);
+static_assert(!pack_verdict_v<::fixy::atom::coroutine, ::fixy::atom::borrow>.admits(R002));
+static_assert(
+    !pack_verdict_v<::fixy::atom::borrow, ::fixy::atom::with<::foundation::effects::Effect::Bg>>.admits(L007));
 
 // M012 needs all three premises, so the atomic representation is what
 // rescues it.  That is the rule's whole content.
-static_assert(!live_rules<::fixy::atom::mut_monotonic, ::fixy::atom::coroutine>::M012_ok);
-static_assert(live_rules<::fixy::atom::mut_monotonic, ::fixy::atom::coroutine,
-                         ::fixy::atom::repr<::fixy::pole::ReprKind::Atomic>>::M012_ok);
+static_assert(!pack_verdict_v<::fixy::atom::mut_monotonic, ::fixy::atom::coroutine>.admits(M012));
+static_assert(pack_verdict_v<::fixy::atom::mut_monotonic, ::fixy::atom::coroutine,
+                         ::fixy::atom::repr<::fixy::pole::ReprKind::Atomic>>.admits(M012));
 
 // P002 reaches the two emitting axes, and a call through the vDSO lifts
 // the empty row, so the pair it refuses is one P010 admits.  Both halves
@@ -179,13 +183,13 @@ static_assert(live_rules<::fixy::atom::mut_monotonic, ::fixy::atom::coroutine,
 namespace p002_cells {
 using VdsoRead = ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::clock_gettime>;
 using StdoutWrite = ::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stdout>;
-static_assert(!live_rules<::fixy::atom::ghost, VdsoRead>::P002_ok);
-static_assert(live_rules<::fixy::atom::ghost, VdsoRead>::P010_ok,
+static_assert(!pack_verdict_v<::fixy::atom::ghost, VdsoRead>.admits(P002));
+static_assert(pack_verdict_v<::fixy::atom::ghost, VdsoRead>.admits(P010),
               "P002 must be the rule that catches this pair; if P010 already did, P002 would be redundant");
-static_assert(live_rules<VdsoRead>::P002_ok);
-static_assert(live_rules<::fixy::atom::ghost>::P002_ok);
-static_assert(!live_rules<::fixy::atom::ghost, StdoutWrite>::P002_ok
-              && !live_rules<::fixy::atom::ghost, StdoutWrite>::P010_ok);
+static_assert(pack_verdict_v<VdsoRead>.admits(P002));
+static_assert(pack_verdict_v<::fixy::atom::ghost>.admits(P002));
+static_assert(!pack_verdict_v<::fixy::atom::ghost, StdoutWrite>.admits(P002)
+              && !pack_verdict_v<::fixy::atom::ghost, StdoutWrite>.admits(P010));
 }  // namespace p002_cells
 
 // The constant-time family.  constant_time alone trips nothing, and each
@@ -197,88 +201,100 @@ using CT = at::constant_time;
 using FlushBoth =
     fp::mode<::foundation::core::FpDenormalInput::DenormalsAreZero, ::foundation::core::FpFtz::FlushToZero>;
 
-static_assert(live_rules<CT>::valid);
-static_assert(live_rules<CT, FlushBoth>::valid, "a constant-time mode that names both flushes is legal");
+static_assert(pack_verdict_v<CT>.is_valid());
+static_assert(pack_verdict_v<CT, FlushBoth>.is_valid(), "a constant-time mode that names both flushes is legal");
 
 static_assert(
-    !live_rules<CT,
+    !pack_verdict_v<CT,
                 fp::mode<fp::FpReassociate::UnrestrictedRewrite, ::foundation::core::FpDenormalInput::DenormalsAreZero,
-                         ::foundation::core::FpFtz::FlushToZero>>::F103_ok);
+                         ::foundation::core::FpFtz::FlushToZero>>.admits(F103));
 static_assert(
-    live_rules<CT, fp::mode<fp::FpReassociate::BoundedTreeDepth, ::foundation::core::FpDenormalInput::DenormalsAreZero,
-                            ::foundation::core::FpFtz::FlushToZero>>::valid,
+    pack_verdict_v<CT, fp::mode<fp::FpReassociate::BoundedTreeDepth, ::foundation::core::FpDenormalInput::DenormalsAreZero,
+                            ::foundation::core::FpFtz::FlushToZero>>.is_valid(),
     "a tree of bounded depth keeps its topology apart from the data, so F103 admits it");
-static_assert(live_rules<fp::mode<fp::FpReassociate::UnrestrictedRewrite>>::F103_ok, "no timing claim, no F103");
+static_assert(pack_verdict_v<fp::mode<fp::FpReassociate::UnrestrictedRewrite>>.admits(F103),
+              "no timing claim, no F103");
 
-static_assert(!live_rules<CT, fp::mode<::foundation::core::FpFtz::FlushToZero>>::F104_ok,
+static_assert(!pack_verdict_v<CT, fp::mode<::foundation::core::FpFtz::FlushToZero>>.admits(F104),
               "an unnamed setting honours denormals");
-static_assert(!live_rules<CT, fp::mode<::foundation::core::FpDenormalInput::HonorDenormals,
-                                       ::foundation::core::FpFtz::FlushToZero>>::F104_ok);
-static_assert(live_rules<CT, fp::mode<::foundation::core::FpDenormalInput::DenormalsAreZero,
-                                      ::foundation::core::FpFtz::FlushToZero>>::F104_ok);
-static_assert(!live_rules<CT, fp::mode<::foundation::core::FpDenormalInput::DenormalsAreZero>>::F105_ok);
-static_assert(!live_rules<CT, fp::mode<::foundation::core::FpFtz::PreserveSubnormals,
-                                       ::foundation::core::FpDenormalInput::DenormalsAreZero>>::F105_ok);
-static_assert(live_rules<CT>::F104_ok && live_rules<CT>::F105_ok, "no FP mode stated, no FP claim to refuse");
-static_assert(live_rules<fp::mode<>>::F104_ok && live_rules<fp::mode<>>::F105_ok, "no timing claim");
+static_assert(!pack_verdict_v<CT, fp::mode<::foundation::core::FpDenormalInput::HonorDenormals,
+                                       ::foundation::core::FpFtz::FlushToZero>>.admits(F104));
+static_assert(pack_verdict_v<CT, fp::mode<::foundation::core::FpDenormalInput::DenormalsAreZero,
+                                      ::foundation::core::FpFtz::FlushToZero>>.admits(F104));
+static_assert(!pack_verdict_v<CT, fp::mode<::foundation::core::FpDenormalInput::DenormalsAreZero>>.admits(F105));
+static_assert(!pack_verdict_v<CT, fp::mode<::foundation::core::FpFtz::PreserveSubnormals,
+                                       ::foundation::core::FpDenormalInput::DenormalsAreZero>>.admits(F105));
+static_assert(pack_verdict_v<CT>.admits(F104) && pack_verdict_v<CT>.admits(F105),
+              "no FP mode stated, no FP claim to refuse");
+static_assert(pack_verdict_v<fp::mode<>>.admits(F104) && pack_verdict_v<fp::mode<>>.admits(F105), "no timing claim");
 
-static_assert(!live_rules<CT, at::coroutine>::E044_ok);
-static_assert(!live_rules<CT, at::ctrl::coroutine<at::ctrl::async_task>>::E044_ok);
-static_assert(!live_rules<CT, at::with<::foundation::effects::Effect::Bg>>::E044_ok);
-static_assert(live_rules<CT, at::with<>>::E044_ok);
+static_assert(!pack_verdict_v<CT, at::coroutine>.admits(E044));
+static_assert(!pack_verdict_v<CT, at::ctrl::coroutine<at::ctrl::async_task>>.admits(E044));
+static_assert(!pack_verdict_v<CT, at::with<::foundation::effects::Effect::Bg>>.admits(E044));
+static_assert(pack_verdict_v<CT, at::with<>>.admits(E044));
 
-static_assert(!live_rules<CT, at::stale_to<1>>::S010_ok);
-static_assert(live_rules<at::stale_to<1>>::S010_ok);
+static_assert(!pack_verdict_v<CT, at::stale_to<1>>.admits(S010));
+static_assert(pack_verdict_v<at::stale_to<1>>.admits(S010));
 
 struct session_witness final {};
 using Session = at::protocol<session_witness>;
-static_assert(!live_rules<at::coroutine, Session>::I004_ok, "the strict Security pole is classified");
-static_assert(!live_rules<at::as_secret, at::ctrl::coroutine<at::ctrl::async_task>, Session>::I004_ok);
-static_assert(live_rules<CT, at::coroutine, Session>::I004_ok, "I004 stands down for constant time; E044 fires");
-static_assert(!live_rules<CT, at::coroutine, Session>::E044_ok);
-static_assert(live_rules<at::as_public, at::coroutine, Session>::valid);
-static_assert(live_rules<at::as_internal, at::coroutine, Session>::valid, "internal is below the carrier");
-static_assert(live_rules<at::declassify<::fixy::tags::secret_policy::WireSerialize>, at::coroutine, Session>::valid);
-static_assert(live_rules<at::declassify<::fixy::tags::secret_policy::AuditedLogging>, at::coroutine, Session>::valid,
-              "each policy whose mask names IO licenses the send");
-static_assert(!live_rules<at::declassify<::fixy::tags::secret_policy::HashForCompare>, at::coroutine, Session>::I004_ok,
-              "a policy that names no channel leaves the send classified");
+static_assert(!pack_verdict_v<at::coroutine, Session>.admits(I004), "the strict Security pole is classified");
+static_assert(!pack_verdict_v<at::as_secret, at::ctrl::coroutine<at::ctrl::async_task>, Session>.admits(I004));
+static_assert(pack_verdict_v<CT, at::coroutine, Session>.admits(I004),
+              "I004 stands down for constant time; E044 fires");
+static_assert(!pack_verdict_v<CT, at::coroutine, Session>.admits(E044));
+static_assert(pack_verdict_v<at::as_public, at::coroutine, Session>.is_valid());
+static_assert(pack_verdict_v<at::as_internal, at::coroutine, Session>.is_valid(), "internal is below the carrier");
 static_assert(
-    !live_rules<at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>, at::coroutine, Session>::I004_ok,
+    pack_verdict_v<at::declassify<::fixy::tags::secret_policy::WireSerialize>, at::coroutine, Session>.is_valid());
+static_assert(
+    pack_verdict_v<at::declassify<::fixy::tags::secret_policy::AuditedLogging>, at::coroutine, Session>.is_valid(),
+    "each policy whose mask names IO licenses the send");
+static_assert(
+    !pack_verdict_v<at::declassify<::fixy::tags::secret_policy::HashForCompare>, at::coroutine, Session>.admits(I004),
+    "a policy that names no channel leaves the send classified");
+static_assert(
+    !pack_verdict_v<at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>, at::coroutine, Session>.admits(I004),
     "the replay policy licenses no export");
-static_assert(live_rules<at::coroutine, at::protocol<::fixy::pole::proto::None>>::valid, "no session");
-static_assert(live_rules<Session>::valid, "a synchronous session sends at no time the scheduler chooses");
+static_assert(pack_verdict_v<at::coroutine, at::protocol<::fixy::pole::proto::None>>.is_valid(), "no session");
+static_assert(pack_verdict_v<Session>.is_valid(), "a synchronous session sends at no time the scheduler chooses");
 
 // The failure family.  The payload half stands down under void, so these
 // cells name the payload.
 struct plain_error final {};
 using SecretError = ::fixy::Secret<plain_error>;
-using ::fixy::collision::rules_of;
+using ::fixy::collision::binding_verdict_v;
 
-static_assert(!rules_of<std::expected<int, plain_error>>::I002_ok, "the strict Security pole is classified");
-static_assert(!rules_of<int, at::ctrl::throws<>>::I002_ok, "an exception family the reader cannot see is plain");
-static_assert(!rules_of<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, std::expected<int, plain_error>>>::I002_ok,
-              "a band does not hide the failure it grades");
-static_assert(rules_of<std::expected<int, SecretError>>::valid);
-static_assert(rules_of<int, at::ctrl::throws<SecretError>>::valid);
-static_assert(rules_of<std::expected<int, plain_error>, at::as_public>::valid);
-static_assert(rules_of<std::expected<int, plain_error>, at::as_internal>::valid);
-static_assert(rules_of<::fixy::Secret<std::expected<int, plain_error>>>::valid,
+static_assert(!binding_verdict_v<std::expected<int, plain_error>>.admits(I002),
+              "the strict Security pole is classified");
+static_assert(!binding_verdict_v<int, at::ctrl::throws<>>.admits(I002),
+              "an exception family the reader cannot see is plain");
+static_assert(
+    !binding_verdict_v<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, std::expected<int, plain_error>>>.admits(I002),
+    "a band does not hide the failure it grades");
+static_assert(binding_verdict_v<std::expected<int, SecretError>>.is_valid());
+static_assert(binding_verdict_v<int, at::ctrl::throws<SecretError>>.is_valid());
+static_assert(binding_verdict_v<std::expected<int, plain_error>, at::as_public>.is_valid());
+static_assert(binding_verdict_v<std::expected<int, plain_error>, at::as_internal>.is_valid());
+static_assert(binding_verdict_v<::fixy::Secret<std::expected<int, plain_error>>>.is_valid(),
               "the error inside a Secret is secret, and the discriminant with it");
-static_assert(live_rules<at::ctrl::throws<SecretError>>::valid);
+static_assert(pack_verdict_v<at::ctrl::throws<SecretError>>.is_valid());
 static_assert(
-    !rules_of<int, at::declassify<::fixy::tags::secret_policy::WireSerialize>, at::ctrl::throws<plain_error>>::I002_ok,
+    !binding_verdict_v<int, at::declassify<::fixy::tags::secret_policy::WireSerialize>, at::ctrl::throws<plain_error>>.admits(
+        I002),
     "no policy licenses the failure channel");
-static_assert(!rules_of<int, at::declassify<::fixy::tags::secret_policy::AuditedLogging>, at::ctrl::throws<>>::I002_ok,
-              "no policy licenses a thrown failure");
 static_assert(
-    rules_of<int, at::declassify<::fixy::tags::secret_policy::AuditedLogging>, at::ctrl::throws<SecretError>>::valid,
+    !binding_verdict_v<int, at::declassify<::fixy::tags::secret_policy::AuditedLogging>, at::ctrl::throws<>>.admits(
+        I002),
+    "no policy licenses a thrown failure");
+static_assert(
+    binding_verdict_v<int, at::declassify<::fixy::tags::secret_policy::AuditedLogging>, at::ctrl::throws<SecretError>>.is_valid(),
     "a Secret error stays classified on the failure channel");
 
-static_assert(!rules_of<std::expected<int, SecretError>, CT>::I003_ok);
-static_assert(rules_of<std::expected<int, SecretError>, CT>::I002_ok, "a Secret error isolates I003");
-static_assert(!rules_of<int, CT, at::ctrl::throws<SecretError>>::I003_ok);
-static_assert(rules_of<int, CT>::valid);
+static_assert(!binding_verdict_v<std::expected<int, SecretError>, CT>.admits(I003));
+static_assert(binding_verdict_v<std::expected<int, SecretError>, CT>.admits(I002), "a Secret error isolates I003");
+static_assert(!binding_verdict_v<int, CT, at::ctrl::throws<SecretError>>.admits(I003));
+static_assert(binding_verdict_v<int, CT>.is_valid());
 }  // namespace ct_cells
 
 // The session family.  R004 needs three premises: a live handle, a
@@ -286,23 +302,23 @@ static_assert(rules_of<int, CT>::valid);
 // removes one premise and the rule stands down.
 namespace session_cells {
 namespace at = ::fixy::atom;
-using ::fixy::collision::rules_of;
+using ::fixy::collision::binding_verdict_v;
 
 struct handshake final {};
 using Live = at::session::live_handle<handshake>;
 using Suspends = at::ctrl::coroutine<at::ctrl::async_task>;
 
-static_assert(!live_rules<Live, Suspends, at::affine>::R004_ok);
-static_assert(!live_rules<Live, at::coroutine, at::copy>::R004_ok, "a suspension on Reentrancy counts too");
-static_assert(live_rules<Live, Suspends>::R004_ok, "a linear frame is resumed exactly once");
-static_assert(live_rules<Live, at::affine>::R004_ok, "no suspension, so no continuation");
-static_assert(live_rules<Suspends, at::affine>::R004_ok, "no handle in the frame");
-static_assert(live_rules<at::protocol<handshake>, Suspends, at::affine>::R004_ok,
+static_assert(!pack_verdict_v<Live, Suspends, at::affine>.admits(R004));
+static_assert(!pack_verdict_v<Live, at::coroutine, at::copy>.admits(R004), "a suspension on Reentrancy counts too");
+static_assert(pack_verdict_v<Live, Suspends>.admits(R004), "a linear frame is resumed exactly once");
+static_assert(pack_verdict_v<Live, at::affine>.admits(R004), "no suspension, so no continuation");
+static_assert(pack_verdict_v<Suspends, at::affine>.admits(R004), "no handle in the frame");
+static_assert(pack_verdict_v<at::protocol<handshake>, Suspends, at::affine>.admits(R004),
               "a protocol grade says the binding speaks a protocol, not that its frame holds a handle");
 
 // A live handle is a session, so I004 reads it as one.
-static_assert(!live_rules<Live, Suspends>::I004_ok, "the strict Security pole is classified");
-static_assert(live_rules<Live, Suspends, at::as_public>::valid);
+static_assert(!pack_verdict_v<Live, Suspends>.admits(I004), "the strict Security pole is classified");
+static_assert(pack_verdict_v<Live, Suspends, at::as_public>.is_valid());
 
 // The payload half.  These stand-ins carry the Stepping contract that a
 // session handle carries: the modality and the answer to is_terminal().
@@ -322,31 +338,34 @@ struct graded_not_stepping final {
     [[nodiscard]] static constexpr bool is_terminal() noexcept { return false; }
 };
 
-static_assert(!rules_of<owes_a_step, Suspends, at::affine>::R004_ok);
-static_assert(rules_of<owes_a_step, Suspends>::R004_ok, "a linear frame is resumed exactly once");
-static_assert(rules_of<at_the_end, Suspends, at::affine>::R004_ok, "a handle at End owes nothing");
-static_assert(!rules_of<stepping_with_no_answer, Suspends, at::affine>::R004_ok,
+static_assert(!binding_verdict_v<owes_a_step, Suspends, at::affine>.admits(R004));
+static_assert(binding_verdict_v<owes_a_step, Suspends>.admits(R004), "a linear frame is resumed exactly once");
+static_assert(binding_verdict_v<at_the_end, Suspends, at::affine>.admits(R004), "a handle at End owes nothing");
+static_assert(!binding_verdict_v<stepping_with_no_answer, Suspends, at::affine>.admits(R004),
               "a Stepping type that does not answer is read as live");
-static_assert(rules_of<graded_not_stepping, Suspends, at::affine>::R004_ok, "another modality is not a session");
-static_assert(!rules_of<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, owes_a_step>, Suspends, at::affine>::R004_ok,
-              "a band does not hide the handle it grades");
-static_assert(live_rules<Suspends, at::affine>::R004_ok, "the payload half stands down under the pack-only view");
+static_assert(binding_verdict_v<graded_not_stepping, Suspends, at::affine>.admits(R004),
+              "another modality is not a session");
+static_assert(
+    !binding_verdict_v<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, owes_a_step>, Suspends, at::affine>.admits(R004),
+    "a band does not hide the handle it grades");
+static_assert(pack_verdict_v<Suspends, at::affine>.admits(R004),
+              "the payload half stands down under the pack-only view");
 
 // W003 needs three premises: the hot regime, a live handle, and no stated
 // wait.  A stated wait moves the judgement to W001, which refuses a
 // kernel wait and admits a spin.
 struct hot_invariant final {};
 template <class... Extra>
-using hot_rules =
-    live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, at::as_public, Extra...>;
-static_assert(!hot_rules<Live>::W003_ok, "a hot handle with no stated wait");
-static_assert(hot_rules<Live, at::sync::spin_pause>::valid, "a stated spin is the hot-path wait");
-static_assert(hot_rules<Live, at::sync::bounded_spin>::valid);
-static_assert(hot_rules<Live, at::sync::umwait_c01>::valid, "UMWAIT stays in user space, as W001 reads it");
-static_assert(hot_rules<Live, at::sync::park>::W003_ok && !hot_rules<Live, at::sync::park>::W001_ok,
+constexpr const ::fixy::collision::binding_verdict& hot_rules =
+    pack_verdict_v<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, at::as_public, Extra...>;
+static_assert(!hot_rules<Live>.admits(W003), "a hot handle with no stated wait");
+static_assert(hot_rules<Live, at::sync::spin_pause>.is_valid(), "a stated spin is the hot-path wait");
+static_assert(hot_rules<Live, at::sync::bounded_spin>.is_valid());
+static_assert(hot_rules<Live, at::sync::umwait_c01>.is_valid(), "UMWAIT stays in user space, as W001 reads it");
+static_assert(hot_rules<Live, at::sync::park>.admits(W003) && !hot_rules<Live, at::sync::park>.admits(W001),
               "a stated kernel wait is W001's refusal, not W003's");
-static_assert(live_rules<Live>::W003_ok, "not hot, so the wait is the regime's business");
-static_assert(hot_rules<>::W003_ok, "no handle, so no transport wait");
+static_assert(pack_verdict_v<Live>.admits(W003), "not hot, so the wait is the regime's business");
+static_assert(hot_rules<>.admits(W003), "no handle, so no transport wait");
 // A type on the axis that names no strategy is not an atom of the
 // catalog, so no rule reads it and the grade lookup refuses it.
 struct names_no_strategy final : at::atom_of<Axis::Synchronization> {};
@@ -356,10 +375,12 @@ concept grade_lookup_forms = requires { typename grades<G>; };
 static_assert(grade_lookup_forms<at::sync::park>);
 static_assert(!grade_lookup_forms<names_no_strategy>, "a grade lookup over a type that is not an atom must not form");
 static_assert(
-    !rules_of<owes_a_step, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, at::as_public>::W003_ok,
+    !binding_verdict_v<owes_a_step, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, at::as_public>.admits(
+        W003),
     "a payload that is a live handle waits as the atom does");
 static_assert(
-    rules_of<at_the_end, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, at::as_public>::W003_ok,
+    binding_verdict_v<at_the_end, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, at::as_public>.admits(
+        W003),
     "a handle at End takes no step");
 }  // namespace session_cells
 

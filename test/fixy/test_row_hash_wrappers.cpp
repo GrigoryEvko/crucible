@@ -69,6 +69,7 @@ namespace {
 namespace fd = ::foundation::diag;
 
 using fd::row_hash_contribution_v;
+using enum ::fixy::collision::RuleCode;
 
 // One wrapper per shape the tree uses. Tagged, Secret, Qtt, Stale and
 // Monotonic are classes over graded_facade. DetSafe and CipherTier are
@@ -253,9 +254,9 @@ using TrustUnverified = ::fixy::atom::trust<::fixy::tags::trust::Unverified>;
 static_assert(
     ::fixy::collision::HasTrustLevel<TrustUnverified, ::fixy::tags::trust::Unverified>
     && ::fixy::collision::HasTrustLevel<::fixy::strict_pole_t<::fixy::Axis::Trust>, ::fixy::tags::trust::Unverified>);
-static_assert(!::fixy::collision::live_rules<::fixy::atom::capability_usage, TrustUnverified>::T001_ok,
+static_assert(!::fixy::collision::pack_verdict_v<::fixy::atom::capability_usage, TrustUnverified>.admits(T001),
               "T001 must fire on a capability at the written-out unverified atom");
-static_assert(!::fixy::collision::live_rules<::fixy::atom::capability_usage>::T001_ok,
+static_assert(!::fixy::collision::pack_verdict_v<::fixy::atom::capability_usage>.admits(T001),
               "T001 must fire on a capability at the strict Trust pole");
 static_assert(!std::is_same_v<TrustUnverified, ::fixy::tags::trust::Unverified>,
               "the atom and the pole must stay distinct types for this cell to have content");
@@ -268,7 +269,7 @@ static_assert(row_hash_contribution_v<UnverifiedInt> == row_hash_contribution_v<
 // other verdict admitted.
 using TrustVerified = ::fixy::atom::trust<::fixy::tags::trust::Verified>;
 using VerifiedInt = ::fixy::fn<int, TrustVerified>;
-static_assert(::fixy::collision::live_rules<::fixy::atom::capability_usage, TrustVerified>::T001_ok);
+static_assert(::fixy::collision::pack_verdict_v<::fixy::atom::capability_usage, TrustVerified>.admits(T001));
 static_assert(row_hash_contribution_v<VerifiedInt> != row_hash_contribution_v<StrictPoleInt>,
               "T001 separates trust<Verified> from the strict Trust pole, so the two are two claims");
 

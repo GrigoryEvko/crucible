@@ -209,6 +209,7 @@ constexpr auto kAttackDeadline = std::chrono::milliseconds{800};
 // ── Resources ────────────────────────────────────────────────────────
 
 using attack_tags::Ping;
+using enum ::fixy::collision::RuleCode;
 struct Pong {
     int value = 0;
 };
@@ -847,14 +848,14 @@ using OneRead = s::Recv<int, s::End>;
 // the binding until it states its wait strategy.  With a stated spin the
 // binding is admitted, and with a stated kernel wait W001 refuses it.
 template <class... Wait>
-using HotHoldsRecv =
-    ::fixy::collision::live_rules<::fixy::atom::regime::hot, ::fixy::atom::cost_constant,
-                                  ::fixy::atom::refined_with<attack_tags::hot_invariant>, ::fixy::atom::as_public,
-                                  ::fixy::atom::session::live_handle<s::Recv<Ping, s::End>>, Wait...>;
-static_assert(!HotHoldsRecv<>::W003_ok && !HotHoldsRecv<>::valid,
+constexpr const ::fixy::collision::binding_verdict& HotHoldsRecv =
+    ::fixy::collision::pack_verdict_v<::fixy::atom::regime::hot, ::fixy::atom::cost_constant,
+                                      ::fixy::atom::refined_with<attack_tags::hot_invariant>, ::fixy::atom::as_public,
+                                      ::fixy::atom::session::live_handle<s::Recv<Ping, s::End>>, Wait...>;
+static_assert(!HotHoldsRecv<>.admits(W003) && !HotHoldsRecv<>.is_valid(),
               "a hot binding that holds a handle at a receive and states no wait is refused");
-static_assert(HotHoldsRecv<::fixy::atom::sync::spin_pause>::valid, "a stated spin is the hot-path wait");
-static_assert(!HotHoldsRecv<::fixy::atom::sync::park>::W001_ok, "a stated kernel wait is refused by W001");
+static_assert(HotHoldsRecv<::fixy::atom::sync::spin_pause>.is_valid(), "a stated spin is the hot-path wait");
+static_assert(!HotHoldsRecv<::fixy::atom::sync::park>.admits(W001), "a stated kernel wait is refused by W001");
 
 // ── The runner ───────────────────────────────────────────────────────
 

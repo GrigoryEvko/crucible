@@ -5,8 +5,8 @@
 // construction, so a binding that reads one cannot keep that claim, and
 // replay cannot be bit-exact.
 //
-// The rule reads the payload: rules_of<Payload, Atoms...> reads the band
-// from the fn's first template parameter.  The pack is not hot and
+// The rule reads the payload: binding_verdict_v<Payload, Atoms...> reads
+// the band from the fn's first template parameter.  The pack is not hot and
 // carries no other premise, so the fixture floors on V203 alone; V201
 // needs the hot tier and stands down.
 
