@@ -2592,6 +2592,14 @@ fixy_neg_compile_test(neg_sess_subsorts_specialized
   "template-id .subsorts<>. for .consteval bool fixy::session::transition::subsorts\\(std::meta::info, std::meta::info, std::meta::info\\). does not match any template declaration"
   "neg_sess_subsorts_specialized\\.cpp:12:[0-9]+: error:")
 
+# A specialization of subsort_cell_at can hold only a cell that the walk
+# builds, and that cell holds the pair that it answers.  The read compares
+# that pair with the pair that it asks for, and it refuses the cell of
+# another pair.
+fixy_neg_compile_test(neg_sess_subsort_cell_of_another_pair
+  "call to non-.constexpr. function .void fixy::session::transition::detail::a_subsort_cell_stands_for_another_pair\\(\\)."
+  "neg_sess_subsort_cell_of_another_pair\\.cpp:23:[0-9]+: error: non-constant condition for static assertion")
+
 # An axiom that names a variable template would read a specialization of
 # it, so the first query of the order refuses the axiom.
 fixy_neg_compile_test(neg_sess_axiom_names_a_variable_template
