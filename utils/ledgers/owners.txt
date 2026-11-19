@@ -102,7 +102,6 @@ test/fixy/session_crash_attack.h | detail-use | 1 | namespace-scope: foundation:
 test/fixy/session_global_attack.h | detail-use | 1 | test_session_global_attack::check_generated(test_session_global_attack::FamilyCounts&, std::string_view, uint64_t): fixy::session::detail | reads the projection check of each role
 test/fixy/session_recording.h | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
 test/fixy/test_armed_roster.cpp | detail-use | 1 | namespace-scope: fixy::channels::detail | names the armed predicate of the endpoint bridge
-test/fixy/test_armed_roster.cpp | detail-use | 39 | namespace-scope: fixy::collision::detail | names each armed predicate of the collision rules
 test/fixy/test_armed_roster.cpp | detail-use | 26 | namespace-scope: fixy::concurrent::detail | names each armed predicate of the stages and the stage fakes
 test/fixy/test_armed_roster.cpp | detail-use | 4 | namespace-scope: fixy::corpus::detail | names each armed predicate of the corpus
 test/fixy/test_armed_roster.cpp | detail-use | 2 | namespace-scope: fixy::detail | names each armed predicate of the fixy root
@@ -118,7 +117,7 @@ test/fixy/test_atom.cpp | detail-use | 1 | (anonymous namespace)::every_atom_con
 test/fixy/test_atom.cpp | detail-use | 4 | (anonymous namespace)::every_forgery_is_refused_at_runtime(): fixy::atom::detail | tests the roster and lift helpers of the atoms
 test/fixy/test_atom.cpp | detail-use | 59 | namespace-scope: fixy::atom::detail | tests the roster and lift helpers of the atoms
 test/fixy/test_cheat_probe.cpp | unchecked-use | admit | algebra_declares_a_decoupling_template(): std::meta::access_context::unchecked | walks the algebra namespace to prove that no cheat is admitted
-test/fixy/test_collision.cpp | detail-use | 15 | namespace-scope: fixy::collision::detail | tests each collision predicate on its own
+test/fixy/test_collision.cpp | detail-use | 10 | namespace-scope: fixy::collision::detail | tests each collision predicate on its own
 test/fixy/test_contexts.cpp | detail-use | 5 | namespace-scope: foundation::effects::detail | pins each context witness to the context it stands for
 test/fixy/test_core_storage_float.cpp | detail-use | 1 | (anonymous namespace)::check_round_trip(const {anonymous}::Test&): foundation::core::detail | compares the product arm, the portable code and the F16C arm of each conversion of StorageFloat.h, which have no public door, and reads the facts of each format
 test/fixy/test_core_storage_float.cpp | detail-use | 1 | (anonymous namespace)::check_widen(const {anonymous}::Test&): foundation::core::detail | compares the product arm, the portable code and the F16C arm of each conversion of StorageFloat.h, which have no public door, and reads the facts of each format

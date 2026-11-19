@@ -158,7 +158,7 @@ include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 1 | ABI: libbpf opened the descriptor of the BPF map, and the map door maps it | libbpf gives the descriptor of a BPF map as a raw int, and map_foreign_region is the door that maps a descriptor that a C library opened
-include/fixy/ | base-std-entity | 287 | - | -
+include/fixy/ | base-std-entity | 285 | - | -
 include/fixy/ | base-std-object | 162 | - | -
 include/fixy/ | replace-pending:<array> | 4 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
@@ -438,7 +438,7 @@ test/fixy/ | std-entity | 2370 | - | -
 test/fixy/ | std-object | 851 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
-test/fixy/neg/ | detail-use | 297 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | detail-use | 301 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
