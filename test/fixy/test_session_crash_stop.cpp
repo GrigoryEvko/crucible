@@ -13,6 +13,7 @@
 // sender takes it with a Select of one branch, so the label travels.
 
 #include <fixy/session/CrashTransport.h>
+#include <fixy/session/Delegate.h>
 #include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 

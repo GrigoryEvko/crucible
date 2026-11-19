@@ -1,12 +1,13 @@
 #pragma once
 
 // The session-type protocol DSL.  A protocol is a type built from Send,
-// Recv, Select, Offer, Loop, Continue, End, VendorPinned, Named, Delegate
-// and Accept.  The two endpoints of one channel agree when their protocols
-// are duals.  Stop, Commit, Roll and Abort are combinators too, and no
-// plain protocol holds them: Stop is the runtime type of a crashed
-// endpoint (fixy/session/Crash.h), and the three others are the
-// checkpoint primitives (fixy/session/Checkpoint.h).
+// Recv, Select, Offer, Loop, Continue, End, VendorPinned and Named, and
+// from the combinators that an extension header registers.  The two
+// endpoints of one channel agree when their protocols are duals.  The
+// extensions register their own combinators: Delegate and Accept in
+// fixy/session/Delegate.h, Stop in fixy/session/Crash.h, and Commit, Roll
+// and Abort in fixy/session/Checkpoint.h.  No plain protocol holds Stop or
+// a checkpoint primitive.
 //
 // Select is an internal choice: this endpoint picks the branch and tells
 // the peer which one.  Offer is an external choice: the peer picks, and
@@ -181,43 +182,6 @@ struct Named : Name::protocol {
     using protocol = typename Name::protocol;
 };
 
-// The delegation heads.  Delegate<T, K> sends an endpoint of protocol T
-// and then continues as K.  Accept<T, K> receives an endpoint of
-// protocol T and then continues as K.  The endpoint itself travels, not
-// the view of its peer, so the dual of each head keeps T as it is.
-// fixy/session/Delegate.h states what a mint does with a protocol that
-// holds one of them.
-template <typename T, typename K>
-struct Delegate {
-    using delegated_proto = T;
-    using next = K;
-};
-
-template <typename T, typename K>
-struct Accept {
-    using delegated_proto = T;
-    using next = K;
-};
-
-// The runtime type of a crashed endpoint.  fixy/session/Crash.h states
-// its rules: no protocol written at design time holds it, and no handle
-// stands at it.
-struct Stop {};
-
-// The checkpoint primitives of fixy/session/Checkpoint.h.  Commit<K>
-// takes a checkpoint and continues with K, Roll returns both parties to
-// their checkpoints, and Abort returns both parties to the start.  Each
-// is a label of a choice that the two parties exchange, and only the
-// checkpoint mint admits a protocol that holds one.
-template <typename K>
-struct Commit {
-    using next = K;
-};
-
-struct Roll {};
-
-struct Abort {};
-
 // The payloads that the registry below has a rule for.  Each is defined
 // in the header of its layer: Crash in fixy/session/Crash.h, and PeerMsg
 // and Labelled in fixy/session/Projection.h.
@@ -367,58 +331,8 @@ inline constexpr ::fixy::session::transition::combinator vendor_pinned{
 inline constexpr ::fixy::session::transition::combinator named_state{
     .shape = ^^Named, .kind = ::fixy::session::transition::shape_kind::named, .dual = ^^Named};
 
-// A delegation head is a step, and the protocol of the endpoint is its
-// payload.  The payload is invariant, so this layer states no refinement
-// between two delegated protocols at a head.  The payload order of
-// fixy/session/Subtype.h orders the DelegatedSession that a Send carries.
-// The delegated protocol becomes a session of its own, so it is
-// well-formed outside every Loop, and an empty choice in it is found.
-inline constexpr ::fixy::session::transition::combinator delegate{.shape = ^^Delegate,
-                                                                  .kind = ::fixy::session::transition::shape_kind::step,
-                                                                  .direction =
-                                                                      ::fixy::session::transition::polarity::output,
-                                                                  .dual = ^^Accept,
-                                                                  .payload_is_protocol = true};
-
-inline constexpr ::fixy::session::transition::combinator accept{.shape = ^^Accept,
-                                                                .kind = ::fixy::session::transition::shape_kind::step,
-                                                                .direction =
-                                                                    ::fixy::session::transition::polarity::input,
-                                                                .dual = ^^Delegate,
-                                                                .payload_is_protocol = true};
-
-// Stop is a terminal that absorbs a suffix: a crashed endpoint never
-// resumes, so composition keeps it.  Its dual is itself, and refinement
-// relates it only to itself (rule Sub-stop of fixy/session/Crash.h).
-inline constexpr ::fixy::session::transition::combinator stop{.shape = ^^Stop,
-                                                              .kind = ::fixy::session::transition::shape_kind::terminal,
-                                                              .dual = ^^Stop,
-                                                              .absorbs_suffix = true,
-                                                              .is_plain = false};
-
-// Commit is a marker: it takes a checkpoint and continues, and its dual
-// commits at the same label.  A Roll or an Abort never falls through to
-// what follows it, so composition keeps it, as it keeps a crashed
-// endpoint.  No handle stands at one of the three: the checkpoint handle
-// does the primitive in the step that exchanges its label.
-inline constexpr ::fixy::session::transition::combinator commit{
-    .shape = ^^Commit, .kind = ::fixy::session::transition::shape_kind::marker, .dual = ^^Commit, .is_plain = false};
-
-inline constexpr ::fixy::session::transition::combinator roll{.shape = ^^Roll,
-                                                              .kind = ::fixy::session::transition::shape_kind::terminal,
-                                                              .dual = ^^Roll,
-                                                              .absorbs_suffix = true,
-                                                              .is_plain = false};
-
-inline constexpr ::fixy::session::transition::combinator restart{.shape = ^^Abort,
-                                                                 .kind =
-                                                                     ::fixy::session::transition::shape_kind::terminal,
-                                                                 .dual = ^^Abort,
-                                                                 .absorbs_suffix = true,
-                                                                 .is_plain = false};
-
 inline constexpr ::fixy::session::transition::seal combinator_seal{.kind = ^^::fixy::session::transition::combinator,
-                                                                   .count = 15};
+                                                                   .count = 9};
 
 // The crash label is a payload that no endpoint sends (rule 1) and that
 // is no label a peer can send (rule 2).  fixy/session/Crash.h states why.
@@ -512,12 +426,14 @@ consteval void require_registered_head(std::meta::info protocol) {
 inline constexpr std::string_view specialized_prefix = "fixy::session::diagnostic [Protocol_Specialized_Combinator]: ";
 
 // The node reader of this layer.  It claims each member that a reader
-// reads: message_type and next of a Send or a Recv, delegated_proto and
-// next of a delegation head, body of a Loop, next of a Commit, protocol
-// and vendor_backend of a pin, which also derives from the protocol that
-// it pins, name and protocol of a named state, which also derives from its
-// protocol, and branch_count, branches_tuple and the sender of an Offer of
-// a choice.  End, Continue, Stop, Roll and Abort hold no member.  The
+// reads, by the kind of the registration of the node: message_type and
+// next of a step, or delegated_proto and next of a step whose payload is a
+// protocol (a delegation head), body of a binder (a Loop), next of a
+// marker (a Commit), protocol and vendor_backend of a wrapper (a pin),
+// which also derives from the protocol that it pins, name and protocol of
+// a named state, which also derives from its protocol, and branch_count,
+// branches_tuple and the sender of an input choice (an Offer) of a choice.
+// A terminal and a back node hold no member.  The
 // children are each node that a handle can step to: the next step, each
 // branch of a choice (the crash branches among them), the body of a loop,
 // the protocol under a pin, the protocol of a named state, and the protocol
@@ -551,29 +467,27 @@ consteval void session_node_members(std::meta::info type, ::fixy::session::trans
     const tr::node view = tr::decompose(protocol_registry, type);
     if (!view.is_registered) return;
     result.is_node = true;
-    const std::meta::info shape = view.entry.shape;
-    if (shape == ^^Send || shape == ^^Recv) {
-        tr::push(result.claims, member_claim{"message_type", view.payload});
+    const tr::shape_kind kind = view.entry.kind;
+    if (kind == tr::shape_kind::step) {
+        tr::push(result.claims,
+                 member_claim{view.entry.payload_is_protocol ? "delegated_proto" : "message_type", view.payload});
         tr::push(result.claims, member_claim{"next", view.next});
-    } else if (shape == ^^Delegate || shape == ^^Accept) {
-        tr::push(result.claims, member_claim{"delegated_proto", view.payload});
-        tr::push(result.claims, member_claim{"next", view.next});
-    } else if (shape == ^^Loop) {
+    } else if (kind == tr::shape_kind::binder) {
         tr::push(result.claims, member_claim{"body", view.next});
-    } else if (shape == ^^Commit) {
+    } else if (kind == tr::shape_kind::marker) {
         tr::push(result.claims, member_claim{"next", view.next});
-    } else if (shape == ^^VendorPinned) {
+    } else if (kind == tr::shape_kind::wrapper) {
         tr::push(result.claims, member_claim{"protocol", view.next});
         tr::push(result.claims, member_claim{"vendor_backend", view.value});
         tr::push(result.bases, view.next);
-    } else if (shape == ^^Named) {
+    } else if (kind == tr::shape_kind::named) {
         tr::push(result.claims, member_claim{"name", view.name});
         tr::push(result.claims, member_claim{"protocol", view.next});
         tr::push(result.bases, view.next);
-    } else if (shape == ^^Select || shape == ^^Offer) {
+    } else if (kind == tr::shape_kind::choice) {
         tr::push(result.claims, member_claim{"branch_count", std::meta::reflect_constant(view.branches.size())});
         tr::push(result.claims, member_claim{"branches_tuple", std::meta::substitute(^^std::tuple, view.branches)});
-        if (shape == ^^Offer) {
+        if (view.entry.direction == tr::polarity::input) {
             const std::meta::info sender = view.annotation == std::meta::info{}
                                              ? ^^AnonymousPeer
                                              : std::meta::dealias(std::meta::template_arguments_of(view.annotation)[0]);

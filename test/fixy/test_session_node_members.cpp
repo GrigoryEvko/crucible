@@ -10,7 +10,9 @@
 // layer has an instance here, and that each instance agrees with its own
 // claims.
 
+#include <fixy/session/Checkpoint.h>
 #include <fixy/session/Crash.h>
+#include <fixy/session/Delegate.h>
 #include <fixy/session/Fold.h>
 #include <fixy/session/Global.h>
 #include <fixy/session/Projection.h>
@@ -110,13 +112,10 @@ consteval bool every_session_instance_is_claimed() {
 }
 
 // Each registered combinator of the session layer has an instance above.
+// The registry is a root of families, so the read takes the registrations
+// of each family that this unit includes.
 consteval bool every_registered_combinator_has_an_instance() {
-    for (const std::meta::info registration :
-         std::meta::members_of(s::detail::protocol_registry, std::meta::access_context::current())) {
-        if (!std::meta::is_variable(registration)
-            || std::meta::remove_const(std::meta::type_of(registration)) != ^^t::combinator) {
-            continue;
-        }
+    for (const std::meta::info registration : t::registrations_of(s::detail::protocol_registry, ^^t::combinator)) {
         const std::meta::info shape = std::meta::extract<t::combinator>(registration).shape;
         bool has_instance = false;
         for (const std::meta::info instance : session_instances)
@@ -149,6 +148,11 @@ static_assert(every_session_instance_is_claimed(),
               "a session combinator declares a member that the node reader of fixy/session/Protocol.h does not claim");
 static_assert(every_registered_combinator_has_an_instance(),
               "a registered session combinator has no instance in this test");
+// The four families that this unit includes: core (9), crash (1),
+// checkpoint (3) and delegation (2).  A read that missed a family would
+// make the check above pass with no work.
+static_assert(t::registrations_of(^^s::combinators, ^^t::combinator).size() == 15,
+              "the read of the registry sees each family of combinators that the unit includes");
 static_assert(every_global_instance_is_claimed(),
               "a global combinator declares a member that the node reader of fixy/session/Global.h does not claim");
 

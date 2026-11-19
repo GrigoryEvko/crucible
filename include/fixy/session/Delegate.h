@@ -53,12 +53,11 @@
 //
 // ── The delegation heads ─────────────────────────────────────────────
 //
-// fixy/session/Protocol.h defines Delegate<T, K> and Accept<T, K>, two
-// heads that state a hand-off in the protocol type.  They stand beside
-// the other combinators, because the payload walk of
-// fixy/session/Admission.h reads the registry when that header is read.  A
-// head that this header registered would be a head that the walk cannot
-// classify.
+// This header defines Delegate<T, K> and Accept<T, K>, two heads that
+// state a hand-off in the protocol type, and registers them in its own
+// family of the registry.  The payload walk of fixy/session/Admission.h
+// reads the registry where the row of a protocol is first asked, so it
+// classifies each head that this header registers.
 //
 // No mint admits a protocol that holds one of the two heads.  The
 // permission-flow walk of fixy/session/Admission.h refuses a head that it
@@ -81,6 +80,50 @@
 #include <utility>
 
 namespace fixy::session {
+
+// The delegation heads.  Delegate<T, K> sends an endpoint of protocol T
+// and then continues as K.  Accept<T, K> receives an endpoint of
+// protocol T and then continues as K.  The endpoint itself travels, not
+// the view of its peer, so the dual of each head keeps T as it is.
+template <typename T, typename K>
+struct Delegate {
+    using delegated_proto = T;
+    using next = K;
+};
+
+template <typename T, typename K>
+struct Accept {
+    using delegated_proto = T;
+    using next = K;
+};
+
+// The family of the delegation heads (fixy/session/Registry.h).  A
+// delegation head is a step, and the protocol of the endpoint is its
+// payload.  The payload is invariant, so this layer states no refinement
+// between two delegated protocols at a head.  The payload order of
+// fixy/session/Subtype.h orders the DelegatedSession that a Send carries.
+// The delegated protocol becomes a session of its own, so it is
+// well-formed outside every Loop, and an empty choice in it is found.
+namespace combinators::delegation {
+
+inline constexpr ::fixy::session::transition::combinator delegate{.shape = ^^Delegate,
+                                                                  .kind = ::fixy::session::transition::shape_kind::step,
+                                                                  .direction =
+                                                                      ::fixy::session::transition::polarity::output,
+                                                                  .dual = ^^Accept,
+                                                                  .payload_is_protocol = true};
+
+inline constexpr ::fixy::session::transition::combinator accept{.shape = ^^Accept,
+                                                                .kind = ::fixy::session::transition::shape_kind::step,
+                                                                .direction =
+                                                                    ::fixy::session::transition::polarity::input,
+                                                                .dual = ^^Delegate,
+                                                                .payload_is_protocol = true};
+
+inline constexpr ::fixy::session::transition::seal combinator_seal{.kind = ^^::fixy::session::transition::combinator,
+                                                                   .count = 2};
+
+}  // namespace combinators::delegation
 
 namespace detail {
 

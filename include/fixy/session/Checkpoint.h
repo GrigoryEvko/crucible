@@ -109,16 +109,54 @@ namespace fixy::session {
 
 // ── The three primitives ────────────────────────────────────────────
 //
-// Commit, Roll and Abort and their registrations stand in
-// fixy/session/Protocol.h, under the seal of the registry.  A checkpoint
-// protocol cannot run on one endpoint, because compliance is a property
-// of the pair, so each primitive is registered as not plain: the plain
-// handle factory refuses a protocol that holds one, and only
+// Commit, Roll and Abort and their registrations stand here, in the
+// family `checkpoint` of the registry (fixy/session/Registry.h).  A
+// checkpoint protocol cannot run on one endpoint, because compliance is a
+// property of the pair, so each primitive is registered as not plain: the
+// plain handle factory refuses a protocol that holds one, and only
 // mint_checkpoint_session admits it.  Commit is a marker whose dual
 // commits at the same label.  Roll and Abort are terminals that keep
 // their place under composition, as a crashed endpoint does.  A dual pair
 // is not compliant by that fact alone, because the imposed flag can still
 // make a Roll fail, so the mint checks the pair.
+//
+// Commit<K> takes a checkpoint and continues with K, Roll returns both
+// parties to their checkpoints, and Abort returns both parties to the
+// start.  Each is a label of a choice that the two parties exchange.
+
+template <typename K>
+struct Commit {
+    using next = K;
+};
+
+struct Roll {};
+
+struct Abort {};
+
+namespace combinators::checkpoint {
+
+// No handle stands at one of the three: the checkpoint handle does the
+// primitive in the step that exchanges its label.
+inline constexpr ::fixy::session::transition::combinator commit{
+    .shape = ^^Commit, .kind = ::fixy::session::transition::shape_kind::marker, .dual = ^^Commit, .is_plain = false};
+
+inline constexpr ::fixy::session::transition::combinator roll{.shape = ^^Roll,
+                                                              .kind = ::fixy::session::transition::shape_kind::terminal,
+                                                              .dual = ^^Roll,
+                                                              .absorbs_suffix = true,
+                                                              .is_plain = false};
+
+inline constexpr ::fixy::session::transition::combinator restart{.shape = ^^Abort,
+                                                                 .kind =
+                                                                     ::fixy::session::transition::shape_kind::terminal,
+                                                                 .dual = ^^Abort,
+                                                                 .absorbs_suffix = true,
+                                                                 .is_plain = false};
+
+inline constexpr ::fixy::session::transition::seal combinator_seal{.kind = ^^::fixy::session::transition::combinator,
+                                                                   .count = 3};
+
+}  // namespace combinators::checkpoint
 
 // Each trait of this header is an alias and each _v form is a concept, so
 // no program can specialize one to change its answer.
@@ -145,8 +183,20 @@ using is_checkpoint_primitive = std::bool_constant<detail::checkpoint::is_primit
 // same branch in both protocols.  An unknown combinator has no erasure,
 // so it stops the build.
 
+namespace detail::checkpoint {
+
+// The checkpoint erasure of the erase walk, with Roll and Abort as the two
+// terminals that it reads as End.  Complexity: linear in the size of the
+// protocol.
+[[nodiscard]] consteval std::meta::info erased_of(std::meta::info protocol) {
+    return ::fixy::session::transition::fold(protocol_registry, protocol,
+                                             erase_algebra{erasure::checkpoints, ^^Roll, ^^Abort}, 0);
+}
+
+}  // namespace detail::checkpoint
+
 template <typename P>
-using checkpoint_erase_t = typename[:detail::erased(^^P, detail::erasure::checkpoints):];
+using checkpoint_erase_t = typename[:detail::checkpoint::erased_of(^^P):];
 
 namespace detail::checkpoint {
 

@@ -3595,7 +3595,7 @@ fixy_neg_compile_test(neg_sess_checkpoint_delegation_owned_handle
 # payload.
 fixy_neg_compile_test(neg_sess_checkpoint_ctx_row_refused
   "no matching function for call to .mint_checkpoint_session<Decide, Follow>"
-  "satisfaction of .CtxAdmitsProtocolRow<Ctx, .: fixy::session::detail::erased\\(\\^\\^[A-Za-z]+, fixy::session::detail::erasure::checkpoints\\) :.>.")
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, .: fixy::session::detail::checkpoint::erased_of\\(\\^\\^[A-Za-z]+\\) :.>.")
 
 # The checkpoint door builds each checkpoint handle and does each step.
 # Its opening member states the whole gate of the mint, and the class is

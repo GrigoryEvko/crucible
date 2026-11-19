@@ -2,6 +2,11 @@
 
 #include <fixy/session/Crash.h>
 
+// The headers of two families that the walk refuses: the delegation heads
+// and the checkpoint primitives.
+#include <fixy/session/Checkpoint.h>
+#include <fixy/session/Delegate.h>
+
 // The traits of the armed cells of the header are aliases, and the roster
 // walk of foundation/contracts/ArmedRoster.h finds class templates only.  These
 // assertions read their cells.

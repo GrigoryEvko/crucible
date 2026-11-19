@@ -95,9 +95,12 @@
 #include <fixy/Saturated.h>
 #include <fixy/ScopedView.h>
 #include <fixy/Secret.h>
+#include <fixy/session/Checkpoint.h>
 #include <fixy/session/ContentAddressed.h>
+#include <fixy/session/Delegate.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/MachineBridge.h>
+#include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
 #include <fixy/session/Stepping.h>
 #include <fixy/session/VigilMode.h>

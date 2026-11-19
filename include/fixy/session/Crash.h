@@ -135,14 +135,34 @@ namespace fixy::session {
 
 // ── Stop ─────────────────────────────────────────────────────────────
 //
-// Stop and its registration stand in fixy/session/Protocol.h, under the
-// seal of the registry.  The registration gives its dual, its terminal
-// kind that absorbs a suffix, and its place in refinement, and it marks
-// Stop as not plain, so no design-time protocol holds it.
+// Stop and its registration stand here, in the family `crash` of the
+// registry (fixy/session/Registry.h).  The registration gives its dual,
+// its terminal kind that absorbs a suffix, and its place in refinement,
+// and it marks Stop as not plain, so no design-time protocol holds it.
 //
 // Each trait of this header is an alias, and each _v form is a concept, so
 // no program can specialize one to change its answer.  The registry and
 // the crash walk below give every answer.
+
+// The runtime type of a crashed endpoint.  No protocol written at design
+// time holds it, and no handle stands at it.
+struct Stop {};
+
+namespace combinators::crash {
+
+// Stop is a terminal that absorbs a suffix: a crashed endpoint never
+// resumes, so composition keeps it.  Its dual is itself, and refinement
+// relates it only to itself (rule Sub-stop below).
+inline constexpr ::fixy::session::transition::combinator stop{.shape = ^^Stop,
+                                                              .kind = ::fixy::session::transition::shape_kind::terminal,
+                                                              .dual = ^^Stop,
+                                                              .absorbs_suffix = true,
+                                                              .is_plain = false};
+
+inline constexpr ::fixy::session::transition::seal combinator_seal{.kind = ^^::fixy::session::transition::combinator,
+                                                                   .count = 1};
+
+}  // namespace combinators::crash
 
 // ── The crash label and its metadata ─────────────────────────────────
 
@@ -580,16 +600,21 @@ enum class erasure : std::uint8_t {
     checkpoints
 };
 
+// `ends` and `restarts` name the two terminals that the checkpoint
+// erasure reads as End.  fixy/session/Checkpoint.h names them, Roll and
+// Abort, so this header names no shape of that header.
 struct erase_algebra {
     using result = std::meta::info;
     using context = int;
     erasure removes = erasure::crash_branches;
+    std::meta::info ends{};
+    std::meta::info restarts{};
 
     template <class Child>
     consteval std::meta::info terminal(const crash::tr::node& view, context, const Child&) const {
-        if (removes == erasure::checkpoints && (view.entry.shape == ^^Roll || view.entry.shape == ^^Abort)) {
-            return ^^End;
-        }
+        const bool is_checkpoint_terminal =
+            view.entry.shape != std::meta::info{} && (view.entry.shape == ends || view.entry.shape == restarts);
+        if (removes == erasure::checkpoints && is_checkpoint_terminal) return ^^End;
         return view.type;
     }
     template <class Child>
@@ -639,7 +664,6 @@ struct erase_algebra {
 [[nodiscard]] consteval std::meta::info erased(std::meta::info proto, erasure removes) {
     return crash::tr::fold(protocol_registry, proto, erase_algebra{removes}, 0);
 }
-
 }  // namespace detail
 
 // ── Duality modulo crash branches ────────────────────────────────────
