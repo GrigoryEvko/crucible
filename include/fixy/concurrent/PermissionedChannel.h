@@ -55,6 +55,7 @@
 // not have.
 
 #include <fixy/concurrent/ChannelEnd.h>
+#include <fixy/concurrent/EventCount.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/SpscRing.h>
 #include <fixy/concurrent/WorkingSet.h>
@@ -406,6 +407,17 @@ public:
             }
         }
 
+        // The condition of receive_waiting: a receive that gives an item or
+        // the end goes into got, and an empty channel gives false.
+        template <typename... PopTag>
+        [[nodiscard]] bool has_received_(::foundation::core::Option<::foundation::core::Result<T, NoItem>>& got,
+                                         PopTag... tag) noexcept {
+            ::foundation::core::Result<T, NoItem> received = receive_(tag...);
+            if (received.err().value_or(NoItem::Closed) == NoItem::Empty) return false;
+            got = ::foundation::core::Option<::foundation::core::Result<T, NoItem>>::some(std::move(received));
+            return true;
+        }
+
     public:
         static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<parts::consumer_lines, T>;
         using row_discipline = typename parts::consumer_discipline;
@@ -452,6 +464,27 @@ public:
         // it with the ring after its mark, so a close that came before the
         // mark and its wake ends the park.
         [[nodiscard]] bool is_closed() const noexcept { return ch_->producers_.is_closed(); }
+
+        // The oldest item, or NoItem::Closed after the last item of a closed
+        // channel.  While the channel is empty and open, the call waits by
+        // Policy (THE POLICY of fixy/concurrent/EventCount.h): Spin spins, and
+        // SpinThenPark spins for its budget and then parks on events.  The
+        // condition of the wait is a receive, so the receive after the entry
+        // of a park in the count takes each item and the end that came before
+        // the entry.  A channel whose producers notify events after each push
+        // and after their close then loses no wake.  The gate of the policy
+        // refuses a policy that parks to a context of the hot path, because
+        // that context owns no Block.  A merge gives the tag of Nondet after
+        // events, as its pops do.
+        template <WaitPolicy Policy, class Ctx, typename... PopTag>
+            requires CtxFitsWaitPolicy<Ctx, Policy>
+                  && (sizeof...(PopTag) == (Form == ChannelForm::merge ? std::size_t{1} : std::size_t{0}))
+        [[nodiscard]] ::foundation::core::Result<T, NoItem> receive_waiting(Ctx const& ctx, EventCount& events,
+                                                                            PopTag... tag) noexcept {
+            ::foundation::core::Option<::foundation::core::Result<T, NoItem>> got{::foundation::core::none};
+            wait_for<Policy>(ctx, events, [this, &got, tag...]() noexcept { return has_received_(got, tag...); });
+            return std::move(got).expect("the wait ends after a receive that gives an item or the end");
+        }
 
         [[nodiscard]] constexpr ::foundation::ChannelIdentity<PermissionedChannel> channel_identity() const noexcept {
             return ch_.identity();

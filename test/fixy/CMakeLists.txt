@@ -4343,6 +4343,13 @@ fixy_neg_compile_test(neg_stage_handle_with_thread_affinity
 # channel, many threaded rounds, and pipelines with no sentinel.
 fixy_test(test_channel_close)
 
+# The wait of the consumer handle: each item in order, then the end, with no
+# lost wake, and no policy that parks for a context of the hot path.
+fixy_test(test_channel_wait)
+fixy_neg_compile_test(neg_channel_receive_waiting_park_from_the_foreground
+  "template constraint failure|constraints not satisfied|no matching function"
+  "CtxFitsWaitPolicy")
+
 # A handle owns a linear token or a pool share; copying it would
 # duplicate the one and double-count the other.
 fixy_neg_compile_test(neg_channel_producer_handle_copied

@@ -300,6 +300,22 @@ public:
         // The closed state of the channel of the words, with acquire order.
         [[nodiscard]] bool is_closed() const noexcept { return cells_.is_closed(); }
 
+        // The oldest Box, or NoItem::Closed after the last Box of a closed
+        // channel, with the wait of receive_waiting of the channel of the
+        // words.
+        template <WaitPolicy Policy, class Ctx, typename... PopTag>
+            requires CtxFitsWaitPolicy<Ctx, Policy>
+        [[nodiscard]] ::foundation::core::Result<value_type, NoItem> receive_waiting(Ctx const& ctx, EventCount& events,
+                                                                                     PopTag... tag) noexcept {
+            ::foundation::core::Result<word_type, NoItem> const received =
+                cells_.template receive_waiting<Policy>(ctx, events, tag...);
+            return received.match(
+                [](word_type word) noexcept { return ::foundation::core::Result<value_type, NoItem>{open_(word)}; },
+                [](NoItem why) noexcept {
+                    return ::foundation::core::Result<value_type, NoItem>{::foundation::core::err(why)};
+                });
+        }
+
         [[nodiscard]] constexpr ::foundation::ChannelIdentity<cell_channel> channel_identity() const noexcept {
             return cells_.channel_identity();
         }
