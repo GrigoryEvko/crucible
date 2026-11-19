@@ -3678,6 +3678,20 @@ fixy_test(test_session_semantics test_session_semantics.cpp test_session_semanti
   test_session_semantics_config.cpp test_session_semantics_corpus.cpp test_session_semantics_sender.cpp
   test_session_semantics_sender_tirore3.cpp)
 
+# The rules that read the local type of one role are functions over
+# reflections.  Each fixture specializes one old class template of a rule
+# in a PROBE region.  It compiles on the tree before the functions, so its
+# test fails there.  On this tree the old name names nothing.
+fixy_neg_compile_test(neg_sess_role_actions_specialized
+  ".role_actions. is not a class template"
+  "neg_sess_role_actions_specialized\\.cpp:21:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_receipt_specialized
+  ".receipt. is not a class template"
+  "neg_sess_receipt_specialized\\.cpp:21:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_detection_specialized
+  ".detection. is not a class template"
+  "neg_sess_detection_specialized\\.cpp:22:[0-9]+: error:")
+
 # Two fixtures for each input predicate of the public aliases.  A state
 # holds a well-formed global type and a set of crashed roles.
 fixy_neg_compile_test(neg_sess_semantics_state_self_communication

@@ -628,68 +628,93 @@ struct message_from<Ctx, R, Q> {
 };
 
 // ── The labels one role offers ───────────────────────────────────────
+//
+// The rules [Γ-⊕], [Γ-&] and [Γ-⊙] read the local type of one role.  The
+// rules are a deduction.  Each rule is an overload of a member of
+// role_rules, and an alias reads the return type of a call.  role_rules is
+// not a template, so no other file can add an overload of a rule.  An
+// explicit specialization of a member keeps the return type of the
+// template, so no file can hide a label of a role or add one.  An overload
+// of a shape matches as a partial specialization does, so a rule costs one
+// overload resolution.  Each body is empty, and no code calls one: the alias
+// reads the return type in an unevaluated operand.
+struct role_rules {
+    // [Γ-&]: the receipt of the message M at the head of the queue from Q,
+    // when each branch receives a message from Q, and a branch has the label
+    // of M and a payload above the payload of M.
+    template <typename R, typename Q, typename M, typename... Ls, typename... Bs, typename... Ks>
+        requires(!std::is_void_v<M>)
+    static auto receipt(R*, Q*, M*, Recv<PeerMsg<Q, Ls, Bs>, Ks>*...) noexcept
+        -> std::conditional_t<((std::is_same_v<typename M::label, Ls>
+                                && ::fixy::session::transition::subsorts(^^::fixy::session::payload_axioms,
+                                                                         ^^typename M::payload, ^^Bs))
+                               || ...),
+                              Actions<RecvAction<R, Q, typename M::label, typename M::payload>>, Actions<>> {
+        return {};
+    }
+    template <typename R, typename Q, typename M, typename... Branches>
+    static Actions<> receipt(R*, Q*, M*, Branches*...) noexcept {
+        return {};
+    }
+
+    // [Γ-⊙]: the peer Q is at Stop, its queue to R is empty, and a branch is
+    // the crash branch.
+    template <typename Ctx, typename R, typename Q, typename... Ls, typename... Bs, typename... Ks>
+    static auto detection(Ctx*, R*, Q*, Recv<PeerMsg<Q, Ls, Bs>, Ks>*...) noexcept
+        -> std::conditional_t<(std::is_same_v<Ls, g::CrashLabel> || ...)
+                                  && is_stopped_v<Ctx, Q> && std::is_void_v<typename message_from<Ctx, R, Q>::type>,
+                              Actions<DetectAction<R, Q>>, Actions<>> {
+        return {};
+    }
+    template <typename Ctx, typename R, typename Q, typename... Branches>
+    static Actions<> detection(Ctx*, R*, Q*, Branches*...) noexcept {
+        return {};
+    }
+
+    // The labels of one role at each local type of a configuration.  A local
+    // type of another shape matches no overload, and the alias does not
+    // compile.
+    template <typename Ctx, typename R>
+    static Actions<> actions(Ctx*, R*, End*) noexcept {
+        return {};
+    }
+    template <typename Ctx, typename R>
+    static Actions<> actions(Ctx*, R*, Stop*) noexcept {
+        return {};
+    }
+    template <typename Ctx, typename R, typename Q, typename L, typename B, typename K>
+    static Actions<SendAction<R, Q, L, B>> actions(Ctx*, R*, Send<PeerMsg<Q, L, B>, K>*) noexcept {
+        return {};
+    }
+    template <typename Ctx, typename R, typename... Qs, typename... Ls, typename... Bs, typename... Ks>
+    static Actions<SendAction<R, Qs, Ls, Bs>...> actions(Ctx*, R*, Select<Send<PeerMsg<Qs, Ls, Bs>, Ks>...>*) noexcept {
+        return {};
+    }
+    template <typename Ctx, typename R, typename Q, typename L, typename B, typename K>
+    static auto actions(Ctx*, R*, Recv<PeerMsg<Q, L, B>, K>*) noexcept -> ::foundation::reflect::list_concat_t<
+        Actions,
+        decltype(receipt(static_cast<R*>(nullptr), static_cast<Q*>(nullptr),
+                         static_cast<typename message_from<Ctx, R, Q>::type*>(nullptr),
+                         static_cast<Recv<PeerMsg<Q, L, B>, K>*>(nullptr))),
+        decltype(detection(static_cast<Ctx*>(nullptr), static_cast<R*>(nullptr), static_cast<Q*>(nullptr),
+                           static_cast<Recv<PeerMsg<Q, L, B>, K>*>(nullptr)))> {
+        return {};
+    }
+    template <typename Ctx, typename R, typename Q, typename... Branches>
+    static auto actions(Ctx*, R*, Offer<Sender<Q>, Branches...>*) noexcept -> ::foundation::reflect::list_concat_t<
+        Actions,
+        decltype(receipt(static_cast<R*>(nullptr), static_cast<Q*>(nullptr),
+                         static_cast<typename message_from<Ctx, R, Q>::type*>(nullptr),
+                         static_cast<Branches*>(nullptr)...)),
+        decltype(detection(static_cast<Ctx*>(nullptr), static_cast<R*>(nullptr), static_cast<Q*>(nullptr),
+                           static_cast<Branches*>(nullptr)...))> {
+        return {};
+    }
+};
 
 template <typename Ctx, typename R, typename U>
-struct role_actions;
-template <typename Ctx, typename R>
-struct role_actions<Ctx, R, End> {
-    using type = Actions<>;
-};
-template <typename Ctx, typename R>
-struct role_actions<Ctx, R, Stop> {
-    using type = Actions<>;
-};
-template <typename Ctx, typename R, typename Q, typename L, typename B, typename K>
-struct role_actions<Ctx, R, Send<PeerMsg<Q, L, B>, K>> {
-    using type = Actions<SendAction<R, Q, L, B>>;
-};
-template <typename Ctx, typename R, typename... Qs, typename... Ls, typename... Bs, typename... Ks>
-struct role_actions<Ctx, R, Select<Send<PeerMsg<Qs, Ls, Bs>, Ks>...>> {
-    using type = Actions<SendAction<R, Qs, Ls, Bs>...>;
-};
-
-// The receipt of the message at the head of the queue from Q, when a
-// branch has its label and a payload above its payload.
-template <typename R, typename Q, typename M, typename... Branches>
-struct receipt {
-    using type = Actions<>;
-};
-template <typename R, typename Q, typename M, typename... Ls, typename... Bs, typename... Ks>
-    requires(!std::is_void_v<M>)
-struct receipt<R, Q, M, Recv<PeerMsg<Q, Ls, Bs>, Ks>...> {
-    static constexpr bool is_received =
-        ((std::is_same_v<typename M::label, Ls>
-          && ::fixy::session::transition::subsorts(^^::fixy::session::payload_axioms, ^^typename M::payload, ^^Bs))
-         || ...);
-    using type =
-        std::conditional_t<is_received, Actions<RecvAction<R, Q, typename M::label, typename M::payload>>, Actions<>>;
-};
-
-// [Γ-⊙]: the peer is at Stop, its queue to R is empty, and a branch is
-// the crash branch.
-template <typename Ctx, typename R, typename Q, typename... Branches>
-struct detection {
-    using type = Actions<>;
-};
-template <typename Ctx, typename R, typename Q, typename... Ls, typename... Bs, typename... Ks>
-struct detection<Ctx, R, Q, Recv<PeerMsg<Q, Ls, Bs>, Ks>...> {
-    static constexpr bool is_detected = (std::is_same_v<Ls, g::CrashLabel> || ...)
-                                     && is_stopped_v<Ctx, Q> && std::is_void_v<typename message_from<Ctx, R, Q>::type>;
-    using type = std::conditional_t<is_detected, Actions<DetectAction<R, Q>>, Actions<>>;
-};
-
-template <typename Ctx, typename R, typename Q, typename L, typename B, typename K>
-struct role_actions<Ctx, R, Recv<PeerMsg<Q, L, B>, K>> {
-    using type = ::foundation::reflect::list_concat_t<
-        Actions, typename receipt<R, Q, typename message_from<Ctx, R, Q>::type, Recv<PeerMsg<Q, L, B>, K>>::type,
-        typename detection<Ctx, R, Q, Recv<PeerMsg<Q, L, B>, K>>::type>;
-};
-template <typename Ctx, typename R, typename Q, typename... Branches>
-struct role_actions<Ctx, R, Offer<Sender<Q>, Branches...>> {
-    using type = ::foundation::reflect::list_concat_t<
-        Actions, typename receipt<R, Q, typename message_from<Ctx, R, Q>::type, Branches...>::type,
-        typename detection<Ctx, R, Q, Branches...>::type>;
-};
+using role_actions_t =
+    decltype(role_rules::actions(static_cast<Ctx*>(nullptr), static_cast<R*>(nullptr), static_cast<U*>(nullptr)));
 
 template <typename Ctx, typename Reliable, typename E>
 struct entry_actions {
@@ -697,7 +722,7 @@ struct entry_actions {
     static constexpr bool may_crash = !g::detail::lts::is_reliable_v<Reliable, typename E::role>
                                    && !std::is_same_v<local, End> && !std::is_same_v<local, Stop>;
     using type = ::foundation::reflect::list_concat_t<
-        Actions, typename role_actions<Ctx, typename E::role, local>::type,
+        Actions, role_actions_t<Ctx, typename E::role, local>,
         std::conditional_t<may_crash, Actions<CrashAction<typename E::role>>, Actions<>>>;
 };
 
