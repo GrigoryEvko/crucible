@@ -206,6 +206,9 @@ crucible_bench(bench_schema_table)
 crucible_bench(bench_serialize)
 crucible_bench(bench_simd)
 crucible_bench(bench_smoke)
+# One getsockopt through the borrow of a socket Handle and through its shared
+# ref, which a table of cntp stores.
+crucible_bench(bench_socket_doors)
 # A waiter and a writer on two cores: the wake latency of each spin wait and
 # the cost of a spin for the writer of its line.
 crucible_bench(bench_spin_wake CORES 2)
