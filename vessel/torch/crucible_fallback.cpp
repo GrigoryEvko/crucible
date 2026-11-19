@@ -45,7 +45,9 @@
 #include "vessel_api_typed.h"
 
 #include <bit>
+#include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 #include <utility>
 
@@ -84,6 +86,58 @@ static_assert(!::fixy::has_enumerator_named<c10::DispatchKey>("DeferredInit"),
               "DispatchKey::DeferredInit survived the patch: the removal hunk did not apply, so Crucible widened "
               "the key budget instead of reusing the dead slot.  Repair "
               "patches/pytorch-crucible-integration.patch.");
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// =====================================================================
+// The modes of the TLS state
+//
+// The PyTorch fork patch declares c10::CrucibleMode.  TlsMode of
+// crucible_native.py mirrors its enumerators, and the loader compares the two
+// after the load of this library through crucible_dispatch_mode_entry.  The
+// table below reads the name and the value of each enumerator by reflection,
+// so a change of the enum in the patch reaches that check with no edit here.
+// crucible_dispatch_set_tls_mode refuses a value that names no enumerator,
+// and the fallback ends the process on such a value.
+//
+// The table gives each name to ctypes as a C text, and it reads the enum of
+// PyTorch, so it is in an ABI region.
+// =====================================================================
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: ctypes reads the name and the value of each mode of the TLS state of PyTorch")
+
+// One enumerator of c10::CrucibleMode: its name with a terminating zero, and
+// its value.
+struct ModeEnumerator {
+    const char* name = nullptr;
+    uint8_t value = 0;
+};
+
+constexpr std::size_t kModeCount = std::meta::enumerators_of(^^c10::CrucibleMode).size();
+
+// The enumerators of c10::CrucibleMode in the order of their declarations.
+consteval ::fixy::FixedArray<ModeEnumerator, kModeCount> read_mode_enumerators() {
+    ::fixy::FixedArray<ModeEnumerator, kModeCount> table{};
+    std::size_t position = 0;
+    for (const std::meta::info enumerator : std::meta::enumerators_of(^^c10::CrucibleMode)) {
+        table.at(::fixy::Index<kModeCount>::check(position).expect("the walk stays below the count of the modes")) =
+            ModeEnumerator{.name = std::define_static_string(std::meta::identifier_of(enumerator)),
+                           .value = std::to_underlying(std::meta::extract<c10::CrucibleMode>(enumerator))};
+        ++position;
+    }
+    return table;
+}
+
+constexpr ::fixy::FixedArray<ModeEnumerator, kModeCount> kModeEnumerators = read_mode_enumerators();
+
+// True when the value names an enumerator of c10::CrucibleMode.  Complexity:
+// linear in the modes.
+[[nodiscard]] constexpr bool is_named_mode(uint8_t raw) noexcept {
+    for (const ModeEnumerator& mode : kModeEnumerators) {
+        if (mode.value == raw) return true;
+    }
+    return false;
+}
+
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
@@ -726,6 +780,10 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
         op.redispatchBoxed(dispatch_keys & kAfterCrucibleKeyset, stack);
         return;
     }
+    // The set entry refuses a value that names no mode, and the code of
+    // PyTorch sets only an enumerator, so each other value is a defect.  The
+    // check comes after the fast path, so the passthrough pays nothing for it.
+    CRUCIBLE_FATAL_INVARIANT(is_named_mode(std::to_underlying(state.mode())));
 
     // -- Get Vigil from TLS context -----------------------------------
     //
@@ -1024,8 +1082,25 @@ CRUCIBLE_API uint32_t crucible_dispatch_storage_generation(void* storage) {
     return crucible::vessel::generation_of(static_cast<c10::StorageImpl*>(storage)->data_ptr()).raw();
 }
 
-CRUCIBLE_API void crucible_dispatch_set_tls_mode(uint8_t mode) {
+// The enumerator i of c10::CrucibleMode, in the order of the declarations:
+// its value and its name, a C text with a terminating zero.  Gives 1 for an
+// enumerator, and 0 with no write when i is past the last one.  The loader
+// compares the modes with TlsMode of crucible_native.py.
+CRUCIBLE_API uint32_t crucible_dispatch_mode_entry(uint32_t i, uint8_t* out_value, const char** out_name) {
+    if (i >= kModeCount) return 0;
+    const ModeEnumerator& mode = kModeEnumerators.at(::fixy::Index<kModeCount>::check(i).expect("the test above"));
+    if (out_value != nullptr) *out_value = mode.value;
+    if (out_name != nullptr) *out_name = mode.name;
+    return 1;
+}
+
+// Sets the mode of the TLS state of the calling thread and gives 1, or gives
+// 0 and keeps the mode when the value names no enumerator of
+// c10::CrucibleMode.
+CRUCIBLE_API uint32_t crucible_dispatch_set_tls_mode(uint8_t mode) {
+    if (!is_named_mode(mode)) return 0;
     c10::CrucibleState::get_tls_state().set_mode(static_cast<c10::CrucibleMode>(mode));
+    return 1;
 }
 
 CRUCIBLE_API void crucible_dispatch_set_tls_context(void* ctx) { c10::CrucibleState::get_tls_state().set_context(ctx); }

@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 
-from crucible_native import CrucibleNative, RegionSlot, _DispatchLib, attach  # noqa: E402
+from crucible_native import CrucibleNative, RegionSlot, TlsMode, _DispatchLib, attach  # noqa: E402
 from test_region_ops import (  # noqa: E402
     BATCH,
     HIDDEN,
@@ -142,9 +142,9 @@ def check_reused_address() -> list[str]:
             del dead
             # The TLS mode INACTIVE keeps the op out of the record, so the
             # recorder sees no allocation at the address.
-            lib.set_mode(CrucibleNative.INACTIVE)
+            lib.set_mode(TlsMode.INACTIVE)
             fresh = torch.full((REUSED_ELEMENTS,), 3.0)
-            lib.set_mode(CrucibleNative.RECORD)
+            lib.set_mode(TlsMode.RECORD)
             is_each_address_reused = is_each_address_reused and fresh.data_ptr() == address
             torch.add(fresh, kept)
             if ctx.active_num_ops() > 0:

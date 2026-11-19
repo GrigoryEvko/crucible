@@ -228,6 +228,24 @@ class DispatchStatus(enum.IntEnum):
     COMPLETE = 2
 
 
+class TlsMode(enum.IntEnum):
+    """The mode of the TLS state of a thread, the enumerators of c10::CrucibleMode of the PyTorch fork patch.
+
+    The loader of the dispatch library compares these names and values with
+    the enumerators that the library reads from the patched enum
+    (check_tls_modes), so a change of the enum in the patch stops the load.
+    """
+
+    # The fallback runs each op with no record.
+    INACTIVE = 0
+    # The ops run eagerly, and the Vigil records them.
+    RECORD = 1
+    # The Vigil replays a region and checks the guard of each op.
+    COMPILED = 2
+    # A guard failed, and the Vigil goes back to RECORD.
+    DIVERGED = 3
+
+
 class CrucibleAbiMismatchError(RuntimeError):
     """Raised before the load of a Crucible library whose layout is not the layout of the build.
 
@@ -944,6 +962,55 @@ def load_vessel_library(lib_path: str | None = None) -> ctypes.CDLL:
     return library
 
 
+# The most enumerators that read_tls_modes reads: one for each value of the
+# uint8_t base of c10::CrucibleMode.
+_MAX_TLS_MODES = 256
+
+
+def read_tls_modes(library: Any) -> dict[str, int]:
+    """Read the name and the value of each enumerator of c10::CrucibleMode from the loaded dispatch library.
+
+    The library reads them from the patched enum by reflection, and gives
+    them through crucible_dispatch_mode_entry.  Complexity: one call for each
+    enumerator.
+
+    Raises:
+        CrucibleAbiMismatchError: If the library has no crucible_dispatch_mode_entry
+    """
+    try:
+        entry = library.crucible_dispatch_mode_entry
+    except AttributeError:
+        raise CrucibleAbiMismatchError("the dispatch library has no crucible_dispatch_mode_entry, which gives the "
+                                       f"modes of c10::CrucibleMode.  Rebuild the libraries:\n{VESSEL_BUILD}") from None
+    entry.restype = ctypes.c_uint32
+    entry.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_char_p)]
+    modes: dict[str, int] = {}
+    for index in range(_MAX_TLS_MODES):
+        value = ctypes.c_uint8(0)
+        name = ctypes.c_char_p(None)
+        if entry(ctypes.c_uint32(index), ctypes.byref(value), ctypes.byref(name)) != 1:
+            break
+        if name.value is not None:
+            modes[name.value.decode("ascii")] = int(value.value)
+    return modes
+
+
+def check_tls_modes(observed: dict[str, int], path: str) -> None:
+    """Refuse a dispatch library whose enumerators of c10::CrucibleMode differ from TlsMode.
+
+    Raises:
+        CrucibleAbiMismatchError: If a name or a value differs
+    """
+    expected = {member.name: int(member.value) for member in TlsMode}
+    if observed != expected:
+        raise CrucibleAbiMismatchError(
+            f"TlsMode of crucible_native.py does not mirror c10::CrucibleMode of the dispatch library {path}:\n"
+            f"  Python values : {expected}\n"
+            f"  C values      : {observed}\n"
+            f"Give TlsMode the names and the values of c10::CrucibleMode of "
+            f"patches/pytorch-crucible-integration.patch.")
+
+
 def load_dispatch_library(lib_path: str | None = None) -> ctypes.CDLL:
     """Load libcrucible_dispatch.so, and return it once its layout is the layout of its build.
 
@@ -953,17 +1020,22 @@ def load_dispatch_library(lib_path: str | None = None) -> ctypes.CDLL:
     they register its kernels and its fallback for DispatchKey::Crucible.
     The check of the layout reads the file before the load, so a refused
     library registers no kernel, and the process can load a rebuilt library.
+    After the load, the modes of the library must be the modes of TlsMode
+    (check_tls_modes).  A refused library gets no mode from this package, so
+    its fallback records nothing.
 
     Raises:
         RuntimeError: If no library is found, or if it needs a sanitizer
             runtime that the process does not hold (checked_lib_path).
         CrucibleAbiMismatchError: If the layout of the library or of a
-            mirror is not the layout of the build (check_layout)
+            mirror is not the layout of the build (check_layout), or if
+            its modes differ from TlsMode (check_tls_modes)
     """
     path = checked_lib_path(DISPATCH_LIBRARY, lib_path, VESSEL_BUILD)
     table = check_layout(path, VESSEL_BUILD)
     library = ctypes.CDLL(path)
     check_loaded_layout(library, "crucible_dispatch_layout_digest", path, table)
+    check_tls_modes(read_tls_modes(library), path)
     return library
 
 
@@ -1143,7 +1215,7 @@ class _DispatchLib:
         L = self._lib
 
         # TLS mode/context
-        L.crucible_dispatch_set_tls_mode.restype = None
+        L.crucible_dispatch_set_tls_mode.restype = ctypes.c_uint32
         L.crucible_dispatch_set_tls_mode.argtypes = [ctypes.c_uint8]
         L.crucible_dispatch_get_tls_mode.restype = ctypes.c_uint8
         L.crucible_dispatch_get_tls_mode.argtypes = []
@@ -1246,9 +1318,16 @@ class _DispatchLib:
         """How many backward windows are open on this thread."""
         return self._lib.crucible_dispatch_backward_depth()
 
-    def set_mode(self, mode: int) -> None:
-        """Set the CrucibleState TLS mode for this thread."""
-        self._lib.crucible_dispatch_set_tls_mode(ctypes.c_uint8(mode))
+    def set_mode(self, mode: TlsMode) -> None:
+        """Set the CrucibleState TLS mode for this thread.
+
+        Raises:
+            ValueError: If the library refuses the value, because it names no
+                enumerator of c10::CrucibleMode.  The mode of the thread stays
+        """
+        if self._lib.crucible_dispatch_set_tls_mode(ctypes.c_uint8(int(mode))) != 1:
+            raise ValueError(f"the dispatch library refuses the TLS mode {int(mode)}, which names no enumerator of "
+                             f"c10::CrucibleMode.  Give a member of TlsMode")
 
     def set_context(self, ctx: int) -> None:
         """Set the CrucibleState TLS Vigil handle for this thread."""
@@ -1258,9 +1337,9 @@ class _DispatchLib:
         """Set the scope hash the next recorded operations carry."""
         self._lib.crucible_dispatch_set_tls_scope(ctypes.c_uint64(scope_hash))
 
-    def get_mode(self) -> int:
+    def get_mode(self) -> TlsMode:
         """The CrucibleState TLS mode of this thread."""
-        return self._lib.crucible_dispatch_get_tls_mode()
+        return TlsMode(self._lib.crucible_dispatch_get_tls_mode())
 
     def get_scope(self) -> int:
         """The scope hash of this thread."""
@@ -1364,12 +1443,6 @@ class CrucibleNative:
     of another thread lives, ends the process at the create of its Vigil.
     """
 
-    # CrucibleMode ordinals (must match c10::CrucibleMode enum)
-    INACTIVE = 0
-    RECORD   = 1
-    COMPILED = 2
-    DIVERGED = 3
-
     def __init__(self, *, vessel_lib_path: str | None = None,
                  dispatch_lib_path: str | None = None,
                  verbose: bool = False) -> None:
@@ -1454,7 +1527,7 @@ class CrucibleNative:
                 raise RuntimeError("the generation allocator did not attach as the CPU allocator of PyTorch")
 
             # Set CrucibleState TLS: mode=RECORD, context=vigil handle
-            self._dispatch.set_mode(self.RECORD)
+            self._dispatch.set_mode(TlsMode.RECORD)
             self._dispatch.set_context(self._handle)
 
             # Enable DispatchKey::Crucible in this thread
@@ -1503,7 +1576,7 @@ class CrucibleNative:
 
         # Clear TLS state
         if self._dispatch is not None:
-            self._dispatch.set_mode(self.INACTIVE)
+            self._dispatch.set_mode(TlsMode.INACTIVE)
             self._dispatch.set_context(0)
             self._dispatch.set_scope(0)
 

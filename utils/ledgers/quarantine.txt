@@ -723,11 +723,10 @@ test/layer/checks/foundation/reflect/ | std-object | 17 | - | -
 test/memory_neg/ | raw-pointer-object | 2 | - | -
 test/perf_neg/ | std-entity | 1 | - | -
 test/session_oracle/ | c-array-object | 37 | - | -
-test/session_oracle/ | c-library-call | 7 | - | -
-test/session_oracle/ | door-header | 1 | - | -
+test/session_oracle/ | c-library-call | 5 | - | -
 test/session_oracle/ | raw-function-pointer | 3 | - | -
-test/session_oracle/ | raw-pointer-object | 8 | - | -
-test/session_oracle/ | std-entity | 26 | - | -
+test/session_oracle/ | raw-pointer-object | 7 | - | -
+test/session_oracle/ | std-entity | 25 | - | -
 test/session_oracle/ | std-object | 1383 | - | -
 test/shape/ | opted-out | 266 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
@@ -749,7 +748,7 @@ utils/tools/ | std-object | 1 | - | -
 utils/tools/lsp_code_action_plugin/ | std-entity | 97 | - | -
 utils/tools/lsp_code_action_plugin/ | std-object | 27 | - | -
 vessel/torch/ | opted-out | 44 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
-vessel/torch/ | opted-out | 24 | ABI: ctypes binds these entries by name, so they take and give only C types | the layout note of the vessel declares the C entries of the dispatch library, its host tool reads the layout of the C structs that ctypes mirrors, and the check of the layout digest reads a raw pointer, a C array and an entry with C linkage
+vessel/torch/ | opted-out | 27 | ABI: ctypes binds these entries by name, so they take and give only C types | the layout note of the vessel declares the C entries of the dispatch library, its host tool reads the layout of the C structs that ctypes mirrors, and the check of the layout digest reads a raw pointer, a C array and an entry with C linkage
 vessel/torch/ | opted-out | 9 | ABI: the helpers give a type to the handle and the meta array of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
 vessel/torch/ | opted-out | 8 | ABI: the tool reads the layout of the C structs that ctypes mirrors | the layout note of the vessel declares the C entries of the dispatch library, its host tool reads the layout of the C structs that ctypes mirrors, and the check of the layout digest reads a raw pointer, a C array and an entry with C linkage
 vessel/torch/ | opted-out | 62 | C-HEADER: a C caller and ctypes read these declarations, so they hold only C types | vessel_api.h is a header that a C compiler and ctypes read, so its declarations hold only C types
