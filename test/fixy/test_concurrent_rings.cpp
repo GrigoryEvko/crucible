@@ -10,6 +10,8 @@
 #include <fixy/Core.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/SpscRing.h>
+#include <fixy/os/OwnedThread.h>
+#include <foundation/effects/Ctx.h>
 
 #include <array>
 #include <atomic>
@@ -185,6 +187,112 @@ using MpscWide = c::MpscRing<int, 128>;
         return 1;
     }
     return 0;
+}
+
+// Each side of the SPSC ring keeps a cache of the index of the other side
+// (THE CACHES of fixy/concurrent/SpscRing.h).  The walk below makes each
+// cache stale in each direction, and each call must still give the answer of
+// a fresh read: a full ring refuses, a pop frees room for the next push, an
+// empty ring gives no item, and a push gives an item to the next pop.  The
+// batch calls must take the count of a fresh read too.
+[[nodiscard]] int spsc_caches_follow_the_other_side() {
+    c::SpscRing<int, 4> ring{};
+    const auto fail = [](fixy::TextView what) {
+        fixy::report(fixy::Sink::Err, "SPSC cache: {}\n", what);
+        return 1;
+    };
+    // The cached head is zero, and a push moves the head to one.  The pop
+    // must read the head again and find the item.
+    if (!ring.try_push(10)) return fail(fixy::TextView{"a push into an empty ring was refused"});
+    if (ring.try_pop().value_or(-1) != 10) return fail(fixy::TextView{"a pop missed an item behind its cache"});
+    if (ring.try_pop().is_some()) return fail(fixy::TextView{"a pop of an empty ring gave an item"});
+
+    // Fill the ring.  The cached tail is behind, so the fifth push must read
+    // the tail, find no room, and refuse.
+    for (int i = 0; i < 4; ++i) {
+        if (!ring.try_push(20 + i)) return fail(fixy::TextView{"a push below capacity was refused"});
+    }
+    if (ring.try_push(99)) return fail(fixy::TextView{"a push into a full ring was accepted"});
+
+    // One pop frees one cell.  The cached tail still says full, so the push
+    // must read the tail again and take the cell.
+    if (ring.try_pop().value_or(-1) != 20) return fail(fixy::TextView{"the first item of a full ring"});
+    if (!ring.try_push(24)) return fail(fixy::TextView{"a push after a pop did not read the tail again"});
+    if (ring.try_push(99)) return fail(fixy::TextView{"a push into a ring full again was accepted"});
+
+    // The cached head of the consumer is behind the head by the pushes above.
+    // The consumer takes each item in order across the wrap.
+    for (int i = 21; i <= 24; ++i) {
+        if (ring.try_pop().value_or(-1) != i) return fail(fixy::TextView{"an item came back out of order"});
+    }
+    if (ring.try_pop().is_some()) return fail(fixy::TextView{"a drained ring gave an item"});
+
+    // A batch push of six into four free cells takes four, and a batch pop
+    // with a cached head behind them takes all four.
+    Run<int, 6> six{};
+    for (std::size_t i = 0; i < 6; ++i)
+        six.at(i) = 30 + static_cast<int>(i);
+    if (ring.try_push_batch(six.first(6)) != 4) return fail(fixy::TextView{"a batch push took the wrong count"});
+    if (ring.try_push_batch(six.first(1)) != 0) return fail(fixy::TextView{"a batch push into a full ring"});
+    Run<int, 3> three{};
+    if (ring.try_pop_batch(three.each()) != 3 || three.at(0) != 30 || three.at(2) != 32) {
+        return fail(fixy::TextView{"a batch pop of three"});
+    }
+    // The cached tail says no free cell, and three are free.  A batch push
+    // of three must read the tail again and take all three.
+    if (ring.try_push_batch(six.first(3)) != 3) return fail(fixy::TextView{"a batch push behind a stale cache"});
+    Run<int, 8> rest{};
+    if (ring.try_pop_batch(rest.each()) != 4 || rest.at(0) != 33 || rest.at(1) != 30 || rest.at(3) != 32) {
+        return fail(fixy::TextView{"the batch pop of the rest"});
+    }
+    if (!ring.empty_approx(kNondet) || ring.try_pop().is_some()) return fail(fixy::TextView{"the ring is not empty"});
+    return 0;
+}
+
+// Each role of the SPSC ring moves to a new thread after the last owner of
+// the role ended.  The new owner reads the caches that the last owner wrote,
+// and the join of the last owner orders those writes before the reads.  The
+// stream keeps its order and loses no item.  Under TSan, a cache that no
+// synchronization covers is a data race.
+[[nodiscard]] int spsc_roles_move_between_threads() {
+    constexpr int kPerTurn = 5000;
+    constexpr int kTurns = 4;
+    using Starter = ::foundation::effects::ExecCtx<
+        ::foundation::effects::Bg,
+        ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>>;
+    c::SpscRing<int, 64> ring{};
+    int next_expected = 0;
+    for (int turn = 0; turn < kTurns; ++turn) {
+        const int first = turn * kPerTurn;
+        ::fixy::thread::OwnedThread producer =
+            ::fixy::thread::mint_owned_thread(Starter{::foundation::effects::testing::bg()},
+                                              ::fixy::thread::ThreadOptions{},
+                                              [&ring, first]() noexcept {
+                                                  for (int i = first; i < first + kPerTurn;) {
+                                                      if (ring.try_push(i)) ++i;
+                                                  }
+                                              })
+                .expect("the thread door starts the producer of a turn");
+        ::fixy::thread::OwnedThread consumer =
+            ::fixy::thread::mint_owned_thread(
+                Starter{::foundation::effects::testing::bg()}, ::fixy::thread::ThreadOptions{},
+                [&ring, &next_expected, first]() noexcept {
+                    while (next_expected < first + kPerTurn) {
+                        ::fixy::Option<int> item = ring.try_pop();
+                        if (item.is_none()) continue;
+                        if (std::move(item).expect("the test above found an item") != next_expected) return;
+                        ++next_expected;
+                    }
+                })
+                .expect("the thread door starts the consumer of a turn");
+        std::move(producer).join();
+        std::move(consumer).join();
+        if (next_expected != first + kPerTurn) {
+            fixy::report(fixy::Sink::Err, "SPSC gave item {} out of order after a move of the roles\n", next_expected);
+            return 1;
+        }
+    }
+    return ring.empty_approx(kNondet) ? 0 : 1;
 }
 
 [[nodiscard]] int mpsc_single_threaded() {
@@ -646,6 +754,8 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
 
 int main() {
     if (const int rc = spsc_single_threaded(); rc != 0) return rc;
+    if (const int rc = spsc_caches_follow_the_other_side(); rc != 0) return rc;
+    if (const int rc = spsc_roles_move_between_threads(); rc != 0) return rc;
     if (const int rc = mpsc_single_threaded(); rc != 0) return rc;
     if (const int rc = mpsc_bitmap_widths(); rc != 0) return rc;
     if (const int rc = mpsc_batch_paths_each_capacity(); rc != 0) return rc;

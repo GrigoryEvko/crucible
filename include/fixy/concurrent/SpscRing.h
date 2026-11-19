@@ -1,9 +1,28 @@
 #pragma once
 
-// One producer thread is the sole writer of head_ and of the slots in
-// [tail, head).  One consumer thread is the sole writer of tail_ and
-// the sole reader of those slots.  Nothing enforces this at run time.
-// A second producer or a second consumer corrupts the ring silently.
+// One producer thread is the sole writer of head_, of cached_tail_ and of
+// the slots in [tail, head).  One consumer thread is the sole writer of
+// tail_ and of cached_head_, and the sole reader of those slots.  Nothing
+// enforces this at run time.  A second producer or a second consumer
+// corrupts the ring silently.  A new owner of a side reads the caches of
+// that side only after the last owner of the side ended, with a
+// synchronization between the two, such as the claim of a role of
+// fixy/concurrent/PermissionedChannel.h.
+//
+// THE CACHES
+//   Each side keeps the last value of the index of the other side that it
+//   loaded, on a cache line that only it touches.  A push reads the tail
+//   of the consumer only when the cached tail says that the ring is full,
+//   and a pop reads the head of the producer only when the cached head says
+//   that the ring is empty.  So while the ring has room and items, a push
+//   and a pop move only the line of their own index and the lines of the
+//   cells between the two cores.  A cache is never ahead of the index that
+//   it copies, because each index only grows, so a stale cache can only
+//   report less room or fewer items than the ring holds.  A side reports a
+//   full ring or an empty ring only after a fresh acquire load of the index
+//   of the other side.  That load and its update of the cache are in a cold
+//   function out of line, so the path of a push with room and a pop with an
+//   item holds no call.
 
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/RingValue.h>
@@ -54,24 +73,27 @@ public:
     // consumer last read that slot at tail position h - Capacity and
     // has moved past it.  So (h & MASK) and (t & MASK) never name the
     // same slot while both are in flight, and the non-atomic cell write
-    // races with nothing.
+    // races with nothing.  The cached tail is at most the tail, so the
+    // test on the cached tail implies the test on the tail (THE CACHES).
     [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
         const std::uint64_t h = head_.peek_relaxed();
-        const std::uint64_t t = tail_.get();
-        if (h - t >= Capacity) [[unlikely]] {
-            return false;
+        if (h - cached_tail_.get() >= Capacity) [[unlikely]] {
+            if (free_after_tail_load_() == 0) return false;
         }
         buffer_[h & MASK] = item;
         head_.advance_sole_writer_from(h, h + 1);
         return true;
     }
 
-    // The oldest item, or no value when the ring is empty.
+    // The oldest item, or no value when the ring is empty.  The cached head
+    // is at least the tail, and the compare is ordered, so a cache at or
+    // behind the tail reads the head again.  The acquire load that gave the
+    // cached head synchronizes with the release of the producer that
+    // published the cell, so the cell read below sees the item.
     [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop() noexcept {
         const std::uint64_t t = tail_.peek_relaxed();
-        const std::uint64_t h = head_.get();
-        if (h == t) [[unlikely]] {
-            return ::foundation::core::none;
+        if (cached_head_.get() <= t) [[unlikely]] {
+            if (items_after_head_load_() == 0) return ::foundation::core::none;
         }
         const T result = buffer_[t & MASK];
         tail_.advance_sole_writer_from(t, t + 1);
@@ -82,13 +104,19 @@ public:
     // store loop.  The compiler lowers a bounded contiguous memcpy to
     // the widest store the target ISA offers, so the explicit vector
     // form buys nothing and adds a header dependency.  The View of the
-    // caller gives its first element through the door of the base.
+    // caller gives its first element through the door of the base.  The
+    // push reads the tail again only when the cached tail leaves less room
+    // than the batch asks, so it takes the same count as a read of the tail
+    // at that point (THE CACHES).  The batch is visible to the consumer at
+    // the one release store of the head.
     [[nodiscard, gnu::hot]] std::size_t try_push_batch(::foundation::core::View<T const> items) noexcept {
         if (items.size() == 0) [[unlikely]]
             return 0;
         const std::uint64_t h = head_.peek_relaxed();
-        const std::uint64_t t = tail_.get();
-        const std::uint64_t free_slots = Capacity - (h - t);
+        std::uint64_t free_slots = Capacity - (h - cached_tail_.get());
+        if (free_slots < items.size()) [[unlikely]] {
+            free_slots = free_after_tail_load_();
+        }
         if (free_slots == 0) [[unlikely]]
             return 0;
         const std::size_t count = free_slots < items.size() ? free_slots : items.size();
@@ -108,12 +136,17 @@ public:
         return count;
     }
 
+    // The pop reads the head again only when the cached head gives fewer
+    // items than the View holds, for the reason of the push.  The cells are
+    // free for the producer at the one release store of the tail.
     [[nodiscard, gnu::hot]] std::size_t try_pop_batch(::foundation::core::View<T> out) noexcept {
         if (out.size() == 0) [[unlikely]]
             return 0;
         const std::uint64_t t = tail_.peek_relaxed();
-        const std::uint64_t h = head_.get();
-        const std::uint64_t available = h - t;
+        std::uint64_t available = cached_head_.get() - t;
+        if (available < out.size()) [[unlikely]] {
+            available = items_after_head_load_();
+        }
         if (available == 0) [[unlikely]]
             return 0;
         const std::size_t count = available < out.size() ? available : out.size();
@@ -164,6 +197,24 @@ public:
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
+    // The free slots of the ring after a fresh acquire load of the tail into
+    // the cached tail: the path of a push whose cache says that the ring has
+    // too little room.  Only the producer calls it.  It is cold and out of
+    // line, so the path of a push with room keeps the code of a push with no
+    // cache.
+    [[nodiscard]] CRUCIBLE_COLD std::uint64_t free_after_tail_load_() noexcept {
+        cached_tail_.advance(tail_.get());
+        return Capacity - (head_.peek_relaxed() - cached_tail_.get());
+    }
+
+    // The items of the ring after a fresh acquire load of the head into the
+    // cached head: the path of a pop whose cache says that the ring has too
+    // few items.  Only the consumer calls it, for the reason of the push.
+    [[nodiscard]] CRUCIBLE_COLD std::uint64_t items_after_head_load_() noexcept {
+        cached_head_.advance(head_.get());
+        return cached_head_.get() - tail_.peek_relaxed();
+    }
+
     // head_ and tail_ occupy separate cache lines.  On one shared line
     // every push would invalidate the consumer's copy and every pop the
     // producer's.  The separation is carried by AtomicMonotonic, which
@@ -179,11 +230,20 @@ private:
     // index has one writer, so the publish is a plain store and not a
     // locked instruction.  The writer hands in the value it read, so the
     // step check compares registers and loads nothing.
+    //
+    // Each cache is a plain value on a line of its own, next to the index of
+    // its side (THE CACHES).  Only its side reads and writes it, so the other
+    // core never pulls that line.  The order of the members keeps the lines
+    // of the producer together and the lines of the consumer together.
 
     ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> head_ =
         ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
+    // The producer is the one reader and the one writer.
+    alignas(64)::fixy::Monotonic<std::uint64_t> cached_tail_ = ::fixy::mint_monotonic<std::uint64_t>(0);
     ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> tail_ =
         ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
+    // The consumer is the one reader and the one writer.
+    alignas(64)::fixy::Monotonic<std::uint64_t> cached_head_ = ::fixy::mint_monotonic<std::uint64_t>(0);
 
     alignas(64) std::array<T, Capacity> buffer_{};
 };
