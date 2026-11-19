@@ -3544,6 +3544,14 @@ fixy_test(test_session_checkpoint_shared_arms)
 # see through a name, the type-building operations keep it, and a name hides
 # nothing from a gate.  A cycle of names is refused with its own diagnostic.
 fixy_test(test_session_named_state)
+# A recorded session and a recorded crash session step through a named
+# state as through its protocol.
+fixy_test(test_session_named_decorators)
+# An explicit specialization of Named that lies about its protocol is
+# refused by the member claims of the node reader.
+fixy_neg_compile_test(neg_sess_named_state_specialization_lies
+  "fixy::session::diagnostic \\[Protocol_Specialized_Combinator\\]: the node fixy::session::Named<named_lie_types::Rest>"
+  "has a nested member or a base that its template arguments do not give")
 fixy_neg_compile_test(neg_sess_named_state_cycle
   "no matching function for call to .mint_session<fixy::session::Named<neg_sess_named_state_cycle_types::Ping> >"
   "fixy::session::diagnostic \\[Protocol_Named_State_Cycle\\]: the named state .*Named<neg_sess_named_state_cycle_types::P[io]ng> reaches itself"
