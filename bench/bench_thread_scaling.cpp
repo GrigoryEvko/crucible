@@ -884,10 +884,13 @@ void end_lanes_past_the_producers(RowState& state, ThreadCount threads) noexcept
     }
 }
 
-// Runs one row of an op on the first threads.count slots of the spread.
+// Runs one row of an op on the first threads.count slots of the spread.  The
+// state of a row holds each ring, more than half a megabyte, so it lives on the
+// heap and not on the stack of the main thread.
 template <OpKind Kind>
 [[nodiscard]] RowResult run_row(bench::Spread const& spread, ThreadCount threads, ConsumerPlace place) {
-    RowState state{};
+    ::fixy::Box<RowState> boxed = ::fixy::mint_box<RowState>(eff::testing::test().alloc);
+    RowState& state = *boxed;
     for (::fixy::Index<kBatch> const index : state.batch.indices())
         state.batch.at(index) = Item{index.raw() + 1};
     end_lanes_past_the_producers<Kind>(state, threads);
