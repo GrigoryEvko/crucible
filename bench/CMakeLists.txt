@@ -145,11 +145,6 @@ crucible_bench(bench_diag_emission)
 crucible_bench(bench_iteration_detector)
 crucible_bench(bench_kernel_cache)
 crucible_bench(bench_keyed_hash)
-# A bench compiles for the processor of the host, and the foundation library
-# for the level of the tree, so the two name different target namespaces of
-# the run-time arm of the keyed hash.  The bench compiles the source of the arm
-# itself, so it measures the arm of its own target and links it.
-target_sources(bench_keyed_hash PRIVATE "${CMAKE_SOURCE_DIR}/src/foundation/core/KeyedHash.cpp")
 # The reference of the keyed hash of the base: the official BLAKE3, its C and
 # its assembly of x86-64 in the static library blake3_reference.  This
 # directory enables the C and ASM languages for that library alone, and only
