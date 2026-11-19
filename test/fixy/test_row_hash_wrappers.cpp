@@ -432,6 +432,12 @@ static_assert(row_hash_contribution_v<SpscWitness::ProducerHandle>
               != row_hash_contribution_v<SpscWitness::ConsumerHandle>);
 static_assert(row_hash_contribution_v<MpscWitness::ProducerHandle>
               != row_hash_contribution_v<SpscWitness::ProducerHandle>);
+static_assert(row_hash_contribution_v<LanesWitness::ProducerHandle>
+              != row_hash_contribution_v<MpscWitness::ProducerHandle>);
+static_assert(row_hash_contribution_v<LanesWitness::ProducerHandle>
+              != row_hash_contribution_v<LanesWitness::ConsumerHandle>);
+static_assert(row_hash_contribution_v<::fixy::concurrent::LaneRing<int, 8, ::fixy::concurrent::LaneCount{2}>>
+              != row_hash_contribution_v<::fixy::concurrent::SpscRing<int, 8>>);
 
 }  // namespace census
 

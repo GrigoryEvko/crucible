@@ -40,6 +40,7 @@
 #include <fixy/concurrent/ChaseLevDeque.h>
 #include <fixy/concurrent/EventCount.h>
 #include <fixy/concurrent/HandleTraits.h>
+#include <fixy/concurrent/LaneRing.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/PayloadRow.h>
 #include <fixy/concurrent/PermissionFork.h>
@@ -684,15 +685,20 @@ struct SwmrReaderTag {
 };
 struct SwmrReaderBrand {};
 struct SwmrWriterBrand {};
-// The tags and the brand of the witnesses of the two forms of the ring
-// channel.  A channel names its form, its tag and the brand of its root.
+// The tags and the brand of the witnesses of the three forms of the ring
+// channel.  A channel names its form, its tag and the brand of its root, and
+// the lanes form names the count of its lanes.
 struct SpscWitnessTag {};
 struct MpscWitnessTag {};
+struct LanesWitnessTag {};
 struct ChannelWitnessBrand {};
 using SpscWitness = ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::wire, int, 8,
                                                             SpscWitnessTag, ChannelWitnessBrand>;
 using MpscWitness = ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::merge, int, 8,
                                                             MpscWitnessTag, ChannelWitnessBrand>;
+using LanesWitness =
+    ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::lanes, int, 8, LanesWitnessTag,
+                                            ChannelWitnessBrand, ::fixy::concurrent::LaneCount{2}>;
 struct SpscBoxWitnessTag {};
 using SpscBoxWitness = ::fixy::concurrent::PermissionedBoxChannel<::fixy::concurrent::ChannelForm::wire, int, 8,
                                                                   SpscBoxWitnessTag, ChannelWitnessBrand>;
@@ -831,6 +837,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::ChaseLevDeque, ^^::fixy::concurrent::ChaseLevDeque<int, 8>},
     {^^::fixy::concurrent::MpscRing, ^^::fixy::concurrent::MpscRing<int, 8>},
     {^^::fixy::concurrent::SpscRing, ^^::fixy::concurrent::SpscRing<int, 8>},
+    {^^::fixy::concurrent::LaneRing, ^^::fixy::concurrent::LaneRing<int, 8, ::fixy::concurrent::LaneCount{2}>},
     {^^::fixy::concurrent::PermissionedChannel, ^^SpscWitness},
     {^^::fixy::concurrent::PermissionedBoxChannel, ^^SpscBoxWitness},
     {^^::fixy::concurrent::AtomicSnapshot, ^^::fixy::concurrent::AtomicSnapshot<int>},
