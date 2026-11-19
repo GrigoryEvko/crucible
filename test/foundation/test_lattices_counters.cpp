@@ -52,10 +52,10 @@ template <typename L>
 using OnAxisGradedWay = OnAxis<GradedWay<L>>;
 
 constexpr std::array<std::uint64_t, 4> kAxisIdentities = {
-    fd::lattice_canonical_id_v<fl::EpochLattice>,
-    fd::lattice_canonical_id_v<fl::GenerationLattice>,
-    fd::lattice_canonical_id_v<fl::PeakBytesLattice>,
-    fd::lattice_canonical_id_v<fl::BitsBudgetLattice>,
+    fd::lattice_canonical_id(^^fl::EpochLattice),
+    fd::lattice_canonical_id(^^fl::GenerationLattice),
+    fd::lattice_canonical_id(^^fl::PeakBytesLattice),
+    fd::lattice_canonical_id(^^fl::BitsBudgetLattice),
 };
 
 constexpr std::array<std::uint64_t, 4> kCarrierHashes = {

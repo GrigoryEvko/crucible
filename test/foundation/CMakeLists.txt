@@ -2013,6 +2013,13 @@ foundation_neg_compile_test(neg_stable_identity_verdict_forged
 foundation_neg_compile_test(neg_stable_type_id_specialized
   "expected initializer before .<. token"
   "neg_stable_type_id_specialized\\.cpp:19:[0-9]+: error:")
+# The canonical identity of a lattice is a function at namespace scope that
+# is not a template, and a type states a second identity only in its own
+# definition.  A class specialization of its name does not compile, so no
+# unit merges two cache slots.
+foundation_neg_compile_test(neg_lattice_canonical_id_specialized
+  ".lattice_canonical_id. is not a class template"
+  "neg_lattice_canonical_id_specialized\\.cpp:21:[0-9]+: error:")
 foundation_neg_compile_test(neg_stable_identity_function_reader_specialized
   "expected initializer before .<. token"
   "neg_stable_identity_function_reader_specialized\\.cpp:21:[0-9]+: error:")

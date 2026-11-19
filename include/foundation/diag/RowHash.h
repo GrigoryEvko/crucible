@@ -88,12 +88,14 @@
 // see a reflected name move underneath it.
 
 #include <foundation/algebra/Modality.h>
+#include <foundation/diag/CanonicalIdentity.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 
 // Graded needs no declaration, because the fold matches on the shape a
@@ -292,13 +294,18 @@ inline constexpr std::uint64_t row_hash_contribution_v = row_hash_contribution<T
 // DetSafeLattice::At<Impure> are different types, so they take different
 // slots without either one naming a salt.
 //
-// Specializing this maps a second type onto an existing identity.
-// That is what a rename or an alias needs in order to keep
-// reaching entries already cached, and what peers need when they spell
-// one axis differently. It is also where a predicate rename lands, since
-// a refinement's predicate is a template argument of its lattice.
-// Aliasing a lattice without specializing here fragments the cache
-// silently.
+// A type can take the identity of a second type.  That is what a rename
+// or an alias needs in order to keep reaching entries already cached, and
+// what peers need when they spell one axis differently.  It is also where
+// a predicate rename lands, since a refinement's predicate is a template
+// argument of its lattice.  The type states it in its own definition:
+//
+//     using canonical_identity = foundation::diag::canonical_identity_of<Owner, Target>;
+//
+// No other file can add a member to a class, so no unit can merge two
+// cache slots from outside.  The statement names its owner.  A class that
+// derives from Owner inherits the member, and the statement still names
+// Owner, so the derived class keeps an identity of its own.
 //
 // The default is a reflected name, which is the toolchain bound the
 // header comment sets out. Nothing here falls back to a shared constant
@@ -309,27 +316,86 @@ inline constexpr std::uint64_t row_hash_contribution_v = row_hash_contribution<T
 // name differs between translation units or is shared by different types.
 //
 // The name is narrower than the role, and it stays. Not every identity
-// folded through this trait belongs to a lattice: the multi-axis binding
-// in fixy/Fn.h resolves an axis to an atom type or to a pole type, and it
-// folds those here as well. The alternative was a second trait named for
-// grades, defaulting the same way. One table is right, and the recursion
-// is what decides it rather than taste. A binding's payload axis recurses
-// into row_hash_contribution, which reaches the graded fold below, which
-// reads this trait. Both folds are therefore already live inside one key.
-// Two tables could disagree about one type, and that type would then
-// carry two identities within a single key, which is an inconsistency
-// rather than the fragmentation one table risks. A rename mapped in one
-// table and forgotten in the other is the ordinary way that happens.
+// folded through this function belongs to a lattice: the multi-axis
+// binding in fixy/Fn.h resolves an axis to an atom type or to a pole type,
+// and it folds those here as well. One function is right, and the
+// recursion is what decides it rather than taste. A binding's payload axis
+// recurses into row_hash_contribution, which reaches the graded fold
+// below, which reads this function. Both folds are therefore already live
+// inside one key.  Two functions could disagree about one type, and that
+// type would then carry two identities within a single key.
 //
-// So a third kind of grade widens this comment. It does not add a peer
-// trait.
-template <typename L>
-struct lattice_canonical_id {
-    static constexpr std::uint64_t value = ::foundation::reflect::stable_type_id(^^L);
-};
+// foundation/diag/CanonicalIdentity.h gives the statement
+// canonical_identity_of.
+namespace detail {
 
 template <typename L>
-inline constexpr std::uint64_t lattice_canonical_id_v = lattice_canonical_id<L>::value;
+concept DeclaresCanonicalIdentity = requires { typename L::canonical_identity; };
+
+template <typename L>
+using declared_canonical_identity_t = typename L::canonical_identity;
+
+// The owner and the target of a statement, by deduction from its type.  The
+// deduction is a member of a class that is not a template, so no other file
+// can add an overload of it.  A specialization of canonical_identity_of
+// keeps its template arguments, so it cannot change what the deduction
+// gives.
+struct canonical_identity_parts_ {
+    template <class Owner, class Target>
+    static Owner* owner_of(const canonical_identity_of<Owner, Target>*) noexcept;
+    template <class Owner, class Target>
+    static Target* target_of(const canonical_identity_of<Owner, Target>*) noexcept;
+};
+
+template <typename Statement>
+using statement_owner_pointer_t = decltype(canonical_identity_parts_::owner_of(static_cast<const Statement*>(nullptr)));
+
+template <typename Statement>
+using statement_target_pointer_t =
+    decltype(canonical_identity_parts_::target_of(static_cast<const Statement*>(nullptr)));
+
+// The owner and the target of a statement, as the deductions above give
+// them.
+[[nodiscard]] consteval std::meta::info statement_owner(std::meta::info statement) {
+    return std::meta::dealias(
+        std::meta::remove_pointer(std::meta::dealias(std::meta::substitute(^^statement_owner_pointer_t, {statement}))));
+}
+
+[[nodiscard]] consteval std::meta::info statement_target(std::meta::info statement) {
+    return std::meta::dealias(std::meta::remove_pointer(
+        std::meta::dealias(std::meta::substitute(^^statement_target_pointer_t, {statement}))));
+}
+
+// Each function below has no constant definition.  A call to one stops
+// the constant evaluation, and the diagnostic names it.
+void a_canonical_identity_member_is_no_canonical_identity_of() noexcept;
+void canonical_identities_form_a_cycle() noexcept;
+
+// The number of statements that one identity follows before it stops.
+inline constexpr std::size_t canonical_identity_depth_limit = 8;
+
+}  // namespace detail
+
+// The identity of the type in a row hash: the stable id of the type that
+// its own statements lead to.  The function is not a template, so no
+// translation unit can specialize an identity.  Complexity: one step for
+// each statement on the path, at most canonical_identity_depth_limit.
+[[nodiscard]] consteval std::uint64_t lattice_canonical_id(std::meta::info type) {
+    std::meta::info named = std::meta::dealias(type);
+    for (std::size_t depth = 0;; ++depth) {
+        if (!std::meta::extract<bool>(std::meta::substitute(^^detail::DeclaresCanonicalIdentity, {named}))) break;
+        const std::meta::info statement =
+            std::meta::dealias(std::meta::substitute(^^detail::declared_canonical_identity_t, {named}));
+        if (!std::meta::has_template_arguments(statement)
+            || std::meta::template_of(statement) != ^^canonical_identity_of) {
+            detail::a_canonical_identity_member_is_no_canonical_identity_of();
+        }
+        if (detail::statement_owner(statement) != named) break;
+        if (depth == detail::canonical_identity_depth_limit) detail::canonical_identities_form_a_cycle();
+        named = detail::statement_target(statement);
+    }
+    return ::foundation::reflect::stable_type_id(named);
+}
 
 // A row denotes a set of atoms, and union, intersection and difference
 // over rows are all set-shaped, so hash equality has to match set
@@ -383,7 +449,7 @@ concept GradedShaped = requires {
 // row_hash_contribution through this.
 template <::foundation::algebra::ModalityKind M, typename Lattice, typename Payload>
 inline constexpr std::uint64_t graded_row_hash_v = detail::combine_ids(
-    detail::combine_ids(detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(M), lattice_canonical_id_v<Lattice>),
+    detail::combine_ids(detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(M), lattice_canonical_id(^^Lattice)),
     row_hash_contribution_v<Payload>);
 
 // The one fold. Every graded wrapper in the tree reaches this, and
@@ -423,8 +489,8 @@ struct row_hash_contribution<W> {
     static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
         if constexpr (requires { typename W::row_discipline; }) {
             std::uint64_t h = detail::combine_ids(detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(W::modality),
-                                                  lattice_canonical_id_v<typename W::lattice_type>);
-            h = detail::combine_ids(h, lattice_canonical_id_v<typename W::row_discipline>);
+                                                  lattice_canonical_id(^^typename W::lattice_type));
+            h = detail::combine_ids(h, lattice_canonical_id(^^typename W::row_discipline));
             return detail::combine_ids(h, row_hash_contribution_v<typename W::value_type>);
         } else {
             return graded_row_hash_v<W::modality, typename W::lattice_type, typename W::value_type>;
@@ -437,7 +503,8 @@ struct row_hash_contribution<W> {
 // A carrier folds two things: an identity that names its claim at its
 // tier, and the payloads the claim is over. The identity goes through
 // lattice_canonical_id, so a rename maps onto the old identity the same
-// way a lattice rename does. The payloads recurse, which keeps a row
+// way a lattice rename does, through a canonical_identity member of the
+// renamed type. The payloads recurse, which keeps a row
 // nested inside a carrier visible in the carrier's hash and keeps a bare
 // payload out of it.
 //
@@ -483,7 +550,7 @@ struct payload_fold<row_payloads<Ps...>> {
 // published shape agree bit for bit.
 template <typename Identity, typename Payload>
 inline constexpr std::uint64_t discipline_row_hash_v = detail::payload_fold<Payload>::over(
-    detail::combine_ids(detail::WRAPPER_DISCIPLINE_TAG, lattice_canonical_id_v<Identity>));
+    detail::combine_ids(detail::WRAPPER_DISCIPLINE_TAG, lattice_canonical_id(^^Identity)));
 
 // The published shape. A carrier declares its own claim in its own body:
 //
@@ -529,7 +596,7 @@ template <SteppingShaped W>
 struct row_hash_contribution<W> {
     static constexpr std::uint64_t value =
         detail::combine_ids(detail::combine_ids(detail::WRAPPER_STEPPING_TAG | static_cast<std::uint64_t>(W::modality),
-                                                lattice_canonical_id_v<typename W::protocol_type>),
+                                                lattice_canonical_id(^^typename W::protocol_type)),
                             row_hash_contribution_v<typename W::resource_type>);
 };
 

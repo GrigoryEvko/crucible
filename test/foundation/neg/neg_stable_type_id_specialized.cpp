@@ -19,6 +19,6 @@ template <>
 inline constexpr std::uint64_t foundation::reflect::stable_type_id<forged_lattice::Forged> = 1;
 
 [[maybe_unused]] inline constexpr std::uint64_t read_id =
-    foundation::diag::lattice_canonical_id_v<forged_lattice::Forged>;
+    foundation::diag::lattice_canonical_id(^^forged_lattice::Forged);
 
 int main() { return 0; }

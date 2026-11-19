@@ -19,6 +19,7 @@
 #include <fixy/Axis.h>
 #include <fixy/Predicates.h>
 #include <fixy/Tags.h>
+#include <foundation/diag/CanonicalIdentity.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
@@ -558,7 +559,38 @@ struct declassify final : atom_of<Axis::Security> {
 struct as_unclassified final : atom_of<Axis::Security> {};
 struct as_public final : atom_of<Axis::Security> {};
 struct as_internal final : atom_of<Axis::Security> {};
-struct as_classified final : atom_of<Axis::Security> {};
+
+// `as_classified` and the strict Security pole are one claim under two
+// spellings, and its canonical identity puts them in one cache slot of the
+// row hash (foundation/diag/RowHash.h).
+//
+// What establishes the equivalence is a consumer, not the naming.  Every
+// corpus entry and collision rule that reads the Security axis for
+// classification on a channel reads it through `IsClassifiedOn` below,
+// which answers true on every channel for the strict pole and for
+// `as_classified` alike.  No other predicate separates them:
+// `is_internal_` answers false for both, and a mask reads `declassify`
+// only.  The collision rules read the same closed relation of this header,
+// which gives both the class Classified.  So the two spellings get one
+// verdict on every pack, and the cells in
+// test/fixy/test_row_hash_wrappers.cpp assert that rather than cite it.
+// The atom also names the strict pole explicitly by definition: it exists
+// in order to write the default out.
+//
+// `as_secret` is the third spelling the same predicate accepts, and it
+// deliberately states no canonical identity.  It pins the top of the
+// lattice, where no declassification is permitted at all, which is a
+// residual claim the other two do not carry.  Two points of Conf make that
+// claim coincide with the pole, and tier 4 makes it unobservable, because
+// an atom and a `declassify` cannot both sit on one axis.  A rule that
+// makes the claim real would separate `as_secret` from the pole, and a
+// merge would then be a wrong hit rather than a stale one.  An author who
+// establishes that the residual claim is empty states its identity here,
+// one judgment, with the consumer named.
+struct as_classified final : atom_of<Axis::Security> {
+    using canonical_identity =
+        ::foundation::diag::canonical_identity_of<as_classified, typename axis_traits<Axis::Security>::strict>;
+};
 struct as_secret final : atom_of<Axis::Security> {};
 
 // The binding's data is classified, AND no branch, no memory index and no
@@ -768,10 +800,19 @@ struct trust_assumed final : atom_of<Axis::Trust> {
 // as a vendor library or firmware, and a binding that takes it confirms that
 // claim through a channel of its own.  The level Assumed has no such atom,
 // because trust_assumed carries the rationale of the assumption.
+//
+// The atom and its level are one claim, so the atom states the identity of
+// its level.  The strict Trust pole is the level tags::trust::Unverified, so
+// trust<tags::trust::Unverified> and the pole reach one slot of the row
+// hash, as as_classified and the strict Security pole do.  The consumer is
+// rule T001 in fixy/Collision.h, the one rule that reads the Trust axis,
+// through trust_level_of_v.  Each other level is its own slot, because each
+// one admits a capability that the pole refuses.
 template <class Level>
     requires(::fixy::tags::IsTrustLevel<Level> && !__is_same(Level, ::fixy::tags::trust::Assumed))
 struct trust final : atom_of<Axis::Trust> {
     using level = Level;
+    using canonical_identity = ::foundation::diag::canonical_identity_of<trust, Level>;
 };
 
 template <::fixy::pole::ReprKind Kind>

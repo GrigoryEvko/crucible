@@ -425,7 +425,7 @@ concept CtxAdmitsBinding =
 //
 // Every other axis folds the canonical identity of its resolved grade,
 // which it reads through foundation/diag/RowHash.h's
-// lattice_canonical_id.  That trait defaults to the reflected identity,
+// lattice_canonical_id.  That function defaults to the reflected identity,
 // and the reflected identity is the only canonical identity an atom
 // publishes — an atom carries no meaning beyond the axis it engages, by
 // fixy/Atom.h's own words.  It also discriminates a parametric atom by
@@ -438,15 +438,17 @@ concept CtxAdmitsBinding =
 // directly therefore gives one claim two slots.  The Effect axis never
 // had that problem, because the branch above folds through the row and
 // the row already collapses a stated empty pack onto the strict pole.
-// Every other axis closes it one specialisation at a time.
+// Every other axis closes it one statement at a time: an atom states in
+// its own definition that it takes the identity of the pole, with a
+// canonical_identity member (fixy/Atom.h).
 //
-// Each specialisation is one judgment, and the judgment is made against
+// Each statement is one judgment, and the judgment is made against
 // the code rather than against the naming.  The direction of the two
 // errors is not symmetric.  Two spellings left apart cost a cache miss
 // and a recompile.  Two spellings merged without an equivalence behind
 // them serve a kernel compiled under one discipline to a caller under
 // another, which is the direction this key must never move.  So a
-// specialisation is owed a consumer that already treats the two
+// statement is owed a consumer that already treats the two
 // spellings alike, and the Security and Trust axes show that the naming
 // alone does not tell: the two read the same way and decide opposite
 // ways.  The cells at the foot of test/fixy/test_row_hash_wrappers.cpp
@@ -497,7 +499,7 @@ template <class Binding>
             h = ::foundation::diag::detail::combine_ids(
                 h, ::foundation::diag::row_hash_contribution_v<atom::effect_row_of_t<Grade>>);
         } else {
-            h = ::foundation::diag::detail::combine_ids(h, ::foundation::diag::lattice_canonical_id_v<Grade>);
+            h = ::foundation::diag::detail::combine_ids(h, ::foundation::diag::lattice_canonical_id(^^Grade));
         }
     }
     return h;
@@ -509,65 +511,11 @@ template <class Binding>
 
 }  // namespace fixy
 
-// The specialisations live on this side of the layer boundary because
+// The specialisation lives on this side of the layer boundary because
 // foundation may name only foundation and the standard library, while
-// fixy may name foundation.  A binding and an atom are both fixy types,
-// so the only place the two layers can meet is here.
+// fixy may name foundation.  A binding is a fixy type, so the only place
+// the two layers can meet is here.
 namespace foundation::diag {
-
-// `as_classified` and the strict Security pole are one claim under two
-// spellings, and this is what puts them in one cache slot.
-//
-// What establishes the equivalence is a consumer, not the naming.  Every
-// corpus entry and collision rule that reads the Security axis for
-// classification on a channel reads it through fixy/Atom.h's
-// `IsClassifiedOn`, which answers true on every channel for the strict
-// pole and for `as_classified` alike — "the strict pole counts, because a
-// binding that says nothing about Security is classified", in that
-// header's words.  No other predicate separates
-// them: `is_internal_` answers false for both, and a mask reads
-// `declassify` only.  The collision rules read the same closed relation
-// of fixy/Atom.h, which gives both the class Classified.  So the two
-// spellings get one verdict on every pack, and the cells in
-// test/fixy/test_row_hash_wrappers.cpp assert that rather than cite it.
-//
-// fixy/Atom.h settles it a second way, definitionally: `as_classified`
-// "names the strict pole explicitly".  The atom exists in order to write
-// the default out, and the fold above already holds that writing an axis
-// out is a diagnostic distinction rather than an identity one.
-//
-// `as_secret` is the third spelling the same predicate accepts, and it is
-// deliberately NOT mapped here.  fixy/Atom.h gives it a residual claim
-// the other two do not carry — it "pins the top of the lattice, where no
-// declassification is permitted at all".  Two points of Conf make that
-// claim coincide with the pole today, and tier 4 makes it unobservable,
-// because an atom and a `declassify` cannot both sit on one axis.  A rule
-// that makes the claim real would separate `as_secret` from the pole, and
-// a merge shipped now would then be a wrong hit rather than a stale one.
-// A later author who establishes that the residual claim is empty maps it
-// here, one judgment, with the consumer named.
-//
-// The pole is reached through this same trait rather than through the
-// reflected identity, so a canonicalisation of the pole carries the atom
-// with it instead of splitting the pair again.
-template <>
-struct lattice_canonical_id<::fixy::atom::as_classified> {
-    static constexpr std::uint64_t value =
-        lattice_canonical_id_v<typename ::fixy::axis_traits<::fixy::Axis::Security>::strict>;
-};
-
-// A Trust atom names its level of fixy/Tags.h, and the atom and its level
-// are one claim, so the atom takes the identity of its level.  The strict
-// Trust pole is the level tags::trust::Unverified, so
-// `trust<tags::trust::Unverified>` and the pole reach one slot, as
-// `as_classified` and the strict Security pole do.  The consumer is rule
-// T001 in fixy/Collision.h, the one rule that reads the Trust axis, through
-// `trust_level_of_v`.  Each other level is its own slot, because each one
-// admits a capability that the pole refuses.
-template <class Level>
-struct lattice_canonical_id<::fixy::atom::trust<Level>> {
-    static constexpr std::uint64_t value = lattice_canonical_id_v<Level>;
-};
 
 template <class Type, class... Atoms>
 struct row_hash_contribution<::fixy::fn<Type, Atoms...>> {

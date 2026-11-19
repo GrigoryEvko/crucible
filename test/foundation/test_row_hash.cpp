@@ -42,6 +42,17 @@ struct probe_discipline;
 struct other_probe_discipline;
 struct probe_protocol_end;
 struct probe_protocol_send;
+
+// A type that takes the identity of a second type, a class that derives
+// from it, and a statement that leads to the first one.
+struct CanonicalTarget {};
+struct RenamedLattice {
+    using canonical_identity = ::foundation::diag::canonical_identity_of<RenamedLattice, CanonicalTarget>;
+};
+struct DerivedFromRenamed : RenamedLattice {};
+struct ChainedRename {
+    using canonical_identity = ::foundation::diag::canonical_identity_of<ChainedRename, RenamedLattice>;
+};
 }  // namespace test_row_hash_identities
 
 namespace {
@@ -284,9 +295,22 @@ static_assert(row_hash_contribution_v<FacadeProbe<fa::ModalityKind::Absolute, Ho
 // The canonical-id hook is what a rename goes through. Two lattices with
 // no mapping between them are separate; the mapping is what makes one
 // reach the other's entries.
-static_assert(fd::lattice_canonical_id_v<DetPure> != fd::lattice_canonical_id_v<DetEntropyRead>);
-static_assert(fd::lattice_canonical_id_v<DetPure> != fd::lattice_canonical_id_v<HotHot>);
-static_assert(fd::lattice_canonical_id_v<DetPure> != 0);
+static_assert(fd::lattice_canonical_id(^^DetPure) != fd::lattice_canonical_id(^^DetEntropyRead));
+static_assert(fd::lattice_canonical_id(^^DetPure) != fd::lattice_canonical_id(^^HotHot));
+static_assert(fd::lattice_canonical_id(^^DetPure) != 0);
+
+// A type takes the identity that its own statement names.  A class that
+// derives from it inherits the member, and the statement names its base,
+// so the derived class keeps its own identity.  A type with no statement
+// keeps its reflected identity.
+namespace ids = ::test_row_hash_identities;
+static_assert(fd::lattice_canonical_id(^^ids::RenamedLattice) == fd::lattice_canonical_id(^^ids::CanonicalTarget));
+static_assert(fd::lattice_canonical_id(^^ids::ChainedRename) == fd::lattice_canonical_id(^^ids::CanonicalTarget));
+static_assert(fd::lattice_canonical_id(^^ids::DerivedFromRenamed) != fd::lattice_canonical_id(^^ids::CanonicalTarget));
+static_assert(fd::lattice_canonical_id(^^ids::DerivedFromRenamed)
+              == ::foundation::reflect::stable_type_id(^^ids::DerivedFromRenamed));
+static_assert(fd::lattice_canonical_id(^^ids::CanonicalTarget)
+              == ::foundation::reflect::stable_type_id(^^ids::CanonicalTarget));
 
 // ── A graded wrapper with a claim its lattice does not see ───────────
 //

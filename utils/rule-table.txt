@@ -458,7 +458,6 @@ home trait permission_rows include/foundation/permissions/Permission.h | a fail-
 home trait foundation::contracts::armed_cell include/foundation/ include/fixy/ | an extension point: a cell holds the witnesses that a gate predicate accepts and refuses, beside the predicate.  It adds a check and gives no authority
 home trait foundation::contracts::armed_instances include/foundation/ include/fixy/ | an extension point: the instances of a templated gate that the armed roster walks, beside the gate
 home trait foundation::diag::row_hash_contribution include/foundation/ include/fixy/ | an extension point: a carrier states its row identity beside its definition.  A fold outside the two layers can make two carriers share one cache key
-home trait foundation::diag::lattice_canonical_id include/fixy/ | an extension point: a lattice states its canonical identity beside its definition, for the row hash
 home trait foundation::diag::insight_provider include/foundation/ include/fixy/ | an extension point: the diagnostic text of a category.  It changes a message and gives no authority
 home trait fixy::concurrent::is_stage_inline_safe bench/ | an extension point: a stage author claims inline dispatch beside the stage.  Pipeline.h refuses the claim unless the stage states its working set
 

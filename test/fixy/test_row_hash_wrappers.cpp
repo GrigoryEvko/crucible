@@ -162,8 +162,8 @@ static_assert(row_hash_contribution_v<::fixy::fn<SecretInt>> != row_hash_contrib
 // An axis can hold an atom that names a level and a strict pole at that
 // same level.  They are distinct types, so the walk in fixy/Fn.h folds
 // two identities for one claim unless a canonicalisation maps them
-// together.  It reads every grade through
-// foundation/diag/lattice_canonical_id in order to make that possible.
+// together.  It reads every grade through lattice_canonical_id of
+// foundation/diag/RowHash.h in order to make that possible.
 //
 // Both directions of error live here, and they are not symmetric.  Two
 // spellings left apart cost a cache miss and a recompile.  Two spellings
