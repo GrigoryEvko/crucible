@@ -50,19 +50,22 @@ THE PARTS
 `guard selftest tests.oracle.test_unit_store [--part K/N]` runs the test alone.
 """
 
+import fcntl
 import os
 import stat
 import tempfile
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from unittest import mock
 
-from assay.core import cache_root, paths, proc, testing
+from assay.core import cache, cache_root, paths, proc, testing
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
 from assay.guard import selftest
 from assay.loop.fixture import store as compile_store
 from assay.oracle import runner
+from assay.oracle import unit_store as unit_store_module
 from assay.oracle.unit_store import USE_LINKER, UnitStore, linker_of, program_flags, source_lock
 from assay.tests import oracle as oracle_parts
 
@@ -478,6 +481,48 @@ def held_sweep_cases(expect: testing.Expect) -> None:
         expect(
             "after the store frees its locks, the sweep removes the directory and its lock file",
             removed == 1 and not directory.exists() and not source_lock(directory).exists(),
+        )
+    orphan_sweep_cases(expect)
+
+
+def orphan_sweep_cases(expect: testing.Expect) -> None:
+    """A sweep removes each lock file with no source directory that no store holds (THE LOCK OF A SOURCE DIRECTORY).
+
+    A sweep of an earlier copy of the module removes a directory and leaves its lock file of 0 bytes.  The case plants
+    two such lock files and holds one of them in the shared mode, as a store does in the step from the lock to the
+    directory.  It also hands _removed_idle() a directory that a different sweep removed after the read.
+    """
+    with tempfile.TemporaryDirectory(prefix="unit_store_orphan_") as scratch:
+        root = Path(scratch)
+        store = UnitStore("c++", (), (), root / "scratch", store_root=root / "store")
+        free = source_lock(store.sources_root / "ab" / ("ab" * 32))
+        held = source_lock(store.sources_root / "cd" / ("cd" * 32))
+        for lock in (free, held):
+            lock.parent.mkdir(parents=True)
+            lock.write_bytes(b"")
+        kept = store.sources_root / "ef" / ("ef" * 32)
+        kept.mkdir(parents=True)
+        source_lock(kept).write_bytes(b"")
+        descriptor = os.open(held, os.O_RDWR | os.O_CLOEXEC)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_SH)
+            store.sweep_sources(max_bytes=1 << 30)
+        finally:
+            os.close(descriptor)
+        expect(
+            "a sweep removes a lock file with no directory, and keeps a lock file that a store holds and the lock file "
+            "of a directory",
+            not free.exists() and held.exists() and source_lock(kept).exists(),
+        )
+        gone = store.sources_root / "aa" / ("aa" * 32)
+        gone.parent.mkdir(parents=True)
+        stale = [cache.Entry(gone, 40 << 10, time.time() - 5 * 3600.0)]
+        (store.sources_root / "evicted").unlink(missing_ok=True)
+        with mock.patch.object(unit_store_module, "_source_directories", return_value=stale):
+            removed = store.sweep_sources(max_bytes=1 << 10)
+        expect(
+            "a sweep whose read names a directory that is gone at its lock removes nothing and leaves no lock file",
+            removed == 0 and not source_lock(gone).exists(),
         )
 
 

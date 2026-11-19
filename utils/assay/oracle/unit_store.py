@@ -52,6 +52,16 @@ THE LOCK OF A SOURCE DIRECTORY
     lock.  A store that then gets the lock of the removed file sees another
     inode at the path, and it takes the lock of the file at the path.
 
+    A lock file can stay with no directory: a sweep of an earlier copy of
+    this module removes the directory and not its lock file, and a store
+    that stops before it makes the directory leaves its lock file.  So the
+    sweep also removes each lock file with no directory (_orphan_locks()).
+    It takes the lock in the exclusive mode with no wait, it looks for the
+    directory again, and it removes the file before it frees the lock.  A
+    lock file that a store holds, such as in the step from the lock to the
+    directory, stays.  The sweep makes no lock file for a directory that is
+    gone (_removed_idle()).
+
 THE KEY OF A STATIC UNIT
     compile_key of the store hashes the identity of the compiler, the
     command, the working directory, the environment of the compiler and the
@@ -356,8 +366,9 @@ def _removed_idle(directory: Path) -> bool:
     """Remove a source directory that no store holds and that had no use in SOURCES_IN_USE_S, and tell if it went.
 
     The sweep takes the lock in the exclusive mode with no wait, so a directory that a store holds stays.  A use after
-    the read of the sweep and before the lock also keeps the directory (THE LOCK OF A SOURCE DIRECTORY).  Complexity:
-    one removal of the files of the directory.
+    the read of the sweep and before the lock also keeps the directory.  When the directory is gone at the lock, the
+    sweep removes the lock file that it opened (THE LOCK OF A SOURCE DIRECTORY).  Complexity: one removal of the files
+    of the directory.
     """
     lock = source_lock(directory)
     try:
@@ -366,10 +377,62 @@ def _removed_idle(directory: Path) -> bool:
         return False
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        if time.time() - directory.stat().st_mtime <= SOURCES_IN_USE_S:
+        try:
+            used = directory.stat().st_mtime
+        except FileNotFoundError:
+            lock.unlink(missing_ok=True)
+            return False
+        if time.time() - used <= SOURCES_IN_USE_S:
             return False
         shutil.rmtree(directory)
         lock.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(descriptor)
+
+
+def _orphan_locks(sources_root: Path) -> list[Path]:
+    """Return each lock file in the fan-out directories of the sources with no source directory beside it.
+
+    THE LOCK OF A SOURCE DIRECTORY gives the name .DIGEST.lock of the lock file of the directory DIGEST.  Complexity: one
+    listing of each fan-out directory and one stat of each lock file.
+    """
+    found: list[Path] = []
+    with contextlib.suppress(FileNotFoundError):
+        for fan in os.scandir(sources_root):
+            if not fan.is_dir(follow_symlinks=False):
+                continue
+            with contextlib.suppress(FileNotFoundError):
+                for item in os.scandir(fan.path):
+                    name = item.name
+                    if not (name.startswith(".") and name.endswith(SOURCE_LOCK_SUFFIX)):
+                        continue
+                    digest = name.removeprefix(".").removesuffix(SOURCE_LOCK_SUFFIX)
+                    if digest and not os.path.lexists(os.path.join(fan.path, digest)):
+                        found.append(Path(item.path))
+    return sorted(found)
+
+
+def _removed_orphan(lock: Path) -> bool:
+    """Remove a lock file with no source directory that no store holds, and tell if it went (THE LOCK OF A SOURCE
+    DIRECTORY).
+
+    The sweep takes the lock in the exclusive mode with no wait, so a lock file that a store holds stays.  It removes the
+    file only when the directory is still gone and the path still names the locked file.
+    """
+    try:
+        descriptor = os.open(lock, os.O_RDWR | os.O_CLOEXEC)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        held, named = os.fstat(descriptor), os.stat(lock)
+        directory = lock.parent / lock.name.removeprefix(".").removesuffix(SOURCE_LOCK_SUFFIX)
+        if (held.st_dev, held.st_ino) != (named.st_dev, named.st_ino) or os.path.lexists(directory):
+            return False
+        lock.unlink()
         return True
     except OSError:
         return False
@@ -663,12 +726,13 @@ class UnitStore:
         limit, the directories with the oldest use go until the remaining
         directories hold less than cache_dir.EVICT_TO of the limit.  A
         directory with a use in the last SOURCES_IN_USE_S can be in use, and
-        only its age removes it.  A directory that a store holds stays (THE
-        LOCK OF A SOURCE DIRECTORY).  The turn is due one time each day, or
-        when a sample of the sources is over the limit.
+        only its age removes it.  A directory that a store holds stays.  Each
+        lock file with no directory goes too (THE LOCK OF A SOURCE
+        DIRECTORY).  The turn is due one time each day, or when a sample of
+        the sources is over the limit.
 
-        Return the count of removed directories.  Complexity: O(d log d) for d directories, and one stat of each
-        file of each directory.
+        Return the count of removed directories.  Complexity: O(d log d) for d directories, one stat of each file of
+        each directory, and one stat of each lock file.
         """
         if self.store is None or not self.sources_root.is_dir():
             return 0
@@ -683,6 +747,8 @@ class UnitStore:
             for entry in cache_dir.victims(idle, max(max_bytes - in_use, 0), now=now):
                 if _removed_idle(entry.path):
                     removed += 1
+            for lock in _orphan_locks(self.sources_root):
+                _removed_orphan(lock)
         return removed
 
     # ── The keys ────────────────────────────────────────────────────
