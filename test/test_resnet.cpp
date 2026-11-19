@@ -58,7 +58,7 @@ int main() {
     feed_iter(vigil, net.ops, 0);
     feed_iter(vigil, net.ops, 1);
     feed_trigger(vigil, net.ops, 2);
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
 
     const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
     CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_some());

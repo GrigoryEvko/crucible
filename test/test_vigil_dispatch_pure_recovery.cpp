@@ -35,7 +35,7 @@ void test_dispatch_pure_divergence_and_recovery() {
         feed_record(vigil, 0);
         feed_record(vigil, 1);
         feed_trigger(vigil, 2);
-        flush_and_wait_region_published(vigil);
+        flush_and_wait_region_published(kTest, vigil);
         align_and_activate(vigil, 3);
 
         const VigilFgCtx fg = vigil.mint_producer_context();
@@ -73,7 +73,7 @@ void test_dispatch_pure_divergence_and_recovery() {
         feed_record(vigil, 0);
         feed_record(vigil, 1);
         feed_trigger(vigil, 2);
-        flush_and_wait_region_published(vigil);
+        flush_and_wait_region_published(kTest, vigil);
         align_and_activate(vigil, 3);
 
         TraceRing::Entry bad{};
@@ -95,7 +95,7 @@ void test_dispatch_pure_divergence_and_recovery() {
         for (uint32_t iter = 10; iter < 16; iter++)
             feed_record(vigil, iter);
         feed_trigger(vigil, 16);
-        flush_and_wait_region_published(vigil);
+        flush_and_wait_region_published(kTest, vigil);
 
         // Realignment is open-coded rather than delegated to
         // align_and_activate, because that helper drives dispatch_op and
@@ -128,7 +128,7 @@ void test_dispatch_pure_divergence_and_recovery() {
         feed_record(vigil, 0);
         feed_record(vigil, 1);
         feed_trigger(vigil, 2);
-        flush_and_wait_region_published(vigil);
+        flush_and_wait_region_published(kTest, vigil);
         align_and_activate(vigil, 3);
 
         for (uint32_t iter = 4; iter < 6; ++iter) {

@@ -68,7 +68,7 @@ void drive_one_region(crucible::Vigil& vigil) {
             CRUCIBLE_TEST_ASSERT(kTest, ok && "record_op must succeed (ring not full)");
         }
     }
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
 }
 
 void test_disabled_watchdog() {

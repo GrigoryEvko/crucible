@@ -456,7 +456,7 @@ void test_golden_bits() {
     // digest that differs.
     std::size_t differences = 0;
     auto const compare = [&](TextView form, std::uint64_t digest, std::uint64_t golden) noexcept {
-        if (!is_golden(form, digest, golden)) ++differences;
+        if (!is_golden(kTest, form, digest, golden)) ++differences;
     };
     View<double const> const double_view{doubles.view()};
     View<float const> const special_scan_floats = special_float_view.window(0, 1000).expect("the scan run fits");

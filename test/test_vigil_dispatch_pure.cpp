@@ -66,7 +66,7 @@ void test_dispatch_pure_matches_dispatch_op() {
         feed_record(vigil, 0);
         feed_record(vigil, 1);
         feed_trigger(vigil, 2);
-        flush_and_wait_region_published(vigil);
+        flush_and_wait_region_published(kTest, vigil);
 
         const VigilFgCtx fg = vigil.mint_producer_context();
         for (uint32_t i = 0; i < K; ++i) {

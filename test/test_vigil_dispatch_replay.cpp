@@ -32,7 +32,7 @@ void test_dispatch_basic() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
 
     align_and_activate(vigil, 3);
     CRUCIBLE_TEST_ASSERT(kTest, vigil.compiled_iterations() == 1);
@@ -77,7 +77,7 @@ void test_dispatch_divergence() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
     align_and_activate(vigil, 3);
 
     for (uint32_t i = 0; i < 3; i++) {
@@ -118,7 +118,7 @@ void test_dispatch_recovery() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
 
     align_and_activate(vigil, 3);
 
@@ -143,7 +143,7 @@ void test_dispatch_recovery() {
 
     // Divergence put the mode back to recording, so this call is waiting
     // for a fresh transition rather than observing the original one.
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
 
     align_and_activate(vigil, 17);
 

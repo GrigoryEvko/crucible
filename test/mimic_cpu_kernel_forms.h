@@ -21,7 +21,6 @@
 
 #include "foundation/philox_stream.h"
 #include "product_rig.h"
-#include "test_assert.h"
 
 #include <cstddef>
 #include <cstdint>

@@ -256,20 +256,20 @@ int main() {
         // which the index alone does not.
         auto s = ctx.advance(H_MM1, S_MM1, cv);
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        cpu::mm(host_ptr<const float>(ctx.input_ptr(0, cv)),  // X
+        cpu::mm(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)),  // X
                 host_ptr<const float>(ctx.input_ptr(1, cv)),  // W1
                 host_ptr<float>(ctx.output_ptr(0, cv)),  // mm1_out
                 BATCH, HIDDEN, IN_DIM);
 
         s = ctx.advance(H_RELU, S_RELU, cv);
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        cpu::relu(host_ptr<const float>(ctx.input_ptr(0, cv)),  // mm1_out
+        cpu::relu(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)),  // mm1_out
                   host_ptr<float>(ctx.output_ptr(0, cv)),  // relu_out
                   BATCH * HIDDEN);
 
         s = ctx.advance(H_MM2, S_MM2, cv);
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        cpu::mm(host_ptr<const float>(ctx.input_ptr(0, cv)),  // relu_out
+        cpu::mm(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)),  // relu_out
                 host_ptr<const float>(ctx.input_ptr(1, cv)),  // W2
                 host_ptr<float>(ctx.output_ptr(0, cv)),  // mm2_out
                 BATCH, OUT_DIM, HIDDEN);
@@ -278,7 +278,7 @@ int main() {
         // than matching.
         s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv);
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
-        cpu::softmax(host_ptr<const float>(ctx.input_ptr(0, cv)),  // mm2_out
+        cpu::softmax(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)),  // mm2_out
                      host_ptr<float>(ctx.output_ptr(0, cv)),  // softmax_out
                      BATCH, OUT_DIM);
     }
@@ -291,10 +291,10 @@ int main() {
     float ref_mm2[BATCH * OUT_DIM]{};
     float ref_sm[BATCH * OUT_DIM]{};
 
-    cpu::mm(X, W1, ref_mm1, BATCH, HIDDEN, IN_DIM);
-    cpu::relu(ref_mm1, ref_relu, BATCH * HIDDEN);
-    cpu::mm(ref_relu, W2, ref_mm2, BATCH, OUT_DIM, HIDDEN);
-    cpu::softmax(ref_mm2, ref_sm, BATCH, OUT_DIM);
+    cpu::mm(kTest, X, W1, ref_mm1, BATCH, HIDDEN, IN_DIM);
+    cpu::relu(kTest, ref_mm1, ref_relu, BATCH * HIDDEN);
+    cpu::mm(kTest, ref_relu, W2, ref_mm2, BATCH, OUT_DIM, HIDDEN);
+    cpu::softmax(kTest, ref_mm2, ref_sm, BATCH, OUT_DIM);
 
     auto* pool_sm = host_ptr<const float>(ctx.pool().slot_ptr(SlotId{SL_SM}, pv));
 

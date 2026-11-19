@@ -34,7 +34,7 @@ void test_cache_switch_mid_iter() {
     feed_record(vigil, SHAPE_A, 0, 1);
     feed_trigger(vigil, SHAPE_A, 0, 2);
 
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
     align_and_activate(vigil, SHAPE_A, 0, 3);
 
     CRUCIBLE_TEST_ASSERT(kTest, vigil.region_cache().size() == 1);
@@ -59,7 +59,7 @@ void test_cache_switch_mid_iter() {
         feed_record(vigil, SHAPE_B, 1, iter);
     feed_trigger(vigil, SHAPE_B, 1, 16);
 
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
     align_and_activate(vigil, SHAPE_B, 1, 17);
 
     CRUCIBLE_TEST_ASSERT(kTest, vigil.region_cache().size() == 2);
@@ -100,7 +100,7 @@ void test_cache_miss_fallback() {
     feed_record(vigil, SHAPE_A, 0, 1);
     feed_trigger(vigil, SHAPE_A, 0, 2);
 
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
     align_and_activate(vigil, SHAPE_A, 0, 3);
 
     // A schema no cached region carries, so the lookup must miss.

@@ -13,8 +13,9 @@
 //                                           which prints a digest that differs
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
-#include "../test_assert.h"
 #include "nan_outputs.h"
 
 #include <cstdint>
@@ -62,9 +63,10 @@ struct Mix {
 
 // Compares the digest of one form with its golden digest, and prints the two
 // when they differ.
-[[nodiscard]] inline bool is_golden(::fixy::TextView form, std::uint64_t digest, std::uint64_t golden) noexcept {
+[[nodiscard]] inline bool is_golden(::fixy::TestRunnerCtx const& test, ::fixy::TextView form, std::uint64_t digest,
+                                    std::uint64_t golden) noexcept {
     if (digest == golden) return true;
-    pass("the digest of {} is {}, and the golden digest is {}\n", form, digest, golden);
+    ::fixy::check::pass(test, "the digest of {} is {}, and the golden digest is {}\n", form, digest, golden);
     return false;
 }
 

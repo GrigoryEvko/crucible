@@ -9,10 +9,11 @@
 // of the stated order alone, so each unit gives the same digest.
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/Reductions.h>
+#include <fixy/check/Check.h>
 
 #include "../product_rig.h"
-#include "../test_assert.h"
 #include "philox_stream.h"
 
 #include <cstddef>
@@ -123,7 +124,7 @@ template <class T>
 // The digest of fixed draws: the products of the three paths in each layout
 // of the left factor, the sums of runs and the dot products.
 template <class T>
-[[nodiscard]] std::uint64_t digest_of_fixed_draws() noexcept {
+[[nodiscard]] std::uint64_t digest_of_fixed_draws(::fixy::TestRunnerCtx const& test) noexcept {
     PhiloxStream stream{0x9D0C0000000000F0u};
     std::uint64_t digest = kDigestOffset;
     for (std::size_t layout = 0; layout < kLayouts; ++layout) {
@@ -135,13 +136,13 @@ template <class T>
         fill_matrix(right, stream, 12);
         fill_matrix(transposed, stream, 12);
         Matrix<T> out = make_matrix<T>(MatrixShape{7, 29}, Layout::RowMajor, 0);
-        assert(multiply_into(out, left.view(), right.view(), LaneCount::Native).is_ok());
+        CRUCIBLE_TEST_ASSERT(test, multiply_into(out, left.view(), right.view(), LaneCount::Native).is_ok());
         Matrix<T> other = make_matrix<T>(MatrixShape{7, 29}, Layout::ColumnMajor, 0);
-        assert(multiply_into(other, left.view(), transposed.view(), LaneCount::Native).is_ok());
+        CRUCIBLE_TEST_ASSERT(test, multiply_into(other, left.view(), transposed.view(), LaneCount::Native).is_ok());
         Matrix<T> sums = make_matrix<T>(MatrixShape{1, 29}, Layout::RowMajor, 0);
-        assert(sum_runs_into(sums, right.view(), LaneCount::Native).is_ok());
+        CRUCIBLE_TEST_ASSERT(test, sum_runs_into(sums, right.view(), LaneCount::Native).is_ok());
         Matrix<T> column_sums = make_matrix<T>(MatrixShape{1, 29}, Layout::RowMajor, 0);
-        assert(sum_runs_into(column_sums, transposed.view(), LaneCount::Native).is_ok());
+        CRUCIBLE_TEST_ASSERT(test, sum_runs_into(column_sums, transposed.view(), LaneCount::Native).is_ok());
         for (std::size_t row = 0; row < 7; ++row) {
             for (std::size_t column = 0; column < 29; ++column) {
                 digest = fold_value(digest, out.at(row, column));
@@ -167,8 +168,8 @@ template <class T>
     return digest;
 }
 
-[[nodiscard]] ProductDigests digests_of_this_unit() noexcept {
-    return ProductDigests{digest_of_fixed_draws<float>(), digest_of_fixed_draws<double>()};
+[[nodiscard]] ProductDigests digests_of_this_unit(::fixy::TestRunnerCtx const& test) noexcept {
+    return ProductDigests{digest_of_fixed_draws<float>(test), digest_of_fixed_draws<double>(test)};
 }
 
 }  // namespace

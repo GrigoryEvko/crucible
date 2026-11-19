@@ -91,7 +91,7 @@ void test_alignment_continues_inside_the_matched_ops() {
     record_bordered(vigil, 0, NUM_OPS);
     record_bordered(vigil, 1, NUM_OPS);
     record_bordered(vigil, 2, K);
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
 
     (void)dispatch_bordered(vigil, 3, 0);
     for (uint32_t i = 0; i < BORDER_RUN; i++) {
@@ -122,7 +122,7 @@ void test_alignment_ends_after_its_bound() {
     feed_record(vigil, 0);
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
 
     const uint64_t produced = vigil.ring_total_produced();
     const uint32_t bound = Vigil::alignment_bound(NUM_OPS);
@@ -152,7 +152,7 @@ void test_alignment_bound_returns_to_replay() {
     feed_record(vigil, 0);
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
 
     const uint32_t first_detection = Vigil::alignment_bound(NUM_OPS) + 2 * NUM_OPS + K;
     uint32_t index = 0;
@@ -161,7 +161,7 @@ void test_alignment_bound_returns_to_replay() {
         CRUCIBLE_TEST_ASSERT(kTest, result.action == DispatchResult::Action::RECORD
                                         && "no replay before a region of the new trace");
     }
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
 
     CRUCIBLE_TEST_ASSERT(kTest, vigil.active_region().is_some());
     const RegionNode& region = *vigil.active_region().expect("the flush published a region");

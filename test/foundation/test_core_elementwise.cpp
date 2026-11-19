@@ -56,8 +56,8 @@ void test_the_scaled_product_is_inside_its_bound() {
     Matrix<float> const rights = drawn_matrix<float>(stream, Layout::RowMajor);
     Matrix<float> const scales = drawn_matrix<float>(stream, Layout::RowMajor);
     Matrix<float> const factors = drawn_matrix<float>(stream, Layout::RowMajor);
-    Matrix<float> const outputs =
-        run_on_two_layouts<float>(::fixy::elementwise::ScaledProductOfDifference{}, lefts, rights, scales, factors);
+    Matrix<float> const outputs = run_on_two_layouts<float>(kTest, ::fixy::elementwise::ScaledProductOfDifference{},
+                                                            lefts, rights, scales, factors);
     std::size_t checked = 0;
     double largest_ratio = 0.0;
     for (std::size_t row = 0; row < kRows; ++row) {
@@ -132,7 +132,7 @@ void test_each_mix_of_the_loops_of_the_scaled_product() {
         Matrix<float> const scales = stepped(step_of(2));
         Matrix<float> const factors = stepped(step_of(3));
         Matrix<float> const outputs =
-            ::crucible::test::run_op<float>(op, Layout::RowMajor, lefts, rights, scales, factors);
+            ::crucible::test::run_op<float>(kTest, op, Layout::RowMajor, lefts, rights, scales, factors);
         for (std::size_t row = 0; row < kRows; ++row) {
             for (std::size_t column = 0; column < kColumns; ++column) {
                 float const expected = ::crucible::test::canonical_output(

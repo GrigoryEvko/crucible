@@ -392,11 +392,12 @@ inline constexpr spawn::BodyCoupling kGoldenCoupling = spawn::BodyCoupling::Wait
     });
     std::uint64_t const segments = fold_outputs(kFnvOffset, View<float const>{segment_sums.view()});
 
-    bool const is_sum_golden = is_golden("sum_by_tree_in_parallel of float", sums, 0xF9C1E83A119F9F4Eu);
-    bool const is_reduce_golden = is_golden("reduce_by_tree_in_parallel with a mix", reduces, 0x16332C815E486A72u);
-    bool const is_scan_golden = is_golden("scan_sums_in_parallel of float", scans, 0x33878626746F0EB7u);
+    bool const is_sum_golden = is_golden(kTest, "sum_by_tree_in_parallel of float", sums, 0xF9C1E83A119F9F4Eu);
+    bool const is_reduce_golden =
+        is_golden(kTest, "reduce_by_tree_in_parallel with a mix", reduces, 0x16332C815E486A72u);
+    bool const is_scan_golden = is_golden(kTest, "scan_sums_in_parallel of float", scans, 0x33878626746F0EB7u);
     bool const is_segment_golden =
-        is_golden("sum_segments_by_tree_in_parallel of float", segments, 0x2F64B99E0558E387u);
+        is_golden(kTest, "sum_segments_by_tree_in_parallel of float", segments, 0x2F64B99E0558E387u);
     return is_sum_golden && is_reduce_golden && is_scan_golden && is_segment_golden;
 }
 

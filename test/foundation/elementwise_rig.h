@@ -15,11 +15,12 @@
 // test_core_elementwise.cpp holds main and the test of the scaled product.
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/Elementwise.h>
+#include <fixy/check/Check.h>
 
 #include "../exact_sum.h"
 #include "../product_rig.h"
-#include "../test_assert.h"
 #include "philox_stream.h"
 
 #include <cstddef>
@@ -62,7 +63,9 @@ template <class T>
     Matrix<T> matrix = make_matrix<T>(MatrixShape{kRows, kColumns}, layout, 1);
     for (std::size_t row = 0; row < kRows; ++row) {
         for (std::size_t column = 0; column < kColumns; ++column) {
-            element_at(matrix.values.view(), matrix.position(row, column)) = draw_hard_value<T>(stream);
+            *matrix.values.view()
+                 .get(matrix.position(row, column))
+                 .expect("a test reads an element at or past the count of its View") = draw_hard_value<T>(stream);
         }
     }
     return matrix;
@@ -74,7 +77,9 @@ template <class T>
     Matrix<T> matrix = make_matrix<T>(source.shape, layout, 2);
     for (std::size_t row = 0; row < kRows; ++row) {
         for (std::size_t column = 0; column < kColumns; ++column) {
-            element_at(matrix.values.view(), matrix.position(row, column)) = source.at(row, column);
+            *matrix.values.view()
+                 .get(matrix.position(row, column))
+                 .expect("a test reads an element at or past the count of its View") = source.at(row, column);
         }
     }
     return matrix;
@@ -82,7 +87,8 @@ template <class T>
 
 // The output of op over the inputs, in the layout.
 template <class T, class Op, class... Inputs>
-[[nodiscard]] Matrix<T> run_op(Op op, Layout layout, Inputs const&... inputs) noexcept {
+[[nodiscard]] Matrix<T> run_op(::fixy::TestRunnerCtx const& test, Op op, Layout layout,
+                               Inputs const&... inputs) noexcept {
     Matrix<T> out = make_matrix<T>(MatrixShape{kRows, kColumns}, layout, 0);
     ::fixy::FixedArray<std::size_t, 2> const sizes{kRows, kColumns};
     ::fixy::FixedArray<std::size_t, 2> const strides{out.place.row_stride, out.place.column_stride};
@@ -93,19 +99,19 @@ template <class T, class Op, class... Inputs>
         return ::fixy::write_pointwise(target, op, inputs.view()...).is_ok();
     });
     out.values = std::move(back);
-    assert(result);
+    CRUCIBLE_TEST_ASSERT(test, result);
     return out;
 }
 
 // The output of op on the dense layout and on the spread layout, which must
 // have the same bits.
 template <class T, class Op, class... Inputs>
-[[nodiscard]] Matrix<T> run_on_two_layouts(Op op, Inputs const&... inputs) noexcept {
-    Matrix<T> dense = run_op<T>(op, Layout::RowMajor, relaid(inputs, Layout::RowMajor)...);
-    Matrix<T> spread = run_op<T>(op, Layout::Spread, relaid(inputs, Layout::Spread)...);
+[[nodiscard]] Matrix<T> run_on_two_layouts(::fixy::TestRunnerCtx const& test, Op op, Inputs const&... inputs) noexcept {
+    Matrix<T> dense = run_op<T>(test, op, Layout::RowMajor, relaid(inputs, Layout::RowMajor)...);
+    Matrix<T> spread = run_op<T>(test, op, Layout::Spread, relaid(inputs, Layout::Spread)...);
     for (std::size_t row = 0; row < kRows; ++row) {
         for (std::size_t column = 0; column < kColumns; ++column) {
-            assert(bits_of_float(dense.at(row, column)) == bits_of_float(spread.at(row, column)));
+            CRUCIBLE_TEST_ASSERT(test, bits_of_float(dense.at(row, column)) == bits_of_float(spread.at(row, column)));
         }
     }
     return dense;
@@ -119,15 +125,15 @@ template <class T>
 // The selects and the copy give their stated values, and a NaN keeps its
 // bits.
 template <class T>
-void test_the_selects_keep_their_bits() {
+void test_the_selects_keep_their_bits(::fixy::TestRunnerCtx const& test) {
     PhiloxStream stream{0xE1E0000000000001u + sizeof(T)};
     Matrix<T> const values = drawn_matrix<T>(stream, Layout::RowMajor);
     Matrix<T> const gates = drawn_matrix<T>(stream, Layout::RowMajor);
     Matrix<T> const thresholds = drawn_matrix<T>(stream, Layout::RowMajor);
-    Matrix<T> const clamped = run_on_two_layouts<T>(::fixy::elementwise::ClampBelowAtZero{}, values);
+    Matrix<T> const clamped = run_on_two_layouts<T>(test, ::fixy::elementwise::ClampBelowAtZero{}, values);
     Matrix<T> const gated =
-        run_on_two_layouts<T>(::fixy::elementwise::ZeroAtOrBelowThreshold{}, values, gates, thresholds);
-    Matrix<T> const copied = run_on_two_layouts<T>(::fixy::elementwise::Copy{}, values);
+        run_on_two_layouts<T>(test, ::fixy::elementwise::ZeroAtOrBelowThreshold{}, values, gates, thresholds);
+    Matrix<T> const copied = run_on_two_layouts<T>(test, ::fixy::elementwise::Copy{}, values);
     for (std::size_t row = 0; row < kRows; ++row) {
         for (std::size_t column = 0; column < kColumns; ++column) {
             T const value = values.at(row, column);
@@ -135,12 +141,13 @@ void test_the_selects_keep_their_bits() {
             T const threshold = thresholds.at(row, column);
             T const clamp = value < T{0} ? T{0} : value;
             T const gate_result = gate <= threshold ? T{0} : value;
-            assert(same_bits(clamped.at(row, column), clamp));
-            assert(same_bits(gated.at(row, column), gate_result));
-            assert(same_bits(copied.at(row, column), value));
+            CRUCIBLE_TEST_ASSERT(test, same_bits(clamped.at(row, column), clamp));
+            CRUCIBLE_TEST_ASSERT(test, same_bits(gated.at(row, column), gate_result));
+            CRUCIBLE_TEST_ASSERT(test, same_bits(copied.at(row, column), value));
         }
     }
-    ::crucible::test::pass("test_core_elementwise: the selects and the copy of {} bytes keep their bits\n", sizeof(T));
+    ::fixy::check::pass(test, "test_core_elementwise: the selects and the copy of {} bytes keep their bits\n",
+                        sizeof(T));
 }
 
 // The IEEE result of a sum and of a quotient of two floats: the value in
@@ -163,7 +170,9 @@ template <class T>
         for (std::size_t column = 0; column < kColumns; ++column) {
             T const value = source.at(row, column);
             if (::fixy::fp::abs(value) < ::fixy::min_subnormal_of<T>) {
-                element_at(matrix.values.view(), matrix.position(row, column)) = T{3};
+                *matrix.values.view()
+                     .get(matrix.position(row, column))
+                     .expect("a test reads an element at or past the count of its View") = T{3};
             }
         }
     }
@@ -173,28 +182,32 @@ template <class T>
 // Sum and Quotient give the IEEE result, and FusedMultiplyAdd gives the
 // exact fma.
 template <class T>
-void test_the_single_rounds_are_exact() {
+void test_the_single_rounds_are_exact(::fixy::TestRunnerCtx const& test) {
     PhiloxStream stream{0xE1E0000000000002u + sizeof(T)};
     Matrix<T> const lefts = drawn_matrix<T>(stream, Layout::RowMajor);
     Matrix<T> const rights = drawn_matrix<T>(stream, Layout::RowMajor);
     Matrix<T> const addends = drawn_matrix<T>(stream, Layout::RowMajor);
     Matrix<T> const denominators = without_zeros(rights);
-    Matrix<T> const sums = run_on_two_layouts<T>(::fixy::elementwise::Sum{}, lefts, rights);
-    Matrix<T> const quotients = run_on_two_layouts<T>(::fixy::elementwise::Quotient{}, lefts, denominators);
-    Matrix<T> const fused = run_on_two_layouts<T>(::fixy::elementwise::FusedMultiplyAdd{}, lefts, rights, addends);
+    Matrix<T> const sums = run_on_two_layouts<T>(test, ::fixy::elementwise::Sum{}, lefts, rights);
+    Matrix<T> const quotients = run_on_two_layouts<T>(test, ::fixy::elementwise::Quotient{}, lefts, denominators);
+    Matrix<T> const fused =
+        run_on_two_layouts<T>(test, ::fixy::elementwise::FusedMultiplyAdd{}, lefts, rights, addends);
     std::size_t checked = 0;
     for (std::size_t row = 0; row < kRows; ++row) {
         for (std::size_t column = 0; column < kColumns; ++column) {
             T const left = lefts.at(row, column);
             T const right = rights.at(row, column);
             T const addend = addends.at(row, column);
-            assert(same_bits(fused.at(row, column), canonical(::crucible::test::exact_fma(left, right, addend))));
+            CRUCIBLE_TEST_ASSERT(
+                test, same_bits(fused.at(row, column), canonical(::crucible::test::exact_fma(left, right, addend))));
             if constexpr (sizeof(T) == sizeof(float)) {
                 double const wide_left = left;
                 double const wide_right = right;
                 double const wide_denominator = denominators.at(row, column);
-                assert(same_bits(sums.at(row, column), canonical(float_result(wide_left + wide_right))));
-                assert(same_bits(quotients.at(row, column), canonical(float_result(wide_left / wide_denominator))));
+                CRUCIBLE_TEST_ASSERT(test,
+                                     same_bits(sums.at(row, column), canonical(float_result(wide_left + wide_right))));
+                CRUCIBLE_TEST_ASSERT(
+                    test, same_bits(quotients.at(row, column), canonical(float_result(wide_left / wide_denominator))));
             } else {
                 ExactSum<T> exact{};
                 exact.add(left);
@@ -204,19 +217,20 @@ void test_the_single_rounds_are_exact() {
                 bool const is_negative_zero_sum = ::fixy::fp::sign_bit(left) && ::fixy::fp::sign_bit(right)
                                                && ::fixy::fp::abs(left) < ::fixy::min_subnormal_of<T>
                                                && ::fixy::fp::abs(right) < ::fixy::min_subnormal_of<T>;
-                assert(same_bits(sums.at(row, column), is_negative_zero_sum ? -T{0} : rounded));
+                CRUCIBLE_TEST_ASSERT(test, same_bits(sums.at(row, column), is_negative_zero_sum ? -T{0} : rounded));
             }
             ++checked;
         }
     }
-    ::crucible::test::pass("test_core_elementwise: {} sums, quotients and fused products of {} bytes give the "
-                           "IEEE result\n",
-                           checked, sizeof(T));
+    ::fixy::check::pass(test,
+                        "test_core_elementwise: {} sums, quotients and fused products of {} bytes give the "
+                        "IEEE result\n",
+                        checked, sizeof(T));
 }
 
 // SquareOfDifference is inside gamma(3) * y + eta of the exact square.
 template <class T>
-void test_the_square_of_a_difference_is_inside_its_bound() {
+void test_the_square_of_a_difference_is_inside_its_bound(::fixy::TestRunnerCtx const& test) {
     PhiloxStream stream{0xE1E0000000000003u + sizeof(T)};
     Matrix<T> const lefts = drawn_matrix<T>(stream, Layout::RowMajor);
     Matrix<T> rights = drawn_matrix<T>(stream, Layout::RowMajor);
@@ -224,11 +238,13 @@ void test_the_square_of_a_difference_is_inside_its_bound() {
     for (std::size_t row = 0; row < kRows; row += 4) {
         for (std::size_t column = 0; column < kColumns; ++column) {
             T const left = lefts.at(row, column);
-            element_at(rights.values.view(), rights.position(row, column)) =
+            *rights.values.view()
+                 .get(rights.position(row, column))
+                 .expect("a test reads an element at or past the count of its View") =
                 left * (T{1} + ::fixy::epsilon_of<T> * static_cast<T>(stream.below(5)));
         }
     }
-    Matrix<T> const squares = run_on_two_layouts<T>(::fixy::elementwise::SquareOfDifference{}, lefts, rights);
+    Matrix<T> const squares = run_on_two_layouts<T>(test, ::fixy::elementwise::SquareOfDifference{}, lefts, rights);
     ::crucible::test::BoundRecord record{};
     for (std::size_t row = 0; row < kRows; ++row) {
         for (std::size_t column = 0; column < kColumns; ++column) {
@@ -236,8 +252,8 @@ void test_the_square_of_a_difference_is_inside_its_bound() {
             T const right = rights.at(row, column);
             T const square = squares.at(row, column);
             if (!::fixy::fp::is_finite(left) || !::fixy::fp::is_finite(right)) {
-                assert(::fixy::fp::is_nan(square) ? same_bits(square, ::fixy::quiet_nan_of<T>)
-                                                  : same_bits(square, ::fixy::infinity_of<T>));
+                CRUCIBLE_TEST_ASSERT(test, ::fixy::fp::is_nan(square) ? same_bits(square, ::fixy::quiet_nan_of<T>)
+                                                                      : same_bits(square, ::fixy::infinity_of<T>));
                 continue;
             }
             // The exact square: a^2 - 2ab + b^2, each product exact.
@@ -251,12 +267,13 @@ void test_the_square_of_a_difference_is_inside_its_bound() {
             // One leaf of three rounds: the bound gamma(3) * y + 3 * eta, which
             // holds when gamma(3) * y + eta holds.
             ExactSum<T> const magnitude = exact;
-            ::crucible::test::check_bound(exact, magnitude, 1, 3, square, record);
+            ::crucible::test::check_bound(test, exact, magnitude, 1, 3, square, record);
         }
     }
-    ::crucible::test::pass("test_core_elementwise: {} squares of a difference of {} bytes are inside the bound, the "
-                           "largest error is {} of the bound\n",
-                           record.outputs, sizeof(T), record.largest_ratio);
+    ::fixy::check::pass(test,
+                        "test_core_elementwise: {} squares of a difference of {} bytes are inside the bound, the "
+                        "largest error is {} of the bound\n",
+                        record.outputs, sizeof(T), record.largest_ratio);
 }
 
 // The tests of the units, each for one element type.

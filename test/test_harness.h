@@ -4,8 +4,10 @@
 // add sleep_for, yield, futex or condition_variable.
 
 #include <crucible/Vigil.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/Tags.h>
-#include "test_assert.h"
+#include <fixy/check/Check.h>
 #include <cstdint>
 
 namespace crucible::test {
@@ -16,18 +18,18 @@ namespace crucible::test {
 //
 // After flush() the publication is already visible, because the release and
 // acquire on total_processed order it.  This loop is a safety net.
-inline void wait_region_published(Vigil& vigil) {
+inline void wait_region_published(::fixy::TestRunnerCtx const& test, Vigil& vigil) {
     uint64_t spins = 0;
     while (!vigil.has_pending_region()) {
-        assert(++spins < 100000000 && "the background thread did not publish a region");
+        CRUCIBLE_TEST_ASSERT(test, ++spins < 100000000 && "the background thread did not publish a region");
         CRUCIBLE_SPIN_PAUSE;
     }
 }
 
-inline void flush_and_wait_region_published(Vigil& vigil) {
+inline void flush_and_wait_region_published(::fixy::TestRunnerCtx const& test, Vigil& vigil) {
     vigil.flush();
-    assert(vigil.flush_complete() && "flush() returned but bg thread did not finish processing");
-    wait_region_published(vigil);
+    CRUCIBLE_TEST_ASSERT(test, vigil.flush_complete() && "flush() returned but bg thread did not finish processing");
+    wait_region_published(test, vigil);
 }
 
 // Certifies an Entry a test built field by field, so it can reach

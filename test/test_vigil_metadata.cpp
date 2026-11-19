@@ -117,7 +117,7 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
     }
     for (uint32_t op = 0; op < K; ++op)
         record(vigil, 2, op);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
 
     const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
     CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == NUM_OPS);

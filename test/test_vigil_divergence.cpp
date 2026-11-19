@@ -88,7 +88,7 @@ void test_divergence_drops_the_unobserved_region() {
     // Phase 1: the background thread publishes a region and the foreground
     // aligns onto it, which leaves the context compiled.
     feed_one_region(vigil, 0);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
 
     for (uint32_t i = 0; i < K; i++) {
         auto recorded = op_at(3, i);
@@ -168,7 +168,7 @@ void test_divergence_drops_the_regions_of_the_backlog() {
 
     crucible::Vigil vigil;
     feed_one_region(vigil, 0);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto aligned = op_at(3, i);
         (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
@@ -229,7 +229,7 @@ void test_divergence_drops_a_half_finished_alignment() {
     // entry for rollback() to restore.  Neither is observed by the
     // foreground: these entries reach the ring through record_op.
     feed_one_region(vigil, 0);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
     const uint64_t step_after_first = vigil.current_step();
 
     feed_one_region(vigil, 4);
@@ -300,7 +300,7 @@ void feed_planless_region(crucible::Vigil& vigil) {
 // the second region.
 void publish_planless_then_planned(crucible::Vigil& vigil) {
     feed_planless_region(vigil);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
     const uint64_t step_after_planless = vigil.current_step();
     divrig::feed_one_region(vigil, 0);
     vigil.flush();
@@ -425,7 +425,7 @@ void test_region_store_stays_bounded() {
     uint32_t base = 0;
     for (uint32_t cycle = 0; cycle < CYCLES; ++cycle) {
         feed_cycle_region(vigil, cycle, base);
-        crucible::test::flush_and_wait_region_published(vigil);
+        crucible::test::flush_and_wait_region_published(kTest, vigil);
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             OpData aligned = cycle_op(cycle, base + 3, i);
             (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
@@ -485,7 +485,7 @@ void test_divergence_leaves_no_stale_active_region() {
 
     crucible::Vigil vigil;
     feed_cycle_region(vigil, 0, 0);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         OpData aligned = cycle_op(0, 3, i);
         (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
@@ -527,7 +527,7 @@ void test_same_region_keeps_the_alignment() {
 
     crucible::Vigil vigil;
     feed_one_region(vigil, 0);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
     for (uint32_t i = 0; i < 2; i++) {
         OpData aligned = op_at(3, i);
         (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);

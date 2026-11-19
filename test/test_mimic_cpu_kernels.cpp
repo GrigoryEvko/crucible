@@ -145,13 +145,13 @@ void test_the_products_of_the_first_model() {
                 magnitude.add(::fixy::fp::abs(bias.at(0, column)));
                 // The tree of 16 products has depth 4, and the add of the bias is
                 // one more round on the path of each product.
-                ::crucible::test::check_bound(exact, magnitude, 16, 2, forward.at(row, column), record);
+                ::crucible::test::check_bound(kTest, exact, magnitude, 16, 2, forward.at(row, column), record);
             }
             for (std::size_t column = 0; column < 16; ++column) {
                 CRUCIBLE_TEST_ASSERT(kTest, same_bits(input_gradient.at(row, column),
                                                       ::crucible::test::model_product(gradient, weight, row, column)));
                 auto const [exact, magnitude] = ::crucible::test::exact_product(gradient, weight, row, column);
-                ::crucible::test::check_bound(exact, magnitude, 24, 1, input_gradient.at(row, column), record);
+                ::crucible::test::check_bound(kTest, exact, magnitude, 24, 1, input_gradient.at(row, column), record);
             }
         }
         for (std::size_t row = 0; row < 24; ++row) {
@@ -161,7 +161,7 @@ void test_the_products_of_the_first_model() {
                                      ::crucible::test::model_product(gradient_transposed, input, row, column)));
                 auto const [exact, magnitude] =
                     ::crucible::test::exact_product(gradient_transposed, input, row, column);
-                ::crucible::test::check_bound(exact, magnitude, 8, 1, weight_gradient.at(row, column), record);
+                ::crucible::test::check_bound(kTest, exact, magnitude, 8, 1, weight_gradient.at(row, column), record);
             }
         }
     }
@@ -349,7 +349,7 @@ void test_the_rounded_element_kernels() {
             exact.add_product(-left, right);
             exact.add_product(-left, right);
             exact.add_product(right, right);
-            ::crucible::test::check_bound(exact, exact, 1, 3, squares.at(row, column), record);
+            ::crucible::test::check_bound(kTest, exact, exact, 1, 3, squares.at(row, column), record);
             double const factor_value = factor.at(0, column);
             double const expected =
                 static_cast<double>(scale) * (static_cast<double>(left) - static_cast<double>(right)) * factor_value;
@@ -402,7 +402,7 @@ void test_the_sums() {
                 exact.add(input.at(row, column));
                 magnitude.add(::fixy::fp::abs(input.at(row, column)));
             }
-            ::crucible::test::check_bound(exact, magnitude, rows, 0, column_sums.at(0, column), record);
+            ::crucible::test::check_bound(kTest, exact, magnitude, rows, 0, column_sums.at(0, column), record);
         }
         auto const leaf = [&](std::size_t index) noexcept { return input.at(index / columns, index % columns); };
         CRUCIBLE_TEST_ASSERT(

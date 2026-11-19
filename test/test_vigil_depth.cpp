@@ -67,7 +67,7 @@ void test_region_keeps_the_depth_of_each_op() {
     }
     for (uint32_t op = 0; op < K; ++op)
         dispatch_with_depth(vigil, 2, op);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
 
     const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
     CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == NUM_OPS);
@@ -102,7 +102,7 @@ void test_region_keeps_the_depth_past_a_growth_of_the_held_ops() {
     }
     for (uint32_t op = 0; op < K; ++op)
         dispatch(op);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
 
     const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
     CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == kLongPeriod);
@@ -276,7 +276,7 @@ void test_unrecorded_nest_keeps_the_loop_eager() {
         crucible::Vigil vigil;
         for (uint32_t iter = 0; iter < kIterations; ++iter)
             give_iteration(vigil, false);
-        crucible::test::flush_and_wait_region_published(vigil);
+        crucible::test::flush_and_wait_region_published(kTest, vigil);
     }
 
     ::fixy::check::pass(kTest, "  test_unrecorded_nest_keeps_the_loop_eager: PASSED\n");

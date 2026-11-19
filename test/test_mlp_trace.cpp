@@ -60,7 +60,7 @@ int main() {
     std::printf("── Trigger: feeding first %u ops of iter 2 ──\n", IterationDetector::K);
     feed_trigger(vigil, 2);
 
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
 
     std::printf("\n   >>> Iteration boundary detected! <<<\n");
     const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");

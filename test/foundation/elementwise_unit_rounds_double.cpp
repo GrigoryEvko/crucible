@@ -4,8 +4,19 @@
 
 #include "elementwise_rig.h"
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
+
 namespace crucible::test {
 
-void test_the_double_single_rounds_are_exact() { test_the_single_rounds_are_exact<double>(); }
+void test_the_double_single_rounds_are_exact() { test_the_single_rounds_are_exact<double>(kTest); }
 
 }  // namespace crucible::test

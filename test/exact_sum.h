@@ -21,8 +21,6 @@
 
 #include <fixy/Core.h>
 
-#include "test_assert.h"
-
 #include <cstddef>
 #include <cstdint>
 
@@ -122,12 +120,14 @@ public:
         has_negative_infinity_ = has_negative_infinity_ || other.has_negative_infinity_;
         std::uint64_t carry = 0;
         for (std::size_t word = 0; word < words; ++word) {
-            std::uint64_t const left = element_at(words_, word);
-            std::uint64_t const right = element_at(other.words_, word);
+            std::uint64_t const left =
+                *words_.get(word).expect("a test reads an element at or past the count of its array");
+            std::uint64_t const right =
+                *other.words_.get(word).expect("a test reads an element at or past the count of its array");
             std::uint64_t const partial = left + right;
             std::uint64_t const total = partial + carry;
             carry = (partial < left ? 1u : 0u) + (total < partial ? 1u : 0u);
-            element_at(words_, word) = total;
+            *words_.get(word).expect("a test reads an element at or past the count of its array") = total;
         }
     }
 
@@ -157,11 +157,13 @@ public:
         if (has_positive_infinity_) return ::fixy::bit_cast<Out>(infinity);
         if (has_negative_infinity_) return ::fixy::bit_cast<Out>(static_cast<OutWord>(sign_word | infinity));
         ::fixy::FixedArray<std::uint64_t, words> magnitude = words_;
-        bool const is_negative = (element_at(words_, words - 1) >> 63) != 0;
+        bool const is_negative =
+            (*words_.get(words - 1).expect("a test reads an element at or past the count of its array") >> 63) != 0;
         if (is_negative) negate(magnitude);
         int highest = -1;
         for (std::size_t word = words; word-- > 0;) {
-            std::uint64_t const value = element_at(magnitude, word);
+            std::uint64_t const value =
+                *magnitude.get(word).expect("a test reads an element at or past the count of its array");
             if (value != 0) {
                 highest = static_cast<int>(word) * 64 + 63 - ::fixy::countl_zero(value);
                 break;
@@ -229,25 +231,29 @@ private:
         ::fixy::FixedArray<std::uint64_t, 3> part{};
         auto const low = static_cast<std::uint64_t>(term.significand);
         auto const high = static_cast<std::uint64_t>(term.significand >> 64);
-        element_at(part, 0) = low << shift;
-        element_at(part, 1) = shift == 0 ? high : (high << shift) | (low >> (64 - shift));
-        element_at(part, 2) = shift == 0 ? 0 : high >> (64 - shift);
+        *part.get(0).expect("a test reads an element at or past the count of its array") = low << shift;
+        *part.get(1).expect("a test reads an element at or past the count of its array") =
+            shift == 0 ? high : (high << shift) | (low >> (64 - shift));
+        *part.get(2).expect("a test reads an element at or past the count of its array") =
+            shift == 0 ? 0 : high >> (64 - shift);
         std::uint64_t carry = 0;
         for (std::size_t word = first; word < words; ++word) {
             std::size_t const offset = word - first;
-            std::uint64_t const value = offset < 3 ? element_at(part, offset) : 0;
+            std::uint64_t const value =
+                offset < 3 ? *part.get(offset).expect("a test reads an element at or past the count of its array") : 0;
             if (offset >= 3 && carry == 0) break;
-            std::uint64_t const current = element_at(words_, word);
+            std::uint64_t const current =
+                *words_.get(word).expect("a test reads an element at or past the count of its array");
             if (term.is_negative) {
                 std::uint64_t const partial = current - value;
                 std::uint64_t const total = partial - carry;
                 carry = (current < value ? 1u : 0u) + (partial < carry ? 1u : 0u);
-                element_at(words_, word) = total;
+                *words_.get(word).expect("a test reads an element at or past the count of its array") = total;
             } else {
                 std::uint64_t const partial = current + value;
                 std::uint64_t const total = partial + carry;
                 carry = (partial < current ? 1u : 0u) + (total < partial ? 1u : 0u);
-                element_at(words_, word) = total;
+                *words_.get(word).expect("a test reads an element at or past the count of its array") = total;
             }
         }
     }
@@ -263,7 +269,10 @@ private:
 
     [[nodiscard]] static bool bit_at(Words const& value, int bit) noexcept {
         auto const position = static_cast<std::size_t>(bit);
-        return ((element_at(value, position / 64) >> (position % 64)) & 1u) != 0;
+        return ((*value.get(position / 64).expect("a test reads an element at or past the count of its array")
+                 >> (position % 64))
+                & 1u)
+            != 0;
     }
 
     // The count bits from the bit first, for a count of at most 64.
@@ -281,10 +290,12 @@ private:
         std::size_t const word = position / 64;
         std::size_t const shift = position % 64;
         for (std::size_t lower = 0; lower < word; ++lower) {
-            if (element_at(value, lower) != 0) return true;
+            if (*value.get(lower).expect("a test reads an element at or past the count of its array") != 0) return true;
         }
         if (shift == 0) return false;
-        return (element_at(value, word) & ((std::uint64_t{1} << shift) - 1)) != 0;
+        return (*value.get(word).expect("a test reads an element at or past the count of its array")
+                & ((std::uint64_t{1} << shift) - 1))
+            != 0;
     }
 
     Words words_{};

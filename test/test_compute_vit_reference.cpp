@@ -5,7 +5,18 @@
 
 #include "cpu_kernels.h"
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
 #include <random>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -55,21 +66,21 @@ void compute_reference(const Weights& weights, Reference& reference) {
     float ref_cls[B * D]{};
     float ref_logits[B * N_CLS]{};
 
-    cpu::layer_norm(weights.X, weights.gamma1, weights.beta1, ref_norm1, B * S, D);
-    cpu::mm(ref_norm1, weights.W_q, ref_Q, B * S, D, D);
-    cpu::mm(ref_norm1, weights.W_k, ref_K, B * S, D, D);
-    cpu::mm(ref_norm1, weights.W_v, ref_V, B * S, D, D);
-    cpu::sdpa(ref_Q, ref_K, ref_V, ref_attn, B, S, D);
-    cpu::mm(ref_attn, weights.W_out, ref_proj, B * S, D, D);
-    cpu::add(ref_proj, weights.X, ref_res1, B * S * D);
-    cpu::layer_norm(ref_res1, weights.gamma2, weights.beta2, ref_norm2, B * S, D);
-    cpu::mm(ref_norm2, weights.W_ff1, ref_ff1, B * S, D_FF, D);
-    cpu::relu(ref_ff1, ref_relu, B * S * D_FF);
-    cpu::mm(ref_relu, weights.W_ff2, ref_ff2, B * S, D, D_FF);
-    cpu::add(ref_ff2, ref_res1, reference.res2, B * S * D);
-    cpu::index_select(reference.res2, ref_cls, B, S, D, 0);
-    cpu::mm(ref_cls, weights.W_head, ref_logits, B, N_CLS, D);
-    cpu::softmax(ref_logits, reference.probs, B, N_CLS);
+    cpu::layer_norm(kTest, weights.X, weights.gamma1, weights.beta1, ref_norm1, B * S, D);
+    cpu::mm(kTest, ref_norm1, weights.W_q, ref_Q, B * S, D, D);
+    cpu::mm(kTest, ref_norm1, weights.W_k, ref_K, B * S, D, D);
+    cpu::mm(kTest, ref_norm1, weights.W_v, ref_V, B * S, D, D);
+    cpu::sdpa(kTest, ref_Q, ref_K, ref_V, ref_attn, B, S, D);
+    cpu::mm(kTest, ref_attn, weights.W_out, ref_proj, B * S, D, D);
+    cpu::add(kTest, ref_proj, weights.X, ref_res1, B * S * D);
+    cpu::layer_norm(kTest, ref_res1, weights.gamma2, weights.beta2, ref_norm2, B * S, D);
+    cpu::mm(kTest, ref_norm2, weights.W_ff1, ref_ff1, B * S, D_FF, D);
+    cpu::relu(kTest, ref_ff1, ref_relu, B * S * D_FF);
+    cpu::mm(kTest, ref_relu, weights.W_ff2, ref_ff2, B * S, D, D_FF);
+    cpu::add(kTest, ref_ff2, ref_res1, reference.res2, B * S * D);
+    cpu::index_select(kTest, reference.res2, ref_cls, B, S, D, 0);
+    cpu::mm(kTest, ref_cls, weights.W_head, ref_logits, B, N_CLS, D);
+    cpu::softmax(kTest, ref_logits, reference.probs, B, N_CLS);
 }
 
 }  // namespace test_compute_vit

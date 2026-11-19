@@ -110,7 +110,7 @@ void test_dispatch_binds_each_data_scalar() {
     record_ops(vigil, Iteration{0}, NUM_OPS);
     record_ops(vigil, Iteration{1}, NUM_OPS);
     record_ops(vigil, Iteration{2}, IterationDetector::K);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
 
     // The first K ops align, and the region activates at the last of them.
     const Iteration aligned{3};

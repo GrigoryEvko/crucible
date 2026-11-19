@@ -204,7 +204,7 @@ void test_products_are_inside_the_bound() {
         for (std::size_t row = 0; row < rows; ++row) {
             for (std::size_t column = 0; column < columns; ++column) {
                 auto const [exact, magnitude] = ::crucible::test::exact_product(left, right, row, column);
-                ::crucible::test::check_bound(exact, magnitude, depth, 1, out.at(row, column), record);
+                ::crucible::test::check_bound(kTest, exact, magnitude, depth, 1, out.at(row, column), record);
             }
         }
     }
@@ -372,7 +372,7 @@ void test_the_hard_cases_are_inside_the_bound() {
         for (std::size_t row = 0; row < 2; ++row) {
             for (std::size_t column = 0; column < 3; ++column) {
                 auto const [exact, magnitude] = ::crucible::test::exact_product(left, right, row, column);
-                ::crucible::test::check_bound(exact, magnitude, depth, 1, out.at(row, column), record);
+                ::crucible::test::check_bound(kTest, exact, magnitude, depth, 1, out.at(row, column), record);
                 CRUCIBLE_TEST_ASSERT(kTest, ::crucible::test::bits_of_float(out.at(row, column))
                                                 == ::crucible::test::bits_of_float(
                                                     ::crucible::test::model_product(left, right, row, column)));
@@ -512,7 +512,7 @@ void test_sums_of_runs() {
                         exact.add(runs.at(run, column));
                         magnitude.add(::fixy::fp::abs(runs.at(run, column)));
                     }
-                    ::crucible::test::check_bound(exact, magnitude, count, 0, out.at(0, column), record);
+                    ::crucible::test::check_bound(kTest, exact, magnitude, count, 0, out.at(0, column), record);
                 }
             }
             ++cases;
@@ -586,7 +586,7 @@ inline constexpr std::uint64_t kDoubleDigest = 3087225960675716927u;
 // The digests of this unit, and of the units of x86-64-v3 and x86-64-v4 that
 // the build has on a host of their level, hold.
 void test_the_digests_hold() {
-    CRUCIBLE_TEST_ASSERT(kTest, agree_with_the_constants(::crucible::test::digests_of_this_unit()));
+    CRUCIBLE_TEST_ASSERT(kTest, agree_with_the_constants(::crucible::test::digests_of_this_unit(kTest)));
     std::size_t units = 1;
 #if defined(__x86_64__)
     namespace os = ::foundation::os;

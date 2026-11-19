@@ -119,7 +119,7 @@ void publish_and_align(crucible::Vigil& vigil, uint32_t op1_first) {
     }
     for (uint32_t op = 0; op < K; ++op)
         CRUCIBLE_TEST_ASSERT(kTest, dispatch(vigil, 2, op, op1_first).action == DispatchResult::Action::RECORD);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
 
     for (uint32_t op = 0; op < K; ++op)
         CRUCIBLE_TEST_ASSERT(kTest, dispatch(vigil, 3, op, op1_first).action == DispatchResult::Action::RECORD);

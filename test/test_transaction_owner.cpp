@@ -30,6 +30,13 @@
 #include <thread>
 #include <type_traits>
 
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
+
 using crucible::SchemaHash;
 using crucible::ShapeHash;
 
@@ -118,7 +125,7 @@ void feed_one_region(crucible::Vigil& vigil, uint32_t first_iter) {
 void rollback_while_regions_are_in_flight() {
     crucible::Vigil vigil;
     feed_one_region(vigil, 0);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
 
     constexpr uint32_t kRounds = 24;
     for (uint32_t round = 1; round <= kRounds; ++round) {
@@ -147,9 +154,9 @@ void rollback_while_regions_are_in_flight() {
 void rollback_reads_its_region_while_the_store_sweeps() {
     crucible::Vigil vigil;
     feed_one_region(vigil, 0);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
     feed_one_region(vigil, 4);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
 
     constexpr uint32_t kRounds = 32;
     uint32_t restored = 0;

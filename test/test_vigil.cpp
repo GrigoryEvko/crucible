@@ -142,8 +142,8 @@ static void test_region_hashes_under_the_numerics_of_the_config() {
     crucible::Vigil ordered;
     divrig::feed_one_region(strict, 0);
     divrig::feed_one_region(ordered, 0);
-    crucible::test::flush_and_wait_region_published(strict);
-    crucible::test::flush_and_wait_region_published(ordered);
+    crucible::test::flush_and_wait_region_published(kTest, strict);
+    crucible::test::flush_and_wait_region_published(kTest, ordered);
 
     const ::fixy::Ref<const crucible::RegionNode> strict_region =
         strict.active_region().expect("the flush published a region");
@@ -190,7 +190,7 @@ static void test_region_of_other_numerics_does_not_replay(::fixy::TextView direc
     {
         crucible::Vigil recorder{config_with_store(directory, crucible::NumericsPolicy{})};
         divrig::feed_one_region(recorder, 0);
-        crucible::test::flush_and_wait_region_published(recorder);
+        crucible::test::flush_and_wait_region_published(kTest, recorder);
         for (uint32_t i = 0; i < divrig::NUM_OPS; i++) {
             auto aligned = divrig::op_at(3, i);
             (void)crucible::test::dispatch_synthetic(recorder, aligned.entry, aligned.metas, aligned.n_metas);
@@ -244,7 +244,7 @@ static void test_eager_word_change_is_a_divergence() {
     crucible::Vigil vigil;
     const crucible::VigilFgCtx fg = vigil.mint_producer_context();
     divrig::feed_one_region(vigil, 0);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
     uint32_t entries = 0;
     for (uint32_t i = 0; i < divrig::NUM_OPS; i++) {
         auto aligned = divrig::op_at(3, i);
@@ -275,7 +275,7 @@ static void test_eager_word_change_is_a_divergence() {
     CRUCIBLE_TEST_ASSERT(kTest, vigil.eager_numerics() == flushing);
 
     divrig::feed_one_region(vigil, 4);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
     const ::fixy::Ref<const crucible::RegionNode> flushed =
         vigil.active_region().expect("the pipeline published a region after the change");
     CRUCIBLE_TEST_ASSERT(kTest,
@@ -361,7 +361,7 @@ int main() {
         }
     }
 
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
 
     // A published region is not a replay. The mode turns COMPILED only when
     // the foreground aligns to the region and activates the context, and
@@ -417,7 +417,7 @@ int main() {
     const crucible::ContentHash stored_hash = active_region->content_hash;
     CRUCIBLE_TEST_ASSERT(kTest, active_region->plan.is_none() && "the stored region must have no memory plan");
     divrig::feed_one_region(vigil, 0);
-    crucible::test::flush_and_wait_region_published(vigil);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
     for (uint32_t i = 0; i < divrig::NUM_OPS; i++) {
         auto aligned = divrig::op_at(3, i);
         (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);

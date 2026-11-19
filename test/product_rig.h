@@ -10,11 +10,12 @@
 // the array, and it shares no code with the code under test.
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
 #include "exact_sum.h"
 #include "foundation/philox_stream.h"
-#include "test_assert.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -97,7 +98,9 @@ struct Matrix {
         return place.offset + row * place.row_stride + column * place.column_stride;
     }
     [[nodiscard]] T at(std::size_t row, std::size_t column) const noexcept {
-        return element_at(values.view(), position(row, column));
+        return *values.view()
+                    .get(position(row, column))
+                    .expect("a test reads an element at or past the count of its View");
     }
 
     // The strided view of the elements.
@@ -121,7 +124,9 @@ template <class T>
     }
     for (std::size_t row = 0; row < shape.rows; ++row) {
         for (std::size_t column = 0; column < shape.columns; ++column) {
-            element_at(matrix.values.view(), matrix.position(row, column)) = T{};
+            *matrix.values.view()
+                 .get(matrix.position(row, column))
+                 .expect("a test reads an element at or past the count of its View") = T{};
         }
     }
     return matrix;
@@ -147,7 +152,10 @@ template <class T>
 void fill_matrix(Matrix<T>& matrix, PhiloxStream& stream, std::uint64_t spread) noexcept {
     for (std::size_t row = 0; row < matrix.shape.rows; ++row) {
         for (std::size_t column = 0; column < matrix.shape.columns; ++column) {
-            element_at(matrix.values.view(), matrix.position(row, column)) = draw_spread_value<T>(stream, spread);
+            *matrix.values.view()
+                 .get(matrix.position(row, column))
+                 .expect("a test reads an element at or past the count of its View") =
+                draw_spread_value<T>(stream, spread);
         }
     }
 }
@@ -241,16 +249,16 @@ struct BoundRecord {
 // gamma_of covers.  A NaN or an infinite exact sum must give a NaN or an
 // infinity of the same sign.
 template <class T>
-void check_bound(ExactSum<T> const& exact, ExactSum<T> const& magnitude, std::size_t leaves, std::size_t rounds,
-                 T computed, BoundRecord& record) noexcept {
+void check_bound(::fixy::TestRunnerCtx const& test, ExactSum<T> const& exact, ExactSum<T> const& magnitude,
+                 std::size_t leaves, std::size_t rounds, T computed, BoundRecord& record) noexcept {
     ++record.outputs;
     if (exact.is_nan()) {
-        assert(bits_of_float(computed) == bits_of_float(::fixy::quiet_nan_of<T>));
+        CRUCIBLE_TEST_ASSERT(test, bits_of_float(computed) == bits_of_float(::fixy::quiet_nan_of<T>));
         return;
     }
     double const exact_value = exact.template rounded_as<double>();
     if (!::fixy::fp::is_finite(exact_value)) {
-        assert(bits_of_float(static_cast<double>(computed)) == bits_of_float(exact_value));
+        CRUCIBLE_TEST_ASSERT(test, bits_of_float(static_cast<double>(computed)) == bits_of_float(exact_value));
         return;
     }
     ExactSum<T> error = exact;
@@ -266,7 +274,7 @@ void check_bound(ExactSum<T> const& exact, ExactSum<T> const& magnitude, std::si
                        "terms is {}\n",
                        leaves, difference, bound, sum_of_terms);
     }
-    assert(difference <= bound);
+    CRUCIBLE_TEST_ASSERT(test, difference <= bound);
     if (bound > 0.0) {
         double const ratio = difference / bound;
         if (ratio > record.largest_ratio) record.largest_ratio = ratio;

@@ -37,7 +37,7 @@ void test_dispatch_data_flow() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
     align_and_activate(vigil, 3);
 
     auto d0 = make_op(4, 0);
@@ -84,7 +84,7 @@ void test_dispatch_pool_bounds() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    flush_and_wait_region_published(vigil);
+    flush_and_wait_region_published(kTest, vigil);
     align_and_activate(vigil, 3);
 
     auto& pool = vigil.context().pool();
