@@ -8,6 +8,9 @@
 //                             bytes), against a copy of its 40 bytes
 //   feedback_signature,       the product folds on the hash of the family,
 //   loopterm_hash             against their packed forms
+//   hash of the parts         the hash of a record of sums, of a bounded list
+//                             and of a heap array, each against a record of
+//                             fixed size with the same bytes of image
 //
 // THE REFERENCES.  foldhash-f of Orson Peters (2024, the default hasher of
 // hashbrown and of the Rust standard tables) packs the fields into a 128-bit
@@ -34,6 +37,7 @@
 #include <fixy/Bits.h>
 #include <fixy/Core.h>
 #include <fixy/Protocol.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/reflect/Mix.h>
 
 #include "bench_harness.h"
@@ -65,6 +69,50 @@ constexpr std::size_t kBatch = 64;
 
 using SmallBatch = ::fixy::FixedArray<Small, kBatch>;
 using WideBatch = ::fixy::FixedArray<Wide, kBatch>;
+
+// The rows of the sums, the bounded lists and the heap parts.  A sum and a
+// list write their image on the stack first, and the fold reads that image
+// as bytes.  The reference of each is a record of the same count of plain
+// bytes, whose fold reads its words in place.  A heap record folds its count
+// and its words one after the other, and one block of its length.  Its
+// reference is a record of fixed size with the same 264 bytes of image.
+enum class SumCode : std::uint8_t {
+    done = 1,
+    stalled = 2,
+};
+
+struct[[= ::fixy::derive_protocol{}]] SumRecord {
+    ::fixy::Option<std::uint64_t> maybe{};
+    ::fixy::Result<std::uint32_t, SumCode> outcome{std::uint32_t{0}};
+    ::fixy::OneOf<std::uint16_t, std::uint64_t> either{std::uint16_t{0}};
+};
+
+struct[[= ::fixy::derive_protocol{}]] SumBytes {
+    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<SumRecord>> image{};
+};
+
+struct[[= ::fixy::derive_protocol{}]] ListRecord {
+    ::fixy::FixedList<std::uint32_t, 16> words{};
+};
+
+struct[[= ::fixy::derive_protocol{}]] ListBytes {
+    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<ListRecord>> image{};
+};
+
+struct[[= ::fixy::derive_protocol{}]] HeapRecord {
+    ::fixy::HeapArray<std::uint32_t> words{};
+};
+
+// The count of the words of the list row and of the heap row.
+constexpr std::size_t kListWords = 8;
+constexpr std::size_t kHeapWords = 64;
+
+struct[[= ::fixy::derive_protocol{}]] HeapBytes {
+    std::uint64_t count = kHeapWords;
+    ::fixy::FixedArray<std::uint32_t, kHeapWords> words{};
+};
+
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
 // The next word of a splitmix64 stream: the fields of the records of a batch.
 uint64_t next_word(uint64_t& state) noexcept {
@@ -500,9 +548,75 @@ int main() {
     bench::compare(refactor_reports.at(::fixy::index<4>()), refactor_reports.at(::fixy::index<5>())).print_text();
     bench::compare(refactor_reports.at(::fixy::index<6>()), refactor_reports.at(::fixy::index<7>())).print_text();
 
-    // One JSON tail holds the rows of the two groups, because the reader
+    // The hash of the sums, the bounded lists and the heap parts, each
+    // against its reference.  A volatile word changes one part of each record
+    // in each iteration.
+    ::fixy::report(::fixy::Sink::Out, "\n=== hash of the sums, the lists and the heap parts ===\n\n");
+    volatile std::uint64_t vword = 0x0123456789ABCDEFULL;
+    SumRecord sum_record{};
+    sum_record.outcome = ::fixy::Result<std::uint32_t, SumCode>{::fixy::Err<SumCode>{SumCode::stalled}};
+    sum_record.either = ::fixy::OneOf<std::uint16_t, std::uint64_t>{std::uint64_t{7}};
+    SumBytes sum_bytes{};
+    ListRecord list_record{};
+    for (std::size_t index = 0; index < kListWords; ++index) {
+        bool const is_put = list_record.words.append(static_cast<std::uint32_t>(index * 3)).is_ok();
+        if (!is_put) ::fixy::fatal("the list row holds eight words");
+    }
+    ListBytes list_bytes{};
+    HeapRecord heap_record{};
+    heap_record.words = ::fixy::mint_heap_array_with<std::uint32_t>(
+        kAlloc, kHeapWords, [](std::size_t position) noexcept { return static_cast<std::uint32_t>(position * 5); });
+    HeapBytes heap_bytes{};
+
+    ::fixy::FixedArray<bench::Report, 6> part_reports{
+        bench::run("hash<SumRecord>      (3 sums, 23 bytes)",
+                   [&] {
+                       sum_record.maybe = ::fixy::Option<std::uint64_t>::some(std::uint64_t{vword});
+                       auto h = ::fixy::hash(sum_record).raw();
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("hash<SumBytes>       (23 plain bytes)",
+                   [&] {
+                       sum_bytes.image.at(::fixy::index<1>()) = static_cast<std::byte>(vword);
+                       auto h = ::fixy::hash(sum_bytes).raw();
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("hash<ListRecord>     (8 of 16 words, 65 bytes)",
+                   [&] {
+                       *list_record.words.view().get(0).expect("the list holds a word") =
+                           static_cast<std::uint32_t>(vword);
+                       auto h = ::fixy::hash(list_record).raw();
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("hash<ListBytes>      (65 plain bytes)",
+                   [&] {
+                       list_bytes.image.at(::fixy::index<1>()) = static_cast<std::byte>(vword);
+                       auto h = ::fixy::hash(list_bytes).raw();
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("hash<HeapRecord>     (64 words, 264 bytes)",
+                   [&] {
+                       *heap_record.words.view().get(0).expect("the array holds a word") =
+                           static_cast<std::uint32_t>(vword);
+                       auto h = ::fixy::hash(heap_record).raw();
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("hash<HeapBytes>      (the same 264 bytes)",
+                   [&] {
+                       heap_bytes.words.at(::fixy::index<0>()) = static_cast<std::uint32_t>(vword);
+                       auto h = ::fixy::hash(heap_bytes).raw();
+                       bench::do_not_optimize(h);
+                   }),
+    };
+    bench::emit_reports_text(part_reports.view());
+    ::fixy::report(::fixy::Sink::Out, "\n=== compare of the parts with their references ===\n");
+    bench::compare(part_reports.at(::fixy::index<0>()), part_reports.at(::fixy::index<1>())).print_text();
+    bench::compare(part_reports.at(::fixy::index<2>()), part_reports.at(::fixy::index<3>())).print_text();
+    bench::compare(part_reports.at(::fixy::index<4>()), part_reports.at(::fixy::index<5>())).print_text();
+
+    // One JSON tail holds the rows of the three groups, because the reader
     // reads only the last tail of the output.
-    ::fixy::FixedList<bench::Report, 19> all_reports{};
+    ::fixy::FixedList<bench::Report, 25> all_reports{};
     for (bench::Report& report : reports)
         bench::add_report(all_reports, std::move(report));
 #if defined(CRUCIBLE_BENCH_RAPIDHASH)
@@ -511,6 +625,9 @@ int main() {
 #endif
     for (bench::Report& report : refactor_reports)
         bench::add_report(all_reports, std::move(report));
+    for (bench::Report& report : part_reports) {
+        bench::add_report(all_reports, static_cast<bench::Report&&>(report));
+    }
     bench::emit_reports_json(all_reports.view(), json);
     return 0;
 }
