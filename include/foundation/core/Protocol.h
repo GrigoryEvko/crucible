@@ -1484,12 +1484,17 @@ struct HeapFold final {
     }
 };
 
+// True for a leaf whose word folds in place in a block: a leaf of 1, 2, 4 or
+// 8 bytes, whose size divides the 16 bytes of a block.
+template <class Element>
+inline constexpr bool is_block_leaf_ = is_hash_leaf_<Element> && sizeof(Element) <= sizeof(std::uint64_t);
+
 // The fold of a part with an image of fixed size: a leaf of at most 8 bytes
 // as its word, and each other part as the bytes of its image.
 template <class T>
 constexpr void fold_fixed_part_(HeapFold& fold, T const& part) noexcept {
     using Bare = std::remove_cv_t<T>;
-    if constexpr (is_hash_leaf_<Bare> && sizeof(Bare) <= sizeof(std::uint64_t)) {
+    if constexpr (is_block_leaf_<Bare>) {
         fold.put_leaf<sizeof(Bare)>(static_cast<std::uint64_t>(detail::leaf_word_(part)));
     } else {
         constexpr std::size_t bytes = image_bytes_at(^^Bare);
@@ -1498,6 +1503,33 @@ constexpr void fold_fixed_part_(HeapFold& fold, T const& part) noexcept {
         for (std::byte const byte : image.view()) {
             fold.put_byte(byte);
         }
+    }
+}
+
+// The fold of count leaves from first, one after the other in the image.
+// The leaves before the start of the next block go one at a time.  Then each
+// group of leaves that fills a block folds the block with the offsets of its
+// leaves, as the fold of an array does, and the remaining leaves go one at a
+// time.  A position that is no multiple of the size of a leaf never starts a
+// block, so each leaf then goes one at a time.  Complexity: one fold for
+// each 16 bytes, and one step for each leaf outside a full block.
+template <class Element>
+constexpr void fold_leaf_run_(HeapFold& fold, Element const* first, std::size_t count) noexcept {
+    constexpr std::size_t step = sizeof(Element);
+    constexpr std::size_t per_block = hash_block_bytes / step;
+    std::size_t index = 0;
+    for (; index < count && fold.position != 0; ++index) {
+        fold.put_leaf<step>(static_cast<std::uint64_t>(detail::leaf_word_(first[index])));
+    }
+    if (fold.position == 0) {
+        for (; index + per_block <= count; index += per_block) {
+            detail::fill_block_<step>(fold.state, first + index, std::make_index_sequence<per_block>{});
+            fold.state.fold_block();
+            fold.total += hash_block_bytes;
+        }
+    }
+    for (; index < count; ++index) {
+        fold.put_leaf<step>(static_cast<std::uint64_t>(detail::leaf_word_(first[index])));
     }
 }
 
@@ -1513,19 +1545,26 @@ constexpr void fold_heap_parts_([[maybe_unused]] HeapFold& fold, [[maybe_unused]
 }
 
 // Folds the image of one part, byte for byte as encode_heap_part_ writes it.
-// Complexity: one step for each leaf, and one fold for each 16 bytes.
+// The characters of a text and the leaves of an array fold as a run of
+// leaves.  Complexity: one fold for each 16 bytes, and one step for each
+// other element.
 template <class T>
 constexpr void fold_heap_part_(HeapFold& fold, T const& part) noexcept {
     using Bare = std::remove_cv_t<T>;
     if constexpr (is_heap_text_at(^^Bare)) {
         fold.put_leaf<heap_count_bytes>(static_cast<std::uint64_t>(part.size()));
-        for (char const character : part.view()) {
-            fold.put_leaf<1>(static_cast<std::uint64_t>(static_cast<unsigned char>(character)));
-        }
+        TextView const text = part.view();
+        detail::fold_leaf_run_(fold, detail::text_first_(text), text.size());
     } else if constexpr (is_heap_array_at(^^Bare)) {
+        using Element = typename[:heap_element_at(^^Bare):];
         fold.put_leaf<heap_count_bytes>(static_cast<std::uint64_t>(part.size()));
-        for (auto const& element : part.view()) {
-            detail::fold_fixed_part_(fold, element);
+        if constexpr (is_block_leaf_<Element>) {
+            View<Element const> const run = part.view();
+            detail::fold_leaf_run_(fold, first_of_(detail::ViewDoor::key(), run), run.size());
+        } else {
+            for (auto const& element : part.view()) {
+                detail::fold_fixed_part_(fold, element);
+            }
         }
     } else if constexpr (has_heap_image_at(^^Bare, 0)) {
         constexpr std::meta::info type = std::meta::dealias(^^Bare);

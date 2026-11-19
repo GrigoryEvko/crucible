@@ -311,6 +311,66 @@ void test_heap_hash_of_an_array_of_lists() {
     }
 }
 
+// Runs of leaves at each kind of position: the words of AlignedWords start
+// at 12, a multiple of their 4 bytes, and the words of OddWords start at 9,
+// which is no multiple.  The wide words of AlignedWide start at 8, and those
+// of OddWide at 9.
+struct[[= derive_protocol{}]] AlignedWords {
+    std::uint32_t head = 0;
+    HeapArray<std::uint32_t> words{};
+};
+
+struct[[= derive_protocol{}]] OddWords {
+    std::uint8_t head = 0;
+    HeapArray<std::uint32_t> words{};
+};
+
+struct[[= derive_protocol{}]] AlignedWide {
+    HeapArray<std::uint64_t> words{};
+};
+
+struct[[= derive_protocol{}]] OddWide {
+    std::uint8_t head = 0;
+    HeapArray<std::uint64_t> words{};
+};
+
+// The hash of value is the hand fold of its image.
+template <class T>
+[[nodiscard]] bool hashes_as_its_image(T const& value) noexcept {
+    Bytes image = mint_heap_array_zeroed<std::byte>(test_alloc(), encoded_size(value));
+    encode(value, image.view());
+    Bytes const& read = image;
+    return hash(value).raw() == hand_heap_hash(read.view());
+}
+
+// The fold of a run of leaves takes whole blocks only from the start of a
+// block, so each count of words at each kind of position gives the hand fold.
+void test_heap_hash_of_runs_at_each_position() {
+    ::crucible::test::PhiloxStream stream{0x52554E5341544F46ULL};
+    for (std::size_t count = 0; count < 41; ++count) {
+        std::uint64_t const seed = stream.next_word();
+        auto const word_at = [seed](std::size_t position) noexcept {
+            return static_cast<std::uint32_t>(seed >> (position % 32)) ^ static_cast<std::uint32_t>(position);
+        };
+        auto const wide_at = [seed](std::size_t position) noexcept -> std::uint64_t {
+            return seed ^ (position * std::uint64_t{0x9E3779B97F4A7C15ULL});
+        };
+        AlignedWords aligned{};
+        aligned.head = static_cast<std::uint32_t>(seed);
+        aligned.words = mint_heap_array_with<std::uint32_t>(test_alloc(), count, word_at);
+        OddWords odd{};
+        odd.head = static_cast<std::uint8_t>(seed);
+        odd.words = mint_heap_array_with<std::uint32_t>(test_alloc(), count, word_at);
+        AlignedWide aligned_wide{};
+        aligned_wide.words = mint_heap_array_with<std::uint64_t>(test_alloc(), count, wide_at);
+        OddWide odd_wide{};
+        odd_wide.head = static_cast<std::uint8_t>(seed);
+        odd_wide.words = mint_heap_array_with<std::uint64_t>(test_alloc(), count, wide_at);
+        CRUCIBLE_FATAL_INVARIANT(hashes_as_its_image(aligned) && hashes_as_its_image(odd));
+        CRUCIBLE_FATAL_INVARIANT(hashes_as_its_image(aligned_wide) && hashes_as_its_image(odd_wide));
+    }
+}
+
 void test_heap_format_names_each_part() {
     FixedText<160> out{};
     TextView const expected{
@@ -423,6 +483,7 @@ int main() {
     test_heap_decode_inverts_encode();
     test_heap_decode_refuses_each_fault();
     test_heap_hash_of_an_array_of_lists();
+    test_heap_hash_of_runs_at_each_position();
     test_heap_format_names_each_part();
     test_heap_decode_agrees_with_an_oracle();
     return 0;
