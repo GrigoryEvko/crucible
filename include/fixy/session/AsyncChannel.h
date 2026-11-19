@@ -84,7 +84,7 @@ template <typename SelfProto, typename PeerProto, typename SelfTag, typename Pee
           AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Parent, typename Brand,
           typename ResourceSelf, typename ResourcePeer, typename SelfBody, typename PeerBody>
     requires CtxFitsAsyncForkedChannel<Ctx, SelfProto, PeerProto, Parent, SelfTag, PeerTag, ResourceSelf, ResourcePeer>
-          && SessionResource<ResourceSelf> && SessionResource<ResourcePeer>
+          && PlainSessionResource<ResourceSelf> && PlainSessionResource<ResourcePeer>
           && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
           && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
           && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Brand, Ctx>

@@ -2,6 +2,10 @@
 
 #include <fixy/channels/SwmrSession.h>
 
+// The second table of the unit, so the root of the pole tables holds two
+// families.
+#include <fixy/channels/SubstrateSessionBridge.h>
+
 #include <foundation/Linear.h>
 
 namespace fixy::channels::swmr_session {
@@ -64,6 +68,26 @@ static_assert(std::is_same_v<WriterRuntimeProto<int>,
                              ::fixy::session::Loop<::fixy::session::Send<int, ::fixy::session::Continue>>>);
 static_assert(std::is_same_v<ReaderRuntimeProto<int>,
                              ::fixy::session::Loop<::fixy::session::Recv<int, ::fixy::session::Continue>>>);
+
+// Each handle is a pole of the session, and its table gives the writer the
+// writer protocol and each reader the reader protocol.  A mint of one end
+// refuses a pole, and the pole door admits it.
+static_assert(::fixy::session::ChannelPole<WriterHandle> && ::fixy::session::ChannelPole<ReaderHandle>);
+static_assert(!::fixy::session::PlainSessionResource<WriterHandle>);
+static_assert(std::is_same_v<::fixy::session::pole_protocol_t<WriterHandle>, WriterRuntimeProto<int>>);
+static_assert(std::is_same_v<::fixy::session::pole_peer_protocol_t<WriterHandle>, ReaderRuntimeProto<int>>);
+static_assert(std::is_same_v<::fixy::session::pole_protocol_t<ReaderHandle>, ReaderRuntimeProto<int>>);
+static_assert(std::is_same_v<::fixy::session::pole_peer_protocol_t<ReaderHandle>, WriterRuntimeProto<int>>);
+
+// The unit includes the bridge too, so the root of the pole tables holds two
+// families, and each pole reads the one table that knows it.
+struct BridgeUserTag {};
+struct BridgeUserBrand {};
+using BridgedWire = ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::wire, long, 8,
+                                                            BridgeUserTag, BridgeUserBrand>;
+static_assert(std::is_same_v<::fixy::session::pole_protocol_t<typename BridgedWire::ConsumerHandle>,
+                             ::fixy::session::Loop<::fixy::session::Recv<long, ::fixy::session::Continue>>>);
+static_assert(std::is_same_v<::fixy::session::pole_protocol_t<WriterHandle>, WriterRuntimeProto<int>>);
 
 }  // namespace detail::swmr_session_self_test
 

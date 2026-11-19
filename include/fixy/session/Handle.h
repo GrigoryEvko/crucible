@@ -865,8 +865,11 @@ public:
     // refuses each end of a forked channel when the program compiles, because
     // the body of each side brands it.  The precondition refuses an end whose
     // mark names a peer, as an end of a test channel or of a rewound channel.
+    // The gate refuses a Resource that reaches a pole of a channel, because
+    // the protocol of a pole comes from the pole table of its channel, and a
+    // rewind names a protocol of its own.
     template <typename R, typename LoopCtx, typename Resource, typename EndLoopCtx, AbandonmentPolicy Policy>
-        requires RewindableTo<R, LoopCtx, EndLoopCtx>
+        requires RewindableTo<R, LoopCtx, EndLoopCtx> && (!ReachesAChannelPole<Resource>)
     [[nodiscard]] static constexpr auto
     rewind(SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
            std::source_location loc = std::source_location::current()) noexcept;
@@ -883,7 +886,8 @@ public:
     //
     // The two handles must be the two ends of one channel.  The gate refuses
     // two ends whose types show two channels, and the precondition refuses
-    // two ends whose marks do not name each other.
+    // two ends whose marks do not name each other.  The gate refuses a
+    // Resource that reaches a pole of a channel, as rewind does.
     template <typename Rewound, typename PeerRewound>
     struct RewoundChannel {
         Rewound rewound;
@@ -893,6 +897,7 @@ public:
     template <typename R, typename LoopCtx, typename Resource, typename PeerResource, typename EndLoopCtx,
               typename PeerEndLoopCtx, AbandonmentPolicy Policy>
         requires RewindableChannelTo<R, LoopCtx, EndLoopCtx, PeerEndLoopCtx, Resource, PeerResource>
+              && (!ReachesAChannelPole<Resource>) && (!ReachesAChannelPole<PeerResource>)
     [[nodiscard]] static constexpr auto rewind_channel(
         SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
         SessionHandle<End, PeerResource, PeerEndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& peer_at_end,
@@ -2104,7 +2109,7 @@ constexpr auto HandleFactory::open_(SessionOpenKey const&, Resource r, HoldSlots
 // policy that keeps no record has no mark to read, and a constant evaluation
 // claims no record.
 template <typename R, typename LoopCtx, typename Resource, typename EndLoopCtx, AbandonmentPolicy Policy>
-    requires RewindableTo<R, LoopCtx, EndLoopCtx>
+    requires RewindableTo<R, LoopCtx, EndLoopCtx> && (!ReachesAChannelPole<Resource>)
 constexpr auto HandleFactory::rewind(
     SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
     std::source_location loc) noexcept {
@@ -2134,6 +2139,7 @@ constexpr auto HandleFactory::rewind(
 template <typename R, typename LoopCtx, typename Resource, typename PeerResource, typename EndLoopCtx,
           typename PeerEndLoopCtx, AbandonmentPolicy Policy>
     requires RewindableChannelTo<R, LoopCtx, EndLoopCtx, PeerEndLoopCtx, Resource, PeerResource>
+          && (!ReachesAChannelPole<Resource>) && (!ReachesAChannelPole<PeerResource>)
 constexpr auto HandleFactory::rewind_channel(
     SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
     SessionHandle<End, PeerResource, PeerEndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& peer_at_end,
@@ -2265,8 +2271,8 @@ concept CtxFitsForkedSides =
     && PermissionFlowCloses<SelfProto, ::foundation::permissions::EmptyPermSet>
     && PermissionFlowCloses<PeerProto, ::foundation::permissions::EmptyPermSet>
     && CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto>
-    && ::fixy::concurrent::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag> && SessionResource<ResourceSelf>
-    && SessionResource<ResourcePeer> && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
+    && ::fixy::concurrent::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag> && PlainSessionResource<ResourceSelf>
+    && PlainSessionResource<ResourcePeer> && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
     && ChannelSidesAgree<SelfProto, PeerProto, ResourceSelf, ResourcePeer>
     && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
     && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Brand, Ctx>;
@@ -2308,10 +2314,10 @@ class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
         requires(sizeof...(Record) <= 1)
              && (std::is_same_v<PeerProto, detail::one_end_peer>
                  || ChannelSidesAgree<SelfProto, PeerProto, ResourceSelf, ResourcePeer>)
-    [[nodiscard]] static constexpr auto open_end_(ResourceSelf resource, HoldSlots<PS> slots, std::source_location loc,
+    [[nodiscard]] static constexpr auto open_end_(ResourceSelf resource, HoldSlots<PS> slots, detail::mint_site_ site,
                                                   Record... record) noexcept {
         return HandleFactory::open_<SelfProto, ResourceSelf, Policy, PS, LoopCtx>(
-            SessionOpenKey{}, std::forward<ResourceSelf>(resource), std::move(slots), loc, record...);
+            SessionOpenKey{}, std::forward<ResourceSelf>(resource), std::move(slots), site.loc, record...);
     }
 
     // One side of a forked channel.  It builds the endpoint in the thread
@@ -2334,7 +2340,7 @@ class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
         void operator()(View const& view, Ctx const& ctx) noexcept {
             auto head =
                 open_end_<Proto, PeerProto, Resource, PeerResource, Policy, ::foundation::permissions::EmptyPermSet,
-                          detail::brand_ctx_t<Body>>(std::forward<Resource>(resource), no_slots_{}, site.loc, endpoint);
+                          detail::brand_ctx_t<Body>>(std::forward<Resource>(resource), no_slots_{}, site, endpoint);
             auto at_end = std::invoke(std::move(body), std::move(head), view, ctx);
             static_cast<void>(std::move(at_end).close());
         }
@@ -2349,7 +2355,8 @@ public:
         requires CtxFitsSessionFrom<Ctx, Proto, Resource>
     [[nodiscard]] static constexpr auto open(Ctx const&, Resource r, std::source_location loc) noexcept {
         return open_end_<Proto, detail::one_end_peer, Resource, Resource, Policy,
-                         ::foundation::permissions::EmptyPermSet>(std::forward<Resource>(r), no_slots_{}, loc);
+                         ::foundation::permissions::EmptyPermSet>(std::forward<Resource>(r), no_slots_{},
+                                                                  detail::mint_site_{loc});
     }
 
     // mint_permissioned_session: consumes one token for each tag, and
@@ -2365,7 +2372,22 @@ public:
         using Set = ::foundation::permissions::PermSet<Tags...>;
         return open_end_<Proto, detail::one_end_peer, Resource, Resource, Policy, Set>(
             std::forward<Resource>(resource), HoldFactory::slots_of(std::move(tokens)...),
-            std::source_location::current());
+            detail::mint_site_{std::source_location::current()});
+    }
+
+    // mint_substrate_session of fixy/channels/SubstrateSessionBridge.h and
+    // the session mints of fixy/channels/SwmrSession.h: opens a pole of a
+    // channel on the protocol that the pole table of the channel names
+    // (fixy/session/Admission.h).  The caller names no protocol, so the poles
+    // of one channel run the two protocols of one table, and the relation of
+    // the two sides holds for them.  The session owns the pole.
+    template <AbandonmentPolicy Policy, typename Ctx, typename Pole>
+        requires CtxFitsPoleSession<Ctx, Pole>
+    [[nodiscard]] static constexpr auto open_pole(Ctx const&, Pole pole,
+                                                  std::source_location loc = std::source_location::current()) noexcept {
+        return open_end_<pole_protocol_t<Pole>, pole_peer_protocol_t<Pole>, Pole, Pole, Policy,
+                         ::foundation::permissions::EmptyPermSet>(std::move(pole), no_slots_{},
+                                                                  detail::mint_site_{loc});
     }
 
     // with_session: runs the body on the first handle of a session that
@@ -2380,7 +2402,7 @@ public:
         auto at_end = std::invoke(
             std::move(body),
             open_end_<Proto, detail::one_end_peer, Resource, Resource, Policy, ::foundation::permissions::EmptyPermSet,
-                      detail::brand_ctx_t<Body>>(std::forward<Resource>(r), no_slots_{}, loc));
+                      detail::brand_ctx_t<Body>>(std::forward<Resource>(r), no_slots_{}, detail::mint_site_{loc}));
         return std::move(at_end).close();
     }
 
@@ -2395,7 +2417,7 @@ public:
     [[nodiscard]] static ::foundation::permissions::Permission<Parent, Brand>
     fork_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                  ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body,
-                 std::source_location loc) noexcept {
+                 std::source_location loc = std::source_location::current()) noexcept {
         using SelfSide = forked_endpoint_<SelfProto, PeerProto, Policy, ResourceSelf, ResourcePeer, SelfBody>;
         using PeerSide = forked_endpoint_<PeerProto, SelfProto, Policy, ResourcePeer, ResourceSelf, PeerBody>;
         const auto [self_endpoint, peer_endpoint] =
@@ -2411,7 +2433,7 @@ public:
     // mint_test_channel: the two endpoints of one channel to one caller, for
     // a context that holds the Test capability.
     template <typename Proto, AbandonmentPolicy Policy, typename Ctx, typename ResourceA, typename ResourceB>
-        requires CtxFitsTestChannel<Ctx, Proto> && SessionResource<ResourceA> && SessionResource<ResourceB>
+        requires CtxFitsTestChannel<Ctx, Proto> && PlainSessionResource<ResourceA> && PlainSessionResource<ResourceB>
               && ChannelEndsShareAPriority<ResourceA, ResourceB>
     [[nodiscard]] static constexpr auto open_test_channel(Ctx const&, ResourceA resource_a, ResourceB resource_b,
                                                           std::source_location loc) noexcept {
@@ -2421,10 +2443,10 @@ public:
         }
         auto self =
             open_end_<Proto, dual_of_t<Proto>, ResourceA, ResourceB, Policy, ::foundation::permissions::EmptyPermSet>(
-                std::forward<ResourceA>(resource_a), no_slots_{}, loc, records.self);
+                std::forward<ResourceA>(resource_a), no_slots_{}, detail::mint_site_{loc}, records.self);
         auto peer =
             open_end_<dual_of_t<Proto>, Proto, ResourceB, ResourceA, Policy, ::foundation::permissions::EmptyPermSet>(
-                std::forward<ResourceB>(resource_b), no_slots_{}, loc, records.peer);
+                std::forward<ResourceB>(resource_b), no_slots_{}, detail::mint_site_{loc}, records.peer);
         return TestChannelEnds<decltype(self), decltype(peer)>{std::move(self), std::move(peer)};
     }
 };

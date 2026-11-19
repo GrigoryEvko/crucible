@@ -4539,7 +4539,7 @@ fixy_test(test_endpoint)
 # carries, it owns the handle, and the table names only its two channels.
 fixy_neg_compile_test(neg_substrate_session_payload_row_outside_ctx
   "no matching function for call to .mint_substrate_session<substrate_row_fixture::Channel"
-  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>."
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, fixy::session::pole_protocol_t<Pole> >."
   "satisfaction of .CtxFitsSubstrateSessionMint<Substr, Dir, Ctx>.")
 fixy_neg_compile_test(neg_substrate_session_lvalue_handle
   "no matching function for call to .mint_substrate_session<substrate_lvalue_fixture::Channel"
@@ -4557,6 +4557,29 @@ fixy_neg_compile_test(neg_substrate_session_probe_gives_one_end_a_protocol
 fixy_neg_compile_test(neg_substrate_session_one_end_protocol
   "invalid class name in declaration of .using fixy::channels::default_proto_for_t = "
   "fixy::session::Loop<fixy::session::Send<int, fixy::session::Continue> >")
+# A pole of a channel enters a session only through the pole door, which
+# takes the two protocols of the channel from its pole table.  No mint of one
+# end admits a Resource that reaches a pole: not the pole, not a class that
+# holds it, and not a crash or a checkpoint session.  The fork asks the
+# relation of the two sides.
+fixy_neg_compile_test(neg_sess_plain_session_over_a_channel_pole
+  "no matching function for call to .mint_session<fixy::session::Loop<fixy::session::Send<long int"
+  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, plain_pole_fixture::Tag, foundation::permissions::._anon_[0-9]+>::ProducerHandle")
+fixy_neg_compile_test(neg_sess_session_over_a_held_channel_pole
+  "no matching function for call to .mint_session<fixy::session::Loop<fixy::session::Send<long int"
+  "ReachesAChannelPole<Resource>. .with Resource = held_pole_fixture::HeldPole")
+fixy_neg_compile_test(neg_sess_crash_session_over_a_channel_pole
+  "no matching function for call to .mint_crash_session<Proto, crash_pole_fixture::Alice, crash_pole_fixture::Bob>"
+  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<")
+fixy_neg_compile_test(neg_sess_checkpoint_session_over_a_channel_pole
+  "no matching function for call to .mint_checkpoint_session<checkpoint_pole_fixture::Decider"
+  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<")
+fixy_neg_compile_test(neg_sess_second_pole_table_for_a_bridged_pole
+  "call to non-.constexpr. function .void fixy::session::detail::two_pole_tables_know_one_pole"
+  "no matching function for call to .mint_substrate_session<second_table_fixture::Channel")
+fixy_neg_compile_test(neg_sess_forked_sides_not_duals
+  "no matching function for call to .fixy::session::SessionMintDoor::fork_channel<"
+  "required for the satisfaction of .ChannelSidesAgree<SelfProto, PeerProto, ResourceSelf, ResourcePeer>. .with SelfProto = fixy::session::Send<<unnamed>::Msg, fixy::session::End>. PeerProto = fixy::session::Send<<unnamed>::Msg")
 
 # An endpoint binds a handle to an execution context, and its gate is the
 # gate of the session that the endpoint can start.
@@ -4565,7 +4588,7 @@ fixy_neg_compile_test(neg_endpoint_int_as_ctx
   "satisfaction of .IsExecCtx<Ctx>. .with Ctx = int.")
 fixy_neg_compile_test(neg_endpoint_payload_row_outside_ctx
   "no matching function for call to .mint_endpoint<endpoint_row_fixture::Channel"
-  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>."
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, fixy::session::pole_protocol_t<Pole> >."
   "satisfaction of .CtxFitsEndpointMint<Substr, Dir, Ctx>.")
 
 # The stage mints consume their endpoints by move, in the direction the

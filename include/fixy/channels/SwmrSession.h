@@ -274,34 +274,49 @@ template <SwmrSessionSurface Swmr>
     return session.reader();
 }
 
+// The pole table of a session (fixy/session/Admission.h, section The pole
+// table of a channel): the writer handle runs the writer protocol, and each
+// reader handle runs the reader protocol.
+template <class Pole>
+    requires SwmrSessionSurface<typename Pole::channel_type>
+          && (std::same_as<Pole, typename Pole::channel_type::WriterHandle>
+              || std::same_as<Pole, typename Pole::channel_type::ReaderHandle>)
+struct swmr_pole_protocols {
+    static constexpr bool is_writer = std::same_as<Pole, typename Pole::channel_type::WriterHandle>;
+    using writer_protocol = WriterRuntimeProto<typename Pole::channel_type::value_type>;
+    using reader_protocol = ReaderRuntimeProto<typename Pole::channel_type::value_type>;
+    using self_protocol = std::conditional_t<is_writer, writer_protocol, reader_protocol>;
+    using peer_protocol = std::conditional_t<is_writer, reader_protocol, writer_protocol>;
+};
+
 // The gate of each session mint: a channel of the right shape, the
-// handle of the mint's role passed by move, and the gate of
-// fixy::session::mint_session for the role's protocol over that handle.
-// The handle is a template parameter so that each refusal is a clause
-// of one concept: a type that is not a channel, a handle of the other
-// role, and a handle passed as an lvalue all fail here.
+// handle of the mint's role passed by move, and the gate of the pole door
+// of fixy/session/Handle.h for that handle.  The handle is a template
+// parameter so that each refusal is a clause of one concept: a type that
+// is not a channel, a handle of the other role, and a handle passed as an
+// lvalue all fail here.
 template <typename Ctx, typename Swmr, typename Handle>
 concept CtxFitsSwmrWriterSession =
-    SwmrSessionSurface<Swmr> && SwmrWriterHandleOf<Swmr, Handle>
-    && ::fixy::session::CtxFitsSession<Ctx, WriterRuntimeProto<typename Swmr::value_type>, Handle>;
+    SwmrSessionSurface<Swmr> && SwmrWriterHandleOf<Swmr, Handle> && ::fixy::session::CtxFitsPoleSession<Ctx, Handle>;
 
 template <typename Ctx, typename Swmr, typename Handle>
-concept CtxFitsSwmrReaderSession =
-    SwmrSessionSurface<Swmr> && std::same_as<Handle, typename Swmr::ReaderHandle>
-    && ::fixy::session::CtxFitsSession<Ctx, ReaderRuntimeProto<typename Swmr::value_type>, Handle>;
+concept CtxFitsSwmrReaderSession = SwmrSessionSurface<Swmr> && std::same_as<Handle, typename Swmr::ReaderHandle>
+                                && ::fixy::session::CtxFitsPoleSession<Ctx, Handle>;
 
+// Each mint opens the handle on the protocol that the table above names
+// for its role.
 template <typename Swmr, typename Ctx, typename Handle>
     requires CtxFitsSwmrWriterSession<Ctx, Swmr, Handle>
 [[nodiscard]] constexpr auto mint_writer_runtime_session(Ctx const& ctx, Handle&& handle) noexcept {
-    return ::fixy::session::mint_session<WriterRuntimeProto<typename Swmr::value_type>>(ctx,
-                                                                                        std::forward<Handle>(handle));
+    return ::fixy::session::SessionMintDoor::open_pole<::fixy::session::DefaultAbandonmentPolicy>(
+        ctx, std::forward<Handle>(handle));
 }
 
 template <typename Swmr, typename Ctx, typename Handle>
     requires CtxFitsSwmrReaderSession<Ctx, Swmr, Handle>
 [[nodiscard]] constexpr auto mint_reader_runtime_session(Ctx const& ctx, Handle&& handle) noexcept {
-    return ::fixy::session::mint_session<ReaderRuntimeProto<typename Swmr::value_type>>(ctx,
-                                                                                        std::forward<Handle>(handle));
+    return ::fixy::session::SessionMintDoor::open_pole<::fixy::session::DefaultAbandonmentPolicy>(
+        ctx, std::forward<Handle>(handle));
 }
 
 // The write of the writer session: a publish never lacks room, so the
@@ -331,3 +346,14 @@ struct ReaderBrand {};
 }  // namespace detail::swmr_session_witness
 
 }  // namespace fixy::channels::swmr_session
+
+// The family of this header in the root of the pole tables.  The
+// registration stands in the file of its template.
+namespace fixy::session::pole_tables::swmr {
+
+inline constexpr ::fixy::session::pole_table swmr_session{.table =
+                                                              ^^::fixy::channels::swmr_session::swmr_pole_protocols};
+
+inline constexpr ::fixy::session::transition::seal table_seal{.kind = ^^::fixy::session::pole_table, .count = 1};
+
+}  // namespace fixy::session::pole_tables::swmr

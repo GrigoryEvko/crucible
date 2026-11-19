@@ -107,25 +107,54 @@ template <class Substr, Direction Dir>
 concept IsBridgeableDirection = detail::HasHandleFor<Substr, Dir> && detail::HasDefaultProtoFor<Substr, Dir>
                              && detail::HandleHasPoleOf<Substr, Dir>;
 
+// The pole table of the bridge (fixy/session/Admission.h, section The pole
+// table of a channel): a handle of a bridged channel runs the protocol of
+// its direction, and each handle of the other direction runs the protocol of
+// that direction.
+template <class Pole>
+    requires detail::IsBridgedChannel<typename Pole::channel_type>
+          && (std::same_as<Pole, typename Pole::channel_type::ProducerHandle>
+              || std::same_as<Pole, typename Pole::channel_type::ConsumerHandle>)
+struct bridged_pole_protocols {
+    static constexpr Direction direction =
+        std::same_as<Pole, typename Pole::channel_type::ProducerHandle> ? Direction::Producer : Direction::Consumer;
+    static constexpr Direction other_direction =
+        direction == Direction::Producer ? Direction::Consumer : Direction::Producer;
+    using self_protocol = default_proto_for_t<typename Pole::channel_type, direction>;
+    using peer_protocol = default_proto_for_t<typename Pole::channel_type, other_direction>;
+};
+
 // The gate of mint_substrate_session: a bridgeable direction, and the gate
-// of fixy::session::mint_session for its protocol over its handle.  So the
-// context admits each effect that a payload of the protocol carries.  The
-// pop of a merge pole takes the bare tag of Nondet, so the context of such
-// a pole holds Nondet.
+// of the pole door of fixy/session/Handle.h for its handle.  So the context
+// admits each effect that a payload of the protocol carries.  The pop of a
+// merge pole takes the bare tag of Nondet, so the context of such a pole
+// holds Nondet.
 template <class Substr, Direction Dir, class Ctx>
 concept CtxFitsSubstrateSessionMint =
     ::foundation::effects::IsExecCtx<Ctx> && IsBridgeableDirection<Substr, Dir>
-    && ::fixy::session::CtxFitsSession<Ctx, default_proto_for_t<Substr, Dir>, handle_for_t<Substr, Dir>>
+    && ::fixy::session::CtxFitsPoleSession<Ctx, handle_for_t<Substr, Dir>>
     && (!::fixy::concurrent::is_merge_consumer_handle_v<handle_for_t<Substr, Dir>>
         || ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>);
 
 // The handle comes in by move.  The caller keeps only a moved-from handle,
 // which reaches no channel, so the session and the caller never act on the
-// channel at the same time.
+// channel at the same time.  The pole door takes the protocol of the handle
+// from the table above.
 template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSubstrateSessionMint<Substr, Dir, Ctx>
 [[nodiscard]] constexpr auto mint_substrate_session(Ctx const& ctx, handle_for_t<Substr, Dir>&& handle) noexcept {
-    return ::fixy::session::mint_session<default_proto_for_t<Substr, Dir>>(ctx, std::move(handle));
+    return ::fixy::session::SessionMintDoor::open_pole<::fixy::session::DefaultAbandonmentPolicy>(ctx,
+                                                                                                  std::move(handle));
 }
 
 }  // namespace fixy::channels
+
+// The family of the bridge in the root of the pole tables.  The
+// registration stands in the file of its template.
+namespace fixy::session::pole_tables::bridge {
+
+inline constexpr ::fixy::session::pole_table permissioned_channel{.table = ^^::fixy::channels::bridged_pole_protocols};
+
+inline constexpr ::fixy::session::transition::seal table_seal{.kind = ^^::fixy::session::pole_table, .count = 1};
+
+}  // namespace fixy::session::pole_tables::bridge

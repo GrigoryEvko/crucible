@@ -829,8 +829,9 @@ concept CheckpointSessionAdmissible =
 // each payload, so that row is the row of Proto.
 template <typename Ctx, typename Proto, typename PeerProto, typename Resource,
           std::size_t WorkBound = checkpoint_work_bound>
-concept CtxFitsCheckpointSession = CheckpointSessionAdmissible<Proto, PeerProto, WorkBound> && SessionResource<Resource>
-                                && CtxAdmitsProtocolRow<Ctx, checkpoint_erase_t<Proto>>;
+concept CtxFitsCheckpointSession =
+    CheckpointSessionAdmissible<Proto, PeerProto, WorkBound> && PlainSessionResource<Resource>
+    && CtxAdmitsProtocolRow<Ctx, checkpoint_erase_t<Proto>>;
 
 // ── The runtime ─────────────────────────────────────────────────────
 

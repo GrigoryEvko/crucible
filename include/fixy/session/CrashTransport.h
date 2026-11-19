@@ -719,7 +719,7 @@ concept CrashSessionAdmissible =
 // counts in.
 template <typename Ctx, typename Proto, typename Self, typename Peer, typename Reliable, typename Resource,
           typename Third>
-concept CtxFitsCrashSession = CrashSessionAdmissible<Proto, Self, Peer, Reliable> && SessionResource<Resource>
+concept CtxFitsCrashSession = CrashSessionAdmissible<Proto, Self, Peer, Reliable> && PlainSessionResource<Resource>
                            && CtxAdmitsProtocolRow<Ctx, Proto> && std::is_nothrow_copy_constructible_v<Ctx>
                            && detail::crash_transport::is_third_receiver(^^Proto, ^^Peer, ^^Third);
 

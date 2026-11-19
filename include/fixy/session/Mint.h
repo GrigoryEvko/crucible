@@ -101,8 +101,8 @@ void mint_channel(ResourceA, ResourceB) noexcept =
 template <typename Proto, typename SelfTag, typename PeerTag, AbandonmentPolicy Policy = DefaultAbandonmentPolicy,
           typename Ctx, typename Parent, typename Brand, typename ResourceSelf, typename ResourcePeer,
           typename SelfBody, typename PeerBody>
-    requires CtxFitsForkedChannel<Ctx, Proto, Parent, SelfTag, PeerTag> && SessionResource<ResourceSelf>
-          && SessionResource<ResourcePeer> && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
+    requires CtxFitsForkedChannel<Ctx, Proto, Parent, SelfTag, PeerTag> && PlainSessionResource<ResourceSelf>
+          && PlainSessionResource<ResourcePeer> && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
           && detail::ForkedEndpointBody<SelfBody, Proto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
           && detail::ForkedEndpointBody<PeerBody, dual_of_t<Proto>, ResourcePeer, Policy, PeerTag, Brand, Ctx>
 [[nodiscard]] ::foundation::permissions::Permission<Parent, Brand>
@@ -121,7 +121,7 @@ mint_forked_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent
 // capability.
 template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename ResourceA,
           typename ResourceB>
-    requires CtxFitsTestChannel<Ctx, Proto> && SessionResource<ResourceA> && SessionResource<ResourceB>
+    requires CtxFitsTestChannel<Ctx, Proto> && PlainSessionResource<ResourceA> && PlainSessionResource<ResourceB>
           && ChannelEndsShareAPriority<ResourceA, ResourceB>
 [[nodiscard]] constexpr auto mint_test_channel(Ctx const& ctx, ResourceA resource_a, ResourceB resource_b,
                                                std::source_location loc = std::source_location::current()) noexcept {

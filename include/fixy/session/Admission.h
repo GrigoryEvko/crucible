@@ -23,6 +23,7 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Instance.h>
+#include <foundation/reflect/TypeComponents.h>
 
 #include <concepts>
 #include <cstddef>
@@ -395,6 +396,101 @@ concept PinnedSessionResource =
 template <typename Resource>
 concept SessionResource = OwnedSessionResource<Resource> || PinnedSessionResource<Resource>;
 
+// ── The poles of a channel ───────────────────────────────────────────
+//
+// A pole of a channel is a class that names its channel with a public
+// member type channel_type, as each handle of fixy/concurrent and of
+// fixy/channels does.  The binding inside such a handle
+// (foundation::ChannelBinding) names the channel too, but it moves no value,
+// so it is no pole.
+//
+// The protocol of a channel is one value for the channel.  A mint of one
+// end takes the protocol of that end from its caller, and the peer end of
+// the same channel is minted apart, so no mint of one end can see the two
+// protocols.  The two ends of one channel could then run protocols that
+// are not duals.  So no mint that takes a protocol from its caller admits
+// a Resource that reaches a pole: the Resource itself, a base, a member, an
+// element, or a type that a pointer, a reference or a template argument
+// names (the walk of foundation/reflect/TypeComponents.h).  A pole enters a
+// session only through SessionMintDoor::open_pole of fixy/session/Handle.h,
+// which takes the two protocols of the channel from the pole table of the
+// channel (below, after the relation of the two sides).
+//
+// The walk instantiates nothing.  It reads the members of each class that
+// it reaches by value, and of each complete class that is no specialization
+// of a template.  Each pole of fixy/concurrent and of fixy/channels is a
+// member class of its channel, which is no specialization, so the walk sees
+// it behind a pointer or a reference too.  A pole that is a specialization of
+// a template, and that the Resource names only through a pointer, a
+// reference or a template argument, is not seen.  A class that holds a
+// channel and does not name it with channel_type is no pole, so this rule
+// does not see it either.
+
+namespace detail {
+
+// True when the type is a pole of a channel.  The caller reads the members
+// of a complete class only.  The answer is a function at namespace scope
+// that is not a template, so no translation unit can specialize it.
+[[nodiscard]] consteval bool is_channel_pole(std::meta::info type) {
+    if (!std::meta::is_class_type(type)) return false;
+    if (std::meta::has_template_arguments(type)) {
+        const std::meta::info family = std::meta::template_of(type);
+        if (std::meta::parent_of(family) == ^^::foundation&& std::meta::identifier_of(family) == "ChannelBinding") {
+            return false;
+        }
+    }
+    const std::meta::info member = ::foundation::reflect::member_named(type, "channel_type");
+    return member != std::meta::info{} && std::meta::is_type(member);
+}
+
+// True when the walk of foundation/reflect/TypeComponents.h reaches a pole
+// of a channel from the type.  A node is a pole when the walk may read its
+// members and the class names its channel.  The walk visits each node once,
+// as first_component_satisfying of that header does.  The function is no
+// template, so GCC builds its body once in each includer.  Complexity:
+// linear in the distinct nodes, times the scan of the visited nodes.
+[[nodiscard]] consteval bool reaches_a_channel_pole(std::meta::info root) {
+    namespace rf = ::foundation::reflect;
+    namespace tr = ::fixy::session::transition;
+    tr::stack<rf::TypeNode> pending{};
+    tr::stack<rf::TypeNode> visited{};
+    tr::push(pending, rf::TypeNode{rf::bare_type(root), true});
+    while (pending.top != 0) {
+        --pending.top;
+        const rf::TypeNode node = pending.items[pending.top];
+        bool was_visited = false;
+        for (const rf::TypeNode& seen : visited) {
+            if (seen.type == node.type && (seen.may_read_members || !node.may_read_members)) {
+                was_visited = true;
+                break;
+            }
+        }
+        if (was_visited) continue;
+        tr::push(visited, node);
+        if (node.may_read_members && is_channel_pole(node.type)) return true;
+        for (const rf::TypeNode& part : rf::member_components_of(node))
+            tr::push(pending, part);
+        for (const rf::TypeNode& part : rf::argument_components_of(node))
+            tr::push(pending, part);
+    }
+    return false;
+}
+
+}  // namespace detail
+
+// The Resource is a pole of a channel, held by value.
+template <typename Resource>
+concept ChannelPole = !std::is_reference_v<Resource> && detail::is_channel_pole(^^Resource);
+
+// The Resource is a pole, or holds or names one.
+template <typename Resource>
+concept ReachesAChannelPole = detail::reaches_a_channel_pole(^^Resource);
+
+// A Resource that a mint of a protocol of its caller admits: a
+// SessionResource that reaches no pole of a channel.
+template <typename Resource>
+concept PlainSessionResource = SessionResource<Resource> && !ReachesAChannelPole<Resource>;
+
 // ── The priority of a session ────────────────────────────────────────
 //
 // A Resource states the priority of its session in the order of
@@ -637,7 +733,7 @@ template <typename Ctx, typename Proto, typename Resource, typename... Tags>
 concept CtxFitsSessionFrom =
     ::foundation::effects::IsExecCtx<Ctx> && ::foundation::permissions::DistinctTags<Tags...>
     && (::foundation::permissions::CtxAdmitsPermission<Tags, Ctx> && ...)
-    && WellFormedRunnableProtocol<Proto> && SessionResource<Resource>
+    && WellFormedRunnableProtocol<Proto> && PlainSessionResource<Resource>
     && PermissionFlowCloses<Proto, ::foundation::permissions::PermSet<Tags...>> && CtxAdmitsProtocolRow<Ctx, Proto>;
 
 template <typename Ctx, typename Proto, typename Resource, typename... Tags>
@@ -740,5 +836,76 @@ template <typename SelfProto, typename PeerProto, typename ResourceSelf, typenam
 concept ChannelSidesAgree =
     std::is_same_v<PeerProto, dual_of_t<SelfProto>>
     || detail::side_relation_holds(^^side_relations, ^^SelfProto, ^^PeerProto, ^^ResourceSelf, ^^ResourcePeer);
+
+// ── The pole table of a channel ─────────────────────────────────────
+//
+// A pole table is a registration of the kind pole_table in a family of the
+// root pole_tables (fixy/session/Registry.h, section Families).  It names a
+// class template `template <class Pole> struct`, constrained to the poles
+// that the table knows.  Its specialization for a pole has two member
+// types: self_protocol, the protocol that the pole runs, and
+// peer_protocol, the protocol that each pole of the other side runs.  So
+// the protocol of a channel is one value of its table, and no caller names
+// the protocol of one pole.  SessionMintDoor::open_pole asks the relation
+// of the two sides of these two protocols in its one member.
+//
+// The registration stands in the file of its template, which is the header
+// of the channel or of the bridge of the channel.  The door reads the
+// tables where its gate is asked, so a unit that does not include the
+// header of a table opens no pole of its channels.  Two tables that know
+// one pole stop the build.  A table is a declaration of the base, and the
+// rule base-namespace refuses a planted one outside the base.
+struct pole_table {
+    std::meta::info table{};
+};
+
+namespace pole_tables {}
+
+namespace detail {
+
+// Have no constant definition.  A call to one stops the constant
+// evaluation, and the diagnostic names it.
+void a_pole_table_stands_outside_the_file_of_its_template() noexcept;
+void two_pole_tables_know_one_pole() noexcept;
+
+// The specialization of the one table of the root `tables` that knows the
+// pole, or null.  The root is a parameter, so GCC does not fold the read
+// where this body stands.  Complexity: linear in the tables.
+[[nodiscard]] consteval std::meta::info pole_table_entry(std::meta::info tables, std::meta::info pole) {
+    namespace tr = ::fixy::session::transition;
+    std::meta::info found{};
+    for (const std::meta::info member : tr::registrations_of(tables, ^^pole_table)) {
+        const pole_table entry = std::meta::extract<pole_table>(member);
+        if (!tr::detail::is_same_file(member, entry.table)) a_pole_table_stands_outside_the_file_of_its_template();
+        if (!std::meta::can_substitute(entry.table, {pole})) continue;
+        if (found != std::meta::info{}) two_pole_tables_know_one_pole();
+        found = std::meta::substitute(entry.table, {pole});
+    }
+    return found;
+}
+
+}  // namespace detail
+
+// A table of the unit knows the pole.
+template <typename Pole>
+concept HasPoleTable = detail::pole_table_entry(^^pole_tables, ^^Pole) != std::meta::info{};
+
+// The protocol of the pole, and the protocol of each pole of the other side
+// of its channel, from the table that knows the pole.
+template <HasPoleTable Pole>
+using pole_protocol_t = typename[:detail::pole_table_entry(^^pole_tables, ^^Pole):] ::self_protocol;
+
+template <HasPoleTable Pole>
+using pole_peer_protocol_t = typename[:detail::pole_table_entry(^^pole_tables, ^^Pole):] ::peer_protocol;
+
+// The whole gate of SessionMintDoor::open_pole: a pole of a channel held by
+// value, which a table knows, two protocols of the table whose sides agree,
+// and the gate of a session of one end for the protocol of the pole.
+template <typename Ctx, typename Pole>
+concept CtxFitsPoleSession = ::foundation::effects::IsExecCtx<Ctx> && ChannelPole<Pole> && SessionResource<Pole>
+                          && HasPoleTable<Pole> && WellFormedRunnableProtocol<pole_protocol_t<Pole>>
+                          && PermissionFlowCloses<pole_protocol_t<Pole>, ::foundation::permissions::EmptyPermSet>
+                          && CtxAdmitsProtocolRow<Ctx, pole_protocol_t<Pole>>
+                          && ChannelSidesAgree<pole_protocol_t<Pole>, pole_peer_protocol_t<Pole>, Pole, Pole>;
 
 }  // namespace fixy::session

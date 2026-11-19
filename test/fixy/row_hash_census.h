@@ -1342,6 +1342,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::side_relation,
      "a registration of the registry of the side relations: it names a concept at compile time, and it is "
      "never a value in a signature"},
+    {^^::fixy::session::pole_table,
+     "a registration of the registry of the pole tables: it names a class template at compile time, and it is "
+     "never a value in a signature"},
     {^^::fixy::session::MachineLease,
      "the Resource of one view of a machine bridge: it reaches the state of the machine of the bridge for the "
      "span of the view, makes no claim, and is never a value in a signature"},
@@ -1470,6 +1473,8 @@ inline constexpr StatedZero kZeros[] = {
      "folds, and never a value in a signature"},
 
     {^^::fixy::channels::handle_for, kMetafunction},
+    {^^::fixy::channels::bridged_pole_protocols, kMetafunction},
+    {^^::fixy::channels::swmr_session::swmr_pole_protocols, kMetafunction},
     {^^::fixy::channels::Endpoint,
      "a builder that binds a channel handle to a context once: a stage mint or a session mint consumes it, the "
      "stage or the session handle that comes out folds, and an endpoint is never a template argument of a kernel "

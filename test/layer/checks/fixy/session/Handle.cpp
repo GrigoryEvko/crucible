@@ -11,4 +11,43 @@ static_assert(detail::is_sealed_passkey<HandleKey>() && detail::is_sealed_passke
 static_assert(sizeof(std::size_t) == sizeof(std::uint64_t),
               "a label word has 64 bits, and the Transport carries it as std::size_t");
 
+namespace detail::pole_self_test {
+
+struct SomeChannel {};
+struct Pole {
+    using channel_type = SomeChannel;
+    [[no_unique_address]] MoveOnlyResource move_only{};
+};
+struct HoldsAPole {
+    Pole pole;
+};
+// The walk reads the template arguments of a member too.
+struct MayHoldAPole {
+    ::fixy::Option<Pole> pole{};
+};
+// A pole that is no specialization of a template is seen behind a
+// reference.
+struct RefersToAPole {
+    Pole& pole;
+};
+struct Plain {
+    [[no_unique_address]] MoveOnlyResource move_only{};
+    int count = 0;
+};
+// A class that names its channel with a member that is no type is no pole.
+struct NamesNoChannelType {
+    [[no_unique_address]] MoveOnlyResource move_only{};
+    static constexpr int channel_type = 0;
+};
+
+static_assert(ChannelPole<Pole> && !ChannelPole<Pole&> && !ChannelPole<HoldsAPole>);
+static_assert(ReachesAChannelPole<Pole> && ReachesAChannelPole<HoldsAPole> && ReachesAChannelPole<MayHoldAPole>
+              && ReachesAChannelPole<RefersToAPole>);
+static_assert(!PlainSessionResource<Pole> && !PlainSessionResource<HoldsAPole>);
+static_assert(PlainSessionResource<Plain> && PlainSessionResource<NamesNoChannelType>);
+// No table of this unit knows the pole, so the pole door refuses it too.
+static_assert(!HasPoleTable<Pole>);
+
+}  // namespace detail::pole_self_test
+
 }  // namespace fixy::session

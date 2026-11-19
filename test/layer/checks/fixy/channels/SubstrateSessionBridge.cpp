@@ -58,6 +58,29 @@ struct LooksLikeAChannel {
 };
 static_assert(!IsBridgeableDirection<LooksLikeAChannel, Direction::Producer>);
 
+// Each handle is a pole of its channel, and the table of the bridge gives
+// each pole the protocol of its direction and the protocol of the other
+// direction as its peer.  A mint of one end refuses a pole, and the pole door
+// admits it.
+static_assert(proto::ChannelPole<typename Spsc::ProducerHandle> && proto::ChannelPole<typename Spsc::ConsumerHandle>);
+static_assert(!proto::PlainSessionResource<typename Spsc::ProducerHandle>);
+static_assert(!proto::PlainSessionResource<typename Mpsc::ConsumerHandle>);
+static_assert(std::is_same_v<proto::pole_protocol_t<typename Spsc::ProducerHandle>,
+                             default_proto_for_t<Spsc, Direction::Producer>>);
+static_assert(std::is_same_v<proto::pole_peer_protocol_t<typename Spsc::ProducerHandle>,
+                             default_proto_for_t<Spsc, Direction::Consumer>>);
+static_assert(std::is_same_v<proto::pole_protocol_t<typename Mpsc::ConsumerHandle>,
+                             default_proto_for_t<Mpsc, Direction::Consumer>>);
+static_assert(std::is_same_v<proto::pole_peer_protocol_t<typename Mpsc::ConsumerHandle>,
+                             default_proto_for_t<Mpsc, Direction::Producer>>);
+static_assert(proto::ChannelSidesAgree<proto::pole_protocol_t<typename Spsc::ProducerHandle>,
+                                       proto::pole_peer_protocol_t<typename Spsc::ProducerHandle>,
+                                       typename Spsc::ProducerHandle, typename Spsc::ProducerHandle>);
+
+// A class that names no bridged channel is no pole of the table.
+static_assert(!proto::HasPoleTable<LooksLikeAChannel>);
+static_assert(!proto::HasPoleTable<int>);
+
 }  // namespace detail::substrate_session_bridge_self_test
 
 }  // namespace fixy::channels
