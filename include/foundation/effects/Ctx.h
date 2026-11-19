@@ -17,6 +17,7 @@
 
 #include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
+#include <foundation/SoleWriterProof.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/FpMode.h>
 #include <foundation/effects/Effect.h>
@@ -646,6 +647,25 @@ private:
     constexpr ProducerClaim() noexcept = default;
 
     friend Brand;
+
+    // The proof that the caller is the one writer of the counters of the
+    // single-producer state of the brand in the role Role (THE PROOF OF THE
+    // ONE WRITER of foundation/SoleWriterProof.h).  The context is the
+    // evidence: only mint_producer_context makes it, after the check of the
+    // calling thread.  The door is private, so only the brand calls it, with
+    // the context that it minted in the same call.  So the proof needs no
+    // second check of the thread, and it costs no instruction.
+    //
+    // One thread holds all the live claims of a brand (enter_brand_), so a
+    // proof holds for each state of the brand.  A thread that gives the claim
+    // up frees the holder with a release store, and the next holder acquires
+    // it, so each write of the last writer happens before each write of the
+    // next one.
+    template <class Role>
+    [[nodiscard]] CRUCIBLE_INLINE ::foundation::SoleWriterProof<ProducerClaim, Role>
+    prove_sole_writer(ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> const& /*context*/) const noexcept {
+        return ::foundation::SoleWriterProof<ProducerClaim, Role>{};
+    }
 
     using BrandRecord = detail::producer_claim::BrandRecord;
     using BrandRegistry = detail::producer_claim::BrandRegistry;

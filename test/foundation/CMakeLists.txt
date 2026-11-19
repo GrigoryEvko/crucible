@@ -1966,6 +1966,10 @@ foundation_neg_compile_test(neg_bg_door_without_owner
 foundation_neg_compile_test(neg_producer_claim_default_built
   "is private within this context"
   "ProducerClaim<Brand>::ProducerClaim\\(\\) .with Brand = .anonymous.::Brand")
+# The door of the proof of the one writer is private to the brand of the claim.
+foundation_neg_compile_test(neg_producer_claim_proof_outside_brand
+  "is private within this context"
+  "ProducerClaim<Brand>::prove_sole_writer\\(.*\\) const .with Role = neg_fixture::WriterRole. Brand = neg_fixture::Brand.")
 foundation_neg_compile_test(neg_producer_claim_outside_brand
   "is private within this context"
   "ProducerClaim<Brand>::ProducerClaim\\(\\) .with Brand = .anonymous.::Brand"
