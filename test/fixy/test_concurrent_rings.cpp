@@ -97,15 +97,6 @@ static_assert(alignof(Mpsc) >= 64);
 static_assert(alignof(::fixy::AtomicMonotonic<std::uint64_t>) >= 64);
 static_assert(sizeof(::fixy::AtomicMonotonic<std::uint64_t>) >= 64);
 
-// The MPSC capacity gate over the two positions a producer read.  A head
-// that trails the tail is stale, and the gate lets the compare-exchange
-// refuse it.  An unsigned difference wraps there and reads a full ring.
-static_assert(Mpsc::has_room_for(9, 2, 1), "seven items and room for one more");
-static_assert(!Mpsc::has_room_for(10, 2, 1), "eight items fill a ring of eight");
-static_assert(Mpsc::has_room_for(5, 7, 1), "a stale head that trails the tail is not a full ring");
-static_assert(Mpsc::has_room_for(3, 10, 4), "a stale head is not a full ring for a batch either");
-static_assert(!Mpsc::has_room_for(7, 2, 4), "a batch of four does not fit beside five items");
-
 // The SPSC count of a head and a tail that a reader loaded in that order.
 // A reader on a third thread can load a tail that passed the head, and the
 // unsigned difference then wraps to a value near 2^64.
@@ -115,8 +106,8 @@ static_assert(Spsc::count_between(7, 7) == 0, "an empty ring");
 static_assert(Spsc::count_between(5, 7) == 0, "a tail that passed the head is an empty ring");
 static_assert(Spsc::count_between(20, 2) == 8, "the count never passes the capacity");
 
-// A ring whose capacity is below one bitmap word still gets one word,
-// and one that spans several gets several.  Both are exercised below.
+// A small ring wraps after few tickets, and a wide ring holds a batch that
+// spans many cache lines of cells.  Both are exercised below.
 using MpscSmall = c::MpscRing<int, 4>;
 using MpscWide = c::MpscRing<int, 128>;
 
@@ -466,10 +457,9 @@ struct ProvenOwner final {
     return 0;
 }
 
-// The bitmap is a word per 64 cells.  A capacity below one word leaves
-// high bits permanently zero; a capacity spanning words makes the
-// prefix scan cross a word boundary.  Both paths run here.
-[[nodiscard]] int mpsc_bitmap_widths() {
+// A small ring fills and drains in one batch, and a wide ring drains a
+// batch of 100 cells in one scan of the turn words.
+[[nodiscard]] int mpsc_small_and_wide() {
     MpscSmall small{};
     for (int i = 0; i < 4; ++i) {
         if (!small.try_push(i)) return 1;
@@ -484,7 +474,7 @@ struct ProvenOwner final {
         items.at(i) = static_cast<int>(i);
     if (wide.try_push_batch(items.first(100)) != 100) return 1;
 
-    // The drain crosses the boundary between bitmap words 0 and 1.
+    // The drain crosses many cache lines of cells.
     Run<int, 100> drained{};
     if (wide.try_pop_batch(kNondet, drained.each()) != 100) return 1;
     for (int i = 0; i < 100; ++i) {
@@ -502,7 +492,7 @@ struct ProvenOwner final {
 // offset.  A batch of count items goes in, the first singles items come
 // out one at a time, and one batch pop drains the rest.  Then a full batch
 // fills the ring again.  A tail past the head admits one more push, and a
-// stale ready bit gives one more item to a batch pop.
+// stale turn word gives one more item to a batch pop.
 template <std::size_t Capacity>
 [[nodiscard]] int mpsc_batch_case(std::size_t offset, std::size_t count, std::size_t singles) {
     c::MpscRing<int, Capacity> ring{};
@@ -547,11 +537,11 @@ template <std::size_t Capacity>
     return 0;
 }
 
-// A full batch sets the ready bits of the whole ring.  A ring below 64
-// cells has one bitmap word, and only its low Capacity bits belong to
-// cells.  The prefix scan of try_pop_batch reads a set bit past them as
-// one more ready cell.  The walk starts a batch at each offset and pushes
-// each batch size, so each batch path meets each wrap and each word edge.
+// A full batch publishes each cell of the ring.  The scan of try_pop_batch
+// must stop at the cells of the batch and not read a cell of the next round
+// as one more item.  A ring of one cell has the same turn words for each
+// step of a round.  The walk starts a batch at each offset and pushes each
+// batch size, so each batch path meets each wrap.
 // Each batch then loses no item, one item, or each item but one to single
 // pops before the batch pop.
 template <std::size_t Capacity>
@@ -686,8 +676,8 @@ template <std::size_t Capacity>
 // eight cells, and the consumer takes one item and then a batch, in turn.
 // So a batch pop often follows a full batch and one single pop.  Each item
 // carries its producer and its place in the order of that producer.  A
-// stale ready bit makes the batch pop give a cell a second time, and a
-// later producer then writes that cell while the bit is still set.
+// stale turn word makes the batch pop give a cell a second time, and a
+// later producer then writes that cell while the word still shows it.
 [[nodiscard]] int mpsc_full_batches_many_producers() {
     constexpr std::size_t kCapacity = 8;
     constexpr std::size_t kPartial = 3;
@@ -863,7 +853,7 @@ int main() {
     if (const int rc = spsc_proven_and_checked_calls_share_one_ring(); rc != 0) return rc;
     if (const int rc = spsc_proven_two_threads(); rc != 0) return rc;
     if (const int rc = mpsc_single_threaded(); rc != 0) return rc;
-    if (const int rc = mpsc_bitmap_widths(); rc != 0) return rc;
+    if (const int rc = mpsc_small_and_wide(); rc != 0) return rc;
     if (const int rc = mpsc_batch_paths_each_capacity(); rc != 0) return rc;
     if (const int rc = spsc_two_threads(); rc != 0) return rc;
     if (const int rc = mpsc_many_producers(); rc != 0) return rc;

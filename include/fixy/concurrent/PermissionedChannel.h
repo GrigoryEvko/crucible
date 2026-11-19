@@ -164,10 +164,10 @@ struct channel_form_parts<ChannelForm::merge, T, Capacity, ProducerTag, Brand, O
     using channel_discipline = ::fixy::row_discipline::mpsc_channel;
     using producer_discipline = ::fixy::row_discipline::mpsc_producer;
     using consumer_discipline = ::fixy::row_discipline::mpsc_consumer;
-    // A push reads the head, the tail and one word of the ready bitmap.  A
-    // pop reads the head, the tail, the bitmap word and the roster.
-    static constexpr std::size_t producer_lines = 3;
-    static constexpr std::size_t consumer_lines = 4;
+    // A push reads the head, and the turn word on the line of its cell.  A pop
+    // reads the tail, the turn word on the line of its cell, and the roster.
+    static constexpr std::size_t producer_lines = 1;
+    static constexpr std::size_t consumer_lines = 2;
 };
 
 // The pops of a consumer handle of payload T.  Each form gives one
@@ -556,8 +556,8 @@ public:
     // The call takes the exclusive of each role: the claims of a wire, and the
     // exclusive of the pool and the claims of a merge.  So a live handle of
     // each role ends the process here, and no handle starts while the call
-    // runs.  Each producer handle of a merge set the ready bit of each of its
-    // items before its end, and the upgrade reads that end with acquire order,
+    // runs.  Each producer handle of a merge published the turn word of each of
+    // its items before its end, and the upgrade reads that end with acquire order,
     // so the drain finds each item.  The order of the items of a merge reads
     // the merge, so its drop holds no state, as the drain of the MPSC ring
     // asks.  An owner of items that end only through a door, such as the
@@ -669,8 +669,8 @@ private:
     // The receive after a pop that found the ring empty.  The read of the
     // closed state is an acquire, so the pop after it finds each item that the
     // stream still holds, and Closed comes only after the last item.  A
-    // producer of a merge sets the ready bit of each item before its handle
-    // ends, so the same holds for a merge.
+    // producer of a merge publishes the turn word of each item before its
+    // handle ends, so the same holds for a merge.
     template <typename... PopTag>
     [[nodiscard]] ::foundation::core::Result<T, NoItem> receive_after_empty_(PopTag... tag) noexcept {
         if (!producers_.is_closed()) [[likely]] {

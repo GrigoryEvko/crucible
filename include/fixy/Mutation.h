@@ -965,10 +965,10 @@ public:
 
     // Weak, relaxed on success and on failure: the claim of a ticket of the
     // MPSC ring of fixy/concurrent/MpscRing.h.  The claim carries no data:
-    // the release fetch_or of the ready bit of the cell publishes the item,
-    // and the acquire load of the bitmap of the consumer reads it.  So the
-    // claim needs no order, until a sequence word of each cell replaces the
-    // protocol of the ring.
+    // the release store of the turn word of the cell publishes the item, and
+    // the acquire load of the turn word by the consumer reads it.  The
+    // producer reads the turn word of its cell with acquire order before the
+    // claim.  So the claim needs no order.
     [[nodiscard]] bool compare_exchange_advance_weak_relaxed(T& expected, T desired) noexcept
         requires(kIsLess || kIsGreater)
     {

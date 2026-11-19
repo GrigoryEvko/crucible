@@ -111,10 +111,11 @@ static_assert(c::cell_line_footprint(1) == 64);
 static_assert(c::cell_line_footprint(64) == 64);
 static_assert(c::cell_line_footprint(65) == 128);
 
-// Two control lines for the SPSC ring's head and tail, three for the
-// MPSC ring's head, tail and bitmap word, plus the cell.
+// Two control lines for the SPSC ring, its head and the line of the copies
+// of the producer, and one for the head of the MPSC ring, plus the cell,
+// which holds the turn word of the MPSC ring.
 static_assert(Spsc::ProducerHandle::per_call_working_set == 2 * 64 + 64);
-static_assert(Mpsc::ProducerHandle::per_call_working_set == 3 * 64 + 64);
+static_assert(Mpsc::ProducerHandle::per_call_working_set == 1 * 64 + 64);
 
 // Unknown is the maximum, so a type that declares nothing reads as too
 // big to parallelize blindly rather than as free.

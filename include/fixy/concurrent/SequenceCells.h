@@ -1,0 +1,132 @@
+#pragma once
+
+// The cells of a bounded queue in the form of Dmitry Vyukov: each cell holds a
+// turn word beside its value, so a writer and a reader meet at the word of one
+// cell and at no word that the other cells share.  The MPSC ring of
+// fixy/concurrent/MpscRing.h claims its pushes on these cells.  A bounded
+// queue of many producers and many consumers claims its pops on them too.
+//
+// THE TICKETS
+//   The cells keep no index.  A queue claims tickets in order: ticket t names
+//   the cell t mod Capacity and the round t / Capacity of that cell.  The
+//   claim of a ticket is the business of the queue, such as a
+//   compare-and-swap on a head that many producers share.  The holder of a
+//   claim is the one writer of its ticket, and the holder of the next ticket
+//   of the reader side is the one reader of it.
+//
+// THE TURN WORD
+//   The word of a cell reads 2 * r while the cell is free for the writer of
+//   round r, and 2 * r + 1 while it holds the value of round r.  A writer
+//   writes the value and then stores 2 * r + 1 with release order.  A reader
+//   loads the word with acquire order, reads the value, and then stores
+//   2 * r + 2, the free word of the next round, with release order.  So the
+//   reader sees each write of the writer of the value, and the writer of the
+//   next round sees the read of the reader before it writes.  The two values
+//   of one round differ in the low bit, so a ring of one cell has distinct
+//   words for each step too.
+//
+// THE TURN OF A WRITER
+//   write_turn tells the writer of a ticket how its cell stands: free for the
+//   ticket, behind (the cell still holds a round before it, so the queue is
+//   full at the ticket), or ahead (a claim of a later round took the cell,
+//   so the ticket is stale).  The answer is true at the load, because a word
+//   only grows.  The reader side frees the cells in the order of their
+//   tickets, so a cell that is free at ticket t also shows each ticket of the
+//   round before t as read.  A batch of tickets then tests only its last
+//   cell.
+
+#include <fixy/concurrent/RingValue.h>
+
+#include <foundation/Pinned.h>
+#include <foundation/Platform.h>
+#include <foundation/core/Atomic.h>
+#include <foundation/core/Id.h>
+
+#include <array>
+#include <bit>
+#include <cstddef>
+#include <cstdint>
+
+namespace fixy::concurrent {
+
+struct CellTicketTag final {};
+
+// A ticket of a queue (THE TICKETS).
+using CellTicket = ::foundation::core::Id<CellTicketTag, std::uint64_t>;
+
+// How the cell of a ticket stands for its writer (THE TURN OF A WRITER).
+enum class CellTurn : std::uint8_t {
+    free,
+    behind,
+    ahead,
+};
+
+template <RingValue T, std::size_t Capacity>
+class SequenceCells : public ::foundation::Pinned<SequenceCells<T, Capacity>> {
+    static_assert(std::has_single_bit(Capacity), "fixy::concurrent::SequenceCells<T, Capacity>: Capacity must be a "
+                                                 "power of two.  The cell of a ticket is its low bits, and the round "
+                                                 "of a ticket is its high bits.");
+
+    static constexpr std::uint64_t MASK = std::uint64_t{Capacity - 1};
+    static constexpr int ROUND_SHIFT = std::countr_zero(Capacity);
+
+    // The word and the value of one cell.  The cells stay packed: a writer
+    // and a reader of one cell touch its line, and a write of a word is a
+    // plain release store, not a read-modify-write.
+    struct Cell {
+        ::foundation::core::Atomic<std::uint64_t> word{};
+        T value{};
+    };
+
+    // The free word of the round of a ticket (THE TURN WORD).
+    [[nodiscard]] static constexpr std::uint64_t free_word_(CellTicket ticket) noexcept {
+        return (ticket.raw() >> ROUND_SHIFT) << 1;
+    }
+
+    [[nodiscard]] Cell& cell_(CellTicket ticket) noexcept { return cells_[ticket.raw() & MASK]; }
+    [[nodiscard]] Cell const& cell_(CellTicket ticket) const noexcept { return cells_[ticket.raw() & MASK]; }
+
+public:
+    SequenceCells() noexcept = default;
+
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
+
+    // How the cell of the ticket stands for its writer, with acquire order:
+    // a free cell also shows the read of the reader of the round before.
+    // The difference is signed, because a word behind the free word of the
+    // ticket is below it and a word ahead of it is above it.
+    [[nodiscard]] CellTurn write_turn(CellTicket ticket) const noexcept {
+        std::uint64_t const word = cell_(ticket).word.load_acquire();
+        auto const distance = static_cast<std::int64_t>(word - free_word_(ticket));
+        if (distance == 0) return CellTurn::free;
+        return distance < 0 ? CellTurn::behind : CellTurn::ahead;
+    }
+
+    // Writes the value of the ticket and publishes it.  The caller holds the
+    // claim of the ticket, and write_turn gave free for its cell.
+    void publish(CellTicket ticket, T const& value) noexcept {
+        Cell& cell = cell_(ticket);
+        cell.value = value;
+        cell.word.store_release(free_word_(ticket) + 1);
+    }
+
+    // True when the cell of the ticket holds the value of the ticket, with
+    // acquire order, so a read of the value after it sees the write of the
+    // writer.
+    [[nodiscard]] bool is_published(CellTicket ticket) const noexcept {
+        return cell_(ticket).word.load_acquire() == free_word_(ticket) + 1;
+    }
+
+    // The value of the ticket.  The caller is the one reader of the ticket,
+    // and is_published gave true.
+    [[nodiscard]] T value_of(CellTicket ticket) const noexcept { return cell_(ticket).value; }
+
+    // Frees the cell of the ticket for the writer of its next round.  The
+    // caller read the value of the ticket.
+    void free(CellTicket ticket) noexcept { cell_(ticket).word.store_release(free_word_(ticket) + 2); }
+
+private:
+    alignas(64) std::array<Cell, Capacity> cells_{};
+};
+
+}  // namespace fixy::concurrent

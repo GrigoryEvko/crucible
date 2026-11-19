@@ -1,34 +1,46 @@
 #pragma once
 
-// Multi-producer single-consumer ring.  A cell holds only T.  The ready
-// signal lives out of band, one bit per cell in a packed bitmap.
+// Multi-producer single-consumer ring, on the cells of
+// fixy/concurrent/SequenceCells.h: each cell holds a turn word beside its
+// value, in the form of Dmitry Vyukov.
 //
-// The rejected alternative is a per-cell sequence number, which forces
-// every cell onto its own cache line and pushes the ring out of L1d at
-// useful capacities.  The bitmap leaves the cells packed.
+// A producer claims a ticket with a compare-and-swap on the head, which the
+// producers share, and then it touches only the cell of its ticket.  The
+// consumer reads the turn word of the cell at its tail.  So the producers
+// share one word, the head, and a producer reads no line that the consumer
+// writes on each pop.  The full test of a producer is the turn word of its
+// cell: a cell that still holds the value of the round before shows a full
+// ring at that ticket.
 //
-// One bit cannot encode a round, so nothing in a cell distinguishes a
-// producer at round R from a producer at round R + 1 on the same cell
-// K.  The capacity gate supplies the missing order.  A producer at
-// position K + Capacity passes the gate only when tail >= K + 1, which
-// means the consumer has already cleared bit K with a release fetch_and
-// and then advanced tail with a release store.  The producer's acquire
-// load of tail synchronizes with that store, so the clear is visible
-// before the producer's set.  Bit K therefore moves 0, 1, 0, 1 in that
-// order, each step a distinct atomic operation.
+// THE MEASURED REASON
+//   An earlier form kept the ready signal out of band, one bit for each cell
+//   in a packed bitmap, so that the cells stay packed.  Each producer and the
+//   consumer then did a read-modify-write on one bitmap word for each 64
+//   cells, and each producer read the tail, which the consumer writes on each
+//   pop.  The turn words keep the cells packed too: a cell of an item of 8
+//   bytes takes 16 bytes.  In bench_thread_scaling on 16 isolated cores, with
+//   the consumer on its own core, the single push of this form gave 3.6 times
+//   the throughput of the bitmap form with one producer, 1.3 times with 3,
+//   1.5 times with 7 and 2.3 times with 15, and a batch push of 16 gave 1.0
+//   to 1.8 times.
+//
+// THE PACKED CELLS
+//   Two producers with adjacent tickets write one cache line.  A queue that
+//   gives each cell a line of its own, such as the pinned MPMCQueue of the
+//   bench, pays a line for each item and gains with many producers in one L3
+//   group: with 7 producers it gave 1.2 times the throughput of this form,
+//   and with 1 and 15 producers this form was faster.
 
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/RingValue.h>
+#include <fixy/concurrent/SequenceCells.h>
 
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
-#include <foundation/core/Arithmetic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
-#include <atomic>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -55,73 +67,48 @@ public:
                                                  "Capacity - 1, which is the index modulo Capacity only when "
                                                  "Capacity is a power of two.");
     static_assert(Capacity >= 1, "fixy::concurrent::MpscRing<T, Capacity>: Capacity must be greater than zero.  A "
-                                 "ring with no cells has no bit for a producer to set.");
+                                 "ring with no cells has no cell for a producer to fill.");
 
-private:
-    static constexpr std::uint64_t MASK = std::uint64_t{Capacity - 1};
-    // A Capacity below 64 still gets one word.  Its unused high bits
-    // stay zero, because every index derives from a masked position and
-    // so is always below Capacity.
-    static constexpr std::size_t WORDS = ::foundation::core::div_ceil(Capacity, std::size_t{64});
-    static constexpr std::uint64_t kAllSet = ~std::uint64_t{0};
-    // The bits of one word that name a cell.  Capacity is a power of two,
-    // so each word of a ring of 64 cells or more names 64 cells.
-    static constexpr std::uint64_t kCellBits = Capacity >= 64 ? kAllSet : (std::uint64_t{1} << (Capacity % 64)) - 1;
-
-public:
     MpscRing() noexcept = default;
 
-    // The capacity gate, as a function of the head and the tail that a
-    // producer read, in that order.  Other producers can push and the
-    // consumer can pop between the two loads, so the tail can pass the
-    // head that was read.  The distance is then negative, the ring is not
-    // full, and the compare-exchange on the stale head fails and reads it
-    // again.  The difference is signed for that reason: as an unsigned
-    // value it wraps, and the gate reads a stale head as a full ring.
-    // A refusal is true at the load of the head, because the tail only
-    // grows after it.  Loading the tail first would refuse on a ring that
-    // was never full.
-    [[nodiscard]] static constexpr bool has_room_for(std::uint64_t head, std::uint64_t tail,
-                                                     std::uint64_t count) noexcept {
-        return static_cast<std::int64_t>(head + count - tail) <= static_cast<std::int64_t>(Capacity);
-    }
-
-    // The head CAS is relaxed because it claims a ticket and carries no
-    // payload.  The release on the bitmap set is what publishes the
-    // cell write, and the caller owns the cell from CAS success until
-    // that set.
+    // The head is a counter of many writers.  Its load seeds the
+    // compare-and-swap of the claim, and the claim carries no data: the
+    // release store of the turn word of the cell publishes the item, and the
+    // acquire load of the turn word by the consumer reads it.  The turn word
+    // that a producer reads with acquire order before its claim shows that
+    // the consumer read the cell of the round before.  A stale head names a
+    // cell whose turn is ahead, and the producer reads the head again.
 
     [[nodiscard, gnu::hot]] bool try_push(T const& item) noexcept {
         // The copy reads the item before the claim of the ticket.  The claim
         // is an atomic step, so a read through the reference after it loads
         // the item from memory again.
         const T value = item;
+        std::uint64_t pos = head_.load_relaxed();
         for (;;) {
-            // load_relaxed, not peek_relaxed: producers race-CAS a
-            // shared head_, so the sole-writer claim behind
-            // peek_relaxed does not hold here.
-            const std::uint64_t pos = head_.load_relaxed();
-            const std::uint64_t tail_val = tail_.get();
-            if (!has_room_for(pos, tail_val, 1)) [[unlikely]] {
+            CellTicket const ticket{pos};
+            CellTurn const turn = cells_.write_turn(ticket);
+            if (turn == CellTurn::behind) [[unlikely]] {
                 return false;
             }
-            std::uint64_t expected = pos;
-            if (!head_.compare_exchange_advance_weak_relaxed(expected, pos + 1)) {
+            if (turn == CellTurn::ahead) [[unlikely]] {
+                pos = head_.load_relaxed();
                 continue;
             }
-
-            const std::size_t cell_idx = pos & MASK;
-            cells_[cell_idx] = value;
-
-            const std::size_t word_idx = cell_idx >> 6;
-            const std::size_t bit_idx = cell_idx & 63;
-            const std::uint64_t mask = std::uint64_t{1} << bit_idx;
-            ready_[word_idx].fetch_or(mask, std::memory_order_release);
-            return true;
+            std::uint64_t expected = pos;
+            if (head_.compare_exchange_advance_weak_relaxed(expected, pos + 1)) [[likely]] {
+                cells_.publish(ticket, value);
+                return true;
+            }
+            pos = expected;
         }
     }
 
-    // All or nothing: a batch that does not fit pushes no items.
+    // All or nothing: a batch that does not fit pushes no items.  The
+    // consumer frees the cells in the order of their tickets, so a last cell
+    // that is free for its ticket shows each cell of the batch as free
+    // (THE TURN OF A WRITER of fixy/concurrent/SequenceCells.h).  One claim
+    // takes the tickets of the whole batch.
 
     [[nodiscard, gnu::hot]] std::size_t try_push_batch(::foundation::core::View<T const> items) noexcept {
         const std::size_t N = items.size();
@@ -129,23 +116,24 @@ public:
         if (N > Capacity) [[unlikely]]
             return 0;
         T const* const source = first_of_(::foundation::core::detail::ViewDoor::key(), items);
-
+        std::uint64_t pos = head_.load_relaxed();
         for (;;) {
-            const std::uint64_t pos = head_.load_relaxed();
-            const std::uint64_t tail_val = tail_.get();
-            if (!has_room_for(pos, tail_val, N)) [[unlikely]] {
+            CellTurn const turn = cells_.write_turn(CellTicket{pos + N - 1});
+            if (turn == CellTurn::behind) [[unlikely]] {
                 return 0;
             }
-            std::uint64_t expected = pos;
-            if (!head_.compare_exchange_advance_weak_relaxed(expected, pos + N)) {
+            if (turn == CellTurn::ahead) [[unlikely]] {
+                pos = head_.load_relaxed();
                 continue;
             }
-
-            for (std::size_t i = 0; i < N; ++i) {
-                cells_[(pos + i) & MASK] = source[i];
+            std::uint64_t expected = pos;
+            if (head_.compare_exchange_advance_weak_relaxed(expected, pos + N)) [[likely]] {
+                for (std::size_t i = 0; i < N; ++i) {
+                    cells_.publish(CellTicket{pos + i}, source[i]);
+                }
+                return N;
             }
-            publish_range_(pos & MASK, ((pos + N - 1) & MASK) + 1, N);
-            return N;
+            pos = expected;
         }
     }
 
@@ -173,53 +161,28 @@ public:
     }
 
     // The caller guarantees no concurrent try_pop or try_pop_batch.  A batch
-    // pop is a merge, as a pop is, so it takes the bare tag of Nondet.
+    // pop is a merge, as a pop is, so it takes the bare tag of Nondet.  The
+    // pop takes the published cells from the tail up to the first cell that
+    // is not published, and at most out.size() of them.  The ring holds at
+    // most Capacity items, so the scan stops after Capacity cells, before it
+    // wraps to a cell that it took.  Complexity: linear in the items taken.
 
     [[nodiscard, gnu::hot]] std::size_t try_pop_batch(::foundation::effects::cap::Nondet,
                                                       ::foundation::core::View<T> out) noexcept {
-        // The ring holds at most Capacity live items, so a request
-        // larger than Capacity has to be clamped.  Unclamped, the
-        // prefix scan below wraps past the buffer end, re-reads the
-        // still-set bits of the cells it already counted, and grows R
-        // beyond Capacity.  The drain then returns duplicates, clears
-        // every bit, and leaves tail ahead of head.  The signed gate of
-        // the producers reads that negative distance as room.  Clamping
-        // rather than rejecting keeps the partial-fill contract.
         const std::size_t cap = Capacity < out.size() ? Capacity : out.size();
         if (cap == 0) return 0;
 
         const std::uint64_t pos0 = tail_.peek_relaxed();
-
+        T* const target = first_of_(::foundation::core::detail::ViewDoor::key(), out);
         std::size_t R = 0;
         while (R < cap) {
-            const std::size_t cell_idx = (pos0 + R) & MASK;
-            const std::size_t word_idx = cell_idx >> 6;
-            const std::size_t bit_idx = cell_idx & 63;
-
-            const std::uint64_t word = ready_[word_idx].load(std::memory_order_acquire);
-            const std::uint64_t shifted = word >> bit_idx;
-            // countr_zero of an all-zero inversion answers 64, but only
-            // the top 64 - bit_idx bits of this word belong to the
-            // scan, so the all-ones case needs its own arm.
-            const std::size_t avail_in_word =
-                (~shifted == 0) ? (64 - bit_idx) : static_cast<std::size_t>(std::countr_zero(~shifted));
-            const std::size_t remaining = cap - R;
-            const std::size_t take = remaining < avail_in_word ? remaining : avail_in_word;
-            if (take == 0) break;
-            R += take;
-            // Stopping short of the word's run means a clear bit ended
-            // the prefix.  Consuming the whole run continues into the
-            // next word.
-            if (take < avail_in_word) break;
+            CellTicket const ticket{pos0 + R};
+            if (!cells_.is_published(ticket)) break;
+            target[R] = cells_.value_of(ticket);
+            cells_.free(ticket);
+            ++R;
         }
-
         if (R == 0) return 0;
-
-        T* const target = first_of_(::foundation::core::detail::ViewDoor::key(), out);
-        for (std::size_t i = 0; i < R; ++i) {
-            target[i] = cells_[(pos0 + i) & MASK];
-        }
-        clear_range_(pos0 & MASK, ((pos0 + R - 1) & MASK) + 1, R);
         tail_.advance_sole_writer_from(pos0, pos0 + R);
         return R;
     }
@@ -229,12 +192,7 @@ public:
     // inputs can read two values, and each snapshot takes the bare tag of
     // Nondet.
     [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet) const noexcept {
-        const std::uint64_t pos = tail_.get();
-        const std::size_t cell_idx = pos & MASK;
-        const std::size_t word_idx = cell_idx >> 6;
-        const std::size_t bit_idx = cell_idx & 63;
-        const std::uint64_t mask = std::uint64_t{1} << bit_idx;
-        return (ready_[word_idx].load(std::memory_order_acquire) & mask) == 0;
+        return !cells_.is_published(CellTicket{tail_.get()});
     }
 
     // The two loads are not one snapshot, so head can outrun the tail
@@ -249,104 +207,30 @@ public:
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
-    // The oldest item, or no value when its cell is not ready.  The acquire
-    // load of the bitmap pairs with the release fetch_or of the producer, so
-    // the cell read below sees the published payload.
+    // The oldest item, or no value when its cell is not published.  The
+    // acquire load of the turn word pairs with the release store of the
+    // producer, so the read of the value sees the published item.  The free
+    // of the cell comes after the read, so the producer of the next round
+    // writes the cell after the read.
     [[nodiscard, gnu::always_inline]] ::foundation::core::Option<T> pop_one_() noexcept {
         const std::uint64_t pos = tail_.peek_relaxed();
-        const std::size_t cell_idx = pos & MASK;
-        const std::size_t word_idx = cell_idx >> 6;
-        const std::size_t bit_idx = cell_idx & 63;
-        const std::uint64_t mask = std::uint64_t{1} << bit_idx;
-
-        const std::uint64_t word = ready_[word_idx].load(std::memory_order_acquire);
-        if ((word & mask) == 0) {
+        CellTicket const ticket{pos};
+        if (!cells_.is_published(ticket)) {
             return ::foundation::core::none;
         }
-
-        const T item = cells_[cell_idx];
-        // Clear the bit before advancing tail.  A producer that then
-        // passes the capacity gate observes the new tail and therefore
-        // the cleared bit.
-        ready_[word_idx].fetch_and(~mask, std::memory_order_release);
+        const T item = cells_.value_of(ticket);
+        cells_.free(ticket);
         tail_.advance_sole_writer_from(pos, pos + 1);
         return ::foundation::core::Option<T>::some(item);
     }
 
-    void publish_range_(std::size_t bit_start, std::size_t bit_end, std::size_t N) noexcept {
-        // A full batch sets the bits of each cell and no other bit.  The
-        // prefix scan of try_pop_batch reads a set bit past Capacity as one
-        // more ready cell.
-        if (N >= Capacity) [[unlikely]] {
-            for (auto& word : ready_) {
-                word.fetch_or(kCellBits, std::memory_order_release);
-            }
-            return;
-        }
-        // A range that wrapped the buffer end arrives with its end at
-        // or below its start, and splits into two segments.
-        if (bit_end <= bit_start) {
-            set_word_range_(bit_start, Capacity);
-            set_word_range_(0, bit_end);
-        } else {
-            set_word_range_(bit_start, bit_end);
-        }
-    }
-
-    // Callers guarantee start < end and both within [0, Capacity).
-    void set_word_range_(std::size_t start, std::size_t end) noexcept {
-        while (start < end) {
-            const std::size_t word_idx = start >> 6;
-            const std::size_t bit_offset = start & 63;
-            const std::size_t word_room = 64 - bit_offset;
-            const std::size_t range_left = end - start;
-            const std::size_t bits_in_word = range_left < word_room ? range_left : word_room;
-            const std::uint64_t mask =
-                (bits_in_word == 64) ? kAllSet : (((std::uint64_t{1} << bits_in_word) - 1) << bit_offset);
-            ready_[word_idx].fetch_or(mask, std::memory_order_release);
-            start += bits_in_word;
-        }
-    }
-
-    void clear_range_(std::size_t bit_start, std::size_t bit_end, std::size_t N) noexcept {
-        if (N >= Capacity) [[unlikely]] {
-            for (auto& word : ready_) {
-                word.fetch_and(0, std::memory_order_release);
-            }
-            return;
-        }
-        if (bit_end <= bit_start) {
-            clear_word_range_(bit_start, Capacity);
-            clear_word_range_(0, bit_end);
-        } else {
-            clear_word_range_(bit_start, bit_end);
-        }
-    }
-
-    void clear_word_range_(std::size_t start, std::size_t end) noexcept {
-        while (start < end) {
-            const std::size_t word_idx = start >> 6;
-            const std::size_t bit_offset = start & 63;
-            const std::size_t word_room = 64 - bit_offset;
-            const std::size_t range_left = end - start;
-            const std::size_t bits_in_word = range_left < word_room ? range_left : word_room;
-            const std::uint64_t mask =
-                (bits_in_word == 64) ? kAllSet : (((std::uint64_t{1} << bits_in_word) - 1) << bit_offset);
-            ready_[word_idx].fetch_and(~mask, std::memory_order_release);
-            start += bits_in_word;
-        }
-    }
-
-    // The array is aligned, not each cell, so the cells stay packed.
-    // A producer fetch_or and the consumer fetch_and on one bitmap word
-    // are read-modify-writes and so are safe, but they do contend for
-    // the line.  head_ and tail_ each take a line of their own, which
+    // The producers write head_, and they read no line of the consumer.  The
+    // consumer is the one writer of tail_, which only a snapshot reads apart
+    // from the consumer.  Each counter takes a line of its own, which
     // AtomicMonotonic carries: it is alignas(64) and at least a line in
     // size, and asserts both in its own header.
 
-    alignas(64) std::array<T, Capacity> cells_{};
-    alignas(64) std::array<std::atomic<std::uint64_t>, WORDS> ready_{};
-    // The producers write head_.  The consumer is the one writer of tail_.
+    SequenceCells<T, Capacity> cells_{};
     ::fixy::AtomicMonotonic<std::uint64_t> head_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
     ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> tail_ =
         ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);

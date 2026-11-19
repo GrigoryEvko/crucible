@@ -13,7 +13,7 @@
 //     handle belongs to the consumer thread.  A push gives the object of its
 //     Box to a word.  The ring writes the word to its cell and then publishes
 //     the cell with a release store: the head of the SPSC ring of a wire, or
-//     the ready bit of the cell of the MPSC ring of a merge.  A pop reads that
+//     the turn word of the cell of the MPSC ring of a merge.  A pop reads that
 //     store with an acquire load before it reads the cell.  So the consumer
 //     sees each write to the object that its producer made before the push,
 //     and the Box of the pop owns the object alone.

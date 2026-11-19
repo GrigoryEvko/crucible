@@ -1,6 +1,6 @@
 // MpscRing multi-producer contention bench.
 //
-// Validates the post-Vyukov bitmap design's claim from the commit:
+// Validates the claim of the batch push of the ring:
 //
 //   "Real win for THIS API: multi-producer contention.
 //    Single FAA(tail, N) replaces N × FAA(tail, 1)."
