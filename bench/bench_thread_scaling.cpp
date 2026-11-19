@@ -20,6 +20,14 @@
 //   mpsc reference     try_push and try_pop of the pinned MPMCQueue of Erik
 //                      Rigtorp (utils/pins.txt), a queue with a turn word in
 //                      each slot in the form of Dmitry Vyukov
+//   lanes push         try_push of fixy/concurrent/LaneRing.h into the lane
+//                      of each producer, and try_pop on the last thread, which
+//                      takes one item of each lane in turn (THE LANES)
+//   lanes permissioned try_push of a producer handle of a lane of the lanes
+//   push               channel of fixy/concurrent/PermissionedChannel.h, and
+//                      try_pop of its consumer handle (THE PERMISSIONED ROWS)
+//   mpsc slow push     the mpsc push, with one slow producer (THE SLOW PRODUCER)
+//   lanes slow push    the lanes push, with one slow producer
 //   spsc push          try_push of fixy/concurrent/SpscRing.h on the main
 //                      thread, and try_pop on one consumer
 //   spsc proven push   try_push_proven and try_pop_proven of a ring that the
@@ -31,6 +39,22 @@
 //   A push into a full ring waits for the consumer.  A pop of an empty ring
 //   waits for a producer.  Each wait spins with the spin hint.  A batch op
 //   counts each item of its batch.
+//
+// THE LANES
+//   The ring of lanes has kBenchLanes lanes of kLaneCapacity cells.  The
+//   producer of slot k pushes into lane k, and a row ends each lane past its
+//   producers before its threads start.  The consumer waits for the lane of
+//   its turn, so each producer of a row pushes at the pace of the slowest one.
+//   A row of more producers than lanes gives no row of a lanes op.
+//
+// THE SLOW PRODUCER
+//   In a row of a slow op, the producer of the last slot before the consumer
+//   runs kSlowPauses spin hints before each push.  The other producers push at
+//   full speed.  A row of fewer than three threads has no slow producer, and
+//   gives no row.  The shared ring of the mpsc slow push takes the items of the
+//   fast producers while the slow one waits.  The ring of lanes waits for the
+//   slow lane, which sets the pace of the whole row (THE STALL of
+//   fixy/concurrent/LaneRing.h).
 //
 // THE PLACES OF THE CONSUMER
 //   The consumer of an mpsc row is the thread of the last slot of the row.
@@ -116,6 +140,7 @@
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/concurrent/LaneRing.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/SpscRing.h>
@@ -146,9 +171,9 @@ using Item = std::uint64_t;
 
 // The threads of one row, at most.  The command of the owner runs 224.
 constexpr std::size_t kMaxThreads = 256;
-// The rows of one op, at most, and the latency reports of the ten ops.
+// The rows of one op, at most, and the latency reports of the fourteen ops.
 constexpr std::size_t kMaxRows = 16;
-constexpr std::size_t kMaxReports = 10 * kMaxRows;
+constexpr std::size_t kMaxReports = 14 * kMaxRows;
 constexpr std::uint64_t kWindowNs = 500000000;
 constexpr std::size_t kLatencySamples = 1000000;
 constexpr std::size_t kLatencyWarmup = 10000;
@@ -161,6 +186,12 @@ constexpr std::size_t kRingCapacity = 4096;
 // The items of one batch push, and the items of one batch pop at most.
 constexpr std::size_t kBatch = 16;
 constexpr std::size_t kPopBatch = 64;
+// The lanes of the ring of lanes and the cells of each lane (THE LANES).
+constexpr ::fixy::concurrent::LaneCount kBenchLanes{16};
+constexpr std::size_t kLaneCapacity = 1024;
+using BenchLaneIndex = ::fixy::concurrent::LaneIndex<kBenchLanes>;
+// The spin hints of the slow producer before each push (THE SLOW PRODUCER).
+constexpr std::uint32_t kSlowPauses = 64;
 
 }  // namespace
 
@@ -258,6 +289,10 @@ enum class OpKind : std::uint8_t {
     MpscBatchPush,
     MpscReferencePush,
     MpscPermissionedPush,
+    LanesPush,
+    LanesPermissionedPush,
+    MpscSlowPush,
+    LanesSlowPush,
     SpscPush,
     SpscProvenPush,
     SpscBatchPush,
@@ -283,6 +318,15 @@ inline constexpr bool kHasConsumer = Kind != OpKind::SharedAdd && Kind != OpKind
 template <OpKind Kind>
 inline constexpr bool kIsSpsc = Kind == OpKind::SpscPush || Kind == OpKind::SpscProvenPush
                              || Kind == OpKind::SpscBatchPush || Kind == OpKind::SpscReferencePush;
+
+// True for an op of the ring of lanes or of the lanes channel (THE LANES).
+template <OpKind Kind>
+inline constexpr bool kIsLanes =
+    Kind == OpKind::LanesPush || Kind == OpKind::LanesPermissionedPush || Kind == OpKind::LanesSlowPush;
+
+// True for an op with one slow producer (THE SLOW PRODUCER).
+template <OpKind Kind>
+inline constexpr bool kHasSlowProducer = Kind == OpKind::MpscSlowPush || Kind == OpKind::LanesSlowPush;
 
 // The items of one op.
 template <OpKind Kind>
@@ -336,6 +380,19 @@ enum class Role : std::uint8_t {
 struct ThreadCountTag final {};
 using ThreadCount = ::fixy::Id<ThreadCountTag, std::uint32_t>;
 
+// The pace of a producer (THE SLOW PRODUCER).
+enum class Pace : std::uint8_t {
+    full,
+    slow,
+};
+
+// The lane and the pace of one producer of a row.  Each producer holds its
+// seat as a value, which the main thread gives it before its thread starts.
+struct Seat {
+    BenchLaneIndex lane{::fixy::index<0>()};
+    Pace pace = Pace::full;
+};
+
 // The line that one thread writes: its own cell, its items in each window,
 // and whether it published them.
 struct alignas(64) ThreadLine {
@@ -370,6 +427,7 @@ struct RowControl {
 struct RowState : RowControl {
     ::fixy::concurrent::MpscRing<Item, kRingCapacity> mpsc{};
     ::fixy::concurrent::MpscRing<Item, kRingCapacity, ::fixy::concurrent::CellSpacing::packed> mpsc_packed{};
+    ::fixy::concurrent::LaneRing<Item, kLaneCapacity, kBenchLanes> lanes{};
     ::fixy::concurrent::SpscRing<Item, kRingCapacity> spsc{};
     ProvenOwner::Ring spsc_proven{};
     MpscReference mpsc_reference{};
@@ -408,15 +466,50 @@ template <class Push>
     }
 }
 
+// The delay of the slow producer before each push (THE SLOW PRODUCER).
+[[gnu::always_inline]] inline void wait_for_pace(Seat const& seat) noexcept {
+    if (seat.pace == Pace::full) return;
+    for (std::uint32_t pause = 0; pause < kSlowPauses; ++pause) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+}
+
+// The seat of the producer of a slot of a row: lane k for the producer of slot
+// k of a lanes op (THE LANES), and the slow pace for the last producer of a
+// slow op (THE SLOW PRODUCER).  A row of a lanes op has at most kBenchLanes
+// producers.
+template <OpKind Kind>
+[[nodiscard]] Seat seat_of(bench::ThreadSlot slot, ThreadCount threads) noexcept {
+    Seat seat{};
+    if constexpr (kIsLanes<Kind>) {
+        seat.lane = BenchLaneIndex::check(slot.raw()).expect("a row of a lanes op has a lane for each producer");
+    }
+    if constexpr (kHasSlowProducer<Kind>) {
+        std::uint32_t const producers = threads.raw() - 1;
+        seat.pace = slot.raw() + 1 == producers ? Pace::slow : Pace::full;
+    } else {
+        static_cast<void>(threads);
+    }
+    return seat;
+}
+
 // One op of a producer (THE OPS).
 template <OpKind Kind>
-[[gnu::always_inline]] inline void run_op(RowState& state, ThreadLine& line) noexcept {
+[[gnu::always_inline]] inline void run_op(RowState& state, ThreadLine& line, Seat const& seat) noexcept {
     if constexpr (Kind == OpKind::SharedAdd) {
         static_cast<void>(state.shared.value.fetch_add_acq_rel(1));
     } else if constexpr (Kind == OpKind::OwnAdd) {
         static_cast<void>(line.cell.fetch_add_acq_rel(1));
     } else if constexpr (Kind == OpKind::MpscPush) {
         push_waiting(state, [&state]() noexcept { return state.mpsc.try_push(Item{1}); });
+    } else if constexpr (Kind == OpKind::LanesPush) {
+        push_waiting(state, [&state, &seat]() noexcept { return state.lanes.try_push(seat.lane, Item{1}); });
+    } else if constexpr (Kind == OpKind::MpscSlowPush) {
+        wait_for_pace(seat);
+        push_waiting(state, [&state]() noexcept { return state.mpsc.try_push(Item{1}); });
+    } else if constexpr (Kind == OpKind::LanesSlowPush) {
+        wait_for_pace(seat);
+        push_waiting(state, [&state, &seat]() noexcept { return state.lanes.try_push(seat.lane, Item{1}); });
     } else if constexpr (Kind == OpKind::MpscPackedPush) {
         push_waiting(state, [&state]() noexcept { return state.mpsc_packed.try_push(Item{1}); });
     } else if constexpr (Kind == OpKind::MpscBatchPush) {
@@ -465,9 +558,9 @@ void run_producer_loop(RowControl& control, Op const& op, ThreadLine& line) noex
 }
 
 template <OpKind Kind>
-void run_producer(RowState& state, ThreadLine& line) noexcept {
+void run_producer(RowState& state, ThreadLine& line, Seat const& seat) noexcept {
     run_producer_loop<Kind>(
-        state, [&state, &line] [[gnu::always_inline]] () noexcept { run_op<Kind>(state, line); }, line);
+        state, [&state, &line, &seat] [[gnu::always_inline]] () noexcept { run_op<Kind>(state, line, seat); }, line);
 }
 
 // The sum of the items that a pop took: one item, or each item of a batch.
@@ -500,8 +593,12 @@ template <OpKind Kind>
         sum += sum_of(out, count);
         return count != 0;
     };
-    if constexpr (Kind == OpKind::MpscPush) {
+    if constexpr (Kind == OpKind::MpscPush || Kind == OpKind::MpscSlowPush) {
         return take_one(state.mpsc.try_pop(merge));
+    } else if constexpr (Kind == OpKind::LanesPush || Kind == OpKind::LanesSlowPush) {
+        // The pop of the ring of lanes is in the order of its lanes, so it
+        // takes no tag of Nondet.
+        return take_one(state.lanes.try_pop());
     } else if constexpr (Kind == OpKind::MpscPackedPush) {
         return take_one(state.mpsc_packed.try_pop(merge));
     } else if constexpr (Kind == OpKind::MpscBatchPush) {
@@ -603,9 +700,9 @@ template <OpKind Kind, class Op>
 }
 
 template <OpKind Kind>
-[[nodiscard]] Window run_window(RowState& state, ThreadLine& line, bench::CpuId cpu) noexcept {
+[[nodiscard]] Window run_window(RowState& state, ThreadLine& line, Seat const& seat, bench::CpuId cpu) noexcept {
     return run_window_loop<Kind>(
-        state, [&state, &line] [[gnu::always_inline]] () noexcept { run_op<Kind>(state, line); }, cpu);
+        state, [&state, &line, &seat] [[gnu::always_inline]] () noexcept { run_op<Kind>(state, line, seat); }, cpu);
 }
 
 // The result of one row.
@@ -634,6 +731,10 @@ template <OpKind Kind>
     if constexpr (Kind == OpKind::MpscBatchPush) return ::fixy::TextView{"mpsc batch push"};
     if constexpr (Kind == OpKind::MpscReferencePush) return ::fixy::TextView{"mpsc reference push"};
     if constexpr (Kind == OpKind::MpscPermissionedPush) return ::fixy::TextView{"mpsc permissioned push"};
+    if constexpr (Kind == OpKind::LanesPush) return ::fixy::TextView{"lanes push"};
+    if constexpr (Kind == OpKind::LanesPermissionedPush) return ::fixy::TextView{"lanes permissioned push"};
+    if constexpr (Kind == OpKind::MpscSlowPush) return ::fixy::TextView{"mpsc slow push"};
+    if constexpr (Kind == OpKind::LanesSlowPush) return ::fixy::TextView{"lanes slow push"};
     if constexpr (Kind == OpKind::SpscPush) return ::fixy::TextView{"spsc push"};
     if constexpr (Kind == OpKind::SpscProvenPush) return ::fixy::TextView{"spsc proven push"};
     if constexpr (Kind == OpKind::SpscBatchPush) return ::fixy::TextView{"spsc batch push"};
@@ -697,12 +798,13 @@ public:
             Role const role = slot == consumer_slot ? Role::Consumer : Role::Producer;
             ThreadLine& line = line_of(state, bench::ThreadSlot{slot});
             bench::CpuId const cpu = cpu_of_slot(spread, bench::ThreadSlot{slot}, role, place);
-            threads_[slot] = std::jthread{[&state, &line, role, cpu]() noexcept {
+            Seat const seat = role == Role::Producer ? seat_of<Kind>(bench::ThreadSlot{slot}, threads) : Seat{};
+            threads_[slot] = std::jthread{[&state, &line, role, cpu, seat]() noexcept {
                 bench::pin_calling_thread_to(cpu).expect("the pin of a worker to the CPU of its slot");
                 if (role == Role::Consumer) {
                     run_consumer<Kind>(state, line);
                 } else {
-                    run_producer<Kind>(state, line);
+                    run_producer<Kind>(state, line, seat);
                 }
             }};
         }
@@ -768,22 +870,39 @@ template <OpKind Kind, class Op>
     return result;
 }
 
+// The end of each lane of a lanes op past the producers of the row, so the
+// turn of the consumer holds only the lanes of the producers (THE LANES).  The
+// main thread runs it before the workers start.  Complexity: linear in the
+// lanes.
+template <OpKind Kind>
+void end_lanes_past_the_producers(RowState& state, ThreadCount threads) noexcept {
+    if constexpr (kIsLanes<Kind>) {
+        std::uint32_t const producers = threads.raw() - 1;
+        for (BenchLaneIndex const lane : ::fixy::IndexRange<static_cast<std::size_t>(kBenchLanes)>{}) {
+            if (lane.raw() >= producers) state.lanes.end_lane(lane);
+        }
+    }
+}
+
 // Runs one row of an op on the first threads.count slots of the spread.
 template <OpKind Kind>
 [[nodiscard]] RowResult run_row(bench::Spread const& spread, ThreadCount threads, ConsumerPlace place) {
     RowState state{};
     for (::fixy::Index<kBatch> const index : state.batch.indices())
         state.batch.at(index) = Item{index.raw() + 1};
+    end_lanes_past_the_producers<Kind>(state, threads);
     RawWorkers workers{};
     workers.start<Kind>(state, spread, threads, place);
     while (state.ready.value.load_acquire() + 1 < threads.raw())
         CRUCIBLE_SPIN_PAUSE;
 
     ThreadLine& own = line_of(state, bench::kMeasuringSlot);
+    Seat const own_seat = seat_of<Kind>(bench::kMeasuringSlot, threads);
     bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
     RowResult result =
-        finish_row<Kind>(state, threads, place, main_cpu,
-                         [&state, &own] [[gnu::always_inline]] () noexcept { run_op<Kind>(state, own); });
+        finish_row<Kind>(state, threads, place, main_cpu, [&state, &own, &own_seat] [[gnu::always_inline]] () noexcept {
+            run_op<Kind>(state, own, own_seat);
+        });
     workers.join();
     return result;
 }
@@ -791,13 +910,37 @@ template <OpKind Kind>
 // The tag of the root of the channel of a permissioned row.  Each row mints
 // its root in its body, so the brand of the root stays in the scope that made
 // it.
-struct PermissionedMpscTag final {};
+struct PermissionedRowTag final {};
 
-// A producer handle that the pool of the channel lends.  No exclusive is out
-// in the bench, so an empty lend ends the process.
-template <class Channel>
+// The form of the channel of a permissioned op.
+template <OpKind Kind>
+inline constexpr ::fixy::concurrent::ChannelForm kRowForm =
+    Kind == OpKind::LanesPermissionedPush ? ::fixy::concurrent::ChannelForm::lanes
+                                          : ::fixy::concurrent::ChannelForm::merge;
+
+// The channel of a permissioned row of Threads threads and a root of type
+// Root: a merge channel of kRingCapacity cells, or a lanes channel of one lane
+// of kLaneCapacity cells for each producer.
+template <OpKind Kind, std::uint32_t Threads, class Root>
+struct RowChannel {
+    using type = ::fixy::concurrent::channel_t<Item, kRingCapacity, Root>;
+};
+template <std::uint32_t Threads, class Root>
+struct RowChannel<OpKind::LanesPermissionedPush, Threads, Root> {
+    using type = ::fixy::concurrent::channel_t<Item, kLaneCapacity, Root, ::fixy::concurrent::LaneCount{Threads - 1}>;
+};
+
+// The producer handle of the slot Slot of a permissioned row: a share that
+// the pool of a merge lends, or the lane of the slot of a lanes channel.  No
+// exclusive is out in the bench, so an empty lend ends the process.
+template <OpKind Kind, std::size_t Slot, class Channel>
 [[nodiscard]] typename Channel::ProducerHandle lend_producer(Channel& channel) noexcept {
-    return channel.producer().expect("the channel lends a producer while no exclusive is out");
+    if constexpr (Kind == OpKind::LanesPermissionedPush) {
+        return channel.producer(typename Channel::lane_index{::fixy::index<Slot>()})
+            .expect("the channel lends the lane of a slot while no exclusive is out");
+    } else {
+        return channel.producer().expect("the channel lends a producer while no exclusive is out");
+    }
 }
 
 // The options of the worker of a slot of a permissioned row: its name and the
@@ -836,12 +979,13 @@ template <class Measure, class Body, class... Rest>
 
 // The body of a producer worker of a permissioned row: it moves its end onto
 // its own stack and pushes into it until the row stops.  The end goes back to
-// the pool of the channel when the body ends.
-template <class Producer>
+// the pool of the channel when the body ends, and the end of a lane ends the
+// lane.
+template <OpKind Kind, class Producer>
 [[nodiscard]] auto make_beside_pusher(RowControl& control, ThreadLine& line, Producer&& producer) noexcept {
     return [&control, &line, owned = std::move(producer)]() mutable noexcept {
         auto end = std::move(owned);
-        run_producer_loop<OpKind::MpscPermissionedPush>(
+        run_producer_loop<Kind>(
             control,
             [&control, &end] [[gnu::always_inline]] () noexcept {
                 push_waiting(control, [&end]() noexcept { return end.try_push(Item{1}); });
@@ -850,39 +994,18 @@ template <class Producer>
     };
 }
 
-// One row of the permissioned MPSC channel with Threads threads: the main
-// thread and the workers of slots 1 to Threads - 2 push, each through a
-// producer handle that the pool lends, and the worker of the last slot pops
-// through the consumer handle.  Each worker owns its end in its own frame, so
-// no end shares a line with an object that the main thread writes.
-template <std::uint32_t Threads, std::size_t... Producers>
-[[nodiscard]] RowResult run_permissioned_row(bench::Spread const& spread,
-                                             std::index_sequence<Producers...> /*pushers*/) {
-    auto root = perm::mint_permission_root<
-        ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::merge, PermissionedMpscTag>>();
-    using Mpsc = ::fixy::concurrent::channel_t<Item, kRingCapacity, decltype(root)>;
-    RowControl control{};
-    auto [producer_root, consumer_perm] =
-        perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(std::move(root));
-    Mpsc channel{std::move(producer_root)};
-    eff::cap::Nondet const merge = eff::testing::test().nondet;
-    Mpsc::ProducerHandle producer = lend_producer(channel);
-    auto push = [&control, &producer] [[gnu::always_inline]] () noexcept {
-        push_waiting(control, [&producer]() noexcept { return producer.try_push(Item{1}); });
-    };
-    bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
-    auto measure = [&control, &spread, &push, main_cpu]() noexcept {
-        while (control.ready.value.load_acquire() + 1 < Threads)
-            CRUCIBLE_SPIN_PAUSE;
-        return finish_row<OpKind::MpscPermissionedPush>(control, ThreadCount{Threads}, ConsumerPlace::LastSlot,
-                                                        main_cpu, push);
-    };
-    auto popper = [&control, owned = channel.consumer(std::move(consumer_perm)), merge]() mutable noexcept {
+// The body of the consumer worker of the last slot of a permissioned row: it
+// moves its end onto its own stack and pops until the row stops.  The pack
+// holds the tag of Nondet for a merge, and no value for a lanes channel,
+// whose pop is in the order of its lanes.
+template <std::uint32_t Threads, class Consumer, typename... PopTag>
+[[nodiscard]] auto make_beside_popper(RowControl& control, Consumer&& consumer, PopTag... tag) noexcept {
+    return [&control, owned = std::move(consumer), tag...]() mutable noexcept {
         auto end = std::move(owned);
         run_consumer_loop(
             control,
-            [merge] [[gnu::always_inline]] (auto& from, ::fixy::View<Item> /*out*/, std::uint64_t& sum) noexcept {
-                ::fixy::Option<Item> item = from.try_pop(merge);
+            [tag...] [[gnu::always_inline]] (auto& from, ::fixy::View<Item> /*out*/, std::uint64_t& sum) noexcept {
+                ::fixy::Option<Item> item = from.try_pop(tag...);
                 bool const has_item = item.is_some();
                 sum += sum_of(std::move(item));
                 return has_item;
@@ -890,12 +1013,49 @@ template <std::uint32_t Threads, std::size_t... Producers>
             end, line_of(control, bench::ThreadSlot{Threads - 1}));
         ::foundation::linear::drop(std::move(end));
     };
+}
+
+// One row of a permissioned channel with Threads threads: the main thread and
+// the workers of slots 1 to Threads - 2 push, each through a producer handle
+// that the pool lends, and the worker of the last slot pops through the
+// consumer handle.  The producer of slot k of a lanes channel pushes into
+// lane k.  Each worker owns its end in its own frame, so no end shares a line
+// with an object that the main thread writes.
+template <OpKind Kind, std::uint32_t Threads, std::size_t... Producers>
+[[nodiscard]] RowResult run_permissioned_row(bench::Spread const& spread,
+                                             std::index_sequence<Producers...> /*pushers*/) {
+    auto root =
+        perm::mint_permission_root<::fixy::concurrent::channel_tag::Whole<kRowForm<Kind>, PermissionedRowTag>>();
+    using Channel = typename RowChannel<Kind, Threads, decltype(root)>::type;
+    RowControl control{};
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<typename Channel::producer_tag, typename Channel::consumer_tag>(std::move(root));
+    Channel channel{std::move(producer_root)};
+    typename Channel::ProducerHandle producer = lend_producer<Kind, 0>(channel);
+    auto push = [&control, &producer] [[gnu::always_inline]] () noexcept {
+        push_waiting(control, [&producer]() noexcept { return producer.try_push(Item{1}); });
+    };
+    bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
+    auto measure = [&control, &spread, &push, main_cpu]() noexcept {
+        while (control.ready.value.load_acquire() + 1 < Threads)
+            CRUCIBLE_SPIN_PAUSE;
+        return finish_row<Kind>(control, ThreadCount{Threads}, ConsumerPlace::LastSlot, main_cpu, push);
+    };
+    auto popper = [&control, &channel, &consumer_perm]() noexcept {
+        if constexpr (Kind == OpKind::LanesPermissionedPush) {
+            return make_beside_popper<Threads>(control, channel.consumer(std::move(consumer_perm)));
+        } else {
+            return make_beside_popper<Threads>(control, channel.consumer(std::move(consumer_perm)),
+                                               eff::testing::test().nondet);
+        }
+    }();
     // The producer of the main thread goes back to the pool of the channel at
     // the end of its scope.
     return run_beside_workers(
         spread, bench::ThreadSlot{1}, measure,
-        make_beside_pusher(control, line_of(control, bench::ThreadSlot{static_cast<std::uint32_t>(Producers) + 1}),
-                           lend_producer(channel))...,
+        make_beside_pusher<Kind>(control,
+                                 line_of(control, bench::ThreadSlot{static_cast<std::uint32_t>(Producers) + 1}),
+                                 lend_producer<Kind, Producers + 1>(channel))...,
         std::move(popper));
 }
 
@@ -903,18 +1063,19 @@ template <std::uint32_t Threads, std::size_t... Producers>
 // bench builds no row of.  The workers of a row hold the ends of the channel
 // in the bodies of run_beside, so a count of threads is a count of bodies, and
 // the rows take the counts 2, 4, 8 and 16.
+template <OpKind Kind>
 [[nodiscard]] ::fixy::Option<RowResult> run_permissioned_row_of(bench::Spread const& spread,
                                                                 ThreadCount threads) noexcept {
     if (threads.raw() > spread.count()) return ::fixy::none;
     switch (threads.raw()) {
         case 2:
-            return ::fixy::some(run_permissioned_row<2>(spread, std::make_index_sequence<0>{}));
+            return ::fixy::some(run_permissioned_row<Kind, 2>(spread, std::make_index_sequence<0>{}));
         case 4:
-            return ::fixy::some(run_permissioned_row<4>(spread, std::make_index_sequence<2>{}));
+            return ::fixy::some(run_permissioned_row<Kind, 4>(spread, std::make_index_sequence<2>{}));
         case 8:
-            return ::fixy::some(run_permissioned_row<8>(spread, std::make_index_sequence<6>{}));
+            return ::fixy::some(run_permissioned_row<Kind, 8>(spread, std::make_index_sequence<6>{}));
         case 16:
-            return ::fixy::some(run_permissioned_row<16>(spread, std::make_index_sequence<14>{}));
+            return ::fixy::some(run_permissioned_row<Kind, 16>(spread, std::make_index_sequence<14>{}));
         default:
             return ::fixy::none;
     }
@@ -979,9 +1140,9 @@ void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> co
             static_cast<void>(rows.append(run_row<Kind>(spread, ThreadCount{2}, ConsumerPlace::OtherL3))
                                   .expect("an op has at most kMaxRows rows"));
         }
-    } else if constexpr (Kind == OpKind::MpscPermissionedPush) {
+    } else if constexpr (Kind == OpKind::MpscPermissionedPush || Kind == OpKind::LanesPermissionedPush) {
         for (ThreadCount const threads : counts) {
-            ::fixy::Option<RowResult> row = run_permissioned_row_of(spread, threads);
+            ::fixy::Option<RowResult> row = run_permissioned_row_of<Kind>(spread, threads);
             if (row.is_none()) continue;
             static_cast<void>(rows.append(std::move(row).expect("the test above found a row"))
                                   .expect("an op has at most kMaxRows rows"));
@@ -990,6 +1151,10 @@ void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> co
         for (ThreadCount const threads : counts) {
             // A row of an op with a consumer needs a producer beside its consumer.
             if (producers_of<Kind>(threads) == 0) continue;
+            // A lanes op has a lane for each producer (THE LANES), and a slow
+            // op has a slow producer beside the main thread (THE SLOW PRODUCER).
+            if (kIsLanes<Kind> && producers_of<Kind>(threads) > static_cast<std::uint64_t>(kBenchLanes)) continue;
+            if (kHasSlowProducer<Kind> && producers_of<Kind>(threads) < 2) continue;
             static_cast<void>(rows.append(run_row<Kind>(spread, threads, ConsumerPlace::LastSlot))
                                   .expect("an op has at most kMaxRows rows"));
         }
@@ -1127,6 +1292,16 @@ int run_bench(::fixy::os::Args const& arguments) {
             run_op_rows<OpKind::MpscReferencePush>(
                 spread, counts.view(), "mpsc reference push: the pinned MPMCQueue of Erik Rigtorp", reports);
         }
+        run_op_rows<OpKind::LanesPush>(spread, counts.view(),
+                                       "lanes push: one SPSC lane for each producer, read in the order of the lanes",
+                                       reports);
+        run_op_rows<OpKind::LanesPermissionedPush>(
+            spread, counts.view(), "lanes permissioned push: the lanes channel, each end in the body of its worker",
+            reports);
+        run_op_rows<OpKind::MpscSlowPush>(spread, counts.view(), "mpsc slow push: the mpsc push with one slow producer",
+                                          reports);
+        run_op_rows<OpKind::LanesSlowPush>(spread, counts.view(),
+                                           "lanes slow push: the lanes push with one slow producer", reports);
     }
     if (has_group(OpGroup::Spsc)) {
         run_op_rows<OpKind::SpscPush>(spread, counts.view(), "spsc push: the main thread produces", reports);
