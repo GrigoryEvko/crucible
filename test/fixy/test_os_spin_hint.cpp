@@ -100,7 +100,7 @@ void test_a_store_ends_the_wait(SpinArm arm) {
     core::Atomic<std::uint32_t> word{0};
     core::Atomic<std::uint32_t> waiting_round{0};
     core::Atomic<std::uint32_t> lost_rounds{0};
-    auto waiter = [&]() noexcept {
+    auto waiter = [&word, &waiting_round, &lost_rounds, arm]() noexcept {
         for (std::uint32_t round = 0; round < kRounds; ++round) {
             waiting_round.store_release(round + 1);
             SpinEnd const end = os::wait_for_change(word, round, os::read_spin_counter() + kLongWaitTicks, arm);
