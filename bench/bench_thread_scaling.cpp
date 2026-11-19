@@ -11,6 +11,10 @@
 //   mpsc packed push   the same calls on the ring with packed cells
 //                      (CellSpacing::packed), whose cache line holds the cells
 //                      of some adjacent tickets
+//   mpsc permissioned  try_push of a producer handle of the merge channel of
+//   push               fixy/concurrent/PermissionedChannel.h on each producer,
+//                      and try_pop of its consumer handle on the last thread
+//                      (THE PERMISSIONED ROWS)
 //   mpsc batch push    try_push_batch of kBatch items from each producer, and
 //                      try_pop_batch of up to kPopBatch items on the consumer
 //   mpsc reference     try_push and try_pop of the pinned MPMCQueue of Erik
@@ -50,6 +54,16 @@
 //   type of the base states that, so no door of the base can check the
 //   workers.  The rows thus keep the raw rings and raw threads as a
 //   measurement, in a MEASURE region.
+//
+// THE PERMISSIONED ROWS
+//   The rows of the permissioned channel run each worker beside the main
+//   thread through run_beside of fixy/os/ThreadTasks.h, and not on a raw
+//   thread.  The end of the channel of each worker moves into the body of its
+//   worker, and the body moves it onto its own stack, so no end shares a line
+//   with an object of the frame of the main thread.  A body borrows only the
+//   atomics of the row (RowControl), as the door of the thread asks.  The
+//   count of the bodies is a count of template arguments, so these rows take
+//   the counts 2, 4, 8 and 16.
 //
 // THE PHASES OF A ROW
 //   1. The window: each thread runs the op and counts it for kWindowNs.  The
@@ -103,10 +117,14 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/MpscRing.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/SpscRing.h>
 #include <fixy/os/Args.h>
+#include <fixy/os/ThreadTasks.h>
+#include <foundation/Linear.h>
 #include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/permissions/Permission.h>
 
 #include <array>
 #include <cstddef>
@@ -119,7 +137,11 @@
 namespace {
 
 namespace eff = ::foundation::effects;
+namespace perm = ::foundation::permissions;
 
+// The context that starts the workers of a permissioned row: Bg for the
+// threads, Alloc for their frames.
+using Starter = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 using Item = std::uint64_t;
 
 // The threads of one row, at most.  The command of the owner runs 224.
@@ -235,6 +257,7 @@ enum class OpKind : std::uint8_t {
     MpscPackedPush,
     MpscBatchPush,
     MpscReferencePush,
+    MpscPermissionedPush,
     SpscPush,
     SpscProvenPush,
     SpscBatchPush,
@@ -329,15 +352,22 @@ struct alignas(64) CountLine {
     ::fixy::Atomic<std::uint64_t> value{};
 };
 
-// The state that the threads of one row share.  The main thread owns it, and
-// it outlives each worker of the row.  Each row builds each ring and each
-// reference, and it uses the one of its op.
-struct RowState {
+// The part of the state of a row that holds only atomics: the phase, the
+// count of the workers that wait, the shared cell and the line of each
+// thread.  A body beside the caller borrows only this part (THE PERMISSIONED
+// ROWS).
+struct RowControl {
     PhaseLine phase{};
     // The workers that wait for the window.
     CountLine ready{};
     CountLine shared{};
     ::fixy::FixedArray<ThreadLine, kMaxThreads> lines{};
+};
+
+// The state that the threads of one row share.  The main thread owns it, and
+// it outlives each worker of the row.  Each row builds each ring and each
+// reference, and it uses the one of its op.
+struct RowState : RowControl {
     ::fixy::concurrent::MpscRing<Item, kRingCapacity> mpsc{};
     ::fixy::concurrent::MpscRing<Item, kRingCapacity, ::fixy::concurrent::CellSpacing::packed> mpsc_packed{};
     ::fixy::concurrent::SpscRing<Item, kRingCapacity> spsc{};
@@ -348,18 +378,18 @@ struct RowState {
     ::fixy::FixedArray<Item, kBatch> batch{};
 };
 
-[[nodiscard]] Phase read_phase(RowState const& state) noexcept { return state.phase.phase.load_acquire(); }
+[[nodiscard]] Phase read_phase(RowControl const& control) noexcept { return control.phase.phase.load_acquire(); }
 
-[[nodiscard]] ThreadLine& line_of(RowState& state, bench::ThreadSlot slot) noexcept {
-    return *state.lines.get(slot.raw()).expect("a slot of a row is below kMaxThreads");
+[[nodiscard]] ThreadLine& line_of(RowControl& control, bench::ThreadSlot slot) noexcept {
+    return *control.lines.get(slot.raw()).expect("a slot of a row is below kMaxThreads");
 }
 
 // One push that waits while its ring is full, and that stops when the row
 // stops, so no producer waits for a consumer that ended.
 template <class Push>
-[[gnu::always_inline]] inline void push_waiting(RowState const& state, Push const& push) noexcept {
+[[gnu::always_inline]] inline void push_waiting(RowControl const& control, Push const& push) noexcept {
     while (!push()) {
-        if (read_phase(state) == Phase::Stop) return;
+        if (read_phase(control) == Phase::Stop) return;
         CRUCIBLE_SPIN_PAUSE;
     }
 }
@@ -410,26 +440,34 @@ template <OpKind Kind>
 // publishes, then the ops of the latency phase until the stop.  A run of
 // kOpsPerCheck ops counts in the window of the phase that the worker read
 // before it.
-template <OpKind Kind>
-void run_producer(RowState& state, ThreadLine& line) noexcept {
-    static_cast<void>(state.ready.value.fetch_add_acq_rel(1));
-    while (read_phase(state) == Phase::Wait)
+// The op is a call of the thread, so a worker that owns the end of a channel
+// runs the same loop.
+template <OpKind Kind, class Op>
+void run_producer_loop(RowControl& control, Op const& op, ThreadLine& line) noexcept {
+    static_cast<void>(control.ready.value.fetch_add_acq_rel(1));
+    while (read_phase(control) == Phase::Wait)
         CRUCIBLE_SPIN_PAUSE;
     ::fixy::FixedArray<std::uint64_t, bench::kWindows> ops{};
-    for (::fixy::Option<WindowIndex> window = window_of(read_phase(state)); window.is_some();
-         window = window_of(read_phase(state))) {
-        for (std::uint64_t op = 0; op < kOpsPerCheck; ++op)
-            run_op<Kind>(state, line);
+    for (::fixy::Option<WindowIndex> window = window_of(read_phase(control)); window.is_some();
+         window = window_of(read_phase(control))) {
+        for (std::uint64_t count = 0; count < kOpsPerCheck; ++count)
+            op();
         for (WindowIndex const index : window)
             ops.at(index) += kOpsPerCheck * kItemsPerOp<Kind>;
     }
     for (WindowIndex const index : ops.indices())
         line.window_ops.at(index).store_release(ops.at(index));
     line.is_published.store_release(true);
-    while (read_phase(state) != Phase::Stop) {
-        for (std::uint64_t op = 0; op < kOpsPerCheck; ++op)
-            run_op<Kind>(state, line);
+    while (read_phase(control) != Phase::Stop) {
+        for (std::uint64_t count = 0; count < kOpsPerCheck; ++count)
+            op();
     }
+}
+
+template <OpKind Kind>
+void run_producer(RowState& state, ThreadLine& line) noexcept {
+    run_producer_loop<Kind>(
+        state, [&state, &line] [[gnu::always_inline]] () noexcept { run_op<Kind>(state, line); }, line);
 }
 
 // The sum of the items that a pop took: one item, or each item of a batch.
@@ -484,18 +522,31 @@ template <OpKind Kind>
 // The loop of the consumer of an op: it pops until the stop, and it counts
 // no item of the window.  It stores the sum of its items into its line at
 // the end, so no read of a cell is dead code.
-template <OpKind Kind>
-void run_consumer(RowState& state, ThreadLine& line) noexcept {
+// The pop is a call of the thread, as the op of run_producer_loop is.  The
+// loop gives the pop its source on each call, so a pop of the end of a channel
+// holds no borrow of the end.
+template <class Pop, class Source>
+void run_consumer_loop(RowControl& control, Pop const& pop, Source& source, ThreadLine& line) noexcept {
     ::fixy::FixedArray<Item, kPopBatch> out{};
     std::uint64_t sum = 0;
     line.is_published.store_release(true);
-    static_cast<void>(state.ready.value.fetch_add_acq_rel(1));
-    while (read_phase(state) != Phase::Stop) {
-        for (std::uint64_t pop = 0; pop < kOpsPerCheck; ++pop) {
-            if (!pop_once<Kind>(state, out.view(), sum)) CRUCIBLE_SPIN_PAUSE;
+    static_cast<void>(control.ready.value.fetch_add_acq_rel(1));
+    while (read_phase(control) != Phase::Stop) {
+        for (std::uint64_t count = 0; count < kOpsPerCheck; ++count) {
+            if (!pop(source, out.view(), sum)) CRUCIBLE_SPIN_PAUSE;
         }
     }
     line.cell.store_release(sum);
+}
+
+template <OpKind Kind>
+void run_consumer(RowState& state, ThreadLine& line) noexcept {
+    run_consumer_loop(
+        state,
+        [] [[gnu::always_inline]] (RowState & from, ::fixy::View<Item> out, std::uint64_t& sum) noexcept {
+            return pop_once<Kind>(from, out, sum);
+        },
+        state, line);
 }
 
 // What the window of the main thread measured: its items, its wall time and
@@ -512,8 +563,8 @@ struct Window {
 // starts the latency phase.  The check of each window reads two clocks and no
 // file of procfs, so it does not change the basis of the pause of the whole
 // window (THE WINDOWS of bench/bench_harness.h).
-template <OpKind Kind>
-[[nodiscard]] Window run_window(RowState& state, ThreadLine& line, bench::CpuId cpu) noexcept {
+template <OpKind Kind, class Op>
+[[nodiscard]] Window run_window_loop(RowControl& control, Op const& op, bench::CpuId cpu) noexcept {
     bench::CoreHold const hold{cpu};
     ::fixy::InitLoadCtx const startup{eff::testing::init()};
     eff::cap::Nondet const nondet = eff::testing::test().nondet;
@@ -526,12 +577,12 @@ template <OpKind Kind>
     bench::WindowClock window_clock = bench::detail::read_window_clock();
     std::uint64_t start = now();
     for (WindowIndex const index : ::fixy::IndexRange<bench::kWindows>{}) {
-        state.phase.phase.store_release(phase_of(index));
+        control.phase.phase.store_release(phase_of(index));
         std::uint64_t end = start;
         std::uint64_t ops = 0;
         while (end - start < kWindowNs / bench::kWindows) {
-            for (std::uint64_t op = 0; op < kOpsPerClock; ++op)
-                run_op<Kind>(state, line);
+            for (std::uint64_t count = 0; count < kOpsPerClock; ++count)
+                op();
             ops += kOpsPerClock * kItemsPerOp<Kind>;
             end = now();
         }
@@ -544,11 +595,17 @@ template <OpKind Kind>
         window_clock = window_end;
         start = end;
     }
-    state.phase.phase.store_release(Phase::Latency);
+    control.phase.phase.store_release(Phase::Latency);
     bench::PauseReading const after = bench::detail::read_pause();
     window.pause = bench::detail::pause_between(::fixy::side_as<bench::side::ReadingBefore>(before),
                                                 ::fixy::side_as<bench::side::ReadingAfter>(after));
     return window;
+}
+
+template <OpKind Kind>
+[[nodiscard]] Window run_window(RowState& state, ThreadLine& line, bench::CpuId cpu) noexcept {
+    return run_window_loop<Kind>(
+        state, [&state, &line] [[gnu::always_inline]] () noexcept { run_op<Kind>(state, line); }, cpu);
 }
 
 // The result of one row.
@@ -576,6 +633,7 @@ template <OpKind Kind>
     if constexpr (Kind == OpKind::MpscPackedPush) return ::fixy::TextView{"mpsc packed push"};
     if constexpr (Kind == OpKind::MpscBatchPush) return ::fixy::TextView{"mpsc batch push"};
     if constexpr (Kind == OpKind::MpscReferencePush) return ::fixy::TextView{"mpsc reference push"};
+    if constexpr (Kind == OpKind::MpscPermissionedPush) return ::fixy::TextView{"mpsc permissioned push"};
     if constexpr (Kind == OpKind::SpscPush) return ::fixy::TextView{"spsc push"};
     if constexpr (Kind == OpKind::SpscProvenPush) return ::fixy::TextView{"spsc proven push"};
     if constexpr (Kind == OpKind::SpscBatchPush) return ::fixy::TextView{"spsc batch push"};
@@ -665,23 +723,16 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace {
 
-// Runs one row of an op on the first threads.count slots of the spread.
-template <OpKind Kind>
-[[nodiscard]] RowResult run_row(bench::Spread const& spread, ThreadCount threads, ConsumerPlace place) {
-    RowState state{};
-    for (::fixy::Index<kBatch> const index : state.batch.indices())
-        state.batch.at(index) = Item{index.raw() + 1};
-    RawWorkers workers{};
-    workers.start<Kind>(state, spread, threads, place);
-    while (state.ready.value.load_acquire() + 1 < threads.raw())
-        CRUCIBLE_SPIN_PAUSE;
-
-    ThreadLine& own = line_of(state, bench::kMeasuringSlot);
-    bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
-    Window const window = run_window<Kind>(state, own, main_cpu);
+// The window and the latency of the main thread, and the result of the row.
+// It stops the row at its end, so each worker ends its loop.  The caller then
+// joins the workers.
+template <OpKind Kind, class Op>
+[[nodiscard]] RowResult finish_row(RowControl& control, ThreadCount threads, ConsumerPlace place, bench::CpuId main_cpu,
+                                   Op const& op) {
+    Window const window = run_window_loop<Kind>(control, op, main_cpu);
     ::fixy::FixedArray<std::uint64_t, bench::kWindows> ops = window.ops;
     for (std::uint32_t slot = 1; slot < threads.raw(); ++slot) {
-        ThreadLine const& line = line_of(state, bench::ThreadSlot{slot});
+        ThreadLine const& line = line_of(control, bench::ThreadSlot{slot});
         while (!line.is_published.load_acquire())
             CRUCIBLE_SPIN_PAUSE;
         for (WindowIndex const index : ops.indices())
@@ -711,11 +762,162 @@ template <OpKind Kind>
                          .samples(kLatencySamples)
                          .warmup(kLatencyWarmup)
                          .max_wall_ms(kLatencyMs)
-                         .measure([&state, &own] { run_op<Kind>(state, own); });
+                         .measure([&op] { op(); });
     if (threads.raw() <= 16) bench::print_thread_cpus("the row");
-    state.phase.phase.store_release(Phase::Stop);
+    control.phase.phase.store_release(Phase::Stop);
+    return result;
+}
+
+// Runs one row of an op on the first threads.count slots of the spread.
+template <OpKind Kind>
+[[nodiscard]] RowResult run_row(bench::Spread const& spread, ThreadCount threads, ConsumerPlace place) {
+    RowState state{};
+    for (::fixy::Index<kBatch> const index : state.batch.indices())
+        state.batch.at(index) = Item{index.raw() + 1};
+    RawWorkers workers{};
+    workers.start<Kind>(state, spread, threads, place);
+    while (state.ready.value.load_acquire() + 1 < threads.raw())
+        CRUCIBLE_SPIN_PAUSE;
+
+    ThreadLine& own = line_of(state, bench::kMeasuringSlot);
+    bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
+    RowResult result =
+        finish_row<Kind>(state, threads, place, main_cpu,
+                         [&state, &own] [[gnu::always_inline]] () noexcept { run_op<Kind>(state, own); });
     workers.join();
     return result;
+}
+
+// The tag of the root of the channel of a permissioned row.  Each row mints
+// its root in its body, so the brand of the root stays in the scope that made
+// it.
+struct PermissionedMpscTag final {};
+
+// A producer handle that the pool of the channel lends.  No exclusive is out
+// in the bench, so an empty lend ends the process.
+template <class Channel>
+[[nodiscard]] typename Channel::ProducerHandle lend_producer(Channel& channel) noexcept {
+    return channel.producer().expect("the channel lends a producer while no exclusive is out");
+}
+
+// The options of the worker of a slot of a permissioned row: its name and the
+// CPU of the slot.
+[[nodiscard]] ::fixy::thread::ThreadOptions beside_options(bench::Spread const& spread,
+                                                           bench::ThreadSlot slot) noexcept {
+    return ::fixy::thread::ThreadOptions{
+        .name = "scaling-beside",
+        .affinity = ::fixy::AffinityMask::single(
+            static_cast<std::uint16_t>(spread.of_slot(slot).expect("a row has at most the slots of the spread").raw())),
+    };
+}
+
+// Runs the measure of the main thread with one worker for each body, on the
+// slots from slot on, in the order of the bodies (THE PERMISSIONED ROWS).  The
+// continuation of each run_beside starts the next worker, so the measure runs
+// in the continuation of the last one, and each worker joins when the call
+// returns.
+template <class Measure>
+[[nodiscard]] RowResult run_beside_workers(bench::Spread const& /*spread*/, bench::ThreadSlot /*slot*/,
+                                           Measure& measure) noexcept {
+    return measure();
+}
+
+template <class Measure, class Body, class... Rest>
+[[nodiscard]] RowResult run_beside_workers(bench::Spread const& spread, bench::ThreadSlot slot, Measure& measure,
+                                           Body body, Rest... rest) noexcept {
+    bench::ThreadSlot const next{slot.raw() + 1};
+    auto values = ::fixy::thread::run_beside(Starter{eff::testing::bg()}, beside_options(spread, slot), std::move(body),
+                                             [&spread, next, &measure, ... moved = std::move(rest)]() mutable noexcept {
+                                                 return run_beside_workers(spread, next, measure, std::move(moved)...);
+                                             })
+                      .expect("the thread door starts a worker of a row");
+    return std::move(values.at(::foundation::core::index<1>()));
+}
+
+// The body of a producer worker of a permissioned row: it moves its end onto
+// its own stack and pushes into it until the row stops.  The end goes back to
+// the pool of the channel when the body ends.
+template <class Producer>
+[[nodiscard]] auto make_beside_pusher(RowControl& control, ThreadLine& line, Producer&& producer) noexcept {
+    return [&control, &line, owned = std::move(producer)]() mutable noexcept {
+        auto end = std::move(owned);
+        run_producer_loop<OpKind::MpscPermissionedPush>(
+            control,
+            [&control, &end] [[gnu::always_inline]] () noexcept {
+                push_waiting(control, [&end]() noexcept { return end.try_push(Item{1}); });
+            },
+            line);
+    };
+}
+
+// One row of the permissioned MPSC channel with Threads threads: the main
+// thread and the workers of slots 1 to Threads - 2 push, each through a
+// producer handle that the pool lends, and the worker of the last slot pops
+// through the consumer handle.  Each worker owns its end in its own frame, so
+// no end shares a line with an object that the main thread writes.
+template <std::uint32_t Threads, std::size_t... Producers>
+[[nodiscard]] RowResult run_permissioned_row(bench::Spread const& spread,
+                                             std::index_sequence<Producers...> /*pushers*/) {
+    auto root = perm::mint_permission_root<
+        ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::merge, PermissionedMpscTag>>();
+    using Mpsc = ::fixy::concurrent::channel_t<Item, kRingCapacity, decltype(root)>;
+    RowControl control{};
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(std::move(root));
+    Mpsc channel{std::move(producer_root)};
+    eff::cap::Nondet const merge = eff::testing::test().nondet;
+    Mpsc::ProducerHandle producer = lend_producer(channel);
+    auto push = [&control, &producer] [[gnu::always_inline]] () noexcept {
+        push_waiting(control, [&producer]() noexcept { return producer.try_push(Item{1}); });
+    };
+    bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
+    auto measure = [&control, &spread, &push, main_cpu]() noexcept {
+        while (control.ready.value.load_acquire() + 1 < Threads)
+            CRUCIBLE_SPIN_PAUSE;
+        return finish_row<OpKind::MpscPermissionedPush>(control, ThreadCount{Threads}, ConsumerPlace::LastSlot,
+                                                        main_cpu, push);
+    };
+    auto popper = [&control, owned = channel.consumer(std::move(consumer_perm)), merge]() mutable noexcept {
+        auto end = std::move(owned);
+        run_consumer_loop(
+            control,
+            [merge] [[gnu::always_inline]] (auto& from, ::fixy::View<Item> /*out*/, std::uint64_t& sum) noexcept {
+                ::fixy::Option<Item> item = from.try_pop(merge);
+                bool const has_item = item.is_some();
+                sum += sum_of(std::move(item));
+                return has_item;
+            },
+            end, line_of(control, bench::ThreadSlot{Threads - 1}));
+        ::foundation::linear::drop(std::move(end));
+    };
+    // The producer of the main thread goes back to the pool of the channel at
+    // the end of its scope.
+    return run_beside_workers(
+        spread, bench::ThreadSlot{1}, measure,
+        make_beside_pusher(control, line_of(control, bench::ThreadSlot{static_cast<std::uint32_t>(Producers) + 1}),
+                           lend_producer(channel))...,
+        std::move(popper));
+}
+
+// The permissioned row of a count of threads, or no row for a count that the
+// bench builds no row of.  The workers of a row hold the ends of the channel
+// in the bodies of run_beside, so a count of threads is a count of bodies, and
+// the rows take the counts 2, 4, 8 and 16.
+[[nodiscard]] ::fixy::Option<RowResult> run_permissioned_row_of(bench::Spread const& spread,
+                                                                ThreadCount threads) noexcept {
+    if (threads.raw() > spread.count()) return ::fixy::none;
+    switch (threads.raw()) {
+        case 2:
+            return ::fixy::some(run_permissioned_row<2>(spread, std::make_index_sequence<0>{}));
+        case 4:
+            return ::fixy::some(run_permissioned_row<4>(spread, std::make_index_sequence<2>{}));
+        case 8:
+            return ::fixy::some(run_permissioned_row<8>(spread, std::make_index_sequence<6>{}));
+        case 16:
+            return ::fixy::some(run_permissioned_row<16>(spread, std::make_index_sequence<14>{}));
+        default:
+            return ::fixy::none;
+    }
 }
 
 // The producers of a row: each thread, but the consumer of an op with one.
@@ -775,6 +977,13 @@ void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> co
                               .expect("an op has at most kMaxRows rows"));
         if (other_l3_cpu_of(spread).is_some()) {
             static_cast<void>(rows.append(run_row<Kind>(spread, ThreadCount{2}, ConsumerPlace::OtherL3))
+                                  .expect("an op has at most kMaxRows rows"));
+        }
+    } else if constexpr (Kind == OpKind::MpscPermissionedPush) {
+        for (ThreadCount const threads : counts) {
+            ::fixy::Option<RowResult> row = run_permissioned_row_of(spread, threads);
+            if (row.is_none()) continue;
+            static_cast<void>(rows.append(std::move(row).expect("the test above found a row"))
                                   .expect("an op has at most kMaxRows rows"));
         }
     } else {
@@ -909,6 +1118,9 @@ int run_bench(::fixy::os::Args const& arguments) {
         run_op_rows<OpKind::MpscPush>(spread, counts.view(), "mpsc push: the last thread is the one consumer", reports);
         run_op_rows<OpKind::MpscPackedPush>(spread, counts.view(),
                                             "mpsc packed push: the ring with packed cells, one consumer", reports);
+        run_op_rows<OpKind::MpscPermissionedPush>(
+            spread, counts.view(), "mpsc permissioned push: the merge channel, each end in the body of its worker",
+            reports);
         run_op_rows<OpKind::MpscBatchPush>(spread, counts.view(),
                                            "mpsc batch push: batches of 16, and batch pops of up to 64", reports);
         if (kHasMpscReference) {
