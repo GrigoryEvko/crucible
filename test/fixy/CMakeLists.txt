@@ -3634,6 +3634,11 @@ fixy_neg_compile_test(neg_sess_named_state_cycle
   "no matching function for call to .mint_session<fixy::session::Named<neg_sess_named_state_cycle_types::Ping> >"
   "fixy::session::diagnostic \\[Protocol_Named_State_Cycle\\]: the named state .*Named<neg_sess_named_state_cycle_types::P[io]ng> reaches itself"
   "a recursion is a Loop with its Continue inside the protocol of one name")
+fixy_neg_compile_test(neg_sess_received_endpoint_with_a_cycle_of_names
+  "no matching function for call to .mint_session<neg_sess_received_endpoint_with_a_cycle_of_names_types::Receiver>"
+  "fixy::session::diagnostic \\[Protocol_Named_State_Cycle\\]: the named state .*Named<neg_sess_received_endpoint_with_a_cycle_of_names_types::P[io]ng> reaches itself"
+  "a recursion is a Loop with its Continue inside the protocol of one name"
+  "fixy/session/Flow\\.h:[0-9]+:[0-9]+: error: non-constant condition for static assertion")
 fixy_neg_compile_test(neg_sess_named_state_hides_a_pin
   "no matching function for call to .mint_session<fixy::session::Named<fixy::session::VendorPinned<"
   "fixy::session::diagnostic \\[Protocol_Unregistered_Combinator\\]: the combinator fixy::session::Named<fixy::session::VendorPinned<"

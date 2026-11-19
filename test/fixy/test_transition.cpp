@@ -377,6 +377,35 @@ inline constexpr tr::combinator single{
 }  // namespace wrong_layout
 static_assert(!tr::is_registered(^^wrong_layout, ^^Single<int>));
 
+// The node of a choice gives the role that its note names.  A note names one
+// role, so a note with two arguments makes the choice malformed.
+template <class R, class S>
+struct FromPair {};
+namespace pair_note {
+template <class... Bs>
+struct Out {};
+template <class... Bs>
+struct In {};
+inline constexpr tr::combinator out{.shape = ^^Out,
+                                    .kind = tr::shape_kind::choice,
+                                    .direction = tr::polarity::output,
+                                    .dual = ^^In,
+                                    .annotation = ^^FromPair};
+inline constexpr tr::combinator in{.shape = ^^In,
+                                   .kind = tr::shape_kind::choice,
+                                   .direction = tr::polarity::input,
+                                   .dual = ^^Out,
+                                   .annotation = ^^FromPair};
+}  // namespace pair_note
+static_assert(tr::decompose(reg, ^^Wait<From<int>, Done>).note_role == ^^int);
+static_assert(tr::decompose(reg, ^^Wait<Done>).note_role == std::meta::info{});
+static_assert(tr::decompose(reg, ^^Put<int, Done>).note_role == std::meta::info{});
+static_assert(tr::is_registered(^^pair_note, ^^pair_note::In<Done>));
+static_assert(!tr::is_registered(^^pair_note, ^^pair_note::In<FromPair<int, char>, Done>));
+static_assert(tr::role_of_note(^^From<int>) == ^^int);
+static_assert(tr::role_of_note(^^FromPair<int, char>) == std::meta::info{});
+static_assert(tr::role_of_note(^^Done) == std::meta::info{});
+
 // ── Duality ──────────────────────────────────────────────────────────
 
 using Ping = Put<int, Take<char, Done>>;

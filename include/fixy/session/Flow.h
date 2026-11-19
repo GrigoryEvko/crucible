@@ -394,38 +394,22 @@ struct payload_conveys_delegation : std::bool_constant<payload_conveys_delegatio
 
 }  // namespace detail
 
-// ── The protocol walk ───────────────────────────────────────────────
+// ── The protocol walks ──────────────────────────────────────────────
 //
-// The walks below read a protocol through the registry of
-// fixy/session/Protocol.h: each node of the spine one time, the node
-// first, then its continuation, then each branch.  A payload is not a
-// node.  Each walk reads a payload through payload_facts_of, so a payload
-// has one walk.
-
-namespace detail {
-
-// Calls visit on each node of the spine of `protocol` that `visited` does
-// not hold, and adds the node to `visited`.  A node that the registry does
-// not know goes to visit and is not entered.  visit returns false to stop
-// the walk, and then the function returns false.  Complexity: one visit
-// for each distinct node, times the scan of `visited`.
-template <class Visitor>
-consteval bool walk_protocol_spine(std::meta::info protocol, stack<std::meta::info>& visited, Visitor& visit) {
-    namespace tr = ::fixy::session::transition;
-    const std::meta::info type = std::meta::dealias(protocol);
-    if (holds_type(visited, type)) return true;
-    push(visited, type);
-    const tr::node view = tr::decompose(protocol_registry, type);
-    if (!visit(view)) return false;
-    if (!view.is_registered) return true;
-    if (view.next != std::meta::info{} && !walk_protocol_spine(view.next, visited, visit)) return false;
-    for (const std::meta::info branch : view.branches) {
-        if (!walk_protocol_spine(branch, visited, visit)) return false;
-    }
-    return true;
-}
-
-}  // namespace detail
+// Each walk below is an algebra of the registry fold of
+// fixy/session/Fold.h.  It reads the spine of a protocol through the
+// registry of fixy/session/Protocol.h: the next node of each node, and each
+// branch of a choice.  A payload is not a node, so a walk does not enter it,
+// and each walk reads a payload through payload_facts_of, so a payload has
+// one walk.  A node that the registry does not know is not entered.  The
+// fold keeps one answer for each node and walk in a translation unit, so a
+// node that many protocols share costs one read.  A walk that lists items
+// keeps the first place of each item in a walk that reads a node first, then
+// its continuation, then each branch.
+//
+// A fold does not end on a cycle of names.  So each entry point below
+// refuses a protocol with a named state that reaches itself before it folds,
+// as each entry check of fixy/session/Protocol.h does.
 
 // ── Delegation to a peer of the delegated session ───────────────────
 //
@@ -447,59 +431,145 @@ consteval bool walk_protocol_spine(std::meta::info protocol, stack<std::meta::in
 // The walk does not go into a payload, so the protocol of a delegated
 // endpoint is a different session, and its own mint checks it.
 
+namespace detail::walks {
+
+namespace tr = ::fixy::session::transition;
+
+// The roles that a protocol names as peers: the peer of each keyed message
+// that a step carries, and the role of the note of each choice.  A node
+// that the registry does not know names no peer.
+struct named_peers_algebra {
+    using result = tr::static_run<std::meta::info>;
+    using context = int;
+
+    template <class Child>
+    consteval result terminal(const tr::node&, context, const Child&) const {
+        return {};
+    }
+    template <class Child>
+    consteval result back(const tr::node&, context, const Child&) const {
+        return {};
+    }
+    template <class Child>
+    consteval result step(const tr::node& view, context ctx, const Child& child) const {
+        const payload_lookup rule = message_rule_of(view.payload);
+        const result below = child(view.next, ctx);
+        if (!rule.is_found || rule.entry.peer_argument == tr::npos) return below;
+        return tr::join_runs(tr::run_of_one(rule_argument_of(view.payload, rule.entry.peer_argument)), below);
+    }
+    template <class Child>
+    consteval result choice(const tr::node& view, context ctx, const Child& child) const {
+        result roles = view.note_role == std::meta::info{} ? result{} : tr::run_of_one(view.note_role);
+        for (const std::meta::info branch : view.branches)
+            roles = tr::join_runs(roles, child(branch, ctx));
+        return roles;
+    }
+    template <class Child>
+    consteval result binder(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result wrapper(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result marker(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result named(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    consteval result unregistered(const tr::node&, context) const { return {}; }
+};
+
+// The roles that `protocol` names as peers, each one time.  Complexity: one
+// fold, linear in the distinct nodes, times the joins of the runs of roles.
+[[nodiscard]] consteval tr::static_run<std::meta::info> named_peers_of(std::meta::info protocol) {
+    require_acyclic_names(protocol);
+    return tr::fold(protocol_registry, protocol, named_peers_algebra{}, 0);
+}
+
+// True when the send `step` hands an endpoint of a session to the receiver
+// that its keyed message names, and the protocol of that session names the
+// receiver as a peer.
+[[nodiscard]] consteval bool hands_to_own_peer(const tr::node& step) {
+    const payload_lookup rule = message_rule_of(step.payload);
+    if (!rule.is_found || rule.entry.peer_argument == tr::npos) return false;
+    const std::meta::info receiver = rule_argument_of(step.payload, rule.entry.peer_argument);
+    for (const std::meta::info carried :
+         payload_facts_of(rule_argument_of(step.payload, rule.entry.value_argument)).hand_offs()) {
+        if (tr::run_holds(named_peers_of(hand_off_protocol_of(carried)), receiver)) return true;
+    }
+    return false;
+}
+
+// True when a send of the protocol hands an endpoint of a session to a
+// role that the protocol of that session names as a peer.
+struct own_peer_delegation_algebra {
+    using result = bool;
+    using context = int;
+
+    template <class Child>
+    consteval bool terminal(const tr::node&, context, const Child&) const {
+        return false;
+    }
+    template <class Child>
+    consteval bool back(const tr::node&, context, const Child&) const {
+        return false;
+    }
+    template <class Child>
+    consteval bool step(const tr::node& view, context ctx, const Child& child) const {
+        if (view.entry.direction == tr::polarity::output && hands_to_own_peer(view)) return true;
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval bool choice(const tr::node& view, context ctx, const Child& child) const {
+        for (const std::meta::info branch : view.branches) {
+            if (child(branch, ctx)) return true;
+        }
+        return false;
+    }
+    template <class Child>
+    consteval bool binder(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval bool wrapper(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval bool marker(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval bool named(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    consteval bool unregistered(const tr::node&, context) const { return false; }
+};
+
+}  // namespace detail::walks
+
 namespace detail {
 
 // Adds to `peers` each role that a protocol names as a peer and that
 // `peers` does not hold: the peer of each PeerMsg that a step carries, and
-// the role of each Sender note of a choice.  Complexity: one visit for each
-// distinct node, times the scans of `peers` and of the visited nodes.
+// the role of the note of each choice.  Complexity: the fold of
+// named_peers_of, then the scan of `peers` for each role.
 consteval void collect_named_peers(std::meta::info protocol, stack<std::meta::info>& peers) {
-    namespace tr = ::fixy::session::transition;
-    stack<std::meta::info> visited{};
-    auto collect = [&peers](const tr::node& view) consteval {
-        if (!view.is_registered) return true;
-        if (view.entry.kind == tr::shape_kind::step) {
-            const payload_lookup rule = message_rule_of(view.payload);
-            if (rule.is_found && rule.entry.peer_argument != tr::npos) {
-                const std::meta::info peer = rule_argument_of(view.payload, rule.entry.peer_argument);
-                if (!holds_type(peers, peer)) push(peers, peer);
-            }
-        }
-        if (view.annotation != std::meta::info{} && payload_family_is(view.annotation, ^^Sender)) {
-            const std::meta::info role = std::meta::dealias(std::meta::template_arguments_of(view.annotation)[0]);
-            if (!holds_type(peers, role)) push(peers, role);
-        }
-        return true;
-    };
-    static_cast<void>(walk_protocol_spine(protocol, visited, collect));
+    for (const std::meta::info role : walks::named_peers_of(protocol)) {
+        if (!holds_type(peers, role)) push(peers, role);
+    }
 }
 
 // True when a Send of the protocol hands an endpoint of a session to a
-// role that the protocol of that session names as a peer.
+// role that the protocol of that session names as a peer.  Complexity: one
+// fold, linear in the distinct nodes, with the peer walk of each delegated
+// protocol.
 [[nodiscard]] consteval bool delegates_to_own_peer(std::meta::info protocol) {
-    namespace tr = ::fixy::session::transition;
-    bool is_found = false;
-    stack<std::meta::info> visited{};
-    auto check = [&is_found](const tr::node& view) consteval {
-        const bool is_send = view.is_registered && view.entry.kind == tr::shape_kind::step
-                          && view.entry.direction == tr::polarity::output;
-        if (!is_send) return true;
-        const payload_lookup rule = message_rule_of(view.payload);
-        if (!rule.is_found || rule.entry.peer_argument == tr::npos) return true;
-        const std::meta::info receiver = rule_argument_of(view.payload, rule.entry.peer_argument);
-        for (const std::meta::info carried :
-             payload_facts_of(rule_argument_of(view.payload, rule.entry.value_argument)).hand_offs()) {
-            stack<std::meta::info> peers{};
-            collect_named_peers(hand_off_protocol_of(carried), peers);
-            if (holds_type(peers, receiver)) {
-                is_found = true;
-                return false;
-            }
-        }
-        return true;
-    };
-    static_cast<void>(walk_protocol_spine(protocol, visited, check));
-    return is_found;
+    require_acyclic_names(protocol);
+    return walks::tr::fold(protocol_registry, protocol, walks::own_peer_delegation_algebra{}, 0);
 }
 
 }  // namespace detail
@@ -575,52 +645,159 @@ struct DeliveryVerdict {
     PayloadVerdict payload{};
 };
 
-struct DeliveryWalk {
-    stack<std::meta::info> regions;
-    stack<std::meta::info> visited;
-    DeliveryVerdict verdict;
-};
-
 [[nodiscard]] consteval bool delivery_is_refused(const DeliveryVerdict& verdict) noexcept {
     return verdict.unregistered_node != std::meta::info{} || verdict.payload.refusal != PayloadRefusal::None;
 }
 
-// A node gives the same regions on every path that reaches it, so the
-// walk visits each node one time, also across the delegated protocols.
-consteval void walk_delivered_regions(std::meta::info protocol, DeliveryWalk& walk) {
-    namespace tr = ::fixy::session::transition;
-    auto deliver = [&walk](const tr::node& view) consteval {
-        if (!view.is_registered) {
-            walk.verdict.unregistered_node = view.type;
-            return false;
-        }
-        if (view.entry.kind != tr::shape_kind::step || view.entry.direction != tr::polarity::input) return true;
+// One item of the walk of one protocol: a region that a receive delivers,
+// or the protocol of an endpoint that a receive hands over, whose regions
+// the receiver gets too.
+enum class DeliveryItemKind : std::uint8_t {
+    region,
+    hand_off
+};
+
+struct DeliveryItem {
+    std::meta::info type{};
+    DeliveryItemKind kind = DeliveryItemKind::region;
+
+    constexpr bool operator==(const DeliveryItem&) const = default;
+};
+
+// The walk of one protocol, with no received endpoint entered: its items,
+// each one time, and the first refusal, which stands after the last item.
+struct DeliveryRun {
+    DeliveryVerdict verdict{};
+    ::fixy::session::transition::static_run<DeliveryItem> items{};
+};
+
+}  // namespace detail
+
+namespace detail::walks {
+
+// The items of each Recv of a protocol, on each branch and in each loop
+// body.  A node that the registry does not know, and a payload that the
+// payload walk refuses, stop the walk.  The fold does not enter the protocol
+// of a received endpoint, so a protocol whose endpoint comes back to a node
+// of the walk ends.  walk_delivered_regions below enters each such protocol
+// one time.
+struct delivery_algebra {
+    using result = DeliveryRun;
+    using context = int;
+
+    template <class Child>
+    consteval result terminal(const tr::node&, context, const Child&) const {
+        return {};
+    }
+    template <class Child>
+    consteval result back(const tr::node&, context, const Child&) const {
+        return {};
+    }
+    template <class Child>
+    consteval result step(const tr::node& view, context ctx, const Child& child) const {
+        if (view.entry.direction != tr::polarity::input) return child(view.next, ctx);
         const PayloadFacts facts = payload_facts_of(view.payload);
         if (facts.refusal != PayloadRefusal::None) {
-            walk.verdict.payload = PayloadVerdict{facts.refusal, facts.refused_type};
-            return false;
+            return {DeliveryVerdict{{}, PayloadVerdict{facts.refusal, facts.refused_type}}, {}};
         }
+        const result below = child(view.next, ctx);
+        return {below.verdict, tr::join_runs(items_of(facts), below.items)};
+    }
+    template <class Child>
+    consteval result choice(const tr::node& view, context ctx, const Child& child) const {
+        result answer{};
+        for (const std::meta::info branch : view.branches) {
+            const result below = child(branch, ctx);
+            answer.items = tr::join_runs(answer.items, below.items);
+            if (delivery_is_refused(below.verdict)) {
+                answer.verdict = below.verdict;
+                return answer;
+            }
+        }
+        return answer;
+    }
+    template <class Child>
+    consteval result binder(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result wrapper(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result marker(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result named(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    consteval result unregistered(const tr::node& view, context) const { return {DeliveryVerdict{view.type, {}}, {}}; }
+
+private:
+    static consteval void add_item(tr::stack<DeliveryItem>& items, const DeliveryItem& item) {
+        for (const DeliveryItem& held : items) {
+            if (held == item) return;
+        }
+        tr::push(items, item);
+    }
+
+    // The items of one received payload: each region that it moves, lends
+    // or releases, each region of the set of each endpoint that it hands
+    // over, and the protocol of each such endpoint.
+    static consteval tr::static_run<DeliveryItem> items_of(const PayloadFacts& facts) {
+        tr::stack<DeliveryItem> items{};
         // The set of a delegated endpoint can hold a loan state, and the
         // region of LentOut<Tag> or BorrowedIn<Tag> is Tag.
         const std::vector<std::meta::info> elements = std::meta::template_arguments_of(facts.receiver_gains);
         const std::meta::info* const element = elements.data();
         const std::size_t element_count = elements.size();
-        for (std::size_t place = 0; place < element_count; ++place) {
-            const std::meta::info region = region_of(element[place]);
-            if (!holds_type(walk.regions, region)) push(walk.regions, region);
-        }
+        for (std::size_t place = 0; place < element_count; ++place)
+            add_item(items, DeliveryItem{region_of(element[place]), DeliveryItemKind::region});
         // A received endpoint holds the tokens of its set in its slots, so
         // the receiver holds those regions too.
-        for (const std::meta::info handed : ::fixy::session::transition::template_arguments_run(facts.hand_off_tags)) {
-            const std::meta::info region = region_of(handed);
-            if (!holds_type(walk.regions, region)) push(walk.regions, region);
+        for (const std::meta::info handed : tr::template_arguments_run(facts.hand_off_tags))
+            add_item(items, DeliveryItem{region_of(handed), DeliveryItemKind::region});
+        for (const std::meta::info carried : facts.hand_offs())
+            add_item(items, DeliveryItem{hand_off_protocol_of(carried), DeliveryItemKind::hand_off});
+        if (items.top == 0) return {};
+        return tr::to_static_run(items);
+    }
+};
+
+}  // namespace detail::walks
+
+namespace detail {
+
+// The regions and the protocols of the received endpoints that the walk
+// entered, and why it stopped.
+struct DeliveryWalk {
+    stack<std::meta::info> regions;
+    stack<std::meta::info> entered;
+    DeliveryVerdict verdict;
+};
+
+// Adds the regions of `protocol` to the walk, in the order of its items, and
+// enters the protocol of each endpoint that it receives, at the place of
+// that endpoint.  A protocol that the walk entered adds nothing again, so the
+// walk ends when an endpoint comes back to a protocol of the walk.  A node
+// gives the same regions on every path that reaches it, so this order is
+// the order of a walk that visits each node one time, also across the
+// delegated protocols.
+consteval void walk_delivered_regions(std::meta::info protocol, DeliveryWalk& walk) {
+    require_acyclic_names(protocol);
+    const DeliveryRun run = walks::tr::fold(protocol_registry, protocol, walks::delivery_algebra{}, 0);
+    for (const DeliveryItem& item : run.items) {
+        if (item.kind == DeliveryItemKind::region) {
+            if (!holds_type(walk.regions, item.type)) push(walk.regions, item.type);
+            continue;
         }
-        for (const std::meta::info carried : facts.hand_offs()) {
-            walk_delivered_regions(hand_off_protocol_of(carried), walk);
-        }
-        return !delivery_is_refused(walk.verdict);
-    };
-    static_cast<void>(walk_protocol_spine(protocol, walk.visited, deliver));
+        if (holds_type(walk.entered, item.type)) continue;
+        push(walk.entered, item.type);
+        walk_delivered_regions(item.type, walk);
+        if (delivery_is_refused(walk.verdict)) return;
+    }
+    walk.verdict = run.verdict;
 }
 
 // The result of the walk over one protocol: why it stopped, or the
@@ -634,6 +811,7 @@ struct DeliveryFacts {
 
 [[nodiscard]] consteval DeliveryFacts delivery_facts(std::meta::info protocol) {
     DeliveryWalk walk;
+    push(walk.entered, std::meta::dealias(protocol));
     walk_delivered_regions(protocol, walk);
     const std::meta::info regions = delivery_is_refused(walk.verdict)
                                       ? std::meta::dealias(^^::foundation::permissions::EmptyPermSet)
@@ -647,9 +825,16 @@ struct delivery_facts_cell {};
 template <class Proto>
 using delivery_facts_cached = delivery_facts_cell<delivery_facts(^^Proto)>;
 
-// The result of the walk over one protocol.  Complexity: one walk for each
-// protocol type in a translation unit, and a lookup after that.
+// The result of the walk over one protocol.  A walk that stops the constant
+// evaluation of the cell with an error, such as the refusal of a cycle of
+// names in the protocol of a received endpoint, makes the substitution fail,
+// and the failure of a substitution names no cause.  The walk then runs again
+// here, in the evaluation that asked, so its error stops that evaluation
+// with its own text.  Complexity: one walk for each protocol type in a
+// translation unit, and a lookup after that.  A walk that fails runs two
+// times.
 [[nodiscard]] consteval DeliveryFacts delivery_facts_of(std::meta::info protocol) {
+    if (!std::meta::can_substitute(^^delivery_facts_cached, {protocol})) return delivery_facts(protocol);
     const std::meta::info cell = std::meta::dealias(std::meta::substitute(^^delivery_facts_cached, {protocol}));
     return std::meta::extract<DeliveryFacts>(std::meta::template_arguments_of(cell)[0]);
 }

@@ -2,6 +2,9 @@
 
 #include <fixy/session/Flow.h>
 
+// The header of the hand-off, which the delivery walk enters.
+#include <fixy/session/Delegate.h>
+
 #include <foundation/Linear.h>
 #include <foundation/effects/Row.h>
 
@@ -13,6 +16,51 @@ namespace fixy::session::detail::flow_checks {
 struct FlowRegion {
     using permission_row = ::foundation::effects::Row<>;
 };
+
+// ── The delivery walk ────────────────────────────────────────────────
+//
+// The regions come in the order of a walk that reads a node first, then the
+// protocol of each endpoint that the node receives, then its continuation,
+// then each branch.  The walk stops at its first refusal in that order.
+template <int Place>
+struct OrderedRegion {
+    using permission_row = ::foundation::effects::Row<>;
+};
+
+struct FlowResource {
+    static constexpr Network session_network = Network::Local;
+    [[no_unique_address]] MoveOnlyResource move_only{};
+};
+
+using FlowPolicy = DefaultAbandonmentPolicy;
+using NoRegions = ::foundation::permissions::EmptyPermSet;
+
+using ReceivesInOrder =
+    Recv<Transferable<int, OrderedRegion<1>>,
+         Recv<DelegatedSession<Recv<Transferable<int, OrderedRegion<3>>, End>, FlowResource, FlowPolicy,
+                               ::foundation::permissions::PermSet<OrderedRegion<2>>>,
+              Offer<Recv<Transferable<int, OrderedRegion<4>>, End>, Recv<Transferable<int, OrderedRegion<5>>, End>>>>;
+static_assert(std::is_same_v<protocol_delivered_regions_t<ReceivesInOrder>,
+                             ::foundation::permissions::PermSet<OrderedRegion<1>, OrderedRegion<2>, OrderedRegion<3>,
+                                                                OrderedRegion<4>, OrderedRegion<5>>>);
+
+// A received endpoint whose protocol comes back to the named state of the
+// receiver adds its regions one time, and the walk ends.
+struct ComesBack {
+    using protocol =
+        Recv<Transferable<int, OrderedRegion<1>>,
+             Recv<DelegatedSession<Send<int, Named<ComesBack>>, FlowResource, FlowPolicy, NoRegions>, End>>;
+};
+static_assert(std::is_same_v<protocol_delivered_regions_t<Named<ComesBack>>,
+                             ::foundation::permissions::PermSet<OrderedRegion<1>>>);
+
+// A node of the protocol of a received endpoint comes before the
+// continuation of the receive, so its refusal is the first one.
+struct UnknownInEndpoint {};
+struct UnknownAfterEndpoint {};
+using RefusedTwice =
+    Recv<DelegatedSession<Recv<int, UnknownInEndpoint>, FlowResource, FlowPolicy, NoRegions>, UnknownAfterEndpoint>;
+static_assert(delivery_facts_of(^^RefusedTwice).verdict.unregistered_node == ^^UnknownInEndpoint);
 
 // A marker that carries a Permission moves, and no assignment writes over
 // the token of a live marker.  The move and the destructor are trivial for

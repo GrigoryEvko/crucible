@@ -407,9 +407,7 @@ consteval void session_node_members(std::meta::info type, ::fixy::session::trans
         tr::push(result.claims, member_claim{"branch_count", std::meta::reflect_constant(view.branches.size())});
         tr::push(result.claims, member_claim{"branches_tuple", std::meta::substitute(^^std::tuple, view.branches)});
         if (view.entry.direction == tr::polarity::input) {
-            const std::meta::info sender = view.annotation == std::meta::info{}
-                                             ? ^^AnonymousPeer
-                                             : std::meta::dealias(std::meta::template_arguments_of(view.annotation)[0]);
+            const std::meta::info sender = view.note_role == std::meta::info{} ? ^^AnonymousPeer : view.note_role;
             tr::push(result.claims, member_claim{"sender", sender});
         }
     }
@@ -617,12 +615,12 @@ void a_loop_context_has_no_known_form() noexcept;
     return std::meta::dealias(new_inner);
 }
 
-// The body of the loop that a loop context or a Loop stands for, read
-// from the template argument of the Loop.
+// The body of the loop that a loop context or a Loop stands for: the next
+// node of the kept node of the Loop, which is its template argument.
 [[nodiscard]] consteval std::meta::info loop_body_of(std::meta::info loop_ctx) {
     const std::meta::info loop = loop_of_inner(inner_loop_ctx_of(loop_ctx));
     if (loop == ^^void) a_loop_context_has_no_known_form();
-    return std::meta::dealias(std::meta::template_arguments_of(loop)[0]);
+    return ::fixy::session::transition::decompose(protocol_registry, loop).next;
 }
 
 template <typename LoopCtx>

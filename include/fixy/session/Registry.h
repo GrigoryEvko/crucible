@@ -128,7 +128,10 @@
 //   annotation        The template of the note of a choice, or null.
 //                     The dual shape must name the same template, so
 //                     the dual keeps the note.  Refinement compares
-//                     notes for equality.
+//                     notes for equality.  A note names one role, the
+//                     role that signals the choice: it is a
+//                     specialization with one type argument.  A choice
+//                     whose note has a different layout is malformed.
 //   value_variance    The variance of the value of a wrapper.
 //   value_order       A variable template `template <auto A, auto B>
 //                     constexpr bool`, the order of the values.  Null
@@ -384,7 +387,8 @@ struct payload_rule {
     std::size_t tag_argument = npos;
     // The value that the family carries.
     std::size_t value_argument = npos;
-    // The role that a message names as its receiver or its sender.
+    // The role that the payload names: the receiver or the sender of a
+    // message, or the crashed role of a crash label.
     std::size_t peer_argument = npos;
     // The permission set of the endpoint of a hand-off.
     std::size_t set_argument = npos;

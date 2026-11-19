@@ -490,25 +490,63 @@ using keyed_receiver_t = typename[:role_of_step(^^P, ^^Peer):];
 
 // The role other than the channel peer that a send of the protocol names:
 // the receiver of a keyed send, or of a branch of a keyed Select.  The null
-// reflection when the protocol sends to no such role.  Admission refuses a
-// local type that names two roles (NamesAtMostOnePeer of
-// fixy/session/Admission.h), so the walk finds one role at most.
-// Complexity: one visit for each distinct node of the protocol.
+// reflection when the protocol sends to no such role.  The context is the
+// channel peer.  The fold reads the spine of the protocol, as the walks of
+// fixy/session/Flow.h do, and it gives the first such role of a walk that
+// reads a node first, then its continuation, then each branch.  Admission
+// refuses a local type that names two roles (NamesAtMostOnePeer of
+// fixy/session/Admission.h), so the protocol names one such role at most.
+struct third_receiver_algebra {
+    using result = std::meta::info;
+    using context = std::meta::info;
+
+    template <class Child>
+    consteval result terminal(const crash::tr::node&, context, const Child&) const {
+        return {};
+    }
+    template <class Child>
+    consteval result back(const crash::tr::node&, context, const Child&) const {
+        return {};
+    }
+    template <class Child>
+    consteval result step(const crash::tr::node& view, context channel_peer, const Child& child) const {
+        if (view.entry.direction == crash::tr::polarity::output) {
+            const std::meta::info role = crash::named_role(view);
+            if (role != std::meta::info{} && std::meta::dealias(role) != channel_peer) return std::meta::dealias(role);
+        }
+        return child(view.next, channel_peer);
+    }
+    template <class Child>
+    consteval result choice(const crash::tr::node& view, context channel_peer, const Child& child) const {
+        for (const std::meta::info branch : view.branches) {
+            const std::meta::info found = child(branch, channel_peer);
+            if (found != std::meta::info{}) return found;
+        }
+        return {};
+    }
+    template <class Child>
+    consteval result binder(const crash::tr::node& view, context channel_peer, const Child& child) const {
+        return child(view.next, channel_peer);
+    }
+    template <class Child>
+    consteval result wrapper(const crash::tr::node& view, context channel_peer, const Child& child) const {
+        return child(view.next, channel_peer);
+    }
+    template <class Child>
+    consteval result marker(const crash::tr::node& view, context channel_peer, const Child& child) const {
+        return child(view.next, channel_peer);
+    }
+    template <class Child>
+    consteval result named(const crash::tr::node& view, context channel_peer, const Child& child) const {
+        return child(view.next, channel_peer);
+    }
+    consteval result unregistered(const crash::tr::node&, context) const { return {}; }
+};
+
+// Complexity: one fold, linear in the distinct nodes of the protocol.
 [[nodiscard]] consteval std::meta::info third_receiver_of(std::meta::info proto, std::meta::info peer) {
-    namespace tr = crash::tr;
-    tr::stack<std::meta::info> visited{};
-    std::meta::info found{};
-    const std::meta::info channel_peer = std::meta::dealias(peer);
-    auto look = [&found, channel_peer](const tr::node& view) consteval {
-        const bool is_send = view.is_registered && view.entry.kind == tr::shape_kind::step
-                          && view.entry.direction == tr::polarity::output;
-        if (!is_send) return true;
-        const std::meta::info role = crash::named_role(view);
-        if (role != std::meta::info{} && std::meta::dealias(role) != channel_peer) found = std::meta::dealias(role);
-        return true;
-    };
-    static_cast<void>(::fixy::session::detail::walk_protocol_spine(proto, visited, look));
-    return found;
+    ::fixy::session::detail::require_acyclic_names(proto);
+    return crash::tr::fold(protocol_registry, proto, third_receiver_algebra{}, std::meta::dealias(peer));
 }
 
 // True when Third is the third receiver of the protocol, or NoThirdRole

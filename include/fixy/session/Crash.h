@@ -177,9 +177,13 @@ inline constexpr const char* crash_label_members[] = {"peer"};
 
 // The crash label is a payload that no endpoint sends (rule 1) and that
 // is no label a peer can send (rule 2), as the rules below state.  It holds
-// its cause, and no token, so the payload walk reads its members.
-inline constexpr ::fixy::session::transition::payload_rule crash_label{
-    .shape = ^^Crash, .is_sendable = false, .is_label = false, .member_names = {crash_label_members, 1}};
+// its cause, and no token, so the payload walk reads its members.  Its peer
+// argument is the crashed role.
+inline constexpr ::fixy::session::transition::payload_rule crash_label{.shape = ^^Crash,
+                                                                       .is_sendable = false,
+                                                                       .is_label = false,
+                                                                       .peer_argument = 0,
+                                                                       .member_names = {crash_label_members, 1}};
 
 inline constexpr ::fixy::session::transition::seal payload_rule_seal{
     .kind = ^^::fixy::session::transition::payload_rule, .count = 1};
@@ -338,18 +342,19 @@ struct channel {
     std::meta::info reliable{};
 };
 
-// The role of a note Sender<Role>, or of a crash payload Crash<Peer>.
-[[nodiscard]] consteval std::meta::info first_argument(std::meta::info type) {
-    return std::meta::dealias(std::meta::template_arguments_of(std::meta::dealias(type))[0]);
+// The crashed role that a crash payload Crash<Peer> names, at the peer
+// argument of its payload rule.
+[[nodiscard]] consteval std::meta::info crashed_role(std::meta::info payload) {
+    return rule_argument_of(payload, combinators::crash::crash_label.peer_argument);
 }
 
 // The role that the payload rule of a keyed step names, in either
-// direction, or null.
+// direction: the role of the note that its rule names, or null.
 [[nodiscard]] consteval std::meta::info named_role(const tr::node& step) {
     const tr::payload_lookup rule = tr::lookup_payload_rule(protocol_registry, step.payload);
     if (!rule.is_found || rule.entry.input_note == std::meta::info{}) return {};
     if (!std::meta::can_substitute(rule.entry.input_note, {step.payload})) return {};
-    return first_argument(std::meta::substitute(rule.entry.input_note, {step.payload}));
+    return tr::role_of_note(std::meta::substitute(rule.entry.input_note, {step.payload}));
 }
 
 [[nodiscard]] consteval bool is_watched_role(const channel& on, std::meta::info role) {
@@ -448,7 +453,7 @@ private:
     template <class Child>
     static consteval verdict offer(const tr::node& view, const channel& on, const Child& child) {
         const std::meta::info sender =
-            std::meta::dealias(view.annotation == std::meta::info{} ? on.peer : first_argument(view.annotation));
+            std::meta::dealias(view.note_role == std::meta::info{} ? on.peer : view.note_role);
         verdict answer = admitted;
         tr::stack<std::meta::info> crashed{};
         bool has_message = false;
@@ -459,7 +464,7 @@ private:
         for (const std::meta::info branch : view.branches) {
             const tr::node head = tr::decompose(protocol_registry, branch);
             if (is_branch_reception(head) && is_crash_payload_type(head.payload)) {
-                const std::meta::info peer = first_argument(head.payload);
+                const std::meta::info peer = crashed_role(head.payload);
                 const std::meta::info* const seen = crashed.items;
                 for (std::size_t place = 0; place < crashed.top; ++place) {
                     if (seen[place] == peer) is_distinct = false;
@@ -564,7 +569,7 @@ namespace detail::crash {
     for (std::size_t index = 0; index < view.branches.size(); ++index) {
         const std::meta::info branch = view.branches[index];
         if (is_crash_branch_type(branch)
-            && first_argument(tr::decompose(protocol_registry, branch).payload) == std::meta::dealias(peer)) {
+            && crashed_role(tr::decompose(protocol_registry, branch).payload) == std::meta::dealias(peer)) {
             return index;
         }
     }

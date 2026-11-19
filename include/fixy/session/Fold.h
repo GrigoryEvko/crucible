@@ -156,11 +156,27 @@ struct node {
     std::meta::info payload{};
     std::meta::info next{};
     std::meta::info annotation{};
+    // The role that the note of a choice names, or null for a choice with
+    // no note and for each other kind.
+    std::meta::info note_role{};
     std::meta::info value{};
     // The class of a named state, or null.
     std::meta::info name{};
     static_run<std::meta::info> branches{};
 };
+
+// The role that a note names: its one template argument, with its aliases
+// removed.  A type that is no specialization with one type argument names no
+// role, and the answer is null.  The node of a choice reads the note through
+// this function, and so does a walk that reads the note that a payload rule
+// names (input_note of fixy/session/Registry.h).
+[[nodiscard]] consteval std::meta::info role_of_note(std::meta::info note) {
+    const std::meta::info type = std::meta::dealias(note);
+    if (!std::meta::is_type(type) || !std::meta::has_template_arguments(type)) return {};
+    const static_run<std::meta::info> arguments = template_arguments_run(type);
+    if (arguments.size() != 1 || !std::meta::is_type(arguments[0])) return {};
+    return std::meta::dealias(arguments[0]);
+}
 
 namespace detail {
 
@@ -231,9 +247,13 @@ using name_protocol_t = typename Name::protocol;
         }
         case shape_kind::choice: {
             std::size_t first = 0;
+            // A note names one role.  A note with any other layout makes the
+            // node malformed, so no walk reads a note that names no role.
             if (count != 0 && result.entry.annotation != std::meta::info{} && std::meta::is_type(argument[0])
                 && shape_of(argument[0]) == result.entry.annotation) {
                 result.annotation = std::meta::dealias(argument[0]);
+                result.note_role = role_of_note(result.annotation);
+                result.is_malformed = result.note_role == std::meta::info{};
                 first = 1;
             }
             stack<std::meta::info> branches{};
@@ -1593,33 +1613,46 @@ struct binding_probe_algebra {
     return fold(registry, type, binding_probe_algebra{binding_probe_algebra::probe::bound_terminal}, binders_above > 0);
 }
 
-// ── Cycles of names ───────────────────────────────────────────────────
+// ── Runs that an algebra joins ────────────────────────────────────────
+//
+// An algebra whose result is a set of items gives a run, and it joins the
+// runs of its children in the order that it asks them.  The join keeps the
+// first place of each item, so the result of a node lists each item one time,
+// in the order of a walk that reads the children in that order.
 
-namespace detail {
-
-[[nodiscard]] consteval bool run_holds(static_run<std::meta::info> run, std::meta::info item) {
-    for (const std::meta::info held : run) {
+// True when an item of the run equals `item`.  Complexity: linear in the run.
+template <class T>
+[[nodiscard]] consteval bool run_holds(static_run<T> run, const T& item) {
+    for (const T& held : run) {
         if (held == item) return true;
     }
     return false;
 }
 
-// The items of the two runs, each one time.  Complexity: the product of the
-// two lengths.
-[[nodiscard]] consteval static_run<std::meta::info> join_runs(static_run<std::meta::info> left,
-                                                              static_run<std::meta::info> right) {
+// The items of `left`, then each item of `right` that `left` does not hold.
+// Complexity: the product of the two lengths.
+template <class T>
+[[nodiscard]] consteval static_run<T> join_runs(static_run<T> left, static_run<T> right) {
     if (right.empty()) return left;
     if (left.empty()) return right;
-    stack<std::meta::info> joined{};
-    for (const std::meta::info item : left)
+    stack<T> joined{};
+    for (const T& item : left)
         push(joined, item);
-    for (const std::meta::info item : right) {
+    for (const T& item : right) {
         if (!run_holds(left, item)) push(joined, item);
     }
     return joined.top == left.size() ? left : to_static_run(joined);
 }
 
-}  // namespace detail
+// The run of one item.
+template <class T>
+[[nodiscard]] consteval static_run<T> run_of_one(const T& item) {
+    stack<T> own{};
+    push(own, item);
+    return to_static_run(own);
+}
+
+// ── Cycles of names ───────────────────────────────────────────────────
 
 // The named states that a protocol reaches with no named state between: each
 // named state on its spine and in each payload that is a protocol.  The fold
@@ -1639,13 +1672,13 @@ struct names_below_algebra {
     template <class Child>
     consteval result step(const node& view, context ctx, const Child& child) const {
         const result after = child(view.next, ctx);
-        return view.entry.payload_is_protocol ? detail::join_runs(child(view.payload, ctx), after) : after;
+        return view.entry.payload_is_protocol ? join_runs(child(view.payload, ctx), after) : after;
     }
     template <class Child>
     consteval result choice(const node& view, context ctx, const Child& child) const {
         result names{};
         for (const std::meta::info branch : view.branches)
-            names = detail::join_runs(names, child(branch, ctx));
+            names = join_runs(names, child(branch, ctx));
         return names;
     }
     template <class Child>
@@ -1662,9 +1695,7 @@ struct names_below_algebra {
     }
     template <class Child>
     consteval result named(const node& view, context, const Child&) const {
-        stack<std::meta::info> own_name{};
-        push(own_name, view.type);
-        return to_static_run(own_name);
+        return run_of_one(view.type);
     }
     consteval result unregistered(const node&, context) const { return {}; }
 };
