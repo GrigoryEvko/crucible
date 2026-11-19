@@ -48,7 +48,7 @@
 // THE DEFERRED TAIL
 //   try_pop_deferred moves only the copy of the tail of the consumer, and it
 //   counts its pops on the private line of the consumer.  The pop that makes
-//   the count equal to its Interval publishes the tail with one release
+//   the count reach or pass its Interval publishes the tail with one release
 //   store, and publish_tail publishes it at any time.  Each publish checks
 //   the published tail against the copy minus the count, so a second
 //   consumer ends the process at the next publish.  The producer sees the
@@ -178,14 +178,15 @@ public:
     }
 
     // The pop of THE DEFERRED TAIL.  It reads the cell as try_pop does, and it
-    // moves only the copy of the tail.  It publishes the tail at each
-    // Interval deferred pops, so the producer waits for at most Interval - 1
-    // pops that the consumer took.  An Interval of 1 publishes at each pop,
-    // as try_pop does.
+    // moves only the copy of the tail.  It publishes the tail when the count
+    // of the deferred pops reaches Interval or passes it, so the producer
+    // waits for at most Interval - 1 pops that the consumer took.  A count
+    // passes Interval only after pops with a larger Interval.  An Interval of
+    // 1 publishes at each pop, as try_pop does.
     template <std::size_t Interval>
     [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop_deferred() noexcept {
-        static_assert(std::has_single_bit(Interval) && Interval <= Capacity,
-                      "fixy::concurrent::SpscRing::try_pop_deferred: the interval of the publish is a power of two "
+        static_assert(Interval > 0 && Interval <= Capacity,
+                      "fixy::concurrent::SpscRing::try_pop_deferred: the interval of the publish is at least one pop "
                       "and at most the capacity.  A larger interval would hold free cells of a full ring until the "
                       "ring is empty.");
         const std::uint64_t t = own_tail_.get();
@@ -195,8 +196,8 @@ public:
         const T result = buffer_[t & MASK];
         own_tail_.advance(t + 1);
         const std::uint64_t deferred = deferred_pops_ + 1;
-        if (deferred == Interval) [[unlikely]] {
-            tail_.advance_sole_writer_from(t + 1 - Interval, t + 1);
+        if (deferred >= Interval) [[unlikely]] {
+            tail_.advance_sole_writer_from(t + 1 - deferred, t + 1);
             deferred_pops_ = 0;
         } else {
             deferred_pops_ = deferred;

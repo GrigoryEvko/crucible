@@ -370,6 +370,20 @@ using MpscWide = c::MpscRing<int, 128>;
     if (!ring.empty_approx(kNondet) || ring.size_approx(kNondet) != 0) {
         return fail(fixy::TextView{"a snapshot after publish_tail counted an item"});
     }
+
+    // Three pops of a larger interval, and then a pop of a smaller interval:
+    // the count passes the smaller interval, so that pop publishes the tail.
+    for (int i = 20; i < 28; ++i) {
+        if (!ring.try_push(i)) return fail(fixy::TextView{"a push below capacity was refused"});
+    }
+    for (int i = 20; i < 23; ++i) {
+        if (ring.try_pop_deferred<8>().value_or(-1) != i) return fail(fixy::TextView{"a pop of the larger interval"});
+    }
+    if (ring.try_push(99)) return fail(fixy::TextView{"a push saw a cell before the publish of the tail"});
+    if (ring.try_pop_deferred<2>().value_or(-1) != 23) return fail(fixy::TextView{"a pop of the smaller interval"});
+    for (int i = 0; i < 4; ++i) {
+        if (!ring.try_push(30 + i)) return fail(fixy::TextView{"a pop past its interval did not publish the tail"});
+    }
     return 0;
 }
 
