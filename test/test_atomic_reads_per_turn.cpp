@@ -54,7 +54,15 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 namespace {
 
 struct ProbeTag final {};
-struct ProbeWriter final {};
+
+// The one writer of the commit cell of the probe.  Its read of its own count
+// is the relaxed read of the cell.
+struct ProbeWriter final {
+    template <class Cell>
+    [[nodiscard, gnu::always_inline, gnu::no_instrument_function]] static std::uint64_t peek(Cell const& cell) noexcept {
+        return cell.peek_relaxed();
+    }
+};
 
 // The control: a read that says it is pure, of a plain value.
 struct PureControl final {
@@ -119,7 +127,7 @@ int main() {
         0u);
     failures += failures_of(
         fixy::TextView{"PublishCommitCell::peek_relaxed"},
-        [&commit] [[gnu::always_inline, gnu::no_instrument_function]] () noexcept { return commit.peek_relaxed(); },
+        [&commit] [[gnu::always_inline, gnu::no_instrument_function]] () noexcept { return ProbeWriter::peek(commit); },
         0u);
 
     const fixy::AtomicMonotonic<std::uint64_t> monotonic = fixy::mint_atomic_monotonic<std::uint64_t>(0);

@@ -107,10 +107,12 @@ public:
         // decrement globally ahead of the load of top, so a thief
         // cannot slip in between and be missed.
         ::fixy::AtomicMonotonic<std::int64_t>::fence_seq_cst();
-        // A relaxed load suffices: the fence above already carries the
-        // cross-thread ordering.  The thieves write top too, so the owner
-        // is not its one writer, and the read is load_relaxed.
-        std::int64_t t = top_.load_relaxed();
+        // The thieves write top, so the owner is not its one writer, and the
+        // read takes acquire order: a relaxed read is only for the own
+        // variable of the thread.  The fence above carries the order of the
+        // claim of the last item.  On x86-64 the acquire load is the same
+        // plain load.
+        std::int64_t t = top_.get();
 
         if (t > b) {
             bottom_.store(b + 1, std::memory_order_relaxed);

@@ -32,6 +32,12 @@ class PublishCommitCell {
 
     uint64_t bump() noexcept { return bump_by(1); }
 
+    // The read of the one writer of its own count: WriteAuth stores each
+    // value of the cell, so the read needs no order.  A reader on another
+    // thread reads the count with load_acquire, because a relaxed read is
+    // only for the own variable of the thread.
+    [[nodiscard]] uint64_t peek_relaxed() const noexcept { return value_.load(std::memory_order_relaxed); }
+
 public:
     using tag_type = Tag;
     using write_auth_type = WriteAuth;
@@ -45,18 +51,15 @@ public:
     PublishCommitCell& operator=(PublishCommitCell&&) = delete("interior atomic crosses thread boundary; cannot move");
 
     // Every write the publishing stage made before its bump is visible to a
-    // reader that observes the bumped value through this load.
+    // reader that observes the bumped value through this load.  It and the
+    // read of the writer, peek_relaxed, are the only reads: a read that takes
+    // its order as an argument would admit a release order, which no load
+    // can have.
     //
     // No read here is gnu::pure.  The publishing stage changes the value
     // between two reads, and a pure read lets the compiler fold the reads of
     // a wait loop into one.
     [[nodiscard]] uint64_t load_acquire() const noexcept { return value_.load(std::memory_order_acquire); }
-
-    // Carries no synchronization.  Read the counter this way for reporting
-    // only, never to conclude that the published writes are visible.  These
-    // two are the only reads: a read that takes its order as an argument
-    // would admit a release order, which no load can have.
-    [[nodiscard]] uint64_t peek_relaxed() const noexcept { return value_.load(std::memory_order_relaxed); }
 };
 
 }  // namespace fixy::handle

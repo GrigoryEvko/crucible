@@ -4934,6 +4934,11 @@ fixy_test(test_handle_publish_commit)
 fixy_neg_compile_test(neg_handle_publish_commit_bump_outside_auth
   "is private within this context"
   "fixy::handle::PublishCommitCell<Tag, WriteAuth>::bump\\(\\)")
+# The relaxed read is the read of the writer of its own count.  A reader on
+# another thread reads with acquire order.
+fixy_neg_compile_test(neg_handle_publish_commit_peek_outside_auth
+  "is private within this context"
+  "fixy::handle::PublishCommitCell<Tag, WriteAuth>::peek_relaxed\\(\\)")
 
 # The one-shot signal: a raise that arrives while the body runs is kept,
 # and several consumers never run two bodies for one raise.  A reset

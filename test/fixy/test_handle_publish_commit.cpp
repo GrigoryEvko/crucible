@@ -33,6 +33,9 @@ public:
     }
 
     static std::uint64_t publish_many(Cell& cell, std::uint64_t count) noexcept { return cell.bump_by(count); }
+
+    // The read of the one writer of its own count.
+    static std::uint64_t peek_own(Cell const& cell) noexcept { return cell.peek_relaxed(); }
 };
 
 using Cell = Publisher::Cell;
@@ -51,7 +54,7 @@ static_assert(!ReadsWithAnOrderArgument<Cell>);
 
 [[nodiscard]] bool a_fresh_cell_reads_zero() noexcept {
     Cell cell;
-    return cell.load_acquire() == 0 && cell.peek_relaxed() == 0;
+    return cell.load_acquire() == 0 && Publisher::peek_own(cell) == 0;
 }
 
 [[nodiscard]] bool the_writer_counts() noexcept {
