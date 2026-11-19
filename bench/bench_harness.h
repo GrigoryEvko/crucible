@@ -755,6 +755,12 @@ private:
 
 namespace detail {
 
+// The topology of the host that the harness lends to each choice of a CPU of
+// the warden.  A bench process probes it one time, at its first use.
+[[nodiscard]] inline crucible::warden::TopologyRef harness_topology() noexcept {
+    return ::fixy::to(::fixy::topology::Topology::instance());
+}
+
 // The core of a run in the affinity allowed of the process: the asked core
 // when allowed holds it, else the core of the measuring slot, else the core
 // that warden::select_hot_cpu_of picks in allowed.  A run never leaves its
@@ -769,8 +775,8 @@ namespace detail {
     for (CpuId const core : measuring) {
         if (allowed.contains(core.raw())) return core;
     }
-    return CpuId{crucible::warden::detail::select_hot_cpu_of(allowed, crucible::warden::CoreSelector{},
-                                                             crucible::warden::CpuSet{})};
+    return CpuId{crucible::warden::detail::select_hot_cpu_of(
+        allowed, harness_topology(), crucible::warden::CoreSelector{}, crucible::warden::CpuSet{})};
 }
 
 // Read /sys/.../cpu<N>/cpufreq/scaling_cur_freq (kHz) → Hz, 0 on failure.
@@ -2601,10 +2607,10 @@ private:
         // startup work, so it holds the startup load context.
         const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
         if (have_hardening_) {
-            opening.hardening_guard = crucible::warden::mint_hardening(startup, hardening_);
+            opening.hardening_guard = crucible::warden::mint_hardening(startup, detail::harness_topology(), hardening_);
             opening.pin = PinResult::one(CpuId{opening.hardening_guard.pinned_cpu()});
         } else if (auto env = env_hardening_(); env.has_value()) {
-            opening.hardening_guard = crucible::warden::mint_hardening(startup, *env);
+            opening.hardening_guard = crucible::warden::mint_hardening(startup, detail::harness_topology(), *env);
             opening.pin = PinResult::one(CpuId{opening.hardening_guard.pinned_cpu()});
         } else {
             opening.pin = pin_();
@@ -3004,7 +3010,7 @@ private:
             crucible::warden::CoreSelector selector{};
             selector.prefer_isolcpu = false;
             selector.avoid_smt_sibling = false;
-            start_cpu = crucible::warden::select_hot_cpu(startup, selector, isolated);
+            start_cpu = crucible::warden::select_hot_cpu(startup, detail::harness_topology(), selector, isolated);
             if (!is_free(start_cpu)) return PinResult{};
         }
         ::fixy::Result<::fixy::sched::PriorAffinity, ::foundation::os::Errno> prior =

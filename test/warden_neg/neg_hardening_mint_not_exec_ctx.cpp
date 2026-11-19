@@ -11,7 +11,8 @@ struct NotAnExecCtx {};
 
 int main() {
     crucible::warden::Policy p{};
-    auto applied = crucible::warden::mint_hardening(NotAnExecCtx{}, p);
+    crucible::warden::TopologyRef const topology = ::fixy::to(::fixy::topology::Topology::instance());
+    auto applied = crucible::warden::mint_hardening(NotAnExecCtx{}, topology, p);
     (void)applied;
     return 0;
 }

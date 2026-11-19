@@ -50,6 +50,16 @@ namespace topology_detail {
 
 }  // namespace topology_detail
 
+// The load of a topology reads sysfs, which can wait on the file system, and
+// the owner of the topology holds it from start-up.  So the context owns
+// Init, IO and Block.
+template <typename Ctx>
+concept CtxFitsTopologyLoad =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<
+        Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init, ::foundation::effects::Effect::IO,
+                                        ::foundation::effects::Effect::Block>>;
+
 class Topology : public ::foundation::Pinned<Topology> {
 public:
     enum class Source : std::uint8_t {
@@ -80,6 +90,17 @@ public:
     [[nodiscard]] static Snapshot reprobe_snapshot() noexcept {
         const Topology fresh{kSysfsRoot};
         return fresh.snapshot();
+    }
+
+    // The topology of this host, read from sysfs, for an owner that holds it
+    // and lends it to the code that reads it, such as the warden.  Each call
+    // reads sysfs again, so the owner calls it one time, at start-up.  The
+    // topology lives in the frame of its owner, so no static object, guard or
+    // exit handler holds it.
+    template <typename Ctx>
+        requires CtxFitsTopologyLoad<Ctx>
+    [[nodiscard, gnu::cold]] static Topology load(Ctx const&) noexcept {
+        return Topology{kSysfsRoot};
     }
 
     // A topology read from a sysfs tree under another root, for a test

@@ -183,10 +183,11 @@ public:
     // Hold the returned guard for as long as the policy is to stay in
     // effect.  The switch CRUCIBLE_WARDEN_QUIET=1 of the environment at the
     // start of the process (fixy/os/Environment.h) suppresses the
-    // warnings that a skipped knob emits.
+    // warnings that a skipped knob emits.  The choice of the hot CPU reads
+    // the NUMA node of each CPU from topology, which the caller loaded.
     template <class Ctx>
         requires CtxFitsHardeningMint<Ctx>
-    [[nodiscard]] static AppliedPolicy apply(Ctx const& ctx, const Policy& p) noexcept {
+    [[nodiscard]] static AppliedPolicy apply(Ctx const& ctx, TopologyRef topology, const Policy& p) noexcept {
         AppliedPolicy g;
         if (!p.hot_enabled) return g;
         g.undo_ctx_ = ::fixy::Option<UndoCtx>::some(ctx.template in_row<UndoRow>());
@@ -196,7 +197,7 @@ public:
             // which records a new pin event, so an older pin proof of
             // this thread stops being in force.  The door reads the prior
             // mask first, and revert puts it back through the same door.
-            const int cpu = select_hot_cpu(ctx, p.hot_core);
+            const int cpu = select_hot_cpu(ctx, topology, p.hot_core);
             if (cpu >= 0) {
                 ::fixy::Result<::fixy::sched::PriorAffinity, ::foundation::os::Errno> prior =
                     ::fixy::sched::apply_affinity_to_cpu(ctx, cpu);
@@ -453,8 +454,8 @@ using hardening_syscall_atoms =
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsHardeningMint<Ctx>
-[[nodiscard]] inline AppliedPolicy mint_hardening(Ctx const& ctx, const Policy& policy) noexcept {
-    return Hardening::apply(ctx, policy);
+[[nodiscard]] inline AppliedPolicy mint_hardening(Ctx const& ctx, TopologyRef topology, const Policy& policy) noexcept {
+    return Hardening::apply(ctx, topology, policy);
 }
 
 }  // namespace crucible::warden

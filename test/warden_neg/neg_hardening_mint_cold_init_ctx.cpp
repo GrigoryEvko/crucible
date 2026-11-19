@@ -10,7 +10,8 @@
 int main() {
     crucible::warden::Policy p{};
     ::fixy::ColdInitCtx const init{::foundation::effects::testing::init()};
-    auto applied = crucible::warden::mint_hardening(init, p);
+    crucible::warden::TopologyRef const topology = ::fixy::to(::fixy::topology::Topology::instance());
+    auto applied = crucible::warden::mint_hardening(init, topology, p);
     (void)applied;
     return 0;
 }

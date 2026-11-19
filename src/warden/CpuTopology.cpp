@@ -8,7 +8,6 @@
 
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
-#include <foundation/os/Directory.h>
 #include <foundation/os/File.h>
 #include <foundation/os/PathText.h>
 
@@ -151,28 +150,6 @@ bool read_is_p_core(int cpu) noexcept {
     return ::fixy::find(text.view(), ::fixy::TextView{"Core"}).is_some();
 }
 
-int read_numa_node_of(int cpu) noexcept {
-    SysfsPath path{};
-    if (!build_cpu_path(cpu, ::fixy::TextView{}, path)) {
-        return -1;
-    }
-    int node = -1;
-    auto visit = [&node](::fixy::CText name) noexcept {
-        constexpr ::fixy::TextView prefix = "node";
-        ::fixy::TextView const entry = name.view();
-        if (!::fixy::starts_with(entry, prefix)) {
-            return ::foundation::os::Visit::proceed;
-        }
-        for (std::size_t const id : parse_cpu_id(text_suffix(entry, prefix.size()))) {
-            node = static_cast<int>(id);
-            return ::foundation::os::Visit::stop;
-        }
-        return ::foundation::os::Visit::proceed;
-    };
-    static_cast<void>(::foundation::os::for_each_entry(path.c_text(), visit));
-    return node;
-}
-
 int read_numa_node_of_device(::fixy::CText sysfs_numa_node_path) noexcept {
     SmallFileText text{};
     if (!read_small_file(sysfs_numa_node_path, text)) {
@@ -199,7 +176,8 @@ std::uint64_t read_cpu_max_freq_khz(int cpu) noexcept {
     return parse_file_number(text.view());
 }
 
-int select_hot_cpu_of(CpuSet const& allowed, CoreSelector const& sel, CpuSet const& exclude) noexcept {
+int select_hot_cpu_of(CpuSet const& allowed, TopologyRef topology, CoreSelector const& sel,
+                      CpuSet const& exclude) noexcept {
     // The bonuses are multiplied by this before the CPU index is
     // subtracted, so the index can only break ties between equal
     // bonuses and never outweigh one. The scale is the capacity of a
@@ -232,7 +210,13 @@ int select_hot_cpu_of(CpuSet const& allowed, CoreSelector const& sel, CpuSet con
             }
             int score = 0;
             if (sel.prefer_p_core && read_is_p_core(c)) score += 4;
-            if (sel.numa_hint >= 0 && read_numa_node_of(c) == sel.numa_hint) score += 2;
+            // A CPU that no node of the topology holds is on no node.  The
+            // lookup is O(CPUs of the host).
+            bool const is_on_hinted_node =
+                sel.numa_hint >= 0 && (*topology).numa_node_of_cpu(c).is_some_and([&sel](int node) noexcept {
+                    return node == sel.numa_hint;
+                });
+            if (is_on_hinted_node) score += 2;
             // The penalties are sized against the performance-core
             // bonus above. The larger one outweighs it, so any other
             // CPU beats the first one. The smaller one cancels it, so
@@ -271,15 +255,18 @@ int select_hot_cpu_of(CpuSet const& allowed, CoreSelector const& sel, CpuSet con
     return -1;
 }
 
-CpuSet select_warm_cpus_of(CpuSet const& allowed, int hot_cpu, int count) noexcept {
+CpuSet select_warm_cpus_of(CpuSet const& allowed, TopologyRef topology, int hot_cpu, int count) noexcept {
     CRUCIBLE_PRE(::foundation::decide::non_negative(count));
-    const int hot_numa = (hot_cpu >= 0) ? read_numa_node_of(hot_cpu) : -1;
+    const int hot_numa = (hot_cpu >= 0) ? (*topology).numa_node_of_cpu(hot_cpu).value_or(-1) : -1;
 
     CpuSet same_numa{};
     CpuSet other{};
     for (const int c : allowed) {
         if (c == hot_cpu) continue;
-        if (hot_numa >= 0 && read_numa_node_of(c) == hot_numa)
+        bool const is_on_hot_node =
+            hot_numa >= 0
+            && (*topology).numa_node_of_cpu(c).is_some_and([hot_numa](int node) noexcept { return node == hot_numa; });
+        if (is_on_hot_node)
             same_numa.insert(static_cast<std::size_t>(c));
         else
             other.insert(static_cast<std::size_t>(c));

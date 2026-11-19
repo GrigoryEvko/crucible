@@ -681,6 +681,9 @@ target_compile_options(test_bench_check PRIVATE -DNDEBUG)
 # process, so the quiet switch is set here and not in the test.
 crucible_test(test_warden_policy)
 set_tests_properties(test_warden_policy PROPERTIES ENVIRONMENT_MODIFICATION "CRUCIBLE_WARDEN_QUIET=set:1")
+# The choice of a CPU reads the NUMA node from a topology of the planted tree
+# of two sockets above.
+target_compile_definitions(test_warden_policy PRIVATE TWO_PACKAGE_SYSFS_ROOT="${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}")
 # qemu user mode refuses the THP knob with einval, and the warden test accepts
 # that refusal only under the emulator.
 if(CMAKE_CROSSCOMPILING_EMULATOR)
@@ -1203,10 +1206,10 @@ crucible_neg_compile_test(neg_quarantine_zero_events
 # mint_deadline_watchdog) each ship two HS14 neg-compile fixtures
 # proving the CtxFits* concept gates fire on missing Init.
 crucible_neg_compile_test(neg_hardening_mint_bg_ctx
-    "no matching function for call to .mint_hardening\\(const fixy::BgDrainCtx&, crucible::warden::Policy&\\)."
+    "no matching function for call to .mint_hardening\\(const fixy::BgDrainCtx&, const crucible::warden::TopologyRef&, crucible::warden::Policy&\\)."
     "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
 crucible_neg_compile_test(neg_hardening_mint_hot_fg_ctx
-    "no matching function for call to .mint_hardening\\(const fixy::HotFgCtx&, crucible::warden::Policy&\\)."
+    "no matching function for call to .mint_hardening\\(const fixy::HotFgCtx&, const crucible::warden::TopologyRef&, crucible::warden::Policy&\\)."
     "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 # The cold init context owns Init but no Block, and the choice of the hot
 # CPU reads sysfs.

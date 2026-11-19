@@ -238,7 +238,7 @@ void test_cpulist_parser_refuses_malformed_text() {
           "a repeated full range stays at the ceiling");
 }
 
-void test_core_selector() {
+void test_core_selector(crucible::warden::TopologyRef topology) {
     using namespace crucible::warden;
 
     CoreSelector sel;
@@ -246,7 +246,7 @@ void test_core_selector() {
     sel.prefer_p_core = true;
     sel.avoid_smt_sibling = true;
 
-    const int pick = select_hot_cpu(kStartup, sel);
+    const int pick = select_hot_cpu(kStartup, topology, sel);
     const auto allowed = allowed_cpus(kStartup);
     CHECK(pick >= 0, "select_hot_cpu must return something on a normal system");
     CHECK(allowed.contains(pick), "picked CPU must be in allowed set");
@@ -254,7 +254,7 @@ void test_core_selector() {
     if (!allowed.is_empty()) {
         CoreSelector sel_explicit;
         sel_explicit.explicit_cpu = allowed.last().expect("the set is not empty");
-        CHECK(select_hot_cpu(kStartup, sel_explicit) == sel_explicit.explicit_cpu,
+        CHECK(select_hot_cpu(kStartup, topology, sel_explicit) == sel_explicit.explicit_cpu,
               "explicit_cpu must be honored when allowed");
     }
 }
@@ -263,7 +263,7 @@ void test_core_selector() {
 // configurations, so its cache state is the least predictable member of
 // the allowed set.  That is the reason the default selector steers away
 // from it.
-void test_core_selector_avoids_cpu0() {
+void test_core_selector_avoids_cpu0(crucible::warden::TopologyRef topology) {
     using namespace crucible::warden;
 
     const auto allowed = allowed_cpus(kStartup);
@@ -274,7 +274,7 @@ void test_core_selector_avoids_cpu0() {
     if (!have0 || allowed.size() < 2) return;
 
     CoreSelector sel;  // default: avoid_cpu0 = true
-    const int pick = select_hot_cpu(kStartup, sel);
+    const int pick = select_hot_cpu(kStartup, topology, sel);
     CHECK(pick >= 0, "select_hot_cpu returns something");
     CHECK(pick != 0, "default selector avoids cpu0 when another CPU is available");
 
@@ -284,11 +284,11 @@ void test_core_selector_avoids_cpu0() {
     sel_legacy.avoid_cpu0 = false;
     sel_legacy.prefer_p_core = false;  // flatten any P/E signal
     sel_legacy.prefer_isolcpu = false;  // ignore isolcpus
-    const int pick_legacy = select_hot_cpu(kStartup, sel_legacy);
+    const int pick_legacy = select_hot_cpu(kStartup, topology, sel_legacy);
     CHECK(pick_legacy == 0, "avoid_cpu0=false with flat scoring returns cpu0");
 }
 
-void test_core_selector_avoids_exclude() {
+void test_core_selector_avoids_exclude(crucible::warden::TopologyRef topology) {
     using namespace crucible::warden;
 
     const auto allowed = allowed_cpus(kStartup);
@@ -306,7 +306,7 @@ void test_core_selector_avoids_exclude() {
     const int excluded = allowed.first().expect("the set holds two CPUs");
     CpuSet exclude{};
     exclude.insert(static_cast<std::size_t>(excluded));
-    const int pick = select_hot_cpu(kStartup, sel, exclude);
+    const int pick = select_hot_cpu(kStartup, topology, sel, exclude);
 
     CHECK(pick >= 0, "select_hot_cpu must still return a CPU when one is excluded");
     CHECK(pick != excluded, "select_hot_cpu must not return a CPU that was in the exclude list");
@@ -315,22 +315,54 @@ void test_core_selector_avoids_exclude() {
 
 // The companions are allowed CPUs other than the hot CPU, and their count is
 // the smaller of the count asked for and the count of the other CPUs.
-void test_warm_cpus_leave_out_the_hot_cpu() {
+void test_warm_cpus_leave_out_the_hot_cpu(crucible::warden::TopologyRef topology) {
     using namespace crucible::warden;
 
     const CpuSet allowed = allowed_cpus(kStartup);
     const int hot_cpu = allowed.first().value_or(-1);
     const std::size_t others = hot_cpu >= 0 ? allowed.size() - 1 : allowed.size();
 
-    const CpuSet warm = select_warm_cpus(kStartup, hot_cpu, 2);
+    const CpuSet warm = select_warm_cpus(kStartup, topology, hot_cpu, 2);
     CHECK(!warm.contains(hot_cpu), "the hot CPU is not a companion");
     CHECK(warm.intersection(allowed) == warm, "each companion is an allowed CPU");
     CHECK(warm.size() == (others < 2 ? others : 2), "the count of the companions is the count asked for");
 
-    CHECK(select_warm_cpus(kStartup, hot_cpu, 0).is_empty(), "a count of zero gives no companion");
+    CHECK(select_warm_cpus(kStartup, topology, hot_cpu, 0).is_empty(), "a count of zero gives no companion");
 }
 
-void test_policy_none_is_noop() {
+// The warden reads the NUMA node of a CPU from the topology that its owner
+// lends, and not from the sysfs of the host.  The planted tree of two
+// sockets (test/CMakeLists.txt) puts CPUs 0 and 1 on node 0, CPUs 2 and 3 on
+// node 1, and CPUs 4 and 5 on node 3.  The selector reads no other fact of
+// the host: no isolated CPU, no core type, no sibling and no rule for cpu0.
+void test_choice_reads_the_node_of_the_lent_topology() {
+    using namespace crucible::warden;
+
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    ::fixy::topology::Topology const planted = ::fixy::topology::Topology::probe_tree(test, TWO_PACKAGE_SYSFS_ROOT);
+    CpuSet allowed{};
+    allowed.insert_range(0, 5);
+
+    CpuSet const same_node = detail::select_warm_cpus_of(allowed, ::fixy::to(planted), 2, 1);
+    CHECK(same_node.size() == 1 && same_node.contains(3), "the one companion of CPU 2 is CPU 3 of node 1");
+    CpuSet const three = detail::select_warm_cpus_of(allowed, ::fixy::to(planted), 4, 3);
+    CHECK(three.size() == 3 && three.contains(5) && three.contains(0) && three.contains(1),
+          "CPU 5 of node 3 comes first, then the lowest CPUs of the other nodes");
+
+    CoreSelector sel{};
+    sel.prefer_isolcpu = false;
+    sel.prefer_p_core = false;
+    sel.avoid_smt_sibling = false;
+    sel.avoid_cpu0 = false;
+    sel.numa_hint = 3;
+    CHECK(detail::select_hot_cpu_of(allowed, ::fixy::to(planted), sel, CpuSet{}) == 4,
+          "the hint of node 3 picks CPU 4, the lowest CPU of node 3");
+    sel.numa_hint = 2;
+    CHECK(detail::select_hot_cpu_of(allowed, ::fixy::to(planted), sel, CpuSet{}) == 0,
+          "a hint of a node that the topology does not name gives no bonus");
+}
+
+void test_policy_none_is_noop(crucible::warden::TopologyRef topology) {
     using namespace crucible::warden;
 
 #ifdef __linux__
@@ -339,7 +371,7 @@ void test_policy_none_is_noop() {
     (void)::sched_getaffinity(0, sizeof(before), &before);
 #endif
 
-    auto g = mint_hardening(kStartup, Policy::none());
+    auto g = mint_hardening(kStartup, topology, Policy::none());
     CHECK(!g.scheduler_applied(), "none() should not touch scheduler");
     CHECK(!g.affinity_applied(), "none() should not touch affinity");
     CHECK(g.regions_locked() == 0, "none() should lock nothing");
@@ -352,7 +384,7 @@ void test_policy_none_is_noop() {
 #endif
 }
 
-void test_policy_dev_quiet_pins_and_reverts() {
+void test_policy_dev_quiet_pins_and_reverts(crucible::warden::TopologyRef topology) {
     using namespace crucible::warden;
 
 #ifdef __linux__
@@ -364,7 +396,7 @@ void test_policy_dev_quiet_pins_and_reverts() {
 #endif
 
     {
-        auto g = mint_hardening(kStartup, Policy::dev_quiet());
+        auto g = mint_hardening(kStartup, topology, Policy::dev_quiet());
         // This policy stays on SCHED_OTHER, so pinning is the only
         // change it can make, and declining to pin is also legal.
         CHECK(g.affinity_applied() || g.pinned_cpu() < 0, "dev_quiet either pins or declines cleanly");
@@ -390,13 +422,13 @@ void test_policy_dev_quiet_pins_and_reverts() {
 // Move assignment reverts the target and then swaps state in, so a
 // stale observer flag rides into the moved-from source and reports it
 // as still active, even though its destructor correctly does nothing.
-void test_revert_clears_observers() {
+void test_revert_clears_observers(crucible::warden::TopologyRef topology) {
     using namespace crucible::warden;
 
 #ifdef __linux__
     // Explicit early revert.
     {
-        auto g = mint_hardening(kStartup, Policy::dev_quiet());
+        auto g = mint_hardening(kStartup, topology, Policy::dev_quiet());
         const bool had_affinity = g.affinity_applied();
         const int had_pin = g.pinned_cpu();
         (void)had_pin;
@@ -410,8 +442,8 @@ void test_revert_clears_observers() {
 
     // Move assignment.
     {
-        auto lhs = mint_hardening(kStartup, Policy::dev_quiet());
-        auto rhs = mint_hardening(kStartup, Policy::dev_quiet());
+        auto lhs = mint_hardening(kStartup, topology, Policy::dev_quiet());
+        auto rhs = mint_hardening(kStartup, topology, Policy::dev_quiet());
         lhs = std::move(rhs);
         // NOLINTNEXTLINE(bugprone-use-after-move) — reading the
         // moved-from object is the point: a disarmed one must report
@@ -424,7 +456,7 @@ void test_revert_clears_observers() {
 #endif
 }
 
-void test_policy_production_degrades_gracefully() {
+void test_policy_production_degrades_gracefully(crucible::warden::TopologyRef topology) {
     using namespace crucible::warden;
 
     // This policy asks for SCHED_DEADLINE, CAP_SYS_NICE, a frequency
@@ -433,7 +465,7 @@ void test_policy_production_degrades_gracefully() {
     Policy p = Policy::production();
     p.on_missing_capability = OnMissingCap::DegradeAndWarn;
 
-    auto g = mint_hardening(kStartup, p);
+    auto g = mint_hardening(kStartup, topology, p);
 
     CHECK(g.pinned_cpu() >= -1, "pinned_cpu is plausible after production()");
 }
@@ -511,7 +543,7 @@ void test_registry_basic() {
 // Whether the mlock took effect is unobservable without CAP_IPC_LOCK,
 // so the claim is narrower: mint_hardening() walks the registry and
 // teardown leaves the registry at the size it started from.
-void test_registry_applies_on_mint_hardening() {
+void test_registry_applies_on_mint_hardening(crucible::warden::TopologyRef topology) {
     using namespace crucible::warden;
 
     alignas(64)::fixy::FixedArray<std::byte, 4096> buf{};
@@ -524,7 +556,7 @@ void test_registry_applies_on_mint_hardening() {
     // This policy enables the region lock while staying on SCHED_OTHER,
     // so the walk runs without needing CAP_SYS_NICE.
     {
-        auto g = mint_hardening(kStartup, Policy::dev_quiet());
+        auto g = mint_hardening(kStartup, topology, Policy::dev_quiet());
         // The count is nonzero only where CAP_IPC_LOCK or memlock
         // headroom exists, so it carries no claim here.
         (void)g.regions_locked();
@@ -649,7 +681,7 @@ void test_prefault_faults_in_each_page_of_the_range() {
 // the next, and the page after it keeps no frame.  The lock and the huge page
 // knobs are off, so no other step faults in a page.  A policy with the knob
 // off leaves each page of the region with no frame.
-void test_apply_prefaults_each_registered_region() {
+void test_apply_prefaults_each_registered_region(crucible::warden::TopologyRef topology) {
     using namespace crucible::warden;
     if (!kernel_populates_pages()) {
         ::fixy::report(::fixy::Sink::Err,
@@ -672,7 +704,7 @@ void test_apply_prefaults_each_registered_region() {
     policy.thp_collapse_now = false;
     policy.prefault_hot_regions = false;
     {
-        AppliedPolicy const applied = mint_hardening(kStartup, policy);
+        AppliedPolicy const applied = mint_hardening(kStartup, topology, policy);
         CHECK(applied.regions_locked() == 0, "the policy locks no region");
     }
     CHECK(pages_with_no_frame(window_of(block, page, 3 * page)) == 3,
@@ -680,7 +712,7 @@ void test_apply_prefaults_each_registered_region() {
 
     policy.prefault_hot_regions = true;
     {
-        AppliedPolicy const applied = mint_hardening(kStartup, policy);
+        AppliedPolicy const applied = mint_hardening(kStartup, topology, policy);
         CHECK(applied.regions_locked() == 0, "the policy locks no region");
     }
     CHECK(pages_with_no_frame(window_of(block, page, 2 * page)) == 0, "each page of the region has a frame");
@@ -693,7 +725,7 @@ void test_apply_prefaults_each_registered_region() {
 // revert puts back the THP setting that the process had before apply.  A
 // process that refused THP before apply still refuses it after the revert,
 // and the revert does not allow THP for it.
-void test_revert_keeps_a_prior_thp_refusal() {
+void test_revert_keeps_a_prior_thp_refusal(crucible::warden::TopologyRef topology) {
     using namespace crucible::warden;
     ::foundation::core::Result<::fixy::pages::ThpSetting, ::foundation::os::Errno> const exchanged =
         ::fixy::pages::exchange_thp_setting(kStartup, ::fixy::pages::ThpSetting::refused);
@@ -712,7 +744,7 @@ void test_revert_keeps_a_prior_thp_refusal() {
     {
         Policy policy = Policy::dev_quiet();
         policy.disable_thp_global = true;
-        AppliedPolicy const applied = mint_hardening(kStartup, policy);
+        AppliedPolicy const applied = mint_hardening(kStartup, topology, policy);
         CHECK(applied.pinned_cpu() >= -1, "the apply returns a handle");
     }
     const ::fixy::pages::ThpSetting after_revert =
@@ -724,25 +756,31 @@ void test_revert_keeps_a_prior_thp_refusal() {
 }  // namespace
 
 int main() {
+    // The suite is the owner of the warden: it loads the topology of the
+    // host one time and lends it to each choice of a CPU.
+    ::fixy::topology::Topology const host = ::fixy::topology::Topology::load(kStartup);
+    crucible::warden::TopologyRef const topology = ::fixy::to(host);
+
     test_topology_basic();
     test_allowed_cpus_reads_the_calling_thread();
     test_cpulist_parser();
     test_cpulist_parser_refuses_malformed_text();
-    test_core_selector();
-    test_core_selector_avoids_cpu0();
-    test_core_selector_avoids_exclude();
-    test_warm_cpus_leave_out_the_hot_cpu();
-    test_policy_none_is_noop();
-    test_policy_dev_quiet_pins_and_reverts();
-    test_revert_clears_observers();
-    test_policy_production_degrades_gracefully();
+    test_core_selector(topology);
+    test_core_selector_avoids_cpu0(topology);
+    test_core_selector_avoids_exclude(topology);
+    test_warm_cpus_leave_out_the_hot_cpu(topology);
+    test_choice_reads_the_node_of_the_lent_topology();
+    test_policy_none_is_noop(topology);
+    test_policy_dev_quiet_pins_and_reverts(topology);
+    test_revert_clears_observers(topology);
+    test_policy_production_degrades_gracefully(topology);
     test_registry_basic();
-    test_registry_applies_on_mint_hardening();
+    test_registry_applies_on_mint_hardening(topology);
     test_region_has_no_padding_byte();
     test_snapshot_pairs_each_start_with_its_own_length();
     test_prefault_faults_in_each_page_of_the_range();
-    test_apply_prefaults_each_registered_region();
-    test_revert_keeps_a_prior_thp_refusal();
+    test_apply_prefaults_each_registered_region(topology);
+    test_revert_keeps_a_prior_thp_refusal(topology);
 
     if (failures == 0) {
         crucible::test::pass("test_warden_policy: OK\n");

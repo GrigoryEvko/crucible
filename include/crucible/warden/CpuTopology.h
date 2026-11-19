@@ -34,10 +34,16 @@
 // Each query of this header is a gate: it checks the context, and it calls
 // its body in src/warden/CpuTopology.cpp.  No query is hot, so an includer
 // compiles the gates and not the bodies.
+//
+// The NUMA node of a CPU comes from the topology of fixy/os/Topology.h.  The
+// owner of the warden loads one topology with Topology::load at start-up and
+// lends it to each choice of a CPU, so the warden keeps no topology of its
+// own and reads no sysfs file for a node.
 
 #include <fixy/Core.h>
 #include <fixy/os/Fd.h>
 #include <fixy/os/Sched.h>
+#include <fixy/os/Topology.h>
 #include <foundation/contracts/Pre.h>
 
 #include <cstddef>
@@ -220,6 +226,10 @@ constexpr CpuSetCursor CpuSet::end() const& noexcept { return CpuSetCursor{::fix
 template <class Ctx>
 concept CtxFitsAffinityQuery = ::fixy::fs::CtxAdmitsFs<Ctx> && ::fixy::sched::CtxFitsRuntimeAffinity<Ctx>;
 
+// The topology that the owner of the warden loaded, lent to a choice of a
+// CPU.  The owner keeps it for the life of each lend.
+using TopologyRef = ::fixy::Ref<::fixy::topology::Topology const>;
+
 struct CoreSelector {
     bool prefer_isolcpu = true;
     bool prefer_p_core = true;
@@ -366,12 +376,12 @@ namespace detail {
 [[nodiscard]] CpuSet read_isolated_cpus() noexcept;
 [[nodiscard]] CpuSet read_smt_siblings(int cpu) noexcept;
 [[nodiscard]] bool read_is_p_core(int cpu) noexcept;
-[[nodiscard]] int read_numa_node_of(int cpu) noexcept;
 [[nodiscard]] int read_numa_node_of_device(::fixy::CText sysfs_numa_node_path) noexcept;
 [[nodiscard]] std::uint64_t read_cpu_cur_freq_khz(int cpu) noexcept;
 [[nodiscard]] std::uint64_t read_cpu_max_freq_khz(int cpu) noexcept;
-[[nodiscard]] int select_hot_cpu_of(CpuSet const& allowed, CoreSelector const& sel, CpuSet const& exclude) noexcept;
-[[nodiscard]] CpuSet select_warm_cpus_of(CpuSet const& allowed, int hot_cpu, int count) noexcept;
+[[nodiscard]] int select_hot_cpu_of(CpuSet const& allowed, TopologyRef topology, CoreSelector const& sel,
+                                    CpuSet const& exclude) noexcept;
+[[nodiscard]] CpuSet select_warm_cpus_of(CpuSet const& allowed, TopologyRef topology, int hot_cpu, int count) noexcept;
 
 }  // namespace detail
 
@@ -432,15 +442,6 @@ template <::fixy::fs::CtxAdmitsFs Ctx>
     return detail::read_is_p_core(cpu);
 }
 
-// The NUMA node a CPU belongs to, or -1 when it cannot be determined.
-// The kernel publishes the membership as a symlink named after the
-// node, so the node number is the number of the entry of the CPU
-// directory whose name starts with "node".
-template <::fixy::fs::CtxAdmitsFs Ctx>
-[[nodiscard]] inline int numa_node_of(Ctx const&, int cpu) noexcept {
-    return detail::read_numa_node_of(cpu);
-}
-
 // The NUMA node nearest a device. The caller passes the sysfs path of
 // that device's numa_node file. -1 when it cannot be read.
 template <::fixy::fs::CtxAdmitsFs Ctx>
@@ -461,23 +462,24 @@ template <::fixy::fs::CtxAdmitsFs Ctx>
 }
 
 // Returns -1 only when this task is allowed no CPU at all, which is
-// unrecoverable and means the caller should refuse to start.
+// unrecoverable and means the caller should refuse to start.  A NUMA hint
+// of the selector reads the node of each CPU from topology.
 template <class Ctx>
     requires CtxFitsAffinityQuery<Ctx>
-[[nodiscard]] inline int select_hot_cpu(Ctx const& ctx, const CoreSelector& sel,
+[[nodiscard]] inline int select_hot_cpu(Ctx const& ctx, TopologyRef topology, const CoreSelector& sel,
                                         CpuSet const& exclude = CpuSet{}) noexcept {
-    return detail::select_hot_cpu_of(allowed_cpus(ctx), sel, exclude);
+    return detail::select_hot_cpu_of(allowed_cpus(ctx), topology, sel, exclude);
 }
 
 // At most count companion CPUs for the supporting threads, from the CPUs
-// that the calling thread may run on.  The CPUs on the same NUMA node as
-// the given CPU are chosen first, and the given CPU itself is never among
-// them.  Complexity: linear in the allowed CPUs, times the cost of one
-// sysfs read.
+// that the calling thread may run on.  The CPUs on the same NUMA node of
+// topology as the given CPU are chosen first, and the given CPU itself is
+// never among them.  Complexity: the allowed CPUs times the CPUs of the
+// host, with no sysfs read.
 template <class Ctx>
     requires CtxFitsAffinityQuery<Ctx>
-[[nodiscard]] inline CpuSet select_warm_cpus(Ctx const& ctx, int hot_cpu, int count) noexcept {
-    return detail::select_warm_cpus_of(allowed_cpus(ctx), hot_cpu, count);
+[[nodiscard]] inline CpuSet select_warm_cpus(Ctx const& ctx, TopologyRef topology, int hot_cpu, int count) noexcept {
+    return detail::select_warm_cpus_of(allowed_cpus(ctx), topology, hot_cpu, count);
 }
 
 }  // namespace crucible::warden
