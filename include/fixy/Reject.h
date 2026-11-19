@@ -126,7 +126,9 @@ concept UniqueAtomPerAxis = (detail::reject::first_duplicated_axis_<Atoms...>() 
 // handle, and it is the fn's first template parameter rather than a member
 // of the fn.
 template <class T, class... Atoms>
-concept ValidComposition = ::fixy::collision::binding_verdict_v<T, Atoms...>.is_valid();
+concept ValidComposition = ::fixy::collision::read_verdict(::fixy::collision::verdict_cell_v<T, Atoms...>,
+                                                           ^^::fixy::collision::verdict_key<T, Atoms...>)
+                               .is_valid();
 
 // The refused-combination corpus, folded in fixy/Corpus.h.  An entry
 // reads the same resolved grades a rule does, and never fn, for the
@@ -461,7 +463,8 @@ template <class T, class... Atoms>
         return "fixy::fn<Type, Atoms...> [tier 5]: not reached — the pack passes each tier.";
     } else {
         using Entry = corpus_tag_or_void_t<T, Atoms...>;
-        constexpr const ::fixy::collision::binding_verdict& verdict = ::fixy::collision::binding_verdict_v<T, Atoms...>;
+        constexpr ::fixy::collision::binding_verdict verdict = ::fixy::collision::read_verdict(
+            ::fixy::collision::verdict_cell_v<T, Atoms...>, ^^::fixy::collision::verdict_key<T, Atoms...>);
         constexpr std::string_view codes = verdict.failing_codes();
         ::foundation::reflect::anchored_t<^^T, std::string> text{
             "fixy::fn<Type, Atoms...> [tier 5]: the combination is refused.  "};

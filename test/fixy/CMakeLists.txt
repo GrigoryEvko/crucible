@@ -125,6 +125,15 @@ fixy_neg_compile_test(neg_axis_traits_specialized
 # payload returns is a function.  The old class spellings compile on the
 # tree before them, in a PROBE region, and they name no class template on
 # this tree.  An explicit specialization of a new form matches no template.
+# The gate reads the verdict of a binding from its sealed cell, with the key
+# of the binding.  A cell of another binding stops the read, and a forged
+# view changes no verdict of the gate.
+fixy_neg_compile_test(neg_collision_verdict_cell_of_another_binding
+  "a_verdict_cell_stands_for_another_binding"
+  "neg_collision_verdict_cell_of_another_binding\\.cpp:18:[0-9]+: error:")
+fixy_neg_compile_test(neg_collision_verdict_view_specialized
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 5\\]: the combination is refused"
+  "Collision rule\\(s\\) L002")
 fixy_neg_compile_test(neg_observability_row_of_specialized
   ".observability_row_of_. is not a class template"
   "neg_observability_row_of_specialized\\.cpp:13:[0-9]+: error:")

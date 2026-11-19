@@ -60,9 +60,10 @@
 // Option<T> or a std::expected<T, E>.  So the verdict takes the payload as
 // a template parameter of its own.  That is the first template parameter
 // of the fn, and never a member of the fn: a read of a member would
-// complete fn, and the cycle above closes.  pack_verdict_v<Atoms...> is
-// the same verdict with void for the payload, under which each payload
-// rule stands down, so a pack-only cell keeps meaning what it says.
+// complete fn, and the cycle above closes.  The verdict of the key
+// pack_key<Atoms...> is the same verdict with void for the payload, under
+// which each payload rule stands down, so a pack-only cell keeps meaning
+// what it says.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -1324,14 +1325,94 @@ namespace detail {
 
 }  // namespace detail
 
-// The verdict of the rules on a binding with this payload and this pack,
-// computed one time for each binding.
+// ---------------------------------------------------------------------
+// The sealed record of the verdicts.
+//
+// The key of a verdict names the payload and the pack of one binding.  The
+// class is declared and never defined, so a key states nothing but its
+// arguments.  The pack-only view keys its verdict with the payload void.
+// Each rule that reads the payload stands down under void, so a cell written
+// against the pack alone means what it says: this pack, with any payload,
+// is or is not a contradiction.
 template <class Payload, class... Atoms>
-inline constexpr binding_verdict binding_verdict_v = detail::judge_(binding_premises_v<Payload, Atoms...>);
+struct verdict_key;
 
-// The pack-only view.  Each rule that reads the payload stands down under
-// void, so a cell written against the pack alone means what it says: this
-// pack, with any payload, is or is not a contradiction.
+template <class... Atoms>
+using pack_key = verdict_key<void, Atoms...>;
+
+// Has no constant definition.  A call to it stops the constant evaluation,
+// and the diagnostic names it.
+void a_verdict_cell_stands_for_another_binding() noexcept;
+
+class verdict_cell;
+
+[[nodiscard]] consteval verdict_cell build_verdict_cell(std::meta::info key);
+
+// The verdict of one binding, with the key of the binding that it answers.
+// The cell is the value of verdict_cell_v, so GCC judges each binding one
+// time.  The two constructors are private and user-provided, and the build
+// is their one friend.  The build is not a template, and it judges the
+// binding that its key names.  So a specialization of verdict_cell_v can
+// hold only the cell of a binding that the build judged, and the read
+// refuses the cell of another binding.  No specialization changes a verdict.
+class verdict_cell {
+public:
+    [[nodiscard]] consteval std::meta::info key() const noexcept { return key_; }
+    [[nodiscard]] consteval binding_verdict verdict() const noexcept { return verdict_; }
+
+private:
+    consteval verdict_cell() noexcept {}
+    consteval verdict_cell(const verdict_cell& other) noexcept : key_{other.key_}, verdict_{other.verdict_} {}
+
+    std::meta::info key_{};
+    binding_verdict verdict_{};
+
+    friend consteval verdict_cell build_verdict_cell(std::meta::info key);
+};
+
+// The build reads the premises of the binding that the key names, and it
+// applies each row of the rule table to them.
+[[nodiscard]] consteval verdict_cell build_verdict_cell(std::meta::info key) {
+    verdict_cell cell{};
+    cell.key_ = std::meta::dealias(key);
+    cell.verdict_ = detail::judge_(std::meta::extract<const rule_premises&>(
+        std::meta::substitute(^^binding_premises_v, std::meta::template_arguments_of(cell.key_))));
+    return cell;
+}
+
+// The verdict of the rules on a binding with this payload and this pack,
+// computed one time for each binding.  A gate reads it through read_verdict
+// or verdict_of, which refuse a cell of another binding.
+template <class Payload, class... Atoms>
+inline constexpr verdict_cell verdict_cell_v = build_verdict_cell(^^verdict_key<Payload, Atoms...>);
+
+// The verdict in a cell, for the binding that the reader names by its key.
+// It refuses a cell that answers another binding.  The cell holds a
+// reflection, so it exists only at compile time, and the read gives a copy
+// of the verdict, which a run-time reader can hold.
+[[nodiscard]] consteval binding_verdict read_verdict(const verdict_cell& cell, std::meta::info key) {
+    if (cell.key() != std::meta::dealias(key)) a_verdict_cell_stands_for_another_binding();
+    return cell.verdict();
+}
+
+// The verdict of the binding that a key names, such as
+// verdict_of(^^pack_key<Atoms...>).  The function is not a template, so no
+// unit can specialize it.  It reads the cell of the key.
+[[nodiscard]] consteval binding_verdict verdict_of(std::meta::info key) {
+    const std::meta::info named = std::meta::dealias(key);
+    return read_verdict(std::meta::extract<const verdict_cell&>(
+                            std::meta::substitute(^^verdict_cell_v, std::meta::template_arguments_of(named))),
+                        named);
+}
+
+// The views of the cells that the tests and the check files read: the
+// verdict of a binding, and the verdict of the pack-only view.  No gate
+// reads a view.  The gates read the cell with its key, so a specialization
+// of a view changes what its own reader sees, and no verdict of a gate.
+template <class Payload, class... Atoms>
+inline constexpr binding_verdict binding_verdict_v =
+    read_verdict(verdict_cell_v<Payload, Atoms...>, ^^verdict_key<Payload, Atoms...>);
+
 template <class... Atoms>
 inline constexpr const binding_verdict& pack_verdict_v = binding_verdict_v<void, Atoms...>;
 

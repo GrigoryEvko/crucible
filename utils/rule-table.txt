@@ -1047,6 +1047,11 @@ witness <fixy/session/Refinement.h> private | fixy::session::transition::detail:
 # that it answers.  Only the build of the cell makes one.  The cell exists
 # only at compile time, so the construction stands in an operand of sizeof.
 witness <foundation/diag/RowHash.h> private | foundation::diag::detail::canonical_id_cell | sizeof(foundation::diag::detail::canonical_id_cell{})
+# The cell of the verdict of a binding holds the verdict and the key of the
+# binding that it answers.  Only the build of the cell makes one.  The cell
+# exists only at compile time, so the construction stands in an operand of
+# sizeof.
+witness <fixy/Collision.h> private | fixy::collision::verdict_cell | sizeof(fixy::collision::verdict_cell{})
 
 # -- Interaction nets ------------------------------------------------
 # A sealed net holds the fault of the wiring of its own copy of a net, so
