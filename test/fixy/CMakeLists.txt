@@ -5126,9 +5126,9 @@ fixy_test(test_strided_view)
 
 # The pointwise walk of foundation/core/Pointwise.h against walk() with the op
 # on scalars, bit for bit, for each loop of a view, the masked blocks, the
-# in-place form and an input that overlaps the output.  Each element type and
-# op costs much machine code, so the tests compile in eight units
-# (pointwise_rig.h).
+# in-place form, an input that overlaps the output, and each mix of the loops
+# of three inputs.  Each element type and op costs much machine code, so the
+# tests compile in eight units (pointwise_rig.h).
 fixy_test(test_pointwise test_pointwise.cpp pointwise_unit_float.cpp pointwise_unit_float_multiply_add.cpp
           pointwise_unit_double.cpp pointwise_unit_double_multiply_add.cpp pointwise_unit_integer.cpp
           pointwise_unit_uint64_multiply_add.cpp pointwise_unit_rows.cpp)

@@ -5,7 +5,8 @@
 // foundation/core/Pointwise.h.
 //
 // The compile of an op through write_pointwise gives one lane plan for each
-// class of each input, so each element type and op costs much machine code.
+// mix of the loops of its inputs, with three loops in place of four for each
+// input past the second, so each element type and op costs much machine code.
 // Thus the tests compile in more than one unit.  Each unit
 // pointwise_unit_*.cpp of test_pointwise gives one function at the end of
 // this header, which runs the directed cases and the properties of some
@@ -688,6 +689,66 @@ void step_two_ends_the_run(::fixy::TestRunnerCtx const& test, ::fixy::TextView n
     Case<2> const two_rows{plane_of(2, 32, 32, 1, 0), {plane_of(2, 32, 32, 1, 64), plane_of(2, 32, 64, 2, 128)}, 255};
     CRUCIBLE_TEST_ASSERT(test, writes_directed<E>(two_rows, Add{}, values, 0));
     pass(test, "  step_two_ends_the_run {}: PASSED\n", name);
+}
+
+// The count of the loops of an input of the lane path: Dense, Splat, StepTwo
+// and General.
+inline constexpr std::size_t kLaneLoops = 4;
+
+// Each mix of the loops of the lane path over the three inputs of a dense
+// output writes the bits of the oracle: one of the four loops on each input,
+// so 64 mixes.  The third input takes Dense and Splat in the lane plan, and
+// its steps two and three take the loop Switched.  The output and each input
+// are planes of 3 x 37 elements in regions of their own, so each mix takes
+// the lane plan, with no tile and no stated order.  A Splat input reads one
+// element for each row, and each row reads a different element.  The region
+// of the third input ends the run, so a read past that view is a read past
+// the allocation.  A run of a floating element holds NaNs among finite
+// values.  O(64) walks.
+template <class E, std::size_t Inputs, class Op>
+void lane_loop_mixes(::fixy::TestRunnerCtx const& test, ::fixy::TextView name, Op op) noexcept {
+    static_assert(Inputs == 3, "the mixes cover an op of three inputs");
+    constexpr std::size_t rows = 3;
+    constexpr std::size_t columns = 37;
+    ::fixy::FixedArray<std::size_t, kLaneLoops> const steps{1, 0, 2, 3};
+    auto const fill = [](std::size_t position) noexcept {
+        if constexpr (std::is_floating_point_v<E>) {
+            return position % 7 == 3 ? nan_at<E>(position)
+                                     : static_cast<E>(position % 1021) * static_cast<E>(0.25) + static_cast<E>(0.5);
+        } else {
+            return static_cast<E>(position % 1021 * 7 + 3);
+        }
+    };
+    std::size_t mixes = 1;
+    for (std::size_t input = 0; input < Inputs; ++input) {
+        mixes *= kLaneLoops;
+    }
+    for (std::size_t mix = 0; mix < mixes; ++mix) {
+        Case<Inputs> directed{};
+        directed.out = plane_of(rows, columns, columns, 1, 0);
+        std::size_t loops = mix;
+        for (std::size_t input = 0; input < Inputs; ++input) {
+            std::size_t const step = *steps.get(loops % kLaneLoops).expect("a loop below the count of the loops");
+            loops /= kLaneLoops;
+            Layout& layout = *directed.inputs.get(input).expect("an input is below the count");
+            layout = step == 0 ? plane_of(rows, columns, 1, 0, 0) : plane_of(rows, columns, columns * step, step, 0);
+        }
+        std::size_t position = reach_of(directed.out);
+        for (std::size_t input = 0; input < Inputs; ++input) {
+            Layout& layout = *directed.inputs.get(input).expect("an input is below the count");
+            layout.offset = position;
+            position += reach_of(layout);
+        }
+        directed.total = position;
+        ::fixy::HeapArray<E> run =
+            ::fixy::mint_heap_array_with<E>(::foundation::effects::testing::test().alloc, directed.total, fill);
+        Written<E> const written = write_case<E>(directed, op, std::move(run), std::make_index_sequence<Inputs>{});
+        bool const is_agreed =
+            written.is_written
+            && same_bits(::fixy::View<E const>{written.run.view()}, ::fixy::View<E const>{written.expected.view()});
+        CRUCIBLE_TEST_ASSERT(test, is_agreed);
+    }
+    pass(test, "  lane_loop_mixes {}: {} mixes of {} inputs: PASSED\n", name, mixes, Inputs);
 }
 
 // ── The cases of the units ──────────────────────────────────────────────
