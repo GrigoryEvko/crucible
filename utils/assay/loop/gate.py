@@ -758,6 +758,9 @@ CONFIGURE_S = proc.TOOL_S
 # The one wall guard of a test in the gate, in seconds (THE HANG GUARD).  It is no judge of a test.  It only bounds a
 # hang, and a test that gets to it is red and is a defect to correct.
 TEST_TIMEOUT_S = 1800
+# The room of the run of the red tests alone above the guards of its tests, in seconds: ctest starts, stops a test at
+# its guard and writes its report in that time, also on a loaded host.
+ALONE_ROOM_S = proc.TOOL_S
 # The bytes of the output of one red test that the report of the run alone keeps.  The default of ctest is 300 KB
 # (THE FAILING ITEMS).
 ALONE_OUTPUT_BYTES = 64 * 1024 * 1024
@@ -2383,9 +2386,9 @@ class Step:
 
         The tests run at the same time, in one run of ctest with the jobs of the lease (THE RUN OF A CONFIGURATION).
         The report of that run gives the status of each test.  A test with no status in the report is red.  Each test
-        has the wall guard of THE HANG GUARD.  The limit of the run is that guard for each test and one guard more: the
-        time of the tests one after the other, and room for ctest to stop a test at its guard and write the report.
-        The files of the run have the name of its round (log_name()).
+        has the wall guard of THE HANG GUARD.  The limit of the run is that guard for each test, the time of the tests
+        one after the other, and ALONE_ROOM_S for ctest to start, stop a test at its guard and write the report.  The
+        files of the run have the name of its round (log_name()).
 
         Raises:
             GateError: If the CMake cache of the build names no ctest
@@ -2403,7 +2406,7 @@ class Step:
         command = [ctest, "--test-dir", str(build), "--tests-from-file", str(selection), "-j", str(share.jobs)]
         command += [*self.gate.guard_words, "--output-on-failure", "--output-junit", str(report)]
         command += ["--test-output-size-failed", str(ALONE_OUTPUT_BYTES)]
-        limit_s = self.gate.test_timeout_s * (len(names) + 1)
+        limit_s = self.gate.test_timeout_s * len(names) + ALONE_ROOM_S
         self.run_logged(command, log_name(configuration, "alone.log", is_again), share, limit_s)
         try:
             statuses = ctest_reader.results(report)
