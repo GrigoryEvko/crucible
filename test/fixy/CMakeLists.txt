@@ -2615,6 +2615,11 @@ fixy_neg_compile_test(neg_sess_unwrap_content_addressed_class_specialized
 fixy_neg_compile_test(neg_sess_subsorts_specialized
   "template-id .subsorts<>. for .consteval bool fixy::session::transition::subsorts\\(std::meta::info, std::meta::info, std::meta::info\\). does not match any template declaration"
   "neg_sess_subsorts_specialized\\.cpp:12:[0-9]+: error:")
+# The old variable spelling of the answer compiles on the tree before the
+# cell, in a PROBE region, and it names nothing on this tree.
+fixy_neg_compile_test(neg_sess_subsorts_v_specialized
+  "expected initializer before .<. token"
+  "neg_sess_subsorts_v_specialized\\.cpp:15:[0-9]+: error:")
 
 # A specialization of subsort_cell_at can hold only a cell that the walk
 # builds, and that cell holds the pair that it answers.  The read compares

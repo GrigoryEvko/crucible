@@ -270,6 +270,18 @@ foundation_neg_compile_test(neg_claim_subject_specialized
 foundation_neg_compile_test(neg_product_orientation_specialized
   "template-id .OrientedStrongerIsHigher<\\{anonymous\\}::Stronger>. used as a declarator"
   "neg_product_orientation_specialized\\.cpp:24:[0-9]+: error:")
+# The old variable and function template spellings of the orientation and
+# the subject compile on the tree before the concepts, in a PROBE region,
+# and they name nothing on this tree.
+foundation_neg_compile_test(neg_claim_orientation_v_specialized
+  "expected initializer before .<. token"
+  "neg_claim_orientation_v_specialized\\.cpp:25:[0-9]+: error:")
+foundation_neg_compile_test(neg_claim_subject_v_specialized
+  "expected initializer before .<. token"
+  "neg_claim_subject_v_specialized\\.cpp:22:[0-9]+: error:")
+foundation_neg_compile_test(neg_product_orientation_function_specialized
+  "expected initializer before .<. token"
+  "neg_product_orientation_function_specialized\\.cpp:25:[0-9]+: error:")
 
 # A member claim_orientation or claim_subject of another type is a misspelt
 # statement.  The gate stops the build at a call whose name gives the fix,
@@ -287,6 +299,11 @@ foundation_neg_compile_test(neg_claim_subject_mistyped
 foundation_neg_compile_test(neg_row_descriptor_specialized
   "template-id .row_descriptor<>. for .consteval foundation::effects::EffectRowLattice::element_type foundation::effects::row_descriptor\\(std::meta::info\\). does not match any template declaration"
   "neg_row_descriptor_specialized\\.cpp:12:[0-9]+: error:")
+# The old variable spelling of the mask compiles on the tree before the
+# function, in a PROBE region, and it names nothing on this tree.
+foundation_neg_compile_test(neg_row_descriptor_v_specialized
+  "expected initializer before .<. token"
+  "neg_row_descriptor_v_specialized\\.cpp:13:[0-9]+: error:")
 foundation_neg_compile_test(neg_graded_default_value_claims_bytes
   "no matching function for call to .foundation::algebra::Graded<.*OneByteValue>::Graded\\(\\)."
   "required by the constraints of .template<foundation::algebra::ModalityKind M, class L, class T> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(\\) requires ! foundation::algebra::Graded<M, L, T>::stores_grade_ \\|\\| \\(GradeIgnoresBytes<L>\\).")
