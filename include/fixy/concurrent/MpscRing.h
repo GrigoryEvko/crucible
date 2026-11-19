@@ -17,19 +17,27 @@
 //   in a packed bitmap, so that the cells stay packed.  Each producer and the
 //   consumer then did a read-modify-write on one bitmap word for each 64
 //   cells, and each producer read the tail, which the consumer writes on each
-//   pop.  The turn words keep the cells packed too: a cell of an item of 8
-//   bytes takes 16 bytes.  In bench_thread_scaling on 16 isolated cores, with
-//   the consumer on its own core, the single push of this form gave 3.6 times
-//   the throughput of the bitmap form with one producer, 1.3 times with 3,
-//   1.5 times with 7 and 2.3 times with 15, and a batch push of 16 gave 1.0
+//   pop.  In bench_thread_scaling on 16 isolated cores, with the consumer on
+//   its own core, the single push of the turn words in packed cells gave 3.6
+//   times the throughput of the bitmap form with one producer, 1.3 times with
+//   3, 1.5 times with 7 and 2.3 times with 15, and a batch push of 16 gave 1.0
 //   to 1.8 times.
 //
-// THE PACKED CELLS
-//   Two producers with adjacent tickets write one cache line.  A queue that
-//   gives each cell a line of its own, such as the pinned MPMCQueue of the
-//   bench, pays a line for each item and gains with many producers in one L3
-//   group: with 7 producers it gave 1.2 times the throughput of this form,
-//   and with 1 and 15 producers this form was faster.
+// THE SPACING OF THE CELLS
+//   The ring takes the spacing of its cells as a parameter (THE SPACING OF THE
+//   CELLS of fixy/concurrent/SequenceCells.h).  With packed cells, two
+//   producers with adjacent tickets write one cache line.  With the spacing
+//   line, each cell takes a line of its own, and the ring pays a line for each
+//   item.  In bench_thread_scaling on isolated cores of one L3 group, the push
+//   of packed cells gave 57 million items a second with one producer, 10.6
+//   with three and 7.7 with seven.  The spacing line gave 28, 22 and 15.  The
+//   pinned MPMCQueue of the bench, whose slots take 128 bytes each, gave 39 to
+//   50, 11 to 17 and 9 to 10.  A batch push writes one line for each item
+//   with the spacing line: with three producers, the batch push of 16 items
+//   gave 235 million items a second with packed cells and 163 to 169 with the
+//   spacing line.  A ring of many producers is the purpose of this type, so
+//   the spacing line is the default.  A ring that mostly has one producer, or
+//   that takes batch pushes, names CellSpacing::packed.
 
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/RingValue.h>
@@ -54,11 +62,12 @@ struct mpsc_ring;
 
 namespace fixy::concurrent {
 
-template <RingValue T, std::size_t Capacity>
-class MpscRing : public ::foundation::Pinned<MpscRing<T, Capacity>> {
+template <RingValue T, std::size_t Capacity, CellSpacing Spacing = CellSpacing::line>
+class MpscRing : public ::foundation::Pinned<MpscRing<T, Capacity, Spacing>> {
 public:
     using value_type = T;
     static constexpr std::size_t channel_capacity = Capacity;
+    static constexpr CellSpacing cell_spacing = Spacing;
     using row_discipline = ::fixy::row_discipline::mpsc_ring;
     using row_payload = T;
 
@@ -230,7 +239,7 @@ private:
     // AtomicMonotonic carries: it is alignas(64) and at least a line in
     // size, and asserts both in its own header.
 
-    SequenceCells<T, Capacity> cells_{};
+    SequenceCells<T, Capacity, Spacing> cells_{};
     ::fixy::AtomicMonotonic<std::uint64_t> head_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
     ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> tail_ =
         ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);

@@ -34,6 +34,16 @@
 //   tickets, so a cell that is free at ticket t also shows each ticket of the
 //   round before t as read.  A batch of tickets then tests only its last
 //   cell.
+//
+// THE SPACING OF THE CELLS
+//   A packed cell takes its word and its value, so one cache line holds the
+//   cells of some adjacent tickets.  A cell of the spacing line takes a line of
+//   its own.  Writers of adjacent tickets then write different lines, and the
+//   reader of a ticket reads no line that the writer of the next ticket
+//   writes.  A packed line moves to the reader with the values of some
+//   tickets at one time, so one writer gains from it.  Several writers that
+//   claim adjacent tickets at the same time move one line between them.  The
+//   MPSC ring of fixy/concurrent/MpscRing.h gives its measured numbers.
 
 #include <fixy/concurrent/RingValue.h>
 
@@ -45,6 +55,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace fixy::concurrent {
 
@@ -60,8 +71,14 @@ enum class CellTurn : std::uint8_t {
     ahead,
 };
 
-template <RingValue T, std::size_t Capacity>
-class SequenceCells : public ::foundation::Pinned<SequenceCells<T, Capacity>> {
+// How the cells lie in memory (THE SPACING OF THE CELLS).
+enum class CellSpacing : std::uint8_t {
+    packed,
+    line,
+};
+
+template <RingValue T, std::size_t Capacity, CellSpacing Spacing = CellSpacing::line>
+class SequenceCells : public ::foundation::Pinned<SequenceCells<T, Capacity, Spacing>> {
     static_assert(Capacity != 0 && (Capacity & (Capacity - 1)) == 0,
                   "fixy::concurrent::SequenceCells<T, Capacity>: Capacity must be a power of two.  The cell of a "
                   "ticket is its low bits, and the round of a ticket is its high bits.");
@@ -70,13 +87,19 @@ class SequenceCells : public ::foundation::Pinned<SequenceCells<T, Capacity>> {
     // The count of the low bits of a ticket that name its cell.
     static constexpr int ROUND_SHIFT = __builtin_ctzll(Capacity);
 
-    // The word and the value of one cell.  The cells stay packed: a writer
-    // and a reader of one cell touch its line, and a write of a word is a
-    // plain release store, not a read-modify-write.
-    struct Cell {
+    // The word and the value of one cell.  A writer and a reader of one cell
+    // touch its line, and a write of a word is a plain release store, not a
+    // read-modify-write.  The two forms differ only in the alignment of the
+    // cell (THE SPACING OF THE CELLS).
+    struct PackedCell {
         ::foundation::core::Atomic<std::uint64_t> word{};
         T value{};
     };
+    struct alignas(64) LineCell {
+        ::foundation::core::Atomic<std::uint64_t> word{};
+        T value{};
+    };
+    using Cell = std::conditional_t<Spacing == CellSpacing::line, LineCell, PackedCell>;
 
     // The free word of the round of a ticket (THE TURN WORD).
     [[nodiscard]] static constexpr std::uint64_t free_word_(CellTicket ticket) noexcept {
@@ -90,6 +113,9 @@ public:
     SequenceCells() noexcept = default;
 
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
+    static constexpr CellSpacing spacing = Spacing;
+    // The bytes of one cell in the array.
+    static constexpr std::size_t cell_bytes = sizeof(Cell);
 
     // How the cell of the ticket stands for its writer, with acquire order:
     // a free cell also shows the read of the reader of the round before.

@@ -8,6 +8,9 @@
 //   mpsc push          try_push of fixy/concurrent/MpscRing.h from each thread
 //                      of the row but the last, and try_pop on the last
 //                      thread, the one consumer
+//   mpsc packed push   the same calls on the ring with packed cells
+//                      (CellSpacing::packed), whose cache line holds the cells
+//                      of some adjacent tickets
 //   mpsc batch push    try_push_batch of kBatch items from each producer, and
 //                      try_pop_batch of up to kPopBatch items on the consumer
 //   mpsc reference     try_push and try_pop of the pinned MPMCQueue of Erik
@@ -83,7 +86,7 @@
 //
 // THE GROUPS OF OPS
 //   An argument add, mpsc or spsc selects the ops of that group: the two
-//   adds, the three mpsc ops, or the three spsc ops.  With no such argument,
+//   adds, the mpsc ops, or the spsc ops.  With no such argument,
 //   the run gives each group.  So two builds of one ring can run in turns:
 //       python3 utils/bin/loop bench --cores 9 --command -- BINARY spsc
 //
@@ -121,9 +124,9 @@ using Item = std::uint64_t;
 
 // The threads of one row, at most.  The command of the owner runs 224.
 constexpr std::size_t kMaxThreads = 256;
-// The rows of one op, at most, and the latency reports of the eight ops.
+// The rows of one op, at most, and the latency reports of the ten ops.
 constexpr std::size_t kMaxRows = 16;
-constexpr std::size_t kMaxReports = 8 * kMaxRows;
+constexpr std::size_t kMaxReports = 10 * kMaxRows;
 constexpr std::uint64_t kWindowNs = 500000000;
 constexpr std::size_t kLatencySamples = 1000000;
 constexpr std::size_t kLatencyWarmup = 10000;
@@ -229,6 +232,7 @@ enum class OpKind : std::uint8_t {
     SharedAdd,
     OwnAdd,
     MpscPush,
+    MpscPackedPush,
     MpscBatchPush,
     MpscReferencePush,
     SpscPush,
@@ -335,6 +339,7 @@ struct RowState {
     CountLine shared{};
     ::fixy::FixedArray<ThreadLine, kMaxThreads> lines{};
     ::fixy::concurrent::MpscRing<Item, kRingCapacity> mpsc{};
+    ::fixy::concurrent::MpscRing<Item, kRingCapacity, ::fixy::concurrent::CellSpacing::packed> mpsc_packed{};
     ::fixy::concurrent::SpscRing<Item, kRingCapacity> spsc{};
     ProvenOwner::Ring spsc_proven{};
     MpscReference mpsc_reference{};
@@ -382,6 +387,8 @@ template <OpKind Kind>
         static_cast<void>(line.cell.fetch_add_acq_rel(1));
     } else if constexpr (Kind == OpKind::MpscPush) {
         push_waiting(state, [&state]() noexcept { return state.mpsc.try_push(Item{1}); });
+    } else if constexpr (Kind == OpKind::MpscPackedPush) {
+        push_waiting(state, [&state]() noexcept { return state.mpsc_packed.try_push(Item{1}); });
     } else if constexpr (Kind == OpKind::MpscBatchPush) {
         // The batch of the MPSC ring is all or nothing.
         push_waiting(state, [&state]() noexcept { return state.mpsc.try_push_batch(state.batch.view()) == kBatch; });
@@ -457,6 +464,8 @@ template <OpKind Kind>
     };
     if constexpr (Kind == OpKind::MpscPush) {
         return take_one(state.mpsc.try_pop(merge));
+    } else if constexpr (Kind == OpKind::MpscPackedPush) {
+        return take_one(state.mpsc_packed.try_pop(merge));
     } else if constexpr (Kind == OpKind::MpscBatchPush) {
         return take_batch(state.mpsc.try_pop_batch(merge, out));
     } else if constexpr (Kind == OpKind::MpscReferencePush) {
@@ -564,6 +573,7 @@ template <OpKind Kind>
     if constexpr (Kind == OpKind::SharedAdd) return ::fixy::TextView{"shared add"};
     if constexpr (Kind == OpKind::OwnAdd) return ::fixy::TextView{"own add"};
     if constexpr (Kind == OpKind::MpscPush) return ::fixy::TextView{"mpsc push"};
+    if constexpr (Kind == OpKind::MpscPackedPush) return ::fixy::TextView{"mpsc packed push"};
     if constexpr (Kind == OpKind::MpscBatchPush) return ::fixy::TextView{"mpsc batch push"};
     if constexpr (Kind == OpKind::MpscReferencePush) return ::fixy::TextView{"mpsc reference push"};
     if constexpr (Kind == OpKind::SpscPush) return ::fixy::TextView{"spsc push"};
@@ -897,6 +907,8 @@ int run_bench(::fixy::os::Args const& arguments) {
     }
     if (has_group(OpGroup::Mpsc)) {
         run_op_rows<OpKind::MpscPush>(spread, counts.view(), "mpsc push: the last thread is the one consumer", reports);
+        run_op_rows<OpKind::MpscPackedPush>(spread, counts.view(),
+                                            "mpsc packed push: the ring with packed cells, one consumer", reports);
         run_op_rows<OpKind::MpscBatchPush>(spread, counts.view(),
                                            "mpsc batch push: batches of 16, and batch pops of up to 64", reports);
         if (kHasMpscReference) {

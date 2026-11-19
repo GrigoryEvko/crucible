@@ -132,6 +132,12 @@ static_assert(std::is_same_v<typename Spsc::value_type, Plain>);
 // restate it, so this line records the ring's dependence on it.
 static_assert(alignof(Spsc) >= 64);
 static_assert(alignof(Mpsc) >= 64);
+// A cell of the spacing line takes one cache line, and a packed cell takes its
+// word and its value (THE SPACING OF THE CELLS of fixy/concurrent/SequenceCells.h).
+// A ring of many producers takes the spacing line by default.
+static_assert(c::SequenceCells<std::uint64_t, 8, c::CellSpacing::line>::cell_bytes == 64);
+static_assert(c::SequenceCells<std::uint64_t, 8, c::CellSpacing::packed>::cell_bytes == 16);
+static_assert(Mpsc::cell_spacing == c::CellSpacing::line);
 static_assert(alignof(::fixy::AtomicMonotonic<std::uint64_t>) >= 64);
 static_assert(sizeof(::fixy::AtomicMonotonic<std::uint64_t>) >= 64);
 
@@ -519,9 +525,9 @@ struct ProvenOwner final {
 // out one at a time, and one batch pop drains the rest.  Then a full batch
 // fills the ring again.  A tail past the head admits one more push, and a
 // stale turn word gives one more item to a batch pop.
-template <std::size_t Capacity>
+template <std::size_t Capacity, c::CellSpacing Spacing>
 [[nodiscard]] int mpsc_batch_case(std::size_t offset, std::size_t count, std::size_t singles) {
-    c::MpscRing<int, Capacity> ring{};
+    c::MpscRing<int, Capacity, Spacing> ring{};
     Run<int, Capacity> items{};
     Run<int, 2 * Capacity> drained{};
     const auto fail = [&](fixy::TextView what) {
@@ -570,28 +576,36 @@ template <std::size_t Capacity>
 // batch size, so each batch path meets each wrap.
 // Each batch then loses no item, one item, or each item but one to single
 // pops before the batch pop.
-template <std::size_t Capacity>
+template <std::size_t Capacity, c::CellSpacing Spacing>
 [[nodiscard]] int mpsc_batch_paths_at() {
     for (std::size_t offset = 0; offset < Capacity; ++offset) {
         for (std::size_t count = 1; count <= Capacity; ++count) {
             for (std::size_t form = 0; form < 3; ++form) {
                 const std::size_t singles = form == 0 ? 0 : form == 1 ? 1 : count - 1;
-                if (const int rc = mpsc_batch_case<Capacity>(offset, count, singles); rc != 0) return rc;
+                if (const int rc = mpsc_batch_case<Capacity, Spacing>(offset, count, singles); rc != 0) return rc;
             }
         }
     }
     return 0;
 }
 
+// The walk of each capacity of Capacities, in their order.  It stops at the
+// first case that fails, and gives its code.
+template <c::CellSpacing Spacing, std::size_t... Capacities>
 [[nodiscard]] int mpsc_batch_paths_each_capacity() {
-    if (const int rc = mpsc_batch_paths_at<1>(); rc != 0) return rc;
-    if (const int rc = mpsc_batch_paths_at<2>(); rc != 0) return rc;
-    if (const int rc = mpsc_batch_paths_at<4>(); rc != 0) return rc;
-    if (const int rc = mpsc_batch_paths_at<8>(); rc != 0) return rc;
-    if (const int rc = mpsc_batch_paths_at<16>(); rc != 0) return rc;
-    if (const int rc = mpsc_batch_paths_at<32>(); rc != 0) return rc;
-    if (const int rc = mpsc_batch_paths_at<64>(); rc != 0) return rc;
-    return mpsc_batch_paths_at<128>();
+    int rc = 0;
+    static_cast<void>((((rc = mpsc_batch_paths_at<Capacities, Spacing>()) == 0) && ...));
+    return rc;
+}
+
+// The walk runs for each spacing of the cells.  The two spacings share each
+// path of the ring and differ only in the alignment of a cell.  The work of
+// a walk is cubic in the capacity, so the default spacing takes each capacity
+// to 128, and the packed cells take each capacity to 32.
+[[nodiscard]] int mpsc_batch_paths_each_spacing() {
+    if (const int rc = mpsc_batch_paths_each_capacity<c::CellSpacing::line, 1, 2, 4, 8, 16, 32, 64, 128>(); rc != 0)
+        return rc;
+    return mpsc_batch_paths_each_capacity<c::CellSpacing::packed, 1, 2, 4, 8, 16, 32>();
 }
 
 // ── Threaded: the ordering claim ─────────────────────────────────────
@@ -923,7 +937,7 @@ int main() {
     if (const int rc = spsc_proven_two_threads(); rc != 0) return rc;
     if (const int rc = mpsc_single_threaded(); rc != 0) return rc;
     if (const int rc = mpsc_small_and_wide(); rc != 0) return rc;
-    if (const int rc = mpsc_batch_paths_each_capacity(); rc != 0) return rc;
+    if (const int rc = mpsc_batch_paths_each_spacing(); rc != 0) return rc;
     if (const int rc = spsc_two_threads(); rc != 0) return rc;
     if (const int rc = mpsc_many_producers(); rc != 0) return rc;
     if (const int rc = mpsc_full_batches_many_producers(); rc != 0) return rc;
