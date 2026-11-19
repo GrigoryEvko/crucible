@@ -104,6 +104,15 @@ THE WRITE
     Write it with the mode raise for the policy count, or with the mode
     admit and a reason for the policy admit.  Give the reason in the commit.
 
+THE PATHS
+    A write can take a set of paths (`guard write --path PATH`).  It then
+    writes only the rows of those paths, and it keeps each other row as it
+    is: rows_of_paths() gives the rows that the write reads, and
+    merged_paths() puts each other row back.  A write of the mode lower with
+    a reason gives each row of the paths that it keeps that reason, and the
+    count of the row does not change.  This write is the one way to correct
+    the reason of a row that stays.
+
 THE REDUCE
     The count of a key of a ledger that a build gives is the largest count of
     the key over the configurations of the landing gate.  The gate gives one
@@ -141,7 +150,7 @@ tests.core.test_ledger` does a test of the module.
 
 import enum
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -644,6 +653,40 @@ def write_counts(
             if key not in written or int(entry.value) > int(written[key].value):
                 written[key] = entry
     return needed_reasons(replace(ledger, base={**written, **kept_admits}))
+
+
+def rows_of_paths(ledger: Ledger, paths: Collection[str]) -> Ledger:
+    """Return the ledger with only the rows of the paths, or the ledger itself for no path (THE PATHS).
+
+    Complexity: linear in the rows.
+    """
+    if not paths:
+        return ledger
+    return replace(ledger, base={key: entry for key, entry in ledger.base.items() if key.path in paths})
+
+
+def merged_paths(
+    ledger: Ledger, written: Ledger, paths: Collection[str], mode: WriteMode, reason: str | None
+) -> Ledger:
+    """Return the rows of the paths from a write of rows_of_paths(), and each other row of the ledger (THE PATHS).
+
+    A write of the mode lower with a reason gives each row of the paths that reason, and its value does not change.
+    No path gives the written ledger itself.  Complexity: linear in the rows.
+
+    Args:
+        ledger: The ledger before the write
+        written: The ledger that the write gave from rows_of_paths(ledger, paths)
+        paths: The paths of the write
+        mode: The mode of the write
+        reason: The reason of the write, or None
+    """
+    if not paths:
+        return written
+    kept = {key: entry for key, entry in ledger.base.items() if key.path not in paths}
+    own = written.base
+    if reason and mode == WriteMode.LOWER:
+        own = {key: replace(entry, reason=reason) for key, entry in own.items()}
+    return replace(written, base={**kept, **own})
 
 
 def needed_reasons(ledger: Ledger) -> Ledger:

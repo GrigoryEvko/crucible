@@ -163,7 +163,8 @@ class WriteRequest:
     """What one write of the ledger of a plugin rule does (THE WRITE).
 
     `mode` is the mode of assay.core.ledger.  `more_builds` holds the other builds of a reduce, after `build_dir`
-    (THE REDUCE of assay.core.ledger).  A write with no other build reads one build, and it lowers no row.
+    (THE REDUCE of assay.core.ledger).  A write with no other build reads one build, and it lowers no row.  `paths`
+    holds the paths of the rows that the write writes, or none for each row (THE PATHS of assay.core.ledger).
     """
 
     root: Path
@@ -171,6 +172,7 @@ class WriteRequest:
     mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER
     reason: str | None = None
     more_builds: tuple[Path, ...] = ()
+    paths: tuple[str, ...] = ()
 
     @property
     def builds(self) -> tuple[Path, ...]:
@@ -483,27 +485,41 @@ def finding_counts(rule: rule_registry.Rule, context: PluginContext) -> Counter[
 def write(rule: rule_registry.Rule, request: WriteRequest) -> int:
     """Write the ledger of one plugin rule from the builds of the request (THE WRITE).
 
-    A module that writes its ledger itself writes it.  For each other rule, assay.core.ledger writes it.
+    A module that writes its ledger itself writes it, and it refuses the paths of a request.  For each other rule,
+    assay.core.ledger writes it.  A request with paths writes only the rows of those paths (THE PATHS of
+    assay.core.ledger).
 
     Returns:
-        0 when the ledger is written.  1 when the mode refuses a finding or a build cannot be read.  SKIPPED when the
-        rule does not apply to a build
+        0 when the ledger is written.  1 when the mode refuses a finding or a build cannot be read.  2 for the paths
+        of a rule whose module writes its ledger.  SKIPPED when the rule does not apply to a build
     """
     own_write = getattr(meta_runner.rule_module(rule), "write", None)
     if own_write is not None:
+        if request.paths:
+            check_report.write_line(
+                f"guard write: --path does not apply to the rule {rule.id}, whose module writes its ledger itself",
+                is_error=True,
+            )
+            return 2
         return int(own_write(rule, request))
     per_build = counts_of_builds(rule.id, request, lambda context: finding_counts(rule, context))
     if isinstance(per_build, int):
         return per_build
+    named = frozenset(request.paths)
     try:
+        ledger = rule_ledger.read(rule, request.root)
+        counts = {
+            key: count for key, count in rule_ledger.largest_counts(per_build).items() if not named or key.path in named
+        }
         written = rule_ledger.write_counts(
             rule,
-            rule_ledger.read(rule, request.root),
-            rule_ledger.largest_counts(per_build),
+            rule_ledger.rows_of_paths(ledger, named),
+            counts,
             mode=request.mode,
             reason=request.reason,
             is_partial=request.is_partial,
         )
+        written = rule_ledger.merged_paths(ledger, written, named, request.mode, request.reason)
     except (rule_ledger.LedgerError, rows_grammar.RowsError, OSError) as problem:
         check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {problem}", is_error=True)
         return 1

@@ -27,9 +27,12 @@ The command then refuses the write, because the write would remove the rows
 of those parts (assay.guard.engines.meta.registry, THE BUILD).
 
 --path names paths of the rows of the ledger.  The command then writes only
-the rows of those paths, and it keeps each other row.  It applies to a rule
-of the engine build, meta or tsast with the policy count or admit.  With --reason and no mode, each row of those paths
-that the write keeps gets the reason.  A row that must stay then tells why.
+the rows of those paths, and it keeps each other row (THE PATHS of
+assay.core.ledger).  It applies to a rule of the engine build, meta, tsast or
+plugin with the policy count or admit.  A plugin rule whose module writes its
+ledger itself refuses it.  With --reason and no mode, each row of those paths
+that the write keeps gets the reason, and its count does not change.  A row
+that must stay then tells why, and a stale reason gets a correct one.
 
 A rule of the policy none has no ledger.  Its module can write a data file
 from a build.  Then the function refresh(context) of the module writes the
@@ -59,7 +62,6 @@ does.
 
 import sys
 from collections.abc import Sequence
-from dataclasses import replace
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
@@ -139,9 +141,9 @@ def main(argv: list[str]) -> int:
         print(f"guard write: {chosen}", file=sys.stderr)
         return 2
     rule = chosen[0]
-    if options.paths and (rule.engine in OWN_WRITE_ENGINES or rule.policy not in PARTIAL_POLICIES):
+    if options.paths and (rule.engine == rule_registry.Engine.ELF or rule.policy not in PARTIAL_POLICIES):
         check_report.write_line(
-            "guard write: --path applies only to a rule of the engine build, meta or tsast with "
+            "guard write: --path applies only to a rule of the engine build, meta, tsast or plugin with "
             "the policy count or admit",
             is_error=True,
         )
@@ -172,7 +174,9 @@ def main(argv: list[str]) -> int:
     if is_build_write:
         from assay.guard.engines.plugin import runner as plugin_runner
 
-        request = plugin_runner.WriteRequest(root, build_dir, mode, options.reason, tuple(builds[1:]))
+        request = plugin_runner.WriteRequest(
+            root, build_dir, mode, options.reason, tuple(builds[1:]), tuple(options.paths)
+        )
         return plugin_runner.write(rule, request)
     context = check.rule_context(rule, root, build_dir, options.paths)
     try:
@@ -213,18 +217,12 @@ def main(argv: list[str]) -> int:
                     is_error=True,
                 )
                 return 1
-            named = set(options.paths)
-            judged = replace(
-                ledger, base={key: entry for key, entry in ledger.base.items() if not named or key.path in named}
-            )
+            named = frozenset(options.paths)
             found = [item for item in found if not named or item.path in named]
-            written = rule_ledger.write(rule, judged, found, mode=mode, reason=options.reason)
-            if named:
-                kept = {key: entry for key, entry in ledger.base.items() if key.path not in named}
-                own = written.base
-                if options.reason and options.mode is None:
-                    own = {key: replace(entry, reason=options.reason) for key, entry in own.items()}
-                written = replace(written, base={**kept, **own})
+            written = rule_ledger.write(
+                rule, rule_ledger.rows_of_paths(ledger, named), found, mode=mode, reason=options.reason
+            )
+            written = rule_ledger.merged_paths(ledger, written, named, mode, options.reason)
     except runner.NotApplicable as reason:
         print(f"guard write: the rule {rule.id} does not apply: {reason}", file=sys.stderr)
         return 2

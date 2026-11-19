@@ -55,9 +55,15 @@ from assay.readers import sections as quarantine_sections
 
 RULE = quarantine.RULE
 CONTRACT = "contract-specifier"
+# A plugin rule of the policy admit whose ledger assay.core.ledger writes.
+STATE = "process-wide-state"
 REGISTRY_ROWS = (
     "rule quarantine engine=plugin scope=quarantined ledger=count doc=XXII.R11 | a planted quarantine rule | lower it",
     "rule contract-specifier engine=plugin scope=tracked ledger=none doc=XII | a planted contract rule | use a macro",
+    (
+        "rule process-wide-state engine=plugin scope=include/,src/,vessel/ ledger=admit kinds=unmarked-static doc=XV | "
+        "a planted rule of the policy admit | mark it"
+    ),
 )
 # The fake ninja prints the planted dependency log for `-t deps`, and the planted inputs of all for each other tool.
 FAKE_NINJA = """\
@@ -270,19 +276,23 @@ class Scratch:
         mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER,
         reason: str | None = None,
         is_complete: bool = False,
+        paths: tuple[str, ...] = (),
+        rule: str = RULE,
     ) -> tuple[int, str]:
-        """Write the ledger of the rule quarantine from the planted build, and return the status and the text.
+        """Write the ledger of a rule, the rule quarantine by default, from the planted build, and return the status
+        and the text.
 
         With `is_complete`, the write gets the planted build two times, and it is a complete write that lowers the rows
-        (THE REDUCE of assay.core.ledger).
+        (THE REDUCE of assay.core.ledger).  With `paths`, the write writes only the rows of those paths (THE PATHS of
+        assay.core.ledger).
         """
-        request = runner.WriteRequest(self.root, self.build, mode, reason, (self.build,) if is_complete else ())
+        request = runner.WriteRequest(self.root, self.build, mode, reason, (self.build,) if is_complete else (), paths)
         with (
             check_report.github_actions(False),
             contextlib.redirect_stdout(io.StringIO()) as printed,
             contextlib.redirect_stderr(io.StringIO()) as said,
         ):
-            status = runner.write(RULES[RULE], request)
+            status = runner.write(RULES[rule], request)
         return status, printed.getvalue() + said.getvalue()
 
     def listed(self, place: str | None, kind: str | None = None) -> tuple[int, str]:
@@ -954,6 +964,69 @@ def ledger_cases(expect: testing.Expect) -> None:
         parsed_cases(expect, scratch)
 
 
+def path_cases(expect: testing.Expect) -> None:
+    """Hold a write of the rows of some paths: a new reason, and the other rows as they are (THE PATHS).
+
+    The rule process-wide-state has the policy admit, and assay.core.ledger writes its ledger.  The rule quarantine
+    writes its ledger itself.
+    """
+    with tempfile.TemporaryDirectory(prefix="plugin-paths-") as scratch_text:
+        scratch = Scratch(Path(scratch_text) / "tree")
+        lifeguard = "src/canopy/Lifeguard.cpp"
+        first = f"{STATE} unmarked-static {lifeguard}:3:1 crucible::canopy::first_copy"
+        second = f"{STATE} unmarked-static include/crucible/Vigil.h:4:1 crucible::second_copy"
+        lines_b = scratch.objects["b"][0]
+        scratch.add("b", [*lines_b, first, second])
+
+        def state_rows() -> dict[rule_ledger.Key, rule_ledger.Entry]:
+            """Return the rows of the planted ledger of the rule process-wide-state, without their lines."""
+            rows = rule_ledger.read(RULES[STATE], scratch.root).base
+            return {key: rule_ledger.Entry(key, entry.value, entry.reason) for key, entry in rows.items()}
+
+        first_key = rule_ledger.Key(lifeguard, "unmarked-static", "crucible::canopy::first_copy")
+        second_key = rule_ledger.Key("include/crucible/Vigil.h", "unmarked-static", "crucible::second_copy")
+        status, _ = scratch.write(rule_ledger.WriteMode.ADMIT, reason="the first reason", rule=STATE)
+        before = state_rows()
+        expect(
+            "--admit writes a row of each object with the reason of the call",
+            status == 0
+            and set(before) == {first_key, second_key}
+            and {entry.reason for entry in before.values()} == {"the first reason"},
+        )
+        status, _ = scratch.write(reason="a reason of no path", rule=STATE)
+        expect("a write with no path keeps the reason of each row that stays", status == 0 and state_rows() == before)
+        corrected = "a corrected reason of the planted row"
+        status, _ = scratch.write(reason=corrected, paths=(lifeguard,), rule=STATE)
+        after = state_rows()
+        expect(
+            "a write of the mode lower with a path and a reason gives the rows of the path that reason, and their "
+            "values and each other row do not change",
+            status == 0
+            and after[first_key].reason == corrected
+            and after[first_key].value == before[first_key].value
+            and after[second_key] == before[second_key],
+        )
+        scratch.add("b", [*lines_b, first])
+        status, _ = scratch.write(is_complete=True, paths=(lifeguard,), rule=STATE)
+        expect(
+            "a complete write of a path keeps the row of a different path that the build no longer holds",
+            status == 0 and second_key in state_rows(),
+        )
+        status, _ = scratch.write(is_complete=True, rule=STATE)
+        expect(
+            "a complete write of each path removes that row, and the row of the path keeps its corrected reason",
+            status == 0 and set(state_rows()) == {first_key} and state_rows()[first_key].reason == corrected,
+        )
+        text = scratch.ledger.read_text(encoding="utf-8")
+        status, said = scratch.write(reason=corrected, paths=("src/canopy/",))
+        expect(
+            "a rule whose module writes its ledger itself refuses a path, and the write changes no ledger",
+            status == 2
+            and f"--path does not apply to the rule {RULE}" in said
+            and scratch.ledger.read_text(encoding="utf-8") == text,
+        )
+
+
 # ── The census of the fixtures ─────────────────────────────────────
 
 
@@ -1178,5 +1251,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (unit_cases, census_cases, ledger_cases, layer_move_cases, fixture_cases, contract_cases),
+        (unit_cases, census_cases, ledger_cases, path_cases, layer_move_cases, fixture_cases, contract_cases),
     )
