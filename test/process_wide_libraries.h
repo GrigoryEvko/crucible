@@ -10,6 +10,7 @@
 
 #include <fixy/Core.h>
 #include <foundation/Platform.h>
+#include <foundation/Quarantine.h>
 #include <foundation/ThreadLocalRef.h>
 #include <foundation/effects/Ctx.h>
 
@@ -86,5 +87,15 @@ extern "C" {
 
 // Defined in the two libraries: the address of each control, null past the last.
 [[gnu::visibility("default")]] const void* process_wide_control_address(unsigned index) noexcept;
+
+// Defined in the two libraries.  The first writes the report of the fallback
+// rows that the release of the kernel floor lacks, through the one cell of the
+// process (report_kernel_fallbacks_once of foundation/os/KernelFloor.h).  The
+// second opens the init door, which writes the report of the running kernel
+// through the same cell.  dlsym of the test finds each one by its C name.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: dlsym finds each entry point of a test library by its C name")
+[[gnu::visibility("default")]] void process_wide_report_floor_fallbacks() noexcept;
+[[gnu::visibility("default")]] void process_wide_open_init_door() noexcept;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 }  // extern "C"

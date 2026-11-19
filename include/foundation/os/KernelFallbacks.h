@@ -1,20 +1,22 @@
 #pragma once
 
-// The report of the fallback rows of the kernel floor at start-up.
+// The text of the fallback rows of the kernel floor that a release lacks.
 //
 // A row of the need fallback (THE FLAGS of foundation/os/KernelFloor.h) names
 // a word that the caller of a door chooses.  A kernel that lacks the word
 // refuses the call, often with einval, and the row states what the caller
-// does then.  So a process on such a kernel states each such row one time at
-// its start, near the cause, and no door reports it at its first use.
+// does then.  So a process on such a kernel states each such row one time,
+// near the cause, and no door reports it at its first use.
 //
-// The hook of src/foundation/os/ReportSink.cpp runs after the start-up check
-// of the kernel floor, in each program and each shared library that links the
-// sink write of the Report family.  It reports each row that the release of
-// running_kernel() lacks, one line for each row, in one write to standard
-// error.  A kernel that has each word reports nothing.  Each such program or
-// library has its own hook, as it has its own start-up check, so a process
-// with two of them reports each row two times.
+// The init door of foundation/effects/Effect.h writes the report, through
+// report_kernel_fallbacks_once of foundation/os/KernelFloor.h, one time in the
+// process: one line for each row that the release of running_kernel() lacks,
+// in one write to standard error.  A kernel that has each word reports
+// nothing.  The load of a program or of a shared library writes nothing.
+//
+// format_kernel_fallbacks is the query of the text.  Each program and each
+// shared library can read the text of any release with it, at any time, also
+// before the init door and in a process that never opens the door.
 
 #include <foundation/core/Choice.h>
 #include <foundation/core/Full.h>
@@ -36,9 +38,5 @@ inline constexpr std::size_t kernel_fallback_text_capacity = 4096;
 // that lacks no word gives the empty text.  Complexity: linear in the rows.
 [[nodiscard]] core::Result<core::TextView, core::Full<char>>
 format_kernel_fallbacks(KernelVersion running, core::FixedText<kernel_fallback_text_capacity>& out) noexcept;
-
-// Writes the text of format_kernel_fallbacks for running to standard error in
-// one write, or nothing when the release lacks no word.
-void report_kernel_fallbacks(KernelVersion running) noexcept;
 
 }  // namespace foundation::os

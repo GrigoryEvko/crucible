@@ -10,8 +10,9 @@
 // libraries in the same way and checks that each process-wide object has one
 // address, that each object for a thread is one object for that thread, and
 // that each write reaches the other library.  Two objects with no marker are
-// the control: each has a copy in each library.  The last case is the run-time
-// witness of the rule static-tls.
+// the control: each has a copy in each library.  The first case shows that the
+// report of the fallback rows of the kernel floor is one for each process.
+// The last case is the run-time witness of the rule static-tls.
 
 #include "process_wide_libraries.h"
 #include "test_assert.h"
@@ -21,7 +22,10 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/os/Args.h>
+#include <fixy/os/Process.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/os/KernelFallbacks.h>
+#include <foundation/os/KernelFloor.h>
 
 #include <dlfcn.h>
 
@@ -66,6 +70,69 @@ template <class Body>
     decltype(body()) result{};
     std::jthread{[&] { result = body(); }}.join();
     return result;
+}
+
+// The report of a child that loads the writer and the reader, as the vessel
+// loads its two libraries, and then gives the two to body.  The child makes
+// the loads itself, so its standard error also holds each write of a load.
+template <class Body>
+[[nodiscard]] ::fixy::process::ChildReport run_with_libraries(::fixy::TestRunnerCtx const& test, Body body) {
+    ::fixy::process::Child child = ::fixy::process::spawn_child(test, [&body] noexcept {
+                                       const Library writer{PROCESS_WIDE_WRITER_PATH};
+                                       const Library reader{PROCESS_WIDE_READER_PATH};
+                                       body(writer, reader);
+                                   }).expect("the test starts a child");
+    return ::fixy::process::wait(std::move(child)).expect("the test waits for its child");
+}
+
+void report_floor_fallbacks_in(const Library& library) noexcept {
+    library.symbol<decltype(process_wide_report_floor_fallbacks)>("process_wide_report_floor_fallbacks")();
+}
+
+void open_init_door_in(const Library& library) noexcept {
+    library.symbol<decltype(process_wide_open_init_door)>("process_wide_open_init_door")();
+}
+
+// The report of the fallback rows of the kernel floor is one for each
+// process, and the load of a library writes none of it.  A process spends the
+// cell of the report one time, so each part runs in a child of its own, and
+// the child loads the two libraries after the fork.  The release of the floor
+// lacks each fallback row above it, so its text is the witness of a report.
+// The release of this host can lack no row, and its text is then empty.
+void test_one_fallback_report_for_the_process(::fixy::TestRunnerCtx const& test) {
+    namespace os = ::foundation::os;
+    ::fixy::FixedText<os::kernel_fallback_text_capacity> floor_text{};
+    static_cast<void>(
+        os::format_kernel_fallbacks(os::minimum_kernel(), floor_text).expect("the rows of the floor fit"));
+    require(floor_text.size() != 0, "the release of the floor lacks a fallback row");
+    ::fixy::FixedText<os::kernel_fallback_text_capacity> running_text{};
+    static_cast<void>(
+        os::format_kernel_fallbacks(os::running_kernel(), running_text).expect("the rows of this host fit"));
+
+    ::fixy::process::ChildReport const loaded =
+        run_with_libraries(test, [](const Library&, const Library&) noexcept {});
+    require(loaded.is_exit_with(0) && loaded.output().size() == 0,
+            "the load of the two libraries writes nothing before the init door");
+
+    ::fixy::process::ChildReport const two_units =
+        run_with_libraries(test, [](const Library& writer, const Library& reader) noexcept {
+            report_floor_fallbacks_in(writer);
+            report_floor_fallbacks_in(reader);
+            open_init_door_in(reader);
+            open_init_door_in(writer);
+        });
+    require(two_units.is_exit_with(0) && two_units.output() == floor_text.view(),
+            "of four reports in two libraries, only the first writes");
+
+    ::fixy::process::ChildReport const door_first =
+        run_with_libraries(test, [](const Library& writer, const Library& reader) noexcept {
+            open_init_door_in(writer);
+            report_floor_fallbacks_in(reader);
+            open_init_door_in(reader);
+        });
+    require(door_first.is_exit_with(0) && door_first.output() == running_text.view(),
+            "the init door of one library writes the report of the running kernel and spends the report of the other");
+    ::fixy::check::pass(test, "  test_one_fallback_report_for_the_process: PASSED\n");
 }
 
 void test_each_object_has_one_address(const Library& writer, const Library& reader) {
@@ -196,13 +263,16 @@ void test_static_tls_holds_the_rule_threshold() {
 int main(int argc, char** argv) {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     ::fixy::os::Args const arguments = ::fixy::os::args(argc, argv);
-    const Library writer{PROCESS_WIDE_WRITER_PATH};
-    const Library reader{PROCESS_WIDE_READER_PATH};
     const auto is_selected = [&arguments](::fixy::TextView const name) noexcept {
         return arguments.get(1).match([name](::fixy::CText const argument) noexcept { return argument.view() == name; },
                                       [] noexcept { return true; });
     };
     ::fixy::report(::fixy::Sink::Out, "test_process_wide_across_libraries:\n");
+    // The children of this case load the two libraries themselves, so it runs
+    // before this process loads them.
+    if (is_selected(::fixy::TextView{"fallbacks"})) test_one_fallback_report_for_the_process(test);
+    const Library writer{PROCESS_WIDE_WRITER_PATH};
+    const Library reader{PROCESS_WIDE_READER_PATH};
     if (is_selected(::fixy::TextView{"addresses"})) test_each_object_has_one_address(writer, reader);
     if (is_selected(::fixy::TextView{"threads"})) test_each_thread_object_is_one_for_the_thread(writer, reader);
     if (is_selected(::fixy::TextView{"writes"})) test_the_reader_sees_each_write(writer, reader);

@@ -1,17 +1,39 @@
-// The text and the report of the fallback rows of the kernel floor
-// (foundation/os/KernelFallbacks.h).  The rows come from flag_floor of
-// foundation/os/KernelFloor.h, and the report writes through the sink write of
-// the Report family.
+// The text of the fallback rows of the kernel floor
+// (foundation/os/KernelFallbacks.h), and the report of the text one time in
+// the process (report_kernel_fallbacks_once of foundation/os/KernelFloor.h).
+// The rows come from flag_floor of foundation/os/KernelFloor.h, and the report
+// writes through the sink write of the Report family.
 
 #include <foundation/os/KernelFallbacks.h>
 
+#include <foundation/Platform.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Format.h>
 #include <foundation/core/Report.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
+#include <cstdint>
 
 namespace foundation::os {
+
+namespace detail {
+
+// The state of the report of the fallback rows in the process.
+enum class FallbackReport : std::uint8_t {
+    pending,
+    written,
+};
+
+// The one cell of the report in the process (CRUCIBLE_PROCESS_WIDE of
+// foundation/Platform.h).  Each program and each shared library that links
+// this file holds a copy, and the dynamic linker binds each copy to one
+// object, also across RTLD_LOCAL.  So the first call of
+// report_kernel_fallbacks_once in any of them writes the report, and each
+// later call writes nothing.
+CRUCIBLE_PROCESS_WIDE inline constinit core::Atomic<FallbackReport> kernel_fallback_report_{FallbackReport::pending};
+
+}  // namespace detail
 
 namespace {
 
@@ -60,7 +82,13 @@ format_kernel_fallbacks(KernelVersion running, core::FixedText<kernel_fallback_t
     return out.view();
 }
 
-void report_kernel_fallbacks(KernelVersion running) noexcept {
+void report_kernel_fallbacks_once(KernelVersion running) noexcept {
+    // The first exchange in the process finds the report pending.  Each later
+    // call, in this library or in another, finds it written.
+    if (detail::kernel_fallback_report_.exchange_acq_rel(detail::FallbackReport::written)
+        == detail::FallbackReport::written) {
+        return;
+    }
     core::FixedText<kernel_fallback_text_capacity> text{};
     // A text that does not fit keeps its first lines, and the report writes
     // them.

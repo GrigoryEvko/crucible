@@ -10,6 +10,8 @@
 #include <crucible/CKernel.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/warden/Registry.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/os/KernelFloor.h>
 
 #include <array>
 
@@ -53,4 +55,12 @@ std::uint64_t process_wide_thread_object_value(unsigned index) noexcept {
     if (index == 1) return per_thread_local();
     if (index == 3) return ThreadCell{}.peek();
     return PerThreadHolder::held == &per_thread_value ? 1u : 0u;
+}
+
+void process_wide_report_floor_fallbacks() noexcept {
+    ::foundation::os::report_kernel_fallbacks_once(::foundation::os::minimum_kernel());
+}
+
+void process_wide_open_init_door() noexcept {
+    static_cast<void>(::foundation::effects::host::InitOwner::mint_init_context());
 }

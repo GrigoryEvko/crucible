@@ -298,7 +298,7 @@ void test_refuses_a_flag_of_each_call() {
     return count;
 }
 
-// The text of the start-up report holds one line for each row of the need
+// The text of the report of the init door holds one line for each row of the need
 // fallback that a release lacks, and nothing for a release that has each
 // word.  The release of the floor lacks each row above it.  The release just
 // before TCP_RTO_MIN_US lacks that word and the refusal flags of THP.
@@ -324,8 +324,8 @@ void test_reports_each_fallback_row_of_a_release() {
 }
 
 // The start-up check keeps the release of the running kernel, and the floor
-// admits that release, so the start-up report judged the release of this
-// host.  The text of that release holds one line for each row it lacks.
+// admits that release, so the report of the init door judges the release of
+// this host.  The text of that release holds one line for each row it lacks.
 void test_keeps_the_running_release() {
     os::KernelVersion const running = os::running_kernel();
     CRUCIBLE_FATAL_INVARIANT(!(running < os::minimum_kernel()));

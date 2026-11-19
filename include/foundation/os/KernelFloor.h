@@ -48,8 +48,11 @@
 //     fallback.  Its door gives the error of the kernel to its caller in the
 //     Result of the door, and the row states what the caller does then.  The
 //     start-up check does not refuse such a row, and the process runs.  The
-//     report of foundation/os/KernelFallbacks.h states each such row that the
-//     running kernel lacks, one time at the start of the process.
+//     init door of foundation/effects/Effect.h states each such row that the
+//     running kernel lacks, one time in the process, through
+//     report_kernel_fallbacks_once.  The load of a program or of a shared
+//     library writes nothing, so a library in a host process stays silent
+//     until the host opens the init door.
 //   judge_flag gives the verdict of one row for a release.  Each row above
 //   the floor is a fallback row, so a new feature of the kernel does not
 //   raise the release that the base needs.  The door file of each word
@@ -80,6 +83,15 @@ struct KernelVersion {
 // in this program or this shared library.  It is the zero release before the
 // check runs, and the check ends the process on a release that it refuses.
 [[nodiscard]] KernelVersion running_kernel() noexcept;
+
+// Writes to standard error the text of format_kernel_fallbacks of
+// foundation/os/KernelFallbacks.h for the release running, one time in the
+// process.  One cell of the process holds the fact of the report, so only
+// the first call writes, in the program or in any of its shared libraries,
+// and each later call writes nothing.  The first call also spends the report
+// when the release lacks no word.  The init door calls it with
+// running_kernel(), and a test calls it with a release that lacks rows.
+void report_kernel_fallbacks_once(KernelVersion running) noexcept;
 
 // A flag that a door of the base passes to the kernel.  The comment of each
 // enumerator names the word of the kernel header, and the door that passes

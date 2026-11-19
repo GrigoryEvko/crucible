@@ -65,6 +65,7 @@
 
 #include <foundation/core/Heap.h>
 #include <foundation/diag/RowHash.h>
+#include <foundation/os/KernelFloor.h>
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Hash.h>
@@ -621,8 +622,18 @@ namespace host {
 // The door is a static member, so the name of the owner is in each call.
 // The rule owners of the quarantine plugin rejects a call of the door
 // outside the process entry points that utils/ledgers/owners.txt admits.
+//
+// The door also writes the report of the fallback rows of the kernel floor
+// that the running kernel lacks, one time in the process
+// (report_kernel_fallbacks_once of foundation/os/KernelFloor.h).  The report
+// is a write to standard error, an effect of IO, which the init context
+// holds.  A later call of the door, in any library of the process, writes
+// nothing, and a constant evaluation of the door writes nothing.
 struct InitOwner final {
     [[nodiscard]] static constexpr Init mint_init_context() noexcept {
+        if !consteval {
+            ::foundation::os::report_kernel_fallbacks_once(::foundation::os::running_kernel());
+        }
         return mint_context<Init>(detail::ctx_mint::init_key{});
     }
 };

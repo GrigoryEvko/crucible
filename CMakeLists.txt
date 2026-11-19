@@ -404,9 +404,9 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # sink, the aborts of a permission pool, the formatter of the Report family
 # and the growth of the growable owners.  It also holds the door directory of the base floor,
 # src/foundation/os: the raw system call primitive with its start-up check of
-# the kernel, the abort door, the sink write of the Report family with the
-# start-up report of the fallback rows of the kernel floor, the file
-# door, the directory door, the door of AddressSanitizer, the auxiliary vector
+# the kernel, the abort door, the sink write of the Report family, the report
+# of the fallback rows of the kernel floor that the init door writes one time
+# in the process, the file door, the directory door, the door of AddressSanitizer, the auxiliary vector
 # door, the guarded memory door, the allocation door, the spin-hint door and the
 # cold path of the arena of the Ref family.  foundation starts no
 # thread.  `fixy` is a static
@@ -445,8 +445,9 @@ target_link_libraries(foundation PUBLIC crucible_dialect)
 
 # The handler sources of foundation: the contract handler, the formatter that
 # the handler writes with, the tracer probe that the handler calls with its
-# file door, the sink write of the Report family, the abort door and the raw
-# system call primitive under them.  These sources call only functions of the
+# file door, the sink write of the Report family, the report of the fallback
+# rows that the init door writes, the abort door and the raw system call
+# primitive under them.  These sources call only functions of the
 # C library and the primitive, so they need no archive of the toolchain.  A
 # target that compiles the base code with its own flags, and links no
 # libfoundation.a of the flags of the build, compiles this list: the timing
