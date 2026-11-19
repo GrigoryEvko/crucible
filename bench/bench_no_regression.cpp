@@ -12,10 +12,13 @@
 // iteration regardless of the working set, which is the overhead the
 // rule is meant to avoid.
 
+#include <fixy/Core.h>
 #include <fixy/OwnedRegion.h>
 #include <fixy/concurrent/ParallelismRule.h>
 #include <fixy/concurrent/Spawn.h>
 #include <fixy/os/Topology.h>
+#include <foundation/Quarantine.h>
+#include <foundation/core/Region.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -24,7 +27,6 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
@@ -121,173 +123,50 @@ struct Range {
     return value == 0 ? fallback : value;
 }
 
-struct Workload {
-    const char* name = "";
+// The order of the matrices of the matrix multiply: n rows and n columns.
+constexpr std::size_t kMatrixOrder = 146;
+
+// One row of the product of the matrix multiply.  The region of the rule arm
+// holds one element for each row, so the split gives each shard whole rows.
+using ProductRow = ::fixy::FixedArray<double, kMatrixOrder>;
+
+// The inputs of a workload, which the threads of a run read.  Each run of
+// elements is a HeapArray, which owns its elements, so two threads can read
+// the inputs at the same time (foundation/Transfer.h).  The product of the
+// matrix multiply is no input: an arm writes it through a run of its rows.
+struct WorkloadInputs {
     WorkloadKind kind = WorkloadKind::L1ArraySum;
-    fc::WorkBudget budget{};
+    // The count of the units of the work: the elements of the sum, the rows
+    // of the product, the starts of the traversal or the lines of the stream.
     std::size_t units = 0;
-    std::size_t forced_workers = 1;
-
-    std::vector<std::uint64_t> l1;
-    std::vector<double> matrix_a;
-    std::vector<double> matrix_b;
-    std::vector<double> matrix_c;
+    ::fixy::HeapArray<std::uint64_t> l1{};
+    ::fixy::HeapArray<double> matrix_a{};
+    ::fixy::HeapArray<double> matrix_b{};
     std::size_t matrix_n = 0;
-    std::vector<std::uint32_t> graph_next;
-    std::vector<std::uint64_t> dram;
-
-    void run_range(Range range, std::atomic<std::uint64_t>& sink) noexcept {
-        switch (kind) {
-            case WorkloadKind::L1ArraySum:
-                run_l1_sum(range, sink);
-                break;
-            case WorkloadKind::L2MatrixMultiply:
-                run_l2_matmul(range, sink);
-                break;
-            case WorkloadKind::L3GraphTraversal:
-                run_l3_graph(range, sink);
-                break;
-            case WorkloadKind::DramStreamFold:
-                run_dram_stream(range, sink);
-                break;
-            default:
-                break;
-        }
-    }
-
-private:
-    void run_l1_sum(Range range, std::atomic<std::uint64_t>& sink) noexcept {
-        std::uint64_t acc = 0;
-        for (std::size_t i = range.begin; i < range.end; ++i) {
-            acc += l1[i];
-        }
-        bench::do_not_optimize(acc);
-        sink.fetch_add(acc, std::memory_order_relaxed);
-    }
-
-    void run_l2_matmul(Range rows, std::atomic<std::uint64_t>& sink) noexcept {
-        double acc = 0.0;
-        const std::size_t n = matrix_n;
-        for (std::size_t i = rows.begin; i < rows.end; ++i) {
-            for (std::size_t j = 0; j < n; ++j) {
-                double sum = 0.0;
-                for (std::size_t k = 0; k < n; ++k) {
-                    sum += matrix_a[i * n + k] * matrix_b[k * n + j];
-                }
-                matrix_c[i * n + j] = sum;
-                acc += sum;
-            }
-        }
-        bench::do_not_optimize(acc);
-        sink.fetch_add(static_cast<std::uint64_t>(acc), std::memory_order_relaxed);
-    }
-
-    void run_l3_graph(Range starts, std::atomic<std::uint64_t>& sink) noexcept {
-        const std::uint32_t mask = static_cast<std::uint32_t>(graph_next.size() - 1);
-        std::uint64_t acc = 0;
-        for (std::size_t pass = 0; pass < kL3GraphPasses; ++pass) {
-            for (std::size_t i = starts.begin; i < starts.end; ++i) {
-                const std::uint32_t node = graph_next[(i + pass) & mask];
-                acc += graph_next[node & mask];
-            }
-        }
-        bench::do_not_optimize(acc);
-        sink.fetch_add(acc, std::memory_order_relaxed);
-    }
-
-    void run_dram_stream(Range lines, std::atomic<std::uint64_t>& sink) noexcept {
-        std::uint64_t acc = 0;
-        for (std::size_t line = lines.begin; line < lines.end; ++line) {
-            acc += dram[line * 8];
-        }
-        bench::do_not_optimize(acc);
-        sink.fetch_add(acc, std::memory_order_relaxed);
-    }
+    ::fixy::HeapArray<std::uint32_t> graph_next{};
+    ::fixy::HeapArray<std::uint64_t> dram{};
 };
 
-[[nodiscard]] Workload make_l1(std::size_t forced_workers) {
-    Workload w{};
-    w.name = "L1d.array_sum.16KiB";
-    w.kind = WorkloadKind::L1ArraySum;
-    w.budget = fc::WorkBudget{
-        .read_bytes = 16 * KiB,
-        .write_bytes = 16 * KiB,
-        .item_count = (16 * KiB) / sizeof(std::uint64_t),
-    };
-    w.units = (16 * KiB) / sizeof(std::uint64_t);
-    w.forced_workers = forced_workers;
-    w.l1.resize(w.units);
-    for (std::size_t i = 0; i < w.l1.size(); ++i) {
-        w.l1[i] = i ^ 0x9E3779B9ULL;
-    }
-    return w;
-}
+struct Workload {
+    const char* name = "";
+    fc::WorkBudget budget{};
+    std::size_t forced_workers = 1;
+    WorkloadInputs inputs{};
+    // The rows of the product of the matrix multiply, which each arm writes.
+    // The run is empty for each other workload.
+    ::fixy::HeapArray<ProductRow> product{};
+};
 
-[[nodiscard]] Workload make_l2(std::size_t forced_workers) {
-    constexpr std::size_t n = 146;
-    Workload w{};
-    w.name = "L2.matrix_multiply.512KB";
-    w.kind = WorkloadKind::L2MatrixMultiply;
-    w.budget = fc::WorkBudget{
-        .read_bytes = 2 * n * n * sizeof(double),
-        .write_bytes = n * n * sizeof(double),
-        .item_count = n * n,
-    };
-    w.units = n;
-    w.forced_workers = forced_workers;
-    w.matrix_n = n;
-    w.matrix_a.resize(n * n);
-    w.matrix_b.resize(n * n);
-    w.matrix_c.resize(n * n);
-    for (std::size_t i = 0; i < n * n; ++i) {
-        w.matrix_a[i] = static_cast<double>((i % 17) + 1) * 0.03125;
-        w.matrix_b[i] = static_cast<double>((i % 29) + 1) * 0.015625;
-    }
-    return w;
-}
+// The sink of the folds of the kernels.  Each kernel adds its fold one time
+// with fetch_add_relaxed.  On x86-64 the add is one lock xadd, the
+// instruction of the relaxed add of std::atomic too.
+using Sink = ::fixy::Atomic<std::uint64_t, ::fixy::Counter>;
 
-[[nodiscard]] Workload make_l3(std::size_t forced_workers) {
-    constexpr std::size_t bytes = 16 * MiB;
-    constexpr std::size_t entries = bytes / sizeof(std::uint32_t);
-    static_assert((entries & (entries - 1)) == 0);
-    Workload w{};
-    w.name = "L3.graph_traversal.16MiB";
-    w.kind = WorkloadKind::L3GraphTraversal;
-    w.budget = fc::WorkBudget{
-        .read_bytes = bytes,
-        .write_bytes = 0,
-        .item_count = entries,
-    };
-    w.units = entries;
-    w.forced_workers = forced_workers;
-    w.graph_next.resize(entries);
-    for (std::size_t i = 0; i < entries; ++i) {
-        w.graph_next[i] = static_cast<std::uint32_t>((i + 257) & (entries - 1));
-    }
-    return w;
-}
-
-[[nodiscard]] Workload make_dram(std::size_t forced_workers) {
-    constexpr std::size_t bytes = GiB;
-    constexpr std::size_t elems = bytes / sizeof(std::uint64_t);
-    Workload w{};
-    w.name = "DRAM.stream_fold.1GiB";
-    w.kind = WorkloadKind::DramStreamFold;
-    w.budget = fc::WorkBudget{
-        .read_bytes = bytes,
-        .write_bytes = 0,
-        .item_count = bytes / 64,
-    };
-    w.units = bytes / 64;
-    w.forced_workers = forced_workers;
-    w.dram.resize(elems);
-    for (std::size_t i = 0; i < w.dram.size(); i += 8) {
-        w.dram[i] = (i * 0x9E3779B97F4A7C15ULL) ^ (i >> 7);
-    }
-    return w;
-}
-
-void run_sequential(Workload& w, std::atomic<std::uint64_t>& sink) noexcept { w.run_range(Range{0, w.units}, sink); }
+// The tag of the region of the rows of the product, which the rule arm of
+// the matrix multiply splits into shards.
+struct ProductWhole {
+    using permission_row = eff::Row<>;
+};
 
 // The piece table that the rule arm splits.  Element i names piece i
 // of the work, and a shard runs the pieces of its slice.
@@ -301,30 +180,245 @@ using PieceTable = std::array<std::uint32_t, kPieces>;
     return table;
 }
 
-// Runs the work through mint_parallel_for, one shard for each piece.
-// The mint asks the rule for a decision on each call and starts no more
-// threads than the factor of that decision.  A sequential decision runs
-// every piece on the calling thread.
-void run_rule(Workload& w, std::atomic<std::uint64_t>& sink, PieceTable& pieces) noexcept {
-    const BgCtx ctx{eff::testing::bg()};
-    auto region = ::fixy::mint_owned_region(pieces.data(), kPieces, perm::mint_permission_root<PieceTableWhole>());
-    auto whole = ::fixy::spawn::mint_parallel_for<::fixy::spawn::BodyCoupling::Independent, kPieces>(
-        ctx, w.budget, std::move(region), [&w, &sink](auto& shard) noexcept {
-            for (const std::uint32_t piece : shard) {
-                w.run_range(split_range(w.units, piece, kPieces), sink);
-            }
-        });
-    (void)whole;
+}  // namespace
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the kernels index their runs as the memory hierarchy sees them, with no check")
+namespace {
+
+void run_l1_sum(WorkloadInputs const& inputs, Range range, Sink& sink) noexcept {
+    std::uint64_t const* const l1 = ::foundation::core::foreign_first(inputs.l1.view());
+    std::uint64_t acc = 0;
+    for (std::size_t i = range.begin; i < range.end; ++i) {
+        acc += l1[i];
+    }
+    bench::do_not_optimize(acc);
+    static_cast<void>(sink.fetch_add_relaxed(acc));
 }
 
-void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {
+// The rows of RANGE of the product, in the order i, j, k, into OUT, which
+// points at the first row of RANGE.  Each cell is the dot product of its row
+// of A and its column of B, in the order of k.
+void run_l2_rows(WorkloadInputs const& inputs, Range rows, Sink& sink, ProductRow* out) noexcept {
+    double const* const matrix_a = ::foundation::core::foreign_first(inputs.matrix_a.view());
+    double const* const matrix_b = ::foundation::core::foreign_first(inputs.matrix_b.view());
+    std::size_t const n = inputs.matrix_n;
+    double acc = 0.0;
+    for (std::size_t i = rows.begin; i < rows.end; ++i) {
+        double* const row_out = ::foundation::core::foreign_first(out[i - rows.begin].view());
+        for (std::size_t j = 0; j < n; ++j) {
+            double sum = 0.0;
+            for (std::size_t k = 0; k < n; ++k) {
+                sum += matrix_a[i * n + k] * matrix_b[k * n + j];
+            }
+            row_out[j] = sum;
+            acc += sum;
+        }
+    }
+    bench::do_not_optimize(acc);
+    static_cast<void>(sink.fetch_add_relaxed(static_cast<std::uint64_t>(acc)));
+}
+
+void run_l3_graph(WorkloadInputs const& inputs, Range starts, Sink& sink) noexcept {
+    std::uint32_t const* const graph_next = ::foundation::core::foreign_first(inputs.graph_next.view());
+    const std::uint32_t mask = static_cast<std::uint32_t>(inputs.graph_next.size() - 1);
+    std::uint64_t acc = 0;
+    for (std::size_t pass = 0; pass < kL3GraphPasses; ++pass) {
+        for (std::size_t i = starts.begin; i < starts.end; ++i) {
+            const std::uint32_t node = graph_next[(i + pass) & mask];
+            acc += graph_next[node & mask];
+        }
+    }
+    bench::do_not_optimize(acc);
+    static_cast<void>(sink.fetch_add_relaxed(acc));
+}
+
+void run_dram_stream(WorkloadInputs const& inputs, Range lines, Sink& sink) noexcept {
+    std::uint64_t const* const dram = ::foundation::core::foreign_first(inputs.dram.view());
+    std::uint64_t acc = 0;
+    for (std::size_t line = lines.begin; line < lines.end; ++line) {
+        acc += dram[line * 8];
+    }
+    bench::do_not_optimize(acc);
+    static_cast<void>(sink.fetch_add_relaxed(acc));
+}
+
+// The units of RANGE of the workload.  The matrix multiply writes the rows of
+// RANGE into PRODUCT, which points at the row 0.
+void run_range(WorkloadInputs const& inputs, Range range, Sink& sink, ProductRow* product) noexcept {
+    switch (inputs.kind) {
+        case WorkloadKind::L1ArraySum:
+            run_l1_sum(inputs, range, sink);
+            break;
+        case WorkloadKind::L2MatrixMultiply:
+            run_l2_rows(inputs, range, sink, product + range.begin);
+            break;
+        case WorkloadKind::L3GraphTraversal:
+            run_l3_graph(inputs, range, sink);
+            break;
+        case WorkloadKind::DramStreamFold:
+            run_dram_stream(inputs, range, sink);
+            break;
+        default:
+            break;
+    }
+}
+
+void run_sequential(Workload& w, Sink& sink) noexcept {
+    run_range(w.inputs, Range{0, w.inputs.units}, sink, ::foundation::core::foreign_first(w.product.view()));
+}
+
+// Runs the work through mint_parallel_for.  The mint asks the rule for a
+// decision on each call and starts no more threads than the factor of that
+// decision.  A sequential decision runs every shard on the calling thread.
+// The matrix multiply splits the rows of its product, so each shard writes
+// only its own whole rows.  Each other workload splits the piece table, one
+// shard for each piece.  Each shard reads the inputs through a const
+// reference.
+void run_rule(Workload& w, Sink& sink, PieceTable& pieces) noexcept {
+    const BgCtx ctx{eff::testing::bg()};
+    if (w.inputs.kind == WorkloadKind::L2MatrixMultiply) {
+        ProductRow const* const first_row = ::foundation::core::foreign_first(w.product.view());
+        auto region = ::fixy::mint_owned_region(::foundation::core::foreign_first(w.product.view()), w.product.size(),
+                                                perm::mint_permission_root<ProductWhole>());
+        auto whole = ::fixy::spawn::mint_parallel_for<::fixy::spawn::BodyCoupling::Independent, kPieces>(
+            ctx, w.budget, std::move(region),
+            [&inputs = ::fixy::as_const(w.inputs), &sink, first_row](auto& shard) noexcept {
+                if (shard.size() == 0) return;
+                auto const begin = static_cast<std::size_t>(shard.data() - first_row);
+                run_l2_rows(inputs, Range{begin, begin + shard.size()}, sink, shard.data());
+            });
+        ::foundation::linear::drop(std::move(whole));
+        return;
+    }
+    auto region = ::fixy::mint_owned_region(pieces.data(), kPieces, perm::mint_permission_root<PieceTableWhole>());
+    auto whole = ::fixy::spawn::mint_parallel_for<::fixy::spawn::BodyCoupling::Independent, kPieces>(
+        ctx, w.budget, std::move(region), [&inputs = ::fixy::as_const(w.inputs), &sink](auto& shard) noexcept {
+            for (const std::uint32_t piece : shard) {
+                run_range(inputs, split_range(inputs.units, piece, kPieces), sink, nullptr);
+            }
+        });
+    ::foundation::linear::drop(std::move(whole));
+}
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the forced arm is the naive baseline of one std::jthread for each worker")
+namespace {
+
+void run_forced_parallel(Workload& w, Sink& sink) {
+    ProductRow* const product = ::foundation::core::foreign_first(w.product.view());
     std::vector<std::jthread> threads(w.forced_workers);
     for (std::size_t worker = 0; worker < w.forced_workers; ++worker) {
-        threads[worker] = std::jthread{[&, worker](std::stop_token) noexcept {
-            const Range r = split_range(w.units, worker, w.forced_workers);
-            w.run_range(r, sink);
+        threads[worker] = std::jthread{[&w, &sink, product, worker](std::stop_token) noexcept {
+            const Range r = split_range(w.inputs.units, worker, w.forced_workers);
+            run_range(w.inputs, r, sink, product);
         }};
     }
+}
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+namespace {
+
+[[nodiscard]] Workload make_l1(std::size_t forced_workers) {
+    constexpr std::size_t units = (16 * KiB) / sizeof(std::uint64_t);
+    auto const alloc = eff::testing::test().alloc;
+    return Workload{
+        .name = "L1d.array_sum.16KiB",
+        .budget =
+            fc::WorkBudget{
+                .read_bytes = 16 * KiB,
+                .write_bytes = 16 * KiB,
+                .item_count = units,
+            },
+        .forced_workers = forced_workers,
+        .inputs =
+            WorkloadInputs{
+                .kind = WorkloadKind::L1ArraySum,
+                .units = units,
+                .l1 = ::fixy::mint_heap_array_with<std::uint64_t>(
+                    alloc, units, [](std::size_t i) noexcept -> std::uint64_t { return i ^ 0x9E3779B9ULL; }),
+            },
+    };
+}
+
+[[nodiscard]] Workload make_l2(std::size_t forced_workers) {
+    constexpr std::size_t n = kMatrixOrder;
+    auto const alloc = eff::testing::test().alloc;
+    return Workload{
+        .name = "L2.matrix_multiply.512KB",
+        .budget =
+            fc::WorkBudget{
+                .read_bytes = 2 * n * n * sizeof(double),
+                .write_bytes = n * n * sizeof(double),
+                .item_count = n * n,
+            },
+        .forced_workers = forced_workers,
+        .inputs =
+            WorkloadInputs{
+                .kind = WorkloadKind::L2MatrixMultiply,
+                .units = n,
+                .matrix_a = ::fixy::mint_heap_array_with<double>(
+                    alloc, n * n, [](std::size_t i) noexcept { return static_cast<double>((i % 17) + 1) * 0.03125; }),
+                .matrix_b = ::fixy::mint_heap_array_with<double>(
+                    alloc, n * n, [](std::size_t i) noexcept { return static_cast<double>((i % 29) + 1) * 0.015625; }),
+                .matrix_n = n,
+            },
+        .product = ::fixy::mint_heap_array(alloc, n, ProductRow{}),
+    };
+}
+
+[[nodiscard]] Workload make_l3(std::size_t forced_workers) {
+    constexpr std::size_t bytes = 16 * MiB;
+    constexpr std::size_t entries = bytes / sizeof(std::uint32_t);
+    static_assert((entries & (entries - 1)) == 0);
+    auto const alloc = eff::testing::test().alloc;
+    return Workload{
+        .name = "L3.graph_traversal.16MiB",
+        .budget =
+            fc::WorkBudget{
+                .read_bytes = bytes,
+                .write_bytes = 0,
+                .item_count = entries,
+            },
+        .forced_workers = forced_workers,
+        .inputs =
+            WorkloadInputs{
+                .kind = WorkloadKind::L3GraphTraversal,
+                .units = entries,
+                .graph_next = ::fixy::mint_heap_array_with<std::uint32_t>(
+                    alloc, entries,
+                    [](std::size_t i) noexcept { return static_cast<std::uint32_t>((i + 257) & (entries - 1)); }),
+            },
+    };
+}
+
+[[nodiscard]] Workload make_dram(std::size_t forced_workers) {
+    constexpr std::size_t bytes = GiB;
+    constexpr std::size_t elems = bytes / sizeof(std::uint64_t);
+    auto const alloc = eff::testing::test().alloc;
+    return Workload{
+        .name = "DRAM.stream_fold.1GiB",
+        .budget =
+            fc::WorkBudget{
+                .read_bytes = bytes,
+                .write_bytes = 0,
+                .item_count = bytes / 64,
+            },
+        .forced_workers = forced_workers,
+        .inputs =
+            WorkloadInputs{
+                .kind = WorkloadKind::DramStreamFold,
+                .units = bytes / 64,
+                .dram = ::fixy::mint_heap_array_with<std::uint64_t>(alloc, elems,
+                                                                    [](std::size_t i) noexcept -> std::uint64_t {
+                                                                        if (i % 8 != 0) return 0;
+                                                                        return (i * 0x9E3779B97F4A7C15ULL) ^ (i >> 7);
+                                                                    }),
+            },
+    };
 }
 
 // True when the arm starts threads for this workload.  The rule arm starts
@@ -349,7 +443,6 @@ void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {
 // parallel arm is compared against the best sequential time.
 [[nodiscard]] bench::Report measure_once(std::string name, Strategy strategy, Workload& w, PieceTable& pieces,
                                          std::size_t samples) {
-    std::atomic<std::uint64_t> sink{0};
     bench::Run run{std::move(name)};
     if (starts_threads(strategy, w)) {
         (void)run.fan_out();
@@ -357,7 +450,8 @@ void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {
         (void)run.core(core);
     }
     return run.samples(samples).warmup(std::max<std::size_t>(2, samples / 6)).batch(1).max_wall_ms(8000).measure([&] {
-        sink.store(0, std::memory_order_relaxed);
+        // A new sink for each sample, so the fold of one sample starts at 0.
+        Sink sink{};
         switch (strategy) {
             case Strategy::Sequential:
                 run_sequential(w, sink);
@@ -371,7 +465,7 @@ void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {
             default:
                 break;
         }
-        bench::do_not_optimize(sink.load(std::memory_order_relaxed));
+        bench::do_not_optimize(sink.load_acquire());
     });
 }
 
@@ -493,7 +587,7 @@ int main() {
                     w.name, static_cast<unsigned>(dec.tier), dec.is_parallel() ? "parallel" : "sequential", dec.factor,
                     ratio(rul_p50, seq_p50), ratio(rul_p50, frc_p50));
 
-        const bool small = w.kind == WorkloadKind::L1ArraySum || w.kind == WorkloadKind::L2MatrixMultiply;
+        const bool small = w.inputs.kind == WorkloadKind::L1ArraySum || w.inputs.kind == WorkloadKind::L2MatrixMultiply;
         if (small && dec.is_parallel()) {
             std::printf("  FAIL %-26s expected sequential decision for small tier\n", w.name);
             ++failures;
