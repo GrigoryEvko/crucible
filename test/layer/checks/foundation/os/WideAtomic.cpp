@@ -49,4 +49,8 @@ static_assert(!std::is_copy_constructible_v<WideAtomicByLock<Generation>>
 static_assert(!std::is_copy_constructible_v<WideAtomic<Generation>>
               && !std::is_move_constructible_v<WideAtomic<Generation>>);
 
+// Two threads read and write one cell of each form (foundation/Transfer.h).
+static_assert(::foundation::transfer::Synchronized<WideAtomicByLock<Generation>>
+              && ::foundation::transfer::Synchronized<WideAtomic<Generation>>);
+
 }  // namespace foundation::os::detail::wide_atomic_checks

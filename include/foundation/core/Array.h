@@ -92,6 +92,7 @@
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Bits.h>
@@ -552,9 +553,12 @@ concept CanMintHeapArrayWritten = OwnedElement<T> && detail::HeapArrayAlignment<
                                && AllocationCapability<Marker> && ::foundation::lifetime::ImplicitLifetimeThroughout<T>
                                && RegionCopyElement<T> && std::is_nothrow_invocable_v<Writer&, WriteLease<T>&>;
 
+// A HeapArray owns its elements alone, so it moves between threads as its
+// element does (foundation/Transfer.h).
 template <class T, std::size_t Align = alignof(T)>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
-class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]] HeapArray final
+class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
+                   [[= ::foundation::transfer::by_arguments{}]] HeapArray final
     : public detail::OwnerCore<detail::owner::HeapArrayState<T, Align>> {
     using State = detail::owner::HeapArrayState<T, Align>;
 

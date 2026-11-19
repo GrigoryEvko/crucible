@@ -89,6 +89,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
@@ -156,8 +157,10 @@ template <class... Refused, class T>
     requires(!std::is_lvalue_reference_v<T>)
 void to(T&& object) = delete("a Ref of a temporary dangles at the end of the full expression");
 
+// A Ref is a reference that a value holds, so it moves between threads as a
+// reference to T does (foundation/Transfer.h).
 template <RefTarget T, ::foundation::brand::IsBrand Brand>
-class Ref {
+class[[= ::foundation::transfer::refers{}]] Ref {
     T* object_ = nullptr;
     // The seal makes the assignment user-provided, so std::bit_cast cannot
     // build a Ref from the bytes of an address.
@@ -686,10 +689,12 @@ public:
 // The object of a Box, given to the words of one authority (THE WORD OF A
 // BOX).  Only a Box builds a word that holds an object, and only a Box reads
 // the object of a word.  The type is trivially copyable, so a ring cell
-// holds it.
+// holds it.  A word owns the object behind its pointer, as the Box that made
+// it did, so it moves between threads as its type arguments do
+// (foundation/Transfer.h).
 template <BoxPayload T, class Authority>
     requires std::is_class_v<Authority>
-class BoxWord {
+class[[= ::foundation::transfer::by_arguments{}]] BoxWord {
     template <BoxPayload U>
     friend class Box;
 
@@ -707,9 +712,12 @@ public:
 
 // The core of foundation/core/Owner.h gives the moves and the end of a Box.
 // A Box of a linear payload is linear, and it has no move assignment,
-// because the assignment ends the payload that the target holds.
+// because the assignment ends the payload that the target holds.  A Box owns
+// its object alone, so it moves between threads as its payload does
+// (foundation/Transfer.h).
 template <BoxPayload T>
-class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box_payload<T>()>]] Box final
+class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box_payload<T>()>]]
+                   [[= ::foundation::transfer::by_arguments{}]] Box final
     : public detail::OwnerCore<detail::owner::BoxState<T>> {
     using State = detail::owner::BoxState<T>;
     using Core = detail::OwnerCore<State>;

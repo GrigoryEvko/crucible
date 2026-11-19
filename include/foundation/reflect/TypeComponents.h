@@ -89,12 +89,23 @@ namespace foundation::reflect {
 
 // One node of the walk: a type, whether the walk may read its members
 // without an instantiation, and whether its parent holds a value of it.
-// The last fact is true only for a base and for a member that is not a
+// That fact is true only for a base and for a member that is not a
 // reference, which member_components_of gives.
+//
+// The type of a node is bare (bare_type), so four more facts keep what the
+// declaration said: a reference, a const object (the referent of a
+// reference, the element of a pointer, or the type itself), a member
+// declared mutable, and the type of a value argument of a specialization
+// in place of a type argument.  The rules of foundation/Transfer.h read
+// them.
 struct TypeNode {
     std::meta::info type{};
     bool may_read_members = false;
     bool is_held_by_value = false;
+    bool was_reference = false;
+    bool was_const = false;
+    bool is_mutable = false;
+    bool is_value_argument = false;
 };
 
 // The nodes that one step of the walk lists, in a growable array.
@@ -219,12 +230,15 @@ enum class SpecializationRead : unsigned char {
 // specialization, and answers false for a template with no definition.
 [[nodiscard]] consteval TypeNode node_reached_indirectly(std::meta::info type,
                                                          SpecializationRead read = SpecializationRead::ArgumentsOnly) {
+    const std::meta::info declared = std::meta::dealias(type);
+    const bool was_reference = std::meta::is_reference_type(declared);
+    const bool was_const = std::meta::is_const_type(std::meta::remove_reference(declared));
     const std::meta::info bare = bare_type(type);
     const bool is_class = std::meta::is_class_type(bare) || std::meta::is_union_type(bare);
     if (read == SpecializationRead::Instantiating && is_class && std::meta::has_template_arguments(bare)) {
-        return TypeNode{bare, std::meta::is_complete_type(bare)};
+        return TypeNode{bare, std::meta::is_complete_type(bare), false, was_reference, was_const};
     }
-    return TypeNode{bare, members_readable_without_instantiation(bare)};
+    return TypeNode{bare, members_readable_without_instantiation(bare), false, was_reference, was_const};
 }
 
 // True for a class whose state the walk cannot read: complete, not
@@ -287,7 +301,9 @@ argument_components_of(TypeNode node, SpecializationRead read = SpecializationRe
         if (std::meta::is_type(argument)) {
             components.push_back(node_reached_indirectly(argument, read));
         } else if (std::meta::is_value(argument) || std::meta::is_object(argument)) {
-            components.push_back(node_reached_indirectly(std::meta::type_of(argument), read));
+            TypeNode value_type = node_reached_indirectly(std::meta::type_of(argument), read);
+            value_type.is_value_argument = true;
+            components.push_back(value_type);
         }
     }
     return components;
@@ -313,7 +329,8 @@ argument_components_of(TypeNode node, SpecializationRead read = SpecializationRe
         if (std::meta::is_reference_type(member_type)) {
             components.push_back(node_reached_indirectly(member_type, read));
         } else {
-            components.push_back(TypeNode{bare_type(member_type), true, true});
+            components.push_back(TypeNode{bare_type(member_type), true, true, false,
+                                          std::meta::is_const_type(member_type), std::meta::is_mutable_member(member)});
         }
     }
     return components;

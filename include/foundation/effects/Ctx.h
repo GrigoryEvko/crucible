@@ -17,6 +17,7 @@
 
 #include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/FpMode.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -110,8 +111,14 @@ namespace ctx_cap {
 // it in no register.  Its copy assignment is user-provided, so
 // std::bit_cast refuses it, and the annotation refuses the checked
 // lifetime start.
+//
+// The source belongs to the thread that holds the claim of its brand, so it
+// neither moves to another thread nor gives a reference to two threads
+// (foundation/Transfer.h).  A class that holds a reference to it is neither
+// Sendable nor Shareable, and a door that starts a thread refuses it.
 template <class Brand>
-class[[= ::foundation::lifetime::no_start_over_bytes{}]] BrandedFg {
+class[[= ::foundation::lifetime::no_start_over_bytes{}]][[= ::foundation::transfer::not_sendable{}]]
+     [[= ::foundation::transfer::not_shareable{}]] BrandedFg {
 public:
     using brand_type = Brand;
 

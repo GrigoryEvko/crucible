@@ -41,6 +41,7 @@
 // PermissionedMetaLog.h hold their channel through this binding.
 
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Report.h>
 
 #include <atomic>
@@ -53,8 +54,11 @@ namespace foundation {
 // identities compare equal when they name one instance, and an identity
 // gives no access to the channel.  A pipeline compares the identity of the
 // producer of one stage with the identity of the consumer of the next.
+// An identity holds the address of its channel only to compare it, and no
+// code reads the channel through it, so it moves between threads and two
+// threads read it at once (foundation/Transfer.h).
 template <typename Channel>
-class ChannelIdentity {
+class[[= ::foundation::transfer::sendable{}]][[= ::foundation::transfer::shareable{}]] ChannelIdentity {
 public:
     constexpr ChannelIdentity() noexcept = default;
     explicit constexpr ChannelIdentity(Channel const* instance) noexcept : instance_{instance} {}
@@ -68,8 +72,11 @@ private:
     Channel const* instance_ = nullptr;
 };
 
+// A binding points at a channel that its handles on several threads use at
+// once by design, so it moves between threads as its channel does
+// (foundation/Transfer.h).
 template <typename Channel>
-class ChannelBinding {
+class[[= ::foundation::transfer::by_arguments{}]] ChannelBinding {
 public:
     using channel_type = Channel;
 
@@ -142,7 +149,11 @@ private:
 // store when the handle ends, and nothing on a push or a pop.  The exchange acquires
 // what the last holder released, so a new holder sees each write of the
 // last one.
-class EndpointClaim {
+//
+// Two threads take and release one claim at the same time through its atomic
+// cell, so the class states shareable{} (THE SHARED WRITE of
+// foundation/Transfer.h).
+class[[= ::foundation::transfer::shareable{}]] EndpointClaim {
 public:
     constexpr EndpointClaim() noexcept = default;
 

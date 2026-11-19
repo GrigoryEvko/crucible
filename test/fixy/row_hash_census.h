@@ -566,6 +566,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::foundation::contracts, "armed cells and the roster verdict, which are gate machinery"},
     {^^::foundation::lifetime, "the annotation that refuses a lifetime start over bytes, read at compile time"},
     {^^::foundation::linear, "the annotations of the linear marker and its doors, read at compile time"},
+    {^^::foundation::transfer, "the annotations of the two transfer properties and the names of the two properties, "
+                               "read at compile time"},
     {^^::foundation::reflect, kMachinery},
 };
 

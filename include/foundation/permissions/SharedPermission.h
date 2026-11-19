@@ -24,6 +24,7 @@
 #include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
@@ -147,8 +148,12 @@ public:
 
 // The destructor gives the share back to the pool, so the end of the scope
 // of a guard is its named door.
+// A guard points at its pool, which each thread that holds a share writes
+// with atomic steps by design, so it moves between threads as its tag and
+// its brand do (foundation/Transfer.h).
 template <typename Tag, typename Brand>
-class [[nodiscard]][[= ::foundation::linear::scope_end_door{}]] SharedPermissionGuard {
+class [[nodiscard]][[= ::foundation::linear::scope_end_door{}]][[= ::foundation::transfer::by_arguments{}]]
+    SharedPermissionGuard {
     SharedPermissionPool<Tag, Brand>* pool_ = nullptr;
 
     constexpr explicit SharedPermissionGuard(SharedPermissionPool<Tag, Brand>& p) noexcept : pool_{&p} {}

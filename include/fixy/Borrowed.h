@@ -43,6 +43,7 @@
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Region.h>
 #include <foundation/reflect/Anchor.h>
@@ -522,9 +523,11 @@ mint_borrowed(R&& owner CRUCIBLE_LIFETIMEBOUND) noexcept {
                                                                       detail::first_of_run_(run), run.size()};
 }
 
+// A WeakRef is a reference that can be empty, so it moves between threads
+// as a reference to T does (foundation/Transfer.h).
 template <class T>
     requires(std::is_object_v<T>)
-class [[nodiscard]] WeakRef {
+class [[nodiscard]][[= ::foundation::transfer::refers{}]] WeakRef {
 public:
     using element_type = T;
 

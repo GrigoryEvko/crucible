@@ -83,6 +83,7 @@
 
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
@@ -123,8 +124,11 @@ concept WideAtomicValue =
 #if defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_16)
 
 // The cell of 128 bits through the instructions of the core (THE TWO FORMS).
+// Each step of a cell is atomic, so two threads read and write one cell at the
+// same time (foundation/Transfer.h).
 template <WideAtomicValue T>
-class WideAtomicByInstruction : ::foundation::Pinned<WideAtomicByInstruction<T>> {
+class[[= ::foundation::transfer::shareable{}]] WideAtomicByInstruction
+    : ::foundation::Pinned<WideAtomicByInstruction<T>> {
     // A load through a compare-and-swap writes the value that the cell holds
     // back to the cell, so a const cell writes its word.  The word is mutable
     // for that write, and a const cell then never lives in memory that is
@@ -217,9 +221,10 @@ public:
 
 #endif
 
-// The cell of 128 bits through a lock (THE TWO FORMS).
+// The cell of 128 bits through a lock (THE TWO FORMS).  Each step takes the
+// lock, so two threads read and write one cell at the same time.
 template <WideAtomicValue T>
-class WideAtomicByLock : ::foundation::Pinned<WideAtomicByLock<T>> {
+class[[= ::foundation::transfer::shareable{}]] WideAtomicByLock : ::foundation::Pinned<WideAtomicByLock<T>> {
     alignas(16) detail::WideWord word_ = 0;
     // 0 when no thread holds the lock, and 1 when a thread holds it.  A load
     // takes the lock, so a const cell writes the lock word.
