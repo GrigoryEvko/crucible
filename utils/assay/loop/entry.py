@@ -45,9 +45,10 @@ THE WORK
     gate then goes before it, and the other heavy steps of the host wait for
     it.  A job of a preset and a runner of evidence get the jobs that the
     memory gives the step (THE MEMORY of assay.loop.heavy).  A campaign gets
-    one CPU for each job of its step (THE CAMPAIGN).  A different step of
-    STEPS holds only the lock, because its command gives its own job count.
-    A job that fails stops no other job.
+    one CPU for each job of its step (THE CAMPAIGN).  A step of cmake holds
+    a lease of the slot pool and no heavy step (THE BUILD STEPS).  A
+    different step of STEPS holds only the lock, because its command gives
+    its own job count.  A job that fails stops no other job.
 
 THE BUDGET
     --budget-s gives the wall time of the run, or DEFAULT_BUDGET_S of the
@@ -89,8 +90,12 @@ THE BUILD STEPS
     A step whose command starts with BUILD_WORD builds the build of its
     preset, and it runs no test.  The job configures the build when it has
     no graph of Ninja.  Then it runs the command with the cmake of the
-    build, the build directory and the job count that the memory gives it
-    (`cmake --build BUILD -j N`).  The job holds the lock of a heavy step.
+    build and the build directory (`cmake --build BUILD`).  The job holds a
+    lease of the slot pool with the slice of the run as its cap, and not the
+    exclusive lock of a heavy step (THE POOL of assay.loop.heavy).  The
+    build gets MAKEFLAGS of the jobserver of the lease and no -j, because
+    ninja obeys the jobserver only with no -j.  The lanes of the gate and the
+    builds of the work trees then go on beside it.
     The tests of the build keep the tier of the preset, so an entry of a
     tier before that tier compiles the build and runs none of its tests.
     The aarch64 cross build is an example: the nightly entry compiles it,
@@ -421,20 +426,24 @@ class Runner:
         deadline: float,
         limit_s: float | None = None,
         variables: Mapping[str, str] | None = None,
+        removed: Sequence[str] = (),
     ) -> int | None:
         """Run one command in the tree with its outputs in a log, and give its exit, or None when the budget ends.
 
-        The command gets STEP_VARIABLE of assay.loop.heavy and `variables`.  A program that cannot start gives the exit
-        TOOL_FAILED, and the log gives the reason.
+        The command gets STEP_VARIABLE of assay.loop.heavy and `variables`, and not the variables of `removed`.  A
+        program that cannot start gives the exit TOOL_FAILED, and the log gives the reason.
         """
         left = deadline - time.monotonic() if limit_s is None else limit_s
         if left <= 0:
             return None
+        environment = proc.environment({heavy.STEP_VARIABLE: heavy.STEP_VALUE, **(variables or {})})
+        for name in removed:
+            environment.pop(name, None)
         command = proc.Command(
             list(words),
             timeout_s=left,
             cwd=self.root,
-            env=proc.environment({heavy.STEP_VARIABLE: heavy.STEP_VALUE, **(variables or {})}),
+            env=environment,
             stdout=log,
             stderr=proc.Output.MERGE,
             stop=proc.Stop.INTERRUPT,
@@ -458,8 +467,7 @@ class Runner:
         elif job.kind is JobKind.STEP and job.step is not None and job.step.command[0] == CTEST_WORD:
             outcome = self.privileged(job, prefix, deadline)
         elif job.kind is JobKind.STEP and job.step is not None and job.step.command[0] == BUILD_WORD:
-            with heavy.heavy_step(self.root, self.jobs) as step_jobs:
-                outcome = self.build_step(job, prefix, deadline, step_jobs)
+            outcome = self.leased_build_step(job, prefix, deadline)
         elif job.kind is JobKind.STEP:
             with heavy.heavy_lock(self.root):
                 outcome = self.step(job, prefix, deadline)
@@ -587,10 +595,21 @@ class Runner:
             return self.ended(job, status, words, log)
         return Outcome(job, State.PASSED, step.text)
 
-    def build_step(self, job: Job, prefix: Path, deadline: float, jobs: int) -> Outcome:
+    def leased_build_step(self, job: Job, prefix: Path, deadline: float) -> Outcome:
+        """Run a step of cmake in a lease of the slot pool, with the slice of the run as its cap (THE BUILD STEPS)."""
+        try:
+            with heavy.leased(self.root, min(self.jobs, heavy.SLICE)) as share:
+                if share is None:
+                    return Outcome(job, State.FAILED, "the lease of the slot pool holds no slot")
+                return self.build_step(job, prefix, deadline, share.environment)
+        except (jobserver.JobserverError, OSError) as problem:
+            return Outcome(job, State.FAILED, f"the lease of the slot pool fails: {problem}")
+
+    def build_step(self, job: Job, prefix: Path, deadline: float, served: Mapping[str, str]) -> Outcome:
         """Configure the build of the preset of a step when it has no graph, and build it with no test.
 
-        The caller holds the lock of a heavy step, and `jobs` is its job count (THE BUILD STEPS).
+        `served` is MAKEFLAGS of the jobserver of the lease of the caller.  The build gets it and no -j, because ninja
+        obeys the jobserver only with no -j (THE BUILD STEPS).
         """
         step = job.step
         preset = step.preset if step is not None else ""
@@ -607,9 +626,9 @@ class Runner:
             cmake = cmake_pin.configured_program(build, "cmake")
         except cmake_pin.PinError as error:
             return Outcome(job, State.BLOCKED, f"the build {build} names no cmake: {error}")
-        words = [cmake, *step.command[1:], str(build), "-j", str(jobs)]
+        words = [cmake, *step.command[1:], str(build)]
         log = Path(f"{prefix}.log")
-        status = self.logged(words, log, deadline)
+        status = self.logged(words, log, deadline, variables=served, removed=(heavy.BUILD_PARALLEL_VARIABLE,))
         if status != 0:
             return self.ended(job, status, words, log)
         return Outcome(job, State.PASSED, f"each target of {build} builds, and no test ran")

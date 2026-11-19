@@ -13,6 +13,7 @@ jobs of its names.
 
 import os
 import tempfile
+import threading
 import time
 from pathlib import Path
 from unittest import mock
@@ -35,6 +36,9 @@ TEST = tiers.PresetKind.TEST
 LOCK_BUDGET_S = 60.0
 # The budget of the planted step of cmake of build_step_cases(), in seconds.  Its planted cmake ends at once.
 BUILD_BUDGET_S = 60.0
+# The most time that the case of the lease of a step of cmake waits for the end of the step while it holds a different
+# lease.  It is only the guard against a hang: the verdict reads the outcome of the step, and not a time.
+LEASE_LIMIT_S = 60.0
 
 
 def planted_presets() -> tiers.Tiers:
@@ -135,14 +139,16 @@ def tree_jobs_cases(expect: testing.Expect) -> None:
 
 
 def build_step_cases(expect: testing.Expect, directory: Path) -> None:
-    """Hold a step of cmake: blocked with no build, and else `cmake --build BUILD -j N` with no test (THE BUILD STEPS).
+    """Hold a step of cmake: blocked with no build, else `cmake --build BUILD` in a lease, with no test (THE BUILD STEPS).
 
-    The build has a graph of Ninja, and its cmake is a planted program that writes its words into a file.
+    The build has a graph of Ninja, and its cmake is a planted program that writes its words, MAKEFLAGS and
+    CMAKE_BUILD_PARALLEL_LEVEL into a file.  The run of the step must not wait for the lease of a different job, as an
+    exclusive heavy step does: the case holds such a lease of a private pool, and the run must end while it holds it.
     """
     step = next(item for item in plan.STEPS if item.command[0] == entry.BUILD_WORD)
     job = entry.Job(entry.JobKind.STEP, step.name, step=step)
     bare = entry.Runner(directory, NIGHTLY, 1, directory, tiers.Tiers((), (), ()))
-    blocked = bare.build_step(job, directory / "bare", 1e18, 3)
+    blocked = bare.build_step(job, directory / "bare", 1e18, {})
     expect(
         f"a step of cmake with no build directory of its preset is blocked: {blocked.summary}",
         blocked.state is entry.State.BLOCKED,
@@ -152,17 +158,41 @@ def build_step_cases(expect: testing.Expect, directory: Path) -> None:
     ninja_reader.graph_file(build).write_text("", encoding="utf-8")
     said = directory / "said.txt"
     cmake = directory / "cmake"
-    cmake.write_text(f'#!/bin/sh\necho "$@" > "{said}"\n', encoding="utf-8")
+    cmake.write_text(
+        f'#!/bin/sh\necho "$@" > "{said}"\necho "${{MAKEFLAGS:--}} ${{{heavy.BUILD_PARALLEL_VARIABLE}:--}}" >> "{said}"\n',
+        encoding="utf-8",
+    )
     cmake.chmod(0o755)
     preset = tiers.PresetTier(CONFIGURE, step.preset, RELEASE, build=build)
     runner = entry.Runner(directory, NIGHTLY, 1, directory, tiers.Tiers((preset,), (), ()))
-    with mock.patch.object(cmake_pin, "configured_program", return_value=str(cmake)):
-        outcome = runner.build_step(job, directory / "built", time.monotonic() + BUILD_BUDGET_S, 3)
-    words = said.read_text(encoding="utf-8").split() if said.is_file() else []
+    served = {jobserver.VARIABLE: "-j3 --jobserver-auth=fifo:/planted"}
+    with (
+        mock.patch.object(cmake_pin, "configured_program", return_value=str(cmake)),
+        testing.environment_variable(heavy.BUILD_PARALLEL_VARIABLE, "7"),
+    ):
+        outcome = runner.build_step(job, directory / "built", time.monotonic() + BUILD_BUDGET_S, served)
+    lines = said.read_text(encoding="utf-8").splitlines() if said.is_file() else []
     expect(
-        f"a step of cmake runs the cmake of its build with --build, the build and the job count: {words}, "
-        f"{outcome.summary}",
-        outcome.state is entry.State.PASSED and words == ["--build", str(build), "-j", "3"],
+        f"a step of cmake runs the cmake of its build with --build and the build, MAKEFLAGS of the lease, no -j and "
+        f"no {heavy.BUILD_PARALLEL_VARIABLE}: {lines}, {outcome.summary}",
+        outcome.state is entry.State.PASSED and lines == [f"--build {build}", f"{served[jobserver.VARIABLE]} -"],
+    )
+    said.unlink()
+    outcomes: list[entry.Outcome] = []
+    with heavy.private_pool(), mock.patch.object(cmake_pin, "configured_program", return_value=str(cmake)):
+        pool = heavy.host_pool()
+        with heavy.leased(directory, 1, pool, lambda: 1e6) as other:
+            worker = threading.Thread(
+                target=lambda: outcomes.append(runner.run(0, job, time.monotonic() + BUILD_BUDGET_S)), daemon=True
+            )
+            worker.start()
+            is_done = testing.wait_until(lambda: bool(outcomes), limit_s=LEASE_LIMIT_S)
+            is_held = other is not None
+        worker.join(LEASE_LIMIT_S)
+    expect(
+        f"the run of a step of cmake ends while a different job holds a lease, because the step holds a lease and no "
+        f"exclusive heavy step: {[item.summary for item in outcomes]}",
+        is_held and is_done and outcomes[0].state is entry.State.PASSED,
     )
 
 
