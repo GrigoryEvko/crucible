@@ -18,14 +18,16 @@
 //      circular.
 //
 // This header does not include the production predicate library, so an oracle
-// cannot reuse a production definition by accident.
+// cannot reuse a production definition by accident.  The limits and the count
+// of set bits come from the core families of the base, which do not include
+// that library.
 
 #pragma once
 
-#include <bit>
+#include <fixy/Core.h>
+
 #include <concepts>
 #include <cstdint>
-#include <limits>
 #include <type_traits>
 
 // The oracle has a namespace of the tests, so no template of the base is
@@ -66,8 +68,8 @@ template <std::integral T>
     W const wa = static_cast<W>(a);
     W const wb = static_cast<W>(b);
     W const sum = wa + wb;
-    W const lo = static_cast<W>(std::numeric_limits<T>::min());
-    W const hi = static_cast<W>(std::numeric_limits<T>::max());
+    W const lo = static_cast<W>(::fixy::min_of<T>);
+    W const hi = static_cast<W>(::fixy::max_of<T>);
     return sum >= lo && sum <= hi;
 }
 
@@ -80,7 +82,7 @@ template <std::integral T>
     }
     using U = std::make_unsigned_t<T>;
     auto const ux = static_cast<U>(x);
-    if (std::popcount(ux) != 1) return false;
+    if (::fixy::popcount(ux) != 1) return false;
     return x <= bound;
 }
 
