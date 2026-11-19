@@ -52,6 +52,38 @@ struct ProcessStatus {
 // gives at read_intercepted.
 [[nodiscard, gnu::nothrow]] long wait_process(std::int32_t child, ProcessStatus& status);
 
+// How a call of wait_process_event waits: until the child changes, or not at
+// all (WNOHANG).
+enum class ProcessWait : std::uint8_t {
+    block,
+    poll,
+};
+
+// What a wait of a child tells: the child still runs, it ended, or it stopped.
+// Only a child that the caller traces stops: the kernel gives each stop of a
+// tracee to its tracer, also with no WUNTRACED.
+enum class ProcessChange : std::uint8_t {
+    none,
+    ended,
+    stopped,
+};
+
+// The change of a child.  end holds the end of a child that ended, and
+// stop_signal the signal word of a stop, as WSTOPSIG gives it.  A stop of a
+// system call under PTRACE_O_TRACESYSGOOD has the word SIGTRAP | 0x80.
+struct ProcessEvent {
+    ProcessChange change = ProcessChange::none;
+    ProcessStatus end{};
+    std::uint8_t stop_signal = 0;
+};
+
+// waitpid of the C library for the child CHILD.  ProcessWait::poll adds
+// WNOHANG, so the call gives the change none for a child that runs.  The word
+// is zero, and EVENT holds the change, or -E for the error number E.  An
+// eintr comes back to the caller.  The attribute nothrow has the same reason
+// as at wait_process.
+[[nodiscard, gnu::nothrow]] long wait_process_event(std::int32_t child, ProcessWait mode, ProcessEvent& event);
+
 // _exit of the C library: the process ends with CODE, and no exit hook and
 // no static destructor runs.  The attribute nothrow has the same reason as
 // at wait_process.

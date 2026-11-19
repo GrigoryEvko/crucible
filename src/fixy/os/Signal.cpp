@@ -1,12 +1,13 @@
 // The signal door of fixy (fixy/os/Signal.h).  It is the one includer of
-// <signal.h>, and it keeps the calls of sigaction, sigaltstack, sigemptyset
-// and raise in the C library (decision D12 of
+// <signal.h>, and it keeps the calls of sigaction, sigaltstack, sigemptyset,
+// raise and kill in the C library (decision D12 of
 // misc/01_10_2026_quarantine.md).  The C library keeps the dispositions and
 // the masks of its threads, so the base takes signals only through it.  The
 // one exception is the block of SIGPIPE of foundation/os/PipeSignal.h.
 
 #include <fixy/os/Signal.h>
 
+#include <fixy/os/Process.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Report.h>
@@ -19,6 +20,17 @@
 #include <cstdint>
 
 static_assert(::foundation::os::kAbortSignal == SIGABRT, "foundation::os::kAbortSignal is not SIGABRT of <signal.h>");
+static_assert(::fixy::process::kLimitSignal == SIGKILL, "fixy::process::kLimitSignal is not SIGKILL of <signal.h>");
+static_assert(::fixy::process::detail::kTrapSignal == SIGTRAP,
+              "fixy::process::detail::kTrapSignal is not SIGTRAP of <signal.h>");
+static_assert(::fixy::process::detail::kStopSignal == SIGSTOP,
+              "fixy::process::detail::kStopSignal is not SIGSTOP of <signal.h>");
+static_assert(::fixy::process::detail::kTerminalStopSignal == SIGTSTP,
+              "fixy::process::detail::kTerminalStopSignal is not SIGTSTP of <signal.h>");
+static_assert(::fixy::process::detail::kTerminalInputSignal == SIGTTIN,
+              "fixy::process::detail::kTerminalInputSignal is not SIGTTIN of <signal.h>");
+static_assert(::fixy::process::detail::kTerminalOutputSignal == SIGTTOU,
+              "fixy::process::detail::kTerminalOutputSignal is not SIGTTOU of <signal.h>");
 
 namespace fixy::signal::detail {
 
@@ -133,5 +145,9 @@ install_fatal_handlers_(FatalReport report) noexcept {
     }
     return ::foundation::core::Unit{};
 }
+
+void stop_self_() noexcept { static_cast<void>(::raise(SIGSTOP)); }
+
+void end_process_(std::int32_t process) noexcept { static_cast<void>(::kill(process, SIGKILL)); }
 
 }  // namespace fixy::signal::detail

@@ -14,9 +14,10 @@
 // through the lock of the stream and the heap.  So the child must end by
 // SIGABRT before the parent gives up on it.
 //
-// The child door reads the pipe while the child runs, so the pipe never
-// stays full, and it waits with no bound.  These three cases thus start
-// their child by hand, in a PROBE region.
+// The wait with a limit of the child door reads no output while the child
+// runs, so the pipe stays full.  It ends a child that runs past its limit,
+// and its report tells that.  The child fills its pipe and arms the timer
+// with raw calls, in a PROBE region.
 //
 // The timer ticks every 20 ms.  A tick before the child calls its first
 // violation raises nothing.  A child that waits for a CPU gets its tick
@@ -30,12 +31,12 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/os/Process.h>
-#include <fixy/os/Time.h>
 #include <foundation/Quarantine.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Abort.h>
 
+#include <cstddef>
 #include <utility>
 
 // The first token of the condition of violate_after_a_far_macro.  The
@@ -105,20 +106,23 @@ void message_report_carries_its_message(::fixy::TestRunnerCtx const& test) {
 
 }  // namespace
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a violation report blocks on a full pipe, and the wait has a bound")
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a violation report blocks on a full pipe, and a timer raises a second one")
 #include <fcntl.h>
 #include <sys/time.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cerrno>
 #include <csignal>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <string>
 
 namespace {
+
+// The longest time that the parent waits for a child whose report blocks.
+// A real kernel ends the child by SIGABRT at the first tick of its timer.
+constexpr ::fixy::process::WaitLimit kBlockedReportLimit{10000};
+
+// The count of the last bytes of the output of a refused child that the test
+// writes.  A child that filled the pipe leaves 64 KiB of filler bytes.
+constexpr std::size_t kShownOutputBytes = 2048;
 
 // The child sets this immediately before its first violation.
 volatile std::sig_atomic_t g_first_violation_started = 0;
@@ -131,12 +135,6 @@ void violate_with_a_message_in_a_signal(int /*signal*/) {
     if (g_first_violation_started != 0) violate_with_a_message();
 }
 
-struct ChildResult {
-    bool ended_by_sigabrt = false;
-    bool ended_in_time = false;
-    std::string standard_error;
-};
-
 // Fills the pipe on file descriptor 2, so that the next write to it blocks.
 void fill_standard_error() noexcept {
     const int flags = ::fcntl(STDERR_FILENO, F_GETFL);
@@ -146,95 +144,57 @@ void fill_standard_error() noexcept {
     if (errno != EAGAIN || ::fcntl(STDERR_FILENO, F_SETFL, flags) != 0) ::_exit(91);
 }
 
-// Runs body in a child whose standard error is a pipe.  The parent waits at
-// most ten seconds for the child, and it reads the pipe only after the child
-// ends, so a child that fills the pipe keeps it full.
-template <typename Body>
-[[nodiscard]] ChildResult run_in_child(Body body) {
-    ChildResult result;
-    int channel[2];
-    if (::pipe(channel) != 0) return result;
-    const ::pid_t child = ::fork();
-    if (child < 0) return result;
-    if (child == 0) {
-        ::dup2(channel[1], STDERR_FILENO);
-        ::close(channel[0]);
-        ::close(channel[1]);
-        body();
-        ::_exit(0);
+// True when the child ended by SIGABRT before the limit of its wait.  A
+// refused child gets its end and the last bytes of its output written.
+[[nodiscard]] bool holds(::fixy::process::ChildReport const& report, ::fixy::TextView what) {
+    bool const is_aborted = report.is_signaled_by(::foundation::os::kAbortSignal) && !report.is_ended_at_limit();
+    if (!is_aborted) {
+        ::fixy::TextView const output = report.output();
+        std::size_t const shown = output.size() < kShownOutputBytes ? output.size() : kShownOutputBytes;
+        ::fixy::report(
+            ::fixy::Sink::Err,
+            "test_contract_handler: FAIL: {} (sigabrt={}, at the limit={})\nchild output (last {} bytes):\n{}\n", what,
+            report.is_signaled_by(::foundation::os::kAbortSignal), report.is_ended_at_limit(), shown,
+            output.window(output.size() - shown, shown).expect("the tail is a part of the output"));
     }
-    ::close(channel[1]);
-    int status = 0;
-    constexpr std::uint64_t pause_nanos = 10000000;
-    fixy::TestRunnerCtx const runner{foundation::effects::testing::test()};
-    auto const pause = fixy::time::mint_bounded_sleep<pause_nanos>(runner);
-    for (int tick = 0; tick < 1000; ++tick) {
-        const ::pid_t reaped = ::waitpid(child, &status, WNOHANG);
-        if (reaped == child) {
-            result.ended_in_time = true;
-            break;
-        }
-        static_cast<void>(pause.sleep_for(pause_nanos));
-    }
-    if (!result.ended_in_time) {
-        ::kill(child, SIGKILL);
-        ::waitpid(child, &status, 0);
-    }
-    result.ended_by_sigabrt = result.ended_in_time && WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
-    char buffer[512];
-    for (::ssize_t got = ::read(channel[0], buffer, sizeof buffer); got > 0;
-         got = ::read(channel[0], buffer, sizeof buffer)) {
-        result.standard_error.append(buffer, static_cast<std::size_t>(got));
-    }
-    ::close(channel[0]);
-    return result;
-}
-
-[[nodiscard]] bool holds(bool condition, const char* what, ChildResult const& result) {
-    if (!condition) {
-        std::fprintf(stderr, "test_contract_handler: FAIL: %s (sigabrt=%d, in time=%d)\n", what,
-                     result.ended_by_sigabrt ? 1 : 0, result.ended_in_time ? 1 : 0);
-        // A child that filled the pipe leaves 64 KiB of filler bytes, so
-        // only the tail of its output is printed.
-        const std::size_t shown = result.standard_error.size() < 2048 ? result.standard_error.size() : 2048;
-        std::fprintf(stderr, "child output (last %zu bytes):\n%s\n", shown,
-                     result.standard_error.substr(result.standard_error.size() - shown).c_str());
-    }
-    return condition;
+    return is_aborted;
 }
 
 // The first violation blocks in its report, and a tick of the timer raises
-// the second one in a signal handler on the same thread.
+// the second one in a signal handler on the same thread.  The child door
+// starts the child, and its wait with a limit keeps the pipe full.
 template <void (*First)() noexcept, void (*Second)(int)>
-[[nodiscard]] bool second_violation_aborts_at_once(const char* what) {
-    const ChildResult result = run_in_child([] {
-        fill_standard_error();
-        struct sigaction action{};
-        action.sa_handler = Second;
-        sigemptyset(&action.sa_mask);
-        action.sa_flags = SA_NODEFER;
-        if (::sigaction(SIGALRM, &action, nullptr) != 0) ::_exit(92);
-        const ::itimerval every_20_ms{{0, 20000}, {0, 20000}};
-        if (::setitimer(ITIMER_REAL, &every_20_ms, nullptr) != 0) ::_exit(93);
-        g_first_violation_started = 1;
-        First();
-    });
-    return holds(result.ended_by_sigabrt, what, result);
+[[nodiscard]] bool second_violation_aborts_at_once(::fixy::TestRunnerCtx const& test, ::fixy::TextView what) {
+    ::fixy::process::Child child = ::fixy::process::spawn_child(test, [] noexcept {
+                                       fill_standard_error();
+                                       struct sigaction action{};
+                                       action.sa_handler = Second;
+                                       sigemptyset(&action.sa_mask);
+                                       action.sa_flags = SA_NODEFER;
+                                       if (::sigaction(SIGALRM, &action, nullptr) != 0) ::_exit(92);
+                                       const ::itimerval every_20_ms{{0, 20000}, {0, 20000}};
+                                       if (::setitimer(ITIMER_REAL, &every_20_ms, nullptr) != 0) ::_exit(93);
+                                       g_first_violation_started = 1;
+                                       First();
+                                   }).expect("the test starts a child");
+    ::fixy::process::ChildReport const report =
+        ::fixy::process::wait_within(std::move(child), kBlockedReportLimit).expect("the test waits for its child");
+    return holds(report, what);
 }
 
-[[nodiscard]] bool second_clause_violation_aborts() {
+[[nodiscard]] bool second_clause_violation_aborts(::fixy::TestRunnerCtx const& test) {
     return second_violation_aborts_at_once<violate_a_clause, violate_a_clause_in_a_signal>(
-        "a second clause violation during a blocked report aborts at once");
+        test, ::fixy::TextView{"a second clause violation during a blocked report aborts at once"});
 }
 
-[[nodiscard]] bool clause_violation_during_a_message_report_aborts() {
+[[nodiscard]] bool clause_violation_during_a_message_report_aborts(::fixy::TestRunnerCtx const& test) {
     return second_violation_aborts_at_once<violate_with_a_message, violate_a_clause_in_a_signal>(
-        "a clause violation during a blocked message report aborts at once");
+        test, ::fixy::TextView{"a clause violation during a blocked message report aborts at once"});
 }
 
-[[nodiscard]] bool message_violation_during_a_clause_report_aborts() {
+[[nodiscard]] bool message_violation_during_a_clause_report_aborts(::fixy::TestRunnerCtx const& test) {
     return second_violation_aborts_at_once<violate_a_clause, violate_with_a_message_in_a_signal>(
-        "a message violation during a blocked clause report aborts at once");
+        test, ::fixy::TextView{"a message violation during a blocked clause report aborts at once"});
 }
 
 }  // namespace
@@ -274,9 +234,9 @@ int main() {
         ::fixy::check::pass(test,
                             "  the three cases of a blocked report SKIPPED (qemu-user blocks on the full pipe)\n");
     } else {
-        CRUCIBLE_TEST_ASSERT(test, second_clause_violation_aborts());
-        CRUCIBLE_TEST_ASSERT(test, clause_violation_during_a_message_report_aborts());
-        CRUCIBLE_TEST_ASSERT(test, message_violation_during_a_clause_report_aborts());
+        CRUCIBLE_TEST_ASSERT(test, second_clause_violation_aborts(test));
+        CRUCIBLE_TEST_ASSERT(test, clause_violation_during_a_message_report_aborts(test));
+        CRUCIBLE_TEST_ASSERT(test, message_violation_during_a_clause_report_aborts(test));
     }
     ::fixy::check::pass(test, "test_contract_handler: passed\n");
     return 0;

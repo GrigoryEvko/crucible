@@ -339,6 +339,7 @@ door <linux/fs.h> src/fixy/os/Fs.cpp
 door <linux/io_uring.h> src/fixy/os/Io.cpp
 door <linux/tcp.h> src/fixy/os/Socket.cpp
 door <linux/ptp_clock.h> src/fixy/os/Time.cpp
+door <linux/ptrace.h> src/fixy/os/Process.cpp
 door <pthread.h> src/fixy/os/ThreadTasks.cpp
 door <signal.h> src/fixy/os/Signal.cpp
 door <stdlib.h> src/fixy/os/ExitHooks.cpp
@@ -962,6 +963,16 @@ witness <fixy/os/Process.h> private | fixy::process::ChildReport | fixy::process
 # and only spawn_child calls it, after the fork.  The empty Child of the
 # default constructor names no process.
 witness <fixy/os/Process.h> private | fixy::process::Child | fixy::process::Child{forge::rvalue<std::int32_t>(), forge::rvalue<std::int32_t>()}
+# A traced child names a process that the calling thread traces, and its read
+# end of the standard error.  The constructor from the id and the read end is
+# private, and only spawn_traced_child calls it, after the first stop of the
+# child.  The empty TracedChild of the default constructor names no process.
+witness <fixy/os/Process.h> private | fixy::process::TracedChild | fixy::process::TracedChild{forge::rvalue<std::int32_t>(), forge::rvalue<std::int32_t>()}
+# A system call stop claims that a traced child stays in that stop, so a read
+# of its memory reads the child of the stop.  Its default constructor is
+# private, and only trace_within builds one, from the stop that the kernel
+# gives.
+witness <fixy/os/Process.h> private | fixy::process::SyscallStop | fixy::process::SyscallStop{}
 # A replay of a property gives the body the words of a shrunk choice
 # sequence.  Its constructor from those words is private, and only the
 # runner of fixy/check/Property.h replays a failure.  The public constructor

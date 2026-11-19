@@ -83,6 +83,13 @@ struct ChildStart {
 // fork.
 [[nodiscard]] core::Result<ChildStart, Errno> start_child_() noexcept;
 
+// Makes the calling child dumpable again (PR_SET_DUMPABLE 1), after the
+// start made it not dumpable (THE CORE DUMP).  The kernel lets a tracer with
+// no CAP_SYS_PTRACE read the memory and the links of /proc/PID/fd only of a
+// dumpable tracee.  A signal that ends a dumpable child can write a core
+// dump.  A failure ends the child with kChildSetupFailed.
+void make_child_dumpable_() noexcept;
+
 // Reads the next bytes of the standard error of a child into bytes, again
 // after an eintr.  The count is zero at the end of the output, when the
 // child and each copy of the write end are closed.
@@ -95,6 +102,34 @@ void close_child_output_(std::int32_t error_output) noexcept;
 // Waits until the child ends, again after an eintr, and gives its end.  The
 // wait also removes the child from the process table.
 [[nodiscard]] core::Result<ChildEnd, Errno> wait_child_(std::int32_t child) noexcept;
+
+// How wait_child_event_ waits: until the child changes, or not at all.
+enum class ChildWait : std::uint8_t {
+    block,
+    poll,
+};
+
+// What a wait of a child tells: the child still runs, it ended, or it
+// stopped.  Only a child that the caller traces stops.
+enum class ChildChange : std::uint8_t {
+    running,
+    ended,
+    stopped,
+};
+
+// The change of a child.  end holds the end of a child that ended, and
+// stop_signal the signal word of a stop.  A stop of a system call under
+// PTRACE_O_TRACESYSGOOD has the word SIGTRAP | 0x80.
+struct ChildEvent {
+    ChildChange change = ChildChange::running;
+    ChildEnd end{};
+    std::uint8_t stop_signal = 0;
+};
+
+// Gives the next change of the child, again after an eintr.  ChildWait::poll
+// gives the change running at once for a child that runs.  A child that ended
+// leaves the process table.
+[[nodiscard]] core::Result<ChildEvent, Errno> wait_child_event_(std::int32_t child, ChildWait mode) noexcept;
 
 // Ends the calling process with code, and runs no exit hook and no static
 // destructor.  The child of a start ends here when its body returns.

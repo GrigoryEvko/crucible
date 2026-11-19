@@ -5,12 +5,12 @@
 // then loses an entry that it reported as stored.
 //
 // The test runs an open, a store and a persist of session events in a child
-// process, and the parent traces the system calls of the child.  It records
-// each mkdirat, renameat and renameat2 that succeeds, with the directory that
-// holds its new entry, and each fsync that succeeds, with the path of its
-// descriptor.  The check: each change has a later fsync of the directory
-// that holds it.  The store syncs a directory with fsync and a file with
-// fdatasync, so the sync of a file is no sync of a directory here.
+// that the parent traces through the traced child door of fixy/os/Process.h.
+// It records each mkdirat, renameat and renameat2 that succeeds, with the
+// directory that holds its new entry, and each fsync that succeeds, with the
+// path of its descriptor.  The check: each change has a later fsync of the
+// directory that holds it.  The store syncs a directory with fsync and a file
+// with fdatasync, so the sync of a file is no sync of a directory here.
 //
 // A host that refuses ptrace gives a skip.
 
@@ -18,26 +18,25 @@
 #include <crucible/MerkleDag.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/Process.h>
 #include <foundation/Quarantine.h>
 #include <foundation/os/PathText.h>
 
 #include "scratch_dir.h"
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a traced child shows the directory of each sync of the Cipher store")
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the trace shows the directory of each sync of the Cipher store")
 #include <fcntl.h>
-#include <signal.h>
-#include <sys/ptrace.h>
 #include <sys/syscall.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
-#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 
 namespace {
+
+namespace fp = ::fixy::process;
 
 // A change of a directory, or a sync of a directory.
 enum class EventKind : int {
@@ -59,8 +58,11 @@ struct TraceLog {
     bool is_full = false;
 };
 
-// The exit code of a child that the host does not let the parent trace.
+// The result of a traced store that the host does not let the parent trace.
 constexpr int kTraceRefused = 2;
+
+// The longest time that the traced store takes.
+constexpr fp::WaitLimit kTraceLimit{120000};
 
 void push_event(TraceLog& log, EventKind kind, const char* path) {
     if (log.count == static_cast<int>(sizeof log.events / sizeof log.events[0])) {
@@ -73,30 +75,27 @@ void push_event(TraceLog& log, EventKind kind, const char* path) {
     ++log.count;
 }
 
-// Reads the text at address in the child into out, one word at a time, up
-// to its zero.  False when a word does not read.
-bool read_child_text(pid_t child, std::uint64_t address, char* out, std::size_t capacity) {
+// Reads the text at address in the child into out, with a zero at its end.
+// False when the text does not read or does not fit.
+bool read_child_text(fp::SyscallStop const& stop, std::uint64_t address, char* out, std::size_t capacity) {
+    fixy::FixedText<511> text{};
+    if (stop.read_text(fp::ChildAddress{address}, text).is_err() || text.size() >= capacity) return false;
     std::size_t at = 0;
-    while (at + sizeof(long) < capacity) {
-        errno = 0;
-        const long word = ::ptrace(PTRACE_PEEKDATA, child, reinterpret_cast<void*>(address + at), nullptr);
-        if (errno != 0) return false;
-        std::memcpy(out + at, &word, sizeof word);
-        if (std::memchr(&word, 0, sizeof word) != nullptr) return true;
-        at += sizeof word;
+    for (char const character : text) {
+        out[at++] = character;
     }
-    out[capacity - 1] = '\0';
+    out[at] = '\0';
     return true;
 }
 
 // The path of a descriptor of the child, or of its current directory for
 // AT_FDCWD.  False when the link does not read.
-bool read_child_descriptor_path(pid_t child, int descriptor, char* out, std::size_t capacity) {
+bool read_child_descriptor_path(fp::ProcessId child, int descriptor, char* out, std::size_t capacity) {
     char link[64] = {};
     if (descriptor == AT_FDCWD) {
-        std::snprintf(link, sizeof link, "/proc/%d/cwd", static_cast<int>(child));
+        std::snprintf(link, sizeof link, "/proc/%u/cwd", static_cast<unsigned>(child));
     } else {
-        std::snprintf(link, sizeof link, "/proc/%d/fd/%d", static_cast<int>(child), descriptor);
+        std::snprintf(link, sizeof link, "/proc/%u/fd/%d", static_cast<unsigned>(child), descriptor);
     }
     const ssize_t length = ::readlink(link, out, capacity - 1);
     if (length <= 0) return false;
@@ -134,87 +133,77 @@ int descriptor_of(std::uint64_t word) { return static_cast<int>(static_cast<std:
 
 // True when the call makes a new entry in a directory.  dir_word and
 // name_word name the descriptor and the path of the new entry.
-bool is_change_call(const __ptrace_syscall_info& info, std::uint64_t& dir_word, std::uint64_t& name_word) {
-    const std::uint64_t number = info.entry.nr;
-    if (number == __NR_mkdirat) {
-        dir_word = info.entry.args[0];
-        name_word = info.entry.args[1];
+bool is_change_call(fp::SyscallStop const& stop, std::uint64_t& dir_word, std::uint64_t& name_word) {
+    const fp::SyscallNumber number = stop.number();
+    if (number == fp::SyscallNumber{__NR_mkdirat}) {
+        dir_word = stop.argument(fp::SyscallArgument::first);
+        name_word = stop.argument(fp::SyscallArgument::second);
         return true;
     }
-    bool is_rename = number == __NR_renameat2;
+    bool is_rename = number == fp::SyscallNumber{__NR_renameat2};
 #if defined(__NR_renameat)
-    is_rename = is_rename || number == __NR_renameat;
+    is_rename = is_rename || number == fp::SyscallNumber{__NR_renameat};
 #endif
     if (is_rename) {
-        dir_word = info.entry.args[2];
-        name_word = info.entry.args[3];
+        dir_word = stop.argument(fp::SyscallArgument::third);
+        name_word = stop.argument(fp::SyscallArgument::fourth);
         return true;
     }
     return false;
 }
 
-// Runs body in a child that the parent traces, and records its changes and
-// syncs in log.  Gives 0 when the child ends with no error, kTraceRefused
-// when the host refuses the trace, and 1 for each other failure.
+// The event of the last entry stop, which its exit stop records when the
+// call succeeds.
+struct PendingEvent {
+    bool has_event = false;
+    EventKind kind = EventKind::change;
+    char path[512] = {};
+};
+
+// Records the event of the stop: an entry of a change or of an fsync makes
+// the pending event, and the exit of a call that succeeds records it.
+void record_stop(fp::SyscallStop const& stop, PendingEvent& pending, TraceLog& log) {
+    if (stop.kind() == fp::SyscallStopKind::exit) {
+        if (pending.has_event && stop.result() == 0) push_event(log, pending.kind, pending.path);
+        pending.has_event = false;
+        return;
+    }
+    pending.has_event = false;
+    std::uint64_t dir_word = 0;
+    std::uint64_t name_word = 0;
+    if (is_change_call(stop, dir_word, name_word)) {
+        char base[512] = {};
+        char name[512] = {};
+        pending.has_event = read_child_descriptor_path(stop.child(), descriptor_of(dir_word), base, sizeof base)
+                         && read_child_text(stop, name_word, name, sizeof name);
+        if (pending.has_event) parent_of_entry(base, name, pending.path, sizeof pending.path);
+        pending.kind = EventKind::change;
+    } else if (stop.number() == fp::SyscallNumber{__NR_fsync}) {
+        pending.has_event = read_child_descriptor_path(
+            stop.child(), descriptor_of(stop.argument(fp::SyscallArgument::first)), pending.path, sizeof pending.path);
+        pending.kind = EventKind::sync;
+    }
+}
+
+// Runs body in a traced child, and records its changes and syncs in log.
+// Gives 0 when the child ends with no error, kTraceRefused when the host
+// refuses the trace, and 1 for each other failure.  The tracer reads the
+// memory and the descriptors of the child, so the child is readable.
 template <class Body>
-int trace_child(Body& body, TraceLog& log) {
-    const pid_t child = ::fork();
-    if (child < 0) return 1;
-    if (child == 0) {
-        if (::ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) != 0) ::_exit(kTraceRefused);
-        ::raise(SIGSTOP);
-        const bool is_done = body();
-        // _exit skips the leak check at the exit, which would trace the
-        // child a second time.
-        ::_exit(is_done ? 0 : 1);
+int trace_child(fixy::TestRunnerCtx const& test, Body& body, TraceLog& log) {
+    fixy::Result<fp::TracedChild, foundation::os::Errno> started =
+        fp::spawn_traced_child(test, fp::TracedMemory::readable, [&test, &body]() noexcept {
+            fp::exit_now(test, static_cast<std::uint8_t>(body() ? 0 : 1));
+        });
+    if (started.is_err()) {
+        return started.err().value_or(foundation::os::Errno::eio) == foundation::os::Errno::eperm ? kTraceRefused : 1;
     }
-    int status = 0;
-    if (::waitpid(child, &status, 0) != child) return 1;
-    if (WIFEXITED(status)) return WEXITSTATUS(status) == kTraceRefused ? kTraceRefused : 1;
-    if (::ptrace(PTRACE_SETOPTIONS, child, nullptr, PTRACE_O_TRACESYSGOOD | PTRACE_O_EXITKILL) != 0) return 1;
-    // The event of the last entry stop, which its exit stop records when the
-    // call succeeds.
-    bool has_pending = false;
-    EventKind pending_kind = EventKind::change;
-    char pending[512] = {};
-    int signal_to_deliver = 0;
-    while (true) {
-        if (::ptrace(PTRACE_SYSCALL, child, nullptr, reinterpret_cast<void*>(static_cast<long>(signal_to_deliver)))
-            != 0) {
-            return 1;
-        }
-        signal_to_deliver = 0;
-        if (::waitpid(child, &status, 0) != child) return 1;
-        if (WIFEXITED(status)) return WEXITSTATUS(status) == 0 ? 0 : 1;
-        if (WIFSIGNALED(status)) return 1;
-        if (!WIFSTOPPED(status)) continue;
-        if (WSTOPSIG(status) != (SIGTRAP | 0x80)) {
-            signal_to_deliver = WSTOPSIG(status);
-            continue;
-        }
-        __ptrace_syscall_info info{};
-        if (::ptrace(PTRACE_GET_SYSCALL_INFO, child, reinterpret_cast<void*>(sizeof info), &info) <= 0) return 1;
-        if (info.op == PTRACE_SYSCALL_INFO_ENTRY) {
-            has_pending = false;
-            std::uint64_t dir_word = 0;
-            std::uint64_t name_word = 0;
-            if (is_change_call(info, dir_word, name_word)) {
-                char base[512] = {};
-                char name[512] = {};
-                has_pending = read_child_descriptor_path(child, descriptor_of(dir_word), base, sizeof base)
-                           && read_child_text(child, name_word, name, sizeof name);
-                if (has_pending) parent_of_entry(base, name, pending, sizeof pending);
-                pending_kind = EventKind::change;
-            } else if (info.entry.nr == __NR_fsync) {
-                has_pending =
-                    read_child_descriptor_path(child, descriptor_of(info.entry.args[0]), pending, sizeof pending);
-                pending_kind = EventKind::sync;
-            }
-        } else if (info.op == PTRACE_SYSCALL_INFO_EXIT) {
-            if (has_pending && info.exit.rval == 0) push_event(log, pending_kind, pending);
-            has_pending = false;
-        }
-    }
+    PendingEvent pending{};
+    fixy::Result<fp::ChildReport, foundation::os::Errno> traced =
+        fp::trace_within(std::move(started).expect("the test above found the child"), kTraceLimit,
+                         [&pending, &log](fp::SyscallStop const& stop) noexcept { record_stop(stop, pending, log); });
+    return traced.match([](fp::ChildReport const& report) noexcept { return report.is_exit_with(0) ? 0 : 1; },
+                        [](foundation::os::Errno const&) noexcept { return 1; });
 }
 
 // The index of the first change that no later sync of its directory
@@ -296,6 +285,7 @@ TraceLog g_trace_log{};
 }  // namespace
 
 int main() {
+    fixy::TestRunnerCtx const test{foundation::effects::testing::test()};
     crucible::test::ScratchDir const scratch{"crucible-cipher-sync"};
     if (!scratch.is_ready()) {
         fixy::report(fixy::Sink::Err, "[skipped] cannot make a scratch directory under /tmp\n");
@@ -306,7 +296,7 @@ int main() {
     root.append(fixy::TextView{"/store"}).expect("the root fits its buffer");
 
     auto body = [&root]() { return store_into(root); };
-    const int traced = trace_child(body, g_trace_log);
+    const int traced = trace_child(test, body, g_trace_log);
     if (traced == kTraceRefused) {
         fixy::report(fixy::Sink::Err, "[skipped] the host does not let the test trace a child\n");
         return 0;

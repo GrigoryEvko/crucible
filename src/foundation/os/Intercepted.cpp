@@ -78,6 +78,23 @@ ProcessStatus decode_process_status(std::int32_t word) noexcept {
     return 0;
 }
 
+[[gnu::no_sanitize_thread]] long wait_process_event(std::int32_t child, ProcessWait mode, ProcessEvent& event) {
+    int word = 0;
+    int const options = mode == ProcessWait::poll ? WNOHANG : 0;
+    ::pid_t const changed = ::waitpid(child, &word, options);
+    if (changed < 0) {
+        return -static_cast<long>(errno);
+    }
+    if (changed == 0) {
+        event = ProcessEvent{};
+    } else if (WIFSTOPPED(word)) {
+        event = ProcessEvent{ProcessChange::stopped, ProcessStatus{}, static_cast<std::uint8_t>(WSTOPSIG(word))};
+    } else {
+        event = ProcessEvent{ProcessChange::ended, decode_process_status(word), 0};
+    }
+    return 0;
+}
+
 [[gnu::no_sanitize_thread]] void exit_process(std::uint8_t code) { ::_exit(code); }
 
 }  // namespace foundation::os::detail

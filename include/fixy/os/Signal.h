@@ -1,7 +1,8 @@
 #pragma once
 
-// The signal door of fixy: the handler of each fatal signal, and the
-// alternate signal stack of a thread.
+// The signal door of fixy: the handler of each fatal signal, the alternate
+// signal stack of a thread, and the two signal calls of the child door (THE
+// CHILD SIGNALS, below).
 //
 // THE HANDLERS
 //   install_fatal_handlers puts one handler on SIGABRT, SIGSEGV, SIGBUS,
@@ -51,6 +52,7 @@
 #include <foundation/os/GuardedRegion.h>
 
 #include <cstddef>
+#include <cstdint>
 
 namespace fixy::signal {
 
@@ -80,6 +82,15 @@ install_alternate_stack_(PreviousStack& previous) noexcept;
 
 // Puts PREVIOUS back as the alternate stack of the calling thread.
 void restore_alternate_stack_(PreviousStack const& previous) noexcept;
+
+// THE CHILD SIGNALS.  The two signal calls of the child door of
+// fixy/os/Process.h, which only a test reaches.  stop_self_ raises SIGSTOP in
+// the calling process, so a child that its parent traces stops before its
+// body runs.  end_process_ sends SIGKILL to the process PROCESS, a child that
+// ran to the limit of its wait.  A child that ended already ignores the
+// signal, and the wait of the door collects its end.
+void stop_self_() noexcept;
+void end_process_(std::int32_t process) noexcept;
 
 }  // namespace detail
 

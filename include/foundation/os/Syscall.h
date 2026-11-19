@@ -137,6 +137,7 @@ enum class Syscall : std::uint8_t {
     dup3,
     clock_gettime,
     clock_nanosleep,
+    ptrace,
 };
 
 // True when the call can wait for a long time: for another thread or process
