@@ -18,11 +18,19 @@
 #include <foundation/core/KeyedHash.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 namespace fed = crucible::cipher::federation;
@@ -31,7 +39,7 @@ using ::foundation::core::index;
 
 // Variadic because a template argument list contains commas, which the
 // preprocessor would read as separating macro arguments.
-#define ASSERT_TRUE(...) assert((__VA_ARGS__))
+#define ASSERT_TRUE(...) CRUCIBLE_TEST_ASSERT(kTest, (__VA_ARGS__))
 
 // The value of a result that holds one.  A result with an error ends the
 // test.
@@ -132,21 +140,21 @@ static void test_header_layout_invariants() {
     spec.payload_size = 0x0B0A0908;
     spec.key = key_of(0x1716151413121110ULL, 0x1F1E1D1C1B1A1918ULL, 0x2726252423222120ULL, 0x2F2E2D2C2B2A2928ULL);
     const Bytes<kHeader> buf = header_bytes(spec);
-    assert(buf.at(index<0>()) == std::byte{'C'});
-    assert(buf.at(index<4>()) == std::byte{0x02});
-    assert(buf.at(index<5>()) == std::byte{0x00});
-    assert(buf.at(index<6>()) == std::byte{0x06});
-    assert(buf.at(index<7>()) == std::byte{0x07});
-    assert(buf.at(index<8>()) == std::byte{0x08});
-    assert(buf.at(index<11>()) == std::byte{0x0B});
-    assert(buf.at(index<12>()) == std::byte{0x01});
-    assert(buf.at(index<13>()) == std::byte{32});
-    assert(buf.at(index<14>()) == std::byte{0x10});
-    assert(buf.at(index<45>()) == std::byte{0x2F});
-    assert(buf.at(index<46>()) == std::byte{0x00});
-    assert(buf.at(index<47>()) == std::byte{0x00});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<0>()) == std::byte{'C'});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<4>()) == std::byte{0x02});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<5>()) == std::byte{0x00});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<6>()) == std::byte{0x06});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<7>()) == std::byte{0x07});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<8>()) == std::byte{0x08});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<11>()) == std::byte{0x0B});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<12>()) == std::byte{0x01});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<13>()) == std::byte{32});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<14>()) == std::byte{0x10});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<45>()) == std::byte{0x2F});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<46>()) == std::byte{0x00});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<47>()) == std::byte{0x00});
 
-    crucible::test::pass("  test_header_layout_invariants:                  PASSED\n");
+    ::fixy::check::pass(kTest, "  test_header_layout_invariants:                  PASSED\n");
 }
 
 // The federation entry wire format puts the magic at offset 0 of the
@@ -163,12 +171,12 @@ static void test_magic_byte_order() {
     // The same claim again through the bytes of a header, which is how a
     // peer decoder actually sees it.
     const Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-    assert(buf.at(index<0>()) == std::byte{'C'});
-    assert(buf.at(index<1>()) == std::byte{'F'});
-    assert(buf.at(index<2>()) == std::byte{'E'});
-    assert(buf.at(index<3>()) == std::byte{'D'});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<0>()) == std::byte{'C'});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<1>()) == std::byte{'F'});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<2>()) == std::byte{'E'});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(index<3>()) == std::byte{'D'});
 
-    crucible::test::pass("  test_magic_byte_order:                          PASSED\n");
+    ::fixy::check::pass(kTest, "  test_magic_byte_order:                          PASSED\n");
 }
 
 // The federation entry wire format puts the protocol version at offset 4
@@ -186,7 +194,7 @@ static void test_version_byte_order() {
     static_assert(version_bytes.at_offset_4 == 0x02);
     static_assert(version_bytes.at_offset_5 == 0x00);
 
-    crucible::test::pass("  test_version_byte_order:                        PASSED\n");
+    ::fixy::check::pass(kTest, "  test_version_byte_order:                        PASSED\n");
 }
 
 static void test_round_trip_basic() {
@@ -196,24 +204,24 @@ static void test_round_trip_basic() {
     Bytes<kHeader + 16> buf{};
     auto written = fed::serialize_federation_entry(buf.view(), key, payload.view());
     ASSERT_TRUE(written.is_ok());
-    assert(value_of(written) == fed::FEDERATION_HEADER_BYTES + payload.size());
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == fed::FEDERATION_HEADER_BYTES + payload.size());
 
     const auto receiver_card = fed::FEDERATION_UNIVERSE_CARDINALITY;
     auto view = fed::deserialize_untrusted_federation_entry(prefix(buf, value_of(written)), receiver_card);
     ASSERT_TRUE(view.is_ok());
 
-    assert(value_of(view).header.stamp.magic == fed::FEDERATION_MAGIC);
-    assert(value_of(view).header.stamp.protocol_version == fed::FEDERATION_PROTOCOL_V2);
-    assert(value_of(view).header.stamp.universe_cardinality == receiver_card);
-    assert(value_of(view).header.key == key);
-    assert(value_of(view).header.key.kind() == fed::FederationHashKind::blake3_keyed);
-    assert(value_of(view).header.key.width() == fed::FederationKeyWidth::bytes_32);
-    assert(value_of(view).header.payload_size == payload.size());
-    assert(value_of(view).header.reserved == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).header.stamp.magic == fed::FEDERATION_MAGIC);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).header.stamp.protocol_version == fed::FEDERATION_PROTOCOL_V2);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).header.stamp.universe_cardinality == receiver_card);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).header.key == key);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).header.key.kind() == fed::FederationHashKind::blake3_keyed);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).header.key.width() == fed::FederationKeyWidth::bytes_32);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).header.payload_size == payload.size());
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).header.reserved == 0u);
 
-    assert(::fixy::equal(value_of(view).payload, payload.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(value_of(view).payload, payload.view()));
 
-    crucible::test::pass("  test_round_trip_basic:                          PASSED\n");
+    ::fixy::check::pass(kTest, "  test_round_trip_basic:                          PASSED\n");
 }
 
 // An entry with no payload is legal, and means something: it announces
@@ -226,15 +234,15 @@ static void test_round_trip_empty_payload() {
     Bytes<kHeader> buf{};
     auto written = fed::serialize_federation_entry(buf.view(), key, kNoPayload);
     ASSERT_TRUE(written.is_ok());
-    assert(value_of(written) == fed::FEDERATION_HEADER_BYTES);  // header only
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == fed::FEDERATION_HEADER_BYTES);  // header only
 
     auto view = fed::deserialize_untrusted_federation_entry(prefix(buf, value_of(written)),
                                                             fed::FEDERATION_UNIVERSE_CARDINALITY);
     ASSERT_TRUE(view.is_ok());
-    assert(value_of(view).payload.size() == 0);
-    assert(value_of(view).header.payload_size == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).payload.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).header.payload_size == 0u);
 
-    crucible::test::pass("  test_round_trip_empty_payload:                  PASSED\n");
+    ::fixy::check::pass(kTest, "  test_round_trip_empty_payload:                  PASSED\n");
 }
 
 // The sentinel key, each byte of the digest 0xFF, is the empty-slot
@@ -245,9 +253,9 @@ static void test_serialize_rejects_sentinel() {
     Bytes<kHeader> buf{};
     auto written = fed::serialize_federation_entry(buf.view(), fed::FederationKey::sentinel(), kNoPayload);
     ASSERT_TRUE(!written.is_ok());
-    assert(error_of(written) == fed::FederationError::SentinelKey);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(written) == fed::FederationError::SentinelKey);
 
-    crucible::test::pass("  test_serialize_rejects_sentinel:                PASSED\n");
+    ::fixy::check::pass(kTest, "  test_serialize_rejects_sentinel:                PASSED\n");
 }
 
 // A key with a zero digest is what a default-constructed key looks like,
@@ -255,15 +263,15 @@ static void test_serialize_rejects_sentinel() {
 
 static void test_serialize_rejects_zero() {
     const fed::FederationKey zero{};
-    assert(zero.is_zero());
-    assert(!zero.is_sentinel());
+    CRUCIBLE_TEST_ASSERT(kTest, zero.is_zero());
+    CRUCIBLE_TEST_ASSERT(kTest, !zero.is_sentinel());
 
     Bytes<kHeader> buf{};
     auto written = fed::serialize_federation_entry(buf.view(), zero, kNoPayload);
     ASSERT_TRUE(!written.is_ok());
-    assert(error_of(written) == fed::FederationError::ZeroKey);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(written) == fed::FederationError::ZeroKey);
 
-    crucible::test::pass("  test_serialize_rejects_zero:                    PASSED\n");
+    ::fixy::check::pass(kTest, "  test_serialize_rejects_zero:                    PASSED\n");
 }
 
 // Serialize refuses rather than truncating, because a partial entry on
@@ -275,28 +283,28 @@ static void test_serialize_rejects_undersized_buffer() {
     Bytes<kHeader + 8> buf{};  // 48 + 8 < 48 + 16
     auto written = fed::serialize_federation_entry(buf.view(), HeaderSpec{}.key, payload.view());
     ASSERT_TRUE(!written.is_ok());
-    assert(error_of(written) == fed::FederationError::OutputBufferTooSmall);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(written) == fed::FederationError::OutputBufferTooSmall);
 
     // Smaller than the header alone.
     Bytes<16> tiny_buf{};
     auto tiny_written = fed::serialize_federation_entry(tiny_buf.view(), HeaderSpec{}.key, kNoPayload);
     ASSERT_TRUE(!tiny_written.is_ok());
-    assert(error_of(tiny_written) == fed::FederationError::OutputBufferTooSmall);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(tiny_written) == fed::FederationError::OutputBufferTooSmall);
 
-    crucible::test::pass("  test_serialize_rejects_undersized_buffer:       PASSED\n");
+    ::fixy::check::pass(kTest, "  test_serialize_rejects_undersized_buffer:       PASSED\n");
 }
 
 static void test_deserialize_rejects_truncated_header() {
     const Bytes<kHeader - 1> short_buf{};
     auto view = fed::deserialize_untrusted_federation_entry(short_buf.view(), 6);
     ASSERT_TRUE(!view.is_ok());
-    assert(error_of(view) == fed::FederationError::TruncatedHeader);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::TruncatedHeader);
 
     auto empty_view = fed::deserialize_untrusted_federation_entry(kNoPayload, 6);
     ASSERT_TRUE(!empty_view.is_ok());
-    assert(error_of(empty_view) == fed::FederationError::TruncatedHeader);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(empty_view) == fed::FederationError::TruncatedHeader);
 
-    crucible::test::pass("  test_deserialize_rejects_truncated_header:      PASSED\n");
+    ::fixy::check::pass(kTest, "  test_deserialize_rejects_truncated_header:      PASSED\n");
 }
 
 // Everything in this header is valid except the magic, so the decoder
@@ -309,9 +317,9 @@ static void test_deserialize_rejects_bad_magic() {
 
     auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
     ASSERT_TRUE(!view.is_ok());
-    assert(error_of(view) == fed::FederationError::BadMagic);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::BadMagic);
 
-    crucible::test::pass("  test_deserialize_rejects_bad_magic:             PASSED\n");
+    ::fixy::check::pass(kTest, "  test_deserialize_rejects_bad_magic:             PASSED\n");
 }
 
 // The version check is strict equality, not a minimum.  A later version
@@ -325,9 +333,9 @@ static void test_deserialize_rejects_unsupported_version() {
 
     auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
     ASSERT_TRUE(!view.is_ok());
-    assert(error_of(view) == fed::FederationError::UnsupportedVersion);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedVersion);
 
-    crucible::test::pass("  test_deserialize_rejects_unsupported_version:   PASSED\n");
+    ::fixy::check::pass(kTest, "  test_deserialize_rejects_unsupported_version:   PASSED\n");
 }
 
 // An entry of version 1 carried two 64-bit hashes from offset 8, so its
@@ -345,9 +353,9 @@ static void test_deserialize_rejects_version_one() {
 
     auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
     ASSERT_TRUE(!view.is_ok());
-    assert(error_of(view) == fed::FederationError::UnsupportedVersion);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedVersion);
 
-    crucible::test::pass("  test_deserialize_rejects_version_one:           PASSED\n");
+    ::fixy::check::pass(kTest, "  test_deserialize_rejects_version_one:           PASSED\n");
 }
 
 // The kind and the width of the key name its hash.  A reader refuses each
@@ -360,7 +368,7 @@ static void test_deserialize_rejects_kind_and_width() {
         buf.at(index<12>()) = std::byte{2};
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
-        assert(error_of(view) == fed::FederationError::UnsupportedHashKind);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedHashKind);
     }
 
     {
@@ -368,7 +376,7 @@ static void test_deserialize_rejects_kind_and_width() {
         buf.at(index<12>()) = std::byte{0};
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
-        assert(error_of(view) == fed::FederationError::UnsupportedHashKind);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedHashKind);
     }
 
     // A width of 16 bytes is the width that version 1 had in its two words.
@@ -377,7 +385,7 @@ static void test_deserialize_rejects_kind_and_width() {
         buf.at(index<13>()) = std::byte{16};
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
-        assert(error_of(view) == fed::FederationError::UnsupportedKeyWidth);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedKeyWidth);
     }
 
     // The kind comes first in the image, so a header with both faults gives
@@ -388,10 +396,10 @@ static void test_deserialize_rejects_kind_and_width() {
         buf.at(index<13>()) = std::byte{64};
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
-        assert(error_of(view) == fed::FederationError::UnsupportedHashKind);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedHashKind);
     }
 
-    crucible::test::pass("  test_deserialize_rejects_kind_and_width:        PASSED\n");
+    ::fixy::check::pass(kTest, "  test_deserialize_rejects_kind_and_width:        PASSED\n");
 }
 
 // The reserved field is the extension point.  Rejecting a non-zero
@@ -404,7 +412,7 @@ static void test_deserialize_rejects_reserved_nonzero() {
         buf.at(index<46>()) = std::byte{0x01};
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
-        assert(error_of(view) == fed::FederationError::ReservedNonZero);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::ReservedNonZero);
     }
 
     {
@@ -412,10 +420,10 @@ static void test_deserialize_rejects_reserved_nonzero() {
         buf.at(index<47>()) = std::byte{0x80};
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
-        assert(error_of(view) == fed::FederationError::ReservedNonZero);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::ReservedNonZero);
     }
 
-    crucible::test::pass("  test_deserialize_rejects_reserved_nonzero:      PASSED\n");
+    ::fixy::check::pass(kTest, "  test_deserialize_rejects_reserved_nonzero:      PASSED\n");
 }
 
 // Each entry carries the number of effect atoms its sender knew about.
@@ -451,7 +459,7 @@ static void test_universe_cardinality_acceptance() {
         const Bytes<kHeader> buf = encode_with_stamp(7);
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
-        assert(error_of(view) == fed::FederationError::UniverseCardinalityTooHigh);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UniverseCardinalityTooHigh);
     }
 
     // A sender that used no atoms at all is acceptable to anyone.
@@ -461,7 +469,7 @@ static void test_universe_cardinality_acceptance() {
         ASSERT_TRUE(view.is_ok());
     }
 
-    crucible::test::pass("  test_universe_cardinality_acceptance:           PASSED\n");
+    ::fixy::check::pass(kTest, "  test_universe_cardinality_acceptance:           PASSED\n");
 }
 
 // The same rule again as a pure predicate, which a caller can consult
@@ -477,7 +485,7 @@ static void test_accepts_cardinality_predicate() {
     static_assert(fed::federation_accepts_cardinality(64, 64));
     static_assert(!fed::federation_accepts_cardinality(65, 64));
 
-    crucible::test::pass("  test_accepts_cardinality_predicate:             PASSED\n");
+    ::fixy::check::pass(kTest, "  test_accepts_cardinality_predicate:             PASSED\n");
 }
 
 // The receiver repeats the sender's key checks, because the sender is
@@ -490,7 +498,7 @@ static void test_deserialize_rejects_sentinel_and_zero() {
         const Bytes<kHeader> buf = header_bytes(spec);
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
-        assert(error_of(view) == fed::FederationError::SentinelKey);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::SentinelKey);
     }
 
     {
@@ -499,10 +507,10 @@ static void test_deserialize_rejects_sentinel_and_zero() {
         const Bytes<kHeader> buf = header_bytes(spec);
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
-        assert(error_of(view) == fed::FederationError::ZeroKey);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::ZeroKey);
     }
 
-    crucible::test::pass("  test_deserialize_rejects_sentinel_and_zero:     PASSED\n");
+    ::fixy::check::pass(kTest, "  test_deserialize_rejects_sentinel_and_zero:     PASSED\n");
 }
 
 // A declared payload larger than the bytes that follow is refused, not
@@ -517,9 +525,9 @@ static void test_deserialize_rejects_truncated_payload() {
 
     auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
     ASSERT_TRUE(!view.is_ok());
-    assert(error_of(view) == fed::FederationError::TruncatedPayload);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::TruncatedPayload);
 
-    crucible::test::pass("  test_deserialize_rejects_truncated_payload:     PASSED\n");
+    ::fixy::check::pass(kTest, "  test_deserialize_rejects_truncated_payload:     PASSED\n");
 }
 
 // The encoder must have no hidden input.  Two calls with the same key
@@ -536,10 +544,10 @@ static void test_serialize_is_deterministic() {
     auto wb = fed::serialize_federation_entry(buf_b.view(), key, payload.view());
     ASSERT_TRUE(wa.is_ok());
     ASSERT_TRUE(wb.is_ok());
-    assert(value_of(wa) == value_of(wb));
-    assert(::fixy::equal(prefix(buf_a, value_of(wa)), prefix(buf_b, value_of(wb))));
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(wa) == value_of(wb));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(prefix(buf_a, value_of(wa)), prefix(buf_b, value_of(wb))));
 
-    crucible::test::pass("  test_serialize_is_deterministic:                PASSED\n");
+    ::fixy::check::pass(kTest, "  test_serialize_is_deterministic:                PASSED\n");
 }
 
 // A caller that only wants the header must not get a weaker check than
@@ -557,8 +565,8 @@ static void test_header_overload_agreement() {
         auto e = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!h.is_ok());
         ASSERT_TRUE(!e.is_ok());
-        assert(error_of(h) == error_of(e));
-        assert(error_of(h) == fed::FederationError::BadMagic);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(h) == error_of(e));
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(h) == fed::FederationError::BadMagic);
     }
 
     {
@@ -566,8 +574,8 @@ static void test_header_overload_agreement() {
         buf.at(index<13>()) = std::byte{31};
         auto h = fed::deserialize_federation_header(buf.view(), 6);
         auto e = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
-        assert(error_of(h) == error_of(e));
-        assert(error_of(h) == fed::FederationError::UnsupportedKeyWidth);
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(h) == error_of(e));
+        CRUCIBLE_TEST_ASSERT(kTest, error_of(h) == fed::FederationError::UnsupportedKeyWidth);
     }
 
     {
@@ -583,10 +591,10 @@ static void test_header_overload_agreement() {
                                                              fed::FEDERATION_UNIVERSE_CARDINALITY);
         ASSERT_TRUE(h.is_ok());
         ASSERT_TRUE(e.is_ok());
-        assert(value_of(h).key == value_of(e).header.key);
+        CRUCIBLE_TEST_ASSERT(kTest, value_of(h).key == value_of(e).header.key);
     }
 
-    crucible::test::pass("  test_header_overload_agreement:                 PASSED\n");
+    ::fixy::check::pass(kTest, "  test_header_overload_agreement:                 PASSED\n");
 }
 
 // A new error added to the enum without a name lands on the unknown
@@ -610,16 +618,17 @@ static void test_error_name_coverage() {
     };
     for (auto e : all) {
         const ::fixy::TextView nm = fed::federation_error_name(e);
-        assert(nm.size() != 0);
-        assert(nm != "<unknown FederationError>");
+        CRUCIBLE_TEST_ASSERT(kTest, nm.size() != 0);
+        CRUCIBLE_TEST_ASSERT(kTest, nm != "<unknown FederationError>");
     }
 
-    assert(fed::federation_error_name(E::None) == "None");
-    assert(fed::federation_error_name(E::BadMagic) == "BadMagic");
-    assert(fed::federation_error_name(E::UniverseCardinalityTooHigh) == "UniverseCardinalityTooHigh");
-    assert(fed::federation_error_name(E::UnsupportedKeyWidth) == "UnsupportedKeyWidth");
+    CRUCIBLE_TEST_ASSERT(kTest, fed::federation_error_name(E::None) == "None");
+    CRUCIBLE_TEST_ASSERT(kTest, fed::federation_error_name(E::BadMagic) == "BadMagic");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         fed::federation_error_name(E::UniverseCardinalityTooHigh) == "UniverseCardinalityTooHigh");
+    CRUCIBLE_TEST_ASSERT(kTest, fed::federation_error_name(E::UnsupportedKeyWidth) == "UnsupportedKeyWidth");
 
-    crucible::test::pass("  test_error_name_coverage:                       PASSED\n");
+    ::fixy::check::pass(kTest, "  test_error_name_coverage:                       PASSED\n");
 }
 
 // The payload is every byte value once, so a codec that mangled one
@@ -641,9 +650,9 @@ static void test_round_trip_full_byte_range() {
     auto view = fed::deserialize_untrusted_federation_entry(prefix(buf, value_of(written)),
                                                             fed::FEDERATION_UNIVERSE_CARDINALITY);
     ASSERT_TRUE(view.is_ok());
-    assert(::fixy::equal(value_of(view).payload, payload.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(value_of(view).payload, payload.view()));
 
-    crucible::test::pass("  test_round_trip_full_byte_range:                PASSED\n");
+    ::fixy::check::pass(kTest, "  test_round_trip_full_byte_range:                PASSED\n");
 }
 
 // The decoded payload points into the caller's buffer rather than into
@@ -661,10 +670,11 @@ static void test_view_payload_aliases_input() {
     ASSERT_TRUE(view.is_ok());
 
     // The first byte of the payload is the byte of the buffer after the header.
-    assert(::fixy::same_object(value_of(view).payload.get(0).expect("the payload holds eight bytes"),
-                               buf.get(fed::FEDERATION_HEADER_BYTES).expect("the buffer holds the payload")));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, ::fixy::same_object(value_of(view).payload.get(0).expect("the payload holds eight bytes"),
+                                   buf.get(fed::FEDERATION_HEADER_BYTES).expect("the buffer holds the payload")));
 
-    crucible::test::pass("  test_view_payload_aliases_input:                PASSED\n");
+    ::fixy::check::pass(kTest, "  test_view_payload_aliases_input:                PASSED\n");
 }
 
 // The digest sits at offset 14 as its 32 bytes in the order of the
@@ -683,16 +693,18 @@ static void test_digest_on_wire() {
     auto ws = fed::serialize_federation_entry(buf_s.view(), swapped, kNoPayload);
     ASSERT_TRUE(wn.is_ok());
     ASSERT_TRUE(ws.is_ok());
-    assert(value_of(wn) == value_of(ws));  // same byte count
-    assert(!::fixy::equal(prefix(buf_n, value_of(wn)), prefix(buf_s, value_of(ws))));
-    assert(::fixy::equal(prefix(buf_n, kHeader).window(14, 32).expect("the header holds the digest"),
-                         ::fixy::View<std::byte const>{key.digest()}));
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(wn) == value_of(ws));  // same byte count
+    CRUCIBLE_TEST_ASSERT(kTest, !::fixy::equal(prefix(buf_n, value_of(wn)), prefix(buf_s, value_of(ws))));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::fixy::equal(prefix(buf_n, kHeader).window(14, 32).expect("the header holds the digest"),
+                                       ::fixy::View<std::byte const>{key.digest()}));
     // The last two words agree, so the last 16 bytes of the two digests
     // agree.
-    assert(::fixy::equal(prefix(buf_n, kHeader).window(30, 16).expect("the header holds the digest"),
-                         prefix(buf_s, kHeader).window(30, 16).expect("the header holds the digest")));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::fixy::equal(prefix(buf_n, kHeader).window(30, 16).expect("the header holds the digest"),
+                                       prefix(buf_s, kHeader).window(30, 16).expect("the header holds the digest")));
 
-    crucible::test::pass("  test_digest_on_wire:                            PASSED\n");
+    ::fixy::check::pass(kTest, "  test_digest_on_wire:                            PASSED\n");
 }
 
 // The receiver's cardinality is a parameter, not a compile-time
@@ -707,7 +719,7 @@ static void test_receiver_cardinality_is_explicit() {
 
     auto rej = fed::deserialize_untrusted_federation_entry(buf.view(), 5);
     ASSERT_TRUE(!rej.is_ok());
-    assert(error_of(rej) == fed::FederationError::UniverseCardinalityTooHigh);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(rej) == fed::FederationError::UniverseCardinalityTooHigh);
 
     auto eq = fed::deserialize_untrusted_federation_entry(buf.view(), 10);
     ASSERT_TRUE(eq.is_ok());
@@ -715,7 +727,7 @@ static void test_receiver_cardinality_is_explicit() {
     auto big = fed::deserialize_untrusted_federation_entry(buf.view(), 100);
     ASSERT_TRUE(big.is_ok());
 
-    crucible::test::pass("  test_receiver_cardinality_is_explicit:          PASSED\n");
+    ::fixy::check::pass(kTest, "  test_receiver_cardinality_is_explicit:          PASSED\n");
 }
 
 // The returned error is the only failure channel the codec has, so
@@ -731,7 +743,7 @@ static void test_codec_is_noexcept() {
     static_assert(noexcept(fed::federation_error_name(fed::FederationError::None)));
     static_assert(noexcept(fed::federation_key_of_bytes(test_hash_key(), kNoPayload)));
 
-    crucible::test::pass("  test_codec_is_noexcept:                         PASSED\n");
+    ::fixy::check::pass(kTest, "  test_codec_is_noexcept:                         PASSED\n");
 }
 
 // The cardinality field is 16 bits, so the largest value it can hold is
@@ -750,13 +762,13 @@ static void test_cardinality_boundary_uint16_max() {
 
     auto accept = fed::deserialize_untrusted_federation_entry(buf.view(), MAX_CARD);
     ASSERT_TRUE(accept.is_ok());
-    assert(value_of(accept).header.stamp.universe_cardinality == MAX_CARD);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(accept).header.stamp.universe_cardinality == MAX_CARD);
 
     auto reject_one_below = fed::deserialize_untrusted_federation_entry(buf.view(), MAX_CARD - 1u);
     ASSERT_TRUE(!reject_one_below.is_ok());
-    assert(error_of(reject_one_below) == fed::FederationError::UniverseCardinalityTooHigh);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(reject_one_below) == fed::FederationError::UniverseCardinalityTooHigh);
 
-    crucible::test::pass("  test_cardinality_boundary_uint16_max:           PASSED\n");
+    ::fixy::check::pass(kTest, "  test_cardinality_boundary_uint16_max:           PASSED\n");
 }
 
 // An exactly-sized buffer must be accepted.  An off-by-one in the size
@@ -770,20 +782,20 @@ static void test_buffer_exactly_fits() {
     Bytes<kHeader + 16> buf{};  // 48 + 16, exactly
     auto written = fed::serialize_federation_entry(buf.view(), key, payload.view());
     ASSERT_TRUE(written.is_ok());
-    assert(value_of(written) == kHeader + 16);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == kHeader + 16);
 
     Bytes<kHeader + 15> short_buf{};
     auto rejected = fed::serialize_federation_entry(short_buf.view(), key, payload.view());
     ASSERT_TRUE(!rejected.is_ok());
-    assert(error_of(rejected) == fed::FederationError::OutputBufferTooSmall);
+    CRUCIBLE_TEST_ASSERT(kTest, error_of(rejected) == fed::FederationError::OutputBufferTooSmall);
 
     // The same boundary with no payload at all.
     Bytes<kHeader> tight_buf{};
     auto tight = fed::serialize_federation_entry(tight_buf.view(), key, kNoPayload);
     ASSERT_TRUE(tight.is_ok());
-    assert(value_of(tight) == kHeader);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(tight) == kHeader);
 
-    crucible::test::pass("  test_buffer_exactly_fits:                       PASSED\n");
+    ::fixy::check::pass(kTest, "  test_buffer_exactly_fits:                       PASSED\n");
 }
 
 // A transport that batches several entries into one buffer hands the
@@ -797,7 +809,7 @@ static void test_extra_bytes_at_end() {
     Bytes<kHeader + 16> buf{};
     auto written = fed::serialize_federation_entry(buf.view(), HeaderSpec{}.key, payload.view());
     ASSERT_TRUE(written.is_ok());
-    assert(value_of(written) == kHeader + 4);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == kHeader + 4);
 
     // A value that appears nowhere in the payload, so its absence from
     // the decoded payload is meaningful.
@@ -808,10 +820,10 @@ static void test_extra_bytes_at_end() {
     // Decode over the whole buffer, not over the bytes just written.
     auto view = fed::deserialize_untrusted_federation_entry(buf.view(), fed::FEDERATION_UNIVERSE_CARDINALITY);
     ASSERT_TRUE(view.is_ok());
-    assert(value_of(view).header.payload_size == 4u);
-    assert(::fixy::equal(value_of(view).payload, payload.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).header.payload_size == 4u);
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(value_of(view).payload, payload.view()));
 
-    crucible::test::pass("  test_extra_bytes_at_end:                        PASSED\n");
+    ::fixy::check::pass(kTest, "  test_extra_bytes_at_end:                        PASSED\n");
 }
 
 // Only the full sentinel and the full zero digest are refused.  A digest
@@ -823,8 +835,8 @@ static void test_partial_sentinel_accepted() {
 
     {
         const fed::FederationKey key = key_of(all_ones, all_ones, all_ones, 0x7FFFFFFFFFFFFFFFULL);
-        assert(!key.is_sentinel());
-        assert(!key.is_zero());
+        CRUCIBLE_TEST_ASSERT(kTest, !key.is_sentinel());
+        CRUCIBLE_TEST_ASSERT(kTest, !key.is_zero());
 
         Bytes<kHeader> buf{};
         auto written = fed::serialize_federation_entry(buf.view(), key, kNoPayload);
@@ -832,20 +844,20 @@ static void test_partial_sentinel_accepted() {
 
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), fed::FEDERATION_UNIVERSE_CARDINALITY);
         ASSERT_TRUE(view.is_ok());
-        assert(value_of(view).header.key == key);
+        CRUCIBLE_TEST_ASSERT(kTest, value_of(view).header.key == key);
     }
 
     {
         const fed::FederationKey key = key_of(0, 0, 0, 1);
-        assert(!key.is_sentinel());
-        assert(!key.is_zero());
+        CRUCIBLE_TEST_ASSERT(kTest, !key.is_sentinel());
+        CRUCIBLE_TEST_ASSERT(kTest, !key.is_zero());
 
         Bytes<kHeader> buf{};
         auto written = fed::serialize_federation_entry(buf.view(), key, kNoPayload);
         ASSERT_TRUE(written.is_ok());
     }
 
-    crucible::test::pass("  test_partial_sentinel_accepted:                 PASSED\n");
+    ::fixy::check::pass(kTest, "  test_partial_sentinel_accepted:                 PASSED\n");
 }
 
 // The federation key of a content is the keyed hash of BLAKE3 under the
@@ -863,11 +875,11 @@ static void test_key_is_keyed_blake3() {
     // The vector of 64 bytes: ba8ced36f327700d213f120b1a207a3b8c04330528586f414d09f2f7d9ccb7e6.
     const fed::FederationKey expected =
         key_of(0x0d7027f336ed8cbaULL, 0x3b7a201a0b123f21ULL, 0x416f58280533048cULL, 0xe6b7ccd9f7f2094dULL);
-    assert(key == expected);
-    assert(key.kind() == fed::FederationHashKind::blake3_keyed);
-    assert(key.width() == fed::FederationKeyWidth::bytes_32);
+    CRUCIBLE_TEST_ASSERT(kTest, key == expected);
+    CRUCIBLE_TEST_ASSERT(kTest, key.kind() == fed::FederationHashKind::blake3_keyed);
+    CRUCIBLE_TEST_ASSERT(kTest, key.width() == fed::FederationKeyWidth::bytes_32);
 
-    crucible::test::pass("  test_key_is_keyed_blake3:                       PASSED\n");
+    ::fixy::check::pass(kTest, "  test_key_is_keyed_blake3:                       PASSED\n");
 }
 
 // Two values with one 64-bit id get two federation keys.  The 64-bit hash
@@ -889,15 +901,15 @@ static void test_one_id_two_keys() {
     const TwoWords second{.low = 2 ^ fold_seed ^ start_seed, .high = 1 ^ start_seed ^ fold_seed};
 
     // The positive control: the two values differ and share one 64-bit id.
-    assert(!::fixy::equal(first, second));
-    assert(::fixy::hash(first).raw() == ::fixy::hash(second).raw());
+    CRUCIBLE_TEST_ASSERT(kTest, !::fixy::equal(first, second));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::hash(first).raw() == ::fixy::hash(second).raw());
 
     const fed::FederationKey first_key = fed::federation_key_of(test_hash_key(), first);
     const fed::FederationKey second_key = fed::federation_key_of(test_hash_key(), second);
-    assert(!(first_key == second_key));
-    assert(!first_key.is_zero() && !second_key.is_zero());
+    CRUCIBLE_TEST_ASSERT(kTest, !(first_key == second_key));
+    CRUCIBLE_TEST_ASSERT(kTest, !first_key.is_zero() && !second_key.is_zero());
 
-    crucible::test::pass("  test_one_id_two_keys:                           PASSED\n");
+    ::fixy::check::pass(kTest, "  test_one_id_two_keys:                           PASSED\n");
 }
 
 // Two keys of two federations differ for one content, and a key changes
@@ -910,12 +922,12 @@ static void test_key_and_content_take_part() {
     const fed::FederationHashKey other_hash_key{::fixy::View<std::byte const, 32>{other_key_bytes.view()}};
 
     const fed::FederationKey key = fed::federation_key_of_bytes(test_hash_key(), content.view());
-    assert(!(key == fed::federation_key_of_bytes(other_hash_key, content.view())));
+    CRUCIBLE_TEST_ASSERT(kTest, !(key == fed::federation_key_of_bytes(other_hash_key, content.view())));
     const auto changed = bytes_of(1, 2, 3, 4, 5, 6, 7, 9);
-    assert(!(key == fed::federation_key_of_bytes(test_hash_key(), changed.view())));
-    assert(key == fed::federation_key_of_bytes(test_hash_key(), content.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, !(key == fed::federation_key_of_bytes(test_hash_key(), changed.view())));
+    CRUCIBLE_TEST_ASSERT(kTest, key == fed::federation_key_of_bytes(test_hash_key(), content.view()));
 
-    crucible::test::pass("  test_key_and_content_take_part:                 PASSED\n");
+    ::fixy::check::pass(kTest, "  test_key_and_content_take_part:                 PASSED\n");
 }
 
 // The query side folds at compile time.
@@ -943,12 +955,12 @@ static_assert(!fed::federation_key_of(test_hash_key(), TwoWords{.low = 1, .high 
 static void test_constexpr_witnesses() {
     [[maybe_unused]] auto card_check = fed::federation_accepts_cardinality(6, 6);
     [[maybe_unused]] auto name_check = fed::federation_error_name(fed::FederationError::None);
-    assert(card_check);
-    assert(name_check == "None");
+    CRUCIBLE_TEST_ASSERT(kTest, card_check);
+    CRUCIBLE_TEST_ASSERT(kTest, name_check == "None");
     constexpr fed::FederationKey constant_key = fed::federation_key_of(test_hash_key(), TwoWords{.low = 1, .high = 2});
-    assert(constant_key == fed::federation_key_of(test_hash_key(), TwoWords{.low = 1, .high = 2}));
+    CRUCIBLE_TEST_ASSERT(kTest, constant_key == fed::federation_key_of(test_hash_key(), TwoWords{.low = 1, .high = 2}));
 
-    crucible::test::pass("  test_constexpr_witnesses:                       PASSED\n");
+    ::fixy::check::pass(kTest, "  test_constexpr_witnesses:                       PASSED\n");
 }
 
 // A federation stream and a graph snapshot are told apart by their
@@ -967,7 +979,7 @@ static void test_magic_collision_with_cdag() {
     static_assert(cdag_first_byte == 'G');
     static_assert(fed_first_byte != cdag_first_byte);
 
-    crucible::test::pass("  test_magic_collision_with_cdag:                 PASSED\n");
+    ::fixy::check::pass(kTest, "  test_magic_collision_with_cdag:                 PASSED\n");
 }
 
 static void test_field_width_pins() {
@@ -982,7 +994,7 @@ static void test_field_width_pins() {
     // padding.
     static_assert(4 + 2 + 2 + 4 + 34 + 2 == 48);
 
-    crucible::test::pass("  test_field_width_pins:                          PASSED\n");
+    ::fixy::check::pass(kTest, "  test_field_width_pins:                          PASSED\n");
 }
 
 // The payload alternates two values, so a copy shifted by one byte
@@ -1003,13 +1015,13 @@ static void test_heap_buffer_round_trip() {
         ::fixy::mint_heap_array(alloc, fed::FEDERATION_HEADER_BYTES + payload.size(), std::byte{0});
     auto written = fed::serialize_federation_entry(buf.view(), key, payload.view());
     ASSERT_TRUE(written.is_ok());
-    assert(value_of(written) == buf.size());
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == buf.size());
 
     auto view = fed::deserialize_untrusted_federation_entry(buf.view(), fed::FEDERATION_UNIVERSE_CARDINALITY);
     ASSERT_TRUE(view.is_ok());
-    assert(::fixy::equal(value_of(view).payload, payload.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(value_of(view).payload, payload.view()));
 
-    crucible::test::pass("  test_heap_buffer_round_trip:                    PASSED\n");
+    ::fixy::check::pass(kTest, "  test_heap_buffer_round_trip:                    PASSED\n");
 }
 
 // The permissioned decode takes a peer token from the federation door of
@@ -1058,10 +1070,10 @@ static void test_permissioned_decode_tags_the_view() {
     static_assert(std::is_same_v<typename TaggedView::tag_type, fp::tag::FederatedPeer<FederationProtocolTestOrg>>);
 
     const fed::FederationEntryView view = value_of(tagged).value();
-    assert(view.header.key == key);
-    assert(::fixy::equal(view.payload, body.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, view.header.key == key);
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(view.payload, body.view()));
 
-    crucible::test::pass("  permissioned_decode_tags_the_view:               PASSED\n");
+    ::fixy::check::pass(kTest, "  permissioned_decode_tags_the_view:               PASSED\n");
 }
 
 int main() {
@@ -1104,6 +1116,6 @@ int main() {
     test_magic_collision_with_cdag();
     test_field_width_pins();
     test_heap_buffer_round_trip();
-    crucible::test::pass("test_federation_protocol: 38 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_federation_protocol: 38 groups, all passed\n");
     return 0;
 }

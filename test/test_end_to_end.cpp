@@ -11,11 +11,21 @@
 
 #include <crucible/CrucibleContext.h>
 #include <crucible/BackgroundThread.h>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "test_harness.h"
 #include <bit>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -49,12 +59,15 @@ void feed_iteration(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
         const auto n_metas = static_cast<uint16_t>(e.num_inputs + e.num_outputs);
         ::fixy::FixedArray<TensorMeta, 2> metas{};
         uint16_t idx = 0;
-        if (i > 0) crucible::test::element_at(metas, idx++) = make_meta(fake_ptr(iter, i - 1));
-        crucible::test::element_at(metas, idx++) = make_meta(fake_ptr(iter, i));
+        if (i > 0)
+            *metas.get(idx++).expect("a test reads an element at or past the count of its array") =
+                make_meta(fake_ptr(iter, i - 1));
+        *metas.get(idx++).expect("a test reads an element at or past the count of its array") =
+            make_meta(fake_ptr(iter, i));
 
         auto ms = meta_log->try_append(crucible::test::records_of(metas, n_metas));
-        assert(ms.is_valid() && "MetaLog overflow");
-        assert(ring->try_append(e, ms) && "TraceRing full");
+        CRUCIBLE_TEST_ASSERT(kTest, ms.is_valid() && "MetaLog overflow");
+        CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(e, ms) && "TraceRing full");
     }
 }
 
@@ -69,12 +82,15 @@ void feed_trigger(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
         const auto n_metas = static_cast<uint16_t>(e.num_inputs + e.num_outputs);
         ::fixy::FixedArray<TensorMeta, 2> metas{};
         uint16_t idx = 0;
-        if (i > 0) crucible::test::element_at(metas, idx++) = make_meta(fake_ptr(iter, i - 1));
-        crucible::test::element_at(metas, idx++) = make_meta(fake_ptr(iter, i));
+        if (i > 0)
+            *metas.get(idx++).expect("a test reads an element at or past the count of its array") =
+                make_meta(fake_ptr(iter, i - 1));
+        *metas.get(idx++).expect("a test reads an element at or past the count of its array") =
+            make_meta(fake_ptr(iter, i));
 
         auto ms = meta_log->try_append(crucible::test::records_of(metas, n_metas));
-        assert(ms.is_valid());
-        assert(ring->try_append(e, ms));
+        CRUCIBLE_TEST_ASSERT(kTest, ms.is_valid());
+        CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(e, ms));
     }
 }
 
@@ -82,7 +98,7 @@ void wait_processed(BackgroundThread& bt, TraceRing& ring) {
     const uint64_t target = ring.total_produced();
     uint64_t spins = 0;
     while (bt.total_processed.load_acquire() < target) {
-        assert(++spins < 100000000 && "bg thread did not finish processing");
+        CRUCIBLE_TEST_ASSERT(kTest, ++spins < 100000000 && "bg thread did not finish processing");
         CRUCIBLE_SPIN_PAUSE;
     }
 }
@@ -97,6 +113,6 @@ int main() {
     test_pipeline_data_flow();
     test_pipeline_pool_bounds();
     test_pipeline_multi_iteration();
-    crucible::test::pass("test_end_to_end: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_end_to_end: all tests passed\n");
     return 0;
 }

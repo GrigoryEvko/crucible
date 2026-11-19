@@ -2,11 +2,21 @@
 // that a walk collects from it, and its replay.
 
 #include <crucible/MerkleDag.h>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <bit>
 #include <cstdint>
 #include <vector>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::ContentHash;
 using crucible::MerkleHash;
@@ -32,9 +42,9 @@ using crucible::SchemaHash;
     body_r2.next = crucible::make_link(body_term);
 
     ContentHash body_ch = crucible::compute_body_content_hash(body_r1);
-    assert(static_cast<bool>(body_ch));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(body_ch));
 
-    assert(crucible::compute_body_content_hash(body_r1) == body_ch);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::compute_body_content_hash(body_r1) == body_ch);
 
     ::foundation::core::FixedArray<crucible::FeedbackEdge, 1> fb_edges{};
     fb_edges.at(::fixy::index<0>()).output_idx = 0;
@@ -43,14 +53,14 @@ using crucible::SchemaHash;
     crucible::LoopNode& loop =
         *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 4);
 
-    assert(loop.kind == crucible::TraceNodeKind::LOOP);
-    assert(crucible::is_link_to(loop.body.option(), body_r1));
-    assert(loop.body_content_hash == body_ch);
-    assert(loop.num_feedback() == 1);
-    assert(loop.feedback_edges.get(0).expect("the loop holds one feedback edge")->output_idx == 0);
-    assert(loop.term_kind == crucible::LoopTermKind::REPEAT);
-    assert(loop.repeat_count == 4);
-    assert(std::bit_cast<uint32_t>(loop.epsilon) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, loop.kind == crucible::TraceNodeKind::LOOP);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(loop.body.option(), body_r1));
+    CRUCIBLE_TEST_ASSERT(kTest, loop.body_content_hash == body_ch);
+    CRUCIBLE_TEST_ASSERT(kTest, loop.num_feedback() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, loop.feedback_edges.get(0).expect("the loop holds one feedback edge")->output_idx == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, loop.term_kind == crucible::LoopTermKind::REPEAT);
+    CRUCIBLE_TEST_ASSERT(kTest, loop.repeat_count == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uint32_t>(loop.epsilon) == 0);
     static_assert(sizeof(crucible::LoopNode) == 72);
     static_assert(sizeof(crucible::FeedbackEdge) == 4);
 
@@ -64,20 +74,20 @@ using crucible::SchemaHash;
     // Merkle hash covers loop body, feedback, termination, and continuation
     crucible::recompute_merkle(loop);
     MerkleHash loop_merkle = loop.merkle_hash;
-    assert(static_cast<bool>(loop_merkle));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(loop_merkle));
 
     crucible::LoopNode& loop2 =
         *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 8);
     loop2.next = crucible::make_link(final_region);
     crucible::recompute_merkle(loop2);
-    assert(loop2.merkle_hash != loop_merkle);
+    CRUCIBLE_TEST_ASSERT(kTest, loop2.merkle_hash != loop_merkle);
 
     crucible::LoopNode& loop3 = *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(),
                                                      crucible::LoopTermKind::UNTIL, 4, 0.001f);
     loop3.next = crucible::make_link(final_region);
     crucible::recompute_merkle(loop3);
-    assert(loop3.merkle_hash != loop_merkle);
-    assert(loop3.merkle_hash != loop2.merkle_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, loop3.merkle_hash != loop_merkle);
+    CRUCIBLE_TEST_ASSERT(kTest, loop3.merkle_hash != loop2.merkle_hash);
 
     ::foundation::core::FixedArray<crucible::FeedbackEdge, 2> fb_edges2{};
     fb_edges2.at(::fixy::index<0>()) = {.output_idx = 0, .input_idx = 0};
@@ -86,18 +96,18 @@ using crucible::SchemaHash;
         *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges2.view(), crucible::LoopTermKind::REPEAT, 4);
     loop4.next = crucible::make_link(final_region);
     crucible::recompute_merkle(loop4);
-    assert(loop4.merkle_hash != loop_merkle);
+    CRUCIBLE_TEST_ASSERT(kTest, loop4.merkle_hash != loop_merkle);
 
-    assert(crucible::feedback_signature({}) == 0);
-    assert(crucible::feedback_signature(loop.feedback_edges) != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::feedback_signature({}) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::feedback_signature(loop.feedback_edges) != 0);
 
     ::foundation::core::FixedArray<crucible::RegionNode*, 16> collected{};
     uint32_t n_collected = crucible::collect_regions(loop, collected.view());
     // Two body regions, counted once, plus the region after the loop.
-    assert(n_collected == 3);
-    assert(collected.at(::fixy::index<0>()) == &body_r1);
-    assert(collected.at(::fixy::index<1>()) == &body_r2);
-    assert(collected.at(::fixy::index<2>()) == &final_region);
+    CRUCIBLE_TEST_ASSERT(kTest, n_collected == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, collected.at(::fixy::index<0>()) == &body_r1);
+    CRUCIBLE_TEST_ASSERT(kTest, collected.at(::fixy::index<1>()) == &body_r2);
+    CRUCIBLE_TEST_ASSERT(kTest, collected.at(::fixy::index<2>()) == &final_region);
 
     // The replays of this test share one guard callback.  The replays that
     // count regions share one closure type of counter_of, so the unit
@@ -112,23 +122,23 @@ using crucible::SchemaHash;
         replay_log.push_back(r.content_hash);
         exec_count++;
     });
-    assert(replay_ok);
+    CRUCIBLE_TEST_ASSERT(kTest, replay_ok);
     // 4 iterations × 2 body regions + 1 continuation region.
-    assert(exec_count == 9);
-    assert(replay_log.size() == 9);
+    CRUCIBLE_TEST_ASSERT(kTest, exec_count == 9);
+    CRUCIBLE_TEST_ASSERT(kTest, replay_log.size() == 9);
     for (uint32_t i = 0; i < 8; i += 2) {
-        assert(replay_log[i] == body_r1.content_hash);
-        assert(replay_log[i + 1] == body_r2.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, replay_log[i] == body_r1.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, replay_log[i + 1] == body_r2.content_hash);
     }
-    assert(replay_log[8] == final_region.content_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, replay_log[8] == final_region.content_hash);
 
     crucible::LoopNode& loop_zero =
         *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 0);
     loop_zero.next = crucible::make_link(final_region);
     uint32_t zero_count = 0;
     bool zero_ok = crucible::replay(loop_zero, never_diverges, counter_of(zero_count));
-    assert(zero_ok);
-    assert(zero_count == 1);  // the continuation region alone
+    CRUCIBLE_TEST_ASSERT(kTest, zero_ok);
+    CRUCIBLE_TEST_ASSERT(kTest, zero_count == 1);  // the continuation region alone
 
     ::foundation::core::FixedArray<crucible::TraceEntry, 1> alt_body_ops{};
     alt_body_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0x9999};
@@ -136,7 +146,7 @@ using crucible::SchemaHash;
     crucible::TraceNode& alt_body_term = *crucible::make_terminal(test.alloc, arena);
     alt_body.next = crucible::make_link(alt_body_term);
     ContentHash alt_ch = crucible::compute_body_content_hash(alt_body);
-    assert(alt_ch != body_ch);
+    CRUCIBLE_TEST_ASSERT(kTest, alt_ch != body_ch);
 
     // ── LoopNode: epsilon is identity, repeat_count is execution ──────
     //
@@ -169,30 +179,30 @@ using crucible::SchemaHash;
         crucible::LoopNode& tight = *build_until_loop(0.001f);
 
         uint32_t loose_regions = 0;
-        assert(crucible::replay(loose, never_diverges, counter_of(loose_regions)));
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::replay(loose, never_diverges, counter_of(loose_regions)));
         uint32_t tight_regions = 0;
-        assert(crucible::replay(tight, never_diverges, counter_of(tight_regions)));
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::replay(tight, never_diverges, counter_of(tight_regions)));
 
         // 500x the threshold and the same number of iterations.  A replay
         // that consulted epsilon could not produce this.
-        assert(loose_regions == 3 && "an UNTIL loop must replay the iteration count it observed");
-        assert(tight_regions == 3);
-        assert(loose_regions == tight_regions
-               && "replay read epsilon: the same recorded trace now executes a "
-                  "number of times that depends on the threshold, so two replays of "
-                  "one trace can disagree");
+        CRUCIBLE_TEST_ASSERT(kTest, loose_regions == 3 && "an UNTIL loop must replay the iteration count it observed");
+        CRUCIBLE_TEST_ASSERT(kTest, tight_regions == 3);
+        CRUCIBLE_TEST_ASSERT(kTest, loose_regions == tight_regions
+                                        && "replay read epsilon: the same recorded trace now executes a "
+                                           "number of times that depends on the threshold, so two replays of "
+                                           "one trace can disagree");
 
         // The other direction.  Identical ops, identical count, different
         // numerics — different computation, so different cache key.
-        assert(loose.merkle_hash != tight.merkle_hash
-               && "epsilon left the termination hash: two loops with different "
-                  "convergence thresholds now share a merkle hash, so one's "
-                  "compiled kernel can serve the other");
+        CRUCIBLE_TEST_ASSERT(kTest, loose.merkle_hash != tight.merkle_hash
+                                        && "epsilon left the termination hash: two loops with different "
+                                           "convergence thresholds now share a merkle hash, so one's "
+                                           "compiled kernel can serve the other");
 
         ::fixy::report(::fixy::Sink::Out,
                        "  loop replay walks repeat_count and ignores epsilon; epsilon stays in the hash\n");
     }
 
-    crucible::test::pass("test_merkle_loop: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_merkle_loop: all tests passed\n");
     return 0;
 }

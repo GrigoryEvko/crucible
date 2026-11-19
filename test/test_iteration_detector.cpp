@@ -8,10 +8,20 @@
 #include <crucible/IterationDetectorState.h>
 #include <fixy/ScopedView.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdint>
 #include <cstdio>
 #include <vector>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::IterationDetector;
 using crucible::SchemaHash;
@@ -94,10 +104,10 @@ uint32_t window_count(const std::vector<Op>& body, uint32_t phase) {
 // all one length, that length is the true period, and consecutive reports are
 // exactly one period apart.
 void assert_settles_on(const std::vector<Boundary>& boundaries, uint32_t period, size_t tail) {
-    assert(boundaries.size() > tail);
+    CRUCIBLE_TEST_ASSERT(kTest, boundaries.size() > tail);
     for (size_t i = boundaries.size() - tail; i < boundaries.size(); ++i) {
-        assert(boundaries[i].length == period);
-        assert(boundaries[i].op_index - boundaries[i - 1].op_index == period);
+        CRUCIBLE_TEST_ASSERT(kTest, boundaries[i].length == period);
+        CRUCIBLE_TEST_ASSERT(kTest, boundaries[i].op_index - boundaries[i - 1].op_index == period);
     }
 }
 
@@ -148,37 +158,37 @@ std::vector<Op> inference_mlp_body() {
 
 void test_signature_build_requires_K_ops() {
     IterationDetector d;
-    assert(!d.check(kAlloc, H(1)));
-    assert(!d.check(kAlloc, H(2)));
-    assert(!d.check(kAlloc, H(3)));
-    assert(!d.check(kAlloc, H(4)));
-    assert(d.signature_len.get() == 4);
-    assert(!d.check(kAlloc, H(5)));
-    assert(d.signature_len.get() == 5);
-    crucible::test::pass("  test_signature_build:            PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, H(1)));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, H(2)));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, H(3)));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, H(4)));
+    CRUCIBLE_TEST_ASSERT(kTest, d.signature_len.get() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, H(5)));
+    CRUCIBLE_TEST_ASSERT(kTest, d.signature_len.get() == 5);
+    ::fixy::check::pass(kTest, "  test_signature_build:            PASSED\n");
 }
 
 void test_boundary_needs_two_equal_iterations() {
     IterationDetector d;
     const SchemaHash sig[5] = {H(100), H(200), H(300), H(400), H(500)};
     for (auto h : sig)
-        assert(!d.check(kAlloc, h));
+        CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, h));
     // One repeat is one iteration and nothing to compare it with.
     for (auto h : sig)
-        assert(!d.check(kAlloc, h));
-    assert(!d.confirmed);
-    assert(d.boundaries_detected.get() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, h));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.confirmed);
+    CRUCIBLE_TEST_ASSERT(kTest, d.boundaries_detected.get() == 0);
     // The third copy completes the square. The boundary fires on its last op.
-    assert(!d.check(kAlloc, sig[0]));
-    assert(!d.check(kAlloc, sig[1]));
-    assert(!d.check(kAlloc, sig[2]));
-    assert(!d.check(kAlloc, sig[3]));
-    assert(d.check(kAlloc, sig[4]));
-    assert(d.confirmed);
-    assert(d.last_completed_len == 5);
-    assert(d.boundaries_detected.get() == 1);
-    assert(d.ops_since_boundary.get() == K);
-    crucible::test::pass("  test_boundary_two_iterations:    PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, sig[0]));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, sig[1]));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, sig[2]));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, sig[3]));
+    CRUCIBLE_TEST_ASSERT(kTest, d.check(kAlloc, sig[4]));
+    CRUCIBLE_TEST_ASSERT(kTest, d.confirmed);
+    CRUCIBLE_TEST_ASSERT(kTest, d.last_completed_len == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, d.boundaries_detected.get() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, d.ops_since_boundary.get() == K);
+    ::fixy::check::pass(kTest, "  test_boundary_two_iterations:    PASSED\n");
 }
 
 void test_unequal_iterations_do_not_fire() {
@@ -187,34 +197,34 @@ void test_unequal_iterations_do_not_fire() {
     IterationDetector d;
     const SchemaHash sig[5] = {H(1), H(2), H(3), H(4), H(5)};
     for (auto h : sig)
-        assert(!d.check(kAlloc, h));
+        CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, h));
     for (auto h : sig)
-        assert(!d.check(kAlloc, h));
+        CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, h));
     for (uint64_t i = 0; i < 10; i++)
-        assert(!d.check(kAlloc, H(1000 + i)));
+        CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, H(1000 + i)));
     for (auto h : sig)
-        assert(!d.check(kAlloc, h));
-    assert(d.boundaries_detected.get() == 0);
-    assert(!d.confirmed);
-    crucible::test::pass("  test_unequal_iterations:         PASSED\n");
+        CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, h));
+    CRUCIBLE_TEST_ASSERT(kTest, d.boundaries_detected.get() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, !d.confirmed);
+    ::fixy::check::pass(kTest, "  test_unequal_iterations:         PASSED\n");
 }
 
 void test_broken_period_is_refuted() {
     IterationDetector d;
     std::vector<Op> body = {{1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}};
     auto boundaries = feed(d, body, 4);
-    assert(!boundaries.empty());
-    assert(d.confirmed);
+    CRUCIBLE_TEST_ASSERT(kTest, !boundaries.empty());
+    CRUCIBLE_TEST_ASSERT(kTest, d.confirmed);
 
     // The next iteration breaks after three ops.
-    assert(!d.check(kAlloc, H(1)));
-    assert(!d.check(kAlloc, H(2)));
-    assert(!d.check(kAlloc, H(3)));
-    assert(!d.check(kAlloc, H(999)));
-    assert(!d.check(kAlloc, H(1)));
-    assert(!d.confirmed);
-    assert(d.refuted_count_ == 1);
-    crucible::test::pass("  test_broken_period:              PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, H(1)));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, H(2)));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, H(3)));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, H(999)));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, H(1)));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.confirmed);
+    CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 1);
+    ::fixy::check::pass(kTest, "  test_broken_period:              PASSED\n");
 }
 
 void test_sub_period_signature_mlp_aten_level() {
@@ -233,15 +243,15 @@ void test_sub_period_signature_mlp_aten_level() {
 
     IterationDetector d;
     auto boundaries = feed(d, body, 40);
-    assert(!boundaries.empty());
+    CRUCIBLE_TEST_ASSERT(kTest, !boundaries.empty());
     for (const auto& boundary : boundaries)
-        assert(boundary.length == 11);
+        CRUCIBLE_TEST_ASSERT(kTest, boundary.length == 11);
     // The square is complete after two iterations. The first boundary then
     // waits for the earliest window that occurs once per iteration, t addmm
     // relu t addmm occurs three times, and 2 3 1 2 1 at offset 7 once.
-    assert(boundaries.front().op_index == 2 * 11 + 7 + K - 1);
+    CRUCIBLE_TEST_ASSERT(kTest, boundaries.front().op_index == 2 * 11 + 7 + K - 1);
     assert_settles_on(boundaries, 11, boundaries.size() - 1);
-    crucible::test::pass("  test_sub_period_aten_level:      PASSED\n");
+    ::fixy::check::pass(kTest, "  test_sub_period_aten_level:      PASSED\n");
 }
 
 void test_repeated_layers_recorded_mlp() {
@@ -249,7 +259,7 @@ void test_repeated_layers_recorded_mlp() {
     // detector may accept 12 first. Layer 3 breaks that period, the period is
     // refuted, and the detector settles on the 46-op iteration.
     const auto body = inference_mlp_body();
-    assert(body.size() == 46);
+    CRUCIBLE_TEST_ASSERT(kTest, body.size() == 46);
 
     IterationDetector d;
     auto boundaries = feed(d, body, 30);
@@ -257,17 +267,17 @@ void test_repeated_layers_recorded_mlp() {
     size_t wrong = 0;
     for (const auto& boundary : boundaries)
         wrong += boundary.length != 46 ? 1u : 0u;
-    assert(wrong <= 2);
+    CRUCIBLE_TEST_ASSERT(kTest, wrong <= 2);
 
     // The iteration begins at a window that occurs once per period, so the
     // foreground cannot align at a hidden layer. Every such window touches
     // the head layer, and the earliest one starts four ops before it.
-    assert(d.phase_is_unique);
+    CRUCIBLE_TEST_ASSERT(kTest, d.phase_is_unique);
     const uint64_t iteration_start = boundaries.back().op_index + 1 - K;
     const auto phase = static_cast<uint32_t>(iteration_start % 46);
-    assert(window_count(body, phase) == 1);
-    assert(phase == 32);
-    crucible::test::pass("  test_repeated_layers_mlp:        PASSED ({} early boundaries)\n", wrong);
+    CRUCIBLE_TEST_ASSERT(kTest, window_count(body, phase) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, phase == 32);
+    ::fixy::check::pass(kTest, "  test_repeated_layers_mlp:        PASSED ({} early boundaries)\n", wrong);
 }
 
 void test_refuted_period_survives_divergence_restart() {
@@ -288,20 +298,20 @@ void test_refuted_period_survives_divergence_restart() {
             break;
         }
     }
-    assert(accepted_layer);
-    assert(d.phase_is_unique);
+    CRUCIBLE_TEST_ASSERT(kTest, accepted_layer);
+    CRUCIBLE_TEST_ASSERT(kTest, d.phase_is_unique);
 
     d.restart_after_divergence();
-    assert(d.refuted_count_ == 1);
-    assert(d.signature_len.get() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, d.signature_len.get() == 0);
 
     // Resume one op into a hidden layer.
     auto boundaries = feed(d, body, 20, 0, 13);
-    assert(!boundaries.empty());
+    CRUCIBLE_TEST_ASSERT(kTest, !boundaries.empty());
     for (const auto& boundary : boundaries)
-        assert(boundary.length == 46);
+        CRUCIBLE_TEST_ASSERT(kTest, boundary.length == 46);
     assert_settles_on(boundaries, 46, boundaries.size() - 1);
-    crucible::test::pass("  test_refuted_survives_restart:   PASSED\n");
+    ::fixy::check::pass(kTest, "  test_refuted_survives_restart:   PASSED\n");
 }
 
 void test_divergence_after_a_second_period_refutes_nothing() {
@@ -318,17 +328,17 @@ void test_divergence_after_a_second_period_refutes_nothing() {
             const bool fired = d.check(kAlloc, SchemaHash{op.schema}, ShapeHash{op.shape});
             if (d.period_ == 46 && (!true_period_reported || fired)) break;
         }
-        assert(d.period_ == 46);
-        assert(d.refuted_count_ == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, d.period_ == 46);
+        CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 1);
 
         d.restart_after_divergence();
-        assert(d.refuted_count_ == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 1);
         auto boundaries = feed(d, body, 20, 0, 13);
         for (const auto& boundary : boundaries)
-            assert(boundary.length == 46);
+            CRUCIBLE_TEST_ASSERT(kTest, boundary.length == 46);
         assert_settles_on(boundaries, 46, boundaries.size() - 1);
     }
-    crucible::test::pass("  test_second_period_not_refuted:  PASSED\n");
+    ::fixy::check::pass(kTest, "  test_second_period_not_refuted:  PASSED\n");
 }
 
 void test_gap_in_the_recording_does_not_refute() {
@@ -340,12 +350,12 @@ void test_gap_in_the_recording_does_not_refute() {
         body.push_back({0x100 + i, 0x200 + i});
     IterationDetector d;
     auto before = feed(d, body, 4);
-    assert(!before.empty());
+    CRUCIBLE_TEST_ASSERT(kTest, !before.empty());
     // Resume three ops into an iteration.
     auto after = feed(d, body, 20, 0, 3);
-    assert(!d.is_refuted(8, d.period_body_sum_));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.is_refuted(8, d.period_body_sum_));
     assert_settles_on(after, 8, 10);
-    crucible::test::pass("  test_gap_does_not_refute:        PASSED\n");
+    ::fixy::check::pass(kTest, "  test_gap_does_not_refute:        PASSED\n");
 }
 
 void test_short_periods() {
@@ -360,13 +370,13 @@ void test_short_periods() {
     };
     const uint32_t expected[] = {5, 6, 6, 6, 7, 6};
     for (size_t i = 0; i < bodies.size(); ++i) {
-        assert(expected_period(bodies[i]) == expected[i]);
+        CRUCIBLE_TEST_ASSERT(kTest, expected_period(bodies[i]) == expected[i]);
         IterationDetector d;
         const auto iterations = static_cast<uint32_t>(400 / bodies[i].size());
         auto boundaries = feed(d, bodies[i], iterations);
         assert_settles_on(boundaries, expected[i], 10);
     }
-    crucible::test::pass("  test_short_periods:              PASSED\n");
+    ::fixy::check::pass(kTest, "  test_short_periods:              PASSED\n");
 }
 
 void test_random_bodies_settle_on_true_period() {
@@ -390,7 +400,7 @@ void test_random_bodies_settle_on_true_period() {
             ++streams;
         }
     }
-    crucible::test::pass("  test_random_bodies:              PASSED ({} streams)\n", streams);
+    ::fixy::check::pass(kTest, "  test_random_bodies:              PASSED ({} streams)\n", streams);
 }
 
 void test_restart_without_unique_phase_refutes_nothing() {
@@ -398,32 +408,32 @@ void test_restart_without_unique_phase_refutes_nothing() {
     // A divergence then says nothing about the period, so it stays eligible.
     IterationDetector d;
     auto boundaries = feed(d, {{7, 0}}, 30);
-    assert(!boundaries.empty());
-    assert(!d.phase_is_unique);
+    CRUCIBLE_TEST_ASSERT(kTest, !boundaries.empty());
+    CRUCIBLE_TEST_ASSERT(kTest, !d.phase_is_unique);
     d.restart_after_divergence();
-    assert(d.refuted_count_ == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 0);
     boundaries = feed(d, {{7, 0}}, 30);
     assert_settles_on(boundaries, 5, 3);
-    crucible::test::pass("  test_restart_no_unique_phase:    PASSED\n");
+    ::fixy::check::pass(kTest, "  test_restart_no_unique_phase:    PASSED\n");
 }
 
 void test_reset_clears_everything() {
     IterationDetector d;
     auto boundaries = feed(d, inference_mlp_body(), 6);
-    assert(!boundaries.empty());
-    assert(d.refuted_count_ > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, !boundaries.empty());
+    CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ > 0);
 
     d.reset();
-    assert(!d.confirmed);
-    assert(d.signature_len.get() == 0);
-    assert(d.boundaries_detected.get() == 0);
-    assert(d.ops_since_boundary.get() == 0);
-    assert(d.last_completed_len == 0);
-    assert(d.refuted_count_ == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, !d.confirmed);
+    CRUCIBLE_TEST_ASSERT(kTest, d.signature_len.get() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, d.boundaries_detected.get() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, d.ops_since_boundary.get() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, d.last_completed_len == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 0);
     for (uint32_t i = 0; i < 4; i++)
-        assert(!d.check(kAlloc, H(100 + i)));
-    assert(d.signature_len.get() == 4);
-    crucible::test::pass("  test_reset:                      PASSED\n");
+        CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, H(100 + i)));
+    CRUCIBLE_TEST_ASSERT(kTest, d.signature_len.get() == 4);
+    ::fixy::check::pass(kTest, "  test_reset:                      PASSED\n");
 }
 
 void test_typestate_witness_minting() {
@@ -435,31 +445,31 @@ void test_typestate_witness_minting() {
     using ::fixy::mint_view;
 
     IterationDetector d;
-    assert(d.signature_len.get() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, d.signature_len.get() == 0);
     {
         auto building_view = mint_view<Building>(d);
-        assert(&building_view.carrier() == &d);
-        assert(building_view->signature_len.get() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, &building_view.carrier() == &d);
+        CRUCIBLE_TEST_ASSERT(kTest, building_view->signature_len.get() == 0);
     }
 
     const SchemaHash sig[5] = {H(11), H(22), H(33), H(44), H(55)};
     for (auto h : sig)
         (void)d.check(kAlloc, h);
-    assert(d.signature_len.get() == K);
+    CRUCIBLE_TEST_ASSERT(kTest, d.signature_len.get() == K);
     {
         auto steady_view = mint_view<Steady>(d);
-        assert(&steady_view.carrier() == &d);
-        assert(steady_view->signature_len.get() == K);
+        CRUCIBLE_TEST_ASSERT(kTest, &steady_view.carrier() == &d);
+        CRUCIBLE_TEST_ASSERT(kTest, steady_view->signature_len.get() == K);
     }
 
     d.reset();
-    assert(d.signature_len.get() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, d.signature_len.get() == 0);
     {
         auto rebuilt_view = mint_view<Building>(d);
-        assert(&rebuilt_view.carrier() == &d);
-        assert(rebuilt_view->signature_len.get() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, &rebuilt_view.carrier() == &d);
+        CRUCIBLE_TEST_ASSERT(kTest, rebuilt_view->signature_len.get() == 0);
     }
-    crucible::test::pass("  test_typestate_witness:          PASSED\n");
+    ::fixy::check::pass(kTest, "  test_typestate_witness:          PASSED\n");
 }
 
 }  // namespace
@@ -479,6 +489,6 @@ int main() {
     test_restart_without_unique_phase_refutes_nothing();
     test_reset_clears_everything();
     test_typestate_witness_minting();
-    crucible::test::pass("test_iteration_detector: 14 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_iteration_detector: 14 groups, all passed\n");
     return 0;
 }

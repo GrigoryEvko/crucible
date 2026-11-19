@@ -22,7 +22,6 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
-#include "test_assert.h"
 
 namespace {
 
@@ -174,7 +173,8 @@ void test_permissioned_bulk_drain() {
     CRUCIBLE_TEST_REQUIRE(count == records.size());
     CRUCIBLE_TEST_REQUIRE(next == records.size());
     for (std::size_t i = 0; i < records.size(); ++i) {
-        CRUCIBLE_TEST_REQUIRE(same_meta(drained[i], crucible::test::element_at(records, i)));
+        CRUCIBLE_TEST_REQUIRE(
+            same_meta(drained[i], *records.get(i).expect("a test reads an element at or past the count of its array")));
     }
     CRUCIBLE_TEST_REQUIRE(consumer.tail_index() == records.size());
 }
@@ -226,7 +226,8 @@ void test_partial_drain() {
     CRUCIBLE_TEST_REQUIRE(drained_count == 3);
     CRUCIBLE_TEST_REQUIRE(next == 3);
     for (std::size_t i = 0; i < first_three.size(); ++i) {
-        CRUCIBLE_TEST_REQUIRE(same_meta(first_three[i], crucible::test::element_at(source, i)));
+        CRUCIBLE_TEST_REQUIRE(same_meta(
+            first_three[i], *source.get(i).expect("a test reads an element at or past the count of its array")));
     }
     CRUCIBLE_TEST_REQUIRE(consumer.size_approx(kSnapshot) == 2);
     CRUCIBLE_TEST_REQUIRE(producer.size_approx(kSnapshot) == 2);

@@ -11,12 +11,21 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
 #include <array>
 #include <cstdint>
 #include <cstdio>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -233,7 +242,7 @@ int main() {
 
     std::fprintf(stderr, "PASSED\n");
 
-    crucible::test::pass("\n2 runtime checks passed; the invalidation invariants are "
-                         "pinned at compile time.\n");
+    ::fixy::check::pass(kTest, "\n2 runtime checks passed; the invalidation invariants are "
+                               "pinned at compile time.\n");
     return 0;
 }

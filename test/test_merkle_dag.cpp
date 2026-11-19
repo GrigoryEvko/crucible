@@ -5,12 +5,19 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
-#include "test_assert.h"
+#include <fixy/Core.h>
 
 #include <cstdio>
 #include <cstring>
 #include <limits>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::SchemaHash;
 using crucible::ContentHash;
@@ -58,10 +65,10 @@ template <class Fake>
     auto nbytes_det = crucible::compute_storage_nbytes_det(crucible::external_tensor_meta(m));
     static_assert(std::is_same_v<decltype(nbytes_det),
                                  ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>>);
-    assert(nbytes_det.peek() == nbytes);
+    CRUCIBLE_TEST_ASSERT(kTest, nbytes_det.peek() == nbytes);
     // (31*64 + 63*1 + 1) * 4 = 2048 * 4 = 8192 (= 32 * 64 * sizeof(float))
-    assert(nbytes.value() == 8192);
-    assert(!nbytes.was_clamped() && "well-formed tensor must not saturate");
+    CRUCIBLE_TEST_ASSERT(kTest, nbytes.value() == 8192);
+    CRUCIBLE_TEST_ASSERT(kTest, !nbytes.was_clamped() && "well-formed tensor must not saturate");
 
     {
         crucible::TensorMeta huge{};
@@ -72,8 +79,8 @@ template <class Fake>
         huge.strides[1] = ::crucible::tensor_dim(1);
         huge.dtype = crucible::ScalarType::Float;
         auto nb = crucible::compute_storage_nbytes(crucible::external_tensor_meta(huge));
-        assert(nb.value() == UINT64_MAX && "huge tensor must saturate value to UINT64_MAX");
-        assert(nb.was_clamped() && "huge tensor must carry clamped=true");
+        CRUCIBLE_TEST_ASSERT(kTest, nb.value() == UINT64_MAX && "huge tensor must saturate value to UINT64_MAX");
+        CRUCIBLE_TEST_ASSERT(kTest, nb.was_clamped() && "huge tensor must carry clamped=true");
     }
 
     // The public name and the vector routine are one algorithm.
@@ -103,18 +110,19 @@ template <class Fake>
         reversed.strides[0] = ::crucible::tensor_dim(-4);
         reversed.strides[1] = ::crucible::tensor_dim(1);
         reversed.dtype = crucible::ScalarType::Double;
-        assert(agrees(reversed) && "the public storage-span name stopped forwarding to the tested reference");
+        CRUCIBLE_TEST_ASSERT(kTest, agrees(reversed)
+                                        && "the public storage-span name stopped forwarding to the tested reference");
 
         crucible::TensorMeta empty_extent = reversed;
         empty_extent.sizes[1] = ::crucible::tensor_dim(0);
-        assert(agrees(empty_extent));
+        CRUCIBLE_TEST_ASSERT(kTest, agrees(empty_extent));
 
         crucible::TensorMeta scalar_meta{};
         scalar_meta.ndim = 0;
         scalar_meta.dtype = crucible::ScalarType::ComplexDouble;
-        assert(agrees(scalar_meta));
+        CRUCIBLE_TEST_ASSERT(kTest, agrees(scalar_meta));
 
-        assert(agrees(m));
+        CRUCIBLE_TEST_ASSERT(kTest, agrees(m));
     }
 
     ::foundation::core::FixedArray<crucible::TraceEntry, 3> ops{};
@@ -124,24 +132,24 @@ template <class Fake>
     // The nodes are held as references: a Ref local in this large function
     // costs the Debug compile far more than a reference.
     crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops.view());
-    assert(region.kind == crucible::TraceNodeKind::REGION);
-    assert(region.num_ops() == 3);
-    assert(region.op_at(0).schema_hash == SchemaHash{0xAABB});
-    assert(region.op_at(2).schema_hash == SchemaHash{0xEEFF});
-    assert(region.first_op_schema == SchemaHash{0xAABB});
-    assert(static_cast<bool>(region.content_hash));
+    CRUCIBLE_TEST_ASSERT(kTest, region.kind == crucible::TraceNodeKind::REGION);
+    CRUCIBLE_TEST_ASSERT(kTest, region.num_ops() == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, region.op_at(0).schema_hash == SchemaHash{0xAABB});
+    CRUCIBLE_TEST_ASSERT(kTest, region.op_at(2).schema_hash == SchemaHash{0xEEFF});
+    CRUCIBLE_TEST_ASSERT(kTest, region.first_op_schema == SchemaHash{0xAABB});
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(region.content_hash));
 
     ContentHash h1 = region.content_hash;
     const crucible::RegionNode& region2 = *crucible::make_region(test.alloc, arena, ops.view());
-    assert(region2.content_hash == h1);
+    CRUCIBLE_TEST_ASSERT(kTest, region2.content_hash == h1);
 
     crucible::TraceNode& terminal = *crucible::make_terminal(test.alloc, arena);
-    assert(terminal.kind == crucible::TraceNodeKind::TERMINAL);
-    assert(terminal.next.is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, terminal.kind == crucible::TraceNodeKind::TERMINAL);
+    CRUCIBLE_TEST_ASSERT(kTest, terminal.next.is_none());
 
     region.next = crucible::make_link(terminal);
     crucible::recompute_merkle(region);
-    assert(static_cast<bool>(region.merkle_hash));
+    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(region.merkle_hash));
 
     // RowHash{0} is the row identity of a bare, unwrapped type, so it is
     // the row every untyped call site keys on.
@@ -242,17 +250,17 @@ template <class Fake>
         small_kernels[4] = FakeKernel{4};
         auto fifth = tiny_cache.insert(test.nondet, ContentHash{0x42}, RowHash{0xA04},  // novel row
                                        kernel_ref(small_kernels[4]));
-        assert(std::move(fifth).err().match(
-            [](crucible::KernelCache::InsertError error) noexcept {
-                return error == crucible::KernelCache::InsertError::TableFull;
-            },
-            []() noexcept { return false; }));
+        CRUCIBLE_TEST_ASSERT(kTest, std::move(fifth).err().match(
+                                        [](crucible::KernelCache::InsertError error) noexcept {
+                                            return error == crucible::KernelCache::InsertError::TableFull;
+                                        },
+                                        []() noexcept { return false; }));
         // A full table still accepts a variant update.  TableFull is
         // returned only when no (content, row) match exists.
         FakeKernel variant_replacement{0xC};
         auto variant = tiny_cache.insert(test.nondet, ContentHash{0x42}, RowHash{0xA00},  // existing row
                                          kernel_ref(variant_replacement));
-        assert(variant.is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, variant.is_ok());
         CRUCIBLE_FATAL_INVARIANT(
             is_found(tiny_cache.lookup(test.nondet, ContentHash{0x42}, RowHash{0xA00}), variant_replacement));
     }
@@ -289,11 +297,12 @@ template <class Fake>
             is_found(audit2_cache.lookup(test.nondet, ContentHash{0x55AA}, RowHash{0xBEEF}), k_rowR_v1));
     }
 
-    assert(crucible::element_size(crucible::ScalarType::Float) == crucible::ElementBytes{4});
-    assert(crucible::element_size(crucible::ScalarType::Double) == crucible::ElementBytes{8});
-    assert(crucible::element_size(crucible::ScalarType::Half) == crucible::ElementBytes{2});
-    assert(crucible::element_size(crucible::ScalarType::Byte) == crucible::ElementBytes{1});
-    assert(crucible::element_size(crucible::ScalarType::ComplexDouble) == crucible::ElementBytes{16});
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::element_size(crucible::ScalarType::Float) == crucible::ElementBytes{4});
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::element_size(crucible::ScalarType::Double) == crucible::ElementBytes{8});
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::element_size(crucible::ScalarType::Half) == crucible::ElementBytes{2});
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::element_size(crucible::ScalarType::Byte) == crucible::ElementBytes{1});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         crucible::element_size(crucible::ScalarType::ComplexDouble) == crucible::ElementBytes{16});
 
     // Two regions with byte-identical ops but different numerical
     // recipes must produce distinct content hashes.  Otherwise a kernel
@@ -324,11 +333,11 @@ template <class Fake>
             .flags = {},
             .hash = {},
         });
-        assert(recipe_tc.hash != recipe_strict.hash);
-        assert(recipe_tc.hash.raw() != 0);
-        assert(!recipe_tc.hash.is_sentinel());
-        assert(recipe_strict.hash.raw() != 0);
-        assert(!recipe_strict.hash.is_sentinel());
+        CRUCIBLE_TEST_ASSERT(kTest, recipe_tc.hash != recipe_strict.hash);
+        CRUCIBLE_TEST_ASSERT(kTest, recipe_tc.hash.raw() != 0);
+        CRUCIBLE_TEST_ASSERT(kTest, !recipe_tc.hash.is_sentinel());
+        CRUCIBLE_TEST_ASSERT(kTest, recipe_strict.hash.raw() != 0);
+        CRUCIBLE_TEST_ASSERT(kTest, !recipe_strict.hash.is_sentinel());
 
         ::foundation::core::FixedArray<crucible::TraceEntry, 2> recipe_ops{};
         recipe_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0xDEAD};
@@ -339,12 +348,12 @@ template <class Fake>
 
         const ContentHash h_tc = crucible::compute_content_hash(ops_span, recipe_tc);
         const ContentHash h_strict = crucible::compute_content_hash(ops_span, recipe_strict);
-        assert(h_tc != h_strict);
-        assert(h_tc != h_null);
-        assert(h_strict != h_null);
+        CRUCIBLE_TEST_ASSERT(kTest, h_tc != h_strict);
+        CRUCIBLE_TEST_ASSERT(kTest, h_tc != h_null);
+        CRUCIBLE_TEST_ASSERT(kTest, h_strict != h_null);
 
         const ContentHash h_tc_again = crucible::compute_content_hash(ops_span, recipe_tc);
-        assert(h_tc == h_tc_again);
+        CRUCIBLE_TEST_ASSERT(kTest, h_tc == h_tc_again);
 
         // The recipe contribution is additive: ops still disambiguate
         // under a fixed recipe.
@@ -353,7 +362,7 @@ template <class Fake>
         alt_recipe_ops.at(::fixy::index<1>()).schema_hash = SchemaHash{0xBEEF};
         const ::fixy::View<const crucible::TraceEntry> alt_ops_span = alt_recipe_ops.view();
         const ContentHash h_alt_tc = crucible::compute_content_hash(alt_ops_span, recipe_tc);
-        assert(h_alt_tc != h_tc);
+        CRUCIBLE_TEST_ASSERT(kTest, h_alt_tc != h_tc);
 
         ::foundation::core::FixedArray<crucible::TraceEntry, 2> rops_a{};
         rops_a.at(::fixy::index<0>()).schema_hash = SchemaHash{0x0A0A};
@@ -366,12 +375,12 @@ template <class Fake>
         const crucible::RegionNode& r_strict = *crucible::make_region(test.alloc, arena, rops_b.view(), recipe_strict);
         const crucible::RegionNode& r_none = *crucible::make_region(test.alloc, arena, rops_a.view());
 
-        assert(r_tc.content_hash != r_strict.content_hash);
-        assert(r_tc.content_hash != r_none.content_hash);
-        assert(r_strict.content_hash != r_none.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash != r_strict.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash != r_none.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, r_strict.content_hash != r_none.content_hash);
 
         const ContentHash direct_tc = crucible::compute_content_hash(rops_a.view(), recipe_tc);
-        assert(r_tc.content_hash == direct_tc);
+        CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash == direct_tc);
 
         crucible::KernelCache rcache{test.alloc};
         struct FakeRecipeKernel {
@@ -418,14 +427,14 @@ template <class Fake>
         auto h_six_diff = hash_one_op(e_six_diff);
         auto h_ten = hash_one_op(e_ten);
 
-        assert(h_five != h_six);
-        assert(h_five != h_ten);
-        assert(h_six != h_ten);
+        CRUCIBLE_TEST_ASSERT(kTest, h_five != h_six);
+        CRUCIBLE_TEST_ASSERT(kTest, h_five != h_ten);
+        CRUCIBLE_TEST_ASSERT(kTest, h_six != h_ten);
 
-        assert(h_six != h_six_diff);
+        CRUCIBLE_TEST_ASSERT(kTest, h_six != h_six_diff);
 
         auto h_six_again = hash_one_op(e_six);
-        assert(h_six == h_six_again);
+        CRUCIBLE_TEST_ASSERT(kTest, h_six == h_six_again);
 
         ::fixy::report(::fixy::Sink::Out, "  scalar args: count and past-index-4 value axes both separate\n");
     }
@@ -480,19 +489,19 @@ template <class Fake>
 
         for (const auto* op : {&e_empty, &e_three, &e_one, &e_five, &e_tensor}) {
             const ::foundation::core::FixedArray<crucible::TraceEntry, 1> single{*op};
-            assert(streaming_hash(single.view()) == crucible::compute_content_hash(single.view()));
+            CRUCIBLE_TEST_ASSERT(kTest, streaming_hash(single.view()) == crucible::compute_content_hash(single.view()));
         }
 
         // One region of mixed op shapes exercises the accumulator carry
         // from one op shape into the next.
         const ::foundation::core::FixedArray<crucible::TraceEntry, 5> mix{e_empty, e_three, e_one, e_five, e_tensor};
         const ::fixy::View<const crucible::TraceEntry> mix_sp = mix.view();
-        assert(streaming_hash(mix_sp) == crucible::compute_content_hash(mix_sp));
+        CRUCIBLE_TEST_ASSERT(kTest, streaming_hash(mix_sp) == crucible::compute_content_hash(mix_sp));
 
         // An op that carries no scalars and no tensors still perturbs the
         // accumulator, so it is not equivalent to an absent op.
         const ::fixy::View<const crucible::TraceEntry> empty_sp{};
-        assert(crucible::compute_content_hash(empty_sp) != hash_one_op(e_empty));
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::compute_content_hash(empty_sp) != hash_one_op(e_empty));
 
         ::fixy::report(::fixy::Sink::Out, "  streaming fold matches the span fold "
                                           "(count==0 / no-tensor / scalar / tensor / multi-op)\n");
@@ -600,9 +609,9 @@ template <class Fake>
         e_fact_tensor.set_inputs(fact_meta.view(), no_producer.view(), no_slot.view());
         golden("one tensor with each fact", one_op(e_fact_tensor), 0x2FB41C5109940EECULL);
 
-        assert(moved_vectors == 0
-               && "the region content-hash format changed: every persisted content hash and "
-                  "every cached kernel keyed on one is now stale");
+        CRUCIBLE_TEST_ASSERT(kTest, moved_vectors == 0
+                                        && "the region content-hash format changed: every persisted content hash and "
+                                           "every cached kernel keyed on one is now stale");
 
         ::fixy::report(::fixy::Sink::Out, "  content-hash vectors frozen "
                                           "(seed, per-op mix, finalizer, recipe fold)\n");
@@ -673,22 +682,25 @@ template <class Fake>
                                                                                    with_meta(0x5555, meta)};
             const auto h_a = crucible::compute_content_hash(region_a.view());
             const auto h_b = crucible::compute_content_hash(region_b.view());
-            assert(h_a != h_b
-                   && "absorbing-element collapse is back: two regions differing only in the op "
-                      "BEFORE the tensor now share a content hash, so the prefix stopped "
-                      "contributing");
+            CRUCIBLE_TEST_ASSERT(kTest,
+                                 h_a != h_b
+                                     && "absorbing-element collapse is back: two regions differing only in the op "
+                                        "BEFORE the tensor now share a content hash, so the prefix stopped "
+                                        "contributing");
         }
 
         // The zero-packed case used to produce the sentinel hash outright.
-        assert(hash_one_op(with_meta(0x5555, zero_packed_meta.view())).raw() != 0
-               && "a uint8 tensor on CPU:0 hashes to the KernelCache empty-slot sentinel again");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             hash_one_op(with_meta(0x5555, zero_packed_meta.view())).raw() != 0
+                                 && "a uint8 tensor on CPU:0 hashes to the KernelCache empty-slot sentinel again");
 
         // A single mix is xor-symmetric, so a fold flattened into one xor
         // would stop telling op order apart.  The chain is what carries it.
         const ::foundation::core::FixedArray<crucible::TraceEntry, 2> forward{no_tensor(0x1111), no_tensor(0x2222)};
         const ::foundation::core::FixedArray<crucible::TraceEntry, 2> reversed{no_tensor(0x2222), no_tensor(0x1111)};
-        assert(crucible::compute_content_hash(forward.view()) != crucible::compute_content_hash(reversed.view())
-               && "the fold lost op-order sensitivity: it was flattened into a single xor");
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::compute_content_hash(forward.view())
+                                            != crucible::compute_content_hash(reversed.view())
+                                        && "the fold lost op-order sensitivity: it was flattened into a single xor");
 
         ::fixy::report(::fixy::Sink::Out, "  absorbing-element collapse repaired and pinned "
                                           "(dtype Undefined, zero-packed metadata, op order)\n");
@@ -742,18 +754,20 @@ template <class Fake>
 
         // What a recipe-blind producer computes: one key for both tiers.
         const auto blind = crucible::compute_content_hash(numerics_sp);
-        assert(blind == crucible::compute_content_hash(numerics_sp)
-               && "a recipe-blind hash is a function of the ops alone, so both tiers land on it");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             blind == crucible::compute_content_hash(numerics_sp)
+                                 && "a recipe-blind hash is a function of the ops alone, so both tiers land on it");
 
         // What a recipe-aware producer computes: one key per tier.
         const auto keyed_unordered = crucible::compute_content_hash(numerics_sp, unordered);
         const auto keyed_strict = crucible::compute_content_hash(numerics_sp, strict);
-        assert(keyed_unordered != keyed_strict
-               && "the recipe left the content hash: two numerics tiers over identical ops "
-                  "now share a KernelCache slot, so a lookup under one is served the other's kernel");
-        assert(keyed_unordered != blind && keyed_strict != blind
-               && "folding a recipe must move the hash off the no-recipe value, or the "
-                  "recipe-aware and recipe-blind keys alias");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             keyed_unordered != keyed_strict
+                                 && "the recipe left the content hash: two numerics tiers over identical ops "
+                                    "now share a KernelCache slot, so a lookup under one is served the other's kernel");
+        CRUCIBLE_TEST_ASSERT(kTest, keyed_unordered != blind && keyed_strict != blind
+                                        && "folding a recipe must move the hash off the no-recipe value, or the "
+                                           "recipe-aware and recipe-blind keys alias");
 
         // The hole that let production reach the first case: a fold that
         // could be built without answering the recipe question at all.
@@ -924,6 +938,6 @@ template <class Fake>
         ::fixy::report(::fixy::Sink::Out, "  an entry refuses arrays of two counts for one kind\n");
     }
 
-    crucible::test::pass("test_merkle_dag: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_merkle_dag: all tests passed\n");
     return 0;
 }

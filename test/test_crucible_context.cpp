@@ -2,11 +2,20 @@
 #include <crucible/BackgroundThread.h>
 #include <foundation/effects/Effect.h>
 #include "entry_arrays.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include "tensor_data.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::CrucibleContext;
 using crucible::ContextMode;
@@ -81,14 +90,14 @@ static MemoryPlan make_simple_plan(::fixy::View<TensorSlot> slots) {
 static void test_initial_state() {
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
 
-    assert(ctx.mode() == ContextMode::RECORD);
-    assert(ctx.is_recording());
-    assert(!ctx.is_compiled());
-    assert(ctx.compiled_iterations() == 0);
-    assert(ctx.diverged_count() == 0);
-    assert(!ctx.active_region().has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.mode() == ContextMode::RECORD);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
+    CRUCIBLE_TEST_ASSERT(kTest, !ctx.is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, !ctx.active_region().has_value());
 
-    crucible::test::pass("  test_initial_state: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_initial_state: PASSED\n");
 }
 
 static void test_activate() {
@@ -109,15 +118,15 @@ static void test_activate() {
     init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    assert(ctx.activate(region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
 
-    assert(ctx.mode() == ContextMode::COMPILED);
-    assert(ctx.is_compiled());
-    assert(ctx.active_region().try_get() == &region);
-    assert(ctx.pool().is_initialized());
-    assert(ctx.engine().is_initialized());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.mode() == ContextMode::COMPILED);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.active_region().try_get() == &region);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().is_initialized());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.engine().is_initialized());
 
-    crucible::test::pass("  test_activate: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_activate: PASSED\n");
 }
 
 // A region with no memory plan cannot be activated, because the
@@ -129,10 +138,10 @@ static void test_activate_no_plan() {
     init_region(&region, ops.view(), crucible::PlanLink{});
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    assert(!ctx.activate(region));
-    assert(ctx.is_recording());
+    CRUCIBLE_TEST_ASSERT(kTest, !ctx.activate(region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
 
-    crucible::test::pass("  test_activate_no_plan: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_activate_no_plan: PASSED\n");
 }
 
 static void test_full_replay() {
@@ -155,30 +164,30 @@ static void test_full_replay() {
     init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    assert(ctx.activate(region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
 
-    assert(ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
     const ::fixy::Option<::fixy::RunAddress> p0 = ctx.output_ptr(0, cv);
-    assert(p0 == ctx.pool().slot_ptr(SlotId{0}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, p0 == ctx.pool().slot_ptr(SlotId{0}, pv));
 
-    assert(ctx.advance(SchemaHash{101}, ShapeHash{201}, cv) == ReplayStatus::COMPLETE);
-    assert(ctx.compiled_iterations() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{101}, ShapeHash{201}, cv) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
     // The rewind is lazy, so after COMPLETE the position still sits on
     // the final op and its output pointer is still readable.
     const ::fixy::Option<::fixy::RunAddress> p1 = ctx.output_ptr(0, cv);
-    assert(p1 == ctx.pool().slot_ptr(SlotId{1}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, p1 == ctx.pool().slot_ptr(SlotId{1}, pv));
 
-    assert(ctx.is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
     // The rewind happens here, on the first advance after COMPLETE.
-    assert(ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
-    assert(ctx.advance(SchemaHash{101}, ShapeHash{201}, cv) == ReplayStatus::COMPLETE);
-    assert(ctx.compiled_iterations() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{101}, ShapeHash{201}, cv) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 2);
 
-    crucible::test::pass("  test_full_replay: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_full_replay: PASSED\n");
 }
 
 static void test_divergence() {
@@ -199,22 +208,22 @@ static void test_divergence() {
     init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    assert(ctx.activate(region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
-    assert(ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
 
-    assert(ctx.advance(SchemaHash{999}, ShapeHash{201}, cv) == ReplayStatus::DIVERGED);
-    assert(ctx.diverged_count() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{999}, ShapeHash{201}, cv) == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 1);
     // A divergence does not switch modes.  Falling back is the caller's
     // decision, which the deactivate below stands in for.
-    assert(ctx.is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
     ctx.deactivate();
-    assert(ctx.is_recording());
-    assert(!ctx.active_region().has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
+    CRUCIBLE_TEST_ASSERT(kTest, !ctx.active_region().has_value());
 
-    crucible::test::pass("  test_divergence: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_divergence: PASSED\n");
 }
 
 static void test_reactivate() {
@@ -252,26 +261,26 @@ static void test_reactivate() {
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
 
-    assert(ctx.activate(region_a));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region_a));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
-        assert(ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::COMPLETE);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::COMPLETE);
     }
-    assert(ctx.compiled_iterations() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
     // Activating the second region deactivates the first implicitly.
     // Each activation needs a fresh view, which is why the replays sit in
     // scopes that end before the next activation.
-    assert(ctx.activate(region_b));
-    assert(ctx.active_region().try_get() == &region_b);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region_b));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.active_region().try_get() == &region_b);
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
-        assert(ctx.advance(SchemaHash{30}, ShapeHash{40}, cv) == ReplayStatus::MATCH);
-        assert(ctx.advance(SchemaHash{31}, ShapeHash{41}, cv) == ReplayStatus::COMPLETE);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{30}, ShapeHash{40}, cv) == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{31}, ShapeHash{41}, cv) == ReplayStatus::COMPLETE);
     }
-    assert(ctx.compiled_iterations() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 2);
 
-    crucible::test::pass("  test_reactivate: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_reactivate: PASSED\n");
 }
 
 static void test_external_slots() {
@@ -321,19 +330,19 @@ static void test_external_slots() {
     init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    assert(ctx.activate(region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
     ctx.register_external(SlotId{1}, crucible::test::host_data(fake_param), cv);
 
-    assert(ctx.advance(SchemaHash{50}, ShapeHash{60}, cv) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{50}, ShapeHash{60}, cv) == ReplayStatus::COMPLETE);
     // The registration is checked through the pool, which is where an
     // external pointer has to land for any op to resolve it.
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
-    assert(crucible::test::host_ptr(ctx.pool().slot_ptr(SlotId{1}, pv)) == fake_param);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::test::host_ptr(ctx.pool().slot_ptr(SlotId{1}, pv)) == fake_param);
 
-    crucible::test::pass("  test_external_slots: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_external_slots: PASSED\n");
 }
 
 // The plan here comes from the real sweep-line planner rather than the
@@ -409,7 +418,7 @@ static void test_integration_sweep_line() {
     init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    assert(ctx.activate(region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
@@ -417,33 +426,33 @@ static void test_integration_sweep_line() {
     ctx.register_external(SlotId{2}, crucible::test::host_data(fake_param), cv);
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
 
-    assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
-    assert(ctx.output_ptr(0, cv) == ctx.pool().slot_ptr(SlotId{0}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.output_ptr(0, cv) == ctx.pool().slot_ptr(SlotId{0}, pv));
     // The external slot resolves to registered storage, not into the pool.
-    assert(crucible::test::host_ptr(ctx.input_ptr(0, cv)) == fake_param);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::test::host_ptr(ctx.input_ptr(0, cv)) == fake_param);
 
     std::memset(crucible::test::host_ptr(ctx.output_ptr(0, cv)), 0x11, 512);
 
-    assert(ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv) == ReplayStatus::COMPLETE);
-    assert(ctx.compiled_iterations() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
-    assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
     // Nothing is claimed about the bytes across iterations, only that the
     // address is stable: a real op would run eagerly and overwrite them.
     auto* p = crucible::test::host_ptr<uint8_t>(ctx.output_ptr(0, cv));
-    assert(p == crucible::test::host_ptr(ctx.pool().slot_ptr(SlotId{0}, pv)));
+    CRUCIBLE_TEST_ASSERT(kTest, p == crucible::test::host_ptr(ctx.pool().slot_ptr(SlotId{0}, pv)));
 
-    assert(ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv) == ReplayStatus::COMPLETE);
-    assert(ctx.compiled_iterations() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 2);
 
-    assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
-    assert(ctx.advance(SchemaHash{0xFF}, ShapeHash{0xFF}, cv) == ReplayStatus::DIVERGED);
-    assert(ctx.diverged_count() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xFF}, ShapeHash{0xFF}, cv) == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 1);
 
     ctx.deactivate();
-    assert(ctx.is_recording());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
 
-    crucible::test::pass("  test_integration_sweep_line: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_integration_sweep_line: PASSED\n");
 }
 
 // The divergence count belongs to the context, not to an activation, so
@@ -467,35 +476,35 @@ static void test_divergence_counter() {
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
 
-    assert(ctx.activate(region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
-        assert(ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::MATCH);
-        assert(ctx.advance(SchemaHash{99}, ShapeHash{99}, cv) == ReplayStatus::DIVERGED);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{99}, ShapeHash{99}, cv) == ReplayStatus::DIVERGED);
     }
-    assert(ctx.diverged_count() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 1);
     ctx.deactivate();
 
     // Each activation mints its own view, so every replay sits in a scope
     // that ends before the next activation.
-    assert(ctx.activate(region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
-        assert(ctx.advance(SchemaHash{99}, ShapeHash{20}, cv) == ReplayStatus::DIVERGED);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{99}, ShapeHash{20}, cv) == ReplayStatus::DIVERGED);
     }
-    assert(ctx.diverged_count() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 2);
     ctx.deactivate();
 
-    assert(ctx.activate(region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
-        assert(ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::MATCH);
-        assert(ctx.advance(SchemaHash{11}, ShapeHash{21}, cv) == ReplayStatus::COMPLETE);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{11}, ShapeHash{21}, cv) == ReplayStatus::COMPLETE);
     }
-    assert(ctx.diverged_count() == 2);  // unchanged
-    assert(ctx.compiled_iterations() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 2);  // unchanged
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
-    crucible::test::pass("  test_divergence_counter: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_divergence_counter: PASSED\n");
 }
 
 int main() {
@@ -509,6 +518,6 @@ int main() {
     test_external_slots();
     test_integration_sweep_line();
     test_divergence_counter();
-    crucible::test::pass("test_crucible_context: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_crucible_context: all tests passed\n");
     return 0;
 }

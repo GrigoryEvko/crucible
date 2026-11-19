@@ -3,7 +3,10 @@
 #include <fixy/os/Socket.h>
 #include <foundation/reflect/EnumName.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <concepts>
 #include <cstddef>
@@ -14,6 +17,13 @@
 
 #include <linux/inet_diag.h>
 #include <linux/tcp.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cntp = crucible::cntp;
 namespace cog = crucible::cog;
@@ -154,15 +164,15 @@ void test_names_and_admission() {
     static_assert(::foundation::reflect::enum_name(topology::CongestionMode::BbrDrain) == "BbrDrain");
     static_assert(::foundation::reflect::enum_name(topology::TelemetryError::InvalidNicCog) == "InvalidNicCog");
     volatile auto mode = topology::CongestionMode::BbrProbeRtt;
-    assert(::foundation::reflect::enum_name(static_cast<topology::CongestionMode>(mode))
-           == std::string_view{"BbrProbeRtt"});
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::reflect::enum_name(static_cast<topology::CongestionMode>(mode))
+                                    == std::string_view{"BbrProbeRtt"});
     auto zero = topology::admit_sample_period_ns(0);
-    assert(zero.is_err());
-    assert(zero.err() == ::fixy::some(topology::TelemetryError::DeadlineOverflow));
+    CRUCIBLE_TEST_ASSERT(kTest, zero.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zero.err() == ::fixy::some(topology::TelemetryError::DeadlineOverflow));
     auto period = topology::admit_sample_period_ns(1000);
-    assert(period.is_ok());
-    assert(std::move(period).expect("1000 ns is positive").value() == 1000);
-    crucible::test::pass("  test_names_and_admission: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, period.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(period).expect("1000 ns is positive").value() == 1000);
+    ::fixy::check::pass(kTest, "  test_names_and_admission: PASSED\n");
 }
 
 void test_aggregate_and_drift() {
@@ -174,12 +184,12 @@ void test_aggregate_and_drift() {
     };
 
     auto aggregate = topology::aggregate_congestion(nic(1), samples.view());
-    assert(aggregate.nic_uuid == nic(1).uuid);
-    assert(aggregate.sample_count == samples.size());
-    assert(aggregate.p95_rtt_us >= 150);
-    assert(aggregate.p95_btl_bw_bps >= 800000000);
-    assert(aggregate.mean_btl_bw_bps == 725000000);
-    assert(aggregate.worst_mode == topology::CongestionMode::Loss);
+    CRUCIBLE_TEST_ASSERT(kTest, aggregate.nic_uuid == nic(1).uuid);
+    CRUCIBLE_TEST_ASSERT(kTest, aggregate.sample_count == samples.size());
+    CRUCIBLE_TEST_ASSERT(kTest, aggregate.p95_rtt_us >= 150);
+    CRUCIBLE_TEST_ASSERT(kTest, aggregate.p95_btl_bw_bps >= 800000000);
+    CRUCIBLE_TEST_ASSERT(kTest, aggregate.mean_btl_bw_bps == 725000000);
+    CRUCIBLE_TEST_ASSERT(kTest, aggregate.worst_mode == topology::CongestionMode::Loss);
 
     auto baseline = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1200000000});
     auto drift = topology::detect_congestion_drift(aggregate, baseline,
@@ -187,9 +197,9 @@ void test_aggregate_and_drift() {
                                                        .bandwidth_drop_ppm = 100000,
                                                        .min_samples = 4,
                                                    });
-    assert(drift.degraded);
-    assert(drift.bandwidth_drop_ppm >= 100000);
-    crucible::test::pass("  test_aggregate_and_drift: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, drift.degraded);
+    CRUCIBLE_TEST_ASSERT(kTest, drift.bandwidth_drop_ppm >= 100000);
+    ::fixy::check::pass(kTest, "  test_aggregate_and_drift: PASSED\n");
 }
 
 void test_worker_recording() {
@@ -200,7 +210,7 @@ void test_worker_recording() {
     ::foundation::core::FixedArray<cog::CogIdentity, 2> const nics{nic(10), nic(11)};
     cog::CogIdentity const& first_nic = nics.at(::fixy::index<0>());
     auto start = worker.start(init, nics.view());
-    assert(start.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, start.is_ok());
 
     ::foundation::core::FixedArray<topology::TcpInfoSnapshot, 2> const samples{
         sample(900000000, 90, topology::CongestionMode::Open),
@@ -208,27 +218,29 @@ void test_worker_recording() {
     };
     auto const recorded =
         worker.record_link(bg, first_nic, samples.view(), 1).expect("the worker started the link of the first nic");
-    assert(recorded.sample_count == samples.size());
+    CRUCIBLE_TEST_ASSERT(kTest, recorded.sample_count == samples.size());
     auto const last = worker.last(first_nic).expect("the worker recorded the link of the first nic");
-    assert(last.sample_count == samples.size());
+    CRUCIBLE_TEST_ASSERT(kTest, last.sample_count == samples.size());
 
     auto unstarted = worker.last(nic(99));
-    assert(unstarted.is_err());
-    assert(unstarted.err().expect("the link did not start") == topology::TelemetryError::LinkNotStarted);
+    CRUCIBLE_TEST_ASSERT(kTest, unstarted.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         unstarted.err().expect("the link did not start") == topology::TelemetryError::LinkNotStarted);
 
     ::foundation::core::FixedArray<cog::CogIdentity, 1> const bad_nics{gpu(1)};
     auto bad_start = worker.start(init, bad_nics.view());
-    assert(bad_start.is_err());
-    assert(bad_start.err().expect("a gpu is no nic") == topology::TelemetryError::InvalidNicCog);
+    CRUCIBLE_TEST_ASSERT(kTest, bad_start.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, bad_start.err().expect("a gpu is no nic") == topology::TelemetryError::InvalidNicCog);
 
     topology::CongestionObservationSet sinks{};
     topology::publish_congestion(sinks, 0, last, 7);
     auto p95 = observe::latest_observation(
         *sinks.get(static_cast<std::size_t>(topology::CongestionMetricSlot::P95BandwidthBps))
              .expect("the set holds one sink for each slot"));
-    assert(p95.metric_id == topology::congestion_metric_id(0, topology::CongestionMetricSlot::P95BandwidthBps));
-    assert(p95.sequence == 7);
-    crucible::test::pass("  test_worker_recording: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, p95.metric_id == topology::congestion_metric_id(0, topology::CongestionMetricSlot::P95BandwidthBps));
+    CRUCIBLE_TEST_ASSERT(kTest, p95.sequence == 7);
+    ::fixy::check::pass(kTest, "  test_worker_recording: PASSED\n");
 }
 
 // The decode reads each field at its offset in the bytes of the kernel.  A
@@ -253,26 +265,27 @@ void test_decode_tcp_sample() {
 
     topology::TcpInfoSnapshot const cubic =
         layout::decode_tcp_sample(info.view(), no_bytes, cntp::CcAlgorithm::Cubic).expect("the struct is full");
-    assert(cubic.value().mode == topology::CongestionMode::Recovery);
-    assert(cubic.value().cwnd_bytes.value() == 20000);
-    assert(cubic.value().ssthresh_bytes.value() == 20000);
-    assert(cubic.value().in_flight_bytes == 5000);
-    assert(cubic.value().rt_prop_us.value() == 300);
-    assert(cubic.value().btl_bw_bps.value() == 5000);
-    assert(cubic.value().retrans_count == 7 && cubic.value().lost_count == 2);
-    assert(cubic.value().pacing_rate_bps == 111 && cubic.value().max_pacing_rate_bps == 222);
-    assert(cubic.value().dctcp.ecn_mark_ppm == 250000);
-    assert(!cubic.value().has_bbr && !cubic.value().has_dctcp);
+    CRUCIBLE_TEST_ASSERT(kTest, cubic.value().mode == topology::CongestionMode::Recovery);
+    CRUCIBLE_TEST_ASSERT(kTest, cubic.value().cwnd_bytes.value() == 20000);
+    CRUCIBLE_TEST_ASSERT(kTest, cubic.value().ssthresh_bytes.value() == 20000);
+    CRUCIBLE_TEST_ASSERT(kTest, cubic.value().in_flight_bytes == 5000);
+    CRUCIBLE_TEST_ASSERT(kTest, cubic.value().rt_prop_us.value() == 300);
+    CRUCIBLE_TEST_ASSERT(kTest, cubic.value().btl_bw_bps.value() == 5000);
+    CRUCIBLE_TEST_ASSERT(kTest, cubic.value().retrans_count == 7 && cubic.value().lost_count == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, cubic.value().pacing_rate_bps == 111 && cubic.value().max_pacing_rate_bps == 222);
+    CRUCIBLE_TEST_ASSERT(kTest, cubic.value().dctcp.ecn_mark_ppm == 250000);
+    CRUCIBLE_TEST_ASSERT(kTest, !cubic.value().has_bbr && !cubic.value().has_dctcp);
 
     auto short_info = layout::decode_tcp_sample(
         info.view().window(0, layout::tcp_info_bytes - 1).expect("the window is inside the struct"), no_bytes,
         cntp::CcAlgorithm::Cubic);
-    assert(short_info.err().expect("a short struct gives no sample") == topology::TelemetryError::GetTcpInfoFailed);
+    CRUCIBLE_TEST_ASSERT(kTest, short_info.err().expect("a short struct gives no sample")
+                                    == topology::TelemetryError::GetTcpInfoFailed);
 
     put_field(info, layout::tcp_info_field::ca_state, layout::TcpCaState{9});
     topology::TcpInfoSnapshot const unknown =
         layout::decode_tcp_sample(info.view(), no_bytes, cntp::CcAlgorithm::Cubic).expect("the struct is full");
-    assert(unknown.value().mode == topology::CongestionMode::Unknown);
+    CRUCIBLE_TEST_ASSERT(kTest, unknown.value().mode == topology::CongestionMode::Unknown);
 
     CongestionInfoBytes bbr{};
     put_field(bbr, layout::bbr_info_field::bw_lo, std::uint32_t{0x10});
@@ -282,19 +295,19 @@ void test_decode_tcp_sample() {
     put_field(bbr, layout::bbr_info_field::cwnd_gain, std::uint32_t{512});
     topology::TcpInfoSnapshot const with_bbr =
         layout::decode_tcp_sample(info.view(), bbr.view(), cntp::CcAlgorithm::Bbr3).expect("the struct is full");
-    assert(with_bbr.value().has_bbr);
-    assert(with_bbr.value().btl_bw_bps.value() == 0x100000010ull);
-    assert(with_bbr.value().rt_prop_us.value() == 40);
-    assert(with_bbr.value().bbr.cwnd_gain_q8 == 512);
-    assert(with_bbr.value().mode == topology::CongestionMode::BbrProbeBw);
+    CRUCIBLE_TEST_ASSERT(kTest, with_bbr.value().has_bbr);
+    CRUCIBLE_TEST_ASSERT(kTest, with_bbr.value().btl_bw_bps.value() == 0x100000010ull);
+    CRUCIBLE_TEST_ASSERT(kTest, with_bbr.value().rt_prop_us.value() == 40);
+    CRUCIBLE_TEST_ASSERT(kTest, with_bbr.value().bbr.cwnd_gain_q8 == 512);
+    CRUCIBLE_TEST_ASSERT(kTest, with_bbr.value().mode == topology::CongestionMode::BbrProbeBw);
 
     topology::TcpInfoSnapshot const short_bbr =
         layout::decode_tcp_sample(info.view(),
                                   bbr.view().window(0, layout::bbr_info_bytes - 1).expect("the window is inside"),
                                   cntp::CcAlgorithm::Bbr3)
             .expect("the struct is full");
-    assert(!short_bbr.value().has_bbr);
-    assert(short_bbr.value().mode == topology::CongestionMode::Unknown);
+    CRUCIBLE_TEST_ASSERT(kTest, !short_bbr.value().has_bbr);
+    CRUCIBLE_TEST_ASSERT(kTest, short_bbr.value().mode == topology::CongestionMode::Unknown);
 
     CongestionInfoBytes dctcp{};
     put_field(dctcp, layout::dctcp_info_field::enabled, std::uint16_t{1});
@@ -303,10 +316,10 @@ void test_decode_tcp_sample() {
     put_field(dctcp, layout::dctcp_info_field::ab_tot, std::uint32_t{100});
     topology::TcpInfoSnapshot const with_dctcp =
         layout::decode_tcp_sample(info.view(), dctcp.view(), cntp::CcAlgorithm::Dctcp).expect("the struct is full");
-    assert(with_dctcp.value().has_dctcp && with_dctcp.value().dctcp.enabled);
-    assert(with_dctcp.value().dctcp.alpha_q10 == 512);
-    assert(with_dctcp.value().dctcp.ecn_mark_ppm == 250000);
-    crucible::test::pass("  test_decode_tcp_sample: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, with_dctcp.value().has_dctcp && with_dctcp.value().dctcp.enabled);
+    CRUCIBLE_TEST_ASSERT(kTest, with_dctcp.value().dctcp.alpha_q10 == 512);
+    CRUCIBLE_TEST_ASSERT(kTest, with_dctcp.value().dctcp.ecn_mark_ppm == 250000);
+    ::fixy::check::pass(kTest, "  test_decode_tcp_sample: PASSED\n");
 }
 
 // A TCP socket of the kernel that is not connected has the initial window
@@ -317,16 +330,16 @@ void test_live_tcp_info() {
     // the IO and Block that the socket option gate asks for.
     eff::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
     TcpSocket const tcp = descriptor_of(::fixy::net::mint_socket<::fixy::net::socket_kind::TcpStream>(test_ctx));
-    assert(tcp.is_open());
+    CRUCIBLE_TEST_ASSERT(kTest, tcp.is_open());
     cntp::SocketFd const fd = ::fixy::net::share_socket(tcp.ref());
     ::foundation::core::FixedArray<cntp::SocketFd, 1> const fds{fd};
     // A gpu is no nic, so the harvest refuses it before it reads a socket.
     auto wrong_cog = topology::harvest_per_link(test_ctx, gpu(88), fds.view());
-    assert(wrong_cog.is_err());
-    assert(wrong_cog.err().expect("a gpu is no nic") == topology::TelemetryError::InvalidNicCog);
+    CRUCIBLE_TEST_ASSERT(kTest, wrong_cog.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, wrong_cog.err().expect("a gpu is no nic") == topology::TelemetryError::InvalidNicCog);
     // Reno is part of each kernel, so the harvest reads no fields of BBR or
     // of DCTCP.
-    assert(::fixy::net::set_tcp_congestion(test_ctx, fd, "reno").is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::net::set_tcp_congestion(test_ctx, fd, "reno").is_ok());
     // qemu user mode has no SO_MAX_PACING_RATE, and the door gives its
     // enoprotoopt.  The emulator also answers TCP_INFO with the four bytes of
     // an int, so the harvest has no struct to read.  A real kernel takes the
@@ -336,20 +349,20 @@ void test_live_tcp_info() {
         ::fixy::report(::fixy::Sink::Out, "  test_live_tcp_info: SKIPPED (qemu-user has no SO_MAX_PACING_RATE)\n");
         return;
     }
-    assert(pacing.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, pacing.is_ok());
 
     topology::TcpInfoSnapshot const snapshot =
         topology::harvest_socket(test_ctx, fd).expect("the kernel gives the TCP_INFO of a TCP socket");
-    assert(snapshot.value().algorithm == cntp::CcAlgorithm::Reno);
-    assert(snapshot.value().mode == topology::CongestionMode::Open);
-    assert(snapshot.value().cwnd_bytes.value() == 10u * 536u);
-    assert(snapshot.value().max_pacing_rate_bps == 1000000);
-    assert(!snapshot.value().has_bbr && !snapshot.value().has_dctcp);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.value().algorithm == cntp::CcAlgorithm::Reno);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.value().mode == topology::CongestionMode::Open);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.value().cwnd_bytes.value() == 10u * 536u);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.value().max_pacing_rate_bps == 1000000);
+    CRUCIBLE_TEST_ASSERT(kTest, !snapshot.value().has_bbr && !snapshot.value().has_dctcp);
 
     auto const aggregate =
         topology::harvest_per_link(test_ctx, nic(77), fds.view()).expect("the harvest of a nic link succeeded");
-    assert(aggregate.sample_count == 1);
-    crucible::test::pass("  test_live_tcp_info: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, aggregate.sample_count == 1);
+    ::fixy::check::pass(kTest, "  test_live_tcp_info: PASSED\n");
 }
 
 void test_aggregate_finalize_guard() {
@@ -358,12 +371,12 @@ void test_aggregate_finalize_guard() {
     // sample count of zero.  One helper for both call sites is what
     // makes the two paths impossible to drift apart.
     auto empty = topology::aggregate_congestion(nic(101), {});
-    assert(empty.sample_count == 0);
-    assert(empty.mean_btl_bw_bps == 0);
-    assert(empty.p50_rtt_us == 0);
-    assert(empty.p95_rtt_us == 0);
-    assert(empty.p95_btl_bw_bps == 0);
-    assert(empty.nic_uuid == nic(101).uuid);
+    CRUCIBLE_TEST_ASSERT(kTest, empty.sample_count == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, empty.mean_btl_bw_bps == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, empty.p50_rtt_us == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, empty.p95_rtt_us == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, empty.p95_btl_bw_bps == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, empty.nic_uuid == nic(101).uuid);
 
     ::foundation::core::FixedArray<topology::TcpInfoSnapshot, 3> const samples{
         sample(100000000ull, 1500ull, topology::CongestionMode::BbrProbeBw),
@@ -371,11 +384,11 @@ void test_aggregate_finalize_guard() {
         sample(300000000ull, 3500ull, topology::CongestionMode::BbrProbeBw),
     };
     auto agg = topology::aggregate_congestion(nic(102), samples.view());
-    assert(agg.sample_count == 3);
-    assert(agg.mean_btl_bw_bps == 200000000ull);
-    assert(agg.nic_uuid == nic(102).uuid);
+    CRUCIBLE_TEST_ASSERT(kTest, agg.sample_count == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, agg.mean_btl_bw_bps == 200000000ull);
+    CRUCIBLE_TEST_ASSERT(kTest, agg.nic_uuid == nic(102).uuid);
 
-    crucible::test::pass("  test_aggregate_finalize_guard: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_aggregate_finalize_guard: PASSED\n");
 }
 
 // Link 256 differs from link 0 only in the ninth bit of its index, and the id
@@ -387,7 +400,8 @@ void test_metric_ids_are_injective() {
     constexpr std::uint32_t kSlotCount = topology::kCongestionObservationCount;
     for (std::uint32_t slot_index = 0; slot_index < kSlotCount; ++slot_index) {
         auto const slot = static_cast<topology::CongestionMetricSlot>(slot_index);
-        assert(topology::congestion_metric_id(0, slot) != topology::congestion_metric_id(256, slot));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             topology::congestion_metric_id(0, slot) != topology::congestion_metric_id(256, slot));
     }
     constexpr std::uint64_t kSampleCount = std::uint64_t{1} << 16;
     for (std::uint64_t offset = 0; offset < kSampleCount; ++offset) {
@@ -402,11 +416,11 @@ void test_metric_ids_are_injective() {
         auto const slot = static_cast<topology::CongestionMetricSlot>(word2 % kSlotCount);
         auto const other_slot = static_cast<topology::CongestionMetricSlot>(word3 % kSlotCount);
         std::uint32_t const id = topology::congestion_metric_id(link, slot);
-        assert(id != topology::congestion_metric_id(flipped, slot));
+        CRUCIBLE_TEST_ASSERT(kTest, id != topology::congestion_metric_id(flipped, slot));
         bool const is_same_pair = link == other && slot == other_slot;
-        assert(is_same_pair == (id == topology::congestion_metric_id(other, other_slot)));
+        CRUCIBLE_TEST_ASSERT(kTest, is_same_pair == (id == topology::congestion_metric_id(other, other_slot)));
     }
-    crucible::test::pass("  test_metric_ids_are_injective: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_metric_ids_are_injective: PASSED\n");
 }
 
 }  // namespace
@@ -435,6 +449,6 @@ int main() {
     test_metric_ids_are_injective();
     test_decode_tcp_sample();
     test_live_tcp_info();
-    crucible::test::pass("test_congestion_telemetry: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_congestion_telemetry: all PASSED\n");
     return 0;
 }

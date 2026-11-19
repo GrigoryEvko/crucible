@@ -3,13 +3,23 @@
 
 #include <array>
 #include <concepts>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdint>
 #include <cstdio>
 #include <span>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace phase = crucible::forge::_wip::phases::comm;
 namespace ir = crucible::forge::ir001;
@@ -138,7 +148,7 @@ void test_names_layout_and_static_gates() {
     static_assert(!phase::CommFusionRecipeAllowed<StrictRecipe, phase::CommFusionPattern::CompressBeforeSend>);
     static_assert(phase::CommFusionRecipeAllowed<OrderedRecipe, phase::CommFusionPattern::CompressBeforeSend>);
 
-    crucible::test::pass("  test_names_layout_and_static_gates: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_names_layout_and_static_gates: PASSED\n");
 }
 
 void test_send_from_epilogue_decision() {
@@ -146,27 +156,28 @@ void test_send_from_epilogue_decision() {
                                               net::NetworkReductionLaws{.associative = true, .commutative = true});
     auto decision = phase::admit_comm_fusion<phase::CommFusionPattern::SendFromEpilogue, crucible::cog::CogKind::Gpu>(
         ir::admit_ir001_node(compute_node()), ir::admit_ir001_node(send_node()), constraints);
-    assert(decision.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, decision.is_ok());
     phase::FusedCommDecision const fused = std::move(decision).expect("the pattern and the recipe admit it").value();
-    assert(fused.pattern == phase::CommFusionPattern::SendFromEpilogue);
-    assert(fused.producer_kind == ir::Ir001OpKind::Gemm);
-    assert(fused.comm_kind == ir::Ir001OpKind::SendAsync);
-    assert(fused.producer_hash.raw() != 0);
-    assert(fused.comm_hash.raw() != 0);
-    assert(fused.fused_hash.raw() != 0);
-    assert(fused.participants == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, fused.pattern == phase::CommFusionPattern::SendFromEpilogue);
+    CRUCIBLE_TEST_ASSERT(kTest, fused.producer_kind == ir::Ir001OpKind::Gemm);
+    CRUCIBLE_TEST_ASSERT(kTest, fused.comm_kind == ir::Ir001OpKind::SendAsync);
+    CRUCIBLE_TEST_ASSERT(kTest, fused.producer_hash.raw() != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, fused.comm_hash.raw() != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, fused.fused_hash.raw() != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, fused.participants == 1);
     // The fused key.  It folds the content keys of the two nodes, so the
     // layout of TensorMeta is part of it.
-    assert(fused.fused_hash.raw() == 0x00e077f646606207ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, fused.fused_hash.raw() == 0x00e077f646606207ULL);
 
     phase::CommPhasePolicy disabled{};
     disabled.send_from_epilogue = false;
     auto blocked = phase::admit_comm_fusion<phase::CommFusionPattern::SendFromEpilogue, crucible::cog::CogKind::Gpu>(
         ir::admit_ir001_node(compute_node()), ir::admit_ir001_node(send_node()), constraints, disabled);
-    assert(blocked.is_err());
-    assert(blocked.err().value_or(phase::CommPhaseError::None) == phase::CommPhaseError::PatternDisabled);
+    CRUCIBLE_TEST_ASSERT(kTest, blocked.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         blocked.err().value_or(phase::CommPhaseError::None) == phase::CommPhaseError::PatternDisabled);
 
-    crucible::test::pass("  test_send_from_epilogue_decision: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_send_from_epilogue_decision: PASSED\n");
 }
 
 void test_recipe_and_algorithm_blocks() {
@@ -179,30 +190,32 @@ void test_recipe_and_algorithm_blocks() {
     auto compressed =
         phase::admit_comm_fusion<phase::CommFusionPattern::CompressBeforeSend, crucible::cog::CogKind::Gpu>(
             ir::admit_ir001_node(compute_node()), ir::admit_ir001_node(send_node()), ordered);
-    assert(compressed.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, compressed.is_ok());
 
     auto strict_compressed =
         phase::admit_comm_fusion<phase::CommFusionPattern::CompressBeforeSend, crucible::cog::CogKind::Gpu>(
             ir::admit_ir001_node(compute_node()), ir::admit_ir001_node(send_node()), strict);
-    assert(strict_compressed.is_err());
-    assert(strict_compressed.err().value_or(phase::CommPhaseError::None)
-           == phase::CommPhaseError::RecipeForbidsPattern);
+    CRUCIBLE_TEST_ASSERT(kTest, strict_compressed.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, strict_compressed.err().value_or(phase::CommPhaseError::None)
+                                    == phase::CommPhaseError::RecipeForbidsPattern);
 
     auto strict_reduce = phase::admit_comm_fusion<phase::CommFusionPattern::ReduceOnRecv, crucible::cog::CogKind::Gpu>(
         ir::admit_ir001_node(recv_node()),
         ir::admit_ir001_node(collective_node<AllReduceNode>(p.view(), net::NetworkCollectiveAlgorithm::Ring)), strict);
-    assert(strict_reduce.is_err());
-    assert(strict_reduce.err().value_or(phase::CommPhaseError::None) == phase::CommPhaseError::RecipeForbidsPattern);
+    CRUCIBLE_TEST_ASSERT(kTest, strict_reduce.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, strict_reduce.err().value_or(phase::CommPhaseError::None)
+                                    == phase::CommPhaseError::RecipeForbidsPattern);
 
     auto odd_peers =
         collective_node<AllReduceNode>(p.view(), net::NetworkCollectiveAlgorithm::RecursiveHalvingDoubling);
     odd_peers.attrs.participants.count = ::fixy::mint_refined<ir::kIr001ParticipantRange>(std::uint16_t{3});
     auto bad_algorithm = phase::admit_comm_fusion<phase::CommFusionPattern::ReduceOnRecv, crucible::cog::CogKind::Gpu>(
         ir::admit_ir001_node(recv_node()), ir::admit_ir001_node(odd_peers), ordered);
-    assert(bad_algorithm.is_err());
-    assert(bad_algorithm.err().value_or(phase::CommPhaseError::None) == phase::CommPhaseError::RecipeForbidsAlgorithm);
+    CRUCIBLE_TEST_ASSERT(kTest, bad_algorithm.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, bad_algorithm.err().value_or(phase::CommPhaseError::None)
+                                    == phase::CommPhaseError::RecipeForbidsAlgorithm);
 
-    crucible::test::pass("  test_recipe_and_algorithm_blocks: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_recipe_and_algorithm_blocks: PASSED\n");
 }
 
 }  // namespace
@@ -212,6 +225,6 @@ int main() {
     test_names_layout_and_static_gates();
     test_send_from_epilogue_decision();
     test_recipe_and_algorithm_blocks();
-    crucible::test::pass("test_forge_comm_phase: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_forge_comm_phase: all PASSED\n");
     return 0;
 }

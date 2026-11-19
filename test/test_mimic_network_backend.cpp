@@ -8,11 +8,19 @@
 #include <foundation/effects/Effect.h>
 
 #include <array>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
 #include <cstdio>
 #include <span>
 #include <string_view>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cog = crucible::cog;
 namespace ir = crucible::forge::ir001;
@@ -128,11 +136,11 @@ void test_static_contracts() {
     volatile auto vendor = mb::NetworkBackendVendor::Mellanox;
     volatile auto artifact = mb::NetworkArtifactKind::DpuOffload;
     volatile auto error = mb::NetworkBackendError::BackendUnavailable;
-    assert(mb::network_backend_vendor_name(vendor) == ::fixy::TextView{"mellanox"});
-    assert(mb::network_artifact_kind_name(artifact) == ::fixy::TextView{"dpu-offload"});
-    assert(mb::network_backend_error_name(error) == ::fixy::TextView{"BackendUnavailable"});
+    CRUCIBLE_TEST_ASSERT(kTest, mb::network_backend_vendor_name(vendor) == ::fixy::TextView{"mellanox"});
+    CRUCIBLE_TEST_ASSERT(kTest, mb::network_artifact_kind_name(artifact) == ::fixy::TextView{"dpu-offload"});
+    CRUCIBLE_TEST_ASSERT(kTest, mb::network_backend_error_name(error) == ::fixy::TextView{"BackendUnavailable"});
 
-    crucible::test::pass("  test_static_contracts: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_static_contracts: PASSED\n");
 }
 
 void test_cpu_stub_signals_unavailable() {
@@ -147,14 +155,15 @@ void test_cpu_stub_signals_unavailable() {
     auto planned = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
         cpu, ir::admit_ir001_node(all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Ring)), constraints);
 
-    assert(planned.is_err());
-    assert(planned.err().value_or(mb::NetworkBackendError::None) == mb::NetworkBackendError::BackendUnavailable);
+    CRUCIBLE_TEST_ASSERT(kTest, planned.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, planned.err().value_or(mb::NetworkBackendError::None)
+                                    == mb::NetworkBackendError::BackendUnavailable);
 
     // The trait that produced the rejection above is the same one the emit
     // path consults, so the two layers cannot disagree.
     static_assert(!mb::network_backend_has_emit_path_v<mb::NetworkBackendVendor::Cpu>);
 
-    crucible::test::pass("  test_cpu_stub_signals_unavailable: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_cpu_stub_signals_unavailable: PASSED\n");
 }
 
 void test_gpu_stub_signals_unavailable() {
@@ -166,12 +175,13 @@ void test_gpu_stub_signals_unavailable() {
     auto planned =
         mb::plan_network_kernel<mb::NetworkBackendVendor::Nv>(gpu, ir::admit_ir001_node(send_node()), constraints);
 
-    assert(planned.is_err());
-    assert(planned.err().value_or(mb::NetworkBackendError::None) == mb::NetworkBackendError::BackendUnavailable);
+    CRUCIBLE_TEST_ASSERT(kTest, planned.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, planned.err().value_or(mb::NetworkBackendError::None)
+                                    == mb::NetworkBackendError::BackendUnavailable);
 
     static_assert(!mb::network_backend_has_emit_path_v<mb::NetworkBackendVendor::Nv>);
 
-    crucible::test::pass("  test_gpu_stub_signals_unavailable: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_gpu_stub_signals_unavailable: PASSED\n");
 }
 
 void test_empty_content_hash_rejected_with_distinct_error() {
@@ -194,11 +204,12 @@ void test_empty_content_hash_rejected_with_distinct_error() {
 
     auto planned = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(cpu, declared, constraints);
 
-    assert(planned.is_err());
-    assert(planned.err().value_or(mb::NetworkBackendError::None) == mb::NetworkBackendError::EmptyContentHash);
+    CRUCIBLE_TEST_ASSERT(kTest, planned.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, planned.err().value_or(mb::NetworkBackendError::None)
+                                    == mb::NetworkBackendError::EmptyContentHash);
 
-    crucible::test::pass("  test_empty_content_hash_rejected_with_distinct_error: "
-                         "PASSED\n");
+    ::fixy::check::pass(kTest, "  test_empty_content_hash_rejected_with_distinct_error: "
+                               "PASSED\n");
 }
 
 void test_recipe_rejection() {
@@ -210,10 +221,11 @@ void test_recipe_rejection() {
     auto planned = mb::plan_network_kernel<mb::NetworkBackendVendor::Mellanox>(
         nic, ir::admit_ir001_node(all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Sharp)), strict);
 
-    assert(planned.is_err());
-    assert(planned.err().value_or(mb::NetworkBackendError::None) == mb::NetworkBackendError::RecipeForbidsAlgorithm);
+    CRUCIBLE_TEST_ASSERT(kTest, planned.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, planned.err().value_or(mb::NetworkBackendError::None)
+                                    == mb::NetworkBackendError::RecipeForbidsAlgorithm);
 
-    crucible::test::pass("  test_recipe_rejection: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_recipe_rejection: PASSED\n");
 }
 
 void test_changed_identity_rejected() {
@@ -228,17 +240,19 @@ void test_changed_identity_rejected() {
     cpu_identity.uuid = cog::Uuid{};
     auto zeroed = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
         cpu, ir::admit_ir001_node(all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Ring)), constraints);
-    assert(zeroed.is_err());
-    assert(zeroed.err().value_or(mb::NetworkBackendError::None) == mb::NetworkBackendError::UnsupportedCogKind);
+    CRUCIBLE_TEST_ASSERT(kTest, zeroed.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zeroed.err().value_or(mb::NetworkBackendError::None)
+                                    == mb::NetworkBackendError::UnsupportedCogKind);
 
     cpu_identity.uuid = cog::Uuid{0xCAFEULL, 5};
     cpu_identity.kind = cog::CogKind::CpuCore;
     auto rekinded = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
         cpu, ir::admit_ir001_node(all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Ring)), constraints);
-    assert(rekinded.is_err());
-    assert(rekinded.err().value_or(mb::NetworkBackendError::None) == mb::NetworkBackendError::UnsupportedCogKind);
+    CRUCIBLE_TEST_ASSERT(kTest, rekinded.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, rekinded.err().value_or(mb::NetworkBackendError::None)
+                                    == mb::NetworkBackendError::UnsupportedCogKind);
 
-    crucible::test::pass("  test_changed_identity_rejected: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_changed_identity_rejected: PASSED\n");
 }
 
 }  // namespace
@@ -251,6 +265,6 @@ int main() {
     test_empty_content_hash_rejected_with_distinct_error();
     test_recipe_rejection();
     test_changed_identity_rejected();
-    crucible::test::pass("test_mimic_network_backend: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_mimic_network_backend: all PASSED\n");
     return 0;
 }

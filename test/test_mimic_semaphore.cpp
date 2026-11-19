@@ -8,11 +8,21 @@
 #include <crucible/mimic/Semaphore.h>
 #include <foundation/Platform.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <thread>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace mimic = crucible::mimic;
 using mimic::VendorBackend;
@@ -26,13 +36,13 @@ void signal_then_wait() {
     mimic::SemaphoreCounter counter{0};
     const auto semaphore = mimic::mint_device_semaphore<Backend>(counter, 41);
     static_assert(decltype(semaphore)::backend == Backend);
-    assert(semaphore.native_handle() == 41);
-    assert(!semaphore.try_wait(1));
+    CRUCIBLE_TEST_ASSERT(kTest, semaphore.native_handle() == 41);
+    CRUCIBLE_TEST_ASSERT(kTest, !semaphore.try_wait(1));
     semaphore.signal(5);
-    assert(semaphore.try_wait(5));
-    assert(semaphore.try_wait(4));
-    assert(!semaphore.try_wait(6));
-    assert(counter.load_acquire() == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, semaphore.try_wait(5));
+    CRUCIBLE_TEST_ASSERT(kTest, semaphore.try_wait(4));
+    CRUCIBLE_TEST_ASSERT(kTest, !semaphore.try_wait(6));
+    CRUCIBLE_TEST_ASSERT(kTest, counter.load_acquire() == 5);
 }
 
 void test_signal_then_wait() {
@@ -42,7 +52,7 @@ void test_signal_then_wait() {
     signal_then_wait<VendorBackend::TPU>();
     signal_then_wait<VendorBackend::TRN>();
     signal_then_wait<VendorBackend::CER>();
-    crucible::test::pass("  test_signal_then_wait:        PASSED\n");
+    ::fixy::check::pass(kTest, "  test_signal_then_wait:        PASSED\n");
 }
 
 // A copy and an assignment keep the counter and the handle of their source,
@@ -54,12 +64,12 @@ void test_copy_and_assignment() {
     auto second = mimic::mint_device_semaphore<VendorBackend::CPU>(second_counter, 2);
     const auto copied = first;
     copied.signal(3);
-    assert(first.try_wait(3));
+    CRUCIBLE_TEST_ASSERT(kTest, first.try_wait(3));
     second = first;
-    assert(second.native_handle() == 1);
-    assert(second.try_wait(3));
-    assert(second_counter.load_acquire() == 0);
-    crucible::test::pass("  test_copy_and_assignment:     PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, second.native_handle() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, second.try_wait(3));
+    CRUCIBLE_TEST_ASSERT(kTest, second_counter.load_acquire() == 0);
+    ::fixy::check::pass(kTest, "  test_copy_and_assignment:     PASSED\n");
 }
 
 // A waiter on another thread that sees the signal also sees the write that
@@ -79,8 +89,8 @@ void test_signal_publishes_prior_writes() {
         payload = 99;
         semaphore.signal(1);
     }
-    assert(observed == 99);
-    crucible::test::pass("  test_signal_publishes_prior_writes: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, observed == 99);
+    ::fixy::check::pass(kTest, "  test_signal_publishes_prior_writes: PASSED\n");
 }
 
 }  // namespace
@@ -90,6 +100,6 @@ int main() {
     test_signal_then_wait();
     test_copy_and_assignment();
     test_signal_publishes_prior_writes();
-    crucible::test::pass("test_mimic_semaphore: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_mimic_semaphore: all PASSED\n");
     return 0;
 }

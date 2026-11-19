@@ -5,12 +5,21 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 namespace eff = ::foundation::effects;
@@ -33,31 +42,31 @@ static bool approx(float actual, float expected, float tol = 0.01f) {
 
 static void test_preset_sanity() {
     auto b200 = blackwell_b200();
-    assert(b200.num_sms == 128);
-    assert(b200.warp_size.value() == 32);
-    assert(b200.max_warps_per_sm == 64);
-    assert(b200.max_threads_per_sm() == 32 * 64);
-    assert(b200.total_threads() == 128ULL * 32 * 64);
+    CRUCIBLE_TEST_ASSERT(kTest, b200.num_sms == 128);
+    CRUCIBLE_TEST_ASSERT(kTest, b200.warp_size.value() == 32);
+    CRUCIBLE_TEST_ASSERT(kTest, b200.max_warps_per_sm == 64);
+    CRUCIBLE_TEST_ASSERT(kTest, b200.max_threads_per_sm() == 32 * 64);
+    CRUCIBLE_TEST_ASSERT(kTest, b200.total_threads() == 128ULL * 32 * 64);
     // The rates of the presets are whole numbers below 2^53, so a double
     // holds each one exactly.
     CRUCIBLE_FATAL_INVARIANT(b200.peak_fp16 == FlopRate{1.125e15});
     CRUCIBLE_FATAL_INVARIANT(b200.hbm_bw == ByteRate{8.0e12});
 
     auto h100 = hopper_h100();
-    assert(h100.num_sms == 132);
+    CRUCIBLE_TEST_ASSERT(kTest, h100.num_sms == 132);
     CRUCIBLE_FATAL_INVARIANT(h100.peak_fp16 == FlopRate{9.9e14});
     CRUCIBLE_FATAL_INVARIANT(h100.hbm_bw == ByteRate{3.35e12});
-    assert(h100.sm_version == 90);
+    CRUCIBLE_TEST_ASSERT(kTest, h100.sm_version == 90);
 
     auto mi300 = mi300x();
-    assert(mi300.warp_size.value() == 64);  // AMD wavefront
+    CRUCIBLE_TEST_ASSERT(kTest, mi300.warp_size.value() == 64);  // AMD wavefront
     CRUCIBLE_FATAL_INVARIANT(mi300.peak_fp16 == FlopRate{1.3e15});
 
     auto a100 = ampere_a100();
-    assert(a100.num_sms == 108);
+    CRUCIBLE_TEST_ASSERT(kTest, a100.num_sms == 108);
     CRUCIBLE_FATAL_INVARIANT(a100.peak_fp8 == FlopRate{0.0});  // A100 predates FP8
 
-    crucible::test::pass("  test_preset_sanity:             PASSED\n");
+    ::fixy::check::pass(kTest, "  test_preset_sanity:             PASSED\n");
 }
 
 // The bits of a double, so a test compares two numbers bit for bit.
@@ -79,7 +88,7 @@ static void test_ridge_point() {
     // A part with no bandwidth has the ridge 0.
     CRUCIBLE_FATAL_INVARIANT(HardwareProfile{}.compute_ridge_point(ScalarType::Half) == FlopsPerByte{0.0});
 
-    crucible::test::pass("  test_ridge_point:               PASSED\n");
+    ::fixy::check::pass(kTest, "  test_ridge_point:               PASSED\n");
 }
 
 // evaluate_cost against the same formula on plain doubles, bit for bit.
@@ -108,7 +117,7 @@ static void test_evaluate_cost() {
     CRUCIBLE_FATAL_INVARIANT(empty.arithmetic_intensity == FlopsPerByte{0.0});
     CRUCIBLE_FATAL_INVARIANT(empty.compute_ns == Nanoseconds{0.0} && empty.memory_ns == Nanoseconds{0.0});
 
-    crucible::test::pass("  test_evaluate_cost:             PASSED\n");
+    ::fixy::check::pass(kTest, "  test_evaluate_cost:             PASSED\n");
 }
 
 static void test_wave_efficiency() {
@@ -118,12 +127,12 @@ static void test_wave_efficiency() {
     // The return is a refined float, so building it already checks the
     // [0, 1] bound.  A formula that leaves that range aborts on
     // construction, before any assertion below is reached.
-    assert(approx(wave_efficiency(pure_ctx, 0, hw).value(), 0.0f));
-    assert(approx(wave_efficiency(pure_ctx, tpw, hw).value(), 1.0f));
-    assert(approx(wave_efficiency(pure_ctx, tpw / 2, hw).value(), 0.5f));
+    CRUCIBLE_TEST_ASSERT(kTest, approx(wave_efficiency(pure_ctx, 0, hw).value(), 0.0f));
+    CRUCIBLE_TEST_ASSERT(kTest, approx(wave_efficiency(pure_ctx, tpw, hw).value(), 1.0f));
+    CRUCIBLE_TEST_ASSERT(kTest, approx(wave_efficiency(pure_ctx, tpw / 2, hw).value(), 0.5f));
     const float expect = static_cast<float>(tpw + 1) / static_cast<float>(2 * tpw);
-    assert(approx(wave_efficiency(pure_ctx, tpw + 1, hw).value(), expect));
-    crucible::test::pass("  test_wave_efficiency:           PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, approx(wave_efficiency(pure_ctx, tpw + 1, hw).value(), expect));
+    ::fixy::check::pass(kTest, "  test_wave_efficiency:           PASSED\n");
 }
 
 static void test_sm_occupancy() {
@@ -134,17 +143,17 @@ static void test_sm_occupancy() {
     // travelling on as a plausible-looking ratio.
     //
     // 32 regs/thread → 65536 / 32 = 2048 threads = full occupancy.
-    assert(approx(sm_occupancy(pure_ctx, regs(32), 0, 8, hw).value(), 1.0f));
+    CRUCIBLE_TEST_ASSERT(kTest, approx(sm_occupancy(pure_ctx, regs(32), 0, 8, hw).value(), 1.0f));
     // 64 regs/thread → 1024 threads = 50% occupancy.
-    assert(approx(sm_occupancy(pure_ctx, regs(64), 0, 8, hw).value(), 0.5f));
+    CRUCIBLE_TEST_ASSERT(kTest, approx(sm_occupancy(pure_ctx, regs(64), 0, 8, hw).value(), 0.5f));
     // 128 regs/thread → 512 threads = 25% occupancy.
-    assert(approx(sm_occupancy(pure_ctx, regs(128), 0, 8, hw).value(), 0.25f));
+    CRUCIBLE_TEST_ASSERT(kTest, approx(sm_occupancy(pure_ctx, regs(128), 0, 8, hw).value(), 0.25f));
     // 255 is the type's ceiling: 65536 / 255 = 257.0…, rounded down to 256
     // threads at warp granularity.  The matrix stops here because a higher
     // register count cannot be constructed at all.
-    assert(approx(sm_occupancy(pure_ctx, regs(255), 0, 8, hw).value(), 0.125f));
+    CRUCIBLE_TEST_ASSERT(kTest, approx(sm_occupancy(pure_ctx, regs(255), 0, 8, hw).value(), 0.125f));
 
-    crucible::test::pass("  test_sm_occupancy:              PASSED\n");
+    ::fixy::check::pass(kTest, "  test_sm_occupancy:              PASSED\n");
 }
 
 static void test_validate_config() {
@@ -159,31 +168,31 @@ static void test_validate_config() {
     ok.smem_bytes = 64 * 1024;
     ok.regs_per_thread = regs(64);
     ok.vec_width = 4;
-    assert(validate_config(ok, hw));
+    CRUCIBLE_TEST_ASSERT(kTest, validate_config(ok, hw));
 
     KernelConfig bad_smem = ok;
     bad_smem.smem_bytes = 1024 * 1024;  // 1 MB, over the 228 KB the part has
-    assert(!validate_config(bad_smem, hw));
+    CRUCIBLE_TEST_ASSERT(kTest, !validate_config(bad_smem, hw));
 
     KernelConfig no_warps = ok;
     no_warps.warps_per_block = 0;
-    assert(!validate_config(no_warps, hw));
+    CRUCIBLE_TEST_ASSERT(kTest, !validate_config(no_warps, hw));
 
     KernelConfig too_wide = ok;
     too_wide.warps_per_block = 64;  // 64 × 32 = 2048 threads, over the 1024 cap
-    assert(!validate_config(too_wide, hw));
+    CRUCIBLE_TEST_ASSERT(kTest, !validate_config(too_wide, hw));
 
     KernelConfig zero_tile = ok;
     zero_tile.tile_m = 0;
-    assert(!validate_config(zero_tile, hw));
+    CRUCIBLE_TEST_ASSERT(kTest, !validate_config(zero_tile, hw));
 
     KernelConfig deep = ok;
     deep.pipeline_stages = 8;
-    assert(!validate_config(deep, hw));
+    CRUCIBLE_TEST_ASSERT(kTest, !validate_config(deep, hw));
     deep.pipeline_stages = 0;
-    assert(!validate_config(deep, hw));
+    CRUCIBLE_TEST_ASSERT(kTest, !validate_config(deep, hw));
 
-    crucible::test::pass("  test_validate_config:           PASSED\n");
+    ::fixy::check::pass(kTest, "  test_validate_config:           PASSED\n");
 }
 
 static void test_fusion_benefit() {
@@ -194,10 +203,10 @@ static void test_fusion_benefit() {
                                      /*fused_ns=*/6000.0,
                                      /*saved_bytes=*/1024000,
                                      /*saved_launches=*/1);
-    assert(approx(static_cast<float>(fb.saved_ns), 4000.0f));
-    assert(approx(fb.speedup, 10.0f / 6.0f));
-    assert(fb.saved_launches == 1);
-    crucible::test::pass("  test_fusion_benefit:            PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, approx(static_cast<float>(fb.saved_ns), 4000.0f));
+    CRUCIBLE_TEST_ASSERT(kTest, approx(fb.speedup, 10.0f / 6.0f));
+    CRUCIBLE_TEST_ASSERT(kTest, fb.saved_launches == 1);
+    ::fixy::check::pass(kTest, "  test_fusion_benefit:            PASSED\n");
 }
 
 // One concept for each evaluator, so each gate is read on its own.
@@ -244,16 +253,18 @@ static void test_pure_context_gate() {
 
     auto hw = blackwell_b200();
     KernelConfig cfg{};
-    assert(approx(wave_efficiency(narrowed, 0, hw).value(), 0.0f));
-    assert(approx(sm_occupancy(narrowed, cfg.regs_per_thread, cfg.smem_bytes, cfg.warps_per_block, hw).value(), 0.5f));
+    CRUCIBLE_TEST_ASSERT(kTest, approx(wave_efficiency(narrowed, 0, hw).value(), 0.0f));
+    CRUCIBLE_TEST_ASSERT(
+        kTest,
+        approx(sm_occupancy(narrowed, cfg.regs_per_thread, cfg.smem_bytes, cfg.warps_per_block, hw).value(), 0.5f));
     const CostBreakdown explicit_cfg =
         evaluate_cost(narrowed, FlopCount{1024}, ByteCount{2048}, ElementCount{4096}, ScalarType::Float, cfg, hw);
     const CostBreakdown default_cfg =
         evaluate_cost(narrowed, FlopCount{1024}, ByteCount{2048}, ElementCount{4096}, ScalarType::Float, hw);
     CRUCIBLE_FATAL_INVARIANT(bits_of_number(explicit_cfg.total_ns.raw()) == bits_of_number(default_cfg.total_ns.raw()));
-    assert(compute_fusion_benefit(narrowed, 10000.0, 6000.0, 1024000, 1).saved_launches == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, compute_fusion_benefit(narrowed, 10000.0, 6000.0, 1024000, 1).saved_launches == 1);
 
-    crucible::test::pass("  test_pure_context_gate:         PASSED\n");
+    ::fixy::check::pass(kTest, "  test_pure_context_gate:         PASSED\n");
 }
 
 int main() {
@@ -265,6 +276,6 @@ int main() {
     test_validate_config();
     test_fusion_benefit();
     test_pure_context_gate();
-    crucible::test::pass("test_cost_model: 8 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_cost_model: 8 groups, all passed\n");
     return 0;
 }

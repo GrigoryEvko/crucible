@@ -7,13 +7,18 @@
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
-
 #include <atomic>
 #include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <thread>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -33,9 +38,9 @@ static TensorMeta make_meta(void* ptr, int64_t d0 = 128, int64_t d1 = 256) {
 
 static void test_empty_state() {
     MetaLog log{::foundation::effects::testing::test().alloc};
-    assert(log.size().peek() == 0);
-    assert(!log.try_append(::fixy::View<const TensorMeta>{}).is_valid());
-    crucible::test::pass("  test_empty:                     PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, !log.try_append(::fixy::View<const TensorMeta>{}).is_valid());
+    ::fixy::check::pass(kTest, "  test_empty:                     PASSED\n");
 }
 
 static void test_single_append_returns_index_zero() {
@@ -43,39 +48,41 @@ static void test_single_append_returns_index_zero() {
     TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x1000)));
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     auto idx = log.try_append(record.view());
-    assert(idx.is_valid());
-    assert(idx.raw() == 0);
-    assert(log.size().peek() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, idx.raw() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 1);
     const TensorMeta got = log.copy_record(0);
-    assert(got.data_ptr.value() == m.data_ptr.value());
-    assert(::crucible::raw_tensor_dim(got.sizes[0]) == 128);
-    assert(::crucible::raw_tensor_dim(got.sizes[1]) == 256);
-    crucible::test::pass("  test_single_append:             PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, got.data_ptr.value() == m.data_ptr.value());
+    CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(got.sizes[0]) == 128);
+    CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(got.sizes[1]) == 256);
+    ::fixy::check::pass(kTest, "  test_single_append:             PASSED\n");
 }
 
 static void test_batch_append_and_monotonic() {
     MetaLog log{::foundation::effects::testing::test().alloc};
     ::fixy::FixedArray<TensorMeta, 8> batch{};
     for (uint32_t i = 0; i < 8; ++i) {
-        crucible::test::element_at(batch, i) =
+        *batch.get(i).expect("a test reads an element at or past the count of its array") =
             make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x1000 + i * 16)));
     }
     const ::fixy::View<const TensorMeta> records{batch.view()};
     auto idx1 = log.try_append(records.window(0, 3).expect("the first run fits the batch"));
     auto idx2 = log.try_append(records.window(3, 5).expect("the second run fits the batch"));
-    assert(idx1.is_valid() && idx2.is_valid());
-    assert(idx1.raw() == 0);
-    assert(idx2.raw() == 3);
-    assert(log.size().peek() == 8);
+    CRUCIBLE_TEST_ASSERT(kTest, idx1.is_valid() && idx2.is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, idx1.raw() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, idx2.raw() == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 8);
 
     // The copy of the two appends is the eight records in their order.
     ::fixy::FixedArray<TensorMeta, 8> copied{};
     log.copy_run(0, copied.view());
     for (size_t i = 0; i < 8; ++i) {
-        assert(crucible::test::element_at(copied, i).data_ptr.value()
-               == crucible::test::element_at(batch, i).data_ptr.value());
+        CRUCIBLE_TEST_ASSERT(
+            kTest,
+            copied.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value()
+                == batch.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value());
     }
-    crucible::test::pass("  test_batch_monotonic:           PASSED\n");
+    ::fixy::check::pass(kTest, "  test_batch_monotonic:           PASSED\n");
 }
 
 static void test_tail_advance_frees_capacity() {
@@ -83,14 +90,14 @@ static void test_tail_advance_frees_capacity() {
     TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x2000)));
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     auto idx = log.try_append(record.view());
-    assert(log.size().peek() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 1);
     log.advance_tail(idx.raw() + 1);
-    assert(log.size().peek() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
     // Freeing capacity does not rewind the index.  Indices keep
     // counting, so the next append is 1 and not 0.
     auto idx2 = log.try_append(record.view());
-    assert(idx2.raw() == 1);
-    crucible::test::pass("  test_tail_advance:              PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, idx2.raw() == 1);
+    ::fixy::check::pass(kTest, "  test_tail_advance:              PASSED\n");
 }
 
 static void test_reset_zeroes_both_pointers() {
@@ -101,11 +108,11 @@ static void test_reset_zeroes_both_pointers() {
         (void)log.try_append(record.view());
     log.advance_tail(5);
     log.reset();
-    assert(log.size().peek() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
     // A reset does rewind the index, where advancing the tail does not.
     auto idx = log.try_append(record.view());
-    assert(idx.raw() == 0);
-    crucible::test::pass("  test_reset:                     PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, idx.raw() == 0);
+    ::fixy::check::pass(kTest, "  test_reset:                     PASSED\n");
 }
 
 static void test_copy_run_across_the_end() {
@@ -117,34 +124,38 @@ static void test_copy_run_across_the_end() {
     // has one thread.
     const uint32_t near_end = MetaLog::CAPACITY - 3;
     log.reset_at(MetaIndex{near_end});
-    assert(log.size().peek() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
 
     // Five entries into three remaining slots: the batch straddles the
     // end of the ring.
     ::fixy::FixedArray<TensorMeta, 5> tail5{};
     for (uint32_t i = 0; i < 5; ++i) {
-        crucible::test::element_at(tail5, i) =
+        *tail5.get(i).expect("a test reads an element at or past the count of its array") =
             make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x5000 + i * 0x100)));
     }
     auto idx = log.try_append(tail5.view());
-    assert(idx.is_valid());
-    assert(idx.raw() == near_end);
+    CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, idx.raw() == near_end);
 
     // The copy joins the three records at the end of the buffer and the two
     // at its start, in the order of the append.
     ::fixy::FixedArray<TensorMeta, 5> copied{};
     log.copy_run(near_end, copied.view());
     for (uint32_t i = 0; i < 5; ++i) {
-        assert(crucible::test::element_at(copied, i).data_ptr.value()
-               == crucible::test::element_at(tail5, i).data_ptr.value());
+        CRUCIBLE_TEST_ASSERT(
+            kTest,
+            copied.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value()
+                == tail5.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value());
     }
 
     // A run that does not pass the end is one copy.
     ::fixy::FixedArray<TensorMeta, 2> head2{};
     log.copy_run(near_end + 3, head2.view());
-    assert(head2.at(::fixy::index<0>()).data_ptr.value() == tail5.at(::fixy::index<3>()).data_ptr.value());
-    assert(head2.at(::fixy::index<1>()).data_ptr.value() == tail5.at(::fixy::index<4>()).data_ptr.value());
-    crucible::test::pass("  test_copy_run_across_the_end:   PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<0>()).data_ptr.value()
+                                    == tail5.at(::fixy::index<3>()).data_ptr.value());
+    CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<1>()).data_ptr.value()
+                                    == tail5.at(::fixy::index<4>()).data_ptr.value());
+    ::fixy::check::pass(kTest, "  test_copy_run_across_the_end:   PASSED\n");
 }
 
 // The head and the tail count each record that the log held, and the index of
@@ -159,35 +170,37 @@ static void test_counters_pass_two_to_the_32() {
 
     ::fixy::FixedArray<TensorMeta, 32> run{};
     for (uint32_t i = 0; i < 32; ++i) {
-        crucible::test::element_at(run, i) =
+        *run.get(i).expect("a test reads an element at or past the count of its array") =
             make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x6000 + i * 0x100)));
     }
     const ::fixy::View<const TensorMeta> records{run.view()};
     const MetaIndex first = log.try_append(records.window(0, 15).expect("the first run fits the array"));
-    assert(first.is_valid() && first.raw() == uint64_t{BELOW_WRAP});
+    CRUCIBLE_TEST_ASSERT(kTest, first.is_valid() && first.raw() == uint64_t{BELOW_WRAP});
     const MetaIndex last_below = log.try_append(records.window(15, 1).expect("the record fits the array"));
-    assert(last_below.is_valid() && last_below.raw() == uint64_t{BELOW_WRAP} + 15);
+    CRUCIBLE_TEST_ASSERT(kTest, last_below.is_valid() && last_below.raw() == uint64_t{BELOW_WRAP} + 15);
     const MetaIndex across = log.try_append(records.window(16, 16).expect("the last run fits the array"));
-    assert(across.is_valid() && across.raw() == (uint64_t{1} << 32));
-    assert(log.size().peek() == 32);
+    CRUCIBLE_TEST_ASSERT(kTest, across.is_valid() && across.raw() == (uint64_t{1} << 32));
+    CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 32);
 
     // The records keep their order across the boundary, in the copy of the
     // run and in the copy of one record at each index.
     ::fixy::FixedArray<TensorMeta, 32> copied{};
     log.copy_run(first.raw(), copied.view());
     for (uint32_t i = 0; i < 32; ++i) {
-        assert(crucible::test::element_at(copied, i).data_ptr.value()
-               == crucible::test::element_at(run, i).data_ptr.value());
+        CRUCIBLE_TEST_ASSERT(
+            kTest,
+            copied.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value()
+                == run.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value());
     }
     const TensorMeta read_below = log.copy_record(last_below.raw());
     const TensorMeta read_across = log.copy_record(across.raw());
-    assert(read_below.data_ptr.value() == run.at(::fixy::index<15>()).data_ptr.value());
-    assert(read_across.data_ptr.value() == run.at(::fixy::index<16>()).data_ptr.value());
+    CRUCIBLE_TEST_ASSERT(kTest, read_below.data_ptr.value() == run.at(::fixy::index<15>()).data_ptr.value());
+    CRUCIBLE_TEST_ASSERT(kTest, read_across.data_ptr.value() == run.at(::fixy::index<16>()).data_ptr.value());
 
     log.advance_tail(across.raw() + 16);
-    assert(log.size().peek() == 0);
-    assert(log.tail.get() == (uint64_t{1} << 32) + 16);
-    crucible::test::pass("  test_counters_pass_2_to_the_32: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, log.tail.get() == (uint64_t{1} << 32) + 16);
+    ::fixy::check::pass(kTest, "  test_counters_pass_2_to_the_32: PASSED\n");
 }
 
 // A run longer than the buffer holds records that the producer wrote over.
@@ -252,26 +265,27 @@ static void test_spsc_concurrent_integrity() {
             for (uint32_t k = 0; k < avail; ++k) {
                 const TensorMeta m = log.copy_record(next + k);
                 const uintptr_t expected = static_cast<uintptr_t>(next + k + 1) << 16;
-                assert(std::bit_cast<uintptr_t>(m.data_ptr.value()) == expected);
+                CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uintptr_t>(m.data_ptr.value()) == expected);
                 // The remaining fields are identical in every record,
                 // so they carry no sequence information.  They are
                 // checked anyway: a torn read shows up here.
-                assert(::crucible::raw_tensor_dim(m.sizes[0]) == 128);
-                assert(::crucible::raw_tensor_dim(m.sizes[1]) == 256);
-                assert(m.dtype == ScalarType::Float);
-                assert(m.device_type == DeviceType::CUDA);
+                CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(m.sizes[0]) == 128);
+                CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(m.sizes[1]) == 256);
+                CRUCIBLE_TEST_ASSERT(kTest, m.dtype == ScalarType::Float);
+                CRUCIBLE_TEST_ASSERT(kTest, m.device_type == DeviceType::CUDA);
             }
             log.advance_tail(next + avail);
             next += avail;
         }
-        assert(next == N);  // nothing was lost and nothing repeated
+        CRUCIBLE_TEST_ASSERT(kTest, next == N);  // nothing was lost and nothing repeated
     }};
 
     producer.join();
     consumer.join();
-    crucible::test::pass("  test_spsc_integrity:            PASSED "
-                         "(N={}, producer_spins={})\n",
-                         N, lost_spin.load());
+    ::fixy::check::pass(kTest,
+                        "  test_spsc_integrity:            PASSED "
+                        "(N={}, producer_spins={})\n",
+                        N, lost_spin.load());
 }
 
 // Only the accepting legs of the row-typed facade run here.  The facade
@@ -295,11 +309,11 @@ static void test_try_append_pure() {
         TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xA0)));
         const ::fixy::FixedArray<TensorMeta, 1> record{m};
         auto idx = log.try_append_pure(kPure, record.view());
-        assert(idx.is_valid());
-        assert(idx.raw() == 0);
-        assert(log.size().peek() == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
+        CRUCIBLE_TEST_ASSERT(kTest, idx.raw() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 1);
         const TensorMeta got = log.copy_record(idx.raw());
-        assert(got.data_ptr.value() == m.data_ptr.value());
+        CRUCIBLE_TEST_ASSERT(kTest, got.data_ptr.value() == m.data_ptr.value());
     }
 
     {
@@ -310,10 +324,10 @@ static void test_try_append_pure() {
         const ::fixy::FixedArray<TensorMeta, 1> second_record{m2};
         auto idx1 = log.try_append_pure(kPure, first_record.view());
         auto idx2 = log.try_append_pure(kPure, second_record.view());
-        assert(idx1.is_valid() && idx2.is_valid());
-        assert(idx1.raw() == 0);
-        assert(idx2.raw() == 1);
-        assert(log.size().peek() == 2);
+        CRUCIBLE_TEST_ASSERT(kTest, idx1.is_valid() && idx2.is_valid());
+        CRUCIBLE_TEST_ASSERT(kTest, idx1.raw() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, idx2.raw() == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 2);
     }
 
     // Interleaved calls share one index sequence with no gap and no
@@ -327,11 +341,11 @@ static void test_try_append_pure() {
         auto i1 = log.try_append_pure(kPure, record.view());  // index 1
         auto i2 = log.try_append(record.view());  // index 2
         auto i3 = log.try_append_pure(kPure, record.view());  // index 3
-        assert(i0.raw() == 0);
-        assert(i1.raw() == 1);
-        assert(i2.raw() == 2);
-        assert(i3.raw() == 3);
-        assert(log.size().peek() == 4);
+        CRUCIBLE_TEST_ASSERT(kTest, i0.raw() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, i1.raw() == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, i2.raw() == 2);
+        CRUCIBLE_TEST_ASSERT(kTest, i3.raw() == 3);
+        CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 4);
     }
 
     // The aliases below are what production callers name, so each is
@@ -344,7 +358,7 @@ static void test_try_append_pure() {
     static_assert(!eff::IsPure<eff::Row<eff::Effect::IO>>);
     static_assert(!eff::IsPure<eff::Row<eff::Effect::Bg>>);
 
-    crucible::test::pass("  test_try_append_pure: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_try_append_pure: PASSED\n");
 }
 
 // The interleaving check above is single-threaded, which cannot see a
@@ -388,23 +402,24 @@ static void test_try_append_pure_concurrent() {
             for (uint32_t k = 0; k < avail; ++k) {
                 const TensorMeta m = log.copy_record(next + k);
                 const uintptr_t expected = static_cast<uintptr_t>(next + k + 1) << 16;
-                assert(std::bit_cast<uintptr_t>(m.data_ptr.value()) == expected);
-                assert(::crucible::raw_tensor_dim(m.sizes[0]) == 128);
-                assert(::crucible::raw_tensor_dim(m.sizes[1]) == 256);
-                assert(m.dtype == ScalarType::Float);
-                assert(m.device_type == DeviceType::CUDA);
+                CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uintptr_t>(m.data_ptr.value()) == expected);
+                CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(m.sizes[0]) == 128);
+                CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(m.sizes[1]) == 256);
+                CRUCIBLE_TEST_ASSERT(kTest, m.dtype == ScalarType::Float);
+                CRUCIBLE_TEST_ASSERT(kTest, m.device_type == DeviceType::CUDA);
             }
             log.advance_tail(next + avail);
             next += avail;
         }
-        assert(next == N);
+        CRUCIBLE_TEST_ASSERT(kTest, next == N);
     }};
 
     producer.join();
     consumer.join();
-    crucible::test::pass("  test_try_append_pure_concurrent: "
-                         "PASSED (N={}, producer_spins={})\n",
-                         N, lost_spin.load());
+    ::fixy::check::pass(kTest,
+                        "  test_try_append_pure_concurrent: "
+                        "PASSED (N={}, producer_spins={})\n",
+                        N, lost_spin.load());
 }
 
 int main() {

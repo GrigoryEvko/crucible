@@ -7,11 +7,18 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
 #include <cinttypes>
 #include <cstdio>
 #include <type_traits>
 #include <unordered_set>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 int main() {
     using crucible::NumericalRecipe;
@@ -36,15 +43,15 @@ int main() {
     // these are the values the whole system falls back to.
     {
         NumericalRecipe r{};
-        assert(r.accum_dtype == ScalarType::Float);
-        assert(r.out_dtype == ScalarType::Undefined);
-        assert(r.reduction_algo == ReductionAlgo::PAIRWISE);
-        assert(r.rounding == RoundingMode::RN);
-        assert(r.scale_policy == ScalePolicy::NONE);
-        assert(r.softmax == SoftmaxRecurrence::ONLINE_LSE);
-        assert(r.determinism == ReductionDeterminism::ORDERED);
-        assert(r.flags.none());
-        assert(r.hash.raw() == 0);  // filled in at interning, not construction
+        CRUCIBLE_TEST_ASSERT(kTest, r.accum_dtype == ScalarType::Float);
+        CRUCIBLE_TEST_ASSERT(kTest, r.out_dtype == ScalarType::Undefined);
+        CRUCIBLE_TEST_ASSERT(kTest, r.reduction_algo == ReductionAlgo::PAIRWISE);
+        CRUCIBLE_TEST_ASSERT(kTest, r.rounding == RoundingMode::RN);
+        CRUCIBLE_TEST_ASSERT(kTest, r.scale_policy == ScalePolicy::NONE);
+        CRUCIBLE_TEST_ASSERT(kTest, r.softmax == SoftmaxRecurrence::ONLINE_LSE);
+        CRUCIBLE_TEST_ASSERT(kTest, r.determinism == ReductionDeterminism::ORDERED);
+        CRUCIBLE_TEST_ASSERT(kTest, r.flags.none());
+        CRUCIBLE_TEST_ASSERT(kTest, r.hash.raw() == 0);  // filled in at interning, not construction
     }
 
     // The four tiers form a ladder.  The two weakest admit tensor
@@ -57,20 +64,20 @@ int main() {
     using D = ReductionDeterminism;
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
 
-    assert(!crucible::is_bitexact(D::UNORDERED));
-    assert(!crucible::is_bitexact(D::ORDERED));
+    CRUCIBLE_TEST_ASSERT(kTest, !crucible::is_bitexact(D::UNORDERED));
+    CRUCIBLE_TEST_ASSERT(kTest, !crucible::is_bitexact(D::ORDERED));
     CRUCIBLE_TEST_ASSERT(test, !crucible::is_bitexact(D::BITEXACT_TC));
-    assert(crucible::is_bitexact(D::BITEXACT_STRICT));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_bitexact(D::BITEXACT_STRICT));
 
-    assert(crucible::permits_tensor_cores(D::UNORDERED));
-    assert(crucible::permits_tensor_cores(D::ORDERED));
-    assert(crucible::permits_tensor_cores(D::BITEXACT_TC));
-    assert(!crucible::permits_tensor_cores(D::BITEXACT_STRICT));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::permits_tensor_cores(D::UNORDERED));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::permits_tensor_cores(D::ORDERED));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::permits_tensor_cores(D::BITEXACT_TC));
+    CRUCIBLE_TEST_ASSERT(kTest, !crucible::permits_tensor_cores(D::BITEXACT_STRICT));
 
-    assert(crucible::allows_block_scaled_formats(D::UNORDERED));
-    assert(crucible::allows_block_scaled_formats(D::ORDERED));
-    assert(!crucible::allows_block_scaled_formats(D::BITEXACT_TC));
-    assert(!crucible::allows_block_scaled_formats(D::BITEXACT_STRICT));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::allows_block_scaled_formats(D::UNORDERED));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::allows_block_scaled_formats(D::ORDERED));
+    CRUCIBLE_TEST_ASSERT(kTest, !crucible::allows_block_scaled_formats(D::BITEXACT_TC));
+    CRUCIBLE_TEST_ASSERT(kTest, !crucible::allows_block_scaled_formats(D::BITEXACT_STRICT));
 
     {
         NumericalRecipe r{};
@@ -80,9 +87,9 @@ int main() {
         // others alone.
         r.flags.set(RecipeFlags::FLUSH_TO_ZERO);
         r.flags.set(RecipeFlags::ALLOW_DENORMAL);
-        assert(r.accum_dtype == ScalarType::Float);
-        assert(r.determinism == ReductionDeterminism::BITEXACT_STRICT);
-        assert(r.flags.raw() == 0x05);
+        CRUCIBLE_TEST_ASSERT(kTest, r.accum_dtype == ScalarType::Float);
+        CRUCIBLE_TEST_ASSERT(kTest, r.determinism == ReductionDeterminism::BITEXACT_STRICT);
+        CRUCIBLE_TEST_ASSERT(kTest, r.flags.raw() == 0x05);
     }
 
     // The hash must not be computed over the hash field itself.  Were
@@ -99,16 +106,16 @@ int main() {
         NumericalRecipe filled = fresh;
         filled.hash = h_fresh;
         const auto h_filled = crucible::compute_recipe_hash(filled);
-        assert(h_fresh == h_filled && "hash must exclude the hash field");
+        CRUCIBLE_TEST_ASSERT(kTest, h_fresh == h_filled && "hash must exclude the hash field");
 
         filled.hash = h_filled;
-        assert(crucible::compute_recipe_hash(filled) == h_fresh);
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::compute_recipe_hash(filled) == h_fresh);
 
         // Hashing a recipe that is already hashed changes nothing.
         const auto once = crucible::hashed(fresh);
         const auto twice = crucible::hashed(once);
-        assert(once.hash == twice.hash);
-        assert(once.hash == h_fresh);
+        CRUCIBLE_TEST_ASSERT(kTest, once.hash == twice.hash);
+        CRUCIBLE_TEST_ASSERT(kTest, once.hash == h_fresh);
     }
 
     // A recipe hash goes into the content hash of every kernel that
@@ -171,7 +178,7 @@ int main() {
                          "  committing.\n",
                          r_f32_strict.hash.raw(), EXPECTED_F32_STRICT, r_f16_tc.hash.raw(), EXPECTED_F16_TC,
                          r_fp8_mx.hash.raw(), EXPECTED_FP8_MX);
-            assert(false && "recipe-hash golden mismatch");
+            CRUCIBLE_TEST_ASSERT(kTest, false && "recipe-hash golden mismatch");
         }
     }
 
@@ -193,10 +200,10 @@ int main() {
             .flags = {},
             .hash = {},
         });
-        assert(r_zero_bytes.hash.raw() != 0);
-        assert(!r_zero_bytes.hash.is_sentinel());
-        assert(crucible::hashed(r_zero_bytes).hash == r_zero_bytes.hash);
-        assert(r_zero_bytes.hash.raw() == 0x9b8c23f44f03a121ULL);
+        CRUCIBLE_TEST_ASSERT(kTest, r_zero_bytes.hash.raw() != 0);
+        CRUCIBLE_TEST_ASSERT(kTest, !r_zero_bytes.hash.is_sentinel());
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::hashed(r_zero_bytes).hash == r_zero_bytes.hash);
+        CRUCIBLE_TEST_ASSERT(kTest, r_zero_bytes.hash.raw() == 0x9b8c23f44f03a121ULL);
     }
 
     // Recipes that differ in any semantic field must hash apart.  A
@@ -234,7 +241,7 @@ int main() {
                         r.scale_policy = sp;
                         const uint64_t h = crucible::compute_recipe_hash(r).raw();
                         auto [it, inserted] = seen.insert(h);
-                        assert(inserted && "recipe-hash collision in the grid");
+                        CRUCIBLE_TEST_ASSERT(kTest, inserted && "recipe-hash collision in the grid");
                         ++checked;
                     }
                 }
@@ -243,8 +250,8 @@ int main() {
 
         // Five accumulate types by five output types by four
         // determinism tiers by four scale policies.
-        assert(checked == 400);
-        assert(seen.size() == 400);
+        CRUCIBLE_TEST_ASSERT(kTest, checked == 400);
+        CRUCIBLE_TEST_ASSERT(kTest, seen.size() == 400);
     }
 
     // The same claim as the idempotence case above, approached from
@@ -254,9 +261,9 @@ int main() {
         NumericalRecipe a{};
         NumericalRecipe b{};
         b.hash = crucible::RecipeHash{0xDEADBEEFCAFEBABEULL};  // poison
-        assert(crucible::compute_recipe_hash(a) == crucible::compute_recipe_hash(b));
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::compute_recipe_hash(a) == crucible::compute_recipe_hash(b));
     }
 
-    crucible::test::pass("test_numerical_recipe: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_numerical_recipe: all tests passed\n");
     return 0;
 }

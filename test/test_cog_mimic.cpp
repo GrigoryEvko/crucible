@@ -12,11 +12,19 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cog = crucible::cog;
 namespace mimic = crucible::mimic;
@@ -114,21 +122,21 @@ static void test_fresh_mint_state_runtime() {
     volatile bool gpu_uncal = gpu_mimic.is_uncalibrated();
     volatile bool cpu_core_uncal = cpu_core_mimic.is_uncalibrated();
     volatile bool cpu_sock_uncal = cpu_socket_mimic.is_uncalibrated();
-    assert(gpu_uncal);
-    assert(cpu_core_uncal);
-    assert(cpu_sock_uncal);
+    CRUCIBLE_TEST_ASSERT(kTest, gpu_uncal);
+    CRUCIBLE_TEST_ASSERT(kTest, cpu_core_uncal);
+    CRUCIBLE_TEST_ASSERT(kTest, cpu_sock_uncal);
 
-    assert(&gpu_mimic.identity() == &gpu_id);
-    assert(&cpu_core_mimic.identity() == &core_id);
-    assert(&cpu_socket_mimic.identity() == &socket_id);
+    CRUCIBLE_TEST_ASSERT(kTest, &gpu_mimic.identity() == &gpu_id);
+    CRUCIBLE_TEST_ASSERT(kTest, &cpu_core_mimic.identity() == &core_id);
+    CRUCIBLE_TEST_ASSERT(kTest, &cpu_socket_mimic.identity() == &socket_id);
 
-    assert(gpu_mimic.opcode_latency_table().empty());
-    assert(cpu_core_mimic.opcode_latency_table().empty());
-    assert(cpu_socket_mimic.opcode_latency_table().empty());
+    CRUCIBLE_TEST_ASSERT(kTest, gpu_mimic.opcode_latency_table().empty());
+    CRUCIBLE_TEST_ASSERT(kTest, cpu_core_mimic.opcode_latency_table().empty());
+    CRUCIBLE_TEST_ASSERT(kTest, cpu_socket_mimic.opcode_latency_table().empty());
 
     static_assert(mimic::CogMimic<cog::CogKind::Gpu>::kind == cog::CogKind::Gpu);
 
-    crucible::test::pass("  test_fresh_mint_state_runtime:        PASSED\n");
+    ::fixy::check::pass(kTest, "  test_fresh_mint_state_runtime:        PASSED\n");
 }
 
 static void test_target_caps_class_hash_determinism() {
@@ -137,22 +145,22 @@ static void test_target_caps_class_hash_determinism() {
     auto const b = mint_with_default_caps<cog::CogKind::Gpu>(id);
     volatile std::uint64_t ha = a.target_caps_class_hash();
     volatile std::uint64_t hb = b.target_caps_class_hash();
-    assert(ha == hb);
+    CRUCIBLE_TEST_ASSERT(kTest, ha == hb);
 
     // The kind's underlying value seeds the high byte, so two kinds
     // cannot land on one hash.
     cog::CogIdentity const core_id = identity_of<cog::CogKind::CpuCore>(21, 1);
     auto const c = mint_with_default_caps<cog::CogKind::CpuCore>(core_id);
     volatile std::uint64_t hc = c.target_caps_class_hash();
-    assert(ha != hc);
+    CRUCIBLE_TEST_ASSERT(kTest, ha != hc);
 
     cog::CogIdentity const socket_id = identity_of<cog::CogKind::CpuSocket>(22, 1);
     auto const s = mint_with_default_caps<cog::CogKind::CpuSocket>(socket_id);
     volatile std::uint64_t hs = s.target_caps_class_hash();
-    assert(ha != hs);
-    assert(hc != hs);
+    CRUCIBLE_TEST_ASSERT(kTest, ha != hs);
+    CRUCIBLE_TEST_ASSERT(kTest, hc != hs);
 
-    crucible::test::pass("  test_target_caps_class_hash_determinism: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_target_caps_class_hash_determinism: PASSED\n");
 }
 
 // Two GPU generations must produce different federation hashes, or a
@@ -166,13 +174,13 @@ static void test_target_caps_class_hash_sm_version_discrimination() {
 
     volatile std::uint64_t hopper_hash = hopper.target_caps_class_hash();
     volatile std::uint64_t blackwell_hash = blackwell.target_caps_class_hash();
-    assert(hopper_hash != blackwell_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, hopper_hash != blackwell_hash);
 
     mimic::CogMimic<cog::CogKind::Gpu> const hopper_twin = hopper;
     volatile std::uint64_t twin_hash = hopper_twin.target_caps_class_hash();
-    assert(hopper_hash == twin_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, hopper_hash == twin_hash);
 
-    crucible::test::pass("  test_target_caps_class_hash_sm_version_discrimination: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_target_caps_class_hash_sm_version_discrimination: PASSED\n");
 }
 
 // One physical Cog that takes a firmware update gets a new per-Cog cache
@@ -196,11 +204,11 @@ static void test_cog_kernel_cache_key_firmware_rotation() {
 
     volatile std::uint64_t fed_v1 = mimic_v1.target_caps_class_hash();
     volatile std::uint64_t fed_v2 = mimic_v2.target_caps_class_hash();
-    assert(fed_v1 == fed_v2);
+    CRUCIBLE_TEST_ASSERT(kTest, fed_v1 == fed_v2);
 
     volatile std::uint64_t cog_v1 = mimic_v1.cog_kernel_cache_key();
     volatile std::uint64_t cog_v2 = mimic_v2.cog_kernel_cache_key();
-    assert(cog_v1 != cog_v2);
+    CRUCIBLE_TEST_ASSERT(kTest, cog_v1 != cog_v2);
 
     cog::CogIdentity id_bios_drift = id_v1;
     id_bios_drift.bios_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(43);
@@ -208,12 +216,12 @@ static void test_cog_kernel_cache_key_firmware_rotation() {
     auto const mimic_bios_drift = mint_gpu(id_bios_drift, mimic_v1.calibrated_caps().value());
 
     volatile std::uint64_t cog_bios_drift = mimic_bios_drift.cog_kernel_cache_key();
-    assert(cog_bios_drift != cog_v1);
+    CRUCIBLE_TEST_ASSERT(kTest, cog_bios_drift != cog_v1);
 
     volatile std::uint64_t fed_bios_drift = mimic_bios_drift.target_caps_class_hash();
-    assert(fed_bios_drift == fed_v1);
+    CRUCIBLE_TEST_ASSERT(kTest, fed_bios_drift == fed_v1);
 
-    crucible::test::pass("  test_cog_kernel_cache_key_firmware_rotation: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_cog_kernel_cache_key_firmware_rotation: PASSED\n");
 }
 
 static void test_mint_cog_mimic_round_trip() {
@@ -229,35 +237,35 @@ static void test_mint_cog_mimic_round_trip() {
 
     auto m = mimic::mint_cog_mimic<cog::CogKind::Gpu>(init_context(), id, caps, tbl);
 
-    assert(&m.identity() == &id);
-    assert(m.identity().kind == cog::CogKind::Gpu);
+    CRUCIBLE_TEST_ASSERT(kTest, &m.identity() == &id);
+    CRUCIBLE_TEST_ASSERT(kTest, m.identity().kind == cog::CogKind::Gpu);
 
     volatile std::uint16_t round_trip_sm_version = m.calibrated_caps().value().sm_version.value();
     volatile std::uint16_t round_trip_sm_count = m.calibrated_caps().value().sm_count.value();
-    assert(round_trip_sm_version == 90);
-    assert(round_trip_sm_count == 132);
+    CRUCIBLE_TEST_ASSERT(kTest, round_trip_sm_version == 90);
+    CRUCIBLE_TEST_ASSERT(kTest, round_trip_sm_count == 132);
 
-    assert(m.opcode_latency_table().empty());
+    CRUCIBLE_TEST_ASSERT(kTest, m.opcode_latency_table().empty());
 
     // The identity is bound, but an empty opcode table still counts as
     // uncalibrated.
     volatile bool uncal = m.is_uncalibrated();
-    assert(uncal);
+    CRUCIBLE_TEST_ASSERT(kTest, uncal);
 
     // The per-Cog key needs an identity that holds a non-zero uuid, which
     // the mint has supplied.
     volatile std::uint64_t per_cog_key = m.cog_kernel_cache_key();
     volatile std::uint64_t federation = m.target_caps_class_hash();
-    assert(per_cog_key != federation);  // fmix64(fed XOR content_hash) ≠ fed
-    assert(per_cog_key != 0);
-    assert(federation != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, per_cog_key != federation);  // fmix64(fed XOR content_hash) ≠ fed
+    CRUCIBLE_TEST_ASSERT(kTest, per_cog_key != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, federation != 0);
 
     auto m_bg = mimic::mint_cog_mimic<cog::CogKind::Gpu>(background_context(), id, caps, tbl);
-    assert(&m_bg.identity() == &id);
+    CRUCIBLE_TEST_ASSERT(kTest, &m_bg.identity() == &id);
     volatile std::uint64_t bg_per_cog_key = m_bg.cog_kernel_cache_key();
-    assert(bg_per_cog_key == per_cog_key);  // same identity → same key
+    CRUCIBLE_TEST_ASSERT(kTest, bg_per_cog_key == per_cog_key);  // same identity → same key
 
-    crucible::test::pass("  test_mint_cog_mimic_round_trip:       PASSED\n");
+    ::fixy::check::pass(kTest, "  test_mint_cog_mimic_round_trip:       PASSED\n");
 }
 
 // All three admitted compute kinds flow through one factory.  Driving
@@ -278,9 +286,9 @@ static void test_mint_cpu_paths() {
 
     auto cpu_core_mimic = mimic::mint_cog_mimic<cog::CogKind::CpuCore>(
         ctx, cpu_id, cpu_caps, cog::OpcodeLatencyTable<cog::CogKind::CpuCore>{});
-    assert(&cpu_core_mimic.identity() == &cpu_id);
+    CRUCIBLE_TEST_ASSERT(kTest, &cpu_core_mimic.identity() == &cpu_id);
     volatile std::uint64_t cpu_core_fed = cpu_core_mimic.target_caps_class_hash();
-    assert(cpu_core_fed != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, cpu_core_fed != 0);
 
     cog::CogIdentity sock_id{};
     sock_id.uuid = cog::Uuid{0x100ULL, 0x200ULL};
@@ -293,13 +301,13 @@ static void test_mint_cpu_paths() {
 
     auto sock_mimic = mimic::mint_cog_mimic<cog::CogKind::CpuSocket>(
         ctx, sock_id, sock_caps, cog::OpcodeLatencyTable<cog::CogKind::CpuSocket>{});
-    assert(&sock_mimic.identity() == &sock_id);
+    CRUCIBLE_TEST_ASSERT(kTest, &sock_mimic.identity() == &sock_id);
     volatile std::uint64_t sock_fed = sock_mimic.target_caps_class_hash();
-    assert(sock_fed != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, sock_fed != 0);
 
-    assert(cpu_core_fed != sock_fed);
+    CRUCIBLE_TEST_ASSERT(kTest, cpu_core_fed != sock_fed);
 
-    crucible::test::pass("  test_mint_cpu_paths:                  PASSED\n");
+    ::fixy::check::pass(kTest, "  test_mint_cpu_paths:                  PASSED\n");
 }
 
 // The assignments are written by hand, so they are driven with values the
@@ -311,16 +319,16 @@ static void test_assignment_runtime() {
     auto target = mint_gpu(id_a, gpu_caps(90, 132));
     auto const source = mint_gpu(id_b, gpu_caps(sm_version, 208));
     target = source;
-    assert(&target.identity() == &id_b);
-    assert(target.calibrated_caps().value().sm_version.value() == 100);
-    assert(target.cog_kernel_cache_key() == source.cog_kernel_cache_key());
+    CRUCIBLE_TEST_ASSERT(kTest, &target.identity() == &id_b);
+    CRUCIBLE_TEST_ASSERT(kTest, target.calibrated_caps().value().sm_version.value() == 100);
+    CRUCIBLE_TEST_ASSERT(kTest, target.cog_kernel_cache_key() == source.cog_kernel_cache_key());
 
     auto moved_into = mint_gpu(id_a, gpu_caps(90, 132));
     moved_into = mint_gpu(id_b, gpu_caps(sm_version, 208));
-    assert(&moved_into.identity() == &id_b);
-    assert(moved_into.target_caps_class_hash() == source.target_caps_class_hash());
+    CRUCIBLE_TEST_ASSERT(kTest, &moved_into.identity() == &id_b);
+    CRUCIBLE_TEST_ASSERT(kTest, moved_into.target_caps_class_hash() == source.target_caps_class_hash());
 
-    crucible::test::pass("  test_assignment_runtime:              PASSED\n");
+    ::fixy::check::pass(kTest, "  test_assignment_runtime:              PASSED\n");
 }
 
 // The header asserts admission at compile time.  Reading the same
@@ -341,20 +349,20 @@ static void test_ctx_fits_cog_mimic_concept_gate_runtime() {
 
     // An Init context admits every substrate family: compute, network
     // and memory.
-    assert(init_admits_gpu);
-    assert(init_admits_cpu_core);
-    assert(init_admits_nic);
-    assert(init_admits_dram);
+    CRUCIBLE_TEST_ASSERT(kTest, init_admits_gpu);
+    CRUCIBLE_TEST_ASSERT(kTest, init_admits_cpu_core);
+    CRUCIBLE_TEST_ASSERT(kTest, init_admits_nic);
+    CRUCIBLE_TEST_ASSERT(kTest, init_admits_dram);
 
     // The power and container families have no Mimic instance, so an
     // Init context refuses them.
-    assert(!init_admits_psu);
-    assert(!init_admits_dc);
+    CRUCIBLE_TEST_ASSERT(kTest, !init_admits_psu);
+    CRUCIBLE_TEST_ASSERT(kTest, !init_admits_dc);
 
     // A Test context carries neither Init nor Bg in its row.
-    assert(!test_admits_gpu);
+    CRUCIBLE_TEST_ASSERT(kTest, !test_admits_gpu);
 
-    crucible::test::pass("  test_ctx_fits_cog_mimic_concept_gate_runtime: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_ctx_fits_cog_mimic_concept_gate_runtime: PASSED\n");
 }
 
 static void test_trivially_destructible_carrier() {
@@ -363,7 +371,7 @@ static void test_trivially_destructible_carrier() {
     static_assert(std::is_trivially_destructible_v<mimic::CogMimic<cog::CogKind::CpuCore>>);
     static_assert(std::is_trivially_destructible_v<mimic::CogMimic<cog::CogKind::CpuSocket>>);
 
-    crucible::test::pass("  test_trivially_destructible_carrier:  PASSED\n");
+    ::fixy::check::pass(kTest, "  test_trivially_destructible_carrier:  PASSED\n");
 }
 
 int main() {
@@ -377,6 +385,6 @@ int main() {
     test_assignment_runtime();
     test_ctx_fits_cog_mimic_concept_gate_runtime();
     test_trivially_destructible_carrier();
-    crucible::test::pass("test_cog_mimic: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_cog_mimic: all PASSED\n");
     return 0;
 }

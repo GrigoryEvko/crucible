@@ -34,11 +34,19 @@
 #include "mimic_cpu_kernel_forms.h"
 #include "mimic_cpu_kernel_units.h"
 #include "product_rig.h"
-#include "test_assert.h"
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -48,7 +56,6 @@ namespace eff = ::foundation::effects;
 using ::crucible::test::bits_of_float;
 using ::crucible::test::BoundRecord;
 using ::crucible::test::broadcast_row;
-using ::crucible::test::element_at;
 using ::crucible::test::ExactSum;
 using ::crucible::test::KernelCtx;
 using ::crucible::test::KernelDigests;
@@ -86,7 +93,9 @@ using ::crucible::test::with_kernel_context;
     Matrix<float> matrix = make_matrix<float>(shape, layout, 1);
     for (std::size_t row = 0; row < shape.rows; ++row) {
         for (std::size_t column = 0; column < shape.columns; ++column) {
-            element_at(matrix.values.view(), matrix.position(row, column)) = draw_hard_value(stream);
+            *matrix.values.view()
+                 .get(matrix.position(row, column))
+                 .expect("a test reads an element at or past the count of its View") = draw_hard_value(stream);
         }
     }
     return matrix;
@@ -130,7 +139,7 @@ void test_the_products_of_the_first_model() {
             for (std::size_t column = 0; column < 24; ++column) {
                 float const product = ::crucible::test::model_product(input, weight_transposed, row, column);
                 float const expected = ::crucible::test::canonical_output(product + bias.at(0, column));
-                assert(same_bits(forward.at(row, column), expected));
+                CRUCIBLE_TEST_ASSERT(kTest, same_bits(forward.at(row, column), expected));
                 auto [exact, magnitude] = ::crucible::test::exact_product(input, weight_transposed, row, column);
                 exact.add(bias.at(0, column));
                 magnitude.add(::fixy::fp::abs(bias.at(0, column)));
@@ -139,25 +148,27 @@ void test_the_products_of_the_first_model() {
                 ::crucible::test::check_bound(exact, magnitude, 16, 2, forward.at(row, column), record);
             }
             for (std::size_t column = 0; column < 16; ++column) {
-                assert(same_bits(input_gradient.at(row, column),
-                                 ::crucible::test::model_product(gradient, weight, row, column)));
+                CRUCIBLE_TEST_ASSERT(kTest, same_bits(input_gradient.at(row, column),
+                                                      ::crucible::test::model_product(gradient, weight, row, column)));
                 auto const [exact, magnitude] = ::crucible::test::exact_product(gradient, weight, row, column);
                 ::crucible::test::check_bound(exact, magnitude, 24, 1, input_gradient.at(row, column), record);
             }
         }
         for (std::size_t row = 0; row < 24; ++row) {
             for (std::size_t column = 0; column < 16; ++column) {
-                assert(same_bits(weight_gradient.at(row, column),
-                                 ::crucible::test::model_product(gradient_transposed, input, row, column)));
+                CRUCIBLE_TEST_ASSERT(
+                    kTest, same_bits(weight_gradient.at(row, column),
+                                     ::crucible::test::model_product(gradient_transposed, input, row, column)));
                 auto const [exact, magnitude] =
                     ::crucible::test::exact_product(gradient_transposed, input, row, column);
                 ::crucible::test::check_bound(exact, magnitude, 8, 1, weight_gradient.at(row, column), record);
             }
         }
     }
-    ::crucible::test::pass("test_mimic_cpu_kernels: {} outputs of the products of the first model have the bits of "
-                           "the tree and are inside the bound, the largest error is {} of the bound\n",
-                           record.outputs, record.largest_ratio);
+    ::fixy::check::pass(kTest,
+                        "test_mimic_cpu_kernels: {} outputs of the products of the first model have the bits of "
+                        "the tree and are inside the bound, the largest error is {} of the bound\n",
+                        record.outputs, record.largest_ratio);
 }
 
 // A block of rows of a product with a bias, which one thread runs under its
@@ -211,7 +222,7 @@ template <std::size_t Threads>
             bool const is_run =
                 ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, blocks.at(::fixy::index<Indexes>())...)
                     .is_ok();
-            assert(is_run);
+            CRUCIBLE_TEST_ASSERT(kTest, is_run);
         }(std::make_index_sequence<Threads>{});
     });
     return out;
@@ -234,15 +245,19 @@ void test_the_threads_change_no_bit() {
     });
     auto const check = [&](::fixy::HeapArray<float> const& parts) noexcept {
         for (std::size_t position = 0; position < 29 * 33; ++position) {
-            assert(same_bits(element_at(parts.view(), position), element_at(whole.values.view(), position)));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(*parts.view().get(position).expect(
+                                                      "a test reads an element at or past the count of its View"),
+                                                  *whole.values.view().get(position).expect(
+                                                      "a test reads an element at or past the count of its View")));
         }
     };
     check(multiply_on_threads<1>(left, right, bias));
     check(multiply_on_threads<2>(left, right, bias));
     check(multiply_on_threads<3>(left, right, bias));
     check(multiply_on_threads<4>(left, right, bias));
-    ::crucible::test::pass("test_mimic_cpu_kernels: a product split over 1, 2, 3 and 4 threads gives the bits of one "
-                           "thread\n");
+    ::fixy::check::pass(kTest,
+                        "test_mimic_cpu_kernels: a product split over 1, 2, 3 and 4 threads gives the bits of one "
+                        "thread\n");
 }
 
 // The selects, the fill and the fused add give their exact bits.
@@ -258,7 +273,9 @@ void test_the_exact_element_kernels() {
     Matrix<float> updated = make_matrix<float>(shape, Layout::RowMajor, 1);
     for (std::size_t row = 0; row < 8; ++row) {
         for (std::size_t column = 0; column < 24; ++column) {
-            element_at(updated.values.view(), updated.position(row, column)) = values.at(row, column);
+            *updated.values.view()
+                 .get(updated.position(row, column))
+                 .expect("a test reads an element at or past the count of its View") = values.at(row, column);
         }
     }
     float const fill_value = ::fixy::bit_cast<float>(std::uint32_t{0x7FA12345u});
@@ -274,15 +291,15 @@ void test_the_exact_element_kernels() {
     for (std::size_t row = 0; row < 8; ++row) {
         for (std::size_t column = 0; column < 24; ++column) {
             float const value = values.at(row, column);
-            assert(same_bits(clamped.at(row, column), value < 0.0f ? 0.0f : value));
-            assert(same_bits(gated.at(row, column), gates.at(row, column) <= 0.0f ? 0.0f : value));
-            assert(same_bits(filled.at(row, column), fill_value));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(clamped.at(row, column), value < 0.0f ? 0.0f : value));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(gated.at(row, column), gates.at(row, column) <= 0.0f ? 0.0f : value));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(filled.at(row, column), fill_value));
             float const fused = ::crucible::test::exact_fma(scale, others.at(row, column), value);
-            assert(same_bits(updated.at(row, column), ::crucible::test::canonical_output(fused)));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(updated.at(row, column), ::crucible::test::canonical_output(fused)));
         }
     }
-    ::crucible::test::pass("test_mimic_cpu_kernels: the clamp, the gate, the fill and the scaled add give their "
-                           "stated bits\n");
+    ::fixy::check::pass(kTest, "test_mimic_cpu_kernels: the clamp, the gate, the fill and the scaled add give their "
+                               "stated bits\n");
 }
 
 // The square of a difference, the quotient and the scaled product of a
@@ -299,7 +316,9 @@ void test_the_rounded_element_kernels() {
     Matrix<float> quotients = make_matrix<float>(shape, Layout::RowMajor, 0);
     for (std::size_t row = 0; row < 8; ++row) {
         for (std::size_t column = 0; column < 24; ++column) {
-            element_at(quotients.values.view(), quotients.position(row, column)) = lefts.at(row, column);
+            *quotients.values.view()
+                 .get(quotients.position(row, column))
+                 .expect("a test reads an element at or past the count of its View") = lefts.at(row, column);
         }
     }
     float const scale = 2.0f / 192.0f;
@@ -319,10 +338,10 @@ void test_the_rounded_element_kernels() {
             float const left = lefts.at(row, column);
             float const right = rights.at(row, column);
             double const wide_quotient = static_cast<double>(left) / static_cast<double>(denominator);
-            assert(same_bits(quotients.at(row, column),
-                             ::crucible::test::canonical_output(static_cast<float>(wide_quotient))));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(quotients.at(row, column), ::crucible::test::canonical_output(
+                                                                                 static_cast<float>(wide_quotient))));
             if (!::fixy::fp::is_finite(left) || !::fixy::fp::is_finite(right)) {
-                assert(!::fixy::fp::is_finite(squares.at(row, column)));
+                CRUCIBLE_TEST_ASSERT(kTest, !::fixy::fp::is_finite(squares.at(row, column)));
                 continue;
             }
             ExactSum<float> exact{};
@@ -337,12 +356,14 @@ void test_the_rounded_element_kernels() {
             double const bound = ::crucible::test::gamma_of<float>(3) * ::fixy::fp::abs(expected)
                                + 0x1p-150 * (1.0 + 0x1p-24) * ::fixy::fp::abs(factor_value) + 0x1p-150
                                + 0x1p-51 * ::fixy::fp::abs(expected);
-            assert(::fixy::fp::abs(static_cast<double>(scaled.at(row, column)) - expected) <= bound);
+            CRUCIBLE_TEST_ASSERT(kTest,
+                                 ::fixy::fp::abs(static_cast<double>(scaled.at(row, column)) - expected) <= bound);
         }
     }
-    ::crucible::test::pass("test_mimic_cpu_kernels: {} squares of a difference are inside the bound, the largest "
-                           "error is {} of the bound, and the quotients and the scaled products agree\n",
-                           record.outputs, record.largest_ratio);
+    ::fixy::check::pass(kTest,
+                        "test_mimic_cpu_kernels: {} squares of a difference are inside the bound, the largest "
+                        "error is {} of the bound, and the quotients and the scaled products agree\n",
+                        record.outputs, record.largest_ratio);
 }
 
 // The sums against the model of the tree and inside the bound, and the mean
@@ -373,7 +394,8 @@ void test_the_sums() {
                      ::fixy::side_as<cpu::side::Denominator>(static_cast<float>(count)));
         });
         for (std::size_t column = 0; column < columns; ++column) {
-            assert(same_bits(column_sums.at(0, column), ::crucible::test::model_runs(input, column)));
+            CRUCIBLE_TEST_ASSERT(kTest,
+                                 same_bits(column_sums.at(0, column), ::crucible::test::model_runs(input, column)));
             ExactSum<float> exact{};
             ExactSum<float> magnitude{};
             for (std::size_t row = 0; row < rows; ++row) {
@@ -383,8 +405,9 @@ void test_the_sums() {
             ::crucible::test::check_bound(exact, magnitude, rows, 0, column_sums.at(0, column), record);
         }
         auto const leaf = [&](std::size_t index) noexcept { return input.at(index / columns, index % columns); };
-        assert(same_bits(total.at(0, 0),
-                         ::crucible::test::canonical_output(::crucible::test::model_tree<float>(leaf, 0, count))));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, same_bits(total.at(0, 0),
+                             ::crucible::test::canonical_output(::crucible::test::model_tree<float>(leaf, 0, count))));
         ExactSum<float> squared{};
         for (std::size_t row = 0; row < rows; ++row) {
             for (std::size_t column = 0; column < columns; ++column) {
@@ -399,12 +422,13 @@ void test_the_sums() {
         double const mean = squared.rounded_as<double>() / static_cast<double>(count);
         double const loss_bound =
             ::crucible::test::gamma_of<float>(::crucible::test::depth_of(count) + 4) * mean + 0x1p-50 * mean + 0x1p-140;
-        assert(::fixy::fp::abs(static_cast<double>(loss.at(0, 0)) - mean) <= loss_bound);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fp::abs(static_cast<double>(loss.at(0, 0)) - mean) <= loss_bound);
     }
-    ::crucible::test::pass("test_mimic_cpu_kernels: the sums have the bits of the tree, {} outputs are inside the "
-                           "bound, the largest error is {} of the bound, and each mean of the squared differences is "
-                           "inside its bound\n",
-                           record.outputs, record.largest_ratio);
+    ::fixy::check::pass(kTest,
+                        "test_mimic_cpu_kernels: the sums have the bits of the tree, {} outputs are inside the "
+                        "bound, the largest error is {} of the bound, and each mean of the squared differences is "
+                        "inside its bound\n",
+                        record.outputs, record.largest_ratio);
 }
 
 // The digests of the fixed draws, which each build gives.  The kernels fix
@@ -424,7 +448,8 @@ inline constexpr KernelDigests kDigests{9627877481138780042u, 128288402776903639
 }
 
 void test_the_digests_hold() {
-    assert(agree_with_the_constants(::crucible::test::kernel_digests_of_this_unit<KernelUnit::Build>()));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         agree_with_the_constants(::crucible::test::kernel_digests_of_this_unit<KernelUnit::Build>()));
     std::size_t units = 1;
 #if defined(__x86_64__)
     namespace os = ::foundation::os;
@@ -435,18 +460,18 @@ void test_the_digests_hold() {
     os::X86Level const host = os::x86_level_of(os::read_x86_feature_words());
     if constexpr (has_v3_unit) {
         if (host >= os::X86Level::v3) {
-            assert(agree_with_the_constants(::crucible::test::kernel_digests_of_v3_unit()));
+            CRUCIBLE_TEST_ASSERT(kTest, agree_with_the_constants(::crucible::test::kernel_digests_of_v3_unit()));
             ++units;
         }
     }
     if constexpr (has_v4_unit) {
         if (host >= os::X86Level::v4) {
-            assert(agree_with_the_constants(::crucible::test::kernel_digests_of_v4_unit()));
+            CRUCIBLE_TEST_ASSERT(kTest, agree_with_the_constants(::crucible::test::kernel_digests_of_v4_unit()));
             ++units;
         }
     }
 #endif
-    ::crucible::test::pass("test_mimic_cpu_kernels: the digests of the kernels hold in {} units\n", units);
+    ::fixy::check::pass(kTest, "test_mimic_cpu_kernels: the digests of the kernels hold in {} units\n", units);
 }
 
 }  // namespace

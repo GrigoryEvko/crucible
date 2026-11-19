@@ -4,10 +4,20 @@
 #include <crucible/cog/NicOffloadAudit.h>
 #include <foundation/reflect/EnumName.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
 #include <string_view>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cog = crucible::cog;
 
@@ -76,20 +86,21 @@ static cog::NicOffloadAuditPolicy strict_policy() {
 
 static void test_enumerator_names() {
     using ::foundation::reflect::enum_name;
-    assert(enum_name(cog::NicRssHash::Toeplitz) == std::string_view{"Toeplitz"});
-    assert(enum_name(cog::NicTxQdisc::Fq) == std::string_view{"Fq"});
-    assert(enum_name(cog::NicAuditIssue::RssDisabled) == std::string_view{"RssDisabled"});
-    assert(enum_name(static_cast<cog::NicAuditIssue>(1u << 31)) == std::string_view{"<unknown NicAuditIssue>"});
-    crucible::test::pass("  test_enumerator_names:                PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name(cog::NicRssHash::Toeplitz) == std::string_view{"Toeplitz"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name(cog::NicTxQdisc::Fq) == std::string_view{"Fq"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name(cog::NicAuditIssue::RssDisabled) == std::string_view{"RssDisabled"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name(static_cast<cog::NicAuditIssue>(1u << 31))
+                                    == std::string_view{"<unknown NicAuditIssue>"});
+    ::fixy::check::pass(kTest, "  test_enumerator_names:                PASSED\n");
 }
 
 static void test_good_configuration_passes() {
     auto const report =
         cog::audit_nic_offloads<cog::CogKind::NicPort>(nic_identity(), nic_caps(), good_facts(), strict_policy());
-    assert(report.passes());
-    assert(report.missing_required_offloads.none());
-    assert(report.unsupported_required_offloads.none());
-    crucible::test::pass("  test_good_configuration_passes:       PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, report.passes());
+    CRUCIBLE_TEST_ASSERT(kTest, report.missing_required_offloads.none());
+    CRUCIBLE_TEST_ASSERT(kTest, report.unsupported_required_offloads.none());
+    ::fixy::check::pass(kTest, "  test_good_configuration_passes:       PASSED\n");
 }
 
 static void test_missing_required_offload_is_error() {
@@ -98,11 +109,11 @@ static void test_missing_required_offload_is_error() {
 
     auto const report =
         cog::audit_nic_offloads<cog::CogKind::NicPort>(nic_identity(), nic_caps(), facts, strict_policy());
-    assert(!report.passes());
-    assert(report.severity == cog::AuditSeverity::Error);
-    assert(report.has(cog::NicAuditIssue::MissingRequiredOffload));
-    assert(report.missing_required_offloads.test(cog::NicFeature::Tso));
-    crucible::test::pass("  test_missing_required_offload_is_error: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, !report.passes());
+    CRUCIBLE_TEST_ASSERT(kTest, report.severity == cog::AuditSeverity::Error);
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::MissingRequiredOffload));
+    CRUCIBLE_TEST_ASSERT(kTest, report.missing_required_offloads.test(cog::NicFeature::Tso));
+    ::fixy::check::pass(kTest, "  test_missing_required_offload_is_error: PASSED\n");
 }
 
 static void test_later_warning_keeps_error() {
@@ -112,10 +123,10 @@ static void test_later_warning_keeps_error() {
 
     auto const report =
         cog::audit_nic_offloads<cog::CogKind::NicPort>(nic_identity(), nic_caps(), facts, strict_policy());
-    assert(report.severity == cog::AuditSeverity::Error);
-    assert(report.has(cog::NicAuditIssue::MissingRequiredOffload));
-    assert(report.has(cog::NicAuditIssue::TxQdiscNotFq));
-    crucible::test::pass("  test_later_warning_keeps_error:       PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, report.severity == cog::AuditSeverity::Error);
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::MissingRequiredOffload));
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::TxQdiscNotFq));
+    ::fixy::check::pass(kTest, "  test_later_warning_keeps_error:       PASSED\n");
 }
 
 static void test_unsupported_required_offload_is_error() {
@@ -124,10 +135,10 @@ static void test_unsupported_required_offload_is_error() {
 
     auto const report =
         cog::audit_nic_offloads<cog::CogKind::NicPort>(nic_identity(), caps, good_facts(), strict_policy());
-    assert(report.severity == cog::AuditSeverity::Error);
-    assert(report.has(cog::NicAuditIssue::UnsupportedRequiredOffload));
-    assert(report.unsupported_required_offloads.test(cog::NicFeature::Gso));
-    crucible::test::pass("  test_unsupported_required_offload_is_error: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, report.severity == cog::AuditSeverity::Error);
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::UnsupportedRequiredOffload));
+    CRUCIBLE_TEST_ASSERT(kTest, report.unsupported_required_offloads.test(cog::NicFeature::Gso));
+    ::fixy::check::pass(kTest, "  test_unsupported_required_offload_is_error: PASSED\n");
 }
 
 static void test_rss_and_policy_warnings() {
@@ -144,17 +155,17 @@ static void test_rss_and_policy_warnings() {
 
     auto const report =
         cog::audit_nic_offloads<cog::CogKind::NicPort>(nic_identity(), nic_caps(), facts, strict_policy());
-    assert(report.severity == cog::AuditSeverity::Warn);
-    assert(report.has(cog::NicAuditIssue::RssSpreadTooNarrow));
-    assert(report.has(cog::NicAuditIssue::RssHashNotToeplitz));
-    assert(report.has(cog::NicAuditIssue::RssFourTupleMissing));
-    assert(report.has(cog::NicAuditIssue::IrqRemoteNuma));
-    assert(report.has(cog::NicAuditIssue::RmemMaxBelowBdp));
-    assert(report.has(cog::NicAuditIssue::WmemMaxBelowBdp));
-    assert(report.has(cog::NicAuditIssue::NetdevBudgetTooSmall));
-    assert(report.has(cog::NicAuditIssue::TxQdiscNotFq));
-    assert(report.has(cog::NicAuditIssue::BusyPollMissing));
-    crucible::test::pass("  test_rss_and_policy_warnings:         PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, report.severity == cog::AuditSeverity::Warn);
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::RssSpreadTooNarrow));
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::RssHashNotToeplitz));
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::RssFourTupleMissing));
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::IrqRemoteNuma));
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::RmemMaxBelowBdp));
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::WmemMaxBelowBdp));
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::NetdevBudgetTooSmall));
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::TxQdiscNotFq));
+    CRUCIBLE_TEST_ASSERT(kTest, report.has(cog::NicAuditIssue::BusyPollMissing));
+    ::fixy::check::pass(kTest, "  test_rss_and_policy_warnings:         PASSED\n");
 }
 
 int main() {
@@ -169,6 +180,6 @@ int main() {
     test_later_warning_keeps_error();
     test_unsupported_required_offload_is_error();
     test_rss_and_policy_warnings();
-    crucible::test::pass("test_nic_offload_audit: all passed\n");
+    ::fixy::check::pass(kTest, "test_nic_offload_audit: all passed\n");
     return 0;
 }

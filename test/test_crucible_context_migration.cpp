@@ -16,9 +16,16 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
 
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -120,7 +127,7 @@ bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     init_region(&new_region, new_ops.view(), crucible::make_plan_link(new_plan));
 
     CrucibleContext context{::foundation::effects::testing::test().alloc};
-    assert(context.activate(old_region));
+    CRUCIBLE_TEST_ASSERT(kTest, context.activate(old_region));
     const bool was_switched = context.switch_region(new_region, 1);
     return was_switched && context.active_region().try_get() == &new_region;
 }
@@ -131,22 +138,22 @@ constexpr ::fixy::TextView kBoundName{"MIGRATION_MAX_SLOTS"};
 // A plan at the bound of the bitset migrates.  This shows that the attacks
 // below fail for the width of the plan and for no other reason.
 void test_plan_at_the_bound_migrates() {
-    assert(switch_to_plan(kBitsetSlots, kBitsetSlots - 1));
-    crucible::test::pass("  test_plan_at_the_bound_migrates: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, switch_to_plan(kBitsetSlots, kBitsetSlots - 1));
+    ::fixy::check::pass(kTest, "  test_plan_at_the_bound_migrates: PASSED\n");
 }
 
 // The shared prefix writes a slot that the bitset can record, and the plan is
 // still too wide.  The switch is refused before it copies the slot.
 void test_wide_plan_is_refused(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(test, [] noexcept { (void)switch_to_plan(kWideSlots, 5); }, kBoundName);
-    crucible::test::pass("  test_wide_plan_is_refused: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_wide_plan_is_refused: PASSED\n");
 }
 
 // The shared prefix writes a slot past the end of the bitset.  Without the
 // refusal, the migration sets a bit outside the bitset on the stack.
 void test_slot_past_the_bitset_is_refused(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(test, [] noexcept { (void)switch_to_plan(kWideSlots, kBitsetSlots + 476); }, kBoundName);
-    crucible::test::pass("  test_slot_past_the_bitset_is_refused: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_slot_past_the_bitset_is_refused: PASSED\n");
 }
 
 // The old slot of the shared prefix holds two times the bytes of its new slot,
@@ -173,14 +180,14 @@ void test_smaller_new_slot_takes_its_own_size() {
     init_region(&new_region, new_ops.view(), crucible::make_plan_link(new_plan));
 
     CrucibleContext context{::foundation::effects::testing::test().alloc};
-    assert(context.activate(old_region));
+    CRUCIBLE_TEST_ASSERT(kTest, context.activate(old_region));
     ::fixy::fill(context.pool().bytes(), std::uint8_t{0x5A});
-    assert(context.switch_region(new_region, 1));
-    assert(context.pool().bytes().size() == kSlotBytes);
+    CRUCIBLE_TEST_ASSERT(kTest, context.switch_region(new_region, 1));
+    CRUCIBLE_TEST_ASSERT(kTest, context.pool().bytes().size() == kSlotBytes);
     for (const std::uint8_t byte : context.pool().bytes()) {
-        assert(byte == 0x5A);
+        CRUCIBLE_TEST_ASSERT(kTest, byte == 0x5A);
     }
-    crucible::test::pass("  test_smaller_new_slot_takes_its_own_size: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_smaller_new_slot_takes_its_own_size: PASSED\n");
 }
 
 }  // namespace
@@ -192,6 +199,6 @@ int main() {
     test_wide_plan_is_refused(test);
     test_slot_past_the_bitset_is_refused(test);
     test_smaller_new_slot_takes_its_own_size();
-    crucible::test::pass("test_crucible_context_migration: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_crucible_context_migration: all tests passed\n");
     return 0;
 }

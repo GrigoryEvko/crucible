@@ -3,8 +3,18 @@
 
 #include <crucible/IterationDetector.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::IterationDetector;
 using crucible::SchemaHash;
@@ -34,8 +44,8 @@ uint32_t feed_prefix_then_body(IterationDetector& detector, uint64_t prefix_ops,
         if (!detector.check(kAlloc, periodic_op(n))) continue;
         ++boundaries;
         if (boundaries > 3) {
-            assert(detector.last_completed_len == 8);
-            assert(n - last_boundary == 8);
+            CRUCIBLE_TEST_ASSERT(kTest, detector.last_completed_len == 8);
+            CRUCIBLE_TEST_ASSERT(kTest, n - last_boundary == 8);
         }
         last_boundary = n;
     }
@@ -45,8 +55,8 @@ uint32_t feed_prefix_then_body(IterationDetector& detector, uint64_t prefix_ops,
 void expect_period_after_prefix(uint64_t prefix_ops) {
     IterationDetector d;
     const uint32_t boundaries = feed_prefix_then_body(d, prefix_ops, 400);
-    assert(boundaries >= 395);
-    assert(d.confirmed);
+    CRUCIBLE_TEST_ASSERT(kTest, boundaries >= 395);
+    CRUCIBLE_TEST_ASSERT(kTest, d.confirmed);
 }
 
 void test_prefix_that_never_recurs() {
@@ -65,13 +75,13 @@ void test_history_is_bounded() {
     constexpr uint64_t kHistoryBound = uint64_t{1} << 19;
     IterationDetector d;
     for (uint64_t i = 0; i < 3 * kHistoryBound; ++i) {
-        assert(!d.check(kAlloc, SchemaHash{0x7000000 + i}));
-        assert(d.pos_ - d.base_ <= kHistoryBound);
+        CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, SchemaHash{0x7000000 + i}));
+        CRUCIBLE_TEST_ASSERT(kTest, d.pos_ - d.base_ <= kHistoryBound);
     }
-    assert(kHistoryBound == IterationDetector::HISTORY_MAX_CAPACITY);
-    assert(d.history_capacity() == IterationDetector::HISTORY_MAX_CAPACITY);
+    CRUCIBLE_TEST_ASSERT(kTest, kHistoryBound == IterationDetector::HISTORY_MAX_CAPACITY);
+    CRUCIBLE_TEST_ASSERT(kTest, d.history_capacity() == IterationDetector::HISTORY_MAX_CAPACITY);
     // The detector still finds a period after the bound.
-    assert(feed_prefix_then_body(d, 0, 400) >= 395);
+    CRUCIBLE_TEST_ASSERT(kTest, feed_prefix_then_body(d, 0, 400) >= 395);
 }
 
 uint32_t boundaries_of_long_body(uint32_t length) {
@@ -79,15 +89,15 @@ uint32_t boundaries_of_long_body(uint32_t length) {
     uint32_t boundaries = 0;
     for (uint64_t n = 0; n < uint64_t{length} * 3; ++n)
         boundaries += d.check(kAlloc, SchemaHash{0x9000000 + n % length}) ? 1u : 0u;
-    assert(d.pos_ - d.base_ <= IterationDetector::HISTORY_MAX_CAPACITY);
+    CRUCIBLE_TEST_ASSERT(kTest, d.pos_ - d.base_ <= IterationDetector::HISTORY_MAX_CAPACITY);
     return boundaries;
 }
 
 void test_period_past_the_bound_gives_no_boundary() {
     // A body of MAX_PERIOD ops has its square in the largest ring.  A body
     // one op longer does not, and gives no boundary.
-    assert(boundaries_of_long_body(IterationDetector::MAX_PERIOD) > 0);
-    assert(boundaries_of_long_body(IterationDetector::MAX_PERIOD + 1) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, boundaries_of_long_body(IterationDetector::MAX_PERIOD) > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, boundaries_of_long_body(IterationDetector::MAX_PERIOD + 1) == 0);
 }
 
 void test_oldest_claimable_holds_each_iteration() {
@@ -101,12 +111,12 @@ void test_oldest_claimable_holds_each_iteration() {
     uint32_t boundaries = 0;
     auto feed_op = [&](SchemaHash schema) {
         const uint64_t floor_now = d.oldest_claimable();
-        assert(floor_now >= floor_before);
+        CRUCIBLE_TEST_ASSERT(kTest, floor_now >= floor_before);
         floor_before = floor_now;
         if (!d.check(kAlloc, schema)) return;
         ++boundaries;
         const uint64_t iteration_start = d.pos_ - K - d.last_completed_len;
-        assert(iteration_start >= floor_now);
+        CRUCIBLE_TEST_ASSERT(kTest, iteration_start >= floor_now);
     };
     for (uint64_t i = 0; i < 37; ++i)
         feed_op(SchemaHash{0x5000000 + i});
@@ -118,7 +128,7 @@ void test_oldest_claimable_holds_each_iteration() {
         const uint64_t phase = n % 11;
         feed_op(SchemaHash{phase < 9 ? 1 + phase % 3 : phase - 8});
     }
-    assert(boundaries > 60);
+    CRUCIBLE_TEST_ASSERT(kTest, boundaries > 60);
 }
 
 }  // namespace

@@ -2,10 +2,20 @@
 
 #include <atomic>
 #include <array>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdint>
 #include <thread>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 // The tag of a concurrent histogram keys the cell of each thread, which needs
 // a stable identity, so the tags stand in a named namespace.
@@ -106,12 +116,12 @@ void check_published_buckets(ReaderStart reader_start) {
     }
     reader.join();
 
-    assert(shared.total_count() == kProducerCount * kSamplesPerProducer);
+    CRUCIBLE_TEST_ASSERT(kTest, shared.total_count() == kProducerCount * kSamplesPerProducer);
     // The last iteration of the reader read the buckets of the full
     // histogram.  A reader that stops at the empty-histogram check reads
     // no bucket, and it finds no torn state for that reason.
-    assert(last_total_seen == kProducerCount * kSamplesPerProducer);
-    assert(torn_observations.load(std::memory_order_relaxed) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, last_total_seen == kProducerCount * kSamplesPerProducer);
+    CRUCIBLE_TEST_ASSERT(kTest, torn_observations.load(std::memory_order_relaxed) == 0);
 }
 }  // namespace
 
@@ -126,7 +136,7 @@ int main() {
     h.record(Hist::checked_value(1000));
     h.record(Hist::checked_value(1000000));
 
-    assert(h.total_count() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, h.total_count() == 4);
 
     // Zero is a sample like any other.  A socket with no round trip
     // yet, an idle descriptor, a queue that shed its load: each emits
@@ -135,9 +145,9 @@ int main() {
     {
         Hist zero_h;
         zero_h.record(Hist::checked_value(0));
-        assert(zero_h.total_count() == 1);
-        assert(zero_h.percentile(100.0) == 0);
-        assert(zero_h.mean() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, zero_h.total_count() == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, zero_h.percentile(100.0) == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, zero_h.mean() == 0);
 
         // A zero must not take probability mass from the samples
         // already recorded: it adds one to the lowest bucket and
@@ -146,11 +156,11 @@ int main() {
         mixed.record(Hist::checked_value(0));
         mixed.record(Hist::checked_value(0));
         mixed.record(Hist::checked_value(100));
-        assert(mixed.total_count() == 3);
+        CRUCIBLE_TEST_ASSERT(kTest, mixed.total_count() == 3);
         // Two of the three samples are zero, so the median is zero and
         // the single positive sample is the maximum.
-        assert(mixed.percentile(50.0) == 0);
-        assert(mixed.percentile(100.0) >= 100);
+        CRUCIBLE_TEST_ASSERT(kTest, mixed.percentile(50.0) == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, mixed.percentile(100.0) >= 100);
 
         std::uint64_t bucket0_count = 0;
         std::uint64_t total_buckets = 0;
@@ -160,14 +170,14 @@ int main() {
                 bucket0_count = bucket.count;
             }
         });
-        assert(bucket0_count == 2);
-        assert(total_buckets == 2);  // bucket 0 + the 100-bucket
+        CRUCIBLE_TEST_ASSERT(kTest, bucket0_count == 2);
+        CRUCIBLE_TEST_ASSERT(kTest, total_buckets == 2);  // bucket 0 + the 100-bucket
     }
-    assert(h.percentile(0.0) == 0);
-    assert(h.percentile(50.0) >= 20);
-    assert(h.percentile(99.0) <= Hist::max_trackable_value);
-    assert(h.mean() > 0);
-    assert(h.std_dev() > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, h.percentile(0.0) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, h.percentile(50.0) >= 20);
+    CRUCIBLE_TEST_ASSERT(kTest, h.percentile(99.0) <= Hist::max_trackable_value);
+    CRUCIBLE_TEST_ASSERT(kTest, h.mean() > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, h.std_dev() > 0);
 
     // The sum of squared deviations accumulates in exact integer
     // arithmetic, not in an extended-precision float whose width
@@ -180,48 +190,48 @@ int main() {
         for (int rep = 0; rep < 1000; ++rep) {
             same.record(Hist::checked_value(777));
         }
-        assert(same.total_count() == 1000);
-        assert(same.std_dev() == 0);
-        assert(same.mean() == same.percentile(100.0));
-        assert(same.mean() == same.percentile(50.0));
-        assert(same.mean() > 0);
+        CRUCIBLE_TEST_ASSERT(kTest, same.total_count() == 1000);
+        CRUCIBLE_TEST_ASSERT(kTest, same.std_dev() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, same.mean() == same.percentile(100.0));
+        CRUCIBLE_TEST_ASSERT(kTest, same.mean() == same.percentile(50.0));
+        CRUCIBLE_TEST_ASSERT(kTest, same.mean() > 0);
     }
 
     std::uint64_t exported_count = 0;
     const std::size_t nonzero = h.for_each_nonzero([&](Hist::EncodedBucket bucket) {
-        assert(bucket.count > 0);
+        CRUCIBLE_TEST_ASSERT(kTest, bucket.count > 0);
         exported_count += bucket.count;
     });
-    assert(nonzero >= 3);
-    assert(exported_count == h.total_count());
+    CRUCIBLE_TEST_ASSERT(kTest, nonzero >= 3);
+    CRUCIBLE_TEST_ASSERT(kTest, exported_count == h.total_count());
 
     ::foundation::core::FixedArray<Hist::LogEncodedBucket, 2> partial_export{};
     const auto partial_result = h.serialize_log_into(partial_export.view());
-    assert(partial_result.written == partial_export.size());
-    assert(partial_result.required == nonzero);
-    assert(!partial_result.complete());
+    CRUCIBLE_TEST_ASSERT(kTest, partial_result.written == partial_export.size());
+    CRUCIBLE_TEST_ASSERT(kTest, partial_result.required == nonzero);
+    CRUCIBLE_TEST_ASSERT(kTest, !partial_result.complete());
 
     ::foundation::core::FixedArray<Hist::LogEncodedBucket, Hist::bucket_slots> full_export{};
     const auto full_result = h.serialize_log_into(full_export.view());
-    assert(full_result.complete());
-    assert(full_result.written == nonzero);
+    CRUCIBLE_TEST_ASSERT(kTest, full_result.complete());
+    CRUCIBLE_TEST_ASSERT(kTest, full_result.written == nonzero);
     std::uint64_t serialized_count = 0;
     for (std::size_t i = 0; i < full_result.written; ++i) {
         const std::uint64_t count = full_export.get(i).expect("the position is below the written count")->count;
-        assert(count > 0);
+        CRUCIBLE_TEST_ASSERT(kTest, count > 0);
         serialized_count += count;
     }
-    assert(serialized_count == h.total_count());
+    CRUCIBLE_TEST_ASSERT(kTest, serialized_count == h.total_count());
 
     Hist delta;
     delta.record(Hist::checked_value(20));
     h.subtract_from(delta);
-    assert(h.total_count() == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, h.total_count() == 3);
 
     Hist merged;
     merged.merge_from(h);
     merged.merge_from(delta);
-    assert(merged.total_count() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, merged.total_count() == 4);
 
     // Subtraction publishes its bucket writes the same way merging
     // does.  Without that, a reader could see the lowered total while
@@ -230,7 +240,7 @@ int main() {
     for (int i = 0; i < 16; ++i) {
         publish_h.record(Hist::checked_value(500));
     }
-    assert(publish_h.total_count() == 16);
+    CRUCIBLE_TEST_ASSERT(kTest, publish_h.total_count() == 16);
     Hist publish_delta;
     for (int i = 0; i < 4; ++i) {
         publish_delta.record(Hist::checked_value(500));
@@ -240,11 +250,11 @@ int main() {
         // Read in the order a consumer does: the total first, then the
         // buckets.  The two must agree.
         const std::uint64_t post_total = publish_h.total_count();
-        assert(post_total == 12);
+        CRUCIBLE_TEST_ASSERT(kTest, post_total == 12);
         std::uint64_t bucket_sum = 0;
         publish_h.for_each_nonzero([&](const Hist::EncodedBucket& bucket) noexcept { bucket_sum += bucket.count; });
-        assert(bucket_sum == post_total);
-        assert(publish_h.percentile(50.0) >= 500);
+        CRUCIBLE_TEST_ASSERT(kTest, bucket_sum == post_total);
+        CRUCIBLE_TEST_ASSERT(kTest, publish_h.percentile(50.0) >= 500);
     }
 
     using Concurrent = crucible::observe::ConcurrentHdrHistogram<2, 1000000, 2>;
@@ -270,15 +280,15 @@ int main() {
     }
     t0.join();
     t1.join();
-    assert(c.total_count() == 256);
+    CRUCIBLE_TEST_ASSERT(kTest, c.total_count() == 256);
 
     Hist snapshot;
     c.merge_into(snapshot);
-    assert(snapshot.total_count() == 256);
-    assert(snapshot.percentile(100.0) >= 200);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.total_count() == 256);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.percentile(100.0) >= 200);
 
     c.reset();
-    assert(c.total_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, c.total_count() == 0);
 
     // The tag parameter is what keeps two histograms apart.  The shard
     // a thread is assigned is cached in storage keyed by that tag, so
@@ -306,14 +316,14 @@ int main() {
             drain.record(DrainHist::histogram_type::checked_value(500));
         }
 
-        assert(latency.total_count() == 64);
-        assert(drain.total_count() == 32);
+        CRUCIBLE_TEST_ASSERT(kTest, latency.total_count() == 64);
+        CRUCIBLE_TEST_ASSERT(kTest, drain.total_count() == 32);
 
         // Resetting one leaves the other alone, which shared state
         // would not.
         latency.reset();
-        assert(latency.total_count() == 0);
-        assert(drain.total_count() == 32);
+        CRUCIBLE_TEST_ASSERT(kTest, latency.total_count() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, drain.total_count() == 32);
     }
 
     check_published_buckets(ReaderStart::WithProducers);
@@ -330,11 +340,11 @@ int main() {
     auto producer = channel.producer(std::move(producer_perm));
     auto consumer = channel.consumer(std::move(consumer_perm));
 
-    assert(producer.try_push(42));
-    assert(producer.try_push(84));
+    CRUCIBLE_TEST_ASSERT(kTest, producer.try_push(42));
+    CRUCIBLE_TEST_ASSERT(kTest, producer.try_push(84));
 
     Hist streamed;
-    assert(crucible::observe::drain_record_stream(streamed, consumer, 8) == 2);
-    assert(streamed.total_count() == 2);
-    assert(streamed.percentile(100.0) >= 84);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::observe::drain_record_stream(streamed, consumer, 8) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, streamed.total_count() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, streamed.percentile(100.0) >= 84);
 }

@@ -5,11 +5,21 @@
 
 #include <crucible/Vigil.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "tensor_data.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -26,9 +36,9 @@ void activate_compiled_mode(Vigil& vigil) {
     for (uint32_t i = 0; i < AK; i++) {
         auto pkt = build_op(3, i);
         auto r = crucible::test::dispatch_synthetic(vigil, pkt.entry, pkt.metas, pkt.n_metas);
-        assert(r.action == DispatchResult::Action::RECORD);
+        CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::RECORD);
     }
-    assert(vigil.context().is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled());
     std::printf("   Aligned after %u ops. CrucibleContext: COMPILED\n", AK);
     std::printf("   Pool: %llu bytes allocated\n",
                 static_cast<unsigned long long>(vigil.context().pool().pool_bytes()));
@@ -36,7 +46,7 @@ void activate_compiled_mode(Vigil& vigil) {
     for (uint32_t i = AK; i < NUM_OPS; i++) {
         auto pkt = build_op(3, i);
         auto r = crucible::test::dispatch_synthetic(vigil, pkt.entry, pkt.metas, pkt.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
+        CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
     }
     std::printf("   Partial iteration completed (ops %u-%u COMPILED)\n", AK, NUM_OPS - 1);
 }
@@ -49,7 +59,7 @@ void run_compiled_iterations(Vigil& vigil) {
             auto pkt = build_op(iter, i);
             auto result = crucible::test::dispatch_synthetic(vigil, pkt.entry, pkt.metas, pkt.n_metas);
 
-            assert(result.action == DispatchResult::Action::COMPILED);
+            CRUCIBLE_TEST_ASSERT(kTest, result.action == DispatchResult::Action::COMPILED);
 
             const char* status_str = (result.status == ReplayStatus::MATCH)    ? "MATCH"
                                    : (result.status == ReplayStatus::COMPLETE) ? "COMPLETE"
@@ -58,7 +68,7 @@ void run_compiled_iterations(Vigil& vigil) {
             // The buffer already exists.  A real kernel would write its
             // result here rather than producing a new tensor.
             void* out = crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), 0));
-            assert(out != nullptr);
+            CRUCIBLE_TEST_ASSERT(kTest, out != nullptr);
 
             uint64_t tensor_bytes = 0;
             const auto& op = MLP_OPS[i];
@@ -107,12 +117,12 @@ void verify_data_flow(Vigil& vigil) {
 
     auto p0 = build_op(7, 0);
     auto r0 = crucible::test::dispatch_synthetic(vigil, p0.entry, p0.metas, p0.n_metas);
-    assert(r0.action == DispatchResult::Action::COMPILED);
+    CRUCIBLE_TEST_ASSERT(kTest, r0.action == DispatchResult::Action::COMPILED);
     std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), 0)), 0xAB, BATCH * HIDDEN * 4);
 
     auto p1 = build_op(7, 1);
     auto r1 = crucible::test::dispatch_synthetic(vigil, p1.entry, p1.metas, p1.n_metas);
-    assert(r1.action == DispatchResult::Action::COMPILED);
+    CRUCIBLE_TEST_ASSERT(kTest, r1.action == DispatchResult::Action::COMPILED);
     auto* in_data = crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), 0));
     bool flow_ok = true;
     for (uint32_t b = 0; b < BATCH * HIDDEN * 4; b++) {
@@ -130,7 +140,7 @@ void verify_data_flow(Vigil& vigil) {
     }
 
     std::printf("   op0 output → op1 input data flow: %s\n", flow_ok ? "VERIFIED" : "FAILED");
-    assert(flow_ok);
+    CRUCIBLE_TEST_ASSERT(kTest, flow_ok);
 }
 
 }  // namespace test_mlp_trace

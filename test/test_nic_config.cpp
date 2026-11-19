@@ -3,10 +3,18 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 // Every apply and query entry point this file calls carries a
 // [[deprecated("CRUCIBLE_STUB:...")]] attribute, because no
@@ -41,46 +49,46 @@ template <typename Config>
 
 void test_admission() {
     auto ring = nic::admit_ring_size(4096);
-    assert(ring.is_ok());
-    assert(std::move(ring).expect("4096 slots fit").value() == 4096);
+    CRUCIBLE_TEST_ASSERT(kTest, ring.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(ring).expect("4096 slots fit").value() == 4096);
 
     auto non_power = nic::admit_ring_size(1000);
-    assert(non_power.is_err());
-    assert(non_power.err() == ::fixy::some(nic::NicConfigError::InvalidRingSize));
+    CRUCIBLE_TEST_ASSERT(kTest, non_power.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, non_power.err() == ::fixy::some(nic::NicConfigError::InvalidRingSize));
 
     auto huge_ring = nic::admit_ring_size(16384);
-    assert(huge_ring.is_err());
-    assert(huge_ring.err() == ::fixy::some(nic::NicConfigError::InvalidRingSize));
+    CRUCIBLE_TEST_ASSERT(kTest, huge_ring.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, huge_ring.err() == ::fixy::some(nic::NicConfigError::InvalidRingSize));
 
     auto queues = nic::admit_queue_count(64);
-    assert(queues.is_ok());
-    assert(std::move(queues).expect("64 queues fit").value() == 64);
+    CRUCIBLE_TEST_ASSERT(kTest, queues.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(queues).expect("64 queues fit").value() == 64);
 
     auto zero_queues = nic::admit_queue_count(0);
-    assert(zero_queues.is_err());
-    assert(zero_queues.err() == ::fixy::some(nic::NicConfigError::InvalidQueueCount));
+    CRUCIBLE_TEST_ASSERT(kTest, zero_queues.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_queues.err() == ::fixy::some(nic::NicConfigError::InvalidQueueCount));
 
     auto rss = nic::admit_rss_table_size(4097);
-    assert(rss.is_err());
-    assert(rss.err() == ::fixy::some(nic::NicConfigError::InvalidRssTableSize));
+    CRUCIBLE_TEST_ASSERT(kTest, rss.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, rss.err() == ::fixy::some(nic::NicConfigError::InvalidRssTableSize));
 
     auto busy = nic::admit_busy_poll_us(50);
-    assert(busy.is_ok());
-    assert(std::move(busy).expect("50 us fits").value() == 50);
+    CRUCIBLE_TEST_ASSERT(kTest, busy.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(busy).expect("50 us fits").value() == 50);
 
     auto too_busy = nic::admit_busy_poll_us(1000001);
-    assert(too_busy.is_err());
-    assert(too_busy.err() == ::fixy::some(nic::NicConfigError::InvalidBusyPollUs));
+    CRUCIBLE_TEST_ASSERT(kTest, too_busy.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, too_busy.err() == ::fixy::some(nic::NicConfigError::InvalidBusyPollUs));
 
     auto zero_bytes = nic::admit_sysctl_bytes(0);
-    assert(zero_bytes.is_err());
-    assert(zero_bytes.err() == ::fixy::some(nic::NicConfigError::InvalidSysctlBytes));
+    CRUCIBLE_TEST_ASSERT(kTest, zero_bytes.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_bytes.err() == ::fixy::some(nic::NicConfigError::InvalidSysctlBytes));
 
     auto zero_rto = nic::admit_tcp_rto_min_us(0);
-    assert(zero_rto.is_err());
-    assert(zero_rto.err() == ::fixy::some(nic::NicConfigError::InvalidTcpRtoMinUs));
+    CRUCIBLE_TEST_ASSERT(kTest, zero_rto.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_rto.err() == ::fixy::some(nic::NicConfigError::InvalidTcpRtoMinUs));
 
-    crucible::test::pass("  test_admission: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_admission: PASSED\n");
 }
 
 void test_mint_and_apply_boundaries() {
@@ -105,84 +113,86 @@ void test_mint_and_apply_boundaries() {
     sysctl.busy_poll_us = nic::admit_busy_poll_us(50).expect("50 us fits");
     sysctl.tcp_rto_min_us = nic::admit_tcp_rto_min_us(10000).expect("10 ms fits");
     auto valid_sysctl = nic::validate_sysctl_config(sysctl);
-    assert(valid_sysctl.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, valid_sysctl.is_ok());
 
     auto minted = nic::mint_nic_config(init_ctx(), nic_identity(), iface, ethtool, qdisc, sysctl)
                       .expect("a NicPort identity and a named interface make a configuration");
     static_assert(std::same_as<decltype(minted), nic::DeclaredNicConfig>);
-    assert(minted.value().identity.kind == cog::CogKind::NicPort);
-    assert(minted.value().ethtool.interface.view() == "eth0");
-    assert(minted.value().qdisc.interface.view() == "eth0");
-    assert(minted.value().qdisc.kind == nic::QdiscKind::FqCodel);
-    assert(minted.value().sysctl.busy_poll_us.value() == 50);
+    CRUCIBLE_TEST_ASSERT(kTest, minted.value().identity.kind == cog::CogKind::NicPort);
+    CRUCIBLE_TEST_ASSERT(kTest, minted.value().ethtool.interface.view() == "eth0");
+    CRUCIBLE_TEST_ASSERT(kTest, minted.value().qdisc.interface.view() == "eth0");
+    CRUCIBLE_TEST_ASSERT(kTest, minted.value().qdisc.kind == nic::QdiscKind::FqCodel);
+    CRUCIBLE_TEST_ASSERT(kTest, minted.value().sysctl.busy_poll_us.value() == 50);
 
     auto apply = nic::apply_config(minted);
-    assert(apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
 
     auto declared_ethtool =
         nic::declare_ethtool_config(minted.value().ethtool).expect("the minted ethtool configuration is valid");
     auto ethtool_apply = nic::apply_ethtool(declared_ethtool);
-    assert(ethtool_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, ethtool_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
 
     auto declared_qdisc =
         nic::declare_qdisc_config(minted.value().qdisc).expect("the minted qdisc configuration is valid");
     auto qdisc_apply = nic::apply_qdisc(declared_qdisc);
-    assert(qdisc_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, qdisc_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
 
     auto declared_sysctl = nic::declare_sysctl_config(sysctl).expect("the sysctl configuration is valid");
     auto sysctl_apply = nic::apply_sysctl(declared_sysctl);
-    assert(sysctl_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, sysctl_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
 
     auto privileged = nic::mint_nic_config(init_ctx(), nic_identity(), iface, ethtool, qdisc, sysctl, true)
                           .expect("a privileged request makes a configuration too");
     auto privileged_apply = nic::apply_config(privileged);
-    assert(privileged_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedBackendUnavailable));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         privileged_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedBackendUnavailable));
 
-    crucible::test::pass("  test_mint_and_apply_boundaries: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_mint_and_apply_boundaries: PASSED\n");
 }
 
 void test_identity_and_sysctl_validation() {
     cntp::NicInterfaceName const iface = cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
 
     auto zero = nic::mint_nic_config(init_ctx(), cog::CogIdentity{}, iface);
-    assert(zero.err() == ::fixy::some(nic::NicConfigError::ZeroCog));
+    CRUCIBLE_TEST_ASSERT(kTest, zero.err() == ::fixy::some(nic::NicConfigError::ZeroCog));
 
     auto gpu = nic_identity();
     gpu.kind = cog::CogKind::Gpu;
     auto wrong_kind = nic::mint_nic_config(init_ctx(), gpu, iface);
-    assert(wrong_kind.err() == ::fixy::some(nic::NicConfigError::NonNicCog));
+    CRUCIBLE_TEST_ASSERT(kTest, wrong_kind.err() == ::fixy::some(nic::NicConfigError::NonNicCog));
 
     nic::SysctlConfig invalid{};
     invalid.tcp_rmem.min = nic::admit_sysctl_bytes(4096).expect("4096 bytes fit");
     invalid.tcp_rmem.pressure = nic::admit_sysctl_bytes(2048).expect("2048 bytes fit");
     invalid.tcp_rmem.max = nic::admit_sysctl_bytes(8192).expect("8192 bytes fit");
     auto declared = nic::declare_sysctl_config(invalid);
-    assert(declared.err() == ::fixy::some(nic::NicConfigError::InvalidTcpMemoryTriple));
+    CRUCIBLE_TEST_ASSERT(kTest, declared.err() == ::fixy::some(nic::NicConfigError::InvalidTcpMemoryTriple));
 
     auto unordered_apply = nic::apply_sysctl(unvalidated_tag(invalid));
-    assert(unordered_apply.err() == ::fixy::some(nic::NicConfigError::InvalidTcpMemoryTriple));
+    CRUCIBLE_TEST_ASSERT(kTest, unordered_apply.err() == ::fixy::some(nic::NicConfigError::InvalidTcpMemoryTriple));
 
     auto empty_ethtool = nic::declare_ethtool_config(nic::EthtoolConfig{});
-    assert(empty_ethtool.err() == ::fixy::some(nic::NicConfigError::InvalidInterfaceName));
+    CRUCIBLE_TEST_ASSERT(kTest, empty_ethtool.err() == ::fixy::some(nic::NicConfigError::InvalidInterfaceName));
 
     auto empty_qdisc = nic::declare_qdisc_config(nic::QdiscConfig{});
-    assert(empty_qdisc.err() == ::fixy::some(nic::NicConfigError::InvalidInterfaceName));
+    CRUCIBLE_TEST_ASSERT(kTest, empty_qdisc.err() == ::fixy::some(nic::NicConfigError::InvalidInterfaceName));
 
     auto empty_ethtool_apply = nic::apply_ethtool(unvalidated_tag(nic::EthtoolConfig{}));
-    assert(empty_ethtool_apply.err() == ::fixy::some(nic::NicConfigError::InvalidInterfaceName));
+    CRUCIBLE_TEST_ASSERT(kTest, empty_ethtool_apply.err() == ::fixy::some(nic::NicConfigError::InvalidInterfaceName));
 
     nic::NicConfigPlan mismatch{};
     mismatch.identity = nic_identity();
     mismatch.ethtool.interface = iface;
     mismatch.qdisc.interface = cntp::NicInterfaceName::from("eth1").expect("eth1 is an interface name");
-    assert(nic::validate_nic_config(mismatch).err() == ::fixy::some(nic::NicConfigError::InterfaceMismatch));
+    CRUCIBLE_TEST_ASSERT(kTest, nic::validate_nic_config(mismatch).err()
+                                    == ::fixy::some(nic::NicConfigError::InterfaceMismatch));
     auto mismatched_apply = nic::apply_config(unvalidated_tag(mismatch));
-    assert(mismatched_apply.err() == ::fixy::some(nic::NicConfigError::InterfaceMismatch));
+    CRUCIBLE_TEST_ASSERT(kTest, mismatched_apply.err() == ::fixy::some(nic::NicConfigError::InterfaceMismatch));
 
     auto query = nic::query_current(nic_identity(), iface);
-    assert(query.err() == ::fixy::some(nic::NicConfigError::QueryDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, query.err() == ::fixy::some(nic::NicConfigError::QueryDeferred));
 
-    crucible::test::pass("  test_identity_and_sysctl_validation: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_identity_and_sysctl_validation: PASSED\n");
 }
 
 // Nothing here touches the kernel yet, and three separate claims say
@@ -215,35 +225,36 @@ void test_apply_paths_are_stubbed() {
     auto deferred = nic::mint_nic_config(init_ctx(), nic_identity(), iface, ethtool)
                         .expect("a NicPort identity and a named interface make a configuration");
     auto deferred_apply = nic::apply_config(deferred);
-    assert(deferred_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, deferred_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
 
     auto deferred_ethtool = nic::apply_ethtool(
         nic::declare_ethtool_config(deferred.value().ethtool).expect("the minted ethtool configuration is valid"));
-    assert(deferred_ethtool.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, deferred_ethtool.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
 
     auto deferred_qdisc = nic::apply_qdisc(
         nic::declare_qdisc_config(deferred.value().qdisc).expect("the minted qdisc configuration is valid"));
-    assert(deferred_qdisc.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, deferred_qdisc.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
 
     // One that does ask, and is told the backend is missing.
     auto requested = nic::mint_nic_config(init_ctx(), nic_identity(), iface, ethtool, {}, {}, true)
                          .expect("a privileged request makes a configuration too");
     auto requested_apply = nic::apply_config(requested);
-    assert(requested_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedBackendUnavailable));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         requested_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedBackendUnavailable));
 
     // The read side defers in the same way the write side does.
     auto query = nic::query_current(nic_identity(), iface);
-    assert(query.err() == ::fixy::some(nic::NicConfigError::QueryDeferred));
+    CRUCIBLE_TEST_ASSERT(kTest, query.err() == ::fixy::some(nic::NicConfigError::QueryDeferred));
 
-    crucible::test::pass("  test_apply_paths_are_stubbed: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_apply_paths_are_stubbed: PASSED\n");
 }
 
 void test_audit_mapping() {
-    assert(nic::qdisc_kind_name(nic::QdiscKind::Fq) == ::fixy::TextView{"fq"});
-    assert(nic::qdisc_kind_name(nic::QdiscKind::FqCodel) == ::fixy::TextView{"fq_codel"});
-    assert(nic::qdisc_to_audit_qdisc(nic::QdiscKind::Fq) == cog::NicTxQdisc::Fq);
-    assert(nic::qdisc_to_audit_qdisc(nic::QdiscKind::FqCodel) == cog::NicTxQdisc::FqCodel);
-    assert(nic::qdisc_to_audit_qdisc(nic::QdiscKind::Prio) == cog::NicTxQdisc::Unknown);
+    CRUCIBLE_TEST_ASSERT(kTest, nic::qdisc_kind_name(nic::QdiscKind::Fq) == ::fixy::TextView{"fq"});
+    CRUCIBLE_TEST_ASSERT(kTest, nic::qdisc_kind_name(nic::QdiscKind::FqCodel) == ::fixy::TextView{"fq_codel"});
+    CRUCIBLE_TEST_ASSERT(kTest, nic::qdisc_to_audit_qdisc(nic::QdiscKind::Fq) == cog::NicTxQdisc::Fq);
+    CRUCIBLE_TEST_ASSERT(kTest, nic::qdisc_to_audit_qdisc(nic::QdiscKind::FqCodel) == cog::NicTxQdisc::FqCodel);
+    CRUCIBLE_TEST_ASSERT(kTest, nic::qdisc_to_audit_qdisc(nic::QdiscKind::Prio) == cog::NicTxQdisc::Unknown);
 
     ::fixy::Bits<nic::NicOffload> offloads{
         nic::NicOffload::Tso,
@@ -251,21 +262,22 @@ void test_audit_mapping() {
         nic::NicOffload::RxHash,
     };
     auto features = nic::audit_features_from_offloads(offloads);
-    assert(features.test(cog::NicFeature::Tso));
-    assert(features.test(cog::NicFeature::Gro));
-    assert(features.test(cog::NicFeature::Rss));
-    assert(!features.test(cog::NicFeature::Gso));
+    CRUCIBLE_TEST_ASSERT(kTest, features.test(cog::NicFeature::Tso));
+    CRUCIBLE_TEST_ASSERT(kTest, features.test(cog::NicFeature::Gro));
+    CRUCIBLE_TEST_ASSERT(kTest, features.test(cog::NicFeature::Rss));
+    CRUCIBLE_TEST_ASSERT(kTest, !features.test(cog::NicFeature::Gso));
 
-    crucible::test::pass("  test_audit_mapping: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_audit_mapping: PASSED\n");
 }
 
 void test_enumerator_names() {
     using ::foundation::reflect::enum_name;
-    assert(enum_name(nic::NicConfigError::QueryDeferred) == std::string_view{"QueryDeferred"});
-    assert(enum_name(nic::NicOffload::RxHash) == std::string_view{"RxHash"});
-    assert(enum_name(static_cast<nic::NicConfigError>(0xFF)) == std::string_view{"<unknown NicConfigError>"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name(nic::NicConfigError::QueryDeferred) == std::string_view{"QueryDeferred"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name(nic::NicOffload::RxHash) == std::string_view{"RxHash"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name(static_cast<nic::NicConfigError>(0xFF))
+                                    == std::string_view{"<unknown NicConfigError>"});
 
-    crucible::test::pass("  test_enumerator_names: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_enumerator_names: PASSED\n");
 }
 
 }  // namespace
@@ -301,7 +313,7 @@ int main() {
     test_audit_mapping();
     test_enumerator_names();
     test_apply_paths_are_stubbed();
-    crucible::test::pass("test_nic_config: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_nic_config: all PASSED\n");
     return 0;
 }
 

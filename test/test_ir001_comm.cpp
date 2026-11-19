@@ -3,11 +3,20 @@
 #include <foundation/reflect/Hash.h>
 
 #include <array>
-#include "test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace ir = crucible::forge::ir001;
 
@@ -76,10 +85,10 @@ void test_taxonomy() {
     static_assert(!ir::Ir001PointToPointKind<ir::Ir001OpKind::Checkpoint>);
 
     auto all_reduce = ir::ir001_op_info(ir::Ir001OpKind::AllReduce);
-    assert(all_reduce.category == ir::Ir001OpCategory::CollectiveSync);
-    assert(all_reduce.name == ::fixy::TextView{"all_reduce"});
-    assert(all_reduce.side_effecting);
-    assert(all_reduce.network_visible);
+    CRUCIBLE_TEST_ASSERT(kTest, all_reduce.category == ir::Ir001OpCategory::CollectiveSync);
+    CRUCIBLE_TEST_ASSERT(kTest, all_reduce.name == ::fixy::TextView{"all_reduce"});
+    CRUCIBLE_TEST_ASSERT(kTest, all_reduce.side_effecting);
+    CRUCIBLE_TEST_ASSERT(kTest, all_reduce.network_visible);
 
     // The names come from the enumerators: every capital that follows a
     // lower-case letter or a digit starts a word.
@@ -92,11 +101,11 @@ void test_taxonomy() {
                   == "<unknown Ir001OpKind>");
 
     auto gemm = ir::ir001_op_info(ir::Ir001OpKind::Gemm);
-    assert(gemm.category == ir::Ir001OpCategory::Compute);
-    assert(!gemm.side_effecting);
-    assert(!gemm.network_visible);
+    CRUCIBLE_TEST_ASSERT(kTest, gemm.category == ir::Ir001OpCategory::Compute);
+    CRUCIBLE_TEST_ASSERT(kTest, !gemm.side_effecting);
+    CRUCIBLE_TEST_ASSERT(kTest, !gemm.network_visible);
 
-    crucible::test::pass("  test_taxonomy: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_taxonomy: PASSED\n");
 }
 
 void test_collective_node_admission() {
@@ -114,36 +123,36 @@ void test_collective_node_admission() {
 
     auto declared = ir::admit_ir001_node(op);
     auto const header = ir::serialize_ir001_header(declared);
-    assert(header.kind == std::to_underlying(ir::Ir001OpKind::AllReduce));
-    assert(header.flags == 1);
-    assert(header.attr_words > 0);
-    assert(header.content_hash != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, header.kind == std::to_underlying(ir::Ir001OpKind::AllReduce));
+    CRUCIBLE_TEST_ASSERT(kTest, header.flags == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, header.attr_words > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, header.content_hash != 0);
     // The content key of this node.  A change here changes every key in a
     // cache.  The key folds the size of the attributes, so the layout of
     // TensorMeta is part of it.
-    assert(header.content_hash == 0xf8a30e64c1670f65ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, header.content_hash == 0xf8a30e64c1670f65ULL);
 
     bool visited = false;
     ir::visit_ir001_node(declared, [&](ir::AllReduceOp const& node) {
         visited = true;
-        assert(node.content_hash.raw() == header.content_hash);
-        assert(node.attrs.participants.count.value() == 2);
+        CRUCIBLE_TEST_ASSERT(kTest, node.content_hash.raw() == header.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, node.attrs.participants.count.value() == 2);
     });
-    assert(visited);
+    CRUCIBLE_TEST_ASSERT(kTest, visited);
 
     auto redeclared = ir::admit_ir001_node(declared.value());
     auto const reheader = ir::serialize_ir001_header(redeclared);
-    assert(reheader.content_hash == header.content_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, reheader.content_hash == header.content_hash);
 
     auto changed_shape = op;
     changed_shape.attrs.input.meta.sizes[0] = crucible::tensor_dim(2048);
     auto const shape_hash = ir::serialize_ir001_header(ir::admit_ir001_node(changed_shape)).content_hash;
-    assert(shape_hash != header.content_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, shape_hash != header.content_hash);
 
     auto changed_recipe = op;
     changed_recipe.attrs.recipe.rounding = ::foundation::core::RoundingMode::RZ;
     auto const recipe_hash = ir::serialize_ir001_header(ir::admit_ir001_node(changed_recipe)).content_hash;
-    assert(recipe_hash != header.content_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, recipe_hash != header.content_hash);
 
     auto changed_peer = p;
     changed_peer.at(::fixy::index<1>()).uuid = crucible::cog::Uuid{1, 12};
@@ -151,9 +160,9 @@ void test_collective_node_admission() {
     changed_participants.attrs.participants.peers = ::fixy::mint_tagged<::fixy::tags::source::Ir001>(
         ::fixy::View<crucible::cog::CogIdentity const>{changed_peer.view()});
     auto const peer_hash = ir::serialize_ir001_header(ir::admit_ir001_node(changed_participants)).content_hash;
-    assert(peer_hash != header.content_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, peer_hash != header.content_hash);
 
-    crucible::test::pass("  test_collective_node_admission: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_collective_node_admission: PASSED\n");
 }
 
 void test_other_attr_shapes() {
@@ -178,27 +187,27 @@ void test_other_attr_shapes() {
     send.attrs.timeout_ms = ::fixy::mint_refined<ir::kIr001TimeoutRange>(std::uint32_t{25});
     auto declared_send = ir::admit_ir001_node(send);
     auto send_header = ir::serialize_ir001_header(declared_send);
-    assert(send_header.kind == std::to_underlying(ir::Ir001OpKind::SendAsync));
-    assert(send_header.flags == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, send_header.kind == std::to_underlying(ir::Ir001OpKind::SendAsync));
+    CRUCIBLE_TEST_ASSERT(kTest, send_header.flags == 1);
 
     auto changed_send = send;
     changed_send.attrs.peer.uuid = crucible::cog::Uuid{2, 2};
     auto changed_send_header = ir::serialize_ir001_header(ir::admit_ir001_node(changed_send));
-    assert(changed_send_header.content_hash != send_header.content_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, changed_send_header.content_hash != send_header.content_hash);
 
     ir::TelemetryEmitOp telemetry{};
     telemetry.attrs.row = crucible::RowHash::from_raw(0x1234);
     telemetry.attrs.value = 42;
     auto declared_telemetry = ir::admit_ir001_node(telemetry);
     auto telemetry_header = ir::serialize_ir001_header(declared_telemetry);
-    assert(telemetry_header.kind == std::to_underlying(ir::Ir001OpKind::IntTelemetryEmit));
-    assert(telemetry_header.content_hash != send_header.content_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, telemetry_header.kind == std::to_underlying(ir::Ir001OpKind::IntTelemetryEmit));
+    CRUCIBLE_TEST_ASSERT(kTest, telemetry_header.content_hash != send_header.content_hash);
     // The content keys of these nodes.  The key of the send node folds the
     // size of its attributes, so the layout of TensorMeta is part of it.
-    assert(send_header.content_hash == 0x646647f67a17b535ULL);
-    assert(telemetry_header.content_hash == 0xbe2e6fabe114c6cfULL);
+    CRUCIBLE_TEST_ASSERT(kTest, send_header.content_hash == 0x646647f67a17b535ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, telemetry_header.content_hash == 0xbe2e6fabe114c6cfULL);
 
-    crucible::test::pass("  test_other_attr_shapes: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_other_attr_shapes: PASSED\n");
 }
 
 }  // namespace
@@ -208,6 +217,6 @@ int main() {
     test_taxonomy();
     test_collective_node_admission();
     test_other_attr_shapes();
-    crucible::test::pass("test_ir001_comm: all PASSED\n");
+    ::fixy::check::pass(kTest, "test_ir001_comm: all PASSED\n");
     return 0;
 }

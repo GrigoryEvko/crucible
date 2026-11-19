@@ -20,9 +20,19 @@
 
 #include <crucible/Vigil.h>
 #include "test_harness.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 using namespace test_mlp_trace;
@@ -56,7 +66,7 @@ int main() {
     const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
     std::printf("   BackgroundThread built RegionNode with %u ops\n", region->num_ops());
 
-    assert(region->plan.is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_some());
     const ::fixy::Ref<MemoryPlan const> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
 
     std::printf("\n── Memory Plan ──\n");

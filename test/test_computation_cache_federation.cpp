@@ -12,16 +12,25 @@
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 namespace fed = crucible::cipher::federation;
 namespace eff = ::foundation::effects;
 
-#define ASSERT_TRUE(...) assert((__VA_ARGS__))
+#define ASSERT_TRUE(...) CRUCIBLE_TEST_ASSERT(kTest, (__VA_ARGS__))
 
 // The value of a result that holds one.  A result with an error ends the
 // test.
@@ -123,33 +132,36 @@ const auto& local_cipher_permission() {
 // argument type.
 static void test_t01_identity_holds_the_names() {
     const ::fixy::View<std::byte const> identity = fed::computation_identity<&t_binary, RBgIO, int, double>();
-    assert(holds_text(identity, ::foundation::core::stable_function_name_text<&t_binary>()));
-    assert(holds_text(identity, ::foundation::core::stable_name_text<fed::ComputationCacheIdentity>()));
-    assert(holds_text(identity, ::foundation::core::stable_name_text<eff::canonical_row_t<RBgIO>>()));
-    assert(holds_text(identity, ::foundation::core::stable_name_text<int>()));
-    assert(holds_text(identity, ::foundation::core::stable_name_text<double>()));
+    CRUCIBLE_TEST_ASSERT(kTest, holds_text(identity, ::foundation::core::stable_function_name_text<&t_binary>()));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         holds_text(identity, ::foundation::core::stable_name_text<fed::ComputationCacheIdentity>()));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         holds_text(identity, ::foundation::core::stable_name_text<eff::canonical_row_t<RBgIO>>()));
+    CRUCIBLE_TEST_ASSERT(kTest, holds_text(identity, ::foundation::core::stable_name_text<int>()));
+    CRUCIBLE_TEST_ASSERT(kTest, holds_text(identity, ::foundation::core::stable_name_text<double>()));
 
-    crucible::test::pass("  T01 identity_holds_the_names:                PASSED\n");
+    ::fixy::check::pass(kTest, "  T01 identity_holds_the_names:                PASSED\n");
 }
 
 // The key is the keyed hash of the identity under the key of the
 // federation, so it reads the names and no 64-bit id.
 static void test_t02_key_is_the_hash_of_the_identity() {
     const fed::FederationKey key = fed::federation_key<&t_unary, RBg, int>(test_hash_key());
-    assert(key == fed::federation_key_of_bytes(test_hash_key(), fed::computation_identity<&t_unary, RBg, int>()));
-    assert(key.kind() == fed::FederationHashKind::blake3_keyed);
-    assert(key.width() == fed::FederationKeyWidth::bytes_32);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, key == fed::federation_key_of_bytes(test_hash_key(), fed::computation_identity<&t_unary, RBg, int>()));
+    CRUCIBLE_TEST_ASSERT(kTest, key.kind() == fed::FederationHashKind::blake3_keyed);
+    CRUCIBLE_TEST_ASSERT(kTest, key.width() == fed::FederationKeyWidth::bytes_32);
 
-    crucible::test::pass("  T02 key_is_the_hash_of_the_identity:         PASSED\n");
+    ::fixy::check::pass(kTest, "  T02 key_is_the_hash_of_the_identity:         PASSED\n");
 }
 
 // The key of one computation in two federations differs, so an entry of
 // one federation does not name a slot of another.
 static void test_t03_federation_key_takes_part() {
-    assert(!(fed::federation_key<&t_unary, R0, int>(hash_key_from(0))
-             == fed::federation_key<&t_unary, R0, int>(hash_key_from(1))));
+    CRUCIBLE_TEST_ASSERT(kTest, !(fed::federation_key<&t_unary, R0, int>(hash_key_from(0))
+                                  == fed::federation_key<&t_unary, R0, int>(hash_key_from(1))));
 
-    crucible::test::pass("  T03 federation_key_takes_part:               PASSED\n");
+    ::fixy::check::pass(kTest, "  T03 federation_key_takes_part:               PASSED\n");
 }
 
 static void test_t04_deterministic() {
@@ -158,37 +170,45 @@ static void test_t04_deterministic() {
     ASSERT_TRUE(fed::federation_key<&t_binary, RBgIO, int, double>(test_hash_key())
                 == fed::federation_key<&t_binary, RBgIO, int, double>(test_hash_key()));
 
-    crucible::test::pass("  T04 deterministic:                           PASSED\n");
+    ::fixy::check::pass(kTest, "  T04 deterministic:                           PASSED\n");
 }
 
 static void test_t05_row_distinguishes() {
     const auto key = test_hash_key();
-    assert(!(fed::federation_key<&t_unary, R0, int>(key) == fed::federation_key<&t_unary, RBg, int>(key)));
-    assert(!(fed::federation_key<&t_unary, R0, int>(key) == fed::federation_key<&t_unary, RIO, int>(key)));
-    assert(!(fed::federation_key<&t_unary, RBg, int>(key) == fed::federation_key<&t_unary, RIO, int>(key)));
-    assert(!(fed::federation_key<&t_unary, RBg, int>(key) == fed::federation_key<&t_unary, RBgIO, int>(key)));
-    assert(!(fed::federation_key<&t_unary, RBgIO, int>(key) == fed::federation_key<&t_unary, RFull, int>(key)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !(fed::federation_key<&t_unary, R0, int>(key) == fed::federation_key<&t_unary, RBg, int>(key)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !(fed::federation_key<&t_unary, R0, int>(key) == fed::federation_key<&t_unary, RIO, int>(key)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !(fed::federation_key<&t_unary, RBg, int>(key) == fed::federation_key<&t_unary, RIO, int>(key)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !(fed::federation_key<&t_unary, RBg, int>(key) == fed::federation_key<&t_unary, RBgIO, int>(key)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !(fed::federation_key<&t_unary, RBgIO, int>(key) == fed::federation_key<&t_unary, RFull, int>(key)));
 
-    crucible::test::pass("  T05 row_distinguishes:                       PASSED\n");
+    ::fixy::check::pass(kTest, "  T05 row_distinguishes:                       PASSED\n");
 }
 
 // Two functions of one signature share their 64-bit function id, and
 // their names keep them apart.
 static void test_t06_fnptr_distinguishes() {
     const auto key = test_hash_key();
-    assert(!(fed::federation_key<&t_unary, R0, int>(key) == fed::federation_key<&t_other, R0, int>(key)));
-    assert(!(fed::federation_key<&t_unary, R0, int>(key) == fed::federation_key<&t_void, R0>(key)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !(fed::federation_key<&t_unary, R0, int>(key) == fed::federation_key<&t_other, R0, int>(key)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !(fed::federation_key<&t_unary, R0, int>(key) == fed::federation_key<&t_void, R0>(key)));
 
-    crucible::test::pass("  T06 fnptr_distinguishes:                     PASSED\n");
+    ::fixy::check::pass(kTest, "  T06 fnptr_distinguishes:                     PASSED\n");
 }
 
 static void test_t07_args_distinguishes() {
     const auto key = test_hash_key();
-    assert(!(fed::federation_key<&t_unary, R0, int>(key) == fed::federation_key<&t_unary, R0, float>(key)));
-    assert(!(fed::federation_key<&t_binary, R0, int, double>(key)
-             == fed::federation_key<&t_binary, R0, double, int>(key)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !(fed::federation_key<&t_unary, R0, int>(key) == fed::federation_key<&t_unary, R0, float>(key)));
+    CRUCIBLE_TEST_ASSERT(kTest, !(fed::federation_key<&t_binary, R0, int, double>(key)
+                                  == fed::federation_key<&t_binary, R0, double, int>(key)));
 
-    crucible::test::pass("  T07 args_distinguishes:                      PASSED\n");
+    ::fixy::check::pass(kTest, "  T07 args_distinguishes:                      PASSED\n");
 }
 
 // A row is a set of atoms: its order and a repeated atom do not change the
@@ -198,17 +218,17 @@ static void test_t08_row_permutation_invariance() {
     ASSERT_TRUE(fed::federation_key<&t_unary, RBgIO, int>(key) == fed::federation_key<&t_unary, RIOBg, int>(key));
     ASSERT_TRUE(fed::federation_key<&t_unary, RBgIO, int>(key) == fed::federation_key<&t_unary, RIOBgIO, int>(key));
 
-    crucible::test::pass("  T08 row_permutation_invariance:              PASSED\n");
+    ::fixy::check::pass(kTest, "  T08 row_permutation_invariance:              PASSED\n");
 }
 
 static void test_t09_empty_args() {
     const auto key = test_hash_key();
     const fed::FederationKey k_void_empty = fed::federation_key<&t_void, R0>(key);
     const fed::FederationKey k_void_bg = fed::federation_key<&t_void, RBg>(key);
-    assert(!k_void_empty.is_zero());
-    assert(!(k_void_empty == k_void_bg));
+    CRUCIBLE_TEST_ASSERT(kTest, !k_void_empty.is_zero());
+    CRUCIBLE_TEST_ASSERT(kTest, !(k_void_empty == k_void_bg));
 
-    crucible::test::pass("  T09 empty_args:                              PASSED\n");
+    ::fixy::check::pass(kTest, "  T09 empty_args:                              PASSED\n");
 }
 
 static void test_t10_codec_round_trip() {
@@ -225,9 +245,9 @@ static void test_t10_codec_round_trip() {
     ASSERT_TRUE(view.is_ok());
 
     ASSERT_TRUE(value_of(view).header.key == fed::federation_key<&t_unary, R0, int>(test_hash_key()));
-    assert(::fixy::equal(value_of(view).payload, body.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(value_of(view).payload, body.view()));
 
-    crucible::test::pass("  T10 codec_round_trip:                        PASSED\n");
+    ::fixy::check::pass(kTest, "  T10 codec_round_trip:                        PASSED\n");
 }
 
 // One function and one argument list across four rows. The streams differ
@@ -252,14 +272,14 @@ static void test_t11_cross_row_on_wire_distinct() {
     ASSERT_TRUE(wbi.is_ok());
 
     // Each entry fills its buffer of 48 bytes.
-    assert(!::fixy::equal(buf_r0.view(), buf_rbg.view()));
-    assert(!::fixy::equal(buf_r0.view(), buf_rio.view()));
-    assert(!::fixy::equal(buf_r0.view(), buf_rbgio.view()));
-    assert(!::fixy::equal(buf_rbg.view(), buf_rio.view()));
-    assert(!::fixy::equal(buf_rbg.view(), buf_rbgio.view()));
-    assert(!::fixy::equal(buf_rio.view(), buf_rbgio.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, !::fixy::equal(buf_r0.view(), buf_rbg.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, !::fixy::equal(buf_r0.view(), buf_rio.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, !::fixy::equal(buf_r0.view(), buf_rbgio.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, !::fixy::equal(buf_rbg.view(), buf_rio.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, !::fixy::equal(buf_rbg.view(), buf_rbgio.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, !::fixy::equal(buf_rio.view(), buf_rbgio.view()));
 
-    crucible::test::pass("  T11 cross_row_on_wire_distinct:              PASSED\n");
+    ::fixy::check::pass(kTest, "  T11 cross_row_on_wire_distinct:              PASSED\n");
 }
 
 static void test_t12_key_never_sentinel_or_zero() {
@@ -269,19 +289,19 @@ static void test_t12_key_never_sentinel_or_zero() {
     const fed::FederationKey ki = fed::federation_key<&t_unary, RIO, int>(key);
     const fed::FederationKey kf = fed::federation_key<&t_unary, RFull, int>(key);
 
-    assert(!k0.is_zero() && !k0.is_sentinel());
-    assert(!kb.is_zero() && !kb.is_sentinel());
-    assert(!ki.is_zero() && !ki.is_sentinel());
-    assert(!kf.is_zero() && !kf.is_sentinel());
+    CRUCIBLE_TEST_ASSERT(kTest, !k0.is_zero() && !k0.is_sentinel());
+    CRUCIBLE_TEST_ASSERT(kTest, !kb.is_zero() && !kb.is_sentinel());
+    CRUCIBLE_TEST_ASSERT(kTest, !ki.is_zero() && !ki.is_sentinel());
+    CRUCIBLE_TEST_ASSERT(kTest, !kf.is_zero() && !kf.is_sentinel());
 
-    crucible::test::pass("  T12 key_never_sentinel_or_zero:              PASSED\n");
+    ::fixy::check::pass(kTest, "  T12 key_never_sentinel_or_zero:              PASSED\n");
 }
 
 static void test_t14_header_smoke_test() {
     const bool is_smoke_green =
         fed::computation_cache_federation_smoke_test(local_cipher_permission(), test_hash_key());
-    assert(is_smoke_green);
-    crucible::test::pass("  T14 header_smoke_test:                       PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, is_smoke_green);
+    ::fixy::check::pass(kTest, "  T14 header_smoke_test:                       PASSED\n");
 }
 
 // The decoded payload points into the caller's buffer just past the header
@@ -297,10 +317,11 @@ static void test_t15_payload_aliases_input() {
                                                             fed::FEDERATION_UNIVERSE_CARDINALITY);
     ASSERT_TRUE(view.is_ok());
     // The first byte of the payload is the byte of the buffer after the header.
-    assert(::fixy::same_object(value_of(view).payload.get(0).expect("the payload holds eight bytes"),
-                               buf.get(fed::FEDERATION_HEADER_BYTES).expect("the buffer holds the payload")));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, ::fixy::same_object(value_of(view).payload.get(0).expect("the payload holds eight bytes"),
+                                   buf.get(fed::FEDERATION_HEADER_BYTES).expect("the buffer holds the payload")));
 
-    crucible::test::pass("  T15 payload_aliases_input:                   PASSED\n");
+    ::fixy::check::pass(kTest, "  T15 payload_aliases_input:                   PASSED\n");
 }
 
 // When the receiver is known to hold the bytes already, only the header need
@@ -318,21 +339,21 @@ static void test_t16_content_addressed_payload_elision() {
     auto full_written = fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
         local_cipher_permission(), test_hash_key(), full_buf.view(), Payload{body.view()});
     ASSERT_TRUE(full_written.is_ok());
-    assert(value_of(full_written) == fed::FEDERATION_HEADER_BYTES + body.size());
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(full_written) == fed::FEDERATION_HEADER_BYTES + body.size());
 
     Bytes<kHeader + 16> hash_only_buf{};
     auto hash_only_written = fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
         local_cipher_permission(), test_hash_key(), hash_only_buf.view(), Payload::hash_only());
     ASSERT_TRUE(hash_only_written.is_ok());
-    assert(value_of(hash_only_written) == fed::FEDERATION_HEADER_BYTES);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(hash_only_written) == fed::FEDERATION_HEADER_BYTES);
 
     auto view = fed::deserialize_untrusted_federation_entry(prefix(hash_only_buf, value_of(hash_only_written)),
                                                             fed::FEDERATION_UNIVERSE_CARDINALITY);
     ASSERT_TRUE(view.is_ok());
-    assert(value_of(view).payload.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).payload.size() == 0);
     ASSERT_TRUE(value_of(view).header.key == fed::federation_key<&t_unary, R0, int>(test_hash_key()));
 
-    crucible::test::pass("  T16 content_addressed_payload_elision:       PASSED\n");
+    ::fixy::check::pass(kTest, "  T16 content_addressed_payload_elision:       PASSED\n");
 }
 
 // Other implementations read the offsets of crucible/cipher/
@@ -348,13 +369,13 @@ static void test_wire_byte_offset_stability() {
     ASSERT_TRUE(written.is_ok());
     ASSERT_TRUE(value_of(written) == fed::FEDERATION_HEADER_BYTES);  // empty payload
 
-    assert(buf.at(::foundation::core::index<0>()) == std::byte{'C'});
-    assert(buf.at(::foundation::core::index<12>()) == std::byte{1});
-    assert(buf.at(::foundation::core::index<13>()) == std::byte{32});
-    assert(::fixy::equal(prefix(buf, kHeader).window(14, 32).expect("the header holds the digest"),
-                         ::fixy::View<std::byte const>{key.digest()}));
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(::foundation::core::index<0>()) == std::byte{'C'});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(::foundation::core::index<12>()) == std::byte{1});
+    CRUCIBLE_TEST_ASSERT(kTest, buf.at(::foundation::core::index<13>()) == std::byte{32});
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(prefix(buf, kHeader).window(14, 32).expect("the header holds the digest"),
+                                              ::fixy::View<std::byte const>{key.digest()}));
 
-    crucible::test::pass("  wire_byte_offset_stability:                  PASSED\n");
+    ::fixy::check::pass(kTest, "  wire_byte_offset_stability:                  PASSED\n");
 }
 
 // The effect universe only ever grows: atoms are appended, never removed or
@@ -388,11 +409,11 @@ static void test_cross_universe_cardinality_rejection() {
         auto view = fed::deserialize_untrusted_federation_entry(prefix(buf, value_of(written)),
                                                                 static_cast<std::uint16_t>(current_cardinality - 1u));
         ASSERT_TRUE(!view.is_ok());
-        assert(view.err().expect("the view holds an error")
-               == crucible::cipher::federation::FederationError::UniverseCardinalityTooHigh);
+        CRUCIBLE_TEST_ASSERT(kTest, view.err().expect("the view holds an error")
+                                        == crucible::cipher::federation::FederationError::UniverseCardinalityTooHigh);
     }
 
-    crucible::test::pass("  cross_universe_cardinality_rejection:        PASSED\n");
+    ::fixy::check::pass(kTest, "  cross_universe_cardinality_rejection:        PASSED\n");
 }
 
 // Two permutations of one row produce equal keys. The serialized bytes have
@@ -410,18 +431,18 @@ static void test_row_permutation_byte_invariance() {
         local_cipher_permission(), test_hash_key(), buf_iobg.view(), body.view());
     ASSERT_TRUE(wa.is_ok());
     ASSERT_TRUE(wb.is_ok());
-    assert(value_of(wa) == value_of(wb));
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(wa) == value_of(wb));
 
-    assert(::fixy::equal(prefix(buf_bgio, value_of(wa)), prefix(buf_iobg, value_of(wb))));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(prefix(buf_bgio, value_of(wa)), prefix(buf_iobg, value_of(wb))));
 
-    crucible::test::pass("  row_permutation_byte_invariance:             PASSED\n");
+    ::fixy::check::pass(kTest, "  row_permutation_byte_invariance:             PASSED\n");
 }
 
 // The saturation case: a row naming every atom of the universe.
 static void test_saturation_row_round_trip() {
     const fed::FederationKey k_full = fed::federation_key<&t_unary, RFull, int>(test_hash_key());
-    assert(!k_full.is_zero());
-    assert(!k_full.is_sentinel());
+    CRUCIBLE_TEST_ASSERT(kTest, !k_full.is_zero());
+    CRUCIBLE_TEST_ASSERT(kTest, !k_full.is_sentinel());
 
     const auto body = bytes_of(0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE, 0x01, 0x02, 0x03, 0x04);
     Bytes<kHeader + 16> buf{};
@@ -432,10 +453,10 @@ static void test_saturation_row_round_trip() {
     auto view = fed::deserialize_untrusted_federation_entry(prefix(buf, value_of(written)),
                                                             fed::FEDERATION_UNIVERSE_CARDINALITY);
     ASSERT_TRUE(view.is_ok());
-    assert(value_of(view).header.key == k_full);
-    assert(::fixy::equal(value_of(view).payload, body.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, value_of(view).header.key == k_full);
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(value_of(view).payload, body.view()));
 
-    crucible::test::pass("  saturation_row_round_trip:                   PASSED\n");
+    ::fixy::check::pass(kTest, "  saturation_row_round_trip:                   PASSED\n");
 }
 
 namespace {
@@ -454,10 +475,10 @@ static void test_gate_a_canonical_args_accepted() {
     static_assert(fed::ArgsCanonicallyOrdered<CanonStack>);
 
     const fed::FederationKey k = fed::federation_key<&t_unary, R0, CanonStack>(test_hash_key());
-    assert(!k.is_zero());
-    assert(!k.is_sentinel());
+    CRUCIBLE_TEST_ASSERT(kTest, !k.is_zero());
+    CRUCIBLE_TEST_ASSERT(kTest, !k.is_sentinel());
 
-    crucible::test::pass("  GATE-A canonical_args_accepted:              PASSED\n");
+    ::fixy::check::pass(kTest, "  GATE-A canonical_args_accepted:              PASSED\n");
 }
 
 // The canonical-order predicate is consulted at the publish boundary, so an
@@ -468,7 +489,7 @@ static void test_gate_b_inverted_args_rejected() {
     static_assert(!fed::ArgsCanonicallyOrdered<InvStack>,
                   "The federation argument gate rejects an inverted wrapper stack.");
 
-    crucible::test::pass("  GATE-B inverted_args_rejected:               PASSED\n");
+    ::fixy::check::pass(kTest, "  GATE-B inverted_args_rejected:               PASSED\n");
 }
 
 static void test_gate_c_canonical_stack_deterministic_distinct() {
@@ -478,9 +499,10 @@ static void test_gate_c_canonical_stack_deterministic_distinct() {
 
     // A wrapped argument keys to its own cache slot and does not collapse
     // onto the bare payload.
-    assert(!(fed::federation_key<&t_unary, R0, CanonStack>(key) == fed::federation_key<&t_unary, R0, int>(key)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !(fed::federation_key<&t_unary, R0, CanonStack>(key) == fed::federation_key<&t_unary, R0, int>(key)));
 
-    crucible::test::pass("  GATE-C canonical_stack_deterministic_distinct: PASSED\n");
+    ::fixy::check::pass(kTest, "  GATE-C canonical_stack_deterministic_distinct: PASSED\n");
 }
 
 int main() {
@@ -507,6 +529,6 @@ int main() {
     test_gate_a_canonical_args_accepted();
     test_gate_b_inverted_args_rejected();
     test_gate_c_canonical_stack_deterministic_distinct();
-    crucible::test::pass("test_computation_cache_federation: 22 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_computation_cache_federation: 22 groups, all passed\n");
     return 0;
 }

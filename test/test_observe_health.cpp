@@ -3,7 +3,17 @@
 #include <cstdio>
 #include <cstdlib>
 #include <type_traits>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -154,6 +164,6 @@ int main() {
     run_test("snapshot_maps_to_fixed_observation_batch", test_snapshot_maps_to_fixed_observation_batch);
     run_test("publish_updates_dedicated_latest_value_sinks", test_publish_updates_dedicated_latest_value_sinks);
 
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
+    ::fixy::check::pass(kTest, "\n{} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

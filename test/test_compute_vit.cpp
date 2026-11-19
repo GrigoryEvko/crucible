@@ -28,11 +28,21 @@
 #include <foundation/effects/Effect.h>
 
 #include "entry_arrays.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
 #include "tensor_data.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 using namespace test_compute_vit;
@@ -124,7 +134,7 @@ int main() {
     // The slot ids of each op are arrays of this arena.
     ::fixy::BumpArena runs{size_t{1} << 16};
     const auto slots_of = [&](auto... slot_numbers) noexcept {
-        return crucible::test::run_of(test.alloc, runs, SlotId{slot_numbers}...);
+        return ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{slot_numbers}...);
     };
 
     struct OpDef {
@@ -165,8 +175,8 @@ int main() {
     region.plan = make_plan_link(plan);
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    assert(ctx.activate(region));
-    assert(ctx.is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     const auto bind = [&](uint32_t slot, void* ptr) {
@@ -191,8 +201,8 @@ int main() {
         run_ffn_and_head_ops(ctx, cv);
     }
 
-    assert(ctx.compiled_iterations() == 50);
-    assert(ctx.diverged_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 50);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 0);
 
     Reference reference;
     compute_reference(weights, reference);
@@ -207,16 +217,16 @@ int main() {
     }
 
     std::printf("  max_error vs reference: %.2e\n", static_cast<double>(max_err));
-    assert(max_err < 1e-5f && "ViT output diverged from reference");
+    CRUCIBLE_TEST_ASSERT(kTest, max_err < 1e-5f && "ViT output diverged from reference");
 
     for (int b = 0; b < B; b++) {
         float row_sum = 0.0f;
         for (int j = 0; j < N_CLS; j++) {
             float v = pool_probs[b * N_CLS + j];
-            assert(v >= 0.0f && v <= 1.0f);
+            CRUCIBLE_TEST_ASSERT(kTest, v >= 0.0f && v <= 1.0f);
             row_sum += v;
         }
-        assert(std::abs(row_sum - 1.0f) < 1e-5f && "softmax row does not sum to 1");
+        CRUCIBLE_TEST_ASSERT(kTest, std::abs(row_sum - 1.0f) < 1e-5f && "softmax row does not sum to 1");
     }
 
     auto* pool_res2 = crucible::test::host_ptr<const float>(ctx.pool().slot_ptr(SlotId{SL_RES2}, pv));
@@ -226,7 +236,7 @@ int main() {
         max_res2_err = std::max(max_res2_err, err);
     }
     std::printf("  resid2 max_error: %.2e\n", static_cast<double>(max_res2_err));
-    assert(max_res2_err < 1e-5f && "residual output diverged from reference");
+    CRUCIBLE_TEST_ASSERT(kTest, max_res2_err < 1e-5f && "residual output diverged from reference");
 
     std::printf("  probs[0] = [%.4f, %.4f, %.4f]\n", static_cast<double>(pool_probs[0]),
                 static_cast<double>(pool_probs[1]), static_cast<double>(pool_probs[2]));

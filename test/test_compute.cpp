@@ -15,12 +15,21 @@
 #include <foundation/effects/Effect.h>
 
 #include "entry_arrays.h"
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include "tensor_data.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <random>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 using crucible::test::host_data;
@@ -222,8 +231,8 @@ int main() {
     region.plan = make_plan_link(plan);
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    assert(ctx.activate(region));
-    assert(ctx.is_compiled());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
     // The view is minted once, because the context stays compiled for
     // the whole loop.  Passing it to every call costs nothing at run
@@ -238,28 +247,28 @@ int main() {
     // A read-only view, so that even these checks reach the pool the
     // way the hot path does.
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
-    assert(host_ptr<float>(ctx.pool().slot_ptr(SlotId{SL_X}, pv)) == X);
-    assert(host_ptr<float>(ctx.pool().slot_ptr(SlotId{SL_W1}, pv)) == W1);
-    assert(host_ptr<float>(ctx.pool().slot_ptr(SlotId{SL_W2}, pv)) == W2);
+    CRUCIBLE_TEST_ASSERT(kTest, host_ptr<float>(ctx.pool().slot_ptr(SlotId{SL_X}, pv)) == X);
+    CRUCIBLE_TEST_ASSERT(kTest, host_ptr<float>(ctx.pool().slot_ptr(SlotId{SL_W1}, pv)) == W1);
+    CRUCIBLE_TEST_ASSERT(kTest, host_ptr<float>(ctx.pool().slot_ptr(SlotId{SL_W2}, pv)) == W2);
 
     for (int iter = 0; iter < 100; iter++) {
         // The trailing names below say which slot each index reaches,
         // which the index alone does not.
         auto s = ctx.advance(H_MM1, S_MM1, cv);
-        assert(s == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
         cpu::mm(host_ptr<const float>(ctx.input_ptr(0, cv)),  // X
                 host_ptr<const float>(ctx.input_ptr(1, cv)),  // W1
                 host_ptr<float>(ctx.output_ptr(0, cv)),  // mm1_out
                 BATCH, HIDDEN, IN_DIM);
 
         s = ctx.advance(H_RELU, S_RELU, cv);
-        assert(s == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
         cpu::relu(host_ptr<const float>(ctx.input_ptr(0, cv)),  // mm1_out
                   host_ptr<float>(ctx.output_ptr(0, cv)),  // relu_out
                   BATCH * HIDDEN);
 
         s = ctx.advance(H_MM2, S_MM2, cv);
-        assert(s == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
         cpu::mm(host_ptr<const float>(ctx.input_ptr(0, cv)),  // relu_out
                 host_ptr<const float>(ctx.input_ptr(1, cv)),  // W2
                 host_ptr<float>(ctx.output_ptr(0, cv)),  // mm2_out
@@ -268,14 +277,14 @@ int main() {
         // The last operation of an iteration completes it rather
         // than matching.
         s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv);
-        assert(s == ReplayStatus::COMPLETE);
+        CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
         cpu::softmax(host_ptr<const float>(ctx.input_ptr(0, cv)),  // mm2_out
                      host_ptr<float>(ctx.output_ptr(0, cv)),  // softmax_out
                      BATCH, OUT_DIM);
     }
 
-    assert(ctx.compiled_iterations() == 100);
-    assert(ctx.diverged_count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 100);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 0);
 
     float ref_mm1[BATCH * HIDDEN]{};
     float ref_relu[BATCH * HIDDEN]{};
@@ -296,16 +305,16 @@ int main() {
     }
 
     std::printf("  max_error vs reference: %.2e\n", static_cast<double>(max_err));
-    assert(max_err < 1e-5f && "softmax output diverged from reference");
+    CRUCIBLE_TEST_ASSERT(kTest, max_err < 1e-5f && "softmax output diverged from reference");
 
     for (int b = 0; b < BATCH; b++) {
         float row_sum = 0.0f;
         for (int j = 0; j < OUT_DIM; j++) {
             float v = pool_sm[b * OUT_DIM + j];
-            assert(v >= 0.0f && v <= 1.0f);
+            CRUCIBLE_TEST_ASSERT(kTest, v >= 0.0f && v <= 1.0f);
             row_sum += v;
         }
-        assert(std::abs(row_sum - 1.0f) < 1e-5f && "softmax row doesn't sum to 1");
+        CRUCIBLE_TEST_ASSERT(kTest, std::abs(row_sum - 1.0f) < 1e-5f && "softmax row doesn't sum to 1");
     }
 
     std::printf("  softmax[0] = [%.4f, %.4f, %.4f]\n", static_cast<double>(pool_sm[0]), static_cast<double>(pool_sm[1]),

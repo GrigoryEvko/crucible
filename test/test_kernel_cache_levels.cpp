@@ -5,13 +5,23 @@
 
 #include <crucible/KernelCache.h>
 #include <fixy/Tagged.h>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <expected>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using crucible::CompiledKernel;
 using crucible::ContentHash;
@@ -60,13 +70,13 @@ static void test_lookup_l1_round_trip() {
     KernelCache cache{kAlloc};
     FakeKernel fk{42};
     auto pub = cache.publish_l1(kNondet, ContentHash{0xAAAA}, RowHash{0}, kernel_ref(fk));
-    assert(std::move(pub).into().is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(pub).into().is_ok());
 
     const Found raw = cache.lookup(kNondet, ContentHash{0xAAAA}, RowHash{0});
     auto tagged = cache.lookup_l1(kNondet, ContentHash{0xAAAA}, RowHash{0});
     const Found via_level = std::move(tagged).into();
-    assert(is_found(raw, fk));
-    assert(is_found(via_level, fk));
+    CRUCIBLE_TEST_ASSERT(kTest, is_found(raw, fk));
+    CRUCIBLE_TEST_ASSERT(kTest, is_found(via_level, fk));
 }
 
 static void test_each_level_names_its_level() {
@@ -142,8 +152,8 @@ static void test_unbacked_levels() {
     // on.
     auto r2 = cache.publish_l2(kNondet, ContentHash{0xFFFF}, RowHash{0}, kernel_ref(fk)).into();
     auto r3 = cache.publish_l3(kNondet, ContentHash{0xFFFF}, RowHash{0}, kernel_ref(fk)).into();
-    assert(is_not_yet_implemented(std::move(r2)));
-    assert(is_not_yet_implemented(std::move(r3)));
+    CRUCIBLE_TEST_ASSERT(kTest, is_not_yet_implemented(std::move(r2)));
+    CRUCIBLE_TEST_ASSERT(kTest, is_not_yet_implemented(std::move(r3)));
 
     // A publish into L2 stays invisible to L1 at the same key.
     CRUCIBLE_FATAL_INVARIANT(cache.lookup_l1(kNondet, ContentHash{0xFFFF}, RowHash{0}).into().is_none());
@@ -156,9 +166,9 @@ static void test_three_level_publish() {
     auto r1 = cache.publish_l1(kNondet, ContentHash{0x1111}, RowHash{0xAAAA}, kernel_ref(fk)).into();
     auto r2 = cache.publish_l2(kNondet, ContentHash{0x1111}, RowHash{0xAAAA}, kernel_ref(fk)).into();
     auto r3 = cache.publish_l3(kNondet, ContentHash{0x1111}, RowHash{0xAAAA}, kernel_ref(fk)).into();
-    assert(r1.is_ok());
-    assert(r2.is_err());
-    assert(r3.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, r1.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, r2.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, r3.is_err());
     CRUCIBLE_FATAL_INVARIANT(is_found(cache.lookup_l1(kNondet, ContentHash{0x1111}, RowHash{0xAAAA}).into(), fk));
 }
 
@@ -213,6 +223,6 @@ int main() {
     test_lookup_l1_miss();
     test_publish_l1_variant_update();
     test_publish_l1_row_discrimination();
-    crucible::test::pass("test_kernel_cache_levels: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_kernel_cache_levels: all tests passed\n");
     return 0;
 }

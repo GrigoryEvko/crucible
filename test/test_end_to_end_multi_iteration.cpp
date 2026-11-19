@@ -4,10 +4,20 @@
 
 #include <crucible/CrucibleContext.h>
 #include <crucible/BackgroundThread.h>
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace crucible;
 
@@ -32,8 +42,8 @@ void test_pipeline_multi_iteration() {
 
     wait_processed(bt, *ring);
     auto* region1 = bt.active_region.load_acquire().try_get();
-    assert(region1 != nullptr);
-    assert(region1->num_ops() == NUM_OPS);
+    CRUCIBLE_TEST_ASSERT(kTest, region1 != nullptr);
+    CRUCIBLE_TEST_ASSERT(kTest, region1->num_ops() == NUM_OPS);
 
     // The loop starts at K because the background thread already holds
     // the first K ops of this iteration from the trigger feed above.
@@ -47,8 +57,8 @@ void test_pipeline_multi_iteration() {
         const ::fixy::FixedArray<TensorMeta, 2> metas{make_meta(fake_ptr(2, i - 1)), make_meta(fake_ptr(2, i))};
 
         auto ms = meta_log->try_append(metas.view());
-        assert(ms.is_valid());
-        assert(ring->try_append(e, ms));
+        CRUCIBLE_TEST_ASSERT(kTest, ms.is_valid());
+        CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(e, ms));
     }
 
     feed_iteration(ring, meta_log, 3);
@@ -56,29 +66,29 @@ void test_pipeline_multi_iteration() {
 
     wait_processed(bt, *ring);
     auto* region2 = bt.active_region.load_acquire().try_get();
-    assert(region2 != nullptr && region2 != region1 && "Second boundary did not fire");
-    assert(region2->num_ops() == NUM_OPS);
-    assert(region2->plan.is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, region2 != nullptr && region2 != region1 && "Second boundary did not fire");
+    CRUCIBLE_TEST_ASSERT(kTest, region2->num_ops() == NUM_OPS);
+    CRUCIBLE_TEST_ASSERT(kTest, region2->plan.is_some());
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    assert(ctx.activate(*region2));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region2));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv);
         if (i < NUM_OPS - 1) {
-            assert(s == ReplayStatus::MATCH);
+            CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
         } else {
-            assert(s == ReplayStatus::COMPLETE);
+            CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
         }
     }
-    assert(ctx.compiled_iterations() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
     ctx.deactivate();
     bt.stop();
     delete meta_log;
     delete ring;
 
-    crucible::test::pass("  test_pipeline_multi_iteration: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_pipeline_multi_iteration: PASSED\n");
 }
 
 }  // namespace test_end_to_end

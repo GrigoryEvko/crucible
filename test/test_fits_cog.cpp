@@ -10,9 +10,19 @@
 #include <foundation/effects/Resources.h>
 #include <foundation/effects/Row.h>
 
-#include "test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cog = crucible::cog;
 namespace effects = ::foundation::effects;
@@ -45,28 +55,28 @@ static void test_gpu_ceilings_runtime() {
 
     volatile auto axis = ResourceKind::Sm;
     auto sm = cog_max_capacity<CogKind::Gpu>::for_kind(const_cast<ResourceKind&>(axis));
-    assert(sm == 320ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, sm == 320ULL);
 
     axis = ResourceKind::HbmBytes;
     auto hbm = cog_max_capacity<CogKind::Gpu>::for_kind(const_cast<ResourceKind&>(axis));
     // The ceiling clears the largest shipped HBM3E part with headroom.
     // A ceiling below real silicon would reject rows that do fit.
-    assert(hbm == 384ULL * 1024 * 1024 * 1024);
+    CRUCIBLE_TEST_ASSERT(kTest, hbm == 384ULL * 1024 * 1024 * 1024);
 
     // PcieBw has no ceiling of its own, so both layers report 0 and
     // reject any PcieBw demand.
     axis = ResourceKind::PcieBw;
     auto pcie_on_gpu = cog_max_capacity<CogKind::Gpu>::for_kind(const_cast<ResourceKind&>(axis));
-    assert(pcie_on_gpu == 0ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, pcie_on_gpu == 0ULL);
 
     // An axis the substrate does not expose reads as 0.
     axis = ResourceKind::NicQp;
     auto nic_on_gpu = cog_max_capacity<CogKind::Gpu>::for_kind(const_cast<ResourceKind&>(axis));
-    assert(nic_on_gpu == 0ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, nic_on_gpu == 0ULL);
 
     axis = ResourceKind::Tcam;
     auto tcam_on_gpu = cog_max_capacity<CogKind::Gpu>::for_kind(const_cast<ResourceKind&>(axis));
-    assert(tcam_on_gpu == 0ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, tcam_on_gpu == 0ULL);
 }
 
 static void test_nic_ceilings_runtime() {
@@ -76,11 +86,11 @@ static void test_nic_ceilings_runtime() {
 
     volatile auto axis = ResourceKind::NicQp;
     auto qp = cog_max_capacity<CogKind::NicPort>::for_kind(const_cast<ResourceKind&>(axis));
-    assert(qp == 16ULL * 1024 * 1024);
+    CRUCIBLE_TEST_ASSERT(kTest, qp == 16ULL * 1024 * 1024);
 
     axis = ResourceKind::Sm;
     auto sm_on_nic = cog_max_capacity<CogKind::NicPort>::for_kind(const_cast<ResourceKind&>(axis));
-    assert(sm_on_nic == 0ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, sm_on_nic == 0ULL);
 }
 
 static void test_fits_cog_h100_compute_row() {
@@ -200,21 +210,21 @@ static void test_fits_cog_caps_runtime_h100() {
 
     using Fits = effects::ConcurrentRow<effects::SmBudget<128>, effects::HbmBytes<70000000000ULL>>;
     volatile bool fits = cog::fits_cog_caps_runtime<Fits, cog::CogKind::Gpu>(h100);
-    assert(fits);
+    CRUCIBLE_TEST_ASSERT(kTest, fits);
 
     // 200 SMs is over H100's 132, but under the family ceiling 320 —
     // FitsCog (compile-time) admits, fits_cog_caps_runtime rejects.
     using OverSm = effects::ConcurrentRow<effects::SmBudget<200>>;
     static_assert(cog::FitsCog<OverSm, cog::CogKind::Gpu>);
     volatile bool runtime_over = cog::fits_cog_caps_runtime<OverSm, cog::CogKind::Gpu>(h100);
-    assert(!runtime_over);
+    CRUCIBLE_TEST_ASSERT(kTest, !runtime_over);
 
     // HBM > h100's 80 GB but under family ceiling 384 GB —
     // same compile-time-admits / runtime-rejects pattern.
     using OverHbm = effects::ConcurrentRow<effects::HbmBytes<200ULL * 1024 * 1024 * 1024>>;
     static_assert(cog::FitsCog<OverHbm, cog::CogKind::Gpu>);
     volatile bool runtime_hbm = cog::fits_cog_caps_runtime<OverHbm, cog::CogKind::Gpu>(h100);
-    assert(!runtime_hbm);
+    CRUCIBLE_TEST_ASSERT(kTest, !runtime_hbm);
 }
 
 static void test_fits_cog_caps_runtime_nic() {
@@ -228,11 +238,11 @@ static void test_fits_cog_caps_runtime_nic() {
 
     using Fits = effects::ConcurrentRow<effects::NicQp<512>, effects::NicCq<512>, effects::NicMr<32>>;
     volatile bool fits = cog::fits_cog_caps_runtime<Fits, cog::CogKind::NicPort>(nic);
-    assert(fits);
+    CRUCIBLE_TEST_ASSERT(kTest, fits);
 
     using OverQp = effects::ConcurrentRow<effects::NicQp<2048>>;
     volatile bool over_qp = cog::fits_cog_caps_runtime<OverQp, cog::CogKind::NicPort>(nic);
-    assert(!over_qp);
+    CRUCIBLE_TEST_ASSERT(kTest, !over_qp);
 }
 
 // A substrate added to one binding table but forgotten in the other
@@ -290,13 +300,13 @@ static void test_every_substrate_every_axis_runtime() {
         if (v_cpu > 0) ++cpu_nonzero;
         if (v_sock > 0) ++sock_nonzero;
     }
-    assert(gpu_nonzero > 0);
-    assert(nic_nonzero > 0);
-    assert(sw_nonzero > 0);
-    assert(cpu_nonzero > 0);
-    assert(sock_nonzero > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, gpu_nonzero > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, nic_nonzero > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, sw_nonzero > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, cpu_nonzero > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, sock_nonzero > 0);
     // GPU exposes the most axes (compute + memory + power).
-    assert(gpu_nonzero >= nic_nonzero);
+    CRUCIBLE_TEST_ASSERT(kTest, gpu_nonzero >= nic_nonzero);
 }
 
 int main() {
@@ -316,6 +326,6 @@ int main() {
     test_has_cog_capacity_caps_lockstep();
     test_fits_cog_multi_axis_all_must_fit();
     test_every_substrate_every_axis_runtime();
-    crucible::test::pass("FitsCog: all 16 sentinel groups passed.\n");
+    ::fixy::check::pass(kTest, "FitsCog: all 16 sentinel groups passed.\n");
     return 0;
 }
