@@ -1754,6 +1754,11 @@ fixy_neg_compile_test(neg_sequence_source_in_foreground
 fixy_neg_compile_test(neg_budgeted_built_at_zero_outside_its_door
   ".constexpr fixy::Budgeted<T>::Budgeted\\(T, budget_t\\) .with T = int. budget_t = .* is private within this context"
   "fixy/Budgeted\\.h:[0-9]+:[0-9]+: note: declared private here")
+# A default count is the bottom of its use axis, the strongest claim.  It
+# does not convert to the stamp that the public constructor takes as proof.
+fixy_neg_compile_test(neg_budgeted_default_count_as_stamp
+  "no matching function for call to .fixy::Budgeted<int>::Budgeted\\(<brace-enclosed initializer list>\\)."
+  "no known conversion for argument 2 from .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::bits_budget>::element_type. to .fixy::BudgetStamp&&.")
 
 # EpochVersioned has no door that raises a version without new evidence.
 # A default version, a combine that joins two versions into one payload,
