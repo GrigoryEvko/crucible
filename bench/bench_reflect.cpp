@@ -11,6 +11,10 @@
 //   hash of the parts         the hash of a record of sums, of a bounded list
 //                             and of a heap array, each against a record of
 //                             fixed size with the same bytes of image
+//   decode of a heap array    the decode of the image of a heap record,
+//                             against a hand decode: a bit copy of the image
+//                             into a record of fixed size, and one copy of
+//                             its words into a new HeapArray
 //
 // THE REFERENCES.  foldhash-f of Orson Peters (2024, the default hasher of
 // hashbrown and of the Rust standard tables) packs the fields into a 128-bit
@@ -548,10 +552,12 @@ int main() {
     bench::compare(refactor_reports.at(::fixy::index<4>()), refactor_reports.at(::fixy::index<5>())).print_text();
     bench::compare(refactor_reports.at(::fixy::index<6>()), refactor_reports.at(::fixy::index<7>())).print_text();
 
-    // The hash of the sums, the bounded lists and the heap parts, each
-    // against its reference.  A volatile word changes one part of each record
-    // in each iteration.
-    ::fixy::report(::fixy::Sink::Out, "\n=== hash of the sums, the lists and the heap parts ===\n\n");
+    // The hash of the sums, the bounded lists and the heap parts, and the
+    // decode of the image of the heap record, each against its reference.  A
+    // volatile word changes one part of each hashed record in each iteration.
+    // Each decode allocates the words and gives them back.
+    ::fixy::report(::fixy::Sink::Out,
+                   "\n=== hash of the sums, the lists and the heap parts, decode of a heap record ===\n\n");
     volatile std::uint64_t vword = 0x0123456789ABCDEFULL;
     SumRecord sum_record{};
     sum_record.outcome = ::fixy::Result<std::uint32_t, SumCode>{::fixy::Err<SumCode>{SumCode::stalled}};
@@ -567,8 +573,10 @@ int main() {
     heap_record.words = ::fixy::mint_heap_array_with<std::uint32_t>(
         kAlloc, kHeapWords, [](std::size_t position) noexcept { return static_cast<std::uint32_t>(position * 5); });
     HeapBytes heap_bytes{};
+    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<HeapBytes>> heap_image{};
+    ::fixy::encode(heap_record, ::fixy::View<std::byte>{heap_image.view()});
 
-    ::fixy::FixedArray<bench::Report, 6> part_reports{
+    ::fixy::FixedArray<bench::Report, 8> part_reports{
         bench::run("hash<SumRecord>      (3 sums, 23 bytes)",
                    [&] {
                        sum_record.maybe = ::fixy::Option<std::uint64_t>::some(std::uint64_t{vword});
@@ -607,16 +615,33 @@ int main() {
                        auto h = ::fixy::hash(heap_bytes).raw();
                        bench::do_not_optimize(h);
                    }),
+        bench::run("decode<HeapRecord>   (64 words, 264 bytes)",
+                   [&] {
+                       const auto& read = heap_image;
+                       auto back = ::fixy::decode<HeapRecord>(kAlloc, ::fixy::View<std::byte const>{read.view()});
+                       bench::do_not_optimize(back);
+                   }),
+        bench::run("hand decode          (the same 264 bytes)",
+                   [&] {
+                       const auto& read = heap_image;
+                       HeapBytes const plain = ::fixy::bit_cast<HeapBytes>(read);
+                       auto words = ::fixy::mint_heap_array_copy<std::uint32_t>(
+                           kAlloc, ::fixy::View<std::uint32_t const>{plain.words.view()}
+                                       .window(0, plain.count)
+                                       .expect("the image holds its count of words"));
+                       bench::do_not_optimize(words);
+                   }),
     };
     bench::emit_reports_text(part_reports.view());
     ::fixy::report(::fixy::Sink::Out, "\n=== compare of the parts with their references ===\n");
     bench::compare(part_reports.at(::fixy::index<0>()), part_reports.at(::fixy::index<1>())).print_text();
     bench::compare(part_reports.at(::fixy::index<2>()), part_reports.at(::fixy::index<3>())).print_text();
     bench::compare(part_reports.at(::fixy::index<4>()), part_reports.at(::fixy::index<5>())).print_text();
+    bench::compare(part_reports.at(::fixy::index<6>()), part_reports.at(::fixy::index<7>())).print_text();
 
     // One JSON tail holds the rows of the three groups, because the reader
     // reads only the last tail of the output.
-    ::fixy::FixedList<bench::Report, 25> all_reports{};
+    ::fixy::FixedList<bench::Report, 27> all_reports{};
     for (bench::Report& report : reports)
         bench::add_report(all_reports, std::move(report));
 #if defined(CRUCIBLE_BENCH_RAPIDHASH)
