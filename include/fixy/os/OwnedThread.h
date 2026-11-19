@@ -48,6 +48,7 @@
 //     process.
 
 #include <fixy/os/ThreadTasks.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Report.h>
@@ -117,8 +118,12 @@ private:
 
 }  // namespace detail
 
-// The owner of one thread that the base started (THE OWNER).
-class [[nodiscard]] OwnedThread final {
+// The owner of one thread that the base started (THE OWNER).  An owner can
+// move to another thread, which then joins the thread and ends the frame and
+// its body (foundation/Transfer.h).  The body runs on the owned thread, so it
+// is on a thread other than its mint in any case.  The frame fields are
+// pointers that only the holder of the owner reads.
+class [[nodiscard]][[= ::foundation::transfer::sendable{}]] OwnedThread final {
 public:
     OwnedThread(OwnedThread const&) = delete("one thread has one owner of its join.  A copy would join it two times");
     OwnedThread&

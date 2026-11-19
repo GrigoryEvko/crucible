@@ -9,6 +9,7 @@
 
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/effects/Ctx.h>
@@ -39,6 +40,11 @@ NameWords read_calling_thread_name() noexcept {
 
 }  // namespace
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// An owner moves to the thread that joins it.  Two threads do not read one
+// owner, because the holder empties it on a join (foundation/Transfer.h).
+static_assert(::foundation::transfer::Sendable<::fixy::thread::OwnedThread>
+              && !::foundation::transfer::Shareable<::fixy::thread::OwnedThread>);
 
 namespace {
 

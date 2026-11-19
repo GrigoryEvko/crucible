@@ -108,10 +108,18 @@
 // `auto [index, element] = pair;` gives the parts, and *element reaches the
 // element.  This header includes the Record family and defines the stage and
 // the cursor of enumerate().
+//
+// THE TRANSFER
+//   A View refers to its elements as a reference does (refers of
+//   foundation/Transfer.h).  So a View<T const> moves to another thread and
+//   two threads read it when T is Shareable.  A View<T> that is not const
+//   moves to another thread only when two threads can write a T, because a
+//   const View<T> gives each element as T&, and a copy of it writes too.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Cursor.h>
 #include <foundation/core/Index.h>
@@ -238,7 +246,7 @@ class ViewStage;
 
 template <class T, std::size_t Extent>
     requires ViewElement<T> && ViewExtent<T, Extent>
-class View {
+class[[= ::foundation::transfer::refers{}]] View {
     T* first_ = nullptr;
     [[no_unique_address]] detail::ViewCount<Extent> count_{};
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};

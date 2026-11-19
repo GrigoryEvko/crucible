@@ -145,9 +145,18 @@
 // of foundation/core/Branded.h.  The brand is a scope brand, so the rule
 // brand-escape of the quarantine plugin refuses an object of static or
 // thread storage duration that holds it.
+//
+// THE TRANSFER
+//   A StridedView refers to its elements as a reference does (refers of
+//   foundation/Transfer.h).  So a StridedView<T const, Rank> moves to another
+//   thread and two threads read it when T is Shareable.  A StridedView<T, Rank>
+//   that is not const moves to another thread only when two threads can write
+//   a T, because a const view gives a transpose and a permute of T, and each
+//   of them writes.  A body that only reads takes the view of const T.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Branded.h>
 #include <foundation/core/Choice.h>
@@ -423,7 +432,7 @@ struct StridedIndexEnd final {};
 
 template <class T, std::size_t Rank>
     requires ViewElement<T> && StridedRank<Rank>
-class StridedView {
+class[[= ::foundation::transfer::refers{}]] StridedView {
     using Lanes = detail::StridedLanes<Rank>;
     using Axis = detail::strided_axis_t<Rank>;
 

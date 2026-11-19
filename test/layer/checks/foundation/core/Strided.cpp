@@ -100,6 +100,16 @@ static_assert(!has_no_overlap(3, 2, 2, 3));
 }
 static_assert(matrix_sum() == 66);
 
+// A strided view refers to its elements (THE TRANSFER).  The walk above
+// writes each element through a const view of int, so a const view of
+// elements that are not const is no shared read.  A view of const elements
+// moves to another thread and two threads read it.
+static_assert(::foundation::transfer::Sendable<StridedView<float const, 2>>
+              && ::foundation::transfer::Shareable<StridedView<float const, 2>>);
+static_assert(::foundation::transfer::Sendable<StridedView<float const, 2> const&>);
+static_assert(!::foundation::transfer::Shareable<StridedView<float, 2>>
+              && !::foundation::transfer::Sendable<StridedView<float, 2> const&>);
+
 }  // namespace detail::strided_checks
 
 }  // namespace foundation::core

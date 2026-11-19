@@ -22,6 +22,7 @@
 
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -67,13 +68,20 @@ inline constexpr std::uint64_t kRoundsInASession = 100;
 inline constexpr std::uint64_t kRounds = (2 * kDirectRounds) + (kSessions * kRoundsInASession);
 
 // The state that the two threads share.  The plain value is the subject of
-// the test, and each reply is an atomic of the base.
-struct Shared {
+// the test, and each reply is an atomic of the base.  The mode cell orders
+// each access of the plain value: the writer stores it before the release
+// store of a mode, and the reader reads it after the acquire load of that
+// mode.  So two threads use one Shared at the same time with no race
+// (foundation/Transfer.h).
+struct[[= ::foundation::transfer::shareable{}]] Shared {
     std::uint64_t written = 0;
     ::foundation::core::Atomic<std::uint64_t> read_compiled{0};
     ::foundation::core::Atomic<std::uint64_t> read_recording{0};
     ::foundation::core::Atomic<std::uint64_t> wrong_reads{0};
 };
+static_assert(::foundation::transfer::Synchronized<Shared>);
+// Each write of a cell is atomic, and the identity of its writer is const.
+static_assert(::foundation::transfer::Synchronized<vm::ModeCell>);
 
 void wait_until(::foundation::core::Atomic<std::uint64_t> const& reply, std::uint64_t value) noexcept {
     while (reply.load_acquire() != value)

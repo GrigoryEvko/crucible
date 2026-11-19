@@ -119,10 +119,12 @@ namespace detail {
 
 }  // namespace detail
 
+// Two threads can write a cell at the same time: each write of the mode is
+// atomic, and the identity of the writer is const (foundation/Transfer.h).
 class ModeCell : public ::foundation::Pinned<ModeCell> {
     ::foundation::core::Atomic<Mode> value_{Mode::RECORDING};
     // The identity of the writer that built the cell.
-    ::foundation::core::Identity writer_;
+    ::foundation::core::Identity const writer_;
 
     // Each write shows the writer that built the cell, held, and not a
     // writer that a move emptied.
