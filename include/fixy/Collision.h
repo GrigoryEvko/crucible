@@ -993,85 +993,11 @@ template <class Grade, class Level>
 concept HasTrustLevel = IsTrustGrade<Grade> && ::fixy::tags::IsTrustLevel<Level> && trust_level_of_v<Grade> == ^^Level;
 
 // ---------------------------------------------------------------------
-// The premises of the rules.
+// The premises of the rules, and the verdict of each rule.
 //
-// A premise is one fact about a binding that a rule reads.  One pass over
-// the pack and one pass over the payload give each premise one time, and
-// each rule is a predicate over this record.  A field is false when the
-// binding does not state the fact.  The pass that sets a field tells how
-// it reads the grade.
-struct rule_premises {
-    // The Usage grade.
-    bool borrow{};
-    bool ghost{};
-    bool capability{};
-    bool linear{};
-    // A suspension, a hand-off to another thread, or either.
-    bool coroutine{};
-    bool suspends_in_control_flow{};
-    bool suspends{};
-    bool concurrent{};
-    bool monotonic{};
-    bool unverified{};
-    // The cost and the space of the binding.
-    bool cost_unstated{};
-    bool unbounded_cost{};
-    bool may_run_unbounded{};
-    // The row of the binding: the Effect grade joined with the lifts.
-    bool row_bg{};
-    bool row_observable{};
-    bool row_alloc_or_io{};
-    bool row_init{};
-    bool blocks{};
-    bool allocates{};
-    bool observes_something{};
-    bool observes_within_the_row{};
-    // The representation, the global state, the exits and the calls.
-    bool atomic_repr{};
-    bool thread_local_state{};
-    bool longjmp_unsafe{};
-    bool recurses_unbounded{};
-    bool publishes_past_the_thread{};
-    bool indirect_call_may_throw{};
-    bool spawn_outlives_the_frame{};
-    bool emits_outside_the_row{};
-    // The regime and the waits.
-    bool hot{};
-    bool no_witness_floor{};
-    bool states_stdio{};
-    bool core_burning_spin{};
-    bool states_a_wait{};
-    // The instruction tier, the fence, the scope and the ISA.
-    bool hw_nondeterministic{};
-    bool hw_privileged{};
-    bool barrier_seq_cst_or_above{};
-    bool barrier_acq_rel_or_above{};
-    bool scope_cluster_or_above{};
-    bool scope_pinned{};
-    bool isa_pinned{};
-    bool trunks_cohere{};
-    // The FP mode.
-    bool fp_reassociates{};
-    bool fp_contracts_across_statements{};
-    bool fp_mode_stated{};
-    bool fp_flushes_denormal_inputs{};
-    bool fp_flushes_subnormal_results{};
-    bool fp_rewrites_without_bound{};
-    // The Security grade, the staleness and the session.
-    bool constant_time{};
-    bool classified_on_send{};
-    bool classified_on_failure{};
-    bool states_staleness{};
-    bool session_protocol{};
-    bool has_live_handle{};
-    // The failure path, from the payload or from a throw.
-    bool fails{};
-    bool fails_with_plain_error{};
-    // The claims of the bands of the payload.
-    bool replay_deterministic{};
-    bool claims_no_allocation{};
-    bool claims_user_space_wait{};
-};
+// fixy/collision/Codes.h declares the record of the premises and the rule
+// table.  The passes below give each premise of a binding one time, and the
+// verdict applies each row of the table to the premises one time.
 
 namespace detail {
 
@@ -1260,6 +1186,66 @@ inline constexpr payload_premises payload_premises_v = read_payload_premises_<Pa
 template <class Payload, class... Atoms>
 inline constexpr rule_premises binding_premises_v =
     detail::join_premises_(detail::pack_premises_v<Atoms...>, detail::payload_premises_v<Payload>);
+
+// The verdict of each rule on one binding: the premises, and one bit for
+// each code whose rule refuses the binding.  The bit of a code is the
+// position of its enumerator in RuleCode, which is the position of its row
+// in the rule table.
+struct binding_verdict {
+    rule_premises premises{};
+    std::uint64_t tripped = 0;
+
+    // True when the rule of the code admits the binding.
+    [[nodiscard]] consteval bool admits(RuleCode code) const noexcept {
+        return (tripped >> std::to_underlying(code) & 1U) == 0;
+    }
+
+    // True when each rule admits the binding.
+    [[nodiscard]] consteval bool is_valid() const noexcept { return tripped == 0; }
+
+    // Each code that the binding trips, in the order of the table, or an
+    // empty view when it trips none.  A pack can trip several: the premises
+    // of R002 imply those of L002, so no pack names R002 alone, and the list
+    // of each code lets the fixture of each rule floor on its own code.  The
+    // text depends on Anchor, so only a call builds it.
+    template <class Anchor = void>
+    [[nodiscard]] consteval std::string_view failing_codes() const {
+        if (tripped == 0) return {};
+        ::foundation::reflect::anchored_t<^^Anchor, std::string> text;
+        for (std::size_t place = 0; place < rule_count; ++place) {
+            if ((tripped >> place & 1U) == 0) continue;
+            if (!text.empty()) text += ", ";
+            for (const char letter : rule_row_of(static_cast<RuleCode>(place), premises).code)
+                text += letter;
+        }
+        return std::define_static_string(text);
+    }
+};
+
+namespace detail {
+
+// Each row of the table, applied one time to the premises of a binding.
+// Complexity: the count of the rules.
+[[nodiscard]] consteval binding_verdict judge_(const rule_premises& premises) noexcept {
+    binding_verdict verdict{.premises = premises};
+    for (std::size_t place = 0; place < rule_count; ++place) {
+        if (rule_row_of(static_cast<RuleCode>(place), premises).trips) verdict.tripped |= std::uint64_t{1} << place;
+    }
+    return verdict;
+}
+
+}  // namespace detail
+
+// The verdict of the rules on a binding with this payload and this pack,
+// computed one time for each binding.
+template <class Payload, class... Atoms>
+inline constexpr binding_verdict binding_verdict_v = detail::judge_(binding_premises_v<Payload, Atoms...>);
+
+// The pack-only view.  Each rule that reads the payload stands down under
+// void, so a cell written against the pack alone means what it says: this
+// pack, with any payload, is or is not a contradiction.
+template <class... Atoms>
+inline constexpr const binding_verdict& pack_verdict_v = binding_verdict_v<void, Atoms...>;
 
 // ---------------------------------------------------------------------
 // The live rules.
@@ -1904,14 +1890,7 @@ struct rules_of {
     // imply L002's, so no pack names R002 alone, and listing every one
     // is what lets each rule's fixture floor on its own code.
     [[nodiscard]] static consteval std::string_view failing_codes() noexcept {
-        ::foundation::reflect::anchored_t<^^Payload, std::string> text;
-        for (const rule_verdict& verdict : verdicts()) {
-            if (verdict.ok) continue;
-            if (!text.empty()) text += ", ";
-            for (const char letter : verdict.code)
-                text += letter;
-        }
-        return std::define_static_string(text);
+        return binding_verdict_v<Payload, Atoms...>.failing_codes();
     }
 
     // Every code, whatever the pack.  A pin of fixy/collision/Report.h
@@ -1947,12 +1926,7 @@ struct rules_of {
     // verdicts() the single list, and every_ok_member_has_a_verdict_row_
     // of fixy/collision/Report.h is what keeps a new `_ok` member from
     // staying out of it.
-    static constexpr bool valid = [] {
-        for (const rule_verdict& verdict : verdicts()) {
-            if (!verdict.ok) return false;
-        }
-        return true;
-    }();
+    static constexpr bool valid = binding_verdict_v<Payload, Atoms...>.is_valid();
 };
 
 // The pack-only view.  Every rule that reads the payload stands down

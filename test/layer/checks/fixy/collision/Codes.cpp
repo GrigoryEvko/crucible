@@ -81,6 +81,59 @@ static_assert(pending_rule_count == detail::corpus_count_(Disposition::Pending),
               "fixy/collision/Codes.h: pending_rules and the corpus disagree about how many rules are waiting on "
               "an atomless axis.");
 
+// The rule table has one row for each enumerator of RuleCode, in the order
+// of the enumerators.  The verdict of a binding holds one bit for each row,
+// in a word of 64 bits.  The code of each row is the identifier of its
+// enumerator, and its theorem starts with the code, so a refusal and the
+// fixture that greps it name one rule.  The answer is the first enumerator
+// whose row disagrees, or an empty view.
+namespace detail {
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
+[[nodiscard]] consteval std::string_view row_that_disagrees_with_its_code_() {
+    std::size_t place = 0;
+    std::string_view offender{};
+    template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^RuleCode))) {
+        constexpr std::string_view name = std::meta::identifier_of(enumerator);
+        constexpr RuleCode enumerated = std::meta::extract<RuleCode>(enumerator);
+        const rule_row row = rule_row_of(enumerated, rule_premises{});
+        std::string code;
+        for (const char letter : row.code)
+            code += letter;
+        std::string lead;
+        std::size_t taken = 0;
+        for (const char letter : row.theorem) {
+            if (taken++ == name.size()) break;
+            lead += letter;
+        }
+        const bool agrees = std::to_underlying(enumerated) == place && code == name && lead == name;
+        if (!agrees && offender.empty()) offender = name;
+        ++place;
+    }
+    return offender;
+}
+
+#pragma GCC diagnostic pop
+
+}  // namespace detail
+
+static_assert(rule_count == std::meta::enumerators_of(^^RuleCode).size(),
+              "fixy/collision/Codes.h: rule_count is not the count of the enumerators of RuleCode.");
+static_assert(rule_count <= 64,
+              "fixy/collision/Codes.h: the verdict of a binding holds one bit for each rule in a word of 64 bits.");
+static_assert(detail::row_that_disagrees_with_its_code_().empty(),
+              detail::named_("fixy/collision/Codes.h: the row of this code in rule_row_of is out of the order of "
+                             "RuleCode, or its code or the start of its theorem is not the code: ",
+                             detail::row_that_disagrees_with_its_code_()));
+
+// Each Live entry of the corpus has a row in the table.  The pins above bind
+// each Live code to an enumerator, and each enumerator has one row.
+static_assert(detail::corpus_count_(Disposition::Live) == rule_count,
+              "fixy/collision/Codes.h: the corpus records a different number of Live rules than the rule table "
+              "has rows.");
+
 // There is deliberately no pin on pending_axis_count here.  It would be
 // derived from the array it counts, and the biconditional of
 // every_pending_axis_is_still_empty() in fixy/Collision.h already

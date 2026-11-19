@@ -153,14 +153,15 @@ concept UniqueAtomPerAxis = (detail::reject::first_duplicated_axis_<Atoms...>() 
 // ---------------------------------------------------------------------
 // Tier 5: the collision rules and the corpus.
 //
-// The collision rules, folded in fixy/Collision.h.  A rule reads the
+// The collision rules, judged in fixy/Collision.h.  A rule reads the
 // payload and the pack and nothing else, which is why this delegates
 // those two rather than the fn: a rule that completed fn would recurse
-// through fn's own assertion of this concept.  The payload is read for
-// one premise only, the DetSafe band's replay claim, and it is the fn's
-// first template parameter rather than a member of the fn.
+// through fn's own assertion of this concept.  The payload is read for the
+// claims of its bands, for the failure that it returns and for a session
+// handle, and it is the fn's first template parameter rather than a member
+// of the fn.
 template <class T, class... Atoms>
-concept ValidComposition = ::fixy::collision::rules_of<T, Atoms...>::valid;
+concept ValidComposition = ::fixy::collision::binding_verdict_v<T, Atoms...>.is_valid();
 
 // The refused-combination corpus, folded in fixy/Corpus.h.  An entry
 // reads the same resolved grades a rule does, and never fn, for the
@@ -483,7 +484,8 @@ template <class T, class... Atoms>
         return "fixy::fn<Type, Atoms...> [tier 5]: not reached — the pack passes each tier.";
     } else {
         using Entry = corpus_tag_or_void_t<T, Atoms...>;
-        constexpr std::string_view codes = ::fixy::collision::rules_of<T, Atoms...>::failing_codes();
+        constexpr const ::fixy::collision::binding_verdict& verdict = ::fixy::collision::binding_verdict_v<T, Atoms...>;
+        constexpr std::string_view codes = verdict.failing_codes();
         ::foundation::reflect::anchored_t<^^T, std::string> text{
             "fixy::fn<Type, Atoms...> [tier 5]: the combination is refused.  "};
         if constexpr (!RefinementDefinedOnPayload<T, Atoms...>) {
@@ -499,18 +501,18 @@ template <class T, class... Atoms>
             text += Entry::cite();
             text += "  ";
         }
-        // The theorems are appended from the rows, whose texts are string
-        // literals.  GCC 16 does not append a view that define_static_string
-        // gave, in a constant expression: the append compares the pointer
-        // with null, and GCC refuses that comparison for such a pointer.
+        // The theorems are appended from the rows of the rule table, in its
+        // order, one character at a time.
         if constexpr (!codes.empty()) {
             text += "Collision rule(s) ";
             text += codes;
             text += ":";
-            for (const auto& verdict : ::fixy::collision::rules_of<T, Atoms...>::verdicts()) {
-                if (verdict.ok) continue;
+            for (std::size_t place = 0; place < ::fixy::collision::rule_count; ++place) {
+                const auto code = static_cast<::fixy::collision::RuleCode>(place);
+                if (verdict.admits(code)) continue;
                 text += "  ";
-                text += verdict.theorem;
+                for (const char letter : ::fixy::collision::rule_row_of(code, verdict.premises).theorem)
+                    text += letter;
             }
         }
         return std::define_static_string(text);
