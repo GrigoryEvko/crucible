@@ -219,10 +219,6 @@ struct BackgroundThread::Pipeline {
     // True after the first start().  Only the thread that owns the
     // BackgroundThread reads and writes it.
     bool has_started = false;
-    // The thread that runs run_in_row, while one runs.  start() sets it, and
-    // stop() takes it and joins it.  It is the last data member, so it
-    // joins first.
-    ::fixy::Option<::fixy::thread::OwnedThread> thread{};
 
     using StartChannel = ::fixy::concurrent::channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>;
     // A Box owns each message of the three channels after the start, and the
@@ -914,7 +910,7 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
 }
 
 void BackgroundThread::set_numerics(NumericsHash numerics) noexcept {
-    CRUCIBLE_PRE(!pipeline_->thread.is_some());
+    CRUCIBLE_PRE(!thread_.holds_thread());
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(numerics));
     CRUCIBLE_PRE(!numerics.is_sentinel());
     numerics_ = numerics;
@@ -922,9 +918,15 @@ void BackgroundThread::set_numerics(NumericsHash numerics) noexcept {
     requested_numerics_.store_release(numerics);
 }
 
+// No destructor body runs before the members end, so thread_, the last
+// member, stops and joins the pipeline thread while each other member is
+// alive (THE THREAD OF AN OWNER of fixy/os/OwnedThread.h).  The definition
+// comes before start(), so the door of the thread reads it as defaulted.
+BackgroundThread::~BackgroundThread() = default;
+
 void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log,
                              int32_t rank_, int32_t world_size_, uint64_t device_cap) {
-    CRUCIBLE_PRE_MSG(!pipeline_->thread.is_some(), "a start while the pipeline thread runs: stop the pipeline first");
+    CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a start while the pipeline thread runs: stop the pipeline first");
     CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(ring, trace_ring),
                      "a start after stop names the trace ring of the first start");
     CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(meta_log, trace_meta_log),
@@ -945,21 +947,19 @@ void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trac
         meta_cursor_ = meta_log.get()->tail.get();
     }
     // The lambda is the entry of the pipeline thread, so it takes the
-    // background context of that thread from the door.  The process ends
-    // when the host has no resource for one more thread.
-    pipeline_->thread = ::fixy::Option<::fixy::thread::OwnedThread>::some(
-        ::fixy::thread::mint_owned_thread(startup, ::fixy::thread::ThreadOptions{}, [this]() noexcept {
-            run_in_row(::fixy::BgLoadCtx{::foundation::effects::host::BackgroundOwner::mint_background_context()});
-        }).expect("the thread door starts the pipeline thread"));
+    // background context of that thread from the door.  It borrows this
+    // object through the door, which keeps the thread in thread_.  The
+    // process ends when the host has no resource for one more thread.
+    ::fixy::thread::mint_owner_thread<&BackgroundThread::thread_, &BackgroundThread::request_stop_>(
+        startup, ::fixy::thread::ThreadOptions{}, *this,
+        [](BackgroundThread& owner) noexcept {
+            owner.run_in_row(
+                ::fixy::BgLoadCtx{::foundation::effects::host::BackgroundOwner::mint_background_context()});
+        })
+        .expect("the thread door starts the pipeline thread");
 }
 
-void BackgroundThread::stop() {
-    stop_requested.signal();
-    std::move(pipeline_->thread)
-        .match([](::fixy::thread::OwnedThread thread) noexcept { std::move(thread).join(); }, []() noexcept {});
-}
-
-BackgroundThread::~BackgroundThread() { stop(); }
+void BackgroundThread::stop() { thread_.stop_and_join(); }
 
 void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
     namespace perm = ::foundation::permissions;

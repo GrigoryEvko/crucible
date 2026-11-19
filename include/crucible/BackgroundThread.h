@@ -28,6 +28,7 @@
 #include <fixy/Tags.h>
 #include <fixy/handle/OneShotFlag.h>
 #include <fixy/handle/PublishCommit.h>
+#include <fixy/os/OwnedThread.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/contracts/Pre.h>
@@ -999,8 +1000,10 @@ public:
 
     [[nodiscard]] NumericsHash numerics() const noexcept { return numerics_; }
 
-    // Signals the drain stage to stop and joins the pipeline thread.  The
-    // pipeline joins its stage threads before the thread ends.  The signal
+    // Signals the drain stage to stop and joins the pipeline thread, through
+    // request_stop_ and the join of thread_.  The end of this object does the
+    // same when the thread still runs.  The pipeline joins its stage threads
+    // before the thread ends.  The signal
     // does not wake a sleeping drain stage, so the stage reads it at the end
     // of its sleep, within RING_MAX_SLEEP_NANOS (0.2 ms).  That bound comes
     // from the margin of the trace ring, which a sleep must not fill.
@@ -1340,6 +1343,18 @@ public:
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] ::fixy::Result<::fixy::Ref<MemoryPlan>, PlanRefusal>
     compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage, ::fixy::BumpArena& scratch,
                         ::fixy::View<TensorSlot> slots) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+
+private:
+    // The stop hook of the pipeline thread (THE THREAD OF AN OWNER of
+    // fixy/os/OwnedThread.h).  It signals the drain stage to stop, and it does
+    // not join.  The stage reads the signal at the end of its sleep.
+    void request_stop_() noexcept { stop_requested.signal(); }
+
+    // The thread that runs run_in_row, while one runs.  start() gives it a
+    // thread, and stop() and the end of this object call request_stop_ and
+    // join it.  It is the last data member, so it ends first, and each other
+    // member is alive while the thread ends.
+    ::fixy::thread::OwnerThread<BackgroundThread> thread_{};
 };
 
 // The two sentinels of the owner mailbox.  Only their addresses matter, so
