@@ -17,7 +17,7 @@ using AwaitsCrash =
 using Detected = fixy::session::global::Actions<fixy::session::global::DetectAction<Bob, Alice>>;
 }  // namespace probe
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture specializes a rule of the semantics, and the compiler refuses it")
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture specializes a trait of the base, and the compiler refuses it")
 template <>
 struct fixy::session::config::detail::detection<probe::Empty, probe::Bob, probe::Alice, probe::AwaitsCrash> {
     using type = probe::Detected;

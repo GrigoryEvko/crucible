@@ -16,7 +16,7 @@ using Empty = fixy::session::TypingContext<>;
 using Receives = fixy::session::Recv<fixy::session::PeerMsg<Alice, Hello, int>, fixy::session::End>;
 }  // namespace probe
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture specializes a rule of the semantics, and the compiler refuses it")
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture specializes a trait of the base, and the compiler refuses it")
 template <>
 struct fixy::session::config::detail::role_actions<probe::Empty, probe::Bob, probe::Receives> {
     using type = fixy::session::global::Actions<>;

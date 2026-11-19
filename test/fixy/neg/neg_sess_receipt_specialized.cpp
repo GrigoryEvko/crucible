@@ -16,7 +16,7 @@ using Receives = fixy::session::Recv<fixy::session::PeerMsg<Alice, Hello, int>, 
 using Received = fixy::session::global::Actions<fixy::session::global::RecvAction<Bob, Alice, Hello, int>>;
 }  // namespace probe
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture specializes a rule of the semantics, and the compiler refuses it")
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture specializes a trait of the base, and the compiler refuses it")
 template <>
 struct fixy::session::config::detail::receipt<probe::Bob, probe::Alice, void, probe::Receives> {
     using type = probe::Received;
