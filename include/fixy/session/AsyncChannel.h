@@ -30,7 +30,7 @@
 // side runs on its own thread with its own endpoint, and each body
 // returns its endpoint at End.  The mint reaches the fork through
 // SessionMintDoor::fork_channel of fixy/session/Handle.h.  Its gate admits
-// exact duals or a registered side relation (ForkedSidesAgree of
+// exact duals or a registered side relation (ChannelSidesAgree of
 // fixy/session/Admission.h), and this header registers the relation of
 // this mint in the family async of side_relations.  So the core includes
 // no header of the asynchronous relation, and a unit that does not include

@@ -677,10 +677,12 @@ concept CtxFitsTestChannel = ::foundation::effects::CtxOwnsCapability<Ctx, ::fou
                           && PermissionFlowCloses<dual_of_t<Proto>, ::foundation::permissions::EmptyPermSet>
                           && CtxAdmitsChannelRow<Ctx, Proto, dual_of_t<Proto>>;
 
-// ── The relation between the two sides of a forked channel ──────────
+// ── The relation between the two sides of a channel ─────────────────
 //
-// The two sides of a forked channel are exact duals, or a side relation
-// that a header registers holds for them.  A side relation is a
+// The two sides of a channel are exact duals, or a side relation that a
+// header registers holds for them.  The door of the mints
+// (SessionMintDoor of fixy/session/Handle.h) asks this relation in one
+// member, which opens each end of each form.  A side relation is a
 // registration of the kind side_relation in a family of the root
 // side_relations (fixy/session/Registry.h, section Families).  It names a
 // concept `template <class SelfProto, class PeerProto, class ResourceSelf,
@@ -732,10 +734,10 @@ void a_side_relation_stands_outside_the_file_of_its_concept() noexcept;
 
 }  // namespace detail
 
-// The relation between the two sides of a forked channel: exact duals, or
-// a registered side relation.
+// The relation between the two sides of a channel: exact duals, or a
+// registered side relation.
 template <typename SelfProto, typename PeerProto, typename ResourceSelf, typename ResourcePeer>
-concept ForkedSidesAgree =
+concept ChannelSidesAgree =
     std::is_same_v<PeerProto, dual_of_t<SelfProto>>
     || detail::side_relation_holds(^^side_relations, ^^SelfProto, ^^PeerProto, ^^ResourceSelf, ^^ResourcePeer);
 

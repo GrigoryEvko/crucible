@@ -2204,6 +2204,14 @@ struct late_door_ {
 template <typename Door, typename Dep>
 using late_door_t = typename late_door_<Door, Dep>::type;
 
+// The peer of a session of one end.  A mint of one end names one protocol,
+// and its peer runs the dual of that protocol by the definition of a
+// session, so the door asks no relation for it.  The gate of each such mint
+// refuses a Resource that reaches a pole of a channel
+// (fixy/session/Admission.h), so the two ends of one channel never pass the
+// door as two sessions of one end.
+struct one_end_peer {};
+
 }  // namespace detail
 
 // True when H is a handle at End of the session that Brand owns, and its
@@ -2259,7 +2267,7 @@ concept CtxFitsForkedSides =
     && CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto>
     && ::fixy::concurrent::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag> && SessionResource<ResourceSelf>
     && SessionResource<ResourcePeer> && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
-    && ForkedSidesAgree<SelfProto, PeerProto, ResourceSelf, ResourcePeer>
+    && ChannelSidesAgree<SelfProto, PeerProto, ResourceSelf, ResourcePeer>
     && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
     && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Brand, Ctx>;
 
@@ -2283,13 +2291,37 @@ struct [[nodiscard]] TestChannelEnds {
 // fixy/session/Entry.h forward here for their names and their default
 // arguments, through detail::late_door_t.  No object of the class exists.
 class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
+    // Opens the first handle of one end of a channel.  The end runs SelfProto
+    // over ResourceSelf, and each end of the other side runs PeerProto over
+    // ResourcePeer.  Each member of this class opens each first handle here,
+    // so the relation between the two sides of a channel (ChannelSidesAgree
+    // of fixy/session/Admission.h) stands in this one place for each form:
+    // the test channel, the two forked forms and the pole of a channel name
+    // the two protocols.  A session of one end names detail::one_end_peer as
+    // its peer.  The crash and the checkpoint sessions open their inner
+    // session through open, so they pass here too.  A delegated endpoint
+    // already passed here at its first mint, and a hand-off opens no end.
+    // Record is empty for an end that claims its own record, or the one
+    // record that a channel mint claimed for the end.
+    template <typename SelfProto, typename PeerProto, typename ResourceSelf, typename ResourcePeer,
+              AbandonmentPolicy Policy, typename PS, typename LoopCtx = void, typename... Record>
+        requires(sizeof...(Record) <= 1)
+             && (std::is_same_v<PeerProto, detail::one_end_peer>
+                 || ChannelSidesAgree<SelfProto, PeerProto, ResourceSelf, ResourcePeer>)
+    [[nodiscard]] static constexpr auto open_end_(ResourceSelf resource, HoldSlots<PS> slots, std::source_location loc,
+                                                  Record... record) noexcept {
+        return HandleFactory::open_<SelfProto, ResourceSelf, Policy, PS, LoopCtx>(
+            SessionOpenKey{}, std::forward<ResourceSelf>(resource), std::move(slots), loc, record...);
+    }
+
     // One side of a forked channel.  It builds the endpoint in the thread
     // that runs it, gives the endpoint and the fork's view of its child
     // permission to the body, and closes the handle that the body returns.
     // A struct and not a lambda, because a lambda capture cannot hold a
     // reference Resource by its declared type.  It is a private member, and
     // only fork_channel builds one.
-    template <typename Proto, AbandonmentPolicy Policy, typename Resource, typename Body>
+    template <typename Proto, typename PeerProto, AbandonmentPolicy Policy, typename Resource, typename PeerResource,
+              typename Body>
     struct forked_endpoint_ {
         Resource resource;
         Body body;
@@ -2300,9 +2332,9 @@ class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
 
         template <typename View, typename Ctx>
         void operator()(View const& view, Ctx const& ctx) noexcept {
-            auto head = HandleFactory::open_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
-                                             detail::brand_ctx_t<Body>>(
-                SessionOpenKey{}, std::forward<Resource>(resource), no_slots_{}, site.loc, endpoint);
+            auto head =
+                open_end_<Proto, PeerProto, Resource, PeerResource, Policy, ::foundation::permissions::EmptyPermSet,
+                          detail::brand_ctx_t<Body>>(std::forward<Resource>(resource), no_slots_{}, site.loc, endpoint);
             auto at_end = std::invoke(std::move(body), std::move(head), view, ctx);
             static_cast<void>(std::move(at_end).close());
         }
@@ -2316,8 +2348,8 @@ public:
     template <typename Proto, AbandonmentPolicy Policy, typename Ctx, typename Resource>
         requires CtxFitsSessionFrom<Ctx, Proto, Resource>
     [[nodiscard]] static constexpr auto open(Ctx const&, Resource r, std::source_location loc) noexcept {
-        return HandleFactory::open_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet>(
-            SessionOpenKey{}, std::forward<Resource>(r), no_slots_{}, loc);
+        return open_end_<Proto, detail::one_end_peer, Resource, Resource, Policy,
+                         ::foundation::permissions::EmptyPermSet>(std::forward<Resource>(r), no_slots_{}, loc);
     }
 
     // mint_permissioned_session: consumes one token for each tag, and
@@ -2331,9 +2363,9 @@ public:
     open_permissioned(Ctx const&, Resource resource,
                       ::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
         using Set = ::foundation::permissions::PermSet<Tags...>;
-        return HandleFactory::open_<Proto, Resource, Policy, Set>(SessionOpenKey{}, std::forward<Resource>(resource),
-                                                                  HoldFactory::slots_of(std::move(tokens)...),
-                                                                  std::source_location::current());
+        return open_end_<Proto, detail::one_end_peer, Resource, Resource, Policy, Set>(
+            std::forward<Resource>(resource), HoldFactory::slots_of(std::move(tokens)...),
+            std::source_location::current());
     }
 
     // with_session: runs the body on the first handle of a session that
@@ -2345,10 +2377,10 @@ public:
         std::is_nothrow_invocable_v<
             Body, detail::first_handle_t<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
                                          detail::brand_ctx_t<Body>>>) {
-        auto at_end = std::invoke(std::move(body),
-                                  HandleFactory::open_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
-                                                       detail::brand_ctx_t<Body>>(
-                                      SessionOpenKey{}, std::forward<Resource>(r), no_slots_{}, loc));
+        auto at_end = std::invoke(
+            std::move(body),
+            open_end_<Proto, detail::one_end_peer, Resource, Resource, Policy, ::foundation::permissions::EmptyPermSet,
+                      detail::brand_ctx_t<Body>>(std::forward<Resource>(r), no_slots_{}, loc));
         return std::move(at_end).close();
     }
 
@@ -2364,8 +2396,8 @@ public:
     fork_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                  ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body,
                  std::source_location loc) noexcept {
-        using SelfSide = forked_endpoint_<SelfProto, Policy, ResourceSelf, SelfBody>;
-        using PeerSide = forked_endpoint_<PeerProto, Policy, ResourcePeer, PeerBody>;
+        using SelfSide = forked_endpoint_<SelfProto, PeerProto, Policy, ResourceSelf, ResourcePeer, SelfBody>;
+        using PeerSide = forked_endpoint_<PeerProto, SelfProto, Policy, ResourcePeer, ResourceSelf, PeerBody>;
         const auto [self_endpoint, peer_endpoint] =
             detail::claim_channel_<SelfProto, PeerProto, Policy, session_priority(^^ResourceSelf)>(loc);
         return ::fixy::concurrent::mint_permission_fork<SelfTag, PeerTag>(
@@ -2387,10 +2419,12 @@ public:
         if !consteval {
             records = detail::claim_channel_<Proto, dual_of_t<Proto>, Policy, session_priority(^^ResourceA)>(loc);
         }
-        auto self = HandleFactory::open_<Proto, ResourceA, Policy, ::foundation::permissions::EmptyPermSet>(
-            SessionOpenKey{}, std::forward<ResourceA>(resource_a), no_slots_{}, loc, records.self);
-        auto peer = HandleFactory::open_<dual_of_t<Proto>, ResourceB, Policy, ::foundation::permissions::EmptyPermSet>(
-            SessionOpenKey{}, std::forward<ResourceB>(resource_b), no_slots_{}, loc, records.peer);
+        auto self =
+            open_end_<Proto, dual_of_t<Proto>, ResourceA, ResourceB, Policy, ::foundation::permissions::EmptyPermSet>(
+                std::forward<ResourceA>(resource_a), no_slots_{}, loc, records.self);
+        auto peer =
+            open_end_<dual_of_t<Proto>, Proto, ResourceB, ResourceA, Policy, ::foundation::permissions::EmptyPermSet>(
+                std::forward<ResourceB>(resource_b), no_slots_{}, loc, records.peer);
         return TestChannelEnds<decltype(self), decltype(peer)>{std::move(self), std::move(peer)};
     }
 };
