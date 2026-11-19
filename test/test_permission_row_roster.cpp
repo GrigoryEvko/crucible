@@ -124,6 +124,9 @@ constexpr RosterEntry kEmptyRowRoster[] = {
     {"fixy::concurrent::detail::ParallelTreeSlots",
      "the tag of the slots of one call of a parallel tree form: the form mints the root in its body, the split of "
      "mint_parallel_for gives each shard its slots, and the root never leaves the call"},
+    {"fixy::concurrent::detail::ParallelScanParts",
+     "the tag of the parts of the output of one parallel scan: the scan mints the root in its body, the split of "
+     "mint_parallel_for gives each shard its part, and the root never leaves the call"},
     {"fixy::concurrent::detail::ParallelPointwiseShards",
      "the tag of the slots of the shards of one call of the parallel pointwise walk: the form mints the root in its "
      "body, the split of mint_parallel_for gives each shard its slot, and the root never leaves the call"},

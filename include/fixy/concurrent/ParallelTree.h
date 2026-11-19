@@ -149,6 +149,12 @@ template <typename T>
                       .item_count = read};
 }
 
+// The tag of the region of the parts of the output of a scan, for the second
+// pass of the scan.
+struct ParallelScanParts {
+    using permission_row = eff::Row<>;
+};
+
 // The parts of out at the cut of the Shards shards of a region of grains
 // slots: part s holds the outputs of the grains of shard s, by the cut of
 // mint_split (fixy::detail::shard_start).  Complexity: O(Shards).
@@ -257,20 +263,24 @@ scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::ScanKind kind, ::found
     ::foundation::core::detail::sum_scan_lanes_<::foundation::core::ScanKind::Exclusive, T,
                                                 ::foundation::simd::native_lanes<T>>(slots, slots, grains,
                                                                                      static_cast<T const*>(nullptr));
+    // The parts of out are a region of Shards elements, so the split of the
+    // door gives shard s the part s and no other.  The carries stay in the
+    // region of the call, and each shard reads the carries of its grains.
     auto parts = detail::split_by_shards_<Shards>(std::move(out), grains);
-    return spawn::mint_parallel_for<Coupling, Shards>(
-        ctx, budget, std::move(summed), [in, base, kind, grains, &parts](auto& shard) noexcept {
+    ::foundation::core::View<T const> const all_carries{detail::region_view_(summed)};
+    ::foundation::linear::drop(spawn::mint_parallel_for<Coupling, Shards>(
+        ctx, budget,
+        ::fixy::mint_owned_region(first_of_(::foundation::core::detail::ViewDoor::key(), parts.view()), Shards,
+                                  ::foundation::permissions::mint_permission_root<detail::ParallelScanParts>()),
+        [in, all_carries, kind, grains](auto& shard) noexcept {
             constexpr std::size_t index = std::remove_cvref_t<decltype(shard)>::tag_type::index;
-            std::size_t const first = detail::first_slot_(shard, base);
-            if (first != ::fixy::detail::shard_start(grains, Shards, index)) [[unlikely]] {
-                ::foundation::core::fatal(
-                    "shard {} of a parallel scan starts at slot {}, not at the slot {} of its part", index, first,
-                    ::fixy::detail::shard_start(grains, Shards, index));
-            }
-            auto own = std::move(*parts.get(index).expect("each shard has a part"))
-                           .expect("each shard takes its part one time");
-            if (shard.size() == 0) return;
-            ::foundation::core::View<T const> const shard_carries{detail::region_view_(shard)};
+            CRUCIBLE_FATAL_INVARIANT(shard.size() == 1);
+            auto own = std::move(*shard.data()).expect("each shard takes its part one time");
+            std::size_t const first = ::fixy::detail::shard_start(grains, Shards, index);
+            std::size_t const count = ::fixy::detail::shard_start(grains, Shards, index + 1) - first;
+            if (count == 0) return;
+            ::foundation::core::View<T const> const shard_carries =
+                all_carries.window(first, count).expect("the grains of a shard lie inside the carries");
             if (kind == ::foundation::core::ScanKind::Inclusive) {
                 ::foundation::core::scan_inclusive_sum_grains<parallel_tree_grain>(in, first, shard_carries,
                                                                                    std::move(own));
@@ -278,7 +288,8 @@ scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::ScanKind kind, ::found
                 ::foundation::core::scan_exclusive_sum_grains<parallel_tree_grain>(in, first, shard_carries,
                                                                                    std::move(own));
             }
-        });
+        }));
+    return summed;
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
