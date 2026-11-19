@@ -3204,6 +3204,9 @@ foundation_neg_compile_test(neg_core_scalar_swap_const
 foundation_neg_compile_test(neg_closure_race_at_concurrent_door
   "static assertion failed: run_concurrently: the body captures .count. \\(field count, type int&\\)"
   "The first part that refuses it: int")
+foundation_neg_compile_test(neg_closure_view_mut_at_concurrent_door
+  "static assertion failed: run_concurrently: the body captures .run. \\(field run, type const foundation::core::ViewMut<int, \\{anonymous\\}::RunBrand>&\\)"
+  "The first part that refuses it: foundation::core::ViewMut<int, \\{anonymous\\}::RunBrand>")
 foundation_neg_compile_test(neg_closure_borrow_at_escaping_door
   "static assertion failed: run_later: the body captures .values. \\(field values, type foundation::core::View<const int>\\)"
   "so a borrow dangles")

@@ -610,9 +610,14 @@ public:
 // the frame.  It reads the run, and it does not write it.  A door of a kernel
 // reads its inputs through such a reference, so the brands tell it that two
 // runs do not overlap (THE ALIAS PROOF of Frame.h).
+//
+// The class states refers_unique (foundation/Transfer.h).  A ViewMut moves to
+// another thread when its element can move.  The key door first_of_ gives the
+// first element for writing from a const reference too, so two threads share
+// a const reference of a ViewMut only when they can write its element.
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent = dynamic_extent>
     requires ViewElement<T> && (!std::is_const_v<T>) && ViewExtent<T, Extent>
-class [[nodiscard]] ViewMut final {
+class [[nodiscard]][[= ::foundation::transfer::refers_unique{}]] ViewMut final {
     T* first_ = nullptr;
     [[no_unique_address]] detail::ViewCount<Extent> count_{};
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};

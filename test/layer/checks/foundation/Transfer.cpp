@@ -6,6 +6,8 @@
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+#include <foundation/core/Strided.h>
 #include <foundation/reflect/TypeComponents.h>
 
 namespace foundation::transfer {
@@ -62,6 +64,21 @@ consteval bool are_refs_checked() {
         && !holds(^^decltype(::foundation::core::to(plain)), Property::Send);
 }
 static_assert(are_refs_checked());
+
+// Rule 1 for a class that states refers_unique: a ViewMut and a StridedViewMut
+// are Sendable when their element is Sendable.  They are Shareable only when
+// two threads can write their element, because a const one can still write
+// the run.  Two threads never write one of them at the same time.
+struct ViewBrand {};
+using IntRun = ::foundation::core::ViewMut<int, ViewBrand>;
+using IntRows = ::foundation::core::StridedViewMut<int, 2, ViewBrand>;
+using PointerRun = ::foundation::core::ViewMut<int*, ViewBrand>;
+static_assert(Sendable<IntRun> && !Shareable<IntRun> && !Synchronized<IntRun>);
+static_assert(Sendable<IntRows> && !Shareable<IntRows> && !Synchronized<IntRows>);
+static_assert(!Sendable<PointerRun> && !Shareable<PointerRun>);
+static_assert(!Sendable<IntRun const&> && !Sendable<IntRun&>);
+static_assert(first_refusal(^^IntRun, Property::Share) == std::meta::dealias(^^IntRun));
+static_assert(first_refusal(^^PointerRun, Property::Send) == ^^int*);
 
 // Rule 7: a lambda with no capture holds each property.  A capture by
 // reference of a plain int holds none: a compiler that hides the capture

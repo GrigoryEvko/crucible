@@ -26,7 +26,11 @@
 //        WRITE): the thread that gives the reference can still write the
 //        object, and no type tells that only one of the two threads writes.
 //        A class that states refers{}, such as a Ref, is a reference to its
-//        first type argument, and this rule applies to it.
+//        first type argument, and this rule applies to it.  A class that
+//        states refers_unique{}, such as a ViewMut, is the one writer of the
+//        object of its first type argument.  It is Sendable when that type is
+//        Sendable.  It is Shareable only when two threads can write that type,
+//        because a reference to const of it can still write the object.
 //     2. A scalar, an enumeration, nullptr_t, a pointer to a function and a
 //        pointer to a member hold each property.  A pointer to a function
 //        names code, which no thread writes.
@@ -73,6 +77,8 @@
 //     by_arguments{} states that the class owns the objects of its type
 //     arguments behind its pointers.  refers{} states that the class refers to
 //     the object of its first type argument, as a reference does.
+//     refers_unique{} states that the class refers to that object as its one
+//     writer, as a ViewMut does.
 //     thread_bound{} states that the class belongs to one owner thread: a
 //     value does not move to another thread, and no other thread writes it.
 //     The class then is not Sendable and two threads cannot write it, but it
@@ -107,6 +113,7 @@ struct shareable final {};
 struct not_shareable final {};
 struct by_arguments final {};
 struct refers final {};
+struct refers_unique final {};
 struct thread_bound final {};
 
 // The two properties that first_refusal walks (THE THREE PROPERTIES).  The
@@ -347,6 +354,21 @@ struct ReferenceAnswer {
             const detail::ReferenceAnswer answer = detail::answer_reference(*arguments.begin());
             if (answer.is_refused) return bare;
             if (answer.has_next) pending.push(answer.next);
+            continue;
+        }
+        // Rule 1, a class that is the one writer of the object of its first
+        // argument.  A value moves with its target, and a read through a
+        // reference to const of it can still write the target.
+        if (detail::states(bare, ^^refers_unique)) {
+            if (!is_specialization) return bare;
+            const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
+            if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
+            const std::meta::info target = arguments.begin()->type;
+            if (goal.property == Property::Send) {
+                pending.push(detail::Goal{target, Property::Send});
+                continue;
+            }
+            if (!detail::is_shared_writable(target)) return bare;
             continue;
         }
         // Rule 6.

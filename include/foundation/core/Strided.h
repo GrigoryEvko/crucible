@@ -897,7 +897,7 @@ template <class Lanes>
 // of this class.
 template <class T, std::size_t Rank, ::foundation::brand::IsBrand Brand>
     requires ViewElement<T> && (!std::is_const_v<T>) && StridedRank<Rank>
-class [[nodiscard]] StridedViewMut final {
+class [[nodiscard]][[= ::foundation::transfer::refers_unique{}]] StridedViewMut final {
     using Axis = detail::strided_axis_t<Rank>;
 
     // The seal of the view keeps this class from being trivially copyable,
