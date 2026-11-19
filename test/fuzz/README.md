@@ -63,6 +63,14 @@ To add a boundary, write `boundary/harnesses/<name>.h` and add one
 `crucible_boundary_fuzzer(<name> <mutations>)` line to
 `test/fuzz/CMakeLists.txt`.
 
+A harness can also hold only types of the base: `run_<name>` takes a
+`View<std::byte const>`, and `seeds_<name>()` gives a list of seeds of the
+base, each with a `view()` of its bytes.  Add `VIEW` as the third argument of
+its line.  Then `boundary/view_entry.cpp` is its entry, and it holds the one
+ABI region of the input.  `protocol_image` and `protocol_heap`, the two
+decoders of the Protocol family, have this form.  `prop_boundary_harnesses`
+does not run such a harness.  Its smoke test does.
+
 ## Coverage-guided campaigns: AFL++ with its GCC plugin
 
 The coverage-guided fuzzer is AFL++ with its GCC plugin (`afl-g++-fast`),
