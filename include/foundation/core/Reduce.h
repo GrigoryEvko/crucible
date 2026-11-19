@@ -199,13 +199,18 @@ template <class T, int Lanes>
 }
 
 // The tree of the lanes of one vector: the adjacent pairs, then the pairs of
-// the pairs, down to one value.
+// the pairs, down to one value.  Each step keeps its pairs in a named vector.
+// On aarch64 a vec of more than 16 bytes returns in memory.  If the add builds
+// its result in the argument slot of the next step, GCC 16 with UBSan at -O1
+// warns that the slot can be uninitialized, which is false.  The named vector
+// prevents that warning, and the code at -O3 is the same.
 template <class T, int Lanes>
 [[nodiscard]] CRUCIBLE_INLINE T reduce_tree_lanes_(simd::vec<T, Lanes> lanes) noexcept {
     if constexpr (Lanes == 2) {
         return lanes[0] + lanes[1];
     } else {
-        return reduce_tree_lanes_<T, Lanes / 2>(simd::pick_even_lanes(lanes) + simd::pick_odd_lanes(lanes));
+        simd::vec<T, Lanes / 2> const pairs = simd::pick_even_lanes(lanes) + simd::pick_odd_lanes(lanes);
+        return reduce_tree_lanes_<T, Lanes / 2>(pairs);
     }
 }
 
