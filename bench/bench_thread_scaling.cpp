@@ -23,6 +23,9 @@
 //   lanes push         try_push of fixy/concurrent/LaneRing.h into the lane
 //                      of each producer, and try_pop on the last thread, which
 //                      takes one item of each lane in turn (THE LANES)
+//   lanes permissioned try_push of a producer handle of a lane of the lanes
+//   push               channel of fixy/concurrent/PermissionedChannel.h, and
+//                      try_pop of its consumer handle (THE PERMISSIONED ROWS)
 //   mpsc slow push     the mpsc push, with one slow producer (THE SLOW PRODUCER)
 //   lanes slow push    the lanes push, with one slow producer
 //   spsc push          try_push of fixy/concurrent/SpscRing.h on the main
@@ -168,9 +171,9 @@ using Item = std::uint64_t;
 
 // The threads of one row, at most.  The command of the owner runs 224.
 constexpr std::size_t kMaxThreads = 256;
-// The rows of one op, at most, and the latency reports of the thirteen ops.
+// The rows of one op, at most, and the latency reports of the fourteen ops.
 constexpr std::size_t kMaxRows = 16;
-constexpr std::size_t kMaxReports = 13 * kMaxRows;
+constexpr std::size_t kMaxReports = 14 * kMaxRows;
 constexpr std::uint64_t kWindowNs = 500000000;
 constexpr std::size_t kLatencySamples = 1000000;
 constexpr std::size_t kLatencyWarmup = 10000;
@@ -287,6 +290,7 @@ enum class OpKind : std::uint8_t {
     MpscReferencePush,
     MpscPermissionedPush,
     LanesPush,
+    LanesPermissionedPush,
     MpscSlowPush,
     LanesSlowPush,
     SpscPush,
@@ -315,9 +319,10 @@ template <OpKind Kind>
 inline constexpr bool kIsSpsc = Kind == OpKind::SpscPush || Kind == OpKind::SpscProvenPush
                              || Kind == OpKind::SpscBatchPush || Kind == OpKind::SpscReferencePush;
 
-// True for an op of the ring of lanes (THE LANES).
+// True for an op of the ring of lanes or of the lanes channel (THE LANES).
 template <OpKind Kind>
-inline constexpr bool kIsLanes = Kind == OpKind::LanesPush || Kind == OpKind::LanesSlowPush;
+inline constexpr bool kIsLanes =
+    Kind == OpKind::LanesPush || Kind == OpKind::LanesPermissionedPush || Kind == OpKind::LanesSlowPush;
 
 // True for an op with one slow producer (THE SLOW PRODUCER).
 template <OpKind Kind>
@@ -727,6 +732,7 @@ template <OpKind Kind>
     if constexpr (Kind == OpKind::MpscReferencePush) return ::fixy::TextView{"mpsc reference push"};
     if constexpr (Kind == OpKind::MpscPermissionedPush) return ::fixy::TextView{"mpsc permissioned push"};
     if constexpr (Kind == OpKind::LanesPush) return ::fixy::TextView{"lanes push"};
+    if constexpr (Kind == OpKind::LanesPermissionedPush) return ::fixy::TextView{"lanes permissioned push"};
     if constexpr (Kind == OpKind::MpscSlowPush) return ::fixy::TextView{"mpsc slow push"};
     if constexpr (Kind == OpKind::LanesSlowPush) return ::fixy::TextView{"lanes slow push"};
     if constexpr (Kind == OpKind::SpscPush) return ::fixy::TextView{"spsc push"};
@@ -912,13 +918,37 @@ template <OpKind Kind>
 // The tag of the root of the channel of a permissioned row.  Each row mints
 // its root in its body, so the brand of the root stays in the scope that made
 // it.
-struct PermissionedMpscTag final {};
+struct PermissionedRowTag final {};
 
-// A producer handle that the pool of the channel lends.  No exclusive is out
-// in the bench, so an empty lend ends the process.
-template <class Channel>
+// The form of the channel of a permissioned op.
+template <OpKind Kind>
+inline constexpr ::fixy::concurrent::ChannelForm kRowForm =
+    Kind == OpKind::LanesPermissionedPush ? ::fixy::concurrent::ChannelForm::lanes
+                                          : ::fixy::concurrent::ChannelForm::merge;
+
+// The channel of a permissioned row of Threads threads and a root of type
+// Root: a merge channel of kRingCapacity cells, or a lanes channel of one lane
+// of kLaneCapacity cells for each producer.
+template <OpKind Kind, std::uint32_t Threads, class Root>
+struct RowChannel {
+    using type = ::fixy::concurrent::channel_t<Item, kRingCapacity, Root>;
+};
+template <std::uint32_t Threads, class Root>
+struct RowChannel<OpKind::LanesPermissionedPush, Threads, Root> {
+    using type = ::fixy::concurrent::channel_t<Item, kLaneCapacity, Root, ::fixy::concurrent::LaneCount{Threads - 1}>;
+};
+
+// The producer handle of the slot Slot of a permissioned row: a share that
+// the pool of a merge lends, or the lane of the slot of a lanes channel.  No
+// exclusive is out in the bench, so an empty lend ends the process.
+template <OpKind Kind, std::size_t Slot, class Channel>
 [[nodiscard]] typename Channel::ProducerHandle lend_producer(Channel& channel) noexcept {
-    return channel.producer().expect("the channel lends a producer while no exclusive is out");
+    if constexpr (Kind == OpKind::LanesPermissionedPush) {
+        return channel.producer(typename Channel::lane_index{::fixy::index<Slot>()})
+            .expect("the channel lends the lane of a slot while no exclusive is out");
+    } else {
+        return channel.producer().expect("the channel lends a producer while no exclusive is out");
+    }
 }
 
 // The options of the worker of a slot of a permissioned row: its name and the
@@ -957,12 +987,13 @@ template <class Measure, class Body, class... Rest>
 
 // The body of a producer worker of a permissioned row: it moves its end onto
 // its own stack and pushes into it until the row stops.  The end goes back to
-// the pool of the channel when the body ends.
-template <class Producer>
+// the pool of the channel when the body ends, and the end of a lane ends the
+// lane.
+template <OpKind Kind, class Producer>
 [[nodiscard]] auto make_beside_pusher(RowControl& control, ThreadLine& line, Producer&& producer) noexcept {
     return [&control, &line, owned = std::move(producer)]() mutable noexcept {
         auto end = std::move(owned);
-        run_producer_loop<OpKind::MpscPermissionedPush>(
+        run_producer_loop<Kind>(
             control,
             [&control, &end] [[gnu::always_inline]] () noexcept {
                 push_waiting(control, [&end]() noexcept { return end.try_push(Item{1}); });
@@ -971,23 +1002,41 @@ template <class Producer>
     };
 }
 
-// One row of the permissioned MPSC channel with Threads threads: the main
-// thread and the workers of slots 1 to Threads - 2 push, each through a
-// producer handle that the pool lends, and the worker of the last slot pops
-// through the consumer handle.  Each worker owns its end in its own frame, so
-// no end shares a line with an object that the main thread writes.
-template <std::uint32_t Threads, std::size_t... Producers>
+// One pop of the consumer end of a permissioned row: the pop of a merge takes
+// the tag of Nondet, and the pop of a lanes channel, which is in the order of
+// its lanes, takes no tag.  It adds the item that it took into sum.
+template <OpKind Kind, class Consumer>
+[[gnu::always_inline]] inline bool pop_permissioned(Consumer& from, std::uint64_t& sum) noexcept {
+    if constexpr (Kind == OpKind::LanesPermissionedPush) {
+        ::fixy::Option<Item> item = from.try_pop();
+        bool const has_item = item.is_some();
+        sum += sum_of(std::move(item));
+        return has_item;
+    } else {
+        ::fixy::Option<Item> item = from.try_pop(eff::testing::test().nondet);
+        bool const has_item = item.is_some();
+        sum += sum_of(std::move(item));
+        return has_item;
+    }
+}
+
+// One row of a permissioned channel with Threads threads: the main thread and
+// the workers of slots 1 to Threads - 2 push, each through a producer handle
+// that the pool lends, and the worker of the last slot pops through the
+// consumer handle.  The producer of slot k of a lanes channel pushes into
+// lane k.  Each worker owns its end in its own frame, so no end shares a line
+// with an object that the main thread writes.
+template <OpKind Kind, std::uint32_t Threads, std::size_t... Producers>
 [[nodiscard]] RowResult run_permissioned_row(bench::Spread const& spread,
                                              std::index_sequence<Producers...> /*pushers*/) {
-    auto root = perm::mint_permission_root<
-        ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::merge, PermissionedMpscTag>>();
-    using Mpsc = ::fixy::concurrent::channel_t<Item, kRingCapacity, decltype(root)>;
+    auto root =
+        perm::mint_permission_root<::fixy::concurrent::channel_tag::Whole<kRowForm<Kind>, PermissionedRowTag>>();
+    using Channel = typename RowChannel<Kind, Threads, decltype(root)>::type;
     RowControl control{};
     auto [producer_root, consumer_perm] =
-        perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(std::move(root));
-    Mpsc channel{std::move(producer_root)};
-    eff::cap::Nondet const merge = eff::testing::test().nondet;
-    Mpsc::ProducerHandle producer = lend_producer(channel);
+        perm::mint_permission_split<typename Channel::producer_tag, typename Channel::consumer_tag>(std::move(root));
+    Channel channel{std::move(producer_root)};
+    typename Channel::ProducerHandle producer = lend_producer<Kind, 0>(channel);
     auto push = [&control, &producer] [[gnu::always_inline]] () noexcept {
         push_waiting(control, [&producer]() noexcept { return producer.try_push(Item{1}); });
     };
@@ -995,18 +1044,16 @@ template <std::uint32_t Threads, std::size_t... Producers>
     auto measure = [&control, &spread, &push, main_cpu]() noexcept {
         while (control.ready.value.load_acquire() + 1 < Threads)
             CRUCIBLE_SPIN_PAUSE;
-        return finish_row<OpKind::MpscPermissionedPush>(control, ThreadCount{Threads}, ConsumerPlace::LastSlot,
-                                                        main_cpu, push);
+        return finish_row<Kind>(control, ThreadCount{Threads}, ConsumerPlace::LastSlot, main_cpu, push);
     };
-    auto popper = [&control, owned = channel.consumer(std::move(consumer_perm)), merge]() mutable noexcept {
+    // The worker of the last slot moves its end onto its own stack and pops
+    // until the row stops.
+    auto popper = [&control, owned = channel.consumer(std::move(consumer_perm))]() mutable noexcept {
         auto end = std::move(owned);
         run_consumer_loop(
             control,
-            [merge] [[gnu::always_inline]] (auto& from, ::fixy::View<Item> /*out*/, std::uint64_t& sum) noexcept {
-                ::fixy::Option<Item> item = from.try_pop(merge);
-                bool const has_item = item.is_some();
-                sum += sum_of(std::move(item));
-                return has_item;
+            [] [[gnu::always_inline]] (auto& from, ::fixy::View<Item> /*out*/, std::uint64_t& sum) noexcept {
+                return pop_permissioned<Kind>(from, sum);
             },
             end, line_of(control, bench::ThreadSlot{Threads - 1}));
         ::foundation::linear::drop(std::move(end));
@@ -1015,8 +1062,9 @@ template <std::uint32_t Threads, std::size_t... Producers>
     // the end of its scope.
     return run_beside_workers(
         spread, bench::ThreadSlot{1}, measure,
-        make_beside_pusher(control, line_of(control, bench::ThreadSlot{static_cast<std::uint32_t>(Producers) + 1}),
-                           lend_producer(channel))...,
+        make_beside_pusher<Kind>(control,
+                                 line_of(control, bench::ThreadSlot{static_cast<std::uint32_t>(Producers) + 1}),
+                                 lend_producer<Kind, Producers + 1>(channel))...,
         std::move(popper));
 }
 
@@ -1024,18 +1072,19 @@ template <std::uint32_t Threads, std::size_t... Producers>
 // bench builds no row of.  The workers of a row hold the ends of the channel
 // in the bodies of run_beside, so a count of threads is a count of bodies, and
 // the rows take the counts 2, 4, 8 and 16.
+template <OpKind Kind>
 [[nodiscard]] ::fixy::Option<RowResult> run_permissioned_row_of(bench::Spread const& spread,
                                                                 ThreadCount threads) noexcept {
     if (threads.raw() > spread.count()) return ::fixy::none;
     switch (threads.raw()) {
         case 2:
-            return ::fixy::some(run_permissioned_row<2>(spread, std::make_index_sequence<0>{}));
+            return ::fixy::some(run_permissioned_row<Kind, 2>(spread, std::make_index_sequence<0>{}));
         case 4:
-            return ::fixy::some(run_permissioned_row<4>(spread, std::make_index_sequence<2>{}));
+            return ::fixy::some(run_permissioned_row<Kind, 4>(spread, std::make_index_sequence<2>{}));
         case 8:
-            return ::fixy::some(run_permissioned_row<8>(spread, std::make_index_sequence<6>{}));
+            return ::fixy::some(run_permissioned_row<Kind, 8>(spread, std::make_index_sequence<6>{}));
         case 16:
-            return ::fixy::some(run_permissioned_row<16>(spread, std::make_index_sequence<14>{}));
+            return ::fixy::some(run_permissioned_row<Kind, 16>(spread, std::make_index_sequence<14>{}));
         default:
             return ::fixy::none;
     }
@@ -1100,9 +1149,9 @@ void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> co
             static_cast<void>(rows.append(run_row<Kind>(spread, ThreadCount{2}, ConsumerPlace::OtherL3))
                                   .expect("an op has at most kMaxRows rows"));
         }
-    } else if constexpr (Kind == OpKind::MpscPermissionedPush) {
+    } else if constexpr (Kind == OpKind::MpscPermissionedPush || Kind == OpKind::LanesPermissionedPush) {
         for (ThreadCount const threads : counts) {
-            ::fixy::Option<RowResult> row = run_permissioned_row_of(spread, threads);
+            ::fixy::Option<RowResult> row = run_permissioned_row_of<Kind>(spread, threads);
             if (row.is_none()) continue;
             static_cast<void>(rows.append(std::move(row).expect("the test above found a row"))
                                   .expect("an op has at most kMaxRows rows"));
@@ -1255,6 +1304,9 @@ int run_bench(::fixy::os::Args const& arguments) {
         run_op_rows<OpKind::LanesPush>(spread, counts.view(),
                                        "lanes push: one SPSC lane for each producer, read in the order of the lanes",
                                        reports);
+        run_op_rows<OpKind::LanesPermissionedPush>(
+            spread, counts.view(), "lanes permissioned push: the lanes channel, each end in the body of its worker",
+            reports);
         run_op_rows<OpKind::MpscSlowPush>(spread, counts.view(), "mpsc slow push: the mpsc push with one slow producer",
                                           reports);
         run_op_rows<OpKind::LanesSlowPush>(spread, counts.view(),
