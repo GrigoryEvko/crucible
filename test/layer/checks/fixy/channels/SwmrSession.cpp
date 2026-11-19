@@ -68,6 +68,7 @@ static_assert(std::is_same_v<WriterRuntimeProto<int>,
                              ::fixy::session::Loop<::fixy::session::Send<int, ::fixy::session::Continue>>>);
 static_assert(std::is_same_v<ReaderRuntimeProto<int>,
                              ::fixy::session::Loop<::fixy::session::Recv<int, ::fixy::session::Continue>>>);
+static_assert(std::is_same_v<ReaderRuntimeProto<int>, ::fixy::session::dual_of_t<WriterRuntimeProto<int>>>);
 
 // Each handle is a pole of the session, and its table gives the writer the
 // writer protocol and each reader the reader protocol.  A mint of one end

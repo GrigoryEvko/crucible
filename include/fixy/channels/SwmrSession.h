@@ -60,8 +60,10 @@ namespace fixy::channels::swmr_session {
 template <typename T>
 using WriterRuntimeProto = ::fixy::session::Loop<::fixy::session::Send<T, ::fixy::session::Continue>>;
 
+// The protocol of a reader is the dual of the protocol of the writer, so the
+// two sides of the session cannot drift apart.
 template <typename T>
-using ReaderRuntimeProto = ::fixy::session::Loop<::fixy::session::Recv<T, ::fixy::session::Continue>>;
+using ReaderRuntimeProto = ::fixy::session::dual_of_t<WriterRuntimeProto<T>>;
 
 template <typename S>
 concept SwmrSessionSurface =
