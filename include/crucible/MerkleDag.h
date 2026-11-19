@@ -322,10 +322,11 @@ struct LoopNode;
 // pointer, so a link takes eight bytes.
 using TraceLink = ::fixy::Option<::fixy::Ref<TraceNode>>;
 
-// The continuation of a node.  A const node gives its continuation only as
-// const, so a reader of a const region writes no node that the region links.
-// The link takes eight bytes too.
-using NextLink = ::fixy::Link<TraceNode>;
+// A link of a node to the node that it continues to or runs.  A const node
+// gives the node of each such link only as const, so a reader of a const
+// region writes no node that the region reaches.  The link takes eight bytes
+// too.
+using NodeLink = ::fixy::Link<TraceNode>;
 
 // Nodes are arena-allocated and are never freed individually.
 struct TraceNode {
@@ -335,7 +336,7 @@ struct TraceNode {
     // MerkleHash because wrapping it would change the layout.
     MerkleHash merkle_hash;
     // The continuation.  A TERMINAL node has none.
-    NextLink next{};
+    NodeLink next{};
 
     // A node that has not been through recompute_merkle carries hash 0, and
     // comparing that against a stored hash reports a spurious mismatch.  This
@@ -378,6 +379,14 @@ struct TraceNode {
 // the two nodes, so a link to a copy of the node is not a link to the node.
 [[nodiscard]] inline bool is_link_to(TraceLink const& link, TraceNode const& node) noexcept {
     return link.is_some_and([&node](::fixy::Ref<TraceNode> const& linked) noexcept {
+        return ::fixy::same_object(linked, ::fixy::to(node));
+    });
+}
+
+// True when a link of const reaches the node, as is_link_to above.
+[[nodiscard]] inline bool is_link_to(::fixy::Option<::fixy::Ref<TraceNode const>> const& link,
+                                     TraceNode const& node) noexcept {
+    return link.is_some_and([&node](::fixy::Ref<TraceNode const> const& linked) noexcept {
         return ::fixy::same_object(linked, ::fixy::to(node));
     });
 }
@@ -487,33 +496,56 @@ struct RegionNode : TraceNode {
 struct BranchNode : TraceNode {
     Guard guard;
 
-    struct Arm {
+    // One arm: the guard value and the node that the arm runs.  A const arm
+    // gives its node only as const.  The arm copies from a const arm, so an
+    // arena can fill a run of arms with one arm.
+    class Arm {
+    public:
         int64_t value = 0;  // the observed guard outcome
+
+        constexpr Arm() noexcept = default;
+        constexpr Arm(int64_t guard_value, TraceLink arm_target) noexcept : value{guard_value}, target_{arm_target} {}
+
         // The node that the arm runs.  An arm of a loaded branch has no
         // target until a caller resolves it.
-        TraceLink target{};
+        [[nodiscard]] TraceLink target() noexcept { return target_; }
+        [[nodiscard]] ::fixy::Option<::fixy::Ref<TraceNode const>> target() const noexcept {
+            return target_.match(
+                [](::fixy::Ref<TraceNode> const& node) noexcept {
+                    return ::fixy::some(::fixy::Ref<TraceNode const>{node});
+                },
+                []() noexcept { return ::fixy::Option<::fixy::Ref<TraceNode const>>{}; });
+        }
+        void set_target(TraceLink arm_target) noexcept { target_ = arm_target; }
 
         // The target of the arm.  A hash of the branch reads the target of
-        // each arm, so an arm with no target ends the process here.  A const
-        // arm gives its target as const.
+        // each arm, so an arm with no target ends the process here.
         [[nodiscard]] TraceNode& resolved_target() noexcept {
-            return *TraceLink{target}.expect("an arm of the branch has no target: resolve the targets of a "
-                                             "loaded branch before a walk reads them");
+            return *TraceLink{target_}.expect("an arm of the branch has no target: resolve the targets of a "
+                                              "loaded branch before a walk reads them");
         }
         [[nodiscard]] TraceNode const& resolved_target() const noexcept {
-            return *TraceLink{target}.expect("an arm of the branch has no target: resolve the targets of a "
-                                             "loaded branch before a walk reads them");
+            return *target().expect("an arm of the branch has no target: resolve the targets of a "
+                                    "loaded branch before a walk reads them");
         }
+
+    private:
+        TraceLink target_{};
     };
 
     uint32_t pad1 = 0;  // the bytes between the guard and the arms
-    // The arms are in the arena, and the node only borrows them.
-    ::fixy::View<Arm> arms{};
     // The inherited next points at the merge node where all arms reconverge.
+
+    // The arms, which are in the arena: the node only borrows them.  A const
+    // branch gives its arms only as const, so a reader of a const branch
+    // writes no node that an arm links.
+    [[nodiscard]] ::fixy::View<Arm> arms() noexcept { return arms_; }
+    [[nodiscard]] ::fixy::View<Arm const> arms() const noexcept { return arms_; }
+    void set_arms(::fixy::View<Arm> arms) noexcept { arms_ = arms; }
 
     // The count of arms.  The loader takes at most CDAG_MAX_BRANCH_ARMS arms.
     [[nodiscard]] uint32_t num_arms() const noexcept {
-        const size_t count = arms.size();
+        const size_t count = arms_.size();
         CRUCIBLE_PRE(count <= ::fixy::max_of<uint32_t>);
         return static_cast<uint32_t>(count);
     }
@@ -524,10 +556,13 @@ struct BranchNode : TraceNode {
     // Adjacent-pair comparison admits duplicate values, because two guards
     // that compare equal are not structurally forbidden.
     [[nodiscard, gnu::cold]] bool are_arms_sorted_by_value() const noexcept {
-        for (const ::fixy::View<Arm, 2> pair : arms.windows<2>())
+        for (const ::fixy::View<Arm, 2> pair : arms_.windows<2>())
             if (pair.at(::fixy::index<1>()).value < pair.at(::fixy::index<0>()).value) return false;
         return true;
     }
+
+private:
+    ::fixy::View<Arm> arms_{};
 };
 
 // Carries one of the loop body's outputs back to one of its inputs for the
@@ -550,8 +585,9 @@ enum class LoopTermKind : uint8_t {
 struct LoopNode : TraceNode {
     ContentHash body_content_hash;
     // The first node of the body: a chain that ends in TERMINAL.  make_loop
-    // sets it, and replay refuses a loop with an empty body.
-    TraceLink body{};
+    // sets it, and replay refuses a loop with an empty body.  A const loop
+    // gives the body only as const.
+    NodeLink body{};
     // The edges are in the arena, and the node only borrows them.
     ::fixy::View<FeedbackEdge> feedback_edges{};
     LoopTermKind term_kind = LoopTermKind::REPEAT;
@@ -966,7 +1002,7 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
         case TraceNodeKind::BRANCH: {
             const ::fixy::Ref<BranchNode> branch = node.expect_branch();
             merkle_hash_state = ::foundation::reflect::fmix64(::fixy::hash(branch->guard).raw());
-            for (const BranchNode::Arm& arm : branch->arms) {
+            for (const BranchNode::Arm& arm : branch->arms()) {
                 merkle_hash_state ^= ::foundation::reflect::fmix64(arm.resolved_target().merkle_hash.raw());
                 merkle_hash_state *= 0x9E3779B97F4A7C15ULL;
             }
@@ -1001,7 +1037,7 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
 // sound: the guard and the arms' content hashes are fixed at construction.
 [[nodiscard, gnu::pure]] inline ContentHash branched_content_hash(BranchNode const& branch) noexcept {
     uint64_t branched_hash_state = ::foundation::reflect::fmix64(::fixy::hash(branch.guard).raw());
-    for (const BranchNode::Arm& arm : branch.arms) {
+    for (const BranchNode::Arm& arm : branch.arms()) {
         for (const ::fixy::Ref<RegionNode const>& region : arm.resolved_target().as_region()) {
             branched_hash_state ^= ::foundation::reflect::fmix64(region->content_hash.raw());
             branched_hash_state *= 0x9E3779B97F4A7C15ULL;
@@ -1141,7 +1177,7 @@ template <class... Rest>
     node->repeat_count = repeat_count;
     node->epsilon = epsilon;
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::LOOP);
-    CRUCIBLE_POST(node, is_link_to(node->body, body));
+    CRUCIBLE_POST(node, is_link_to(node->body.option(), body));
     CRUCIBLE_POST(node, node->feedback_edges.size() == feedback.size());
     CRUCIBLE_POST(node, node->term_kind == term_kind);
     CRUCIBLE_POST(node, node->repeat_count == repeat_count);
@@ -1159,8 +1195,8 @@ template <class... Rest>
 // its arms, its body and its continuation.
 inline void recompute_merkle(TraceNode& node) {
     for (const ::fixy::Ref<BranchNode>& branch : node.as_branch()) {
-        for (const BranchNode::Arm& arm : branch->arms)
-            for (const ::fixy::Ref<TraceNode>& target : arm.target)
+        for (BranchNode::Arm& arm : branch->arms())
+            for (const ::fixy::Ref<TraceNode>& target : arm.target())
                 recompute_merkle(*target);
     }
     for (const ::fixy::Ref<LoopNode>& loop : node.as_loop()) {
@@ -1186,8 +1222,8 @@ inline void recompute_merkle(TraceNode& node) {
                 ++count;
                 break;
             case TraceNodeKind::BRANCH: {
-                for (const BranchNode::Arm& arm : node->expect_branch()->arms)
-                    for (const ::fixy::Ref<TraceNode>& target : arm.target)
+                for (BranchNode::Arm& arm : node->expect_branch()->arms())
+                    for (const ::fixy::Ref<TraceNode>& target : arm.target())
                         count = collect_regions(*target, out, count);
                 break;
             }
@@ -1285,7 +1321,7 @@ template <typename GuardEval, typename RegionExec>
 
                 ::fixy::Option<::fixy::Ref<TraceNode const>> arm{};
                 {
-                    const ::fixy::View<const BranchNode::Arm> arms = branch->arms;
+                    const ::fixy::View<const BranchNode::Arm> arms = branch->arms();
                     uint32_t lo = 0, hi = branch->num_arms();
                     while (lo < hi) {
                         uint32_t mid = lo + (hi - lo) / 2;
@@ -1296,7 +1332,7 @@ template <typename GuardEval, typename RegionExec>
                         else if (mid_arm.value > val)
                             hi = mid;
                         else {
-                            arm = read_link(mid_arm.target);
+                            arm = mid_arm.target();
                             break;
                         }
                     }
@@ -1342,7 +1378,7 @@ template <typename GuardEval, typename RegionExec>
                 // because it would skip the body and report success.
                 CRUCIBLE_FATAL_INVARIANT(loop->term_kind != LoopTermKind::UNTIL || loop->repeat_count > 0u);
                 for (uint32_t i = 0; i < loop->repeat_count; i++) {
-                    for (const ::fixy::Ref<TraceNode const>& body : read_link(loop->body))
+                    for (const ::fixy::Ref<TraceNode const>& body : loop->body.option())
                         if (!replay(*body, eval_guard, exec_region)) return false;
                 }
                 walk = node->next.option();
@@ -1405,12 +1441,12 @@ struct DagDiff {
         if (node_a->kind == TraceNodeKind::BRANCH) {
             const ::fixy::Ref<BranchNode> ba = node_a->expect_branch();
             const ::fixy::Ref<BranchNode> bb = node_b->expect_branch();
-            if (!::fixy::equal(ba->guard, bb->guard) || ba->arms.size() != bb->arms.size())
+            if (!::fixy::equal(ba->guard, bb->guard) || ba->arms().size() != bb->arms().size())
                 return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
             for (auto [arm_a, arm_b] :
-                 ba->arms.walk().try_zip(bb->arms.walk()).expect("the two branches hold one count of arms")) {
+                 ba->arms().walk().try_zip(bb->arms().walk()).expect("the two branches hold one count of arms")) {
                 if (arm_a->value != arm_b->value) return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
-                DagDiff arm_diff = dag_diff(arm_a->target, arm_b->target, depth + 1);
+                DagDiff arm_diff = dag_diff(arm_a->target(), arm_b->target(), depth + 1);
                 if (arm_diff.kind != DagDiff::Kind::IDENTICAL) return arm_diff;
             }
             a = node_a->next.option();
@@ -1429,7 +1465,7 @@ struct DagDiff {
             if (!::fixy::equal(la->feedback_edges, lb->feedback_edges))
                 return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
             // The bodies agree on content, so compare their structure.
-            DagDiff body_diff = dag_diff(la->body, lb->body, depth + 1);
+            DagDiff body_diff = dag_diff(la->body.option(), lb->body.option(), depth + 1);
             if (body_diff.kind != DagDiff::Kind::IDENTICAL) return body_diff;
             a = node_a->next.option();
             b = node_b->next.option();
@@ -1455,12 +1491,12 @@ struct DagDiff {
         ++count;
         switch (node->kind) {
             case TraceNodeKind::BRANCH: {
-                for (const BranchNode::Arm& arm : node->expect_branch()->arms)
-                    count += dag_node_count(arm.target);
+                for (BranchNode::Arm& arm : node->expect_branch()->arms())
+                    count += dag_node_count(arm.target());
                 break;
             }
             case TraceNodeKind::LOOP:
-                count += dag_node_count(node->expect_loop()->body);
+                count += dag_node_count(node->expect_loop()->body.option());
                 break;
             case TraceNodeKind::REGION:
             case TraceNodeKind::TERMINAL:

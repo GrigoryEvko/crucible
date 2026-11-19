@@ -17,9 +17,9 @@ namespace {
                                                         crucible::TraceLink second) noexcept {
     crucible::BranchNode& branch = *arena.make<crucible::BranchNode>(alloc);
     branch.kind = crucible::TraceNodeKind::BRANCH;
-    branch.arms = arena.array<crucible::BranchNode::Arm>(alloc, 2, crucible::BranchNode::Arm{});
-    *branch.arms.get(0).expect("the branch holds two arms") = crucible::BranchNode::Arm{.value = 1, .target = first};
-    *branch.arms.get(1).expect("the branch holds two arms") = crucible::BranchNode::Arm{.value = 2, .target = second};
+    branch.set_arms(arena.array<crucible::BranchNode::Arm>(alloc, 2, crucible::BranchNode::Arm{}));
+    *branch.arms().get(0).expect("the branch holds two arms") = crucible::BranchNode::Arm{1, first};
+    *branch.arms().get(1).expect("the branch holds two arms") = crucible::BranchNode::Arm{2, second};
     return branch;
 }
 
@@ -55,7 +55,7 @@ namespace {
     assert(crucible::is_link_to(cursor, region));
 
     // make_loop links its body.
-    assert(crucible::is_link_to(loop.body, region));
+    assert(crucible::is_link_to(loop.body.option(), region));
 
     // The door of a loop gives the node itself for a loop, and no value for
     // each other kind.
@@ -102,10 +102,10 @@ namespace {
     assert(::fixy::same_object(loop.expect_loop(), ::fixy::to(loop)));
 
     // The arms keep their targets, and resolved_target gives the node.
-    crucible::BranchNode::Arm& first_arm = *branch.arms.get(0).expect("the branch holds two arms");
-    const crucible::BranchNode::Arm& second_arm = *branch.arms.get(1).expect("the branch holds two arms");
-    assert(crucible::is_link_to(first_arm.target, region_a));
-    assert(crucible::is_link_to(second_arm.target, region_b));
+    crucible::BranchNode::Arm& first_arm = *branch.arms().get(0).expect("the branch holds two arms");
+    const crucible::BranchNode::Arm& second_arm = *branch.arms().get(1).expect("the branch holds two arms");
+    assert(crucible::is_link_to(first_arm.target(), region_a));
+    assert(crucible::is_link_to(second_arm.target(), region_b));
     assert(crucible::is_link_to(crucible::make_link(first_arm.resolved_target()), region_a));
 
     // The merkle hash of the branch folds the merkle hash of each target in
@@ -138,10 +138,10 @@ namespace {
                  return hash == region_a.merkle_hash ? crucible::make_link(region_a) : crucible::TraceLink{};
              })
              .expect("the image of a branch loads");
-    const crucible::BranchNode::Arm& loaded_first = *loaded.arms.get(0).expect("the image holds two arms");
-    const crucible::BranchNode::Arm& loaded_second = *loaded.arms.get(1).expect("the image holds two arms");
-    assert(crucible::is_link_to(loaded_first.target, region_a));
-    assert(loaded_second.target.is_none());
+    const crucible::BranchNode::Arm& loaded_first = *loaded.arms().get(0).expect("the image holds two arms");
+    const crucible::BranchNode::Arm& loaded_second = *loaded.arms().get(1).expect("the image holds two arms");
+    assert(crucible::is_link_to(loaded_first.target(), region_a));
+    assert(loaded_second.target().is_none());
 
     ::fixy::HeapArray<std::byte> image_again = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
     const size_t written_again = crucible::serialize_branch(crucible::SerializedBranch{loaded}, image_again.view());
@@ -156,8 +156,8 @@ namespace {
         *crucible::deserialize_branch(
              test.alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena)
              .expect("the image of a branch loads");
-    for (const crucible::BranchNode::Arm& arm : unresolved.arms) {
-        assert(arm.target.is_none());
+    for (const crucible::BranchNode::Arm& arm : unresolved.arms()) {
+        assert(arm.target().is_none());
     }
 
     // ── The walks along the links ────────────────────────────────────

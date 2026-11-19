@@ -32,7 +32,7 @@ int main() {
     auto& tx = log.begin_tx(owner, 1);
     crucible::RegionNode region{};
     const auto loaded =
-        ::fixy::mint_tagged<::fixy::tags::source::Replayed>(::fixy::Ref<crucible::RegionNode>{::fixy::to(region)})
+        ::fixy::mint_tagged<::fixy::tags::source::Replayed>(::fixy::Ref<crucible::RegionNode const>{::fixy::to(region)})
             .retag<::fixy::tags::source::Loaded>();
     (void)log.commit(owner, tx, loaded, crucible::ContentHash{}, crucible::MerkleHash{1});
     return 0;

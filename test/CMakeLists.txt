@@ -2046,7 +2046,7 @@ crucible_neg_compile_test(neg_transaction_log_capacity_two
 # boundary.
 crucible_neg_compile_test(neg_transaction_region_raw_pointer
   "neg_transaction_region_raw_pointer.cpp:32:33: error: cannot convert .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion."
-  "\\{aka .fixy::Tagged<foundation::core::Ref<crucible::RegionNode>, fixy::tags::source::Arena>.\\}")
+  "\\{aka .fixy::Tagged<foundation::core::Ref<const crucible::RegionNode>, fixy::tags::source::Arena>.\\}")
 crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
   "neg_transaction_region_loaded_cross_tag.cpp:37:33: error: cannot convert"
   ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
@@ -2109,7 +2109,13 @@ crucible_neg_compile_test(neg_trace_node_kind_uint8_max
 # resolved_target().
 crucible_neg_compile_test(neg_branch_arm_target_raw_read
   "error: base operand of .->. has non-pointer type"
-  "non-pointer type .const crucible::TraceLink.")
+  "non-pointer type .foundation::core::Option<foundation::core::Ref<const crucible::TraceNode")
+crucible_neg_compile_test(neg_published_region_writes_through_an_arm
+  "invalid initialization of reference of type .const foundation::core::Ref<crucible::TraceNode>&. from expression of type .const foundation::core::Ref<const crucible::TraceNode"
+  "neg_published_region_writes_through_an_arm.cpp:[0-9]+:[0-9]+: error")
+crucible_neg_compile_test(neg_published_region_writes_through_a_loop_body
+  "invalid initialization of reference of type .const foundation::core::Ref<crucible::TraceNode>&. from expression of type .foundation::core::Ref<const crucible::TraceNode"
+  "neg_published_region_writes_through_a_loop_body.cpp:[0-9]+:[0-9]+: error")
 
 # CDAG_VERSION is a fixy::Tagged<uint32_t, source::FormatVersion>.
 # Disk-read header versions enter as source::External and are compared

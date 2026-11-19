@@ -44,7 +44,7 @@ using crucible::SchemaHash;
         *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 4);
 
     assert(loop.kind == crucible::TraceNodeKind::LOOP);
-    assert(crucible::is_link_to(loop.body, body_r1));
+    assert(crucible::is_link_to(loop.body.option(), body_r1));
     assert(loop.body_content_hash == body_ch);
     assert(loop.num_feedback() == 1);
     assert(loop.feedback_edges.get(0).expect("the loop holds one feedback edge")->output_idx == 0);

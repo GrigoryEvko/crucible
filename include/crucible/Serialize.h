@@ -746,12 +746,12 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     w.write_image(branch->guard);
 
     w.w(branch->num_arms());
-    for (const BranchNode::Arm& arm : branch->arms) {
+    for (const BranchNode::Arm& arm : branch->arms()) {
         w.w(arm.value);
         // An arm with no target writes the hash zero.
         const uint64_t target_hash =
-            arm.target.match([](::fixy::Ref<TraceNode> const& target) noexcept { return target->merkle_hash.raw(); },
-                             []() noexcept { return uint64_t{0}; });
+            arm.target().match([](::fixy::Ref<TraceNode const> target) noexcept { return target->merkle_hash.raw(); },
+                               []() noexcept { return uint64_t{0}; });
         w.w(target_hash);
     }
 
@@ -795,11 +795,11 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     node->merkle_hash = hdr.merkle_hash;
     node->next = ::fixy::none;  // the caller resolves the continuation separately
     node->guard = guard;
-    node->arms = arena.array<BranchNode::Arm>(a, num_arms, BranchNode::Arm{});
-    for (BranchNode::Arm& arm : node->arms) {
+    node->set_arms(arena.array<BranchNode::Arm>(a, num_arms, BranchNode::Arm{}));
+    for (BranchNode::Arm& arm : node->arms()) {
         arm.value = r.r<int64_t>();
         const MerkleHash target_h = MerkleHash{r.r<uint64_t>()};
-        arm.target = resolver(target_h);
+        arm.set_target(resolver(target_h));
     }
 
     // Replay finds an arm by binary search on the value, so an image with

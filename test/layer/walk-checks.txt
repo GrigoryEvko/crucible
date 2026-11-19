@@ -14,6 +14,7 @@
 #   each weight, and --measure BUILD_DIR measures each weight again.
 crucible/CKernel.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/DimHash.cpp | 0.0 | ::fixy::tags::admitted_retags
+crucible/MerkleDag.cpp | unmeasured | unknown
 crucible/MetaLogSession.cpp | 0.2 | ::fixy::session::combinators
 crucible/Serialize.cpp | 1.6 | ::fixy::tags::admitted_retags
 crucible/SingletonInitGraph.cpp | 0.1 | unknown
@@ -91,8 +92,11 @@ fixy/channels/LazyEstablishedChannel.cpp | 0.2 | ::fixy::session::combinators
 fixy/channels/StageEndpointBridge.cpp | 0.7 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
 fixy/channels/SubstrateSessionBridge.cpp | unmeasured | ::fixy::session::combinators, unknown
 fixy/collision/Report.cpp | unmeasured | ::fixy::atom::detail, ::fixy::atom::dispatch, ::fixy::atom::spawn
-fixy/concurrent/PermissionedChannel.cpp | unmeasured | ::foundation::permissions::permission_rows
+fixy/concurrent/PermissionedChannel.cpp | unmeasured | ::foundation::permissions::permission_rows, unknown
+fixy/concurrent/Pipeline.cpp | unmeasured | unknown
 fixy/concurrent/Spawn.cpp | 0.4 | unknown
+fixy/concurrent/Stage.cpp | unmeasured | unknown
+fixy/handle/Published.cpp | unmeasured | unknown
 fixy/os/Fs.cpp | 0.1 | unknown
 fixy/os/Io.cpp | 0.1 | unknown
 fixy/os/Mmap.cpp | 0.1 | unknown
@@ -105,13 +109,21 @@ fixy/session/Network.cpp | 0.0 | ::fixy::session::combinators
 fixy/session/Protocol.cpp | 0.4 | ::fixy::session::combinators
 fixy/session/VigilMode.cpp | 0.4 | ::fixy::session::combinators
 fixy/session/Witnessed.cpp | 0.1 | ::foundation::permissions::permission_rows
+foundation/Closure.cpp | unmeasured | unknown
+foundation/Transfer.cpp | unmeasured | unknown
 foundation/algebra/net/Reflect.cpp | unmeasured | unknown
+foundation/core/Array.cpp | unmeasured | unknown
+foundation/core/Link.cpp | unmeasured | unknown
 foundation/core/Owner.cpp | unmeasured | unknown
+foundation/core/Region.cpp | unmeasured | unknown
+foundation/core/Strided.cpp | unmeasured | unknown
 foundation/diag/Catalog.cpp | 3.2 | ::foundation::diag
 foundation/diag/Insights.cpp | 0.6 | ::foundation::diag
 foundation/effects/Capability.cpp | 0.2 | ::foundation::effects::cap
 foundation/effects/Concurrent.cpp | 2.3 | ::foundation::effects::resource, ::foundation::permissions::permission_rows
+foundation/effects/Ctx.cpp | unmeasured | unknown
 foundation/effects/Effect.cpp | unmeasured | ::foundation::effects::cap
 foundation/effects/Resources.cpp | 2.5 | ::foundation::effects, ::foundation::effects::resource, ::foundation::permissions::permission_rows
+foundation/os/WideAtomic.cpp | unmeasured | unknown
 foundation/permissions/Permission.cpp | 1.0 | ::foundation::permissions::permission_rows, ::foundation::permissions::tag
 foundation/permissions/ReadView.cpp | 0.2 | ::foundation::permissions::permission_rows

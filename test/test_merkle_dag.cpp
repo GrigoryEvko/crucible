@@ -832,8 +832,8 @@ template <class Fake>
             ::fixy::BumpArena child_arena(1 << 12);
             crucible::BranchNode& branch = *child_arena.make<crucible::BranchNode>(test.alloc);
             branch.kind = crucible::TraceNodeKind::BRANCH;
-            branch.arms =
-                child_arena.array<crucible::BranchNode::Arm>(test.alloc, 1, crucible::BranchNode::Arm{.value = 1});
+            branch.set_arms(child_arena.array<crucible::BranchNode::Arm>(
+                test.alloc, 1, crucible::BranchNode::Arm{1, crucible::TraceLink{}}));
             crucible::recompute_merkle(branch);
             // The child prints the hash only when the hash returns.
             ::fixy::report(::fixy::Sink::Out, "  the hash of the unresolved branch: {}\n", branch.merkle_hash.raw());

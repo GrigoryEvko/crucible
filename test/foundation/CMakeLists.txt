@@ -2804,7 +2804,7 @@ foundation_neg_compile_test(neg_core_call_ref_wrong_signature
   "required for the satisfaction of .CallRefTarget<F, R, Args \\.\\.\\.>.")
 foundation_neg_compile_test(neg_core_link_const_writes
   "conversion from .Ref<const \\{anonymous\\}::Node,\\[\\.\\.\\.\\]>. to non-scalar type .Ref<\\{anonymous\\}::Node,\\[\\.\\.\\.\\]>. requested"
-  "read\\.next\\.expect")
+  "neg_core_link_const_writes.cpp:[0-9]+:[0-9]+: error")
 foundation_neg_compile_test(neg_core_ref_drops_const
   "no matching function for call to .foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >::Ref\\(<brace-enclosed initializer list>\\)."
   "required for the satisfaction of .RefWidens<U, UBrand, T, Brand>. \\[with U = const int; UBrand = [^;]+; T = int; ")
@@ -3237,7 +3237,8 @@ foundation_neg_compile_test(neg_closure_borrow_at_escaping_door
   "so a borrow dangles")
 foundation_neg_compile_test(neg_transfer_statement_outside_its_seal
   "a_statement_of_transfer_facts_stands_outside_its_seal"
-  "foundation::transfer::detail::statement_of")
+  "foundation::transfer::detail::statement_of"
+  "non-constant condition for static assertion")
 foundation_neg_compile_test(neg_core_values_as_const_temporary
   "use of deleted function .void foundation::core::as_const\\(const T&&\\) \\[with T = int\\]."
   "as_const of a temporary gives a reference that dangles at the end of the full expression")

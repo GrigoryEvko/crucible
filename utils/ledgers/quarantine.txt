@@ -283,7 +283,7 @@ include/foundation/diag/ | replace-pending:<string> | 1 | - | -
 include/foundation/diag/ | replace-pending:<string_view> | 6 | - | -
 include/foundation/diag/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/diag/ | replace-pending:<vector> | 3 | - | -
-include/foundation/effects/ | base-std-entity | 69 | - | -
+include/foundation/effects/ | base-std-entity | 61 | - | -
 include/foundation/effects/ | base-std-object | 20 | - | -
 include/foundation/effects/ | replace-pending:<array> | 3 | - | -
 include/foundation/effects/ | replace-pending:<atomic> | 1 | - | -
@@ -298,7 +298,7 @@ include/foundation/permissions/ | replace-pending:<optional> | 1 | - | -
 include/foundation/permissions/ | replace-pending:<string_view> | 3 | - | -
 include/foundation/permissions/ | replace-pending:<tuple> | 2 | - | -
 include/foundation/permissions/ | replace-pending:<vector> | 3 | - | -
-include/foundation/reflect/ | base-std-entity | 116 | - | -
+include/foundation/reflect/ | base-std-entity | 110 | - | -
 include/foundation/reflect/ | base-std-object | 56 | - | -
 include/foundation/reflect/ | replace-pending:<array> | 3 | - | -
 include/foundation/reflect/ | replace-pending:<bit> | 1 | - | -
@@ -620,7 +620,7 @@ test/fuzz/boundary/harnesses/ | c-library-call | 3 | - | -
 test/fuzz/boundary/harnesses/ | compiler-builtin | 1 | - | -
 test/fuzz/boundary/harnesses/ | opted-out | 16 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
 test/fuzz/boundary/harnesses/ | opted-out | 6 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
-test/fuzz/boundary/harnesses/ | raw-pointer-object | 8 | - | -
+test/fuzz/boundary/harnesses/ | raw-pointer-object | 6 | - | -
 test/fuzz/boundary/harnesses/ | region | 6 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
 test/fuzz/boundary/harnesses/ | region | 2 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
 test/fuzz/boundary/harnesses/ | std-entity | 146 | - | -

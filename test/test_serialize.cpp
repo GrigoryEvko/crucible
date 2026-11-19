@@ -371,9 +371,9 @@ static void check_descriptor_images_agree() {
         ::fixy::BumpArena branch_arena{1 << 12};
         crucible::BranchNode& branch = *branch_arena.make<crucible::BranchNode>(test.alloc);
         branch.kind = crucible::TraceNodeKind::BRANCH;
-        branch.arms = branch_arena.array<crucible::BranchNode::Arm>(test.alloc, 2, crucible::BranchNode::Arm{});
-        branch.arms.get(0).expect("the branch holds two arms")->value = 2;
-        branch.arms.get(1).expect("the branch holds two arms")->value = 1;
+        branch.set_arms(branch_arena.array<crucible::BranchNode::Arm>(test.alloc, 2, crucible::BranchNode::Arm{}));
+        branch.arms().get(0).expect("the branch holds two arms")->value = 2;
+        branch.arms().get(1).expect("the branch holds two arms")->value = 1;
         ::fixy::HeapArray<std::byte> branch_buf = ::fixy::mint_heap_array(test.alloc, 256, std::byte{0});
         const size_t branch_bytes = crucible::serialize_branch(crucible::SerializedBranch{branch}, branch_buf.view());
         assert(branch_bytes > 0);

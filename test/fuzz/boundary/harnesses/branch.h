@@ -25,9 +25,9 @@ namespace crucible::fuzz::boundary {
     BranchNode* branch = &*arena.make<BranchNode>(alloc);
     branch->kind = TraceNodeKind::BRANCH;
     branch->merkle_hash = MerkleHash{0x5eed0000u + arms};
-    branch->arms = arena.array<BranchNode::Arm>(alloc, arms, BranchNode::Arm{});
+    branch->set_arms(arena.array<BranchNode::Arm>(alloc, arms, BranchNode::Arm{}));
     for (std::uint32_t i = 0; i < arms; ++i)
-        *branch->arms.get(i).expect("i is below the count of arms") = BranchNode::Arm{.value = values[i]};
+        *branch->arms().get(i).expect("i is below the count of arms") = BranchNode::Arm{values[i], TraceLink{}};
     ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, 4096, std::byte{0});
     const size_t written = serialize_branch(SerializedBranch{*branch}, image.view());
     std::vector<std::uint8_t> seed(written);
@@ -85,9 +85,9 @@ inline void run_branch(std::span<const std::uint8_t> bytes) {
             CRUCIBLE_FUZZ_CLAIM("branch", again->num_arms() == branch->num_arms());
             CRUCIBLE_FUZZ_CLAIM("branch", again->merkle_hash == branch->merkle_hash);
             for (std::uint32_t i = 0; i < branch->num_arms(); ++i) {
-                const BranchNode::Arm& arm = *branch->arms.get(i).expect("i is below the count of arms");
+                const BranchNode::Arm& arm = *branch->arms().get(i).expect("i is below the count of arms");
                 const BranchNode::Arm& again_arm =
-                    *again->arms.get(i).expect("the two branches hold one count of arms");
+                    *again->arms().get(i).expect("the two branches hold one count of arms");
                 CRUCIBLE_FUZZ_CLAIM("branch", again_arm.value == arm.value);
             }
         }
