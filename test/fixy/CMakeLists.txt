@@ -106,13 +106,20 @@ fixy_test(test_precondition_checks_in_release)
 set_property(SOURCE test_precondition_checks_in_release.cpp APPEND PROPERTY
   COMPILE_OPTIONS -DNDEBUG -fcontract-evaluation-semantic=observe)
 
-# The axis table's primary is defined, so defaulted_axes is what keeps
-# it from handing a new axis a claim nobody gave it.  A value one past
-# the enum stands in for that axis.
+# The axis table gives each axis a row, and a value with no row would get
+# a pole that no author gave it.  A value one past the enum stands in for
+# such a value.
 fixy_neg_compile_test(neg_axis_unclassified_axis
-  "static assertion failed: an axis off the roster and off the specialization list is classified"
+  "static assertion failed: an axis with no row in the axis table is classified"
   "required by the constraints of .template<fixy::Axis A> concept fixy::AxisIsClassified."
-  "the expression .\\(TakesDefaultTraits<A>\\) == \\(axis_takes_defaults<A>\\) \\[with A = \\(fixy::Axis\\)33\\]. evaluated to .false.")
+  "the expression .axis_record\\(fixy::Axis\\)\\(A\\)\\.pole_source != fixy::PoleSource::Unclassified \\[with A = \\(fixy::Axis\\)33\\]. evaluated to .false.")
+
+# The table is a function.  A class specialization of the old trait for an
+# axis of the default row compiles on the tree before the table, in a PROBE
+# region, and it names no class template on this tree.
+fixy_neg_compile_test(neg_axis_traits_specialized
+  ".axis_traits. is not a class template"
+  "neg_axis_traits_specialized\\.cpp:13:[0-9]+: error:")
 
 # The strict pole of each axis is its weakest claim.  A Fact pole that
 # states a fact, and a Right pole that claims nothing, are refused.

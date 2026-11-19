@@ -48,7 +48,7 @@ namespace at = ::fixy::atom;
 namespace source = ::fixy::tags::source;
 namespace trust_level = ::fixy::tags::trust;
 using ::fixy::Axis;
-using ::fixy::axis_traits;
+using ::fixy::strict_pole_t;
 
 // A stand-in for the CNTP packet header.  A real frame also carries a
 // sequence number, the identity of the peer and session keys.  The
@@ -145,8 +145,7 @@ static_assert(std::is_same_v<UnvalidatedFrame<CntpHeader>::grade_on<Axis::Repres
                              at::repr<::fixy::pole::ReprKind::Packed>>);
 
 // The Mutation axis takes the strict pole: no in-place mutation.
-static_assert(
-    std::is_same_v<UnvalidatedFrame<CntpHeader>::grade_on<Axis::Mutation>, axis_traits<Axis::Mutation>::strict>);
+static_assert(std::is_same_v<UnvalidatedFrame<CntpHeader>::grade_on<Axis::Mutation>, strict_pole_t<Axis::Mutation>>);
 
 // The two states take two federation cache slots.
 static_assert(::foundation::diag::row_hash_contribution_v<UnvalidatedFrame<CntpHeader>>

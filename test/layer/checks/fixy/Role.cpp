@@ -41,8 +41,8 @@ static_assert(sizeof(::fixy::role::PublicEmit<int, ::fixy::tags::secret_policy::
 
 // The grades each role pins, and the ones it leaves strict.
 static_assert(std::is_same_v<::fixy::role::PureCopy<int>::grade_on<Axis::Usage>, ::fixy::atom::copy>);
-static_assert(std::is_same_v<::fixy::role::PureCopy<int>::grade_on<Axis::Refinement>,
-                             typename ::fixy::axis_traits<Axis::Refinement>::strict>);
+static_assert(
+    std::is_same_v<::fixy::role::PureCopy<int>::grade_on<Axis::Refinement>, ::fixy::strict_pole_t<Axis::Refinement>>);
 static_assert(std::is_same_v<::fixy::role::IoFunction<int>::grade_on<Axis::Effect>, ::fixy::atom::with_io>);
 static_assert(std::is_same_v<::fixy::role::IoFunction<int>::grade_on<Axis::Security>, ::fixy::atom::as_public>);
 static_assert(
@@ -52,10 +52,9 @@ static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Effect>
 static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Security>, ::fixy::atom::constant_time>);
 static_assert(::fixy::atom::IsConstantTime<::fixy::role::CtCrypto<int>::grade_on<Axis::Security>>,
               "CtCrypto must state the timing claim, or no constant-time rule reads the role");
-static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Usage>,
-                             typename ::fixy::axis_traits<Axis::Usage>::strict>);
-static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Reentrancy>,
-                             typename ::fixy::axis_traits<Axis::Reentrancy>::strict>);
+static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Usage>, ::fixy::strict_pole_t<Axis::Usage>>);
+static_assert(
+    std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Reentrancy>, ::fixy::strict_pole_t<Axis::Reentrancy>>);
 
 // The policy is recoverable from the type.
 static_assert(

@@ -6,13 +6,13 @@ namespace fixy {
 
 namespace collision {
 
-// grades resolves an unmentioned axis to axis_traits<A>::strict, so the
-// resolver depends on the refusal of an unclassified axis in
-// fixy/Axis.h.  The message names the two ways to classify an axis.
+// grades resolves an unmentioned axis to the strict pole of its row in
+// the axis table, so the resolver depends on a row for each axis in
+// fixy/Axis.h.  The message names the two ways to write a row.
 static_assert(::fixy::every_axis_has_traits(),
-              "fixy::collision::grades resolves an unmentioned axis to axis_traits<A>::strict, so every axis "
-              "must be classified: it carries a hand-written specialization, or it is named on "
-              "Axis.h's defaulted_axes roster as a Fact axis whose pole claims nothing.");
+              "fixy::collision::grades resolves an unmentioned axis to strict_pole_t<A>, so every axis must "
+              "have a row in axis_record of Axis.h: a row of its own, or the default row of a Fact axis whose "
+              "pole claims nothing.");
 
 static_assert(every_pending_axis_is_still_empty(),
               "fixy/Collision.h: the pending-rule roster is out of date.  Either an axis listed in "
@@ -39,7 +39,7 @@ static_assert(live_rules<>::validate());
 
 // grades answers the same question fn::grade_on does, without fn.
 static_assert(std::is_same_v<grades<::fixy::atom::copy>::on<Axis::Usage>, ::fixy::atom::copy>);
-static_assert(std::is_same_v<grades<>::on<Axis::Usage>, typename axis_traits<Axis::Usage>::strict>);
+static_assert(std::is_same_v<grades<>::on<Axis::Usage>, strict_pole_t<Axis::Usage>>);
 static_assert(grades<::fixy::atom::copy>::mentions<Axis::Usage>);
 static_assert(!grades<>::mentions<Axis::Usage>);
 
@@ -71,7 +71,7 @@ static_assert(HasTrustLevel<::fixy::atom::trust<trust_level::Tested>, trust_leve
 static_assert(HasTrustLevel<::fixy::atom::trust<trust_level::External>, trust_level::External>);
 static_assert(!HasTrustLevel<::fixy::atom::trust<trust_level::External>, trust_level::Tested>);
 static_assert(HasTrustLevel<::fixy::atom::trust_assumed<0>, trust_level::Assumed>);
-static_assert(HasTrustLevel<typename axis_traits<Axis::Trust>::strict, trust_level::Unverified>);
+static_assert(HasTrustLevel<strict_pole_t<Axis::Trust>, trust_level::Unverified>);
 static_assert(!HasTrustLevel<::fixy::atom::copy, trust_level::Unverified>);
 
 // The atom trust takes a level of the tags, and not Assumed, because
@@ -125,7 +125,7 @@ static_assert(atoms_without_an_answer_().empty(),
                   + atoms_without_an_answer_()
                   + ".  Name each one in trust_level_of_, call_shape_reading_ or protocol_reading_, and decide "
                     "how T001, D001 or L003 reads it.")});
-static_assert(::fixy::collision::IsTrustGrade<typename axis_traits<Axis::Trust>::strict>,
+static_assert(::fixy::collision::IsTrustGrade<strict_pole_t<Axis::Trust>>,
               "the strict Trust pole must have a level, because a binding that says nothing about Trust reads it");
 static_assert(!::fixy::collision::IsTrustGrade<int>, "a type that is not a Trust grade has no level");
 static_assert(!::fixy::collision::IsTrustGrade<::fixy::atom::copy>, "an atom on another axis has no Trust level");
@@ -133,10 +133,10 @@ static_assert(!::fixy::collision::IsTrustGrade<::fixy::atom::copy>, "an atom on 
 // The CallShape relation and the Protocol relation name the strict pole of
 // fixy/Axis.h by its type, and these pins hold the two to that pole.  A
 // type of another axis gets no reading.
-static_assert(::fixy::collision::detail::call_shape_reading_(^^typename axis_traits<Axis::CallShape>::strict)
+static_assert(::fixy::collision::detail::call_shape_reading_(axis_record(Axis::CallShape).strict)
                   == ::fixy::collision::detail::CallShapeReading::NoIndirectCall,
               "the strict CallShape pole calls through no pointer, and a binding that says nothing reads it");
-static_assert(::fixy::collision::detail::protocol_reading_(^^typename axis_traits<Axis::Protocol>::strict)
+static_assert(::fixy::collision::detail::protocol_reading_(axis_record(Axis::Protocol).strict)
                   == ::fixy::collision::detail::ProtocolReading::NoSpawn,
               "the strict Protocol pole states no spawn, and a binding that says nothing reads it");
 static_assert(::fixy::collision::detail::call_shape_reading_(^^int)

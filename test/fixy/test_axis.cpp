@@ -10,7 +10,6 @@
 #include <foundation/effects/Row.h>
 
 #include <cstddef>
-#include <iterator>
 #include <meta>
 #include <string_view>
 #include <type_traits>
@@ -18,8 +17,9 @@
 namespace {
 
 using ::fixy::Axis;
-using ::fixy::axis_traits;
+using ::fixy::axis_record;
 using ::fixy::Discharge;
+using ::fixy::strict_pole_t;
 using ::fixy::Shape;
 using ::fixy::Wrapper;
 
@@ -54,35 +54,35 @@ static_assert(static_cast<std::size_t>(Axis::MemoryScope) == 32);
 static_assert(static_cast<std::size_t>(Axis::MemoryScope) + 1 == ::fixy::axis_count);
 
 // The poles the header comment promises.
-static_assert(std::is_same_v<axis_traits<Axis::Trust>::strict, ::fixy::tags::trust::Unverified>);
-static_assert(std::is_same_v<axis_traits<Axis::Effect>::strict, ::foundation::effects::Row<>>);
-static_assert(axis_traits<Axis::Usage>::strict::value == ::foundation::algebra::lattices::QttGrade::One);
-static_assert(std::is_same_v<axis_traits<Axis::Refinement>::strict, ::fixy::pole::pred::True>);
-static_assert(std::is_same_v<axis_traits<Axis::MemoryScope>::strict, ::fixy::pole::Unconstrained<Axis::MemoryScope>>);
+static_assert(std::is_same_v<strict_pole_t<Axis::Trust>, ::fixy::tags::trust::Unverified>);
+static_assert(std::is_same_v<strict_pole_t<Axis::Effect>, ::foundation::effects::Row<>>);
+static_assert(strict_pole_t<Axis::Usage>::value == ::foundation::algebra::lattices::QttGrade::One);
+static_assert(std::is_same_v<strict_pole_t<Axis::Refinement>, ::fixy::pole::pred::True>);
+static_assert(std::is_same_v<strict_pole_t<Axis::MemoryScope>, ::fixy::pole::Unconstrained<Axis::MemoryScope>>);
 
 // A Fact axis states no fact at its pole.  A pole that names a fact gives
 // that fact to each binding that says nothing: a value that lives for the
 // whole program, an internal source, a bit-exact result, no heap use,
 // version 1.
-static_assert(std::is_same_v<axis_traits<Axis::Lifetime>::strict, ::fixy::pole::Unconstrained<Axis::Lifetime>>);
-static_assert(std::is_same_v<axis_traits<Axis::Provenance>::strict, ::fixy::pole::Unconstrained<Axis::Provenance>>);
-static_assert(std::is_same_v<axis_traits<Axis::Precision>::strict, ::fixy::pole::Unconstrained<Axis::Precision>>);
-static_assert(std::is_same_v<axis_traits<Axis::Space>::strict, ::fixy::pole::Unconstrained<Axis::Space>>);
-static_assert(std::is_same_v<axis_traits<Axis::Complexity>::strict, ::fixy::pole::Unconstrained<Axis::Complexity>>);
-static_assert(std::is_same_v<axis_traits<Axis::Size>::strict, ::fixy::pole::Unconstrained<Axis::Size>>);
-static_assert(std::is_same_v<axis_traits<Axis::Version>::strict, ::fixy::pole::Unconstrained<Axis::Version>>);
+static_assert(std::is_same_v<strict_pole_t<Axis::Lifetime>, ::fixy::pole::Unconstrained<Axis::Lifetime>>);
+static_assert(std::is_same_v<strict_pole_t<Axis::Provenance>, ::fixy::pole::Unconstrained<Axis::Provenance>>);
+static_assert(std::is_same_v<strict_pole_t<Axis::Precision>, ::fixy::pole::Unconstrained<Axis::Precision>>);
+static_assert(std::is_same_v<strict_pole_t<Axis::Space>, ::fixy::pole::Unconstrained<Axis::Space>>);
+static_assert(std::is_same_v<strict_pole_t<Axis::Complexity>, ::fixy::pole::Unconstrained<Axis::Complexity>>);
+static_assert(std::is_same_v<strict_pole_t<Axis::Size>, ::fixy::pole::Unconstrained<Axis::Size>>);
+static_assert(std::is_same_v<strict_pole_t<Axis::Version>, ::fixy::pole::Unconstrained<Axis::Version>>);
 
 // Each axis states its claim, and the rule of the header comment holds
 // over the whole table.
-static_assert(axis_traits<Axis::Effect>::claim == ::fixy::Claim::Right);
-static_assert(axis_traits<Axis::Observability>::claim == ::fixy::Claim::Right,
+static_assert(axis_record(Axis::Effect).claim == ::fixy::Claim::Right);
+static_assert(axis_record(Axis::Observability).claim == ::fixy::Claim::Right,
               "Observability takes the claim of the axis it derives from");
-static_assert(axis_traits<Axis::Staleness>::claim == ::fixy::Claim::Right);
-static_assert(axis_traits<Axis::Trust>::claim == ::fixy::Claim::Fact);
-static_assert(axis_traits<Axis::Space>::claim == ::fixy::Claim::Fact);
-static_assert(axis_traits<Axis::MemoryScope>::claim == ::fixy::Claim::Fact);
+static_assert(axis_record(Axis::Staleness).claim == ::fixy::Claim::Right);
+static_assert(axis_record(Axis::Trust).claim == ::fixy::Claim::Fact);
+static_assert(axis_record(Axis::Space).claim == ::fixy::Claim::Fact);
+static_assert(axis_record(Axis::MemoryScope).claim == ::fixy::Claim::Fact);
 static_assert(::fixy::every_pole_is_the_weakest_claim());
-static_assert(axis_traits<Axis::Type>::caller_supplied);
+static_assert(axis_record(Axis::Type).pole_source == ::fixy::PoleSource::CallerSupplied);
 static_assert(::fixy::IsCallerSupplied<Axis::Type>);
 static_assert(!::fixy::HasStrictPole<Axis::Type>);
 static_assert(::fixy::HasDerivedPole<Axis::Observability>);
@@ -93,54 +93,58 @@ static_assert(!::fixy::HasDerivedPole<Axis::Effect>);
 // that constrains one axis satisfy another.
 static_assert(
     !std::is_same_v<::fixy::pole::Unconstrained<Axis::MemoryScope>, ::fixy::pole::Unconstrained<Axis::SimdIsa>>);
-static_assert(!std::is_same_v<axis_traits<Axis::Stdio>::strict, axis_traits<Axis::GlobalState>::strict>);
+static_assert(!std::is_same_v<strict_pole_t<Axis::Stdio>, strict_pole_t<Axis::GlobalState>>);
 static_assert(std::is_empty_v<::fixy::pole::Unconstrained<Axis::Stdio>>);
 
-// The roster and the specializations partition the enum. Thirteen axes
-// take the primary's defaults, and the other twenty say something the
-// primary does not.
-static_assert(std::size(::fixy::defaulted_axes) == 13);
-static_assert(::fixy::axis_count - std::size(::fixy::defaulted_axes) == 20);
+// Thirteen axes take the default row, and the other twenty have a row of
+// their own.
+[[nodiscard]] consteval std::size_t count_defaulted_axes() noexcept {
+    std::size_t count = 0;
+    for (std::size_t position = 0; position < ::fixy::axis_count; ++position) {
+        if (axis_record(static_cast<Axis>(position)).is_defaulted) ++count;
+    }
+    return count;
+}
+static_assert(count_defaulted_axes() == 13);
+static_assert(::fixy::axis_count - count_defaulted_axes() == 20);
 static_assert(::fixy::TakesDefaultTraits<Axis::MemoryScope>);
-static_assert(::fixy::axis_takes_defaults<Axis::MemoryScope>);
 static_assert(!::fixy::TakesDefaultTraits<Axis::Trust>);
-static_assert(!::fixy::axis_takes_defaults<Axis::Trust>);
 
 // Regime shares the pole of the thirteen but not their discharge, so it
-// stays off the roster.
-static_assert(!::fixy::axis_takes_defaults<Axis::Regime>);
+// has a row of its own.
 static_assert(!::fixy::TakesDefaultTraits<Axis::Regime>);
-static_assert(axis_traits<Axis::Regime>::discharge == Discharge::Measurement);
-static_assert(std::is_same_v<axis_traits<Axis::Regime>::strict, ::fixy::pole::Unconstrained<Axis::Regime>>);
+static_assert(axis_record(Axis::Regime).discharge == Discharge::Measurement);
+static_assert(std::is_same_v<strict_pole_t<Axis::Regime>, ::fixy::pole::Unconstrained<Axis::Regime>>);
 
-// Every axis on the roster reads back the primary's sentence.
-[[nodiscard]] consteval bool every_defaulted_axis_reads_the_primary() noexcept {
+// Every axis of the default row reads back the sentence of that row.
+[[nodiscard]] consteval bool every_defaulted_axis_reads_the_default_row() noexcept {
     static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : axes) {
         constexpr Axis axis = [:en:];
-        if constexpr (::fixy::axis_takes_defaults<axis>) {
-            if (axis_traits<axis>::shape != Shape::Lattice) return false;
-            if (axis_traits<axis>::discharge != Discharge::TypeLevel) return false;
-            if (axis_traits<axis>::wrapper != Wrapper::None) return false;
-            if (axis_traits<axis>::claim != ::fixy::Claim::Fact) return false;
-            if (!std::is_same_v<typename axis_traits<axis>::strict, ::fixy::pole::Unconstrained<axis>>) return false;
+        if constexpr (::fixy::TakesDefaultTraits<axis>) {
+            constexpr ::fixy::AxisRecord record = axis_record(axis);
+            if (record.shape != Shape::Lattice) return false;
+            if (record.discharge != Discharge::TypeLevel) return false;
+            if (record.wrapper != Wrapper::None) return false;
+            if (record.claim != ::fixy::Claim::Fact) return false;
+            if (!std::is_same_v<strict_pole_t<axis>, ::fixy::pole::Unconstrained<axis>>) return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_defaulted_axis_reads_the_primary());
+static_assert(every_defaulted_axis_reads_the_default_row());
 
 // The shapes the algebra forces: the two counted resources, the row,
 // the protocol order, and the two predicates over the type.
-static_assert(axis_traits<Axis::Effect>::shape == Shape::Row);
-static_assert(axis_traits<Axis::Usage>::shape == Shape::Semiring);
-static_assert(axis_traits<Axis::Staleness>::shape == Shape::Semiring);
-static_assert(axis_traits<Axis::Protocol>::shape == Shape::Transition);
-static_assert(axis_traits<Axis::Type>::shape == Shape::Structural);
-static_assert(axis_traits<Axis::Trust>::shape == Shape::Lattice);
+static_assert(axis_record(Axis::Effect).shape == Shape::Row);
+static_assert(axis_record(Axis::Usage).shape == Shape::Semiring);
+static_assert(axis_record(Axis::Staleness).shape == Shape::Semiring);
+static_assert(axis_record(Axis::Protocol).shape == Shape::Transition);
+static_assert(axis_record(Axis::Type).shape == Shape::Structural);
+static_assert(axis_record(Axis::Trust).shape == Shape::Lattice);
 
 // Each shape has at least one axis, and the shapes partition the axes.
 [[nodiscard]] consteval bool every_shape_is_used() noexcept {
@@ -159,21 +163,21 @@ static_assert(axis_traits<Axis::Trust>::shape == Shape::Lattice);
 static_assert(every_shape_is_used());
 
 // The wrappers named by the table are the ones the design assigns.
-static_assert(axis_traits<Axis::Refinement>::wrapper == Wrapper::Refined);
-static_assert(axis_traits<Axis::Usage>::wrapper == Wrapper::Qtt);
-static_assert(axis_traits<Axis::Trust>::wrapper == Wrapper::Tagged);
-static_assert(axis_traits<Axis::Security>::wrapper == Wrapper::Secret);
-static_assert(axis_traits<Axis::Mutation>::wrapper == Wrapper::Monotonic);
-static_assert(axis_traits<Axis::Staleness>::wrapper == Wrapper::Stale);
-static_assert(axis_traits<Axis::Lifetime>::wrapper == Wrapper::OwnedRegion);
-static_assert(axis_traits<Axis::Effect>::wrapper == Wrapper::Computation);
-static_assert(axis_traits<Axis::Version>::wrapper == Wrapper::None);
+static_assert(axis_record(Axis::Refinement).wrapper == Wrapper::Refined);
+static_assert(axis_record(Axis::Usage).wrapper == Wrapper::Qtt);
+static_assert(axis_record(Axis::Trust).wrapper == Wrapper::Tagged);
+static_assert(axis_record(Axis::Security).wrapper == Wrapper::Secret);
+static_assert(axis_record(Axis::Mutation).wrapper == Wrapper::Monotonic);
+static_assert(axis_record(Axis::Staleness).wrapper == Wrapper::Stale);
+static_assert(axis_record(Axis::Lifetime).wrapper == Wrapper::OwnedRegion);
+static_assert(axis_record(Axis::Effect).wrapper == Wrapper::Computation);
+static_assert(axis_record(Axis::Version).wrapper == Wrapper::None);
 
 // Each discharge mechanism has at least one axis.
-static_assert(axis_traits<Axis::Usage>::discharge == Discharge::TypeLevel);
-static_assert(axis_traits<Axis::Refinement>::discharge == Discharge::Contract);
-static_assert(axis_traits<Axis::Type>::discharge == Discharge::Reflection);
-static_assert(axis_traits<Axis::Precision>::discharge == Discharge::Measurement);
+static_assert(axis_record(Axis::Usage).discharge == Discharge::TypeLevel);
+static_assert(axis_record(Axis::Refinement).discharge == Discharge::Contract);
+static_assert(axis_record(Axis::Type).discharge == Discharge::Reflection);
+static_assert(axis_record(Axis::Precision).discharge == Discharge::Measurement);
 
 static_assert(::fixy::axis_name(Axis::Type) == "Type");
 static_assert(::fixy::axis_name(Axis::MemoryScope) == "MemoryScope");

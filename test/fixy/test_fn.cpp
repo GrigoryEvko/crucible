@@ -37,7 +37,7 @@ namespace {
 
 using ::fixy::Axis;
 using ::fixy::axis_count;
-using ::fixy::axis_traits;
+using ::fixy::strict_pole_t;
 using ::fixy::fn;
 using ::fixy::IsAccepted;
 using ::fixy::mint_fn;
@@ -70,8 +70,7 @@ template <class Binding, Axis Relaxed>
     template for (constexpr auto axis_member : std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis))) {
         constexpr Axis axis = [:axis_member:];
         if constexpr (axis != Relaxed && axis != Axis::Type) {
-            all_strict = all_strict
-                      && std::is_same_v<typename Binding::template grade_on<axis>, typename axis_traits<axis>::strict>;
+            all_strict = all_strict && std::is_same_v<typename Binding::template grade_on<axis>, strict_pole_t<axis>>;
         }
     }
     return all_strict;

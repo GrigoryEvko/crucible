@@ -190,7 +190,7 @@ inline constexpr bool classified_on_every_channel =
     && ::fixy::atom::IsClassifiedOn<Grade, ::fixy::atom::DischargeAxis::Bg>
     && ::fixy::atom::IsClassifiedOn<Grade, ::fixy::atom::DischargeAxis::Staleness>
     && ::fixy::atom::IsClassifiedOn<Grade, ::fixy::atom::DischargeAxis::Failure>;
-static_assert(classified_on_every_channel<typename ::fixy::axis_traits<::fixy::Axis::Security>::strict>);
+static_assert(classified_on_every_channel<::fixy::strict_pole_t<::fixy::Axis::Security>>);
 static_assert(classified_on_every_channel<::fixy::atom::as_classified>);
 static_assert(classified_on_every_channel<::fixy::atom::as_secret>);
 
@@ -250,9 +250,9 @@ static_assert(row_hash_contribution_v<SecretAtomInt> != row_hash_contribution_v<
 // the level Unverified.  So T001 gives them one verdict on every pack, and
 // this is the establishment, asserted.
 using TrustUnverified = ::fixy::atom::trust<::fixy::tags::trust::Unverified>;
-static_assert(::fixy::collision::HasTrustLevel<TrustUnverified, ::fixy::tags::trust::Unverified>
-              && ::fixy::collision::HasTrustLevel<typename ::fixy::axis_traits<::fixy::Axis::Trust>::strict,
-                                                  ::fixy::tags::trust::Unverified>);
+static_assert(
+    ::fixy::collision::HasTrustLevel<TrustUnverified, ::fixy::tags::trust::Unverified>
+    && ::fixy::collision::HasTrustLevel<::fixy::strict_pole_t<::fixy::Axis::Trust>, ::fixy::tags::trust::Unverified>);
 static_assert(!::fixy::collision::live_rules<::fixy::atom::capability_usage, TrustUnverified>::T001_ok,
               "T001 must fire on a capability at the written-out unverified atom");
 static_assert(!::fixy::collision::live_rules<::fixy::atom::capability_usage>::T001_ok,

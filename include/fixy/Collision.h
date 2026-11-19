@@ -143,18 +143,15 @@ template <class... Atoms>
 
 template <Axis A, class... Atoms>
 [[nodiscard]] consteval std::meta::info grade_() noexcept {
-    // A value outside the enum reaches the defaulted axis_traits primary
-    // and comes back as a pole of an axis that does not exist.  Only a
-    // cast produces such a value, and a cast into the resolver is a
-    // mistake and not a question.
+    // A value outside the enum has no row in the axis table, so it has no
+    // pole.  Only a cast produces such a value, and a cast into the
+    // resolver is a mistake and not a question.
     static_assert(std::to_underlying(A) < ::fixy::axis_count,
                   "fixy::collision::grades<Atoms...>::on<A>: A is not an Axis enumerator.  A value outside the "
-                  "enum reaches the defaulted axis_traits primary and resolves to a pole of an axis that "
-                  "does not exist.");
+                  "enum has no row in the axis table of fixy/Axis.h, so it has no pole.");
     std::meta::info found = ^^void;
-    if constexpr (requires { typename axis_traits<A>::strict; }) {
-        using Strict = typename axis_traits<A>::strict;
-        found = ^^Strict;
+    if constexpr (HasStrictPole<A>) {
+        found = axis_record(A).strict;
     }
     static constexpr auto entries = pack_entries_<Atoms...>();
     template for (constexpr auto entry : entries) {
@@ -179,13 +176,10 @@ template <Axis A, class... Atoms>
 // grade by its axis alone, so a type that states an axis without being
 // an atom would be read as a shipped grade.
 //
-// An axis the pack does not mention resolves to axis_traits<A>::strict,
-// so the default is correct only while each axis is classified.
-// An unclassified axis in the enum reaches the primary and gets a Fact
-// pole.  On an axis that carries a right, that pole puts no bound on
-// each binding in the tree.  fixy/Axis.h refuses such an axis.  The
-// check file of this header shows where the resolver depends on that
-// refusal.
+// An axis the pack does not mention resolves to the strict pole of its
+// row in the axis table.  The switch of axis_record names each enumerator,
+// so each axis of the enum has a row.  The check file of this header shows
+// where the resolver depends on that table.
 template <class... Atoms>
     requires(::fixy::atom::IsAtom<Atoms> && ...)
 struct grades {
@@ -193,7 +187,7 @@ struct grades {
     using on = [:detail::grade_<A, Atoms...>():];
 
     template <Axis A>
-    static constexpr bool mentions = !std::is_same_v<on<A>, typename axis_traits<A>::strict>;
+    static constexpr bool mentions = !std::is_same_v<on<A>, strict_pole_t<A>>;
 };
 
 // ---------------------------------------------------------------------
@@ -912,7 +906,7 @@ namespace detail {
 // no level.  A template argument is a type and never an alias.
 [[nodiscard]] consteval std::meta::info trust_level_of_(std::meta::info grade) {
     const std::meta::info named = std::meta::dealias(grade);
-    if (named == std::meta::dealias(^^typename axis_traits<Axis::Trust>::strict)) return named;
+    if (named == std::meta::dealias(axis_record(Axis::Trust).strict)) return named;
     if (std::meta::has_template_arguments(named)) {
         const auto primary = std::meta::template_of(named);
         if (primary == ^^::fixy::atom::trust) return std::meta::template_arguments_of(named)[0];

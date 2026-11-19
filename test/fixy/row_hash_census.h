@@ -1177,7 +1177,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^fe::EffectMask,
      "a set of effect atoms read at run time, from a sample or from bytes on the wire: its type names no row, and bits_from_row projects a row into it"},
 
-    {^^::fixy::axis_traits, kMetafunction},
+    {^^::fixy::AxisRecord,
+     "the row of one axis in the table of fixy/Axis.h: it exists only at compile time, and it is never a value"},
     {^^::fixy::Bits, kPayload},
     {^^::fixy::is_writeonce, kMetafunction},
     {^^::fixy::is_writeoncenonnull, kMetafunction},

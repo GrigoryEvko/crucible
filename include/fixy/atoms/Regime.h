@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------
 // Why this axis carries atoms at all, when its discharge is Measurement
 //
-// axis_traits<Axis::Regime>::discharge is Discharge::Measurement: which
+// The row of Axis::Regime in axis_record has Discharge::Measurement: which
 // tier a function actually achieves is settled by the bench, not by the
 // type.  An atom here therefore declares an INTENT, and the bench is
 // what confirms it.  That is still worth a grade, because a large class

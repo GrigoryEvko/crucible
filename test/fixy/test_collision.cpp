@@ -41,7 +41,7 @@ namespace col = ::fixy::collision;
 namespace at = ::fixy::atom;
 namespace trust_level = ::fixy::tags::trust;
 using ::fixy::Axis;
-using ::fixy::axis_traits;
+using ::fixy::strict_pole_t;
 using col::grades;
 using col::live_rules;
 using col::rules_of;
@@ -65,9 +65,9 @@ struct hot_invariant final {
 // ---------------------------------------------------------------------
 // grades answers without fn.
 
-static_assert(std::is_same_v<grades<>::on<Axis::Usage>, typename axis_traits<Axis::Usage>::strict>);
+static_assert(std::is_same_v<grades<>::on<Axis::Usage>, strict_pole_t<Axis::Usage>>);
 static_assert(std::is_same_v<grades<at::copy>::on<Axis::Usage>, at::copy>);
-static_assert(std::is_same_v<grades<at::copy>::on<Axis::Effect>, typename axis_traits<Axis::Effect>::strict>);
+static_assert(std::is_same_v<grades<at::copy>::on<Axis::Effect>, strict_pole_t<Axis::Effect>>);
 static_assert(grades<at::copy>::mentions<Axis::Usage>);
 static_assert(!grades<at::copy>::mentions<Axis::Effect>);
 

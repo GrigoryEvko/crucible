@@ -44,7 +44,7 @@ namespace at = ::fixy::atom;
 namespace source = ::fixy::tags::source;
 namespace trust_level = ::fixy::tags::trust;
 using ::fixy::Axis;
-using ::fixy::axis_traits;
+using ::fixy::strict_pole_t;
 using Effect = ::foundation::effects::Effect;
 
 // Stand-ins for the IR.  In the design, an IR node carries shapes, dtypes
@@ -110,9 +110,9 @@ static_assert(sizeof(BitExactGraph) == sizeof(KernelGraph), "a band must be byte
 // The axes that tell a Forge phase from a user callable.  A consumer that
 // asks for these grades accepts only an internal phase with no in-place
 // mutation, and the compiler checks that at the call site.
-static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Mutation>, axis_traits<Axis::Mutation>::strict>,
+static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Mutation>, strict_pole_t<Axis::Mutation>>,
               "a Forge phase does no in-place mutation on its input");
-static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Reentrancy>, axis_traits<Axis::Reentrancy>::strict>,
+static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Reentrancy>, strict_pole_t<Axis::Reentrancy>>,
               "the phases share one arena, so two calls at the same time race on the bump cursor");
 static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Trust>, at::trust<trust_level::Verified>>,
               "in the design, the cross-vendor numerics CI checks each Forge phase");

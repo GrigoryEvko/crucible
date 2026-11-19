@@ -115,12 +115,12 @@ static_assert(security_atoms_classified_() == security_atoms_rostered_(),
               "fixy/Atom.h: a Security atom in core_atom_roster has no entry in security_class_answer_of_.  "
               "Every reader of the Security grade asks that relation, so an atom without an entry cannot be "
               "used in a binding.  Give it a SecurityClass, next to the others.");
-static_assert(IsSecurityGrade<typename axis_traits<Axis::Security>::strict>,
+static_assert(IsSecurityGrade<strict_pole_t<Axis::Security>>,
               "fixy/Atom.h: the strict Security pole must have a class, because a binding that names no "
               "Security atom resolves to it.");
 
 // The relation answers what it must and refuses what it must.
-static_assert(security_class_of(^^axis_traits<Axis::Security>::strict) == SecurityClass::Classified);
+static_assert(security_class_of(axis_record(Axis::Security).strict) == SecurityClass::Classified);
 static_assert(security_class_of(^^constant_time) == SecurityClass::ConstantTime);
 static_assert(security_class_of(^^as_secret) == SecurityClass::Classified);
 static_assert(security_class_of(^^as_public) == SecurityClass::Public);
@@ -159,7 +159,7 @@ static_assert(discharge_mask_of(^^int) == DischargeAxis::None, "a type that is n
 // names Bg or Failure.  A type that is not a Security grade is classified
 // on no channel.
 static_assert(IsClassifiedOn<as_secret, DischargeAxis::IO> && IsClassifiedOn<constant_time, DischargeAxis::Bg>);
-static_assert(IsClassifiedOn<typename axis_traits<Axis::Security>::strict, DischargeAxis::Failure>);
+static_assert(IsClassifiedOn<strict_pole_t<Axis::Security>, DischargeAxis::Failure>);
 static_assert(IsClassifiedOn<declassify<::fixy::tags::secret_policy::WireSerialize>, DischargeAxis::Bg>);
 static_assert(IsClassifiedOn<declassify<::fixy::tags::secret_policy::AuthorizedReplay>, DischargeAxis::IO>);
 static_assert(IsClassifiedOn<declassify<::fixy::tags::secret_policy::AuditedLogging>, DischargeAxis::Failure>,

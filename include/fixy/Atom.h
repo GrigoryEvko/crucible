@@ -588,8 +588,7 @@ struct as_internal final : atom_of<Axis::Security> {};
 // establishes that the residual claim is empty states its identity here,
 // one judgment, with the consumer named.
 struct as_classified final : atom_of<Axis::Security> {
-    using canonical_identity =
-        ::foundation::diag::canonical_identity_of<as_classified, typename axis_traits<Axis::Security>::strict>;
+    using canonical_identity = ::foundation::diag::canonical_identity_of<as_classified, strict_pole_t<Axis::Security>>;
 };
 struct as_secret final : atom_of<Axis::Security> {};
 
@@ -665,7 +664,7 @@ struct security_class_answer {
     if (type == ^^as_unclassified || type == ^^as_public) return {true, SecurityClass::Public};
     if (type == ^^as_internal) return {true, SecurityClass::Internal};
     if (type == ^^as_classified || type == ^^as_secret
-        || type == std::meta::dealias(^^axis_traits<Axis::Security>::strict)) {
+        || type == std::meta::dealias(axis_record(Axis::Security).strict)) {
         return {true, SecurityClass::Classified};
     }
     if (type == ^^constant_time) return {true, SecurityClass::ConstantTime};

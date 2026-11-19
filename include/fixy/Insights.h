@@ -60,7 +60,7 @@ template <Axis A>
     if constexpr (::fixy::IsCallerSupplied<A>) {
         return "the payload type the binding names";
     } else {
-        using Strict = typename ::fixy::axis_traits<A>::strict;
+        using Strict = ::fixy::strict_pole_t<A>;
         if constexpr (requires { Strict::value; }) {
             constexpr auto value = Strict::value;
             if constexpr (std::is_enum_v<decltype(value)>) {

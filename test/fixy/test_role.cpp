@@ -27,7 +27,7 @@ namespace role = ::fixy::role;
 namespace policy = ::fixy::tags::secret_policy;
 using Eff = ::foundation::effects::Effect;
 using ::fixy::Axis;
-using ::fixy::axis_traits;
+using ::fixy::strict_pole_t;
 using ::fixy::fn;
 using ::fixy::IsAccepted;
 using ::fixy::IsRoleFor;
@@ -79,12 +79,12 @@ static_assert(std::is_same_v<role::PublicEmit<int, policy::WireSerialize>::grade
 
 // The strict poles carry the rest.  Usage stays linear on every role
 // but PureCopy, and Reentrancy stays non-reentrant on all of them.
-static_assert(std::is_same_v<role::IoFunction<int>::grade_on<Axis::Usage>, axis_traits<Axis::Usage>::strict>);
-static_assert(std::is_same_v<role::BgWorker<int>::grade_on<Axis::Usage>, axis_traits<Axis::Usage>::strict>);
-static_assert(std::is_same_v<role::CtCrypto<int>::grade_on<Axis::Usage>, axis_traits<Axis::Usage>::strict>);
-static_assert(std::is_same_v<role::CtCrypto<int>::grade_on<Axis::Reentrancy>, axis_traits<Axis::Reentrancy>::strict>);
-static_assert(std::is_same_v<role::PureCopy<int>::grade_on<Axis::Security>, axis_traits<Axis::Security>::strict>);
-static_assert(std::is_same_v<role::PureCopy<int>::grade_on<Axis::Effect>, axis_traits<Axis::Effect>::strict>);
+static_assert(std::is_same_v<role::IoFunction<int>::grade_on<Axis::Usage>, strict_pole_t<Axis::Usage>>);
+static_assert(std::is_same_v<role::BgWorker<int>::grade_on<Axis::Usage>, strict_pole_t<Axis::Usage>>);
+static_assert(std::is_same_v<role::CtCrypto<int>::grade_on<Axis::Usage>, strict_pole_t<Axis::Usage>>);
+static_assert(std::is_same_v<role::CtCrypto<int>::grade_on<Axis::Reentrancy>, strict_pole_t<Axis::Reentrancy>>);
+static_assert(std::is_same_v<role::PureCopy<int>::grade_on<Axis::Security>, strict_pole_t<Axis::Security>>);
+static_assert(std::is_same_v<role::PureCopy<int>::grade_on<Axis::Effect>, strict_pole_t<Axis::Effect>>);
 static_assert(!role::IoFunction<int>::mentions_axis<Axis::Usage>);
 static_assert(role::IoFunction<int>::mentions_axis<Axis::Effect>);
 static_assert(role::IoFunction<int>::mentions_axis<Axis::Security>);

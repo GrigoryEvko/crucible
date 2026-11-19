@@ -29,7 +29,7 @@ namespace {
 namespace fd = ::foundation::diag;
 using ::fixy::Axis;
 using ::fixy::axis_name;
-using ::fixy::axis_traits;
+using ::fixy::strict_pole_t;
 using ::fixy::duplicate_atom_on;
 
 // ---------------------------------------------------------------------
@@ -70,7 +70,7 @@ template <Axis A>
     if constexpr (::fixy::IsCallerSupplied<A>) {
         return "the payload type the binding names";
     } else {
-        using Strict = typename axis_traits<A>::strict;
+        using Strict = strict_pole_t<A>;
         if constexpr (requires { Strict::value; }) {
             constexpr auto value = Strict::value;
             if constexpr (std::is_enum_v<decltype(value)>) {

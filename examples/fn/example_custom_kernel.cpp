@@ -35,7 +35,7 @@ namespace at = ::fixy::atom;
 namespace source = ::fixy::tags::source;
 namespace trust_level = ::fixy::tags::trust;
 using ::fixy::Axis;
-using ::fixy::axis_traits;
+using ::fixy::strict_pole_t;
 
 // The signature of the kernel.  In production the user compiles it from
 // a GEMM library of their own.  The scalar reference below is only a
@@ -106,9 +106,9 @@ static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Reentrancy>, at::reentran
 static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Version>, at::version<1>>);
 
 // An axis that the pack does not name takes its strict pole.
-static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Overflow>, axis_traits<Axis::Overflow>::strict>);
-static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Staleness>, axis_traits<Axis::Staleness>::strict>);
-static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Refinement>, axis_traits<Axis::Refinement>::strict>);
+static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Overflow>, strict_pole_t<Axis::Overflow>>);
+static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Staleness>, strict_pole_t<Axis::Staleness>>);
+static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Refinement>, strict_pole_t<Axis::Refinement>>);
 static_assert(!BoundGemm::mentions_axis<Axis::Complexity>);
 
 // A caller needs a context whose row holds Bg.  The background drain

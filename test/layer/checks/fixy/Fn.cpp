@@ -47,18 +47,18 @@ static_assert(std::is_same_v<fn<double>::grade_on<Axis::Type>, double>);
 
 // An unmentioned axis takes its strict pole.  A dozen axes, drawn from
 // each shape the table carries, rather than one.
-static_assert(std::is_same_v<fn<int>::grade_on<Axis::Usage>, typename axis_traits<Axis::Usage>::strict>);
-static_assert(std::is_same_v<fn<int>::grade_on<Axis::Effect>, typename axis_traits<Axis::Effect>::strict>);
-static_assert(std::is_same_v<fn<int>::grade_on<Axis::Refinement>, typename axis_traits<Axis::Refinement>::strict>);
-static_assert(std::is_same_v<fn<int>::grade_on<Axis::Security>, typename axis_traits<Axis::Security>::strict>);
-static_assert(std::is_same_v<fn<int>::grade_on<Axis::Mutation>, typename axis_traits<Axis::Mutation>::strict>);
-static_assert(std::is_same_v<fn<int>::grade_on<Axis::Reentrancy>, typename axis_traits<Axis::Reentrancy>::strict>);
-static_assert(std::is_same_v<fn<int>::grade_on<Axis::Regime>, typename axis_traits<Axis::Regime>::strict>);
-static_assert(std::is_same_v<fn<int>::grade_on<Axis::MemoryScope>, typename axis_traits<Axis::MemoryScope>::strict>);
-static_assert(std::is_same_v<fn<int>::grade_on<Axis::SimdIsa>, typename axis_traits<Axis::SimdIsa>::strict>);
-static_assert(std::is_same_v<fn<int>::grade_on<Axis::Stdio>, typename axis_traits<Axis::Stdio>::strict>);
-static_assert(std::is_same_v<fn<int>::grade_on<Axis::Version>, typename axis_traits<Axis::Version>::strict>);
-static_assert(std::is_same_v<fn<int>::grade_on<Axis::Staleness>, typename axis_traits<Axis::Staleness>::strict>);
+static_assert(std::is_same_v<fn<int>::grade_on<Axis::Usage>, strict_pole_t<Axis::Usage>>);
+static_assert(std::is_same_v<fn<int>::grade_on<Axis::Effect>, strict_pole_t<Axis::Effect>>);
+static_assert(std::is_same_v<fn<int>::grade_on<Axis::Refinement>, strict_pole_t<Axis::Refinement>>);
+static_assert(std::is_same_v<fn<int>::grade_on<Axis::Security>, strict_pole_t<Axis::Security>>);
+static_assert(std::is_same_v<fn<int>::grade_on<Axis::Mutation>, strict_pole_t<Axis::Mutation>>);
+static_assert(std::is_same_v<fn<int>::grade_on<Axis::Reentrancy>, strict_pole_t<Axis::Reentrancy>>);
+static_assert(std::is_same_v<fn<int>::grade_on<Axis::Regime>, strict_pole_t<Axis::Regime>>);
+static_assert(std::is_same_v<fn<int>::grade_on<Axis::MemoryScope>, strict_pole_t<Axis::MemoryScope>>);
+static_assert(std::is_same_v<fn<int>::grade_on<Axis::SimdIsa>, strict_pole_t<Axis::SimdIsa>>);
+static_assert(std::is_same_v<fn<int>::grade_on<Axis::Stdio>, strict_pole_t<Axis::Stdio>>);
+static_assert(std::is_same_v<fn<int>::grade_on<Axis::Version>, strict_pole_t<Axis::Version>>);
+static_assert(std::is_same_v<fn<int>::grade_on<Axis::Staleness>, strict_pole_t<Axis::Staleness>>);
 
 // Every axis resolves, for the empty pack and for a pack that mentions
 // one axis.  A sample of twelve proves twelve; this proves the table.
@@ -81,8 +81,8 @@ static_assert(every_axis_resolves<fn<int, atom::copy>>());
 // One atom relaxes exactly its own axis and leaves the rest strict.
 using CopyBinding = fn<int, atom::copy>;
 static_assert(std::is_same_v<CopyBinding::grade_on<Axis::Usage>, atom::copy>);
-static_assert(!std::is_same_v<CopyBinding::grade_on<Axis::Usage>, typename axis_traits<Axis::Usage>::strict>);
-static_assert(std::is_same_v<CopyBinding::grade_on<Axis::Effect>, typename axis_traits<Axis::Effect>::strict>);
+static_assert(!std::is_same_v<CopyBinding::grade_on<Axis::Usage>, strict_pole_t<Axis::Usage>>);
+static_assert(std::is_same_v<CopyBinding::grade_on<Axis::Effect>, strict_pole_t<Axis::Effect>>);
 static_assert(std::is_same_v<CopyBinding::grade_on<Axis::Type>, int>);
 static_assert(CopyBinding::mentions_axis<Axis::Usage>);
 static_assert(!CopyBinding::mentions_axis<Axis::Effect>);
@@ -93,7 +93,7 @@ using MixedBinding = fn<int, atom::affine, atom::mut_append, atom::reentrant>;
 static_assert(std::is_same_v<MixedBinding::grade_on<Axis::Usage>, atom::affine>);
 static_assert(std::is_same_v<MixedBinding::grade_on<Axis::Mutation>, atom::mut_append>);
 static_assert(std::is_same_v<MixedBinding::grade_on<Axis::Reentrancy>, atom::reentrant>);
-static_assert(std::is_same_v<MixedBinding::grade_on<Axis::Security>, typename axis_traits<Axis::Security>::strict>);
+static_assert(std::is_same_v<MixedBinding::grade_on<Axis::Security>, strict_pole_t<Axis::Security>>);
 static_assert(MixedBinding::atom_count == 3);
 
 // The gate refuses what it should, at the concept rather than only in
@@ -201,7 +201,7 @@ static_assert(fd_::row_hash_contribution_v<fn<int, atom::declassify<tags::secret
 // stays at the strict pole.
 using FutexBinding = fn<int, atom::syscall::per<atom::syscall::SyscallId::futex>>;
 using StatedBlockBinding = fn<int, atom::with<fe_::Effect::Block, fe_::Effect::Nondet>>;
-static_assert(std::is_same_v<FutexBinding::grade_on<Axis::Effect>, typename axis_traits<Axis::Effect>::strict>);
+static_assert(std::is_same_v<FutexBinding::grade_on<Axis::Effect>, strict_pole_t<Axis::Effect>>);
 static_assert(std::is_same_v<binding_row_t<FutexBinding>, fe_::Row<fe_::Effect::Block, fe_::Effect::Nondet>>);
 static_assert(std::is_same_v<binding_row_t<fn<int>>, fe_::Row<>>);
 

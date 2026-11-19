@@ -34,10 +34,10 @@
 //   3. The rules can fire, so the atoms are gates rather than
 //      decoration.
 //
-// axis_traits<Axis::Observability> already said this before any atom
-// existed: its pole is `derived_from = axis_traits<Axis::Effect>`, so the
-// strict pole is Effect's empty row — "observes nothing".  The subrow
-// reading is what those traits were already asserting.
+// The row of Axis::Observability in axis_record already said this before
+// any atom existed: its pole derives from Axis::Effect, so the strict pole
+// is Effect's empty row — "observes nothing".  The subrow reading is what
+// that row was already asserting.
 //
 // ---------------------------------------------------------------------
 // No lift, and a third meaning for that

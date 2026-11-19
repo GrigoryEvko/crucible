@@ -40,7 +40,7 @@ namespace at = ::fixy::atom;
 namespace source = ::fixy::tags::source;
 namespace trust_level = ::fixy::tags::trust;
 using ::fixy::Axis;
-using ::fixy::axis_traits;
+using ::fixy::strict_pole_t;
 using Effect = ::foundation::effects::Effect;
 
 // One step over an array of n parameters.  In production p, m and v stay
@@ -89,7 +89,7 @@ using BoundOptimizer = UserBgOptimizer<AdamStepPtr>;
 static_assert(sizeof(BoundOptimizer) == sizeof(AdamStepPtr), "a binding must be byte-equivalent to its payload");
 
 // The axes that differ from the kernel binding.
-static_assert(std::is_same_v<BoundOptimizer::grade_on<Axis::Reentrancy>, axis_traits<Axis::Reentrancy>::strict>,
+static_assert(std::is_same_v<BoundOptimizer::grade_on<Axis::Reentrancy>, strict_pole_t<Axis::Reentrancy>>,
               "the optimizer is not reentrant: two calls at the same time race on m and v");
 static_assert(!BoundOptimizer::mentions_axis<Axis::Reentrancy>);
 static_assert(std::is_same_v<BoundOptimizer::grade_on<Axis::Mutation>, at::mut_mutable>);
