@@ -1406,6 +1406,75 @@ struct compose_at_choice_algebra {
     consteval std::meta::info unregistered(const node&, context) const { return {}; }
 };
 
+// The unfold of a binder: the fold of its body, where each back node that
+// the binder binds becomes the binder, the replacement.  A back node binds
+// the nearest binder above it, so the fold keeps each binder of the body as
+// it is, with its own back nodes, and the replacement captures no back node.
+// A named state keeps its name, because its protocol is closed: each back
+// node in it binds a binder in it.  A node that the registry does not know
+// gives the null reflection, so the splice of the result stops the build.
+struct unfold_algebra {
+    using result = std::meta::info;
+    using context = int;
+    std::meta::info registry{};
+    std::meta::info replacement{};
+
+    template <class Child>
+    consteval std::meta::info terminal(const node& view, context, const Child&) const {
+        return view.type;
+    }
+    template <class Child>
+    consteval std::meta::info back(const node&, context, const Child&) const {
+        return replacement;
+    }
+    template <class Child>
+    consteval std::meta::info step(const node& view, context ctx, const Child& child) const {
+        const std::meta::info below = child(view.next, ctx);
+        if (below == std::meta::info{}) return {};
+        return std::meta::substitute(view.entry.shape, {view.payload, below});
+    }
+    template <class Child>
+    consteval std::meta::info choice(const node& view, context ctx, const Child& child) const {
+        stack<std::meta::info> mapped{};
+        for (const std::meta::info branch : view.branches) {
+            const std::meta::info below = child(branch, ctx);
+            if (below == std::meta::info{}) return {};
+            push(mapped, below);
+        }
+        return detail::rebuild_choice(registry, view, view.entry.shape, mapped);
+    }
+    template <class Child>
+    consteval std::meta::info binder(const node& view, context, const Child&) const {
+        return view.type;
+    }
+    template <class Child>
+    consteval std::meta::info wrapper(const node& view, context ctx, const Child& child) const {
+        const std::meta::info below = child(view.next, ctx);
+        if (below == std::meta::info{}) return {};
+        return std::meta::substitute(view.entry.shape, {view.value, below});
+    }
+    template <class Child>
+    consteval std::meta::info marker(const node& view, context ctx, const Child& child) const {
+        const std::meta::info below = child(view.next, ctx);
+        if (below == std::meta::info{}) return {};
+        return std::meta::substitute(view.entry.shape, {below});
+    }
+    template <class Child>
+    consteval std::meta::info named(const node& view, context, const Child&) const {
+        return view.type;
+    }
+    consteval std::meta::info unregistered(const node&, context) const { return {}; }
+};
+
+// The unfold of a binder node: its body with each back node that it binds
+// replaced by the node.  Any other node is its own unfold.  The fold keeps
+// one answer for each node in a translation unit.
+[[nodiscard]] consteval std::meta::info unfold_of(std::meta::info registry, std::meta::info type) {
+    const node view = decompose(registry, type);
+    if (!view.is_registered || view.entry.kind != shape_kind::binder) return std::meta::dealias(type);
+    return fold(registry, view.next, unfold_algebra{registry, view.type}, 0);
+}
+
 namespace detail {
 
 // True for a node that the walk to the first stop of a spine passes.

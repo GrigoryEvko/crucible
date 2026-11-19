@@ -467,45 +467,11 @@ struct first_failure<T, Rest...> {
 
 // ── Loop unfolding ───────────────────────────────────────────────────
 //
-// unfold replaces each Continue that the Loop binds with the Loop
-// itself.  A nested Loop binds its own Continue, so the walk stops
-// there.  The replacement is closed, because a Continue always binds to
-// the nearest Loop, so no capture can occur.
-
-template <typename T, typename Rep>
-struct subst;
-template <typename Rep>
-struct subst<End, Rep> {
-    using type = End;
-};
-template <typename Rep>
-struct subst<Continue, Rep> {
-    using type = Rep;
-};
-template <typename M, typename K, typename Rep>
-struct subst<Send<M, K>, Rep> {
-    using type = Send<M, typename subst<K, Rep>::type>;
-};
-template <typename M, typename K, typename Rep>
-struct subst<Recv<M, K>, Rep> {
-    using type = Recv<M, typename subst<K, Rep>::type>;
-};
-template <typename... Bs, typename Rep>
-struct subst<Select<Bs...>, Rep> {
-    using type = Select<typename subst<Bs, Rep>::type...>;
-};
-template <typename... Bs, typename Rep>
-struct subst<Offer<Bs...>, Rep> {
-    using type = Offer<typename subst<Bs, Rep>::type...>;
-};
-template <typename Role, typename... Bs, typename Rep>
-struct subst<Offer<Sender<Role>, Bs...>, Rep> {
-    using type = Offer<Sender<Role>, typename subst<Bs, Rep>::type...>;
-};
-template <typename B, typename Rep>
-struct subst<Loop<B>, Rep> {
-    using type = Loop<B>;
-};
+// unfold replaces each Continue that the Loop binds with the Loop itself,
+// through the unfold of the registry (unfold_of of fixy/session/Fold.h).
+// A nested Loop binds its own Continue, so the walk stops there.  The
+// replacement is closed, because a Continue always binds to the nearest
+// Loop, so no capture can occur.  Each other node is its own unfold.
 
 // A Loop node that the projection built.  is_loop_v also admits a
 // VendorPinned wrapper, which a projection never produces.
@@ -516,11 +482,7 @@ inline constexpr bool is_loop_node_v<Loop<B>> = true;
 
 template <typename T>
 struct unfold {
-    using type = T;
-};
-template <typename B>
-struct unfold<Loop<B>> {
-    using type = typename subst<B, Loop<B>>::type;
+    using type = typename[: ::fixy::session::transition::unfold_of(::fixy::session::detail::protocol_registry, ^^T):];
 };
 
 // ── Merge ────────────────────────────────────────────────────────────
