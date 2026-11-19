@@ -797,6 +797,190 @@ void test_c_array_and_pointer_parts() {
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+// ── The sums ─────────────────────────────────────────────────────────────
+
+enum class SumFault : std::uint8_t {
+    first = 1,
+    second = 2
+};
+
+using MaybeWord = ::foundation::core::Option<std::uint32_t>;
+using Outcome = ::foundation::core::Result<std::uint16_t, SumFault>;
+using Either = ::foundation::core::OneOf<std::uint8_t, std::uint64_t>;
+
+// The image: head at 0, the Option at 2 (its payload at 3 to 6), the Result
+// at 7 (its room at 8 and 9), and the OneOf at 10 (its room at 11 to 18).
+struct[[= derive_protocol{}]] WithSums {
+    std::uint16_t head = 0;
+    MaybeWord maybe{};
+    Outcome outcome{std::uint16_t{0}};
+    Either either{std::uint8_t{0}};
+};
+
+using SumImage = FixedArray<std::byte, encoded_size_v<WithSums>>;
+
+[[nodiscard]] WithSums sample_with_sums() noexcept {
+    WithSums value{};
+    value.head = 0x0102;
+    value.maybe = MaybeWord::some(0x0A0B0C0DU);
+    value.outcome = Outcome{::foundation::core::Err<SumFault>{SumFault::second}};
+    value.either = Either{std::uint64_t{0x1122334455667788ULL}};
+    return value;
+}
+
+[[nodiscard]] DecodeFault sum_fault_of(SumImage const& image) noexcept {
+    return decode<WithSums>(image.view())
+        .match([](WithSums) noexcept { return DecodeFault{DecodeRefusal::bool_byte, 9999}; },
+               [](DecodeFault fault) noexcept { return fault; });
+}
+
+// True when decode of the image of value gives a value equal to it.
+template <class T>
+[[nodiscard]] bool decodes_back(T const& value) noexcept {
+    FixedArray<std::byte, encoded_size_v<T>> const image = encoded(value);
+    return decode<T>(image.view())
+        .match([&value](T back) noexcept { return equal(back, value); }, [](DecodeFault) noexcept { return false; });
+}
+
+// The image of each sum is its tag and then its active alternative, with
+// zero bytes after it.
+void test_sums_encode_their_tag_and_alternative() {
+    static_assert(encoded_size_v<WithSums> == 19);
+    SumImage const image = encoded(sample_with_sums());
+    constexpr FixedArray<std::uint8_t, 19> expected{0x02, 0x01, 0x01, 0x0D, 0x0C, 0x0B, 0x0A, 0x01, 0x02, 0x00,
+                                                    0x01, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11};
+    std::size_t at = 0;
+    for (std::byte const byte : image) {
+        CRUCIBLE_FATAL_INVARIANT(static_cast<std::uint8_t>(byte)
+                                 == expected.at(Index<19>::check(at).expect("19 bytes")));
+        ++at;
+    }
+
+    WithSums empty{};
+    SumImage const empty_image = encoded(empty);
+    for (std::byte const byte : empty_image) {
+        CRUCIBLE_FATAL_INVARIANT(byte == std::byte{0});
+    }
+}
+
+// decode gives back each alternative of each sum, and the hash folds the
+// image as the hand fold does.
+void test_sums_decode_back_and_hash_their_image() {
+    WithSums value = sample_with_sums();
+    CRUCIBLE_FATAL_INVARIANT(decodes_back(value));
+    CRUCIBLE_FATAL_INVARIANT(hash(value).raw() == hand_hash_of_image(encoded(value)));
+    value.maybe = MaybeWord{::foundation::core::none};
+    value.outcome = Outcome{std::uint16_t{0xBEEF}};
+    value.either = Either{std::uint8_t{0x5A}};
+    CRUCIBLE_FATAL_INVARIANT(decodes_back(value));
+    CRUCIBLE_FATAL_INVARIANT(hash(value).raw() == hand_hash_of_image(encoded(value)));
+    CRUCIBLE_FATAL_INVARIANT(hash(value) != hash(sample_with_sums()));
+    CRUCIBLE_FATAL_INVARIANT(decodes_back(WithSums{}));
+}
+
+// Random values of each alternative decode back, and the hash of each is the
+// hand fold of its image.
+void test_sums_round_trip_random_values() {
+    ::crucible::test::PhiloxStream stream{0x53554D53524F554EULL};
+    for (int round = 0; round < 4096; ++round) {
+        std::uint64_t const word = stream.next_word();
+        WithSums value{};
+        value.head = static_cast<std::uint16_t>(word);
+        bool const has_payload = ((word >> 16) & 1U) != 0;
+        bool const is_error = ((word >> 17) & 1U) != 0;
+        bool const is_first_fault = ((word >> 18) & 1U) != 0;
+        bool const is_wide = ((word >> 19) & 1U) != 0;
+        if (has_payload) value.maybe = MaybeWord::some(static_cast<std::uint32_t>(word >> 32));
+        SumFault const fault = is_first_fault ? SumFault::first : SumFault::second;
+        value.outcome = is_error ? Outcome{::foundation::core::Err<SumFault>{fault}}
+                                 : Outcome{static_cast<std::uint16_t>(word >> 20)};
+        std::uint64_t const wide = stream.next_word();
+        value.either = is_wide ? Either{wide} : Either{static_cast<std::uint8_t>(wide)};
+        CRUCIBLE_FATAL_INVARIANT(decodes_back(value));
+        CRUCIBLE_FATAL_INVARIANT(hash(value).raw() == hand_hash_of_image(encoded(value)));
+    }
+}
+
+struct[[= derive_protocol{}]] WithFloatSums {
+    ::foundation::core::Option<float> maybe{};
+    ::foundation::core::Result<double, SumFault> outcome{0.0};
+};
+
+// The float rule holds in a sum: equal of two values agrees with the
+// equality of their images, so +0 and -0 differ, and a NaN equals itself.
+void test_sums_obey_the_float_rule() {
+    WithFloatSums positive{};
+    positive.maybe = ::foundation::core::Option<float>::some(0.0f);
+    WithFloatSums negative{};
+    negative.maybe = ::foundation::core::Option<float>::some(-0.0f);
+    negative.outcome = ::foundation::core::Result<double, SumFault>{-0.0};
+    WithFloatSums not_a_number{};
+    not_a_number.maybe = ::foundation::core::Option<float>::some(bit_cast<float>(std::uint32_t{0x7FC00001U}));
+    not_a_number.outcome = ::foundation::core::Result<double, SumFault>{bit_cast<double>(0x7FF8000000000001ULL)};
+    FixedArray<WithFloatSums, 4> const values{WithFloatSums{}, positive, negative, not_a_number};
+    for (WithFloatSums const& left : values) {
+        for (WithFloatSums const& right : values) {
+            bool const has_equal_images = encoded(left) == encoded(right);
+            CRUCIBLE_FATAL_INVARIANT(equal(left, right) == has_equal_images);
+            CRUCIBLE_FATAL_INVARIANT((hash(left) == hash(right)) == has_equal_images);
+        }
+        CRUCIBLE_FATAL_INVARIANT(decodes_back(left));
+    }
+    CRUCIBLE_FATAL_INVARIANT(!equal(positive, negative) && equal(not_a_number, not_a_number));
+}
+
+// decode refuses a tag of no alternative and a byte after the active
+// alternative that is not zero, at the offset of the byte.
+void test_sums_refuse_each_byte_that_names_no_value() {
+    SumImage const clean = encoded(sample_with_sums());
+
+    SumImage bad_option_tag = clean;
+    bad_option_tag.at(index<2>()) = std::byte{2};
+    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(bad_option_tag) == DecodeFault{DecodeRefusal::sum_tag, 2}));
+
+    SumImage none_with_payload = encoded(WithSums{});
+    none_with_payload.at(index<4>()) = std::byte{1};
+    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(none_with_payload) == DecodeFault{DecodeRefusal::sum_tail, 3}));
+
+    SumImage bad_result_tag = clean;
+    bad_result_tag.at(index<7>()) = std::byte{2};
+    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(bad_result_tag) == DecodeFault{DecodeRefusal::sum_tag, 7}));
+
+    SumImage error_with_tail = clean;
+    error_with_tail.at(index<9>()) = std::byte{1};
+    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(error_with_tail) == DecodeFault{DecodeRefusal::sum_tail, 9}));
+
+    SumImage bad_error = clean;
+    bad_error.at(index<8>()) = std::byte{3};
+    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(bad_error) == DecodeFault{DecodeRefusal::enumerator, 8}));
+
+    SumImage bad_one_of_tag = clean;
+    bad_one_of_tag.at(index<10>()) = std::byte{2};
+    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(bad_one_of_tag) == DecodeFault{DecodeRefusal::sum_tag, 10}));
+
+    SumImage narrow_with_tail = encoded(WithSums{});
+    narrow_with_tail.at(index<13>()) = std::byte{1};
+    CRUCIBLE_FATAL_INVARIANT((sum_fault_of(narrow_with_tail) == DecodeFault{DecodeRefusal::sum_tail, 12}));
+}
+
+void test_sums_format_their_alternative() {
+    FixedText<256> out{};
+    TextView const expected{
+        "{head = 258, maybe = some(168496141), outcome = err(second), either = #1(1234605616436508552)}"};
+    bool const is_expected = format(out, sample_with_sums())
+                                 .match([&expected](TextView text) noexcept { return text == expected; },
+                                        [](::foundation::core::Full<char>) noexcept { return false; });
+    CRUCIBLE_FATAL_INVARIANT(is_expected);
+
+    FixedText<256> empty_out{};
+    TextView const empty_expected{"{head = 0, maybe = none, outcome = ok(0), either = #0(0)}"};
+    bool const is_empty_expected =
+        format(empty_out, WithSums{})
+            .match([&empty_expected](TextView text) noexcept { return text == empty_expected; },
+                   [](::foundation::core::Full<char>) noexcept { return false; });
+    CRUCIBLE_FATAL_INVARIANT(is_empty_expected);
+}
+
 }  // namespace
 
 int main() {
@@ -812,5 +996,11 @@ int main() {
     test_format_names_each_part();
     test_float_rule();
     test_c_array_and_pointer_parts();
+    test_sums_encode_their_tag_and_alternative();
+    test_sums_decode_back_and_hash_their_image();
+    test_sums_round_trip_random_values();
+    test_sums_obey_the_float_rule();
+    test_sums_refuse_each_byte_that_names_no_value();
+    test_sums_format_their_alternative();
     return 0;
 }

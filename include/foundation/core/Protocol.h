@@ -23,8 +23,8 @@
 // THE IMAGE
 //   A value has a byte image when each part has one: an integer, a bool, a
 //   character, an enumeration, a float or a double, a bounded C array or a
-//   FixedArray of such parts, and a class with the annotation
-//   derive_protocol.  The walk refuses a pointer, a reference, a union, a
+//   FixedArray of such parts, a sum of such parts (THE SUMS), and a class with
+//   the annotation derive_protocol.  The walk refuses a pointer, a reference, a union, a
 //   named bit-field and each other class, as decode of the Scalar family
 //   does.  A local part has no place in the image.  The image holds no
 //   padding byte: each part takes the bytes of its value and no more, in
@@ -60,12 +60,26 @@
 //   keyed hash of the bytes of encode, with its width and its key in its
 //   type, and never this hash.
 //
+// THE SUMS
+//   An Option, a Result or a OneOf (foundation/core/Choice.h and OneOf.h)
+//   whose alternatives have an image has an image too: one tag byte, and then
+//   room for the largest image of its alternatives.  The tag of an Option is 0
+//   for none and 1 for some, the tag of a Result is 0 for the value and 1 for
+//   the error, and the tag of a OneOf is the index of its alternative.  The
+//   active alternative takes the bytes after the tag, and each byte after its
+//   image is zero, so one value gives one image.  The hash, the codec and the
+//   format read a sum through its match, and decode builds it through its
+//   constructors.  decode of a sum needs each alternative to have a default
+//   constructor with no throw, and it refuses a tag of no alternative and a
+//   byte after the active alternative that is not zero.
+//
 // THE CODEC
 //   encode writes the image into a View of exactly encoded_size_v<T> bytes,
 //   so it cannot fail.  decode reads such a View into a T.  It refuses a
 //   bool byte other than 0 and 1, an enumeration value that names no
-//   enumerator, a byte of a pad part that is not zero, and a part that
-//   declares a niche and holds its empty value.  The DecodeFault names the
+//   enumerator, a byte of a pad part that is not zero, a part that declares a
+//   niche and holds its empty value, and a sum of THE SUMS with a tag or a
+//   tail byte that holds no value.  The DecodeFault names the
 //   reason and the byte offset of the part in the image.  The first fault in
 //   the order of the parts wins.  A local part of the result keeps the value
 //   of the default constructor of T.  Decodable refuses a class with a const
@@ -76,8 +90,10 @@
 //   format writes `{name = value, name = value}`, with the parts of each base
 //   first.  An integer is written in decimal, a bool as true or false, a
 //   float as the text of report(), an enumerator of a scoped enumeration as
-//   its name, and an array as `[a, b, c]`.  A local part and a pad part are
-//   not written.  format is no part of a hot path.
+//   its name, an array as `[a, b, c]`, an Option as `some(a)` or `none`, a
+//   Result as `ok(a)` or `err(e)`, and a OneOf as the index of its
+//   alternative and its value, `#1(a)`.  A local part and a pad part are not
+//   written.  format is no part of a hot path.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Arithmetic.h>
@@ -86,6 +102,7 @@
 #include <foundation/core/Equatable.h>
 #include <foundation/core/Format.h>
 #include <foundation/core/Id.h>
+#include <foundation/core/OneOf.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/core/Text.h>
@@ -109,6 +126,10 @@ enum class DecodeRefusal : std::uint8_t {
     pad_byte,
     // A part that declares a niche holds its empty value.
     empty_niche,
+    // The tag byte of a sum names no alternative (THE SUMS).
+    sum_tag,
+    // A byte after the active alternative of a sum is not zero (THE SUMS).
+    sum_tail,
 };
 
 // The first fault of an image: the reason, and the byte offset of the part
@@ -153,6 +174,26 @@ namespace detail {
         std::meta::template_arguments_of(std::meta::remove_cv(std::meta::dealias(spelled)))[1]);
 }
 
+// True for a sum of THE SUMS: an Option, a Result or a OneOf.  An alias
+// reads as the type that it names.
+[[nodiscard]] consteval bool is_sum_at(std::meta::info spelled) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    if (!std::meta::is_class_type(type) || !std::meta::has_template_arguments(type)) return false;
+    std::meta::info const family = std::meta::template_of(type);
+    return family == ^^Option || family == ^^Result || family == ^^OneOf;
+}
+
+// The count of the alternatives of a sum, and the alternative at an index:
+// the payload of an Option, the value and the error of a Result, and each
+// alternative of a OneOf, in the order of the tag.
+[[nodiscard]] consteval std::size_t sum_alternative_count_at(std::meta::info spelled) {
+    return std::meta::template_arguments_of(std::meta::remove_cv(std::meta::dealias(spelled))).size();
+}
+
+[[nodiscard]] consteval std::meta::info sum_alternative_at(std::meta::info spelled, std::size_t index) {
+    return std::meta::template_arguments_of(std::meta::remove_cv(std::meta::dealias(spelled)))[index];
+}
+
 // True when a value of the type has a byte image (THE IMAGE).  Linear in the
 // number of parts that the walk reaches.
 [[nodiscard]] consteval bool has_image_at(std::meta::info spelled, int depth) {
@@ -165,6 +206,12 @@ namespace detail {
         return std::meta::is_bounded_array_type(type) && has_image_at(std::meta::remove_all_extents(type), depth + 1);
     }
     if (is_fixed_array_at(type)) return has_image_at(fixed_array_element_at(type), depth + 1);
+    if (is_sum_at(type)) {
+        for (std::size_t index = 0; index < sum_alternative_count_at(type); ++index) {
+            if (!has_image_at(sum_alternative_at(type, index), depth + 1)) return false;
+        }
+        return true;
+    }
     if (!derives_protocol_at(type)) return false;
     std::size_t const bases = base_count(type);
     std::size_t const members = member_count(type);
@@ -185,6 +232,15 @@ namespace detail {
     std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
     if (std::meta::is_array_type(type)) return decodes_at(std::meta::remove_all_extents(type));
     if (is_fixed_array_at(type)) return decodes_at(fixed_array_element_at(type));
+    if (is_sum_at(type)) {
+        for (std::size_t index = 0; index < sum_alternative_count_at(type); ++index) {
+            std::meta::info const alternative = sum_alternative_at(type, index);
+            if (!std::meta::is_nothrow_default_constructible_type(alternative) || !decodes_at(alternative)) {
+                return false;
+            }
+        }
+        return true;
+    }
     if (!derives_protocol_at(type)) return true;
     if (!std::meta::annotations_of_with_type(type, ^^::foundation::lifetime::no_start_over_bytes).empty()) {
         return false;
@@ -210,6 +266,14 @@ namespace detail {
         return (std::meta::size_of(type) / std::meta::size_of(element)) * image_bytes_at(element);
     }
     if (is_fixed_array_at(type)) return fixed_array_count_at(type) * image_bytes_at(fixed_array_element_at(type));
+    if (is_sum_at(type)) {
+        std::size_t largest = 0;
+        for (std::size_t index = 0; index < sum_alternative_count_at(type); ++index) {
+            std::size_t const bytes = image_bytes_at(sum_alternative_at(type, index));
+            if (bytes > largest) largest = bytes;
+        }
+        return 1 + largest;
+    }
     if (!derives_protocol_at(type)) return std::meta::size_of(type);
     std::size_t total = 0;
     std::size_t const bases = base_count(type);
@@ -324,6 +388,48 @@ template <class T>
 template <class T>
 constexpr void encode_part_(T const& part, std::byte* first) noexcept;
 
+// Writes the tag of a sum at first and zero bytes in the room after it, so
+// each byte after the active alternative is zero (THE SUMS).
+template <class Sum>
+constexpr void put_sum_tag_(std::byte* first, std::size_t tag) noexcept {
+    first[0] = static_cast<std::byte>(static_cast<std::uint8_t>(tag));
+    for (std::size_t index = 1; index < image_bytes_at(^^Sum); ++index) {
+        first[index] = std::byte{0};
+    }
+}
+
+// The image of a sum: its tag, and then its active alternative.  The match
+// reads the alternative and changes no part of the sum.
+template <class T>
+constexpr void encode_sum_(Option<T> const& part, std::byte* first) noexcept {
+    part.match(
+        [first](T const& payload) noexcept {
+            detail::put_sum_tag_<Option<T>>(first, 1);
+            detail::encode_part_(payload, first + 1);
+        },
+        [first]() noexcept { detail::put_sum_tag_<Option<T>>(first, 0); });
+}
+
+template <class T, class E>
+constexpr void encode_sum_(Result<T, E> const& part, std::byte* first) noexcept {
+    part.match(
+        [first](T const& value) noexcept {
+            detail::put_sum_tag_<Result<T, E>>(first, 0);
+            detail::encode_part_(value, first + 1);
+        },
+        [first](E const& error) noexcept {
+            detail::put_sum_tag_<Result<T, E>>(first, 1);
+            detail::encode_part_(error, first + 1);
+        });
+}
+
+template <class... Ts>
+constexpr void encode_sum_(OneOf<Ts...> const& part, std::byte* first) noexcept {
+    detail::put_sum_tag_<OneOf<Ts...>>(first, part.which().raw());
+    auto const write = [first](auto const& alternative) noexcept { detail::encode_part_(alternative, first + 1); };
+    part.match(((void)sizeof(Ts), write)...);
+}
+
 template <class T, std::size_t... Bases, std::size_t... Members>
 constexpr void encode_parts_([[maybe_unused]] T const& object, [[maybe_unused]] std::byte* first,
                              std::index_sequence<Bases...> /*bases*/,
@@ -350,6 +456,8 @@ constexpr void encode_part_(T const& part, std::byte* first) noexcept {
             detail::encode_part_(element, first + index * step);
             ++index;
         }
+    } else if constexpr (is_sum_at(^^Bare)) {
+        detail::encode_sum_(part, first);
     } else if constexpr (derives_protocol_at(^^Bare)) {
         constexpr std::meta::info type = std::meta::dealias(^^Bare);
         detail::encode_parts_(part, first, std::make_index_sequence<base_count(type)>{},
@@ -424,6 +532,94 @@ template <class T, std::size_t Index>
     }
 }
 
+// Reads the alternative Alt of a sum from the bytes after its tag into value,
+// and refuses a byte after its image in the room of the sum that is not zero
+// (THE SUMS).  first is the tag byte of the sum, at offset in the image.
+template <class Sum, class Alt>
+[[nodiscard]] constexpr bool decode_alternative_(Alt& value, std::byte const* first, std::size_t offset,
+                                                 DecodeFault& fault) noexcept {
+    constexpr std::size_t room = image_bytes_at(^^Sum) - 1;
+    constexpr std::size_t taken = image_bytes_at(^^Alt);
+    if (!detail::decode_part_(value, first + 1, offset + 1, fault)) return false;
+    if (!are_zero_bytes_(first + 1 + taken, room - taken)) {
+        fault = fault_at_(DecodeRefusal::sum_tail, offset + 1 + taken);
+        return false;
+    }
+    return true;
+}
+
+template <class T>
+[[nodiscard]] constexpr bool decode_sum_(Option<T>& part, std::byte const* first, std::size_t offset,
+                                         DecodeFault& fault) noexcept {
+    std::uint8_t const tag = static_cast<std::uint8_t>(first[0]);
+    if (tag == 0) {
+        if (!are_zero_bytes_(first + 1, image_bytes_at(^^T))) {
+            fault = fault_at_(DecodeRefusal::sum_tail, offset + 1);
+            return false;
+        }
+        part = Option<T>{none};
+        return true;
+    }
+    if (tag != 1) {
+        fault = fault_at_(DecodeRefusal::sum_tag, offset);
+        return false;
+    }
+    T value{};
+    if (!detail::decode_alternative_<Option<T>>(value, first, offset, fault)) return false;
+    part = Option<T>::some(static_cast<T&&>(value));
+    return true;
+}
+
+template <class T, class E>
+[[nodiscard]] constexpr bool decode_sum_(Result<T, E>& part, std::byte const* first, std::size_t offset,
+                                         DecodeFault& fault) noexcept {
+    std::uint8_t const tag = static_cast<std::uint8_t>(first[0]);
+    if (tag == 0) {
+        T value{};
+        if (!detail::decode_alternative_<Result<T, E>>(value, first, offset, fault)) return false;
+        part = Result<T, E>{static_cast<T&&>(value)};
+        return true;
+    }
+    if (tag == 1) {
+        E error{};
+        if (!detail::decode_alternative_<Result<T, E>>(error, first, offset, fault)) return false;
+        part = Result<T, E>{Err<E>{static_cast<E&&>(error)}};
+        return true;
+    }
+    fault = fault_at_(DecodeRefusal::sum_tag, offset);
+    return false;
+}
+
+// Reads the alternative at Index when the tag names it.  The fold over the
+// indexes reads the one alternative of the tag.
+template <class Sum, std::size_t Index>
+[[nodiscard]] constexpr bool decode_one_of_at_(Sum& part, std::uint8_t tag, std::byte const* first, std::size_t offset,
+                                               DecodeFault& fault) noexcept {
+    if (tag != Index) return true;
+    using Alt = typename[:sum_alternative_at(^^Sum, Index):];
+    Alt value{};
+    if (!detail::decode_alternative_<Sum>(value, first, offset, fault)) return false;
+    part = Sum{static_cast<Alt&&>(value)};
+    return true;
+}
+
+template <class Sum, std::size_t... Indexes>
+[[nodiscard]] constexpr bool decode_one_of_(Sum& part, std::uint8_t tag, std::byte const* first, std::size_t offset,
+                                            DecodeFault& fault, std::index_sequence<Indexes...> /*indexes*/) noexcept {
+    return (detail::decode_one_of_at_<Sum, Indexes>(part, tag, first, offset, fault) && ...);
+}
+
+template <class... Ts>
+[[nodiscard]] constexpr bool decode_sum_(OneOf<Ts...>& part, std::byte const* first, std::size_t offset,
+                                         DecodeFault& fault) noexcept {
+    std::uint8_t const tag = static_cast<std::uint8_t>(first[0]);
+    if (tag >= sizeof...(Ts)) {
+        fault = fault_at_(DecodeRefusal::sum_tag, offset);
+        return false;
+    }
+    return detail::decode_one_of_<OneOf<Ts...>>(part, tag, first, offset, fault, std::index_sequence_for<Ts...>{});
+}
+
 template <class T, std::size_t... Bases, std::size_t... Members>
 [[nodiscard]] constexpr bool decode_parts_([[maybe_unused]] T& object, [[maybe_unused]] std::byte const* first,
                                            [[maybe_unused]] std::size_t offset, [[maybe_unused]] DecodeFault& fault,
@@ -458,6 +654,8 @@ template <class T>
             if (!detail::decode_part_(part.at(index), first + at, offset + at, fault)) return false;
         }
         return true;
+    } else if constexpr (is_sum_at(^^Bare)) {
+        return detail::decode_sum_(part, first, offset, fault);
     } else if constexpr (derives_protocol_at(^^Bare)) {
         constexpr std::meta::info type = std::meta::dealias(^^Bare);
         if (!detail::decode_parts_(part, first, offset, fault, std::make_index_sequence<base_count(type)>{},
@@ -614,7 +812,8 @@ constexpr void fill_block_(HashState& state, Element const* first, std::index_se
 
 // True for a leaf: a part that is no array and no class of the family.
 template <class T>
-inline constexpr bool is_hash_leaf_ = !std::is_array_v<T> && !is_fixed_array_at(^^T) && !derives_protocol_at(^^T);
+inline constexpr bool is_hash_leaf_ =
+    !std::is_array_v<T> && !is_fixed_array_at(^^T) && !is_sum_at(^^T) && !derives_protocol_at(^^T);
 
 // The fold of Count elements from first, at the byte Offset of the image.
 // A short array folds each element at its offset.  A long array of leaves
@@ -660,6 +859,15 @@ constexpr void hash_part_(HashState& state, T const& part) noexcept {
     } else if constexpr (is_fixed_array_at(^^Bare)) {
         detail::hash_array_<Offset, typename[:fixed_array_element_at(^^Bare):], fixed_array_count_at(^^Bare)>(
             state, first_of_(detail::ViewDoor::key(), part.view()));
+    } else if constexpr (is_sum_at(^^Bare)) {
+        // The active alternative is known only at run time, so the fold
+        // writes the image of the sum and folds its bytes.
+        FixedArray<std::byte, image_bytes_at(^^Bare)> image{};
+        detail::encode_part_(part, first_of_(detail::ViewDoor::key(), image.view()));
+        std::size_t position = Offset % hash_block_bytes;
+        for (std::byte const byte : image.view()) {
+            detail::put_byte_(state, position, byte);
+        }
     } else if constexpr (derives_protocol_at(^^Bare)) {
         constexpr std::meta::info type = std::meta::dealias(^^Bare);
         detail::hash_parts_<Offset>(state, part, std::make_index_sequence<base_count(type)>{},
@@ -763,6 +971,38 @@ template <std::size_t Capacity, class T, std::size_t... Bases, std::size_t... Me
         && (detail::put_member_<Capacity, T, Members>(out, object, is_first) && ...);
 }
 
+// The text of a sum (THE FORMAT): some(value) or none, ok(value) or
+// err(error), and the index of the alternative of a OneOf before its value,
+// as #1(value).
+template <std::size_t Capacity, class T>
+[[nodiscard]] bool put_sum_(FixedText<Capacity>& out, Option<T> const& part) noexcept {
+    return part.match(
+        [&out](T const& payload) noexcept {
+            return detail::put_text_(out, "some(") && detail::put_part_(out, payload) && detail::put_text_(out, ")");
+        },
+        [&out]() noexcept { return detail::put_text_(out, "none"); });
+}
+
+template <std::size_t Capacity, class T, class E>
+[[nodiscard]] bool put_sum_(FixedText<Capacity>& out, Result<T, E> const& part) noexcept {
+    return part.match(
+        [&out](T const& value) noexcept {
+            return detail::put_text_(out, "ok(") && detail::put_part_(out, value) && detail::put_text_(out, ")");
+        },
+        [&out](E const& error) noexcept {
+            return detail::put_text_(out, "err(") && detail::put_part_(out, error) && detail::put_text_(out, ")");
+        });
+}
+
+template <std::size_t Capacity, class... Ts>
+[[nodiscard]] bool put_sum_(FixedText<Capacity>& out, OneOf<Ts...> const& part) noexcept {
+    auto const write = [&out](auto const& alternative) noexcept {
+        return detail::put_part_(out, alternative) && detail::put_text_(out, ")");
+    };
+    return detail::put_text_(out, "#") && detail::put_number_(out, static_cast<std::uint64_t>(part.which().raw()))
+        && detail::put_text_(out, "(") && part.match(((void)sizeof(Ts), write)...);
+}
+
 template <std::size_t Capacity, class T>
 [[nodiscard]] bool put_sequence_(FixedText<Capacity>& out, T const& sequence) noexcept {
     if (!detail::put_text_(out, "[")) return false;
@@ -784,6 +1024,8 @@ template <std::size_t Capacity, class T>
         return detail::put_sequence_(out, part);
     } else if constexpr (is_fixed_array_at(^^Bare)) {
         return detail::put_sequence_(out, part.view());
+    } else if constexpr (is_sum_at(^^Bare)) {
+        return detail::put_sum_(out, part);
     } else if constexpr (derives_protocol_at(^^Bare)) {
         bool is_first = true;
         return detail::put_text_(out, "{") && detail::put_inline_parts_(out, part, is_first)
