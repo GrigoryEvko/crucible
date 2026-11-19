@@ -16,7 +16,8 @@ only free slots, grow while its job uses each slot, and give idle slots
 back.  SIGKILL of a holder must free each of its slots.  A lease that holds
 each slot must give its idle slots above its fair share to a hungry lease.
 A lease that is not of the gate must give its idle slots to a waiting lease
-of the gate, and a waiting exclusive step must stop each new lease.
+of the gate, and a waiting exclusive step must stop each new lease.  A lease
+must start and grow only into the room below the runnable limit of its pool.
 """
 
 import contextlib
@@ -811,6 +812,108 @@ def start_cases(expect: testing.Expect) -> None:
         )
 
 
+def load_cases(expect: testing.Expect) -> None:
+    """Hold THE LOAD: a lease starts and grows only into the room below the runnable limit of the pool.
+
+    The counts read planted files and planted markers with no time.  The live case gives a lease of a planted pool a
+    planted reader of the runnable tasks.  Each step waits for a state of the pool, and STATE_LIMIT_S is only the guard
+    against a hang.  A worker holds its slot, so a host at a high load gives the pump no idle token.
+    """
+    with tempfile.TemporaryDirectory(prefix="heavy-load-") as work_text:
+        work = Path(work_text)
+        loadavg = work / "loadavg"
+        loadavg.write_text("310.00 300.00 290.00 387/4012 123456\n", encoding="ascii")
+        busy_read = heavy.runnable_tasks(loadavg)
+        loadavg.write_text("310.00 300.00\n", encoding="ascii")
+        short_read = heavy.runnable_tasks(loadavg)
+        missing_read = heavy.runnable_tasks(work / "missing")
+        limited = heavy.Pool(work / "slots", 64, runnable_limit=32)
+        rooms = [heavy.room_of(limited, value) for value in (387.0, 20.0, None)]
+        rooms.append(heavy.room_of(heavy.Pool(work / "plain", 64), 387.0))
+        starts = [heavy.start_count(limited, 32, value) for value in (387.0, 30.0, 0.0, None)]
+        expect(
+            f"the runnable tasks are the fourth field of /proc/loadavg, the room is the runnable limit less them, a "
+            f"pool with no limit has no room limit, and a start takes at most the room with one slot as the least: "
+            f"reads {busy_read}, {short_read}, {missing_read}, rooms {rooms}, starts {starts}",
+            busy_read == 387.0
+            and short_read is None
+            and missing_read is None
+            and rooms == [-355, 12, None, None]
+            and starts == [1, 2, heavy.START_SLOTS, heavy.START_SLOTS],
+        )
+        limited.directory.mkdir()
+        growing, peer, other = (heavy.Lease(limited, 64, True) for _ in range(3))
+        try:
+            for lease in (growing, peer, other):
+                lease.register()
+                lease.take(4)
+                lease.hungry = True
+                lease.mark()
+            demand = growing.demand()
+            grown = [heavy.grown_count(growing, demand, 64, room) for room in (None, 100, 6, 1, 0, -50)]
+        finally:
+            for lease in (growing, peer, other):
+                lease.close()
+        expect(
+            f"a hungry lease with two hungry peers doubles its 4 slots with no room limit or a large room, takes a "
+            f"third of the room rounded up, and does not grow with no room: {grown} with {demand.hungry} hungry peers",
+            demand.hungry == 2 and grown == [4, 4, 2, 1, 0, 0],
+        )
+        live = heavy.Pool(work / "live", 8, runnable_limit=8)
+        runnable = [20.0]
+        samples: list[int] = []
+        steps: list[bool] = []
+        is_held = threading.Event()
+        finish = threading.Event()
+        shares: list[heavy.Share] = []
+
+        def held() -> int:
+            """Give the slots of the lease at this time, and keep them."""
+            sample = shares[0].lease.held if shares else 0
+            samples.append(sample)
+            return sample
+
+        def job() -> None:
+            """Hold a lease of the pool whose workers take each token, until the finish event."""
+            with heavy.leased(work, live.size, live, reader([MUCH_MEMORY_GB]), runnable=lambda: runnable[0]) as share:
+                if share is None:
+                    is_held.set()
+                    return
+                shares.append(share)
+                stops = [threading.Event() for _ in range(live.size)]
+                workers = [threading.Thread(target=held_until, args=(share.client, stop)) for stop in stops]
+                for worker in workers:
+                    worker.start()
+                is_held.set()
+                finish.wait()
+                for stop in stops:
+                    stop.set()
+                for worker in workers:
+                    worker.join()
+
+        def run() -> None:
+            """Start the job on a busy host, keep it busy for some ticks, then make the host quiet."""
+            thread = threading.Thread(target=job)
+            thread.start()
+            steps.append(is_held.wait(STATE_LIMIT_S))
+            steps.append(held() == 1)
+            # Eight ticks of the pump on the busy host: the lease stays at one slot.
+            time.sleep(8 * heavy.TICK_S)
+            steps.append(held() == 1)
+            runnable[0] = 0.0
+            steps.append(testing.wait_until(lambda: held() == live.size, limit_s=STATE_LIMIT_S))
+            finish.set()
+            thread.join()
+
+        testing.captured(run)
+        expect(
+            f"on a host with 20 runnable tasks and a limit of 8, a lease whose job uses each token starts with one slot "
+            f"and does not grow, and it grows to the pool when the host is quiet: the steps {steps}, the last samples "
+            f"{samples[-5:]}",
+            steps == [True] * 4,
+        )
+
+
 def held_until(client: jobserver.Client, stop: threading.Event) -> None:
     """Take one slot of a jobserver, and hold it until the stop event."""
     with client.held(stop) as is_held:
@@ -837,5 +940,6 @@ def main(argv: list[str]) -> int:
             budget_cases,
             priority_cases,
             start_cases,
+            load_cases,
         ),
     )

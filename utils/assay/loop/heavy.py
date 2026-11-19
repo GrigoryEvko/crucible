@@ -29,9 +29,9 @@ THE POOL
     jobserver to each command.  A thread of the lease (the pump) looks at
     the idle tokens of the FIFO each TICK_S seconds (THE VALVE):
       * No idle token: the job uses each slot, and the lease is hungry.
-        The pump doubles the slots, with the free slots and the memory as
-        limits.  It grows to the burst while no different lease waits, and
-        to the cap else.  A lease waits when it is hungry and holds less
+        The pump doubles the slots, with the free slots, the memory and the
+        room of the host as limits (THE LOAD).  It grows to the burst while
+        no different lease waits, and to the cap else.  A lease waits when it is hungry and holds less
         than its cap.
       * A different lease waits: the pump pulls each idle token above the
         cap at once.  A lease then grows past its cap only on slots that no
@@ -77,6 +77,38 @@ THE WEIGHT
     A token that a child holds when SIGKILL ends it does not come back to
     the FIFO.  The job then runs one job less, and the lease keeps the
     slot of that token until it ends.
+
+THE LOAD
+    A slot is not a CPU.  A test that waits for its children holds a slot
+    and no CPU, so the pool has SLOTS_PER_CPU slots for each CPU.  But a
+    compile uses its CPU for all of its time, and one token can run many
+    tasks: ctest takes exactly one token for each test, also for a test
+    with the property PROCESSORS, and a test can start a pool of
+    compilers.  On 2026-11-19 the leases of a run of the gate held 271
+    slots, and 290 to 400 tasks of the host were runnable.  Thus a lease
+    also grows only into the room of the host: the runnable limit of the
+    pool less the runnable tasks of the host (room_of()).  The runnable
+    tasks are the fourth field of /proc/loadavg (runnable_tasks()), and
+    the runnable limit of the pool of the host is RUNNABLE_PER_CPU tasks
+    for each CPU of the process.
+      * The pump keeps a moving average of the runnable tasks over
+        RUNNABLE_WINDOW_S seconds.  The room is the limit less the larger
+        of the average and the last read.  The jobs of a growth then show
+        in the next read, and a dip of one read does not open the room.
+      * A lease takes its part of the room: the room divided among the
+        hungry leases with the lease itself, rounded up.  Two leases then
+        seldom take the same room.
+      * A lease starts with at most the room, and with one slot as the
+        least.
+      * The room limits only a start and a growth.  A lease always takes
+        its first slot, and the pump pulls no token that a job holds.  Idle
+        tokens go back to the pool as before.  A lease that the room stops
+        is hungry, so a lease of the gate that the room stops waits, and
+        the other leases give it their idle tokens (THE PRIORITY OF THE
+        GATE).  On a quiet host the room is large, and the pool grows to
+        each of its slots as before.
+    A planted pool and a private pool have no runnable limit, so the
+    leases of a test do not change with the load of the host.
 
 THE LOCK
     The work trees of one repository share the build host, and a large
@@ -306,6 +338,14 @@ TICK_S = 0.25
 IDLE_TICKS = 8
 HOLDOFF_S = 2.0
 WAIT_S = 0.25
+# The file whose fourth field gives the runnable tasks of the host (THE LOAD).
+LOADAVG_FILE = Path("/proc/loadavg")
+# The runnable tasks of the host that the growth of the leases aims for, for each CPU of the process (THE LOAD).
+RUNNABLE_PER_CPU = 1
+# The time of the moving average of the runnable tasks in the pump, in seconds, and the weight of one tick in it (THE
+# LOAD).
+RUNNABLE_WINDOW_S = 2.0
+RUNNABLE_WEIGHT = TICK_S / RUNNABLE_WINDOW_S
 
 type Reader = Callable[[], float | None]
 # A function that waits a number of seconds (assay.loop.land).
@@ -427,6 +467,18 @@ def memory_ceiling_gb(
             values.append(limit / BYTES_PER_GB)
     known = [value for value in values if value is not None]
     return min(known) if known else None
+
+
+def runnable_tasks(path: Path = LOADAVG_FILE) -> float | None:
+    """Return the tasks of the host that run or wait for a CPU at this time, or None when the file does not read.
+
+    The fourth field of /proc/loadavg is RUNNING/TOTAL, and the count holds the reader itself (THE LOAD).
+    """
+    try:
+        running = path.read_text(encoding="ascii").split()[3].partition("/")[0]
+    except OSError, IndexError:
+        return None
+    return float(running) if running.isdigit() else None
 
 
 def main_work_tree(root: Path) -> Path:
@@ -593,25 +645,41 @@ def heavy_step(
 
 @dataclass(frozen=True, slots=True)
 class Pool:
-    """The slot pool of a host: its directory, its count of slots, and its memory ceiling in GB (THE POOL, THE BUDGET).
+    """The slot pool of a host: its directory, its count of slots, its memory ceiling in GB and its runnable limit.
 
-    A ceiling of None puts no limit on the sum of the reservations of the leases.
+    A ceiling of None puts no limit on the sum of the reservations of the leases (THE BUDGET).  A runnable limit of
+    None puts no limit on a growth from the runnable tasks of the host (THE LOAD).
     """
 
     directory: Path
     size: int
     ceiling_gb: float | None = None
+    runnable_limit: int | None = None
 
 
 def host_pool() -> Pool:
     """Return the slot pool of this host, with SLOTS_PER_CPU slots for each CPU of the process (THE POOL).
 
     The directory is the value of POOL_VARIABLE when the variable is set, else POOL_NAME in the work root.  The
-    ceiling is memory_ceiling_gb() (THE BUDGET).
+    ceiling is memory_ceiling_gb() (THE BUDGET).  The pool of POOL_NAME has RUNNABLE_PER_CPU runnable tasks for each
+    CPU as its runnable limit (THE LOAD).  A private pool has none, so the leases of a test do not change with the load
+    of the host.
     """
     moved = os.environ.get(POOL_VARIABLE)
     directory = Path(moved) if moved else cache.work_root() / POOL_NAME
-    return Pool(directory, proc.DEFAULT_JOBS * SLOTS_PER_CPU, memory_ceiling_gb())
+    limit = None if moved else proc.DEFAULT_JOBS * RUNNABLE_PER_CPU
+    return Pool(directory, proc.DEFAULT_JOBS * SLOTS_PER_CPU, memory_ceiling_gb(), limit)
+
+
+def room_of(pool: Pool, runnable: float | None) -> int | None:
+    """Return the runnable tasks that the host takes before the runnable limit of the pool, or None for no limit.
+
+    A pool with no runnable limit, and a read that gives None, give no limit (THE LOAD).  The room is below 0 on a
+    host with more runnable tasks than the limit.
+    """
+    if pool.runnable_limit is None or runnable is None:
+        return None
+    return math.floor(pool.runnable_limit - runnable)
 
 
 @contextlib.contextmanager
@@ -664,13 +732,15 @@ class Demand:
 
     `weight` is the sum of the weights of the leases of the class of the reader, with the reader (THE WEIGHT).  A lease
     waits when it is hungry and holds less than its cap.  `peers_below_fair` counts the hungry leases of the class of
-    the reader below their fair share: the size of the pool times their weight, divided by `weight`.
+    the reader below their fair share: the size of the pool times their weight, divided by `weight`.  `hungry` counts
+    the hungry leases of each class, with no reader (THE LOAD).
     """
 
     weight: int
     waiting_gate: int
     waiting_other: int
     peers_below_fair: int
+    hungry: int = 0
 
     @property
     def is_waiting(self) -> bool:
@@ -844,11 +914,13 @@ class Lease:
         gate_weight = self.weight if self.is_gate else 0
         gate_rows: list[tuple[int, int, int]] = []
         waiting_other = 0
+        hungry = 0
         peers: list[tuple[int, int]] = []
         for marker in self.markers():
             if not marker.is_read:
                 weight += 1
                 continue
+            hungry += int(marker.is_hungry)
             gate_weight += marker.weight if marker.is_gate else 0
             if marker.is_gate and marker.is_hungry:
                 gate_rows.append((marker.held, marker.cap, marker.weight))
@@ -861,7 +933,7 @@ class Lease:
             1 for held, cap, row_weight in gate_rows if held < min(cap, fair_share(self.pool, row_weight, gate_weight))
         )
         below = sum(1 for held, peer_weight in peers if held < fair_share(self.pool, peer_weight, weight))
-        return Demand(weight, waiting_gate, waiting_other, below)
+        return Demand(weight, waiting_gate, waiting_other, below, hungry)
 
     def set_gb_per_job(self, gb_per_job: float) -> None:
         """Give the lease a new memory of one job, such as a step of tests after a build, and write its marker.
@@ -934,18 +1006,21 @@ def pulled_count(lease: Lease, demand: Demand, idle: int, idle_ticks: int) -> in
     return min(idle, lease.held - 1) if idle_ticks >= IDLE_TICKS else 0
 
 
-def grown_count(lease: Lease, demand: Demand, burst: int) -> int:
+def grown_count(lease: Lease, demand: Demand, burst: int, room: int | None = None) -> int:
     """Return the count of slots that the pump tries to add at one tick to a lease that uses each slot (THE POOL).
 
     The count doubles the slots.  A lease grows to `burst` while no different lease waits, and to its cap else.  A lease
     with a hungry peer below the fair share grows only to that share.  A lease that is not of the gate does not grow
-    while a lease of the gate waits.
+    while a lease of the gate waits.  `room` is the room of the host (room_of()): a lease grows only into its part of
+    the room, the room divided among the hungry leases with the lease itself, rounded up (THE LOAD).
     """
     if not lease.is_gate and demand.waiting_gate:
         return 0
     limit = lease.cap if demand.is_waiting else burst
     if demand.peers_below_fair:
         limit = min(limit, fair_share(lease.pool, lease.weight, demand.weight))
+    if room is not None:
+        limit = min(limit, lease.held + max(0, math.ceil(room / (demand.hungry + 1))))
     return max(0, min(lease.held, limit - lease.held))
 
 
@@ -955,17 +1030,20 @@ def pumped(
     burst: int,
     read: Reader,
     stop: threading.Event,
+    runnable: Reader = runnable_tasks,
 ) -> None:
     """Change the slots of a lease to the use of its job, each TICK_S seconds, until the stop event (THE POOL).
 
     The lease holds one slot more than the tokens of its jobserver.  The function puts one token for each new slot,
     and it frees one slot for each token that it pulls.  `burst` is the most slots of the lease, the jobs of its
-    jobserver.  A growth adds at most the jobs that the memory budget of the pool holds (THE BUDGET).
+    jobserver.  A growth adds at most the jobs that the memory budget of the pool holds (THE BUDGET), and only into the
+    room of the host (THE LOAD).  `runnable` reads the runnable tasks of the host.
     """
     idle_ticks = 0
     hold_until = 0.0
     last = time.monotonic()
     is_draining = False
+    average = runnable()
     while not stop.is_set():
         # A lease that must give slots back waits for the next token that a child gives back, and pulls it before the
         # child takes it again.  Each other tick waits for the stop event.
@@ -978,6 +1056,10 @@ def pumped(
         last = now
         idle = opened.idle()
         demand = lease.demand()
+        current = runnable()
+        if current is not None:
+            average = current if average is None else average + RUNNABLE_WEIGHT * (current - average)
+        room = room_of(lease.pool, None if current is None or average is None else max(current, average))
         if idle > 0:
             idle_ticks += 1
             pulled = opened.pull(pulled_count(lease, demand, idle, idle_ticks))
@@ -989,7 +1071,7 @@ def pumped(
         else:
             idle_ticks = 0
             lease.hungry = lease.held < burst
-            count = grown_count(lease, demand, burst) if lease.hungry and now >= hold_until else 0
+            count = grown_count(lease, demand, burst, room) if lease.hungry and now >= hold_until else 0
             opened.put(lease.take_within_budget(count, read) if count > 0 else 0)
         lease.mark()
         is_yielding = not lease.is_gate and demand.waiting_gate > 0 and lease.held > 1
@@ -1014,6 +1096,16 @@ class Share:
     def environment(self) -> dict[str, str]:
         """The variable MAKEFLAGS of the jobserver of the lease."""
         return {jobserver.VARIABLE: self.server.makeflags}
+
+
+def start_count(pool: Pool, cap: int, runnable: float | None) -> int:
+    """Return the slots that a lease takes at its start: START_SLOTS or its cap, at most the room of the host.
+
+    The count is at least one slot, so a lease always starts (THE LOAD).
+    """
+    room = room_of(pool, runnable)
+    count = min(START_SLOTS, cap)
+    return count if room is None else max(1, min(count, room))
 
 
 def held_flock(handle: IO[str], mode: int, stop: threading.Event | None, pause: Pause) -> bool:
@@ -1053,6 +1145,7 @@ def leased(
     gb_per_job: float = GB_PER_JOB,
     is_capped: bool = False,
     weight: int = 1,
+    runnable: Reader = runnable_tasks,
 ) -> Iterator[Share | None]:
     """Hold a lease with the cap `want` of the pool for the block, and give its share (THE POOL).
 
@@ -1061,7 +1154,8 @@ def leased(
     lease (THE PRIORITY OF THE GATE).  The jobs of the share are the most slots of the lease: the size of the pool, or
     the jobs of the memory.  A lease with `is_capped` never grows past its cap, and its most slots are its cap.
     `gb_per_job` is the memory of one job of the lease, for its cap and for each growth (THE MEMORY).  `weight`
-    multiplies the fair share of the lease in its class (THE WEIGHT).
+    multiplies the fair share of the lease in its class (THE WEIGHT).  `runnable` reads the runnable tasks of the host,
+    which limit the start and each growth of the lease (THE LOAD).
 
     Raises:
         jobserver.JobserverError: If the jobserver of the lease cannot be made
@@ -1089,7 +1183,7 @@ def leased(
             lease.register()
             while True:
                 is_yielding = not lease.is_gate and lease.demand().waiting_gate > 0
-                if lease.take_within_budget(1 if is_yielding else min(START_SLOTS, cap), read):
+                if lease.take_within_budget(1 if is_yielding else start_count(chosen, cap, runnable()), read):
                     break
                 if stop is not None and stop.is_set():
                     yield None
@@ -1104,7 +1198,7 @@ def leased(
                 jobserver.valve(server.path) as opened,
                 jobserver.connected(server.path) as client,
             ):
-                pump = threading.Thread(target=pumped, args=(lease, opened, burst, read, halt), daemon=True)
+                pump = threading.Thread(target=pumped, args=(lease, opened, burst, read, halt, runnable), daemon=True)
                 pump.start()
                 try:
                     yield Share(server, client, burst, wait_s, lease)
