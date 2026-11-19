@@ -13,6 +13,13 @@
 //                      SHARED WRITE).  C++ needs this third property where
 //                      Rust needs two, because a T& of C++ is both the &mut T
 //                      and the &T with interior mutability of Rust.
+//     SendableBeside<T>
+//                      a value of T can move to a thread that runs while its
+//                      sender runs on, as the body of run_beside of
+//                      fixy/os/ThreadTasks.h does.  The sender can still
+//                      write each object that the value refers to, so each
+//                      such object is Synchronized (THE VALUE BESIDE ITS
+//                      SENDER).
 //
 // THE RULES
 //     The walk asks one property of one type, and the first rule that applies
@@ -65,6 +72,16 @@
 //     standard library is not either: the base quarantines it, and its Atomic
 //     takes its place.
 //
+// THE VALUE BESIDE ITS SENDER
+//     SendableBeside is Sendable with a stricter rule 1.  A reference, a class
+//     that states refers{} and a class that states refers_unique{} hold it
+//     only when two threads can write their target (THE SHARED WRITE), also
+//     for a target that is const.  Each other rule is the rule of Sendable,
+//     and sendable{}, not_sendable{} and thread_bound{} state it as they state
+//     Sendable.  So a View of const int is Sendable, but it is not
+//     SendableBeside: the sender can write the ints while the other thread
+//     reads them, and no type tells that it does not.
+//
 // THE ANNOTATIONS
 //     A class states a property that its fields hide with one annotation, the
 //     named door that a search finds:
@@ -116,11 +133,13 @@ struct refers final {};
 struct refers_unique final {};
 struct thread_bound final {};
 
-// The two properties that first_refusal walks (THE THREE PROPERTIES).  The
-// shared write has a walk of its own, is_synchronized.
+// The properties that first_refusal walks (THE THREE PROPERTIES and THE
+// VALUE BESIDE ITS SENDER).  The shared write has a walk of its own,
+// is_synchronized.
 enum class Property : unsigned char {
     Send = 0,
     Share = 1,
+    SendBeside = 2,
 };
 
 // True when the type holds the property (THE RULES).  The definition follows
@@ -200,12 +219,14 @@ private:
 }
 
 // The annotation that states the property, and the one that refuses it.
+// sendable{} and not_sendable{} state SendableBeside too (THE VALUE BESIDE
+// ITS SENDER).
 [[nodiscard]] consteval std::meta::info stating_annotation(Property property) {
-    return property == Property::Send ? ^^sendable : ^^shareable;
+    return property == Property::Share ? ^^shareable : ^^sendable;
 }
 
 [[nodiscard]] consteval std::meta::info refusing_annotation(Property property) {
-    return property == Property::Send ? ^^not_sendable : ^^not_shareable;
+    return property == Property::Share ? ^^not_shareable : ^^not_sendable;
 }
 
 [[nodiscard]] consteval bool is_class_or_union(std::meta::info type) {
@@ -259,17 +280,19 @@ private:
     return first_shared_write_refusal(root) == std::meta::info{};
 }
 
-// The goal that rule 1 asks of a reference to the type of the node.  A
-// reference to const asks Shareable of the target.  A reference to a target
-// that is not const holds when two threads can write the target, and refuses
-// otherwise.
+// The goal that rule 1 asks of a reference to the type of the node, for the
+// property.  A reference to const asks Shareable of the target.  A reference
+// to a target that is not const holds when two threads can write the target,
+// and refuses otherwise.  For SendableBeside, each reference holds only when
+// two threads can write the target (THE VALUE BESIDE ITS SENDER).
 struct ReferenceAnswer {
     bool is_refused = false;
     Goal next{};
     bool has_next = false;
 };
 
-[[nodiscard]] consteval ReferenceAnswer answer_reference(::foundation::reflect::TypeNode target) {
+[[nodiscard]] consteval ReferenceAnswer answer_reference(::foundation::reflect::TypeNode target, Property property) {
+    if (property == Property::SendBeside) return ReferenceAnswer{.is_refused = !is_shared_writable(target.type)};
     if (target.was_const) {
         return ReferenceAnswer{.is_refused = false, .next = Goal{target.type, Property::Share}, .has_next = true};
     }
@@ -285,7 +308,7 @@ struct ReferenceAnswer {
     for (const refl::TypeNode& argument : refl::argument_components_of(refl::TypeNode{specialization, true})) {
         if (argument.is_value_argument) continue;
         if (argument.was_reference) {
-            const ReferenceAnswer answer = answer_reference(argument);
+            const ReferenceAnswer answer = answer_reference(argument, property);
             if (answer.is_refused) return false;
             if (answer.has_next) pending.push(answer.next);
             continue;
@@ -307,7 +330,8 @@ struct ReferenceAnswer {
     // Rule 1, a reference at the root.  Each part below the root is bare, and
     // its node tells whether it was a reference.
     if (std::meta::is_reference_type(declared_root)) {
-        const detail::ReferenceAnswer answer = detail::answer_reference(refl::node_reached_indirectly(declared_root));
+        const detail::ReferenceAnswer answer =
+            detail::answer_reference(refl::node_reached_indirectly(declared_root), property);
         if (answer.is_refused) return declared_root;
         if (answer.has_next) pending.push(answer.next);
     } else {
@@ -343,7 +367,7 @@ struct ReferenceAnswer {
         }
         // Rule 5.  A class of one owner thread moves to no other thread.
         if (detail::states(bare, detail::refusing_annotation(goal.property))) return bare;
-        if (goal.property == Property::Send && detail::states(bare, ^^thread_bound)) return bare;
+        if (goal.property != Property::Share && detail::states(bare, ^^thread_bound)) return bare;
         if (detail::states(bare, detail::stating_annotation(goal.property))) continue;
         const bool is_specialization = std::meta::has_template_arguments(bare);
         // Rule 1, a class that refers to the object of its first argument.
@@ -351,7 +375,7 @@ struct ReferenceAnswer {
             if (!is_specialization) return bare;
             const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
             if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
-            const detail::ReferenceAnswer answer = detail::answer_reference(*arguments.begin());
+            const detail::ReferenceAnswer answer = detail::answer_reference(*arguments.begin(), goal.property);
             if (answer.is_refused) return bare;
             if (answer.has_next) pending.push(answer.next);
             continue;
@@ -364,6 +388,8 @@ struct ReferenceAnswer {
             const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
             if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
             const std::meta::info target = arguments.begin()->type;
+            // Beside its sender, the target is also the sender's (THE VALUE
+            // BESIDE ITS SENDER), so it falls to the shared write below.
             if (goal.property == Property::Send) {
                 pending.push(detail::Goal{target, Property::Send});
                 continue;
@@ -382,7 +408,7 @@ struct ReferenceAnswer {
         // node is its target.
         for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{bare, true})) {
             if (!part.is_held_by_value) {
-                const detail::ReferenceAnswer answer = detail::answer_reference(part);
+                const detail::ReferenceAnswer answer = detail::answer_reference(part, goal.property);
                 if (answer.is_refused) return bare;
                 if (answer.has_next) pending.push(answer.next);
                 continue;
@@ -420,6 +446,11 @@ concept Sendable = holds(^^T, Property::Send);
 // same time.
 template <class T>
 concept Shareable = holds(^^T, Property::Share);
+
+// A value of T can move to a thread that runs while its sender runs on (THE
+// VALUE BESIDE ITS SENDER).
+template <class T>
+concept SendableBeside = holds(^^T, Property::SendBeside);
 
 // Two threads can write one object of T through a reference that is not const
 // at the same time.

@@ -6,3 +6,4 @@
 format 1
 rule header-alone
 include/foundation/Closure.h | foundation | 3.597 | - | the check of a closure reads the transfer walk, the type walk, the test of a context and the QTT grades, and each is a header of the base
+include/foundation/permissions/ReadView.h | foundation | 3.501 | - | the read view reads the shared permission, which reads the transfer walk with its four properties, and the record and the type walk

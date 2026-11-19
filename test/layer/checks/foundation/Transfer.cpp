@@ -200,6 +200,26 @@ struct Node {
 };
 static_assert(Sendable<Node>);
 
+// THE VALUE BESIDE ITS SENDER: each target of a reference, of refers and of
+// refers_unique is Synchronized, also a target that is const.  An owner, a
+// statement of sendable and a statement of by_arguments work as for Send.
+using IntReads = ::foundation::core::View<int const>;
+static_assert(Sendable<IntReads> && !SendableBeside<IntReads>);
+static_assert(Sendable<ConstRef> && !SendableBeside<ConstRef> && !SendableBeside<PlainRef>);
+static_assert(SendableBeside<AtomicRef> && SendableBeside<int> && SendableBeside<Node>);
+static_assert(Sendable<IntRun> && !SendableBeside<IntRun> && !SendableBeside<IntRows>);
+static_assert(SendableBeside<StatedSend> && !SendableBeside<RefusedSend> && !SendableBeside<OwnerThreadCount>);
+static_assert(SendableBeside<Owner<int>> && !SendableBeside<Owner<int*>>);
+static_assert(SendableBeside<::foundation::core::Box<int>>);
+consteval bool are_refs_checked_beside() {
+    ::foundation::core::Atomic<int> cell{0};
+    int const plain = 0;
+    return holds(^^decltype(::foundation::core::to(cell)), Property::SendBeside)
+        && holds(^^decltype(::foundation::core::to(plain)), Property::Send)
+        && !holds(^^decltype(::foundation::core::to(plain)), Property::SendBeside);
+}
+static_assert(are_refs_checked_beside());
+
 }  // namespace detail::transfer_self_test
 
 }  // namespace foundation::transfer
