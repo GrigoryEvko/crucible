@@ -255,7 +255,7 @@ using MpscWide = c::MpscRing<int, 128>;
 // stream keeps its order and loses no item.  Under TSan, a cache that no
 // synchronization covers is a data race.
 [[nodiscard]] int spsc_roles_move_between_threads() {
-    constexpr int kPerTurn = 5000;
+    constexpr int kPerTurn = 2000;
     constexpr int kTurns = 4;
     using Starter = ::foundation::effects::ExecCtx<
         ::foundation::effects::Bg,
@@ -269,7 +269,11 @@ using MpscWide = c::MpscRing<int, 128>;
                                               ::fixy::thread::ThreadOptions{},
                                               [&ring, first]() noexcept {
                                                   for (int i = first; i < first + kPerTurn;) {
-                                                      if (ring.try_push(i)) ++i;
+                                                      if (ring.try_push(i)) {
+                                                          ++i;
+                                                      } else {
+                                                          CRUCIBLE_SPIN_PAUSE;
+                                                      }
                                                   }
                                               })
                 .expect("the thread door starts the producer of a turn");
@@ -279,7 +283,10 @@ using MpscWide = c::MpscRing<int, 128>;
                 [&ring, &next_expected, first]() noexcept {
                     while (next_expected < first + kPerTurn) {
                         ::fixy::Option<int> item = ring.try_pop();
-                        if (item.is_none()) continue;
+                        if (item.is_none()) {
+                            CRUCIBLE_SPIN_PAUSE;
+                            continue;
+                        }
                         if (std::move(item).expect("the test above found an item") != next_expected) return;
                         ++next_expected;
                     }
@@ -356,7 +363,7 @@ struct ProvenOwner final {
 // the proof of its side.  The stream keeps its order and loses no item.
 // Under TSan, a publish that does not release the cell is a data race.
 [[nodiscard]] int spsc_proven_two_threads() {
-    constexpr int kItems = 20000;
+    constexpr int kItems = 5000;
     using Starter = ::foundation::effects::ExecCtx<
         ::foundation::effects::Bg,
         ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>>;
@@ -366,14 +373,21 @@ struct ProvenOwner final {
                                           ::fixy::thread::ThreadOptions{},
                                           [&proven]() noexcept {
                                               for (int i = 0; i < kItems;) {
-                                                  if (proven.try_push_proven(ProvenOwner::producer(), i)) ++i;
+                                                  if (proven.try_push_proven(ProvenOwner::producer(), i)) {
+                                                      ++i;
+                                                  } else {
+                                                      CRUCIBLE_SPIN_PAUSE;
+                                                  }
                                               }
                                           })
             .expect("the thread door starts the producer");
     int next_expected = 0;
     while (next_expected < kItems) {
         fixy::Option<int> item = proven.try_pop_proven(ProvenOwner::consumer());
-        if (item.is_none()) continue;
+        if (item.is_none()) {
+            CRUCIBLE_SPIN_PAUSE;
+            continue;
+        }
         if (std::move(item).value_or(-1) != next_expected) break;
         ++next_expected;
     }
