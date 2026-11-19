@@ -491,7 +491,9 @@ foreach(_set debug release tsan ubsan_strict verify pgo_generate pgo_use glibcxx
 endforeach()
 add_library(layer_admitted_flag_matrix OBJECT ${_matrix_units})
 target_link_libraries(layer_admitted_flag_matrix PRIVATE crucible_dialect)
-target_include_directories(layer_admitted_flag_matrix PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+# The root of the foundation layer gives foundation/Quarantine.h, which opens
+# the ORACLE region of the matrix.  The matrix includes no other base header.
+target_include_directories(layer_admitted_flag_matrix PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${_layer_roots}/foundation")
 
 # The meta rule admitted-audit (test guard_admitted_audit) gives each admitted
 # entry and each candidate of the audit one row in the audit table and one

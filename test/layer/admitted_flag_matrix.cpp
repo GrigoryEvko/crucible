@@ -28,8 +28,14 @@
 // helper function.  The front end evaluates a static_assert at namespace scope
 // outside a template and keeps no tree of it.  The quarantine plugin reads each
 // library name of such a condition from the event of the parser (THE FOLDED
-// NAMES of utils/tools/quarantine/owner.cpp).  The ledger of the ratchet holds
-// each name of the file that the rule table does not admit.
+// NAMES of utils/tools/quarantine/owner.cpp).  Each name of the file is the
+// subject of a check against the standard library, so one ORACLE region holds
+// the file, and the ledger counts each name that the rule table does not admit
+// under that region.
+
+#include <foundation/Quarantine.h>
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: the flag matrix checks each audited name of the standard library")
 
 #include <bit>
 #include <compare>
@@ -495,3 +501,5 @@ static_assert(member_read_is_constant<1>);
 static_assert(!member_read_is_constant<2>);
 
 }  // namespace
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
