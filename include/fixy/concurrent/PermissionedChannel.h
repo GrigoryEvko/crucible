@@ -321,6 +321,11 @@ inline constexpr LaneCount lane_count_of_v<Lanes> = Lanes;
 
 }  // namespace detail
 
+// True when the counts of the lanes fit the form: one count for the lanes
+// form, and none for each other form.
+template <ChannelForm Form, LaneCount... Lanes>
+concept LanesFitForm = sizeof...(Lanes) == (Form == ChannelForm::lanes ? std::size_t{1} : std::size_t{0});
+
 // UserTag and Brand have no default.  A default tag would give every channel
 // that omits it one set of Permission types.  The erased brand would let a
 // token of every root site open the endpoints.  The lanes form names the
@@ -328,7 +333,7 @@ inline constexpr LaneCount lane_count_of_v<Lanes> = Lanes;
 // type of a wire or a merge keeps its five arguments.
 template <ChannelForm Form, ChannelValue T, std::size_t Capacity, typename UserTag,
           ::foundation::brand::IsFreshBrand Brand, LaneCount... Lanes>
-    requires(sizeof...(Lanes) == (Form == ChannelForm::lanes ? std::size_t{1} : std::size_t{0}))
+    requires LanesFitForm<Form, Lanes...>
 class PermissionedChannel
     : public ::foundation::Pinned<PermissionedChannel<Form, T, Capacity, UserTag, Brand, Lanes...>> {
     using parts = detail::channel_form_parts<Form, T, Capacity, detail::lane_count_of_v<Lanes...>,

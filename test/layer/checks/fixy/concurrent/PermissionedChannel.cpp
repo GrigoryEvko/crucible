@@ -14,15 +14,19 @@ using channel_witness::WitnessBrand;
 // A channel names its form, its tag and a brand of one root.  A channel that
 // omits the tag or the brand names no type, and no channel is on the erased
 // brand or on a type that is not a brand.
-template <ChannelForm Form, typename... TagAndBrand>
-concept NamesAChannelOf = requires { typename PermissionedChannel<Form, int, 8, TagAndBrand...>; };
-static_assert(NamesAChannelOf<ChannelForm::wire, WitnessTag, WitnessBrand>);
-static_assert(NamesAChannelOf<ChannelForm::merge, WitnessTag, WitnessBrand>);
-static_assert(!NamesAChannelOf<ChannelForm::wire>);
-static_assert(!NamesAChannelOf<ChannelForm::wire, WitnessTag>);
-static_assert(!NamesAChannelOf<ChannelForm::wire, WitnessTag, ::foundation::brand::DefaultBrand>);
-static_assert(!NamesAChannelOf<ChannelForm::merge, WitnessTag, ::foundation::brand::DefaultBrand>);
-static_assert(!NamesAChannelOf<ChannelForm::wire, WitnessTag, int>);
+template <
+    template <ChannelForm F, ChannelValue, std::size_t, typename, ::foundation::brand::IsFreshBrand, LaneCount... L>
+        requires LanesFitForm<F, L...>
+    class Channel,
+    ChannelForm Form, typename... TagAndBrand>
+    concept NamesAChannelOf = requires { typename Channel<Form, int, 8, TagAndBrand...>; };
+static_assert(NamesAChannelOf<PermissionedChannel, ChannelForm::wire, WitnessTag, WitnessBrand>);
+static_assert(NamesAChannelOf<PermissionedChannel, ChannelForm::merge, WitnessTag, WitnessBrand>);
+static_assert(!NamesAChannelOf<PermissionedChannel, ChannelForm::wire>);
+static_assert(!NamesAChannelOf<PermissionedChannel, ChannelForm::wire, WitnessTag>);
+static_assert(!NamesAChannelOf<PermissionedChannel, ChannelForm::wire, WitnessTag, ::foundation::brand::DefaultBrand>);
+static_assert(!NamesAChannelOf<PermissionedChannel, ChannelForm::merge, WitnessTag, ::foundation::brand::DefaultBrand>);
+static_assert(!NamesAChannelOf<PermissionedChannel, ChannelForm::wire, WitnessTag, int>);
 
 // The lanes form names the count of its lanes after the brand, and only the
 // lanes form names a count.

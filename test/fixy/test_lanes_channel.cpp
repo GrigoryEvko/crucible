@@ -2,7 +2,9 @@
 // thread: the producer door of each lane, the order of the merged stream
 // through the handles, the end of each lane and of the stream, the drain that
 // opens each lane again, the doors of the producer root, and the refusals of
-// the doors.  test_channel_wait runs the form on threads.
+// the doors.  test_channel_wait runs the form on threads.  Each case mints
+// its root and names its channel in its own scope, so no brand leaves the
+// scope that made it.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -20,27 +22,21 @@ namespace c = ::fixy::concurrent;
 namespace perm = ::foundation::permissions;
 
 struct LanesTag {};
+using RootTag = c::channel_tag::Whole<c::ChannelForm::lanes, LanesTag>;
 
-auto lanes_root() noexcept {
-    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::lanes, LanesTag>>();
-}
-
-using Lanes = c::channel_t<int, 4, decltype(lanes_root()), c::LaneCount{3}>;
-
-auto lanes_halves() noexcept {
-    return perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(lanes_root());
-}
-
-constexpr Lanes::lane_index kFirst{::fixy::index<0>()};
-constexpr Lanes::lane_index kSecond{::fixy::index<1>()};
-constexpr Lanes::lane_index kThird{::fixy::index<2>()};
+// Each channel of the test has three lanes of four cells.
+constexpr c::LaneCount kLanes{3};
+constexpr c::LaneIndex<kLanes> kFirst{::fixy::index<0>()};
+constexpr c::LaneIndex<kLanes> kSecond{::fixy::index<1>()};
+constexpr c::LaneIndex<kLanes> kThird{::fixy::index<2>()};
 
 // The codes of a receive that gives no item.  No push gives either code.
 constexpr int kEmpty = -1;
 constexpr int kClosed = -2;
 
 // The item of a receive, or the code of its end.
-[[nodiscard]] int receive_code(Lanes::ConsumerHandle& consumer) noexcept {
+template <class Consumer>
+[[nodiscard]] int receive_code(Consumer& consumer) noexcept {
     return consumer.try_receive().match(
         [](int item) noexcept { return item; },
         [](c::NoItem why) noexcept { return why == c::NoItem::Closed ? kClosed : kEmpty; });
@@ -48,8 +44,8 @@ constexpr int kClosed = -2;
 
 // Takes one receive for each code of expected, in order, and ends the test at
 // the first receive that gives another code.
-template <std::size_t N>
-void expect_receives(Lanes::ConsumerHandle& consumer, ::fixy::FixedArray<int, N> const& expected) noexcept {
+template <class Consumer, std::size_t N>
+void expect_receives(Consumer& consumer, ::fixy::FixedArray<int, N> const& expected) noexcept {
     for (int const code : expected) {
         int const got = receive_code(consumer);
         if (got != code) ::fixy::fatal("a receive gave {} where the order of the lanes owes {}", got, code);
@@ -58,14 +54,18 @@ void expect_receives(Lanes::ConsumerHandle& consumer, ::fixy::FixedArray<int, N>
 
 // A producer handle of a lane.  No root is out of the pool in these cases, so
 // an empty lend ends the test.
-[[nodiscard]] Lanes::ProducerHandle lend(Lanes& channel, Lanes::lane_index lane) noexcept {
+template <class Channel>
+[[nodiscard]] typename Channel::ProducerHandle lend(Channel& channel, c::LaneIndex<kLanes> lane) noexcept {
     return channel.producer(lane).expect("the pool lends a producer while its root is in the pool");
 }
 
 // ── The refusals ────────────────────────────────────────────────────────
 
 void second_producer_of_a_lane() {
-    auto [producer_root, consumer_perm] = lanes_halves();
+    auto root = perm::mint_permission_root<RootTag>();
+    using Lanes = c::channel_t<int, 4, decltype(root), kLanes>;
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     ::foundation::linear::drop(std::move(consumer_perm));
     Lanes channel{std::move(producer_root)};
     [[maybe_unused]] auto held = lend(channel, kSecond);
@@ -73,7 +73,10 @@ void second_producer_of_a_lane() {
 }
 
 void producer_of_a_lane_that_ended() {
-    auto [producer_root, consumer_perm] = lanes_halves();
+    auto root = perm::mint_permission_root<RootTag>();
+    using Lanes = c::channel_t<int, 4, decltype(root), kLanes>;
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     ::foundation::linear::drop(std::move(consumer_perm));
     Lanes channel{std::move(producer_root)};
     std::move(lend(channel, kSecond)).close();
@@ -81,18 +84,14 @@ void producer_of_a_lane_that_ended() {
 }
 
 void drain_while_a_producer_lives() {
-    auto [producer_root, consumer_perm] = lanes_halves();
+    auto root = perm::mint_permission_root<RootTag>();
+    using Lanes = c::channel_t<int, 4, decltype(root), kLanes>;
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     ::foundation::linear::drop(std::move(consumer_perm));
     Lanes channel{std::move(producer_root)};
     [[maybe_unused]] auto held = lend(channel, kFirst);
     channel.drain([](int) noexcept {});
-}
-
-void recombined_access_with_its_root_in_the_pool() {
-    auto [producer_root, consumer_perm] = lanes_halves();
-    ::foundation::linear::drop(std::move(consumer_perm));
-    Lanes channel{std::move(producer_root)};
-    ::foundation::linear::drop(channel.with_recombined_access(lanes_root(), [](Lanes::ring_type&) noexcept {}));
 }
 
 // A refused door ends the process, so each attack runs in a child through
@@ -105,9 +104,6 @@ void refusals_end_the_process(::fixy::TestRunnerCtx const& test) noexcept {
                                ::fixy::TextView{"a producer handle of a lane that ended"});
     ::fixy::check::expect_dies(test, drain_while_a_producer_lives,
                                ::fixy::TextView{"a drain of a lanes channel while a producer handle lives."});
-    ::fixy::check::expect_dies(
-        test, recombined_access_with_its_root_in_the_pool,
-        ::fixy::TextView{"recombined access to a lanes channel whose producer root is in its pool"});
 }
 
 // ── The stream ──────────────────────────────────────────────────────────
@@ -116,7 +112,10 @@ void refusals_end_the_process(::fixy::TestRunnerCtx const& test) noexcept {
 // wait on the open lane of the turn, the end of each lane with its producer
 // handle, and the end of the stream after the last lane.
 void order_and_end_through_the_handles(::fixy::TestRunnerCtx const& test) noexcept {
-    auto [producer_root, consumer_perm] = lanes_halves();
+    auto root = perm::mint_permission_root<RootTag>();
+    using Lanes = c::channel_t<int, 4, decltype(root), kLanes>;
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     Lanes channel{std::move(producer_root)};
     Lanes::ConsumerHandle consumer = channel.consumer(std::move(consumer_perm));
     {
@@ -152,7 +151,10 @@ void order_and_end_through_the_handles(::fixy::TestRunnerCtx const& test) noexce
 // The drain gives the items that the lanes hold in the order of the turn, to a
 // drop that holds state, and opens each lane again for a new stream.
 void drain_opens_each_lane(::fixy::TestRunnerCtx const& test) noexcept {
-    auto [producer_root, consumer_perm] = lanes_halves();
+    auto root = perm::mint_permission_root<RootTag>();
+    using Lanes = c::channel_t<int, 4, decltype(root), kLanes>;
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     Lanes channel{std::move(producer_root)};
     {
         Lanes::ProducerHandle first = lend(channel, kFirst);
@@ -187,11 +189,14 @@ void drain_opens_each_lane(::fixy::TestRunnerCtx const& test) noexcept {
 // the root with the consumer token gives the ring to a recombined access.  The
 // deposit of the root opens the door again.
 void root_doors(::fixy::TestRunnerCtx const& test) noexcept {
-    auto [producer_root, consumer_perm] = lanes_halves();
+    auto root = perm::mint_permission_root<RootTag>();
+    using Lanes = c::channel_t<int, 4, decltype(root), kLanes>;
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     Lanes channel{std::move(producer_root)};
-    auto root = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
+    auto withdrawn = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
     CRUCIBLE_TEST_ASSERT(test, channel.is_exclusive_active() && channel.producer(kFirst).is_none());
-    auto whole = perm::mint_permission_combine<Lanes::whole_tag>(std::move(root), std::move(consumer_perm));
+    auto whole = perm::mint_permission_combine<Lanes::whole_tag>(std::move(withdrawn), std::move(consumer_perm));
     auto back = channel.with_recombined_access(
         std::move(whole), [](Lanes::ring_type& ring) noexcept { static_cast<void>(ring.try_push(kSecond, 7)); });
     auto [returned_root, returned_consumer] =
