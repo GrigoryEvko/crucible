@@ -97,6 +97,19 @@ static_assert(check_closure(^^ReadsLimit, fork_policy, "fork").is_admitted());
 static_assert(check_closure(^^OwnsCount, fork_policy, "fork").is_admitted());
 static_assert(check_closure(^^OwnsCount, owned_thread_policy, "owned thread").is_admitted());
 static_assert(check_closure(^^HoldsView, fork_policy, "fork").is_admitted());
+
+// Rule 8: beside the caller, each borrow is Synchronized, also a borrow to
+// const, because the caller can write the object while the body reads it.
+// A value is SendableBeside, so a value that refers to plain ints refuses.
+inline constexpr DoorPolicy beside_policy{Crossing::BesideCaller, QttGrade::One};
+static_assert(check_closure(^^ReadsLimit, beside_policy, "beside").reason() == Refusal::NotSynchronized);
+static_assert(check_closure(^^CountsInto, beside_policy, "beside").reason() == Refusal::NotSynchronized);
+static_assert(check_closure(^^AddsToCell, beside_policy, "beside").is_admitted());
+static_assert(check_closure(^^OwnsCount, beside_policy, "beside").is_admitted());
+static_assert(check_closure(^^HoldsView, beside_policy, "beside").reason() == Refusal::NotSendableBeside);
+static_assert(check_closure(^^HoldsView, fork_policy, "fork").is_admitted(),
+              "a fork joins before the caller runs on, so a view of const ints is Sendable there");
+static_assert(check_closure(^^HoldsContext, beside_policy, "beside").reason() == Refusal::CapturedContext);
 static_assert(check_closure(^^HoldsView, owned_thread_policy, "owned thread").reason() == Refusal::Borrow);
 static_assert(check_closure(^^ReadsLimit, owned_thread_policy, "owned thread").reason() == Refusal::Borrow);
 static_assert(check_closure(^^HoldsContext, stage_policy, "stage").reason() == Refusal::CapturedContext);

@@ -32,6 +32,9 @@
 //                  at the same time on other threads.
 //                  Escapes: the body runs past the end of the frame of the
 //                  call.
+//                  BesideCaller: one body runs on another thread while the
+//                  caller runs on at the same time, and the door joins it
+//                  before it returns.
 //     calls        the QTT grade of the calls of one body object:
 //                  One (exactly one call), AtMostOne (one call or none),
 //                  Omega (many calls) or Zero (no call).
@@ -58,7 +61,15 @@
 //     7. A BorrowMut field is Sendable at a SoleThread door, because no other
 //        thread uses the object while the caller waits.  At each other door
 //        it is Synchronized, because a second body can write the same object.
-//     The three properties are those of foundation/Transfer.h.
+//     8. At a BesideCaller door, each borrow field is Synchronized, also a
+//        BorrowConst field.  The caller runs at the same time as the body,
+//        and it can write each object of its frame, also an object that the
+//        body reads through a reference to const.  The check cannot see that
+//        alias, so a read alone is not enough.  For the same reason, an
+//        OwnValue field is SendableBeside there, not only Sendable: a value
+//        that refers to an object of the frame, such as a View, refers only
+//        to a Synchronized object.
+//     The properties are those of foundation/Transfer.h.
 //
 // THE COST
 //     The facts read the members of the class one time.  The check asks each
@@ -97,6 +108,7 @@ enum class Crossing : unsigned char {
     SoleThread = 1,
     ConcurrentThreads = 2,
     Escapes = 3,
+    BesideCaller = 4,
 };
 
 // The policy of a door (THE POLICY OF A DOOR).
@@ -116,6 +128,7 @@ enum class Refusal : unsigned char {
     NotSendable = 5,
     NotShareable = 6,
     NotSynchronized = 7,
+    NotSendableBeside = 8,
 };
 
 // The most fields that closure_facts reads.  A class with more is unreadable.
@@ -317,7 +330,7 @@ private:
 
     // The cause and the fix of the refusal of one field (THE RULES).  part is
     // the first part of the target that refuses, or a null reflection.
-    consteval void explain_(CaptureFact const& fact, std::meta::info part) noexcept {
+    consteval void explain_(CaptureFact const& fact, std::meta::info part, Crossing crossing) noexcept {
         switch (reason_) {
             case Refusal::CapturedContext:
                 append_("A context names the thread of its owner.  Take the context that the door gives to the body "
@@ -340,8 +353,18 @@ private:
                 append_("Two threads read it at the same time, and its type is not Shareable.  Capture a copy, or a "
                         "type with no unsynchronized part");
                 break;
+            case Refusal::NotSendableBeside:
+                append_("The value moves to a thread that runs beside the caller, and its type is not "
+                        "SendableBeside.  The caller can write each object that the value refers to while the body "
+                        "reads it.  Capture a value that owns its parts, or one that refers only to an Atomic or a "
+                        "channel");
+                break;
             case Refusal::NotSynchronized:
-                if (std::meta::is_pointer_type(std::meta::remove_cvref(std::meta::type_of(fact.field)))) {
+                if (crossing == Crossing::BesideCaller) {
+                    append_("The caller runs at the same time as the body, and it can write the object that the "
+                            "body uses through this borrow, also a borrow to const.  Capture it by value, or use an "
+                            "Atomic or a channel");
+                } else if (std::meta::is_pointer_type(std::meta::remove_cvref(std::meta::type_of(fact.field)))) {
                     append_("The bodies or copies of this door run at the same time on other threads, so a write "
                             "through this pointer to an object that is not const races.  Capture a pointer to const "
                             "if the body only reads through it or uses it as an address");
@@ -379,15 +402,20 @@ namespace detail {
             return transfer::first_refusal(target, transfer::Property::Share);
         case Refusal::NotSynchronized:
             return transfer::first_synchronized_refusal(target);
+        case Refusal::NotSendableBeside:
+            return transfer::first_refusal(target, transfer::Property::SendBeside);
         default:
             return std::meta::info{};
     }
 }
 
 // The property that the rules ask of one field at a door on another thread,
-// as the refusal that it gives (rules 5, 6 and 7).
+// as the refusal that it gives (rules 5 to 8).
 [[nodiscard]] consteval Refusal asked_property(CaptureFact const& fact, DoorPolicy policy) {
-    if (fact.kind == CaptureKind::OwnValue) return Refusal::NotSendable;
+    const bool is_beside = policy.crossing == Crossing::BesideCaller;
+    if (fact.kind == CaptureKind::OwnValue) return is_beside ? Refusal::NotSendableBeside : Refusal::NotSendable;
+    // Rule 8.
+    if (is_beside) return Refusal::NotSynchronized;
     if (fact.kind == CaptureKind::BorrowConst) return Refusal::NotShareable;
     const bool is_unique_borrow = policy.crossing == Crossing::SoleThread && !policy.calls_one_object_concurrently;
     return is_unique_borrow ? Refusal::NotSendable : Refusal::NotSynchronized;
@@ -412,7 +440,7 @@ struct FieldRefusal {
         && (fact.kind != CaptureKind::OwnValue || ::foundation::core::detail::holds_borrow_(fact.target))) {
         return FieldRefusal{Refusal::Borrow};
     }
-    // Rules 5, 6 and 7.
+    // Rules 5 to 8.
     const Refusal asked = asked_property(fact, policy);
     const std::meta::info part = refusing_part(fact.target, asked);
     if (part != std::meta::info{}) return FieldRefusal{asked, part};
@@ -464,7 +492,7 @@ struct FieldRefusal {
         const detail::FieldRefusal refusal = detail::refusal_of_field(fact, policy);
         if (refusal.reason != Refusal::None) {
             verdict.refuse_field_(refusal.reason, index, door, fact);
-            verdict.explain_(fact, refusal.part);
+            verdict.explain_(fact, refusal.part, policy.crossing);
             return verdict;
         }
         ++index;
