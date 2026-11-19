@@ -144,20 +144,20 @@ constexpr std::size_t kOpenTries = 64;
     RelaxedWord closed{};
     bool has_read = false;
     bool has_closed = false;
-    auto first = [&]() noexcept {
+    auto first = [&](BgCtx const& thread_ctx) noexcept {
         int first_number = -1;
         {
-            NullFile const null = open_null(ctx, devices);
+            NullFile const null = open_null(thread_ctx, devices);
             first_number = number_of(null);
             foundation::core::FixedArray<std::byte, 8> bytes{};
-            has_read = fs::read_full(ctx, null.ref(), bytes.view()).is_ok();
+            has_read = fs::read_full(thread_ctx, null.ref(), bytes.view()).is_ok();
         }
         publish_relaxed(closed, static_cast<std::uint64_t>(first_number) + 1U);
     };
-    auto second = [&]() noexcept {
+    auto second = [&](BgCtx const& thread_ctx) noexcept {
         wait_for(closed);
         int const first_number = static_cast<int>(read_relaxed(closed) - 1U);
-        has_closed = open_again_and_close(ctx, devices, first_number, kOpenTries);
+        has_closed = open_again_and_close(thread_ctx, devices, first_number, kOpenTries);
     };
     if (::fixy::thread::run_joined(ctx, ThreadOptions{}, first, second).is_err()) return 1;
     if (!has_read) return 2;

@@ -156,8 +156,8 @@ struct Received {
             }
         }
     };
-    auto consumer = [&]() noexcept {
-        auto const sleeper = spin::mint_bounded_sleep<kSleepNanos>(ctx);
+    auto consumer = [&](::fixy::BgLoadCtx const& thread_ctx) noexcept {
+        auto const sleeper = spin::mint_bounded_sleep<kSleepNanos>(thread_ctx);
         for (std::uint32_t index = 0; index < kValues; ++index) {
             core::Option<std::uint64_t> item = ring.try_pop();
             while (item.is_none()) {

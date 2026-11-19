@@ -131,7 +131,7 @@ void expect_no_lost_wake(::fixy::BgLoadCtx const& ctx, std::uint64_t seed) {
     EventCount events{};
     core::Atomic<std::uint32_t> published{0};
     core::Atomic<std::uint32_t> late_rounds{0};
-    auto producer = [&]() noexcept {
+    auto producer = [&](::fixy::BgLoadCtx const& thread_ctx) noexcept {
         ::crucible::test::PhiloxStream delays{seed};
         for (std::uint32_t round = 1; round <= kRounds; ++round) {
             std::uint64_t const draw = delays.below(100);
@@ -140,13 +140,13 @@ void expect_no_lost_wake(::fixy::BgLoadCtx const& ctx, std::uint64_t seed) {
                 CRUCIBLE_SPIN_PAUSE;
             }
             published.store_release(round);
-            events.notify_one(ctx);
+            events.notify_one(thread_ctx);
         }
     };
-    auto consumer = [&]() noexcept {
+    auto consumer = [&](::fixy::BgLoadCtx const& thread_ctx) noexcept {
         for (std::uint32_t round = 1; round <= kRounds; ++round) {
             auto const is_published = [&published, round]() noexcept { return published.load_acquire() >= round; };
-            if (cc::wait_for<Policy>(ctx, events, is_published, deadline_after(ctx, kLongDeadlineNanos))
+            if (cc::wait_for<Policy>(thread_ctx, events, is_published, deadline_after(thread_ctx, kLongDeadlineNanos))
                 != EventWaitEnd::notified) {
                 static_cast<void>(late_rounds.fetch_add_acq_rel(1));
                 return;
@@ -166,20 +166,21 @@ void expect_no_lost_wake_of_two_waiters(::fixy::BgLoadCtx const& ctx, std::uint6
     EventCount events{};
     core::Atomic<std::uint32_t> published{0};
     core::Atomic<std::uint32_t> late_rounds{0};
-    auto producer = [&]() noexcept {
+    auto producer = [&](::fixy::BgLoadCtx const& thread_ctx) noexcept {
         ::crucible::test::PhiloxStream delays{seed};
         for (std::uint32_t round = 1; round <= kRounds; ++round) {
             for (std::uint64_t turn = delays.below(3000); turn > 0; --turn) {
                 CRUCIBLE_SPIN_PAUSE;
             }
             published.store_release(round);
-            events.notify_all(ctx);
+            events.notify_all(thread_ctx);
         }
     };
-    auto consumer = [&]() noexcept {
+    auto consumer = [&](::fixy::BgLoadCtx const& thread_ctx) noexcept {
         for (std::uint32_t round = 1; round <= kRounds; ++round) {
             auto const is_published = [&published, round]() noexcept { return published.load_acquire() >= round; };
-            if (cc::wait_for<ParkAtOnce>(ctx, events, is_published, deadline_after(ctx, kLongDeadlineNanos))
+            if (cc::wait_for<ParkAtOnce>(thread_ctx, events, is_published,
+                                         deadline_after(thread_ctx, kLongDeadlineNanos))
                 != EventWaitEnd::notified) {
                 static_cast<void>(late_rounds.fetch_add_acq_rel(1));
                 return;

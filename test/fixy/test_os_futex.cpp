@@ -181,15 +181,15 @@ void test_a_wake_ends_the_wait() {
     BlockCtx const ctx{eff::testing::bg()};
     FutexWord word{0};
     core::Atomic<bool> is_waiter_done{false};
-    auto waiter = [&]() noexcept {
+    auto waiter = [&](BlockCtx const& thread_ctx) noexcept {
         while (word.load_acquire() == 0) {
-            static_cast<void>(futex::wait(ctx, word, 0).expect("a wait on a word of the process is valid"));
+            static_cast<void>(futex::wait(thread_ctx, word, 0).expect("a wait on a word of the process is valid"));
         }
         is_waiter_done.store_release(true);
     };
-    auto waker = [&]() noexcept {
+    auto waker = [&](BlockCtx const& thread_ctx) noexcept {
         word.store_release(1);
-        static_cast<void>(futex::wake_all(ctx, word).expect("a wake is valid"));
+        static_cast<void>(futex::wake_all(thread_ctx, word).expect("a wake is valid"));
     };
     CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ThreadOptions{}, waiter, waker).is_ok());
     CRUCIBLE_FATAL_INVARIANT(is_waiter_done.load_acquire());
@@ -206,13 +206,13 @@ void test_a_signal_reaches_a_waiter() {
     FutexWord word{0};
     core::Atomic<std::uint64_t> waiter_thread{0};
     core::Atomic<bool> was_handler_seen{false};
-    auto waiter = [&]() noexcept {
+    auto waiter = [&](BlockCtx const& thread_ctx) noexcept {
         waiter_thread.store_release(calling_thread());
         while (word.load_acquire() == 0) {
-            static_cast<void>(futex::wait(ctx, word, 0).expect("a wait on a word of the process is valid"));
+            static_cast<void>(futex::wait(thread_ctx, word, 0).expect("a wait on a word of the process is valid"));
         }
     };
-    auto signaler = [&]() noexcept {
+    auto signaler = [&](BlockCtx const& thread_ctx) noexcept {
         std::uint64_t thread = waiter_thread.load_acquire();
         while (thread == 0) {
             CRUCIBLE_SPIN_PAUSE;
@@ -221,13 +221,13 @@ void test_a_signal_reaches_a_waiter() {
         expect_the_deadline_to_end_the_wait(50 * kMillisecond);
         CRUCIBLE_FATAL_INVARIANT(send_the_signal(thread));
         for (int step = 0; step < 10000 && handler_runs.load_acquire() == 0; ++step) {
-            static_cast<void>(
-                futex::wait(ctx, handler_runs, 0, core::Option<Deadline>::some(deadline_after(ctx, kMillisecond)))
-                    .expect("a timed wait is valid"));
+            static_cast<void>(futex::wait(thread_ctx, handler_runs, 0,
+                                          core::Option<Deadline>::some(deadline_after(thread_ctx, kMillisecond)))
+                                  .expect("a timed wait is valid"));
         }
         was_handler_seen.store_release(handler_runs.load_acquire() != 0);
         word.store_release(1);
-        static_cast<void>(futex::wake_all(ctx, word).expect("a wake is valid"));
+        static_cast<void>(futex::wake_all(thread_ctx, word).expect("a wake is valid"));
     };
     CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ThreadOptions{}, waiter, signaler).is_ok());
     CRUCIBLE_FATAL_INVARIANT(was_handler_seen.load_acquire());
@@ -247,17 +247,17 @@ void test_a_signal_interrupts_a_waiter() {
     core::Atomic<std::uint64_t> waiter_thread{0};
     core::Atomic<std::uint64_t> waiter_id{0};
     core::Atomic<bool> was_interrupted{false};
-    auto waiter = [&]() noexcept {
+    auto waiter = [&](BlockCtx const& thread_ctx) noexcept {
         waiter_id.store_release(calling_thread_id());
         waiter_thread.store_release(calling_thread());
         while (word.load_acquire() == 0) {
-            WaitEnd const end = futex::wait(ctx, word, 0).expect("a wait on a word of the process is valid");
+            WaitEnd const end = futex::wait(thread_ctx, word, 0).expect("a wait on a word of the process is valid");
             if (end == WaitEnd::interrupted) {
                 was_interrupted.store_release(true);
             }
         }
     };
-    auto signaler = [&]() noexcept {
+    auto signaler = [&](BlockCtx const& thread_ctx) noexcept {
         std::uint64_t thread = waiter_thread.load_acquire();
         while (thread == 0) {
             CRUCIBLE_SPIN_PAUSE;
@@ -271,7 +271,7 @@ void test_a_signal_interrupts_a_waiter() {
             }
         }
         word.store_release(1);
-        static_cast<void>(futex::wake_all(ctx, word).expect("a wake is valid"));
+        static_cast<void>(futex::wake_all(thread_ctx, word).expect("a wake is valid"));
     };
     CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ThreadOptions{}, waiter, signaler).is_ok());
     CRUCIBLE_FATAL_INVARIANT(was_interrupted.load_acquire());

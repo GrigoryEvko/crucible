@@ -106,6 +106,21 @@ void test_each_body_runs_on_a_thread_of_its_own() {
     CRUCIBLE_FATAL_INVARIANT(!left_on_main.load_acquire() && !right_on_main.load_acquire());
 }
 
+// A body takes the context of the call as its parameter, beside a body that
+// takes none, so no body captures a context.  Each runs on a thread of its
+// own.
+void test_a_body_takes_the_context_of_the_call() {
+    WorkerCtx const ctx{eff::testing::bg()};
+    Atomic<bool> is_context_body_off_main{false};
+    Atomic<bool> is_plain_body_off_main{false};
+    auto with_context = [&is_context_body_off_main](WorkerCtx const& /*thread_ctx*/) noexcept {
+        is_context_body_off_main.store_release(!is_main_thread);
+    };
+    auto plain = [&is_plain_body_off_main]() noexcept { is_plain_body_off_main.store_release(!is_main_thread); };
+    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ThreadOptions{}, with_context, plain).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(is_context_body_off_main.load_acquire() && is_plain_body_off_main.load_acquire());
+}
+
 // The default options: a stack of 8 MiB, a guard of at least 4 KiB, the
 // name and the CPUs of the thread that starts the thread.
 void test_default_options() {
@@ -220,6 +235,7 @@ void test_refused_option_runs_no_thread() {
 int main() {
     is_main_thread = true;
     test_each_body_runs_on_a_thread_of_its_own();
+    test_a_body_takes_the_context_of_the_call();
     test_default_options();
     test_each_option_reaches_each_thread();
     test_one_cpu_each();

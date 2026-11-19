@@ -70,6 +70,18 @@
 //     only the thread that called fork, so a hook can drop the state of the
 //     other threads of the parent.
 //
+// THE CONTEXT OF A BODY
+//     A body of run_joined takes no argument, or the context of the call as
+//     its one parameter.  A body that needs a context takes it there and
+//     captures none, so no context of one thread reaches the body through a
+//     capture (foundation/Closure.h).  The context owns Bg or Init, which
+//     names no thread, so each thread of the call can use it.  The door
+//     gives one context to each thread at the same time, so a body takes the
+//     context only when the context is Shareable (foundation/Transfer.h).  A
+//     context that holds the branded source of one thread is not Shareable,
+//     and the door refuses a body that takes it.  The caller waits until each
+//     thread has joined, so the context outlives each body.
+//
 // THE GATE
 //     run_joined takes a context that owns Bg or Init, the authority to start
 //     threads.  The list form and the owned form in detail have no gate of
@@ -226,9 +238,29 @@ void join_thread_task(std::uint64_t handle) noexcept;
 // no error.
 void name_calling_thread(ThreadName const& name) noexcept;
 
-template <typename Body>
-void run_body_(void* frame) noexcept {
-    (*static_cast<Body*>(frame))();
+// True when a body of run_joined takes the context of the call, and the
+// context is Shareable (THE CONTEXT OF A BODY).
+template <typename Ctx, typename Body>
+inline constexpr bool takes_context_ =
+    std::is_nothrow_invocable_v<Body&, Ctx const&> && ::foundation::transfer::Shareable<Ctx>;
+
+// The frame of one body of run_joined: the body and the context of the call.
+// It lives in the frame of run_joined, which waits for each thread (THE
+// CONTEXT OF A BODY).
+struct joined_body_ {
+    void* body = nullptr;
+    void const* ctx = nullptr;
+};
+
+template <typename Ctx, typename Body>
+void run_joined_body_(void* frame) noexcept {
+    joined_body_ const& joined = *static_cast<joined_body_ const*>(frame);
+    Body& body = *static_cast<Body*>(joined.body);
+    if constexpr (takes_context_<Ctx, Body>) {
+        body(*static_cast<Ctx const*>(joined.ctx));
+    } else {
+        body();
+    }
 }
 
 // Registers HOOK for the child of each fork (THE FORK HOOK).  The error is
@@ -251,16 +283,27 @@ run_in_fork_child(Ctx const& /*init*/, void (*hook)() noexcept) noexcept {
     return detail::run_in_fork_child_(hook);
 }
 
+// A body of run_joined for a call with the context Ctx: an object that is not
+// const, and that runs with no argument or with the context (THE CONTEXT OF A
+// BODY).
+template <typename Body, typename Ctx>
+concept JoinedBody =
+    !std::is_const_v<Body> && (std::is_nothrow_invocable_v<Body&> || detail::takes_context_<Ctx, Body>);
+
 // Runs each body on a thread of its own with the options, and joins each
 // thread before it returns.  Each body is an object of the caller, and the
 // call ends before the object does.  The bodies run at the same time, so
 // two bodies that share state need a synchronization of their own.
 template <typename Ctx, typename... Bodies>
-    requires CtxStartsThreads<Ctx> && (sizeof...(Bodies) > 0)
-          && ((!std::is_const_v<Bodies> && std::is_nothrow_invocable_v<Bodies&>) && ...)
+    requires CtxStartsThreads<Ctx> && (sizeof...(Bodies) > 0) && (JoinedBody<Bodies, Ctx> && ...)
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-run_joined(Ctx const& /*ctx*/, ThreadOptions const& options, Bodies&... bodies) noexcept {
-    detail::thread_task tasks[sizeof...(Bodies)]{detail::thread_task{&bodies, &detail::run_body_<Bodies>}...};
+run_joined(Ctx const& ctx, ThreadOptions const& options, Bodies&... bodies) noexcept {
+    detail::joined_body_ joined[sizeof...(Bodies)]{detail::joined_body_{&bodies, &ctx}...};
+    // A braced list runs its parts in order, so each task takes the frame of
+    // its own body.
+    std::size_t index = 0;
+    detail::thread_task tasks[sizeof...(Bodies)]{
+        detail::thread_task{&joined[index++], &detail::run_joined_body_<Ctx, Bodies>}...};
     return detail::run_thread_tasks(::foundation::core::detail::view_over_(tasks, sizeof...(Bodies)), options);
 }
 

@@ -349,8 +349,8 @@ using BgWitness = fixy::BgObserveCtx;
     foundation::core::Atomic<bool> is_sleep_done{false};
     foundation::core::Atomic<bool> has_slept{false};
     foundation::core::Atomic<bool> was_sent{false};
-    auto sleeper = [&]() noexcept {
-        auto const bounded = fixy::time::mint_bounded_sleep<sleep_nanos>(ctx);
+    auto sleeper = [&](ThreadCtx const& thread_ctx) noexcept {
+        auto const bounded = fixy::time::mint_bounded_sleep<sleep_nanos>(thread_ctx);
         sleeper_id.store_release(calling_thread_id());
         sleeper_thread.store_release(calling_thread());
         mark_the_sleep(true);
