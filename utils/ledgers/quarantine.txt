@@ -230,8 +230,8 @@ include/fixy/os/ | replace-pending:<string> | 1 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 440 | - | -
-include/fixy/session/ | base-std-object | 180 | - | -
+include/fixy/session/ | base-std-entity | 426 | - | -
+include/fixy/session/ | base-std-object | 177 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
 include/fixy/session/ | replace-pending:<atomic> | 1 | - | -
@@ -396,6 +396,7 @@ test/fixy/ | opted-out | 2 | PROBE: the test forges the wire word of a keyed ste
 test/fixy/ | opted-out | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/ | opted-out | 1 | PROBE: the test reads the dumpable flag that the child door gave the child | test_child_process reads the dumpable flag of a child with prctl, to check that the child door makes each child not dumpable
 test/fixy/ | opted-out | 2 | PROBE: the test reads the state that the doors gave a socket from the kernel | test_os_socket reads the domain, the type, the protocol, the stamp flags and the close-on-exec flag of a socket from the kernel, to check what the doors did
+test/fixy/ | opted-out | 2 | PROBE: the test states a payload rule of the role data for a class of its own file | The split of the session registry: a test states a payload rule of the role data for a class of its own file in a PROBE region, and the new fixtures plant a family, a forward declaration and a lying specialization of Named in PROBE regions
 test/fixy/ | opted-out | 5 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
@@ -428,12 +429,13 @@ test/fixy/ | region | 1 | PROBE: the test forges the wire word of a keyed step a
 test/fixy/ | region | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/ | region | 1 | PROBE: the test reads the dumpable flag that the child door gave the child | test_child_process reads the dumpable flag of a child with prctl, to check that the child door makes each child not dumpable
 test/fixy/ | region | 1 | PROBE: the test reads the state that the doors gave a socket from the kernel | test_os_socket reads the domain, the type, the protocol, the stamp flags and the close-on-exec flag of a socket from the kernel, to check what the doors did
+test/fixy/ | region | 1 | PROBE: the test states a payload rule of the role data for a class of its own file | The split of the session registry: a test states a payload rule of the role data for a class of its own file in a PROBE region, and the new fixtures plant a family, a forward declaration and a lying specialization of Named in PROBE regions
 test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2394 | - | -
-test/fixy/ | std-object | 857 | - | -
+test/fixy/ | std-entity | 2370 | - | -
+test/fixy/ | std-object | 851 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 297 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
@@ -457,8 +459,9 @@ test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges the protocol of one e
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture gives subsort_cell_at of a pair the cell of another pair | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 5 | PROBE: the fixture needs a borrowed range of the library, which no base type gives | the overload of mint_borrowed for a borrowed rvalue range takes only a range of the library, such as std::span
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a corpus entry template of the base | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/fixy/neg/ | opted-out | 48 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
+test/fixy/neg/ | opted-out | 52 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a spawn template of the base with no reading | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a specialization of a base template, and a check refuses it | The split of the session registry: a test states a payload rule of the role data for a class of its own file in a PROBE region, and the new fixtures plant a family, a forward declaration and a lying specialization of Named in PROBE regions
 test/fixy/neg/ | opted-out | 2 | PROBE: the fixture takes the address of a member mint with a target type | only a pointer to member takes the address of a member mint, and the result of the admittance is a std::pair
 test/fixy/neg/ | opted-out | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | raw-function-pointer | 2 | - | -
@@ -483,8 +486,9 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture forges the protocol of one end 
 test/fixy/neg/ | region | 1 | PROBE: the fixture gives subsort_cell_at of a pair the cell of another pair | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 2 | PROBE: the fixture needs a borrowed range of the library, which no base type gives | the overload of mint_borrowed for a borrowed rvalue range takes only a range of the library, such as std::span
 test/fixy/neg/ | region | 1 | PROBE: the fixture plants a corpus entry template of the base | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/fixy/neg/ | region | 35 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
+test/fixy/neg/ | region | 38 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/neg/ | region | 1 | PROBE: the fixture plants a spawn template of the base with no reading | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/neg/ | region | 1 | PROBE: the fixture plants a specialization of a base template, and a check refuses it | The split of the session registry: a test states a payload rule of the role data for a class of its own file in a PROBE region, and the new fixtures plant a family, a forward declaration and a lying specialization of Named in PROBE regions
 test/fixy/neg/ | region | 10 | PROBE: the fixture specializes a trait of the base, and the compiler refuses it | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member mint with a target type | only a pointer to member takes the address of a member mint, and the result of the admittance is a std::pair
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
