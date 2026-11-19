@@ -3302,8 +3302,11 @@ else()
 endif()
 
 # The element ops of foundation/core/Elementwise.h against an oracle of a
-# higher precision, on a dense layout and on a spread layout.
-foundation_test(test_core_elementwise)
+# higher precision, on a dense layout and on a spread layout.  Each op costs
+# much machine code, so the tests compile in six units (elementwise_rig.h).
+foundation_test(test_core_elementwise test_core_elementwise.cpp elementwise_unit_selects_float.cpp
+                elementwise_unit_selects_double.cpp elementwise_unit_rounds_float.cpp
+                elementwise_unit_rounds_double.cpp elementwise_unit_squares.cpp)
 
 # fp::fma against the exact oracle of test/exact_sum.h.  The unit of the test
 # takes the target of its preset, x86-64-v3 in the build of the preset
