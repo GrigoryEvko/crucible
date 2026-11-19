@@ -268,12 +268,6 @@ namespace detail::payload_order {
     return std::meta::is_type(argument) ? std::meta::dealias(argument) : argument;
 }
 
-// The answer of a concept on its arguments.
-[[nodiscard]] consteval bool concept_holds(std::meta::info concept_template,
-                                           std::initializer_list<std::meta::info> arguments) {
-    return std::meta::extract<bool>(std::meta::substitute(concept_template, arguments));
-}
-
 // A delegated endpoint weakens to another one when the Resource, the policy
 // and the set are the same and the protocol of the other refines its
 // protocol.
@@ -314,9 +308,9 @@ namespace detail::payload_order {
     const std::meta::info premise = argument_at(sub, 0);
     const std::meta::info conclusion = argument_at(super, 0);
     if (::fixy::refined::predicate_type_of(premise) == ::fixy::refined::predicate_type_of(conclusion)) return true;
-    return concept_holds(^^::fixy::PredicateInvocableOn, {premise, value})
-        && concept_holds(^^::fixy::PredicateInvocableOn, {conclusion, value})
-        && concept_holds(^^::fixy::PredicateImplies, {premise, conclusion});
+    return std::meta::extract<bool>(std::meta::substitute(^^::fixy::PredicateInvocableOn, {premise, value}))
+        && std::meta::extract<bool>(std::meta::substitute(^^::fixy::PredicateInvocableOn, {conclusion, value}))
+        && std::meta::extract<bool>(std::meta::substitute(^^::fixy::PredicateImplies, {premise, conclusion}));
 }
 
 // A Tagged drops to its value type when droppable_tags admits its tag.
