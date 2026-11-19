@@ -19,16 +19,27 @@ THE STALE COMPILER
         holds.  An entry with a file name other than the name of the
         resolved compiler is a wrapper, such as the afl-g++-fast of `loop
         fuzz`, and is not stale.
-      * The command compares the two real paths, with each symlink resolved.
-        So a new prefix and a symlink that points to a new prefix both give
-        a stale compiler.  A cache and a toolchain file that name the same
-        symlink agree.
+      * The command compares the real paths, with each symlink resolved, so a
+        new prefix and a symlink that points to a new prefix both give a
+        stale compiler.  A compiler is stale in three cases, in this order:
+          CACHED      the cache names a compiler whose real path is not the
+                      real path of the resolved compiler
+          RECORDED    the configure recorded the real path of the resolved
+                      compiler (RECORD_ENTRIES, cmake/StaleCompiler.cmake),
+                      and the toolchain file now resolves a different real
+                      path, such as a symlink that points to a new prefix
+          UNRECORDED  the cache holds no record, so the command cannot tell
+                      the compiler of the objects.  Such a build directory
+                      heals one time, and its configure then records it.
     A build directory with no reply of the cache gives no stale compiler.
 
 THE OUTPUT
     When a compiler is stale, the command prints one line that names the
     paths of the cache and of the toolchain file, with NAME, the name of
-    the configuration, at its start.  Else it prints nothing.  The gate runs
+    the configuration, at its start.  Else it prints nothing.  A RECORDED
+    compiler keeps the paths of the commands of the build, so Ninja would
+    build no object again: the command then removes the log of Ninja
+    (NINJA_LOG), and each object builds again.  The gate runs
     this command of the warm tree before it builds a configuration, so the
     rules of the commit decide, and it configures a build directory with a
     stale compiler again with `cmake --preset NAME -B BUILD_DIR --fresh`
@@ -39,6 +50,7 @@ Exit status: 0, or 2 on a usage error.
 """
 
 import argparse
+import enum
 import os
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -53,19 +65,36 @@ TOOLCHAIN_TARGETS: dict[str, str | None] = {
     "Toolchain-gcc16-aarch64.cmake": "aarch64-linux-gnu",
 }
 COMPILER_ENTRIES = ("CMAKE_CXX_COMPILER", "CMAKE_C_COMPILER")
+# The cache entry of the real path that the configure recorded for each compiler (cmake/StaleCompiler.cmake).
+RECORD_ENTRIES = {
+    "CMAKE_CXX_COMPILER": "CRUCIBLE_CONFIGURED_CXX_REAL",
+    "CMAKE_C_COMPILER": "CRUCIBLE_CONFIGURED_C_REAL",
+}
+# The log of Ninja in a build directory.  An object with no entry in the log builds again.
+NINJA_LOG = ".ninja_log"
 # The word of a configure that drops the cache of the build directory first.
 FRESH_WORD = "--fresh"
+
+
+class Staleness(enum.Enum):
+    """The case of a stale compiler (THE STALE COMPILER)."""
+
+    CACHED = "cached"
+    RECORDED = "recorded"
+    UNRECORDED = "unrecorded"
 
 
 @dataclass(frozen=True, slots=True)
 class StaleCompiler:
     """A compiler of the cache of a build directory that its toolchain file does not resolve (THE STALE COMPILER).
 
-    `entry` is the cache entry.  `cached` and `resolved` are the paths as the cache and the toolchain file give them,
-    and `cached_real` and `resolved_real` are the same paths with each symlink resolved.
+    `entry` is the cache entry of the compiler, and `kind` the case.  `cached` is the path of the cache for CACHED,
+    the recorded real path for RECORDED, and an empty text for UNRECORDED, and `cached_real` is its real path.
+    `resolved` is the path that the toolchain file gives, and `resolved_real` its real path.
     """
 
     entry: str
+    kind: Staleness
     cached: str
     cached_real: str
     resolved: str
@@ -88,6 +117,22 @@ def resolved_compilers(toolchain_file: str) -> dict[str, Path]:
     return {"CMAKE_CXX_COMPILER": cxx_compiler, "CMAKE_C_COMPILER": c_compiler}
 
 
+def stale_compiler(entry: str, entries: dict[str, cmake_reader.CacheEntry], compiler: Path) -> StaleCompiler | None:
+    """Return the stale compiler of one entry of COMPILER_ENTRIES, or None (THE STALE COMPILER)."""
+    resolved_real = os.path.realpath(compiler)
+    cached = entries.get(entry)
+    if cached is not None and PurePosixPath(cached.value).name == compiler.name:
+        cached_real = os.path.realpath(cached.value)
+        if cached_real != resolved_real:
+            return StaleCompiler(entry, Staleness.CACHED, cached.value, cached_real, str(compiler), resolved_real)
+    record = entries.get(RECORD_ENTRIES[entry])
+    if record is None:
+        return StaleCompiler(entry, Staleness.UNRECORDED, "", "", str(compiler), resolved_real)
+    if record.value != resolved_real:
+        return StaleCompiler(entry, Staleness.RECORDED, record.value, record.value, str(compiler), resolved_real)
+    return None
+
+
 def stale_compilers(build: Path) -> tuple[StaleCompiler, ...]:
     """Return each compiler of the cache of a build directory that its toolchain file does not resolve.
 
@@ -99,31 +144,34 @@ def stale_compilers(build: Path) -> tuple[StaleCompiler, ...]:
         return ()
     toolchain = entries.get("CMAKE_TOOLCHAIN_FILE")
     resolved = {} if toolchain is None else resolved_compilers(toolchain.value)
-    stale: list[StaleCompiler] = []
-    for entry in COMPILER_ENTRIES:
-        cached, compiler = entries.get(entry), resolved.get(entry)
-        if cached is None or compiler is None or PurePosixPath(cached.value).name != compiler.name:
-            continue
-        cached_real, resolved_real = (
-            os.path.realpath(cached.value),
-            os.path.realpath(compiler),
-        )
-        if cached_real != resolved_real:
-            stale.append(StaleCompiler(entry, cached.value, cached_real, str(compiler), resolved_real))
-    return tuple(stale)
+    stale = (stale_compiler(entry, entries, resolved[entry]) for entry in COMPILER_ENTRIES if entry in resolved)
+    return tuple(item for item in stale if item is not None)
+
+
+def needs_rebuild(stale: tuple[StaleCompiler, ...]) -> bool:
+    """Tell if a stale compiler keeps the paths of the commands of the build, so each object must build again."""
+    return any(item.kind is Staleness.RECORDED for item in stale)
+
+
+def stale_part(item: StaleCompiler) -> str:
+    """Return the words that name one stale compiler in the line of the heal."""
+    resolved = f"{item.resolved} ({item.resolved_real})"
+    if item.kind is Staleness.CACHED:
+        return f"{item.entry} {item.cached} ({item.cached_real}) in place of {resolved}"
+    if item.kind is Staleness.RECORDED:
+        return f"{item.entry} with the recorded real path {item.cached} in place of {resolved}"
+    return f"{item.entry} with no recorded real path, for {resolved}"
 
 
 def heal_line(name: str, build: Path, stale: tuple[StaleCompiler, ...]) -> str:
     """Return the line that names each stale compiler of the build directory of a configuration, or an empty line."""
     if not stale:
         return ""
-    parts = " and ".join(
-        f"{item.entry} {item.cached} ({item.cached_real}) in place of {item.resolved} ({item.resolved_real})"
-        for item in stale
-    )
+    parts = " and ".join(stale_part(item) for item in stale)
+    rebuild = f", and removes {NINJA_LOG} so each object builds again" if needs_rebuild(stale) else ""
     return (
         f"loop land: {name}: the cache of {build} names {parts} of the toolchain file, so the gate configures the "
-        f"build again with {FRESH_WORD}"
+        f"build again with {FRESH_WORD}{rebuild}"
     )
 
 
@@ -141,7 +189,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("name", help="the name of the configuration, at the start of the line")
     args = parser.parse_args(argv)
     build = args.build_dir.resolve()
-    line = heal_line(args.name, build, stale_compilers(build))
+    stale = stale_compilers(build)
+    if needs_rebuild(stale):
+        (build / NINJA_LOG).unlink(missing_ok=True)
+    line = heal_line(args.name, build, stale)
     if line:
         print(line)
     return 0

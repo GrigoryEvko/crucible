@@ -14,6 +14,7 @@ that name one symlink must agree.  The defaults of assay.setup.gcc must be
 the defaults of the toolchain files of this tree.
 """
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -47,13 +48,22 @@ def program(prefix: Path, name: str) -> str:
     return str(prefix / "usr" / "bin" / name)
 
 
-def plant_compilers(build: Path, toolchain: str, cxx: str, cc: str | None = None) -> None:
-    """Plant a configured build directory whose cache names a toolchain file and its compilers."""
+def resolved_records(toolchain: str) -> dict[str, str]:
+    """Return the records of a configure now: the real path of each compiler that the toolchain file resolves."""
+    resolved = heal.resolved_compilers(f"/planted/tree/cmake/{toolchain}")
+    return {heal.RECORD_ENTRIES[entry]: os.path.realpath(compiler) for entry, compiler in resolved.items()}
+
+
+def plant_compilers(
+    build: Path, toolchain: str, cxx: str, cc: str | None = None, records: dict[str, str] | None = None
+) -> None:
+    """Plant a configured build directory whose cache names a toolchain file, its compilers and their records."""
     build.mkdir(parents=True, exist_ok=True)
     ninja_reader.plant_graph(build, "")
     cache: dict[str, str | tuple[str, str]] = {
         "CMAKE_TOOLCHAIN_FILE": ("FILEPATH", f"/planted/tree/cmake/{toolchain}"),
         "CMAKE_CXX_COMPILER": ("FILEPATH", cxx),
+        **(records or {}),
     }
     if cc is not None:
         cache["CMAKE_C_COMPILER"] = ("FILEPATH", cc)
@@ -99,14 +109,16 @@ def native_cases(expect: testing.Expect) -> None:
                     "the command `loop heal` prints the line and exits 0",
                     completed.exit == 0 and completed.out.strip() == line,
                 )
-                plant_compilers(build, NATIVE, program(new, "g++-16p"), program(new, "gcc-16p"))
+                plant_compilers(
+                    build, NATIVE, program(new, "g++-16p"), program(new, "gcc-16p"), resolved_records(NATIVE)
+                )
                 completed = proc.run(proc.Command(command, timeout_s=proc.TOOL_S))
                 expect(
                     "a cache with the compilers that the toolchain file resolves gives no line, and the command "
                     "prints nothing",
                     line_of(build) == "" and completed.exit == 0 and completed.out == "",
                 )
-                plant_compilers(build, NATIVE, program(old, "afl-g++-fast"))
+                plant_compilers(build, NATIVE, program(old, "afl-g++-fast"), records=resolved_records(NATIVE))
                 expect(
                     "a wrapper with a name of its own, such as the afl-g++-fast of loop fuzz, gives no line",
                     line_of(build) == "",
@@ -124,19 +136,43 @@ def native_cases(expect: testing.Expect) -> None:
                     line_of(build) == "",
                 )
             with testing.environment_variable("CRUCIBLE_GCC16_PREFIX", str(link)):
-                plant_compilers(build, NATIVE, program(link, "g++-16p"))
+                plant_compilers(build, NATIVE, program(link, "g++-16p"), records=resolved_records(NATIVE))
                 expect(
                     "a cache and a toolchain file that name one symlink agree",
                     line_of(build) == "",
                 )
                 link.unlink()
                 link.symlink_to(new)
+                (build / heal.NINJA_LOG).write_text("# ninja log v7\n", encoding="utf-8")
+                line = line_of(build)
+                completed = proc.run(proc.Command(command, timeout_s=proc.TOOL_S))
+                expect(
+                    f"a symlink that points to a new prefix gives a line also when the cache and the toolchain file "
+                    f"name it, from the record of the configure, and the command removes the log of Ninja: {line}",
+                    "recorded real path" in line
+                    and program(new, "g++-16p") in line
+                    and heal.NINJA_LOG in line
+                    and completed.exit == 0
+                    and not (build / heal.NINJA_LOG).exists(),
+                )
                 plant_compilers(build, NATIVE, program(old, "g++-16p"))
                 line = line_of(build)
                 expect(
                     f"a symlink of the toolchain file that points to a new prefix gives a line for a cache of the old "
                     f"prefix: {line}",
                     program(link, "g++-16p") in line and program(new, "g++-16p") in line,
+                )
+            with testing.environment_variable("CRUCIBLE_GCC16_PREFIX", str(new)):
+                plant_compilers(build, NATIVE, program(new, "g++-16p"), program(new, "gcc-16p"))
+                (build / heal.NINJA_LOG).write_text("# ninja log v7\n", encoding="utf-8")
+                line = line_of(build)
+                completed = proc.run(proc.Command(command, timeout_s=proc.TOOL_S))
+                expect(
+                    f"a cache with no record heals one time, and the log of Ninja stays: {line}",
+                    "no recorded real path" in line
+                    and heal.NINJA_LOG not in line
+                    and completed.exit == 0
+                    and (build / heal.NINJA_LOG).is_file(),
                 )
             with (
                 testing.environment_variable("CRUCIBLE_GCC16_PREFIX", None),
@@ -162,7 +198,7 @@ def cross_cases(expect: testing.Expect) -> None:
                 "a cross build of an old prefix gives a line with the prefix of its cross target",
                 program(new, "aarch64-linux-gnu-g++-16p") in line_of(build),
             )
-            plant_compilers(build, CROSS, program(new, "aarch64-linux-gnu-g++-16p"))
+            plant_compilers(build, CROSS, program(new, "aarch64-linux-gnu-g++-16p"), records=resolved_records(CROSS))
             expect(
                 "a cross build of the prefix of its cross target gives no line",
                 line_of(build) == "",
@@ -182,6 +218,11 @@ def mirror_cases(expect: testing.Expect) -> None:
         "$ENV{CRUCIBLE_CXX}" in native
         and "$ENV{CRUCIBLE_GCC16_PREFIX}" in native
         and f'"$ENV{{HOME}}/{patched_gcc.HOME_PREFIX.as_posix()}"' in native,
+    )
+    stale_text = (cmake_directory / "StaleCompiler.cmake").read_text(encoding="utf-8")
+    expect(
+        "cmake/StaleCompiler.cmake writes each record entry that the command reads",
+        all(record in stale_text for record in heal.RECORD_ENTRIES.values()),
     )
     for name, triplet in heal.TOOLCHAIN_TARGETS.items():
         if triplet is None:

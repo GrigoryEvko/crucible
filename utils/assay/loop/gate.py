@@ -266,8 +266,11 @@ THE COMPILER HEAL
     paths of the cache and of the toolchain file.  Then it configures the
     build directory again with `cmake --preset PRESET -B BUILD --fresh`
     (configure_plan()).  The commands of the compiles then name the new
-    compiler, so Ninja builds each object again.  A build directory with no
-    graph of Ninja takes step 1 of THE RUN OF A CONFIGURATION as it is.
+    compiler, or `loop heal` removed the log of Ninja for a compiler that
+    keeps its path, so Ninja builds each object again.  A cache with no
+    record of its compiler heals one time and builds nothing again.  A build
+    directory with no graph of Ninja takes step 1 of THE RUN OF A
+    CONFIGURATION as it is.
     Outside the gate, cmake/StaleCompiler.cmake refuses such a cache in each
     configure, with the command that heals it.
 
