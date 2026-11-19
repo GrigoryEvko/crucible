@@ -258,6 +258,22 @@ using L03_FnProcessStateRead =
 using L04_FnStderrWrite =
     ::fixy::fn<int, ::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stderr>, ::fixy::atom::as_public>;
 
+// ── The bindings that state an observation ─────────────────────────
+//
+// The Observability axis takes the union of its surfaces, and the key folds
+// the canonical surface, in the order of the bits of its row.  O02 states
+// one surface over two effects, and O03 states the same set as two surfaces
+// in the other order, so they must print one value.  O01 observes one
+// effect of the same row and must print another.
+using O01_FnSurfaceIo = ::fixy::fn<int, ::fixy::atom::with<fe::Effect::Alloc, fe::Effect::IO>,
+                                   ::fixy::atom::observe::surface<fe::Effect::IO>, ::fixy::atom::as_public>;
+using O02_FnSurfaceAllocIo =
+    ::fixy::fn<int, ::fixy::atom::with<fe::Effect::Alloc, fe::Effect::IO>,
+               ::fixy::atom::observe::surface<fe::Effect::Alloc, fe::Effect::IO>, ::fixy::atom::as_public>;
+using O03_FnSurfaceUnion = ::fixy::fn<int, ::fixy::atom::with<fe::Effect::Alloc, fe::Effect::IO>,
+                                      ::fixy::atom::observe::surface<fe::Effect::IO>,
+                                      ::fixy::atom::observe::surface<fe::Effect::Alloc>, ::fixy::atom::as_public>;
+
 // ── The permission carriers ────────────────────────────────────────
 //
 // Each carrier folds its tag's row as its payload.  P01 and P02 differ
@@ -286,7 +302,7 @@ struct LabeledEntry {
     std::uint64_t value;
 };
 
-inline constexpr std::array<LabeledEntry, 56> kEntries = {{
+inline constexpr std::array<LabeledEntry, 59> kEntries = {{
     {"G01_Linear", row_hash_contribution_v<G01_Linear>},
     {"G02_Affine", row_hash_contribution_v<G02_Affine>},
     {"G03_TaggedVerified", row_hash_contribution_v<G03_TaggedVerified>},
@@ -323,6 +339,9 @@ inline constexpr std::array<LabeledEntry, 56> kEntries = {{
     {"L02_FnPark", row_hash_contribution_v<L02_FnPark>},
     {"L03_FnProcessStateRead", row_hash_contribution_v<L03_FnProcessStateRead>},
     {"L04_FnStderrWrite", row_hash_contribution_v<L04_FnStderrWrite>},
+    {"O01_FnSurfaceIo", row_hash_contribution_v<O01_FnSurfaceIo>},
+    {"O02_FnSurfaceAllocIo", row_hash_contribution_v<O02_FnSurfaceAllocIo>},
+    {"O03_FnSurfaceUnion", row_hash_contribution_v<O03_FnSurfaceUnion>},
     {"G10_EpochVersioned", row_hash_contribution_v<G10_EpochVersioned>},
     {"G11_Budgeted", row_hash_contribution_v<G11_Budgeted>},
     {"K02_OnDualGeneration", row_hash_contribution_v<K02_OnDualGeneration>},
@@ -353,7 +372,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // order, or in any single hash moves this value and reddens the build
 // before the golden diff runs, with the ceremony named in the message.
 inline constexpr std::uint64_t kFoldSeed = 0xF0117A11EDA11A5EULL;
-inline constexpr std::uint64_t kFoldAnchor = 0x45b8cbf7694b815fULL;
+inline constexpr std::uint64_t kFoldAnchor = 0xb844f87cf80a3e62ULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;
@@ -433,6 +452,13 @@ static_assert(row_hash_contribution_v<S05_CtCrypto> != row_hash_contribution_v<B
               "CtCrypto states constant_time and B03 states as_secret, so a kernel compiled "
               "under the timing discipline must not share a slot with a plain secret binding");
 
+// The key folds the canonical surface of the Observability axis, so one set
+// of observed effects takes one slot, and a different set takes another.
+static_assert(row_hash_contribution_v<O02_FnSurfaceAllocIo> == row_hash_contribution_v<O03_FnSurfaceUnion>,
+              "one surface over a set and the union of two surfaces over the same set are one observation");
+static_assert(row_hash_contribution_v<O01_FnSurfaceIo> != row_hash_contribution_v<O02_FnSurfaceAllocIo>,
+              "a binding that observes IO alone must not share a slot with one that observes Alloc and IO");
+
 // Two values are reserved, and no entry of this matrix may take either.
 //
 // Zero is the bare-type baseline. crucible/Types.h calls RowHash{0} a
@@ -494,11 +520,11 @@ static_assert(counters_and_clocks_are_distinct(), "two counter axes, or two cloc
     return distinct;
 }
 
-// Fifty-six entries carry fifty-one distinct values. Five entries repeat
-// one that stands above them: R05 repeats R04, and B02, B06, B07 and S01
-// each repeat B01. Every one of those five has its own assert above, with
-// the property that makes the repeat correct.
-static_assert(distinct_value_count() == 51, "the number of distinct values moved. Every repeat in this matrix is "
+// Fifty-nine entries carry fifty-three distinct values. Six entries repeat
+// one that stands above them: R05 repeats R04, O03 repeats O02, and B02,
+// B06, B07 and S01 each repeat B01. Every one of those six has its own
+// assert above, with the property that makes the repeat correct.
+static_assert(distinct_value_count() == 53, "the number of distinct values moved. Every repeat in this matrix is "
                                             "named by an assert above, so a new one is a collision between two "
                                             "claims that must not share a cache slot.");
 
