@@ -870,16 +870,16 @@ public:
     // PROOF OF THE ONE WRITER).  own is the copy of the counter that the
     // writer keeps on a line of its own, and it holds the value of the
     // counter.  The step check compares own and new_value in registers, in
-    // each build, and the advance of own checks the order again.  The store is
-    // a plain release, and the call loads nothing from the counter, so a
-    // reader that polls the line of the counter costs the writer no transfer
-    // of that line.
+    // each build and under each contract semantic, and the advance of own
+    // checks the order again.  The store is a plain release, and the call
+    // loads nothing from the counter, so a reader that polls the line of the
+    // counter costs the writer no transfer of that line.
     template <class Owner, class Role>
     void advance_sole_writer_by_proof(SoleWriterProof<Owner, Role> const& /*proof*/, Monotonic<T, Cmp>& own,
                                       T new_value) noexcept
         requires SoleWriterCounter<Writers>
     {
-        CRUCIBLE_PRE(Cmp{}(own.get(), new_value));
+        CRUCIBLE_FATAL_INVARIANT(Cmp{}(own.get(), new_value));
         own.advance(new_value);
         value_.store(new_value, std::memory_order_release);
     }
