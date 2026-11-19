@@ -6,6 +6,10 @@
 // These two cases run through the child door of fixy/os/Process.h, and the
 // test reads the report of the child.
 //
+// Each failure arm ends by SIGABRT also when a tracer, such as a debugger,
+// strace or rr, is attached to the process.  The parent traces the child
+// through the traced child door.
+//
 // A second violation on the thread that reports the first one aborts at
 // once.  The child fills the pipe that is its standard error, so the report
 // of the first violation blocks in write(2).  A timer signal then raises a
@@ -31,6 +35,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/os/Process.h>
+#include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
@@ -102,6 +107,54 @@ void message_report_carries_its_message(::fixy::TestRunnerCtx const& test) {
     if (!is_reported) show_the_child_output(report);
     CRUCIBLE_TEST_ASSERT(test, is_reported);
     ::fixy::check::pass(test, "  a violated message form is reported with its message\n");
+}
+
+// The longest time that the parent waits for a traced child that aborts.
+constexpr ::fixy::process::WaitLimit kTracedAbortLimit{60000};
+
+// Runs body in a child that the parent traces, as a debugger, strace or rr
+// does.  The child ends by SIGABRT, and its standard error holds expected.
+// A host that refuses the trace, such as the emulator of a cross build,
+// gives a skip line.
+template <typename Body>
+void expect_abort_under_a_tracer(::fixy::TestRunnerCtx const& test, Body&& body, ::fixy::TextView expected) {
+    ::fixy::Result<::fixy::process::TracedChild, ::foundation::os::Errno> started =
+        ::fixy::process::spawn_traced_child(test, ::fixy::process::TracedMemory::sealed, std::forward<Body>(body));
+    if (started.is_err() && started.err().value_or(::foundation::os::Errno::eio) == ::foundation::os::Errno::eperm) {
+        ::fixy::check::pass(test, "  [skipped] the host refuses the trace of a child\n");
+        return;
+    }
+    ::fixy::process::ChildReport const report =
+        ::fixy::process::wait_within(std::move(started).expect("the test starts a traced child"), kTracedAbortLimit)
+            .expect("the test waits for its traced child");
+    bool const is_aborted =
+        report.is_signaled_by(::foundation::os::kAbortSignal) && ::fixy::find(report.output(), expected).is_some();
+    if (!is_aborted) {
+        ::fixy::report(::fixy::Sink::Err, "under a tracer, the child ended by the signal {} or with the exit code {}\n",
+                       report.end().kind == ::foundation::os::ChildEndKind::signaled ? report.end().number : 0,
+                       report.end().kind == ::foundation::os::ChildEndKind::exited ? report.end().number : 0);
+        show_the_child_output(report);
+    }
+    CRUCIBLE_TEST_ASSERT(test, is_aborted);
+}
+
+// Each failure arm ends by SIGABRT also under a tracer, so the end of a death
+// test does not depend on a debugger: the contract handler, the two arms of
+// fatal, and the arm of CRUCIBLE_FATAL_INVARIANT.
+void failure_arms_abort_under_a_tracer(::fixy::TestRunnerCtx const& test) {
+    expect_abort_under_a_tracer(
+        test, [] noexcept { violate_a_clause(); },
+        ::fixy::TextView{"foundation: contract violation: g_condition_holds"});
+    expect_abort_under_a_tracer(
+        test, [] noexcept { ::fixy::fatal("the fatal arm under a tracer"); },
+        ::fixy::TextView{"foundation: fatal: the fatal arm under a tracer"});
+    expect_abort_under_a_tracer(
+        test, [] noexcept { ::fixy::fatal("the fatal arm with the argument {} under a tracer", 7); },
+        ::fixy::TextView{"foundation: fatal: the fatal arm with the argument 7 under a tracer"});
+    expect_abort_under_a_tracer(
+        test, [] noexcept { CRUCIBLE_FATAL_INVARIANT(g_condition_holds); },
+        ::fixy::TextView{"foundation: fatal invariant failed: g_condition_holds"});
+    ::fixy::check::pass(test, "  each failure arm ends by SIGABRT under a tracer\n");
 }
 
 }  // namespace
@@ -225,6 +278,7 @@ int main() {
     clause_report_names_the_condition(test);
     message_report_carries_its_message(test);
     long_report_keeps_its_message(test);
+    failure_arms_abort_under_a_tracer(test);
     // qemu user mode writes its own line of an uncaught signal of the guest to
     // the standard error of the child before it ends.  That standard error is
     // the full pipe of a blocked report, so qemu blocks in the write, and the

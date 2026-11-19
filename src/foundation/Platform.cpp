@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The cold bodies of foundation/Platform.h: the probe of a tracer, and the
-// failure arm of the assertion macros.
+// failure arm of the check macro.  The failure arm ends by SIGABRT also
+// under a tracer, and it reads no probe.
 //
 // The probe reads /proc/self/status through the file door of the base
 // (foundation/os/File.h).  The failure arm writes its text through the sink
@@ -96,9 +97,6 @@ bool is_debugger_present() noexcept {
 }
 
 void fail_invariant(char const* what, char const* predicate, char const* file, int line) noexcept {
-    // The tracer is read one time.  Under a tracer, the arm stops at the
-    // failure, and not inside abort.
-    if (is_debugger_present()) __builtin_trap();
     core::detail::FmtArg const arguments[] = {text_argument(what), text_argument(predicate), text_argument(file),
                                               core::detail::fmt_arg_of_(line)};
     core::detail::report_(core::Sink::Err, core::detail::fmt_text_(failure_text), arguments,

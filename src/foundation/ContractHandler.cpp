@@ -13,11 +13,11 @@
 // lock of the heap or of a stdio stream.  So the report calls only functions
 // that POSIX makes async-signal-safe.  It writes to standard error through
 // the sink write of the Report family (src/foundation/os/ReportSink.cpp),
-// with a small buffer on the stack.  The debugger probe of
-// src/foundation/Platform.cpp reads /proc through the file door of the
-// base, foundation/os/File.h.  Nothing here
-// calls stdio, allocates or takes a lock.  A core dump or a debugger gives
-// the stack.
+// with a small buffer on the stack.  Nothing here calls stdio, allocates or
+// takes a lock.  Each arm ends by SIGABRT, also under a tracer, so the end of
+// a death test does not depend on a debugger.  A debugger stops at the
+// SIGABRT, and its stack holds the frame of the failure.  A core dump gives
+// the stack too.
 //
 // A second violation on one thread while that thread reports a violation
 // aborts at once.  It can come from a signal handler that interrupts the
@@ -235,7 +235,6 @@ void handle_contract_violation(const std::contracts::contract_violation& v) noex
     const std::source_location loc = v.location();
     report_violation(v.comment(), loc.file_name(), loc.line(), loc.function_name());
     leave_report();
-    ::foundation::detail::breakpoint_if_debugging();
     ::foundation::os::abort_process();
 }
 
@@ -249,7 +248,6 @@ void report_fatal_(char const* text, char const* file, std::uint32_t line, char 
     enter_report_or_abort();
     report_fatal_text(text, file, line, function, nullptr, 0);
     leave_report();
-    ::foundation::detail::breakpoint_if_debugging();
     ::foundation::os::abort_process();
 }
 
@@ -259,7 +257,6 @@ void report_fatal_with_(char const* text, char const* file, std::uint32_t line, 
     enter_report_or_abort();
     report_fatal_text(text, file, line, function, arguments, count);
     leave_report();
-    ::foundation::detail::breakpoint_if_debugging();
     ::foundation::os::abort_process();
 }
 

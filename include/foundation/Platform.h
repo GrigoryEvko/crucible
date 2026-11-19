@@ -268,9 +268,10 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
                                                    "well-defined")
 
 // The standard library declares breakpoint, breakpoint_if_debugging and
-// is_debugger_present in <debugging> but ships no definitions for them, so
-// the assertion macros below would fail to link against the standard names.
-// These are stand-ins with the same behaviour.
+// is_debugger_present in <debugging> but ships no definitions for them.
+// These are stand-ins with the same behaviour.  No failure arm calls them:
+// each failure arm ends by SIGABRT, also under a tracer, so the end of a
+// death test does not depend on a debugger.
 //
 // src/foundation/Platform.cpp holds the bodies of is_debugger_present and
 // fail_invariant.  So no includer of this header compiles them, and this
@@ -291,11 +292,12 @@ namespace foundation::detail {
         __builtin_trap();
 }
 
-// The failure arm of the check macro below.  With no tracer, it writes
-// "foundation: WHAT failed: PREDICATE (FILE:LINE)" to standard error.  With
-// a tracer, it traps at the failure.  Then it calls abort.  The write
-// uses the sink of the Report family and no stdio, so a call from a signal
-// handler is safe.
+// The failure arm of the check macro below.  It writes
+// "foundation: WHAT failed: PREDICATE (FILE:LINE)" to standard error, and
+// then it calls abort, also under a tracer.  A debugger stops at the
+// SIGABRT, and its stack holds the frame of the failure.  The write uses the
+// sink of the Report family and no stdio, so a call from a signal handler is
+// safe.
 //
 // The call is cold and is not inline, so a use site keeps one compare and
 // one call, and the arm stays out of the instruction lines of the hot code.
