@@ -141,29 +141,73 @@ template <class... Atoms>
     return std::define_static_array(entry_list{^^Atoms...});
 }
 
-template <Axis A, class... Atoms>
-[[nodiscard]] consteval std::meta::info grade_() noexcept {
-    // A value outside the enum has no row in the axis table, so it has no
-    // pole.  Only a cast produces such a value, and a cast into the
-    // resolver is a mistake and not a question.
-    static_assert(std::to_underlying(A) < ::fixy::axis_count,
-                  "fixy::collision::grades<Atoms...>::on<A>: A is not an Axis enumerator.  A value outside the "
-                  "enum has no row in the axis table of fixy/Axis.h, so it has no pole.");
-    std::meta::info found = ^^void;
-    if constexpr (HasStrictPole<A>) {
-        found = axis_record(A).strict;
+// The grades of one pack, read in one walk of the pack.
+//
+// The record has one slot for each axis.  The slot holds the grade that an
+// atom of the pack states on the axis, or the strict pole of the axis when
+// no atom of the pack names it.  Axis::Type has no pole, and its slot holds
+// void.  Each grade is a type and never an alias, so two slots hold one
+// grade exactly when their reflections are equal.
+//
+// The record also counts the atoms on each axis and names the first entry
+// that is not an atom.  So tier 2, tier 4, the grade lookup and the
+// question whether a pack names an axis read one walk.  An entry that is
+// not an atom states no axis, and the walk does not read one from it.
+// When two atoms name one axis, the slot holds the last of them.
+struct pack_record {
+    std::meta::info grade[::fixy::axis_count]{};
+    // True when the grade of the axis is not its strict pole.
+    bool names_axis[::fixy::axis_count]{};
+    std::size_t atoms_on[::fixy::axis_count]{};
+    std::meta::info first_malformed = ^^void;
+};
+
+// The walk.  It runs one time for each pack, because pack_record_v keeps
+// its answer.  Complexity: the axis count plus the pack size.
+template <class... Atoms>
+[[nodiscard]] consteval pack_record read_pack_() noexcept {
+    pack_record record{};
+    std::meta::info pole[::fixy::axis_count]{};
+    for (std::size_t place = 0; place < ::fixy::axis_count; ++place) {
+        const std::meta::info strict = axis_record(static_cast<Axis>(place)).strict;
+        pole[place] = strict == std::meta::info{} ? ^^void : std::meta::dealias(strict);
+        record.grade[place] = pole[place];
     }
     static constexpr auto entries = pack_entries_<Atoms...>();
     template for (constexpr auto entry : entries) {
         using Candidate = [:entry:];
-        if constexpr (Candidate::axis == A) {
-            found = entry;
+        if constexpr (::fixy::atom::IsAtom<Candidate>) {
+            constexpr std::size_t place = std::to_underlying(Candidate::axis);
+            record.grade[place] = std::meta::dealias(entry);
+            ++record.atoms_on[place];
+        } else {
+            if (record.first_malformed == ^^void) record.first_malformed = entry;
         }
     }
-    return found;
+    for (std::size_t place = 0; place < ::fixy::axis_count; ++place)
+        record.names_axis[place] = record.grade[place] != pole[place];
+    return record;
 }
 
 #pragma GCC diagnostic pop
+
+template <class... Atoms>
+inline constexpr pack_record pack_record_v = read_pack_<Atoms...>();
+
+// The slot of an axis.  A value outside the enum has no row in the axis
+// table, so it has no pole.  Only a cast produces such a value, and a cast
+// into the resolver is a mistake and not a question.
+template <Axis A>
+[[nodiscard]] consteval std::size_t axis_slot_() noexcept {
+    static_assert(std::to_underlying(A) < ::fixy::axis_count,
+                  "fixy::collision::grades<Atoms...>::on<A>: A is not an Axis enumerator.  A value outside the "
+                  "enum has no row in the axis table of fixy/Axis.h, so it has no pole.");
+    return std::to_underlying(A);
+}
+
+// The grade of the pack on one axis, as a type.
+template <Axis A, class... Atoms>
+using grade_on_t = [:pack_record_v<Atoms...>.grade[axis_slot_<A>()]:];
 
 }  // namespace detail
 
@@ -184,10 +228,10 @@ template <class... Atoms>
     requires(::fixy::atom::IsAtom<Atoms> && ...)
 struct grades {
     template <Axis A>
-    using on = [:detail::grade_<A, Atoms...>():];
+    using on = detail::grade_on_t<A, Atoms...>;
 
     template <Axis A>
-    static constexpr bool mentions = !std::is_same_v<on<A>, strict_pole_t<A>>;
+    static constexpr bool mentions = detail::pack_record_v<Atoms...>.names_axis[detail::axis_slot_<A>()];
 };
 
 // ---------------------------------------------------------------------
@@ -949,6 +993,275 @@ template <class Grade, class Level>
 concept HasTrustLevel = IsTrustGrade<Grade> && ::fixy::tags::IsTrustLevel<Level> && trust_level_of_v<Grade> == ^^Level;
 
 // ---------------------------------------------------------------------
+// The premises of the rules.
+//
+// A premise is one fact about a binding that a rule reads.  One pass over
+// the pack and one pass over the payload give each premise one time, and
+// each rule is a predicate over this record.  A field is false when the
+// binding does not state the fact.  The pass that sets a field tells how
+// it reads the grade.
+struct rule_premises {
+    // The Usage grade.
+    bool borrow{};
+    bool ghost{};
+    bool capability{};
+    bool linear{};
+    // A suspension, a hand-off to another thread, or either.
+    bool coroutine{};
+    bool suspends_in_control_flow{};
+    bool suspends{};
+    bool concurrent{};
+    bool monotonic{};
+    bool unverified{};
+    // The cost and the space of the binding.
+    bool cost_unstated{};
+    bool unbounded_cost{};
+    bool may_run_unbounded{};
+    // The row of the binding: the Effect grade joined with the lifts.
+    bool row_bg{};
+    bool row_observable{};
+    bool row_alloc_or_io{};
+    bool row_init{};
+    bool blocks{};
+    bool allocates{};
+    bool observes_something{};
+    bool observes_within_the_row{};
+    // The representation, the global state, the exits and the calls.
+    bool atomic_repr{};
+    bool thread_local_state{};
+    bool longjmp_unsafe{};
+    bool recurses_unbounded{};
+    bool publishes_past_the_thread{};
+    bool indirect_call_may_throw{};
+    bool spawn_outlives_the_frame{};
+    bool emits_outside_the_row{};
+    // The regime and the waits.
+    bool hot{};
+    bool no_witness_floor{};
+    bool states_stdio{};
+    bool core_burning_spin{};
+    bool states_a_wait{};
+    // The instruction tier, the fence, the scope and the ISA.
+    bool hw_nondeterministic{};
+    bool hw_privileged{};
+    bool barrier_seq_cst_or_above{};
+    bool barrier_acq_rel_or_above{};
+    bool scope_cluster_or_above{};
+    bool scope_pinned{};
+    bool isa_pinned{};
+    bool trunks_cohere{};
+    // The FP mode.
+    bool fp_reassociates{};
+    bool fp_contracts_across_statements{};
+    bool fp_mode_stated{};
+    bool fp_flushes_denormal_inputs{};
+    bool fp_flushes_subnormal_results{};
+    bool fp_rewrites_without_bound{};
+    // The Security grade, the staleness and the session.
+    bool constant_time{};
+    bool classified_on_send{};
+    bool classified_on_failure{};
+    bool states_staleness{};
+    bool session_protocol{};
+    bool has_live_handle{};
+    // The failure path, from the payload or from a throw.
+    bool fails{};
+    bool fails_with_plain_error{};
+    // The claims of the bands of the payload.
+    bool replay_deterministic{};
+    bool claims_no_allocation{};
+    bool claims_user_space_wait{};
+};
+
+namespace detail {
+
+[[nodiscard]] consteval bool names_axis_(const pack_record& pack, Axis axis) noexcept {
+    return pack.names_axis[std::to_underlying(axis)];
+}
+
+// The premises that the pack states.  The pass runs one time for each
+// pack, because pack_premises_v keeps its answer, and only a pack that
+// tiers 1 to 4 admit reaches it.
+template <class... Atoms>
+[[nodiscard]] consteval rule_premises read_pack_premises_() noexcept {
+    constexpr const pack_record& pack = pack_record_v<Atoms...>;
+    using Usage = grade_on_t<Axis::Usage, Atoms...>;
+    using ControlFlow = grade_on_t<Axis::ControlFlow, Atoms...>;
+    using CallShape = grade_on_t<Axis::CallShape, Atoms...>;
+    using MemoryScope = grade_on_t<Axis::MemoryScope, Atoms...>;
+    using BarrierStrength = grade_on_t<Axis::BarrierStrength, Atoms...>;
+    using HwInstruction = grade_on_t<Axis::HwInstruction, Atoms...>;
+    using SimdIsa = grade_on_t<Axis::SimdIsa, Atoms...>;
+    using FpMode = grade_on_t<Axis::FpMode, Atoms...>;
+    using Synchronization = grade_on_t<Axis::Synchronization, Atoms...>;
+    using Protocol = grade_on_t<Axis::Protocol, Atoms...>;
+    using Security = grade_on_t<Axis::Security, Atoms...>;
+    using Observability = grade_on_t<Axis::Observability, Atoms...>;
+    using thrown_failure = thrown_failure_<ControlFlow>;
+    namespace fe = ::foundation::effects;
+    namespace lat = ::foundation::algebra::lattices;
+
+    // The rows of the binding.  The row joins the Effect grade with the
+    // lifts of the atoms of the pack, through the relation of fixy/Atom.h
+    // that fixy/Fn.h also reads for context admission.  Each rule that
+    // asks what the binding does reads this row.  A binding can state a
+    // futex call or a park and leave its Effect grade empty, and a rule
+    // that reads only the grade admits that binding.
+    using binding_row = ::fixy::atom::binding_row_of_t<grade_on_t<Axis::Effect, Atoms...>, Atoms...>;
+    constexpr std::meta::info row = ^^binding_row;
+
+    rule_premises premise{};
+    premise.borrow = std::is_same_v<Usage, ::fixy::atom::borrow>;
+    premise.ghost = std::is_same_v<Usage, ::fixy::atom::ghost>;
+    premise.capability = std::is_same_v<Usage, ::fixy::atom::capability_usage>;
+    // A binding says nothing about Usage when it takes the strict pole,
+    // which on this axis is the linear grade: consumed exactly once.
+    premise.linear = !names_axis_(pack, Axis::Usage);
+    premise.monotonic = std::is_same_v<grade_on_t<Axis::Mutation, Atoms...>, ::fixy::atom::mut_monotonic>;
+    premise.unverified = trust_level_of_v<grade_on_t<Axis::Trust, Atoms...>> == ^^::fixy::tags::trust::Unverified;
+
+    // "Unstated" is the strict pole on Complexity, so an unstated cost is
+    // the absence of a grade rather than a grade of its own.  A cost and a
+    // space are facts about the binding, and an unstated grade puts no
+    // bound on it.
+    premise.cost_unstated = !names_axis_(pack, Axis::Complexity);
+    premise.unbounded_cost = std::is_same_v<grade_on_t<Axis::Complexity, Atoms...>, ::fixy::atom::cost_unbounded>;
+    premise.may_run_unbounded = premise.cost_unstated || premise.unbounded_cost || !names_axis_(pack, Axis::Space)
+                             || std::is_same_v<grade_on_t<Axis::Space, Atoms...>, ::fixy::atom::space_unbounded>;
+
+    premise.row_bg = fe::row_contains(row, fe::Effect::Bg);
+    premise.row_observable = row_admits_observable_<binding_row>::value;
+    premise.allocates = fe::row_contains(row, fe::Effect::Alloc);
+    premise.row_alloc_or_io = premise.allocates || fe::row_contains(row, fe::Effect::IO);
+    premise.row_init = fe::row_contains(row, fe::Effect::Init);
+    premise.blocks = fe::row_contains(row, fe::Effect::Block);
+
+    // The concurrency premise that several rules share.  A coroutine
+    // suspends and a Bg row runs elsewhere, and either makes the body
+    // concurrent with respect to the frame of the caller.  A suspension
+    // can be written on Reentrancy or on ControlFlow, and the premise reads
+    // both, so a pack cannot avoid a rule by writing the suspension on the
+    // other axis.
+    premise.coroutine = std::is_same_v<grade_on_t<Axis::Reentrancy, Atoms...>, ::fixy::atom::coroutine>;
+    premise.suspends_in_control_flow = control_flow_has_suspension_<ControlFlow>::value;
+    premise.suspends = premise.coroutine || premise.suspends_in_control_flow;
+    premise.concurrent = premise.suspends || premise.row_bg;
+
+    // Observability names which part of the row of the binding is
+    // observation.  observes_within_the_row holds when the surface names
+    // only effects of that row.
+    premise.observes_something = names_axis_(pack, Axis::Observability);
+    premise.observes_within_the_row = fe::Subrow<observability_row_t<Observability>, binding_row>;
+
+    premise.atomic_repr = repr_is_atomic_<grade_on_t<Axis::Representation, Atoms...>>::value;
+    premise.thread_local_state = is_thread_local_<grade_on_t<Axis::GlobalState, Atoms...>>::value;
+    premise.longjmp_unsafe = is_longjmp_unsafe_<ControlFlow>::value;
+    // A recursion with a proven depth bound has a bounded stack, so D002
+    // reads only the recursion that states no depth bound.
+    premise.recurses_unbounded = std::is_same_v<CallShape, ::fixy::atom::dispatch::recurses_unbounded>;
+    // A store that a thread-local slot publishes past its own thread has a
+    // reader on another thread.  The scope of the binding states how far
+    // the store reaches, and the scope thread, the shared bottom, reaches
+    // no other thread.
+    premise.publishes_past_the_thread =
+        names_axis_(pack, Axis::MemoryScope) && !std::is_same_v<MemoryScope, ::fixy::atom::scope::thread>;
+    premise.indirect_call_may_throw = can_indirect_call_throw_<CallShape>::value;
+    premise.spawn_outlives_the_frame = can_spawn_outlive_the_frame_<Protocol>::value;
+    // A call through the vDSO and a deliberate leak lift the empty row, but
+    // each atom still states an emitting surface on one of these two axes.
+    premise.emits_outside_the_row = names_axis_(pack, Axis::Stdio) || names_axis_(pack, Axis::SyscallSurface);
+
+    premise.hot = std::is_same_v<grade_on_t<Axis::Regime, Atoms...>, ::fixy::atom::regime::hot>;
+    // pred::True is the Refinement strict pole, again an absence.
+    premise.no_witness_floor = !names_axis_(pack, Axis::Refinement);
+    premise.states_stdio = names_axis_(pack, Axis::Stdio);
+    premise.core_burning_spin = is_busy_wait_<Synchronization>::value;
+    premise.states_a_wait = has_wait_strategy_<Synchronization>::value;
+
+    premise.hw_nondeterministic =
+        is_hw_at_or_above_<::fixy::atom::hw::HwInstruction::NonDeterministicTsc, HwInstruction>::value;
+    premise.hw_privileged = is_hw_at_or_above_<::fixy::atom::hw::HwInstruction::PrivilegedMsr, HwInstruction>::value;
+    premise.barrier_seq_cst_or_above = is_barrier_at_or_above_<lat::BarrierStrength::SeqCst, BarrierStrength>::value;
+    premise.barrier_acq_rel_or_above = is_barrier_at_or_above_<lat::BarrierStrength::AcqRel, BarrierStrength>::value;
+    premise.scope_cluster_or_above = is_scope_at_or_above_<lat::MemoryScope::Cluster, MemoryScope>::value;
+    premise.scope_pinned = is_scope_trunk_pinned_<MemoryScope>::value;
+    premise.isa_pinned = is_isa_trunk_pinned_<SimdIsa>::value;
+    premise.trunks_cohere = is_scope_on_host_trunk_<MemoryScope>::value && is_isa_on_arm_trunk_<SimdIsa>::value;
+
+    premise.fp_rewrites_without_bound =
+        fp_mode_has_setting_<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite, FpMode>::value;
+    premise.fp_reassociates = premise.fp_rewrites_without_bound
+                           || fp_mode_has_setting_<::fixy::atom::fp::FpReassociate::BoundedTreeDepth, FpMode>::value;
+    premise.fp_contracts_across_statements = fp_mode_has_setting_<::fixy::atom::fp::FpContract::Fast, FpMode>::value;
+    premise.fp_mode_stated = names_axis_(pack, Axis::FpMode);
+    premise.fp_flushes_denormal_inputs =
+        fp_mode_has_setting_<::foundation::core::FpDenormalInput::DenormalsAreZero, FpMode>::value;
+    premise.fp_flushes_subnormal_results = fp_mode_has_setting_<::foundation::core::FpFtz::FlushToZero, FpMode>::value;
+
+    // A declassification discharges a rule only on a channel that the mask
+    // of its policy names, in fixy/Atom.h.  The send is an export through
+    // IO.  No policy licenses the failure channel.
+    premise.constant_time = security_class_or_refuse_<Security>() == ::fixy::atom::SecurityClass::ConstantTime;
+    premise.classified_on_send = ::fixy::atom::IsClassifiedOn<Security, ::fixy::atom::DischargeAxis::IO>;
+    premise.classified_on_failure = ::fixy::atom::IsClassifiedOn<Security, ::fixy::atom::DischargeAxis::Failure>;
+    premise.states_staleness = names_axis_(pack, Axis::Staleness);
+    premise.session_protocol = is_session_protocol_<Protocol>::value;
+    premise.has_live_handle = is_live_handle_grade_<Protocol>::value;
+
+    premise.fails = thrown_failure::fails;
+    premise.fails_with_plain_error = thrown_failure::carries_error && !thrown_failure::error_is_secret;
+    return premise;
+}
+
+template <class... Atoms>
+inline constexpr rule_premises pack_premises_v = read_pack_premises_<Atoms...>();
+
+// The premises that the payload states, read through its bands.  The
+// premises of void, the payload of the pack-only view, are all false.
+struct payload_premises {
+    bool replay_deterministic{};
+    bool claims_no_allocation{};
+    bool claims_user_space_wait{};
+    bool owes_a_protocol{};
+    ReturnedFailure returned_failure{};
+};
+
+template <class Payload>
+[[nodiscard]] consteval payload_premises read_payload_premises_() {
+    return payload_premises{.replay_deterministic = is_replay_deterministic_<Payload>::value,
+                            .claims_no_allocation = claims_no_allocation_v_<Payload>,
+                            .claims_user_space_wait = claims_user_space_wait_v_<Payload>,
+                            .owes_a_protocol = is_live_handle_payload_<Payload>::value,
+                            .returned_failure = returned_failure_of(^^typename unbanded_<Payload>::type)};
+}
+
+template <class Payload>
+inline constexpr payload_premises payload_premises_v = read_payload_premises_<Payload>();
+
+// The premises of one binding: the premises of its pack, with the facts of
+// its payload added.  A failure comes from the payload or from a throw,
+// and a live handle from the Protocol grade or from the payload.
+[[nodiscard]] consteval rule_premises join_premises_(rule_premises pack, const payload_premises& payload) noexcept {
+    const ReturnedFailure& returned = payload.returned_failure;
+    pack.replay_deterministic = payload.replay_deterministic;
+    pack.claims_no_allocation = payload.claims_no_allocation;
+    pack.claims_user_space_wait = payload.claims_user_space_wait;
+    pack.has_live_handle = pack.has_live_handle || payload.owes_a_protocol;
+    pack.fails = pack.fails || returned.fails;
+    pack.fails_with_plain_error = pack.fails_with_plain_error || (returned.carries_error && !returned.error_is_secret);
+    return pack;
+}
+
+}  // namespace detail
+
+// The premises of a binding with this payload and this pack.  The pass
+// over the pack runs one time for each pack, and the pass over the payload
+// one time for each payload.
+template <class Payload, class... Atoms>
+inline constexpr rule_premises binding_premises_v =
+    detail::join_premises_(detail::pack_premises_v<Atoms...>, detail::payload_premises_v<Payload>);
+
+// ---------------------------------------------------------------------
 // The live rules.
 //
 // Each reads grades<Atoms...> and nothing else.  The message is the
@@ -975,64 +1288,34 @@ template <class Payload, class... Atoms>
 struct rules_of {
     using G = grades<Atoms...>;
 
-    static constexpr bool borrow = std::is_same_v<typename G::template on<Axis::Usage>, ::fixy::atom::borrow>;
-    static constexpr bool ghost = std::is_same_v<typename G::template on<Axis::Usage>, ::fixy::atom::ghost>;
-    static constexpr bool capability =
-        std::is_same_v<typename G::template on<Axis::Usage>, ::fixy::atom::capability_usage>;
-    static constexpr bool coroutine =
-        std::is_same_v<typename G::template on<Axis::Reentrancy>, ::fixy::atom::coroutine>;
-    static constexpr bool monotonic =
-        std::is_same_v<typename G::template on<Axis::Mutation>, ::fixy::atom::mut_monotonic>;
-    static constexpr bool unverified =
-        trust_level_of_v<typename G::template on<Axis::Trust>> == ^^::fixy::tags::trust::Unverified;
-    static constexpr bool unbounded_cost =
-        std::is_same_v<typename G::template on<Axis::Complexity>, ::fixy::atom::cost_unbounded>;
+    static constexpr rule_premises premises = binding_premises_v<Payload, Atoms...>;
+
+    static constexpr bool borrow = premises.borrow;
+    static constexpr bool ghost = premises.ghost;
+    static constexpr bool capability = premises.capability;
+    static constexpr bool coroutine = premises.coroutine;
+    static constexpr bool monotonic = premises.monotonic;
+    static constexpr bool unverified = premises.unverified;
+    static constexpr bool unbounded_cost = premises.unbounded_cost;
 
     // The rows of the binding.  effect_row is the row that the Effect
     // grade states.  lifted_row is the union of the lifts of the atoms in
     // the pack.  binding_row joins the two, through the relation of
-    // fixy/Atom.h that fixy/Fn.h also reads for context admission.  Every
-    // rule that asks what the binding does reads binding_row.  A binding
-    // can state a futex call or a park and leave its Effect grade empty.
-    // A rule that reads only the grade admits that binding.
+    // fixy/Atom.h that fixy/Fn.h also reads for context admission.
     using effect_row = ::fixy::atom::effect_row_of_t<typename G::template on<Axis::Effect>>;
     using lifted_row = ::fixy::atom::lifted_row_of_t<Atoms...>;
     using binding_row = ::fixy::atom::binding_row_of_t<typename G::template on<Axis::Effect>, Atoms...>;
 
-    static constexpr bool row_bg =
-        ::foundation::effects::row_contains(^^binding_row, ::foundation::effects::Effect::Bg);
-    static constexpr bool row_observable = detail::row_admits_observable_<binding_row>::value;
-    static constexpr bool atomic_repr = detail::repr_is_atomic_<typename G::template on<Axis::Representation>>::value;
-    static constexpr bool thread_local_state =
-        detail::is_thread_local_<typename G::template on<Axis::GlobalState>>::value;
-    static constexpr bool longjmp_unsafe =
-        detail::is_longjmp_unsafe_<typename G::template on<Axis::ControlFlow>>::value;
-    // A recursion with a proven depth bound has a bounded stack, so D002
-    // reads only the recursion that states no depth bound.
-    static constexpr bool recurses_unbounded =
-        std::is_same_v<typename G::template on<Axis::CallShape>, ::fixy::atom::dispatch::recurses_unbounded>;
-
-    // A store that a thread-local slot publishes past its own thread has a
-    // reader on another thread, such as a monitor of a per-thread counter.
-    // The scope of the binding states how far the store reaches, and the
-    // scope thread, the shared bottom, reaches no other thread.
-    static constexpr bool publishes_past_the_thread =
-        G::template mentions<Axis::MemoryScope>
-        && !std::is_same_v<typename G::template on<Axis::MemoryScope>, ::fixy::atom::scope::thread>;
-
-    // A binding says nothing about Usage when it takes the strict pole,
-    // which on this axis is the linear grade: consumed exactly once.
-    static constexpr bool linear = !G::template mentions<Axis::Usage>;
-
-    // The concurrency premise several rules share.  A coroutine suspends
-    // and a Bg row runs elsewhere, and either makes the body concurrent
-    // with respect to the caller's frame.  A suspension can be written on
-    // Reentrancy or on ControlFlow, and the premise reads both.  A read of
-    // one axis only would let a pack avoid every rule below by a write of
-    // the suspension on the other axis.
-    static constexpr bool suspends_in_control_flow =
-        detail::control_flow_has_suspension_<typename G::template on<Axis::ControlFlow>>::value;
-    static constexpr bool concurrent = coroutine || suspends_in_control_flow || row_bg;
+    static constexpr bool row_bg = premises.row_bg;
+    static constexpr bool row_observable = premises.row_observable;
+    static constexpr bool atomic_repr = premises.atomic_repr;
+    static constexpr bool thread_local_state = premises.thread_local_state;
+    static constexpr bool longjmp_unsafe = premises.longjmp_unsafe;
+    static constexpr bool recurses_unbounded = premises.recurses_unbounded;
+    static constexpr bool publishes_past_the_thread = premises.publishes_past_the_thread;
+    static constexpr bool linear = premises.linear;
+    static constexpr bool suspends_in_control_flow = premises.suspends_in_control_flow;
+    static constexpr bool concurrent = premises.concurrent;
 
     static constexpr bool L002_ok = !(borrow && concurrent);
     static constexpr bool M012_ok = !(monotonic && concurrent && !atomic_repr);
@@ -1043,8 +1326,7 @@ struct rules_of {
     static constexpr bool R003_ok = !(coroutine && row_bg);
     static constexpr bool L006_ok = !(linear && longjmp_unsafe);
     static constexpr bool G002_ok = !(thread_local_state && atomic_repr && !publishes_past_the_thread);
-    static constexpr bool D002_ok =
-        !(recurses_unbounded && (unbounded_cost || !G::template mentions<Axis::Complexity>));
+    static constexpr bool D002_ok = !(recurses_unbounded && (unbounded_cost || premises.cost_unstated));
 
     // ── The regime family, live since fixy/atoms/Regime.h ────────────
     //
@@ -1055,29 +1337,27 @@ struct rules_of {
     // budgeted in nanoseconds and also admit an unbounded cost, an
     // allocation or an I/O call, a background row, buffered stdio, or a
     // coroutine suspension.
-    static constexpr bool hot = std::is_same_v<typename G::template on<Axis::Regime>, ::fixy::atom::regime::hot>;
+    static constexpr bool hot = premises.hot;
 
     // The one premise read from the payload rather than the pack: the
     // DetSafe band's claim that the bytes are replay-deterministic.  See
     // detail::is_replay_deterministic_ for what the claim is.  False under
     // the pack-only view.
-    static constexpr bool replay_deterministic = detail::is_replay_deterministic_<Payload>::value;
-    static constexpr bool row_alloc_or_io =
-        ::foundation::effects::row_contains(^^binding_row, ::foundation::effects::Effect::Alloc)
-        || ::foundation::effects::row_contains(^^binding_row, ::foundation::effects::Effect::IO);
+    static constexpr bool replay_deterministic = premises.replay_deterministic;
+    static constexpr bool row_alloc_or_io = premises.row_alloc_or_io;
 
     // "Unstated" is the strict pole on Complexity, so an unstated cost
     // is the absence of a grade rather than a grade of its own.  H001
     // refuses both it and the explicit unbounded grade: the hot path has
     // to say what its compute envelope is.
-    static constexpr bool cost_unstated = !G::template mentions<Axis::Complexity>;
+    static constexpr bool cost_unstated = premises.cost_unstated;
     static constexpr bool H001_ok = !(hot && (cost_unstated || unbounded_cost));
 
     // pred::True is the Refinement strict pole, again an absence.  A hot
     // body assumes an invariant it does not check — that is what buys
     // the nanoseconds — so it must carry a witness that something else
     // proved it.
-    static constexpr bool no_witness_floor = !G::template mentions<Axis::Refinement>;
+    static constexpr bool no_witness_floor = premises.no_witness_floor;
     static constexpr bool H002_ok = !(hot && no_witness_floor);
 
     // H003 reads Alloc and IO in the row of the binding, and not the
@@ -1100,7 +1380,7 @@ struct rules_of {
     // A stdio write lifts IO and Block, so H003 and W001 refuse the same
     // pack.  S001 keeps its own theorem and its own code: the write takes
     // the lock of the stream before it reaches the kernel.
-    static constexpr bool S001_ok = !(G::template mentions<Axis::Stdio> && hot);
+    static constexpr bool S001_ok = !(premises.states_stdio && hot);
 
     // ── The wait family, live since fixy/atoms/Sync.h ─────────────────
     //
@@ -1119,10 +1399,8 @@ struct rules_of {
     //
     // W002 reads the axis through the predicate of fixy/atoms/Sync.h.  The
     // rule and the atom header then cannot disagree about the line.
-    static constexpr bool blocks =
-        ::foundation::effects::row_contains(^^binding_row, ::foundation::effects::Effect::Block);
-    static constexpr bool core_burning_spin =
-        detail::is_busy_wait_<typename G::template on<Axis::Synchronization>>::value;
+    static constexpr bool blocks = premises.blocks;
+    static constexpr bool core_burning_spin = premises.core_burning_spin;
 
     static constexpr bool W001_ok = !(hot && blocks);
 
@@ -1136,10 +1414,9 @@ struct rules_of {
     // row is the one source of the coarse fact, so a band that claims more
     // than the row is false: a Pool or Stack grade with Alloc in the row,
     // or a user-space wait grade with Block in the row.
-    static constexpr bool allocates =
-        ::foundation::effects::row_contains(^^binding_row, ::foundation::effects::Effect::Alloc);
-    static constexpr bool A001_ok = !(detail::claims_no_allocation_v_<Payload> && allocates);
-    static constexpr bool W004_ok = !(detail::claims_user_space_wait_v_<Payload> && blocks);
+    static constexpr bool allocates = premises.allocates;
+    static constexpr bool A001_ok = !(premises.claims_no_allocation && allocates);
+    static constexpr bool W004_ok = !(premises.claims_user_space_wait && blocks);
 
     // ── The observability family, live since fixy/atoms/Observe.h ─────
     //
@@ -1157,10 +1434,8 @@ struct rules_of {
     // B001 is the back-pressure trap.  A rule code is stable API here, so
     // B002 above is a code of its own rather than a reinterpretation of
     // this one.
-    using observability_row = detail::observability_row_t<typename G::template on<Axis::Observability>>;
-
-    static constexpr bool observes_something = G::template mentions<Axis::Observability>;
-    static constexpr bool B002_ok = ::foundation::effects::Subrow<observability_row, binding_row>;
+    static constexpr bool observes_something = premises.observes_something;
+    static constexpr bool B002_ok = premises.observes_within_the_row;
 
     // "May run unbounded" reads four ways on this pack, and B001 refuses
     // all four: an unstated cost, an explicit unbounded cost, an unstated
@@ -1168,10 +1443,7 @@ struct rules_of {
     // about the binding, and fixy/Axis.h gives each axis a pole that states
     // nothing, so an unstated grade puts no bound on the binding.  The
     // remedy the theorem names is the pair space_bounded plus cost_linear.
-    static constexpr bool space_unstated = !G::template mentions<Axis::Space>;
-    static constexpr bool space_unbounded =
-        std::is_same_v<typename G::template on<Axis::Space>, ::fixy::atom::space_unbounded>;
-    static constexpr bool may_run_unbounded = cost_unstated || unbounded_cost || space_unstated || space_unbounded;
+    static constexpr bool may_run_unbounded = premises.may_run_unbounded;
     static constexpr bool B001_ok = !(row_bg && observes_something && may_run_unbounded);
 
     // ── The hardware-instruction family, live since fixy/atoms/Hw.h ──
@@ -1182,14 +1454,9 @@ struct rules_of {
     // claim: the same tier that is too slow for the hot path is also
     // non-deterministic by construction, and a payload claiming
     // replay-determinism cannot survive it.
-    static constexpr bool hw_nondeterministic =
-        detail::is_hw_at_or_above_<::fixy::atom::hw::HwInstruction::NonDeterministicTsc,
-                                   typename G::template on<Axis::HwInstruction>>::value;
-    static constexpr bool hw_privileged =
-        detail::is_hw_at_or_above_<::fixy::atom::hw::HwInstruction::PrivilegedMsr,
-                                   typename G::template on<Axis::HwInstruction>>::value;
-    static constexpr bool row_init =
-        ::foundation::effects::row_contains(^^binding_row, ::foundation::effects::Effect::Init);
+    static constexpr bool hw_nondeterministic = premises.hw_nondeterministic;
+    static constexpr bool hw_privileged = premises.hw_privileged;
+    static constexpr bool row_init = premises.row_init;
 
     static constexpr bool V201_ok = !(hot && hw_nondeterministic);
     static constexpr bool V202_ok = !(hw_privileged && !row_init);
@@ -1203,9 +1470,7 @@ struct rules_of {
     // drain.  A release store and an acquire load are one MOV each on
     // x86 and are what the SPSC ring is made of, so the floor sits above
     // them and above acq_rel.
-    static constexpr bool barrier_seq_cst_or_above =
-        detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::SeqCst,
-                                        typename G::template on<Axis::BarrierStrength>>::value;
+    static constexpr bool barrier_seq_cst_or_above = premises.barrier_seq_cst_or_above;
 
     static constexpr bool V301_ok = !(hot && barrier_seq_cst_or_above);
 
@@ -1220,12 +1485,8 @@ struct rules_of {
     // same trap with nothing named, so the rule fires on it too.  The
     // floor is read through the lattice's leq, so the host trunk is
     // incomparable with Cluster and the rule stands down for it.
-    static constexpr bool scope_cluster_or_above =
-        detail::is_scope_at_or_above_<::foundation::algebra::lattices::MemoryScope::Cluster,
-                                      typename G::template on<Axis::MemoryScope>>::value;
-    static constexpr bool barrier_acq_rel_or_above =
-        detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::AcqRel,
-                                        typename G::template on<Axis::BarrierStrength>>::value;
+    static constexpr bool scope_cluster_or_above = premises.scope_cluster_or_above;
+    static constexpr bool barrier_acq_rel_or_above = premises.barrier_acq_rel_or_above;
 
     static constexpr bool V401_ok = !(scope_cluster_or_above && !barrier_acq_rel_or_above);
 
@@ -1245,13 +1506,9 @@ struct rules_of {
     // nothing else; the accelerator trunk is GPU scope and coheres with
     // no host ISA at all.  The shared points on either axis cohere with
     // anything.
-    static constexpr bool isa_pinned = detail::is_isa_trunk_pinned_<typename G::template on<Axis::SimdIsa>>::value;
-    static constexpr bool isa_arm = detail::is_isa_on_arm_trunk_<typename G::template on<Axis::SimdIsa>>::value;
-    static constexpr bool scope_pinned =
-        detail::is_scope_trunk_pinned_<typename G::template on<Axis::MemoryScope>>::value;
-    static constexpr bool scope_host =
-        detail::is_scope_on_host_trunk_<typename G::template on<Axis::MemoryScope>>::value;
-    static constexpr bool trunks_cohere = scope_host && isa_arm;
+    static constexpr bool isa_pinned = premises.isa_pinned;
+    static constexpr bool scope_pinned = premises.scope_pinned;
+    static constexpr bool trunks_cohere = premises.trunks_cohere;
 
     static constexpr bool V101_ok = !(replay_deterministic && isa_pinned);
     static constexpr bool V402_ok = !(scope_pinned && isa_pinned && !trunks_cohere);
@@ -1272,13 +1529,8 @@ struct rules_of {
     // permits, which is the flag CLAUDE.md's DetSafe discipline names as
     // safe, because the fusion is visible in the source expression and so
     // is the same on every build.
-    using fp_mode_grade = typename G::template on<Axis::FpMode>;
-
-    static constexpr bool fp_reassociates =
-        detail::fp_mode_has_setting_<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite, fp_mode_grade>::value
-        || detail::fp_mode_has_setting_<::fixy::atom::fp::FpReassociate::BoundedTreeDepth, fp_mode_grade>::value;
-    static constexpr bool fp_contracts_across_statements =
-        detail::fp_mode_has_setting_<::fixy::atom::fp::FpContract::Fast, fp_mode_grade>::value;
+    static constexpr bool fp_reassociates = premises.fp_reassociates;
+    static constexpr bool fp_contracts_across_statements = premises.fp_contracts_across_statements;
 
     static constexpr bool F101_ok = !(replay_deterministic && fp_reassociates);
     static constexpr bool F102_ok = !(replay_deterministic && fp_contracts_across_statements);
@@ -1299,16 +1551,14 @@ struct rules_of {
     // A caller names the pointer type itself, such as
     // indirect_call<void (*)(void*) noexcept>, or gives its tag class a
     // member type `signature`.
-    static constexpr bool indirect_call_may_throw =
-        detail::can_indirect_call_throw_<typename G::template on<Axis::CallShape>>::value;
+    static constexpr bool indirect_call_may_throw = premises.indirect_call_may_throw;
     static constexpr bool D001_ok = !indirect_call_may_throw;
 
     // L003 is L002's lifetime hazard through a different door.  L002
     // reads a suspension or a Bg row; a detached or raw-cloned child is
     // neither, and it can still run after the frame the borrow points
     // into has unwound.
-    static constexpr bool spawn_outlives_the_frame =
-        detail::can_spawn_outlive_the_frame_<typename G::template on<Axis::Protocol>>::value;
+    static constexpr bool spawn_outlives_the_frame = premises.spawn_outlives_the_frame;
     static constexpr bool L003_ok = !(borrow && spawn_outlives_the_frame);
 
     // P010 reads the row of the binding, which holds the lifts of its
@@ -1318,8 +1568,7 @@ struct rules_of {
     // surface.  So P002 reads the two axes that such atoms engage.  A
     // ghost binding that engages either is the same contradiction through
     // a different door.
-    static constexpr bool emits_outside_the_row =
-        G::template mentions<Axis::Stdio> || G::template mentions<Axis::SyscallSurface>;
+    static constexpr bool emits_outside_the_row = premises.emits_outside_the_row;
     static constexpr bool P002_ok = !(ghost && emits_outside_the_row);
 
     // ── The constant-time family and the failure family ─────────────
@@ -1331,28 +1580,20 @@ struct rules_of {
     // E>, or ctrl::throws<E>, read by the two detail readers above.
     // Neither is in the effect row, and foundation/effects/Effect.h says
     // why at its top.
-    static constexpr ::fixy::atom::SecurityClass security_class =
-        detail::security_class_or_refuse_<typename G::template on<Axis::Security>>();
-    static constexpr bool constant_time = security_class == ::fixy::atom::SecurityClass::ConstantTime;
+    static constexpr bool constant_time = premises.constant_time;
 
     // A declassification discharges a rule only on a channel that the mask
     // of its policy names, in fixy/Atom.h.  I004 reads the channel of a
     // send, which is an export through IO.  I002 reads the failure, which
     // no policy licenses, so a declassification leaves each failure
     // classified.
-    static constexpr bool classified_on_send =
-        ::fixy::atom::IsClassifiedOn<typename G::template on<Axis::Security>, ::fixy::atom::DischargeAxis::IO>;
-    static constexpr bool classified_on_failure =
-        ::fixy::atom::IsClassifiedOn<typename G::template on<Axis::Security>, ::fixy::atom::DischargeAxis::Failure>;
+    static constexpr bool classified_on_send = premises.classified_on_send;
+    static constexpr bool classified_on_failure = premises.classified_on_failure;
 
     // The payload rule's side of the failure reads the payload, as the
     // replay claim does, so it stands down under the pack-only view.
-    static constexpr detail::ReturnedFailure returned_failure =
-        detail::returned_failure_of(^^typename detail::unbanded_<Payload>::type);
-    using thrown_failure = detail::thrown_failure_<typename G::template on<Axis::ControlFlow>>;
-    static constexpr bool fails = returned_failure.fails || thrown_failure::fails;
-    static constexpr bool fails_with_plain_error = (returned_failure.carries_error && !returned_failure.error_is_secret)
-                                                || (thrown_failure::carries_error && !thrown_failure::error_is_secret);
+    static constexpr bool fails = premises.fails;
+    static constexpr bool fails_with_plain_error = premises.fails_with_plain_error;
 
     // F103, F104 and F105 read the FP mode against the timing claim, as
     // F101 and F102 read it against the replay claim.  F103 refuses only
@@ -1366,13 +1607,10 @@ struct rules_of {
     // subnormals preserved.  So a constant-time body that names an FP mode
     // at all must name the flush.  A body that names no FP mode claims
     // nothing about floating point, and the two rules stand down for it.
-    static constexpr bool fp_mode_stated = G::template mentions<Axis::FpMode>;
-    static constexpr bool fp_flushes_denormal_inputs =
-        detail::fp_mode_has_setting_<::foundation::core::FpDenormalInput::DenormalsAreZero, fp_mode_grade>::value;
-    static constexpr bool fp_flushes_subnormal_results =
-        detail::fp_mode_has_setting_<::foundation::core::FpFtz::FlushToZero, fp_mode_grade>::value;
-    static constexpr bool fp_rewrites_without_bound =
-        detail::fp_mode_has_setting_<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite, fp_mode_grade>::value;
+    static constexpr bool fp_mode_stated = premises.fp_mode_stated;
+    static constexpr bool fp_flushes_denormal_inputs = premises.fp_flushes_denormal_inputs;
+    static constexpr bool fp_flushes_subnormal_results = premises.fp_flushes_subnormal_results;
+    static constexpr bool fp_rewrites_without_bound = premises.fp_rewrites_without_bound;
 
     static constexpr bool F103_ok = !(constant_time && fp_rewrites_without_bound);
     static constexpr bool F104_ok = !(constant_time && fp_mode_stated && !fp_flushes_denormal_inputs);
@@ -1389,10 +1627,9 @@ struct rules_of {
     // trip of the corpus entry staleness_secret_without_declassify.  The
     // rule is kept for its own theorem and its own remedy, as R002 is
     // kept beside L002.
-    static constexpr bool S010_ok = !(constant_time && G::template mentions<Axis::Staleness>);
+    static constexpr bool S010_ok = !(constant_time && premises.states_staleness);
 
-    static constexpr bool session_protocol =
-        detail::is_session_protocol_<typename G::template on<Axis::Protocol>>::value;
+    static constexpr bool session_protocol = premises.session_protocol;
     static constexpr bool I004_ok = !(classified_on_send && concurrent && session_protocol && !constant_time);
 
     // I003 needs no condition beyond the failure path.  A constant-time
@@ -1419,10 +1656,8 @@ struct rules_of {
     // it for a frame that captured one.  A payload that is a session
     // handle states it by its type, so the binding does not have to
     // repeat it.  The payload half stands down under the pack-only view.
-    static constexpr bool has_live_handle =
-        detail::is_live_handle_grade_<typename G::template on<Axis::Protocol>>::value
-        || detail::is_live_handle_payload_<Payload>::value;
-    static constexpr bool suspends = coroutine || suspends_in_control_flow;
+    static constexpr bool has_live_handle = premises.has_live_handle;
+    static constexpr bool suspends = premises.suspends;
     static constexpr bool R004_ok = !(has_live_handle && suspends && !linear);
 
     // W003 reads the same live handle against the hot regime.  A handle
@@ -1435,8 +1670,7 @@ struct rules_of {
     // its wait strategy, and W001 then judges the lift of the strategy it
     // states.  The rule reads a stated strategy, not the axis, so a type on
     // the axis that names no strategy does not satisfy it.
-    static constexpr bool states_a_wait =
-        detail::has_wait_strategy_<typename G::template on<Axis::Synchronization>>::value;
+    static constexpr bool states_a_wait = premises.states_a_wait;
     static constexpr bool W003_ok = !(hot && has_live_handle && !states_a_wait);
 
     // ── Naming the rules a pack trips ────────────────────────────────
