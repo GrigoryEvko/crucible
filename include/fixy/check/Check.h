@@ -47,6 +47,8 @@
 #include <foundation/os/Abort.h>
 #include <foundation/os/Errno.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <type_traits>
 #include <utility>
 
@@ -70,6 +72,18 @@ namespace detail {
 // the call of expect_dies.
 [[noreturn, gnu::cold]] void report_child_error_(::foundation::os::Errno error, ::foundation::core::Site site) noexcept;
 
+// Writes "foundation: fatal: assert: CONDITION" and the site of the assert
+// to standard error, and ends the process through the fatal arm of
+// foundation/core/Report.h, with SIGABRT.  CONDITION is the text of size
+// characters at condition.  The body stays in this header, so an assert needs
+// only the library foundation, as the fatal arm does.
+[[noreturn, gnu::cold, gnu::noinline]] inline void report_failed_assertion_(char const* condition, std::size_t size,
+                                                                            char const* file, std::uint32_t line,
+                                                                            char const* function) noexcept {
+    ::foundation::core::detail::FmtArg const argument{::foundation::core::detail::FmtArgKind::text, 0, condition, size};
+    ::foundation::core::detail::report_fatal_with_("assert: {}", file, line, function, &argument, 1);
+}
+
 }  // namespace detail
 
 // Writes the text of the pass line to standard output.  The text holds its
@@ -91,11 +105,14 @@ pass(Ctx const& /*test*/, ::foundation::core::Fmt<std::type_identity_t<First>, s
 
 // The failure arm of CRUCIBLE_TEST_ASSERT: writes "assert: CONDITION" and the
 // site of the assert to standard error, and ends the process with SIGABRT.
-template <TestContext Ctx>
-[[noreturn, gnu::cold, gnu::noinline]] void
-fail_assertion(Ctx const& /*test*/, ::foundation::core::Fmt<::foundation::core::TextView> const& text,
-               ::foundation::core::TextView condition) noexcept {
-    ::foundation::core::fatal(text, condition);
+// The condition is the string literal of the macro, which the arm takes by
+// reference.  The scalar default arguments read the site of the call, as the
+// constructor of Fmt does, and the call is the assert.
+template <TestContext Ctx, std::size_t Length>
+[[noreturn, gnu::always_inline]] inline void
+fail_assertion(Ctx const& /*test*/, char const (&condition)[Length], char const* file = __builtin_FILE(),
+               int line = __builtin_LINE(), char const* function = __builtin_FUNCTION()) noexcept {
+    detail::report_failed_assertion_(condition, Length - 1, file, static_cast<std::uint32_t>(line), function);
 }
 
 // Runs body in a child process (THE DEATH TEST).  The test continues when
@@ -141,15 +158,14 @@ void expect_dies(Ctx const& test, Body&& body, ::foundation::core::TextView expe
 // of a template argument list, such as lookup<&f, int, double>().is_none().
 // The report writes the full condition.
 //
-// The text of the report and the condition are static constexpr locals, so
-// they are constants in read-only data, and the failure builds no object on
-// the stack of the test.
-#define CRUCIBLE_TEST_ASSERT(test, ...)                                                                       \
-    do {                                                                                                      \
-        if (!(__VA_ARGS__)) [[unlikely]] {                                                                    \
-            static constexpr ::foundation::core::Fmt<::foundation::core::TextView> crucible_test_assert_text{ \
-                "assert: {}"};                                                                                \
-            static constexpr ::foundation::core::TextView crucible_test_assert_condition{#__VA_ARGS__};       \
-            ::fixy::check::fail_assertion(test, crucible_test_assert_text, crucible_test_assert_condition);   \
-        }                                                                                                     \
+// The failure arm takes the condition as a string literal by reference, and
+// its default arguments read the site.  So the failure passes an address and
+// constants, it builds no object on the stack of the test, and it declares
+// no name in the scope of the assert.  An assert in a function of a header of
+// any namespace then declares nothing in that namespace.
+#define CRUCIBLE_TEST_ASSERT(test, ...)                        \
+    do {                                                       \
+        if (!(__VA_ARGS__)) [[unlikely]] {                     \
+            ::fixy::check::fail_assertion(test, #__VA_ARGS__); \
+        }                                                      \
     } while (0)
