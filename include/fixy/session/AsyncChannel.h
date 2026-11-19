@@ -29,8 +29,12 @@
 // The rest of the mint is the fork shape of mint_forked_channel: each
 // side runs on its own thread with its own endpoint, and each body
 // returns its endpoint at End.  The mint reaches the fork through
-// SessionMintDoor::fork_channel of fixy/session/Handle.h, whose gate
-// admits the relation of this mint (ForkedSidesAgree).
+// SessionMintDoor::fork_channel of fixy/session/Handle.h.  Its gate admits
+// exact duals or a registered side relation (ForkedSidesAgree of
+// fixy/session/Admission.h), and this header registers the relation of
+// this mint in the family async of side_relations.  So the core includes
+// no header of the asynchronous relation, and a unit that does not include
+// this header has no fork of two sides that are not duals.
 
 #include <fixy/concurrent/PermissionFork.h>
 #include <fixy/session/Handle.h>
@@ -92,5 +96,25 @@ mint_forked_async_channel(Ctx const& ctx, ::foundation::permissions::Permission<
         ctx, std::move(parent), std::forward<ResourceSelf>(self_resource), std::forward<ResourcePeer>(peer_resource),
         std::move(self_body), std::move(peer_body), loc);
 }
+
+// The relation of this mint: the two Resources state one capacity, and
+// each side refines the dual of the other side at that capacity.  The
+// relation asks for both directions because refinement keeps each exit,
+// and duality does not keep that property.
+template <typename SelfProto, typename PeerProto, typename ResourceSelf, typename ResourcePeer>
+concept AsyncSidesAgree =
+    StatesOneChannelCapacity<ResourceSelf, ResourcePeer> && SubtypeAsync<SelfProto, dual_of_t<PeerProto>, ResourceSelf>
+    && SubtypeAsync<PeerProto, dual_of_t<SelfProto>, ResourcePeer>;
+
+// The family async of the side relations (fixy/session/Admission.h).  The
+// registration stands in the file of its concept, the header of
+// mint_forked_async_channel.
+namespace side_relations::async {
+
+inline constexpr side_relation async_subtyping{.relation = ^^AsyncSidesAgree};
+
+inline constexpr ::fixy::session::transition::seal relation_seal{.kind = ^^side_relation, .count = 1};
+
+}  // namespace side_relations::async
 
 }  // namespace fixy::session

@@ -13,7 +13,6 @@
 #include <fixy/session/Flow.h>
 #include <fixy/session/Protocol.h>
 #include <fixy/session/Registry.h>
-#include <fixy/session/Subtype.h>
 #include <fixy/session/Watch.h>
 #include <fixy/session/Wire.h>
 
@@ -22,6 +21,7 @@
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -551,10 +551,14 @@ session_payload_rules(std::meta::info registry, [[maybe_unused]] std::meta::info
 }  // namespace detail
 
 // The rules of this layer for the payload walk of Proto, read where the
-// row of Proto is first asked.
+// row of Proto is first asked.  The list has a type that depends on Proto
+// (foundation/reflect/Anchor.h), so GCC resolves the static array only
+// where the row of a protocol is asked.
 template <class Proto>
 inline constexpr std::span<const ::fixy::concurrent::payload_family_rule> session_payload_families =
-    std::define_static_array(detail::session_payload_rules(detail::protocol_registry, ^^Proto));
+    std::define_static_array(
+        ::foundation::reflect::anchored_t<^^Proto, std::vector<::fixy::concurrent::payload_family_rule>>(
+            detail::session_payload_rules(detail::protocol_registry, ^^Proto)));
 
 // The union of the effect rows of the payloads of Proto.
 template <class Proto>
@@ -673,17 +677,66 @@ concept CtxFitsTestChannel = ::foundation::effects::CtxOwnsCapability<Ctx, ::fou
                           && PermissionFlowCloses<dual_of_t<Proto>, ::foundation::permissions::EmptyPermSet>
                           && CtxAdmitsChannelRow<Ctx, Proto, dual_of_t<Proto>>;
 
-// The relation between the two sides of a forked channel.  The sides are
-// exact duals, or each side refines the dual of the other side at the
-// capacity that the two Resources state (fixy/session/Subtype.h).  The
-// relation asks for both directions because refinement keeps each exit,
-// and duality does not keep that property.  mint_forked_async_channel of
-// fixy/session/AsyncChannel.h states the second form with a diagnostic
-// for each clause.
+// ── The relation between the two sides of a forked channel ──────────
+//
+// The two sides of a forked channel are exact duals, or a side relation
+// that a header registers holds for them.  A side relation is a
+// registration of the kind side_relation in a family of the root
+// side_relations (fixy/session/Registry.h, section Families).  It names a
+// concept `template <class SelfProto, class PeerProto, class ResourceSelf,
+// class ResourcePeer> concept`.  The registration stands in the file of
+// that concept, which is the header of the mint that admits the relation,
+// so the relation comes with the mint that a unit includes.  (GCC 16 gives
+// no file for a function template, so the read cannot tie the relation to
+// the mint itself.)  The fork door reads the relations where its gate is
+// asked, so a unit that does not include an extension admits none of its
+// relations.  fixy/session/AsyncChannel.h registers the asynchronous
+// relation: each side refines the dual of the other side at the capacity
+// that the two Resources state.
+//
+// The relation names no shape, so the home check of a shape does not hold
+// it.  A relation is a declaration of the base, and the rule
+// base-namespace refuses a planted one outside the base.
+struct side_relation {
+    std::meta::info relation{};
+};
+
+namespace side_relations {}
+
+namespace detail {
+
+// Has no constant definition.  A call to it stops the constant evaluation,
+// and the diagnostic names it.
+void a_side_relation_stands_outside_the_file_of_its_concept() noexcept;
+
+// True when a relation of the root `relations` holds for the two sides,
+// read where the gate is asked.  The root is a parameter, so GCC does not
+// fold the read where this body stands.  Complexity: linear in the
+// relations, and one concept check for each.
+[[nodiscard]] consteval bool side_relation_holds(std::meta::info relations, std::meta::info self_proto,
+                                                 std::meta::info peer_proto, std::meta::info resource_self,
+                                                 std::meta::info resource_peer) {
+    namespace tr = ::fixy::session::transition;
+    for (const std::meta::info member : tr::registrations_of(relations, ^^side_relation)) {
+        const side_relation entry = std::meta::extract<side_relation>(member);
+        if (!tr::detail::is_same_file(member, entry.relation)) {
+            a_side_relation_stands_outside_the_file_of_its_concept();
+        }
+        if (std::meta::extract<bool>(
+                std::meta::substitute(entry.relation, {self_proto, peer_proto, resource_self, resource_peer}))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace detail
+
+// The relation between the two sides of a forked channel: exact duals, or
+// a registered side relation.
 template <typename SelfProto, typename PeerProto, typename ResourceSelf, typename ResourcePeer>
-concept ForkedSidesAgree = std::is_same_v<PeerProto, dual_of_t<SelfProto>>
-                        || (StatesOneChannelCapacity<ResourceSelf, ResourcePeer>
-                            && SubtypeAsync<SelfProto, dual_of_t<PeerProto>, ResourceSelf>
-                            && SubtypeAsync<PeerProto, dual_of_t<SelfProto>, ResourcePeer>);
+concept ForkedSidesAgree =
+    std::is_same_v<PeerProto, dual_of_t<SelfProto>>
+    || detail::side_relation_holds(^^side_relations, ^^SelfProto, ^^PeerProto, ^^ResourceSelf, ^^ResourcePeer);
 
 }  // namespace fixy::session

@@ -1322,6 +1322,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::MoveOnlyResource,
      "an empty member that deletes the copy of a session Resource: it holds nothing, makes no claim, and is "
      "never a value in a signature"},
+    {^^::fixy::session::side_relation,
+     "a registration of the registry of the side relations: it names a concept at compile time, and it is "
+     "never a value in a signature"},
     {^^::fixy::session::MachineLease,
      "the Resource of one view of a machine bridge: it reaches the state of the machine of the bridge for the "
      "span of the view, makes no claim, and is never a value in a signature"},
