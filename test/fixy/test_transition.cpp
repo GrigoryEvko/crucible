@@ -621,6 +621,15 @@ inline constexpr tr::subsort_axiom loops{.drops = ^^Always, .inner = ^^same_t};
 }  // namespace looping_axioms
 static_assert(!tr::subsorts(^^looping_axioms, ^^int, ^^long));
 
+// The order keeps the answer of a pair in a cell that only its walk builds.
+// Code outside the walk cannot build a cell or copy one, so a specialization
+// of subsort_cell_at can hold only a cell that the walk builds.  That cell
+// holds its own pair, and the read refuses the cell of another pair
+// (neg_sess_subsort_cell_of_another_pair).
+using looping_cell = std::remove_cvref_t<decltype(tr::subsort_cell_at<^^looping_axioms, ^^int, ^^long>)>;
+static_assert(!std::is_default_constructible_v<looping_cell>);
+static_assert(!std::is_copy_constructible_v<looping_cell>);
+
 // ── The type graph ───────────────────────────────────────────────────
 
 consteval bool graph_links_back_to_binder() {
