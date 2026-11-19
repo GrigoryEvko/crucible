@@ -34,10 +34,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
-#include <span>
 #include <thread>
 #include <vector>
 
+#include <fixy/Core.h>
 #include <fixy/concurrent/MpscRing.h>
 
 #include "bench_harness.h"
@@ -85,17 +85,18 @@ struct BatchedPushWorker {
         while (!start.load(std::memory_order_acquire)) {
             CRUCIBLE_SPIN_PAUSE;
         }
-        std::array<Item, BATCH> buf{};
+        ::fixy::FixedArray<Item, BATCH> buf{};
         std::size_t pushed = 0;
         while (pushed < kPerProducer) {
             const std::size_t remaining = kPerProducer - pushed;
             const std::size_t n = (remaining < BATCH) ? remaining : BATCH;
             for (std::size_t i = 0; i < n; ++i) {
-                buf[i] = base + (pushed + i);
+                *buf.get(i).expect("a position of a batch is below BATCH") = base + (pushed + i);
             }
             std::size_t in_batch = 0;
             while (in_batch < n) {
-                const std::size_t r = ring.try_push_batch(std::span<const Item>(buf.data() + in_batch, n - in_batch));
+                const std::size_t r = ring.try_push_batch(
+                    buf.view().window(in_batch, n - in_batch).expect("the rest of a batch lies inside it"));
                 if (r > 0) {
                     in_batch += r;
                 } else {
@@ -131,19 +132,19 @@ void run_cycle(std::size_t producer_count) {
         while (!start.load(std::memory_order_acquire)) {
             CRUCIBLE_SPIN_PAUSE;
         }
-        std::array<Item, 64> buf{};
+        ::fixy::FixedArray<Item, 64> buf{};
         std::size_t local = 0;
         // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.
         const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
         while (local < total) {
-            const std::size_t n = ring.try_pop_batch(merge, std::span<Item>(buf));
+            const std::size_t n = ring.try_pop_batch(merge, buf.view());
             if (n == 0) {
                 CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
             // Anti-DCE: keep the read alive.
-            bench::do_not_optimize(buf[0]);
-            bench::do_not_optimize(buf[n - 1]);
+            bench::do_not_optimize(buf.at(::fixy::index<0>()));
+            bench::do_not_optimize(*buf.get(n - 1).expect("a pop gives at most the count of the buffer"));
             local += n;
         }
         consumed.store(local, std::memory_order_release);

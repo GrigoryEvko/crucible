@@ -11,6 +11,7 @@
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>
 
 #include <array>
@@ -18,7 +19,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <span>
 
 // The claims the carriers in this header make that no lattice grades.
 // foundation/diag/RowHash.h folds each identity, so every carrier here
@@ -81,9 +81,10 @@ public:
     // The bulk copies go through std::memcpy rather than a std::simd
     // store loop.  The compiler lowers a bounded contiguous memcpy to
     // the widest store the target ISA offers, so the explicit vector
-    // form buys nothing and adds a header dependency.
-    [[nodiscard, gnu::hot]] std::size_t try_push_batch(std::span<const T> items) noexcept {
-        if (items.empty()) [[unlikely]]
+    // form buys nothing and adds a header dependency.  The View of the
+    // caller gives its first element through the door of the base.
+    [[nodiscard, gnu::hot]] std::size_t try_push_batch(::foundation::core::View<T const> items) noexcept {
+        if (items.size() == 0) [[unlikely]]
             return 0;
         const std::uint64_t h = head_.peek_relaxed();
         const std::uint64_t t = tail_.get();
@@ -97,17 +98,18 @@ public:
         const std::size_t first = room_to_end < count ? room_to_end : count;
         const std::size_t second = count - first;
 
-        std::memcpy(buffer_.data() + start_pos, items.data(), first * sizeof(T));
+        T const* const source = first_of_(::foundation::core::detail::ViewDoor::key(), items);
+        std::memcpy(buffer_.data() + start_pos, source, first * sizeof(T));
         if (second > 0) [[unlikely]] {
-            std::memcpy(buffer_.data(), items.data() + first, second * sizeof(T));
+            std::memcpy(buffer_.data(), source + first, second * sizeof(T));
         }
 
         head_.advance_sole_writer_from(h, h + count);
         return count;
     }
 
-    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(std::span<T> out) noexcept {
-        if (out.empty()) [[unlikely]]
+    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(::foundation::core::View<T> out) noexcept {
+        if (out.size() == 0) [[unlikely]]
             return 0;
         const std::uint64_t t = tail_.peek_relaxed();
         const std::uint64_t h = head_.get();
@@ -121,9 +123,10 @@ public:
         const std::size_t first = room_to_end < count ? room_to_end : count;
         const std::size_t second = count - first;
 
-        std::memcpy(out.data(), buffer_.data() + start_pos, first * sizeof(T));
+        T* const target = first_of_(::foundation::core::detail::ViewDoor::key(), out);
+        std::memcpy(target, buffer_.data() + start_pos, first * sizeof(T));
         if (second > 0) [[unlikely]] {
-            std::memcpy(out.data() + first, buffer_.data(), second * sizeof(T));
+            std::memcpy(target + first, buffer_.data(), second * sizeof(T));
         }
 
         tail_.advance_sole_writer_from(t, t + count);

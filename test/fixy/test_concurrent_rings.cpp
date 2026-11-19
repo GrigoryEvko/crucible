@@ -17,7 +17,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
-#include <span>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -51,22 +50,23 @@ static_assert(c::RingValue<Plain>);
 static_assert(!c::RingValue<OwnsSomething>);
 
 // The cells that a batch call of a ring reads or writes.  The batch calls
-// take a std::span, so this class is the one place of the batch tests that
-// names a type of the standard library.
+// take a View of the base.
 template <class T, std::size_t N>
 class Run final {
-    std::array<T, N> cells_{};
+    ::fixy::FixedArray<T, N> cells_{};
 
 public:
-    [[nodiscard]] T& at(std::size_t position) noexcept { return cells_[position]; }
+    [[nodiscard]] T& at(std::size_t position) noexcept {
+        return *cells_.get(position).expect("a position of a run is below the count of the run");
+    }
 
     // The first count cells, for a push.
-    [[nodiscard]] std::span<T const> first(std::size_t count) const noexcept {
-        return std::span<T const>{cells_}.first(count);
+    [[nodiscard]] ::fixy::View<T const> first(std::size_t count) const noexcept {
+        return cells_.view().window(0, count).expect("a run holds the count of a push");
     }
 
     // Each cell, for a pop.
-    [[nodiscard]] std::span<T> each() noexcept { return std::span<T>{cells_}; }
+    [[nodiscard]] ::fixy::View<T> each() noexcept { return cells_.view(); }
 };
 
 // ── Shape ────────────────────────────────────────────────────────────
@@ -263,20 +263,20 @@ using MpscWide = c::MpscRing<int, 128>;
         if (!small.try_push(i)) return 1;
     }
     if (small.try_push(4)) return 1;
-    std::array<int, 4> out{};
-    if (small.try_pop_batch(kNondet, std::span<int>{out}) != 4 || out[3] != 3) return 1;
+    Run<int, 4> out{};
+    if (small.try_pop_batch(kNondet, out.each()) != 4 || out.at(3) != 3) return 1;
 
     MpscWide wide{};
-    std::vector<int> items(100);
-    for (int i = 0; i < 100; ++i)
-        items[static_cast<std::size_t>(i)] = i;
-    if (wide.try_push_batch(std::span<const int>{items}) != 100) return 1;
+    Run<int, 100> items{};
+    for (std::size_t i = 0; i < 100; ++i)
+        items.at(i) = static_cast<int>(i);
+    if (wide.try_push_batch(items.first(100)) != 100) return 1;
 
     // The drain crosses the boundary between bitmap words 0 and 1.
-    std::vector<int> drained(100);
-    if (wide.try_pop_batch(kNondet, std::span<int>{drained}) != 100) return 1;
+    Run<int, 100> drained{};
+    if (wide.try_pop_batch(kNondet, drained.each()) != 100) return 1;
     for (int i = 0; i < 100; ++i) {
-        if (drained[static_cast<std::size_t>(i)] != i) {
+        if (drained.at(static_cast<std::size_t>(i)) != i) {
             std::fprintf(stderr, "the wide MPSC drain broke at index %d\n", i);
             return 1;
         }
@@ -589,9 +589,11 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
                 std::uint64_t taken = 0;
                 std::uint64_t refusals = 0;
                 if (pushes_batches) {
-                    const std::array<std::uint64_t, kBatch> batch{1, 2, 3, 4};
+                    Run<std::uint64_t, kBatch> batch{};
+                    for (std::size_t i = 0; i < kBatch; ++i)
+                        batch.at(i) = i + 1;
                     for (std::uint64_t i = 0; i < kPushesPerProducer / kBatch; ++i) {
-                        const std::size_t pushed = ring->try_push_batch(std::span<const std::uint64_t>{batch});
+                        const std::size_t pushed = ring->try_push_batch(batch.first(kBatch));
                         taken += pushed;
                         refusals += (pushed == 0) ? 1 : 0;
                     }

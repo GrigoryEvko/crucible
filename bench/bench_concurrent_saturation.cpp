@@ -25,8 +25,8 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
-#include <span>
 
+#include <fixy/Core.h>
 #include <fixy/concurrent/SpscRing.h>
 
 #include "bench_harness.h"
@@ -45,17 +45,17 @@ struct SaturationCase {
 
     static bench::Report run() {
         auto ring = std::make_unique<Ring>();
-        alignas(64) static std::array<Item, N> tx{};
-        alignas(64) static std::array<Item, N> rx{};
-        for (std::size_t k = 0; k < N; ++k)
-            tx[k] = k;
+        alignas(64) static ::fixy::FixedArray<Item, N> tx{};
+        alignas(64) static ::fixy::FixedArray<Item, N> rx{};
+        for (::fixy::Index<N> const index : tx.indices())
+            tx.at(index) = index.raw();
 
         char name[128];
         std::snprintf(name, sizeof(name), "spsc_ring batch<%zu> round-trip (push+pop)", N);
 
         return bench::run(name, [&] {
-            const std::size_t np = ring->try_push_batch(std::span{tx});
-            const std::size_t nc = ring->try_pop_batch(std::span{rx});
+            const std::size_t np = ring->try_push_batch(tx.view());
+            const std::size_t nc = ring->try_pop_batch(rx.view());
             bench::do_not_optimize(np);
             bench::do_not_optimize(nc);
             // CRITICAL: clobber rx so the compiler can't elide the pop-side
@@ -64,8 +64,8 @@ struct SaturationCase {
             // ANY element of rx via do_not_optimize forces every byte to
             // be considered live.  rx[0] suffices; the compiler treats
             // the whole array as observable through aliasing.
-            bench::do_not_optimize(rx[0]);
-            bench::do_not_optimize(rx[N - 1]);
+            bench::do_not_optimize(rx.at(::fixy::index<0>()));
+            bench::do_not_optimize(rx.at(::fixy::index<N - 1>()));
         });
     }
 };

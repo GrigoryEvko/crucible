@@ -33,6 +33,7 @@
 #include <cstdint>
 
 #include <crucible/TraceRing.h>
+#include <fixy/Core.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
 #include <fixy/concurrent/SpscRing.h>
 
@@ -118,13 +119,13 @@ int main() {
         // (Zen 4+ would emit AVX-512 ZMM stores; this CPU does not.)
         [&] {
             auto ring = std::make_unique<HugeSpsc>();
-            alignas(64) static std::array<std::uint64_t, 64> tx{};
-            alignas(64) static std::array<std::uint64_t, 64> rx{};
-            for (std::size_t k = 0; k < tx.size(); ++k)
-                tx[k] = k;
+            alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> tx{};
+            alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> rx{};
+            for (::fixy::Index<64> const index : tx.indices())
+                tx.at(index) = index.raw();
             return bench::run("spsc_ring.{try_push_batch,try_pop_batch}<64> round-trip", [&] {
-                const std::size_t np = ring->try_push_batch(std::span{tx});
-                const std::size_t nc = ring->try_pop_batch(std::span{rx});
+                const std::size_t np = ring->try_push_batch(tx.view());
+                const std::size_t nc = ring->try_pop_batch(rx.view());
                 bench::do_not_optimize(np);
                 bench::do_not_optimize(nc);
             });

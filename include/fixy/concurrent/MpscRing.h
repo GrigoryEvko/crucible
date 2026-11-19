@@ -24,6 +24,7 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>
 
 #include <array>
@@ -31,7 +32,6 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 
 // The claims the carriers in this header make that no lattice grades.
 // foundation/diag/RowHash.h folds each identity, so every carrier here
@@ -123,11 +123,12 @@ public:
 
     // All or nothing: a batch that does not fit pushes no items.
 
-    [[nodiscard, gnu::hot]] std::size_t try_push_batch(std::span<const T> items) noexcept {
+    [[nodiscard, gnu::hot]] std::size_t try_push_batch(::foundation::core::View<T const> items) noexcept {
         const std::size_t N = items.size();
         if (N == 0) return 0;
         if (N > Capacity) [[unlikely]]
             return 0;
+        T const* const source = first_of_(::foundation::core::detail::ViewDoor::key(), items);
 
         for (;;) {
             const std::uint64_t pos = head_.load_relaxed();
@@ -141,7 +142,7 @@ public:
             }
 
             for (std::size_t i = 0; i < N; ++i) {
-                cells_[(pos + i) & MASK] = items[i];
+                cells_[(pos + i) & MASK] = source[i];
             }
             publish_range_(pos & MASK, ((pos + N - 1) & MASK) + 1, N);
             return N;
@@ -174,7 +175,8 @@ public:
     // The caller guarantees no concurrent try_pop or try_pop_batch.  A batch
     // pop is a merge, as a pop is, so it takes the bare tag of Nondet.
 
-    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(::foundation::effects::cap::Nondet, std::span<T> out) noexcept {
+    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(::foundation::effects::cap::Nondet,
+                                                      ::foundation::core::View<T> out) noexcept {
         // The ring holds at most Capacity live items, so a request
         // larger than Capacity has to be clamped.  Unclamped, the
         // prefix scan below wraps past the buffer end, re-reads the
@@ -213,8 +215,9 @@ public:
 
         if (R == 0) return 0;
 
+        T* const target = first_of_(::foundation::core::detail::ViewDoor::key(), out);
         for (std::size_t i = 0; i < R; ++i) {
-            out[i] = cells_[(pos0 + i) & MASK];
+            target[i] = cells_[(pos0 + i) & MASK];
         }
         clear_range_(pos0 & MASK, ((pos0 + R - 1) & MASK) + 1, R);
         tail_.advance_sole_writer_from(pos0, pos0 + R);
