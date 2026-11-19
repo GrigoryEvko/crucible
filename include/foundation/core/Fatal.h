@@ -194,8 +194,8 @@ constexpr char const* fmt_function_(FmtParts const& fmt) noexcept { return site_
 constexpr std::uint32_t fmt_line_(FmtParts const& fmt) noexcept { return site_line_(fmt.site_); }
 
 // Writes `foundation: fatal: TEXT` and the site to standard error.  Then it
-// stops in a debugger when one is attached, and aborts.  The text takes no
-// argument, and its escapes `{{` and `}}` are written as one brace.
+// aborts, also under a tracer.  The text takes no argument, and its escapes
+// `{{` and `}}` are written as one brace.
 [[noreturn, gnu::cold]] void report_fatal_(char const* text, char const* file, std::uint32_t line,
                                            char const* function) noexcept;
 
