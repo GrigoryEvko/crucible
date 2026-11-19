@@ -457,10 +457,11 @@ void test_long_run_keeps_its_scratch() {
 
     uint32_t stored = 0;
     uint64_t dropped = 0;
-    bt.run_on_publish_stage([&stored, &dropped, &bt](BackgroundThread::PublishStage const& stage) noexcept {
-        stored = bt.region_count(stage);
-        dropped = bt.regions_dropped_full(stage);
-    });
+    bt.run_on_publish_stage(
+        [&stored, &dropped](BackgroundThread& owner, BackgroundThread::PublishStage const& stage) noexcept {
+            stored = owner.region_count(stage);
+            dropped = owner.regions_dropped_full(stage);
+        });
     assert(dropped == 0 && "a full region store discarded a published region");
     CRUCIBLE_TEST_ASSERT(::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
                          stored <= bt.uncompiled_regions.capacity() + 1);
@@ -493,10 +494,11 @@ void test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx const& test) {
 
     uint32_t stored = 0;
     uint64_t dropped = 0;
-    bt.run_on_publish_stage([&stored, &dropped, &bt](BackgroundThread::PublishStage const& stage) noexcept {
-        stored = bt.region_count(stage);
-        dropped = bt.regions_dropped_full(stage);
-    });
+    bt.run_on_publish_stage(
+        [&stored, &dropped](BackgroundThread& owner, BackgroundThread::PublishStage const& stage) noexcept {
+            stored = owner.region_count(stage);
+            dropped = owner.regions_dropped_full(stage);
+        });
     CRUCIBLE_TEST_ASSERT(test, stored == 2);
     CRUCIBLE_TEST_ASSERT(test, queued == 2);
     CRUCIBLE_TEST_ASSERT(test, dropped > 0);

@@ -233,15 +233,15 @@ void test_publish_stage_releases_in_order() {
     assert(overflowed.is_err());
     assert(metalog->tail.get() == 0u);
 
-    bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
-        bt.publish_region(bg, stage, std::move(built).expect("the first work builds").region,
-                          BackgroundThread::StreamPoint{});
-        assert(bt.meta_log.get()->tail.get() == 0u && "the publish of a region moved the tail");
-        bt.release_meta_log(stage, first_end);
-        assert(bt.meta_log.get()->tail.get() == first_end);
-        bt.release_meta_log(stage, 1);
-        assert(bt.meta_log.get()->tail.get() == first_end && "a floor before the tail moved the tail");
-        bt.release_meta_log(stage, overflow_end);
+    bt.run_on_publish_stage([&](BackgroundThread& owner, BackgroundThread::PublishStage const& stage) noexcept {
+        owner.publish_region(bg, stage, std::move(built).expect("the first work builds").region,
+                             BackgroundThread::StreamPoint{});
+        assert(owner.meta_log.get()->tail.get() == 0u && "the publish of a region moved the tail");
+        owner.release_meta_log(stage, first_end);
+        assert(owner.meta_log.get()->tail.get() == first_end);
+        owner.release_meta_log(stage, 1);
+        assert(owner.meta_log.get()->tail.get() == first_end && "a floor before the tail moved the tail");
+        owner.release_meta_log(stage, overflow_end);
     });
     assert(metalog->tail.get() == overflow_end);
 
@@ -352,9 +352,9 @@ void test_built_graph_owns_its_metadata() {
 
     // The region of the publish holds the same ops, and a release to the end
     // of the run moves the tail past it.
-    bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
-        bt.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
-        bt.release_meta_log(stage, OPS);
+    bt.run_on_publish_stage([&](BackgroundThread& owner, BackgroundThread::PublishStage const& stage) noexcept {
+        owner.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
+        owner.release_meta_log(stage, OPS);
     });
     const crucible::RegionNode* const region = bt.active_region.load_acquire().try_get();
     assert(region != nullptr && &region->op_at(0) == &graph->op(crucible::OpIndex{0}));
@@ -396,9 +396,9 @@ void test_build_and_release_pass_two_to_the_32() {
         assert(first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
     }
 
-    bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
-        bt.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
-        bt.release_meta_log(stage, run_end);
+    bt.run_on_publish_stage([&](BackgroundThread& owner, BackgroundThread::PublishStage const& stage) noexcept {
+        owner.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
+        owner.release_meta_log(stage, run_end);
     });
     assert(metalog->tail.get() == run_end && "the release did not move the tail past 2^32");
 

@@ -260,15 +260,24 @@ struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
     // runs the job itself.  Either way, the job and the region callback
     // never overlap.
     //
+    // The job takes this BackgroundThread and the PublishStage token as its
+    // parameters.  The token is the proof of the fields of the publish stage,
+    // and the door hands the borrow of this object on the thread that owns
+    // those fields.  So a job captures no `this` and no BackgroundThread.
+    // The door checks no closure of the job yet.  The job of a rollback gives
+    // a region of the pipeline to the foreground, and a region has no
+    // transfer fact until a published form of a region holds one.
+    //
     // Cold path.  The caller spins while the publish stage finishes the
     // publication in hand, which is bounded by one region build.  A thread
     // that holds the stage already, in a region callback or in a job, must
     // not call this: it would wait on itself, so the contract stops it.
     template <typename Job>
-        requires std::is_nothrow_invocable_v<Job&, PublishStage const&>
+        requires std::is_nothrow_invocable_v<Job&, BackgroundThread&, PublishStage const&>
     void run_on_publish_stage(Job&& job) noexcept {
         CRUCIBLE_PRE(stage_held_by_this_thread_ != ::fixy::WeakRef<const BackgroundThread>{*this});
-        OwnerJob request{.call = OwnerJobCall{job}};
+        auto with_owner = [&job, this](PublishStage const& stage) noexcept { job(*this, stage); };
+        OwnerJob request{.call = OwnerJobCall{with_owner}};
         const ::fixy::WeakRef<OwnerJob> posted{request};
         while (true) {
             const ::fixy::WeakRef<OwnerJob> seen = owner_mailbox_.load_acquire();

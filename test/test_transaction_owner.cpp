@@ -145,15 +145,19 @@ void rollback_on_a_fresh_vigil() {
 void job_runs_on_the_caller_without_a_stage() {
     crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
     int runs = 0;
-    background.run_on_publish_stage([&runs](crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
-    background.run_on_publish_stage([&runs](crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
+    background.run_on_publish_stage(
+        [&runs](crucible::BackgroundThread&, crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
+    background.run_on_publish_stage(
+        [&runs](crucible::BackgroundThread&, crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
     if (runs != 2) fail("a job posted with no publish stage did not run on its caller");
 }
 
 std::thread::id thread_of_one_job(crucible::BackgroundThread& background) {
     std::thread::id ran_on{};
     background.run_on_publish_stage(
-        [&ran_on](crucible::BackgroundThread::PublishStage const&) noexcept { ran_on = std::this_thread::get_id(); });
+        [&ran_on](crucible::BackgroundThread&, crucible::BackgroundThread::PublishStage const&) noexcept {
+            ran_on = std::this_thread::get_id();
+        });
     return ran_on;
 }
 
@@ -187,9 +191,11 @@ void job_runs_on_the_stage_while_it_runs() {
 // thread.
 void nested_job_ends_the_process() {
     crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
-    background.run_on_publish_stage([&background](crucible::BackgroundThread::PublishStage const&) noexcept {
-        background.run_on_publish_stage([](crucible::BackgroundThread::PublishStage const&) noexcept {});
-    });
+    background.run_on_publish_stage(
+        [](crucible::BackgroundThread& owner, crucible::BackgroundThread::PublishStage const&) noexcept {
+            owner.run_on_publish_stage(
+                [](crucible::BackgroundThread&, crucible::BackgroundThread::PublishStage const&) noexcept {});
+        });
 }
 
 }  // namespace

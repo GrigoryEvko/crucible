@@ -764,14 +764,15 @@ public:
     // runs on the publish stage, between two publications.
     [[nodiscard]] uint32_t region_store_count() {
         uint32_t count = 0;
-        bg_.run_on_publish_stage(
-            [&count, this](BackgroundThread::PublishStage const& stage) noexcept { count = bg_.region_count(stage); });
+        bg_.run_on_publish_stage([&count](BackgroundThread& bg, BackgroundThread::PublishStage const& stage) noexcept {
+            count = bg.region_count(stage);
+        });
         return count;
     }
     [[nodiscard]] uint64_t region_store_drops() {
         uint64_t drops = 0;
-        bg_.run_on_publish_stage([&drops, this](BackgroundThread::PublishStage const& stage) noexcept {
-            drops = bg_.regions_dropped_full(stage);
+        bg_.run_on_publish_stage([&drops](BackgroundThread& bg, BackgroundThread::PublishStage const& stage) noexcept {
+            drops = bg.regions_dropped_full(stage);
         });
         return drops;
     }

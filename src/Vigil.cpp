@@ -88,21 +88,22 @@ bool Vigil::rollback() {
     const uint64_t ops_before = ring_total_produced();
     bool restored_one = false;
     ::fixy::WeakRef<RegionNode> restored{};
-    bg_.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
-        restored_one = tx_log_.rollback(stage);
+    bg_.run_on_publish_stage([&restored_one, &restored, &tx_log = tx_log_,
+                              ops_before](BackgroundThread& bg, BackgroundThread::PublishStage const& stage) noexcept {
+        restored_one = tx_log.rollback(stage);
         if (!restored_one) return;
         // The job runs between two publications, so each publication after
         // it reads the mark, and none gives the foreground a region cut
         // before the rollback.
-        bg_.request_mark(ops_before);
-        const ::fixy::WeakRef<Transaction> active = tx_log_.active(stage);
+        bg.request_mark(ops_before);
+        const ::fixy::WeakRef<Transaction> active = tx_log.active(stage);
         if (!active.has_value()) return;
         for (const ::fixy::Ref<RegionNode>& region : active->region.value()) {
             restored = ::fixy::WeakRef<RegionNode>{*region};
             // The foreground gets the region outside the publication slot,
             // so the store keeps it until the foreground writes its holders
             // again.
-            bg_.keep_region(stage, ::fixy::WeakRef<const RegionNode>{*region});
+            bg.keep_region(stage, ::fixy::WeakRef<const RegionNode>{*region});
         }
     });
     if (!restored_one) return false;

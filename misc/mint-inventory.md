@@ -263,7 +263,7 @@ that the axis does not apply to the row.
 | `mint_socket` | `include/fixy/os/Socket.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_temporary_file_at` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_thread_name` | `include/fixy/os/ThreadName.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
-| `mint_timing_sink` | `include/fixy/os/TimingSink.h` | Y | - | Y | Y | token | · | HS14: 3 |
+| `mint_timing_sink` | `include/fixy/os/TimingSink.h` | Y | - | Y | Y | token | · | HS14: 5 |
 | `mint_tsc_reader` | `include/fixy/os/Time.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 
 ## include/fixy/session/
@@ -352,13 +352,13 @@ that the axis does not apply to the row.
 | `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | HS14: 4 |
 | `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 | `mint_from_image` | `include/foundation/effects/ImageRead.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
-| `mint_kernel_context` | `include/foundation/effects/Ctx.h` | Y | - | Y | Y | token | · | HS14: 2 |
+| `mint_kernel_context` | `include/foundation/effects/Ctx.h` | Y | - | Y | Y | token | · | HS14: 3 |
 
 ## include/foundation/os/
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_fp_scope` | `include/foundation/os/FpControl.h` | Y | - | Y | Y | token | · | HS14: 2 |
+| `mint_fp_scope` | `include/foundation/os/FpControl.h` | Y | - | Y | Y | token | · | HS14: 3 |
 
 ## include/foundation/permissions/
 
