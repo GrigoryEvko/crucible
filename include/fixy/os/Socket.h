@@ -288,14 +288,10 @@ class SocketDoor final : ::foundation::NoObject<SocketDoor> {
     template <MappedSocketKind Kind>
     [[nodiscard]] static ::foundation::core::Result<Linear<SocketHandle<Kind>>, ::foundation::os::Errno>
     open_() noexcept {
-        using Minted = ::foundation::core::Result<Linear<SocketHandle<Kind>>, ::foundation::os::Errno>;
         constexpr detail::socket_triple triple = socket_triple_of(^^Kind);
-        return detail::open_socket_(triple.domain, triple.type, triple.protocol)
-            .match(
-                [](int descriptor) -> Minted {
-                    return mint_linear<SocketHandle<Kind>>(SocketHandle<Kind>{descriptor});
-                },
-                [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
+        return detail::open_socket_(triple.domain, triple.type, triple.protocol).map([](int descriptor) noexcept {
+            return mint_linear<SocketHandle<Kind>>(SocketHandle<Kind>{descriptor});
+        });
     }
 };
 
@@ -367,22 +363,18 @@ template <eff::IsExecCtx Ctx, typename Borrow>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::FixedText<congestion_name_bytes>,
                                                 ::foundation::os::Errno>
 read_tcp_congestion(Ctx const&, Borrow socket) noexcept {
-    using Read =
-        ::foundation::core::Result<::foundation::core::FixedText<congestion_name_bytes>, ::foundation::os::Errno>;
     char bytes[congestion_name_bytes + 1]{};
     return detail::read_tcp_option_(detail::socket_descriptor_of(socket), TcpOption::congestion, bytes, sizeof(bytes))
-        .match(
-            [&bytes](std::size_t length) -> Read {
-                std::size_t count = 0;
-                while (count < length && count < congestion_name_bytes && bytes[count] != '\0') {
-                    ++count;
-                }
-                ::foundation::core::FixedText<congestion_name_bytes> name{};
-                name.append(::foundation::core::detail::text_over_(bytes, count))
-                    .expect("the name holds at most congestion_name_bytes characters");
-                return name;
-            },
-            [](::foundation::os::Errno error) -> Read { return ::foundation::core::err(error); });
+        .map([&bytes](std::size_t length) noexcept {
+            std::size_t count = 0;
+            while (count < length && count < congestion_name_bytes && bytes[count] != '\0') {
+                ++count;
+            }
+            ::foundation::core::FixedText<congestion_name_bytes> name{};
+            name.append(::foundation::core::detail::text_over_(bytes, count))
+                .expect("the name holds at most congestion_name_bytes characters");
+            return name;
+        });
 }
 
 // Reads a TCP option of a socket into the bytes of buffer, and gives the

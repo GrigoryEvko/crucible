@@ -46,13 +46,11 @@ constexpr long kInterrupted = -static_cast<long>(std::to_underlying(os::Errno::e
 [[nodiscard]] constexpr bool is_closed(int socket) noexcept { return socket < 0; }
 
 [[nodiscard]] UnitResult unit_of(long word) noexcept {
-    return os::result_of(word).match([](std::uint64_t) -> UnitResult { return core::Unit{}; },
-                                     [](os::Errno error) -> UnitResult { return core::err(error); });
+    return os::result_of(word).map([](std::uint64_t) noexcept { return core::Unit{}; });
 }
 
 [[nodiscard]] CountResult count_of(long word) noexcept {
-    return os::result_of(word).match([](std::uint64_t count) -> CountResult { return static_cast<std::size_t>(count); },
-                                     [](os::Errno error) -> CountResult { return core::err(error); });
+    return os::result_of(word).map([](std::uint64_t count) noexcept { return static_cast<std::size_t>(count); });
 }
 
 // The name of a TCP option in <linux/tcp.h>.
@@ -87,8 +85,7 @@ CountResult read_tcp_option_(int socket, TcpOption option, void* value, std::uin
         word = os::raw_syscall(os::Syscall::getsockopt, socket, kTcpLevel, name_of(option), value,
                                static_cast<void const*>(&length));
     } while (word == kInterrupted);
-    return unit_of(word).match([length](core::Unit) -> CountResult { return std::size_t{length}; },
-                               [](os::Errno error) -> CountResult { return core::err(error); });
+    return unit_of(word).map([length](core::Unit) noexcept { return std::size_t{length}; });
 }
 
 UnitResult set_option_(int socket, int level, int name, void const* value, std::uint32_t size) noexcept {
@@ -104,8 +101,7 @@ UnitResult set_option_(int socket, int level, int name, void const* value, std::
 
 core::Result<int, os::Errno> open_socket_(int domain, int type, int protocol) noexcept {
     return os::result_of(os::raw_syscall(os::Syscall::socket, domain, type | socket_close_on_exec_flag, protocol))
-        .match([](std::uint64_t descriptor) -> core::Result<int, os::Errno> { return static_cast<int>(descriptor); },
-               [](os::Errno error) -> core::Result<int, os::Errno> { return core::err(error); });
+        .map([](std::uint64_t descriptor) noexcept { return static_cast<int>(descriptor); });
 }
 
 UnitResult bind_address_(int socket, void const* address, std::uint32_t size) noexcept {
@@ -172,7 +168,6 @@ UnitResult set_hardware_timestamping_(int socket, core::TextView interface_name)
 
 core::Result<TimestampedReceive, os::Errno> receive_with_timestamps_(int socket, void* first, std::size_t count,
                                                                      int flags) noexcept {
-    using Received = core::Result<TimestampedReceive, os::Errno>;
     if (is_closed(socket)) {
         return core::err(os::Errno::ebadf);
     }
@@ -190,16 +185,14 @@ core::Result<TimestampedReceive, os::Errno> receive_with_timestamps_(int socket,
     do {
         word = os::raw_syscall(os::Syscall::recvmsg, socket, static_cast<void const*>(&message), flags);
     } while (word == kInterrupted);
-    return count_of(word).match(
-        [&message, &control, count](std::size_t received) -> Received {
-            std::size_t const written = core::min(static_cast<std::size_t>(message.control_length), control.size());
-            return TimestampedReceive{
-                .count = core::min(received, count),
-                .control = read_timestamp_control_(
-                    control.view().window(0, written).expect("the kernel writes at most the control capacity")),
-            };
-        },
-        [](os::Errno error) -> Received { return core::err(error); });
+    return count_of(word).map([&message, &control, count](std::size_t received) noexcept {
+        std::size_t const written = core::min(static_cast<std::size_t>(message.control_length), control.size());
+        return TimestampedReceive{
+            .count = core::min(received, count),
+            .control = read_timestamp_control_(
+                control.view().window(0, written).expect("the kernel writes at most the control capacity")),
+        };
+    });
 }
 
 }  // namespace fixy::net::detail

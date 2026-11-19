@@ -18,13 +18,7 @@ namespace fixy::fs::detail {
                                                                           std::uint32_t mode) noexcept {
     namespace os = ::foundation::os;
     return os::result_of(os::raw_syscall(os::Syscall::openat, os::kAtCurrentDirectory, path, flags, mode))
-        .match(
-            [](std::uint64_t descriptor) -> ::foundation::core::Result<int, os::Errno> {
-                return static_cast<int>(descriptor);
-            },
-            [](os::Errno error) -> ::foundation::core::Result<int, os::Errno> {
-                return ::foundation::core::err(error);
-            });
+        .map([](std::uint64_t descriptor) noexcept { return static_cast<int>(descriptor); });
 }
 
 void close_descriptor_(int descriptor) noexcept {
@@ -36,8 +30,7 @@ query_descriptor_(int descriptor, std::uint64_t request, void* argument) noexcep
     namespace core = ::foundation::core;
     namespace os = ::foundation::os;
     return os::result_of(os::raw_syscall(os::Syscall::ioctl, descriptor, request, argument))
-        .match([](std::uint64_t) -> core::Result<core::Unit, os::Errno> { return core::Unit{}; },
-               [](os::Errno error) -> core::Result<core::Unit, os::Errno> { return core::err(error); });
+        .map([](std::uint64_t) noexcept { return core::Unit{}; });
 }
 
 }  // namespace fixy::fs::detail

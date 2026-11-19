@@ -704,20 +704,14 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
     template <class Owned>
     [[nodiscard]] static ::foundation::core::Result<Owned, ::foundation::os::Errno>
     own_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
-        using Opened = ::foundation::core::Result<Owned, ::foundation::os::Errno>;
-        return std::move(opened).match(
-            [](int descriptor) -> Opened { return Owned{descriptor}; },
-            [](::foundation::os::Errno error) -> Opened { return ::foundation::core::err(error); });
+        return std::move(opened).map([](int descriptor) noexcept { return Owned{descriptor}; });
     }
 
     // The handle Owned of the open, in a Linear, or the error of the open.
     template <class Owned>
     [[nodiscard]] static ::foundation::core::Result<Linear<Owned>, ::foundation::os::Errno>
     own_linear_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
-        using Minted = ::foundation::core::Result<Linear<Owned>, ::foundation::os::Errno>;
-        return std::move(opened).match(
-            [](int descriptor) -> Minted { return mint_linear<Owned>(Owned{descriptor}); },
-            [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
+        return std::move(opened).map([](int descriptor) noexcept { return mint_linear<Owned>(Owned{descriptor}); });
     }
 
     // The open reads perms only when flags holds O_CREAT and ignores it
@@ -1022,15 +1016,11 @@ template <class Marker, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 read_whole_at(Ctx const& ctx, Marker allocation, DirectoryRef<Rights> dir, ::foundation::core::CText path,
               ::foundation::core::GrowText& text) noexcept {
-    using Read = ::foundation::core::Result<std::size_t, ::foundation::os::Errno>;
     return mint_file_at<read_only>(ctx, dir, path)
-        .match(
-            [allocation, &text](Linear<FileOf<read_only>> opened) -> Read {
-                FileOf<read_only> const file = std::move(opened).consume();
-                return detail::read_all_into_(::fixy::os::detail::HandleDoor::descriptor_of(file.ref()), allocation,
-                                              text);
-            },
-            [](::foundation::os::Errno error) -> Read { return ::foundation::core::err(error); });
+        .and_then([allocation, &text](Linear<FileOf<read_only>> opened) noexcept {
+            FileOf<read_only> const file = std::move(opened).consume();
+            return detail::read_all_into_(::fixy::os::detail::HandleDoor::descriptor_of(file.ref()), allocation, text);
+        });
 }
 
 // The durable and atomic_write atoms only declare intent.  The mint

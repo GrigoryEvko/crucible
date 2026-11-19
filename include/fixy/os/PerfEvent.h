@@ -210,10 +210,8 @@ class PerfEventDoor final : ::foundation::NoObject<PerfEventDoor> {
     // Returns the error of the kernel on failure and no handle.
     [[nodiscard]] static ::foundation::core::Result<PerfEventHandle, ::foundation::os::Errno>
     open_(Event event, std::uint64_t period, Task task) noexcept {
-        using Opened = ::foundation::core::Result<PerfEventHandle, ::foundation::os::Errno>;
         return detail::open_event_(detail::user_sample_attributes(event, period, task.children()), task.id())
-            .match([](int descriptor) -> Opened { return PerfEventHandle{descriptor}; },
-                   [](::foundation::os::Errno error) -> Opened { return ::foundation::core::err(error); });
+            .map([](int descriptor) noexcept { return PerfEventHandle{descriptor}; });
     }
 };
 
@@ -228,10 +226,9 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsPerfEventMint<Ctx>
 [[nodiscard]] inline ::foundation::core::Result<Linear<PerfEventHandle>, ::foundation::os::Errno>
 mint_perf_event(Ctx const&, Event event, std::uint64_t period, Task task) noexcept {
-    using Minted = ::foundation::core::Result<Linear<PerfEventHandle>, ::foundation::os::Errno>;
-    return PerfEventDoor::open_(event, period, task)
-        .match([](PerfEventHandle handle) -> Minted { return mint_linear<PerfEventHandle>(std::move(handle)); },
-               [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
+    return PerfEventDoor::open_(event, period, task).map([](PerfEventHandle handle) noexcept {
+        return mint_linear<PerfEventHandle>(std::move(handle));
+    });
 }
 
 // The read of a count is a read of a descriptor, which the catalog puts in the

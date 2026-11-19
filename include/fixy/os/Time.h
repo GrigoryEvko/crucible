@@ -336,17 +336,13 @@ struct ClockReader final {
     // Nondet does not read there.
     [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno>
     read(eff::cap::Nondet) const noexcept {
-        using Reading = ::foundation::core::Result<result_type, ::foundation::os::Errno>;
-        return detail::read_clock_nanos(clockid_for(Source))
-            .match(
-                [this](std::uint64_t raw) noexcept -> Reading {
-                    if constexpr (is_clamped) {
-                        return detail::clock_stamp_access::stamp<Source>(clamp_non_decreasing(last_, raw));
-                    } else {
-                        return detail::clock_stamp_access::stamp<Source>(raw);
-                    }
-                },
-                [](::foundation::os::Errno error) noexcept -> Reading { return ::foundation::core::err(error); });
+        return detail::read_clock_nanos(clockid_for(Source)).map([this](std::uint64_t raw) noexcept {
+            if constexpr (is_clamped) {
+                return detail::clock_stamp_access::stamp<Source>(clamp_non_decreasing(last_, raw));
+            } else {
+                return detail::clock_stamp_access::stamp<Source>(raw);
+            }
+        });
     }
 
     // The reader stays in the frame that minted it.  The gate of the mint
@@ -526,13 +522,10 @@ struct PtpClockReader final {
     // does.
     [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno>
     read(eff::cap::Nondet) const noexcept {
-        using Reading = ::foundation::core::Result<result_type, ::foundation::os::Errno>;
         return detail::read_ptp_clock_nanos(::fixy::os::detail::HandleDoor::descriptor_of(device_.ref()))
-            .match(
-                [](std::uint64_t nanos) noexcept -> Reading {
-                    return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(nanos);
-                },
-                [](::foundation::os::Errno error) noexcept -> Reading { return ::foundation::core::err(error); });
+            .map([](std::uint64_t nanos) noexcept {
+                return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(nanos);
+            });
     }
 
     // The capabilities of the clock, as PTP_CLOCK_GETCAPS2 reports them, or
@@ -590,11 +583,9 @@ class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
         }
         path[length] = '\0';
 
-        using Opened = ::foundation::core::Result<PtpClockReader, ::foundation::os::Errno>;
         return ::fixy::fs::detail::open_descriptor_(
                    path.data(), ::foundation::os::kOpenReadOnly | ::foundation::os::kOpenCloseOnExec, 0)
-            .match([](int descriptor) noexcept -> Opened { return PtpClockReader{PtpClockHandle{descriptor}}; },
-                   [](::foundation::os::Errno error) noexcept -> Opened { return ::foundation::core::err(error); });
+            .map([](int descriptor) noexcept { return PtpClockReader{PtpClockHandle{descriptor}}; });
     }
 };
 

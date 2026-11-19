@@ -57,8 +57,7 @@ constexpr long kInterrupted = -static_cast<long>(os::Errno::eintr);
     os::KernelTimespec reading{};
     long const word = os::raw_syscall(os::Syscall::clock_gettime, std::to_underlying(clock),
                                       os::Word{static_cast<void const*>(&reading)});
-    return os::result_of(word).match([&reading](std::uint64_t) noexcept -> Reading { return reading; },
-                                     [](os::Errno error) noexcept -> Reading { return core::err(error); });
+    return os::result_of(word).map([&reading](std::uint64_t) noexcept { return reading; });
 }
 
 // The time of CLOCK_MONOTONIC NANOS after the reading NOW.  The kernel

@@ -49,14 +49,11 @@ sched_setattr_sys(::foundation::os::KernelSchedAttr const& attributes) noexcept 
 // The kernel writes at most the size argument of bytes, and it writes the
 // size that it filled into the field size.
 ::foundation::core::Result<::foundation::os::KernelSchedAttr, ::foundation::os::Errno> sched_getattr_sys() noexcept {
-    using Read = ::foundation::core::Result<::foundation::os::KernelSchedAttr, ::foundation::os::Errno>;
     ::foundation::os::KernelSchedAttr attributes{};
     long const word = ::foundation::os::raw_syscall(::foundation::os::Syscall::sched_getattr, kCallingThread,
                                                     static_cast<void const*>(&attributes),
                                                     ::foundation::os::kSchedAttrSize, kNoFlags);
-    return ::foundation::os::result_of(word).match(
-        [&attributes](std::uint64_t) -> Read { return attributes; },
-        [](::foundation::os::Errno error) -> Read { return ::foundation::core::err(error); });
+    return ::foundation::os::result_of(word).map([&attributes](std::uint64_t) noexcept { return attributes; });
 }
 
 // The thread id zero names the calling thread, and the kernel sets the nice

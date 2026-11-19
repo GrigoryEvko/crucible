@@ -37,8 +37,7 @@ core::Result<core::Unit, os::Errno> advise_region_(void* address, std::size_t le
         return core::err(os::Errno::einval);
     }
     return os::result_of(os::raw_syscall(os::Syscall::madvise, address, length, advice))
-        .match([](std::uint64_t) -> core::Result<core::Unit, os::Errno> { return core::Unit{}; },
-               [](os::Errno error) -> core::Result<core::Unit, os::Errno> { return core::err(error); });
+        .map([](std::uint64_t) noexcept { return core::Unit{}; });
 }
 
 }  // namespace fixy::mmap::detail

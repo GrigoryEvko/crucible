@@ -56,7 +56,6 @@ UnitResult munlock_sys(void const* first, std::size_t bytes) noexcept {
 // address space has no such boundary, and the range then has no whole huge
 // page.
 core::Result<std::size_t, os::Errno> madvise_sys(void const* first, std::size_t bytes, int advice) noexcept {
-    using Advised = core::Result<std::size_t, os::Errno>;
     constexpr std::uintptr_t kMask = huge_page_bytes - 1;
     std::uintptr_t const start = __builtin_bit_cast(std::uintptr_t, first);
     core::Option<std::uintptr_t> boundary = core::align_up(start, std::uintptr_t{huge_page_bytes});
@@ -73,8 +72,7 @@ core::Result<std::size_t, os::Errno> madvise_sys(void const* first, std::size_t 
         return std::size_t{0};
     }
     return os::result_of(os::raw_syscall(os::Syscall::madvise, aligned, whole, advice))
-        .match([whole](std::uint64_t) -> Advised { return whole; },
-               [](os::Errno error) -> Advised { return core::err(error); });
+        .map([whole](std::uint64_t) noexcept { return whole; });
 }
 
 // The kernel refuses a start that is not aligned to a page, so the start goes
@@ -118,7 +116,6 @@ UnitResult populate_sys(void const* first, std::size_t bytes) noexcept {
 // third, and an older kernel refuses a third argument that is not zero.  A
 // setting of zero clears the refusal with no flags.
 core::Result<ThpSetting, os::Errno> prctl_sys(ThpSetting next) noexcept {
-    using Exchanged = core::Result<ThpSetting, os::Errno>;
     core::Result<std::uint64_t, os::Errno> prior =
         os::result_of(os::raw_syscall(os::Syscall::prctl, kGetThpDisable, 0, 0, 0, 0));
     for (os::Errno const error : prior.err()) {
@@ -129,8 +126,7 @@ core::Result<ThpSetting, os::Errno> prctl_sys(ThpSetting next) noexcept {
     std::uint32_t const refuse = word != 0 ? kRefuseBit : 0;
     std::uint32_t const flags = word & ~kRefuseBit;
     return os::unit_of(os::raw_syscall(os::Syscall::prctl, kSetThpDisable, refuse, flags, 0, 0))
-        .match([prior_word](core::Unit) -> Exchanged { return static_cast<ThpSetting>(prior_word); },
-               [](os::Errno error) -> Exchanged { return core::err(error); });
+        .map([prior_word](core::Unit) noexcept { return static_cast<ThpSetting>(prior_word); });
 }
 
 }  // namespace fixy::pages::detail

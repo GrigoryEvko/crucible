@@ -35,8 +35,7 @@ using UnitResult = core::Result<core::Unit, os::Errno>;
 
 // The Unit of a word of the kernel that gives no value, or its error.
 [[nodiscard]] UnitResult unit_of(long word) noexcept {
-    return os::result_of(word).match([](std::uint64_t) -> UnitResult { return core::Unit{}; },
-                                     [](os::Errno error) -> UnitResult { return core::err(error); });
+    return os::result_of(word).map([](std::uint64_t) noexcept { return core::Unit{}; });
 }
 
 // The descriptor of a closed handle, which gets EBADF with no system call.
@@ -123,13 +122,11 @@ template <class T, class Act>
 [[nodiscard]] core::Result<T, os::Errno> act_in_part(int directory, char const* part, char const* name,
                                                      Act const& act) noexcept {
     return open_beneath_(directory, part, kDirectoryPartFlags, 0)
-        .match(
-            [&](int parent) -> core::Result<T, os::Errno> {
-                core::Result<T, os::Errno> acted = act(parent, name);
-                close_descriptor_(parent);
-                return acted;
-            },
-            [](os::Errno error) -> core::Result<T, os::Errno> { return core::err(error); });
+        .and_then([&](int parent) noexcept -> core::Result<T, os::Errno> {
+            core::Result<T, os::Errno> acted = act(parent, name);
+            close_descriptor_(parent);
+            return acted;
+        });
 }
 
 // Gives ACT(PARENT, NAME) for the split of PATH beneath DIRECTORY (THE FINAL
@@ -309,11 +306,7 @@ core::Result<std::int64_t, os::Errno> file_size_(int descriptor) noexcept {
     }
     ::stat status{};
     return os::result_of(os::raw_syscall(os::Syscall::fstat, descriptor, static_cast<void const*>(&status)))
-        .match(
-            [&status](std::uint64_t) -> core::Result<std::int64_t, os::Errno> {
-                return static_cast<std::int64_t>(status.st_size);
-            },
-            [](os::Errno error) -> core::Result<std::int64_t, os::Errno> { return core::err(error); });
+        .map([&status](std::uint64_t) noexcept { return static_cast<std::int64_t>(status.st_size); });
 }
 
 }  // namespace fixy::fs::detail

@@ -36,13 +36,10 @@ template <std::size_t Capacity>
 [[nodiscard]] core::Result<core::Unit, Errno> read_file(core::CText path, core::FixedText<Capacity>& text) noexcept {
     core::detail::text_resize_(text, 0);
     core::View<char> const buffer = core::detail::view_over_(core::detail::text_bytes_(text), Capacity);
-    return read_file(path, buffer)
-        .match(
-            [&text](std::size_t count) -> core::Result<core::Unit, Errno> {
-                core::detail::text_resize_(text, count);
-                return core::Unit{};
-            },
-            [](Errno error) -> core::Result<core::Unit, Errno> { return core::err(error); });
+    return read_file(path, buffer).map([&text](std::size_t count) noexcept {
+        core::detail::text_resize_(text, count);
+        return core::Unit{};
+    });
 }
 
 }  // namespace foundation::os

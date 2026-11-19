@@ -62,11 +62,7 @@ core::Result<WaitEnd, os::Errno> wait_on(FutexWord const& word, std::uint32_t ex
 
 core::Result<std::uint32_t, os::Errno> wake_waiters(FutexWord const& word, std::uint32_t count) noexcept {
     long const answer = os::raw_syscall(os::Syscall::futex, address_of(word), os::kFutexWakePrivate, count);
-    return os::result_of(answer).match(
-        [](std::uint64_t woken) noexcept -> core::Result<std::uint32_t, os::Errno> {
-            return static_cast<std::uint32_t>(woken);
-        },
-        [](os::Errno error) noexcept -> core::Result<std::uint32_t, os::Errno> { return core::err(error); });
+    return os::result_of(answer).map([](std::uint64_t woken) noexcept { return static_cast<std::uint32_t>(woken); });
 }
 
 }  // namespace detail

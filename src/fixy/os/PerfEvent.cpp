@@ -37,9 +37,7 @@ core::Result<int, os::Errno> open_event_(EventAttributes const& attributes, std:
         word = os::raw_syscall(os::Syscall::perf_event_open, static_cast<void const*>(&attributes), task, kEachCpu,
                                kNoGroup, kCloseOnExec);
     } while (word == kInterrupted);
-    return os::result_of(word).match(
-        [](std::uint64_t descriptor) -> core::Result<int, os::Errno> { return static_cast<int>(descriptor); },
-        [](os::Errno error) -> core::Result<int, os::Errno> { return core::err(error); });
+    return os::result_of(word).map([](std::uint64_t descriptor) noexcept { return static_cast<int>(descriptor); });
 }
 
 core::Result<std::uint64_t, os::Errno> read_count_(int descriptor) noexcept {
@@ -54,12 +52,10 @@ core::Result<std::uint64_t, os::Errno> read_count_(int descriptor) noexcept {
     } while (word == kInterrupted);
     // The kernel writes the whole word or gives an error, so a shorter read
     // is no count.
-    return os::result_of(word).match(
-        [&count](std::uint64_t bytes) -> Count {
-            if (bytes != sizeof(count)) return core::err(os::Errno::eio);
-            return count;
-        },
-        [](os::Errno error) -> Count { return core::err(error); });
+    return os::result_of(word).and_then([&count](std::uint64_t bytes) noexcept -> Count {
+        if (bytes != sizeof(count)) return core::err(os::Errno::eio);
+        return count;
+    });
 }
 
 }  // namespace fixy::perf::detail
