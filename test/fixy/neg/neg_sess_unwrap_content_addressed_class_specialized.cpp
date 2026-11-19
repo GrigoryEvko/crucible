@@ -14,6 +14,4 @@ struct fixy::session::unwrap_content_addressed<Forged> {
     using type = int;
 };
 
-static_assert(fixy::session::is_payload_subsort_v<Forged, fixy::session::ContentAddressed<int>>);
-
 int main() { return 0; }

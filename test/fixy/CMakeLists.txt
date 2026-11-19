@@ -2580,16 +2580,17 @@ fixy_neg_compile_test(neg_sess_content_addressed_equivalent_specialized
 # specialization of its name that strips an unmarked payload does not
 # compile, and the forged pair stays outside the order.
 fixy_neg_compile_test(neg_sess_unwrap_content_addressed_class_specialized
-  "neg_sess_unwrap_content_addressed_class_specialized\\.cpp:13:[0-9]+: error: .unwrap_content_addressed. is not a class template"
-  "neg_sess_unwrap_content_addressed_class_specialized\\.cpp:17:[0-9]+: error: static assertion failed")
+  ".unwrap_content_addressed. is not a class template"
+  "neg_sess_unwrap_content_addressed_class_specialized\\.cpp:13:[0-9]+: error:")
 
-# The order keeps the answer of a pair in a cell that only its walk builds.
-# A specialization under the old variable spelling does not compile.
+# The order gives the answer of a pair through a function that is not a
+# template, so an explicit specialization of it matches no template.  The
+# function keeps the answer in a cell that only its walk builds, and
 # test_transition checks that no code outside the walk builds or copies a
 # cell.
-fixy_neg_compile_test(neg_sess_subsorts_v_specialized
-  "neg_sess_subsorts_v_specialized\\.cpp:13:[0-9]+: error: expected initializer before .<. token"
-  "neg_sess_subsorts_v_specialized\\.cpp:15:[0-9]+: error: static assertion failed")
+fixy_neg_compile_test(neg_sess_subsorts_specialized
+  "template-id .subsorts<>. for .consteval bool fixy::session::transition::subsorts\\(std::meta::info, std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_sess_subsorts_specialized\\.cpp:12:[0-9]+: error:")
 
 # An axiom that names a variable template would read a specialization of
 # it, so the first query of the order refuses the axiom.

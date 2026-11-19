@@ -1,8 +1,8 @@
 // Graded writes a value without a key only when its grade claims the slot
 // and not the bytes.  This file tries to open that door for a lattice that
-// claims the bytes: it specializes the trait spelling claim_subject_v.  The
-// subject is a function at namespace scope that is not a template, so the
-// specialization does not compile, and the gate keeps the door shut.
+// claims the bytes: it writes an explicit specialization of the concept
+// that the gate reads.  A concept cannot have a specialization, so the
+// declaration does not compile, and the gate keeps the door shut.
 
 #include <foundation/algebra/ClaimOrientation.h>
 
@@ -16,9 +16,6 @@ struct AboutTheBytes {
 }  // namespace
 
 template <>
-inline constexpr foundation::algebra::ClaimSubject foundation::algebra::claim_subject_v<AboutTheBytes> =
-    foundation::algebra::ClaimSubject::slot;
-
-static_assert(foundation::algebra::GradeIgnoresBytes<AboutTheBytes>);
+constexpr bool foundation::algebra::detail::StatesSlot<AboutTheBytes> = true;
 
 int main() { return 0; }

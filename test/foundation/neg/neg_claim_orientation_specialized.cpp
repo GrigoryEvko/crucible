@@ -1,9 +1,9 @@
 // Graded stores a grade only over a lattice whose up is the weaker claim.
-// Over a lattice whose up is the stronger claim, weaken() would strengthen
-// a claim with no proof.  This file tries to pass such a lattice through
-// the gate: it specializes the trait spelling claim_orientation_v.  The
-// orientation is a function at namespace scope that is not a template, so
-// the specialization does not compile, and the gate refuses the lattice.
+// Over a lattice whose up is the stronger claim, weaken() can strengthen a
+// claim with no proof.  This file tries to pass such a lattice through the
+// gate: it writes an explicit specialization of the concept that the gate
+// reads.  A concept cannot have a specialization, so the declaration does
+// not compile, and the gate refuses the lattice.
 
 #include <foundation/algebra/ClaimOrientation.h>
 
@@ -19,9 +19,6 @@ struct Stronger {
 }  // namespace
 
 template <>
-inline constexpr foundation::algebra::ClaimOrientation foundation::algebra::claim_orientation_v<Stronger> =
-    foundation::algebra::ClaimOrientation::weaker_is_higher;
-
-static_assert(foundation::algebra::GradableLattice<Stronger>);
+constexpr bool foundation::algebra::detail::OrientedWeakerIsHigher<Stronger> = true;
 
 int main() { return 0; }

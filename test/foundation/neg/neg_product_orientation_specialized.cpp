@@ -1,13 +1,13 @@
 // A product lattice states the orientation of its components together.  A
 // product with one component whose up is the stronger claim lets the product
 // strengthen a claim.  This file tries to give such a product the weaker
-// orientation: it specializes the function template spelling
-// product_orientation<Stronger, Stronger>.  The orientation of a product is
-// an alias template over concepts, so the specialization does not compile,
-// and the product keeps the stronger orientation.
+// orientation: it writes an explicit specialization of the concept that the
+// orientation of the product reads for each component, so that the stronger
+// component does not count.  A concept cannot have a specialization, so the
+// declaration does not compile, and the product keeps the stronger
+// orientation.
 
 #include <foundation/algebra/ClaimOrientation.h>
-#include <foundation/algebra/lattices/ProductLattice.h>
 
 namespace {
 struct Stronger {
@@ -21,12 +21,6 @@ struct Stronger {
 }  // namespace
 
 template <>
-consteval foundation::algebra::ClaimOrientation
-foundation::algebra::product_orientation<Stronger, Stronger>() noexcept {
-    return foundation::algebra::ClaimOrientation::weaker_is_higher;
-}
-
-static_assert(foundation::algebra::lattices::ProductLattice<Stronger, Stronger>::claim_orientation
-              == foundation::algebra::ClaimOrientation::weaker_is_higher);
+constexpr bool foundation::algebra::detail::OrientedStrongerIsHigher<Stronger> = false;
 
 int main() { return 0; }

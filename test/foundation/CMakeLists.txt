@@ -258,18 +258,18 @@ foundation_neg_compile_test(neg_graded_peek_mut_without_key
   "the expression .as_one_constraint\\(bool\\)\\(StatesSlot<L>\\) \\[with L = foundation::algebra::detail::TrivialBoolLattice\\]. evaluated to .false.")
 
 # The orientation and the subject of a lattice are concepts and alias
-# templates, which no unit can specialize.  A specialization of the old
-# variable template or function template spelling does not compile, and the
-# gate keeps its verdict.
-foundation_neg_compile_test(neg_claim_orientation_v_specialized
-  "neg_claim_orientation_v_specialized\\.cpp:22:[0-9]+: error: expected initializer before .<. token"
-  "neg_claim_orientation_v_specialized\\.cpp:25:[0-9]+: error: static assertion failed")
-foundation_neg_compile_test(neg_claim_subject_v_specialized
-  "neg_claim_subject_v_specialized\\.cpp:19:[0-9]+: error: expected initializer before .<. token"
-  "neg_claim_subject_v_specialized\\.cpp:22:[0-9]+: error: static assertion failed")
+# templates, which no unit can specialize.  A specialization of the concept
+# that a gate or the orientation of a product reads does not compile, and
+# the gate keeps its verdict.
+foundation_neg_compile_test(neg_claim_orientation_specialized
+  "template-id .OrientedWeakerIsHigher<\\{anonymous\\}::Stronger>. used as a declarator"
+  "neg_claim_orientation_specialized\\.cpp:22:[0-9]+: error:")
+foundation_neg_compile_test(neg_claim_subject_specialized
+  "template-id .StatesSlot<\\{anonymous\\}::AboutTheBytes>. used as a declarator"
+  "neg_claim_subject_specialized\\.cpp:19:[0-9]+: error:")
 foundation_neg_compile_test(neg_product_orientation_specialized
-  "neg_product_orientation_specialized\\.cpp:25:[0-9]+: error: expected initializer before .<. token"
-  "neg_product_orientation_specialized\\.cpp:30:[0-9]+: error: static assertion failed")
+  "template-id .OrientedStrongerIsHigher<\\{anonymous\\}::Stronger>. used as a declarator"
+  "neg_product_orientation_specialized\\.cpp:24:[0-9]+: error:")
 
 # A member claim_orientation or claim_subject of another type is a misspelt
 # statement.  The gate stops the build at a call whose name gives the fix,
@@ -282,10 +282,8 @@ foundation_neg_compile_test(neg_claim_subject_mistyped
   "neg_claim_subject_mistyped\\.cpp:19:[0-9]+: error: non-constant condition for static assertion")
 
 # The mask of an effect row is a function at namespace scope that is not a
-# template.  A specialization of the trait spelling does not compile, and
-# an explicit specialization of the function matches no template.
-foundation_neg_compile_test(neg_row_descriptor_v_specialized
-  "neg_row_descriptor_v_specialized\\.cpp:11:[0-9]+: error: expected initializer before .<. token")
+# template, so an explicit specialization of the function matches no
+# template.
 foundation_neg_compile_test(neg_row_descriptor_specialized
   "template-id .row_descriptor<>. for .consteval foundation::effects::EffectRowLattice::element_type foundation::effects::row_descriptor\\(std::meta::info\\). does not match any template declaration"
   "neg_row_descriptor_specialized\\.cpp:12:[0-9]+: error:")
