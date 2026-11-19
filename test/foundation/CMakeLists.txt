@@ -3228,6 +3228,9 @@ foundation_neg_compile_test(neg_closure_view_mut_at_concurrent_door
 foundation_neg_compile_test(neg_closure_borrow_at_escaping_door
   "static assertion failed: run_later: the body captures .values. \\(field values, type foundation::core::View<const int>\\)"
   "so a borrow dangles")
+foundation_neg_compile_test(neg_transfer_statement_outside_its_seal
+  "a_statement_of_transfer_facts_stands_outside_its_seal"
+  "foundation::transfer::detail::statement_of")
 foundation_neg_compile_test(neg_core_values_as_const_temporary
   "use of deleted function .void foundation::core::as_const\\(const T&&\\) \\[with T = int\\]."
   "as_const of a temporary gives a reference that dangles at the end of the full expression")

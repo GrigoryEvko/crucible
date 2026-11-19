@@ -111,6 +111,38 @@
 //     a claim that the code of the class makes true, and the comment beside
 //     it gives the reason.
 //
+// THE OPAQUE TYPES
+//     A class that is only declared, such as a handle whose definition is out
+//     of view, holds no property, because the walk cannot read it.  The header
+//     that declares such a class states its facts beside the declaration, in
+//     a registry, as fixy/session/Registry.h does for the combinators of a
+//     protocol.  An annotation cannot do it, because a declaration that is
+//     not a definition keeps no annotation that the walk can read.
+//
+//         namespace my_layer {
+//         struct Handle;
+//         namespace transfer_facts {
+//         // No thread writes a handle after its build.
+//         inline constexpr ::foundation::transfer::opaque_facts handle{
+//             .type = ^^Handle, .is_sendable = true, .is_shareable = true};
+//         inline constexpr ::foundation::transfer::opaque_seal seal{.count = 1};
+//         }
+//         }
+//
+//     The registry is the namespace transfer_facts in the namespace of the
+//     class.  Each variable of type opaque_facts in it is one statement, and
+//     its one variable of type opaque_seal counts the statements.  The comment
+//     beside a statement gives its reason, as for an annotation.  A registry
+//     with no seal, with two seals, or with a count that differs from its seal
+//     stops the build at its first read, and so does a class with two
+//     statements.  So each translation unit reads the same statements.
+//
+//     The walk reads a statement only while the class is only declared.  The
+//     file that defines the class must check that its definition holds each
+//     property that the statement gives, beside the definition:
+//
+//         static_assert(::foundation::transfer::holds_its_statement(^^Handle));
+//
 // What the walk cannot see, stated rather than implied: a value behind type
 // erasure, and a capture of a lambda on a compiler that shows no field of a
 // capture (rule 7 refuses such a lambda).  The walk reads the bases, the
@@ -123,6 +155,7 @@
 // visited list.
 
 #include <foundation/Linear.h>
+#include <foundation/reflect/Members.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <cstddef>
@@ -140,6 +173,21 @@ struct refers final {};
 struct refers_unique final {};
 struct thread_bound final {};
 struct payload_cell final {};
+
+// A statement of the facts of a class that is only declared, and the seal of
+// a registry of such statements (THE OPAQUE TYPES).  is_synchronized states
+// that two threads can write an object of the class at the same time.  Both
+// are structural types, so the walk reads a variable of each as a constant.
+struct opaque_facts {
+    std::meta::info type{};
+    bool is_sendable = false;
+    bool is_shareable = false;
+    bool is_synchronized = false;
+};
+
+struct opaque_seal {
+    std::size_t count = 0;
+};
 
 // The properties that first_refusal walks (THE THREE PROPERTIES and THE
 // VALUE BESIDE ITS SENDER).  The shared write has a walk of its own,
@@ -226,6 +274,71 @@ private:
     return ::foundation::linear::carries_annotation(type, annotation);
 }
 
+// Each function below has no constant definition.  A call to one stops the
+// constant evaluation, and the diagnostic names it (THE OPAQUE TYPES).
+void a_registry_of_transfer_facts_has_no_seal() noexcept;
+void a_registry_of_transfer_facts_has_two_seals() noexcept;
+void a_statement_of_transfer_facts_stands_outside_its_seal() noexcept;
+void a_class_has_two_statements_of_transfer_facts() noexcept;
+
+[[nodiscard]] consteval bool is_variable_of(std::meta::info member, std::meta::info type) {
+    return std::meta::is_variable(member) && std::meta::remove_cvref(std::meta::type_of(member)) == type;
+}
+
+// The registry of the class, the namespace transfer_facts in the namespace
+// of the class, or a null reflection when there is none.  Complexity: linear
+// in the members of the namespace of the class.
+[[nodiscard]] consteval std::meta::info registry_of(std::meta::info type) {
+    const std::meta::info scope = std::meta::parent_of(type);
+    if (!std::meta::is_namespace(scope)) return std::meta::info{};
+    const std::meta::info registry =
+        ::foundation::reflect::member_named_in(scope, std::meta::access_context::unprivileged(), "transfer_facts");
+    if (registry == std::meta::info{} || !std::meta::is_namespace(registry) || std::meta::is_namespace_alias(registry))
+        return std::meta::info{};
+    return registry;
+}
+
+// The statement of the class, read from its registry, or a statement with no
+// type when the registry states nothing of it (THE OPAQUE TYPES).  A fault of
+// the registry stops the build.  Complexity: linear in the members of the
+// namespace of the class and of the registry.
+[[nodiscard]] consteval opaque_facts statement_of(std::meta::info type) {
+    const std::meta::info registry = registry_of(type);
+    if (registry == std::meta::info{}) return opaque_facts{};
+    const std::meta::info bare = std::meta::dealias(type);
+    opaque_facts found{};
+    std::size_t statements = 0;
+    std::size_t seals = 0;
+    std::size_t sealed = 0;
+    static_cast<void>(::foundation::reflect::find_member(
+        registry, std::meta::access_context::unprivileged(), [&](std::meta::info member) {
+            if (is_variable_of(member, ^^opaque_seal)) {
+                ++seals;
+                sealed = std::meta::extract<opaque_seal>(member).count;
+                return false;
+            }
+            if (!is_variable_of(member, ^^opaque_facts)) return false;
+            ++statements;
+            const opaque_facts statement = std::meta::extract<opaque_facts>(member);
+            if (std::meta::dealias(statement.type) != bare) return false;
+            if (found.type != std::meta::info{}) a_class_has_two_statements_of_transfer_facts();
+            found = statement;
+            return false;
+        }));
+    if (seals == 0) a_registry_of_transfer_facts_has_no_seal();
+    if (seals > 1) a_registry_of_transfer_facts_has_two_seals();
+    if (statements != sealed) a_statement_of_transfer_facts_stands_outside_its_seal();
+    return found;
+}
+
+// True when the statement of a class that is only declared gives the
+// property (THE OPAQUE TYPES).  Without a statement, the class holds none.
+[[nodiscard]] consteval bool is_stated(std::meta::info type, Property property) {
+    const opaque_facts statement = statement_of(type);
+    if (statement.type == std::meta::info{}) return false;
+    return property == Property::Share ? statement.is_shareable : statement.is_sendable;
+}
+
 // The annotation that states the property, and the one that refuses it.
 // sendable{} and not_sendable{} state SendableBeside too (THE VALUE BESIDE
 // ITS SENDER).
@@ -270,7 +383,13 @@ private:
             pending.push(Goal{refl::bare_type(std::meta::remove_all_extents(type)), Property::Share});
             continue;
         }
-        if (!is_class_or_union(type) || !std::meta::is_complete_type(type)) return type;
+        if (!is_class_or_union(type)) return type;
+        // A class that is only declared holds what its statement gives (THE
+        // OPAQUE TYPES).
+        if (!std::meta::is_complete_type(type)) {
+            if (statement_of(type).is_synchronized) continue;
+            return type;
+        }
         if (states(type, ^^not_shareable) || states(type, ^^thread_bound)) return type;
         // A cell of a payload (THE ANNOTATIONS).
         if (states(type, ^^payload_cell)) {
@@ -386,7 +505,7 @@ struct ReferenceAnswer {
         }
         if (!detail::is_class_or_union(bare)) return bare;
         if (!std::meta::is_complete_type(bare)) {
-            if (goal.is_argument) continue;
+            if (goal.is_argument || detail::is_stated(bare, goal.property)) continue;
             return bare;
         }
         // Rule 5.  A class of one owner thread moves to no other thread.
@@ -462,6 +581,21 @@ struct ReferenceAnswer {
 // True when two threads can write one object of the type through a reference
 // that is not const at the same time (THE SHARED WRITE).
 [[nodiscard]] consteval bool is_synchronized(std::meta::info type) { return detail::is_shared_writable(type); }
+
+// True when the class has a statement of its facts and its definition holds
+// each property that the statement gives (THE OPAQUE TYPES).  The file that
+// defines a class with a statement asserts it beside the definition.  A
+// property that the statement does not give asks nothing, so a statement can
+// give less than the definition holds.  The class must be complete.
+[[nodiscard]] consteval bool holds_its_statement(std::meta::info type) {
+    const opaque_facts statement = detail::statement_of(type);
+    if (statement.type == std::meta::info{} || !std::meta::is_complete_type(std::meta::dealias(type))) return false;
+    if (statement.is_sendable && !holds(type, Property::Send)) return false;
+    if (statement.is_sendable && !holds(type, Property::SendBeside)) return false;
+    if (statement.is_shareable && !holds(type, Property::Share)) return false;
+    if (statement.is_synchronized && !is_synchronized(type)) return false;
+    return true;
+}
 
 // The first type that two threads cannot write at the same time, or a null
 // reflection when the type is Synchronized (THE SHARED WRITE).  A message

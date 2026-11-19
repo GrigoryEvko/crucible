@@ -251,6 +251,42 @@ consteval bool are_refs_checked_beside() {
 }
 static_assert(are_refs_checked_beside());
 
+// THE OPAQUE TYPES: a class that is only declared holds what the statement of
+// its registry gives.  A definition must hold each property that its
+// statement gives, so the definition of StatedWithAddress, whose pointer
+// refuses Share, disagrees with its statement.
+struct OpaqueHandle;
+struct UnstatedHandle;
+struct StatedPlain {
+    int value = 0;
+};
+struct StatedWithAddress {
+    int* address = nullptr;
+};
+namespace transfer_facts {
+// No thread writes the handle after its build.
+inline constexpr opaque_facts opaque_handle{.type = ^^OpaqueHandle, .is_sendable = true, .is_shareable = true};
+// The class holds one int.
+inline constexpr opaque_facts stated_plain{.type = ^^StatedPlain, .is_sendable = true, .is_shareable = true};
+// A statement that the definition of the class refuses.
+inline constexpr opaque_facts stated_with_address{.type = ^^StatedWithAddress, .is_shareable = true};
+inline constexpr opaque_seal seal{.count = 3};
+}  // namespace transfer_facts
+struct ReadsOpaque {
+    OpaqueHandle const& handle;
+};
+struct WritesOpaque {
+    OpaqueHandle& handle;
+};
+struct ReadsUnstated {
+    UnstatedHandle const& handle;
+};
+static_assert(Sendable<ReadsOpaque> && Shareable<ReadsOpaque> && !SendableBeside<ReadsOpaque>);
+static_assert(!Sendable<WritesOpaque>, "the statement does not state that two threads can write the handle");
+static_assert(!Sendable<ReadsUnstated> && first_refusal(^^ReadsUnstated, Property::Send) == ^^UnstatedHandle);
+static_assert(holds_its_statement(^^StatedPlain) && !holds_its_statement(^^StatedWithAddress));
+static_assert(!holds_its_statement(^^Plain), "a class with no statement holds none");
+
 }  // namespace detail::transfer_self_test
 
 }  // namespace foundation::transfer
