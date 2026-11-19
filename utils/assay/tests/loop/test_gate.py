@@ -40,7 +40,7 @@ import os
 import sys
 import tempfile
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from unittest import mock
@@ -108,8 +108,8 @@ COUNTED_REGISTRY = (
     "rule mint engine=plugin scope=include/ ledger=admit kinds=mint doc=XXI | a mint | shape the mint\n"
     "rule padded-list engine=plugin scope=include/ ledger=count kinds=padded-member doc=XV.7 | a list | add a member\n"
 )
-# The planted master loop: `syntax --changed` names no preset, and `test BUILD` writes the report of the mode of the
-# build directory.  The mode build gives a build that fails, and the mode late gives an error after a green run.  The
+# The planted master loop: `syntax --changed` names no preset, `heal BUILD NAME` finds no stale compiler, and `test
+# BUILD` writes the report of the mode of the build directory.  The mode build gives a build that fails, and the mode late gives an error after a green run.  The
 # master writes MAKEFLAGS to makeflags.txt, and the times of its start and its end to times.txt.  The mode hang runs
 # until a stop ends it.  The mode plugin makes the test guard_plugin red.
 # `derive TARGET --write --build-dir BUILD` writes inventory.txt of the build into the tree as the
@@ -156,6 +156,8 @@ def is_written(path):
 
 words = sys.argv[1:]
 if words[:2] == ["syntax", "--changed"]:
+    sys.exit(0)
+if words[0] == "heal":
     sys.exit(0)
 if words[0] == "derive":
     build = pathlib.Path(words[words.index("--build-dir") + 1])
@@ -697,6 +699,38 @@ def repair_cases(expect: testing.Expect) -> None:
             (whole / "build.ninja").is_file()
             and (whole.joinpath(*gate.REPLY_DIRECTORY) / "index-1.json").is_file()
             and f"{release.name}:" not in printed,
+        )
+
+
+def plan_cases(expect: testing.Expect) -> None:
+    """Hold configure_plan(): no graph configures as today, and a line of `loop heal` configures with --fresh."""
+    with tempfile.TemporaryDirectory(prefix="gate-plan-") as work_text:
+        tree = Path(work_text)
+        default = gate.BY_NAME["default"]
+        build = tree / default.build
+        asked: list[Path] = []
+
+        def heal_of(line: str) -> Callable[[Path], str]:
+            def heal(asked_build: Path) -> str:
+                asked.append(asked_build)
+                return line
+
+            return heal
+
+        words = gate.configure_words(tree, default)
+        expect(
+            "a build directory with no graph of Ninja takes its configure of today, and the gate asks no heal",
+            gate.configure_plan(tree, default, heal_of("planted line")) == (words, "") and not asked,
+        )
+        build.mkdir(parents=True)
+        ninja_reader.plant_graph(build, "")
+        expect(
+            "a build directory with a graph and a cache that agrees takes no configure",
+            gate.configure_plan(tree, default, heal_of("")) is None and asked == [build],
+        )
+        expect(
+            "a line of the heal gives the configure with --fresh, and the gate writes the line",
+            gate.configure_plan(tree, default, heal_of("planted line")) == ([*words, gate.FRESH_WORD], "planted line"),
         )
 
 
@@ -2408,6 +2442,7 @@ def main(argv: list[str]) -> int:
             table_cases,
             tree_cases,
             repair_cases,
+            plan_cases,
             change_cases,
             run_cases,
             reduce_cases,

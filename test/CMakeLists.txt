@@ -4772,7 +4772,8 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         loop.derive.test_walk_units loop.derive.test_header_lists
         loop.derive.test_header_costs
         loop.derive.test_mint_inventory loop.derive.test_row_hashes loop.test_inputs loop.test_syntax
-        loop.test_land loop.test_heavy loop.test_gate loop.test_tiers loop.test_plan loop.test_readset loop.test_audit
+        loop.test_land loop.test_heavy loop.test_gate loop.test_heal loop.test_tiers loop.test_plan loop.test_readset
+        loop.test_audit
         loop.test_levels
         loop.test_caps
         core.test_calls loop.test_evidence loop.evidence.test_store loop.evidence.test_status

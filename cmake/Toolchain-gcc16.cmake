@@ -78,7 +78,15 @@ if(NOT EXISTS "${_crucible_cxx}")
     "See cmake/Toolchain-gcc16.cmake for resolution order.")
 endif()
 
-# --- 3. Refuse a compiler that does not have each fix -----------------------
+# --- 3. Refuse a cache that keeps a different compiler ----------------------
+# A build directory keeps the compiler of its first configure.  When the
+# resolution above gives a different compiler, such as a new default prefix,
+# the configure stops with the command that configures the directory again
+# (cmake/StaleCompiler.cmake).
+include("${CMAKE_CURRENT_LIST_DIR}/StaleCompiler.cmake")
+crucible_refuse_stale_compilers("${_crucible_cxx}" "${_crucible_cc}")
+
+# --- 4. Refuse a compiler that does not have each fix -----------------------
 # CMake reads this file again in each try_compile project, with the same
 # compiler.  The probes run only in the top project.  The root CMakeLists.txt
 # makes the same call after project(), for a configure without this file.
@@ -102,7 +110,7 @@ set(CMAKE_AR           "${_crucible_ar}"     CACHE FILEPATH "Crucible patched gc
 set(CMAKE_NM           "${_crucible_nm}"     CACHE FILEPATH "Crucible patched gcc-nm-16p")
 set(CMAKE_RANLIB       "${_crucible_ranlib}" CACHE FILEPATH "Crucible patched gcc-ranlib-16p")
 
-# --- 4. Derive the rpath from the SAME prefix -------------------------------
+# --- 5. Derive the rpath from the SAME prefix -------------------------------
 # Binaries compiled with the patched tree link against its newer libstdc++.so.6,
 # which is not on the system path. The rpath is derived from the resolved
 # prefix so it always matches the compiler that produced the binary.

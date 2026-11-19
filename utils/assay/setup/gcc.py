@@ -125,14 +125,19 @@ class CrossPackage:
 
 @dataclass(frozen=True, slots=True)
 class CrossTarget:
-    """A target of a cross compiler: its triplet, its packages in the sequence of their unpack, and its sysroot.
+    """A target of a cross compiler: its triplet, its packages, its sysroot, and the prefix of its toolchain file.
 
-    `sysroot` is the path of the sysroot below the prefix, as the package of the glibc of the target holds it.
+    `packages` are in the sequence of their unpack.  `sysroot` is the path of the sysroot below the prefix, as the
+    package of the glibc of the target holds it.  `prefix_variable` names the environment variable of the install
+    prefix, and `home_prefix` is the prefix below the home directory when the environment names none.  The toolchain
+    file of the target resolves the prefix with the same two rules.
     """
 
     triplet: str
     packages: tuple[CrossPackage, ...]
     sysroot: Path
+    prefix_variable: str
+    home_prefix: Path
 
 
 CROSS_TARGETS = {
@@ -140,7 +145,9 @@ CROSS_TARGETS = {
         "aarch64-linux-gnu",
         (CrossPackage("binutils-aarch64", False), CrossPackage("sysroot-aarch64", False),
          CrossPackage("libbpf-devel-aarch64", True)),
-        Path("usr") / "aarch64-redhat-linux" / "sys-root" / "fc44"),
+        Path("usr") / "aarch64-redhat-linux" / "sys-root" / "fc44",
+        "CRUCIBLE_GCC16_AARCH64_PREFIX",
+        Path(".local") / "gcc16-patched-aarch64"),
 }
 # The pins of the packages of each cross target.  The rule tool-pins holds them (assay.setup.pins).
 CROSS_PINS = frozenset(package.pin for target in CROSS_TARGETS.values() for package in target.packages)
@@ -182,6 +189,17 @@ def toolchain_compilers() -> tuple[Path, Path]:
     prefix_text = os.environ.get("CRUCIBLE_GCC16_PREFIX", "")
     prefix = Path(prefix_text) if prefix_text else Path.home() / HOME_PREFIX
     return prefix / COMPILER.with_name("gcc-16p"), prefix / COMPILER
+
+
+def cross_toolchain_compilers(target: CrossTarget) -> tuple[Path, Path]:
+    """Return the C compiler and the C++ compiler of a cross target, with the rules of its toolchain file.
+
+    The variable `target.prefix_variable` names the prefix.  If it is not set, the prefix is `target.home_prefix`
+    below the home directory, as cmake/Toolchain-gcc16-aarch64.cmake resolves it.  The files can be missing.
+    """
+    prefix_text = os.environ.get(target.prefix_variable, "")
+    prefix = Path(prefix_text) if prefix_text else Path.home() / target.home_prefix
+    return prefix / COMPILER.with_name(f"{target.triplet}-gcc-16p"), compiler_of(prefix, target)
 
 
 def compiler_of(prefix: Path, target: CrossTarget | None) -> Path:

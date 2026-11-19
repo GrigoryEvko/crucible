@@ -56,8 +56,8 @@ if sys.path[:1] != [_UTILS]:
     sys.path.insert(0, _UTILS)
 
 # Each subcommand: its module, and the line of the help text.  A subcommand
-# with no line is for a tool (CMake, ccache, ctest or a guard), and the help
-# text does not list it.
+# with no line is for a tool (CMake, ccache, ctest, a guard or the gate of a
+# landing), and the help text does not list it.
 SUBCOMMANDS = {
     "test": ("assay.loop.affected", "build, and then run each test with an input that changed: loop test BUILD_DIR"),
     "gauge": ("assay.loop.gauge", "measure the edit loop in a clone, a sample of units with --sample, or a clean "
@@ -81,6 +81,7 @@ SUBCOMMANDS = {
     "test-step": ("assay.loop.teststep", None),
     "fixture": ("assay.loop.fixture.store", None),
     "stamps": ("assay.loop.stamps", None),
+    "heal": ("assay.loop.heal", None),
     "budget": ("assay.core.report", None),
     "jobs": ("assay.core.proc", None),
 }

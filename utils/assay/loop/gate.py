@@ -210,7 +210,9 @@ THE RUN OF A CONFIGURATION
     check runs in a thread of its own, with a lease of the slot pool of the
     host (THE JOBSERVER, THE THREADS):
       1. A build directory with no graph of Ninja gets its configure:
-         `cmake --preset PRESET -B BUILD`.
+         `cmake --preset PRESET -B BUILD`.  A build directory whose cache
+         names a compiler that its toolchain file does not resolve gets
+         `cmake --preset PRESET -B BUILD --fresh` (THE COMPILER HEAL).
       2. A parse configuration: `loop syntax BUILD`, then `guard check
          --build-dir BUILD` of each rule of COUNTED_RULES of
          assay.guard.engines.buildsys.parse_builds, at the same time.
@@ -248,6 +250,26 @@ THE RUN OF A CONFIGURATION
     commit judge the commit.  The step writes its two outputs to a log in
     the directory of the logs of the gate (THE LOGS).  The first
     configuration with a problem stops the others (THE STOP).
+
+THE COMPILER HEAL
+    CMake keeps the compiler of the first configure of a build directory,
+    and the warm tree keeps its build directories from one landing to the
+    next.  So a new default prefix of a toolchain file, such as the prefix
+    of a new patch of GCC, never reaches a build directory of the warm tree
+    by itself.  Before the build of a configuration with a graph of Ninja,
+    the gate runs `loop heal BUILD PRESET` of the warm tree (heal_line()).
+    That command compares the compilers of the cache with the compilers
+    that the toolchain file of the commit resolves (THE STALE COMPILER of
+    assay.loop.heal).  It runs from the warm tree, because the rules of the
+    commit decide, and this copy of the gate can be older than the commit.
+    When the command gives a line, the gate writes the line, which names the
+    paths of the cache and of the toolchain file.  Then it configures the
+    build directory again with `cmake --preset PRESET -B BUILD --fresh`
+    (configure_plan()).  The commands of the compiles then name the new
+    compiler, so Ninja builds each object again.  A build directory with no
+    graph of Ninja takes step 1 of THE RUN OF A CONFIGURATION as it is.
+    Outside the gate, cmake/StaleCompiler.cmake refuses such a cache in each
+    configure, with the command that heals it.
 
 THE JOBSERVER
     Each configuration of a check holds a lease of the slot pool of the host
@@ -688,6 +710,8 @@ UNBORN_REF = "refs/heads/main"
 OUTPUT_SUFFIXES = (".o", ".a", ".so")
 REPLY_DIRECTORY = (".cmake", "api", "v1", "reply")
 EMPTY_SHOWN = 5
+# The word of a configure that drops the cache of the build directory first (THE COMPILER HEAL).
+FRESH_WORD = "--fresh"
 # The weight of the lease of the vessel in the slot pool (THE WEIGHT of assay.loop.heavy).  With the weight 2, four runs
 # of the gate built the vessel at the same time with 64 jobs each, and the host ran out of memory two times on
 # 2026-11-15.  Each lease reads the available memory one time at its start, so leases that start together each count
@@ -1434,6 +1458,25 @@ def configure_words(tree: Path, configuration: Configuration) -> list[str]:
     return ["cmake", "--preset", configuration.name, "-B", str(build_directory(tree, configuration))]
 
 
+def configure_plan(
+    tree: Path, configuration: Configuration, heal: Callable[[Path], str]
+) -> tuple[list[str], str] | None:
+    """Return the words of the configure of a build directory and the line of its heal, or None for no configure.
+
+    THE RUN OF A CONFIGURATION, step 1, and THE COMPILER HEAL give the rules.  A build directory with no graph of Ninja
+    gets the words of configure_words() and an empty line.  `heal` gives the line of `loop heal` for a build directory
+    with a graph, an empty line when its cache agrees with its toolchain file.  A line gets the words with FRESH_WORD.
+    """
+    build = build_directory(tree, configuration)
+    words = configure_words(tree, configuration)
+    if not ninja_reader.graph_file(build).is_file():
+        return words, ""
+    line = heal(build)
+    if not line:
+        return None
+    return [*words, FRESH_WORD], line
+
+
 def configured_program(build: Path, name: str) -> str:
     """Return the cmake or the ctest that the CMake cache of a build names.
 
@@ -1927,14 +1970,43 @@ class Step:
             return completed.exit
 
     def configure(self, configuration: Configuration, share: heavy.Share, is_again: bool = False) -> str | None:
-        """Configure the build directory of a configuration when it has no graph of Ninja, and give a problem."""
-        build = build_directory(self.gate.tree, configuration)
-        if ninja_reader.graph_file(build).is_file():
+        """Configure the build directory of a configuration, and give a problem (THE RUN OF A CONFIGURATION, step 1).
+
+        A build directory with no graph of Ninja gets its configure.  A build directory whose cache names a compiler
+        that its toolchain file does not resolve gets its configure with FRESH_WORD (THE COMPILER HEAL).
+
+        Raises:
+            GateError: If `loop heal` of the warm tree cannot run or gives an error
+        """
+        plan = configure_plan(self.gate.tree, configuration, lambda build: self.heal_line(configuration, build))
+        if plan is None:
             return None
+        words, line = plan
+        if line:
+            self.say(line)
         log = log_name(configuration, "configure.log", is_again)
-        if self.run_logged(configure_words(self.gate.tree, configuration), log, share, CONFIGURE_S) != 0:
+        if self.run_logged(words, log, share, CONFIGURE_S) != 0:
             return f"{configuration.name}: the configure gives an error, see {self.gate.logs / log}"
         return None
+
+    def heal_line(self, configuration: Configuration, build: Path) -> str:
+        """Return the line of `loop heal` of the warm tree for a build directory, or an empty line (THE COMPILER HEAL).
+
+        The command of the warm tree resolves the compilers with the rules of the commit, not of this copy of the gate.
+
+        Raises:
+            GateError: If the command cannot run or gives an error
+        """
+        command = [*self.gate.master("loop"), "heal", str(build), configuration.name]
+        try:
+            completed = proc.run(
+                proc.Command(command, timeout_s=proc.TOOL_S, cwd=self.gate.tree, env=dict(self.environment))
+            )
+        except proc.ToolFailed as problem:
+            raise GateError(f"`loop heal` cannot run: {problem}") from None
+        if completed.exit != ExitCode.OK:
+            raise GateError(f"`loop heal` gives an error: {completed.err.strip()}")
+        return completed.out.strip()
 
     def regenerate(self, configuration: Configuration, share: heavy.Share) -> str | None:
         """Build the target build.ninja of the build of a configuration, and give a problem (THE THREADS).

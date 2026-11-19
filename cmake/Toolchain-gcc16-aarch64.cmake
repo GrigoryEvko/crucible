@@ -44,6 +44,12 @@ if(NOT EXISTS "${_crucible_cross_cxx}")
     "`python3 utils/bin/setup gcc PREFIX --target aarch64-linux-gnu`, and set CRUCIBLE_GCC16_AARCH64_PREFIX to PREFIX.")
 endif()
 
+# A build directory keeps the cross compiler of its first configure.  When
+# the prefix above gives a different compiler, the configure stops with the
+# command that configures the directory again (cmake/StaleCompiler.cmake).
+include("${CMAKE_CURRENT_LIST_DIR}/StaleCompiler.cmake")
+crucible_refuse_stale_compilers("${_crucible_cross_cxx}" "${_crucible_cross_bindir}/${_crucible_cross_triplet}-gcc-16p")
+
 # The patched g++ of the host, which compiles the quarantine plugin.
 if(DEFINED ENV{CRUCIBLE_CXX} AND NOT "$ENV{CRUCIBLE_CXX}" STREQUAL "")
   set(_crucible_host_cxx "$ENV{CRUCIBLE_CXX}")
