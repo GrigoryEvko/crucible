@@ -42,6 +42,7 @@
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
 #include <foundation/os/GuardedRegion.h>
 
@@ -64,8 +65,10 @@ void write_first_byte(::foundation::os::GuardedRegion& region, char value) noexc
 
 // A word that the first thread of a case sets to a value other than zero
 // when it ends its part.  The two threads read and write it with relaxed
-// order only, so the sanitizer takes no happens-before edge from it.
-struct RelaxedWord {
+// order only, so the sanitizer takes no happens-before edge from it.  Each
+// access is atomic, so the word states shareable: two threads can read and
+// write it at the same time.
+struct[[= ::foundation::transfer::shareable{}]] RelaxedWord {
     std::uint64_t value = 0;
 };
 
@@ -142,26 +145,28 @@ constexpr std::size_t kOpenTries = 64;
     BgCtx const ctx{eff::testing::bg()};
     fs::DirectoryHandle const devices = fs::open_directory(ctx, sanitized("/dev")).expect("/dev opens");
     RelaxedWord closed{};
-    bool has_read = false;
-    bool has_closed = false;
+    // Only the thread of a body writes its result, and the main thread reads
+    // it after the join, so the result gives the two bodies no edge.
+    foundation::core::Atomic<bool> has_read{false};
+    foundation::core::Atomic<bool> has_closed{false};
     auto first = [&](BgCtx const& thread_ctx) noexcept {
         int first_number = -1;
         {
             NullFile const null = open_null(thread_ctx, devices);
             first_number = number_of(null);
             foundation::core::FixedArray<std::byte, 8> bytes{};
-            has_read = fs::read_full(thread_ctx, null.ref(), bytes.view()).is_ok();
+            has_read.store_release(fs::read_full(thread_ctx, null.ref(), bytes.view()).is_ok());
         }
         publish_relaxed(closed, static_cast<std::uint64_t>(first_number) + 1U);
     };
     auto second = [&](BgCtx const& thread_ctx) noexcept {
         wait_for(closed);
         int const first_number = static_cast<int>(read_relaxed(closed) - 1U);
-        has_closed = open_again_and_close(thread_ctx, devices, first_number, kOpenTries);
+        has_closed.store_release(open_again_and_close(thread_ctx, devices, first_number, kOpenTries));
     };
     if (::fixy::thread::run_joined(ctx, ThreadOptions{}, first, second).is_err()) return 1;
-    if (!has_read) return 2;
-    if (!has_closed) return 3;
+    if (!has_read.load_acquire()) return 2;
+    if (!has_closed.load_acquire()) return 3;
     return 0;
 }
 
@@ -198,7 +203,7 @@ constexpr int kMapRounds = 16;
 [[nodiscard]] bool reuse_range_once(BgCtx const& ctx) {
     RelaxedWord unmapped{};
     RelaxedWord second_done{};
-    bool has_found_range = false;
+    foundation::core::Atomic<bool> has_found_range{false};
     // The first thread waits for the second one before it ends, so the
     // unmap of its alternate signal stack cannot come before the maps of the
     // second thread.
@@ -214,11 +219,11 @@ constexpr int kMapRounds = 16;
     };
     auto second = [&]() noexcept {
         wait_for(unmapped);
-        has_found_range = map_again_and_write(read_relaxed(unmapped), kMapTries);
+        has_found_range.store_release(map_again_and_write(read_relaxed(unmapped), kMapTries));
         publish_relaxed(second_done, 1);
     };
     if (::fixy::thread::run_joined(ctx, ThreadOptions{}, first, second).is_err()) return false;
-    return has_found_range;
+    return has_found_range.load_acquire();
 }
 
 // THE MAP: a write to a new map of a range that a raw unmap gave back reports
