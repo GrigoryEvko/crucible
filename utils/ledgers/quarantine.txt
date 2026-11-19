@@ -142,6 +142,7 @@ include/crucible/ | opted-out | 1 | ABI: the front end gave the data pointer of 
 include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the tensor at the record of the op | the data pointer of a TensorMeta came from the front end, and data_address gives it a RunAddress through the foreign mint, which stands only at the edge of a foreign ABI
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
+include/crucible/perf/detail/ | region | 1 | ABI: libbpf opened the descriptor of the BPF map, and the map door maps it | libbpf gives the descriptor of a BPF map as a raw int, and map_foreign_region is the door that maps a descriptor that a C library opened
 include/fixy/ | base-std-entity | 288 | - | -
 include/fixy/ | base-std-object | 165 | - | -
 include/fixy/ | replace-pending:<array> | 4 | - | -
@@ -301,15 +302,16 @@ src/foundation/ | base-std-object | 14 | - | -
 src/foundation/ | replace-pending:<atomic> | 1 | - | -
 src/foundation/ | replace-pending:<csignal> | 1 | - | -
 src/foundation/os/ | base-std-entity | 28 | - | -
-src/perf/ | c-library-call | 1 | - | -
-src/perf/ | c-library-object | 2 | - | -
+src/perf/ | c-library-object | 1 | - | -
 src/perf/ | compiler-builtin | 1 | - | -
-src/perf/ | raw-pointer-object | 2 | - | -
+src/perf/ | opted-out | 3 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
+src/perf/ | raw-pointer-object | 1 | - | -
+src/perf/ | region | 1 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
 test/ | c-array-object | 148 | - | -
-test/ | c-library-call | 720 | - | -
+test/ | c-library-call | 714 | - | -
 test/ | c-library-object | 9 | - | -
 test/ | compiler-builtin | 1 | - | -
-test/ | door-header | 8 | - | -
+test/ | door-header | 5 | - | -
 test/ | foreign-symbol | 12 | - | -
 test/ | inline-asm | 1 | - | -
 test/ | opted-out | 47 | PROBE: a traced child shows the directory of each sync of the Cipher store | the test of the syncs of the Cipher traces a child with ptrace and reads the path of each descriptor from /proc, because no door of the base traces a process or shows the directory of a sync, and the child door of the base waits only for the end of a child, not for a ptrace stop
@@ -325,8 +327,8 @@ test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the 
 test/ | region | 1 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | replace-pending:<limits> | 11 | - | -
 test/ | replace-pending:std::bit_cast | 77 | - | -
-test/ | std-entity | 1447 | - | -
-test/ | std-object | 521 | - | -
+test/ | std-entity | 1435 | - | -
+test/ | std-object | 513 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 2 | - | -
 test/cipher_neg/ | std-entity | 3 | - | -
@@ -343,10 +345,10 @@ test/ct/ | raw-pointer-object | 4 | - | -
 test/ct/ | std-entity | 18 | - | -
 test/ct/ | std-object | 12 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
-test/fixy/ | c-array-object | 87 | - | -
-test/fixy/ | c-library-call | 1028 | - | -
+test/fixy/ | c-array-object | 86 | - | -
+test/fixy/ | c-library-call | 991 | - | -
 test/fixy/ | c-library-object | 6 | - | -
-test/fixy/ | door-header | 10 | - | -
+test/fixy/ | door-header | 9 | - | -
 test/fixy/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | opted-out | 4 | ORACLE: the PyTorch tables, and the F16C instructions under each MXCSR state | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
@@ -374,10 +376,11 @@ test/fixy/ | opted-out | 1 | PROBE: the test forges stdio::write for a private s
 test/fixy/ | opted-out | 2 | PROBE: the test forges the wire word of a keyed step and of a branch of a keyed choice | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/ | opted-out | 1 | PROBE: the test reads the dumpable flag that the child door gave the child | test_child_process reads the dumpable flag of a child with prctl, to check that the child door makes each child not dumpable
+test/fixy/ | opted-out | 2 | PROBE: the test reads the state that the doors gave a socket from the kernel | test_os_socket reads the domain, the type, the protocol, the stamp flags and the close-on-exec flag of a socket from the kernel, to check what the doors did
 test/fixy/ | opted-out | 5 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
-test/fixy/ | raw-pointer-object | 142 | - | -
+test/fixy/ | raw-pointer-object | 141 | - | -
 test/fixy/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | region | 1 | ORACLE: the PyTorch tables, and the F16C instructions under each MXCSR state | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
@@ -405,12 +408,13 @@ test/fixy/ | region | 1 | PROBE: the test forges stdio::write for a private stre
 test/fixy/ | region | 1 | PROBE: the test forges the wire word of a keyed step and of a branch of a keyed choice | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/ | region | 1 | PROBE: the test reads the dumpable flag that the child door gave the child | test_child_process reads the dumpable flag of a child with prctl, to check that the child door makes each child not dumpable
+test/fixy/ | region | 1 | PROBE: the test reads the state that the doors gave a socket from the kernel | test_os_socket reads the domain, the type, the protocol, the stamp flags and the close-on-exec flag of a socket from the kernel, to check what the doors did
 test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2498 | - | -
-test/fixy/ | std-object | 889 | - | -
+test/fixy/ | std-entity | 2494 | - | -
+test/fixy/ | std-object | 888 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 265 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
