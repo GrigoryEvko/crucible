@@ -50,14 +50,20 @@ THE TOOLS
                  rapidhash): the hash of a short byte string of the state of
                  the art, which the reference rows of bench_reflect measure.
                  --print-bin prints the top directory of the source.
+    blake3       The source of the official BLAKE3 (the pin blake3): the C and
+                 the assembly of the keyed hash, which the reference rows of
+                 bench_keyed_hash measure.  --print-bin prints the directory c
+                 of the source.
     No tool comes from PATH, because a program of PATH is an input that no pin
     holds.
 
 THE SOURCES OF THE BENCH
-    fluxsort, x86-simd-sort and rapidhash are rows of via=archive with no
-    platform: the archive of GitHub of one commit, which serves each host.
-    Only the bench presets compile their headers (bench/CMakeLists.txt), and
-    the product links none of their code.  The row of each source names its
+    fluxsort, x86-simd-sort, rapidhash and blake3 are rows of via=archive with
+    no platform: the archive of GitHub of one commit, which serves each host.
+    Only the bench presets compile their headers and sources
+    (bench/CMakeLists.txt), and the product links none of their code.  The C
+    and the assembly of blake3 are the one source of the C and ASM languages,
+    which only bench/CMakeLists.txt enables.  The row of each source names its
     license.
 
 THE PIP TOOLS
@@ -806,6 +812,9 @@ SOURCE_FILES = {
     "x86-simd-sort": ("src/x86simdsort-static-incl.h", "src/xss-common-qsort.h", "src/avx2-32bit-qsort.hpp",
                       "src/avx512-32bit-qsort.hpp", "LICENSE.md"),
     "rapidhash": ("rapidhash.h", "LICENSE"),
+    "blake3": ("c/blake3.h", "c/blake3_impl.h", "c/blake3.c", "c/blake3_dispatch.c", "c/blake3_portable.c",
+               "c/blake3_sse2_x86-64_unix.S", "c/blake3_sse41_x86-64_unix.S", "c/blake3_avx2_x86-64_unix.S",
+               "c/blake3_avx512_x86-64_unix.S", "c/blake3_neon.c", "LICENSE_CC0"),
 }
 
 
@@ -877,6 +886,9 @@ TOOLS: dict[str, Tool] = {
         "rapidhash", "rapidhash", "rapidhash-", {"": "source"},
         functools.partial(verify_source, SOURCE_FILES["rapidhash"]), unpack_source, version_stamp,
         version_stamp_matches, lambda directory: directory, False),
+    "blake3": Tool(
+        "blake3", "blake3", "blake3-", {"": "source"}, functools.partial(verify_source, SOURCE_FILES["blake3"]),
+        unpack_source, version_stamp, version_stamp_matches, lambda directory: directory / "c", False),
 }
 
 

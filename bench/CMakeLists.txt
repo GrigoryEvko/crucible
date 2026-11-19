@@ -140,6 +140,43 @@ crucible_bench(bench_fp_control)
 crucible_bench(bench_diag_emission)
 crucible_bench(bench_iteration_detector)
 crucible_bench(bench_kernel_cache)
+crucible_bench(bench_keyed_hash)
+# A bench compiles for the processor of the host, and the foundation library
+# for the level of the tree, so the two name different target namespaces of
+# the run-time arm of the keyed hash.  The bench compiles the source of the arm
+# itself, so it measures the arm of its own target and links it.
+target_sources(bench_keyed_hash PRIVATE "${CMAKE_SOURCE_DIR}/src/foundation/core/KeyedHash.cpp")
+# The reference of the keyed hash of the base: the official BLAKE3, its C and
+# its assembly of x86-64 in the static library blake3_reference.  This
+# directory enables the C and ASM languages for that library alone, and only
+# a bench preset reads this directory (CRUCIBLE_BENCH), so no product preset
+# compiles a line of C.  The library takes no flag of the tree, as the
+# official build takes none, apart from the control-flow protection that the
+# rule artifacts asks of each object of an executable.  With that flag the
+# compiler sets __CET__, and the official assembly then includes <cet.h> for
+# its marks of IBT and SHSTK.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  execute_process(
+    COMMAND "${CRUCIBLE_PYTHON3}" -S "${CMAKE_SOURCE_DIR}/utils/bin/setup" install --print-bin blake3
+    RESULT_VARIABLE _blake3_status
+    OUTPUT_VARIABLE _blake3_directory
+    ERROR_QUIET
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(_blake3_status EQUAL 0 AND NOT _blake3_directory STREQUAL "")
+    enable_language(C ASM)
+    add_library(blake3_reference STATIC
+      "${_blake3_directory}/blake3.c"
+      "${_blake3_directory}/blake3_dispatch.c"
+      "${_blake3_directory}/blake3_portable.c"
+      "${_blake3_directory}/blake3_sse2_x86-64_unix.S"
+      "${_blake3_directory}/blake3_sse41_x86-64_unix.S"
+      "${_blake3_directory}/blake3_avx2_x86-64_unix.S"
+      "${_blake3_directory}/blake3_avx512_x86-64_unix.S")
+    target_compile_options(blake3_reference PRIVATE $<$<COMPILE_LANGUAGE:C>:-O3> -fcf-protection=full)
+    target_link_libraries(bench_keyed_hash PRIVATE blake3_reference)
+  endif()
+  crucible_bench_reference(bench_keyed_hash blake3 CRUCIBLE_BENCH_BLAKE3 bench_keyed_hash_blake3.cpp)
+endif()
 crucible_bench(bench_merkle_dag)
 crucible_bench(bench_meta_log)
 crucible_bench(bench_net_checks)
