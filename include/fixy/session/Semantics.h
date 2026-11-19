@@ -658,7 +658,9 @@ template <typename R, typename Q, typename M, typename... Ls, typename... Bs, ty
     requires(!std::is_void_v<M>)
 struct receipt<R, Q, M, Recv<PeerMsg<Q, Ls, Bs>, Ks>...> {
     static constexpr bool is_received =
-        ((std::is_same_v<typename M::label, Ls> && is_payload_subsort_v<typename M::payload, Bs>) || ...);
+        ((std::is_same_v<typename M::label, Ls>
+          && ::fixy::session::transition::subsorts(^^::fixy::session::payload_axioms, ^^typename M::payload, ^^Bs))
+         || ...);
     using type =
         std::conditional_t<is_received, Actions<RecvAction<R, Q, typename M::label, typename M::payload>>, Actions<>>;
 };

@@ -418,6 +418,9 @@ static_assert(::fixy::session::transition::read_seal(^^::fixy::session::payload_
               "fixy::session::diagnostic [Subtype_Axiom_Outside_Seal]: fixy::session::payload_axioms holds an axiom "
               "that its seal does not count.  Every axiom of the payload order stands in fixy/session/Subtype.h.");
 
+// The value spelling of the order, for a reader that asks the question as a
+// value.  It carries no authority of its own: each gate calls
+// transition::subsorts, so a specialization of this variable admits nothing.
 template <typename Sub, typename Super>
 inline constexpr bool is_payload_subsort_v =
     ::fixy::session::transition::subsorts(^^::fixy::session::payload_axioms, ^^Sub, ^^Super);

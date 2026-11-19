@@ -92,8 +92,11 @@ consteval void require_closed_axiom(const subsort_axiom& axiom) {
     std::vector<subsort_axiom> found;
     for (const std::meta::info member : std::meta::members_of(axioms, std::meta::access_context::unchecked())) {
         if (!is_registration_of(member, ^^subsort_axiom)) continue;
-        found.push_back(std::meta::extract<subsort_axiom>(member));
-        require_closed_axiom(found.back());
+        const subsort_axiom axiom = std::meta::extract<subsort_axiom>(member);
+        // The top of a query reads each axiom, and a step below reads the
+        // same namespace again.
+        if (depth == subsort_depth_bound) require_closed_axiom(axiom);
+        found.push_back(axiom);
     }
     for (const subsort_axiom& axiom : found) {
         if (ask(axiom.weakens, {sub, super})) return true;
@@ -112,18 +115,68 @@ consteval void require_closed_axiom(const subsort_axiom& axiom) {
 
 }  // namespace detail
 
+namespace detail {
+
+// Has no constant definition.  A call to it stops the constant evaluation,
+// and the diagnostic names it.
+void a_subsort_cell_stands_for_another_pair() noexcept;
+
+class subsort_cell;
+
+[[nodiscard]] consteval subsort_cell walk_subsort(std::meta::info axioms, std::meta::info sub, std::meta::info super);
+
+// The answer of the order for one pair, with the pair that it answers.  The
+// cell is the value of subsort_cell_at, so GCC computes it one time for each
+// pair.  The two constructors are private and user-provided, and the walk is
+// their one friend.  So a specialization of subsort_cell_at can only hold the
+// cell of another pair, which the read refuses.
+class subsort_cell {
+public:
+    [[nodiscard]] consteval std::meta::info axioms() const noexcept { return axioms_; }
+    [[nodiscard]] consteval std::meta::info sub() const noexcept { return sub_; }
+    [[nodiscard]] consteval std::meta::info super() const noexcept { return super_; }
+    [[nodiscard]] consteval bool holds() const noexcept { return holds_; }
+
+private:
+    consteval subsort_cell() noexcept {}
+    consteval subsort_cell(const subsort_cell& other) noexcept
+        : axioms_{other.axioms_}, sub_{other.sub_}, super_{other.super_}, holds_{other.holds_} {}
+
+    std::meta::info axioms_{};
+    std::meta::info sub_{};
+    std::meta::info super_{};
+    bool holds_ = false;
+
+    friend consteval subsort_cell walk_subsort(std::meta::info axioms, std::meta::info sub, std::meta::info super);
+};
+
+[[nodiscard]] consteval subsort_cell walk_subsort(std::meta::info axioms, std::meta::info sub, std::meta::info super) {
+    subsort_cell cell{};
+    cell.axioms_ = axioms;
+    cell.sub_ = sub;
+    cell.super_ = super;
+    cell.holds_ = subsorts_within(axioms, sub, super, subsort_depth_bound);
+    return cell;
+}
+
+}  // namespace detail
+
 // The answer for one pair, computed once per translation unit.  Declare
 // every axiom of a namespace before the first query against it.
 template <std::meta::info Axioms, std::meta::info Sub, std::meta::info Super>
-inline constexpr bool subsorts_v = detail::subsorts_within(Axioms, Sub, Super, detail::subsort_depth_bound);
+inline constexpr detail::subsort_cell subsort_cell_at = detail::walk_subsort(Axioms, Sub, Super);
 
 [[nodiscard]] consteval bool subsorts(std::meta::info axioms, std::meta::info sub, std::meta::info super) {
     const std::meta::info low = std::meta::dealias(sub);
     const std::meta::info high = std::meta::dealias(super);
     if (low == high) return true;
-    return std::meta::extract<bool>(
-        std::meta::substitute(^^subsorts_v, {std::meta::reflect_constant(axioms), std::meta::reflect_constant(low),
-                                             std::meta::reflect_constant(high)}));
+    const detail::subsort_cell& cell = std::meta::extract<const detail::subsort_cell&>(
+        std::meta::substitute(^^subsort_cell_at, {std::meta::reflect_constant(axioms), std::meta::reflect_constant(low),
+                                                  std::meta::reflect_constant(high)}));
+    if (cell.axioms() != axioms || cell.sub() != low || cell.super() != high) {
+        detail::a_subsort_cell_stands_for_another_pair();
+    }
+    return cell.holds();
 }
 
 // ── The type graph ────────────────────────────────────────────────────

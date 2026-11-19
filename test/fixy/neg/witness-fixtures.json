@@ -1002,6 +1002,11 @@
       "constructor": "\\bSessionOpenKey\\("
     },
     {
+      "name": "neg_witness_session_transition_detail_subsort_cell_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bsubsort_cell\\("
+    },
+    {
       "name": "neg_witness_session_vigil_mode_modewriter_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bModeWriter\\("
@@ -1969,6 +1974,10 @@
     {
       "type": "fixy::channels::EndpointDoor",
       "header": "fixy/channels/Endpoint.h"
+    },
+    {
+      "type": "fixy::session::transition::detail::subsort_cell",
+      "header": "fixy/session/Refinement.h"
     },
     {
       "type": "foundation::algebra::net::SealedNet<1, 1, 1, 1>",

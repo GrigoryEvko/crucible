@@ -1027,6 +1027,10 @@ witness <fixy/session/Checkpoint.h> deleted | fixy::session::CheckpointDoor | fi
 witness <fixy/session/CrashTransport.h> deleted | fixy::session::CrashSessionDoor | fixy::session::CrashSessionDoor{}
 witness <fixy/session/Recording.h> deleted | fixy::session::RecordingDoor | fixy::session::RecordingDoor{}
 witness <fixy/channels/Endpoint.h> deleted | fixy::channels::EndpointDoor | fixy::channels::EndpointDoor{}
+# The cell of the payload order holds the answer for one pair and the pair
+# that it answers.  Only the walk of the order builds one.  The cell exists
+# only at compile time, so the construction stands in an operand of sizeof.
+witness <fixy/session/Refinement.h> private | fixy::session::transition::detail::subsort_cell | sizeof(fixy::session::transition::detail::subsort_cell{})
 
 # -- Interaction nets ------------------------------------------------
 # A sealed net holds the fault of the wiring of its own copy of a net, so
