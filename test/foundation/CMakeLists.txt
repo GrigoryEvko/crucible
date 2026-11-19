@@ -2020,6 +2020,18 @@ foundation_neg_compile_test(neg_stable_type_id_specialized
 foundation_neg_compile_test(neg_lattice_canonical_id_specialized
   ".lattice_canonical_id. is not a class template"
   "neg_lattice_canonical_id_specialized\\.cpp:21:[0-9]+: error:")
+
+# The class of a pointer to member comes from the return type of a
+# deduction that is a member of a class.  The variable spelling of the old
+# answer does not exist, and an explicit specialization of the deduction
+# keeps the return type of the template, so no unit gives a pointer to a
+# member of one class the class of another.
+foundation_neg_compile_test(neg_member_pointer_class_v_specialized
+  "expected initializer before .<. token"
+  "neg_member_pointer_class_v_specialized\\.cpp:23:[0-9]+: error:")
+foundation_neg_compile_test(neg_member_pointer_class_deduction_specialized
+  "template-id .class_of<int, forged_member::Forged>. for .forged_member::Honest\\* foundation::reflect::detail::member_pointer_parts_::class_of\\(int forged_member::Forged::\\*\\). does not match any template declaration"
+  "neg_member_pointer_class_deduction_specialized\\.cpp:19:[0-9]+: error:")
 foundation_neg_compile_test(neg_stable_identity_function_reader_specialized
   "expected initializer before .<. token"
   "neg_stable_identity_function_reader_specialized\\.cpp:21:[0-9]+: error:")

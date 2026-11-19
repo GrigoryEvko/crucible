@@ -81,8 +81,11 @@ static_assert(any_component_satisfies<is_needle>(^^void (Holder::*)(Needle) cons
 static_assert(!any_component_satisfies<is_needle>(^^int (*)(double, ...)));
 static_assert(!any_component_satisfies<is_needle>(^^long (Holder::*)() volatile&&));
 static_assert(member_pointer_class_of(^^Needle Holder::*) == ^^Holder);
+static_assert(member_pointer_class_of(^^Needle Holder::* const) == ^^Holder);
+static_assert(member_pointer_class_of(^^long (Holder::*)() volatile&&) == ^^Holder);
 static_assert(member_pointer_member_of(^^Needle Holder::* const) == ^^Needle);
 static_assert(member_pointer_class_of(^^Needle*) == std::meta::info{});
+static_assert(member_pointer_class_of(^^Needle) == std::meta::info{});
 
 // The capture gap, pinned.  The closure holds a Needle and the walk does
 // not see it, because GCC 16 reflects no data member of a closure type.

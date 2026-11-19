@@ -177,14 +177,23 @@ private:
 
 namespace detail {
 
-// The two parts of a pointer to member.  The meta header gives no query
-// for them, so a partial specialization takes the type apart.  A pointer
-// to a member function matches too, and its member type is the function
-// type with its cv and reference qualifiers.
-template <typename T>
-inline constexpr std::meta::info member_pointer_class_ = std::meta::info{};
-template <typename Member, typename Class>
-inline constexpr std::meta::info member_pointer_class_<Member Class::*> = ^^Class;
+// The class of a pointer to member.  The meta header gives no query for
+// it, so a deduction takes the type apart.  The deduction is a member of a
+// class that is not a template, so no other file can add an overload of it
+// or specialize the class.  An explicit specialization of the member keeps
+// the return type of the template, so no file can change the class that
+// the deduction gives.  A pointer to a member function matches too.
+struct member_pointer_parts_ {
+    template <typename Member, typename Class>
+    static Class* class_of(Member Class::*) noexcept;
+};
+
+template <typename Pointer>
+using member_pointer_class_pointer_ = decltype(member_pointer_parts_::class_of(Pointer{}));
+
+// The member type of a pointer to member.  A partial specialization takes
+// the type apart.  For a pointer to a member function, the member type is
+// the function type with its cv and reference qualifiers.
 template <typename T>
 inline constexpr std::meta::info member_pointer_member_ = std::meta::info{};
 template <typename Member, typename Class>
@@ -195,8 +204,10 @@ inline constexpr std::meta::info member_pointer_member_<Member Class::*> = ^^Mem
 // The class of a pointer to member, or a null reflection for a type that
 // is not a pointer to member.
 [[nodiscard]] consteval std::meta::info member_pointer_class_of(std::meta::info type) {
-    return std::meta::extract<std::meta::info>(
-        std::meta::substitute(^^detail::member_pointer_class_, {std::meta::dealias(std::meta::remove_cv(type))}));
+    const std::meta::info pointer = std::meta::dealias(std::meta::remove_cv(type));
+    if (!std::meta::is_member_pointer_type(pointer)) return std::meta::info{};
+    return std::meta::remove_pointer(
+        std::meta::dealias(std::meta::substitute(^^detail::member_pointer_class_pointer_, {pointer})));
 }
 
 // The member type of a pointer to member, or a null reflection for a type
