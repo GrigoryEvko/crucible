@@ -623,6 +623,37 @@ constexpr std::size_t kReleaseCharacters = __NEW_UTS_LEN;
     return at > first;
 }
 
+// Reads the release text RELEASE into RUNNING (judge_release of
+// foundation/os/KernelFloor.h).  False for a text that does not start with
+// MAJOR.MINOR, and for a part that does not fit in 16 bits.
+[[nodiscard]] bool read_release(char const* release, KernelVersion& running) noexcept {
+    if (release == nullptr) {
+        return false;
+    }
+    std::size_t at = 0;
+    if (!read_part(release, at, running.major) || at >= kReleaseCharacters || release[at] != '.') {
+        return false;
+    }
+    ++at;
+    if (!read_part(release, at, running.minor)) {
+        return false;
+    }
+    if (at < kReleaseCharacters && release[at] == '.') {
+        ++at;
+        std::size_t const before_patch = at;
+        if (!read_part(release, at, running.patch) && at != before_patch) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The release of the running kernel that the start-up check read.  The check
+// writes it before main and before each other constructor, and no code writes
+// it after that, so a read needs no atomic.  Each program and each shared
+// library that links the primitive has its own copy.
+constinit KernelVersion running_at_start{};
+
 // Appends TEXT up to its zero to BYTES from AT, and stops at CAPACITY.
 void append_text(char* bytes, std::size_t capacity, std::size_t& at, char const* text,
                  std::size_t text_bound) noexcept {
@@ -683,12 +714,17 @@ void write_to_standard_error(char const* bytes, std::size_t count) noexcept {
 // The start-up check (foundation/os/KernelFloor.h).  The priority 101 is the
 // first priority of a program, so the check runs before each constructor of
 // the program that has no priority.  The check reads the release one time,
-// and it holds no state.
+// and it keeps the release of an admitted kernel for running_kernel().
 [[gnu::constructor(101)]] void refuse_an_older_kernel() noexcept {
     ::new_utsname names{};
     long const word = raw_syscall(Syscall::uname, static_cast<void const*>(&names));
-    KernelVerdict const verdict = word < 0 ? KernelVerdict::unreadable : judge_release(names.release);
+    KernelVersion running{};
+    bool const is_readable = word >= 0 && read_release(names.release, running);
+    KernelVerdict const verdict = !is_readable             ? KernelVerdict::unreadable
+                                : running < kMinimumKernel ? KernelVerdict::too_old
+                                                           : KernelVerdict::admitted;
     if (verdict == KernelVerdict::admitted) {
+        running_at_start = running;
         return;
     }
     char message[256] = {};
@@ -773,25 +809,12 @@ long raw_syscall(Syscall call, Word first, Word second, Word third, Word fourth,
 
 KernelVersion minimum_kernel() noexcept { return kMinimumKernel; }
 
+KernelVersion running_kernel() noexcept { return running_at_start; }
+
 KernelVerdict judge_release(char const* release) noexcept {
-    if (release == nullptr) {
-        return KernelVerdict::unreadable;
-    }
     KernelVersion running{};
-    std::size_t at = 0;
-    if (!read_part(release, at, running.major) || at >= kReleaseCharacters || release[at] != '.') {
+    if (!read_release(release, running)) {
         return KernelVerdict::unreadable;
-    }
-    ++at;
-    if (!read_part(release, at, running.minor)) {
-        return KernelVerdict::unreadable;
-    }
-    if (at < kReleaseCharacters && release[at] == '.') {
-        ++at;
-        std::size_t const before_patch = at;
-        if (!read_part(release, at, running.patch) && at != before_patch) {
-            return KernelVerdict::unreadable;
-        }
     }
     return running < kMinimumKernel ? KernelVerdict::too_old : KernelVerdict::admitted;
 }

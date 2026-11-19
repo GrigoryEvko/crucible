@@ -404,7 +404,8 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # sink, the aborts of a permission pool, the formatter of the Report family
 # and the growth of the growable owners.  It also holds the door directory of the base floor,
 # src/foundation/os: the raw system call primitive with its start-up check of
-# the kernel, the abort door, the sink write of the Report family, the file
+# the kernel, the abort door, the sink write of the Report family with the
+# start-up report of the fallback rows of the kernel floor, the file
 # door, the directory door, the door of AddressSanitizer, the auxiliary vector
 # door, the guarded memory door, the allocation door, the spin-hint door and the
 # cold path of the arena of the Ref family.  foundation starts no
@@ -432,6 +433,7 @@ add_library(foundation STATIC
   src/foundation/os/GuardedRegion.cpp
   src/foundation/os/Heap.cpp
   src/foundation/os/Intercepted.cpp
+  src/foundation/os/KernelFallbacks.cpp
   src/foundation/os/Poison.cpp
   src/foundation/os/ReportSink.cpp
   src/foundation/os/SpinHint.cpp
@@ -455,6 +457,7 @@ set(CRUCIBLE_HANDLER_SOURCES
   ${CMAKE_SOURCE_DIR}/src/foundation/core/Report.cpp
   ${CMAKE_SOURCE_DIR}/src/foundation/os/Abort.cpp
   ${CMAKE_SOURCE_DIR}/src/foundation/os/File.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/os/KernelFallbacks.cpp
   ${CMAKE_SOURCE_DIR}/src/foundation/os/ReportSink.cpp
   ${CMAKE_SOURCE_DIR}/src/foundation/os/Syscall.cpp
   ${CMAKE_SOURCE_DIR}/src/foundation/os/Intercepted.cpp)

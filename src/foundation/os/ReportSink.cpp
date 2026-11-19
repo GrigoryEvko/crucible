@@ -19,10 +19,17 @@
 // Python.  The text of a report to a stream with no reader is lost, and the
 // process continues.  test_report_sink_pipe shows a report to each stream and
 // a fatal exit.
+//
+// The file also holds the start-up report of the fallback rows of the kernel
+// floor (foundation/os/KernelFallbacks.h).  Each program and each shared
+// library that can report links this file, so each of them states the rows
+// that the running kernel lacks, one time, at its start.
 
 #include <foundation/core/Report.h>
 
 #include <foundation/os/Errno.h>
+#include <foundation/os/KernelFallbacks.h>
+#include <foundation/os/KernelFloor.h>
 #include <foundation/os/PipeSignal.h>
 #include <foundation/os/Syscall.h>
 
@@ -68,3 +75,19 @@ void write_sink_(Sink sink, char const* bytes, std::size_t count) noexcept {
 }
 
 }  // namespace foundation::core::detail
+
+namespace foundation::os {
+
+namespace {
+
+// The start-up report of the fallback rows.  The priority 102 comes after the
+// start-up check of the kernel floor (101), which reads the release, and
+// before each constructor with no priority.  The report writes through the
+// sink write above, which holds no state, so it can run before main.
+[[gnu::constructor(102)]] void report_kernel_fallbacks_at_start() noexcept {
+    report_kernel_fallbacks(running_kernel());
+}
+
+}  // namespace
+
+}  // namespace foundation::os

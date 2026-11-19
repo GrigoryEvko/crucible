@@ -9,10 +9,12 @@
 
 #include <foundation/os/Directory.h>
 #include <foundation/os/File.h>
+#include <foundation/os/KernelFallbacks.h>
 #include <foundation/os/KernelFloor.h>
 #include <foundation/os/PathText.h>
 
 #include <foundation/Platform.h>
+#include <foundation/core/Algorithms.h>
 
 #include <foundation/reflect/EnumName.h>
 
@@ -277,6 +279,61 @@ void test_refuses_a_flag_of_each_call() {
     CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::open_path, KernelVersion{2, 6, 39}) == FlagVerdict::admitted);
 }
 
+// The count of the rows of the need fallback that the release running lacks,
+// by judge_flag: the oracle of the text of the report.
+[[nodiscard]] std::size_t count_fallback_rows(os::KernelVersion running) noexcept {
+    std::size_t count = 0;
+    ::foundation::reflect::for_each_enumerator<os::KernelFlag>([&](os::KernelFlag flag, auto) noexcept {
+        if (os::judge_flag(flag, running) == os::FlagVerdict::fallback) ++count;
+    });
+    return count;
+}
+
+// The count of the lines of a text.  Complexity: linear in its size.
+[[nodiscard]] std::size_t count_lines(core::TextView text) noexcept {
+    std::size_t count = 0;
+    for (char const character : text) {
+        if (character == '\n') ++count;
+    }
+    return count;
+}
+
+// The text of the start-up report holds one line for each row of the need
+// fallback that a release lacks, and nothing for a release that has each
+// word.  The release of the floor lacks each row above it.  The release just
+// before TCP_RTO_MIN_US lacks that word and the refusal flags of THP.
+void test_reports_each_fallback_row_of_a_release() {
+    core::FixedText<os::kernel_fallback_text_capacity> text{};
+    os::KernelVersion const floor{5, 6, 0};
+    core::TextView const at_floor =
+        os::format_kernel_fallbacks(floor, text).expect("the rows of the floor fit the text of the report");
+    CRUCIBLE_FATAL_INVARIANT(count_lines(at_floor) == count_fallback_rows(floor));
+    CRUCIBLE_FATAL_INVARIANT(count_lines(at_floor) >= 7);
+    CRUCIBLE_FATAL_INVARIANT(core::starts_with(at_floor, "foundation: the kernel release 5.6.0 lacks "));
+    CRUCIBLE_FATAL_INVARIANT(core::find(at_floor, "MADV_POPULATE_WRITE, which 5.14.0 added. ").is_some());
+    CRUCIBLE_FATAL_INVARIANT(core::find(at_floor, "MADV_COLLAPSE, which 6.1.0 added. ").is_some());
+
+    os::KernelVersion const before_rto{6, 14, 11};
+    core::TextView const at_rto = os::format_kernel_fallbacks(before_rto, text).expect("two rows fit the text");
+    CRUCIBLE_FATAL_INVARIANT(count_lines(at_rto) == 2 && count_fallback_rows(before_rto) == 2);
+    CRUCIBLE_FATAL_INVARIANT(core::find(at_rto, "TCP_RTO_MIN_US, which 6.15.0 added. ").is_some());
+    CRUCIBLE_FATAL_INVARIANT(core::find(at_rto, "The option door gives enoprotoopt.").is_some());
+
+    core::TextView const at_future = os::format_kernel_fallbacks(os::KernelVersion{999, 0, 0}, text).expect("empty");
+    CRUCIBLE_FATAL_INVARIANT(at_future.size() == 0);
+}
+
+// The start-up check keeps the release of the running kernel, and the floor
+// admits that release, so the start-up report judged the release of this
+// host.  The text of that release holds one line for each row it lacks.
+void test_keeps_the_running_release() {
+    os::KernelVersion const running = os::running_kernel();
+    CRUCIBLE_FATAL_INVARIANT(!(running < os::minimum_kernel()));
+    core::FixedText<os::kernel_fallback_text_capacity> text{};
+    core::TextView const report = os::format_kernel_fallbacks(running, text).expect("the rows of this host fit");
+    CRUCIBLE_FATAL_INVARIANT(count_lines(report) == count_fallback_rows(running));
+}
+
 }  // namespace
 
 int main() {
@@ -297,5 +354,7 @@ int main() {
     test_each_flag_row_obeys_the_rules();
     test_judges_each_flag_above_the_floor();
     test_refuses_a_flag_of_each_call();
+    test_reports_each_fallback_row_of_a_release();
+    test_keeps_the_running_release();
     return 0;
 }

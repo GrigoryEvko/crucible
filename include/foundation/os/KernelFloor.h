@@ -29,8 +29,8 @@
 // program and each shared library that links the primitive.  It reads the
 // release of the running kernel one time with uname.  An older kernel, or a
 // release text that does not start with MAJOR.MINOR, ends the process with
-// a message on standard error that names the two releases.  The check holds
-// no state.
+// a message on standard error that names the two releases.  The check keeps
+// the release that it read for running_kernel(), and holds no other state.
 //
 // THE FLAGS
 //   A flag is a word that a door passes in an argument of a call, such as an
@@ -47,7 +47,9 @@
 //   - A flag that the caller of a door chooses is a row of the need
 //     fallback.  Its door gives the error of the kernel to its caller in the
 //     Result of the door, and the row states what the caller does then.  The
-//     start-up check does not read such a row, and the process runs.
+//     start-up check does not refuse such a row, and the process runs.  The
+//     report of foundation/os/KernelFallbacks.h states each such row that the
+//     running kernel lacks, one time at the start of the process.
 //   judge_flag gives the verdict of one row for a release.  Each row above
 //   the floor is a fallback row, so a new feature of the kernel does not
 //   raise the release that the base needs.  The door file of each word
@@ -73,6 +75,11 @@ struct KernelVersion {
 // The largest release that a call of the enumeration Syscall, or a flag
 // that a door needs in each call, needs on the architecture of the build.
 [[nodiscard]] KernelVersion minimum_kernel() noexcept;
+
+// The release of the running kernel that the start-up check read with uname,
+// in this program or this shared library.  It is the zero release before the
+// check runs, and the check ends the process on a release that it refuses.
+[[nodiscard]] KernelVersion running_kernel() noexcept;
 
 // A flag that a door of the base passes to the kernel.  The comment of each
 // enumerator names the word of the kernel header, and the door that passes
