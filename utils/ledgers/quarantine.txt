@@ -273,7 +273,7 @@ include/foundation/diag/ | replace-pending:<string> | 1 | - | -
 include/foundation/diag/ | replace-pending:<string_view> | 6 | - | -
 include/foundation/diag/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/diag/ | replace-pending:<vector> | 3 | - | -
-include/foundation/effects/ | base-std-entity | 76 | - | -
+include/foundation/effects/ | base-std-entity | 69 | - | -
 include/foundation/effects/ | base-std-object | 20 | - | -
 include/foundation/effects/ | replace-pending:<array> | 3 | - | -
 include/foundation/effects/ | replace-pending:<atomic> | 1 | - | -
@@ -350,7 +350,7 @@ test/ct/ | raw-pointer-object | 4 | - | -
 test/ct/ | std-entity | 18 | - | -
 test/ct/ | std-object | 12 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
-test/fixy/ | c-array-object | 86 | - | -
+test/fixy/ | c-array-object | 85 | - | -
 test/fixy/ | c-library-call | 991 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 9 | - | -
@@ -422,7 +422,7 @@ test/fixy/ | std-entity | 2494 | - | -
 test/fixy/ | std-object | 888 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
-test/fixy/neg/ | detail-use | 265 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | detail-use | 275 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -440,6 +440,7 @@ test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges a partial specializat
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges stdio::write with the axis Usage for a private stream | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges the call operator of InRange<1, 9> for int | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges the protocol of one end of a channel | The fixture forges the protocol of the producer end of a channel in a probe region, which the rule specialization-home admits.  On a header that lets a unit specialize the protocol of one end, it compiles, and on the alias of the bridge it does not
+test/fixy/neg/ | opted-out | 1 | PROBE: the fixture gives subsort_cell_at of a pair the cell of another pair | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 5 | PROBE: the fixture needs a borrowed range of the library, which no base type gives | the overload of mint_borrowed for a borrowed rvalue range takes only a range of the library, such as std::span
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a corpus entry template of the base | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 48 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
@@ -465,6 +466,7 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture forges a partial specialization
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges stdio::write with the axis Usage for a private stream | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges the call operator of InRange<1, 9> for int | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges the protocol of one end of a channel | The fixture forges the protocol of the producer end of a channel in a probe region, which the rule specialization-home admits.  On a header that lets a unit specialize the protocol of one end, it compiles, and on the alias of the bridge it does not
+test/fixy/neg/ | region | 1 | PROBE: the fixture gives subsort_cell_at of a pair the cell of another pair | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 2 | PROBE: the fixture needs a borrowed range of the library, which no base type gives | the overload of mint_borrowed for a borrowed rvalue range takes only a range of the library, such as std::span
 test/fixy/neg/ | region | 1 | PROBE: the fixture plants a corpus entry template of the base | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 35 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
@@ -535,7 +537,7 @@ test/foundation/ | std-entity | 424 | - | -
 test/foundation/ | std-object | 143 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
-test/foundation/neg/ | detail-use | 116 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type or a range or a cursor that the fixture forges
+test/foundation/neg/ | detail-use | 119 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type or a range or a cursor that the fixture forges
 test/foundation/neg/ | door-use | 2 | - | the fixture defines a door owner again, and its probe shows that the build refuses the second definition
 test/foundation/neg/ | lifetime-start | 11 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/ | opted-out | 1 | PROBE: a forged OneOf shows that a sum slot names no OneOf as a friend | the route probes of a sum slot and of a niche key define a class template of the base in a PROBE region, and the witness of the key of a sum slot names the key
