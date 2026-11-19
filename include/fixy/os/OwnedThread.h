@@ -276,12 +276,21 @@ struct owned_thread_door {
 
 }  // namespace detail
 
+// The policy of a body of an owned thread, and of the own captures of a body
+// of mint_owner_thread (foundation/Closure.h): the body runs past the end of
+// the frame of the call, so it holds no borrow.
+inline constexpr ::foundation::closure::DoorPolicy escaping_body_policy{::foundation::closure::Crossing::Escapes,
+                                                                        ::foundation::closure::QttGrade::One, false};
+
 // Starts one thread with the options, which runs the body, and gives its
 // owner (THE GATE, THE ERRORS).  Complexity: one allocation and one start.
 template <typename Ctx, typename Body>
     requires CanMintOwnedThread<Ctx, Body>
 [[nodiscard]] ::foundation::core::Result<OwnedThread, ::foundation::os::Errno>
 mint_owned_thread(Ctx const& /*ctx*/, ThreadOptions const& options, Body body) noexcept {
+    constexpr ::foundation::closure::ClosureVerdict verdict =
+        ::foundation::closure::check_closure(^^Body, escaping_body_policy, "mint_owned_thread");
+    static_assert(verdict.is_admitted(), verdict);
     return detail::owned_thread_door::start(options, static_cast<Body&&>(body));
 }
 
@@ -424,11 +433,6 @@ struct owner_thread_door {
     }
 };
 
-// The policy of the own captures of a body of mint_owner_thread: the body
-// outlives the frame of the call, as the body of an owned thread does.
-inline constexpr ::foundation::closure::DoorPolicy owner_body_policy{::foundation::closure::Crossing::Escapes,
-                                                                     ::foundation::closure::QttGrade::One, false};
-
 }  // namespace detail
 
 // Starts one thread with the options, which runs body(owner), and keeps its
@@ -440,7 +444,7 @@ template <auto Member, auto Hook, typename Ctx, typename Owner, typename Body>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 mint_owner_thread(Ctx const& /*ctx*/, ThreadOptions const& options, Owner& owner, Body body) noexcept {
     constexpr ::foundation::closure::ClosureVerdict verdict =
-        ::foundation::closure::check_closure(^^Body, detail::owner_body_policy, "mint_owner_thread");
+        ::foundation::closure::check_closure(^^Body, escaping_body_policy, "mint_owner_thread");
     static_assert(verdict.is_admitted(), verdict);
     OwnerThread<Owner>& slot = owner.*Member;
     CRUCIBLE_PRE(!slot.holds_thread());

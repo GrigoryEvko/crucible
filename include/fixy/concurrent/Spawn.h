@@ -388,6 +388,12 @@ template <std::size_t N, typename Ctx, typename TestCtx, typename T, typename Wh
 concept CtxFitsParallelForWithThreadOptions =
     CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body> && eff::CtxOwnsCapability<TestCtx, eff::Effect::Test>;
 
+// The policy of the body of the parallel loop (foundation/Closure.h): the
+// workers run at the same time, each copies the one body object, and a
+// worker calls its copy for each of its shards.
+inline constexpr ::foundation::closure::DoorPolicy parallel_for_body_policy{
+    ::foundation::closure::Crossing::ConcurrentThreads, ::foundation::closure::QttGrade::Omega, true};
+
 // Declared before the runner so that its friend declarations name these
 // two mints and nothing else.
 template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
@@ -487,6 +493,9 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     [[nodiscard]] static ::fixy::OwnedRegion<T, Whole, Brand>
     run_(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
          Body& body, ::fixy::thread::ThreadOptions const& options) noexcept {
+        constexpr ::foundation::closure::ClosureVerdict verdict =
+            ::foundation::closure::check_closure(^^Body, parallel_for_body_policy, "mint_parallel_for");
+        static_assert(verdict.is_admitted(), verdict);
         auto parts = ::fixy::mint_split<N>(std::move(region));
 
         if constexpr (N == 1) {

@@ -6011,6 +6011,17 @@ fixy_neg_compile_test(neg_thread_run_beside_each_writes_a_plain_int
 fixy_neg_compile_test(neg_thread_run_beside_owns_a_view_of_the_frame
   "static assertion failed: run_beside: the body captures .reads. \\(field [_a-z]+, type foundation::core::View<const int, 2>\\)"
   "its type is not SendableBeside")
+# A body of run_joined captures no context, no object of one owner thread,
+# and no atomic cell of a reference to such an object.
+fixy_neg_compile_test(neg_thread_run_joined_captures_a_kernel_context
+  "static assertion failed: run_joined: the body captures .ctx. \\(field [_a-z]+, type const foundation::effects::ExecCtx<foundation::effects::ctx_cap::KernelSource<"
+  "A context names the thread of its owner")
+fixy_neg_compile_test(neg_thread_run_joined_captures_a_timing_sink
+  "static assertion failed: run_joined: the body captures .sink. \\(field [_a-z]+, type fixy::observe::TimingSink<2>&\\)"
+  "its type is not Sendable")
+fixy_neg_compile_test(neg_thread_run_joined_captures_a_cell_of_a_timing_sink
+  "static assertion failed: run_joined: the body captures .cell. \\(field [_a-z]+, type foundation::core::Atomic<fixy::WeakRef<fixy::observe::TimingSink<2> > >&\\)"
+  "its type is not Sendable")
 fixy_neg_compile_test(neg_thread_run_joined_body_gives_an_owner_thread_value
   "no matching function for call to .run_joined"
   "the expression .\\(JoinedBody<Bodies, Ctx> && \\.\\.\\.\\) \\[with Bodies = \\{main::")

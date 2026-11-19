@@ -116,6 +116,10 @@ struct DoorPolicy {
     Crossing crossing = Crossing::SameThread;
     QttGrade calls = QttGrade::One;
     bool calls_one_object_concurrently = false;
+    // False for a door that does not ask the transfer facts of a field, as
+    // the raw probe of fixy/os/ThreadTasks.h does.  Rules 1, 3 and 4 still
+    // hold at such a door.
+    bool asks_transfer_facts = true;
 };
 
 // The reason of a refusal (THE RULES).
@@ -440,6 +444,7 @@ struct FieldRefusal {
         && (fact.kind != CaptureKind::OwnValue || ::foundation::core::detail::holds_borrow_(fact.target))) {
         return FieldRefusal{Refusal::Borrow};
     }
+    if (!policy.asks_transfer_facts) return FieldRefusal{};
     // Rules 5 to 8.
     const Refusal asked = asked_property(fact, policy);
     const std::meta::info part = refusing_part(fact.target, asked);

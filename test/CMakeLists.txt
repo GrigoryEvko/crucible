@@ -950,6 +950,14 @@ endforeach()
 #   reads CLOCK_BOOTTIME (NOT CLOCK_MONOTONIC) so a host suspend
 #   doesn't freeze the window.  Two distinct-mismatch-class fixtures:
 #   HotFgCtx (row-content) and a bare `int` (ctx-type).
+# A body of run_joined uses no object of one owner thread through a reference
+# from another thread: a producer claim and a Vigil.
+crucible_neg_compile_test(neg_thread_run_joined_captures_a_producer_claim
+  "static assertion failed: run_joined: the body captures .first. \\(field [_a-z]+, type \\{anonymous\\}::ClaimBrand&\\)"
+  "its type is not Sendable")
+crucible_neg_compile_test(neg_thread_run_joined_captures_a_vigil
+  "static assertion failed: run_joined: the body captures .vigil. \\(field [_a-z]+, type crucible::Vigil&\\)"
+  "its type is not Sendable")
 crucible_neg_compile_test(neg_deadline_watchdog_hot_ctx
   "no matching function for call to .crucible::warden::DeadlineWatchdog::observe\\(const fixy::HotFgCtx&\\)."
     "required for the satisfaction of .CtxFitsDeadlineWatchdog<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")

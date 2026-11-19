@@ -94,6 +94,16 @@
 //     borrow.  The slot takes the value by an assignment of an Option, so a
 //     linear value is refused.
 //
+// THE CLOSURE OF A BODY
+//     run_joined checks each body with check_closure of foundation/Closure.h,
+//     and a refusal is a static_assert whose message is the verdict.  One
+//     body crosses to one thread while the caller waits, so its policy is
+//     joined_sole_policy (SoleThread).  Two or more bodies run at the same
+//     time, so each has joined_concurrent_policy (ConcurrentThreads).  The
+//     check reads each body alone, so two bodies that reach one object
+//     through two borrows are each refused where a borrow is not
+//     Synchronized: the check fails closed.
+//
 // THE GATE
 //     run_joined takes a context that owns Bg or Init, the authority to start
 //     threads.  The list form and the owned form in detail have no gate of
@@ -444,6 +454,40 @@ run_joined_(Ctx const& ctx, ThreadOptions const& options, std::index_sequence<Is
 
 }  // namespace detail
 
+// The policies of a body of run_joined (THE CLOSURE OF A BODY).  One body
+// runs on one thread while the caller waits, and two or more bodies run at
+// the same time.
+inline constexpr ::foundation::closure::DoorPolicy joined_sole_policy{::foundation::closure::Crossing::SoleThread,
+                                                                      ::foundation::closure::QttGrade::One, false};
+inline constexpr ::foundation::closure::DoorPolicy joined_concurrent_policy{
+    ::foundation::closure::Crossing::ConcurrentThreads, ::foundation::closure::QttGrade::One, false};
+
+// The policy of a body of run_joined_raw_probe (THE RAW PROBE): the policy
+// of sibling bodies, with no transfer fact of a field.
+inline constexpr ::foundation::closure::DoorPolicy raw_probe_policy{::foundation::closure::Crossing::ConcurrentThreads,
+                                                                    ::foundation::closure::QttGrade::One, false, false};
+
+namespace detail {
+
+// The check of one body of run_joined under the policy, as a static_assert
+// whose message is the verdict.
+template <::foundation::closure::DoorPolicy Policy, typename Body>
+consteval void check_joined_body_() noexcept {
+    constexpr ::foundation::closure::ClosureVerdict verdict =
+        ::foundation::closure::check_closure(^^Body, Policy, "run_joined");
+    static_assert(verdict.is_admitted(), verdict);
+}
+
+// The check of one body of run_joined_raw_probe.
+template <typename Body>
+consteval void check_raw_probe_body_() noexcept {
+    constexpr ::foundation::closure::ClosureVerdict verdict =
+        ::foundation::closure::check_closure(^^Body, raw_probe_policy, "run_joined_raw_probe");
+    static_assert(verdict.is_admitted(), verdict);
+}
+
+}  // namespace detail
+
 // Runs each body on a thread of its own with the options, and joins each
 // thread before it returns.  Each body is an object of the caller, and the
 // call ends before the object does.  The bodies run at the same time, so
@@ -453,6 +497,9 @@ template <typename Ctx, typename... Bodies>
     requires CtxStartsThreads<Ctx> && (sizeof...(Bodies) > 0) && (JoinedBody<Bodies, Ctx> && ...)
 [[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
 run_joined(Ctx const& ctx, ThreadOptions const& options, Bodies&... bodies) noexcept {
+    constexpr ::foundation::closure::DoorPolicy policy =
+        sizeof...(Bodies) == 1 ? joined_sole_policy : joined_concurrent_policy;
+    (detail::check_joined_body_<policy, Bodies>(), ...);
     return detail::run_joined_(ctx, options, std::index_sequence_for<Bodies...>{}, bodies...);
 }
 
@@ -648,6 +695,7 @@ template <typename Ctx, typename TestCtx, typename... Bodies>
 [[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
 run_joined_raw_probe(Ctx const& ctx, TestCtx const& /*test*/, RawProbeReason /*reason*/, ThreadOptions const& options,
                      Bodies&... bodies) noexcept {
+    (detail::check_raw_probe_body_<Bodies>(), ...);
     return detail::run_joined_(ctx, options, std::index_sequence_for<Bodies...>{}, bodies...);
 }
 

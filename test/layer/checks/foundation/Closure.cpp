@@ -110,6 +110,15 @@ static_assert(check_closure(^^HoldsView, beside_policy, "beside").reason() == Re
 static_assert(check_closure(^^HoldsView, fork_policy, "fork").is_admitted(),
               "a fork joins before the caller runs on, so a view of const ints is Sendable there");
 static_assert(check_closure(^^HoldsContext, beside_policy, "beside").reason() == Refusal::CapturedContext);
+
+// A door that asks no transfer fact, as the raw probe does, still refuses a
+// captured context, a borrow that escapes and a linear body that it can call
+// more than one time.
+inline constexpr DoorPolicy raw_policy{Crossing::ConcurrentThreads, QttGrade::One, false, false};
+inline constexpr DoorPolicy raw_escape_policy{Crossing::Escapes, QttGrade::One, false, false};
+static_assert(check_closure(^^CountsInto, raw_policy, "raw").is_admitted());
+static_assert(check_closure(^^HoldsContext, raw_policy, "raw").reason() == Refusal::CapturedContext);
+static_assert(check_closure(^^ReadsLimit, raw_escape_policy, "raw").reason() == Refusal::Borrow);
 static_assert(check_closure(^^HoldsView, owned_thread_policy, "owned thread").reason() == Refusal::Borrow);
 static_assert(check_closure(^^ReadsLimit, owned_thread_policy, "owned thread").reason() == Refusal::Borrow);
 static_assert(check_closure(^^HoldsContext, stage_policy, "stage").reason() == Refusal::CapturedContext);

@@ -49,6 +49,20 @@ concept ThreadForkValue =
     std::is_void_v<Given>
     || (::foundation::permissions::detail::LentValue<Given> && ::foundation::transfer::Sendable<Given>);
 
+// The policy of a body of the fork on threads: sibling bodies run at the same
+// time, each called one time (foundation/Closure.h).
+inline constexpr ::foundation::closure::DoorPolicy fork_body_policy{::foundation::closure::Crossing::ConcurrentThreads,
+                                                                    ::foundation::closure::QttGrade::One, false};
+
+// The check of one body of the fork on threads, as a static_assert whose
+// message is the verdict.
+template <typename Body>
+consteval void check_fork_body_() noexcept {
+    constexpr ::foundation::closure::ClosureVerdict verdict =
+        ::foundation::closure::check_closure(^^Body, fork_body_policy, "mint_permission_fork");
+    static_assert(verdict.is_admitted(), verdict);
+}
+
 }  // namespace detail
 
 // The fit of the arm that starts threads: the fit of the inline arm, and a
@@ -195,6 +209,7 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
     ::foundation::permissions::detail::fork_pack_<std::decay_t<Callables>...>>
 mint_permission_fork(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                      Callables&&... callables) noexcept {
+    (detail::check_fork_body_<std::remove_cvref_t<Callables>>(), ...);
     return PermissionForkThreads::run_<Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
 }
 
