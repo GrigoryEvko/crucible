@@ -521,6 +521,68 @@ def merge_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
             rule_ledger.LedgerError,
         ),
     )
+    removed = rule_ledger.merge(count, (base, f"{head}b.py | kind | 2 | - | -\nc.py | kind | 1 | - | -\n", theirs), "x")
+    expect(
+        "a count row that one side removes and the other side changes merges by the sum, with the count 0 for the "
+        "removed row, and it is a summed key",
+        "a.py | kind | 5 | - | -" in (removed.text or "") and key("a.py", "kind", "") in removed.summed,
+    )
+    rows = [line.split(" | ")[0] for line in (merged.text or "").splitlines()[2:]]
+    expect(
+        "the merged ledger has its rows in the sorted sequence of render(), with the rows of the two sides between "
+        "each other",
+        merged.text == rule_ledger.render(parsed) and rows == ["a.py", "b.py", "c.py", "d.py"],
+    )
+    max_merge_cases(expect, table)
+
+
+def max_text(rows: dict[str, tuple[str, str]]) -> str:
+    """Return the planted ledger of the rule max-rule: the value and the reason of each path, sorted."""
+    entries = "".join(f"{path} | kind | {value} | - | {why}\n" for path, (value, why) in sorted(rows.items()))
+    return f"format 1\nrule max-rule\n{entries}"
+
+
+def max_merge_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
+    """Check THE MERGE of a max ledger: the larger of two raised rows, and a conflict for a row that one side lowers."""
+    rule = table["max-rule"]
+    kept = {"b.o": ("20", "base b"), "c.o": ("30", "base c")}
+    base = max_text({"a.o": ("10", "base a"), **kept})
+    ours = max_text({"a.o": ("12", "ours a"), "b.o": ("25", "ours b"), "c.o": ("30", "base c")})
+    theirs = max_text(
+        {"a.o": ("11", "theirs a"), "b.o": ("27", "theirs b"), "c.o": ("31", "theirs c"), "d.o": ("5", "d")}
+    )
+    merged = rule_ledger.merge(rule, (base, ours, theirs), "ledger.txt")
+    wanted = {"a.o": ("12", "ours a"), "b.o": ("27", "theirs b"), "c.o": ("31", "theirs c"), "d.o": ("5", "d")}
+    expect(
+        "two raises of one row of a max ledger merge to the larger value with the reason of its side, a row that "
+        "one side changed takes that side, and no key of a max ledger is a summed key",
+        merged.text == max_text(wanted) and merged.summed == (),
+    )
+    tie = rule_ledger.merge(
+        rule, (base, max_text({"a.o": ("12", "ours a"), **kept}), max_text({"a.o": ("12", "theirs a"), **kept})), "x"
+    )
+    expect(
+        "two raises of one row to the same value take the reason of ours",
+        "a.o | kind | 12 | - | ours a" in (tie.text or ""),
+    )
+    added = rule_ledger.merge(rule, (None, max_text({"a.o": ("3", "ours")}), max_text({"a.o": ("4", "theirs")})), "x")
+    expect("two new rows of one key merge to the larger value", added.text == max_text({"a.o": ("4", "theirs")}))
+    lowered = max_text({"a.o": ("9", "a fall"), **kept})
+    removed = max_text(kept)
+    expect(
+        "a row of a max ledger that one side lowers below the base and the other side raises is a conflict",
+        refuses(partial(rule_ledger.merge, rule, (base, lowered, theirs), "x"), rule_ledger.LedgerError),
+    )
+    expect(
+        "a row of a max ledger that one side removes and the other side changes is a conflict, on each side",
+        refuses(partial(rule_ledger.merge, rule, (base, removed, theirs), "x"), rule_ledger.LedgerError)
+        and refuses(partial(rule_ledger.merge, rule, (base, theirs, removed), "x"), rule_ledger.LedgerError),
+    )
+    expect(
+        "a row of a max ledger that the two sides remove goes, and a row that one side removes and the other keeps goes",
+        rule_ledger.merge(rule, (base, removed, removed), "x").text == removed
+        and rule_ledger.merge(rule, (base, removed, base), "x").text == removed,
+    )
 
 
 def main(argv: list[str]) -> int:

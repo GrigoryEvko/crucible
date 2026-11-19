@@ -132,17 +132,28 @@ THE MERGE
 
     When the two sides change the count of one key of a count ledger, the
     merged count is ours plus theirs less the base.  Each side then keeps
-    its own rise or fall.  That count is the count of the two changes only
+    its own rise or fall.  A side that removes the row has the count 0 in
+    that sum.  That count is the count of the two changes only
     when the two changes are independent.  A fall of main can remove the
     findings that a rise of the landing counted, so the merged count can be
     too high, and a count below its row gives no error.  merge() thus gives
     each such key, and the gate then runs the complete write of THE REDUCE.
     A merged count of 0 or less removes the row.
 
+    A row of a max ledger keeps the largest value of its item: a write of
+    the policy max lowers no kept value and removes no row (THE WRITE of
+    assay.core.budget).  When the two sides change one such row, and each
+    side keeps a row with a value at or above the value of the base, the
+    merged row is the row of the larger value, with the reason of its side.
+    On equal values, ours gives the row.  The gate then judges the composed
+    tree against that row, as it judges each other row.  Such a key is not
+    a summed key.
+
     Each other change of one key by the two sides is a conflict: a value
-    that is not a count, a reason, and a row that one side removes and the
-    other side changes.  A conflict raises LedgerError, and the landing
-    refuses the patch.
+    that is not a count, a reason, a row of a max ledger that one side
+    lowers or removes, and a row of a ledger of the policy admit or
+    baseline.  A conflict raises LedgerError, and the landing refuses the
+    patch.
 
 `guard write --rule ID` writes the ledger of a rule.  `guard selftest
 tests.core.test_ledger` does a test of the module.
@@ -716,29 +727,66 @@ def three_way[Item](base: Item, ours: Item, theirs: Item, what: str) -> Item:
     raise LedgerError(f"the two sides change {what} differently")
 
 
-def merged_entry(rule: Rule, key: Key, entries: tuple[Entry | None, Entry | None, Entry | None]) -> Entry | None:
-    """Return the merged row of one key from its base, ours and theirs rows, or None for no row (THE MERGE).
+type RowSides = tuple[Entry | None, Entry | None, Entry | None]
+
+
+def summed_entry(key: Key, entries: RowSides, where: str) -> Entry | None:
+    """Return the row of two changes of one count: ours plus theirs less the base, or None for 0 or less (THE MERGE).
+
+    A side with no row has the count 0.
 
     Raises:
-        LedgerError: If the two sides change the row differently, and the change is not of two counts
+        LedgerError: If a side has the value admit, or the two sides change the reason differently
+    """
+    counts = [0 if item is None else item.value for item in entries]
+    if not all(isinstance(count, int) for count in counts):
+        raise LedgerError(f"the two sides change {where} differently")
+    base_count, ours_count, theirs_count = (int(count) for count in counts)
+    base_reason, ours_reason, theirs_reason = ("" if item is None else item.reason for item in entries)
+    reason = three_way(base_reason, ours_reason, theirs_reason, f"the reason of {where}")
+    count = ours_count + theirs_count - base_count
+    return Entry(key, count, reason) if count > 0 else None
+
+
+def largest_entry(key: Key, entries: RowSides, where: str) -> Entry:
+    """Return the row of the larger value of two changes of one row of a max ledger (THE MERGE).
+
+    Each side keeps a row with a value at or above the value of the base.  On equal values, ours gives the row.
+
+    Raises:
+        LedgerError: If a side removes the row, or keeps a value below the value of the base
+    """
+    base, ours, theirs = entries
+    if ours is None or theirs is None:
+        raise LedgerError(f"one side removes {where}, and the other side changes it")
+    if base is not None and min(float(ours.value), float(theirs.value)) < float(base.value):
+        raise LedgerError(
+            f"one side lowers {where} below its value {value_text(base.value)} in the base, and the other side changes "
+            f"it.  A write of the policy max lowers no value"
+        )
+    chosen = theirs if float(theirs.value) > float(ours.value) else ours
+    return Entry(key, chosen.value, chosen.reason)
+
+
+def merged_entry(rule: Rule, key: Key, entries: RowSides) -> tuple[Entry | None, bool]:
+    """Return the merged row of one key from its base, ours and theirs rows, and tell if two counts merged by a sum.
+
+    The row is None for no row (THE MERGE).
+
+    Raises:
+        LedgerError: If the two sides change the row differently, and THE MERGE gives no row of the two changes
     """
     base, ours, theirs = (None if item is None else (item.value, item.reason) for item in entries)
+    where = f"the row {described(key)} of {key.path or '-'}"
     try:
-        cells = three_way(base, ours, theirs, f"the row {described(key)} of {key.path or '-'}")
+        cells = three_way(base, ours, theirs, where)
     except LedgerError:
-        counts = [0 if item is None else item.value for item in entries]
-        if rule.policy != Policy.COUNT:
-            raise
-        base_count, ours_count, theirs_count = counts
-        if not (isinstance(base_count, int) and isinstance(ours_count, int) and isinstance(theirs_count, int)):
-            raise
-        base_reason, ours_reason, theirs_reason = ("" if item is None else item.reason for item in entries)
-        reason = three_way(
-            base_reason, ours_reason, theirs_reason, f"the reason of the row {described(key)} of {key.path or '-'}"
-        )
-        count = ours_count + theirs_count - base_count
-        return Entry(key, count, reason) if count > 0 else None
-    return None if cells is None else Entry(key, cells[0], cells[1])
+        if rule.policy == Policy.COUNT:
+            return summed_entry(key, entries, where), True
+        if rule.policy == Policy.MAX:
+            return largest_entry(key, entries, where), False
+        raise
+    return (None if cells is None else Entry(key, cells[0], cells[1])), False
 
 
 def merge(rule: Rule, texts: tuple[str | None, str | None, str | None], shown: str) -> Merged:
@@ -776,9 +824,8 @@ def merge(rule: Rule, texts: tuple[str | None, str | None, str | None], shown: s
     summed: list[Key] = []
     for key in sorted(set(base.base) | set(ours.base) | set(theirs.base)):
         row_sides = (base.base.get(key), ours.base.get(key), theirs.base.get(key))
-        entry = merged_entry(rule, key, row_sides)
-        cells = [None if item is None else (item.value, item.reason) for item in row_sides]
-        if cells[1] != cells[0] and cells[2] != cells[0] and cells[1] != cells[2]:
+        entry, is_summed = merged_entry(rule, key, row_sides)
+        if is_summed:
             summed.append(key)
         if entry is not None:
             rows[key] = entry

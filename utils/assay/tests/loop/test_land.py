@@ -65,6 +65,7 @@ from pathlib import Path
 from unittest import mock
 
 from assay.core import git, paths, proc, testing
+from assay.core import registry as rule_registry
 from assay.core.exit import ExitCode
 from assay.loop import gate, heavy, land
 
@@ -1106,6 +1107,70 @@ def merge_cases(expect: testing.Expect) -> None:
             and git.head(root) == head,
         )
         fall_cases(expect, work)
+        row_merge_cases(expect, work)
+
+
+def max_ledger_text(rows: Mapping[str, tuple[str, str]]) -> str:
+    """Return the planted ledger of the max rule demo-max: the value and the reason of each object, sorted."""
+    entries = "".join(f"{name} | object | {value} | - | {why}\n" for name, (value, why) in sorted(rows.items()))
+    return f"format 1\nrule demo-max\n{entries}"
+
+
+def row_merge_cases(expect: testing.Expect, work: Path) -> None:
+    """Hold THE MERGE of the rows of a ledger: changes of adjacent keys compose, and two raises of one max row compose.
+
+    Each patch changes a row on a line next to a line that main changed, so `git apply` refuses its hunk, and the
+    composition merges the ledger by its keys.  A row of a max ledger that main raises and a patch lowers refuses the
+    patch.
+    """
+    root = work / "repo-rows"
+    planted_repository(root)
+    registry = rule_registry.planted(
+        [MERGE_REGISTRY.splitlines()[1], rule_registry.measured_rule("demo-max", 64, "KB")]
+    )
+    (root / "utils/registry.txt").write_text(registry, encoding="utf-8")
+    max_path = "utils/ledgers/demo-max.txt"
+    base_rows = {"a.o": ("100", "base a"), "b.o": ("200", "base b"), "c.o": ("300", "base c")}
+    (root / MERGE_LEDGER).write_text(ledger_text((4, 2, 1)), encoding="utf-8")
+    (root / max_path).write_text(max_ledger_text(base_rows), encoding="utf-8")
+    git.commit_all(root, "Add the registry and the two ledgers")
+    adjacent = patch_of(root, work, "adjacent.patch", {MERGE_LEDGER: ledger_text((4, 3, 1))})
+    raised_rows = {**base_rows, "a.o": ("110", "theirs a"), "c.o": ("310", "theirs c")}
+    raised = patch_of(root, work, "raised.patch", {max_path: max_ledger_text(raised_rows)})
+    raised_more = patch_of(
+        root, work, "raised-more.patch", {max_path: max_ledger_text({**base_rows, "b.o": ("260", "theirs b")})}
+    )
+    (root / MERGE_LEDGER).write_text(ledger_text((5, 2, 1)), encoding="utf-8")
+    main_rows = {**base_rows, "a.o": ("120", "ours a"), "b.o": ("230", "ours b")}
+    (root / max_path).write_text(max_ledger_text(main_rows), encoding="utf-8")
+    git.commit_all(root, "Raise a count and two rows of the max ledger on main")
+    requests = [
+        request_of(("Raise the adjacent count",), patches=(adjacent,)),
+        request_of(("Raise a row of the max ledger less than main, and a different row",), patches=(raised,)),
+        request_of(("Raise a row of the max ledger more than main",), patches=(raised_more,)),
+    ]
+    decisions, _ = landed(root, requests, passing([]))
+    landed_rows = {"a.o": ("120", "ours a"), "b.o": ("260", "theirs b"), "c.o": ("310", "theirs c")}
+    statuses = [decision.status for decision in decisions.values()]
+    expect(
+        "changes of adjacent keys of a count ledger compose by the keys, and two raises of one row of a max ledger "
+        f"compose to the larger value with the reason of its side: {statuses}",
+        statuses == [0, 0, 0]
+        and git.show(root, "HEAD", MERGE_LEDGER) == ledger_text((5, 3, 1)).encode()
+        and git.show(root, "HEAD", max_path) == max_ledger_text(landed_rows).encode(),
+    )
+    lowered = patch_of(
+        root, work, "lowered.patch", {max_path: max_ledger_text({**landed_rows, "a.o": ("90", "a fall")})}
+    )
+    (root / max_path).write_text(max_ledger_text({**landed_rows, "a.o": ("130", "ours a again")}), encoding="utf-8")
+    git.commit_all(root, "Raise a row of the max ledger on main again")
+    head = git.head(root)
+    decisions, _ = landed(root, [request_of(("Lower a row of the max ledger",), patches=(lowered,))], passing([]))
+    refusal = " ".join(line.content for line in decisions[1].lines)
+    expect(
+        f"a row of a max ledger that main raises and a patch lowers refuses the patch: {refusal}",
+        decisions[1].status == ExitCode.USAGE and "below its value" in refusal and git.head(root) == head,
+    )
 
 
 def fall_cases(expect: testing.Expect, work: Path) -> None:
