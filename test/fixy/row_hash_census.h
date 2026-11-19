@@ -568,6 +568,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::foundation::linear, "the annotations of the linear marker and its doors, read at compile time"},
     {^^::foundation::transfer, "the annotations of the two transfer properties and the names of the two properties, "
                                "read at compile time"},
+    {^^::foundation::closure, "the facts of a callable class, the policy of a door and the verdict of the check, "
+                              "read at compile time"},
     {^^::foundation::reflect, kMachinery},
 };
 

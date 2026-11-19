@@ -3177,6 +3177,12 @@ foundation_neg_compile_test(neg_core_scalar_exchange_pinned
 foundation_neg_compile_test(neg_core_scalar_swap_const
   "no match for call to .\\(const foundation::core::detail::SwapValues\\) \\(const int&, const int&\\)."
   "required for the satisfaction of .Exchangeable<T>. \\[with T = const int\\]")
+foundation_neg_compile_test(neg_closure_race_at_concurrent_door
+  "static assertion failed: run_concurrently: the body captures .count. \\(field count, type int&\\)"
+  "The first part that refuses it: int")
+foundation_neg_compile_test(neg_closure_borrow_at_escaping_door
+  "static assertion failed: run_later: the body captures .values. \\(field values, type foundation::core::View<const int>\\)"
+  "so a borrow dangles")
 foundation_neg_compile_test(neg_core_values_as_const_temporary
   "use of deleted function .void foundation::core::as_const\\(const T&&\\) \\[with T = int\\]."
   "as_const of a temporary gives a reference that dangles at the end of the full expression")
