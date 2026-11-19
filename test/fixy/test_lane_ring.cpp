@@ -2,13 +2,16 @@
 //
 // The walks on one thread check THE ORDER of the header: the turn over the
 // lanes, the wait on an open lane while other lanes hold items, a full lane,
-// the end of a lane, the end of the stream and the drain.  The threaded case
-// runs four producers and the consumer on threads of their own, under several
-// schedules: a delay of a Philox stream on each thread, of a seed of its own
-// in each schedule.  The lanes have different lengths, one lane holds no item,
-// and a lane holds four items, so the producers wait for room.  Each merged
-// stream must equal the oracle of the order, item for item.  The oracle reads
-// only the count of the items of each lane.
+// the end of a lane, the end of the stream and the drain.  A walk checks THE
+// ROOM: the publish of the tail of a lane at each tail_interval pops, and of
+// each lane before an Empty answer.  The threaded case runs four producers and
+// the consumer on threads of their own, under several schedules: a delay of a
+// Philox stream on each thread, of a seed of its own in each schedule.  The
+// lanes have different lengths, one lane holds no item, and a lane holds 16
+// items, so the producers wait for room, and the consumer defers the publish
+// of each tail for four pops.  Each merged stream must equal the oracle of the
+// order, item for item.  The oracle reads only the count of the items of each
+// lane.
 //
 // THE CONTROLS
 //   The same producers push into an MPSC ring under the same schedules.  Its
@@ -155,6 +158,62 @@ void walk_drain(::fixy::TestRunnerCtx const& test) noexcept {
     expect_receives(ring, ::fixy::FixedArray<Item, 4>{104, 203, 302, kEmpty});
 }
 
+// A ring of two lanes of 16 cells, which publishes the tail of a lane at each
+// four deferred pops (THE ROOM of the header).
+using Wide = cc::LaneRing<Item, 16, cc::LaneCount{2}>;
+static_assert(Wide::tail_interval == 4);
+static_assert(Small::tail_interval == 1);
+constexpr Wide::lane_index kWideFirst{::fixy::index<0>()};
+constexpr Wide::lane_index kWideSecond{::fixy::index<1>()};
+
+// Fills LANE of a wide ring: items from first, until the lane refuses one.
+// Gives the count of the items that went in.
+[[nodiscard]] std::uint64_t fill_lane(Wide& ring, Wide::lane_index lane, Item first) noexcept {
+    std::uint64_t count = 0;
+    while (ring.try_push(lane, first + count))
+        ++count;
+    return count;
+}
+
+// The producer of a full lane sees the cells of the deferred pops of its lane
+// at each tail_interval pops of the lane, and at the next Empty answer, also
+// when the turn waits at another lane.  A snapshot after an Empty answer counts
+// only the items that the lanes hold.
+void walk_room_after_empty(::fixy::TestRunnerCtx const& test) noexcept {
+    Wide ring{};
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideFirst, 100) == 16);
+    // One pop of the first lane, and the second lane is empty and open, so
+    // the turn waits there.  The Empty answer publishes the tail of the first
+    // lane, and its producer then takes the free cell.
+    expect_receives(ring, ::fixy::FixedArray<Item, 2>{100, kEmpty});
+    CRUCIBLE_TEST_ASSERT(test, ring.size_approx(kNondet) == 15);
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideFirst, 116) == 1);
+
+    // The turn stays at the second lane.  With both lanes full, no receive
+    // gives an Empty answer.  Three pops of a lane publish no tail, and the
+    // fourth publishes four cells.
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideSecond, 200) == 16);
+    expect_receives(ring, ::fixy::FixedArray<Item, 6>{200, 101, 201, 102, 202, 103});
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideFirst, 117) == 0);
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideSecond, 216) == 0);
+    expect_receives(ring, ::fixy::FixedArray<Item, 2>{203, 104});
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideFirst, 117) == 4);
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideSecond, 216) == 4);
+
+    // The end of each lane: the ring gives the 32 items that the lanes hold,
+    // and each lane publishes its tail when it leaves the turn.
+    ring.end_lane(kWideFirst);
+    ring.end_lane(kWideSecond);
+    std::uint64_t received = 0;
+    Item code = receive_code(ring);
+    while (code != kClosed && code != kEmpty) {
+        ++received;
+        code = receive_code(ring);
+    }
+    CRUCIBLE_TEST_ASSERT(test, code == kClosed && received == 32);
+    CRUCIBLE_TEST_ASSERT(test, ring.empty_approx(kNondet) && ring.size_approx(kNondet) == 0);
+}
+
 // A lane ends one time in a stream, and a second end ends the process.
 void second_end() noexcept {
     Small ring{};
@@ -165,9 +224,12 @@ void second_end() noexcept {
 // ── The threaded case ───────────────────────────────────────────────────
 
 constexpr cc::LaneCount kLanes{4};
-constexpr std::size_t kLaneCapacity = 4;
+constexpr std::size_t kLaneCapacity = 16;
 using Lanes = cc::LaneRing<Item, kLaneCapacity, kLanes>;
 using LaneIndex = Lanes::lane_index;
+// The consumer publishes the tail of a lane at each four pops of the lane, so
+// the runs take the deferred pops of THE ROOM.
+static_assert(Lanes::tail_interval == 4);
 
 // The count of the items of each lane: lanes of different lengths, a lane
 // with no item, and a lane that ends early.
@@ -317,16 +379,22 @@ template <class Ring>
 }
 
 // The body of the consumer.  It receives until the end of the stream, waits
-// while it gets no item, and wakes each producer after each receive.
+// while it gets no item, and wakes each producer after each receive.  The
+// first Empty answer after an item publishes the tail of each lane (THE ROOM
+// of fixy/concurrent/LaneRing.h), so it wakes each producer too.
 template <class Ring>
 [[nodiscard]] auto make_consumer(Run<Ring>& run, Schedule schedule) noexcept {
     return [&run, schedule](::fixy::BgLoadCtx const& ctx) noexcept {
         ::crucible::test::PhiloxStream delays{schedule.seed * 16 + 15};
         for (;;) {
             Item code = kEmpty;
-            cc::wait_for<WaitPolicy>(ctx, run.items, [&run, &code]() noexcept {
+            bool is_first_empty = true;
+            cc::wait_for<WaitPolicy>(ctx, run.items, [&run, &code, &ctx, &is_first_empty]() noexcept {
                 code = next_code(run);
-                return code != kEmpty;
+                if (code != kEmpty) return true;
+                if (is_first_empty) run.room.notify_all(ctx);
+                is_first_empty = false;
+                return false;
             });
             run.room.notify_all(ctx);
             if (code == kClosed) return;
@@ -429,6 +497,7 @@ int main() {
     walk_turn_wait_and_full_lane(test);
     walk_end_of_lanes(test);
     walk_drain(test);
+    walk_room_after_empty(test);
     ::fixy::check::expect_dies(test, second_end, ::fixy::TextView{"end.load_acquire() == LaneEnd::open"});
     threaded_streams_equal_the_oracle(test, ctx);
     ::fixy::check::pass(test, "test_lane_ring: PASSED\n");
