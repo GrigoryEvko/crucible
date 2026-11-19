@@ -5,7 +5,9 @@
 // through the borrow of the Handle, a SocketRef.  The second row calls the
 // same door through the shared ref of the same Handle, a ForeignSocketRef,
 // which a table of cntp stores.  The ratio of the two medians gives the cost
-// of the door of a foreign ref over the door of a borrow.
+// of the door of a foreign ref over the door of a borrow: the check of the
+// generation of its number (THE GENERATION OF A DESCRIPTOR of fixy/os/Fd.h).
+// The third row is that check alone.
 //
 // Each line gives the core of its row, the percentiles of one call in
 // nanoseconds, and the coefficient of variation in thousandths.  A ratio line
@@ -87,5 +89,8 @@ int main() {
     });
     print_row("read_tcp_congestion through a ForeignSocketRef", through_shared);
     print_ratio("ForeignSocketRef over SocketRef", through_shared, through_borrow);
+    bench::Report const current = measure_row(bench::Run{"is_current of a ForeignSocketRef"},
+                                              [&] { bench::do_not_optimize(shared.is_current()); });
+    print_row("is_current of a ForeignSocketRef", current);
     return 0;
 }

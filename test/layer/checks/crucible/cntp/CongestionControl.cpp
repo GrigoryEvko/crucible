@@ -4,7 +4,8 @@
 
 namespace crucible::cntp {
 
-static_assert(sizeof(SocketFd) == sizeof(int));
+// The descriptor and the generation of its number, and no other byte.
+static_assert(sizeof(SocketFd) == sizeof(int) + sizeof(std::uint32_t));
 static_assert(std::is_trivially_copy_constructible_v<KernelCcName>);
 static_assert(std::is_trivially_destructible_v<KernelCcName>);
 static_assert(!std::is_aggregate_v<KernelCcName>,

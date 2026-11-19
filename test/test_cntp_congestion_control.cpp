@@ -199,7 +199,7 @@ static_assert(!::fixy::fs::CtxFitsFileMint<::fixy::ColdInitCtx, cntp::ProcFileRe
               "A cold-init context lacks Block, so the fs door refuses it the /proc read.");
 
 int main() {
-    static_assert(sizeof(cntp::SocketFd) == sizeof(int));
+    static_assert(sizeof(cntp::SocketFd) == sizeof(int) + sizeof(std::uint32_t));
     static_assert(sizeof(cntp::DeclaredCcChoice) == sizeof(cntp::CcSelection));
     static_assert(cntp::CcCompatible<cntp::CcAlgorithm::Dctcp, cntp::LinkClass::LosslessDatacenterFabric>);
     static_assert(!cntp::CcCompatible<cntp::CcAlgorithm::Dctcp, cntp::LinkClass::CrossDatacenter>);

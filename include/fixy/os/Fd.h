@@ -10,8 +10,9 @@
 // owner of a descriptor is the Handle of fixy/os/Handle.h.
 //
 // The door file src/fixy/os/Fd.cpp holds the open, the close and the query
-// of a descriptor.  It issues them with the raw primitive of
-// foundation/os/Syscall.h, so this header includes no system header.
+// of a descriptor, and the generation of each number of a descriptor.  It
+// issues the calls with the raw primitive of foundation/os/Syscall.h, so this
+// header includes no system header.
 
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
@@ -19,6 +20,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace fixy::fs {
@@ -66,6 +68,34 @@ void close_descriptor_(int descriptor) noexcept;
 // no wait for an ioctl (THE SANITIZERS of foundation/os/Syscall.h).
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 query_descriptor_(int descriptor, std::uint64_t request, void* argument) noexcept;
+
+// THE GENERATION OF A DESCRIPTOR
+//   Each number of a descriptor below descriptor_generation_slots has a
+//   generation: a count that a Handle of fixy/os/Handle.h advances after the
+//   open that gives it the number, and before the close or the release that
+//   ends its ownership.  A move of a Handle keeps the generation.  A
+//   ForeignSocketRef of fixy/os/Socket.h keeps the generation of its number
+//   when a door makes it, and each door of the ref compares the two, so a ref
+//   that outlives its Handle fails closed.  The table is in the door file
+//   src/fixy/os/Fd.cpp, and one table serves the process
+//   (CRUCIBLE_PROCESS_WIDE of foundation/Platform.h), as one table of
+//   descriptors does in the kernel.
+//
+// The count of the numbers that have a generation: 2^20, the default of
+// fs.nr_open, past which the kernel gives no number.  A number at or past it
+// has no generation, so a ref of it is never current.
+inline constexpr std::size_t descriptor_generation_slots = std::size_t{1} << 20;
+
+// The generation of the number of descriptor, or zero for a number with no
+// generation.
+[[nodiscard]] std::uint32_t descriptor_generation_(int descriptor) noexcept;
+
+// True when the number of descriptor has a generation and it is generation.
+[[nodiscard]] bool is_descriptor_generation_(int descriptor, std::uint32_t generation) noexcept;
+
+// Advances the generation of the number of descriptor.  A negative number and
+// a number with no generation change nothing.
+void advance_descriptor_generation_(int descriptor) noexcept;
 
 }  // namespace detail
 

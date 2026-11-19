@@ -30,7 +30,11 @@
 //   base (HoldsNoBorrow of foundation/core/Choice.h), and no result of a
 //   frame carries it out.  A Handle that a move emptied gives its borrows the
 //   descriptor -1, so a door makes no call through them and gives ebadf.  A
-//   borrow that outlives its Handle dangles, as each borrow does.
+//   borrow that outlives its Handle dangles, as each borrow does.  A table
+//   that stores a socket holds a ForeignSocketRef of fixy/os/Socket.h by
+//   value, with the generation of its number (THE GENERATION OF A
+//   DESCRIPTOR of fixy/os/Fd.h), which each Handle advances at its open, at
+//   its close and at its release to an ABI.
 //   restrict<Fewer>() gives a borrow with fewer rights, and no form gives
 //   more rights.  A borrow of a temporary Handle does not compile.
 //
@@ -223,7 +227,11 @@ template <class Kind, RightSet Rights>
 class [[nodiscard]] Handle final {
     int descriptor_ = -1;
 
-    explicit Handle(int descriptor) noexcept : descriptor_{descriptor} {}
+    // The open gave the number to this Handle, so the generation of the
+    // number advances (THE GENERATION OF A DESCRIPTOR of fixy/os/Fd.h).
+    explicit Handle(int descriptor) noexcept : descriptor_{descriptor} {
+        ::fixy::fs::detail::advance_descriptor_generation_(descriptor_);
+    }
 
     friend class ::fixy::fs::FileDoor;
     friend class ::fixy::net::SocketDoor;
@@ -265,11 +273,19 @@ public:
     // leaves this Handle empty (THE ABI DESCRIPTOR).  The one caller is a C
     // ABI that takes the ownership of a descriptor, such as a link of libbpf,
     // inside an opt-out region of the class ABI.  An empty Handle gives -1.
-    [[nodiscard]] int release_to_abi() && noexcept { return std::exchange(descriptor_, -1); }
+    // The base stops owning the number, so its generation advances, and each
+    // ForeignSocketRef of the number stops being current.
+    [[nodiscard]] int release_to_abi() && noexcept {
+        ::fixy::fs::detail::advance_descriptor_generation_(descriptor_);
+        return std::exchange(descriptor_, -1);
+    }
 
 private:
+    // The generation advances before the close, while this Handle still owns
+    // the number, so no open of another thread takes the number first.
     void close_() noexcept {
         if (descriptor_ >= 0) {
+            ::fixy::fs::detail::advance_descriptor_generation_(descriptor_);
             ::fixy::fs::detail::close_descriptor_(descriptor_);
             descriptor_ = -1;
         }

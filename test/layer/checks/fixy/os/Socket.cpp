@@ -41,12 +41,16 @@ static_assert(!std::is_default_constructible_v<SocketDoor> && !std::is_copy_cons
                   && !std::is_move_constructible_v<SocketDoor>,
               "No object of the socket door exists.  Its private member is the only call to socket(2).");
 
-// THE FOREIGN SOCKET: a ref by value of one int, which no number converts
-// to, and which the doors take beside the borrow of a Handle.
+// THE FOREIGN SOCKET: a ref by value of one int and the generation of its
+// number, which no number converts to, and which the doors take beside the
+// borrow of a Handle.
 using TcpForeign = ForeignSocketRef<socket_kind::TcpStream, socket_rights>;
 using NetlinkForeign = ForeignSocketRef<socket_kind::NetlinkRoute, socket_rights>;
 using TcpBorrow = SocketRef<socket_kind::TcpStream, socket_rights>;
-static_assert(sizeof(TcpForeign) == sizeof(int) && std::is_trivially_copy_constructible_v<TcpForeign>);
+static_assert(sizeof(TcpForeign) == sizeof(int) + sizeof(std::uint32_t)
+              && std::is_trivially_copy_constructible_v<TcpForeign>);
+static_assert(!std::is_constructible_v<TcpForeign, int, std::uint32_t>,
+              "a number and a generation become a ref only through a door.");
 static_assert(!std::is_trivially_copyable_v<TcpForeign>, "std::bit_cast must not build a ref from a number.");
 static_assert(!std::is_constructible_v<TcpForeign, int>, "a number becomes a ref only through a door.");
 static_assert(!std::is_constructible_v<TcpForeign, NonNegative<int>>, "a number becomes a ref only through a door.");

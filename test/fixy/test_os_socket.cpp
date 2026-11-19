@@ -114,6 +114,9 @@ template <class Kind, fixy::os::RightSet Rights>
     return descriptor_flags >= 0 && (descriptor_flags & FD_CLOEXEC) != 0;
 }
 
+// The raw descriptor that a shared ref gives to a C ABI.
+[[nodiscard]] int abi_descriptor_of(SharedTcp shared) noexcept { return shared.abi_descriptor(); }
+
 }  // namespace
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
@@ -254,6 +257,47 @@ struct LinkDumpRequest final {
     return 0;
 }
 
+// The name of the congestion control of a socket, or the empty name when the
+// read fails.
+[[nodiscard]] fixy::FixedText<fixy::net::congestion_name_bytes> congestion_of(IoBlockCtx const& ctx,
+                                                                              TcpRef socket) noexcept {
+    return fixy::net::read_tcp_congestion(ctx, socket).value_or(fixy::FixedText<fixy::net::congestion_name_bytes>{});
+}
+
+// A shared ref that outlives its Handle fails closed.  The close of the Handle
+// advances the generation of its number, so the ref stops being current.  The
+// kernel gives the lowest free number to the next socket, so a second socket
+// takes the number of the first one.  A door of the stale ref then gives
+// ebadf and makes no call on the second socket, which keeps its congestion
+// control, and the raw descriptor of the stale ref is -1.
+[[nodiscard]] int check_stale_shared_socket() noexcept {
+    IoBlockCtx ctx{eff::testing::test()};
+    SharedTcp stale{};
+    {
+        TcpSocket const first = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+        if (!first.is_open()) return 81;
+        stale = fixy::net::share_socket(first.ref());
+        if (fixy::net::set_tcp_congestion(ctx, stale, "reno").is_err()) return 82;
+        if (!stale.is_current() || abi_descriptor_of(stale) < 0) return 88;
+    }
+    if (stale.is_current() || !stale.is_open() || abi_descriptor_of(stale) != -1) return 89;
+    TcpSocket const second = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    if (!second.is_open()) return 83;
+    SharedTcp const fresh = fixy::net::share_socket(second.ref());
+    if (!(fresh.identity() == stale.identity())) return 84;
+    if (fresh == stale || !fresh.is_current() || stale.is_current()) return 90;
+    if (stale.restrict<fixy::os::RightSet::ioctl_socket>().is_current()) return 91;
+    auto const before = congestion_of(ctx, second.ref());
+    if (before.size() == 0) return 85;
+    if (fixy::net::set_tcp_congestion(ctx, stale, "reno").err().value_or(foundation::os::Errno::eio)
+        != foundation::os::Errno::ebadf) {
+        return 86;
+    }
+    auto const after = congestion_of(ctx, second.ref());
+    if (!(after.view() == before.view())) return 87;
+    return 0;
+}
+
 // The loopback interface has no hardware clock.  The kernel refuses
 // SIOCSHWTSTAMP on it with eperm for a caller with no CAP_NET_ADMIN, and
 // with eopnotsupp for a caller with it.  A name past the limit is refused
@@ -353,6 +397,7 @@ int main() {
     if (failed == 0) failed = check_tcp_options();
     if (failed == 0) failed = check_socket_timestamping();
     if (failed == 0) failed = check_shared_socket();
+    if (failed == 0) failed = check_stale_shared_socket();
     if (failed == 0) failed = check_hardware_timestamping();
     if (failed == 0) failed = check_receive_with_timestamps();
     if (failed == 0) failed = check_send_raises_no_signal();
