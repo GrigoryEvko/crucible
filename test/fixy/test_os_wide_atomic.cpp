@@ -8,7 +8,9 @@
 
 #include <foundation/os/WideAtomic.h>
 
+#include <fixy/Ctx.h>
 #include <fixy/concurrent/PermissionFork.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
@@ -99,6 +101,23 @@ void run_on_four_threads(Body const& body) {
         [&body](WriteView<worker_tags::Third, WholeBrand> const&, WorkerCtx const&) noexcept { body(); },
         [&body](WriteView<worker_tags::Fourth, WholeBrand> const&, WorkerCtx const&) noexcept { body(); });
     ::foundation::linear::drop(std::move(rebuilt));
+}
+
+// Runs the same body on four threads at the same time, for a probe of the
+// memory orders, and returns after each thread joins.  The body shares a
+// plain payload that the orders of the probe publish, so it runs through the
+// raw probe of the thread door (THE RAW PROBE of fixy/os/ThreadTasks.h).
+template <class Body>
+void probe_on_four_threads(Body const& body) {
+    auto first = [&body]() noexcept { body(); };
+    auto second = first;
+    auto third = first;
+    auto fourth = first;
+    ::fixy::thread::run_joined_raw_probe(
+        WorkerCtx{eff::testing::bg()}, ::fixy::TestRunnerCtx{eff::testing::test()},
+        "a probe of the memory orders of a wide atomic: the body shares a plain payload that the orders publish",
+        ::fixy::thread::ThreadOptions{}, first, second, third, fourth)
+        .expect("the probe starts four threads with the default options");
 }
 
 template <class Cell>
@@ -242,7 +261,7 @@ void test_release_publishes_to_acquire() {
     std::uint64_t payload_second = 0;
     CacheLine<::foundation::core::Atomic<std::uint64_t>> role{std::uint64_t{0}};
     CacheLine<Tally> complete_reads{};
-    run_on_four_threads([&] {
+    probe_on_four_threads([&] {
         bool const is_writer = role->fetch_add_acq_rel(1) == 0;
         if (is_writer) {
             payload_first = 0x1111;
