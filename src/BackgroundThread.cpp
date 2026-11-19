@@ -73,13 +73,17 @@ struct GraphPublishTag {};
 // The end of the spin decides only when the stage parks, and each item comes
 // out of its channel in the same order.  The foreground puts ops into the trace
 // ring with no system call, so no thread wakes the drain stage.  It sleeps
-// with a bound, and it polls the ring again after each sleep.  Each later
-// stage parks on the event count of its input channel, and the stage before
-// it notifies the count after each push.  A caller fills the owner mailbox
-// with no wake,
-// so the park of the publish stage has a bound too.  A sleep starts at
-// MIN_SLEEP_NANOS, and each sleep with no work between doubles the bound up
-// to the longest sleep of the stage.
+// with a bound, and it polls the ring again after each sleep.  The detect
+// stage and the build stage receive with receive_waiting of StagePolicy: they
+// park on the items count of their input channel, and the stage before each
+// one notifies that count after each push.  A caller fills the owner mailbox
+// with no wake, so the publish stage parks with a bound.  A sleep or a timed
+// park starts at MIN_SLEEP_NANOS, and each one with no work between doubles
+// the bound up to the longest sleep of the stage.
+//
+// A producer stage that finds its output channel full parks on the room count
+// of that channel by StagePolicy, and the consumer of the channel notifies the
+// room count after each receive (push_pipeline).
 //
 // The drain stage sleeps only after a spin that found no op, so a steady
 // stream of records never meets a sleep.  A burst that starts in a sleep
@@ -100,8 +104,7 @@ static_assert(::fixy::concurrent::CtxFitsWaitPolicy<::fixy::BgLoadCtx, StagePoli
               "a stage of the pipeline spins and then parks, so its context must own Block and Nondet");
 inline constexpr ::fixy::time::SpinBudget SPIN_BUDGET = StagePolicy::budget;
 inline constexpr uint64_t MIN_SLEEP_NANOS = 50000;
-// The longest sleep of the drain stage, and of a producer that waits for a
-// free cell of a channel.
+// The longest sleep of the drain stage.
 inline constexpr uint64_t RING_MAX_SLEEP_NANOS = 200000;
 // The longest timed park of the publish stage.  It bounds only the wait of a
 // job in the owner mailbox.
@@ -125,18 +128,25 @@ enum class ParkBound : uint8_t {
     timed,
 };
 
-// The event counts of the three channels that a stage parks on.  The
-// consumer of a channel parks on its count when the channel is empty, and
-// the producer notifies the count after each push.  A notify with no waiter
-// is one fence and one load, and it writes nothing to the line of the count.
-// The producer stage closes its channel before its last notify
-// (close_and_wake), and the test of the consumer reads the closed state too,
-// so the end of the stream ends a park as an item does.  Each count has its
-// own cache line.  The run of the pipeline holds them beside its channels.
+// The two event counts of one channel.  The consumer parks on items when the
+// channel is empty, and the producer notifies items after each push.  The
+// producer parks on room when the channel is full, and the consumer notifies
+// room after each receive.  A notify with no waiter is one fence and one
+// load, and it writes nothing to the line of the count.  The producer stage
+// closes its channel before its last notify (close_and_wake), and the test of
+// the consumer reads the closed state too, so the end of the stream ends a
+// park as an item does.  Each count has its own cache line.
+struct ChannelWaits {
+    ::fixy::concurrent::EventCount items{};
+    ::fixy::concurrent::EventCount room{};
+};
+
+// The event counts of the three channels between the stages.  The run of the
+// pipeline holds them beside its channels.
 struct ChannelParks {
-    ::fixy::concurrent::EventCount trace_batches{};
-    ::fixy::concurrent::EventCount build_work{};
-    ::fixy::concurrent::EventCount graph_publish{};
+    ChannelWaits trace_batches{};
+    ChannelWaits build_work{};
+    ChannelWaits graph_publish{};
 };
 
 // The idle state of one stage: the end of the spin since the last work, the
@@ -151,8 +161,8 @@ public:
         sleep_nanos_ = MIN_SLEEP_NANOS;
     }
 
-    // A poll found no work in the ring or no free cell in a channel.  The
-    // stage spins, and then it sleeps for the bound.
+    // A poll found no work in the ring.  The stage spins, and then it sleeps
+    // for the bound.
     void pause_or_sleep(::fixy::BgLoadCtx const& ctx) noexcept {
         if (should_spin_(ctx)) return;
         const ::fixy::futex::FutexWord sleep_word{0};
@@ -274,6 +284,16 @@ struct BackgroundThread::Pipeline {
             return inner_.try_receive();
         }
 
+        // The oldest item, or NoItem::Closed after the last item of the
+        // stream.  While the channel is empty and open, the call waits by
+        // Policy on events, the items count of the channel, with the context
+        // of the run (receive_waiting of the channel).
+        template <::fixy::concurrent::WaitPolicy Policy>
+        [[nodiscard]] decltype(std::declval<Consumer&>().try_receive())
+        receive_waiting(::fixy::concurrent::EventCount& events) noexcept {
+            return inner_.template receive_waiting<Policy>(ctx_, events);
+        }
+
         // True when the channel holds an item, or when its stream ended.  A
         // test after the entry of a park in the event count sees each item of
         // a push and the end of each close whose notify the entry could miss.
@@ -306,35 +326,36 @@ struct BackgroundThread::Pipeline {
         [[nodiscard]] bool try_push(BgPipelineDone const& /*done*/) noexcept { return true; }
     };
 
-    // Pushes the Box into the channel of producer, and notifies the event
+    // Pushes the Box into the channel of producer, and notifies the items
     // count of the channel, which wakes the consumer only when it parks.  A
-    // full channel means that its consumer works, and its consumer gives no
-    // wake for a free cell.  A full channel gives the Box back, so the
-    // producer spins, and then it sleeps with a growing bound, until the push
-    // goes in.
+    // full channel gives the Box back, and the producer waits by StagePolicy
+    // on the room count of the channel until the push goes in.  The consumer
+    // notifies the room count after each receive, and the push in the
+    // condition of the wait comes after the entry of a park in the count, so
+    // the producer loses no wake.
     template <class Producer, class T>
-    static void push_pipeline(::fixy::BgLoadCtx const& ctx, ::fixy::concurrent::EventCount& events, Producer& producer,
-                              ::fixy::Box<T>&& value) {
-        detail::bg_pipeline::StageIdle full{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
+    static void push_pipeline(::fixy::BgLoadCtx const& ctx, detail::bg_pipeline::ChannelWaits& waits,
+                              Producer& producer, ::fixy::Box<T>&& value) {
         ::fixy::Box<T> pending = std::move(value);
-        for (;;) {
-            ::fixy::Option<::fixy::Box<T>> kept = producer.try_push(std::move(pending));
-            if (kept.is_none()) break;
-            pending = std::move(kept).expect("a full channel gives the Box back");
-            full.pause_or_sleep(ctx);
-        }
-        events.notify_one(ctx);
+        ::fixy::concurrent::wait_for<detail::bg_pipeline::StagePolicy>(
+            ctx, waits.room, [&producer, &pending]() noexcept {
+                ::fixy::Option<::fixy::Box<T>> kept = producer.try_push(std::move(pending));
+                if (kept.is_none()) return true;
+                pending = std::move(kept).expect("a full channel gives the Box back");
+                return false;
+            });
+        waits.items.notify_one(ctx);
     }
 
     // Ends the producer handle of a stage, which closes its channel (THE END
     // OF THE STREAM of fixy/concurrent/ChannelEnd.h), and then notifies the
-    // event count of the channel.  The notify comes after the close, so a
+    // items count of the channel.  The notify comes after the close, so a
     // consumer that parks after its last receive reads the end.
     template <class Producer>
-    static void close_and_wake(::fixy::BgLoadCtx const& ctx, ::fixy::concurrent::EventCount& events,
+    static void close_and_wake(::fixy::BgLoadCtx const& ctx, detail::bg_pipeline::ChannelWaits& waits,
                                Producer&& out) noexcept {
         ::foundation::linear::drop(std::move(out));
-        events.notify_one(ctx);
+        waits.items.notify_one(ctx);
     }
 
     // True when a receive found the end of the stream.
@@ -675,7 +696,7 @@ uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
 
 void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename TraceBatchChannel::ProducerHandle&& out) {
     BackgroundThread& owner = in.owner();
-    ::fixy::concurrent::EventCount& next = in.parks().trace_batches;
+    detail::bg_pipeline::ChannelWaits& next = in.parks().trace_batches;
     while (in.try_pop().is_none()) {
         CRUCIBLE_SPIN_PAUSE;
     }
@@ -717,17 +738,14 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
                                                    typename BuildWorkChannel::ProducerHandle&& out) {
     BackgroundThread& owner = in.owner();
     detail::bg_pipeline::ChannelParks& parks = in.parks();
-    // The park of this stage has no deadline, so the stage reads no bound.
-    detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
     ::foundation::effects::Alloc const alloc = in.ctx().cap().alloc;
     while (true) {
-        ::fixy::Result<::fixy::Box<BgTraceBatch>, ::fixy::concurrent::NoItem> received = in.try_receive();
-        if (received.is_err()) {
-            if (is_end_of_stream(received)) break;
-            wait_for_item(in, parks.trace_batches, idle, detail::bg_pipeline::ParkBound::untimed);
-            continue;
-        }
-        idle.reset();
+        // The receive waits for a batch or for the end of the stream, and
+        // then it wakes the drain stage when that stage waits for room.
+        ::fixy::Result<::fixy::Box<BgTraceBatch>, ::fixy::concurrent::NoItem> received =
+            in.receive_waiting<detail::bg_pipeline::StagePolicy>(parks.trace_batches.items);
+        parks.trace_batches.room.notify_one(in.ctx());
+        if (is_end_of_stream(received)) break;
 
         // The channel gives the batch in a Box, which ends it after the
         // loop.  The stage reads the ops through this reference.
@@ -777,17 +795,14 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
     const ::fixy::BgLoadCtx ctx{::foundation::effects::host::BackgroundOwner::mint_background_context()};
     BackgroundThread& owner = in.owner();
     detail::bg_pipeline::ChannelParks& parks = in.parks();
-    // The park of this stage has no deadline, so the stage reads no bound.
-    detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
 
     while (true) {
-        ::fixy::Result<::fixy::Box<BgBuildWork>, ::fixy::concurrent::NoItem> received = in.try_receive();
-        if (received.is_err()) {
-            if (is_end_of_stream(received)) break;
-            wait_for_item(in, parks.build_work, idle, detail::bg_pipeline::ParkBound::untimed);
-            continue;
-        }
-        idle.reset();
+        // The receive waits for a work or for the end of the stream, and then
+        // it wakes the detect stage when that stage waits for room.
+        ::fixy::Result<::fixy::Box<BgBuildWork>, ::fixy::concurrent::NoItem> received =
+            in.receive_waiting<detail::bg_pipeline::StagePolicy>(parks.build_work.items);
+        parks.build_work.room.notify_one(ctx);
+        if (is_end_of_stream(received)) break;
 
         ::fixy::Box<BgBuildWork> const work = std::move(received).expect("the test above found an item");
 
@@ -870,10 +885,13 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
             }
             // A job in the owner mailbox gives no wake, so the park is
             // timed, and the stage serves the mailbox after each park.
-            wait_for_item(in, in.parks().graph_publish, idle, detail::bg_pipeline::ParkBound::timed);
+            wait_for_item(in, in.parks().graph_publish.items, idle, detail::bg_pipeline::ParkBound::timed);
             continue;
         }
         idle.reset();
+        // The receive freed a cell, so it wakes the build stage when that
+        // stage waits for room.
+        in.parks().graph_publish.room.notify_one(in.ctx());
 
         ::fixy::Box<BgGraphPublish> publish = std::move(received).expect("the test above found an item");
 
