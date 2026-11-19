@@ -1492,6 +1492,16 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::concurrent::Spin, "a wait policy: a tag that names how a consumer waits, and it is never a value"},
     {^^::fixy::concurrent::SpinThenPark,
      "a wait policy: a tag that names the spin budget of a consumer before its park, and it is never a value"},
+    {^^::fixy::concurrent::SequenceCells,
+     "the cells of a bounded queue with a turn word in each cell: a part of a ring, whose own row folds the claims, "
+     "and it is never a template argument of a kernel signature"},
+    {^^::fixy::concurrent::CellTicketTag,
+     "the tag of the id of a ticket of the cells of a queue: it holds no value and makes no claim"},
+    {^^::fixy::concurrent::SpscProducerRole,
+     "the role of the proof of the one producer of an SPSC ring: a tag that names a side, and it is never a value"},
+    {^^::fixy::concurrent::SpscConsumerRole,
+     "the role of the proof of the one consumer of an SPSC ring: a tag that names a side, and it is never a value"},
+    {^^::fixy::SoleWriterProof, kPasskey},
     {^^::fixy::spin::UnwitnessedSpinLock, kDescriptor},
     {^^::fixy::spin::UnwitnessedBlockingLock, kDescriptor},
     {^^::fixy::spin::try_acquire_t, "the tag that selects the guard that tries a gate one time: it holds no value and "
