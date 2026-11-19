@@ -262,14 +262,14 @@ foundation_neg_compile_test(neg_graded_peek_mut_without_key
 # variable template or function template spelling does not compile, and the
 # gate keeps its verdict.
 foundation_neg_compile_test(neg_claim_orientation_v_specialized
-  "neg_claim_orientation_v_specialized\\.cpp:24:[0-9]+: error: expected initializer before .<. token"
-  "neg_claim_orientation_v_specialized\\.cpp:28:[0-9]+: error: static assertion failed")
+  "neg_claim_orientation_v_specialized\\.cpp:22:[0-9]+: error: expected initializer before .<. token"
+  "neg_claim_orientation_v_specialized\\.cpp:25:[0-9]+: error: static assertion failed")
 foundation_neg_compile_test(neg_claim_subject_v_specialized
-  "neg_claim_subject_v_specialized\\.cpp:21:[0-9]+: error: expected initializer before .<. token"
-  "neg_claim_subject_v_specialized\\.cpp:25:[0-9]+: error: static assertion failed")
+  "neg_claim_subject_v_specialized\\.cpp:19:[0-9]+: error: expected initializer before .<. token"
+  "neg_claim_subject_v_specialized\\.cpp:22:[0-9]+: error: static assertion failed")
 foundation_neg_compile_test(neg_product_orientation_specialized
-  "neg_product_orientation_specialized\\.cpp:27:[0-9]+: error: expected initializer before .<. token"
-  "neg_product_orientation_specialized\\.cpp:33:[0-9]+: error: static assertion failed")
+  "neg_product_orientation_specialized\\.cpp:25:[0-9]+: error: expected initializer before .<. token"
+  "neg_product_orientation_specialized\\.cpp:30:[0-9]+: error: static assertion failed")
 
 # A member claim_orientation or claim_subject of another type is a misspelt
 # statement.  The gate stops the build at a call whose name gives the fix,
@@ -285,7 +285,7 @@ foundation_neg_compile_test(neg_claim_subject_mistyped
 # template.  A specialization of the trait spelling does not compile, and
 # an explicit specialization of the function matches no template.
 foundation_neg_compile_test(neg_row_descriptor_v_specialized
-  "neg_row_descriptor_v_specialized\\.cpp:13:[0-9]+: error: expected initializer before .<. token")
+  "neg_row_descriptor_v_specialized\\.cpp:11:[0-9]+: error: expected initializer before .<. token")
 foundation_neg_compile_test(neg_row_descriptor_specialized
   "template-id .row_descriptor<>. for .consteval foundation::effects::EffectRowLattice::element_type foundation::effects::row_descriptor\\(std::meta::info\\). does not match any template declaration"
   "neg_row_descriptor_specialized\\.cpp:12:[0-9]+: error:")

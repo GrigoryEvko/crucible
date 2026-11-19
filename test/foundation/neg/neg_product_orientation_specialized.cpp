@@ -6,7 +6,6 @@
 // an alias template over concepts, so the specialization does not compile,
 // and the product keeps the stronger orientation.
 
-#include <foundation/Quarantine.h>
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 
@@ -21,13 +20,11 @@ struct Stronger {
 };
 }  // namespace
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture specializes a function of the base, and the compiler refuses it")
 template <>
 consteval foundation::algebra::ClaimOrientation
 foundation::algebra::product_orientation<Stronger, Stronger>() noexcept {
     return foundation::algebra::ClaimOrientation::weaker_is_higher;
 }
-CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 static_assert(foundation::algebra::lattices::ProductLattice<Stronger, Stronger>::claim_orientation
               == foundation::algebra::ClaimOrientation::weaker_is_higher);

@@ -4,7 +4,6 @@
 // subject is a function at namespace scope that is not a template, so the
 // specialization does not compile, and the gate keeps the door shut.
 
-#include <foundation/Quarantine.h>
 #include <foundation/algebra/ClaimOrientation.h>
 
 namespace {
@@ -16,11 +15,9 @@ struct AboutTheBytes {
 };
 }  // namespace
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture specializes a trait of the base, and the compiler refuses it")
 template <>
 inline constexpr foundation::algebra::ClaimSubject foundation::algebra::claim_subject_v<AboutTheBytes> =
     foundation::algebra::ClaimSubject::slot;
-CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 static_assert(foundation::algebra::GradeIgnoresBytes<AboutTheBytes>);
 

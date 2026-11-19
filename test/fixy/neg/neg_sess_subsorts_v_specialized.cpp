@@ -5,15 +5,12 @@
 // so the specialization does not compile, and the pair stays apart.
 
 #include <fixy/session/Subtype.h>
-#include <foundation/Quarantine.h>
 
 struct Forged {};
 struct Honest {};
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture specializes a trait of the base, and the compiler refuses it")
 template <>
 inline constexpr bool fixy::session::transition::subsorts_v<^^fixy::session::payload_axioms, ^^Forged, ^^Honest> = true;
-CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 static_assert(fixy::session::is_payload_subsort_v<Forged, Honest>);
 
