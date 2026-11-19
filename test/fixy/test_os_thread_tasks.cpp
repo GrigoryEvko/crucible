@@ -11,9 +11,12 @@
 #include <foundation/core/Atomic.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
+#include <foundation/Transfer.h>
+#include <foundation/core/Region.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace {
 
@@ -76,6 +79,11 @@ using ::fixy::thread::ThreadOptions;
 
 using WorkerCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>>;
 
+// A value of one owner thread, which does not move to another thread.
+struct[[= ::foundation::transfer::thread_bound{}]] OwnerThreadValue {
+    int value = 0;
+};
+
 constinit thread_local bool is_main_thread = false;
 
 [[nodiscard]] bool have_same_name(ThreadFacts const& left, ThreadFacts const& right) noexcept {
@@ -121,14 +129,37 @@ void test_a_body_takes_the_context_of_the_call() {
     CRUCIBLE_FATAL_INVARIANT(is_context_body_off_main.load_acquire() && is_plain_body_off_main.load_acquire());
 }
 
+// Each body gives its value back, in the order of the bodies, and a body that
+// gives nothing has Unit there.  A value of one owner thread cannot cross to
+// the caller, and a view is a borrow, so the door refuses a body that gives
+// either.
+void test_each_body_gives_its_value() {
+    WorkerCtx const ctx{eff::testing::bg()};
+    auto seven = []() noexcept { return std::uint32_t{7}; };
+    auto nothing = []() noexcept {};
+    auto is_off_main = [](WorkerCtx const& /*thread_ctx*/) noexcept { return !is_main_thread; };
+    auto [value, unit, was_off_main] = ::fixy::thread::run_joined(ctx, ThreadOptions{}, seven, nothing, is_off_main)
+                                           .expect("the door starts three threads with the default options");
+    static_assert(std::is_same_v<decltype(unit), ::foundation::core::Unit>);
+    CRUCIBLE_FATAL_INVARIANT(value == 7 && was_off_main);
+
+    auto none_give = []() noexcept {};
+    static_assert(std::is_same_v<::fixy::thread::joined_values_t<WorkerCtx, decltype(none_give), decltype(nothing)>,
+                                 ::foundation::core::Unit>);
+    auto gives_an_owner_thread_value = []() noexcept { return OwnerThreadValue{}; };
+    auto gives_a_view = []() noexcept { return ::foundation::core::View<int const>{}; };
+    static_assert(::fixy::thread::JoinedBody<decltype(seven), WorkerCtx>);
+    static_assert(!::fixy::thread::JoinedBody<decltype(gives_an_owner_thread_value), WorkerCtx>);
+    static_assert(!::fixy::thread::JoinedBody<decltype(gives_a_view), WorkerCtx>);
+}
+
 // The default options: a stack of 8 MiB, a guard of at least 4 KiB, the
 // name and the CPUs of the thread that starts the thread.
 void test_default_options() {
     ThreadFacts const main_facts = read_calling_thread_facts();
-    ThreadFacts worker_facts{};
-    auto worker = [&]() noexcept { worker_facts = read_calling_thread_facts(); };
-    auto const started = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, ThreadOptions{}, worker);
-    CRUCIBLE_FATAL_INVARIANT(started.is_ok());
+    auto worker = []() noexcept { return read_calling_thread_facts(); };
+    auto [worker_facts] = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, ThreadOptions{}, worker)
+                              .expect("the door starts a thread with the default options");
     CRUCIBLE_FATAL_INVARIANT(worker_facts.stack_bytes == ::fixy::thread::default_stack_bytes);
     CRUCIBLE_FATAL_INVARIANT(worker_facts.guard_bytes >= ::fixy::thread::default_guard_bytes);
     CRUCIBLE_FATAL_INVARIANT(have_same_name(worker_facts, main_facts));
@@ -158,12 +189,10 @@ void test_each_option_reaches_each_thread() {
         .name = "probe-worker",
         .affinity = AffinityMask::single(static_cast<std::uint16_t>(main_facts.first_cpu)),
     };
-    ThreadFacts first_facts{};
-    ThreadFacts second_facts{};
-    auto first = [&]() noexcept { first_facts = read_calling_thread_facts(); };
-    auto second = [&]() noexcept { second_facts = read_calling_thread_facts(); };
-    auto const started = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, options, first, second);
-    CRUCIBLE_FATAL_INVARIANT(started.is_ok());
+    auto first = []() noexcept { return read_calling_thread_facts(); };
+    auto second = []() noexcept { return read_calling_thread_facts(); };
+    auto [first_facts, second_facts] = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, options, first, second)
+                                           .expect("the door starts two threads with the probe options");
     expect_probe_options(first_facts, options, main_facts);
     expect_probe_options(second_facts, options, main_facts);
 }
@@ -184,15 +213,12 @@ void test_one_cpu_each() {
                                                                            AffinityMask::single(second)),
         .placement = ::fixy::thread::ThreadPlacement::OneCpuEach,
     };
-    ThreadFacts first_facts{};
-    ThreadFacts second_facts{};
-    ThreadFacts third_facts{};
-    auto first_task = [&]() noexcept { first_facts = read_calling_thread_facts(); };
-    auto second_task = [&]() noexcept { second_facts = read_calling_thread_facts(); };
-    auto third_task = [&]() noexcept { third_facts = read_calling_thread_facts(); };
-    auto const started =
-        ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, options, first_task, second_task, third_task);
-    CRUCIBLE_FATAL_INVARIANT(started.is_ok());
+    auto first_task = []() noexcept { return read_calling_thread_facts(); };
+    auto second_task = []() noexcept { return read_calling_thread_facts(); };
+    auto third_task = []() noexcept { return read_calling_thread_facts(); };
+    auto [first_facts, second_facts, third_facts] =
+        ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, options, first_task, second_task, third_task)
+            .expect("the door starts three threads, one on each CPU");
     CRUCIBLE_FATAL_INVARIANT(first_facts.cpu_count == 1 && second_facts.cpu_count == 1 && third_facts.cpu_count == 1);
     CRUCIBLE_FATAL_INVARIANT(first_facts.first_cpu == first);
     CRUCIBLE_FATAL_INVARIANT(second_facts.first_cpu == second);
@@ -200,9 +226,9 @@ void test_one_cpu_each() {
 
     // SharedMask gives each thread both CPUs.
     ThreadOptions const shared{.affinity = options.affinity};
-    ThreadFacts shared_facts{};
-    auto shared_task = [&]() noexcept { shared_facts = read_calling_thread_facts(); };
-    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, shared, shared_task).is_ok());
+    auto shared_task = []() noexcept { return read_calling_thread_facts(); };
+    auto [shared_facts] = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, shared, shared_task)
+                              .expect("the door starts a thread on the shared mask");
     CRUCIBLE_FATAL_INVARIANT(shared_facts.cpu_count == 2);
 }
 
@@ -236,6 +262,7 @@ int main() {
     is_main_thread = true;
     test_each_body_runs_on_a_thread_of_its_own();
     test_a_body_takes_the_context_of_the_call();
+    test_each_body_gives_its_value();
     test_default_options();
     test_each_option_reaches_each_thread();
     test_one_cpu_each();

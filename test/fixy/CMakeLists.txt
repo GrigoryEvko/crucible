@@ -5880,6 +5880,10 @@ fixy_neg_compile_test(neg_thread_run_joined_from_the_foreground
 fixy_neg_compile_test(neg_thread_run_joined_body_of_another_parameter
   "no matching function for call to .run_joined"
   "the expression .\\(JoinedBody<Bodies, Ctx> && \\.\\.\\.\\) \\[with Bodies = \\{main::")
+# The value of a body is Sendable.
+fixy_neg_compile_test(neg_thread_run_joined_body_gives_an_owner_thread_value
+  "no matching function for call to .run_joined"
+  "the expression .\\(JoinedBody<Bodies, Ctx> && \\.\\.\\.\\) \\[with Bodies = \\{main::")
 fixy_neg_compile_test(neg_owned_thread_from_the_foreground
   "no matching function for call to .mint_owned_thread"
   "required for the satisfaction of .CtxStartsThreads<Ctx>.")

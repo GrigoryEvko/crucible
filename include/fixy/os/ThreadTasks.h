@@ -82,6 +82,18 @@
 //     and the door refuses a body that takes it.  The caller waits until each
 //     thread has joined, so the context outlives each body.
 //
+// THE RESULTS
+//     A body of run_joined gives a value, or gives nothing.  Each thread
+//     writes the value of its body into a slot of its own in the frame of
+//     the call, and the join orders that write before the read of the
+//     caller.  The call then gives a Record of the value of each body, in the
+//     order of the bodies, with Unit for a body that gives nothing.  When no
+//     body gives a value, the call gives Unit.  So a body gives its result
+//     back and writes no state of its caller.  A value crosses from the
+//     thread of its body to the caller, so it is Sendable, and it holds no
+//     borrow.  The slot takes the value by an assignment of an Option, so a
+//     linear value is refused.
+//
 // THE GATE
 //     run_joined takes a context that owns Bg or Init, the authority to start
 //     threads.  The list form and the owned form in detail have no gate of
@@ -92,7 +104,10 @@
 //     for each fork after it, so it takes a context that owns Init.
 
 #include <foundation/algebra/lattices/AffinityLattice.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Index.h>
+#include <foundation/core/Record.h>
 #include <foundation/core/Region.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -244,23 +259,58 @@ template <typename Ctx, typename Body>
 inline constexpr bool takes_context_ =
     std::is_nothrow_invocable_v<Body&, Ctx const&> && ::foundation::transfer::Shareable<Ctx>;
 
-// The frame of one body of run_joined: the body and the context of the call.
-// It lives in the frame of run_joined, which waits for each thread (THE
-// CONTEXT OF A BODY).
+// The type that a call of a body gives, void included (THE RESULTS).  The
+// trait of the call that the body does not take is not read.
+template <typename Ctx, typename Body>
+using raw_joined_result_t_ =
+    typename std::conditional_t<takes_context_<Ctx, Body>, std::invoke_result<Body&, Ctx const&>,
+                                std::invoke_result<Body&>>::type;
+
+// The value of a body in the result of run_joined: what the body gives, or
+// Unit for a body that gives nothing (THE RESULTS).
+template <typename Ctx, typename Body>
+using joined_result_t_ = std::conditional_t<std::is_void_v<raw_joined_result_t_<Ctx, Body>>, ::foundation::core::Unit,
+                                            raw_joined_result_t_<Ctx, Body>>;
+
+// True when the value of a body can cross to the thread of the caller and
+// sit in the result of run_joined (THE RESULTS).
+template <typename Value>
+concept JoinedValue = ::foundation::transfer::Sendable<Value> && ::foundation::core::DroppablePayload<Value>
+                   && ::foundation::core::HoldsNoBorrow<Value>;
+
+// The frame of one body of run_joined: the body, the context of the call and
+// the slot of the value of the body.  It lives in the frame of run_joined,
+// which waits for each thread (THE CONTEXT OF A BODY, THE RESULTS).
 struct joined_body_ {
     void* body = nullptr;
     void const* ctx = nullptr;
+    void* value = nullptr;
 };
+
+// Calls the body with the context that it takes, and gives its value.
+template <typename Ctx, typename Body>
+[[nodiscard]] joined_result_t_<Ctx, Body> call_joined_body_(Body& body, Ctx const& ctx) noexcept {
+    if constexpr (takes_context_<Ctx, Body>) {
+        if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
+            body(ctx);
+            return ::foundation::core::Unit{};
+        } else {
+            return body(ctx);
+        }
+    } else if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
+        body();
+        return ::foundation::core::Unit{};
+    } else {
+        return body();
+    }
+}
 
 template <typename Ctx, typename Body>
 void run_joined_body_(void* frame) noexcept {
+    using Value = joined_result_t_<Ctx, Body>;
     joined_body_ const& joined = *static_cast<joined_body_ const*>(frame);
-    Body& body = *static_cast<Body*>(joined.body);
-    if constexpr (takes_context_<Ctx, Body>) {
-        body(*static_cast<Ctx const*>(joined.ctx));
-    } else {
-        body();
-    }
+    *static_cast<::foundation::core::Option<Value>*>(joined.value) = ::foundation::core::Option<Value>::some(
+        call_joined_body_<Ctx>(*static_cast<Body*>(joined.body), *static_cast<Ctx const*>(joined.ctx)));
 }
 
 // Registers HOOK for the child of each fork (THE FORK HOOK).  The error is
@@ -284,27 +334,55 @@ run_in_fork_child(Ctx const& /*init*/, void (*hook)() noexcept) noexcept {
 }
 
 // A body of run_joined for a call with the context Ctx: an object that is not
-// const, and that runs with no argument or with the context (THE CONTEXT OF A
-// BODY).
+// const, that runs with no argument or with the context (THE CONTEXT OF A
+// BODY), and whose value can cross to the caller (THE RESULTS).
 template <typename Body, typename Ctx>
-concept JoinedBody =
-    !std::is_const_v<Body> && (std::is_nothrow_invocable_v<Body&> || detail::takes_context_<Ctx, Body>);
+concept JoinedBody = !std::is_const_v<Body> && (std::is_nothrow_invocable_v<Body&> || detail::takes_context_<Ctx, Body>)
+                  && detail::JoinedValue<detail::joined_result_t_<Ctx, Body>>;
+
+// The value of a call of run_joined (THE RESULTS): Unit when no body gives a
+// value, else a Record of the value of each body, in the order of the bodies.
+template <typename Ctx, typename... Bodies>
+using joined_values_t =
+    std::conditional_t<(std::is_void_v<detail::raw_joined_result_t_<Ctx, Bodies>> && ...), ::foundation::core::Unit,
+                       ::foundation::core::Record<detail::joined_result_t_<Ctx, Bodies>...>>;
+
+namespace detail {
+
+template <typename Ctx, std::size_t... Is, typename... Bodies>
+[[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
+run_joined_(Ctx const& ctx, ThreadOptions const& options, std::index_sequence<Is...> /*order*/,
+            Bodies&... bodies) noexcept {
+    ::foundation::core::Record<::foundation::core::Option<joined_result_t_<Ctx, Bodies>>...> slots{};
+    joined_body_ joined[sizeof...(Bodies)]{joined_body_{&bodies, &ctx, &slots.at(::foundation::core::index<Is>())}...};
+    thread_task tasks[sizeof...(Bodies)]{thread_task{&joined[Is], &run_joined_body_<Ctx, Bodies>}...};
+    using Values = joined_values_t<Ctx, Bodies...>;
+    using Joined = ::foundation::core::Result<Values, ::foundation::os::Errno>;
+    ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
+        run_thread_tasks(::foundation::core::detail::view_over_(tasks, sizeof...(Bodies)), options);
+    if constexpr (std::same_as<Values, ::foundation::core::Unit>) {
+        return started;
+    } else {
+        if (started.is_err()) {
+            return Joined{::foundation::core::err(std::move(started).err().expect("a refused start holds its error"))};
+        }
+        return Joined{Values{
+            std::move(slots.at(::foundation::core::index<Is>())).expect("each body of the call ran one time")...}};
+    }
+}
+
+}  // namespace detail
 
 // Runs each body on a thread of its own with the options, and joins each
 // thread before it returns.  Each body is an object of the caller, and the
 // call ends before the object does.  The bodies run at the same time, so
-// two bodies that share state need a synchronization of their own.
+// two bodies that share state need a synchronization of their own.  The
+// value of the call holds the value of each body (THE RESULTS).
 template <typename Ctx, typename... Bodies>
     requires CtxStartsThreads<Ctx> && (sizeof...(Bodies) > 0) && (JoinedBody<Bodies, Ctx> && ...)
-[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+[[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
 run_joined(Ctx const& ctx, ThreadOptions const& options, Bodies&... bodies) noexcept {
-    detail::joined_body_ joined[sizeof...(Bodies)]{detail::joined_body_{&bodies, &ctx}...};
-    // A braced list runs its parts in order, so each task takes the frame of
-    // its own body.
-    std::size_t index = 0;
-    detail::thread_task tasks[sizeof...(Bodies)]{
-        detail::thread_task{&joined[index++], &detail::run_joined_body_<Ctx, Bodies>}...};
-    return detail::run_thread_tasks(::foundation::core::detail::view_over_(tasks, sizeof...(Bodies)), options);
+    return detail::run_joined_(ctx, options, std::index_sequence_for<Bodies...>{}, bodies...);
 }
 
 }  // namespace fixy::thread
