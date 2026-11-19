@@ -370,6 +370,12 @@ concept CanMintOwnerThread =
 // last data member of Owner, and only mint_owner_thread gives it a thread.
 // Its end calls the stop hook of the owner and joins, so the thread ends
 // while each other member of the owner is alive.
+//
+// It reaches the owner through a plain pointer that only the mint sets.  The
+// pointer is valid only because the mint asks StaysInPlace<Owner>: an owner
+// with no copy and no move keeps its address for its whole life, and the
+// OwnerThread ends with it.  A gate that drops StaysInPlace would let the
+// pointer name the source of a move.
 template <typename Owner>
 class OwnerThread final {
 public:
