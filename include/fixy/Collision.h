@@ -413,19 +413,23 @@ inline constexpr bool claims_user_space_wait_v_<Payload> = claims_user_space_wai
 //
 // Observability keeps its own map, because its shape is different: its
 // pole is derived from Effect's, so the pole is that same empty row, and
-// the primary answering Row<> is the WEAKEST answer on this side rather
-// than the strongest.  A binding whose observability grade is
+// the answer Row<> for each other grade is the WEAKEST answer on this side
+// rather than the strongest.  A binding whose observability grade is
 // unrecognised claims to observe nothing, and B002 admits it, which is
 // the direction that stays safe.
+//
+// The map is a deduction.  It is a member of a class that is not a
+// template, so no other file can add an overload of it.  An explicit
+// specialization of the member keeps the return type of the template, so
+// no file can give a surface another row.
+struct observability_parts_ {
+    template <::foundation::effects::Effect... Es>
+    static ::foundation::effects::Row<Es...> row_of(const ::fixy::atom::observe::surface<Es...>*) noexcept;
+    static ::foundation::effects::Row<> row_of(const void*) noexcept;
+};
 
 template <class G>
-struct observability_row_of_ {
-    using type = ::foundation::effects::Row<>;
-};
-template <::foundation::effects::Effect... Es>
-struct observability_row_of_<::fixy::atom::observe::surface<Es...>> {
-    using type = ::foundation::effects::Row<Es...>;
-};
+using observability_row_t = decltype(observability_parts_::row_of(static_cast<const G*>(nullptr)));
 
 // The hardware-instruction tier, read against a floor.  The primary is
 // false because the strict pole of HwInstruction is Unconstrained: a
@@ -756,38 +760,52 @@ struct unbanded_<Payload> {
     using type = typename unbanded_<::fixy::band_value_t<Payload>>::type;
 };
 
+// The failure that a payload returns.
+struct ReturnedFailure {
+    bool fails = false;
+    bool carries_error = false;
+    bool error_is_secret = false;
+};
+
+// A payload that returns its failure as a std::expected does: it names the
+// type of its error and the type of its unexpected value.  A std::expected
+// is such a payload, and no file can change the members of a class of the
+// standard library.  A concept and an alias template cannot have a
+// specialization.
 template <class Payload>
-struct returned_failure_ {
-    static constexpr bool fails = false;
-    static constexpr bool carries_error = false;
-    static constexpr bool error_is_secret = false;
+concept ReturnsExpectedFailure = requires {
+    typename Payload::error_type;
+    typename Payload::unexpected_type;
 };
-// The arms of Result and Option read the template of the payload through
-// IsInstanceOf.  An arm on the pattern Option<Value> makes the gate read
-// the open template niche of Choice.h, through the constraint ChoicePayload
-// of the class template, and a unit can specialize niche.
+
 template <class Payload>
-    requires ::foundation::reflect::IsInstanceOf<Payload, ^^::foundation::core::Result>
-struct returned_failure_<Payload> {
-    // The error type is the second argument of the Result.
-    using Error = [:std::meta::template_arguments_of(std::meta::dealias(std::meta::remove_cvref(^^Payload)))[1]:];
-    static constexpr bool fails = true;
-    static constexpr bool carries_error = true;
-    static constexpr bool error_is_secret = ::fixy::IsSecret<Error>;
-};
-template <class Payload>
-    requires ::foundation::reflect::IsInstanceOf<Payload, ^^::foundation::core::Option>
-struct returned_failure_<Payload> {
-    static constexpr bool fails = true;
-    static constexpr bool carries_error = false;
-    static constexpr bool error_is_secret = false;
-};
-template <class Value, class Error>
-struct returned_failure_<std::expected<Value, Error>> {
-    static constexpr bool fails = true;
-    static constexpr bool carries_error = true;
-    static constexpr bool error_is_secret = ::fixy::IsSecret<Error>;
-};
+using expected_error_t = typename Payload::error_type;
+
+[[nodiscard]] consteval bool is_secret_type_(std::meta::info type) {
+    return std::meta::extract<bool>(std::meta::substitute(^^::fixy::IsSecret, {type}));
+}
+
+// The failure that a payload returns.  The function is not a template, so
+// no other file can give a payload another failure.  The arms of Result
+// and Option read the template of the payload, as IsInstanceOf does.  An
+// arm on the pattern Option<Value> makes the gate read the open template
+// niche of Choice.h, through the constraint ChoicePayload of the class
+// template, and a unit can specialize niche.  A std::expected answers the
+// concept ReturnsExpectedFailure.
+[[nodiscard]] consteval ReturnedFailure returned_failure_of(std::meta::info payload) {
+    const std::meta::info named = std::meta::dealias(std::meta::remove_cvref(payload));
+    if (!std::meta::has_template_arguments(named)) return ReturnedFailure{};
+    const std::meta::info family = std::meta::template_of(named);
+    if (family == ^^::foundation::core::Result) {
+        // The error type is the second argument of the Result.
+        const std::meta::info error = std::meta::template_arguments_of(named)[1];
+        return ReturnedFailure{.fails = true, .carries_error = true, .error_is_secret = is_secret_type_(error)};
+    }
+    if (family == ^^::foundation::core::Option) return ReturnedFailure{.fails = true};
+    if (!std::meta::extract<bool>(std::meta::substitute(^^ReturnsExpectedFailure, {named}))) return ReturnedFailure{};
+    const std::meta::info error = std::meta::dealias(std::meta::substitute(^^expected_error_t, {named}));
+    return ReturnedFailure{.fails = true, .carries_error = true, .error_is_secret = is_secret_type_(error)};
+}
 
 template <class G>
 struct thrown_failure_ {
@@ -1139,8 +1157,7 @@ struct rules_of {
     // B001 is the back-pressure trap.  A rule code is stable API here, so
     // B002 above is a code of its own rather than a reinterpretation of
     // this one.
-    using observability_row =
-        typename detail::observability_row_of_<typename G::template on<Axis::Observability>>::type;
+    using observability_row = detail::observability_row_t<typename G::template on<Axis::Observability>>;
 
     static constexpr bool observes_something = G::template mentions<Axis::Observability>;
     static constexpr bool B002_ok = ::foundation::effects::Subrow<observability_row, binding_row>;
@@ -1330,12 +1347,12 @@ struct rules_of {
 
     // The payload rule's side of the failure reads the payload, as the
     // replay claim does, so it stands down under the pack-only view.
-    using returned_failure = detail::returned_failure_<typename detail::unbanded_<Payload>::type>;
+    static constexpr detail::ReturnedFailure returned_failure =
+        detail::returned_failure_of(^^typename detail::unbanded_<Payload>::type);
     using thrown_failure = detail::thrown_failure_<typename G::template on<Axis::ControlFlow>>;
-    static constexpr bool fails = returned_failure::fails || thrown_failure::fails;
-    static constexpr bool fails_with_plain_error =
-        (returned_failure::carries_error && !returned_failure::error_is_secret)
-        || (thrown_failure::carries_error && !thrown_failure::error_is_secret);
+    static constexpr bool fails = returned_failure.fails || thrown_failure::fails;
+    static constexpr bool fails_with_plain_error = (returned_failure.carries_error && !returned_failure.error_is_secret)
+                                                || (thrown_failure::carries_error && !thrown_failure::error_is_secret);
 
     // F103, F104 and F105 read the FP mode against the timing claim, as
     // F101 and F102 read it against the replay claim.  F103 refuses only

@@ -121,6 +121,23 @@ fixy_neg_compile_test(neg_axis_traits_specialized
   ".axis_traits. is not a class template"
   "neg_axis_traits_specialized\\.cpp:13:[0-9]+: error:")
 
+# The observability row of B002 is a deduction, and the failure that a
+# payload returns is a function.  The old class spellings compile on the
+# tree before them, in a PROBE region, and they name no class template on
+# this tree.  An explicit specialization of a new form matches no template.
+fixy_neg_compile_test(neg_observability_row_of_specialized
+  ".observability_row_of_. is not a class template"
+  "neg_observability_row_of_specialized\\.cpp:13:[0-9]+: error:")
+fixy_neg_compile_test(neg_observability_row_deduction_specialized
+  "template-id .row_of<foundation::effects::Effect::IO>. for .foundation::effects::Row<> fixy::collision::detail::observability_parts_::row_of\\(const fixy::atom::observe::surface<foundation::effects::Effect::IO>\\*\\). does not match any template declaration"
+  "neg_observability_row_deduction_specialized\\.cpp:10:[0-9]+: error:")
+fixy_neg_compile_test(neg_returned_failure_specialized
+  ".returned_failure_. is not a class template"
+  "neg_returned_failure_specialized\\.cpp:13:[0-9]+: error:")
+fixy_neg_compile_test(neg_returned_failure_of_specialized
+  "template-id .returned_failure_of<>. for .consteval fixy::collision::detail::ReturnedFailure fixy::collision::detail::returned_failure_of\\(std::meta::info\\). does not match any template declaration"
+  "neg_returned_failure_of_specialized\\.cpp:12:[0-9]+: error:")
+
 # The strict pole of each axis is its weakest claim.  A Fact pole that
 # states a fact, and a Right pole that claims nothing, are refused.
 fixy_neg_compile_test(neg_axis_fact_pole_claims_a_fact
