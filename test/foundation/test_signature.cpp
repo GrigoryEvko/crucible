@@ -13,9 +13,9 @@
 // a run-time harness around one runs nothing.  Those cells belong in
 // the header's wall.
 
+#include <fixy/Core.h>
 #include <foundation/reflect/Signature.h>
 
-#include <cstdio>
 #include <type_traits>
 
 namespace {
@@ -24,12 +24,13 @@ namespace refl = ::foundation::reflect;
 
 int g_failures = 0;
 
-#define EXPECT(cond)                                                               \
-    do {                                                                           \
-        if (!(cond)) {                                                             \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
-            ++g_failures;                                                          \
-        }                                                                          \
+#define EXPECT(cond)                                                                         \
+    do {                                                                                     \
+        if (!(cond)) {                                                                       \
+            ::fixy::report(::fixy::Sink::Err, "FAIL: {} ({}:{})\n", ::fixy::TextView{#cond}, \
+                           ::fixy::TextView{__FILE__}, __LINE__);                            \
+            ++g_failures;                                                                    \
+        }                                                                                    \
     } while (0)
 
 // The witnesses are this file's own, so that calling them is what pins
@@ -137,9 +138,9 @@ int main() {
     two_functions_one_signature_agree();
 
     if (g_failures != 0) {
-        std::fprintf(stderr, "test_signature: %d failure(s)\n", g_failures);
+        ::fixy::report(::fixy::Sink::Err, "test_signature: {} failure(s)\n", g_failures);
         return 1;
     }
-    std::printf("test_signature: every query read at run time agrees with the wall\n");
+    ::fixy::report(::fixy::Sink::Out, "test_signature: every query read at run time agrees with the wall\n");
     return 0;
 }

@@ -10,10 +10,11 @@
 
 #include <foundation/reflect/Hash.h>
 
+#include <fixy/Core.h>
+
 #include <array>
 #include <bit>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <meta>
 #include <stdfloat>
@@ -167,9 +168,9 @@ inline constexpr std::array<KnownLimit, 0> kLedger{};
 int main() {
     using namespace identity_attacks;
     int failures = 0;
-    const auto expect = [&failures](bool condition, char const* what) {
+    const auto expect = [&failures](bool condition, ::fixy::TextView what) {
         if (!condition) {
-            std::fprintf(stderr, "FAIL: %s\n", what);
+            ::fixy::report(::fixy::Sink::Err, "FAIL: {}\n", what);
             ++failures;
         }
     };
@@ -192,6 +193,7 @@ int main() {
     expect(stable_type_id(^^Holds<1>) == stable_type_id(^^Holds<1>), "one value gives two ids");
 
     if (failures != 0) return EXIT_FAILURE;
-    std::printf("test_identity_attacks: every refused attack refused, %zu ledger entries\n", kLedger.size());
+    ::fixy::report(::fixy::Sink::Out, "test_identity_attacks: every refused attack refused, {} ledger entries\n",
+                   kLedger.size());
     return EXIT_SUCCESS;
 }

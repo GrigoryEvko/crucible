@@ -215,9 +215,8 @@ void test_permission_row_compile() {
     using PoolBrand = decltype(pool)::brand_type;
     auto value =
         perm::with_shared_read(bg_pool, pool, [](perm::SharedPermission<HugePage, PoolBrand>) noexcept { return 7; });
-    if (std::move(value).value_or(0) != 7) std::abort();
-
     TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
+    CRUCIBLE_TEST_ASSERT(test_ctx, std::move(value).value_or(0) == 7);
     auto disk = perm::mint_permission_root<DiskSpilled>(test_ctx);
     auto handed = perm::permission_handoff(test_ctx, std::move(disk));
     ::foundation::linear::drop(std::move(handed));

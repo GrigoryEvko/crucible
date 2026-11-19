@@ -1,12 +1,17 @@
 // Sentinel TU for the namespace-member relation: what it admits, what
 // it skips, and what it refuses.
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/diag/FailClosed.h>
+#include <foundation/effects/Effect.h>
 
-#include <cstdlib>
 #include <type_traits>
 
 namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 namespace ffc = ::foundation::fail_closed;
 
@@ -279,11 +284,11 @@ static_assert(!ffc::Sealed<^^late_sealed>, "a seal whose count is wrong does not
 int main() {
     const bool admitted = as_runtime(ffc::admits(^^ingest, ^^Raw, ^^Checked));
     const bool refused = as_runtime(ffc::admits(^^ingest, ^^Checked, ^^Raw));
-    if (!admitted || refused) std::abort();
-    if (!as_runtime(transition(Raw{}, Checked{}))) std::abort();
-    if (!as_runtime(ffc::admits(^^sealed_ingest, ^^Raw, ^^Checked))) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, admitted && !refused);
+    CRUCIBLE_TEST_ASSERT(kTest, as_runtime(transition(Raw{}, Checked{})));
+    CRUCIBLE_TEST_ASSERT(kTest, as_runtime(ffc::admits(^^sealed_ingest, ^^Raw, ^^Checked)));
     constexpr bool is_sealed = ffc::Sealed<^^sealed_ingest>;
     constexpr bool is_open_sealed = ffc::Sealed<^^ingest>;
-    if (!as_runtime(is_sealed) || as_runtime(is_open_sealed)) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, as_runtime(is_sealed) && !as_runtime(is_open_sealed));
     return 0;
 }

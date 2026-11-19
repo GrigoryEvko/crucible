@@ -16,7 +16,8 @@
 
 #include "producer_claim_libraries.h"
 
-#include <cstdio>
+#include <fixy/Core.h>
+
 #include <thread>
 
 namespace {
@@ -34,7 +35,8 @@ void cycle_on_this_thread() {
 int main() {
     cycle_on_this_thread();
     { std::jthread second_thread{cycle_on_this_thread}; }
-    std::puts("test_producer_claim_across_libraries: a claim won in one shared object and destroyed in another "
-              "leaves the record it entered");
+    ::fixy::report(::fixy::Sink::Out,
+                   "test_producer_claim_across_libraries: a claim won in one shared object and destroyed in another "
+                   "leaves the record it entered\n");
     return 0;
 }

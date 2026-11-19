@@ -24,9 +24,6 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <limits>
 #include <type_traits>
 
 namespace {
@@ -115,10 +112,7 @@ static_assert(fd::row_hash_contribution_v<OnAxisGradedWay<fl::HappensBeforeLatti
 // The value is read at run time, so the compiler cannot fold the calls.
 volatile std::uint64_t g_runtime_seed = 5;
 
-[[noreturn]] void fail(char const* what) {
-    std::fprintf(stderr, "test_lattices_counters: %s\n", what);
-    std::abort();
-}
+[[noreturn]] void fail(::fixy::TextView what) noexcept { ::fixy::fatal("test_lattices_counters: {}", what); }
 
 namespace fe = ::foundation::effects;
 
@@ -134,7 +128,7 @@ typename L::element_type count_at(std::uint64_t count) {
         image[8 + i] = static_cast<std::byte>((count >> (8 * i)) & 0xFFu);
     }
     auto const read = fe::mint_from_image<L>(ctx, image);
-    if (!read) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, read.has_value());
     return *read;
 }
 
@@ -150,7 +144,7 @@ typename HB::element_type clock_after(std::array<std::uint64_t, HB::process_coun
 }
 
 template <typename L>
-void exercise_counter(char const* name) {
+void exercise_counter(::fixy::TextView name) {
     using E = typename L::element_type;
     E const low = count_at<L>(g_runtime_seed);
     E const high = count_at<L>(g_runtime_seed + 10);
@@ -161,7 +155,7 @@ void exercise_counter(char const* name) {
     // A use axis has a top, the largest use.  A version axis has none.
     if constexpr (fa::BoundedAboveLattice<L>) {
         if (!(L::meet(high, L::top()) == high) || !L::leq(high, L::top())) fail(name);
-        if (L::top().raw() != std::numeric_limits<std::uint64_t>::max()) fail(name);
+        if (L::top().raw() != ::fixy::max_of<std::uint64_t>) fail(name);
     } else {
         if (L::claim_orientation != fa::ClaimOrientation::stronger_is_higher) fail(name);
     }

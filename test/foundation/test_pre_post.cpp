@@ -10,12 +10,12 @@
 // clause makes the call a non-constant expression. A concept below reads
 // that as false, and it checks each shape with a violated predicate too.
 
+#include <fixy/Core.h>
 #include <foundation/contracts/Post.h>
 
 #include <contracts>
 
 #include <cstdint>
-#include <cstdio>
 #include <type_traits>
 
 namespace {
@@ -242,7 +242,7 @@ int main() {
 
     // The sink is volatile so none of the calls above can be optimized away.
     if (sink == 0) {
-        std::fprintf(stderr, "test_pre_post: sink unexpectedly zero\n");
+        ::fixy::report(::fixy::Sink::Err, "test_pre_post: sink unexpectedly zero\n");
         return 1;
     }
     return 0;

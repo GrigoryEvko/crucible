@@ -9,9 +9,10 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 
+#include <fixy/Core.h>
+
 #include <any>
 #include <coroutine>
-#include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <string_view>
@@ -62,25 +63,24 @@ static_assert(fp::ReadViewResultStaysInside<std::pair<int, double>>);
 // ── The ledger ───────────────────────────────────────────────────────
 
 struct KnownLimit {
-    std::string_view attack;
-    std::string_view reason;
+    ::fixy::TextView attack;
+    ::fixy::TextView reason;
 };
 
-inline constexpr KnownLimit kLedger[] = {
-    {"a body that captures an outer object by reference stores the address of the view in it",
-     "a body must be able to capture its outer state by reference, and the type of a capture shows the "
-     "reference but not a store through it; every later use of that address reads the released frame of the door"},
-};
-static_assert(std::size(kLedger) <= 1, "the ledger only shrinks");
+inline constexpr ::fixy::FixedArray<KnownLimit, 1> kLedger{KnownLimit{
+    "a body that captures an outer object by reference stores the address of the view in it",
+    "a body must be able to capture its outer state by reference, and the type of a capture shows the "
+    "reference but not a store through it; every later use of that address reads the released frame of the door"}};
+static_assert(kLedger.size() <= 1, "the ledger only shrinks");
 
 }  // namespace read_view_escape_attacks
 
 int main() {
     using namespace read_view_escape_attacks;
     int failures = 0;
-    const auto expect = [&failures](bool condition, char const* what) {
+    const auto expect = [&failures](bool condition, ::fixy::TextView what) {
         if (!condition) {
-            std::fprintf(stderr, "FAIL: %s\n", what);
+            ::fixy::report(::fixy::Sink::Err, "FAIL: {}\n", what);
             ++failures;
         }
     };
@@ -99,7 +99,8 @@ int main() {
     (void)back;
 
     if (failures != 0) return EXIT_FAILURE;
-    std::printf("test_read_view_escape_attacks: every refused carrier refused, %zu ledger entry reproduces\n",
-                std::size(kLedger));
+    ::fixy::report(::fixy::Sink::Out,
+                   "test_read_view_escape_attacks: every refused carrier refused, {} ledger entry reproduces\n",
+                   kLedger.size());
     return EXIT_SUCCESS;
 }
