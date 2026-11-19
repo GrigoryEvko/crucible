@@ -29,6 +29,18 @@
 //                       the same views, in one frame of the output.  Step 3
 //                       takes the General loop, and the transposed left view
 //                       takes the tile path
+//   pointwise one input out = -a over a dense view: the control row of one
+//                       input
+//   pointwise three inputs splat, step 2, step 3
+//                       out = a * b + c with a third input of one element
+//                       broadcast to the plane, as the threshold of
+//                       zero_at_or_below_threshold of crucible/mimic/cpu/
+//                       Kernels.h, or every second or third column of a
+//                       wider run
+//   pointwise four inputs, four inputs scaled
+//                       out = (c * (a - b)) * d over five dense views, and
+//                       with c of one element and d one broadcast row, as
+//                       scale_product_of_difference of the same header
 //   rows dense, rows transposed
 //                       mint_strided_rows of foundation/core/StridedRows.h with
 //                       the add as the counted loop of each row
@@ -201,8 +213,32 @@ struct MultiplyAddOp final {
     }
 };
 
+// The op of one input of the pointwise rows.
+struct NegateOp final {
+    template <class X>
+    constexpr X operator()(X value) const noexcept {
+        return -value;
+    }
+};
+
+// The op of four inputs of the pointwise rows: the op of
+// scale_product_of_difference of crucible/mimic/cpu/Kernels.h.
+struct ScaledDifferenceOp final {
+    template <class X>
+    constexpr X operator()(X first, X second, X scale, X factor) const noexcept {
+        return (scale * (first - second)) * factor;
+    }
+};
+
 // The pointwise kernels.  Out is the unique view of a frame, so each kernel is
 // a template, and each instance is one hot symbol.
+template <class Out>
+[[gnu::noinline, gnu::hot]] void pointwise_one(Out& out, PlaneRead input) noexcept {
+    if (::foundation::core::write_pointwise(out, NegateOp{}, input).is_err()) {
+        ::fixy::fatal("the two views of the bench have one shape");
+    }
+}
+
 template <class Out>
 [[gnu::noinline, gnu::hot]] void pointwise_add(Out& out, PlaneRead left, PlaneRead right) noexcept {
     if (::foundation::core::write_pointwise(out, AddOp{}, left, right).is_err()) {
@@ -215,6 +251,14 @@ template <class Out>
                                                  PlaneRead third) noexcept {
     if (::foundation::core::write_pointwise(out, MultiplyAddOp{}, first, second, third).is_err()) {
         ::fixy::fatal("the four views of the bench have one shape");
+    }
+}
+
+template <class Out>
+[[gnu::noinline, gnu::hot]] void pointwise_four(Out& out, PlaneRead first, PlaneRead second, PlaneRead scale,
+                                                PlaneRead factor) noexcept {
+    if (::foundation::core::write_pointwise(out, ScaledDifferenceOp{}, first, second, scale, factor).is_err()) {
+        ::fixy::fatal("the five views of the bench have one shape");
     }
 }
 
@@ -249,11 +293,15 @@ template <class Out>
     Storage left = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
     Storage right = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
     Storage const third = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
+    Storage const fourth = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
     Storage const row = ::fixy::mint_heap_array_with<float, 64>(test.alloc, columns, fill);
+    Storage const scalar = ::fixy::mint_heap_array_with<float, 64>(test.alloc, 1, fill);
     Storage const wide = ::fixy::mint_heap_array_with<float, 64>(test.alloc, 2 * count, fill);
     Storage const wider = ::fixy::mint_heap_array_with<float, 64>(test.alloc, 3 * count, fill);
+    std::size_t const two_views = 2 * 4 * count;
     std::size_t const three_views = 3 * 4 * count;
     std::size_t const four_views = 4 * 4 * count;
+    std::size_t const five_views = 5 * 4 * count;
     std::size_t const wall = level.wall_ms;
 
     // The roof, with a frame of each owner for each pass.
@@ -275,6 +323,9 @@ template <class Out>
     PlaneRead const left_view = plane_of(left_run, rows, columns, columns, 1);
     PlaneRead const right_view = plane_of(right_run, rows, columns, columns, 1);
     PlaneRead const third_view = plane_of(::fixy::View<float const>{third.view()}, rows, columns, columns, 1);
+    PlaneRead const fourth_view = plane_of(::fixy::View<float const>{fourth.view()}, rows, columns, columns, 1);
+    // The one element of scalar at each index of the plane.
+    PlaneRead const splat = plane_of(::fixy::View<float const>{scalar.view()}, rows, columns, 0, 0);
     // The left run read as a matrix of columns x rows, transposed.
     PlaneRead const transposed = plane_of(left_run, rows, columns, 1, rows);
     PlaneRead const every_second = plane_of(wide_run, rows, columns, 2 * columns, 2);
@@ -383,6 +434,29 @@ template <class Out>
                   measure(bench::Run{"pointwise three inputs"}, wall,
                           [&] { pointwise_three(unique, left_view, right_view, third_view); }),
                   four_views, roof);
+        print_row(level, "pointwise one input",
+                  measure(bench::Run{"pointwise one input"}, wall, [&] { pointwise_one(unique, left_view); }),
+                  two_views, roof);
+        print_row(level, "pointwise three inputs splat",
+                  measure(bench::Run{"pointwise three inputs splat"}, wall,
+                          [&] { pointwise_three(unique, left_view, right_view, splat); }),
+                  four_views, roof);
+        print_row(level, "pointwise three inputs step 2",
+                  measure(bench::Run{"pointwise three inputs step 2"}, wall,
+                          [&] { pointwise_three(unique, left_view, right_view, every_second); }),
+                  four_views, roof);
+        print_row(level, "pointwise three inputs step 3",
+                  measure(bench::Run{"pointwise three inputs step 3"}, wall,
+                          [&] { pointwise_three(unique, left_view, right_view, every_third); }),
+                  four_views, roof);
+        print_row(level, "pointwise four inputs",
+                  measure(bench::Run{"pointwise four inputs"}, wall,
+                          [&] { pointwise_four(unique, left_view, right_view, third_view, fourth_view); }),
+                  five_views, roof);
+        print_row(level, "pointwise four inputs scaled",
+                  measure(bench::Run{"pointwise four inputs scaled"}, wall,
+                          [&] { pointwise_four(unique, left_view, right_view, splat, broadcast); }),
+                  five_views, roof);
         print_row(level, "rows dense",
                   measure(bench::Run{"rows dense"}, wall, [&] { rows_add(unique, left_view, right_view); }),
                   three_views, roof);
