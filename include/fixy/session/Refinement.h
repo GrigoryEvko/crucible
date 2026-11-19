@@ -39,6 +39,21 @@ namespace detail {
 
 inline constexpr std::size_t subsort_depth_bound = 64;
 
+// Stops the build when an axiom names a template that a translation unit
+// can specialize.  drops and weakens name a concept, and inner names an
+// alias template, so a specialization cannot change an answer of the order.
+consteval void require_closed_axiom(const subsort_axiom& axiom) {
+    const bool is_open_drop = axiom.drops != std::meta::info{} && !std::meta::is_concept(axiom.drops);
+    const bool is_open_weakening = axiom.weakens != std::meta::info{} && !std::meta::is_concept(axiom.weakens);
+    const bool is_open_inner = axiom.inner != std::meta::info{} && !std::meta::is_alias_template(axiom.inner);
+    if (!is_open_drop && !is_open_weakening && !is_open_inner) return;
+    const std::meta::info named = is_open_drop ? axiom.drops : is_open_weakening ? axiom.weakens : axiom.inner;
+    throw std::meta::exception(u8"fixy::session::transition: a subsort axiom names a template that a translation "
+                               u8"unit can specialize.  Name a concept in drops and in weakens, and an alias "
+                               u8"template in inner.",
+                               named);
+}
+
 [[nodiscard]] consteval bool subsorts_within(std::meta::info axioms, std::meta::info sub, std::meta::info super,
                                              std::size_t depth);
 
@@ -76,7 +91,9 @@ inline constexpr std::size_t subsort_depth_bound = 64;
     require_seal_holds(axioms, ^^subsort_axiom);
     std::vector<subsort_axiom> found;
     for (const std::meta::info member : std::meta::members_of(axioms, std::meta::access_context::unchecked())) {
-        if (is_registration_of(member, ^^subsort_axiom)) found.push_back(std::meta::extract<subsort_axiom>(member));
+        if (!is_registration_of(member, ^^subsort_axiom)) continue;
+        found.push_back(std::meta::extract<subsort_axiom>(member));
+        require_closed_axiom(found.back());
     }
     for (const subsort_axiom& axiom : found) {
         if (ask(axiom.weakens, {sub, super})) return true;

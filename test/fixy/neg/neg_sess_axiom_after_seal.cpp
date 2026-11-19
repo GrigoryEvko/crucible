@@ -10,13 +10,13 @@
 namespace {
 
 template <class T, class U>
-inline constexpr bool long_weakens_to_int_v = std::is_same_v<T, long> && std::is_same_v<U, int>;
+concept LongWeakensToInt = std::is_same_v<T, long> && std::is_same_v<U, int>;
 
 }  // namespace
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::session::payload_axioms {
-inline constexpr ::fixy::session::transition::subsort_axiom long_to_int{.weakens = ^^::long_weakens_to_int_v};
+inline constexpr ::fixy::session::transition::subsort_axiom long_to_int{.weakens = ^^::LongWeakensToInt};
 }  // namespace fixy::session::payload_axioms
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 

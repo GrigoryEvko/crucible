@@ -2546,6 +2546,47 @@ fixy_neg_compile_test(neg_sess_perm_set_is_empty_specialized
 fixy_neg_compile_test(neg_sess_sync_verdict_specialized
   "template-id .sync_verdict<>. for .consteval fixy::session::transition::verdict fixy::session::detail::subtype::sync_verdict\\(std::meta::info, std::meta::info\\). does not match any template declaration"
   "neg_sess_sync_verdict_specialized\\.cpp:12:[0-9]+: error:")
+
+# Each relation of the payload order is a function at namespace scope that
+# is not a template, so an explicit specialization that forges an answer
+# matches no template.
+fixy_neg_compile_test(neg_sess_delegation_weakens_specialized
+  "template-id .delegation_weakens<>. for .consteval bool fixy::session::detail::payload_order::delegation_weakens\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_sess_delegation_weakens_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_refinement_drops_specialized
+  "template-id .refinement_drops<>. for .consteval bool fixy::session::detail::payload_order::refinement_drops\\(std::meta::info\\). does not match any template declaration"
+  "neg_sess_refinement_drops_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_refinement_value_specialized
+  "template-id .refinement_value<>. for .consteval std::meta::info fixy::session::detail::payload_order::refinement_value\\(std::meta::info\\). does not match any template declaration"
+  "neg_sess_refinement_value_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_refinement_weakens_specialized
+  "template-id .refinement_weakens<>. for .consteval bool fixy::session::detail::payload_order::refinement_weakens\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_sess_refinement_weakens_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_tagged_drops_specialized
+  "template-id .tagged_drops<>. for .consteval bool fixy::session::detail::payload_order::tagged_drops\\(std::meta::info\\). does not match any template declaration"
+  "neg_sess_tagged_drops_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_tagged_value_specialized
+  "template-id .tagged_value<>. for .consteval std::meta::info fixy::session::detail::payload_order::tagged_value\\(std::meta::info\\). does not match any template declaration"
+  "neg_sess_tagged_value_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_tier_weakens_specialized
+  "template-id .tier_weakens<>. for .consteval bool fixy::session::detail::payload_order::tier_weakens\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_sess_tier_weakens_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_content_addressed_equivalent_specialized
+  "template-id .is_content_addressed_equivalent<>. for .consteval bool fixy::session::is_content_addressed_equivalent\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_sess_content_addressed_equivalent_specialized\\.cpp:12:[0-9]+: error:")
+
+# The strip of the content-addressed marker is a function, so a class
+# specialization of its name that strips an unmarked payload does not
+# compile, and the forged pair stays outside the order.
+fixy_neg_compile_test(neg_sess_unwrap_content_addressed_class_specialized
+  "neg_sess_unwrap_content_addressed_class_specialized\\.cpp:15:[0-9]+: error: .unwrap_content_addressed. is not a class template"
+  "neg_sess_unwrap_content_addressed_class_specialized\\.cpp:20:[0-9]+: error: static assertion failed")
+
+# An axiom that names a variable template would read a specialization of
+# it, so the first query of the order refuses the axiom.
+fixy_neg_compile_test(neg_sess_axiom_names_a_variable_template
+  "a subsort axiom names a template that a translation unit can specialize"
+  "neg_sess_axiom_names_a_variable_template\\.cpp:18:[0-9]+: error: non-constant condition for static assertion")
 fixy_neg_compile_test(neg_sess_bounded_specialized
   "template-id .bounded<>. for .consteval bool fixy::session::detail::async::bounded\\(std::meta::info, std::meta::info, std::size_t, bool\\). does not match any template declaration"
   "neg_sess_bounded_specialized\\.cpp:13:[0-9]+: error:")

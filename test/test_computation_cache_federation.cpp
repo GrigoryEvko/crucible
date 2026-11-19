@@ -308,7 +308,7 @@ static void test_t15_payload_aliases_input() {
 // The content-addressed carrier stays the size of a span.
 static void test_t16_content_addressed_payload_elision() {
     using Payload = fed::ComputationCacheFederationContentAddressedPayload<&t_unary, R0, int>;
-    static_assert(::fixy::session::is_content_addressed_v<typename Payload::payload_type>);
+    static_assert(::fixy::session::ContentAddressedType<typename Payload::payload_type>);
     static_assert(sizeof(Payload) == sizeof(::fixy::View<std::byte const>));
 
     const auto body =

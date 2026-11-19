@@ -55,6 +55,19 @@ static_assert(!fs::is_payload_subsort_v<Ack, CaCa>);
 static_assert(!fs::is_payload_subsort_v<CaDepth5, Ack>);
 static_assert(!fs::is_payload_subsort_v<Ca<Ca<Msg>>, Ca<Ca<Ack>>>);
 
+// A payload that is not marked stands for no other content.  A
+// specialization of the old unwrap trait made such a payload and a marked
+// int subsorts of each other.  The relation reads only the marker, so the
+// pairs below stay refused.  A pointer to a marked payload and a
+// cv-qualified marked payload are not marked.
+static_assert(!fs::is_payload_subsort_v<Msg, Ca<int>>);
+static_assert(!fs::is_payload_subsort_v<Ca<int>, Msg>);
+static_assert(!fs::is_payload_subsort_v<Ca<Msg>*, Msg*>);
+static_assert(!fs::is_payload_subsort_v<Msg*, Ca<Msg>*>);
+static_assert(!fs::is_payload_subsort_v<const Ca<Msg>, Msg>);
+static_assert(fs::ContentAddressedType<Ca<Msg>> && !fs::ContentAddressedType<Ca<Msg>*>
+              && !fs::ContentAddressedType<const Ca<Msg>>);
+
 // The synchronous relation, on a send and on a receive.  A one-way payload
 // relation would give only one direction on a receive.  This one is
 // two-way, so both directions hold.

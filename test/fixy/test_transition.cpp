@@ -500,17 +500,15 @@ struct Shed<Boxed<T>> {
     using type = T;
 };
 template <class T>
-inline constexpr bool is_boxed_v = false;
-template <class T>
-inline constexpr bool is_boxed_v<Boxed<T>> = true;
+concept IsBoxed = std::meta::has_template_arguments(^^T) && std::meta::template_of(^^T) == ^^Boxed;
 template <class T>
 using shed_t = typename Shed<T>::type;
 template <class T, class U>
-inline constexpr bool small_to_wide_v = std::is_same_v<T, short> && std::is_same_v<U, long>;
+concept SmallToWide = std::is_same_v<T, short> && std::is_same_v<U, long>;
 
 namespace axioms {
-inline constexpr tr::subsort_axiom boxed{.drops = ^^is_boxed_v, .inner = ^^shed_t};
-inline constexpr tr::subsort_axiom widen{.weakens = ^^small_to_wide_v};
+inline constexpr tr::subsort_axiom boxed{.drops = ^^IsBoxed, .inner = ^^shed_t};
+inline constexpr tr::subsort_axiom widen{.weakens = ^^SmallToWide};
 }  // namespace axioms
 
 static_assert(tr::subsorts(^^axioms, ^^int, ^^int), "the order is reflexive");
@@ -529,8 +527,8 @@ struct Bob {};
 struct Hello {};
 struct Bye {};
 namespace envelope_axioms {
-inline constexpr tr::subsort_axiom widen{.weakens = ^^small_to_wide_v};
-inline constexpr tr::subsort_axiom boxed{.drops = ^^is_boxed_v, .inner = ^^shed_t};
+inline constexpr tr::subsort_axiom widen{.weakens = ^^SmallToWide};
+inline constexpr tr::subsort_axiom boxed{.drops = ^^IsBoxed, .inner = ^^shed_t};
 inline constexpr tr::subsort_axiom envelope{.congruence = ^^Envelope, .covariant = 0b100};
 }  // namespace envelope_axioms
 static_assert(tr::subsorts(^^envelope_axioms, ^^Envelope<Alice, Hello, short>, ^^Envelope<Alice, Hello, long>));
@@ -615,11 +613,11 @@ static_assert(tr::first_faulty_choice(reg, ^^Pick<Put<Envelope<Alice, ClosureLab
 // An axiom that breaks the contract and sheds to the same type stops at
 // the depth bound instead of a recursion without end.
 template <class T>
-inline constexpr bool always_v = true;
+concept Always = true;
 template <class T>
 using same_t = T;
 namespace looping_axioms {
-inline constexpr tr::subsort_axiom loops{.drops = ^^always_v, .inner = ^^same_t};
+inline constexpr tr::subsort_axiom loops{.drops = ^^Always, .inner = ^^same_t};
 }  // namespace looping_axioms
 static_assert(!tr::subsorts(^^looping_axioms, ^^int, ^^long));
 

@@ -1295,9 +1295,6 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::ContentAddressed,
      "a message carrier of a value that the recipient can already hold by its content: it is the payload of a Send "
      "or a Recv, and the handle that steps through the protocol folds it"},
-    {^^::fixy::session::is_content_addressed, kMetafunction},
-    {^^::fixy::session::content_addressed_underlying, kMetafunction},
-    {^^::fixy::session::unwrap_content_addressed, kMetafunction},
     {^^::fixy::session::PermHold,
      "the hold of the tokens that one session endpoint owns: it stays on the thread of that endpoint beside the "
      "handle, and it is never a template argument of a kernel signature"},

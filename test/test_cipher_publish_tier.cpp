@@ -414,7 +414,7 @@ static void test_content_addressed_publish_overloads(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
 
     using Payload = decltype(payload);
-    static_assert(::fixy::session::is_content_addressed_v<typename Payload::payload_type>);
+    static_assert(::fixy::session::ContentAddressedType<typename Payload::payload_type>);
 
     using WarmGot = decltype(cipher.publish_warm(store_ctx(), view, payload));
     using HotGot = decltype(cipher.publish_hot(view, payload));

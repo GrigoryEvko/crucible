@@ -210,13 +210,13 @@ struct payload_rule {
 // One axiom of a payload preorder.  An axiom drops a wrapper, weakens a
 // type in place, or lifts the order through a class template:
 //
-//   drops       A variable template `template <class T> constexpr bool`.
-//               True when T sheds its outer layer.
+//   drops       A concept `template <class T> concept`.  True when T
+//               sheds its outer layer.
 //   inner       An alias template `template <class T> using`, the type
 //               T sheds to.  It must be a template argument of T, so
 //               each drop makes the type smaller.
-//   weakens     A variable template `template <class T, class U>
-//               constexpr bool`.  True when one step takes T to U.
+//   weakens     A concept `template <class T, class U> concept`.  True
+//               when one step takes T to U.
 //   congruence  A class template.  Two of its specializations are in the
 //               order when each argument at a position in `covariant` is
 //               in the order, and each other argument is the same.
@@ -225,7 +225,11 @@ struct payload_rule {
 //               for identity.
 //
 // The templates must accept every type and answer false where they do
-// not apply.  A template that cannot take a type is read as false.
+// not apply.  A template that cannot take a type is read as false.  No
+// translation unit can specialize a concept or an alias template, so a
+// specialization cannot change the order.  The order refuses an axiom
+// that names a variable template or a class template in drops, inner or
+// weakens.
 struct subsort_axiom {
     std::meta::info drops{};
     std::meta::info inner{};

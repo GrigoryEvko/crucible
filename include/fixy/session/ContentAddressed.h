@@ -17,13 +17,18 @@
 // axiom that says so stands with the other axioms of the payload order,
 // in fixy/session/Subtype.h.
 //
-// This header holds only the marker and its traits, so that the payload
+// This header holds only the marker and its relation, so that the payload
 // order and the payload walk can both name the marker without either
 // one reaching the other.
+//
+// Each answer about the marker is a function at namespace scope that is
+// not a template, so no translation unit can specialize an answer.  The
+// concepts and the alias templates below read the functions, and no unit
+// can specialize a concept or an alias template either.
 
-#include <foundation/contracts/Armed.h>
+#include <fixy/Predicates.h>
 
-#include <type_traits>
+#include <meta>
 
 namespace fixy::session {
 
@@ -32,57 +37,52 @@ struct ContentAddressed {
     using wrapped = T;
 };
 
-template <typename T>
-struct is_content_addressed : std::false_type {};
+// True when type, read through its aliases, is a specialization of
+// ContentAddressed.  A cv-qualified type and a pointer to a marked payload
+// are not marked.
+[[nodiscard]] consteval bool is_content_addressed(std::meta::info type) {
+    const std::meta::info named = std::meta::dealias(type);
+    return !std::meta::is_const_type(named) && !std::meta::is_volatile_type(named)
+        && std::meta::has_template_arguments(named) && std::meta::template_of(named) == ^^ContentAddressed;
+}
 
-template <typename T>
-struct is_content_addressed<ContentAddressed<T>> : std::true_type {};
+// The type under one layer of the marker, or the type itself when it is
+// not marked.  The argument of the marker comes from the reader of the
+// refinements.  Each type is read through its aliases.
+[[nodiscard]] consteval std::meta::info peel_content_address(std::meta::info type) {
+    const std::meta::info named = std::meta::dealias(type);
+    return is_content_addressed(named) ? std::meta::dealias(::fixy::refined::argument_of(named, 0)) : named;
+}
 
-template <typename T>
-inline constexpr bool is_content_addressed_v = is_content_addressed<T>::value;
-
-template <typename T>
-concept ContentAddressedType = is_content_addressed_v<T>;
-
-template <typename T>
-struct content_addressed_underlying {
-    using type = T;
-};
-
-template <typename T>
-struct content_addressed_underlying<ContentAddressed<T>> {
-    using type = T;
-};
-
-template <typename T>
-using content_addressed_underlying_t = typename content_addressed_underlying<T>::type;
-
-template <typename T>
-struct unwrap_content_addressed {
-    using type = T;
-};
-
-template <typename T>
-struct unwrap_content_addressed<ContentAddressed<T>> : unwrap_content_addressed<T> {};
-
-template <typename T>
-using unwrap_content_addressed_t = typename unwrap_content_addressed<T>::type;
+// The type under every layer of the marker.  Complexity: linear in the
+// layers of the marker.
+[[nodiscard]] consteval std::meta::info unwrap_content_addressed(std::meta::info type) {
+    std::meta::info named = std::meta::dealias(type);
+    while (is_content_addressed(named))
+        named = peel_content_address(named);
+    return named;
+}
 
 // Two payloads stand for the same content when the marker is on at
 // least one side and stripping every layer of it from both sides leaves
 // one type.  The payload order reads this relation in both directions.
+[[nodiscard]] consteval bool is_content_addressed_equivalent(std::meta::info left, std::meta::info right) {
+    const std::meta::info low = std::meta::dealias(left);
+    const std::meta::info high = std::meta::dealias(right);
+    return low != high && (is_content_addressed(low) || is_content_addressed(high))
+        && unwrap_content_addressed(low) == unwrap_content_addressed(high);
+}
+
+template <typename T>
+concept ContentAddressedType = is_content_addressed(^^T);
+
 template <typename T, typename U>
-inline constexpr bool content_addressed_equivalent_v =
-    !std::is_same_v<T, U> && (is_content_addressed_v<T> || is_content_addressed_v<U>)
-    && std::is_same_v<unwrap_content_addressed_t<T>, unwrap_content_addressed_t<U>>;
+concept ContentAddressedEquivalent = is_content_addressed_equivalent(^^T, ^^U);
+
+template <typename T>
+using content_addressed_underlying_t = typename[:peel_content_address(^^T):];
+
+template <typename T>
+using unwrap_content_addressed_t = typename[:unwrap_content_addressed(^^T):];
 
 }  // namespace fixy::session
-
-// A marked payload is content-addressed at any depth of the marker.  The
-// bare payload is not, and neither is a pointer to a marked payload.
-template <>
-struct foundation::contracts::armed_cell<::fixy::session::is_content_addressed> {
-    using accepts = witnesses<::fixy::session::ContentAddressed<int>,
-                              ::fixy::session::ContentAddressed<::fixy::session::ContentAddressed<int>>>;
-    using refuses = witnesses<int, ::fixy::session::ContentAddressed<int>*>;
-};

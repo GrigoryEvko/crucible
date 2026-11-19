@@ -231,8 +231,8 @@ static void write_object_file(::fixy::TextView root, crucible::ContentHash hash,
 }
 
 static_assert(
-    ::fixy::session::is_content_addressed_v<typename crucible::Cipher::ContentAddressedRegionPayload::payload_type>);
-static_assert(::fixy::session::is_content_addressed_v<
+    ::fixy::session::ContentAddressedType<typename crucible::Cipher::ContentAddressedRegionPayload::payload_type>);
+static_assert(::fixy::session::ContentAddressedType<
               typename crucible::Cipher::LoadedContentAddressedRegionPayload::payload_type>);
 static_assert(::fixy::session::is_payload_subsort_v<
               crucible::RegionNode, typename crucible::Cipher::ContentAddressedRegionPayload::payload_type>);

@@ -26,7 +26,7 @@ static_assert(::fixy::session::is_well_formed_v<ComputationCacheFederationReceiv
 static_assert(::fixy::session::is_well_formed_v<ComputationCacheFederationCoordProto<&probe_unary, EmptyR, int>>);
 static_assert(role_protocol_matches_v<SenderRole, ComputationCacheFederationSenderProto<&probe_unary, EmptyR, int>,
                                       ComputationCacheFederationKeyTag<&probe_unary, EmptyR, int>>);
-static_assert(::fixy::session::is_content_addressed_v<
+static_assert(::fixy::session::ContentAddressedType<
               typename ComputationCacheFederationContentAddressedPayload<&probe_unary, EmptyR, int>::payload_type>);
 static_assert(sizeof(ComputationCacheFederationContentAddressedPayload<&probe_unary, EmptyR, int>)
               == sizeof(::fixy::View<std::byte const>));

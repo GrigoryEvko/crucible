@@ -209,6 +209,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <meta>
 #include <string>
 #include <string_view>
@@ -244,91 +245,147 @@ consteval ::fixy::session::transition::verdict sync_verdict(std::meta::info sub,
 
 }  // namespace detail::subtype
 
+// Each relation of the payload order is a function at namespace scope that
+// is not a template, so no translation unit can specialize an answer.  The
+// axioms name the concepts and the alias templates after the functions, and
+// no unit can specialize a concept or an alias template either.  Each
+// function reads its types through their aliases.
 namespace detail::payload_order {
 
-template <typename T, typename U>
-inline constexpr bool delegation_weakens_v = false;
-template <typename P, typename Q, typename Resource, typename Policy, typename PS>
-inline constexpr bool
-    delegation_weakens_v<DelegatedSession<P, Resource, Policy, PS>, DelegatedSession<Q, Resource, Policy, PS>> =
-        ::fixy::session::detail::subtype::sync_verdict(^^Q, ^^P).holds;
+// True when type, read through its aliases, is a specialization of the
+// class template that family reflects.  A cv-qualified type is not one.
+[[nodiscard]] consteval bool is_unqualified_of(std::meta::info type, std::meta::info family) {
+    const std::meta::info named = std::meta::dealias(type);
+    return !std::meta::is_const_type(named) && !std::meta::is_volatile_type(named)
+        && std::meta::has_template_arguments(named) && std::meta::template_of(named) == family;
+}
 
-template <typename T>
-struct refinement_parts {
-    static constexpr bool is_refinement = false;
-    static constexpr bool is_sealed = false;
-    using value_type = T;
-};
-template <auto P, typename X, bool Sealed>
-struct refinement_parts<::fixy::Refinement<P, X, Sealed>> {
-    static constexpr bool is_refinement = true;
-    static constexpr bool is_sealed = Sealed;
-    using value_type = X;
-};
+// The template argument at index of a specialization, as the reader of the
+// refinements gives it.  The specialization and a type argument are read
+// through their aliases.
+[[nodiscard]] consteval std::meta::info argument_at(std::meta::info type, std::size_t index) {
+    const std::meta::info argument = ::fixy::refined::argument_of(std::meta::dealias(type), index);
+    return std::meta::is_type(argument) ? std::meta::dealias(argument) : argument;
+}
 
-template <typename T>
-struct tagged_parts {
-    static constexpr bool is_tagged = false;
-    using value_type = T;
-    using tag = void;
-};
-template <typename X, typename V>
-struct tagged_parts<::fixy::Tagged<X, V>> {
-    static constexpr bool is_tagged = true;
-    using value_type = X;
-    using tag = V;
-};
+// The answer of a concept on its arguments.
+[[nodiscard]] consteval bool concept_holds(std::meta::info concept_template,
+                                           std::initializer_list<std::meta::info> arguments) {
+    return std::meta::extract<bool>(std::meta::substitute(concept_template, arguments));
+}
 
-template <typename T>
-inline constexpr bool refinement_drops_v = refinement_parts<T>::is_refinement && !refinement_parts<T>::is_sealed;
+// A delegated endpoint weakens to another one when the Resource, the policy
+// and the set are the same and the protocol of the other refines its
+// protocol.
+[[nodiscard]] consteval bool delegation_weakens(std::meta::info sub, std::meta::info super) {
+    if (!is_unqualified_of(sub, ^^DelegatedSession) || !is_unqualified_of(super, ^^DelegatedSession)) return false;
+    for (std::size_t index = 1; index < 4; ++index) {
+        if (argument_at(sub, index) != argument_at(super, index)) return false;
+    }
+    return ::fixy::session::detail::subtype::sync_verdict(argument_at(super, 0), argument_at(sub, 0)).holds;
+}
 
-template <typename T>
-using refinement_value_t = typename refinement_parts<T>::value_type;
+// An open refinement drops to its value type.  A sealed refinement keeps
+// its predicate, because it has no door that returns the value.
+[[nodiscard]] consteval bool refinement_drops(std::meta::info type) {
+    return is_unqualified_of(type, ^^::fixy::Refinement) && !std::meta::extract<bool>(argument_at(type, 2));
+}
 
-template <typename T, typename U>
-inline constexpr bool refinement_weakens_v = false;
-// The relation of fixy/PredicateImplies.h reads its admitted steps where that
-// header defines them, so an edge that a later header adds does not
+// The value type of a refinement, or the type itself.
+[[nodiscard]] consteval std::meta::info refinement_value(std::meta::info type) {
+    return is_unqualified_of(type, ^^::fixy::Refinement) ? argument_at(type, 1) : std::meta::dealias(type);
+}
+
+// A refinement weakens to a refinement of the same value type and the same
+// seal when its predicate implies the other predicate.
+//
+// The relation of fixy/PredicateImplies.h reads its admitted steps where
+// that header defines them, so an edge that a later header adds does not
 // change this order.  A step of that relation holds on a value type only
 // where its two predicates are defined, so each predicate must evaluate
 // the value type here: a trusted refinement whose predicate the value
 // type cannot evaluate, such as bounded_below<256> over a std::uint8_t,
 // weakens to nothing.
-template <auto P, auto Q, typename X, bool Sealed>
-inline constexpr bool refinement_weakens_v<::fixy::Refinement<P, X, Sealed>, ::fixy::Refinement<Q, X, Sealed>> =
-    std::is_same_v<::fixy::refined::predicate_t<P>, ::fixy::refined::predicate_t<Q>>
-    || (::fixy::PredicateInvocableOn<P, X> && ::fixy::PredicateInvocableOn<Q, X> && ::fixy::PredicateImplies<P, Q>);
+[[nodiscard]] consteval bool refinement_weakens(std::meta::info sub, std::meta::info super) {
+    if (!is_unqualified_of(sub, ^^::fixy::Refinement) || !is_unqualified_of(super, ^^::fixy::Refinement)) return false;
+    const std::meta::info value = argument_at(sub, 1);
+    if (value != argument_at(super, 1)) return false;
+    if (std::meta::extract<bool>(argument_at(sub, 2)) != std::meta::extract<bool>(argument_at(super, 2))) return false;
+    const std::meta::info premise = argument_at(sub, 0);
+    const std::meta::info conclusion = argument_at(super, 0);
+    if (::fixy::refined::predicate_type_of(premise) == ::fixy::refined::predicate_type_of(conclusion)) return true;
+    return concept_holds(^^::fixy::PredicateInvocableOn, {premise, value})
+        && concept_holds(^^::fixy::PredicateInvocableOn, {conclusion, value})
+        && concept_holds(^^::fixy::PredicateImplies, {premise, conclusion});
+}
 
-template <typename T>
-inline constexpr bool tagged_drops_v =
-    tagged_parts<T>::is_tagged
-    && ::foundation::fail_closed::admits(^^::fixy::session::droppable_tags, ^^typename tagged_parts<T>::tag, ^^void);
+// A Tagged drops to its value type when droppable_tags admits its tag.
+[[nodiscard]] consteval bool tagged_drops(std::meta::info type) {
+    return is_unqualified_of(type, ^^::fixy::Tagged)
+        && ::foundation::fail_closed::admits(^^::fixy::session::droppable_tags, argument_at(type, 1), ^^void);
+}
 
-template <typename T>
-using tagged_value_t = typename tagged_parts<T>::value_type;
+// The value type of a Tagged, or the type itself.
+[[nodiscard]] consteval std::meta::info tagged_value(std::meta::info type) {
+    return is_unqualified_of(type, ^^::fixy::Tagged) ? argument_at(type, 0) : std::meta::dealias(type);
+}
+
+// True when type is a NumericalTier: a Graded of the absolute modality at
+// one pinned tier of ToleranceLattice.
+[[nodiscard]] consteval bool is_numerical_tier(std::meta::info type) {
+    return is_unqualified_of(type, ^^::foundation::algebra::Graded)
+        && std::meta::extract<::foundation::algebra::ModalityKind>(argument_at(type, 0))
+               == ::foundation::algebra::ModalityKind::Absolute
+        && is_unqualified_of(argument_at(type, 1), ^^::foundation::algebra::lattices::ToleranceLattice::At);
+}
+
+// The tier of a NumericalTier.
+[[nodiscard]] consteval ::foundation::algebra::lattices::Tolerance tier_of(std::meta::info type) {
+    return std::meta::extract<::foundation::algebra::lattices::Tolerance>(argument_at(argument_at(type, 1), 0));
+}
+
+// A NumericalTier weakens to a looser tier over the same value type.
+[[nodiscard]] consteval bool tier_weakens(std::meta::info sub, std::meta::info super) {
+    return is_numerical_tier(sub) && is_numerical_tier(super) && argument_at(sub, 2) == argument_at(super, 2)
+        && ::foundation::algebra::lattices::ToleranceLattice::leq(tier_of(super), tier_of(sub));
+}
 
 template <typename T, typename U>
-inline constexpr bool tier_weakens_v = false;
-template <::foundation::algebra::lattices::Tolerance Tight, ::foundation::algebra::lattices::Tolerance Loose,
-          typename X>
-inline constexpr bool tier_weakens_v<::fixy::NumericalTier<Tight, X>, ::fixy::NumericalTier<Loose, X>> =
-    ::foundation::algebra::lattices::ToleranceLattice::leq(Loose, Tight);
+concept DelegationWeakens = delegation_weakens(^^T, ^^U);
+
+template <typename T>
+concept RefinementDrops = refinement_drops(^^T);
+
+template <typename T>
+using refinement_value_t = typename[:refinement_value(^^T):];
+
+template <typename T, typename U>
+concept RefinementWeakens = refinement_weakens(^^T, ^^U);
+
+template <typename T>
+concept TaggedDrops = tagged_drops(^^T);
+
+template <typename T>
+using tagged_value_t = typename[:tagged_value(^^T):];
+
+template <typename T, typename U>
+concept TierWeakens = tier_weakens(^^T, ^^U);
 
 }  // namespace detail::payload_order
 
 namespace payload_axioms {
 
 inline constexpr ::fixy::session::transition::subsort_axiom refinement_drops{
-    .drops = ^^detail::payload_order::refinement_drops_v, .inner = ^^detail::payload_order::refinement_value_t};
+    .drops = ^^detail::payload_order::RefinementDrops, .inner = ^^detail::payload_order::refinement_value_t};
 
 inline constexpr ::fixy::session::transition::subsort_axiom refinement_weakens{
-    .weakens = ^^detail::payload_order::refinement_weakens_v};
+    .weakens = ^^detail::payload_order::RefinementWeakens};
 
 inline constexpr ::fixy::session::transition::subsort_axiom tagged_drops{
-    .drops = ^^detail::payload_order::tagged_drops_v, .inner = ^^detail::payload_order::tagged_value_t};
+    .drops = ^^detail::payload_order::TaggedDrops, .inner = ^^detail::payload_order::tagged_value_t};
 
 inline constexpr ::fixy::session::transition::subsort_axiom tier_weakens{.weakens =
-                                                                             ^^detail::payload_order::tier_weakens_v};
+                                                                             ^^detail::payload_order::TierWeakens};
 
 // A message is below another message when the peers are the same, the
 // labels are the same, and the payload is below in the payload order.
@@ -339,12 +396,12 @@ inline constexpr ::fixy::session::transition::subsort_axiom peer_message{.congru
 // the protocol of the other, and the Resource, the policy and the set are
 // the same.
 inline constexpr ::fixy::session::transition::subsort_axiom delegation_contravariant{
-    .weakens = ^^detail::payload_order::delegation_weakens_v};
+    .weakens = ^^detail::payload_order::DelegationWeakens};
 
 // A payload and its content-addressed form are below each other, at any
 // depth of the marker.
 inline constexpr ::fixy::session::transition::subsort_axiom content_addressed{
-    .weakens = ^^::fixy::session::content_addressed_equivalent_v};
+    .weakens = ^^::fixy::session::ContentAddressedEquivalent};
 
 inline constexpr ::fixy::session::transition::seal axiom_seal{.kind = ^^::fixy::session::transition::subsort_axiom,
                                                               .count = 7};
