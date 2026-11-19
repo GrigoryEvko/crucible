@@ -271,6 +271,16 @@ foundation_neg_compile_test(neg_product_orientation_specialized
   "neg_product_orientation_specialized\\.cpp:27:[0-9]+: error: expected initializer before .<. token"
   "neg_product_orientation_specialized\\.cpp:33:[0-9]+: error: static assertion failed")
 
+# A member claim_orientation or claim_subject of another type is a misspelt
+# statement.  The gate stops the build at a call whose name gives the fix,
+# and the member does not fall back to a derived answer.
+foundation_neg_compile_test(neg_claim_orientation_mistyped
+  "call to non-.constexpr. function .void foundation::algebra::detail::claim_orientation_must_be_a_ClaimOrientation_so_state_weaker_or_stronger_or_remove_the_member\\(\\)."
+  "neg_claim_orientation_mistyped\\.cpp:19:[0-9]+: error: non-constant condition for static assertion")
+foundation_neg_compile_test(neg_claim_subject_mistyped
+  "call to non-.constexpr. function .void foundation::algebra::detail::claim_subject_must_be_a_ClaimSubject_so_state_bytes_or_slot_or_remove_the_member\\(\\)."
+  "neg_claim_subject_mistyped\\.cpp:19:[0-9]+: error: non-constant condition for static assertion")
+
 # The mask of an effect row is a function at namespace scope that is not a
 # template.  A specialization of the trait spelling does not compile, and
 # an explicit specialization of the function matches no template.
