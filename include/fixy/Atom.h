@@ -805,7 +805,7 @@ struct trust_assumed final : atom_of<Axis::Trust> {
 // trust<tags::trust::Unverified> and the pole reach one slot of the row
 // hash, as as_classified and the strict Security pole do.  The consumer is
 // rule T001 in fixy/Collision.h, the one rule that reads the Trust axis,
-// through trust_level_of_v.  Each other level is its own slot, because each
+// through trust_level_of_.  Each other level is its own slot, because each
 // one admits a capability that the pole refuses.
 template <class Level>
     requires(::fixy::tags::IsTrustLevel<Level> && !__is_same(Level, ::fixy::tags::trust::Assumed))

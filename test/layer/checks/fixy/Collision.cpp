@@ -193,14 +193,14 @@ static_assert(
 // The observable reader of P010 reads the row of an Effect grade through
 // the closed relation of fixy/Atom.h.  A stated with<IO> answers as the row
 // Row<IO> does, and a type that is not an Effect grade has no answer.
-static_assert(::fixy::collision::detail::row_admits_observable_<::fixy::atom::with_io>::value,
+static_assert(::fixy::collision::detail::names_observable_effect_without_bg_(
+                  ::fixy::atom::effect_row_of_t<::fixy::atom::with_io>{}),
               "a stated with<IO> names the observable effect IO, as the row Row<IO> does");
-static_assert(!::fixy::collision::detail::row_admits_observable_<::fixy::atom::with_bg>::value,
+static_assert(!::fixy::collision::detail::names_observable_effect_without_bg_(
+                  ::fixy::atom::effect_row_of_t<::fixy::atom::with_bg>{}),
               "Bg is left out of the set of P010");
-static_assert(!std::meta::can_substitute(^^::fixy::collision::detail::row_admits_observable_, {^^int}),
+static_assert(!::fixy::atom::IsEffectGrade<int> && !::fixy::atom::IsEffectGrade<::fixy::atom::copy>,
               "a type that is not an Effect grade has no row to read");
-static_assert(!std::meta::can_substitute(^^::fixy::collision::detail::row_admits_observable_, {^^::fixy::atom::copy}),
-              "an atom of another axis has no row to read");
 
 static_assert(!pack_verdict_v<::fixy::atom::coroutine, ::fixy::atom::borrow>.admits(R002));
 static_assert(
@@ -458,6 +458,154 @@ static_assert(cd::unbanded_of(^^int) == ^^int);
 static_assert(cd::unbanded_of(^^::fixy::Secret<int>) == ^^::fixy::Secret<int>,
               "a Secret is no band, so its value stays inside it");
 }  // namespace closed_read_cells
+
+// The grade readers of the premises.  Each is a concept or a function that
+// is not a template, so no unit can change an answer.  The cells pin both
+// directions of each read.  An atom of a different axis carries a member of
+// the same name, and the type check of each reader refuses it.
+namespace grade_reader_cells {
+namespace at = ::fixy::atom;
+namespace cd = ::fixy::collision::detail;
+namespace lat = ::foundation::algebra::lattices;
+using Effect = ::foundation::effects::Effect;
+using Row0 = ::foundation::effects::Row<>;
+
+struct global_tag final {};
+struct plain {
+    int value = 0;
+};
+struct names_noexcept_signature {
+    using signature = void(void*) noexcept;
+};
+struct names_data_signature {
+    using signature = int;
+};
+struct names_int_strategy {
+    static constexpr int strategy = 0;
+};
+// A Stepping payload before its end owes its protocol, and one at its end
+// owes nothing.  A Stepping payload that does not answer is read as live.
+struct live_stepper {
+    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Stepping;
+    [[nodiscard]] static consteval bool is_terminal() noexcept { return false; }
+};
+struct ended_stepper {
+    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Stepping;
+    [[nodiscard]] static consteval bool is_terminal() noexcept { return true; }
+};
+struct silent_stepper {
+    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Stepping;
+};
+
+// The observable reader of P010 leaves Bg out of its set.
+static_assert(cd::names_observable_effect_without_bg_(::foundation::effects::Row<Effect::Alloc>{})
+              && cd::names_observable_effect_without_bg_(::foundation::effects::Row<Effect::Block>{}));
+static_assert(!cd::names_observable_effect_without_bg_(::foundation::effects::Row<Effect::Bg>{})
+              && !cd::names_observable_effect_without_bg_(Row0{}));
+
+// The family reads of Representation, GlobalState, ControlFlow and Protocol.
+static_assert(cd::is_grade_of_family_(^^at::global::thread_local_<global_tag>, ^^at::global::thread_local_));
+static_assert(!cd::is_grade_of_family_(^^at::global::singleton<global_tag>, ^^at::global::thread_local_));
+static_assert(!cd::is_grade_of_family_(^^int, ^^at::global::thread_local_));
+static_assert(cd::is_grade_of_family_(^^at::ctrl::longjmp_unsafe<"setjmp island">, ^^at::ctrl::longjmp_unsafe));
+static_assert(!cd::is_grade_of_family_(^^at::ctrl::abort<"setjmp island">, ^^at::ctrl::longjmp_unsafe));
+static_assert(cd::is_grade_of_family_(^^at::ctrl::coroutine<at::ctrl::async_task>, ^^at::ctrl::coroutine));
+static_assert(!cd::is_grade_of_family_(^^at::ctrl::throws<>, ^^at::ctrl::coroutine));
+static_assert(pack_verdict_v<at::repr<::fixy::pole::ReprKind::Atomic>>.premises.atomic_repr
+              && !pack_verdict_v<>.premises.atomic_repr);
+
+// protocol<proto::None> writes the strict pole out, so it names no session.
+// A protocol grade says that a binding speaks a protocol, and it does not
+// say that the frame holds a live handle.
+static_assert(cd::is_session_protocol_(^^at::protocol<plain>)
+              && cd::is_session_protocol_(^^at::session::live_handle<plain>));
+static_assert(!cd::is_session_protocol_(^^at::protocol<::fixy::pole::proto::None>)
+              && !cd::is_session_protocol_(^^at::spawn::detach_with<"no join">) && !cd::is_session_protocol_(^^int));
+static_assert(pack_verdict_v<at::session::live_handle<plain>>.premises.has_live_handle
+              && !pack_verdict_v<at::protocol<plain>>.premises.has_live_handle);
+
+// A Stepping payload owes its protocol until its end.
+static_assert(cd::OwesAProtocol<live_stepper> && cd::OwesAProtocol<silent_stepper>);
+static_assert(!cd::OwesAProtocol<ended_stepper> && !cd::OwesAProtocol<int> && !cd::OwesAProtocol<plain>);
+static_assert(
+    ::fixy::collision::binding_verdict_v<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, live_stepper>>.premises.has_live_handle,
+    "the read of the payload goes through its bands");
+
+// A band claims for its lattice, through the bands of the other lattices.
+[[nodiscard]] consteval bool claims_replay(std::meta::info payload) {
+    return cd::outermost_band_claims_(payload, ^^cd::IsDetSafeBand, ^^cd::ClaimsReplay);
+}
+static_assert(claims_replay(^^::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>)
+              && claims_replay(^^::fixy::DetSafe<::fixy::DetSafeTier_v::PhiloxRng, int>));
+static_assert(
+    claims_replay(^^::fixy::Vendor<::fixy::VendorBackend_v::NV, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>));
+static_assert(!claims_replay(^^int) && !claims_replay(^^void)
+              && !claims_replay(^^::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, int>)
+              && !claims_replay(^^::fixy::Vendor<::fixy::VendorBackend_v::NV, int>));
+
+// The trunks of the scope and the ISA.  The shared bottom and top of the
+// scope lattice, and a portable or scalar ISA, pin no trunk.
+static_assert(cd::HasPinnedScopeTrunk<at::scope::cta> && cd::HasPinnedScopeTrunk<at::scope::inner>);
+static_assert(!cd::HasPinnedScopeTrunk<at::scope::thread> && !cd::HasPinnedScopeTrunk<at::scope::system>
+              && !cd::HasPinnedScopeTrunk<int> && !cd::HasPinnedScopeTrunk<at::barrier::seq_cst>);
+static_assert(cd::HasScopeOnHostTrunk<at::scope::outer> && !cd::HasScopeOnHostTrunk<at::scope::gpu>);
+static_assert(cd::HasPinnedIsaTrunk<at::simd::avx2> && cd::HasPinnedIsaTrunk<at::simd::sve2>);
+static_assert(!cd::HasPinnedIsaTrunk<at::simd::scalar> && !cd::HasPinnedIsaTrunk<at::simd::portable>
+              && !cd::HasPinnedIsaTrunk<int>);
+static_assert(cd::HasIsaOnArmTrunk<at::simd::neon> && !cd::HasIsaOnArmTrunk<at::simd::avx2>);
+
+// UMWAIT halts the core and does not spin it.  A type with no strategy, or
+// with a strategy that is no WaitStrategy, names no wait.
+static_assert(cd::BurnsTheCore<at::sync::bounded_spin> && cd::BurnsTheCore<at::sync::spin_pause>);
+static_assert(!cd::BurnsTheCore<at::sync::umwait_c01> && !cd::BurnsTheCore<at::sync::block> && !cd::BurnsTheCore<int>);
+static_assert(cd::StatesWaitStrategy<at::sync::block> && cd::StatesWaitStrategy<at::sync::umwait_c01>);
+static_assert(!cd::StatesWaitStrategy<int> && !cd::StatesWaitStrategy<plain>
+              && !cd::StatesWaitStrategy<names_int_strategy>);
+
+// A family names a noexcept signature through a function type, a pointer or
+// member pointer to one, or a signature member that is not a class.
+static_assert(cd::names_noexcept_signature_(^^void() noexcept)
+              && cd::names_noexcept_signature_(^^int (*)(char, ...) noexcept)
+              && cd::names_noexcept_signature_(^^void (plain::*)() & noexcept)
+              && cd::names_noexcept_signature_(^^names_noexcept_signature));
+static_assert(!cd::names_noexcept_signature_(^^void()) && !cd::names_noexcept_signature_(^^int (&)(char))
+              && !cd::names_noexcept_signature_(^^void (plain::*)() &) && !cd::names_noexcept_signature_(^^plain)
+              && !cd::names_noexcept_signature_(^^names_data_signature));
+
+// An indirect call can throw unless its family names a noexcept signature.
+// A recursion and the strict pole call through no pointer.  A subprocess
+// cannot outlive the frame that it borrows from.
+static_assert(cd::indirect_call_throws_(^^at::dispatch::indirect_call<int(char)>)
+              && cd::indirect_call_throws_(^^at::dispatch::indirect_call<plain>)
+              && cd::indirect_call_throws_(^^at::dispatch::indirect_call<void (plain::*)() &>));
+static_assert(!cd::indirect_call_throws_(^^at::dispatch::indirect_call<int(char) noexcept>)
+              && !cd::indirect_call_throws_(^^at::dispatch::indirect_call<names_noexcept_signature>)
+              && !cd::indirect_call_throws_(^^at::dispatch::recurses<8>)
+              && !cd::indirect_call_throws_(^^::fixy::pole::Unconstrained<Axis::CallShape>));
+static_assert(cd::spawn_outlives_frame_(^^at::spawn::detach_with<"drain">)
+              && cd::spawn_outlives_frame_(^^at::spawn::syscall_only<"loader">));
+static_assert(!cd::spawn_outlives_frame_(^^at::spawn::subprocess<"helper">)
+              && !cd::spawn_outlives_frame_(^^at::protocol<plain>)
+              && !cd::spawn_outlives_frame_(^^::fixy::pole::proto::None));
+
+// The floor readers.  The scope lattice has two trunks, so a host scope is
+// not at or above an accelerator floor.  A mode names only the settings it
+// was written with.
+static_assert(cd::HasBarrierAtOrAbove<at::barrier::full_fence, lat::BarrierStrength::SeqCst>
+              && cd::HasBarrierAtOrAbove<at::barrier::seq_cst, lat::BarrierStrength::AcqRel>);
+static_assert(!cd::HasBarrierAtOrAbove<at::barrier::acq_rel, lat::BarrierStrength::SeqCst>
+              && !cd::HasBarrierAtOrAbove<int, lat::BarrierStrength::AcqRel>
+              && !cd::HasBarrierAtOrAbove<at::hw::privileged_msr, lat::BarrierStrength::None>);
+static_assert(cd::HasScopeAtOrAbove<at::scope::gpu, lat::MemoryScope::Cluster>
+              && cd::HasScopeAtOrAbove<at::scope::system, lat::MemoryScope::Cta>);
+static_assert(!cd::HasScopeAtOrAbove<at::scope::inner, lat::MemoryScope::Cluster>
+              && !cd::HasScopeAtOrAbove<at::scope::cta, lat::MemoryScope::Gpu>
+              && !cd::HasScopeAtOrAbove<int, lat::MemoryScope::Cluster>);
+static_assert(cd::NamesFpSetting<at::fp::mode<at::fp::FpContract::Fast>, at::fp::FpContract::Fast>);
+static_assert(!cd::NamesFpSetting<at::fp::mode<at::fp::FpContract::Fast>, at::fp::FpContract::Off>
+              && !cd::NamesFpSetting<at::fp::mode<>, at::fp::FpContract::Fast>
+              && !cd::NamesFpSetting<int, at::fp::FpContract::Fast>);
+}  // namespace grade_reader_cells
 
 }  // namespace detail::collision_self_test
 

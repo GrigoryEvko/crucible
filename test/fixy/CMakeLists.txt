@@ -134,6 +134,18 @@ fixy_neg_compile_test(neg_collision_verdict_cell_of_another_binding
 fixy_neg_compile_test(neg_collision_verdict_view_specialized
   "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 5\\]: the combination is refused"
   "Collision rule\\(s\\) L002")
+# Each grade reader of the premises is a concept, a function that is not a
+# template, or a deduction in a class that is not a template.  One fixture
+# stands on each form, and each tries to give a grade another answer.
+fixy_neg_compile_test(neg_collision_concept_reader_specialized
+  "template-id .BurnsTheCore<fixy::atom::sync::block>. used as a declarator"
+  "neg_collision_concept_reader_specialized\\.cpp:11:[0-9]+: error:")
+fixy_neg_compile_test(neg_collision_function_reader_specialized
+  "template-id .spawn_outlives_frame_<>. for .consteval bool fixy::collision::detail::spawn_outlives_frame_\\(std::meta::info\\). does not match any template declaration"
+  "neg_collision_function_reader_specialized\\.cpp:11:[0-9]+: error:")
+fixy_neg_compile_test(neg_collision_deduction_reader_specialized
+  "template-id .pointee_of<void\\(\\), callback_owner>. for .constexpr fixy::collision::detail::member_signature_box<void\\(\\) noexcept> fixy::collision::detail::member_pointer_parts_::pointee_of\\(void \\(callback_owner::\\*\\)\\(\\)\\). does not match any template declaration"
+  "neg_collision_deduction_reader_specialized\\.cpp:14:[0-9]+: error:")
 fixy_neg_compile_test(neg_observability_row_of_specialized
   ".observability_row_of_. is not a class template"
   "neg_observability_row_of_specialized\\.cpp:13:[0-9]+: error:")
@@ -721,11 +733,11 @@ fixy_neg_compile_test(neg_rule_l003_borrow_raw_clone
 # a join ties to the frame.  The catalog of atoms is closed, so each
 # fixture reads the reader directly with a type of the shape of an atom.
 fixy_neg_compile_test(neg_collision_call_shape_without_reading
-  "static assertion failed: fixy/Collision\\.h: the CallShape grade of this binding has no reading in fixy::collision::detail::call_shape_reading_"
-  "indirect_call_throws_\\(\\) \\[with G = fixture::virtual_dispatch\\]")
+  "call to non-.constexpr. function .void fixy::collision::detail::a_call_shape_grade_has_no_reading_in_call_shape_reading_\\(\\)."
+  "neg_collision_call_shape_without_reading\\.cpp:16:")
 fixy_neg_compile_test(neg_collision_protocol_without_reading
-  "static assertion failed: fixy/Collision\\.h: the Protocol grade of this binding has no reading in fixy::collision::detail::protocol_reading_"
-  "spawn_outlives_frame_\\(\\) \\[with G = fixture::detached_thread\\]")
+  "call to non-.constexpr. function .void fixy::collision::detail::a_protocol_grade_has_no_reading_in_protocol_reading_\\(\\)."
+  "neg_collision_protocol_without_reading\\.cpp:16:")
 # The check file of fixy/collision/Report.h walks each declaration of the
 # spawn family, which is a sample set outside the roster.  The fixture plants
 # a template with no reading before the check file, and the check names it.

@@ -13,7 +13,6 @@ namespace fixture {
 struct virtual_dispatch final : ::fixy::atom::atom_of<::fixy::Axis::CallShape> {};
 }  // namespace fixture
 
-[[maybe_unused]] constexpr bool answer =
-    ::fixy::collision::detail::can_indirect_call_throw_<fixture::virtual_dispatch>::value;
+[[maybe_unused]] constexpr bool answer = ::fixy::collision::detail::indirect_call_throws_(^^fixture::virtual_dispatch);
 
 int main() { return 0; }

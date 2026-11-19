@@ -13,7 +13,6 @@ namespace fixture {
 struct detached_thread final : ::fixy::atom::atom_of<::fixy::Axis::Protocol> {};
 }  // namespace fixture
 
-[[maybe_unused]] constexpr bool answer =
-    ::fixy::collision::detail::can_spawn_outlive_the_frame_<fixture::detached_thread>::value;
+[[maybe_unused]] constexpr bool answer = ::fixy::collision::detail::spawn_outlives_frame_(^^fixture::detached_thread);
 
 int main() { return 0; }

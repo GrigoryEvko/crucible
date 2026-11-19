@@ -665,14 +665,14 @@ static_assert(pack_verdict_v<at::barrier::full_fence>.admits(V201)
 // at the other.  No live rule reads a floor at either tag, so the change
 // from a chain moves no verdict: V301 reads SeqCst and V401 reads AcqRel,
 // and each tag sits below both floors in either order.
-static_assert(!col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::AcquireLoad,
-                                                    at::barrier::release_store>::value);
-static_assert(!col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::ReleaseStore,
-                                                    at::barrier::acquire_load>::value);
-static_assert(col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::AcquireLoad,
-                                                   at::barrier::acq_rel>::value
-                  && col::detail::is_barrier_at_or_above_<
-                      ::foundation::algebra::lattices::BarrierStrength::ReleaseStore, at::barrier::acq_rel>::value,
+static_assert(!col::detail::HasBarrierAtOrAbove<at::barrier::release_store,
+                                                ::foundation::algebra::lattices::BarrierStrength::AcquireLoad>);
+static_assert(!col::detail::HasBarrierAtOrAbove<at::barrier::acquire_load,
+                                                ::foundation::algebra::lattices::BarrierStrength::ReleaseStore>);
+static_assert(col::detail::HasBarrierAtOrAbove<at::barrier::acq_rel,
+                                               ::foundation::algebra::lattices::BarrierStrength::AcquireLoad>
+                  && col::detail::HasBarrierAtOrAbove<at::barrier::acq_rel,
+                                                      ::foundation::algebra::lattices::BarrierStrength::ReleaseStore>,
               "acq_rel is both an acquire and a release");
 
 // ---------------------------------------------------------------------
@@ -1080,12 +1080,12 @@ using ClockUnderVendor =
 using ClockOverPure =
     ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>;
 
-static_assert(col::detail::is_replay_deterministic_<PureUnderVendor>::value);
-static_assert(col::detail::is_replay_deterministic_<PureUnderArena>::value);
-static_assert(!col::detail::is_replay_deterministic_<ClockUnderVendor>::value);
-static_assert(!col::detail::is_replay_deterministic_<ClockOverPure>::value,
+static_assert(binding_verdict_v<PureUnderVendor>.premises.replay_deterministic);
+static_assert(binding_verdict_v<PureUnderArena>.premises.replay_deterministic);
+static_assert(!binding_verdict_v<ClockUnderVendor>.premises.replay_deterministic);
+static_assert(!binding_verdict_v<ClockOverPure>.premises.replay_deterministic,
               "the outermost DetSafe band is the claim, and a weaker outer band takes the claim back");
-static_assert(!col::detail::is_replay_deterministic_<::fixy::Vendor<::fixy::VendorBackend_v::NV, int>>::value);
+static_assert(!binding_verdict_v<::fixy::Vendor<::fixy::VendorBackend_v::NV, int>>.premises.replay_deterministic);
 
 static_assert(
     !binding_verdict_v<PureUnderVendor, at::fp::mode<at::fp::FpReassociate::UnrestrictedRewrite>>.admits(F101));
@@ -1125,19 +1125,17 @@ struct attack_owner {
 // A grade of a different axis that carries a member of the same name is
 // refused by the type check of each floor reader.
 static_assert(!col::detail::HasHwTierAtOrAbove<at::barrier::full_fence, at::hw::HwInstruction::Scalar>);
-static_assert(!col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::None,
-                                                    at::hw::privileged_msr>::value);
+static_assert(
+    !col::detail::HasBarrierAtOrAbove<at::hw::privileged_msr, ::foundation::algebra::lattices::BarrierStrength::None>);
 // A host scope is not at or above an accelerator floor.
-static_assert(!col::detail::is_scope_at_or_above_<::foundation::algebra::lattices::MemoryScope::Cluster,
-                                                  at::scope::outer>::value);
+static_assert(!col::detail::HasScopeAtOrAbove<at::scope::outer, ::foundation::algebra::lattices::MemoryScope::Cluster>);
 // UMWAIT is neither a kernel entry nor a busy wait.
 static_assert(!pack_verdict_v<at::sync::umwait_c01>.premises.blocks
-              && !col::detail::is_busy_wait_<at::sync::umwait_c01>::value);
+              && !col::detail::BurnsTheCore<at::sync::umwait_c01>);
 // A setting of a different enum with the same underlying value is not named.
-static_assert(
-    !col::detail::fp_mode_has_setting_<::foundation::core::FpFtz{}, at::fp::mode<at::fp::FpContract{}>>::value);
+static_assert(!col::detail::NamesFpSetting<at::fp::mode<at::fp::FpContract{}>, ::foundation::core::FpFtz{}>);
 // A const member function names its signature, and it is not noexcept.
-static_assert(!col::detail::is_signature_noexcept_<void (attack_owner::*)() const>::value);
+static_assert(!col::detail::names_noexcept_signature_(^^void (attack_owner::*)() const));
 
 // Every form of a function type is read by one query, so a form the
 // reader has no arm for cannot pass as one that states nothing.  Each

@@ -247,7 +247,7 @@ static_assert(row_hash_contribution_v<SecretAtomInt> != row_hash_contribution_v<
 // the level tags::trust::Unverified, so trust<tags::trust::Unverified> names
 // the pole, the same way as_classified names the strict Security pole.
 // Rule T001 in fixy/Collision.h, the one rule that reads the Trust axis,
-// reads the level through trust_level_of_v, which gives the two spellings
+// reads the level through trust_level_of_, which gives the two spellings
 // the level Unverified.  So T001 gives them one verdict on every pack, and
 // this is the establishment, asserted.
 using TrustUnverified = ::fixy::atom::trust<::fixy::tags::trust::Unverified>;

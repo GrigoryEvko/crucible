@@ -460,19 +460,13 @@ namespace detail {
 // this set there and cannot be left out here.  Bg is left out because the
 // rules that read a Bg row, L007 and R003 among them, carry its theorem.
 //
-// The reader takes an Effect grade and reads its row through the closed
-// relation of fixy/Atom.h, so a stated with<IO> answers as the row Row<IO>
-// does.  P010 gives it the row of the binding, which is a canonical Row.
-// A type that is not an Effect grade has no row, and the constraint
-// refuses it.  It does not read as a row with no observable effect.
+// The reader takes a Row.  The pass of the premises gives it the row of the
+// binding, which is a canonical Row.  A type that is not a Row matches no
+// parameter, so it does not read as a row with no observable effect.
 template <::foundation::effects::Effect... Es>
 [[nodiscard]] consteval bool names_observable_effect_without_bg_(::foundation::effects::Row<Es...>) noexcept {
     return ((::foundation::effects::is_observable<Es>() && Es != ::foundation::effects::Effect::Bg) || ...);
 }
-
-template <::fixy::atom::IsEffectGrade G>
-struct row_admits_observable_
-    : std::bool_constant<names_observable_effect_without_bg_(::fixy::atom::effect_row_of_t<G>{})> {};
 
 // The payload's replay claim.
 //
@@ -494,16 +488,11 @@ struct row_admits_observable_
 // Vendor<V, DetSafe<Pure, T>>, claims replay as fully as DetSafe<Pure, T>
 // does.  The outermost DetSafe band decides.
 template <class Payload>
-struct is_replay_deterministic_ : std::false_type {};
+concept IsDetSafeBand = ::fixy::is_band_of_v<::foundation::algebra::lattices::DetSafeLattice, Payload>;
 template <class Payload>
-    requires ::fixy::is_band_of_v<::foundation::algebra::lattices::DetSafeLattice, Payload>
-struct is_replay_deterministic_<Payload>
-    : std::bool_constant<::foundation::algebra::lattices::DetSafeLattice::leq(
-          ::foundation::algebra::lattices::DetSafeTier::PhiloxRng, Payload::lattice_type::tier)> {};
-template <class Payload>
-    requires ::fixy::IsBand<Payload>
-          && (!::fixy::is_band_of_v<::foundation::algebra::lattices::DetSafeLattice, Payload>)
-struct is_replay_deterministic_<Payload> : is_replay_deterministic_<::fixy::band_value_t<Payload>> {};
+concept ClaimsReplay = IsDetSafeBand<Payload>
+                    && ::foundation::algebra::lattices::DetSafeLattice::leq(
+                           ::foundation::algebra::lattices::DetSafeTier::PhiloxRng, Payload::lattice_type::tier);
 
 // The fine grades of the payload against the row.  The row is the one
 // source of the coarse fact, and a band of AllocClass or Wait refines it.
@@ -512,25 +501,36 @@ struct is_replay_deterministic_<Payload> : is_replay_deterministic_<::fixy::band
 // kernel.  Each claim is read through the bands of other lattices, as the
 // replay claim is, and the outermost band of the lattice decides.
 template <class Payload>
-inline constexpr bool claims_no_allocation_v_ = false;
+concept IsAllocClassBand = ::fixy::is_band_of_v<::foundation::algebra::lattices::AllocClassLattice, Payload>;
 template <class Payload>
-    requires ::fixy::is_band_of_v<::foundation::algebra::lattices::AllocClassLattice, Payload>
-inline constexpr bool claims_no_allocation_v_<Payload> = ::foundation::algebra::lattices::AllocClassLattice::leq(
-    ::foundation::algebra::lattices::AllocClassTag::Pool, ::fixy::band_tier_v<Payload>);
-template <class Payload>
-    requires ::fixy::IsBand<Payload>
-              && (!::fixy::is_band_of_v<::foundation::algebra::lattices::AllocClassLattice, Payload>)
-inline constexpr bool claims_no_allocation_v_<Payload> = claims_no_allocation_v_<::fixy::band_value_t<Payload>>;
+concept ClaimsNoAllocation = IsAllocClassBand<Payload>
+                          && ::foundation::algebra::lattices::AllocClassLattice::leq(
+                                 ::foundation::algebra::lattices::AllocClassTag::Pool, ::fixy::band_tier_v<Payload>);
 
 template <class Payload>
-inline constexpr bool claims_user_space_wait_v_ = false;
+concept IsWaitBand = ::fixy::is_band_of_v<::foundation::algebra::lattices::WaitLattice, Payload>;
 template <class Payload>
-    requires ::fixy::is_band_of_v<::foundation::algebra::lattices::WaitLattice, Payload>
-inline constexpr bool claims_user_space_wait_v_<Payload> = ::foundation::algebra::lattices::WaitLattice::leq(
-    ::foundation::algebra::lattices::WaitStrategy::UmwaitC01, ::fixy::band_tier_v<Payload>);
-template <class Payload>
-    requires ::fixy::IsBand<Payload> && (!::fixy::is_band_of_v<::foundation::algebra::lattices::WaitLattice, Payload>)
-inline constexpr bool claims_user_space_wait_v_<Payload> = claims_user_space_wait_v_<::fixy::band_value_t<Payload>>;
+concept ClaimsUserSpaceWait =
+    IsWaitBand<Payload>
+    && ::foundation::algebra::lattices::WaitLattice::leq(::foundation::algebra::lattices::WaitStrategy::UmwaitC01,
+                                                         ::fixy::band_tier_v<Payload>);
+
+// The claim of the outermost band of one lattice, read through the bands
+// of the other lattices.  The band and the claim are concepts, and the
+// function is not a template, so no unit can give a payload another claim.
+// A payload with no band of the lattice claims nothing.  Complexity: the
+// depth of the stack of bands.
+[[nodiscard]] consteval bool outermost_band_claims_(std::meta::info payload, std::meta::info band,
+                                                    std::meta::info claim) {
+    std::meta::info named = std::meta::dealias(payload);
+    while (std::meta::extract<bool>(std::meta::substitute(^^::fixy::IsBand, {named}))) {
+        if (std::meta::extract<bool>(std::meta::substitute(band, {named}))) {
+            return std::meta::extract<bool>(std::meta::substitute(claim, {named}));
+        }
+        named = std::meta::dealias(std::meta::substitute(^^::fixy::band_value_t, {named}));
+    }
+    return false;
+}
 
 // The Observability row, extracted from its grade.
 //
@@ -575,84 +575,74 @@ concept HasHwTierAtOrAbove =
     requires { G::tier; } && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>, ::fixy::atom::hw::HwInstruction>
     && ::fixy::atom::hw::at_or_above(G::tier, Floor);
 
-// The provided fence strength, read against a floor.  The primary is
-// false: a binding that names no strength provides no fence, so there
-// is nothing for V301 to refuse on it.  The order comes from
-// fixy/atoms/Barrier.h's own at_or_above, which is the lattice's leq in
-// its admission direction, so a rule cannot invert it.  The order is not
-// a chain: an acquire load is not at or above a release floor, nor the
-// reverse, so a floor on either tag admits only its own tag and above.  This
-// and HasHwTierAtOrAbove both read a member named `tier`.  The type check
-// in each constraint keeps each from answering for the atoms of the other.
-template <::foundation::algebra::lattices::BarrierStrength Floor, class G>
-struct is_barrier_at_or_above_ : std::false_type {};
-template <::foundation::algebra::lattices::BarrierStrength Floor, class G>
-    requires requires { G::tier; }
-          && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>, ::foundation::algebra::lattices::BarrierStrength>
-struct is_barrier_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::barrier::at_or_above(G::tier, Floor)> {};
+// Each read of a grade below is a concept or a function that is not a
+// template.  A concept has no specialization, and no unit can specialize a
+// function that is not a template, so no unit can give a grade another
+// answer.
 
-// The reached scope, read against a floor.  The primary is false: a
-// binding that names no scope publishes to nobody in particular, so
-// V401 has nothing to refuse on it.  The order is the lattice's own leq
-// through fixy/atoms/Scope.h, and that lattice is two trunks, so a scope
-// on the host trunk is NOT at or above an accelerator floor — Inner and
-// Cluster are incomparable — and a rule reading this stands down for it
-// rather than reading "incomparable" as "wide".
-template <::foundation::algebra::lattices::MemoryScope Floor, class G>
-struct is_scope_at_or_above_ : std::false_type {};
-template <::foundation::algebra::lattices::MemoryScope Floor, class G>
-    requires requires { G::scope; }
-          && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>, ::foundation::algebra::lattices::MemoryScope>
-struct is_scope_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::scope::at_or_above(G::scope, Floor)> {};
+// The provided fence strength, read against a floor.  A binding that names
+// no strength provides no fence, so there is nothing for V301 to refuse on
+// it.  The order comes from fixy/atoms/Barrier.h's own at_or_above, which is
+// the lattice's leq in its admission direction, so a rule cannot invert it.
+// The order is not a chain: an acquire load is not at or above a release
+// floor, nor the reverse, so a floor on either tag admits only its own tag
+// and above.  This and HasHwTierAtOrAbove both read a member named `tier`.
+// The type check in each constraint keeps each from answering for the atoms
+// of the other.
+template <class G, ::foundation::algebra::lattices::BarrierStrength Floor>
+concept HasBarrierAtOrAbove =
+    requires { G::tier; }
+    && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>, ::foundation::algebra::lattices::BarrierStrength>
+    && ::fixy::atom::barrier::at_or_above(G::tier, Floor);
 
-// The two trunk readings V402 composes, and the ISA pin V101 reads.
-// Each primary is false: a binding that names no scope or no ISA pins
-// no trunk, so the rules have nothing to refuse on it.  The trunk
-// predicates come from fixy/atoms/Scope.h and fixy/atoms/Simd.h, so the
-// division is read from one place per axis.
+// The reached scope, read against a floor.  A binding that names no scope
+// publishes to nobody in particular, so V401 has nothing to refuse on it.
+// The order is the lattice's own leq through fixy/atoms/Scope.h, and that
+// lattice is two trunks, so a scope on the host trunk is NOT at or above an
+// accelerator floor — Inner and Cluster are incomparable — and a rule
+// reading this stands down for it rather than reading "incomparable" as
+// "wide".
 template <class G>
-struct is_scope_trunk_pinned_ : std::false_type {};
-template <class G>
-    requires requires { G::scope; }
-          && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>, ::foundation::algebra::lattices::MemoryScope>
-struct is_scope_trunk_pinned_<G> : std::bool_constant<::fixy::atom::scope::is_trunk_pinned(G::scope)> {};
+concept HasMemoryScope = requires {
+    G::scope;
+} && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>, ::foundation::algebra::lattices::MemoryScope>;
 
+template <class G, ::foundation::algebra::lattices::MemoryScope Floor>
+concept HasScopeAtOrAbove = HasMemoryScope<G> && ::fixy::atom::scope::at_or_above(G::scope, Floor);
+
+// The two trunk readings V402 composes, and the ISA pin V101 reads.  A
+// binding that names no scope or no ISA pins no trunk, so the rules have
+// nothing to refuse on it.  The trunk predicates come from
+// fixy/atoms/Scope.h and fixy/atoms/Simd.h, so the division is read from
+// one place per axis.
 template <class G>
-struct is_scope_on_host_trunk_ : std::false_type {};
-template <class G>
-    requires requires { G::scope; }
-          && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>, ::foundation::algebra::lattices::MemoryScope>
-struct is_scope_on_host_trunk_<G> : std::bool_constant<::fixy::atom::scope::on_host_trunk(G::scope)> {};
+concept HasPinnedScopeTrunk = HasMemoryScope<G> && ::fixy::atom::scope::is_trunk_pinned(G::scope);
 
 template <class G>
-struct is_isa_trunk_pinned_ : std::false_type {};
-template <class G>
-    requires requires { G::isa; } && std::is_same_v<std::remove_cvref_t<decltype(G::isa)>, ::fixy::atom::simd::SimdIsa>
-struct is_isa_trunk_pinned_<G> : std::bool_constant<::fixy::atom::simd::is_trunk_pinned(G::isa)> {};
+concept HasScopeOnHostTrunk = HasMemoryScope<G> && ::fixy::atom::scope::on_host_trunk(G::scope);
 
 template <class G>
-struct is_isa_on_arm_trunk_ : std::false_type {};
+concept HasSimdIsa =
+    requires { G::isa; } && std::is_same_v<std::remove_cvref_t<decltype(G::isa)>, ::fixy::atom::simd::SimdIsa>;
+
 template <class G>
-    requires requires { G::isa; } && std::is_same_v<std::remove_cvref_t<decltype(G::isa)>, ::fixy::atom::simd::SimdIsa>
-struct is_isa_on_arm_trunk_<G> : std::bool_constant<::fixy::atom::simd::on_arm_trunk(G::isa)> {};
+concept HasPinnedIsaTrunk = HasSimdIsa<G> && ::fixy::atom::simd::is_trunk_pinned(G::isa);
+
+template <class G>
+concept HasIsaOnArmTrunk = HasSimdIsa<G> && ::fixy::atom::simd::on_arm_trunk(G::isa);
 
 // Whether the FP mode NAMES one setting value.  The atom on this axis is
 // a product rather than a family, so a rule asks it about one setting at
-// a time and the atom answers from the pack it was written with.  The
-// primary is false, which is the strict pole read correctly: a binding
-// that names no mode leaves every setting at its enum's first
+// a time and the atom answers from the pack it was written with.  A
+// binding that names no mode leaves every setting at its enum's first
 // enumerator — reassociation forbidden, contraction off — and those are
 // exactly the values no rule refuses.
-template <auto Wanted, class G>
-struct fp_mode_has_setting_ : std::false_type {};
-template <auto Wanted, class G>
-    requires requires { G::template names<Wanted>; }
-struct fp_mode_has_setting_<Wanted, G> : std::bool_constant<G::template names<Wanted>> {};
+template <class G, auto Wanted>
+concept NamesFpSetting = requires { G::template names<Wanted>; } && G::template names<Wanted>;
 
-// The busy-wait classification, lifted from a grade to a type-level
-// answer.  The primary is false because the strict pole of
-// Synchronization is not a wait at all: a binding that names no strategy
-// makes no claim about waiting, so W002 does not fire on it.
+// The busy-wait classification.  The strict pole of Synchronization is not
+// a wait at all: a binding that names no strategy makes no claim about
+// waiting, so W002 does not fire on it.
 //
 // It delegates to the consteval predicate in fixy/atoms/Sync.h and does
 // not list the grades again, so a grade that moves sides moves for the
@@ -661,37 +651,29 @@ struct fp_mode_has_setting_<Wanted, G> : std::bool_constant<G::template names<Wa
 // asserts that a wait lifts to Row<Block> exactly when it enters the
 // kernel.
 template <class G>
-struct is_busy_wait_ : std::false_type {};
-template <class G>
-    requires requires { G::strategy; }
-struct is_busy_wait_<G> : std::bool_constant<::fixy::atom::sync::burns_the_core(G::strategy)> {};
+concept BurnsTheCore = requires { G::strategy; } && ::fixy::atom::sync::burns_the_core(G::strategy);
 
 // Whether a grade names a wait strategy.  The strict pole of
 // Synchronization names none, and a binding that states no atom on the
 // axis takes that pole.  Such a grade states no wait, and W003 does not
 // read it as one.
 template <class G>
-struct has_wait_strategy_ : std::false_type {};
-template <class G>
-    requires requires {
-        { G::strategy } -> std::same_as<const ::foundation::algebra::lattices::WaitStrategy&>;
-    }
-struct has_wait_strategy_<G> : std::true_type {};
+concept StatesWaitStrategy = requires {
+    { G::strategy } -> std::same_as<const ::foundation::algebra::lattices::WaitStrategy&>;
+};
 
-template <class G>
-struct repr_is_atomic_ : std::false_type {};
-template <>
-struct repr_is_atomic_<::fixy::atom::repr<::fixy::pole::ReprKind::Atomic>> : std::true_type {};
+// True when the grade is a specialization of the template family.  The
+// function is not a template, so no unit can give a grade another family.
+[[nodiscard]] consteval bool is_grade_of_family_(std::meta::info grade, std::meta::info family) {
+    const std::meta::info named = std::meta::dealias(grade);
+    return std::meta::has_template_arguments(named) && std::meta::template_of(named) == family;
+}
 
-template <class G>
-struct is_thread_local_ : std::false_type {};
-template <class Tag>
-struct is_thread_local_<::fixy::atom::global::thread_local_<Tag>> : std::true_type {};
-
-template <class G>
-struct is_longjmp_unsafe_ : std::false_type {};
-template <auto Reason>
-struct is_longjmp_unsafe_<::fixy::atom::ctrl::longjmp_unsafe<Reason>> : std::true_type {};
+// The first template argument of a specialization.  Each reader below that
+// takes the one argument of a family reads it here.
+[[nodiscard]] consteval std::meta::info first_template_argument_(std::meta::info specialization) {
+    return std::meta::template_arguments_of(std::meta::dealias(specialization))[0];
+}
 
 // The function type a call family names, read in one structural step.
 // References and cv are stripped first.  A function type names itself,
@@ -700,32 +682,47 @@ struct is_longjmp_unsafe_<::fixy::atom::ctrl::longjmp_unsafe<Reason>> : std::tru
 // is still one function type.  A class names its signature through a
 // member type `signature` that is not a class.  Every other family names
 // nothing, and the reader gives void.
+//
+// The pointee of a member pointer is a deduction in a class that is not a
+// template, and a class names its signature through a concept, so no unit
+// can give a family another signature.  The function is not a template.
+// The deduction returns a box of the pointee, because a function cannot
+// return a function type.  The reader reads only the one argument of the
+// box, which no specialization of the box can change.
+template <class Signature>
+struct member_signature_box {};
+
+struct member_pointer_parts_ {
+    template <class Function, class Owner>
+    static constexpr member_signature_box<Function> pointee_of(Function Owner::*) noexcept {
+        return {};
+    }
+};
+
+template <class MemberPointer>
+using member_pointee_box_t = decltype(member_pointer_parts_::pointee_of(*static_cast<MemberPointer*>(nullptr)));
+
 template <class Family>
-struct named_signature_ {
-    using type = void;
-};
+concept NamesSignatureMember = std::is_class_v<Family> && requires { typename Family::signature; }
+                            && (!std::is_class_v<std::remove_cvref_t<typename Family::signature>>);
+
 template <class Family>
-    requires(!std::same_as<Family, std::remove_cvref_t<Family>>)
-struct named_signature_<Family> : named_signature_<std::remove_cvref_t<Family>> {};
-template <class Function>
-    requires std::is_function_v<Function>
-struct named_signature_<Function> {
-    using type = Function;
-};
-template <class Function>
-    requires std::is_function_v<Function>
-struct named_signature_<Function*> {
-    using type = Function;
-};
-template <class Function, class Owner>
-    requires std::is_function_v<Function>
-struct named_signature_<Function Owner::*> {
-    using type = Function;
-};
-template <class Family>
-    requires std::is_class_v<Family> && requires { typename Family::signature; }
-          && (!std::is_class_v<std::remove_cvref_t<typename Family::signature>>)
-struct named_signature_<Family> : named_signature_<typename Family::signature> {};
+using signature_member_t = typename Family::signature;
+
+[[nodiscard]] consteval std::meta::info named_signature_of_(std::meta::info family) {
+    const std::meta::info named = std::meta::dealias(std::meta::remove_cvref(family));
+    if (std::meta::is_function_type(named)) return named;
+    if (std::meta::is_pointer_type(named) && std::meta::is_function_type(std::meta::remove_pointer(named))) {
+        return std::meta::dealias(std::meta::remove_pointer(named));
+    }
+    if (std::meta::is_member_function_pointer_type(named)) {
+        return std::meta::dealias(first_template_argument_(std::meta::substitute(^^member_pointee_box_t, {named})));
+    }
+    if (std::meta::extract<bool>(std::meta::substitute(^^NamesSignatureMember, {named}))) {
+        return named_signature_of_(std::meta::substitute(^^signature_member_t, {named}));
+    }
+    return ^^void;
+}
 
 // Whether a family names a signature that is noexcept.  Reflection reads
 // the noexcept of the function type, so each form of the type is read by
@@ -733,18 +730,11 @@ struct named_signature_<Family> : named_signature_<typename Family::signature> {
 // and parameter type.  A family that names no signature answers false.
 // That is the default of the language: a function declared with no
 // noexcept-specifier is potentially-throwing ([except.spec]).
-template <class Family>
-[[nodiscard]] consteval bool names_noexcept_signature_() noexcept {
-    using Signature = typename named_signature_<Family>::type;
-    if constexpr (std::is_void_v<Signature>) {
-        return false;
-    } else {
-        return std::meta::is_noexcept(^^Signature);
-    }
+[[nodiscard]] consteval bool names_noexcept_signature_(std::meta::info family) {
+    const std::meta::info signature = named_signature_of_(family);
+    const std::meta::info nothing = ^^void;
+    return signature != nothing && std::meta::is_noexcept(signature);
 }
-
-template <class Family>
-struct is_signature_noexcept_ : std::bool_constant<names_noexcept_signature_<Family>()> {};
 
 // What D001 reads in a CallShape grade, as one closed relation.
 //
@@ -779,28 +769,20 @@ enum class CallShapeReading : std::uint8_t {
     return CallShapeReading::Unread;
 }
 
+// Has no constant definition.  A call to it stops the constant evaluation,
+// and the diagnostic names it.
+void a_call_shape_grade_has_no_reading_in_call_shape_reading_() noexcept;
+
 // An indirect call can throw unless its family names a noexcept
 // signature.  An unknown family reads as one that throws.  A grade with
-// no reading stops the build with one message, and then gives the answer
-// that refuses.
-template <class G>
-[[nodiscard]] consteval bool indirect_call_throws_() noexcept {
-    constexpr CallShapeReading reading = call_shape_reading_(^^G);
-    static_assert(reading != CallShapeReading::Unread,
-                  "fixy/Collision.h: the CallShape grade of this binding has no reading in "
-                  "fixy::collision::detail::call_shape_reading_, so D001 cannot tell whether the binding calls "
-                  "through a pointer whose callee can throw. Name the atom in the closed relation beside "
-                  "indirect_call, recurses and recurses_unbounded.");
-    if constexpr (reading == CallShapeReading::IndirectCall) {
-        using Family = [:std::meta::template_arguments_of(std::meta::dealias(^^G))[0]:];
-        return !is_signature_noexcept_<Family>::value;
-    } else {
-        return reading == CallShapeReading::Unread;
-    }
+// no reading stops the build, so D001 cannot read it as a call that cannot
+// throw.  The family is the one argument of indirect_call.
+[[nodiscard]] consteval bool indirect_call_throws_(std::meta::info grade) {
+    const CallShapeReading reading = call_shape_reading_(grade);
+    if (reading == CallShapeReading::Unread) a_call_shape_grade_has_no_reading_in_call_shape_reading_();
+    if (reading != CallShapeReading::IndirectCall) return reading == CallShapeReading::Unread;
+    return !names_noexcept_signature_(first_template_argument_(grade));
 }
-
-template <class G>
-struct can_indirect_call_throw_ : std::bool_constant<indirect_call_throws_<G>()> {};
 
 // What L003 reads in a Protocol grade, as one closed relation.
 //
@@ -839,20 +821,17 @@ enum class ProtocolReading : std::uint8_t {
     return ProtocolReading::Unread;
 }
 
-// A grade with no reading stops the build with one message, and then
-// gives the answer that refuses.
-template <class G>
-[[nodiscard]] consteval bool spawn_outlives_frame_() noexcept {
-    constexpr ProtocolReading reading = protocol_reading_(^^G);
-    static_assert(reading != ProtocolReading::Unread,
-                  "fixy/Collision.h: the Protocol grade of this binding has no reading in "
-                  "fixy::collision::detail::protocol_reading_, so L003 cannot tell whether the binding spawns a "
-                  "child that can outlive its frame. Name the atom in the closed relation beside the spawn atoms.");
+// Has no constant definition.  A call to it stops the constant evaluation,
+// and the diagnostic names it.
+void a_protocol_grade_has_no_reading_in_protocol_reading_() noexcept;
+
+// A grade with no reading stops the build, so L003 cannot read it as a
+// spawn that a join ties to the frame.
+[[nodiscard]] consteval bool spawn_outlives_frame_(std::meta::info grade) {
+    const ProtocolReading reading = protocol_reading_(grade);
+    if (reading == ProtocolReading::Unread) a_protocol_grade_has_no_reading_in_protocol_reading_();
     return reading == ProtocolReading::Unread || reading == ProtocolReading::SpawnOutlivesTheFrame;
 }
-
-template <class G>
-struct can_spawn_outlive_the_frame_ : std::bool_constant<spawn_outlives_frame_<G>()> {};
 
 // ── The failure path, in the spellings the tree has ─────────────────
 //
@@ -948,7 +927,7 @@ using expected_error_t = typename Payload::error_type;
         return ReturnedFailure{};
     }
     // The exception family is the one argument of throws.
-    const std::meta::info family = std::meta::template_arguments_of(named)[0];
+    const std::meta::info family = first_template_argument_(named);
     return ReturnedFailure{.fails = true, .carries_error = true, .error_is_secret = is_secret_type_(family)};
 }
 
@@ -974,20 +953,14 @@ template <class G>
 
 // Whether the Protocol grade names a session.  The same axis carries the
 // spawn atoms L003 reads, and protocol<proto::None> writes the strict
-// pole out, so neither is a session.  A live handle is a session.
-template <class G>
-struct is_session_protocol_ : std::false_type {};
-template <class Proto>
-struct is_session_protocol_<::fixy::atom::protocol<Proto>>
-    : std::bool_constant<!std::is_same_v<Proto, ::fixy::pole::proto::None>> {};
-template <class Proto>
-struct is_session_protocol_<::fixy::atom::session::live_handle<Proto>> : std::true_type {};
-
-// Whether the Protocol grade states that the frame holds a live handle.
-template <class G>
-struct is_live_handle_grade_ : std::false_type {};
-template <class Proto>
-struct is_live_handle_grade_<::fixy::atom::session::live_handle<Proto>> : std::true_type {};
+// pole out, so neither is a session.  A live handle is a session.  The
+// pass of the premises reads a live handle with is_grade_of_family_.
+[[nodiscard]] consteval bool is_session_protocol_(std::meta::info grade) {
+    const std::meta::info named = std::meta::dealias(grade);
+    if (is_grade_of_family_(named, ^^::fixy::atom::session::live_handle)) return true;
+    return is_grade_of_family_(named, ^^::fixy::atom::protocol)
+        && named != ^^::fixy::atom::protocol<::fixy::pole::proto::None>;
+}
 
 // Whether a payload is a session handle that still owes its protocol.
 // The test reads the Stepping contract: the modality that
@@ -1001,38 +974,17 @@ struct is_live_handle_grade_<::fixy::atom::session::live_handle<Proto>> : std::t
 // no deeper.  A handle inside an aggregate or a container is not seen,
 // and a binding that holds one states session::live_handle instead.
 template <class Payload>
-[[nodiscard]] consteval bool payload_owes_a_protocol_() noexcept {
-    if constexpr (requires {
-                      requires std::same_as<std::remove_cvref_t<decltype(Payload::modality)>,
-                                            ::foundation::algebra::ModalityKind>;
-                  }) {
-        if constexpr (Payload::modality == ::foundation::algebra::ModalityKind::Stepping) {
-            if constexpr (requires {
-                              { Payload::is_terminal() } -> std::same_as<bool>;
-                          }) {
-                return !Payload::is_terminal();
-            } else {
-                return true;
-            }
-        } else {
-            return false;
-        }
-    } else {
-        return false;
-    }
-}
+concept IsSteppingPayload = requires {
+    requires std::same_as<std::remove_cvref_t<decltype(Payload::modality)>, ::foundation::algebra::ModalityKind>;
+} && Payload::modality == ::foundation::algebra::ModalityKind::Stepping;
 
 template <class Payload>
-struct is_live_handle_payload_
-    : std::bool_constant<payload_owes_a_protocol_<std::remove_cvref_t<typename[:unbanded_of(^^Payload):]>>()> {};
+concept AnswersIsTerminal = requires {
+    { Payload::is_terminal() } -> std::same_as<bool>;
+};
 
-// Whether ControlFlow states a suspension.  ctrl::coroutine<Policy> is
-// the same suspension that atom::coroutine states on Reentrancy, written
-// on the axis of the ways a frame is left.
-template <class G>
-struct control_flow_has_suspension_ : std::false_type {};
-template <class SuspensionPolicy>
-struct control_flow_has_suspension_<::fixy::atom::ctrl::coroutine<SuspensionPolicy>> : std::true_type {};
+template <class Payload>
+concept OwesAProtocol = IsSteppingPayload<Payload> && (!AnswersIsTerminal<Payload> || !Payload::is_terminal());
 
 }  // namespace detail
 
@@ -1059,7 +1011,7 @@ namespace detail {
     if (named == std::meta::dealias(axis_record(Axis::Trust).strict)) return named;
     if (std::meta::has_template_arguments(named)) {
         const auto primary = std::meta::template_of(named);
-        if (primary == ^^::fixy::atom::trust) return std::meta::template_arguments_of(named)[0];
+        if (primary == ^^::fixy::atom::trust) return first_template_argument_(named);
         if (primary == ^^::fixy::atom::trust_assumed) return ^^::fixy::tags::trust::Assumed;
     }
     return {};
@@ -1070,15 +1022,12 @@ namespace detail {
 template <class Grade>
 concept IsTrustGrade = detail::trust_level_of_(^^Grade) != decltype(^^Grade){};
 
-// The level of a Trust grade, as a reflection of its tag.  A grade that the
-// relation does not name has no level, and a read of it stops the build.
-template <IsTrustGrade Grade>
-inline constexpr auto trust_level_of_v = detail::trust_level_of_(^^Grade);
-
 // The Trust grade has the level Level of fixy/Tags.h.  A template argument
-// is a type and never an alias, so ^^Level needs no dealias.
+// is a type and never an alias, so ^^Level needs no dealias.  The level is
+// read through the function, so no unit can give a grade another level.
 template <class Grade, class Level>
-concept HasTrustLevel = IsTrustGrade<Grade> && ::fixy::tags::IsTrustLevel<Level> && trust_level_of_v<Grade> == ^^Level;
+concept HasTrustLevel =
+    IsTrustGrade<Grade> && ::fixy::tags::IsTrustLevel<Level> && detail::trust_level_of_(^^Grade) == ^^Level;
 
 // ---------------------------------------------------------------------
 // The premises of the rules, and the verdict of each rule.
@@ -1099,8 +1048,10 @@ namespace detail {
 template <class... Atoms>
 [[nodiscard]] consteval rule_premises read_pack_premises_() noexcept {
     constexpr const pack_record& pack = pack_record_v<Atoms...>;
+    constexpr auto grade_of = [](Axis axis) consteval noexcept {
+        return pack_record_v<Atoms...>.grade[std::to_underlying(axis)];
+    };
     using Usage = grade_on_t<Axis::Usage, Atoms...>;
-    using ControlFlow = grade_on_t<Axis::ControlFlow, Atoms...>;
     using CallShape = grade_on_t<Axis::CallShape, Atoms...>;
     using MemoryScope = grade_on_t<Axis::MemoryScope, Atoms...>;
     using BarrierStrength = grade_on_t<Axis::BarrierStrength, Atoms...>;
@@ -1108,7 +1059,6 @@ template <class... Atoms>
     using SimdIsa = grade_on_t<Axis::SimdIsa, Atoms...>;
     using FpMode = grade_on_t<Axis::FpMode, Atoms...>;
     using Synchronization = grade_on_t<Axis::Synchronization, Atoms...>;
-    using Protocol = grade_on_t<Axis::Protocol, Atoms...>;
     using Security = grade_on_t<Axis::Security, Atoms...>;
     using Observability = grade_on_t<Axis::Observability, Atoms...>;
     constexpr ReturnedFailure thrown = thrown_failure_of(pack.grade[std::to_underlying(Axis::ControlFlow)]);
@@ -1132,7 +1082,10 @@ template <class... Atoms>
     // which on this axis is the linear grade: consumed exactly once.
     premise.linear = !names_axis_(pack, Axis::Usage);
     premise.monotonic = std::is_same_v<grade_on_t<Axis::Mutation, Atoms...>, ::fixy::atom::mut_monotonic>;
-    premise.unverified = trust_level_of_v<grade_on_t<Axis::Trust, Atoms...>> == ^^::fixy::tags::trust::Unverified;
+    static_assert(::fixy::collision::IsTrustGrade<grade_on_t<Axis::Trust, Atoms...>>,
+                  "fixy/Collision.h: the Trust grade of this binding has no level in "
+                  "fixy::collision::detail::trust_level_of_, so T001 cannot tell whether the binding is verified.");
+    premise.unverified = trust_level_of_(grade_of(Axis::Trust)) == ^^::fixy::tags::trust::Unverified;
 
     // "Unstated" is the strict pole on Complexity, so an unstated cost is
     // the absence of a grade rather than a grade of its own.  A cost and a
@@ -1144,7 +1097,7 @@ template <class... Atoms>
                              || std::is_same_v<grade_on_t<Axis::Space, Atoms...>, ::fixy::atom::space_unbounded>;
 
     premise.row_bg = fe::row_contains(row, fe::Effect::Bg);
-    premise.row_observable = row_admits_observable_<binding_row>::value;
+    premise.row_observable = names_observable_effect_without_bg_(binding_row{});
     premise.allocates = fe::row_contains(row, fe::Effect::Alloc);
     premise.row_alloc_or_io = premise.allocates || fe::row_contains(row, fe::Effect::IO);
     premise.row_init = fe::row_contains(row, fe::Effect::Init);
@@ -1157,7 +1110,10 @@ template <class... Atoms>
     // both, so a pack cannot avoid a rule by writing the suspension on the
     // other axis.
     premise.coroutine = std::is_same_v<grade_on_t<Axis::Reentrancy, Atoms...>, ::fixy::atom::coroutine>;
-    premise.suspends_in_control_flow = control_flow_has_suspension_<ControlFlow>::value;
+    // ctrl::coroutine<Policy> is the same suspension that atom::coroutine
+    // states on Reentrancy, written on the axis of the ways a frame is left.
+    premise.suspends_in_control_flow =
+        is_grade_of_family_(grade_of(Axis::ControlFlow), ^^::fixy::atom::ctrl::coroutine);
     premise.suspends = premise.coroutine || premise.suspends_in_control_flow;
     premise.concurrent = premise.suspends || premise.row_bg;
 
@@ -1167,9 +1123,11 @@ template <class... Atoms>
     premise.observes_something = names_axis_(pack, Axis::Observability);
     premise.observes_within_the_row = fe::Subrow<observability_row_t<Observability>, binding_row>;
 
-    premise.atomic_repr = repr_is_atomic_<grade_on_t<Axis::Representation, Atoms...>>::value;
-    premise.thread_local_state = is_thread_local_<grade_on_t<Axis::GlobalState, Atoms...>>::value;
-    premise.longjmp_unsafe = is_longjmp_unsafe_<ControlFlow>::value;
+    premise.atomic_repr =
+        std::is_same_v<grade_on_t<Axis::Representation, Atoms...>, ::fixy::atom::repr<::fixy::pole::ReprKind::Atomic>>;
+    premise.thread_local_state =
+        is_grade_of_family_(grade_of(Axis::GlobalState), ^^::fixy::atom::global::thread_local_);
+    premise.longjmp_unsafe = is_grade_of_family_(grade_of(Axis::ControlFlow), ^^::fixy::atom::ctrl::longjmp_unsafe);
     // A recursion with a proven depth bound has a bounded stack, so D002
     // reads only the recursion that states no depth bound.
     premise.recurses_unbounded = std::is_same_v<CallShape, ::fixy::atom::dispatch::recurses_unbounded>;
@@ -1179,8 +1137,19 @@ template <class... Atoms>
     // no other thread.
     premise.publishes_past_the_thread =
         names_axis_(pack, Axis::MemoryScope) && !std::is_same_v<MemoryScope, ::fixy::atom::scope::thread>;
-    premise.indirect_call_may_throw = can_indirect_call_throw_<CallShape>::value;
-    premise.spawn_outlives_the_frame = can_spawn_outlive_the_frame_<Protocol>::value;
+    // A CallShape grade or a Protocol grade with no reading stops the build
+    // with one message, and the reader then gives the answer that refuses.
+    static_assert(call_shape_reading_(grade_of(Axis::CallShape)) != CallShapeReading::Unread,
+                  "fixy/Collision.h: the CallShape grade of this binding has no reading in "
+                  "fixy::collision::detail::call_shape_reading_, so D001 cannot tell whether the binding calls "
+                  "through a pointer whose callee can throw. Name the atom in the closed relation beside "
+                  "indirect_call, recurses and recurses_unbounded.");
+    static_assert(protocol_reading_(grade_of(Axis::Protocol)) != ProtocolReading::Unread,
+                  "fixy/Collision.h: the Protocol grade of this binding has no reading in "
+                  "fixy::collision::detail::protocol_reading_, so L003 cannot tell whether the binding spawns a "
+                  "child that can outlive its frame. Name the atom in the closed relation beside the spawn atoms.");
+    premise.indirect_call_may_throw = indirect_call_throws_(grade_of(Axis::CallShape));
+    premise.spawn_outlives_the_frame = spawn_outlives_frame_(grade_of(Axis::Protocol));
     // A call through the vDSO and a deliberate leak lift the empty row, but
     // each atom still states an emitting surface on one of these two axes.
     premise.emits_outside_the_row = names_axis_(pack, Axis::Stdio) || names_axis_(pack, Axis::SyscallSurface);
@@ -1189,28 +1158,26 @@ template <class... Atoms>
     // pred::True is the Refinement strict pole, again an absence.
     premise.no_witness_floor = !names_axis_(pack, Axis::Refinement);
     premise.states_stdio = names_axis_(pack, Axis::Stdio);
-    premise.core_burning_spin = is_busy_wait_<Synchronization>::value;
-    premise.states_a_wait = has_wait_strategy_<Synchronization>::value;
+    premise.core_burning_spin = BurnsTheCore<Synchronization>;
+    premise.states_a_wait = StatesWaitStrategy<Synchronization>;
 
     premise.hw_nondeterministic =
         HasHwTierAtOrAbove<HwInstruction, ::fixy::atom::hw::HwInstruction::NonDeterministicTsc>;
     premise.hw_privileged = HasHwTierAtOrAbove<HwInstruction, ::fixy::atom::hw::HwInstruction::PrivilegedMsr>;
-    premise.barrier_seq_cst_or_above = is_barrier_at_or_above_<lat::BarrierStrength::SeqCst, BarrierStrength>::value;
-    premise.barrier_acq_rel_or_above = is_barrier_at_or_above_<lat::BarrierStrength::AcqRel, BarrierStrength>::value;
-    premise.scope_cluster_or_above = is_scope_at_or_above_<lat::MemoryScope::Cluster, MemoryScope>::value;
-    premise.scope_pinned = is_scope_trunk_pinned_<MemoryScope>::value;
-    premise.isa_pinned = is_isa_trunk_pinned_<SimdIsa>::value;
-    premise.trunks_cohere = is_scope_on_host_trunk_<MemoryScope>::value && is_isa_on_arm_trunk_<SimdIsa>::value;
+    premise.barrier_seq_cst_or_above = HasBarrierAtOrAbove<BarrierStrength, lat::BarrierStrength::SeqCst>;
+    premise.barrier_acq_rel_or_above = HasBarrierAtOrAbove<BarrierStrength, lat::BarrierStrength::AcqRel>;
+    premise.scope_cluster_or_above = HasScopeAtOrAbove<MemoryScope, lat::MemoryScope::Cluster>;
+    premise.scope_pinned = HasPinnedScopeTrunk<MemoryScope>;
+    premise.isa_pinned = HasPinnedIsaTrunk<SimdIsa>;
+    premise.trunks_cohere = HasScopeOnHostTrunk<MemoryScope> && HasIsaOnArmTrunk<SimdIsa>;
 
-    premise.fp_rewrites_without_bound =
-        fp_mode_has_setting_<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite, FpMode>::value;
-    premise.fp_reassociates = premise.fp_rewrites_without_bound
-                           || fp_mode_has_setting_<::fixy::atom::fp::FpReassociate::BoundedTreeDepth, FpMode>::value;
-    premise.fp_contracts_across_statements = fp_mode_has_setting_<::fixy::atom::fp::FpContract::Fast, FpMode>::value;
+    premise.fp_rewrites_without_bound = NamesFpSetting<FpMode, ::fixy::atom::fp::FpReassociate::UnrestrictedRewrite>;
+    premise.fp_reassociates =
+        premise.fp_rewrites_without_bound || NamesFpSetting<FpMode, ::fixy::atom::fp::FpReassociate::BoundedTreeDepth>;
+    premise.fp_contracts_across_statements = NamesFpSetting<FpMode, ::fixy::atom::fp::FpContract::Fast>;
     premise.fp_mode_stated = names_axis_(pack, Axis::FpMode);
-    premise.fp_flushes_denormal_inputs =
-        fp_mode_has_setting_<::foundation::core::FpDenormalInput::DenormalsAreZero, FpMode>::value;
-    premise.fp_flushes_subnormal_results = fp_mode_has_setting_<::foundation::core::FpFtz::FlushToZero, FpMode>::value;
+    premise.fp_flushes_denormal_inputs = NamesFpSetting<FpMode, ::foundation::core::FpDenormalInput::DenormalsAreZero>;
+    premise.fp_flushes_subnormal_results = NamesFpSetting<FpMode, ::foundation::core::FpFtz::FlushToZero>;
 
     // A declassification discharges a rule only on a channel that the mask
     // of its policy names, in fixy/Atom.h.  The send is an export through
@@ -1219,8 +1186,9 @@ template <class... Atoms>
     premise.classified_on_send = ::fixy::atom::IsClassifiedOn<Security, ::fixy::atom::DischargeAxis::IO>;
     premise.classified_on_failure = ::fixy::atom::IsClassifiedOn<Security, ::fixy::atom::DischargeAxis::Failure>;
     premise.states_staleness = names_axis_(pack, Axis::Staleness);
-    premise.session_protocol = is_session_protocol_<Protocol>::value;
-    premise.has_live_handle = is_live_handle_grade_<Protocol>::value;
+    premise.session_protocol = is_session_protocol_(grade_of(Axis::Protocol));
+    // The Protocol grade states that the frame holds a live handle.
+    premise.has_live_handle = is_grade_of_family_(grade_of(Axis::Protocol), ^^::fixy::atom::session::live_handle);
 
     premise.fails = thrown.fails;
     premise.fails_with_plain_error = thrown.carries_error && !thrown.error_is_secret;
@@ -1242,11 +1210,14 @@ struct payload_premises {
 
 template <class Payload>
 [[nodiscard]] consteval payload_premises read_payload_premises_() {
-    return payload_premises{.replay_deterministic = is_replay_deterministic_<Payload>::value,
-                            .claims_no_allocation = claims_no_allocation_v_<Payload>,
-                            .claims_user_space_wait = claims_user_space_wait_v_<Payload>,
-                            .owes_a_protocol = is_live_handle_payload_<Payload>::value,
-                            .returned_failure = returned_failure_of(unbanded_of(^^Payload))};
+    constexpr std::meta::info payload = ^^Payload;
+    return payload_premises{
+        .replay_deterministic = outermost_band_claims_(payload, ^^IsDetSafeBand, ^^ClaimsReplay),
+        .claims_no_allocation = outermost_band_claims_(payload, ^^IsAllocClassBand, ^^ClaimsNoAllocation),
+        .claims_user_space_wait = outermost_band_claims_(payload, ^^IsWaitBand, ^^ClaimsUserSpaceWait),
+        .owes_a_protocol = std::meta::extract<bool>(std::meta::substitute(
+            ^^OwesAProtocol, {std::meta::dealias(std::meta::remove_cvref(unbanded_of(payload)))})),
+        .returned_failure = returned_failure_of(unbanded_of(payload))};
 }
 
 template <class Payload>
