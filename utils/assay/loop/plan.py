@@ -78,7 +78,10 @@ THE STEPS
     command `loop fuzz` runs one campaign of each harness
     (assay.loop.entry, THE WORK).  A command that starts with ctest runs
     that ctest in the build of the preset of its step, through the launcher
-    of assay.loop.caps (assay.loop.entry, THE PRIVILEGED TESTS).
+    of assay.loop.caps (assay.loop.entry, THE PRIVILEGED TESTS).  A command
+    that starts with cmake builds the build of the preset of its step, and
+    it runs no test (assay.loop.entry, THE BUILD STEPS).  The tests of that
+    build keep the tier of the preset.
 
 THE COMMANDS
     Each subcommand of utils/bin/loop has a class:
@@ -314,6 +317,14 @@ STEPS = (
         "runs each test with the label bpf in the build of its preset, with the capabilities of the launcher "
         "crucible-caps",
         preset="default",
+    ),
+    Step(
+        "aarch64-compile",
+        tiers.Tier.NIGHTLY,
+        ("cmake", "--build"),
+        "compiles each target of the aarch64 cross build with no test, so a break of that build shows in the next "
+        "night.  The gate only parses the aarch64 arms, and the release entry runs the tests under qemu-user",
+        preset="aarch64",
     ),
     Step(
         "pgo",

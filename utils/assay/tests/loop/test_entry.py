@@ -6,13 +6,15 @@
 The cases hold the scope of each tier, and the jobs of a planted plan in their sequence.  They hold the budget of a
 runner of evidence, the stop of a run at its deadline, and a step that cannot run.  They hold a job of tests in its
 heavy step, which must not wait for its own lock.  They also hold the text of the report and the usage of the command.
-A run removes each report other than the last ones of its tier.
+A run removes each report other than the last ones of its tier.  A step of cmake builds the build of its preset with
+no test, so the nightly entry compiles the aarch64 build and only the release entry runs its tests.
 """
 
 import os
 import tempfile
 import time
 from pathlib import Path
+from unittest import mock
 
 from assay.core import git, jobserver, paths, testing
 from assay.core.exit import ExitCode
@@ -21,6 +23,7 @@ from assay.loop.evidence import status as evidence_status
 from assay.loop.evidence import store as evidence_store
 from assay.loop.evidence import targets as evidence_targets
 from assay.readers import ninja as ninja_reader
+from assay.setup import pins as cmake_pin
 
 GATE = tiers.Tier.GATE
 NIGHTLY = tiers.Tier.NIGHTLY
@@ -29,6 +32,8 @@ CONFIGURE = tiers.PresetKind.CONFIGURE
 TEST = tiers.PresetKind.TEST
 # The budget of the job of tests_lock_cases(), in seconds.  A job that waits for its own lock uses all of it.
 LOCK_BUDGET_S = 60.0
+# The budget of the planted step of cmake of build_step_cases(), in seconds.  Its planted cmake ends at once.
+BUILD_BUDGET_S = 60.0
 
 
 def planted_presets() -> tiers.Tiers:
@@ -96,6 +101,9 @@ def jobs_cases(expect: testing.Expect) -> None:
     expect(f"a step with `each` gives one job of each item: {campaigns}", campaigns == ["region", "trace"])
     privileged = [job.name for job in nightly if job.step is not None and job.step.command[0] == entry.CTEST_WORD]
     expect(f"the nightly entry gives a job of the step bpf of ctest: {privileged}", privileged == ["bpf"])
+    built = [job.name for job in nightly if job.step is not None and job.step.command[0] == entry.BUILD_WORD]
+    expect(f"the nightly entry gives a job of the step aarch64-compile of cmake: {built}", built == ["aarch64-compile"])
+    tree_jobs_cases(expect)
     release_titles = [job.title for job in release]
     profiled = release_titles.index("tests profiled")
     steps = [index for index, job in enumerate(release) if job.kind is entry.JobKind.STEP]
@@ -107,6 +115,53 @@ def jobs_cases(expect: testing.Expect) -> None:
     expect(
         "the release entry also runs the steps of the release tier",
         any(job.step is not None and job.step.tier is RELEASE for job in release),
+    )
+
+
+def tree_jobs_cases(expect: testing.Expect) -> None:
+    """Hold the jobs of the aarch64 build in the plan of this tree: a compile at night, and its tests at a release."""
+    found, presets = entry.read_plan(paths.REPO_ROOT)
+    names = ("aarch64", "aarch64-compile")
+    nightly = [job.title for job in entry.jobs_of(found, presets, NIGHTLY) if job.name in names]
+    release = [job.title for job in entry.jobs_of(found, presets, RELEASE) if job.name in names]
+    expect(
+        f"the nightly entry compiles the aarch64 build and runs none of its tests, and the release entry also runs "
+        f"its tests: {nightly}, {release}",
+        nightly == ["step aarch64-compile"] and release == ["preset-tests aarch64", "step aarch64-compile"],
+    )
+    aarch64 = next(item for item in found.items if item.kind is plan.Kind.PRESET and item.name == "aarch64")
+    expect("the aarch64 preset and so the tests of its build keep the tier release", aarch64.tier is RELEASE)
+
+
+def build_step_cases(expect: testing.Expect, directory: Path) -> None:
+    """Hold a step of cmake: blocked with no build, and else `cmake --build BUILD -j N` with no test (THE BUILD STEPS).
+
+    The build has a graph of Ninja, and its cmake is a planted program that writes its words into a file.
+    """
+    step = next(item for item in plan.STEPS if item.command[0] == entry.BUILD_WORD)
+    job = entry.Job(entry.JobKind.STEP, step.name, step=step)
+    bare = entry.Runner(directory, NIGHTLY, 1, directory, tiers.Tiers((), (), ()))
+    blocked = bare.build_step(job, directory / "bare", 1e18, 3)
+    expect(
+        f"a step of cmake with no build directory of its preset is blocked: {blocked.summary}",
+        blocked.state is entry.State.BLOCKED,
+    )
+    build = directory / "build-cross"
+    build.mkdir()
+    ninja_reader.graph_file(build).write_text("", encoding="utf-8")
+    said = directory / "said.txt"
+    cmake = directory / "cmake"
+    cmake.write_text(f'#!/bin/sh\necho "$@" > "{said}"\n', encoding="utf-8")
+    cmake.chmod(0o755)
+    preset = tiers.PresetTier(CONFIGURE, step.preset, RELEASE, build=build)
+    runner = entry.Runner(directory, NIGHTLY, 1, directory, tiers.Tiers((preset,), (), ()))
+    with mock.patch.object(cmake_pin, "configured_program", return_value=str(cmake)):
+        outcome = runner.build_step(job, directory / "built", time.monotonic() + BUILD_BUDGET_S, 3)
+    words = said.read_text(encoding="utf-8").split() if said.is_file() else []
+    expect(
+        f"a step of cmake runs the cmake of its build with --build, the build and the job count: {words}, "
+        f"{outcome.summary}",
+        outcome.state is entry.State.PASSED and words == ["--build", str(build), "-j", "3"],
     )
 
 
@@ -203,6 +258,7 @@ def run_cases(expect: testing.Expect) -> None:
         )
         expect("the failed tests of a JUnit report are the failures", entry.failed_names(report) == ["bad"])
         expect("a report that does not read gives no failure", entry.failed_names(Path(directory) / "none") == [])
+        build_step_cases(expect, Path(directory))
     expect(
         "a campaign takes the available CPUs that are not reserved, at most CAMPAIGN_CORES",
         entry.campaign_cpus(range(40), (0, 1, 2)) == tuple(range(3, 3 + entry.CAMPAIGN_CORES)),

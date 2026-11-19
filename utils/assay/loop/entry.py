@@ -31,6 +31,7 @@ THE WORK
          preset of the step.  The step of `loop fuzz` runs one campaign of
          each harness (THE CAMPAIGN).  A step of ctest runs its tests through
          the launcher of assay.loop.caps (THE PRIVILEGED TESTS).  A step of
+         cmake builds the build of its preset (THE BUILD STEPS).  A step of
          `loop evidence run` is part of job 5
       4. Each configure preset of objects in the scope that uses the profile
          of `loop pgo` (assay.loop.tiers, PresetTier).  It comes after the
@@ -83,6 +84,17 @@ THE PRIVILEGED TESTS
     ready blocks the job, and the summary of the job is one line with the
     reason and the fix.  A blocked job does not make the run red.  The gate
     of `loop land` runs the same tests with no capabilities.
+
+THE BUILD STEPS
+    A step whose command starts with BUILD_WORD builds the build of its
+    preset, and it runs no test.  The job configures the build when it has
+    no graph of Ninja.  Then it runs the command with the cmake of the
+    build, the build directory and the job count that the memory gives it
+    (`cmake --build BUILD -j N`).  The job holds the lock of a heavy step.
+    The tests of the build keep the tier of the preset, so an entry of a
+    tier before that tier compiles the build and runs none of its tests.
+    The aarch64 cross build is an example: the nightly entry compiles it,
+    and the release entry runs its tests under qemu-user.
 
 THE REPORT
     Each run writes the directory TIER-TIME in REPORTS of the build directory
@@ -161,8 +173,10 @@ CAMPAIGN_CORES = 16
 # The first words of a step that adds evidence, and of a step of campaigns (THE WORK, 3 and 5).
 EVIDENCE_WORDS = ("loop", "evidence", "run")
 FUZZ_WORDS = ("loop", "fuzz")
-# The first word of a step that runs its tests through the launcher (THE PRIVILEGED TESTS).
+# The first word of a step that runs its tests through the launcher (THE PRIVILEGED TESTS), and of a step that builds
+# the build of its preset (THE BUILD STEPS).
 CTEST_WORD = "ctest"
+BUILD_WORD = "cmake"
 
 
 class State(enum.StrEnum):
@@ -441,6 +455,9 @@ class Runner:
             outcome = self.campaign(job, prefix, deadline)
         elif job.kind is JobKind.STEP and job.step is not None and job.step.command[0] == CTEST_WORD:
             outcome = self.privileged(job, prefix, deadline)
+        elif job.kind is JobKind.STEP and job.step is not None and job.step.command[0] == BUILD_WORD:
+            with heavy.heavy_step(self.root, self.jobs) as step_jobs:
+                outcome = self.build_step(job, prefix, deadline, step_jobs)
         elif job.kind is JobKind.STEP:
             with heavy.heavy_lock(self.root):
                 outcome = self.step(job, prefix, deadline)
@@ -567,6 +584,33 @@ class Runner:
         if status != 0:
             return self.ended(job, status, words, log)
         return Outcome(job, State.PASSED, step.text)
+
+    def build_step(self, job: Job, prefix: Path, deadline: float, jobs: int) -> Outcome:
+        """Configure the build of the preset of a step when it has no graph, and build it with no test.
+
+        The caller holds the lock of a heavy step, and `jobs` is its job count (THE BUILD STEPS).
+        """
+        step = job.step
+        preset = step.preset if step is not None else ""
+        build = self.builds.get(preset)
+        if step is None or build is None:
+            return Outcome(job, State.BLOCKED, f"the presets file gives no build directory of the preset {preset!r}")
+        if not ninja_reader.graph_file(build).is_file():
+            words = ["cmake", "--preset", preset]
+            log = Path(f"{prefix}.configure.log")
+            status = self.logged(words, log, deadline)
+            if status != 0:
+                return self.ended(job, status, words, log)
+        try:
+            cmake = cmake_pin.configured_program(build, "cmake")
+        except cmake_pin.PinError as error:
+            return Outcome(job, State.BLOCKED, f"the build {build} names no cmake: {error}")
+        words = [cmake, *step.command[1:], str(build), "-j", str(jobs)]
+        log = Path(f"{prefix}.log")
+        status = self.logged(words, log, deadline)
+        if status != 0:
+            return self.ended(job, status, words, log)
+        return Outcome(job, State.PASSED, f"each target of {build} builds, and no test ran")
 
     def campaign(self, job: Job, prefix: Path, deadline: float) -> Outcome:
         """Run one campaign of AFL++ on a harness, or give the reason why it cannot run (THE CAMPAIGN)."""
