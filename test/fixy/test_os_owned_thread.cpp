@@ -1,8 +1,9 @@
 // Tests of the owned thread of fixy/os/OwnedThread.h.  Each test starts one
 // thread through mint_owned_thread and ends it in one of the ways that the
 // owner gives: an explicit join, the end of the owner, a move and then a
-// join, and the end of an Option that holds the owner.  The tsan preset runs
-// the same binary.
+// join, and the end of an Option that holds the owner.  The thread of an
+// owner ends when its owner ends or stops it, while each other member of the
+// owner is alive.  The tsan preset runs the same binary.
 
 #include <fixy/os/OwnedThread.h>
 
@@ -73,6 +74,9 @@ constinit Atomic<bool> may_read{false};
 constinit Atomic<std::uint64_t> seen_low{0};
 constinit Atomic<std::uint64_t> seen_high{0};
 constinit Atomic<std::uint32_t> body_ends{0};
+constinit Atomic<bool> has_canary_ended{false};
+constinit Atomic<bool> did_body_see_live_members{false};
+constinit Atomic<std::uint32_t> stop_hook_calls{0};
 
 void reset_cells() noexcept {
     has_run.store_release(false);
@@ -83,6 +87,9 @@ void reset_cells() noexcept {
     seen_low.store_release(0);
     seen_high.store_release(0);
     body_ends.store_release(0);
+    has_canary_ended.store_release(false);
+    did_body_see_live_members.store_release(false);
+    stop_hook_calls.store_release(0);
 }
 
 [[nodiscard]] OwnedThread start_or_end(::foundation::core::Result<OwnedThread, Errno>&& started) noexcept {
@@ -201,6 +208,111 @@ void test_refused_start_runs_no_body() {
     CRUCIBLE_FATAL_INVARIANT(body_ends.load_acquire() == 1);
 }
 
+// A member whose end the body of the thread of its owner must not see.
+struct Canary {
+    Canary() noexcept = default;
+    Canary(Canary const&) = delete("the test watches one canary");
+    Canary& operator=(Canary const&) = delete("the test watches one canary");
+    ~Canary() { has_canary_ended.store_release(true); }
+};
+
+// An owner whose body loops over its members until the stop hook ends the
+// loop (THE THREAD OF AN OWNER of fixy/os/OwnedThread.h).  The thread is the
+// last member, so it ends before the canary and the cells of the loop.
+class LoopingOwner {
+public:
+    LoopingOwner() noexcept = default;
+    LoopingOwner(LoopingOwner const&) = delete("the thread borrows its owner at one address");
+    LoopingOwner& operator=(LoopingOwner const&) = delete("the thread borrows its owner at one address");
+    LoopingOwner(LoopingOwner&&) = delete("the thread borrows its owner at one address");
+    LoopingOwner& operator=(LoopingOwner&&) = delete("the thread borrows its owner at one address");
+    ~LoopingOwner() = default;
+
+    // Starts the thread with the options, and waits until the body loops.
+    [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, Errno>
+    start(ThreadOptions const& options) noexcept {
+        should_stop_.store_release(false);
+        has_looped_.store_release(false);
+        ::foundation::core::Result<::foundation::core::Unit, Errno> started =
+            ::fixy::thread::mint_owner_thread<&LoopingOwner::thread_, &LoopingOwner::request_stop_>(
+                StarterCtx{eff::testing::bg()}, options, *this, [](LoopingOwner& owner) noexcept { owner.run_(); });
+        if (started.is_ok()) {
+            while (!has_looped_.load_acquire())
+                CRUCIBLE_SPIN_PAUSE;
+        }
+        return started;
+    }
+
+    void stop() noexcept { thread_.stop_and_join(); }
+
+    [[nodiscard]] bool holds_thread() const noexcept { return thread_.holds_thread(); }
+
+private:
+    void run_() noexcept {
+        while (!should_stop_.load_acquire()) {
+            static_cast<void>(laps_.fetch_add_acq_rel(1));
+            has_looped_.store_release(true);
+            CRUCIBLE_SPIN_PAUSE;
+        }
+        did_body_see_live_members.store_release(!has_canary_ended.load_acquire() && laps_.load_acquire() > 0);
+    }
+
+    void request_stop_() noexcept {
+        static_cast<void>(stop_hook_calls.fetch_add_acq_rel(1));
+        should_stop_.store_release(true);
+    }
+
+    Canary canary_{};
+    Atomic<bool> should_stop_{false};
+    Atomic<bool> has_looped_{false};
+    Atomic<std::uint64_t> laps_{0};
+    ::fixy::thread::OwnerThread<LoopingOwner> thread_{};
+};
+
+// The end of an owner whose body still loops calls the stop hook and joins
+// before any other member ends, so the body sees each member alive to its
+// end.
+void test_end_of_an_owner_stops_its_thread_first() {
+    reset_cells();
+    {
+        LoopingOwner owner{};
+        owner.start(ThreadOptions{}).expect("the door starts the thread of an owner with the default options");
+        CRUCIBLE_FATAL_INVARIANT(owner.holds_thread());
+    }
+    CRUCIBLE_FATAL_INVARIANT(did_body_see_live_members.load_acquire());
+    CRUCIBLE_FATAL_INVARIANT(has_canary_ended.load_acquire());
+    CRUCIBLE_FATAL_INVARIANT(stop_hook_calls.load_acquire() == 1);
+}
+
+// stop_and_join ends the thread at an earlier line and leaves the member
+// empty, so the end of the owner calls the hook no more.  The owner can start
+// a new thread after it.
+void test_early_stop_empties_the_member() {
+    reset_cells();
+    {
+        LoopingOwner owner{};
+        owner.start(ThreadOptions{}).expect("the door starts the thread of an owner with the default options");
+        owner.stop();
+        CRUCIBLE_FATAL_INVARIANT(!owner.holds_thread());
+        CRUCIBLE_FATAL_INVARIANT(stop_hook_calls.load_acquire() == 1);
+        owner.start(ThreadOptions{}).expect("the door starts a second thread after the first one joined");
+        owner.stop();
+        CRUCIBLE_FATAL_INVARIANT(stop_hook_calls.load_acquire() == 2);
+    }
+    CRUCIBLE_FATAL_INVARIANT(stop_hook_calls.load_acquire() == 2);
+    CRUCIBLE_FATAL_INVARIANT(did_body_see_live_members.load_acquire());
+}
+
+// A refused option is the error of the door, and the member stays empty.
+void test_refused_start_leaves_the_member_empty() {
+    reset_cells();
+    LoopingOwner owner{};
+    auto const refused = owner.start(ThreadOptions{.guard_bytes = 0});
+    CRUCIBLE_FATAL_INVARIANT(refused.err().value_or(Errno::eperm) == Errno::einval);
+    CRUCIBLE_FATAL_INVARIANT(!owner.holds_thread());
+    CRUCIBLE_FATAL_INVARIANT(stop_hook_calls.load_acquire() == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -211,5 +323,8 @@ int main() {
     test_option_holds_the_owner();
     test_name_outlives_the_options();
     test_refused_start_runs_no_body();
+    test_end_of_an_owner_stops_its_thread_first();
+    test_early_stop_empties_the_member();
+    test_refused_start_leaves_the_member_empty();
     return 0;
 }

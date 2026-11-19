@@ -5967,6 +5967,18 @@ fixy_neg_compile_test(neg_thread_run_beside_owns_a_view_of_the_frame
 fixy_neg_compile_test(neg_thread_run_joined_body_gives_an_owner_thread_value
   "no matching function for call to .run_joined"
   "the expression .\\(JoinedBody<Bodies, Ctx> && \\.\\.\\.\\) \\[with Bodies = \\{main::")
+# The thread of an owner joins before each other member of the owner ends:
+# its member is the last member, the destructor of the owner is defaulted,
+# and the owner stays in place.
+fixy_neg_compile_test(neg_owner_thread_member_not_last
+  "no matching function for call to .mint_owner_thread<"
+  "the expression .\\(is_last_owner_thread_member_<Owner, Member>\\)\\(\\) \\[with Owner = <unnamed>::Owner; Member = <unnamed>::Owner::thread_\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_owner_thread_owner_with_destructor_body
+  "no matching function for call to .mint_owner_thread<"
+  "the expression .\\(ends_with_its_members_<Owner>\\)\\(\\) \\[with Owner = <unnamed>::Owner\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_owner_thread_movable_owner
+  "no matching function for call to .mint_owner_thread<"
+  "the expression .!__is_constructible\\(Owner, Owner&&\\) \\[with Owner = <unnamed>::Owner\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_owned_thread_from_the_foreground
   "no matching function for call to .mint_owned_thread"
   "required for the satisfaction of .CtxStartsThreads<Ctx>.")
