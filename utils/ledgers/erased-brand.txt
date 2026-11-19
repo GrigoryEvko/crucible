@@ -9,10 +9,12 @@
 # directories neg/ count the sites of the negative-compile fixtures, which no build compiles.
 format 1
 rule erased-brand
+include/fixy/handle/Published.h | erased-brand | 4 | foundation::core::Ref | holds the erased brand on purpose: a link of an arena graph and a published object live as long as their arena or store, not a frame, and a brand of that lifetime is planned work
 include/fixy/os/OwnedMmap.h | erased-brand | 1 | fixy::OwnedMmap | -
 include/fixy/session/Flow.h | erased-brand | 1 | foundation::permissions::LentPermission | -
-include/fixy/session/Flow.h | erased-brand | 6 | foundation::permissions::Permission | -
-include/fixy/session/Flow.h | erased-brand | 7 | foundation::permissions::ReadLoan | -
+include/fixy/session/Flow.h | erased-brand | 2 | foundation::permissions::Permission | -
+include/fixy/session/Flow.h | erased-brand | 4 | foundation::permissions::ReadLoan | -
+include/foundation/core/Link.h | erased-brand | 23 | foundation::core::Ref | holds the erased brand on purpose: a link of an arena graph and a published object live as long as their arena or store, not a frame, and a brand of that lifetime is planned work
 include/foundation/permissions/Permission.h | erased-brand | 1 | foundation::permissions::Permission | -
 test/fixy/neg/neg_borrowed_from_a_temporary.cpp | erased-brand | 1 | fixy::Borrowed | -
 test/fixy/neg/neg_borrowed_of_a_braced_list.cpp | erased-brand | 1 | fixy::Borrowed | -
@@ -62,7 +64,6 @@ test/fixy/neg/neg_witness_permissions_sharedpermissionguard_direct_construction.
 test/fixy/neg/neg_witness_permissions_sharedpermissionguard_direct_construction.cpp | erased-brand | 1 | foundation::permissions::SharedPermissionPool | -
 test/fixy/neg/neg_witness_permissions_sharedpermissionpool_direct_construction.cpp | erased-brand | 1 | foundation::permissions::SharedPermissionPool | -
 test/fixy/neg/neg_witness_scopedview_direct_construction.cpp | erased-brand | 1 | fixy::ScopedView | -
-test/fixy/neg/neg_witness_session_permhold_direct_construction.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/fixy/neg/neg_witness_sharedread_direct_construction.cpp | erased-brand | 1 | fixy::SharedRead | -
 test/fixy/row_hash_census.h | erased-brand | 1 | fixy::Borrowed | -
 test/fixy/row_hash_census.h | erased-brand | 1 | fixy::BorrowedRef | -
@@ -117,6 +118,7 @@ test/foundation/neg/neg_brand_read_loan_does_not_erase.cpp | erased-brand | 1 | 
 test/foundation/neg/neg_brand_read_view_body_asks_the_erased_view.cpp | erased-brand | 1 | foundation::permissions::ReadView | -
 test/foundation/neg/neg_brand_shared_permission_does_not_erase.cpp | erased-brand | 1 | foundation::permissions::SharedPermission | -
 test/foundation/neg/neg_computation_extract_permission_payload.cpp | erased-brand | 1 | foundation::permissions::Permission | -
+test/foundation/neg/neg_core_link_const_writes.cpp | erased-brand | 2 | foundation::core::Ref | holds the erased brand on purpose: a link of an arena graph and a published object live as long as their arena or store, not a frame, and a brand of that lifetime is planned work
 test/foundation/neg/neg_core_sole_writer_default_brand.cpp | erased-brand | 1 | foundation::core::SoleWriter | the fixture shows that a cell of one writer refuses the erased brand
 test/foundation/neg/neg_lent_permission_forged_by_bit_cast.cpp | erased-brand | 1 | foundation::permissions::LentPermission | -
 test/foundation/neg/neg_lent_permission_forged_by_start_lifetime_as.cpp | erased-brand | 2 | foundation::permissions::LentPermission | -
@@ -137,6 +139,7 @@ test/foundation/neg/neg_swiss_table_buffer_proof_slot.cpp | erased-brand | 1 | f
 test/foundation/test_brand.cpp | erased-brand | 2 | foundation::permissions::Permission | -
 test/foundation/test_computation.cpp | erased-brand | 3 | foundation::permissions::Permission | -
 test/foundation/test_computation.cpp | erased-brand | 1 | foundation::permissions::SharedPermission | -
+test/foundation/test_core_link.cpp | erased-brand | 9 | foundation::core::Ref | holds the erased brand on purpose: a link of an arena graph and a published object live as long as their arena or store, not a frame, and a brand of that lifetime is planned work
 test/foundation/test_permission_shared.cpp | erased-brand | 4 | foundation::permissions::SharedPermission | -
 test/foundation/test_permission_shared.cpp | erased-brand | 3 | foundation::permissions::SharedPermissionGuard | -
 test/foundation/test_permission_shared.cpp | erased-brand | 2 | foundation::permissions::SharedPermissionPool | -
@@ -158,6 +161,7 @@ test/layer/checks/fixy/SharedRegion.cpp | erased-brand | 1 | fixy::SharedRead | 
 test/layer/checks/fixy/os/Mmap.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/layer/checks/fixy/os/NumaPlacement.cpp | erased-brand | 1 | fixy::NumaPlacement | -
 test/layer/checks/fixy/os/NumaPlacement.cpp | erased-brand | 1 | fixy::NumaPolicyPlacement | the fixture or the check spells the region and the proof as its sibling of NumaPlacement does, and the brand does not reach the refusal that it probes
+test/layer/checks/foundation/core/Link.cpp | erased-brand | 13 | foundation::core::Ref | holds the erased brand on purpose: a link of an arena graph and a published object live as long as their arena or store, not a frame, and a brand of that lifetime is planned work
 test/layer/checks/foundation/core/Ref.cpp | erased-brand | 2 | foundation::core::Ref | the check of the one conversion to the erased brand
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 32 | foundation::permissions::Permission | -
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 12 | foundation::permissions::SharedPermission | -

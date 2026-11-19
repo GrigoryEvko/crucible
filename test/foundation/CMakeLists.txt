@@ -2726,6 +2726,10 @@ foundation_neg_compile_test(neg_core_pack_index_of_twice
 # of a temporary are refused.
 foundation_test(test_core_heap)
 foundation_test(test_core_ref)
+
+# A Link gives its object as a Ref of const through a const Link, and its
+# expect of no object ends the process.
+foundation_test(test_core_link)
 foundation_test(test_core_identity)
 foundation_neg_compile_test(neg_core_identity_ordered
   "no match for .operator<."
@@ -2798,6 +2802,9 @@ foundation_neg_compile_test(neg_core_call_ref_of_temporary
 foundation_neg_compile_test(neg_core_call_ref_wrong_signature
   "no matching function for call to .foundation::core::CallRef<int\\(int\\) noexcept>::CallRef\\("
   "required for the satisfaction of .CallRefTarget<F, R, Args \\.\\.\\.>.")
+foundation_neg_compile_test(neg_core_link_const_writes
+  "conversion from .Ref<const \\{anonymous\\}::Node,\\[\\.\\.\\.\\]>. to non-scalar type .Ref<\\{anonymous\\}::Node,\\[\\.\\.\\.\\]>. requested"
+  "read\\.next\\.expect")
 foundation_neg_compile_test(neg_core_ref_drops_const
   "no matching function for call to .foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >::Ref\\(<brace-enclosed initializer list>\\)."
   "required for the satisfaction of .RefWidens<U, UBrand, T, Brand>. \\[with U = const int; UBrand = [^;]+; T = int; ")
@@ -4168,7 +4175,7 @@ foundation_neg_compile_test(neg_net_reflect_growth_without_door
 # links fixy.
 foreach(_death_test
     test_aligned_bytes test_core_array test_core_bit_set test_core_box test_core_branded test_core_bump_arena test_core_choice
-    test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_masked_array
+    test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_link test_core_masked_array
     test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
     test_core_slot_map test_core_small_list test_core_sort test_core_walk test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
     test_swiss_table_buffer test_swiss_table_buffer_ignore test_thread_local_ref)

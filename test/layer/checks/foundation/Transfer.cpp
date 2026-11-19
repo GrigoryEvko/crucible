@@ -86,20 +86,20 @@ static_assert(first_refusal(^^PointerRun, Property::Send) == ^^int*);
 // const writes them, so a set of runs of plain ints holds no property.  A set
 // of runs of const elements gives only const elements, also through a copy,
 // so it holds each property when two threads can read each element.
-struct HoldsAddress {
-    int* address = nullptr;
+struct HoldsBorrow {
+    int& target;
 };
 using WritableRuns =
     ::foundation::core::RunSet<unsigned short, ::foundation::core::RunOf<int, 0>, ::foundation::core::RunOf<double, 1>>;
 using ReadRuns = ::foundation::core::RunSet<unsigned short, ::foundation::core::RunOf<int const, 0>,
                                             ::foundation::core::RunOf<double const, 1>>;
-using AddressRuns = ::foundation::core::RunSet<unsigned short, ::foundation::core::RunOf<HoldsAddress const, 0>>;
+using AddressRuns = ::foundation::core::RunSet<unsigned short, ::foundation::core::RunOf<HoldsBorrow const, 0>>;
 using CellRuns =
     ::foundation::core::RunSet<unsigned short, ::foundation::core::RunOf<::foundation::core::Atomic<int>, 0>>;
 static_assert(!Shareable<WritableRuns> && !Sendable<WritableRuns> && !SendableBeside<WritableRuns>);
 static_assert(Shareable<ReadRuns> && Sendable<ReadRuns> && !SendableBeside<ReadRuns>);
 static_assert(Shareable<CellRuns> && Sendable<CellRuns> && SendableBeside<CellRuns>);
-static_assert(!Shareable<AddressRuns> && first_refusal(^^AddressRuns, Property::Share) == ^^int*);
+static_assert(!Shareable<AddressRuns> && first_refusal(^^AddressRuns, Property::Share) == ^^HoldsBorrow);
 static_assert(!Synchronized<ReadRuns>, "two threads cannot write the counts of one set");
 
 // Rule 7: a lambda with no capture holds each property.  A capture by
@@ -141,6 +141,14 @@ struct MutableAtomic {
 };
 static_assert(Sendable<MutableCount> && !Shareable<MutableCount>);
 static_assert(Shareable<MutableAtomic>);
+
+// Rule 1 for a class that states refers_deep{} but copies from a const
+// object: the copy would write the target, so the class holds no property.
+template <class T>
+struct[[= refers_deep{}]] CopiesFromConst {
+    T& target;
+};
+static_assert(!Shareable<CopiesFromConst<int>> && !Sendable<CopiesFromConst<int>>);
 
 // A class that states shareable{} is a target that two threads can write.
 // EndpointClaim states it over its atomic cell.
@@ -253,15 +261,15 @@ static_assert(are_refs_checked_beside());
 
 // THE OPAQUE TYPES: a class that is only declared holds what the statement of
 // its registry gives.  A definition must hold each property that its
-// statement gives, so the definition of StatedWithAddress, whose pointer
+// statement gives, so the definition of StatedWithBorrow, whose reference
 // refuses Share, disagrees with its statement.
 struct OpaqueHandle;
 struct UnstatedHandle;
 struct StatedPlain {
     int value = 0;
 };
-struct StatedWithAddress {
-    int* address = nullptr;
+struct StatedWithBorrow {
+    int& target;
 };
 namespace transfer_facts {
 // No thread writes the handle after its build.
@@ -269,7 +277,7 @@ inline constexpr opaque_facts opaque_handle{.type = ^^OpaqueHandle, .is_sendable
 // The class holds one int.
 inline constexpr opaque_facts stated_plain{.type = ^^StatedPlain, .is_sendable = true, .is_shareable = true};
 // A statement that the definition of the class refuses.
-inline constexpr opaque_facts stated_with_address{.type = ^^StatedWithAddress, .is_shareable = true};
+inline constexpr opaque_facts stated_with_borrow{.type = ^^StatedWithBorrow, .is_shareable = true};
 inline constexpr opaque_seal seal{.count = 3};
 }  // namespace transfer_facts
 struct ReadsOpaque {
@@ -284,7 +292,7 @@ struct ReadsUnstated {
 static_assert(Sendable<ReadsOpaque> && Shareable<ReadsOpaque> && !SendableBeside<ReadsOpaque>);
 static_assert(!Sendable<WritesOpaque>, "the statement does not state that two threads can write the handle");
 static_assert(!Sendable<ReadsUnstated> && first_refusal(^^ReadsUnstated, Property::Send) == ^^UnstatedHandle);
-static_assert(holds_its_statement(^^StatedPlain) && !holds_its_statement(^^StatedWithAddress));
+static_assert(holds_its_statement(^^StatedPlain) && !holds_its_statement(^^StatedWithBorrow));
 static_assert(!holds_its_statement(^^Plain), "a class with no statement holds none");
 
 }  // namespace detail::transfer_self_test

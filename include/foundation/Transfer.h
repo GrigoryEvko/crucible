@@ -37,7 +37,15 @@
 //        states refers_unique{}, such as a ViewMut, is the one writer of the
 //        object of its first type argument.  It is Sendable when that type is
 //        Sendable.  It is Shareable only when two threads can write that type,
-//        because a reference to const of it can still write the object.
+//        because a reference to const of it can still write the object.  A
+//        class that states refers_deep{}, such as a Link, refers to the object
+//        of its first type argument as a reference does, but a const object of
+//        it gives only const access to the object, and a const object of it
+//        does not copy.  It is Shareable when that type is Shareable.  A copy
+//        of an object that is not const refers to the same object, so for
+//        each other property the class is a reference to the object.  A class
+//        that states refers_deep{} and copies from a const object holds no
+//        property, because the copy would write the object.
 //     2. A scalar, an enumeration, nullptr_t, a pointer to a function and a
 //        pointer to a member hold each property.  A pointer to a function
 //        names code, which no thread writes.
@@ -95,7 +103,9 @@
 //     arguments behind its pointers.  refers{} states that the class refers to
 //     the object of its first type argument, as a reference does.
 //     refers_unique{} states that the class refers to that object as its one
-//     writer, as a ViewMut does.
+//     writer, as a ViewMut does.  refers_deep{} states that the class refers
+//     to that object, and that a const object of the class gives only const
+//     access to it and does not copy, as a Link does.
 //     thread_bound{} states that the class belongs to one owner thread: a
 //     value does not move to another thread, and no other thread writes it.
 //     The class then is not Sendable and two threads cannot write it, but it
@@ -171,6 +181,7 @@ struct not_shareable final {};
 struct by_arguments final {};
 struct refers final {};
 struct refers_unique final {};
+struct refers_deep final {};
 struct thread_bound final {};
 struct payload_cell final {};
 
@@ -546,6 +557,25 @@ struct ReferenceAnswer {
                 continue;
             }
             if (!detail::is_shared_writable(target)) return bare;
+            continue;
+        }
+        // Rule 1, a class that refers to the object of its first argument, and
+        // that gives only const access to it through a const object.  A copy
+        // of a const object would give a writer, so such a class refuses.
+        if (detail::states(bare, ^^refers_deep)) {
+            if (!is_specialization || std::meta::is_copy_constructible_type(bare)
+                || std::meta::is_copy_assignable_type(bare)) {
+                return bare;
+            }
+            const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
+            if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
+            if (goal.property == Property::Share) {
+                pending.push(detail::Goal{arguments.begin()->type, Property::Share});
+                continue;
+            }
+            const detail::ReferenceAnswer answer = detail::answer_reference(*arguments.begin(), goal.property);
+            if (answer.is_refused) return bare;
+            if (answer.has_next) pending.push(answer.next);
             continue;
         }
         // Rule 6.

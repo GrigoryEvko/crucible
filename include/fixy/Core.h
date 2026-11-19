@@ -35,6 +35,7 @@
 #include <foundation/core/Grow.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/Index.h>
+#include <foundation/core/Link.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/OneOf.h>
@@ -144,6 +145,7 @@ using ::foundation::core::mint_address_key;
 using ::foundation::core::prefetch;
 using ::foundation::core::prefetch_byte;
 using ::foundation::core::PrefetchAccess;
+using ::foundation::core::Link;
 using ::foundation::core::Ref;
 using ::foundation::core::RefMut;
 using ::foundation::core::same_object;
