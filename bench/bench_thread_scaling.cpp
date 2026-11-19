@@ -627,9 +627,9 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the rows of the bare rings run their wor
 namespace {
 
 // The workers of one row, one std::jthread for each slot from slot 1 on (THE
-// RAW WORKERS).  A worker pins itself to the CPU of its slot before it runs.
-// The join waits for each worker, and the end of the row calls it after the
-// stop.
+// RAW WORKERS).  A worker pins itself to the CPU of its slot before it runs,
+// and keeps the pin for its life, so it restores no affinity.  The join waits
+// for each worker, and the end of the row calls it after the stop.
 class RawWorkers {
 public:
     template <OpKind Kind>
@@ -640,7 +640,7 @@ public:
             ThreadLine& line = line_of(state, bench::ThreadSlot{slot});
             bench::CpuId const cpu = cpu_of_slot(spread, bench::ThreadSlot{slot}, role, place);
             threads_[slot] = std::jthread{[&state, &line, role, cpu]() noexcept {
-                bench::CoreHold const hold{cpu};
+                bench::pin_calling_thread_to(cpu).expect("the pin of a worker to the CPU of its slot");
                 if (role == Role::Consumer) {
                     run_consumer<Kind>(state, line);
                 } else {
