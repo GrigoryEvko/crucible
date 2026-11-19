@@ -45,7 +45,7 @@ struct ProductLattice<L1, L2> {
     static constexpr std::size_t arity = 2;
 
     // The orientation the two components share (ClaimOrientation.h).
-    static constexpr ClaimOrientation claim_orientation = product_orientation<L1, L2>();
+    static constexpr ClaimOrientation claim_orientation = product_orientation_t<L1, L2>::value;
 
     template <std::size_t I>
         requires(I < 2)
@@ -157,7 +157,7 @@ struct ProductLattice<Ls...> {
     static constexpr std::size_t arity = sizeof...(Ls);
 
     // The orientation the components share (ClaimOrientation.h).
-    static constexpr ClaimOrientation claim_orientation = product_orientation<Ls...>();
+    static constexpr ClaimOrientation claim_orientation = product_orientation_t<Ls...>::value;
 
     using element_type = detail::ProductElementImpl<std::make_index_sequence<sizeof...(Ls)>, Ls...>;
 

@@ -116,7 +116,7 @@ struct UnstatedChainLattice {
 template <typename L, typename T>
 concept CanNameGraded = requires { typename Graded<ModalityKind::Absolute, L, T>; };
 
-static_assert(claim_orientation_v<UnstatedChainLattice> == ClaimOrientation::unstated);
+static_assert(claim_orientation_t<UnstatedChainLattice>::value == ClaimOrientation::unstated);
 static_assert(CanNameGraded<UnstatedChainLattice, unsigned char>);
 static_assert(!CanNameGraded<UnstatedChainLattice, OneByteValue>,
               "an unstated orientation is refused as a stored grade");

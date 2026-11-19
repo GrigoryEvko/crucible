@@ -117,7 +117,7 @@ concept IsPinnedGrade = requires {
     requires std::is_scoped_enum_v<typename L::enum_type>;
     requires std::same_as<std::remove_const_t<decltype(L::pinned)>, typename L::enum_type>;
     requires std::is_empty_v<typename L::element_type>;
-    requires ::foundation::algebra::claim_orientation_v<typename L::outer_lattice>
+    requires ::foundation::algebra::claim_orientation_t<typename L::outer_lattice>::value
                  == ::foundation::algebra::ClaimOrientation::stronger_is_higher;
 };
 

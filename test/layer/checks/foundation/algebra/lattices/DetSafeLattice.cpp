@@ -21,7 +21,7 @@ static_assert(!Semiring<DetSafeLattice>);
 // The chain is not a stored grade, and a pinned tier is.  The element of
 // a pinned tier is empty, and it names one claim.
 static_assert(!GradableLattice<DetSafeLattice>);
-static_assert(claim_orientation_v<det_safe_tier::PureTier> == ClaimOrientation::one_claim);
+static_assert(claim_orientation_t<det_safe_tier::PureTier>::value == ClaimOrientation::one_claim);
 
 // The specific pins: which enumerators bound the chain, and the exact
 // spellings that the reflection builds.

@@ -25,9 +25,9 @@ static_assert(verify_chain_lattice<SmokeChainLattice>(),
 static_assert(SmokeChainLattice::bottom() == SmokeTier::Lo);
 static_assert(SmokeChainLattice::top() == SmokeTier::Hi);
 static_assert(SmokeChainLattice::name() == "SmokeChainLattice");
-static_assert(claim_orientation_v<SmokeChainLattice> == ClaimOrientation::stronger_is_higher);
+static_assert(claim_orientation_t<SmokeChainLattice>::value == ClaimOrientation::stronger_is_higher);
 static_assert(!GradableLattice<SmokeChainLattice>);
-static_assert(claim_orientation_v<SmokeChainLattice::At<SmokeTier::Mid>> == ClaimOrientation::one_claim);
+static_assert(claim_orientation_t<SmokeChainLattice::At<SmokeTier::Mid>>::value == ClaimOrientation::one_claim);
 
 // A chain base with an unstated orientation, or with the one-claim
 // orientation of a single element, does not compile.

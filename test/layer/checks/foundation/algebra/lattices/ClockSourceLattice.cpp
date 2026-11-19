@@ -142,7 +142,7 @@ static_assert(ClockSourceLattice::name() == std::string_view{"ClockSourceLattice
 // Each axis puts the stronger guarantee higher, and the product puts the
 // stronger claim higher too.  A point stored beside a value goes through
 // the order dual.
-static_assert(claim_orientation_v<ClockSourceLattice> == ClaimOrientation::stronger_is_higher);
+static_assert(claim_orientation_t<ClockSourceLattice>::value == ClaimOrientation::stronger_is_higher);
 static_assert(!GradableLattice<ClockSourceLattice> && GradableLattice<DualLattice<ClockSourceLattice>>);
 
 // The product point occupies three bytes, one per axis, so a carrier over it

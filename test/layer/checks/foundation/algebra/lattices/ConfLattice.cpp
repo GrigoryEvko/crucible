@@ -28,7 +28,7 @@ static_assert(ConfLattice::At<static_cast<Conf>(9)>::name() == "ConfLattice::At<
 static_assert(conf::PublicTier::classification == Conf::Public);
 static_assert(conf::SecretTier::classification == Conf::Secret);
 static_assert(ConfLattice::bottom() == Conf::Public && ConfLattice::top() == Conf::Secret);
-static_assert(claim_orientation_v<ConfLattice> == ClaimOrientation::weaker_is_higher);
+static_assert(claim_orientation_t<ConfLattice>::value == ClaimOrientation::weaker_is_higher);
 
 // The payloads of a classified value.  The runtime smoke test in
 // test/foundation/test_lattices_core.cpp builds one.

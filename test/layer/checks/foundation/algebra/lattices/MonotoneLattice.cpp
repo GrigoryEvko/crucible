@@ -192,7 +192,7 @@ static_assert(sizeof(MonU64Less::element_type) == 8);
 static_assert(sizeof(MonotonicGraded<std::uint64_t>) == sizeof(std::uint64_t));
 static_assert(sizeof(MonotonicGraded<std::int32_t>) == sizeof(std::int32_t));
 
-static_assert(claim_orientation_v<MonU64Less> == ClaimOrientation::unstated);
+static_assert(claim_orientation_t<MonU64Less>::value == ClaimOrientation::unstated);
 static_assert(LatticeGradesValue<MonU64Less, std::uint64_t> && !LatticeGradesValue<MonU64Less, std::int32_t>,
               "the order grades a value that is its own grade, and no value beside it");
 

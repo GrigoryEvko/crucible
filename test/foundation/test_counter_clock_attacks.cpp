@@ -482,7 +482,7 @@ static_assert(!can_grade<Dual<fl::PeakBytesLattice>> && !can_grade<Dual<fl::Bits
 // A clock claims the history it saw.  A larger clock is the stronger
 // claim, as a newer version is.  The clock is refused in its pointwise
 // order and accepted through its dual.
-static_assert(fa::claim_orientation_v<fl::HappensBeforeLattice<4>> == fa::ClaimOrientation::stronger_is_higher);
+static_assert(fa::claim_orientation_t<fl::HappensBeforeLattice<4>>::value == fa::ClaimOrientation::stronger_is_higher);
 static_assert(!can_grade<fl::HappensBeforeLattice<4>> && can_grade<Dual<fl::HappensBeforeLattice<4>>>);
 
 [[nodiscard]] consteval bool all_distinct_and_nonzero(std::array<std::uint64_t, 13> const& values) {

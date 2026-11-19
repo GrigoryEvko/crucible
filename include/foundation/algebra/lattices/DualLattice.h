@@ -41,7 +41,7 @@ struct DualLattice {
     using element_type = typename L::element_type;
     using source_lattice = L;
 
-    static constexpr ClaimOrientation claim_orientation = turned_over(claim_orientation_v<L>);
+    static constexpr ClaimOrientation claim_orientation = turned_over(claim_orientation_t<L>::value);
 
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return L::leq(b, a); }
     [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept { return L::meet(a, b); }

@@ -313,7 +313,7 @@ static_assert(hb4_c.slots()[1] == 2);
 
 // A clock in its pointwise order is not a stored grade, and its dual is.
 static_assert(!GradableLattice<HB4> && !GradableLattice<HBReplay>);
-static_assert(claim_orientation_v<HB4> == ClaimOrientation::stronger_is_higher);
+static_assert(claim_orientation_t<HB4>::value == ClaimOrientation::stronger_is_higher);
 
 }  // namespace detail::happens_before_self_test
 

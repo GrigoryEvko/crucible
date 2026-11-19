@@ -1972,7 +1972,8 @@ fixy_neg_compile_test(neg_bands_braces_without_door
   "candidate [0-9]+: .template<class Authority> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(const foundation::algebra::grade_key<Authority>&, T, grade_type\\)")
 fixy_neg_compile_test(neg_bands_peek_mut_rewrites_tier
   "no matching function for call to .foundation::algebra::Graded<.*DetSafeTier::Pure>, int>::peek_mut\\(\\)."
-  "the expression .\\(claim_subject_v<L>\\) == foundation::algebra::ClaimSubject::slot \\[with L = foundation::algebra::lattices::DetSafeLattice::At<foundation::algebra::lattices::DetSafeTier::Pure>\\]. evaluated to .false.")
+  "required for the satisfaction of .GradeIgnoresBytes<L>. \\[with L = foundation::algebra::lattices::DetSafeLattice::At<foundation::algebra::lattices::DetSafeTier::Pure>\\]"
+  "the expression .as_one_constraint\\(bool\\)\\(StatesSlot<L>\\) \\[with L = foundation::algebra::lattices::DetSafeLattice::At<foundation::algebra::lattices::DetSafeTier::Pure>\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_bands_mint_band_cv_band
   "required for the satisfaction of .ExactBand<B>. .with B = const foundation::algebra::Graded<"
   "required for the satisfaction of .same_as<B, typename std::remove_cvref<[A-Za-z_][A-Za-z0-9_]*>::type>. .with B = const foundation::algebra::Graded<")

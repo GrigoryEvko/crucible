@@ -165,7 +165,7 @@ static_assert(QttSemiring::mul(QttGrade::AtMostOne, QttGrade::AtMostOne) == QttG
 static_assert(QttSemiring::join(QttGrade::One, QttGrade::One) == QttGrade::One,
               "Lattice join is idempotent: One ∨ One = One, unlike semiring add One+One = Omega.");
 
-static_assert(claim_orientation_v<QttSemiring> == ClaimOrientation::stronger_is_higher);
+static_assert(claim_orientation_t<QttSemiring>::value == ClaimOrientation::stronger_is_higher);
 static_assert(QttSemiring::At<QttGrade::One>::name() == "QttSemiring::At<1>");
 static_assert(QttSemiring::At<QttGrade::Omega>::name() == "QttSemiring::At<\xCF\x89>");
 static_assert(QttSemiring::At<QttGrade::AtMostOne>::name()

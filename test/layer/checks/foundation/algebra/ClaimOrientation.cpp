@@ -29,17 +29,30 @@ struct Single {
     [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 };
 
-static_assert(claim_orientation_v<Silent> == ClaimOrientation::unstated);
-static_assert(claim_orientation_v<Weaker> == ClaimOrientation::weaker_is_higher);
-static_assert(claim_orientation_v<Stronger> == ClaimOrientation::stronger_is_higher);
-static_assert(claim_orientation_v<Single> == ClaimOrientation::one_claim, "an empty element names one claim");
+static_assert(claim_orientation_t<Silent>::value == ClaimOrientation::unstated);
+static_assert(claim_orientation_t<Weaker>::value == ClaimOrientation::weaker_is_higher);
+static_assert(claim_orientation_t<Stronger>::value == ClaimOrientation::stronger_is_higher);
+static_assert(claim_orientation_t<Single>::value == ClaimOrientation::one_claim, "an empty element names one claim");
 
 // A lattice that states one claim over an element with two values is
 // unstated.  It cannot state its way past the gate.
 struct ForgedSingle : Silent {
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::one_claim;
 };
-static_assert(claim_orientation_v<ForgedSingle> == ClaimOrientation::unstated);
+static_assert(claim_orientation_t<ForgedSingle>::value == ClaimOrientation::unstated);
+
+// A lattice that inherits its orientation from a base states it, as a name
+// lookup of the member finds it.
+struct InheritsWeaker : Weaker {};
+static_assert(claim_orientation_t<InheritsWeaker>::value == ClaimOrientation::weaker_is_higher);
+static_assert(GradableLattice<InheritsWeaker>);
+
+// A lattice that states an orientation over an empty element keeps the
+// orientation it states.
+struct WeakerSingle : Single {
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
+};
+static_assert(claim_orientation_t<WeakerSingle>::value == ClaimOrientation::weaker_is_higher);
 
 static_assert(turned_over(ClaimOrientation::weaker_is_higher) == ClaimOrientation::stronger_is_higher);
 static_assert(turned_over(ClaimOrientation::stronger_is_higher) == ClaimOrientation::weaker_is_higher);
@@ -47,13 +60,13 @@ static_assert(turned_over(ClaimOrientation::unstated) == ClaimOrientation::unsta
 static_assert(turned_over(ClaimOrientation::one_claim) == ClaimOrientation::one_claim);
 static_assert(turned_over(turned_over(ClaimOrientation::stronger_is_higher)) == ClaimOrientation::stronger_is_higher);
 
-static_assert(product_orientation<Weaker, Weaker>() == ClaimOrientation::weaker_is_higher);
-static_assert(product_orientation<Weaker, Stronger>() == ClaimOrientation::stronger_is_higher);
-static_assert(product_orientation<Stronger, Silent>() == ClaimOrientation::stronger_is_higher);
-static_assert(product_orientation<Weaker, Silent>() == ClaimOrientation::unstated);
-static_assert(product_orientation<Weaker, Single>() == ClaimOrientation::weaker_is_higher);
-static_assert(product_orientation<Single, Single>() == ClaimOrientation::one_claim);
-static_assert(product_orientation<>() == ClaimOrientation::one_claim);
+static_assert(product_orientation_t<Weaker, Weaker>::value == ClaimOrientation::weaker_is_higher);
+static_assert(product_orientation_t<Weaker, Stronger>::value == ClaimOrientation::stronger_is_higher);
+static_assert(product_orientation_t<Stronger, Silent>::value == ClaimOrientation::stronger_is_higher);
+static_assert(product_orientation_t<Weaker, Silent>::value == ClaimOrientation::unstated);
+static_assert(product_orientation_t<Weaker, Single>::value == ClaimOrientation::weaker_is_higher);
+static_assert(product_orientation_t<Single, Single>::value == ClaimOrientation::one_claim);
+static_assert(product_orientation_t<>::value == ClaimOrientation::one_claim);
 
 // An unstated orientation is refused as a stored grade, as a stated
 // stronger one is.  The two orientations that Graded accepts are the
@@ -69,9 +82,9 @@ struct AboutTheBytes : Silent {
     static constexpr ClaimSubject claim_subject = ClaimSubject::bytes;
 };
 
-static_assert(claim_subject_v<Silent> == ClaimSubject::bytes, "a lattice that states nothing claims the bytes");
-static_assert(claim_subject_v<AboutTheSlot> == ClaimSubject::slot);
-static_assert(claim_subject_v<AboutTheBytes> == ClaimSubject::bytes);
+static_assert(claim_subject_t<Silent>::value == ClaimSubject::bytes, "a lattice that states nothing claims the bytes");
+static_assert(claim_subject_t<AboutTheSlot>::value == ClaimSubject::slot);
+static_assert(claim_subject_t<AboutTheBytes>::value == ClaimSubject::bytes);
 static_assert(GradeIgnoresBytes<AboutTheSlot> && !GradeIgnoresBytes<AboutTheBytes> && !GradeIgnoresBytes<Silent>);
 
 }  // namespace detail::claim_orientation_self_test

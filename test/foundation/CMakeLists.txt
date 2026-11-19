@@ -254,7 +254,22 @@ foundation_neg_compile_test(neg_graded_key_outside_its_authority
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_graded_peek_mut_without_key
   "no matching function for call to .foundation::algebra::Graded<.*OneByteValue>::peek_mut\\(\\)."
-  "the expression .\\(claim_subject_v<L>\\) == foundation::algebra::ClaimSubject::slot \\[with L = foundation::algebra::detail::TrivialBoolLattice\\]. evaluated to .false.")
+  "required for the satisfaction of .GradeIgnoresBytes<L>. \\[with L = foundation::algebra::detail::TrivialBoolLattice\\]"
+  "the expression .as_one_constraint\\(bool\\)\\(StatesSlot<L>\\) \\[with L = foundation::algebra::detail::TrivialBoolLattice\\]. evaluated to .false.")
+
+# The orientation and the subject of a lattice are concepts and alias
+# templates, which no unit can specialize.  A specialization of the old
+# variable template or function template spelling does not compile, and the
+# gate keeps its verdict.
+foundation_neg_compile_test(neg_claim_orientation_v_specialized
+  "neg_claim_orientation_v_specialized\\.cpp:24:[0-9]+: error: expected initializer before .<. token"
+  "neg_claim_orientation_v_specialized\\.cpp:28:[0-9]+: error: static assertion failed")
+foundation_neg_compile_test(neg_claim_subject_v_specialized
+  "neg_claim_subject_v_specialized\\.cpp:21:[0-9]+: error: expected initializer before .<. token"
+  "neg_claim_subject_v_specialized\\.cpp:25:[0-9]+: error: static assertion failed")
+foundation_neg_compile_test(neg_product_orientation_specialized
+  "neg_product_orientation_specialized\\.cpp:27:[0-9]+: error: expected initializer before .<. token"
+  "neg_product_orientation_specialized\\.cpp:33:[0-9]+: error: static assertion failed")
 foundation_neg_compile_test(neg_graded_default_value_claims_bytes
   "no matching function for call to .foundation::algebra::Graded<.*OneByteValue>::Graded\\(\\)."
   "required by the constraints of .template<foundation::algebra::ModalityKind M, class L, class T> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(\\) requires ! foundation::algebra::Graded<M, L, T>::stores_grade_ \\|\\| \\(GradeIgnoresBytes<L>\\).")
