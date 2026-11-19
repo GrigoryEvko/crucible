@@ -7,21 +7,22 @@
 // on.  It also makes sure that the Murmur3 finalizer maps a non-zero seed
 // to a non-zero hash, which the zero-means-empty slot conventions need.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/EnumPins.h>
 #include <foundation/reflect/Enumerate.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
-#include <initializer_list>
 #include <string_view>
 #include <type_traits>
 
@@ -34,6 +35,9 @@ struct Beta {};
 }  // namespace test_reflect_types
 
 namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 namespace dc = ::foundation::decide;
 namespace fr = ::foundation::reflect;
@@ -187,12 +191,10 @@ using TF = TestFlags;
 using U = std::underlying_type_t<TF>;
 
 // The word that a Bits<TF>{flags...} held: the enumerators' values ORed.
-[[nodiscard]] constexpr U mask_of(std::initializer_list<TF> flags) noexcept {
-    U acc = 0;
-    for (TF flag : flags) {
-        acc = static_cast<U>(acc | static_cast<U>(flag));
-    }
-    return acc;
+template <typename... Flags>
+    requires(std::is_same_v<Flags, TF> && ...)
+[[nodiscard]] constexpr U mask_of(Flags... flags) noexcept {
+    return static_cast<U>((U{0} | ... | static_cast<U>(flags)));
 }
 
 void enumerate_runs_at_run_time() {
@@ -200,72 +202,72 @@ void enumerate_runs_at_run_time() {
     char buf[64] = {};
 
     U empty = 0;
-    if (bits_to_string<TF>(empty, buf, sizeof(buf)) != 0) std::abort();
-    if (buf[0] != '\0') std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, bits_to_string<TF>(empty, buf, sizeof(buf)) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, buf[0] == '\0');
 
-    U a = mask_of({TF::Alpha});
+    U a = mask_of(TF::Alpha);
     auto na = bits_to_string<TF>(a, buf, sizeof(buf));
-    if (na != 5) std::abort();
-    if (std::string_view{buf} != "Alpha") std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, na == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, std::string_view{buf} == "Alpha");
 
-    U abc = mask_of({TF::Alpha, TF::Beta, TF::Gamma});
+    U abc = mask_of(TF::Alpha, TF::Beta, TF::Gamma);
     auto nabc = bits_to_string<TF>(abc, buf, sizeof(buf));
-    if (std::string_view{buf} != "Alpha|Beta|Gamma") std::abort();
-    if (nabc != std::string_view{"Alpha|Beta|Gamma"}.size()) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, std::string_view{buf} == "Alpha|Beta|Gamma");
+    CRUCIBLE_TEST_ASSERT(kTest, nabc == std::string_view{"Alpha|Beta|Gamma"}.size());
 
-    U ab = mask_of({TF::Alpha, TF::Beta});
+    U ab = mask_of(TF::Alpha, TF::Beta);
     auto nab = bits_to_string<TF>(ab, buf, sizeof(buf));
-    if (std::string_view{buf} != "Alpha|Beta") std::abort();
-    if (nab != 10) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, std::string_view{buf} == "Alpha|Beta");
+    CRUCIBLE_TEST_ASSERT(kTest, nab == 10);
 
     char small[8] = {};
     auto nt = bits_to_string<TF>(ab, small, sizeof(small));
-    if (nt != 10) std::abort();
-    if (std::string_view{small} != "Alpha|B") std::abort();
-    if (small[7] != '\0') std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, nt == 10);
+    CRUCIBLE_TEST_ASSERT(kTest, std::string_view{small} == "Alpha|B");
+    CRUCIBLE_TEST_ASSERT(kTest, small[7] == '\0');
 
     auto np = bits_to_string<TF>(abc, nullptr, 0);
-    if (np != std::string_view{"Alpha|Beta|Gamma"}.size()) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, np == std::string_view{"Alpha|Beta|Gamma"}.size());
 
     {
         char tight[11] = {};
-        auto nfit = bits_to_string<TF>(mask_of({TF::Alpha, TF::Beta}), tight, sizeof(tight));
-        if (nfit != 10) std::abort();
-        if (std::string_view{tight} != "Alpha|Beta") std::abort();
-        if (tight[10] != '\0') std::abort();
+        auto nfit = bits_to_string<TF>(mask_of(TF::Alpha, TF::Beta), tight, sizeof(tight));
+        CRUCIBLE_TEST_ASSERT(kTest, nfit == 10);
+        CRUCIBLE_TEST_ASSERT(kTest, std::string_view{tight} == "Alpha|Beta");
+        CRUCIBLE_TEST_ASSERT(kTest, tight[10] == '\0');
     }
     {
         char short_buf[10] = {};
-        auto nshort = bits_to_string<TF>(mask_of({TF::Alpha, TF::Beta}), short_buf, sizeof(short_buf));
-        if (nshort != 10) std::abort();
-        if (std::string_view{short_buf} != "Alpha|Bet") std::abort();
-        if (short_buf[9] != '\0') std::abort();
+        auto nshort = bits_to_string<TF>(mask_of(TF::Alpha, TF::Beta), short_buf, sizeof(short_buf));
+        CRUCIBLE_TEST_ASSERT(kTest, nshort == 10);
+        CRUCIBLE_TEST_ASSERT(kTest, std::string_view{short_buf} == "Alpha|Bet");
+        CRUCIBLE_TEST_ASSERT(kTest, short_buf[9] == '\0');
     }
 }
 
 void enum_name_runs_at_run_time() {
     using namespace ::foundation::reflect;
-    if (enumerator_name(TF::None) != "None") std::abort();
-    if (enumerator_name(TF::Alpha) != "Alpha") std::abort();
-    if (enumerator_name(TF::Delta) != "Delta") std::abort();
-    if (enumerator_name(TF::AlphaBeta) != "AlphaBeta") std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, enumerator_name(TF::None) == "None");
+    CRUCIBLE_TEST_ASSERT(kTest, enumerator_name(TF::Alpha) == "Alpha");
+    CRUCIBLE_TEST_ASSERT(kTest, enumerator_name(TF::Delta) == "Delta");
+    CRUCIBLE_TEST_ASSERT(kTest, enumerator_name(TF::AlphaBeta) == "AlphaBeta");
 
     auto fancy = static_cast<TF>(static_cast<std::uint8_t>(TF::Alpha) | static_cast<std::uint8_t>(TF::Delta));
-    if (!enumerator_name(fancy).empty()) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, enumerator_name(fancy).empty());
 
     // enum_name runs under runtime semantics here, with the sentinel
     // read from static storage.
-    if (enum_name(fancy) != "<unknown TestFlags>") std::abort();
-    if (enum_name(TF::Gamma) != "Gamma") std::abort();
-    if (enum_count<TF> != 6) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name(fancy) == "<unknown TestFlags>");
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name(TF::Gamma) == "Gamma");
+    CRUCIBLE_TEST_ASSERT(kTest, enum_count<TF> == 6);
 
     int counter = 0;
     for_each_enumerator<TF>([&](TF, std::string_view) noexcept { ++counter; });
-    if (counter != 6) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, counter == 6);
 
     int single_bit_counter = 0;
     for_each_single_bit_enumerator<TF>([&](TF, std::string_view) noexcept { ++single_bit_counter; });
-    if (single_bit_counter != 4) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, single_bit_counter == 4);
 }
 
 void stable_name_runs_at_run_time() noexcept {
@@ -295,9 +297,7 @@ void stable_name_runs_at_run_time() noexcept {
     volatile bool sink_b = same;
     (void)sink_b;
 
-    auto const fn_ptr = +[](int) noexcept -> int { return 0; };
     volatile std::uint64_t fid_sink = stable_function_id(^^function_key<+[](int) noexcept -> int { return 0; }>);
-    fid_sink ^= std::bit_cast<std::uintptr_t>(fn_ptr);
     (void)fid_sink;
 }
 
@@ -322,16 +322,16 @@ int main() {
         }
         Lamp volatile lamp_v = Lamp::Green;
         if (fr::enumerator_name(static_cast<Lamp>(lamp_v)) != "Green") {
-            std::fprintf(stderr, "test_reflect: enumerator_name(Green) is wrong\n");
+            ::fixy::report(::fixy::Sink::Err, "test_reflect: enumerator_name(Green) is wrong\n");
             return 1;
         }
         if (fr::enum_name(static_cast<Lamp>(lamp_v)) != "Green") {
-            std::fprintf(stderr, "test_reflect: enum_name(Green) is wrong\n");
+            ::fixy::report(::fixy::Sink::Err, "test_reflect: enum_name(Green) is wrong\n");
             return 1;
         }
         Lamp volatile bad_v = static_cast<Lamp>(0x06);
         if (fr::enum_name(static_cast<Lamp>(bad_v)) != "<unknown Lamp>") {
-            std::fprintf(stderr, "test_reflect: enum_name(0x06) is not the sentinel\n");
+            ::fixy::report(::fixy::Sink::Err, "test_reflect: enum_name(0x06) is not the sentinel\n");
             return 1;
         }
         int counter = 0;
@@ -339,7 +339,8 @@ int main() {
         int single_bit_counter = 0;
         fr::for_each_single_bit_enumerator<Lamp>([&](Lamp, std::string_view) noexcept { ++single_bit_counter; });
         if (counter != 5 || single_bit_counter != 3) {
-            std::fprintf(stderr, "test_reflect: enumerator counts %d/%d, expected 5/3\n", counter, single_bit_counter);
+            ::fixy::report(::fixy::Sink::Err, "test_reflect: enumerator counts {}/{}, expected 5/3\n", counter,
+                           single_bit_counter);
             return 1;
         }
         sink += counter + single_bit_counter;
@@ -351,14 +352,14 @@ int main() {
         volatile std::uint64_t seed_nz = 0xDEADBEEFCAFEBABEULL;
         const std::uint64_t mix_nz = fr::fmix64(static_cast<std::uint64_t>(seed_nz));
         if (!dc::is_non_zero(mix_nz)) {
-            std::fprintf(stderr, "test_reflect: fmix64 mapped a non-zero seed to zero\n");
+            ::fixy::report(::fixy::Sink::Err, "test_reflect: fmix64 mapped a non-zero seed to zero\n");
             return 1;
         }
         volatile std::uint64_t zero_seed = 0;
         const std::uint64_t mix_of_zero = fr::fmix64(static_cast<std::uint64_t>(zero_seed));
         if (mix_of_zero != 0) {
-            std::fprintf(stderr, "test_reflect: fmix64(0) returned non-zero — bijection "
-                                 "theorem violated\n");
+            ::fixy::report(::fixy::Sink::Err, "test_reflect: fmix64(0) returned non-zero — bijection "
+                                              "theorem violated\n");
             return 1;
         }
         sink += static_cast<int>(mix_nz != 0) - static_cast<int>(mix_of_zero != 0);
@@ -374,14 +375,14 @@ int main() {
         const std::uint64_t reverse =
             fr::combine_ids(static_cast<std::uint64_t>(rhs_v), static_cast<std::uint64_t>(lhs_v));
         if (forward == reverse) {
-            std::fprintf(stderr, "test_reflect: combine_ids(1, 2) == combine_ids(2, 1)\n");
+            ::fixy::report(::fixy::Sink::Err, "test_reflect: combine_ids(1, 2) == combine_ids(2, 1)\n");
             return 1;
         }
         sink += static_cast<int>(forward != reverse);
     }
 
     if (sink == 0) {
-        std::fprintf(stderr, "test_reflect: sink unexpectedly zero\n");
+        ::fixy::report(::fixy::Sink::Err, "test_reflect: sink unexpectedly zero\n");
         return 1;
     }
     return 0;
