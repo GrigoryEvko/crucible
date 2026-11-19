@@ -5,7 +5,9 @@
 // notify the event count after each push and after their close.  Each
 // producer runs beside the consumer through run_beside of fixy/os/ThreadTasks.h,
 // and the consumer receives on the calling thread.  A lost wake leaves the consumer
-// parked, and the test then fails at the timeout of the test preset.
+// parked, and the test then fails at the timeout of the test preset.  A lanes
+// channel gives the same stream under the schedule of each seed: the order of
+// its lanes.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -34,6 +36,7 @@ using Item = std::uint64_t;
 
 struct WireTag {};
 struct MergeTag {};
+struct LanesTag {};
 
 constexpr std::uint64_t kItems = 4000;
 
@@ -82,14 +85,16 @@ template <class Producer>
     };
 }
 
-// The result of the consumer of a test.
+// The result of the consumer of a test.  is_in_turn holds while each item
+// equals its place in the stream: the order of two lanes that take turns.
 struct Received {
     std::uint64_t count = 0;
     bool is_ordered = true;
+    bool is_in_turn = true;
 };
 
 // Receives until the end of the stream, with the tag of each pop, and checks
-// the order of each lane.
+// the order of each lane and the turn of the lanes.
 template <class Policy, class Consumer, typename... PopTag>
 [[nodiscard]] Received receive_each(::fixy::BgLoadCtx const& ctx, cc::EventCount& events, Consumer& consumer,
                                     PopTag... tag) noexcept {
@@ -106,6 +111,7 @@ template <class Policy, class Consumer, typename... PopTag>
         Item const value = std::move(got).expect("the test above found an item");
         Item& expected = *next.get(value & 1).expect("a lane bit is below two");
         result.is_ordered = result.is_ordered && (value >> 1) == expected;
+        result.is_in_turn = result.is_in_turn && value == result.count;
         ++expected;
         ++result.count;
     }
@@ -140,15 +146,16 @@ void expect_each_item_then_the_end_of_a_wire(::fixy::BgLoadCtx const& ctx, std::
     CRUCIBLE_FATAL_INVARIANT(received.count == kItems);
 }
 
-// Receives each item of a merge beside its second producer, which runs
-// through run_beside, and ends the consumer end.
-template <class Consumer, class Producer>
+// Receives each item of a merge or of two lanes beside the second producer,
+// which runs through run_beside, and ends the consumer end.  The pack holds
+// the tag of Nondet for a merge and no value for lanes.
+template <class Consumer, class Producer, typename... PopTag>
 [[nodiscard]] Received receive_beside(::fixy::BgLoadCtx const& ctx, cc::EventCount& events, Consumer&& consumer,
-                                      eff::cap::Nondet merge, Producer&& producer) noexcept {
+                                      Producer&& producer, PopTag... tag) noexcept {
     auto values =
         ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, std::move(producer),
-                                   [&ctx, &events, receiving = std::move(consumer), merge]() mutable noexcept {
-                                       Received const got = receive_each<ParkAtOnce>(ctx, events, receiving, merge);
+                                   [&ctx, &events, receiving = std::move(consumer), tag...]() mutable noexcept {
+                                       Received const got = receive_each<ParkAtOnce>(ctx, events, receiving, tag...);
                                        ::foundation::linear::drop(std::move(receiving));
                                        return got;
                                    })
@@ -156,13 +163,13 @@ template <class Consumer, class Producer>
     return values.at(::fixy::index<1>());
 }
 
-// The continuation of the first producer of a merge: it owns the consumer end
-// and the second producer, and it receives beside the second producer.
-template <class Consumer, class Producer>
+// The continuation of the first producer: it owns the consumer end and the
+// second producer, and it receives beside the second producer.
+template <class Consumer, class Producer, typename... PopTag>
 [[nodiscard]] auto make_receive_beside(::fixy::BgLoadCtx const& ctx, cc::EventCount& events, Consumer&& consumer,
-                                       eff::cap::Nondet merge, Producer&& producer) noexcept {
-    return [&ctx, &events, owned = std::move(consumer), merge, second = std::move(producer)]() mutable noexcept {
-        return receive_beside(ctx, events, std::move(owned), merge, std::move(second));
+                                       Producer&& producer, PopTag... tag) noexcept {
+    return [&ctx, &events, owned = std::move(consumer), second = std::move(producer), tag...]() mutable noexcept {
+        return receive_beside(ctx, events, std::move(owned), std::move(second), tag...);
     };
 }
 
@@ -182,13 +189,43 @@ void expect_each_item_then_the_end_of_a_merge(::fixy::BgLoadCtx const& ctx, std:
     typename Merge::ProducerHandle first_producer = channel.producer().expect("the pool lends a producer");
     typename Merge::ProducerHandle second_producer = channel.producer().expect("the pool lends a producer");
     auto receive_beside_second = make_receive_beside(
-        ctx, events, std::move(consumer), merge, make_producer(events, std::move(second_producer), Lane::second, seed));
+        ctx, events, std::move(consumer), make_producer(events, std::move(second_producer), Lane::second, seed), merge);
     auto values = ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{},
                                              make_producer(events, std::move(first_producer), Lane::first, seed),
                                              std::move(receive_beside_second))
                       .expect("the thread door starts the first producer");
     Received const received = values.at(::fixy::index<1>());
     CRUCIBLE_FATAL_INVARIANT(received.is_ordered);
+    CRUCIBLE_FATAL_INVARIANT(received.count == 2 * kItems);
+}
+
+// A lanes channel of two lanes of 8 cells: the producer of each lane on a
+// thread of its own, with the delays of its seed.  The producer of a lane
+// pushes its count shifted left by one, with the bit of the lane, and the
+// lanes take turns.  So under each schedule the merged stream is 0, 1, 2 and
+// on, and then the end.  The pops take no tag of Nondet.
+void expect_the_turn_of_two_lanes(::fixy::BgLoadCtx const& ctx, std::uint64_t seed) {
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::lanes, LanesTag>>();
+    using TwoLanes = cc::channel_t<Item, 8, decltype(root), cc::LaneCount{2}>;
+    static_assert(CanReceiveWaiting<typename TwoLanes::ConsumerHandle, ParkAtOnce, ::fixy::BgLoadCtx>);
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<TwoLanes::producer_tag, TwoLanes::consumer_tag>(std::move(root));
+    TwoLanes channel{std::move(producer_root)};
+    cc::EventCount events{};
+    typename TwoLanes::ConsumerHandle consumer = channel.consumer(std::move(consumer_perm));
+    typename TwoLanes::ProducerHandle first_producer =
+        channel.producer(typename TwoLanes::lane_index{::fixy::index<0>()}).expect("the pool lends the first lane");
+    typename TwoLanes::ProducerHandle second_producer =
+        channel.producer(typename TwoLanes::lane_index{::fixy::index<1>()}).expect("the pool lends the second lane");
+    auto receive_beside_second = make_receive_beside(
+        ctx, events, std::move(consumer), make_producer(events, std::move(second_producer), Lane::second, seed));
+    auto values = ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{},
+                                             make_producer(events, std::move(first_producer), Lane::first, seed),
+                                             std::move(receive_beside_second))
+                      .expect("the thread door starts the first producer");
+    Received const received = values.at(::fixy::index<1>());
+    CRUCIBLE_FATAL_INVARIANT(received.is_ordered);
+    CRUCIBLE_FATAL_INVARIANT(received.is_in_turn);
     CRUCIBLE_FATAL_INVARIANT(received.count == 2 * kItems);
 }
 
@@ -200,5 +237,9 @@ int main() {
     expect_each_item_then_the_end_of_a_wire<SpinFirst>(ctx, 12);
     expect_each_item_then_the_end_of_a_wire<cc::Spin>(ctx, 13);
     expect_each_item_then_the_end_of_a_merge(ctx, 21);
+    // Each seed gives the threads another schedule, and each gives one stream.
+    for (std::uint64_t seed = 31; seed < 35; ++seed) {
+        expect_the_turn_of_two_lanes(ctx, seed);
+    }
     return 0;
 }

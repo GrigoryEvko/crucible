@@ -4492,6 +4492,10 @@ fixy_neg_compile_test(neg_stage_handle_with_thread_affinity
 # channel, many threaded rounds, and pipelines with no sentinel.
 fixy_test(test_channel_close)
 
+# The lanes form of the channel on one thread: the door of each lane, the
+# order of the lanes, the end of each lane, the drain and the refusals.
+fixy_test(test_lanes_channel)
+
 # The wait of the consumer handle: each item in order, then the end, with no
 # lost wake, and no policy that parks for a context of the hot path.
 fixy_test(test_channel_wait)
@@ -4522,8 +4526,8 @@ fixy_neg_compile_test(neg_channel_foreign_tag_permission
 # does not open the channel of the first, although the tag is the same.
 fixy_neg_compile_test(neg_channel_foreign_brand_permission
   "no known conversion for argument 1 from .*Permission<fixy::concurrent::channel_tag::Producer<fixy::concurrent::ChannelForm::wire, \\{anonymous\\}::TraceTag>, foundation::permissions::<lambda\\(\\)> >&&"
-  "PermissionedChannel<Form, T, Capacity, UserTag, Brand>::producer\\(foundation::permissions::Permission<fixy::concurrent::channel_tag::Producer<Form, UserTag>, Brand>&&\\) requires  Form == fixy::concurrent::ChannelForm::wire"
-  "UserTag = \\{anonymous\\}::TraceTag. Brand = foundation::permissions::<lambda\\(\\)>\\]")
+  "PermissionedChannel<Form, T, Capacity, UserTag, Brand, Lanes>::producer\\(foundation::permissions::Permission<fixy::concurrent::channel_tag::Producer<Form, UserTag>, Brand>&&\\) requires  Form == fixy::concurrent::ChannelForm::wire"
+  "UserTag = \\{anonymous\\}::TraceTag. Brand = foundation::permissions::<lambda\\(\\)>. fixy::concurrent::LaneCount \\.\\.\\.Lanes = \\{\\}\\]")
 
 # ── The channel sessions, the endpoints and the stage bridge ──────────
 #
