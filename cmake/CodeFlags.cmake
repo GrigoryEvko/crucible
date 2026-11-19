@@ -90,7 +90,8 @@ endfunction()
 # the tree counts until a class names it.
 set(_CRUCIBLE_NOT_CODE_PREFIXES
   -W -pedantic -fdiagnostics- -fno-diagnostics- -ftemplate-backtrace-limit= -fconstexpr-ops-limit=
-  -fplugin -fdebug-prefix-map= -ffile-prefix-map= -fmacro-prefix-map= -fmessage-length= -g -I -isystem -iquote)
+  -fplugin -fdebug-prefix-map= -ffile-prefix-map= -fmacro-prefix-map= -fmessage-length= -g -I -isystem -iquote
+  -fvar-tracking -fno-var-tracking)
 set(_CRUCIBLE_PER_BUILD_PREFIXES
   -O -march= -mtune= -mcpu= -fPIC -fPIE -fpic -fpie -fsanitize -fno-sanitize -fprofile- -fno-profile-
   -fbranch-probabilities -fauto-profile -fanalyzer -fcontract-evaluation-semantic=)

@@ -38,6 +38,13 @@ project(crucible LANGUAGES CXX)
 # command is the reason for the CMake 3.27 minimum.
 cmake_file_api(QUERY API_VERSION 1 CODEMODEL 2 CACHE 2 CMAKEFILES 1 TOOLCHAINS 1)
 
+# No compile of the tree tracks the locations of variables for a debugger.
+# The pass takes about one fifth of the compile time of a heavy test unit, and
+# no tool of the tree reads a variable location.  The line table stays, so the
+# reports of the sanitizers still give each file and line.  The flags do not change the machine code.  The call comes before the
+# first target, so each target of each directory takes the flags.
+add_compile_options(-fno-var-tracking -fno-var-tracking-assignments)
+
 # The compiler must have each fix in utils/toolchain/gcc/patches.  A configure
 # without cmake/Toolchain-gcc16.cmake takes the compiler that CMake finds,
 # for example the stock Fedora GCC 16.2.1 behind /usr/lib64/ccache/c++,
