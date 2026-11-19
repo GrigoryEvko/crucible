@@ -925,7 +925,8 @@ public:
         requires is_send_v<Head> && (!is_keyed_step_v<Head>)
               && WriteTransport<Transport, typename Inner::resource_type, typename Head::message_type>
     [[nodiscard]] static constexpr auto send(CheckpointHandle<Inner, Head, HeadLoop, Frame>&& handle,
-                                             typename Head::message_type value, Transport transport) {
+                                             detail::sent_value_t<typename Head::message_type> value,
+                                             Transport transport) {
         return wrap_<typename Head::next, HeadLoop, Frame>(
             std::move(handle.inner_).send(std::move(value), std::move(transport)));
     }
@@ -1039,7 +1040,7 @@ public:
     template <typename Transport, typename P = Head>
         requires is_send_v<P> && (!is_keyed_step_v<P>)
               && WriteTransport<Transport, resource_t, typename P::message_type>
-    [[nodiscard]] constexpr auto send(typename P::message_type value, Transport transport) && {
+    [[nodiscard]] constexpr auto send(detail::sent_value_t<typename P::message_type> value, Transport transport) && {
         return CheckpointDoor::send(std::move(*this), std::move(value), std::move(transport));
     }
 

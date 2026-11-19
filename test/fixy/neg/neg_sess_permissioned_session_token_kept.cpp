@@ -28,9 +28,8 @@ int main() {
     using namespace token_kept_fixture;
     const eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
     auto token = perm::mint_permission_root<Region>();
-    auto [head, hold] = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, token);
+    auto head = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, token);
     std::move(head).detach(s::detach_reason::TestInstrumentation{});
-    static_cast<void>(std::move(hold).into_permissions());
     ::foundation::linear::drop(std::move(token));
     return 0;
 }

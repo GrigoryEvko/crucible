@@ -136,7 +136,12 @@ inline constexpr auto read_token = [](Port& port) noexcept -> ::fixy::Option<Tok
     if (port.in->slots.empty()) return ::fixy::none;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
-    return ::fixy::some(Token{static_cast<int>(slot), fp::mint_permission_root<X>()});
+    // Only the door of a hold builds a marker: the wire carries the value,
+    // and the read packs it with a token of its own.
+    auto [message, rest] =
+        s::mint_permission_hold(fp::mint_permission_root<X>()).template pack<X>(static_cast<int>(slot));
+    static_cast<void>(std::move(rest).into_permissions());
+    return ::fixy::some(std::move(message));
 };
 inline constexpr auto poll_label = [](Port& port) noexcept -> ::fixy::Option<std::size_t> {
     if (port.in->slots.empty()) return ::fixy::none;

@@ -29,8 +29,7 @@ using Forever = s::Loop<s::Send<Token, s::Continue>>;
 int main() {
     using namespace loop_iteration_fixture;
     const eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
-    auto [head, hold] = s::mint_permissioned_session<Forever>(ctx, Wire{}, perm::mint_permission_root<Region>());
+    auto head = s::mint_permissioned_session<Forever>(ctx, Wire{}, perm::mint_permission_root<Region>());
     std::move(head).detach(s::detach_reason::InfiniteLoopProtocol{});
-    static_cast<void>(std::move(hold).into_permissions());
     return 0;
 }

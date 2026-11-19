@@ -304,8 +304,16 @@ static_assert(refusal_of<Handed*> == Refusal::HandOffNotOwned);
 static_assert(refusal_of<std::optional<Handed>> == Refusal::HandOffNotOwned);
 static_assert(refusal_of<std::vector<Handed>> == Refusal::HandOffNotOwned);
 static_assert(refusal_of<Handed[1]> == Refusal::HandOffNotOwned);
-static_assert(sender_requires_exactly<Handed, X> && receiver_gains_exactly<Handed, X>,
-              "a hand-off by value moves the tags of its endpoint");
+// The endpoint of a hand-off keeps its tokens in its own slots, so the
+// hand-off moves no tag of the sets that carry it.  A sender and a recipient
+// whose set names a region of the endpoint would make two claims on it.
+static_assert(sender_requires_exactly<Handed> && receiver_gains_exactly<Handed>
+                  && fp::perm_set_equal(^^sess::payload_perm_delta<Handed>::sender_gains, ^^fp::PermSet<>)
+                  && fp::perm_set_equal(^^sess::payload_perm_delta<Handed>::receiver_requires, ^^fp::PermSet<>),
+              "a hand-off by value moves no tag of the sets that carry it");
+static_assert(sess::SendablePayload<Handed, fp::PermSet<>> && sess::ReceivablePayload<Handed, fp::PermSet<>>);
+static_assert(!sess::SendablePayload<Handed, fp::PermSet<X>> && !sess::ReceivablePayload<Handed, fp::PermSet<X>>,
+              "the set of the sender or of the recipient names a region of the endpoint");
 static_assert(sess::is_plain_payload_v<Mentions<Handed>>, "a type that names a hand-off holds no endpoint");
 static_assert(!sess::SendablePayload<LoopedEndpoint, fp::PermSet<>>
               && !sess::SendablePayload<LoopedEndpoint, fp::PermSet<X>>);
@@ -819,6 +827,7 @@ void read_proof_ends_with_the_loan() {
     auto [token, empty] = std::move(closed).template take<X>();
     require(back == region_value, "the lender gets the value the borrower read");
     write_region(token, 0);
+    ::foundation::linear::drop(std::move(token));
     auto rest = std::move(empty).into_permissions();
     auto nothing = std::move(done).into_permissions();
     (void)rest;
@@ -873,8 +882,8 @@ void read_proof_ends_with_the_share() {
 // the refused attacks above.
 template <class Tag>
 concept TokenMovesTwice = requires(fp::Permission<Tag>& token) {
-    sess::Transferable<int, Tag>{1, std::move(token)};
-    sess::Transferable<int, Tag>{2, std::move(token)};
+    sess::mint_permission_hold(std::move(token));
+    sess::mint_permission_hold(std::move(token));
 };
 static_assert(TokenMovesTwice<X>,
               "C++ compiles a second move of one token.  The use-after-move guard refuses it in the source.");

@@ -2,8 +2,8 @@
 //
 //   1. An accept on a DelegatedSession that a move emptied.  A second
 //      accept would build a second handle over a Resource that moved.
-//   2. A delegation with a hold that a move consumed.  The payload would
-//      claim the token of a region that it does not hold.
+//   2. A delegation of a handle that a move consumed.  The payload would
+//      claim the token of a region that the slots of the moved handle hold.
 //   3. An assignment over a DelegatedSession that holds a live endpoint.
 //      The assignment drops that endpoint, and its policy acts.
 //
@@ -47,11 +47,11 @@ void accept_after_a_move() {
     (void)second;
 }
 
-void delegate_with_a_consumed_hold() {
+void delegate_a_consumed_handle() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto [handle, hold] = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, fp::mint_permission_root<Region>());
-    auto kept = std::move(hold);
-    auto parcel = s::mint_delegated_session(std::move(handle), std::move(hold));
+    auto handle = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, fp::mint_permission_root<Region>());
+    auto kept = std::move(handle);
+    auto parcel = s::mint_delegated_session(std::move(handle));
     (void)kept;
     (void)parcel;
 }
@@ -69,11 +69,10 @@ void assign_over_a_live_endpoint() {
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     ::fixy::check::expect_dies(test, accept_after_a_move, ::fixy::TextView{"ACCEPT OF AN EMPTY DELEGATION"});
-    ::fixy::check::expect_dies(test, delegate_with_a_consumed_hold,
-                               ::fixy::TextView{"[Hold_Consumed]: a PermHold was used after a move"});
+    ::fixy::check::expect_dies(test, delegate_a_consumed_handle, ::fixy::TextView{"USE OF A CONSUMED HANDLE"});
     ::fixy::check::expect_dies(test, assign_over_a_live_endpoint,
                                ::fixy::TextView{"ABANDONMENT DETECTED (non-terminal handle)"});
-    ::fixy::check::pass(test, "test_session_delegation_aborts: accept after a move, consumed hold and assignment over "
-                              "a live endpoint refused\n");
+    ::fixy::check::pass(test, "test_session_delegation_aborts: accept after a move, consumed handle and assignment "
+                              "over a live endpoint refused\n");
     return 0;
 }

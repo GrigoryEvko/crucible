@@ -44,17 +44,28 @@ using Carried = s::DelegatedSession<Inner, Wire, s::DefaultAbandonmentPolicy, fp
 
 // The outer channel carries one DelegatedSession, in a slot that the test
 // fills and empties on one thread.
-struct Slot : ::foundation::Pinned<Slot> {
-    std::optional<Carried> held;
+template <class Payload>
+struct SlotOf : ::foundation::Pinned<SlotOf<Payload>> {
+    std::optional<Payload> held;
 };
-struct SenderEnd {
-    Slot* slot = nullptr;
+// A recipient that waits for an endpoint holds that endpoint only after the
+// wait, so the outer channel takes the priority above the priority 0 of the
+// endpoint that the slot holds.  The two ends of a channel have one priority.
+template <class Payload>
+struct SenderEndOf {
+    static constexpr s::watch::priority session_priority{1};
+    SlotOf<Payload>* slot = nullptr;
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
-struct RecipientEnd {
-    Slot* slot = nullptr;
+template <class Payload>
+struct RecipientEndOf {
+    static constexpr s::watch::priority session_priority{1};
+    SlotOf<Payload>* slot = nullptr;
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
+using Slot = SlotOf<Carried>;
+using SenderEnd = SenderEndOf<Carried>;
+using RecipientEnd = RecipientEndOf<Carried>;
 using Outer = s::Send<Carried, s::End>;
 
 // ── The payload order ────────────────────────────────────────────────
@@ -159,17 +170,21 @@ static_assert(
 static_assert(!s::DelegatableHandle<int>);
 static_assert(s::payload_conveys_delegation_v<Carried>);
 
-// A hand-off moves the tags of its endpoint as a token does.  The sender
-// must hold them, and a recipient that holds them already cannot take a
-// second owner.
+// The endpoint of a hand-off keeps the tokens of its tags in its own slots,
+// so the hand-off changes no set of the session that carries it.  The
+// sender needs no tag of the endpoint, and a sender or a recipient whose set
+// names a region of the endpoint would make a second claim on it.
 struct HandedRegion {
     using permission_row = eff::Row<>;
 };
 using CarriesRegion = s::DelegatedSession<Inner, Wire, s::DefaultAbandonmentPolicy, fp::PermSet<HandedRegion>>;
-static_assert(s::PermissionFlowCloses<s::Send<CarriesRegion, s::End>, fp::PermSet<HandedRegion>>);
-static_assert(!s::PermissionFlowCloses<s::Send<CarriesRegion, s::End>, fp::EmptyPermSet>);
+static_assert(!s::PermissionFlowCloses<s::Send<CarriesRegion, s::End>, fp::PermSet<HandedRegion>>,
+              "the sender and the endpoint that it sends would each claim the region");
+static_assert(s::PermissionFlowCloses<s::Send<CarriesRegion, s::End>, fp::EmptyPermSet>,
+              "the endpoint carries its own token, so the sender holds none");
 static_assert(s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::EmptyPermSet>);
-static_assert(!s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::PermSet<HandedRegion>>);
+static_assert(!s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::PermSet<HandedRegion>>,
+              "the recipient and the endpoint that it receives would each claim the region");
 
 [[nodiscard]] static int fail(const char* what) {
     std::fprintf(stderr, "test_session_delegation: %s\n", what);
@@ -243,42 +258,92 @@ static_assert(std::is_nothrow_move_constructible_v<Carried> && std::is_nothrow_m
 
 // ── The tokens travel with the endpoint ──────────────────────────────
 //
-// An endpoint whose permission set holds a tag is delegated with the hold
-// of the token of that tag.  The sender keeps no token, and the recipient
-// gets the token with the handle that claims its region.
+// An endpoint whose permission set holds a tag keeps the token of that tag
+// in its slots, so it is delegated alone.  The recipient gets the token with
+// the handle that claims its region, and it sends the region with it.
 struct Region {
     using permission_row = eff::Row<>;
 };
 using SendsRegion = s::Send<s::Transferable<int, Region>, s::End>;
 
 template <typename H>
-concept DelegatesWithoutItsHold = requires(H handle) { s::mint_delegated_session(std::move(handle)); };
-template <typename H, typename Hold>
-concept DelegatesWithHold =
-    requires(H handle, Hold hold) { s::mint_delegated_session(std::move(handle), std::move(hold)); };
+concept Delegates = requires(H handle) { s::mint_delegated_session(std::move(handle)); };
 
 [[nodiscard]] static int tokens_travel_with_the_endpoint() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto [handle, hold] = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, fp::mint_permission_root<Region>());
-    using H = decltype(handle);
-    static_assert(!DelegatesWithoutItsHold<H>, "a handle whose set holds a tag travels with the hold of its token");
-    static_assert(!DelegatesWithHold<H, s::PermHold<fp::EmptyPermSet>>,
-                  "a hold of another set backs no tag of the handle");
-    static_assert(DelegatesWithHold<H, decltype(hold)>);
+    auto handle = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, fp::mint_permission_root<Region>());
+    static_assert(Delegates<decltype(handle)>, "a handle whose set holds a tag carries its token in its slots");
 
-    auto parcel = s::mint_delegated_session(std::move(handle), std::move(hold));
+    auto parcel = s::mint_delegated_session(std::move(handle));
     static_assert(std::is_same_v<typename decltype(parcel)::inner_perm_set, fp::PermSet<Region>>);
-    auto [received, received_hold] = std::move(parcel).accept();
+    auto received = std::move(parcel).accept();
     static_assert(std::is_same_v<typename decltype(received)::perm_set, fp::PermSet<Region>>);
-    auto [message, rest] = std::move(received_hold).template pack<Region>(9);
-    static_assert(std::is_same_v<decltype(rest), s::PermHold<fp::EmptyPermSet>>);
-    auto at_end =
-        std::move(received).send(std::move(message), [](Wire& wire, s::Transferable<int, Region>& sent) noexcept {
-            wire.sent = sent.peek();
-            return true;
-        });
+    auto at_end = std::move(received).send(9, [](Wire& wire, s::Transferable<int, Region>& sent) noexcept {
+        wire.sent = sent.peek();
+        return true;
+    });
+    static_assert(std::is_same_v<typename decltype(at_end)::perm_set, fp::EmptyPermSet>);
     const Wire back = std::move(at_end).close();
     if (back.sent != 9) return fail("the recipient did not send with the token that came with the endpoint");
+    return 0;
+}
+
+// ── A sender with no tag hands off an endpoint that holds one ────────
+//
+// The outer session starts with no tag.  It sends an endpoint whose slots
+// hold the token of Region, and its own set stays empty.  The recipient
+// accepts the endpoint, and it holds the region through it: its read of the
+// region goes through the token that the endpoint sends.
+using HandsRegion =
+    s::Send<s::DelegatedSession<SendsRegion, Wire, s::DefaultAbandonmentPolicy, fp::PermSet<Region>>, s::End>;
+using ParcelOfRegion = s::DelegatedSession<SendsRegion, Wire, s::DefaultAbandonmentPolicy, fp::PermSet<Region>>;
+
+// The sender puts the endpoint into the slot, and the recipient takes it
+// out, as in delegate_over_a_channel.
+[[nodiscard]] static bool put_parcel(SenderEndOf<ParcelOfRegion>& end, ParcelOfRegion& parcel) noexcept {
+    if (end.slot->held.has_value()) return false;
+    end.slot->held.emplace(std::move(parcel));
+    return true;
+}
+
+// The read waits in its declared form, so it gives the endpoint with no
+// Option around it.  The sender fills the slot on the same thread before the
+// read, so the read does not wait.
+[[nodiscard]] static ParcelOfRegion take_parcel(RecipientEndOf<ParcelOfRegion>& end, s::watch::wait_scope&) noexcept {
+    if (!end.slot->held.has_value()) ::fixy::fatal("the sender put no endpoint into the slot");
+    ParcelOfRegion taken = std::move(*end.slot->held);
+    end.slot->held.reset();
+    return taken;
+}
+
+[[nodiscard]] static int sender_without_tags_hands_off_a_region() {
+    SlotOf<ParcelOfRegion> slot{};
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto [sender, recipient] = s::mint_test_channel<HandsRegion>(ctx, SenderEndOf<ParcelOfRegion>{&slot},
+                                                                 RecipientEndOf<ParcelOfRegion>{&slot});
+    static_assert(std::is_same_v<typename decltype(sender)::perm_set, fp::EmptyPermSet>);
+    auto inner = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, fp::mint_permission_root<Region>());
+    auto sender_done = std::move(sender).send(s::mint_delegated_session(std::move(inner)), put_parcel);
+    static_assert(std::is_same_v<typename decltype(sender_done)::perm_set, fp::EmptyPermSet>,
+                  "the sender holds no token of the endpoint, before the send and after it");
+    // The sender closes before the recipient waits, so the waiting thread
+    // holds no peer of the endpoint that it waits on.
+    static_cast<void>(std::move(sender_done).close());
+    auto [received, recipient_done] = std::move(recipient).recv(take_parcel);
+    static_assert(std::is_same_v<typename decltype(recipient_done)::perm_set, fp::EmptyPermSet>,
+                  "the recipient holds the region through the endpoint, and not in its own set");
+    static_cast<void>(std::move(recipient_done).close());
+    if (slot.held.has_value()) return fail("the recipient left the endpoint in the slot");
+
+    auto accepted = std::move(received).accept();
+    static_assert(std::is_same_v<typename decltype(accepted)::perm_set, fp::PermSet<Region>>,
+                  "the endpoint keeps the token of the region in its slots");
+    auto at_end = std::move(accepted).send(11, [](Wire& wire, s::Transferable<int, Region>& sent) noexcept {
+        wire.sent = sent.peek();
+        return true;
+    });
+    const Wire back = std::move(at_end).close();
+    if (back.sent != 11) return fail("the recipient of the endpoint did not use the region that it holds");
     return 0;
 }
 
@@ -288,5 +353,6 @@ int main() {
     if (const int rc = test_session_delegation_types::delegate_over_a_channel(); rc != 0) return rc;
     if (const int rc = test_session_delegation_types::move_and_assign_take_the_endpoint(); rc != 0) return rc;
     if (const int rc = test_session_delegation_types::tokens_travel_with_the_endpoint(); rc != 0) return rc;
+    if (const int rc = test_session_delegation_types::sender_without_tags_hands_off_a_region(); rc != 0) return rc;
     return 0;
 }

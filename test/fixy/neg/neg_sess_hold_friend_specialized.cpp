@@ -28,7 +28,7 @@ class PermHold<::foundation::permissions::PermSet<neg_sess_hold_friend_specializ
 public:
     static auto
     steal(PermHold<::foundation::permissions::PermSet<neg_sess_hold_friend_specialized_types::Region>>& held) {
-        return std::move(std::get<0>(held.slots_));
+        return std::move(held.slots_);
     }
 };
 }  // namespace fixy::session

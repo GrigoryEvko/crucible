@@ -33,9 +33,8 @@ using Waits = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<Peer>, s::End>>;
 
 int main() {
     const eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
-    auto [head, hold] =
+    auto head =
         s::mint_permissioned_session<Waits>(ctx, Wire{}, ::foundation::permissions::mint_permission_root<Region>());
     static_cast<void>(s::HandleFactory::recover<1>(ctx, std::move(head)));
-    static_cast<void>(hold);
     return 0;
 }

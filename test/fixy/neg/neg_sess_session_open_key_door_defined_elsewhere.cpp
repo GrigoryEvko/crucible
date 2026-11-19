@@ -18,7 +18,9 @@ namespace neg_sess_session_open_key_door_defined_elsewhere_types {
 struct Wire {
     int words = 0;
 };
-struct Region {};
+struct Region {
+    using permission_row = ::foundation::effects::Row<>;
+};
 }  // namespace neg_sess_session_open_key_door_defined_elsewhere_types
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
@@ -29,7 +31,10 @@ public:
         return HandleFactory::open_<
             Recv<int, End>, neg_sess_session_open_key_door_defined_elsewhere_types::Wire, check::Enforced,
             ::foundation::permissions::PermSet<neg_sess_session_open_key_door_defined_elsewhere_types::Region>>(
-            SessionOpenKey{}, wire, std::source_location::current());
+            SessionOpenKey{}, wire,
+            HoldFactory::slots_of(::foundation::permissions::mint_permission_root<
+                                  neg_sess_session_open_key_door_defined_elsewhere_types::Region>()),
+            std::source_location::current());
     }
 };
 }  // namespace fixy::session

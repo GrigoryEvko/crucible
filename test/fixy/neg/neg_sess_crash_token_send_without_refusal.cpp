@@ -35,10 +35,13 @@ int main() {
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
     auto handle =
         s::mint_crash_session<Relay, Alice, Bob, s::ReliableSet<Bob>>(ctx, Wire{}, cell, s::mint_crash_writer(own));
-    auto [token, reply] = std::move(handle).recv(
-        [](Wire&) noexcept { return ::fixy::some(Token{1, fp::mint_permission_root<Region>()}); });
+    auto [value, reply] = std::move(handle).recv([](Wire&) noexcept {
+        auto [message, rest] = s::mint_permission_hold(fp::mint_permission_root<Region>()).template pack<Region>(1);
+        static_cast<void>(std::move(rest).into_permissions());
+        return ::fixy::some(std::move(message));
+    });
     auto chosen = std::move(reply).template select<0>([](Wire&, std::size_t) noexcept { return true; });
-    auto sent = std::move(chosen).send(std::move(token), [](Wire&, Token&&, s::watch::wait_scope&) noexcept {});
+    auto sent = std::move(chosen).send(std::move(value), [](Wire&, Token&&, s::watch::wait_scope&) noexcept {});
     (void)std::move(sent.next).close();
     return 0;
 }

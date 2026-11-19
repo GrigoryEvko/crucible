@@ -29,9 +29,10 @@ using Proto = s::Select<s::End, s::Send<s::Borrowed<int, Region>, s::End>>;
 int main() {
     using namespace unselected_arm_fixture;
     const eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
-    auto [head, hold] = s::mint_permissioned_session<Proto>(ctx, Wire{}, perm::mint_permission_root<Region>());
+    auto head = s::mint_permissioned_session<Proto>(ctx, Wire{}, perm::mint_permission_root<Region>());
     auto at_end = std::move(head).select<0>([](Wire&, std::size_t) noexcept { return true; });
-    static_cast<void>(std::move(at_end).close());
-    static_cast<void>(std::move(hold).into_permissions());
+    auto [wire, token] = std::move(at_end).close();
+    ::foundation::linear::drop(std::move(token));
+    static_cast<void>(wire);
     return 0;
 }

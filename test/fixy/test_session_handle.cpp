@@ -706,15 +706,15 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
 //
 // A handle that holds a permission walks a loop three times.  Each
 // Continue checks that the iteration left the set as the loop found it.
-// The mint consumes the token of the region, and the hold keeps it.
+// The mint consumes the token of the region, and the slots of the handle
+// keep it.
 [[nodiscard]] int walk_loop_with_permission_set() {
     using Forever = s::Loop<s::Send<Ping, s::Continue>>;
     using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
     const BgCtx ctx{::foundation::effects::testing::bg()};
-    auto [head, hold] = s::mint_permissioned_session<Forever, s::check::Enforced>(
+    auto head = s::mint_permissioned_session<Forever, s::check::Enforced>(
         ctx, ValueWire{}, ::foundation::permissions::mint_permission_root<Region>());
     static_assert(std::is_same_v<typename decltype(head)::perm_set, HoldsRegion>);
-    static_assert(std::is_same_v<typename decltype(hold)::perm_set, HoldsRegion>);
     static_assert(std::is_same_v<typename decltype(head)::loop_ctx, s::detail::PermLoopFrame<Forever, HoldsRegion>>);
     for (int round = 0; round < 3; ++round) {
         auto next = std::move(head).send(Ping{round}, [](ValueWire& w, Ping& p) noexcept {
@@ -729,8 +729,6 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
         return 1;
     }
     std::move(head).detach(s::detach_reason::InfiniteLoopProtocol{});
-    auto [token] = std::move(hold).into_permissions();
-    ::foundation::linear::drop(std::move(token));
     return 0;
 }
 
@@ -786,46 +784,42 @@ using PinnedLoop = s::VendorPinned<::fixy::session::VendorBackend::NV, s::Loop<P
 //
 // The sender holds Region and sends its token, so its End handle holds
 // nothing.  The receiver starts with nothing and receives the token, so
-// its End handle holds Region.  The slot is the wire between them.
+// its End handle holds Region.  The token moves out of the slots of the
+// sender and into the slots of the receiver, so the caller never holds it:
+// the send takes no value, the receive gives no value, and close() at End
+// gives the token back with the Resource.  The Resource is the wire: the
+// sender closes with the token in it, and the receiver opens on it.
 
 struct TokenWire {
-    std::optional<Token>* slot = nullptr;
+    ::fixy::FixedList<Token, 1> slot{};
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 [[nodiscard]] int move_token_through_session() {
-    std::optional<Token> slot;
     using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
     const BgCtx ctx{::foundation::effects::testing::bg()};
-    auto [sender, hold] = s::mint_permissioned_session<s::Send<Token, s::End>, s::check::Enforced>(
-        ctx, TokenWire{&slot}, ::foundation::permissions::mint_permission_root<Region>());
-    // The token that the message moves is the token that the mint consumed.
-    auto [sent_token, spent] = std::move(hold).take<Region>();
-    auto sender_done = std::move(sender).send(std::move(sent_token), [](TokenWire& w, Token& token) noexcept {
-        w.slot->emplace(std::move(token));
+    auto sender = s::mint_permissioned_session<s::Send<Token, s::End>, s::check::Enforced>(
+        ctx, TokenWire{}, ::foundation::permissions::mint_permission_root<Region>());
+    auto sender_done = std::move(sender).send([](TokenWire& w, Token& token) noexcept {
+        static_cast<void>(w.slot.append(std::move(token)).expect("the wire is empty"));
         return true;
     });
     static_assert(std::is_same_v<typename decltype(sender_done)::perm_set, NoPerms>);
-    static_assert(std::is_same_v<typename decltype(spent)::perm_set, NoPerms>);
-    static_cast<void>(std::move(spent).into_permissions());
-    (void)std::move(sender_done).close();
+    TokenWire wire = std::move(sender_done).close();
 
-    auto receiver = s::mint_session<s::Recv<Token, s::End>>(ctx, TokenWire{&slot});
-    auto [token, receiver_done] = std::move(receiver).recv([](TokenWire& w) noexcept -> ::fixy::Option<Token> {
-        std::optional<Token>& wire_slot = *w.slot;
-        if (!wire_slot) return ::fixy::none;
-        ::fixy::Option<Token> taken = ::fixy::some(std::move(*wire_slot));
-        wire_slot.reset();
-        return taken;
-    });
+    auto receiver = s::mint_session<s::Recv<Token, s::End>>(ctx, std::move(wire));
+    auto receiver_done = std::move(receiver).recv([](TokenWire& w) noexcept { return w.slot.take_last(); });
     static_assert(
-        ::foundation::permissions::perm_set_equal(^^typename decltype(receiver_done)::perm_set, ^^HoldsRegion));
-    (void)std::move(receiver_done).close();
-    if (slot.has_value()) {
+        ::foundation::permissions::perm_set_equal(^^typename decltype(receiver_done)::perm_set, ^^HoldsRegion),
+        "the receive puts the token into the slots, and the caller holds no token");
+    auto [back, token] = std::move(receiver_done).close();
+    const bool is_wire_empty = back.slot.size() == 0;
+    ::foundation::linear::drop(std::move(token));
+    ::foundation::linear::drop(std::move(back));
+    if (!is_wire_empty) {
         std::fprintf(stderr, "the receive left the token on the wire\n");
         return 1;
     }
-    ::foundation::linear::drop(std::move(token));
     return 0;
 }
 

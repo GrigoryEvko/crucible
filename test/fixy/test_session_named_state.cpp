@@ -141,13 +141,19 @@ static_assert(!s::NamesAtMostOnePeer<s::Named<TwoPeers>>);
 struct Lends {
     using protocol = s::Send<s::Borrowed<int, Region>, s::End>;
 };
-// The brand of the token, so the token does not get the erased identity.
+// A message that moves the token of a region.  A bare token of a brand is
+// no slot form: the slots keep each token on the identity of its tag, so a
+// step cannot give a token of a brand.
 struct TokenBrand final {};
 struct SendsToken {
+    using protocol = s::Send<s::Transferable<int, Region>, s::End>;
+};
+struct SendsBrandedToken {
     using protocol = s::Send<fp::Permission<Region, TokenBrand>, s::End>;
 };
 static_assert(s::PermissionFlowCloses<s::Named<SendsToken>, HoldsRegion>);
 static_assert(!s::PermissionFlowCloses<s::Named<SendsToken>, fp::EmptyPermSet>);
+static_assert(!s::PermissionFlowCloses<s::Named<SendsBrandedToken>, HoldsRegion>, "the slots give no token of a brand");
 static_assert(!s::PermissionFlowCloses<s::Select<s::End, s::Named<Lends>>, HoldsRegion>);
 
 // The row of a name is the row of its protocol.

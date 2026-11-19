@@ -74,8 +74,9 @@
 //
 // A payload delegates when it gives the recipient authority over a
 // session endpoint.  One form of delegation travels: the hand-off
-// DelegatedSession<P, R, Pol, PS>, held by value.  Its tags move with it,
-// and fixy/session/Delegate.h states the rules that it obeys.  In every
+// DelegatedSession<P, R, Pol, PS>, held by value.  Its endpoint keeps the
+// tokens of PS in its own slots, so no set of the sender or of the receiver
+// changes, and fixy/session/Delegate.h states the rules that it obeys.  In every
 // session the walk refuses an endpoint that a type names outside that
 // hand-off.  An endpoint that travels bare carries its permission set with
 // no set change, and it skips the rules of the hand-off: the handle
@@ -403,8 +404,10 @@ struct PayloadCensus {
     stack<std::meta::info> moved;
     stack<std::meta::info> lent;
     stack<std::meta::info> released;
-    // Each DelegatedSession that the payload holds by value.
+    // Each DelegatedSession that the payload holds by value, and the tags
+    // that the endpoints of those hand-offs hold.
     stack<std::meta::info> hand_offs;
+    stack<std::meta::info> handed;
     bool carries_share = false;
     PayloadRefusal refusal = PayloadRefusal::None;
     std::meta::info refused_type{};
@@ -459,7 +462,8 @@ consteval void record_payload_tag(PayloadWalk& walk, stack<std::meta::info> Payl
                                   std::meta::info at) {
     if (walk.census.refusal != PayloadRefusal::None) return;
     const std::meta::info bare_tag = std::meta::dealias(tag);
-    for (const auto held : {&PayloadCensus::moved, &PayloadCensus::lent, &PayloadCensus::released}) {
+    for (const auto held :
+         {&PayloadCensus::moved, &PayloadCensus::lent, &PayloadCensus::released, &PayloadCensus::handed}) {
         if (holds_type(walk.census.*held, bare_tag)) {
             refuse_payload(walk, PayloadRefusal::DuplicateTag, at);
             return;
@@ -517,12 +521,16 @@ consteval void record_payload_tag(PayloadWalk& walk, stack<std::meta::info> Payl
 
 consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node);
 
-// A hand-off moves the tags of the set of its endpoint.  A hand-off that
-// a template argument names holds no endpoint.  A hand-off behind a
-// pointer, in a union or in an array is refused: it travels by value, one
-// time, so that one recipient holds the endpoint and its tokens.  The
-// first token of a hand-off is the hand-off, when its set holds a tag.
-// `argument` points to the template arguments of the hand-off.
+// A hand-off records the tags of the set of its endpoint, and it moves
+// none of them: the endpoint keeps their tokens in its own slots, so the
+// set of the sender and the set of the receiver do not change.  The gates
+// of fixy/session/Flow.h refuse a hand-off whose tags name a region of the
+// set of the sender or of the receiver.  A hand-off that a template
+// argument names holds no endpoint.  A hand-off behind a pointer, in a
+// union or in an array is refused: it travels by value, one time, so that
+// one recipient holds the endpoint and its tokens.  The first token of a
+// hand-off is the hand-off, when its set holds a tag.  `argument` points to
+// the template arguments of the hand-off.
 [[nodiscard]] consteval std::meta::info take_hand_off(PayloadWalk& walk, const PayloadNode& node,
                                                       const std::meta::info* argument) {
     if (node.reach == PayloadReach::Named) return {};
@@ -535,7 +543,7 @@ consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node
     const std::meta::info* const tag = inner_tags.data();
     const std::size_t tag_count = inner_tags.size();
     for (std::size_t place = 0; place < tag_count; ++place)
-        record_payload_tag(walk, &PayloadCensus::moved, tag[place], node.type);
+        record_payload_tag(walk, &PayloadCensus::handed, tag[place], node.type);
     if (walk.census.refusal == PayloadRefusal::None) push(walk.census.hand_offs, node.type);
     return tag_count == 0 ? std::meta::info{} : node.type;
 }
@@ -803,6 +811,8 @@ struct PayloadFacts {
     std::meta::info sender_gains{};
     std::meta::info receiver_requires{};
     std::meta::info receiver_gains{};
+    // The tags that the endpoints of the hand-offs hold, as a PermSet.
+    std::meta::info hand_off_tags{};
     bool carries_share = false;
     // Each DelegatedSession that the payload holds by value, in a static
     // array.
@@ -854,6 +864,7 @@ struct PayloadFacts {
     if (census.refusal != PayloadRefusal::None) {
         const std::meta::info empty = std::meta::dealias(^^::foundation::permissions::EmptyPermSet);
         facts.sender_requires = facts.sender_gains = facts.receiver_requires = facts.receiver_gains = empty;
+        facts.hand_off_tags = empty;
         return facts;
     }
     stack<std::meta::info> sender_requires{};
@@ -876,6 +887,7 @@ struct PayloadFacts {
     facts.sender_gains = payload_wrap_each(^^LentOut, census.lent);
     facts.receiver_requires = payload_wrap_each(^^LentOut, census.released);
     facts.receiver_gains = payload_perm_set_of(receiver_gains);
+    facts.hand_off_tags = payload_perm_set_of(census.handed);
     facts.carries_share = census.carries_share;
     const std::span<const std::meta::info> hand_offs =
         std::define_static_array(std::span<const std::meta::info>{census.hand_offs.items, census.hand_offs.top});

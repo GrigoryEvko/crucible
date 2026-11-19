@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::session::PermHold<foundation::permissions::PermSet<foundation::permissions::tag::HugePageTag>>{fixy::session::detail::hold_from_slots{}, forge::rvalue<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>>()};
+    [[maybe_unused]] auto forged = fixy::session::PermHold<foundation::permissions::PermSet<foundation::permissions::tag::HugePageTag>>{fixy::session::detail::hold_from_slots{}, forge::rvalue<fixy::session::HoldSlots<foundation::permissions::PermSet<foundation::permissions::tag::HugePageTag>>>()};
     return 0;
 }

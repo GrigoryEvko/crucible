@@ -32,11 +32,11 @@ namespace fixy::session {
 // The permission set of a handle names the regions whose tokens its
 // messages can move.  mint_session starts with the empty set.
 // mint_permissioned_session consumes one token for each tag, and starts
-// the session with the set of those tags.  It returns the handle and a
-// PermHold of the same set.  The handle carries the set as a type, and
-// the hold carries the tokens.  The caller takes a token from the hold
-// for each message that moves one.  This is the CSL frame rule at the
-// start of a session: the set of the handle is backed by tokens that no
+// the session with the set of those tags.  It returns the first handle,
+// which carries the set as a type and keeps the tokens in its slots.  Each
+// step that moves a token takes it out of the slots, so the caller gives
+// the value of a marker and never its token.  This is the CSL frame rule at
+// the start of a session: the set of the handle is backed by tokens that no
 // other holder has, and each region has one owner (Actris per-message
 // resources).
 //

@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::session::DelegatedSession<fixy::session::End, int, fixy::session::check::Enforced, foundation::permissions::EmptyPermSet>{forge::rvalue<fixy::session::SessionHandle<fixy::session::End, int, void, fixy::session::check::Enforced, foundation::permissions::EmptyPermSet>>(), forge::rvalue<fixy::session::PermHold<foundation::permissions::EmptyPermSet>>()};
+    [[maybe_unused]] auto forged = fixy::session::DelegatedSession<fixy::session::End, int, fixy::session::check::Enforced, foundation::permissions::EmptyPermSet>{forge::rvalue<fixy::session::SessionHandle<fixy::session::End, int, void, fixy::session::check::Enforced, foundation::permissions::EmptyPermSet>>()};
     return 0;
 }

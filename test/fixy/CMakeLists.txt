@@ -2278,6 +2278,11 @@ endif()
 # a passkey.
 fixy_test(test_session_endpoint_transfer)
 
+# The slots of a handle: each step that moves a token or a loan takes it out
+# of the slots of the sender and puts it into the slots of the receiver, for
+# each slot form, and the slots take no byte.
+fixy_test(test_session_slot_forms)
+
 # The handle factory builds a handle at a position that its caller names,
 # and the door of the mints opens a session on it.  The builders are
 # private, each class is final, and the keys befriend only classes that
@@ -2294,13 +2299,13 @@ fixy_neg_compile_test(neg_sess_handle_factory_derived_look_alike
   "HandleFactory")
 fixy_neg_compile_test(neg_sess_handle_factory_friend_specialized
   "is private within this context"
-  "fixy::session::HandleFactory::make_.Resource, fixy::session::watch::session_ref, std::source_location. .with Proto = fixy::session::Recv<int, fixy::session::End>. Resource = neg_sess_handle_factory_friend_specialized_types::Wire")
+  "fixy::session::HandleFactory::make_.Resource, fixy::session::HoldSlots<PS>, fixy::session::watch::session_ref, std::source_location. .with Proto = fixy::session::Recv<int, fixy::session::End>. Resource = neg_sess_handle_factory_friend_specialized_types::Wire")
 fixy_neg_compile_test(neg_sess_handle_base_sibling_specialized
   "is protected within this context"
   "fixy::session::SessionHandleBase<Proto, Derived, Policy>::mark_consumed_.. .with Proto = fixy::session::Send<int, fixy::session::End>")
 fixy_neg_compile_test(neg_sess_handle_factory_door_defined_elsewhere
   "is private within this context"
-  "fixy::session::HandleFactory::make_.Resource, fixy::session::watch::session_ref, std::source_location. .with Proto = fixy::session::Recv<int, fixy::session::Continue>. Resource = neg_sess_handle_factory_door_defined_elsewhere_types::Wire")
+  "fixy::session::HandleFactory::make_.Resource, fixy::session::HoldSlots<PS>, fixy::session::watch::session_ref, std::source_location. .with Proto = fixy::session::Recv<int, fixy::session::Continue>. Resource = neg_sess_handle_factory_door_defined_elsewhere_types::Wire")
 fixy_neg_compile_test(neg_sess_session_open_key_door_defined_elsewhere
   "is private within this context"
   "constexpr fixy::session::SessionOpenKey::SessionOpenKey..")
@@ -2340,26 +2345,27 @@ fixy_neg_compile_test(neg_sess_rewind_channel_loops_differ
 fixy_test(test_session_rewind_channel)
 
 # Delegate.h: a message that carries a live endpoint.  The test hands an
-# endpoint over a channel, hands an endpoint with the token of its set,
-# and checks the contravariant payload order and the refusal of a
-# hand-off to a peer of the inner session.  Two fixtures for each
+# endpoint over a channel, hands an endpoint with the token of its set in
+# its slots, and checks the contravariant payload order and the refusal of
+# a hand-off to a peer of the inner session.  Two fixtures for each
 # refusal: no code but the delegation door builds a DelegatedSession, the
-# door states the gate of the mint, the tokens of the set travel with the
-# endpoint, no protocol hands an endpoint to a peer of its session, and no
-# handle inside a Loop or under a brand delegates.
+# door states the gate of the mint, no set of a sender or of a recipient
+# names a region of an endpoint that it hands off, no protocol hands an
+# endpoint to a peer of its session, and no handle inside a Loop or under a
+# brand delegates.
 fixy_test(test_session_delegation)
 fixy_neg_compile_test(neg_sess_delegation_door_states_the_gate
   "no matching function for call to .fixy::session::DelegationDoor::give"
   "mismatched types .void. and .fixy::session::Loop<fixy::session::Send<int, fixy::session::Continue> >.")
 fixy_neg_compile_test(neg_sess_delegated_session_forged
   "no matching function for call to .fixy::session::DelegatedSession<fixy::session::Send<int, fixy::session::End>, neg_sess_delegated_session_forged_types::Wire"
-  "DelegatedSession.const fixy::session::DelegationKey&, handle_type&&, hold_type&&.")
-fixy_neg_compile_test(neg_sess_delegation_without_hold
-  "no matching function for call to .mint_delegated_session"
-  "perm_set_is_empty\\(.*\\(\\^\\^ typename H::perm_set\\) .with H = fixy::session::SessionHandle<fixy::session::Send<fixy::session::Transferable<int, neg_sess_delegation_without_hold_types::Region>")
-fixy_neg_compile_test(neg_sess_delegation_foreign_hold
-  "no matching function for call to .mint_delegated_session"
-  "required for the satisfaction of .HoldsTokensOf<Hold, H>. .with Hold = fixy::session::PermHold<foundation::permissions::PermSet<neg_sess_delegation_foreign_hold_types::Other> >")
+  "DelegatedSession.const fixy::session::DelegationKey&, handle_type&&.")
+fixy_neg_compile_test(neg_sess_hand_off_to_holder_of_region
+  "no matching function for call to .mint_permissioned_session<neg_sess_hand_off_to_holder_of_region_types::TakesParcel>"
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >")
+fixy_neg_compile_test(neg_sess_hand_off_from_holder_of_region
+  "no matching function for call to .mint_permissioned_session<neg_sess_hand_off_from_holder_of_region_types::GivesParcel>"
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >")
 fixy_neg_compile_test(neg_sess_delegated_session_forged_by_bit_cast
   "no matching function for call to .bit_cast<neg_sess_delegated_session_forged_by_bit_cast_types::Carried>"
   "is_trivially_copyable_v<_To>")
@@ -3064,6 +3070,23 @@ fixy_neg_compile_test(neg_sess_permissioned_session_token_kept
   "use of deleted function .foundation::permissions::Permission<Tag, Brand>::Permission\\(const foundation::permissions::Permission<Tag, Brand>&\\) .with Tag = token_kept_fixture::Region"
   "duplicating creates two simultaneous owners of the same region"
   "initializing argument 3 of .constexpr auto fixy::session::mint_permissioned_session")
+# The handle keeps the tokens of its set in its slots, and each step that
+# moves a token takes it out of the slots or puts it in.  A send takes no
+# marker and no token from the caller, a receive gives no token to the
+# caller, and a payload that holds a token outside a marker is refused at
+# the mint.  Each fixture compiles on the tree before the slots.
+fixy_neg_compile_test(neg_sess_send_token_from_outside_the_hold
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send"
+  "\\[Marker_From_The_Slots\\]")
+fixy_neg_compile_test(neg_sess_send_bare_token_from_outside_the_hold
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send"
+  "\\[Token_From_The_Slots\\]")
+fixy_neg_compile_test(neg_sess_recv_token_to_the_caller
+  "cannot decompose"
+  "fixy::session::SessionHandle<fixy::session::End, neg_sess_recv_token_to_the_caller_types::Wire")
+fixy_neg_compile_test(neg_sess_token_in_a_member_of_a_payload
+  "no matching function for call to .mint_permissioned_session<neg_sess_token_in_a_member_of_a_payload_types::SendsCarrier>"
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >")
 # HS14 for mint_session of Entry.h.  Its gate is CtxFitsSessionFrom with no
 # tag, and each fixture fails one clause: the context, the permission flow
 # from the empty set, and the Resource.
@@ -3397,13 +3420,13 @@ fixy_neg_compile_test(neg_sess_crash_branch_blocking_poll
   "CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::branch\\(Poll, Handler\\)")
 fixy_neg_compile_test(neg_sess_crash_token_send_without_refusal
   ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
-  "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::send\\(typename P::message_type, Transport\\)")
+  "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::send\\(fixy::session::detail::sent_value_t<typename P::message_type>, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_recorded_token_send_without_refusal
   ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
   "In instantiation of .static constexpr auto fixy::session::RecordingDoor::send\\(fixy::session::Recorded<Inner>&&, T&&, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_send_transport_result
   ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
-  "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::send\\(typename P::message_type, Transport\\)")
+  "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::send\\(fixy::session::detail::sent_value_t<typename P::message_type>, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_recorded_send_transport_result
   ": \\[Transport_Shape\\] a write either tries, as bool\\(Resource&, T&\\)"
   "use of deleted function .void fixy::session::Recorded<Inner>::send\\(T, Transport\\)")
@@ -3639,7 +3662,7 @@ fixy_neg_compile_test(neg_sess_session_priority_untyped
   "declares session_priority with a type other than fixy::session::watch::priority")
 fixy_neg_compile_test(neg_sess_send_write_waits_in_secret
   ": \\[Transport_Shape\\] a write either tries, as bool\\(Resource&, T&\\)"
-  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send\\(T, Transport\\)")
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send\\(fixy::session::detail::sent_value_t<T>, Transport\\)")
 fixy_neg_compile_test(neg_sess_recv_read_waits_in_secret
   ": \\[Transport_Shape\\] a read either polls, as fixy::Option<T>\\(Resource&\\)"
   "use of deleted function .void fixy::session::SessionHandle<fixy::session::Recv<T, R>, Resource, LoopCtx, Policy, PS>::recv\\(Transport\\)")

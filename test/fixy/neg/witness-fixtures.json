@@ -887,6 +887,11 @@
       "constructor": "\\bSequenceStamp\\("
     },
     {
+      "name": "neg_witness_session_borrowed_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBorrowed\\("
+    },
+    {
       "name": "neg_witness_session_checkpointdoor_direct_construction",
       "reason": "use of deleted function",
       "constructor": "\\bCheckpointDoor\\("
@@ -957,6 +962,11 @@
       "constructor": "\\bHoldFactory\\("
     },
     {
+      "name": "neg_witness_session_holdslots_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bHoldSlots\\("
+    },
+    {
       "name": "neg_witness_session_machinelease_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bMachineLease\\("
@@ -975,6 +985,16 @@
       "name": "neg_witness_session_recordingdoor_direct_construction",
       "reason": "use of deleted function",
       "constructor": "\\bRecordingDoor\\("
+    },
+    {
+      "name": "neg_witness_session_released_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bReleased\\("
+    },
+    {
+      "name": "neg_witness_session_returned_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bReturned\\("
     },
     {
       "name": "neg_witness_session_sessionevent_direct_construction",
@@ -1005,6 +1025,11 @@
       "name": "neg_witness_session_sessionopenkey_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bSessionOpenKey\\("
+    },
+    {
+      "name": "neg_witness_session_transferable_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bTransferable\\("
     },
     {
       "name": "neg_witness_session_transition_detail_subsort_cell_direct_construction",
@@ -1323,6 +1348,26 @@
     },
     {
       "type": "fixy::session::PermHold<foundation::permissions::PermSet<foundation::permissions::tag::HugePageTag>>",
+      "header": "fixy/session/Flow.h"
+    },
+    {
+      "type": "fixy::session::HoldSlots<foundation::permissions::PermSet<foundation::permissions::tag::HugePageTag>>",
+      "header": "fixy/session/Flow.h"
+    },
+    {
+      "type": "fixy::session::Transferable<int, foundation::permissions::tag::HugePageTag>",
+      "header": "fixy/session/Flow.h"
+    },
+    {
+      "type": "fixy::session::Returned<int, foundation::permissions::tag::HugePageTag>",
+      "header": "fixy/session/Flow.h"
+    },
+    {
+      "type": "fixy::session::Borrowed<int, foundation::permissions::tag::HugePageTag>",
+      "header": "fixy/session/Flow.h"
+    },
+    {
+      "type": "fixy::session::Released<int, foundation::permissions::tag::HugePageTag>",
       "header": "fixy/session/Flow.h"
     },
     {

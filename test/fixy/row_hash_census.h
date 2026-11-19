@@ -1306,6 +1306,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::HoldFactory,
      "the builder of every hold and of each of its transitions: it has static members only, no object of it "
      "exists, and it is never a value"},
+    {^^::fixy::session::HoldSlots,
+     "the slots of the tokens of one permission set: a session handle or a hold keeps them in a private member on "
+     "the thread of its endpoint, and they are never a template argument of a kernel signature"},
     {^^::fixy::session::is_permission_classified, kMetafunction},
     {^^::fixy::session::payload_perm_delta, kMetafunction},
     {^^::fixy::session::no_label_t,

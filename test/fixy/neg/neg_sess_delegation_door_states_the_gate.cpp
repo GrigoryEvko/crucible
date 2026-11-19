@@ -23,7 +23,7 @@ int main() {
     using namespace neg_sess_delegation_door_states_the_gate_types;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto handle = s::mint_session<s::Loop<s::Send<int, s::Continue>>>(ctx, Wire{});
-    auto carried = s::DelegationDoor::give(std::move(handle), s::mint_permission_hold());
+    auto carried = s::DelegationDoor::give(std::move(handle));
     static_cast<void>(carried);
     return 0;
 }

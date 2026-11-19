@@ -22,8 +22,7 @@ using SendsPing = s::Send<Ping, s::End>;
 int main() {
     using namespace no_tokens_fixture;
     const eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
-    auto [head, hold] = s::mint_permissioned_session<SendsPing>(ctx, Wire{});
+    auto head = s::mint_permissioned_session<SendsPing>(ctx, Wire{});
     std::move(head).detach(s::detach_reason::TestInstrumentation{});
-    static_cast<void>(std::move(hold).into_permissions());
     return 0;
 }

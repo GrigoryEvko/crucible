@@ -16,7 +16,9 @@ struct ForgeTag {};
 struct Wire {
     int words = 0;
 };
-struct Region {};
+struct Region {
+    using permission_row = ::foundation::effects::Row<>;
+};
 }  // namespace neg_sess_handle_factory_friend_specialized_types
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges a DelegatedSession that calls a builder of the factory")
@@ -28,7 +30,11 @@ public:
     static auto forge(neg_sess_handle_factory_friend_specialized_types::Wire wire) {
         return HandleFactory::make_<
             Recv<int, End>, neg_sess_handle_factory_friend_specialized_types::Wire, void, check::Enforced,
-            ::foundation::permissions::PermSet<neg_sess_handle_factory_friend_specialized_types::Region>>(wire, {}, {});
+            ::foundation::permissions::PermSet<neg_sess_handle_factory_friend_specialized_types::Region>>(
+            wire,
+            HoldFactory::slots_of(::foundation::permissions::mint_permission_root<
+                                  neg_sess_handle_factory_friend_specialized_types::Region>()),
+            {}, {});
     }
 };
 }  // namespace fixy::session

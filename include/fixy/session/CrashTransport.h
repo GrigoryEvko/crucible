@@ -920,7 +920,8 @@ public:
         requires is_send_v<typename Handle::protocol> && (!is_keyed_step_v<typename Handle::protocol>)
               && TryWrite<Transport, typename Handle::resource_type, typename Handle::protocol::message_type>
     [[nodiscard]] static constexpr auto send(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched,
-                                             typename Handle::protocol::message_type value, Transport transport) {
+                                             detail::sent_value_t<typename Handle::protocol::message_type> value,
+                                             Transport transport) {
         using T = typename Handle::protocol::message_type;
         using Resource = typename Handle::resource_type;
         // The payload of a keyed message goes to the role that the message
@@ -1295,16 +1296,18 @@ public:
     // write that refuses a closed queue keeps a token out of a queue that no
     // one reads.  A declared write waits inside the transport, where no
     // crash is seen, so the decorator refuses it.
+    // The value is the value of a marker, and the step takes the token from
+    // the slots of the inner handle (the slot form of fixy/session/Flow.h).
     template <typename Transport, typename P = protocol>
         requires is_send_v<P> && (!is_keyed_step_v<P>) && TryWrite<Transport, resource_type, typename P::message_type>
-    [[nodiscard]] constexpr auto send(typename P::message_type value, Transport transport) && {
+    [[nodiscard]] constexpr auto send(detail::sent_value_t<typename P::message_type> value, Transport transport) && {
         return CrashSessionDoor::send(std::move(*this), std::move(value), std::move(transport));
     }
 
     template <typename Transport, typename P = protocol>
         requires is_send_v<P> && (!is_keyed_step_v<P>)
                   && (!TryWrite<Transport, resource_type, typename P::message_type>)
-    void send(typename P::message_type, Transport) && = delete(
+    void send(detail::sent_value_t<typename P::message_type>, Transport) && = delete(
         "[Crash_Write_Must_Try] the write of a crash session is a trying write, bool(Resource&, T&), that returns "
         "false while the queue of the peer has no room or is closed.  A write of another shape waits inside the "
         "transport, where no crash is seen, or puts the payload into a queue that no one reads.");

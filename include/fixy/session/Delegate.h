@@ -6,12 +6,12 @@
 // A sender hands an endpoint of a session to a peer as the payload of a
 // message.  This is the throw and catch of higher-order session types
 // (Honda, Vasconcelos and Kubo, ESOP 1998).  mint_delegated_session moves
-// the live handle of the endpoint into a DelegatedSession, together with
-// the PermHold that backs the permission set of the handle.  The sender
-// then holds a moved-from handle and no token of the endpoint.  The
-// session stays live, and its record in fixy/session/Watch.h moves with
-// the handle.  The recipient calls accept() and gets the handle at the
-// same protocol position, and the hold with it.
+// the live handle of the endpoint into a DelegatedSession.  The handle
+// keeps the tokens of its permission set in its slots, so the tokens move
+// with it.  The sender then holds a moved-from handle and no token of the
+// endpoint.  The session stays live, and its record in
+// fixy/session/Watch.h moves with the handle.  The recipient calls accept()
+// and gets the handle at the same protocol position, with its tokens.
 //
 // The rules:
 //
@@ -31,12 +31,16 @@
 //      a callback entry or a forked channel owns carries the brand of its
 //      body in that context, and the body must return it, so it cannot
 //      delegate either.
-//   4. The tags of the permission set of the endpoint move from the set of
-//      the sender to the set of the recipient, as the payload walk of
-//      fixy/session/Classification.h states for a hand-off.  The tokens
-//      of those tags travel in the DelegatedSession, so the recipient
-//      holds the tokens that its handle claims, and the sender holds none
-//      of them.
+//   4. A hand-off changes no permission set of the session that carries it.
+//      The endpoint keeps the tokens of its own set in its slots, and those
+//      slots are the one ledger of the tokens, so the recipient holds the
+//      tokens that the handle claims, and the sender holds none of them.
+//      The slot tags of each handle are in its type.  So a send and a
+//      receive of the hand-off check at compile time that the tags of the
+//      endpoint name no region of the set of the sender or of the recipient
+//      (SendablePayload and ReceivablePayload of fixy/session/Flow.h).  One
+//      region in the set of a handle and in the set of an endpoint that it
+//      holds is two claims on that region.
 //   5. The payload order is contravariant in the protocol of the endpoint
 //      (the axiom delegation_contravariant of fixy/session/Subtype.h).
 //   6. A protocol that sends an endpoint of a session to a peer of that
@@ -111,17 +115,14 @@ public:
 template <typename InnerProto, typename Resource, typename Policy, typename InnerPS>
 class [[nodiscard]] DelegatedSession {
     using handle_type = SessionHandle<InnerProto, Resource, void, Policy, InnerPS>;
-    using hold_type = PermHold<InnerPS>;
     static constexpr bool is_nothrow_move = std::is_nothrow_move_constructible_v<handle_type>;
 
-    // The endpoint and the hold of its tokens.  Each constructor builds the
-    // two members, and no flag of presence guards the read of the handle
-    // policy in the destructor.  A move takes the two members together.
-    // It marks the source handle consumed and makes the source hold not
-    // live.  So a live hold tells that the payload holds the endpoint.  This
+    // The endpoint, with the tokens of its set in its slots, and the flag of
+    // its presence.  A move takes the handle and clears the flag of the
+    // source, so the flag tells that the payload holds the endpoint.  This
     // is also true under check::Off, where the handle keeps no state.
     handle_type handle_;
-    hold_type hold_;
+    bool holds_endpoint_ = true;
 
 public:
     using inner_proto = InnerProto;
@@ -130,26 +131,30 @@ public:
     using abandonment_policy = Policy;
 
     // The constructor takes the delegation key, which only the delegation
-    // door makes.  The door gives a live handle and a live hold.
-    constexpr DelegatedSession(DelegationKey const&, handle_type&& handle, hold_type&& hold) noexcept(is_nothrow_move)
-        : handle_{std::move(handle)}, hold_{std::move(hold)} {}
+    // door makes.  The door gives a live handle.
+    constexpr DelegatedSession(DelegationKey const&, handle_type&& handle) noexcept(is_nothrow_move)
+        : handle_{std::move(handle)} {}
 
-    constexpr DelegatedSession(DelegatedSession&&) noexcept(is_nothrow_move) = default;
+    constexpr DelegatedSession(DelegatedSession&& other) noexcept(is_nothrow_move)
+        : handle_{std::move(other.handle_)}, holds_endpoint_{other.holds_endpoint_} {
+        other.holds_endpoint_ = false;
+    }
 
     // An assignment over a DelegatedSession that still holds an endpoint
     // drops that endpoint first, as an assignment over a live handle does.
-    // A hold has no assignment, so the two members end and the assignment
-    // builds them again in place.  A move that can throw is refused.  A
-    // throw between the end and the build would end a member two times.
+    // The handle ends and the assignment builds it again in place, because
+    // a handle whose set holds a loan state has no assignment.  A move that
+    // can throw is refused.  A throw between the end and the build would end
+    // the handle two times.
     constexpr DelegatedSession& operator=(DelegatedSession&& other) noexcept
         requires is_nothrow_move
     {
         if (this == &other) [[unlikely]]
             return *this;
-        hold_.~hold_type();
         handle_.~handle_type();
         ::new(static_cast<void*>(&handle_)) handle_type{std::move(other.handle_)};
-        ::new(static_cast<void*>(&hold_)) hold_type{std::move(other.hold_)};
+        holds_endpoint_ = other.holds_endpoint_;
+        other.holds_endpoint_ = false;
         return *this;
     }
 
@@ -162,22 +167,16 @@ public:
     // holds, so the abandonment policy of the handle acts.
     ~DelegatedSession() = default;
 
-    [[nodiscard]] constexpr bool holds_endpoint() const noexcept { return hold_.is_live(); }
+    [[nodiscard]] constexpr bool holds_endpoint() const noexcept { return holds_endpoint_; }
 
-    // Gives the recipient the handle at the delegated position.  A handle
-    // with an empty permission set comes alone.  A handle with tags comes
-    // in a pair with the hold of their tokens.  An accept on a
-    // DelegatedSession that holds no endpoint aborts.
-    [[nodiscard]] constexpr auto accept() && noexcept(is_nothrow_move) {
-        if (!hold_.is_live()) [[unlikely]]
+    // Gives the recipient the handle at the delegated position, with the
+    // tokens of its set in its slots.  An accept on a DelegatedSession that
+    // holds no endpoint aborts.
+    [[nodiscard]] constexpr handle_type accept() && noexcept(is_nothrow_move) {
+        if (!holds_endpoint_) [[unlikely]]
             detail::report_delegation_taken();
-        handle_type handle{std::move(handle_)};
-        hold_type hold{std::move(hold_)};
-        if constexpr (detail::perm_set_is_empty(^^InnerPS)) {
-            return handle;
-        } else {
-            return std::pair{std::move(handle), std::move(hold)};
-        }
+        holds_endpoint_ = false;
+        return handle_type{std::move(handle_)};
     }
 };
 
@@ -198,51 +197,35 @@ namespace detail {
 template <typename H>
 concept DelegatableHandle = detail::is_delegatable_handle(^^H);
 
-// True when Hold backs the permission set of the handle H: it holds the
-// token of each tag of that set, and nothing else.
-template <typename Hold, typename H>
-concept HoldsTokensOf = std::is_same_v<Hold, PermHold<typename H::perm_set>>;
-
 // The door that builds a DelegatedSession, and the one friend of
-// DelegationKey.  Each public member states the whole gate of a form of
-// mint_delegated_session, so a direct call is no weaker than the mint.
-// The class is final, and no object of it exists.
+// DelegationKey.  Each public member states the whole gate of
+// mint_delegated_session, so a direct call is no weaker than the mint.  The
+// class is final, and no object of it exists.
 class DelegationDoor final : ::foundation::NoObject<DelegationDoor> {
 public:
-    // Moves the live handle and the hold of its tokens into the payload.  A
-    // consumed handle aborts here, as at every operation.  A consumed hold
-    // aborts too: the payload would claim tokens that it does not hold.
+    // Moves the live handle, with the tokens in its slots, into the payload.
+    // A consumed handle aborts here, as at every operation.
     template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS>
         requires DelegatableHandle<SessionHandle<Proto, Resource, void, Policy, PS>>
     [[nodiscard]] static constexpr DelegatedSession<Proto, Resource, Policy, PS>
-    give(SessionHandle<Proto, Resource, void, Policy, PS>&& handle,
-         PermHold<PS>&& hold) noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+    give(SessionHandle<Proto, Resource, void, Policy, PS>&& handle) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>) {
         using Handle = SessionHandle<Proto, Resource, void, Policy, PS>;
         if (!handle.is_live()) [[unlikely]]
             detail::report_use_after_consume(Handle::wrapper_name(), Handle::protocol_name(), std::source_location{});
-        if (!hold.is_live()) [[unlikely]]
-            detail::hold_consumed_abort_();
-        return DelegatedSession<Proto, Resource, Policy, PS>{DelegationKey{}, std::move(handle), std::move(hold)};
+        return DelegatedSession<Proto, Resource, Policy, PS>{DelegationKey{}, std::move(handle)};
     }
 };
 
-// Moves the live handle, with the empty permission set, into the payload
-// that carries it.  The payload travels as the value of a Send.
+// Moves the live handle into the payload that carries it.  The handle keeps
+// the tokens of its permission set in its slots, so the sender keeps no
+// token of the endpoint, and the recipient gets them with the handle.  The
+// payload travels as the value of a Send.
 template <typename H>
-    requires DelegatableHandle<H> && (detail::perm_set_is_empty(^^typename H::perm_set))
+    requires DelegatableHandle<H>
 [[nodiscard]] constexpr auto
 mint_delegated_session(H handle) noexcept(std::is_nothrow_move_constructible_v<typename H::resource_type>) {
-    return DelegationDoor::give(std::move(handle), mint_permission_hold());
-}
-
-// Moves the live handle and the hold of the tokens that back its
-// permission set into the payload.  The sender keeps no token of the
-// endpoint, and the recipient gets them with the handle.
-template <typename H, typename Hold>
-    requires DelegatableHandle<H> && HoldsTokensOf<Hold, H>
-[[nodiscard]] constexpr auto
-mint_delegated_session(H handle, Hold hold) noexcept(std::is_nothrow_move_constructible_v<typename H::resource_type>) {
-    return DelegationDoor::give(std::move(handle), std::move(hold));
+    return DelegationDoor::give(std::move(handle));
 }
 
 // ── Queries over the delegation heads ────────────────────────────────

@@ -77,10 +77,17 @@ void token_relayed_to_crashed_peer() {
         if constexpr (s::is_crash_branch_v<Head>) {
             finish(Outcome::Silent);
         } else {
-            auto [token, reply] = std::move(branch).recv(read_token);
+            // The reception puts the token into the slots and gives the value.
+            auto [payload, reply] = std::move(branch).recv(read_token);
             crash_endpoint(cell_p, to_p, s::CrashCause::Abort);
             auto chosen = std::move(reply).template select<0>(push_label);
-            auto [end, undelivered] = std::move(chosen).send(std::move(token), push_token);
+            auto [end, undelivered] = std::move(chosen).send(std::move(payload), push_token);
+            // The step took the token out of the slots to build the marker,
+            // and the stopped send gives the marker back.  So the handle
+            // after the send claims no slot.
+            static_assert(
+                std::is_same_v<typename decltype(end)::handle_type::perm_set, ::foundation::permissions::EmptyPermSet>,
+                "the handle after a stopped send of a marker claims no slot");
             came_back_once = take_token_back(std::move(undelivered), 7);
             (void)std::move(end).close();
         }

@@ -28,8 +28,7 @@ using SendsTwice = s::Send<Token, s::Send<Token, s::End>>;
 int main() {
     using namespace flow_open_fixture;
     const eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
-    auto [head, hold] = s::mint_permissioned_session<SendsTwice>(ctx, Wire{}, perm::mint_permission_root<Region>());
+    auto head = s::mint_permissioned_session<SendsTwice>(ctx, Wire{}, perm::mint_permission_root<Region>());
     std::move(head).detach(s::detach_reason::TestInstrumentation{});
-    static_cast<void>(std::move(hold).into_permissions());
     return 0;
 }

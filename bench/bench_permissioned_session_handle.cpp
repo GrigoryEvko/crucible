@@ -64,8 +64,7 @@ using SendLoop = s::Loop<s::Send<Item, s::Continue>>;
 
 using EmptySetLoopHandle = decltype(s::mint_session<SendLoop>(kForeground, std::declval<FakeChannel>()));
 using PermittedLoopHandle = decltype(s::mint_permissioned_session<SendLoop>(kForeground, std::declval<FakeChannel>(),
-                                                                            perm::mint_permission_root<BenchRegion>())
-                                         .first);
+                                                                            perm::mint_permission_root<BenchRegion>()));
 
 static_assert(sizeof(PermittedLoopHandle) == sizeof(EmptySetLoopHandle),
               "a permission set must take no storage in the handle");
@@ -85,12 +84,9 @@ template <typename Handle>
 }
 
 [[nodiscard]] bench::Report permitted_send() {
-    auto [head, hold] =
+    auto head =
         s::mint_permissioned_session<SendLoop>(kForeground, FakeChannel{}, perm::mint_permission_root<BenchRegion>());
-    auto report = send_loop("send, one permission in the set (Loop<Send<Item, Continue>>)", std::move(head));
-    auto [token] = std::move(hold).into_permissions();
-    bench::do_not_optimize(token);
-    return report;
+    return send_loop("send, one permission in the set (Loop<Send<Item, Continue>>)", std::move(head));
 }
 
 }  // namespace
