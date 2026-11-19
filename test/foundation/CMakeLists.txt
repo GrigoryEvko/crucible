@@ -3289,17 +3289,29 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
 endif()
 
 # The tree products of foundation/core/Product.h against the scalar model of
-# the tree and the exact oracle of test/exact_sum.h.  On x86_64 two more units
-# of the levels x86-64-v3 and x86-64-v4 compute the digests of the fixed
-# draws with their own bodies.  The unit of the test comes first on the link
-# line, so the link keeps its copy of each shared body.
+# the tree and the exact oracle of test/exact_sum.h.  On x86_64 the units of
+# the levels x86-64-v3 and x86-64-v4 compute the digests of the fixed draws
+# with their own bodies.  The build compiles the unit of a level only when the
+# level of the build is a different level: the unit of the test takes the
+# level of the build, so the unit of that level would compile the same bodies
+# again.  The unit of the test comes first on the link line, so the link keeps
+# its copy of each shared body.
+set(_product_units test_core_product.cpp)
+set(_product_has_v3_unit 0)
+set(_product_has_v4_unit 0)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-  foundation_test(test_core_product test_core_product.cpp product_unit_v3.cpp product_unit_v4.cpp)
-  set_source_files_properties(product_unit_v3.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v3)
-  set_source_files_properties(product_unit_v4.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v4)
-else()
-  foundation_test(test_core_product)
+  foreach(_product_level v3 v4)
+    if(NOT "${CRUCIBLE_X86_LEVEL}" STREQUAL "${_product_level}")
+      set(_product_has_${_product_level}_unit 1)
+      list(APPEND _product_units product_unit_${_product_level}.cpp)
+      set_source_files_properties(product_unit_${_product_level}.cpp PROPERTIES COMPILE_OPTIONS
+                                                                     -march=x86-64-${_product_level})
+    endif()
+  endforeach()
 endif()
+foundation_test(test_core_product ${_product_units})
+target_compile_definitions(test_core_product PRIVATE CRUCIBLE_TEST_HAS_V3_UNIT=${_product_has_v3_unit}
+                                                     CRUCIBLE_TEST_HAS_V4_UNIT=${_product_has_v4_unit})
 
 # The element ops of foundation/core/Elementwise.h against an oracle of a
 # higher precision, on a dense layout and on a spread layout.  Each op costs

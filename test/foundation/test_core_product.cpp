@@ -533,21 +533,29 @@ inline constexpr std::uint64_t kDoubleDigest = 3087225960675716927u;
     return digests.float_digest == kFloatDigest && digests.double_digest == kDoubleDigest;
 }
 
-// The digests of this unit, and of the units of x86-64-v3 and x86-64-v4 on a
-// host of their level, hold.
+// The digests of this unit, and of the units of x86-64-v3 and x86-64-v4 that
+// the build has on a host of their level, hold.
 void test_the_digests_hold() {
     assert(agree_with_the_constants(::crucible::test::digests_of_this_unit()));
     std::size_t units = 1;
 #if defined(__x86_64__)
     namespace os = ::foundation::os;
+    // The build compiles the unit of each level other than the level of the
+    // build (test/foundation/CMakeLists.txt).
+    constexpr bool has_v3_unit = CRUCIBLE_TEST_HAS_V3_UNIT != 0;
+    constexpr bool has_v4_unit = CRUCIBLE_TEST_HAS_V4_UNIT != 0;
     os::X86Level const host = os::x86_level_of(os::read_x86_feature_words());
-    if (host >= os::X86Level::v3) {
-        assert(agree_with_the_constants(::crucible::test::product_digests_of_v3_unit()));
-        ++units;
+    if constexpr (has_v3_unit) {
+        if (host >= os::X86Level::v3) {
+            assert(agree_with_the_constants(::crucible::test::product_digests_of_v3_unit()));
+            ++units;
+        }
     }
-    if (host >= os::X86Level::v4) {
-        assert(agree_with_the_constants(::crucible::test::product_digests_of_v4_unit()));
-        ++units;
+    if constexpr (has_v4_unit) {
+        if (host >= os::X86Level::v4) {
+            assert(agree_with_the_constants(::crucible::test::product_digests_of_v4_unit()));
+            ++units;
+        }
     }
 #endif
     ::crucible::test::pass("test_core_product: the digests of the fixed draws hold in {} units of {} vector bytes "
