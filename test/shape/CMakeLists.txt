@@ -29,3 +29,12 @@ endif()
 add_library(core_shape_probes OBJECT core_shapes.cpp)
 target_include_directories(core_shape_probes PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(core_shape_probes PRIVATE crucible_dialect)
+
+# The steady loop of a session send on a local handle.  The check compiles
+# session_send.cpp with the command of core_shapes.cpp, and it refuses a call
+# and each read of memory other than the slot of the thread in that loop
+# (test/shape/check_session_send.py).  A build below -O2 gives a skip, so the
+# check judges the Release builds.
+crucible_script_test(NAME session_send_steady_loop
+  COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/check_session_send.py ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR})
+set_tests_properties(session_send_steady_loop PROPERTIES SKIP_RETURN_CODE 77)

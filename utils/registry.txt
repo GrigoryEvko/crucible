@@ -91,6 +91,7 @@ rule witness-roster engine=plugin scope=include/foundation/,include/fixy/ ledger
 path test/compile_cost/check_ceilings.py | a test of the compile cost of the probes of the heavy compile-time gates, as a C++ test executable is.  It is outside the utils system
 path test/fixy/storage_float/make_torch_tables.py | the writer of the PyTorch tables of the storage float test, which a person runs one time with the Python of .venv-torch.  It is outside the utils system
 path test/harness/check_output.py | a test of three C++ probes of the product, as a C++ test executable is.  It is outside the utils system
+path test/shape/check_session_send.py | a test of the steady loop of a session send on a local handle, as a C++ test executable is.  It is outside the utils system
 path utils/admitted-audit.txt | the audit table of the admitted list: one row for each admit row of the rule table and for each candidate of the plan
 path utils/assay/**/*.py | the modules of the package
 path utils/assay/loop/evidence/admitted-gates.txt | the admitted gates of the coverage runner of loop evidence, data beside its reader
