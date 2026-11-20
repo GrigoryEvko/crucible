@@ -180,7 +180,8 @@ template <class Op>
         auto const now = [&clock, &nondet]() noexcept {
             return clock.read(nondet).expect("a read of the monotonic clock").peek();
         };
-        bench::PauseReading const before = bench::detail::read_pause();
+        bench::detail::PauseFiles const pause_files = bench::detail::open_pause_files();
+        auto const before = bench::detail::read_pause_before(pause_files);
         std::uint64_t const start = now();
         control.phase.phase.store_release(Phase::Window);
         std::uint64_t end = start;
@@ -191,10 +192,9 @@ template <class Op>
             end = now();
         }
         control.phase.phase.store_release(Phase::Latency);
-        bench::PauseReading const after = bench::detail::read_pause();
+        auto const after = bench::detail::read_pause_after(pause_files);
         window.wall_ns = end - start;
-        window.pause = bench::detail::pause_between(::fixy::side_as<bench::side::ReadingBefore>(before),
-                                                    ::fixy::side_as<bench::side::ReadingAfter>(after));
+        window.pause = bench::detail::pause_between(before, after);
     }
     RowResult result{.threads = threads,
                      .centi_mops = window.wall_ns == 0 ? 0 : window.ops * 100000 / window.wall_ns,

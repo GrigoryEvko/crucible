@@ -1326,16 +1326,19 @@ void test_planted_pause_is_caught() {
     const bench::Report& paused = values.at(::fixy::index<1>());
     if (!paused.pinned_cpu.is_valid()) return;
     CHECK(is_hog_pinned.load_acquire() && is_hog_done.load_acquire());
-    // A launcher that counts instructions, as `loop test-step` does, gives the
-    // measuring thread a voluntary switch in the window.  The check then
-    // judges it by its run delay, which also holds the 2 ms.
+    // The body spins and never sleeps, so the measuring thread makes no
+    // voluntary switch in the window, and the check judges it by its lost
+    // time.  The readings open no file between their clocks.  So the read-set
+    // tracer of `loop test-step`, which stops each open, adds no switch and no
+    // arrival in the window (THE PAUSE CHECK of bench/bench_harness.h).  The
+    // first run of each new build of the test is a traced run.
+    CHECK(paused.pause.basis == bench::PauseBasis::LostTime);
     CHECK(paused.pause.lost_ns >= 1900000u);
     CHECK(paused.pause.own_ns() >= 1900000u);
     CHECK(paused.pause.is_over_bound());
     // The window of the planted pause has its own check, and it marks that
-    // window when the check of the whole loop judged the lost time (THE
-    // WINDOWS of bench/bench_harness.h).
-    if (paused.pause.basis == bench::PauseBasis::LostTime) CHECK(paused.paused_windows >= 1u);
+    // window (THE WINDOWS of bench/bench_harness.h).
+    CHECK(paused.paused_windows >= 1u);
     const ::fixy::TextView basis = paused.pause.basis == bench::PauseBasis::LostTime ? ::fixy::TextView{"lost time"}
                                                                                      : ::fixy::TextView{"run delay"};
     ::fixy::report(::fixy::Sink::Err,

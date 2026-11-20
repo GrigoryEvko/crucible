@@ -67,6 +67,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/CpuPinned.h>
+#include <fixy/os/Fs.h>
 #include <fixy/os/Process.h>
 #include <fixy/os/Sched.h>
 #include <fixy/os/Time.h>
@@ -981,6 +982,18 @@ template <class Fn>
 // /proc/thread-self/schedstat.  The steal of its core is then not measured,
 // and the report says so.
 //
+// The readings make no open and no listing between the clocks of the first
+// reading and the clocks of the second (PauseFiles).  The measuring thread
+// opens its status and its schedstat one time, and each reading reads the two
+// files again from their start.  The first reading lists the other threads
+// before its clocks, and the second reading lists them after its clocks.  The
+// read-set tracer of `loop test-step` stops the caller of each open and of
+// each listing until the launcher answers.  An open inside the window can
+// give the measuring thread a voluntary switch that the body did not make,
+// and an arrival for each thread of the process.  The check then judges the
+// thread by its run delay, and the mean wait of its arrivals can fall below
+// kWaitBoundNs.
+//
 // Each other thread of the process that lives at the start and at the end of
 // the sampled loop gives its run delay from /proc/self/task/TID/schedstat.  A
 // run delay shows two threads on one core.  A thread that starts and ends in
@@ -1209,14 +1222,12 @@ template <std::size_t Capacity>
                [](::fixy::ParseError) noexcept -> ::fixy::Option<std::uint64_t> { return ::fixy::none; });
 }
 
-// The run delay and the arrivals of a schedstat file of procfs, which holds
-// the run time, the run delay in nanoseconds and the arrivals on a CPU, or
-// none when the file does not read.  The thread id of the result is zero.
-[[nodiscard]] inline ::fixy::Option<ThreadDelay> read_schedstat(::fixy::CText path) noexcept {
+// The run delay and the arrivals of the text of a schedstat file of procfs,
+// which holds the run time, the run delay in nanoseconds and the arrivals on a
+// CPU, or none when the text holds no such numbers.  The thread id of the
+// result is zero.
+[[nodiscard]] inline ::fixy::Option<ThreadDelay> schedstat_of_text(::fixy::TextView all) noexcept {
     namespace topology = crucible::warden::detail;
-    ::fixy::FixedText<128> text{};
-    if (::foundation::os::read_file(path, text).is_err()) return ::fixy::none;
-    ::fixy::TextView const all = text.view();
     ::fixy::TextView const delay_text = topology::text_suffix(all, ::fixy::find(all, ' ').value_or(all.size()) + 1);
     ::fixy::TextView const arrivals_text =
         topology::text_suffix(delay_text, ::fixy::find(delay_text, ' ').value_or(delay_text.size()) + 1);
@@ -1225,6 +1236,14 @@ template <std::size_t Capacity>
     if (delay.is_none() || arrivals.is_none()) return ::fixy::none;
     return ::fixy::some(
         ThreadDelay{.run_delay_ns = std::move(delay).value_or(0), .arrivals = std::move(arrivals).value_or(0)});
+}
+
+// The run delay and the arrivals of the schedstat file of procfs at path, or
+// none when the file does not read.  The thread id of the result is zero.
+[[nodiscard]] inline ::fixy::Option<ThreadDelay> read_schedstat(::fixy::CText path) noexcept {
+    ::fixy::FixedText<128> text{};
+    if (::foundation::os::read_file(path, text).is_err()) return ::fixy::none;
+    return schedstat_of_text(text.view());
 }
 
 // The frequency in Hz of the text of a scaling_cur_freq file of sysfs, which
@@ -1266,35 +1285,6 @@ inline void read_thread_delays(::fixy::FixedList<ThreadDelay, kPauseThreads>& de
     }));
 }
 
-// Reads the facts of the pause check for the calling thread and for each
-// thread of the process (THE PAUSE CHECK).  A reading whose clocks or files
-// do not read has the basis NotMeasured.  The reads cost a listing of
-// /proc/self/task and some reads of procfs, outside the timed regions.
-[[nodiscard, gnu::noinline]] inline PauseReading read_pause() noexcept {
-    PauseReading reading{};
-    const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
-    const ::foundation::effects::cap::Nondet nondet = ::foundation::effects::testing::test().nondet;
-    const auto wall = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(startup);
-    const auto cpu = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::ThreadCpu>(startup);
-    ::fixy::FixedText<4096> status{};
-    const bool is_status_read = ::foundation::os::read_file("/proc/thread-self/status", status).is_ok();
-    ::fixy::Option<std::uint64_t> switches = is_status_read
-                                               ? leading_number(value_of_line(status.view(), "voluntary_ctxt_switches"))
-                                               : ::fixy::Option<std::uint64_t>{};
-    ::fixy::Option<ThreadDelay> own = read_schedstat("/proc/thread-self/schedstat");
-    auto cpu_read = cpu.read(nondet);
-    auto wall_read = wall.read(nondet);
-    if (switches.is_none() || own.is_none() || cpu_read.is_err() || wall_read.is_err()) return reading;
-    reading.cpu_ns = std::move(cpu_read).expect("the test above found the reading").peek();
-    reading.wall_ns = std::move(wall_read).expect("the test above found the reading").peek();
-    reading.voluntary_switches = std::move(switches).value_or(0);
-    reading.own = std::move(own).value_or(ThreadDelay{});
-    reading.own.tid = ::fixy::process::current_thread(startup);
-    read_thread_delays(reading.others);
-    reading.basis = PauseBasis::LostTime;
-    return reading;
-}
-
 // Reads the two clocks of the calling thread for the check of a window (THE
 // WINDOWS): two reads of a clock and no read of procfs, so the check makes no
 // call that can sleep inside the sampled loop.  A clock that does not read
@@ -1310,6 +1300,122 @@ inline void read_thread_delays(::fixy::FixedList<ThreadDelay, kPauseThreads>& de
     return WindowClock{.wall_ns = std::move(wall_read).expect("the test above found the reading").peek(),
                        .cpu_ns = std::move(cpu_read).expect("the test above found the reading").peek(),
                        .is_read = true};
+}
+
+// A file of procfs that the measuring thread holds open for the readings of
+// the pause check.
+using ProcFile = ::fixy::fs::FileOf<::fixy::fs::read_only>;
+
+// The two files of procfs of the measuring thread that each reading of the
+// pause check reads (THE PAUSE CHECK): its status, with the count of its
+// voluntary switches, and its schedstat, with its run delay and its arrivals.
+// The thread opens them one time before the first reading, and each reading
+// reads them again from their start.  A file that did not open is an empty
+// handle, and a reading of it is not measured.
+struct PauseFiles {
+    ProcFile status{};
+    ProcFile schedstat{};
+};
+
+// Opens the file of procfs at path for a read, or gives an empty handle when
+// the path or the open fails.
+[[nodiscard]] inline ProcFile open_proc_file(::fixy::TextView path) noexcept {
+    const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+    ::fixy::Result<::fixy::Path<::fixy::tags::source::Sanitized>, ::fixy::PathTraversalError> sanitized =
+        ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(path));
+    if (sanitized.is_err()) return ProcFile{};
+    return ::fixy::fs::mint_file<::fixy::fs::read_only>(startup,
+                                                        std::move(sanitized).expect("the test above found the path"))
+        .match([](::fixy::Linear<ProcFile> opened) noexcept -> ProcFile { return std::move(opened).consume(); },
+               [](::foundation::os::Errno) noexcept -> ProcFile { return ProcFile{}; });
+}
+
+// Opens the status and the schedstat of the calling thread for the readings
+// of the pause check.  The calling thread is the measuring thread, because
+// /proc/thread-self names the thread that opens it.
+[[nodiscard, gnu::noinline]] inline PauseFiles open_pause_files() noexcept {
+    return PauseFiles{.status = open_proc_file("/proc/thread-self/status"),
+                      .schedstat = open_proc_file("/proc/thread-self/schedstat")};
+}
+
+// Reads a file of procfs that the caller holds open again, from its start,
+// into text.  procfs makes the text at each read, so the text holds the
+// values of the time of the read.  The read is no open, so the read-set
+// tracer of `loop test-step` does not stop it.  A failed read leaves no
+// character in text.  Complexity: linear in the size of the file.
+template <std::size_t Capacity>
+[[nodiscard]] ::fixy::Result<::fixy::Unit, ::foundation::os::Errno>
+read_proc_file_again(ProcFile const& file, ::fixy::FixedText<Capacity>& text) noexcept {
+    const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+    text = ::fixy::FixedText<Capacity>{};
+    ::fixy::FixedArray<std::byte, Capacity> bytes{};
+    CRUCIBLE_TRY(count, ::fixy::fs::read_full_at(startup, file.ref(), ::fixy::View<std::byte>{bytes.view()},
+                                                 ::fixy::fs::FileOffset{0}));
+    for (std::byte const byte : bytes.view().window(0, count).expect("a read gives at most the size of its buffer")) {
+        if (text.append(::fixy::bit_cast<char>(byte)).is_err()) return ::fixy::err(::foundation::os::Errno::efbig);
+    }
+    return ::fixy::Unit{};
+}
+
+// The texts of the two files of the measuring thread at one reading.
+struct OwnTexts {
+    ::fixy::FixedText<4096> status{};
+    ::fixy::FixedText<128> schedstat{};
+};
+
+// Reads the two files of the measuring thread again into texts, and gives the
+// error of the first read that failed.
+[[nodiscard]] inline ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> read_own_files(PauseFiles const& files,
+                                                                                          OwnTexts& texts) noexcept {
+    CRUCIBLE_TRY(_, read_proc_file_again(files.status, texts.status));
+    return read_proc_file_again(files.schedstat, texts.schedstat);
+}
+
+// The facts of the measuring thread at one reading, from the texts of its two
+// files and from its two clocks, into reading.  A text without its numbers or
+// a clock that did not read leaves the basis NotMeasured.
+inline void fill_own_pause(OwnTexts const& texts, WindowClock const& clock, PauseReading& reading) noexcept {
+    ::fixy::Option<std::uint64_t> switches =
+        leading_number(value_of_line(texts.status.view(), "voluntary_ctxt_switches"));
+    ::fixy::Option<ThreadDelay> own = schedstat_of_text(texts.schedstat.view());
+    if (switches.is_none() || own.is_none() || !clock.is_read) return;
+    const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+    reading.wall_ns = clock.wall_ns;
+    reading.cpu_ns = clock.cpu_ns;
+    reading.voluntary_switches = std::move(switches).value_or(0);
+    reading.own = std::move(own).value_or(ThreadDelay{});
+    reading.own.tid = ::fixy::process::current_thread(startup);
+    reading.basis = PauseBasis::LostTime;
+}
+
+// The first reading of the pause check (THE PAUSE CHECK): the run delay of
+// each thread of the process, then the files and the clocks of the measuring
+// thread.  The listing and its opens then come before the window.  The reads
+// cost a listing of /proc/self/task and some reads of procfs, outside the
+// timed regions.
+[[nodiscard, gnu::noinline]] inline ::fixy::Side<side::ReadingBefore, PauseReading>
+read_pause_before(PauseFiles const& files) noexcept {
+    PauseReading reading{};
+    read_thread_delays(reading.others);
+    OwnTexts texts{};
+    const bool is_read = read_own_files(files, texts).is_ok();
+    WindowClock const clock = read_window_clock();
+    if (is_read) fill_own_pause(texts, clock, reading);
+    return ::fixy::side_as<side::ReadingBefore>(std::move(reading));
+}
+
+// The second reading of the pause check (THE PAUSE CHECK): the clocks and the
+// files of the measuring thread, then the run delay of each thread of the
+// process.  The listing and its opens then come after the window.
+[[nodiscard, gnu::noinline]] inline ::fixy::Side<side::ReadingAfter, PauseReading>
+read_pause_after(PauseFiles const& files) noexcept {
+    PauseReading reading{};
+    WindowClock const clock = read_window_clock();
+    OwnTexts texts{};
+    const bool is_read = read_own_files(files, texts).is_ok();
+    read_thread_delays(reading.others);
+    if (is_read) fill_own_pause(texts, clock, reading);
+    return ::fixy::side_as<side::ReadingAfter>(std::move(reading));
 }
 
 // The time that the measuring thread did not run between two readings of its
@@ -2925,8 +3031,10 @@ private:
         // The monotonic clock at the start of the sampled loop, in
         // nanoseconds.
         std::uint64_t start_ns = 0;
-        // The first reading of the pause check (THE PAUSE CHECK).
-        PauseReading pause_before{};
+        // The files of the measuring thread that the two readings of the
+        // pause check read, and the first reading (THE PAUSE CHECK).
+        detail::PauseFiles pause_files{};
+        ::fixy::Side<side::ReadingBefore, PauseReading> pause_before{PauseReading{}};
         // The clocks at the end of the last window, and the count of the
         // samples at the end of each window with the time that the measuring
         // thread lost in it (THE WINDOWS).
@@ -2975,7 +3083,8 @@ private:
         for (auto const sw : window.sw)
             window.sched_pre_idx = sw->timeline_write_index();
 #endif
-        window.pause_before = detail::read_pause();
+        window.pause_files = detail::open_pause_files();
+        window.pause_before = detail::read_pause_before(window.pause_files);
         window.clock_last = detail::read_window_clock();
         window.start_ns = detail::read_monotonic_ns();
         return window;
@@ -3023,7 +3132,7 @@ private:
                                                ::fixy::HeapArray<double> const& taken, LoopCounts counts) const {
         const std::size_t filled = counts.filled;
         const std::size_t batch = counts.batch;
-        const PauseReading pause_after = detail::read_pause();
+        const ::fixy::Side<side::ReadingAfter, PauseReading> pause_after = detail::read_pause_after(window.pause_files);
         // The samples that the loop filled, the first filled of taken.
         ::fixy::HeapArray<double> ns_samples =
             part_of_samples(::fixy::View<const double>{taken.view()}, ::fixy::side_as<side::PartFirst>(std::size_t{0}),
@@ -3096,8 +3205,7 @@ private:
         r.wall_ns = static_cast<double>(end_ns - window.start_ns);
         r.pct = Percentiles::compute(ns_samples);
         r.samples = std::move(ns_samples);
-        r.pause = detail::pause_between(::fixy::side_as<side::ReadingBefore>(window.pause_before),
-                                        ::fixy::side_as<side::ReadingAfter>(pause_after));
+        r.pause = detail::pause_between(window.pause_before, pause_after);
         r.window_basis = r.pause.basis == PauseBasis::LostTime ? PauseBasis::LostTime : PauseBasis::NotMeasured;
         r.paused_windows = detail::paused_windows_of(window.lost_ns.view(), r.pause.basis);
 

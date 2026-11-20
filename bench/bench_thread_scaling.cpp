@@ -669,7 +669,8 @@ template <OpKind Kind, class Op>
     auto const now = [&clock, &nondet]() noexcept {
         return clock.read(nondet).expect("a read of the monotonic clock").peek();
     };
-    bench::PauseReading const before = bench::detail::read_pause();
+    bench::detail::PauseFiles const pause_files = bench::detail::open_pause_files();
+    auto const before = bench::detail::read_pause_before(pause_files);
     Window window{};
     bench::WindowClock window_clock = bench::detail::read_window_clock();
     std::uint64_t start = now();
@@ -693,9 +694,8 @@ template <OpKind Kind, class Op>
         start = end;
     }
     control.phase.phase.store_release(Phase::Latency);
-    bench::PauseReading const after = bench::detail::read_pause();
-    window.pause = bench::detail::pause_between(::fixy::side_as<bench::side::ReadingBefore>(before),
-                                                ::fixy::side_as<bench::side::ReadingAfter>(after));
+    auto const after = bench::detail::read_pause_after(pause_files);
+    window.pause = bench::detail::pause_between(before, after);
     return window;
 }
 
