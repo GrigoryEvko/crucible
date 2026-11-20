@@ -69,7 +69,9 @@ constexpr std::size_t kWarmup = 3;
 constexpr std::size_t kMaxWallMs = 60000;
 
 using Ring = MpscRing<Item, kCap>;
-using CoreCount = ::fixy::Quantity<::fixy::unit::Element, std::size_t>;
+// The count of the threads of a cycle: the producers and the consumer.  Each
+// thread takes one core of the claim (THE CORES OF A CYCLE).
+using ThreadCount = ::fixy::Quantity<::fixy::unit::Element, std::size_t>;
 
 // The allocation capability of the ring of each cycle.
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
@@ -194,12 +196,12 @@ void run_cycle(::fixy::thread::ThreadOptions const& options, std::index_sequence
 
 // Prints the cores of the threads of a row, or that the threads keep the
 // affinity of the process.
-void print_cycle_cores(crucible::warden::CpuSet const& cpus, std::size_t threads) noexcept {
+void print_cycle_cores(crucible::warden::CpuSet const& cpus, ThreadCount threads) noexcept {
     if (cpus.is_empty()) {
-        bench::print("     └─ {} threads of each cycle with the affinity of the process\n", threads);
+        bench::print("     └─ {} threads of each cycle with the affinity of the process\n", threads.raw());
         return;
     }
-    bench::print("     └─ {} threads of each cycle on the cores", threads);
+    bench::print("     └─ {} threads of each cycle on the cores", threads.raw());
     for (int const cpu : cpus) {
         bench::print(" cpu{}", cpu);
     }
@@ -209,7 +211,8 @@ void print_cycle_cores(crucible::warden::CpuSet const& cpus, std::size_t threads
 template <typename Worker, std::size_t Producers>
 [[nodiscard]] bench::Report run_one(bench::Cores const& cores, ::fixy::TextView label) {
     const bench::CpuId measuring = cores.of_slot(bench::kMeasuringSlot).value_or(bench::CpuId::none());
-    const crucible::warden::CpuSet cpus = cores.first_slots_apart(measuring, CoreCount{Producers + 1});
+    const ThreadCount threads{Producers + 1};
+    const crucible::warden::CpuSet cpus = cores.first_slots_apart(measuring, threads);
     const ::fixy::thread::ThreadOptions options = cycle_options(cpus);
     bench::Report report =
         bench::Run{bench::format_name("{} P={}", label, Producers)}
@@ -219,7 +222,7 @@ template <typename Worker, std::size_t Producers>
             .fan_out()
             .max_wall_ms(kMaxWallMs)
             .measure([&options] { run_cycle<Worker, Producers>(options, std::make_index_sequence<Producers>{}); });
-    print_cycle_cores(cpus, Producers + 1);
+    print_cycle_cores(cpus, threads);
     return report;
 }
 
