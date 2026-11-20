@@ -9,11 +9,9 @@
 #include <fixy/Tags.h>
 #include <foundation/Lifetime.h>
 
-#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <type_traits>
@@ -102,31 +100,35 @@ static_assert(!std::is_convertible_v<::fixy::Tagged<::fixy::CText, ::fixy::tags:
 
 int g_failures = 0;
 
-#define EXPECT(cond, msg)                                                                       \
-    do {                                                                                        \
-        if (!(cond)) {                                                                          \
-            std::fprintf(stderr, "FAIL: %s -- %s (%s:%d)\n", #cond, (msg), __FILE__, __LINE__); \
-            ++g_failures;                                                                       \
-        }                                                                                       \
+#define EXPECT(cond, msg)                                                                          \
+    do {                                                                                           \
+        if (!(cond)) {                                                                             \
+            ::fixy::report(::fixy::Sink::Err, "FAIL: {} -- {} ({}:{})\n", ::fixy::TextView{#cond}, \
+                           ::fixy::TextView{msg}, ::fixy::TextView{__FILE__}, __LINE__);           \
+            ++g_failures;                                                                          \
+        }                                                                                          \
     } while (0)
 
+// The bytes of a Vigil that no constructor starts: the target of a handle
+// that the cases compare and never read.
+using VigilBytes = ::fixy::FixedArray<std::byte, sizeof(crucible::Vigil)>;
+
 void test_handle_roundtrip() {
-    alignas(crucible::Vigil) std::array<std::byte, sizeof(crucible::Vigil)> storage{};
-    auto* vigil_ptr = std::bit_cast<crucible::Vigil*>(storage.data());
-    CrucibleHandle raw = static_cast<CrucibleHandle>(vigil_ptr);
+    alignas(crucible::Vigil) VigilBytes storage{};
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case gives a CrucibleHandle of vessel_api.h to the typed door")
+    crucible::Vigil* const vigil_ptr = static_cast<crucible::Vigil*>(static_cast<void*>(&storage));
+    CrucibleHandle const raw = static_cast<CrucibleHandle>(vigil_ptr);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
     auto typed = crucible::vessel::as_vigil_typed(raw);
     EXPECT(typed.value() == vigil_ptr, "typed handle must preserve the Vigil pointer value");
 
-    CrucibleHandle roundtrip = crucible::vessel::from_typed(typed);
-    EXPECT(roundtrip == raw, "typed handle must roundtrip to CrucibleHandle");
+    EXPECT(crucible::vessel::from_typed(typed) == raw, "typed handle must roundtrip to CrucibleHandle");
 
     // The wrapper must hold exactly the bytes of the raw pointer.
-    std::array<std::byte, sizeof(TypedHandle)> typed_bytes{};
-    std::memcpy(typed_bytes.data(), &typed, sizeof(typed));
-    std::array<std::byte, sizeof(CrucibleHandle)> raw_bytes{};
-    std::memcpy(raw_bytes.data(), &raw, sizeof(raw));
-    EXPECT(typed_bytes == raw_bytes, "TypedHandle layout must be byte-identical to CrucibleHandle");
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the case compares the bytes of a typed handle with the bytes of its pointer")
+    EXPECT(std::memcmp(&typed, &raw, sizeof(raw)) == 0, "TypedHandle layout must be byte-identical to CrucibleHandle");
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 void test_meta_roundtrip() {
@@ -139,7 +141,9 @@ void test_meta_roundtrip() {
     meta.strides[0] = 128;
     meta.strides[1] = 16;
     meta.strides[2] = 1;
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case writes the data pointer of a CrucibleMeta of vessel_api.h")
     meta.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xCAFEBABE));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     meta.ndim = 3;
     meta.dtype = static_cast<int8_t>(crucible::ScalarType::Float);
     meta.device_type = static_cast<int8_t>(crucible::DeviceType::CUDA);
@@ -153,17 +157,18 @@ void test_meta_roundtrip() {
     meta.storage_nbytes = 4 * 8 * 16 * 4;
     meta.grad_fn_hash = 0x0123456789ABCDEFULL;
 
-    const CrucibleMeta arr[2] = {meta, meta};
+    const ::fixy::FixedArray<CrucibleMeta, 2> arr{meta, meta};
+    const CrucibleMeta& first = arr.at(::fixy::index<0>());
 
     // The count is passed explicitly.  A count of zero is reserved for
     // the null case, because the C boundary promises that a zero count
     // comes with a null pointer, and the helper refuses a non-null
     // pointer with a zero count under a debug build.
-    auto typed_single = crucible::vessel::as_meta_typed(&arr[0], 1);
+    auto typed_single = crucible::vessel::as_meta_typed(&first, 1);
     EXPECT(typed_single.value() != nullptr, "as_meta_typed on non-null meta must return non-null pointer");
 
-    auto typed_multi = crucible::vessel::as_meta_typed(arr, 2);
-    EXPECT(typed_multi.value() == &arr[0], "as_meta_typed pointer must match the raw pointer");
+    auto typed_multi = crucible::vessel::as_meta_typed(&first, 2);
+    EXPECT(typed_multi.value() == &first, "as_meta_typed pointer must match the raw pointer");
 
     // The decode gives each field of the record, the data pointer too.
     crucible::TensorMeta expected{};
@@ -186,22 +191,22 @@ void test_meta_roundtrip() {
     expected.version = 5;
     expected.storage_nbytes = 4 * 8 * 16 * 4;
     expected.grad_fn_hash = crucible::grad_fn_hash(0x0123456789ABCDEFULL);
-    const bool is_decoded_whole = crucible::vessel::decode_ffi_meta(arr[1]).match(
-        [&expected](crucible::TensorMeta decoded) noexcept { return decoded == expected; },
-        [] noexcept { return false; });
+    const bool is_decoded_whole =
+        crucible::vessel::decode_ffi_meta(arr.at(::fixy::index<1>()))
+            .match([&expected](crucible::TensorMeta decoded) noexcept { return decoded == expected; },
+                   [] noexcept { return false; });
     EXPECT(is_decoded_whole, "the decode must give each field of the record");
 
-    const CrucibleMeta* roundtripped = crucible::vessel::metas_from_typed(typed_multi);
-    EXPECT(roundtripped == arr, "metas_from_typed must round-trip to the original CrucibleMeta pointer");
+    EXPECT(crucible::vessel::metas_from_typed(typed_multi) == &first,
+           "metas_from_typed must round-trip to the original CrucibleMeta pointer");
 
     // The typed view must hold exactly the bytes of the pointer it
     // wraps.
-    std::array<std::byte, sizeof(TypedMeta)> typed_bytes{};
-    std::memcpy(typed_bytes.data(), &typed_multi, sizeof(typed_multi));
-    const CrucibleMeta* raw_ptr = &arr[0];
-    std::array<std::byte, sizeof(const CrucibleMeta*)> raw_bytes{};
-    std::memcpy(raw_bytes.data(), &raw_ptr, sizeof(raw_ptr));
-    EXPECT(typed_bytes == raw_bytes, "TypedMeta layout must be byte-identical to const CrucibleMeta*");
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the case compares the bytes of a typed meta with the bytes of its pointer")
+    const CrucibleMeta* const raw_ptr = &first;
+    EXPECT(std::memcmp(&typed_multi, &raw_ptr, sizeof(raw_ptr)) == 0,
+           "TypedMeta layout must be byte-identical to const CrucibleMeta*");
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 void test_meta_zero_n_with_null() {
@@ -211,39 +216,42 @@ void test_meta_zero_n_with_null() {
     auto typed = crucible::vessel::as_meta_typed(nullptr, 0);
     EXPECT(typed.value() == nullptr, "as_meta_typed(nullptr, 0) must return null typed view");
 
-    const CrucibleMeta* roundtripped = crucible::vessel::metas_from_typed(typed);
-    EXPECT(roundtripped == nullptr, "metas_from_typed of null typed view must round-trip to nullptr");
+    EXPECT(crucible::vessel::metas_from_typed(typed) == nullptr,
+           "metas_from_typed of null typed view must round-trip to nullptr");
 }
 
 void test_data_ptr_typed() {
     // The typed read must return the same bits the wire struct holds,
     // only carrying provenance.
-    CrucibleMeta arr[3]{};
-    arr[0].data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xAAAA0000));
-    arr[1].data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xBBBB0000));
-    arr[2].data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xCCCC0000));
+    ::fixy::FixedArray<CrucibleMeta, 3> arr{};
+    CrucibleMeta& first = arr.at(::fixy::index<0>());
+    CrucibleMeta& second = arr.at(::fixy::index<1>());
+    CrucibleMeta& third = arr.at(::fixy::index<2>());
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case writes the data pointers of the CrucibleMeta records of vessel_api.h")
+    first.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xAAAA0000));
+    second.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xBBBB0000));
+    third.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xCCCC0000));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-    auto typed_arr = crucible::vessel::as_meta_typed(arr, 3);
+    auto typed_arr = crucible::vessel::as_meta_typed(&first, 3);
 
     auto p0 = crucible::vessel::data_ptr_typed(typed_arr, 0);
     auto p1 = crucible::vessel::data_ptr_typed(typed_arr, 1);
     auto p2 = crucible::vessel::data_ptr_typed(typed_arr, 2);
 
-    EXPECT(p0.value() == arr[0].data_ptr, "data_ptr_typed[0] must read the wire pointer");
-    EXPECT(p1.value() == arr[1].data_ptr, "data_ptr_typed[1] must read the wire pointer");
-    EXPECT(p2.value() == arr[2].data_ptr, "data_ptr_typed[2] must read the wire pointer");
+    EXPECT(p0.value() == first.data_ptr, "data_ptr_typed[0] must read the wire pointer");
+    EXPECT(p1.value() == second.data_ptr, "data_ptr_typed[1] must read the wire pointer");
+    EXPECT(p2.value() == third.data_ptr, "data_ptr_typed[2] must read the wire pointer");
 
     // Distinct inputs stay distinct, so nothing is cached or aliased.
     EXPECT(p0.value() != p1.value(), "distinct meta data_ptrs must yield distinct typed values");
     EXPECT(p1.value() != p2.value(), "distinct meta data_ptrs must yield distinct typed values");
 
     // The wrapper must hold exactly the bytes of the bare pointer.
-    std::array<std::byte, sizeof(ExternalDataPtr)> typed_bytes{};
-    std::memcpy(typed_bytes.data(), &p0, sizeof(p0));
-    std::array<std::byte, sizeof(void*)> raw_bytes{};
-    void* raw0 = arr[0].data_ptr;
-    std::memcpy(raw_bytes.data(), &raw0, sizeof(raw0));
-    EXPECT(typed_bytes == raw_bytes, "ExternalDataPtr layout must be byte-identical to void*");
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the case compares the bytes of a typed data pointer with the C pointer")
+    EXPECT(std::memcmp(&p0, &first.data_ptr, sizeof(first.data_ptr)) == 0,
+           "ExternalDataPtr layout must be byte-identical to void*");
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 // The ranks of some records, in order.
@@ -296,7 +304,9 @@ void test_ffi_records_read_the_c_records() {
     CrucibleMeta written{};
     written.sizes[0] = 12;
     written.strides[0] = 1;
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case writes the data pointer of a CrucibleMeta of vessel_api.h")
     written.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0x2000U));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     written.ndim = 1;
     written.dtype = static_cast<int8_t>(crucible::ScalarType::Float);
     written.requires_grad = 1;
@@ -595,16 +605,18 @@ void test_schema_name_full_code() {
 void test_handle_distinct_pointers() {
     // Two storage blocks give two pointers, and the wrapper must keep
     // them apart rather than collapse or reuse a value.
-    alignas(crucible::Vigil) std::array<std::byte, sizeof(crucible::Vigil)> storage_a{};
-    alignas(crucible::Vigil) std::array<std::byte, sizeof(crucible::Vigil)> storage_b{};
-    auto* a = std::bit_cast<crucible::Vigil*>(storage_a.data());
-    auto* b = std::bit_cast<crucible::Vigil*>(storage_b.data());
-    EXPECT(a != b, "test setup: distinct storage must yield distinct pointers");
+    alignas(crucible::Vigil) VigilBytes storage_a{};
+    alignas(crucible::Vigil) VigilBytes storage_b{};
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case gives two CrucibleHandle values of vessel_api.h to the typed door")
+    crucible::Vigil* const vigil_a = static_cast<crucible::Vigil*>(static_cast<void*>(&storage_a));
+    crucible::Vigil* const vigil_b = static_cast<crucible::Vigil*>(static_cast<void*>(&storage_b));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    EXPECT(vigil_a != vigil_b, "test setup: distinct storage must yield distinct pointers");
 
-    auto ta = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(a));
-    auto tb = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(b));
-    EXPECT(ta.value() == a, "typed handle for a must alias a");
-    EXPECT(tb.value() == b, "typed handle for b must alias b");
+    auto ta = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(vigil_a));
+    auto tb = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(vigil_b));
+    EXPECT(ta.value() == vigil_a, "typed handle for a must alias a");
+    EXPECT(tb.value() == vigil_b, "typed handle for b must alias b");
     EXPECT(ta.value() != tb.value(), "distinct inputs must yield distinct typed handle values");
 }
 
@@ -762,7 +774,7 @@ int main() {
     test_ffi_records_reuse_the_slots_of_the_producer();
 
     if (g_failures != 0) {
-        std::fprintf(stderr, "test_vessel_api_typed: FAIL (%d)\n", g_failures);
+        ::fixy::report(::fixy::Sink::Err, "test_vessel_api_typed: FAIL ({})\n", g_failures);
         return EXIT_FAILURE;
     }
 
