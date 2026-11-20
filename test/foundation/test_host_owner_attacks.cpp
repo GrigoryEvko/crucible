@@ -9,12 +9,15 @@
 // of a claim builds it.  The fixtures under neg/ named neg_host_* and
 // neg_producer_claim_* pin the refusals that a static_assert cannot state.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
 #include <array>
 #include <cstddef>
-#include <cstdio>
+#include <cstdint>
 #include <cstdlib>
 #include <latch>
 #include <thread>
@@ -104,6 +107,32 @@ static_assert(!std::is_convertible_v<SelfBrandedCtx, ProducerCtx>
               && !std::is_constructible_v<ProducerCtx, SelfBrandedCtx>);
 static_assert(!std::is_convertible_v<ProducerCtx, UnbrandedCtx> && !std::is_constructible_v<UnbrandedCtx, ProducerCtx>);
 
+// The answer of a second thread to the question whether it can take a claim.
+// No probe passes on an answer that no thread wrote.
+enum class SecondThreadAnswer : std::uint8_t {
+    unasked,
+    claimable,
+    not_claimable
+};
+
+// Asks on a second thread whether that thread can take the claim of the
+// producer.  The second thread reads a claim that the calling thread can
+// hold, which is the probe, so it runs on the raw probe of the thread door.
+// The join of the door orders the write of the answer before the return.
+[[nodiscard]] inline SecondThreadAnswer ask_a_second_thread(Producer& producer) noexcept {
+    SecondThreadAnswer answer = SecondThreadAnswer::unasked;
+    auto ask = [&producer, &answer] noexcept {
+        answer =
+            producer.claim.is_claimable_by_caller() ? SecondThreadAnswer::claimable : SecondThreadAnswer::not_claimable;
+    };
+    ::fixy::TestRunnerCtx const test{fe::testing::test()};
+    ::fixy::BgLoadCtx const ctx{fe::testing::bg()};
+    ::fixy::thread::run_joined_raw_probe(ctx, test, "a second thread reads the claim of the calling thread",
+                                         ::fixy::thread::ThreadOptions{}, ask)
+        .expect("the thread door starts the second thread");
+    return answer;
+}
+
 // The first thread that mints holds the claim, and a second thread reads
 // that it cannot take it.
 [[nodiscard]] inline bool a_second_thread_cannot_take_the_claim() {
@@ -112,19 +141,13 @@ static_assert(!std::is_convertible_v<ProducerCtx, UnbrandedCtx> && !std::is_cons
     const ProducerCtx fg = producer.claim.mint_producer_context();
     (void)fg;
     if (!producer.claim.is_claimable_by_caller()) return false;
-    bool other_thread_can_claim = true;
-    std::thread other([&] { other_thread_can_claim = producer.claim.is_claimable_by_caller(); });
-    other.join();
-    return !other_thread_can_claim;
+    return ask_a_second_thread(producer) == SecondThreadAnswer::not_claimable;
 }
 
 // A claim that no thread has used yet is claimable by any thread.
 [[nodiscard]] inline bool a_fresh_claim_is_claimable_from_any_thread() {
     Producer producer;
-    bool other_thread_can_claim = false;
-    std::thread other([&] { other_thread_can_claim = producer.claim.is_claimable_by_caller(); });
-    other.join();
-    return other_thread_can_claim && producer.claim.is_claimable_by_caller();
+    return ask_a_second_thread(producer) == SecondThreadAnswer::claimable && producer.claim.is_claimable_by_caller();
 }
 
 // One brand for each thread of the identity test, so the threads hold
@@ -191,19 +214,20 @@ template <std::size_t... Index>
 int main() {
     using namespace host_owner_attacks;
     if (!a_second_thread_cannot_take_the_claim()) {
-        std::fprintf(stderr, "FAIL: a producer claim did not bind the thread that first minted from it\n");
+        ::fixy::report(::fixy::Sink::Err, "FAIL: a producer claim did not bind the thread that first minted from it\n");
         return EXIT_FAILURE;
     }
     if (!a_fresh_claim_is_claimable_from_any_thread()) {
-        std::fprintf(stderr, "FAIL: an unused producer claim refused a thread\n");
+        ::fixy::report(::fixy::Sink::Err, "FAIL: an unused producer claim refused a thread\n");
         return EXIT_FAILURE;
     }
     if (!live_threads_have_distinct_stable_identities()) {
-        std::fprintf(stderr,
-                     "FAIL: a thread could take the claim of another live thread, or could not take its own claim, "
-                     "so two live threads shared an identity or a thread lost its identity\n");
+        ::fixy::report(::fixy::Sink::Err,
+                       "FAIL: a thread could take the claim of another live thread, or could not take its own claim, "
+                       "so two live threads shared an identity or a thread lost its identity\n");
         return EXIT_FAILURE;
     }
-    std::printf("test_host_owner_attacks: every owner is complete, and a claim binds its first thread\n");
+    ::fixy::report(::fixy::Sink::Out,
+                   "test_host_owner_attacks: every owner is complete, and a claim binds its first thread\n");
     return EXIT_SUCCESS;
 }

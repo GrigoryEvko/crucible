@@ -9,6 +9,7 @@
 // the ledger only shrinks.
 
 #include <foundation/Quarantine.h>
+#include <foundation/core/StableIdentity.h>
 #include <foundation/reflect/Hash.h>
 
 #include <fixy/Core.h>
@@ -17,12 +18,11 @@
 #include <cstdlib>
 #include <meta>
 #include <stdfloat>
-#include <string_view>
 
 namespace identity_attacks {
 
+using ::foundation::core::stable_name_text;
 using ::foundation::reflect::HasStableIdentity;
-using ::foundation::reflect::stable_name;
 using ::foundation::reflect::stable_type_id;
 
 template <auto Value>
@@ -180,7 +180,7 @@ int main() {
 
     two_classes_one_name();
     two_classes_one_expansion();
-    constexpr bool named_carries_no_position = stable_name(^^Named).find(" @") == std::string_view::npos;
+    constexpr bool named_carries_no_position = ::fixy::find(stable_name_text<Named>(), " @").is_none();
     expect(named_carries_no_position, "a namespace class carries a position");
     expect(internal_helper(1) == 1, "the internal helper is used");
     expect(stable_type_id(^^Holds<Bound{3}>) != stable_type_id(^^Holds<Bound{4}>), "two class values share an id");

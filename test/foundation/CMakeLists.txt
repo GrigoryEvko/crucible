@@ -1963,8 +1963,10 @@ foundation_test(test_stable_id_function_local
 # Only the brand of a claim builds it, and the context of one brand
 # passes no gate of another, nor the gate that asks for no brand.  A
 # branded context, like the unbranded one, is not built from a byte or
-# over a buffer.
+# over a buffer.  The second thread of a probe runs on the thread door of
+# fixy.
 foundation_test(test_host_owner_attacks)
+target_link_libraries(test_host_owner_attacks PRIVATE fixy)
 # A producer claim that one shared object wins and a second shared object
 # destroys, as the PyTorch vessel does with a Vigil.  Under -fvisibility=hidden
 # each shared object holds its own record of a brand, so the destructor must
