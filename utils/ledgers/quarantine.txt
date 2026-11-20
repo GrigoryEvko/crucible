@@ -670,14 +670,15 @@ test/fuzz/boundary/harnesses/ | region | 6 | ABI: the fuzzer gives its input as 
 test/fuzz/boundary/harnesses/ | region | 2 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
 test/fuzz/boundary/harnesses/ | std-entity | 146 | - | -
 test/fuzz/boundary/harnesses/ | std-object | 80 | - | -
-test/fuzz/property/ | c-array-object | 17 | - | -
-test/fuzz/property/ | c-library-call | 46 | - | -
-test/fuzz/property/ | compiler-builtin | 4 | - | -
+test/fuzz/property/ | c-array-object | 2 | - | -
+test/fuzz/property/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
+test/fuzz/property/ | opted-out | 3 | ORACLE: the overflow builtins of GCC are the model of the saturating operations | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
 test/fuzz/property/ | raw-function-pointer | 2 | - | -
-test/fuzz/property/ | raw-pointer-object | 42 | - | -
-test/fuzz/property/ | replace-pending:<limits> | 27 | - | -
-test/fuzz/property/ | std-entity | 138 | - | -
-test/fuzz/property/ | std-object | 29 | - | -
+test/fuzz/property/ | raw-pointer-object | 1 | - | -
+test/fuzz/property/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
+test/fuzz/property/ | region | 1 | ORACLE: the overflow builtins of GCC are the model of the saturating operations | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
+test/fuzz/property/ | std-entity | 25 | - | -
+test/fuzz/property/ | std-object | 3 | - | -
 test/kernel_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/kernel_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/layer/ | opted-out | 81 | ORACLE: the flag matrix checks each audited name of the standard library | -
