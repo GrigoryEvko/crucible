@@ -138,6 +138,139 @@ crucible_bench(bench_parallel_pointwise CORES 9)
 crucible_bench(bench_thread_scaling CORES 9)
 crucible_bench_reference(bench_thread_scaling rigtorp-spscqueue CRUCIBLE_BENCH_RIGTORP_SPSC)
 crucible_bench_reference(bench_thread_scaling rigtorp-mpmcqueue CRUCIBLE_BENCH_RIGTORP_MPMC)
+
+# ── The reference allocators of bench_alloc_scaling ──────────────────
+#
+# jemalloc, mimalloc and snmalloc are pins of utils/pins.txt.  Each builds as
+# a static library whose public symbols take a prefix: je_, mi_ and sn_.  No
+# library defines malloc, free, another call of the allocator of the C
+# library, or an operator new or delete of C++, so no reference interposes
+# the allocator of the process.  Each library takes the flags of its own
+# build, apart from -fPIC for the executables of the tree, which are PIE, and
+# the control-flow protection that the rule artifacts asks of each object of
+# an executable.  No library takes the flags of the tree.
+#   jemalloc   its configure script and make, in a directory of the build,
+#              with the prefix je_ and with no C++ part (--disable-cxx)
+#   mimalloc   its one unit src/static.c, with no MI_MALLOC_OVERRIDE and no
+#              weak std::get_new_handler (MI_NO_CXX_NEW_HANDLER)
+#   snmalloc   its unit override/malloc.cc alone, with the prefix sn_.  The
+#              unit override/new.cc defines the operators of C++, so the
+#              library leaves it out
+# A pin that the tools directory does not hold gives no library, and the
+# bench omits the rows of that reference and its unit
+# bench_alloc_scaling_REFERENCE.cpp.  After the link, the check
+# check_no_interposition.cmake reads the symbols that the bench defines,
+# and it refuses each name of the allocator of the C library and each
+# operator new or delete.
+function(crucible_pinned_source tool result)
+  execute_process(
+    COMMAND "${CRUCIBLE_PYTHON3}" -S "${CMAKE_SOURCE_DIR}/utils/bin/setup" install --print-bin "${tool}"
+    RESULT_VARIABLE status
+    OUTPUT_VARIABLE directory
+    ERROR_QUIET
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(NOT status EQUAL 0 OR directory STREQUAL "")
+    message(STATUS "bench_alloc_scaling: the pinned ${tool} is not installed, so the bench omits its rows.  Install it "
+                   "with: python3 ${CMAKE_SOURCE_DIR}/utils/bin/setup install ${tool}")
+    set(${result} "" PARENT_SCOPE)
+    return()
+  endif()
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${directory}")
+  set(${result} "${directory}" PARENT_SCOPE)
+endfunction()
+
+function(crucible_alloc_references target)
+  set(_reference_flags -O3 -DNDEBUG -fPIC -fcf-protection=full -fvisibility=hidden -ftls-model=initial-exec)
+
+  crucible_pinned_source(mimalloc _mimalloc_directory)
+  if(NOT _mimalloc_directory STREQUAL "")
+    add_library(mimalloc_reference STATIC "${_mimalloc_directory}/src/static.c")
+    target_include_directories(mimalloc_reference SYSTEM PUBLIC "${_mimalloc_directory}/include")
+    target_compile_definitions(mimalloc_reference PRIVATE MI_NO_CXX_NEW_HANDLER)
+    target_compile_options(mimalloc_reference PRIVATE ${_reference_flags} -fno-builtin-malloc)
+    target_link_libraries(${target} PRIVATE mimalloc_reference)
+    target_compile_definitions(${target} PRIVATE CRUCIBLE_BENCH_MIMALLOC=1)
+    target_sources(${target} PRIVATE ${target}_mimalloc.cpp)
+  endif()
+
+  # The flags of the shim of the snmalloc build (its function compile), with
+  # no exceptions, so the library imports no personality routine of C++.
+  crucible_pinned_source(snmalloc _snmalloc_directory)
+  if(NOT _snmalloc_directory STREQUAL "")
+    add_library(snmalloc_reference STATIC "${_snmalloc_directory}/snmalloc/override/malloc.cc")
+    set_target_properties(snmalloc_reference PROPERTIES CXX_STANDARD 20 CXX_EXTENSIONS OFF)
+    target_include_directories(snmalloc_reference SYSTEM PRIVATE "${_snmalloc_directory}")
+    target_compile_definitions(snmalloc_reference PRIVATE
+      SNMALLOC_STATIC_LIBRARY_PREFIX=sn_
+      SNMALLOC_USE_CXX11_THREAD_ATEXIT_DIRECT
+      SNMALLOC_USE_WAIT_ON_ADDRESS=1
+      SNMALLOC_CHECK_LOADS=false
+      SNMALLOC_PAGEID=false
+      "SNMALLOC_EXPORT=__attribute__((visibility(\"default\")))")
+    target_compile_options(snmalloc_reference PRIVATE ${_reference_flags} -fno-exceptions -fno-rtti
+      -fomit-frame-pointer -ffunction-sections)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+      target_compile_options(snmalloc_reference PRIVATE -mcx16 -mprfchw)
+    endif()
+    target_link_libraries(${target} PRIVATE snmalloc_reference)
+    target_compile_definitions(${target} PRIVATE CRUCIBLE_BENCH_SNMALLOC=1)
+    target_sources(${target} PRIVATE ${target}_snmalloc.cpp)
+  endif()
+
+  # The configure script of jemalloc adds its own flags, -O3 among them, after
+  # the CFLAGS of the call.  The build writes only into its binary directory,
+  # and the source directory of the tools directory stays as the pin gave it.
+  crucible_pinned_source(jemalloc _jemalloc_directory)
+  find_program(CRUCIBLE_MAKE_PROGRAM make)
+  if(NOT _jemalloc_directory STREQUAL "" AND NOT CRUCIBLE_MAKE_PROGRAM)
+    message(STATUS "bench_alloc_scaling: the host has no make, which builds the pinned jemalloc, so the bench omits "
+                   "its rows")
+  endif()
+  if(NOT _jemalloc_directory STREQUAL "" AND CRUCIBLE_MAKE_PROGRAM)
+    set(_jemalloc_binary "${CMAKE_CURRENT_BINARY_DIR}/jemalloc_reference")
+    ExternalProject_Add(jemalloc_reference_build
+      SOURCE_DIR "${_jemalloc_directory}"
+      BINARY_DIR "${_jemalloc_binary}"
+      DOWNLOAD_COMMAND ""
+      UPDATE_COMMAND ""
+      CONFIGURE_COMMAND "${_jemalloc_directory}/configure" "CC=${CMAKE_C_COMPILER}"
+                        "CFLAGS=-O3 -fPIC -fcf-protection=full" --with-jemalloc-prefix=je_
+                        --with-private-namespace=je_internal_ --disable-cxx --disable-libdl --disable-doc
+      # Ninja gives make no job server, so the job count is fixed: about
+      # fifty units at -O3 take some tens of seconds on eight jobs.
+      BUILD_COMMAND "${CRUCIBLE_MAKE_PROGRAM}" -j 8 build_lib_static
+      INSTALL_COMMAND ""
+      BUILD_BYPRODUCTS "${_jemalloc_binary}/lib/libjemalloc.a"
+      LOG_CONFIGURE ON
+      LOG_BUILD ON
+      LOG_OUTPUT_ON_FAILURE ON)
+    # The bench declares the calls of jemalloc itself, so the library gives
+    # no include directory: the generated header is in the build directory,
+    # under the source root, where the quarantine plugin refuses its pragma.
+    add_library(jemalloc_reference STATIC IMPORTED)
+    set_target_properties(jemalloc_reference PROPERTIES IMPORTED_LOCATION "${_jemalloc_binary}/lib/libjemalloc.a")
+    add_dependencies(jemalloc_reference jemalloc_reference_build)
+    target_link_libraries(${target} PRIVATE jemalloc_reference)
+    target_compile_definitions(${target} PRIVATE CRUCIBLE_BENCH_JEMALLOC=1)
+    target_sources(${target} PRIVATE ${target}_jemalloc.cpp)
+  endif()
+
+  add_custom_command(TARGET ${target} POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" "-DNM=${CMAKE_NM}" "-DBINARY=$<TARGET_FILE:${target}>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/check_no_interposition.cmake"
+    VERBATIM)
+endfunction()
+
+# Rows of 1 to 8 threads, one on each core of one L3 group, and one core of a second group for the pair rows across two
+# groups.  --cores 16 adds the rows of 16 threads.  The three reference allocators of the block above take their place
+# beside the allocation door of the base.  enable_language must run at the scope of the file, so the C language and
+# the module ExternalProject come here, before the call.
+enable_language(C)
+include(ExternalProject)
+# Each allocator has its own unit (THE UNITS of bench_alloc_scaling_rows.h).
+crucible_bench(bench_alloc_scaling CORES 9)
+target_sources(bench_alloc_scaling PRIVATE bench_alloc_scaling_base.cpp bench_alloc_scaling_glibc.cpp)
+crucible_alloc_references(bench_alloc_scaling)
 crucible_bench(bench_decide_compile_time)
 crucible_bench(bench_dispatch)
 crucible_bench(bench_fp_control)
