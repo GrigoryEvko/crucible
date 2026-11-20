@@ -7,14 +7,14 @@
 // says so where it does.  main runs them in the order of this file.
 
 #include <crucible/cipher/ComputationCache.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
-#include <atomic>
 #include <cstdint>
-#include <thread>
 
 namespace {
 
@@ -88,7 +88,11 @@ using namespace test_computation_cache_functions;
 using ::fixy::check::pass;
 
 using Slot = ::fixy::Option<::fixy::Ref<cipher::CompiledBody>>;
-using Bodies = ::foundation::core::FixedArray<cipher::CompiledBody, 4>;
+
+// The number of the workers of each race, and the bodies that they insert.
+constexpr std::uint32_t kWorkerCount = 4;
+using Bodies = ::fixy::FixedArray<cipher::CompiledBody, kWorkerCount>;
+using BodyIndex = ::fixy::Index<kWorkerCount>;
 
 // One function under these rows is one slot for each row.
 namespace eff = ::foundation::effects;
@@ -124,8 +128,45 @@ Bodies contended_row_bodies{};
 }
 
 // The body at position of bodies.
-[[nodiscard]] cipher::CompiledBody& body_at(Bodies& bodies, std::size_t position) noexcept {
-    return *bodies.view().get(position).expect("each position of the test is below four");
+[[nodiscard]] cipher::CompiledBody& body_at(Bodies& bodies, BodyIndex position) noexcept { return bodies.at(position); }
+
+// The gate of one race.  Each worker counts itself ready and spins until the
+// opener opens the gate.  The opener waits until each worker is ready, so
+// the inserts of the workers overlap.
+struct RaceGate {
+    ::fixy::Atomic<std::uint32_t> ready{0};
+    ::fixy::Atomic<bool> go{false};
+};
+
+// The part of a worker before its insert.
+void wait_at(RaceGate& gate) noexcept {
+    static_cast<void>(gate.ready.fetch_add_acq_rel(1));
+    while (!gate.go.load_acquire()) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+}
+
+// The body of the opener: it holds the gate until each worker is ready, and
+// then it releases the workers together.
+void open_when_ready(RaceGate& gate) noexcept {
+    while (gate.ready.load_acquire() < kWorkerCount) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+    gate.go.store_release(true);
+}
+
+// Runs the opener and the four workers of one race, each on a thread of its
+// own, and joins each thread.  The bodies share the gate and the slots of the
+// cache on purpose, so the race goes through the raw probe of the thread door.
+template <typename... Workers>
+    requires(sizeof...(Workers) == kWorkerCount)
+void run_race(::fixy::TestRunnerCtx const& test, RaceGate& gate, Workers&... workers) noexcept {
+    auto opener = [&gate] noexcept { open_when_ready(gate); };
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    ::fixy::thread::run_joined_raw_probe(ctx, test,
+                                         "the workers of a race of the cache share its gate and its slots on purpose",
+                                         ::fixy::thread::ThreadOptions{}, opener, workers...)
+        .expect("the thread door starts the opener and each worker of the race");
 }
 
 // This runs once per process and refuses to run twice. The slots it
@@ -134,8 +175,8 @@ Bodies contended_row_bodies{};
 // would find those slots already full, so it reports failure rather
 // than let a miss quietly become a hit.
 bool computation_cache_smoke_test() noexcept {
-    static std::atomic<int> call_counter{0};
-    if (call_counter.fetch_add(1, std::memory_order_relaxed) > 0) {
+    static ::fixy::Atomic<std::uint32_t> call_counter{0};
+    if (call_counter.fetch_add_acq_rel(1) > 0) {
         return false;
     }
 
@@ -246,7 +287,7 @@ void test_same_signature_different_name_distinct_keys(::fixy::TestRunnerCtx cons
 }
 
 void test_hash_distribution_sanity(::fixy::TestRunnerCtx const& test) {
-    constexpr std::array<std::uint64_t, 9> keys = {
+    constexpr ::fixy::FixedArray<std::uint64_t, 9> keys{
         cipher::computation_cache_key<&hd_fn_alpha, int>,
         cipher::computation_cache_key<&hd_fn_beta, int>,
         cipher::computation_cache_key<&hd_fn_gamma, int, int>,
@@ -259,10 +300,11 @@ void test_hash_distribution_sanity(::fixy::TestRunnerCtx const& test) {
     };
     // Comparing every pair is quadratic, which is affordable for
     // nine keys and exact, which sampling would not be.
-    for (std::size_t i = 0; i < keys.size(); ++i) {
-        CRUCIBLE_TEST_ASSERT(test, keys[i] != 0);
-        for (std::size_t j = i + 1; j < keys.size(); ++j) {
-            CRUCIBLE_TEST_ASSERT(test, keys[i] != keys[j]);
+    for (::fixy::Index<9> const i : keys.indices()) {
+        CRUCIBLE_TEST_ASSERT(test, keys.at(i) != 0);
+        for (::fixy::Index<9> const j : keys.indices()) {
+            if (j.raw() <= i.raw()) continue;
+            CRUCIBLE_TEST_ASSERT(test, keys.at(i) != keys.at(j));
         }
     }
 }
@@ -271,55 +313,39 @@ void test_hash_distribution_sanity(::fixy::TestRunnerCtx const& test) {
 // hold distinct atomics, so there is nothing for them to race on,
 // and every slot must end up holding its own thread's body.
 void test_concurrent_inserts_disjoint_slots(::fixy::TestRunnerCtx const& test) {
-    std::atomic<int> ready{0};
-    std::atomic<bool> go{false};
+    RaceGate gate{};
 
-    auto worker = [&](::fixy::Ref<cipher::CompiledBody> body, auto inserter) {
-        ready.fetch_add(1, std::memory_order_release);
-        while (!go.load(std::memory_order_acquire)) { /* spin */
-        }
-        inserter(body);
+    // The instantiation is in the body of each worker, so each worker
+    // reaches a different slot.
+    auto worker_0 = [&gate] noexcept {
+        wait_at(gate);
+        cipher::insert_computation_cache<&ct_fn_t0, int>(::fixy::to(body_at(disjoint_bodies, ::fixy::index<0>())));
     };
-
-    // The instantiation travels in the inserter callable, so each
-    // worker reaches a different slot.
-    std::array<std::jthread, 4> workers = {
-        std::jthread{[&] {
-            worker(::fixy::to(body_at(disjoint_bodies, 0)), [](::fixy::Ref<cipher::CompiledBody> body) {
-                cipher::insert_computation_cache<&ct_fn_t0, int>(body);
-            });
-        }},
-        std::jthread{[&] {
-            worker(::fixy::to(body_at(disjoint_bodies, 1)), [](::fixy::Ref<cipher::CompiledBody> body) {
-                cipher::insert_computation_cache<&ct_fn_t1, int>(body);
-            });
-        }},
-        std::jthread{[&] {
-            worker(::fixy::to(body_at(disjoint_bodies, 2)), [](::fixy::Ref<cipher::CompiledBody> body) {
-                cipher::insert_computation_cache<&ct_fn_t2, int>(body);
-            });
-        }},
-        std::jthread{[&] {
-            worker(::fixy::to(body_at(disjoint_bodies, 3)), [](::fixy::Ref<cipher::CompiledBody> body) {
-                cipher::insert_computation_cache<&ct_fn_t3, int>(body);
-            });
-        }},
+    auto worker_1 = [&gate] noexcept {
+        wait_at(gate);
+        cipher::insert_computation_cache<&ct_fn_t1, int>(::fixy::to(body_at(disjoint_bodies, ::fixy::index<1>())));
+    };
+    auto worker_2 = [&gate] noexcept {
+        wait_at(gate);
+        cipher::insert_computation_cache<&ct_fn_t2, int>(::fixy::to(body_at(disjoint_bodies, ::fixy::index<2>())));
+    };
+    auto worker_3 = [&gate] noexcept {
+        wait_at(gate);
+        cipher::insert_computation_cache<&ct_fn_t3, int>(::fixy::to(body_at(disjoint_bodies, ::fixy::index<3>())));
     };
 
     // Hold every thread at the gate and release them together, so
     // the inserts actually overlap.
-    while (ready.load(std::memory_order_acquire) < 4) { /* spin */
-    }
-    go.store(true, std::memory_order_release);
+    run_race(test, gate, worker_0, worker_1, worker_2, worker_3);
 
-    for (auto& t : workers) {
-        t.join();
-    }
-
-    CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache<&ct_fn_t0, int>(), body_at(disjoint_bodies, 0)));
-    CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache<&ct_fn_t1, int>(), body_at(disjoint_bodies, 1)));
-    CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache<&ct_fn_t2, int>(), body_at(disjoint_bodies, 2)));
-    CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache<&ct_fn_t3, int>(), body_at(disjoint_bodies, 3)));
+    CRUCIBLE_TEST_ASSERT(
+        test, holds(cipher::lookup_computation_cache<&ct_fn_t0, int>(), body_at(disjoint_bodies, ::fixy::index<0>())));
+    CRUCIBLE_TEST_ASSERT(
+        test, holds(cipher::lookup_computation_cache<&ct_fn_t1, int>(), body_at(disjoint_bodies, ::fixy::index<1>())));
+    CRUCIBLE_TEST_ASSERT(
+        test, holds(cipher::lookup_computation_cache<&ct_fn_t2, int>(), body_at(disjoint_bodies, ::fixy::index<2>())));
+    CRUCIBLE_TEST_ASSERT(
+        test, holds(cipher::lookup_computation_cache<&ct_fn_t3, int>(), body_at(disjoint_bodies, ::fixy::index<3>())));
 }
 
 // Four threads, one slot, four different bodies.  One of them
@@ -329,24 +355,18 @@ void test_concurrent_inserts_disjoint_slots(::fixy::TestRunnerCtx const& test) {
 void test_concurrent_inserts_same_slot_first_wins(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, cipher::lookup_computation_cache<&test_fn_c, int>().is_none());
 
-    std::atomic<int> ready{0};
-    std::atomic<bool> go{false};
-
-    std::array<std::jthread, 4> workers;
-    for (std::size_t i = 0; i < 4; ++i) {
-        workers[i] = std::jthread{[&, i] {
-            ready.fetch_add(1, std::memory_order_release);
-            while (!go.load(std::memory_order_acquire)) { /* spin */
-            }
-            cipher::insert_computation_cache<&test_fn_c, int>(::fixy::to(body_at(contended_bodies, i)));
-        }};
-    }
-    while (ready.load(std::memory_order_acquire) < 4) { /* spin */
-    }
-    go.store(true, std::memory_order_release);
-    for (auto& t : workers) {
-        t.join();
-    }
+    RaceGate gate{};
+    auto contender_of = [&gate](BodyIndex position) noexcept {
+        return [&gate, position] noexcept {
+            wait_at(gate);
+            cipher::insert_computation_cache<&test_fn_c, int>(::fixy::to(body_at(contended_bodies, position)));
+        };
+    };
+    auto contender_0 = contender_of(::fixy::index<0>());
+    auto contender_1 = contender_of(::fixy::index<1>());
+    auto contender_2 = contender_of(::fixy::index<2>());
+    auto contender_3 = contender_of(::fixy::index<3>());
+    run_race(test, gate, contender_0, contender_1, contender_2, contender_3);
 
     const Slot winner = cipher::lookup_computation_cache<&test_fn_c, int>();
     CRUCIBLE_TEST_ASSERT(test, winner.is_some());
@@ -413,54 +433,38 @@ void test_row_aware_slot_id_is_type_driven_not_hash_driven(::fixy::TestRunnerCtx
 // argument, but it does catch a refactor that weakens the memory
 // ordering on one family and not the other.
 void test_concurrent_inserts_disjoint_slots_in_row(::fixy::TestRunnerCtx const& test) {
-    std::atomic<int> ready{0};
-    std::atomic<bool> go{false};
+    RaceGate gate{};
 
-    auto worker = [&](::fixy::Ref<cipher::CompiledBody> body, auto inserter) {
-        ready.fetch_add(1, std::memory_order_release);
-        while (!go.load(std::memory_order_acquire)) { /* spin */
-        }
-        inserter(body);
+    auto worker_0 = [&gate] noexcept {
+        wait_at(gate);
+        cipher::insert_computation_cache_in_row<&cr_fn_t0, EmptyR, int>(
+            ::fixy::to(body_at(disjoint_row_bodies, ::fixy::index<0>())));
     };
-
-    std::array<std::jthread, 4> workers = {
-        std::jthread{[&] {
-            worker(::fixy::to(body_at(disjoint_row_bodies, 0)), [](::fixy::Ref<cipher::CompiledBody> body) {
-                cipher::insert_computation_cache_in_row<&cr_fn_t0, EmptyR, int>(body);
-            });
-        }},
-        std::jthread{[&] {
-            worker(::fixy::to(body_at(disjoint_row_bodies, 1)), [](::fixy::Ref<cipher::CompiledBody> body) {
-                cipher::insert_computation_cache_in_row<&cr_fn_t1, EmptyR, int>(body);
-            });
-        }},
-        std::jthread{[&] {
-            worker(::fixy::to(body_at(disjoint_row_bodies, 2)), [](::fixy::Ref<cipher::CompiledBody> body) {
-                cipher::insert_computation_cache_in_row<&cr_fn_t2, EmptyR, int>(body);
-            });
-        }},
-        std::jthread{[&] {
-            worker(::fixy::to(body_at(disjoint_row_bodies, 3)), [](::fixy::Ref<cipher::CompiledBody> body) {
-                cipher::insert_computation_cache_in_row<&cr_fn_t3, EmptyR, int>(body);
-            });
-        }},
+    auto worker_1 = [&gate] noexcept {
+        wait_at(gate);
+        cipher::insert_computation_cache_in_row<&cr_fn_t1, EmptyR, int>(
+            ::fixy::to(body_at(disjoint_row_bodies, ::fixy::index<1>())));
     };
-
-    while (ready.load(std::memory_order_acquire) < 4) { /* spin */
-    }
-    go.store(true, std::memory_order_release);
-    for (auto& t : workers) {
-        t.join();
-    }
+    auto worker_2 = [&gate] noexcept {
+        wait_at(gate);
+        cipher::insert_computation_cache_in_row<&cr_fn_t2, EmptyR, int>(
+            ::fixy::to(body_at(disjoint_row_bodies, ::fixy::index<2>())));
+    };
+    auto worker_3 = [&gate] noexcept {
+        wait_at(gate);
+        cipher::insert_computation_cache_in_row<&cr_fn_t3, EmptyR, int>(
+            ::fixy::to(body_at(disjoint_row_bodies, ::fixy::index<3>())));
+    };
+    run_race(test, gate, worker_0, worker_1, worker_2, worker_3);
 
     CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache_in_row<&cr_fn_t0, EmptyR, int>(),
-                                     body_at(disjoint_row_bodies, 0)));
+                                     body_at(disjoint_row_bodies, ::fixy::index<0>())));
     CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache_in_row<&cr_fn_t1, EmptyR, int>(),
-                                     body_at(disjoint_row_bodies, 1)));
+                                     body_at(disjoint_row_bodies, ::fixy::index<1>())));
     CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache_in_row<&cr_fn_t2, EmptyR, int>(),
-                                     body_at(disjoint_row_bodies, 2)));
+                                     body_at(disjoint_row_bodies, ::fixy::index<2>())));
     CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache_in_row<&cr_fn_t3, EmptyR, int>(),
-                                     body_at(disjoint_row_bodies, 3)));
+                                     body_at(disjoint_row_bodies, ::fixy::index<3>())));
 }
 
 // The same-slot race again, on the row-aware slots, for the same
@@ -468,25 +472,19 @@ void test_concurrent_inserts_disjoint_slots_in_row(::fixy::TestRunnerCtx const& 
 void test_concurrent_inserts_same_slot_first_wins_in_row(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, cipher::lookup_computation_cache_in_row<&cr_contention_fn, EmptyR, int>().is_none());
 
-    std::atomic<int> ready{0};
-    std::atomic<bool> go{false};
-
-    std::array<std::jthread, 4> workers;
-    for (std::size_t i = 0; i < 4; ++i) {
-        workers[i] = std::jthread{[&, i] {
-            ready.fetch_add(1, std::memory_order_release);
-            while (!go.load(std::memory_order_acquire)) { /* spin */
-            }
+    RaceGate gate{};
+    auto contender_of = [&gate](BodyIndex position) noexcept {
+        return [&gate, position] noexcept {
+            wait_at(gate);
             cipher::insert_computation_cache_in_row<&cr_contention_fn, EmptyR, int>(
-                ::fixy::to(body_at(contended_row_bodies, i)));
-        }};
-    }
-    while (ready.load(std::memory_order_acquire) < 4) { /* spin */
-    }
-    go.store(true, std::memory_order_release);
-    for (auto& t : workers) {
-        t.join();
-    }
+                ::fixy::to(body_at(contended_row_bodies, position)));
+        };
+    };
+    auto contender_0 = contender_of(::fixy::index<0>());
+    auto contender_1 = contender_of(::fixy::index<1>());
+    auto contender_2 = contender_of(::fixy::index<2>());
+    auto contender_3 = contender_of(::fixy::index<3>());
+    run_race(test, gate, contender_0, contender_1, contender_2, contender_3);
 
     const Slot winner = cipher::lookup_computation_cache_in_row<&cr_contention_fn, EmptyR, int>();
     CRUCIBLE_TEST_ASSERT(test, winner.is_some());
