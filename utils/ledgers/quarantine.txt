@@ -334,7 +334,7 @@ test/ | c-library-object | 7 | - | -
 test/ | door-header | 3 | - | -
 test/ | foreign-symbol | 12 | - | -
 test/ | inline-asm | 1 | - | -
-test/ | opted-out | 2 | ABI: dlsym finds each entry point of a test library by its C name | the case fallbacks of test_process_wide_across_libraries finds the two entry points of each test library by their C names with dlsym, as Python finds the entry points of the vessel, so the two declarations have C linkage
+test/ | opted-out | 8 | ABI: dlsym finds each entry point of a test library by its C name | the case fallbacks of test_process_wide_across_libraries finds the two entry points of each test library by their C names with dlsym, as Python finds the entry points of the vessel, so the two declarations have C linkage
 test/ | opted-out | 2 | ABI: the case gives a CrucibleHandle of vessel_api.h to the typed door | -
 test/ | opted-out | 2 | ABI: the case gives two CrucibleHandle values of vessel_api.h to the typed door | -
 test/ | opted-out | 2 | ABI: the case writes the data pointer of a CrucibleMeta of vessel_api.h | -
@@ -745,7 +745,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 7 | - | -
 test/session_oracle/ | std-entity | 25 | - | -
 test/session_oracle/ | std-object | 1383 | - | -
-test/shape/ | opted-out | 273 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/shape/ | opted-out | 275 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/tensor_neg/ | opted-out | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/tensor_neg/ | region | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
