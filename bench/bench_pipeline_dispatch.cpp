@@ -14,16 +14,11 @@
 
 #include "bench_harness.h"
 
-#include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <span>
-#include <tuple>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace cc = fixy::concurrent;
 
@@ -38,6 +33,12 @@ constexpr std::size_t kLargeStageWords = kLargeStageBytes / sizeof(std::uint64_t
 constexpr fixy::HotFgCtx kForeground = foundation::effects::testing::foreground();
 // The router starts threads, so the context that runs it must own Bg.
 constexpr fixy::BgDrainCtx kCoordinator{foundation::effects::testing::bg()};
+// The allocation capability of the words of the large stages.
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
+
+// A list of the stage types of one pipeline.  It holds no value.
+template <class... Stages>
+struct StageList {};
 
 // Handles that never block and carry the working set that the router reads.
 // The stages chain, so each handle names the same channel.
@@ -57,8 +58,8 @@ struct Producer {
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
 
-std::array<std::uint64_t, 1024> small_data{};
-std::vector<std::uint64_t> large_data;
+::fixy::FixedArray<std::uint64_t, 1024> small_data{};
+::fixy::HeapArray<std::uint64_t> large_data{};
 std::uint64_t small_sink = 0;
 
 struct alignas(64) SinkCell {
@@ -68,12 +69,12 @@ struct alignas(64) SinkCell {
 static_assert(sizeof(SinkCell) == 64);
 static_assert(alignof(SinkCell) == 64);
 
-std::array<SinkCell, kLargeStages> large_sinks{};
+::fixy::FixedArray<SinkCell, kLargeStages> large_sinks{};
 
 // A multiply-xorshift chain over each word, so a stage does work in
 // proportion to the bytes it touches.  O(words * Rounds).
 template <std::size_t Rounds, std::uint64_t Seed, std::uint64_t Multiplier, unsigned Shift, std::uint64_t Increment>
-[[nodiscard]] static std::uint64_t mix_words(std::span<const std::uint64_t> words) noexcept {
+[[nodiscard]] static std::uint64_t mix_words(::fixy::View<const std::uint64_t> words) noexcept {
     std::uint64_t acc = Seed;
     for (const std::uint64_t word : words) {
         std::uint64_t x = word ^ acc;
@@ -88,9 +89,13 @@ template <std::size_t Rounds, std::uint64_t Seed, std::uint64_t Multiplier, unsi
 // A small stage mixes Count words of small_data from Begin.
 template <std::size_t Ws, std::size_t Begin, std::size_t Count>
 static void small_stage(Consumer<Ws>&&, Producer<Ws>&&) noexcept {
-    static_assert(Begin + Count <= std::tuple_size_v<decltype(small_data)>);
+    static_assert(Begin + Count <= decltype(small_data)::size());
+    // The window of a View of a fixed extent at constant positions has no
+    // check that runs.
+    const ::fixy::FixedArray<std::uint64_t, 1024>& data = small_data;
     small_sink ^= mix_words<4, 0x9E3779B97F4A7C15ULL, 0xD1B54A32D192ED03ULL, 27, 0x94D049BB133111EBULL>(
-        std::span<const std::uint64_t>{small_data}.subspan(Begin, Count));
+        ::fixy::View<const std::uint64_t>{
+            data.view().template window<Count>(Begin).expect("a small stage reads its words")});
     bench::do_not_optimize(small_sink);
 }
 
@@ -98,17 +103,19 @@ static void small_stage(Consumer<Ws>&&, Producer<Ws>&&) noexcept {
 template <std::size_t Stage>
 static void large_stage(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept {
     static_assert(Stage < kLargeStages);
-    large_sinks[Stage].value ^= mix_words<8, 0x243F6A8885A308D3ULL, 0x9E3779B97F4A7C15ULL, 29, 0xD1B54A32D192ED03ULL>(
-        std::span<const std::uint64_t>{large_data}.subspan(Stage * kLargeStageWords, kLargeStageWords));
-    bench::do_not_optimize(large_sinks[Stage].value);
+    SinkCell& sink = large_sinks.at(::fixy::index<Stage>());
+    const ::fixy::HeapArray<std::uint64_t>& data = large_data;
+    sink.value ^= mix_words<8, 0x243F6A8885A308D3ULL, 0x9E3779B97F4A7C15ULL, 29, 0xD1B54A32D192ED03ULL>(
+        data.view().window(Stage * kLargeStageWords, kLargeStageWords).expect("a large stage reads its own slice"));
+    bench::do_not_optimize(sink.value);
 }
 
-using SmallStages = std::tuple<cc::Stage<&small_stage<1 * KiB, 0, 256>, fixy::HotFgCtx>,
-                               cc::Stage<&small_stage<1536, 256, 384>, fixy::HotFgCtx>,
-                               cc::Stage<&small_stage<1536, 640, 384>, fixy::HotFgCtx>>;
+using SmallStages = StageList<cc::Stage<&small_stage<1 * KiB, 0, 256>, fixy::HotFgCtx>,
+                              cc::Stage<&small_stage<1536, 256, 384>, fixy::HotFgCtx>,
+                              cc::Stage<&small_stage<1536, 640, 384>, fixy::HotFgCtx>>;
 
 template <std::size_t... Stage>
-auto large_stage_list(std::index_sequence<Stage...>) -> std::tuple<cc::Stage<&large_stage<Stage>, fixy::HotFgCtx>...>;
+auto large_stage_list(std::index_sequence<Stage...>) -> StageList<cc::Stage<&large_stage<Stage>, fixy::HotFgCtx>...>;
 
 using LargeStages = decltype(large_stage_list(std::make_index_sequence<kLargeStages>{}));
 
@@ -116,7 +123,7 @@ template <class Stage, class List>
 inline constexpr bool is_listed_v = false;
 
 template <class Stage, class... Listed>
-inline constexpr bool is_listed_v<Stage, std::tuple<Listed...>> = (std::same_as<Stage, Listed> || ...);
+inline constexpr bool is_listed_v<Stage, StageList<Listed...>> = (std::same_as<Stage, Listed> || ...);
 
 // The stages of this bench, and no other stage, opt in to the inline run.
 template <class Stage>
@@ -138,7 +145,7 @@ template <class List>
 struct pipeline_of;
 
 template <class... Stages>
-struct pipeline_of<std::tuple<Stages...>> {
+struct pipeline_of<StageList<Stages...>> {
     using type = cc::Pipeline<Stages...>;
 };
 
@@ -158,25 +165,24 @@ template <class Stage>
 
 // Each stage of the list, in order, on the calling thread.
 template <class... Stages>
-static void run_in_order(std::type_identity<std::tuple<Stages...>>) noexcept {
+static void run_in_order(StageList<Stages...> /*stages*/) noexcept {
     (mint_bench_stage<Stages>().run(), ...);
 }
 
 // The same stages through the router, which picks the inline run or a
 // thread per stage.
 template <class... Stages>
-static void run_through_router(std::type_identity<std::tuple<Stages...>>) noexcept {
+static void run_through_router(StageList<Stages...> /*stages*/) noexcept {
     cc::mint_pipeline(kCoordinator, mint_bench_stage<Stages>()...).run(kCoordinator);
 }
 
 static void fill_inputs() {
-    for (std::size_t i = 0; i < small_data.size(); ++i) {
-        small_data[i] = i * 1315423911ULL;
+    for (::fixy::Index<1024> const i : small_data.indices()) {
+        small_data.at(i) = i.raw() * 1315423911ULL;
     }
-    large_data.resize(kLargeStageWords * kLargeStages);
-    for (std::size_t i = 0; i < large_data.size(); ++i) {
-        large_data[i] = i * 11400714819323198485ULL;
-    }
+    large_data = ::fixy::mint_heap_array_with<std::uint64_t>(
+        kAlloc, kLargeStageWords * kLargeStages,
+        [](std::size_t i) noexcept -> std::uint64_t { return i * 11400714819323198485ULL; });
 }
 
 }  // namespace pipeline_dispatch_bench
@@ -187,13 +193,13 @@ int main() {
     fill_inputs();
     bench::print_system_info();
 
-    std::printf("pipeline dispatch facts: small=%zuB inline=%d large=%zuB inline=%d cpus=%zu\n",
-                SmallPipeline::aggregate_per_call_working_set, SmallPipeline::will_run_inline() ? 1 : 0,
-                LargePipeline::aggregate_per_call_working_set, LargePipeline::will_run_inline() ? 1 : 0,
-                ::fixy::topology::Topology::instance().process_cpu_count());
+    bench::print("pipeline dispatch facts: small={}B inline={} large={}B inline={} cpus={}\n",
+                 SmallPipeline::aggregate_per_call_working_set, SmallPipeline::will_run_inline() ? 1 : 0,
+                 LargePipeline::aggregate_per_call_working_set, LargePipeline::will_run_inline() ? 1 : 0,
+                 ::fixy::topology::Topology::instance().process_cpu_count());
 
-    using Small = std::type_identity<SmallStages>;
-    using Large = std::type_identity<LargeStages>;
+    using Small = SmallStages;
+    using Large = LargeStages;
     ::fixy::FixedArray<bench::Report, 4> reports{
         bench::Run{"pipeline.small.direct"}.samples(2000).warmup(200).no_pin().max_wall_ms(1000).measure(
             [] { run_in_order(Small{}); }),
@@ -208,7 +214,8 @@ int main() {
 
     const double small_ratio = reports.at(::fixy::index<1>()).pct.p50 / reports.at(::fixy::index<0>()).pct.p50;
     const double large_speedup = reports.at(::fixy::index<2>()).pct.p50 / reports.at(::fixy::index<3>()).pct.p50;
-    std::printf("\nchecks: small_router/direct=%.3fx large_direct/router=%.3fx\n", small_ratio, large_speedup);
+    bench::print("\nchecks: small_router/direct={}x large_direct/router={}x\n", ::fixy::Fixed<3>{small_ratio},
+                 ::fixy::Fixed<3>{large_speedup});
     // The JSON tail comes last, because the reader reads each line after its
     // marker.
     bench::emit_reports_json(reports.view(), bench::env_json());
