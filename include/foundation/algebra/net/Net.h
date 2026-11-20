@@ -205,7 +205,9 @@
 //   change the copy, so the fault stays the fault of the net.  Each find
 //   function on a SealedNet gives that fault, or runs its body alone, as the
 //   plain form of its algorithm does.  The consteval doors check_* take a
-//   Net, and run the wiring check in each call.
+//   Net, and run the wiring check in each call.  find_canonical_form on a Net
+//   is the one exception: its walk checks each wire and each port that it
+//   reads, and only a net with a fault runs find_wiring_fault for that fault.
 //
 //   The door is seal_net and not a door mint_*.  A mint of the base takes a
 //   context and a concept of the layer of the effects as its constraint, and
@@ -229,7 +231,8 @@
 //     find_canonical_form, is_same_net
 //                       O(A + W), a walk with an explicit stack, and the names
 //                       of the K kinds one time.  The hash folds in four
-//                       chains side by side
+//                       chains side by side.  find_canonical_form on a Net
+//                       checks the wiring in the walk
 //   A check on a sealed net costs the same, with no check_wiring.
 //   Each check reads arrays, because a read of an array costs less in constant
 //   evaluation than a read through a pointer.  The body of each check is a
@@ -1928,12 +1931,12 @@ struct CanonicalNet {
 
 namespace detail {
 
-// The canonical numbers of the agents of a net with no fault of its wiring
-// (THE CANONICAL FORM).  number_of holds the number of each agent, or
-// no_index, and agent_at the agent of each number.  peer holds the other end
-// of the wire at each port as one slot: its agent times max_agent_ports plus
-// its port.  A net has fewer than 2^28 agents, so a slot fits 32 bits.
-// count is the count of the numbered agents.
+// The canonical numbers of the agents of a net (THE CANONICAL FORM).
+// number_of holds the number of each agent, or no_index, and agent_at the
+// agent of each number.  peer holds the other end of the wire at each port as
+// one slot: its agent times max_agent_ports plus its port.  A net has fewer
+// than 2^28 agents, so a slot fits 32 bits.  count is the count of the
+// numbered agents.
 template <std::size_t Agents>
 struct CanonicalOrder {
     std::uint32_t number_of[Agents]{};
@@ -1942,54 +1945,124 @@ struct CanonicalOrder {
     std::uint32_t count = 0;
 };
 
-// Writes the canonical numbers of a net with no fault of its wiring: the
-// boundary agents first in their order, then each inner agent at its first
-// visit of the walk.  Each entry of the stack holds an agent times 16 plus
-// its next port, so one word holds the two.  Complexity: O(K + A + W).
-template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-constexpr void write_canonical_order_(Net<Types, Kinds, Agents, Wires> const& graph,
-                                      CanonicalOrder<Agents>& order) noexcept {
+// What the walk of the canonical order knows of the wiring of its net.
+enum class WiringState : std::uint8_t {
+    // find_wiring_fault gave NoFault for the net.
+    Checked = 0,
+    // No check read the wiring.  The walk stops at each fault of the wiring
+    // that the canonical form can meet, and it names no fault.
+    Unchecked = 1,
+};
+
+// Writes the canonical numbers of a net: the boundary agents first in their
+// order, then each inner agent at its first visit of the walk.  The walk
+// keeps the agent and the next port of its top in registers, and its stack
+// holds the agents below the top, each with its next port.  On a net with the
+// state Unchecked, the walk gives false at a kind past the signature, a wire
+// past the net or past the ports of its agent, a port with a second wire, a
+// wire whose types are no duals, and an agent of its path with a port that
+// has no wire.  A port with no wire that the walk does not reach leaves its
+// agent with no number.  So a walk that gives true and numbers each agent
+// proves that the net has no fault of its wiring.  Complexity: O(K + A + W).
+template <WiringState Wiring, std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr bool write_canonical_order_(Net<Types, Kinds, Agents, Wires> const& graph,
+                                                    CanonicalOrder<Agents>& order) noexcept {
     constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
-    constexpr std::uint32_t port_bits = 4;
-    constexpr std::uint32_t port_mask = (1u << port_bits) - 1u;
+    constexpr bool is_checked = Wiring == WiringState::Checked;
     PortCounts<Kinds> const counts = port_counts_of_(graph.signature);
-    for (Wire const& wire : graph.wires) {
-        std::uint32_t const left = index_of(wire.left.agent) * ports + wire.left.port;
-        std::uint32_t const right = index_of(wire.right.agent) * ports + wire.right.port;
-        order.peer[left] = right;
-        order.peer[right] = left;
+    // The ports of each agent that a wire uses, one bit for each port.  The
+    // state Checked reads no mask.
+    std::uint32_t used[is_checked ? 1 : Agents]{};
+    if constexpr (is_checked) {
+        for (Wire const& wire : graph.wires) {
+            std::uint32_t const left = index_of(wire.left.agent) * ports + wire.left.port;
+            std::uint32_t const right = index_of(wire.right.agent) * ports + wire.right.port;
+            order.peer[left] = right;
+            order.peer[right] = left;
+        }
+    } else {
+        std::uint32_t type_word[Kinds * max_agent_ports]{};
+        for (std::uint32_t kind = 0; kind < Kinds; ++kind) {
+            for (std::uint32_t port = 0; port < counts.of[kind]; ++port)
+                type_word[kind * ports + port] = type_word_of(graph.signature.kinds[kind].port_types[port]);
+        }
+        for (Wire const& wire : graph.wires) {
+            std::uint32_t slot[2]{};
+            std::uint32_t word[2]{};
+            for (std::uint32_t side = 0; side < 2u; ++side) {
+                PortRef const end = side == 0u ? wire.left : wire.right;
+                std::uint32_t const agent = index_of(end.agent);
+                if (agent >= Agents) return false;
+                std::uint32_t const kind = index_of(graph.agents[agent]);
+                if (kind >= Kinds || end.port >= counts.of[kind]) return false;
+                std::uint32_t const bit = 1u << end.port;
+                if ((used[agent] & bit) != 0u) return false;
+                used[agent] |= bit;
+                slot[side] = agent * ports + end.port;
+                word[side] = type_word[kind * ports + end.port];
+            }
+            if (word[1] != dual_word_of(word[0])) return false;
+            order.peer[slot[0]] = slot[1];
+            order.peer[slot[1]] = slot[0];
+        }
     }
+    // An agent of the path whose ports each have a wire.
+    auto const is_fully_wired = [&](std::uint32_t agent) constexpr noexcept {
+        if constexpr (is_checked) {
+            return true;
+        } else {
+            return used[agent] == (1u << counts.of[index_of(graph.agents[agent])]) - 1u;
+        }
+    };
+    bool is_boundary_of[Kinds]{};
+    for (std::uint32_t kind = 0; kind < Kinds; ++kind)
+        is_boundary_of[kind] = graph.signature.kinds[kind].is_boundary;
     for (std::uint32_t& slot : order.number_of)
         slot = no_index;
     for (std::uint32_t agent = 0; agent < Agents; ++agent) {
-        if (!kind_of_(graph, AgentId{agent}).is_boundary) continue;
+        std::uint32_t const kind = index_of(graph.agents[agent]);
+        if constexpr (!is_checked) {
+            if (kind >= Kinds) return false;
+        }
+        if (!is_boundary_of[kind]) continue;
         order.number_of[agent] = order.count;
         order.agent_at[order.count] = agent;
         ++order.count;
     }
     std::uint32_t const boundary_count = order.count;
-    std::uint32_t stack[Agents]{};
+    std::uint32_t stack_agent[Agents]{};
+    std::uint32_t stack_port[Agents]{};
     for (std::uint32_t root = 0; root < boundary_count; ++root) {
-        stack[0] = order.agent_at[root] << port_bits;
-        std::uint32_t depth = 1;
-        while (depth != 0u) {
-            std::uint32_t const top = stack[depth - 1];
-            std::uint32_t const agent = top >> port_bits;
-            std::uint32_t const port = top & port_mask;
-            if (port == counts.of[index_of(graph.agents[agent])]) {
+        std::uint32_t agent = order.agent_at[root];
+        std::uint32_t port = 0;
+        std::uint32_t port_count = counts.of[index_of(graph.agents[agent])];
+        if (!is_fully_wired(agent)) return false;
+        std::uint32_t depth = 0;
+        while (true) {
+            if (port == port_count) {
+                if (depth == 0u) break;
                 --depth;
+                agent = stack_agent[depth];
+                port = stack_port[depth];
+                port_count = counts.of[index_of(graph.agents[agent])];
                 continue;
             }
-            stack[depth - 1] = top + 1u;
             std::uint32_t const next = order.peer[agent * ports + port] / ports;
+            ++port;
             if (order.number_of[next] != no_index) continue;
             order.number_of[next] = order.count;
             order.agent_at[order.count] = next;
             ++order.count;
-            stack[depth] = next << port_bits;
+            stack_agent[depth] = agent;
+            stack_port[depth] = port;
             ++depth;
+            agent = next;
+            port = 0;
+            port_count = counts.of[index_of(graph.agents[next])];
+            if (!is_fully_wired(agent)) return false;
         }
     }
+    return true;
 }
 
 // One word of the canonical form, for its hash.
@@ -2070,22 +2143,17 @@ template <std::size_t Types, std::size_t Kinds>
     return fold_name_(fold_word(hash, FormWord{shape}), form.kind.merge.reason());
 }
 
-// The canonical form of a net with no fault of its wiring: the fault
-// AgentWithoutBoundaryPath, or the hash of its form.  The entry of each
-// number folds the hash of the form of the kind of its agent, and one word
-// for each port: the number of the peer times 8 plus the port of the peer.
-// The entry of number n folds into chain n % 4, so four chains of folds run
-// side by side.  The hash folds the count of the agents and the four chains
-// in their order.  Complexity: O(A + W), and the names of the K kinds.
+// The hash of the canonical form of a net with no fault of its wiring, from
+// an order that numbers each agent.  The entry of each number folds the hash
+// of the form of the kind of its agent, and one word for each port: the
+// number of the peer times 8 plus the port of the peer.  The entry of number
+// n folds into chain n % 4, so four chains of folds run side by side.  The
+// hash folds the count of the agents and the four chains in their order.
+// Complexity: O(A + W), and the names of the K kinds.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] constexpr CanonicalNet find_canonical_form_of_(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+[[nodiscard]] constexpr CanonicalNet hash_canonical_order_(Net<Types, Kinds, Agents, Wires> const& graph,
+                                                           CanonicalOrder<Agents> const& order) noexcept {
     constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
-    CanonicalOrder<Agents> order{};
-    write_canonical_order_(graph, order);
-    for (std::uint32_t agent = 0; agent < Agents; ++agent) {
-        if (order.number_of[agent] != no_index) continue;
-        return CanonicalNet{.fault = NetFault{.code = NetFaultCode::AgentWithoutBoundaryPath, .agent = AgentId{agent}}};
-    }
     PortCounts<Kinds> const counts = port_counts_of_(graph.signature);
     NetHash kind_hash[Kinds]{};
     for (std::uint32_t kind = 0; kind < Kinds; ++kind)
@@ -2122,6 +2190,32 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
     return CanonicalNet{.hash = fold_word(hash, FormWord{static_cast<std::uint64_t>(fourth)})};
 }
 
+// The canonical form of a net with no fault of its wiring: the fault
+// AgentWithoutBoundaryPath at the first agent with no number, or the hash of
+// its form.  Complexity: O(A + W), and the names of the K kinds.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr CanonicalNet find_canonical_form_of_(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    CanonicalOrder<Agents> order{};
+    static_cast<void>(write_canonical_order_<WiringState::Checked>(graph, order));
+    if (order.count != Agents) {
+        std::uint32_t agent = 0;
+        while (order.number_of[agent] != no_index)
+            ++agent;
+        return CanonicalNet{.fault = NetFault{.code = NetFaultCode::AgentWithoutBoundaryPath, .agent = AgentId{agent}}};
+    }
+    return hash_canonical_order_(graph, order);
+}
+
+// The canonical form of a net with a fault: the first fault of its wiring,
+// or the fault of find_canonical_form_of_.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard, gnu::cold, gnu::noinline]] constexpr CanonicalNet
+find_canonical_fault_(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    NetFault const wiring = find_wiring_fault(graph);
+    if (wiring.is_fault()) return CanonicalNet{.fault = wiring};
+    return find_canonical_form_of_(graph);
+}
+
 // Two nets of one type with no fault of their wiring are the same net.  The
 // two arguments can change places with no change of meaning.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
@@ -2130,8 +2224,8 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
     constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
     CanonicalOrder<Agents> one{};
     CanonicalOrder<Agents> other{};
-    write_canonical_order_(left, one);
-    write_canonical_order_(right, other);
+    static_cast<void>(write_canonical_order_<WiringState::Checked>(left, one));
+    static_cast<void>(write_canonical_order_<WiringState::Checked>(right, other));
     if (one.count != Agents || other.count != Agents) return false;
     PortCounts<Kinds> const counts = port_counts_of_(left.signature);
     // A kind of the left net, and a kind of the right net with the same form.
@@ -2162,13 +2256,19 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 }  // namespace detail
 
 // The canonical form of a net: the first fault of its wiring, the fault
-// AgentWithoutBoundaryPath, or the hash of its form (THE CANONICAL FORM).
+// AgentWithoutBoundaryPath, or the hash of its form (THE CANONICAL FORM).  The
+// walk of the order checks the wiring that it reads, so a net that it numbers
+// in full takes no separate check of the wiring.  Each other net runs
+// find_wiring_fault and then the body, which give its fault.
 // Complexity: O(A + W), and the names of the K kinds.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
 [[nodiscard]] constexpr CanonicalNet find_canonical_form(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
-    NetFault const wiring = find_wiring_fault(graph);
-    if (wiring.is_fault()) return CanonicalNet{.fault = wiring};
-    return detail::find_canonical_form_of_(graph);
+    NetFault const kinds = find_signature_fault(graph.signature);
+    if (kinds.is_fault()) return CanonicalNet{.fault = kinds};
+    detail::CanonicalOrder<Agents> order{};
+    bool const is_wired = detail::write_canonical_order_<detail::WiringState::Unchecked>(graph, order);
+    if (is_wired && order.count == Agents) return detail::hash_canonical_order_(graph, order);
+    return detail::find_canonical_fault_(graph);
 }
 
 // The canonical form of a sealed net: the fault of its wiring, or the form
