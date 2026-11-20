@@ -16,11 +16,10 @@
 //   ./build-bench/bench/bench_meta_log
 //   CRUCIBLE_BENCH_HARDENING=production ./build-bench/bench/bench_meta_log
 
-#include <bit>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <new>
 
 #include <crucible/MetaLog.h>
 
@@ -31,6 +30,18 @@ using crucible::external_data_ptr;
 using crucible::MetaLog;
 using crucible::ScalarType;
 using crucible::TensorMeta;
+
+namespace {
+
+// The allocation capability of each log of the rows.
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
+
+// The storage whose address each descriptor of a shape holds as its data
+// pointer.  The log copies the descriptor and never reads the storage.
+::fixy::FixedArray<std::byte, 64> g_storage_2d{};
+::fixy::FixedArray<std::byte, 64> g_storage_4d{};
+
+}  // namespace
 
 // Realistic 2D float tensor (linear / matmul input).
 [[nodiscard]] static TensorMeta make_meta_2d(int64_t dim0, int64_t dim1) noexcept {
@@ -43,7 +54,7 @@ using crucible::TensorMeta;
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
     m.device_idx = 0;
-    m.data_ptr = external_data_ptr(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xDEADBEEF0000ULL)));
+    m.data_ptr = external_data_ptr(static_cast<void*>(&g_storage_2d));
     return m;
 }
 
@@ -62,9 +73,69 @@ using crucible::TensorMeta;
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
     m.device_idx = 0;
-    m.data_ptr = external_data_ptr(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xCAFEBABE0000ULL)));
+    m.data_ptr = external_data_ptr(static_cast<void*>(&g_storage_4d));
     return m;
 }
+
+// ── Baselines: pure memcpy to advancing destination ───────────
+//
+// These show the lower bound of try_append — the ring's producer
+// does (at minimum) one memcpy + two atomic ops. Comparing
+// try_append against memcpy isolates the SPSC overhead.  The rows copy
+// with the memcpy of the C library into raw storage, as the hardware sees
+// it, so they stay raw.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: a raw memcpy of TensorMeta is the floor reference of try_append")
+namespace {
+
+[[nodiscard]] bench::Report memcpy_one_to_advancing_dst() {
+    // 64 B-aligned scratch. aligned_alloc gives raw storage; run
+    // each NSDMI via placement-new so the bytes are well-defined
+    // before we memcpy over them (kills -Wclass-memaccess).
+    constexpr uint32_t kBuf = 4096;
+    auto buf = static_cast<TensorMeta*>(std::aligned_alloc(64, kBuf * sizeof(TensorMeta)));
+    for (uint32_t i = 0; i < kBuf; ++i)
+        ::new(&buf[i]) TensorMeta{};
+    const TensorMeta src = make_meta_2d(64, 768);
+    uint32_t pos = 0;
+    auto r = bench::run("memcpy(168B)  to advancing dst", [&] {
+        std::memcpy(&buf[pos & (kBuf - 1)], &src, sizeof(TensorMeta));
+        bench::do_not_optimize(buf[pos & (kBuf - 1)]);
+        ++pos;
+    });
+    std::free(buf);
+    return r;
+}
+
+[[nodiscard]] bench::Report memcpy_three_to_advancing_dst() {
+    constexpr uint32_t kBuf = 4096;
+    auto buf = static_cast<TensorMeta*>(std::aligned_alloc(64, kBuf * sizeof(TensorMeta)));
+    for (uint32_t i = 0; i < kBuf; ++i)
+        ::new(&buf[i]) TensorMeta{};
+    const TensorMeta src[3] = {make_meta_2d(64, 768), make_meta_2d(768, 768), make_meta_2d(64, 768)};
+    uint32_t pos = 0;
+    auto r = bench::run("memcpy(504B)  to advancing dst", [&] {
+        const uint32_t p = pos & (kBuf - 4);  // leave room for 3 entries
+        std::memcpy(&buf[p], src, 3 * sizeof(TensorMeta));
+        bench::do_not_optimize(buf[p]);
+        ++pos;
+    });
+    std::free(buf);
+    return r;
+}
+
+[[nodiscard]] bench::Report memcpy_one_to_same_dst() {
+    // Same-destination memcpy — hot in L1, theoretical minimum.
+    // Gives the compiler's best case for 168 B store.
+    const TensorMeta src = make_meta_2d(64, 768);
+    TensorMeta dst{};
+    return bench::run("memcpy(168B)  same dst (L1)", [&] {
+        std::memcpy(&dst, &src, sizeof(TensorMeta));
+        bench::do_not_optimize(dst);
+    });
+}
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     bench::print_system_info();
@@ -102,7 +173,7 @@ int main() {
     // would blow the stack.
     ::fixy::FixedArray<bench::Report, 10> reports{
         [&] {
-            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
+            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
             return bench::run("try_append(1 meta  = 168B)", [&] {
                 auto idx = log->try_append(meta1.view());
                 bench::do_not_optimize(idx);
@@ -110,7 +181,7 @@ int main() {
             });
         }(),
         [&] {
-            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
+            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
             return bench::run("try_append(2 metas = 336B)", [&] {
                 auto idx = log->try_append(meta2.view());
                 bench::do_not_optimize(idx);
@@ -118,7 +189,7 @@ int main() {
             });
         }(),
         [&] {
-            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
+            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
             return bench::run("try_append(3 metas = 504B)", [&] {
                 auto idx = log->try_append(meta3.view());
                 bench::do_not_optimize(idx);
@@ -126,7 +197,7 @@ int main() {
             });
         }(),
         [&] {
-            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
+            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
             return bench::run("try_append(8 metas = 1344B)", [&] {
                 auto idx = log->try_append(meta8.view());
                 bench::do_not_optimize(idx);
@@ -141,7 +212,7 @@ int main() {
         // Inner counter stays a local to avoid atomic-store pollution
         // of the measurement.
         [&] {
-            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
+            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
             uint32_t since_drain = 0;
             constexpr uint32_t kD = 50000;
             return bench::run("throughput (3 metas/call, drain/50k)", [&] {
@@ -156,14 +227,14 @@ int main() {
 
         // ── Raw atomics (floor for ordering cost) ─────────────────────
         [&] {
-            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
+            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
             return bench::run("head.peek_relaxed", [&] {
                 auto h = log->head.peek_relaxed();
                 bench::do_not_optimize(h);
             });
         }(),
         [&] {
-            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
+            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
             uint32_t v = 0;
             return bench::run("head.advance_sole_writer_from (release)", [&] {
                 log->head.advance_sole_writer_from(v, v + 1);
@@ -172,55 +243,10 @@ int main() {
             });
         }(),
 
-        // ── Baselines: pure memcpy to advancing destination ───────────
-        //
-        // These show the lower bound of try_append — the ring's producer
-        // does (at minimum) one memcpy + two atomic ops. Comparing
-        // try_append against memcpy isolates the SPSC overhead.
-        [&] {
-            // 64 B-aligned scratch. aligned_alloc gives raw storage; run
-            // each NSDMI via placement-new so the bytes are well-defined
-            // before we memcpy over them (kills -Wclass-memaccess).
-            constexpr uint32_t kBuf = 4096;
-            auto buf = static_cast<TensorMeta*>(std::aligned_alloc(64, kBuf * sizeof(TensorMeta)));
-            for (uint32_t i = 0; i < kBuf; ++i)
-                ::new(&buf[i]) TensorMeta{};
-            const TensorMeta src = make_meta_2d(64, 768);
-            uint32_t pos = 0;
-            auto r = bench::run("memcpy(168B)  to advancing dst", [&] {
-                std::memcpy(&buf[pos & (kBuf - 1)], &src, sizeof(TensorMeta));
-                bench::do_not_optimize(buf[pos & (kBuf - 1)]);
-                ++pos;
-            });
-            std::free(buf);
-            return r;
-        }(),
-        [&] {
-            constexpr uint32_t kBuf = 4096;
-            auto buf = static_cast<TensorMeta*>(std::aligned_alloc(64, kBuf * sizeof(TensorMeta)));
-            for (uint32_t i = 0; i < kBuf; ++i)
-                ::new(&buf[i]) TensorMeta{};
-            const TensorMeta src[3] = {make_meta_2d(64, 768), make_meta_2d(768, 768), make_meta_2d(64, 768)};
-            uint32_t pos = 0;
-            auto r = bench::run("memcpy(504B)  to advancing dst", [&] {
-                const uint32_t p = pos & (kBuf - 4);  // leave room for 3 entries
-                std::memcpy(&buf[p], src, 3 * sizeof(TensorMeta));
-                bench::do_not_optimize(buf[p]);
-                ++pos;
-            });
-            std::free(buf);
-            return r;
-        }(),
-        [&] {
-            // Same-destination memcpy — hot in L1, theoretical minimum.
-            // Gives the compiler's best case for 168 B store.
-            const TensorMeta src = make_meta_2d(64, 768);
-            TensorMeta dst{};
-            return bench::run("memcpy(168B)  same dst (L1)", [&] {
-                std::memcpy(&dst, &src, sizeof(TensorMeta));
-                bench::do_not_optimize(dst);
-            });
-        }(),
+        // The memcpy floors (the MEASURE region above).
+        memcpy_one_to_advancing_dst(),
+        memcpy_three_to_advancing_dst(),
+        memcpy_one_to_same_dst(),
     };
 
     bench::emit_reports_text(reports.view());
