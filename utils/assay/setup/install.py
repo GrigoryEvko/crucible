@@ -66,18 +66,30 @@ THE TOOLS
                  the assembly of the keyed hash, which the reference rows of
                  bench_keyed_hash measure.  --print-bin prints the directory c
                  of the source.
+    jemalloc     The release source of jemalloc (the pin jemalloc), with its
+                 configure script: the allocator that the reference rows of
+                 bench_alloc_scaling measure.  --print-bin prints the top
+                 directory of the source.
+    mimalloc     The source of mimalloc of Microsoft (the pin mimalloc): the
+                 allocator that the reference rows of bench_alloc_scaling
+                 measure.  --print-bin prints the top directory of the source.
+    snmalloc     The source of snmalloc of Microsoft (the pin snmalloc): the
+                 allocator that the reference rows of bench_alloc_scaling
+                 measure.  --print-bin prints the directory src of the source.
     No tool comes from PATH, because a program of PATH is an input that no pin
     holds.
 
 THE SOURCES OF THE BENCH
-    fluxsort, x86-simd-sort, rapidhash, rigtorp-spscqueue, rigtorp-mpmcqueue
-    and blake3 are rows of via=archive with
-    no platform: the archive of GitHub of one commit, which serves each host.
+    fluxsort, x86-simd-sort, rapidhash, rigtorp-spscqueue, rigtorp-mpmcqueue,
+    blake3, mimalloc and snmalloc are rows of via=archive with no platform: the
+    archive of GitHub of one commit, which serves each host.  jemalloc is the
+    archive of a release, because only a release holds the configure script
+    that its build runs.  The unpack reads a tarball of gzip or of bzip2.
     Only the bench presets compile their headers and sources
     (bench/CMakeLists.txt), and the product links none of their code.  The C
-    and the assembly of blake3 are the one source of the C and ASM languages,
-    which only bench/CMakeLists.txt enables.  The row of each source names its
-    license.
+    and the assembly of blake3, mimalloc and jemalloc are the sources of the C
+    and ASM languages, which only bench/CMakeLists.txt enables.  The row of
+    each source names its license.
 
 THE PIP TOOLS
     mypy and ruff are rows of via=pip.  The install writes the file
@@ -830,6 +842,9 @@ SOURCE_FILES = {
     "blake3": ("c/blake3.h", "c/blake3_impl.h", "c/blake3.c", "c/blake3_dispatch.c", "c/blake3_portable.c",
                "c/blake3_sse2_x86-64_unix.S", "c/blake3_sse41_x86-64_unix.S", "c/blake3_avx2_x86-64_unix.S",
                "c/blake3_avx512_x86-64_unix.S", "c/blake3_neon.c", "LICENSE_CC0"),
+    "jemalloc": ("configure", "Makefile.in", "VERSION", "include/jemalloc/jemalloc_macros.h.in", "COPYING"),
+    "mimalloc": ("src/static.c", "include/mimalloc.h", "LICENSE"),
+    "snmalloc": ("src/snmalloc/override/malloc.cc", "src/snmalloc/snmalloc.h", "LICENSE"),
 }
 
 
@@ -837,7 +852,9 @@ def unpack_source(download_path: Path, staging: Path, pin: pin_table.Pin) -> Pat
     """Unpack the archive of a source into staging/unpacked, and return its one top directory.
 
     The archive of a commit of GitHub holds one top directory, the name of the
-    repository and the commit.
+    repository and the commit.  The archive of a release holds one top
+    directory, the name and the version.  The archive is a tarball of gzip or
+    of bzip2, and tarfile reads the compression from the first bytes.
 
     Raises:
         InstallError: If the archive holds a file at its top, or more than one top directory
@@ -845,7 +862,7 @@ def unpack_source(download_path: Path, staging: Path, pin: pin_table.Pin) -> Pat
     import tarfile
 
     unpacked = staging / "unpacked"
-    with tarfile.open(download_path, "r:gz") as archive:
+    with tarfile.open(download_path, "r:*") as archive:
         archive.extractall(unpacked, filter="data")
     tops = sorted(unpacked.iterdir())
     if len(tops) != 1 or not tops[0].is_dir():
@@ -912,6 +929,15 @@ TOOLS: dict[str, Tool] = {
     "blake3": Tool(
         "blake3", "blake3", "blake3-", {"": "source"}, functools.partial(verify_source, SOURCE_FILES["blake3"]),
         unpack_source, version_stamp, version_stamp_matches, lambda directory: directory / "c", False),
+    "jemalloc": Tool(
+        "jemalloc", "jemalloc", "jemalloc-", {"": "source"}, functools.partial(verify_source, SOURCE_FILES["jemalloc"]),
+        unpack_source, version_stamp, version_stamp_matches, lambda directory: directory, False),
+    "mimalloc": Tool(
+        "mimalloc", "mimalloc", "mimalloc-", {"": "source"}, functools.partial(verify_source, SOURCE_FILES["mimalloc"]),
+        unpack_source, version_stamp, version_stamp_matches, lambda directory: directory, False),
+    "snmalloc": Tool(
+        "snmalloc", "snmalloc", "snmalloc-", {"": "source"}, functools.partial(verify_source, SOURCE_FILES["snmalloc"]),
+        unpack_source, version_stamp, version_stamp_matches, lambda directory: directory / "src", False),
 }
 
 

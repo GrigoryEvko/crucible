@@ -20,6 +20,7 @@ import zipfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
+from typing import Literal
 
 from assay.core import cache
 from assay.core import pins as pin_table
@@ -423,19 +424,23 @@ def tarball_cases(expect: Expect, work: Path) -> None:
 # ── A source of the bench with no network ──────────────────────────
 
 
-def planted_source_archive(directory: Path, files: tuple[str, ...], tops: tuple[str, ...]) -> Path:
+def planted_source_archive(directory: Path, files: tuple[str, ...], tops: tuple[str, ...],
+                           compression: Literal["gz", "bz2"] = "gz") -> Path:
     """Write the archive of a stand-in source, and return its path.
 
     Each top directory of tops holds each file of files, as the archive of a
-    commit of GitHub holds the files of the tree under one top directory.
+    commit of GitHub holds the files of the tree under one top directory.  The
+    compression is gz, as for the archive of a commit, or bz2, as for the
+    release of jemalloc.
     """
     tree = directory / "tree"
     for top in tops:
         for name in files:
             (tree / top / name).parent.mkdir(parents=True, exist_ok=True)
             (tree / top / name).write_text(f"// {name}\n", encoding="utf-8")
-    path = directory / "0123456789abcdef.tar.gz"
-    with tarfile.open(path, "w:gz") as archive:
+    path = directory / f"0123456789abcdef.tar.{compression}"
+    mode: Literal["w:gz", "w:bz2"] = "w:gz" if compression == "gz" else "w:bz2"
+    with tarfile.open(path, mode) as archive:
         for top in tops:
             archive.add(tree / top, arcname=top)
     return path
@@ -464,7 +469,15 @@ def source_cases(expect: Expect, work: Path) -> None:
     )
     expect("--print-bin prints the directory src of the source",
            install.program("fluxsort", root, table) == directory / "src")
-    unlicensed = planted_source_archive(work / "unlicensed", files[:-1], ("fluxsort-0123456789abcdef",))
+    released = planted_source_archive(work / "released", files, ("fluxsort-2024-07-27",), "bz2")
+    released_root = work / "bzip2"
+    released_directory = install.install("fluxsort", released_root, copy_fetch, planted_source_table(released))
+    expect(
+        "an install of a planted source in a tarball of bzip2, the form of a release of jemalloc, unpacks its one "
+        "top directory and checks its files",
+        all((released_directory / name).is_file() for name in files) and leftovers(released_root) == [],
+    )
+    unlicensed =planted_source_archive(work / "unlicensed", files[:-1], ("fluxsort-0123456789abcdef",))
     unlicensed_root = work / "no-license"
     expect(
         "an install refuses a source with no license file, with the status 2, and adds nothing",
