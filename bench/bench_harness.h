@@ -1653,7 +1653,7 @@ struct Percentiles {
         p.mean = mean;
         if (p.n > 1) {
             const double var = m2 / static_cast<double>(p.n - 1);
-            p.stddev = std::sqrt(std::max(0.0, var));
+            p.stddev = ::fixy::fp::sqrt(::fixy::max(0.0, var));
         }
         p.cv = (p.mean > 0) ? (p.stddev / p.mean) : 0.0;
         return p;
@@ -2454,7 +2454,7 @@ struct Compare {
     const double dn2 = static_cast<double>(n2);
     const double u1 = r1 - dn1 * (dn1 + 1.0) / 2.0;
     const double u2 = dn1 * dn2 - u1;
-    const double u_min = std::min(u1, u2);
+    const double u_min = ::fixy::min(u1, u2);
     const double mu = dn1 * dn2 / 2.0;
 
     // Tie-corrected variance (Mann & Whitney 1947 §5; Siegel 1956):
@@ -2463,17 +2463,17 @@ struct Compare {
     const double N = static_cast<double>(n1) + static_cast<double>(n2);
     const double n1n2_12 = (static_cast<double>(n1) * dn2) / 12.0;
     const double Ncorr = (N > 1.0) ? (N + 1.0 - tie_sum / (N * (N - 1.0))) : (N + 1.0);
-    const double sigma = std::sqrt(std::max(0.0, n1n2_12 * Ncorr));
+    const double sigma = ::fixy::fp::sqrt(::fixy::max(0.0, n1n2_12 * Ncorr));
 
     // Continuity correction: subtract 0.5 from |u_min − mu| before
     // dividing by sigma (normal approximation of a discrete statistic).
     // Sign of z preserves direction (is A tending below or above B?).
     const double diff = u_min - mu;
-    const double adj = (diff >= 0.0 ? +1.0 : -1.0) * std::max(0.0, std::abs(diff) - 0.5);
+    const double adj = (diff >= 0.0 ? +1.0 : -1.0) * ::fixy::max(0.0, ::fixy::fp::abs(diff) - 0.5);
 
     c.u = u_min;
     c.z = (sigma > 0) ? (adj / sigma) : 0.0;
-    c.distinguishable = std::abs(c.z) > 2.576;
+    c.distinguishable = ::fixy::fp::abs(c.z) > 2.576;
     return c;
 }
 
@@ -2935,7 +2935,7 @@ private:
             const double m2 = median_of_part(
                 part_of_samples(loop_order, ::fixy::side_as<side::PartFirst>(half), ::fixy::side_as<side::PartEnd>(N)));
             const double m = (m1 + m2) / 2.0;
-            drift = (m > 0) ? std::abs(m1 - m2) / m * 100.0 : 0.0;
+            drift = (m > 0) ? ::fixy::fp::abs(m1 - m2) / m * 100.0 : 0.0;
             drift_flag = drift > 10.0;
         }
 
@@ -2971,8 +2971,8 @@ private:
         r.freq_start_hz = freq_start;
         r.freq_end_hz = freq_end;
         if (freq_start > 0 && freq_end > 0) {
-            const auto hi = std::max(freq_start, freq_end);
-            const auto lo = std::min(freq_start, freq_end);
+            const auto hi = ::fixy::max(freq_start, freq_end);
+            const auto lo = ::fixy::min(freq_start, freq_end);
             const double ratio = static_cast<double>(hi - lo) / static_cast<double>(hi);
             r.freq_drift_flag = ratio > 0.05;
         }
@@ -3553,27 +3553,20 @@ void add_report(::fixy::FixedList<Report, Capacity>& reports, Report report) noe
 //
 // Each preset that builds the benches (bench, pgo-generate and pgo)
 // defines NDEBUG, so assert checks nothing in a bench.
-// CRUCIBLE_BENCH_CHECK checks in each build.  A failed check prints its
-// file, its line and its condition to stderr, and then it aborts.
+// CRUCIBLE_BENCH_CHECK checks in each build.  A failed check ends the
+// process through fatal() of the Report family, which writes the file, the
+// line and the condition to stderr, with the site of the check.  fatal() is
+// a cold call that is not inline, so the check leaves one branch in the code.
 //
 // Put each check outside the timed body.  The body can count the results
 // that are not the expected ones, and a check after the measurement reads
 // the count.
-namespace detail {
-
-[[noreturn, gnu::cold, gnu::noinline]] inline void check_failed(const char* file, int line,
-                                                                const char* condition) noexcept {
-    std::fprintf(stderr, "%s:%d: bench check failed: %s\n", file, line, condition);
-    std::fflush(stderr);
-    std::abort();
-}
-
-}  // namespace detail
 
 }  // namespace bench
 
-#define CRUCIBLE_BENCH_CHECK(cond)                                    \
-    do {                                                              \
-        if (!(cond)) [[unlikely]]                                     \
-            ::bench::detail::check_failed(__FILE__, __LINE__, #cond); \
+#define CRUCIBLE_BENCH_CHECK(cond)                                                                              \
+    do {                                                                                                        \
+        if (!(cond)) [[unlikely]]                                                                               \
+            ::fixy::fatal("{}:{}: bench check failed: {}", ::fixy::TextView{__FILE__}, std::uint32_t{__LINE__}, \
+                          ::fixy::TextView{#cond});                                                             \
     } while (0)
