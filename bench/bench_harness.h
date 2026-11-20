@@ -151,6 +151,15 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the fenced reads of the TSC and the comp
 // instruction.
 [[gnu::always_inline]] inline void clobber() noexcept { asm volatile("" : : : "memory"); }
 
+// A compiler barrier that reads and writes value in memory, so the optimizer
+// keeps each store of value before it, also of a local that no other code
+// reads.  It emits no instruction and makes no call, so a timed loop keeps
+// only its own instructions.
+template <typename T>
+[[gnu::always_inline]] inline void keep_in_memory(T& value) noexcept {
+    asm volatile("" : "+m"(value) : : "memory");
+}
+
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // ── RdtscPinned witness + pinned-overload rdtsc primitives ───────────

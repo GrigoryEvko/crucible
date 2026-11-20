@@ -31,94 +31,96 @@
 
 #include <crucible/TensorMeta.h>
 
-#include <algorithm>
-#include <chrono>
 #include <cstdint>
-#include <cstdio>
-#include <vector>
+#include <utility>
+
+#include "bench_harness.h"
 
 namespace {
-
-// Keeps a value the optimizer would otherwise discard.
-template <typename T>
-[[gnu::always_inline]] inline void keep(T& value) noexcept {
-    asm volatile("" : "+m"(value) : : "memory");
-}
 
 // One sample is the average over a batch, which amortises the clock read
 // without letting a single outlier vanish into a mean over everything.
 constexpr int kBatch = 1000;
-constexpr int kSamples = 2000;
-constexpr int kRuns = 10;
+constexpr std::size_t kSamples = 2000;
+constexpr std::size_t kRuns = 10;
+
+// The allocation capability of the samples of a run.
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
 struct Percentiles {
     double p50 = 0, p99 = 0, p999 = 0, max = 0;
 };
 
-[[nodiscard]] Percentiles percentiles_of(std::vector<double>& samples) {
-    std::sort(samples.begin(), samples.end());
-    const auto at = [&](double frac) {
-        const auto idx = static_cast<std::size_t>(frac * static_cast<double>(samples.size() - 1));
-        return samples[idx];
-    };
-    return {at(0.50), at(0.99), at(0.999), samples.back()};
+// The value at the fraction frac of the samples in ascending order, as the
+// index frac * (n - 1) rounded down.
+[[nodiscard]] double at_fraction(::fixy::HeapArray<double> const& sorted, double frac) noexcept {
+    const auto idx = static_cast<std::size_t>(frac * static_cast<double>(sorted.size() - 1));
+    return *sorted.get(idx).expect("a fraction in [0, 1] names a sample");
+}
+
+[[nodiscard]] Percentiles percentiles_of(::fixy::HeapArray<double> samples) {
+    ::fixy::HeapArray<double> const sorted = bench::sorted_samples(std::move(samples));
+    return {at_fraction(sorted, 0.50), at_fraction(sorted, 0.99), at_fraction(sorted, 0.999), at_fraction(sorted, 1.0)};
 }
 
 // Scenario A: default-construct Count descriptors, which is the zeroing the
 // non-static data-member initialisers perform.
 template <std::size_t Count>
 [[nodiscard]] double construct_batch_ns() {
-    const auto start = std::chrono::steady_clock::now();
+    const std::uint64_t start = bench::detail::read_monotonic_ns();
     for (int i = 0; i < kBatch; i++) {
-        crucible::TensorMeta metas[Count]{};
-        keep(metas);
+        ::fixy::FixedArray<crucible::TensorMeta, Count> metas{};
+        bench::keep_in_memory(metas);
     }
-    const auto stop = std::chrono::steady_clock::now();
-    return std::chrono::duration<double, std::nano>(stop - start).count() / kBatch;
+    const std::uint64_t stop = bench::detail::read_monotonic_ns();
+    return static_cast<double>(stop - start) / kBatch;
 }
 
 // Scenario B: the redundant second zero on one already-live descriptor.
 [[nodiscard]] double reassign_batch_ns() {
     crucible::TensorMeta meta{};
-    keep(meta);
-    const auto start = std::chrono::steady_clock::now();
+    bench::keep_in_memory(meta);
+    const std::uint64_t start = bench::detail::read_monotonic_ns();
     for (int i = 0; i < kBatch; i++) {
         meta = {};
-        keep(meta);
+        bench::keep_in_memory(meta);
     }
-    const auto stop = std::chrono::steady_clock::now();
-    return std::chrono::duration<double, std::nano>(stop - start).count() / kBatch;
+    const std::uint64_t stop = bench::detail::read_monotonic_ns();
+    return static_cast<double>(stop - start) / kBatch;
 }
 
-void report(const char* label, double (*one_batch)(), std::size_t descriptors) {
-    std::vector<double> run_p50s;
+// The runs of one scenario of Descriptors descriptors, and their line.
+template <std::size_t Descriptors, typename Batch>
+void report(::fixy::TextView label, Batch const& one_batch) {
+    ::fixy::HeapArray<double> run_p50s = ::fixy::mint_heap_array(kAlloc, kRuns, 0.0);
     Percentiles last{};
-    for (int run = 0; run < kRuns; run++) {
-        std::vector<double> samples;
-        samples.resize(kSamples);
-        for (int s = 0; s < kSamples; s++)
-            samples[static_cast<std::size_t>(s)] = one_batch();
-        last = percentiles_of(samples);
-        run_p50s.push_back(last.p50);
+    for (std::size_t run = 0; run < kRuns; run++) {
+        ::fixy::HeapArray<double> samples = ::fixy::mint_heap_array(kAlloc, kSamples, 0.0);
+        for (std::size_t s = 0; s < kSamples; s++)
+            *samples.get(s).expect("a sample of a run is below kSamples") = one_batch();
+        last = percentiles_of(std::move(samples));
+        *run_p50s.get(run).expect("a run is below kRuns") = last.p50;
     }
-    std::sort(run_p50s.begin(), run_p50s.end());
-    const double median_p50 = run_p50s[run_p50s.size() / 2];
-    const double spread = (run_p50s.back() - run_p50s.front()) / median_p50;
-    const double per_descriptor = descriptors ? median_p50 / static_cast<double>(descriptors) : median_p50;
-    std::printf("%-44s p50=%7.2f  p99=%7.2f  p99.9=%7.2f  max=%8.2f  per-descriptor=%6.2f  spread=%5.1f%%  %s\n", label,
-                median_p50, last.p99, last.p999, last.max, per_descriptor, spread * 100.0,
-                spread <= 0.05 ? "" : "[VOID: spread over 5%]");
+    ::fixy::HeapArray<double> const sorted_p50s = bench::sorted_samples(std::move(run_p50s));
+    const double median_p50 = *sorted_p50s.get(kRuns / 2).expect("the middle run is below kRuns");
+    const double spread = (at_fraction(sorted_p50s, 1.0) - at_fraction(sorted_p50s, 0.0)) / median_p50;
+    const double per_descriptor = Descriptors != 0 ? median_p50 / static_cast<double>(Descriptors) : median_p50;
+    bench::print("{} p50={}  p99={}  p99.9={}  max={}  per-descriptor={}  spread={}%  {}\n",
+                 ::fixy::Padded<44, ::fixy::Align::Left>{label}, ::fixy::Fixed<2, 7>{median_p50},
+                 ::fixy::Fixed<2, 7>{last.p99}, ::fixy::Fixed<2, 7>{last.p999}, ::fixy::Fixed<2, 8>{last.max},
+                 ::fixy::Fixed<2, 6>{per_descriptor}, ::fixy::Fixed<1, 5>{spread * 100.0},
+                 spread <= 0.05 ? ::fixy::TextView{""} : ::fixy::TextView{"[VOID: spread over 5%]"});
 }
 
 }  // namespace
 
 int main() {
-    std::printf("descriptor zeroing, sizeof(TensorMeta)=%zu, %d runs of %d batch-averaged samples\n\n",
-                sizeof(crucible::TensorMeta), kRuns, kSamples);
-    report("A: default-construct 1 descriptor", construct_batch_ns<1>, 1);
-    report("A: default-construct 3 descriptors", construct_batch_ns<3>, 3);
-    report("A: default-construct 8 descriptors", construct_batch_ns<8>, 8);
-    report("A: default-construct 32 descriptors", construct_batch_ns<32>, 32);
-    report("B: redundant second zero, 1 descriptor", reassign_batch_ns, 1);
+    bench::print("descriptor zeroing, sizeof(TensorMeta)={}, {} runs of {} batch-averaged samples\n\n",
+                 sizeof(crucible::TensorMeta), kRuns, kSamples);
+    report<1>("A: default-construct 1 descriptor", construct_batch_ns<1>);
+    report<3>("A: default-construct 3 descriptors", construct_batch_ns<3>);
+    report<8>("A: default-construct 8 descriptors", construct_batch_ns<8>);
+    report<32>("A: default-construct 32 descriptors", construct_batch_ns<32>);
+    report<1>("B: redundant second zero, 1 descriptor", reassign_batch_ns);
     return 0;
 }
