@@ -4,8 +4,11 @@
 
 #include <foundation/core/Format.h>
 #include <foundation/core/Parse.h>
+#include <foundation/core/Region.h>
 #include <foundation/core/Verbs.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <type_traits>
 
 namespace foundation::core {
@@ -169,6 +172,37 @@ static_assert(!TakesArguments<bool const> && !TakesArguments<double const> && !T
 // its arguments.
 static_assert(sizeof(Fmt<long double>) == sizeof(Fmt<>));
 
+// A Hex of each width and a HexBytes are arguments, and a Hex is the value
+// of one word.  A cv-qualified Hex is refused as each other cv-qualified
+// type, and no other class passes for a Hex: the concept asks for the Hex of
+// the width of the type.
+struct LooksLikeHex {
+    static constexpr std::size_t width = 8;
+};
+struct LooksLikeHexBytes {
+    using report_mark = LooksLikeHexBytes;
+};
+static_assert(TakesArguments<Hex<2>, Hex<3>, Hex<8>, Hex<16>, HexBytes>);
+static_assert(!TakesArguments<Hex<8> const> && !TakesArguments<HexBytes const> && !TakesArguments<LooksLikeHex>);
+static_assert(!TakesArguments<LooksLikeHexBytes>);
+static_assert(sizeof(Hex<16>) == sizeof(std::uint64_t) && std::is_trivially_copyable_v<Hex<16>>);
+
+// The width holds each value of the type, so no digit is cut.  A value with
+// more digits than the width, a signed value, a bool and a character are
+// refused, and no Hex converts from a number with no call.
+static_assert(std::is_constructible_v<Hex<2>, unsigned char> && std::is_constructible_v<Hex<16>, unsigned char>);
+static_assert(std::is_constructible_v<Hex<8>, std::uint32_t> && std::is_constructible_v<Hex<16>, std::uint64_t>);
+static_assert(!std::is_constructible_v<Hex<8>, std::uint64_t> && !std::is_constructible_v<Hex<3>, std::uint16_t>);
+static_assert(!std::is_constructible_v<Hex<16>, std::int64_t> && !std::is_constructible_v<Hex<16>, int>);
+static_assert(!std::is_constructible_v<Hex<16>, bool> && !std::is_constructible_v<Hex<16>, char>);
+static_assert(!std::is_constructible_v<Hex<16>, double> && !std::is_convertible_v<std::uint64_t, Hex<16>>);
+static_assert(!std::is_convertible_v<View<std::byte const>, HexBytes>);
+
+// Each Hex reaches the cold formatter as its value and its width.
+static_assert(fmt_arg_of_(Hex<16>{0xABCDU}).kind == FmtArgKind::hex_digits);
+static_assert(fmt_arg_of_(Hex<16>{0xABCDU}).bits == 0xABCDU && fmt_arg_of_(Hex<16>{0xABCDU}).size == 16);
+static_assert(fmt_arg_of_(Hex<2>{static_cast<unsigned char>(0xFFU)}).size == 2);
+
 // Each argument reaches the cold formatter as its kind and its bits.  A
 // signed value keeps its two's complement bits.
 static_assert(fmt_arg_of_(-1).kind == FmtArgKind::signed_integer && fmt_arg_of_(-1).bits == ~0ULL);
@@ -188,10 +222,13 @@ static_assert(noexcept(unreachable()));
 // Each public member of a type of the family is a shared verb, a language
 // protocol or a name of the family list of plan section 11.8: each name of
 // the API table, and the enumeration and the two members kind and position
-// of ParseError.
-inline constexpr TextView report_names{
-    "Site Fmt report Sink fatal unreachable format Formattable parse ParseError ParseErrorKind kind position"};
+// of ParseError, the classes Hex and HexBytes, the width of a Hex, and the
+// mark of a HexBytes.
+inline constexpr TextView report_names{"Site Fmt report Sink fatal unreachable format Formattable parse ParseError "
+                                       "ParseErrorKind kind position Hex HexBytes width report_mark"};
 CRUCIBLE_CLOSED_SURFACE(report_names, Site);
+CRUCIBLE_CLOSED_SURFACE(report_names, Hex<8>);
+CRUCIBLE_CLOSED_SURFACE(report_names, HexBytes);
 CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<>);
 CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<int, TextView, bool>);
 CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<float, double>);

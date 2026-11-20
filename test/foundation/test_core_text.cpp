@@ -205,6 +205,57 @@ void test_format_keeps_a_long_text() {
     CRUCIBLE_TEST_ASSERT(kTest, text.size() == 112);
 }
 
+// A Hex writes its width in lower-case digits with the zeros that lead, and
+// the digits are the digits of append_hex for the same value.
+void test_format_writes_hex_digits() {
+    using ::foundation::core::Hex;
+    FixedText<64> text;
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         text_of(format(text, "{}", Hex<16>{std::uint64_t{0xABCDU}})) == TextView{"000000000000abcd"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{}", Hex<16>{UINT64_MAX})) == TextView{"ffffffffffffffff"});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         text_of(format(text, "0x{}", Hex<8>{std::uint32_t{0xDEADBEEFU}})) == TextView{"0xdeadbeef"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{}", Hex<4>{std::uint16_t{0}})) == TextView{"0000"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{}|{}", Hex<2>{std::uint8_t{0x0FU}}, Hex<3>{std::uint8_t{5}}))
+                                    == TextView{"0f|005"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{} {}", Hex<16>{std::uint8_t{0xA0U}}, 160))
+                                    == TextView{"00000000000000a0 160"});
+    std::uint64_t const value = 0x0123456789ABCDEFULL;
+    FixedText<16> appended;
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::append_hex<16>(appended, value).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{}", Hex<16>{value})) == appended.view());
+    CRUCIBLE_TEST_ASSERT(kTest, appended.view() == TextView{"0123456789abcdef"});
+}
+
+// A HexBytes writes two digits for each byte, in the order of the View.  A
+// text past one window of the cold formatter keeps each digit, and a buffer
+// that is too small gives Full<char> and holds the first digits.
+void test_format_writes_hex_bytes() {
+    using ::foundation::core::HexBytes;
+    using ::foundation::core::View;
+    ::foundation::core::FixedArray<std::byte, 4> four{};
+    four.at(::foundation::core::index<1>()) = std::byte{0x01};
+    four.at(::foundation::core::index<2>()) = std::byte{0xAB};
+    four.at(::foundation::core::index<3>()) = std::byte{0xFF};
+    FixedText<16> small;
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(small, "[{}]", HexBytes{four.view()})) == TextView{"[0001abff]"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(small, "[{}]", HexBytes{View<std::byte const>{}})) == TextView{"[]"});
+
+    ::foundation::core::FixedArray<std::byte, 300> many{};
+    for (::foundation::core::Index<300> const index : many.indices())
+        many.at(index) = static_cast<std::byte>(index.raw() & 0xFFU);
+    FixedText<700> text;
+    TextView const digits = text_of(format(text, "{}", HexBytes{many.view()}));
+    CRUCIBLE_TEST_ASSERT(kTest, digits.size() == 600);
+    CRUCIBLE_TEST_ASSERT(kTest, digits.window(0, 8).expect("eight digits fit") == TextView{"00010203"});
+    CRUCIBLE_TEST_ASSERT(kTest, digits.window(510, 6).expect("six digits fit") == TextView{"ff0001"});
+    CRUCIBLE_TEST_ASSERT(kTest, digits.window(592, 8).expect("eight digits fit") == TextView{"28292a2b"});
+
+    FixedText<9> cut;
+    CRUCIBLE_TEST_ASSERT(kTest, format(cut, "{}", HexBytes{many.view()}).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, cut.view() == TextView{"000102030"});
+}
+
 }  // namespace
 
 int main() {
@@ -221,6 +272,8 @@ int main() {
     test_format_refuses_a_text_that_does_not_fit();
     test_format_writes_from_the_start();
     test_format_keeps_a_long_text();
+    test_format_writes_hex_digits();
+    test_format_writes_hex_bytes();
     ::fixy::check::pass(kTest, "test_core_text: all tests passed\n");
     return 0;
 }

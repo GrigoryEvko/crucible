@@ -2202,6 +2202,12 @@ foundation_neg_compile_test(neg_core_fmt_argument_float16
 foundation_neg_compile_test(neg_core_fmt_argument_pointer
   "no matching function for call to .report\\(foundation::core::Sink, const char \\[20\\], int\\*\\)."
   "required for the satisfaction of .Formattable<First>. \\[with First = int\\*\\]")
+foundation_neg_compile_test(neg_core_hex_width_cuts_digits
+  "use of deleted function .foundation::core::Hex<Width>::Hex\\(T\\) \\[with T = (long unsigned int|unsigned long); long unsigned int Width = 8\\]."
+  "the width of this Hex holds fewer digits than a value of this type")
+foundation_neg_compile_test(neg_core_hex_signed_value
+  "use of deleted function .foundation::core::Hex<Width>::Hex\\(T\\) \\[with T = (long int|long); long unsigned int Width = 16\\]."
+  "a Hex takes an unsigned integer")
 foundation_neg_compile_test(neg_core_fatal_runtime_text
   "no matching function for call to .fatal\\(const char\\*\\)."
   "no known conversion for argument 1 from .const char\\*. to .foundation::core::Fmt<>.")
@@ -3345,8 +3351,10 @@ foundation_test(test_byte_view)
 foundation_neg_compile_test(neg_byte_view_of_int
   "no matching function for call to .byte_view\\(foundation::core::View<int, 4>\\)."
   "required for the satisfaction of .same_as<typename std::remove_const<_Tp>::type, unsigned char>. \\[with T = int\\]")
+# GCC elides the extent of a View that the header itself instantiates, as
+# the View of bytes of HexBytes, so the extent part of each type is optional.
 foundation_neg_compile_test(neg_byte_view_drops_const
-  "conversion from .View<const std::byte,\\[\\.\\.\\.\\]>. to non-scalar type .View<std::byte,\\[\\.\\.\\.\\]>. requested"
+  "conversion from .View<const std::byte(,\\[\\.\\.\\.\\])?>. to non-scalar type .View<std::byte(,\\[\\.\\.\\.\\])?>. requested"
   "In function .void \\{anonymous\\}::write_through\\(foundation::core::View<const unsigned char>\\).")
 
 # An Index<N> proves a number below N: only its check, a constant index
@@ -3995,9 +4003,13 @@ foundation_neg_compile_test(neg_core_masked_array_element_not_default_constructi
 foundation_neg_compile_test(neg_core_view_over_forged_body
   "constexpr foundation::core::View<T, Extent>::View\\(T\\*, std::size_t\\) requires  Extent == foundation::core::dynamic_extent \\[with T = int; long unsigned int Extent = 18446744073709551615; std::size_t = long unsigned int\\]. is private within this context"
   "declared private here")
+# The header instantiates the View of bytes of HexBytes, and with it the
+# friend first_of_ of that View, which is no template.  GCC then names the
+# refusal as a template-id that matches no template, in place of a function
+# that is no template, so each pattern takes the two forms.
 foundation_neg_compile_test(neg_core_view_first_of_specialized
-  "int\\* foundation::core::first_of_\\(const detail::ViewKey&, View<int>\\). should have been declared inside .foundation::core."
-  ".first_of_. is not a template function")
+  "int\\* foundation::core::first_of_\\(const detail::ViewKey&, View<int>\\). (should have been declared inside .foundation::core.|does not match any template declaration)"
+  "(.first_of_. is not a template function|template-id .first_of_<>. for .constexpr int\\* foundation::core::first_of_)")
 
 # The address of a function that gives a Ref with a target type, and an
 # explicit specialization with a declared type, set no brand.  The result

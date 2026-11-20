@@ -67,6 +67,17 @@ void put_unsigned(Window& window, std::uint64_t value) noexcept {
     }
 }
 
+// Writes the low count hexadecimal digits of value with put_hex_digits_, the
+// digit writer of append_hex.  The inline functions of the family give a
+// count of 1 to 16, and each other count writes nothing, because a report
+// must not end the process.
+void put_hex(Window& window, std::uint64_t value, std::size_t count) noexcept {
+    char digits[16] = {};
+    if (count == 0 || count > sizeof digits) return;
+    put_hex_digits_(value, count, digits);
+    window.put(digits, count);
+}
+
 // Writes the std::int64_t whose bits are bits.  The magnitude is the
 // unsigned negation of the bits, which is exact also for the smallest
 // value.
@@ -484,6 +495,13 @@ void put_argument(Window& window, FmtArg const& argument) noexcept {
             return;
         case FmtArgKind::binary64:
             put_float(window, argument.bits, binary64_layout);
+            return;
+        case FmtArgKind::hex_digits:
+            put_hex(window, argument.bits, argument.size);
+            return;
+        case FmtArgKind::hex_bytes:
+            for (std::size_t index = 0; index < argument.size; ++index)
+                put_hex(window, static_cast<unsigned char>(argument.first[index]), 2);
             return;
         default:
             // A kind outside the enumerators writes nothing.  The inline

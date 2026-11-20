@@ -17,13 +17,25 @@
 // writes a text into a FixedText.
 //
 // THE ARGUMENTS
-//   An argument is an integer, a bool, a TextView, a float or a double.  An
-//   integer is written in decimal, and a bool as true or false.  A TextView
-//   is written as its characters, so a literal argument is spelled
-//   TextView{"text"}.  A character type, a long double, each other floating
-//   type, a pointer, an array and each other type is refused at the call
-//   (the concept Formattable).  A long double has 80 value bits on x86_64
-//   and 128 on aarch64, so one value would have two texts.
+//   An argument is an integer, a bool, a TextView, a float, a double, a Hex
+//   or a HexBytes.  An integer is written in decimal, and a bool as true or
+//   false.  A TextView is written as its characters, so a literal argument
+//   is spelled TextView{"text"}.  A character type, a long double, each
+//   other floating type, a pointer, an array and each other type is refused
+//   at the call (the concept Formattable).  A long double has 80 value bits
+//   on x86_64 and 128 on aarch64, so one value would have two texts.
+//
+// THE HEXADECIMAL TEXT
+//   Hex<Width>{value} writes an unsigned integer as Width hexadecimal
+//   digits: lower case, the most significant digit first, with the zeros
+//   that lead, and with no prefix.  Width is 2 to 16, and it holds each
+//   value of the type of the value, so no digit is ever cut: Hex<8> takes a
+//   value of at most 32 bits, and Hex<16> each unsigned integer.  A signed
+//   value is refused, because one set of bits has two texts.
+//   HexBytes{bytes} writes each byte of a View of bytes as two such digits,
+//   in the order of the View.  The digits come from put_hex_digits_ of
+//   foundation/core/Text.h, the digit writer of append_hex, so a report and
+//   append_hex write the same digits for one value.
 //
 // THE TEXT OF A FLOAT
 //   A float and a double are written as the text of std::to_chars(first,
@@ -69,16 +81,70 @@
 
 namespace foundation::core {
 
+// An unsigned integer as Width hexadecimal digits (THE HEXADECIMAL TEXT).
+// The width is a template argument, so it is part of the type and of the
+// call, and a check at compile time proves that the width holds each value
+// of the type.  The smallest type takes two digits, so the width is 2 to 16.
+template <std::size_t Width>
+    requires(Width >= 2 && Width <= 16)
+class Hex final {
+    std::uint64_t value_ = 0;
+
+public:
+    // The count of the digits of the text.
+    static constexpr std::size_t width = Width;
+
+    template <UnsignedInteger T>
+        requires(sizeof(T) <= sizeof(std::uint64_t) && sizeof(T) * 2 <= Width)
+    constexpr explicit Hex(T value) noexcept : value_{value} {}
+
+    template <UnsignedInteger T>
+        requires(sizeof(T) * 2 > Width)
+    Hex(T) = delete("the width of this Hex holds fewer digits than a value of this type, so a digit would be cut: "
+                    "narrow the value to a type that the width holds, or give a larger width");
+
+    template <class T>
+        requires(!UnsignedInteger<T>)
+    Hex(T) = delete("a Hex takes an unsigned integer: a signed value has two texts for one set of bits, so "
+                    "give the unsigned value of its bits");
+
+    // The value whose digits the report writes.
+    [[nodiscard]] constexpr std::uint64_t get() const noexcept { return value_; }
+};
+
+namespace detail {
+
+// The mark of HexBytes, the bytes of a View as two hexadecimal digits each
+// (THE HEXADECIMAL TEXT).  foundation/core/Region.h defines HexBytes beside
+// the View that it holds, because that header includes this one, so this
+// header knows the class only by its mark.  Only HexBytes names the mark.
+struct HexBytesMark final {};
+
+}  // namespace detail
+
+// A Hex of each width, and no other type.  The concept reads the width of
+// the type and asks that the type is the Hex of that width, so no class of
+// a caller passes for a Hex.
+template <class T>
+concept HexDigits = requires { requires std::is_same_v<T, Hex<T::width>>; };
+
+// HexBytes: the class that names the mark of the base, with no cv-qualifier.
+template <class T>
+concept HexByteRun = requires {
+    requires std::is_same_v<T, std::remove_cv_t<T>> && std::is_same_v<typename T::report_mark, detail::HexBytesMark>;
+};
+
 // A type that a report can write: an Integer and a Float of the Scalar
-// family, a bool and a TextView.  An Integer is not bool and not a
-// character type, and signed char and unsigned char are integers, so a
-// std::uint8_t is written as a number.  The argument of a report binds to
-// a reference, so an argument type is never a reference.  A deduced
+// family, a bool, a TextView, a Hex and a HexBytes.  An Integer is not bool
+// and not a character type, and signed char and unsigned char are integers,
+// so a std::uint8_t is written as a number.  The argument of a report binds
+// to a reference, so an argument type is never a reference.  A deduced
 // argument type is never cv-qualified, so each arm refuses a cv-qualified
 // type.  Each function that writes the arguments of a Fmt asks for this
 // concept of each one.
 template <class T>
-concept Formattable = Integer<T> || Float<T> || std::is_same_v<T, bool> || std::is_same_v<T, TextView>;
+concept Formattable =
+    Integer<T> || Float<T> || std::is_same_v<T, bool> || std::is_same_v<T, TextView> || HexDigits<T> || HexByteRun<T>;
 
 // The streams that a report can write to.
 enum class Sink : std::uint8_t {
@@ -95,13 +161,16 @@ enum class FmtArgKind : std::uint8_t {
     boolean,
     text,
     binary32,
-    binary64
+    binary64,
+    hex_digits,
+    hex_bytes
 };
 
 // One argument of a report, as the cold formatter reads it.  An integer, a
 // bool and a floating value are in bits: a signed integer as the bits of
 // its std::int64_t value, and a float or a double as its IEEE bits.  A text
-// is in first and size.
+// is in first and size.  A Hex is its value in bits and its width in size,
+// and a HexBytes is its bytes in first and size.
 struct FmtArg {
     FmtArgKind kind = FmtArgKind::unsigned_integer;
     std::uint64_t bits = 0;
@@ -120,6 +189,17 @@ template <class T>
         return FmtArg{FmtArgKind::binary32, __builtin_bit_cast(std::uint32_t, value), nullptr, 0};
     } else if constexpr (std::is_same_v<T, double>) {
         return FmtArg{FmtArgKind::binary64, __builtin_bit_cast(std::uint64_t, value), nullptr, 0};
+    } else if constexpr (HexDigits<T>) {
+        return FmtArg{FmtArgKind::hex_digits, value.get(), nullptr, T::width};
+    } else if constexpr (HexByteRun<T>) {
+        // A char may read the bytes of each object, so the formatter reads
+        // the std::byte elements of the View as characters.  An empty View
+        // has no first element to name.
+        auto const bytes = value.view();
+        if (bytes.size() == 0) return FmtArg{FmtArgKind::hex_bytes, 0, nullptr, 0};
+        return FmtArg{FmtArgKind::hex_bytes, 0,
+                      static_cast<char const*>(static_cast<void const*>(__builtin_addressof(*bytes.begin()))),
+                      bytes.size()};
     } else if constexpr (std::is_signed_v<T>) {
         return FmtArg{FmtArgKind::signed_integer, static_cast<std::uint64_t>(static_cast<std::int64_t>(value)), nullptr,
                       0};

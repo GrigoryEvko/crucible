@@ -65,6 +65,8 @@ using ::foundation::core::fatal;
 using ::foundation::core::Fmt;
 using ::foundation::core::format;
 using ::foundation::core::Formattable;
+using ::foundation::core::Hex;
+using ::foundation::core::HexBytes;
 using ::foundation::core::parse;
 using ::foundation::core::ParseError;
 using ::foundation::core::ParseErrorKind;

@@ -565,6 +565,24 @@ public:
 
 }  // namespace detail
 
+// The bytes of a View as an argument of a report: two lower-case
+// hexadecimal digits for each byte, in the order of the View (THE
+// HEXADECIMAL TEXT of foundation/core/Report.h).  It borrows the bytes, as
+// the View does, so it lives only for the call of the report.
+class HexBytes final {
+    View<std::byte const> bytes_{};
+
+public:
+    // The mark by which the concept Formattable of foundation/core/Report.h
+    // knows the class.
+    using report_mark = detail::HexBytesMark;
+
+    constexpr explicit HexBytes(View<std::byte const> bytes) noexcept : bytes_{bytes} {}
+
+    // The bytes whose digits the report writes.
+    [[nodiscard]] constexpr View<std::byte const> view() const noexcept { return bytes_; }
+};
+
 // ── The unique view ────────────────────────────────────────────────────
 
 // The unique borrow of the run of an owner that a frame door holds

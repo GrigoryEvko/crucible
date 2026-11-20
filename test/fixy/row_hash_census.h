@@ -1033,6 +1033,11 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::ParseError,
      "the error of a parse() of a text: a kind and a position in the text, and never a value in a kernel "
      "signature"},
+    {^^::foundation::core::Hex,
+     "an argument of a report: an unsigned value and the count of its digits, and never a value in a kernel "
+     "signature"},
+    {^^::foundation::core::HexBytes,
+     "an argument of a report: a borrow of the bytes that it writes, and never a value in a kernel signature"},
     {^^::foundation::core::Record,
      "a product of values: it holds its parts and makes no claim about them, and a binding gives out each part"},
     {^^::foundation::core::Index,
