@@ -51,6 +51,7 @@ namespace foundation::os {
 static_assert(kAtCurrentDirectory == AT_FDCWD, "kAtCurrentDirectory is not AT_FDCWD of <linux/fcntl.h>");
 static_assert(kAtSymlinkNoFollow == AT_SYMLINK_NOFOLLOW,
               "kAtSymlinkNoFollow is not AT_SYMLINK_NOFOLLOW of <linux/fcntl.h>");
+static_assert(kAtRemoveDirectory == AT_REMOVEDIR, "kAtRemoveDirectory is not AT_REMOVEDIR of <linux/fcntl.h>");
 static_assert(kOpenReadOnly == O_RDONLY, "kOpenReadOnly is not O_RDONLY of <linux/fcntl.h>");
 static_assert(kOpenWriteOnly == O_WRONLY, "kOpenWriteOnly is not O_WRONLY of <linux/fcntl.h>");
 static_assert(kOpenReadWrite == O_RDWR, "kOpenReadWrite is not O_RDWR of <linux/fcntl.h>");

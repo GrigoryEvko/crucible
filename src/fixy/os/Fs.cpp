@@ -1,7 +1,8 @@
 // The file door of fixy (fixy/os/Fs.h): the syncs, the renames, the reads
 // and the writes of a whole buffer, the read at an offset, the read and the
-// change of the size of a file, and the opens, the removes, the new
-// directories and the status reads under a directory.  A
+// change of the size of a file, the opens, the removes, the new
+// directories and the status reads under a directory, and the removal of a
+// tree under a directory.  A
 // call that a signal interrupts runs again.  It issues the
 // raw primitive of foundation/os/Syscall.h.  It is the one includer of
 // <asm/stat.h>, for the struct of fstat, and of <linux/fs.h>, for the flag of
@@ -13,6 +14,7 @@
 #include <fixy/os/Fs.h>
 
 #include <foundation/core/Choice.h>
+#include <foundation/os/Directory.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/OpenFlags.h>
 #include <foundation/os/PipeSignal.h>
@@ -228,6 +230,154 @@ core::Result<bool, os::Errno> has_entry_beneath_(int directory, core::CText path
                 if (error == os::Errno::enoent) return false;
                 return core::err(error);
             });
+}
+
+namespace {
+
+// The open flags of a directory of the walk of a tree removal (THE TREE
+// REMOVAL of fixy/os/Fs.h): a read lists its entries, O_DIRECTORY refuses an
+// entry of another kind, and O_NOFOLLOW refuses a symbolic link.
+constexpr int kTreeLevelFlags = os::kOpenReadOnly | os::kOpenDirectory | os::kOpenNoFollow | os::kOpenCloseOnExec;
+
+// Removes the empty directory NAME of DIRECTORY.
+[[nodiscard]] UnitResult remove_directory_entry(int directory, char const* name) noexcept {
+    long word = 0;
+    do {
+        word = os::raw_syscall(os::Syscall::unlinkat, directory, name, os::kAtRemoveDirectory);
+    } while (word == kInterrupted);
+    return unit_of(word);
+}
+
+// The descriptor of a new open of the directory LEVEL, which lists the
+// entries of LEVEL from the first one.
+[[nodiscard]] core::Result<int, os::Errno> open_again(int level) noexcept {
+    return open_beneath_(level, ".", kTreeLevelFlags, 0);
+}
+
+// The step of the walk at the entry NAME of the directory LEVEL, which a
+// listing gave.  The step removes a file or a link, or an empty directory, and
+// gives no value.  For a directory that holds an entry, it gives the
+// descriptor of that directory, opened beneath LEVEL.  An entry that is gone at
+// its removal counts as removed.
+[[nodiscard]] core::Result<core::Option<int>, os::Errno> remove_or_open(int level, char const* name) noexcept {
+    using Step = core::Result<core::Option<int>, os::Errno>;
+    auto const removed_or = [](os::Errno error) noexcept -> Step {
+        if (error == os::Errno::enoent) return core::Option<int>{};
+        return core::err(error);
+    };
+    return unlink_entry(level, name)
+        .match([](core::Unit) noexcept -> Step { return core::Option<int>{}; },
+               [&](os::Errno unlinked) noexcept -> Step {
+                   if (unlinked != os::Errno::eisdir) return removed_or(unlinked);
+                   return remove_directory_entry(level, name)
+                       .match([](core::Unit) noexcept -> Step { return core::Option<int>{}; },
+                              [&](os::Errno held) noexcept -> Step {
+                                  if (held != os::Errno::enotempty && held != os::Errno::eexist) {
+                                      return removed_or(held);
+                                  }
+                                  return open_beneath_(level, name, kTreeLevelFlags, 0).map([](int below) noexcept {
+                                      return core::Option<int>::some(below);
+                                  });
+                              });
+               });
+}
+
+// One pass of the walk over the entries of LEVEL, from the offset of its
+// descriptor.  The pass takes the step of remove_or_open at each entry, and it
+// stops at the first step that gives a descriptor or an error.  It gives that
+// descriptor, no value when it reads to the end, or the first error.
+[[nodiscard]] core::Result<core::Option<int>, os::Errno> clear_pass(int level) noexcept {
+    core::Result<core::Option<int>, os::Errno> step = core::Option<int>{};
+    auto visit = [level, &step](core::CText name) noexcept -> os::Visit {
+        step = remove_or_open(level, core::detail::c_text_first_(name));
+        bool const is_removed = step.match([](core::Option<int> const& below) noexcept { return below.is_none(); },
+                                           [](os::Errno) noexcept { return false; });
+        return is_removed ? os::Visit::proceed : os::Visit::stop;
+    };
+    UnitResult const listed = os::detail::list_open_directory_(level, os::detail::erase_visitor_(visit));
+    return listed.match(
+        [&step](core::Unit) noexcept { return std::move(step); },
+        [](os::Errno error) noexcept -> core::Result<core::Option<int>, os::Errno> { return core::err(error); });
+}
+
+// Removes each entry below the directory LEVEL, whose descriptor lists from the
+// first entry, and closes LEVEL.  DEPTH counts the directories of the walk
+// above LEVEL.  After the walk below one directory, a new open lists LEVEL
+// again, because the pass stopped in the middle of the listing.
+[[nodiscard]] UnitResult clear_and_close(int level, std::size_t depth) noexcept {
+    int current = level;
+    UnitResult outcome = core::Unit{};
+    bool is_done = false;
+    while (!is_done) {
+        clear_pass(current).match(
+            [&](core::Option<int> below) noexcept {
+                below.match(
+                    [&](int child) noexcept {
+                        if (depth + 1 == kRemoveTreeDepth) {
+                            close_descriptor_(child);
+                            outcome = core::err(os::Errno::enametoolong);
+                            is_done = true;
+                            return;
+                        }
+                        UnitResult inner = clear_and_close(child, depth + 1);
+                        if (inner.is_err()) {
+                            outcome = std::move(inner);
+                            is_done = true;
+                            return;
+                        }
+                        open_again(current).match(
+                            [&](int again) noexcept {
+                                close_descriptor_(current);
+                                current = again;
+                            },
+                            [&](os::Errno error) noexcept {
+                                outcome = core::err(error);
+                                is_done = true;
+                            });
+                    },
+                    [&] noexcept { is_done = true; });
+            },
+            [&](os::Errno error) noexcept {
+                outcome = core::err(error);
+                is_done = true;
+            });
+    }
+    close_descriptor_(current);
+    return outcome;
+}
+
+}  // namespace
+
+UnitResult remove_entries_below_(int directory) noexcept {
+    if (is_closed(directory)) {
+        return core::err(os::Errno::ebadf);
+    }
+    return open_again(directory).and_then([](int level) noexcept { return clear_and_close(level, 0); });
+}
+
+UnitResult remove_tree_beneath_(int directory, core::CText path) noexcept {
+    if (split_final_name_(path.view()).is_whole) {
+        return core::err(os::Errno::einval);
+    }
+    return act_on_final_name<core::Unit>(directory, path, [](int parent, char const* name) noexcept -> UnitResult {
+        return unlink_entry(parent, name)
+            .match([](core::Unit) noexcept -> UnitResult { return core::Unit{}; },
+                   [parent, name](os::Errno unlinked) noexcept -> UnitResult {
+                       if (unlinked != os::Errno::eisdir) return core::err(unlinked);
+                       return open_beneath_(parent, name, kTreeLevelFlags, 0)
+                           .and_then([](int level) noexcept { return clear_and_close(level, 0); })
+                           .and_then(
+                               [parent, name](core::Unit) noexcept { return remove_directory_entry(parent, name); });
+                   });
+    });
+}
+
+UnitResult remove_empty_directory_beneath_(int directory, core::CText path) noexcept {
+    if (split_final_name_(path.view()).is_whole) {
+        return core::err(os::Errno::einval);
+    }
+    return act_on_final_name<core::Unit>(
+        directory, path, [](int parent, char const* name) { return remove_directory_entry(parent, name); });
 }
 
 core::Result<bool, os::Errno> has_entry_at_(int directory, char const* path) noexcept {

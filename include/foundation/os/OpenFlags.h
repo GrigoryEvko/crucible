@@ -26,6 +26,10 @@ inline constexpr int kAtCurrentDirectory = -100;
 // follow it (AT_SYMLINK_NOFOLLOW).
 inline constexpr int kAtSymlinkNoFollow = 0x100;
 
+// An unlinkat removes an empty directory, and no entry of another kind
+// (AT_REMOVEDIR).  A directory that holds an entry gives ENOTEMPTY.
+inline constexpr int kAtRemoveDirectory = 0x200;
+
 // An open for reading only (O_RDONLY).
 inline constexpr int kOpenReadOnly = 0;
 

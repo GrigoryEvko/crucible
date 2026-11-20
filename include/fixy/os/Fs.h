@@ -1,7 +1,8 @@
 #pragma once
 
 // The file syscalls: open, the two syncs, the atomic commit, and the
-// directory descriptor that flushes an entry.
+// directory descriptor that flushes an entry.  The removal of a tree under a
+// directory.
 //
 // An atom pack says how a file is opened — its mode, its flags, and the
 // durability and commit it is opened FOR — and the pack is read twice.
@@ -443,6 +444,31 @@ read_full_at_(int descriptor, void* first, std::size_t count, std::int64_t offse
 // gets zero bytes up to it.  A negative length gives einval.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 set_size_(int descriptor, std::int64_t length) noexcept;
+
+}  // namespace detail
+
+// The count of the directories that the walk of a tree removal holds open at
+// one time, from the top down (THE TREE REMOVAL below).
+inline constexpr std::size_t kRemoveTreeDepth = 128;
+
+namespace detail {
+
+// Removes each entry below the directory of DIRECTORY, which stays (THE TREE
+// REMOVAL).  The walk lists a new open of DIRECTORY, so the offset of
+// DIRECTORY does not move.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+remove_entries_below_(int directory) noexcept;
+
+// Removes the entry PATH beneath DIRECTORY, and first each entry below it when
+// it is a directory (THE TREE REMOVAL).  A path whose final name is the
+// directory itself gives einval and removes nothing.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+remove_tree_beneath_(int directory, ::foundation::core::CText path) noexcept;
+
+// Removes the empty directory PATH beneath DIRECTORY (unlinkat of the final
+// name with AT_REMOVEDIR).  A directory that holds an entry gives enotempty.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+remove_empty_directory_beneath_(int directory, ::foundation::core::CText path) noexcept;
 
 }  // namespace detail
 
@@ -969,6 +995,64 @@ template <eff::IsExecCtx Ctx>
 has_entry(Ctx const&, ::foundation::core::CText path) noexcept {
     return detail::has_entry_at_(::foundation::os::kAtCurrentDirectory,
                                  ::foundation::core::detail::c_text_first_(path));
+}
+
+// THE TREE REMOVAL
+//   remove_tree_at removes the entry at a path under a directory.  When the
+//   entry is a directory, the door first removes each entry below it.
+//   remove_entries_below removes each entry below a directory, and the
+//   directory stays, empty.  Each door needs the lookup right, for the opens of
+//   the directories of its walk, and the remove right.
+//
+//   The walk goes down one directory at a time.  In each directory it lists the
+//   entries, unlinks each entry that is no directory, and removes each empty
+//   directory.  At the first directory that holds an entry, it stops the
+//   listing and goes down into that directory.  When a directory is empty, the
+//   walk goes back up.  A new open of the directory above then lists it again
+//   from its first entry, and that listing removes the directory that the walk
+//   emptied.  So the walk removes each directory after each entry below it.
+//
+//   The walk follows no symbolic link.  An unlink removes a link itself, and
+//   each open of a directory of the walk has O_NOFOLLOW and O_DIRECTORY and
+//   resolves its name beneath the directory above.  So a link to a directory
+//   outside the tree goes, and each entry of its target stays.
+//
+//   An entry that a listing names and that is gone at its removal counts as
+//   removed, because another process can remove it between the two calls.
+//   Each other error of a removal, a listing or an open ends the walk, and the
+//   Result holds that first Errno.  The entries that the walk removed before
+//   the error stay removed.  The walk holds one descriptor for each directory
+//   from the top down to the directory that it lists, so a tree with more than
+//   kRemoveTreeDepth directories on one path gives enametoolong.  A
+//   path ".", "..", or of slashes only, names the directory itself and no entry
+//   of it, so remove_tree_at gives einval for it and removes nothing.
+//
+//   Complexity: one removal for each entry.  A directory with s directories
+//   that hold entries has at most s + 1 listings, and each listing reads the
+//   entries that are left.
+
+// Removes the entry at path under dir, and first each entry below it when it
+// is a directory (THE TREE REMOVAL).
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup | ::fixy::os::RightSet::remove>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+remove_tree_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path) noexcept {
+    if (!dir.is_open()) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
+    return detail::remove_tree_beneath_(::fixy::os::detail::HandleDoor::descriptor_of(dir), path);
+}
+
+// Removes each entry below dir, and dir stays as an empty directory (THE TREE
+// REMOVAL).
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup | ::fixy::os::RightSet::remove>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+remove_entries_below(Ctx const&, DirectoryRef<Rights> dir) noexcept {
+    if (!dir.is_open()) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
+    return detail::remove_entries_below_(::fixy::os::detail::HandleDoor::descriptor_of(dir));
 }
 
 // The calls below read and write through a handle that is open.  A signal

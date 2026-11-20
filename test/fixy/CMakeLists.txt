@@ -6084,6 +6084,14 @@ fixy_test(test_os_environment)
 set_tests_properties(test_os_environment PROPERTIES ENVIRONMENT_MODIFICATION
   "CRUCIBLE_PERF_QUIET=set:10;CRUCIBLE_PERF_VERBOSE=unset:;CRUCIBLE_WARDEN_QUIET=set:10;CRUCIBLE_WARDEN_FORCE=set:1;CRUCIBLE_PERF_PMU_PERIOD_HW=set:12345;CRUCIBLE_PERF_PMU_PERIOD_IBS=set:0;CRUCIBLE_PERF_PMU_PERIOD_SW=set:-5")
 
+# The tree removal under a directory.  The setup test makes the fixture tree
+# with two links in the directory of the test before each run.
+fixy_test(test_os_remove_tree)
+add_test(NAME test_os_remove_tree_setup
+  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/remove_tree_fixture.cmake)
+set_tests_properties(test_os_remove_tree_setup PROPERTIES LABELS "fixy" FIXTURES_SETUP remove_tree_fixture)
+set_tests_properties(test_os_remove_tree PROPERTIES FIXTURES_REQUIRED remove_tree_fixture)
+
 fixy_neg_compile_test(neg_os_fs_mint_file_duplicate_mode
   "no matching function for call"
   "mode<fixy::fs::open_mode::WriteTruncate> >\\(\\{anonymous\\}::IoBlockCtx&")
