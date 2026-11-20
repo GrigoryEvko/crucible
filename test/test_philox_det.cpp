@@ -9,7 +9,6 @@
 
 #include <bit>
 #include <cstdint>
-#include <cstdio>
 #include <utility>
 
 namespace {
@@ -47,20 +46,20 @@ using Key = Philox4x32::Key;
 }
 
 static void test_generate_det_bit_equal_to_raw() {
-    std::printf("  generate_det bit-equality with generate...\n");
+    ::fixy::report(::fixy::Sink::Out, "  generate_det bit-equality with generate...\n");
 
     // All zeros, all ones, alternating bits, and a mixed pattern.
-    constexpr Counter ctrs[] = {
-        {0, 0, 0, 0},
-        {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu},
-        {0xDEADBEEFu, 0xCAFEBABEu, 0x55AA55AAu, 0x12345678u},
-        {1, 0, 0, 0},
+    constexpr ::fixy::FixedArray<Counter, 4> ctrs{
+        Counter{0, 0, 0, 0},
+        Counter{0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu},
+        Counter{0xDEADBEEFu, 0xCAFEBABEu, 0x55AA55AAu, 0x12345678u},
+        Counter{1, 0, 0, 0},
     };
-    constexpr Key keys[] = {
-        {0, 0},
-        {0xFFFFFFFFu, 0xFFFFFFFFu},
-        {0x9E3779B9u, 0xBB67AE85u},  // Weyl-style key
-        {1, 0},
+    constexpr ::fixy::FixedArray<Key, 4> keys{
+        Key{0, 0},
+        Key{0xFFFFFFFFu, 0xFFFFFFFFu},
+        Key{0x9E3779B9u, 0xBB67AE85u},  // Weyl-style key
+        Key{1, 0},
     };
 
     for (const auto& ctr : ctrs) {
@@ -69,8 +68,8 @@ static void test_generate_det_bit_equal_to_raw() {
         }
     }
 
-    constexpr uint64_t offsets[] = {0, 1, 0xFFFFFFFFFFFFFFFFull, 0xCAFEBABEDEADBEEFull};
-    constexpr uint64_t key64s[] = {0, 1, 0xFFFFFFFFFFFFFFFFull, 0x9E3779B97F4A7C15ull};
+    constexpr ::fixy::FixedArray<uint64_t, 4> offsets{0, 1, 0xFFFFFFFFFFFFFFFFull, 0xCAFEBABEDEADBEEFull};
+    constexpr ::fixy::FixedArray<uint64_t, 4> key64s{0, 1, 0xFFFFFFFFFFFFFFFFull, 0x9E3779B97F4A7C15ull};
 
     for (uint64_t offset : offsets) {
         for (uint64_t key : key64s) {
@@ -80,45 +79,46 @@ static void test_generate_det_bit_equal_to_raw() {
 }
 
 static void test_to_uniform_det_bit_equal() {
-    std::printf("  to_uniform_det / to_uniform_d_det bit-equality...\n");
+    ::fixy::report(::fixy::Sink::Out, "  to_uniform_det / to_uniform_d_det bit-equality...\n");
 
-    constexpr uint32_t samples[] = {
+    constexpr ::fixy::FixedArray<uint32_t, 8> samples{
         0u, 1u, 0xFFFFFFFFu, 0x80000000u, 0x7FFFFFFFu, 0xDEADBEEFu, 0xCAFEBABEu, 0x55AA55AAu,
     };
     for (uint32_t x : samples) {
         // Compare the bytes, not the values.  A determinism claim is a
         // claim about bits, and two floats can compare equal without
         // carrying the same bit pattern.
-        CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uint32_t>(Philox::to_uniform(x))
-                                        == std::bit_cast<uint32_t>(Philox::to_uniform_det(x).peek()));
-        CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uint64_t>(Philox::to_uniform_d(x))
-                                        == std::bit_cast<uint64_t>(Philox::to_uniform_d_det(x).peek()));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::bit_cast<uint32_t>(Philox::to_uniform(x))
+                                        == ::fixy::bit_cast<uint32_t>(Philox::to_uniform_det(x).peek()));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::bit_cast<uint64_t>(Philox::to_uniform_d(x))
+                                        == ::fixy::bit_cast<uint64_t>(Philox::to_uniform_d_det(x).peek()));
     }
 }
 
 static void test_box_muller_polynomial_det_bit_equal() {
-    std::printf("  box_muller_polynomial_det bit-equality...\n");
+    ::fixy::report(::fixy::Sink::Out, "  box_muller_polynomial_det bit-equality...\n");
 
-    constexpr std::pair<uint32_t, uint32_t> pairs[] = {
-        {1u, 2u},
-        {0xDEADBEEFu, 0xCAFEBABEu},
-        {0x55555555u, 0xAAAAAAAAu},
-        {0x12345678u, 0x9ABCDEF0u},
+    constexpr ::fixy::FixedArray<::fixy::Record<uint32_t, uint32_t>, 4> pairs{
+        ::fixy::Record<uint32_t, uint32_t>{1u, 2u},
+        ::fixy::Record<uint32_t, uint32_t>{0xDEADBEEFu, 0xCAFEBABEu},
+        ::fixy::Record<uint32_t, uint32_t>{0x55555555u, 0xAAAAAAAAu},
+        ::fixy::Record<uint32_t, uint32_t>{0x12345678u, 0x9ABCDEF0u},
     };
     for (auto [u1, u2] : pairs) {
         const auto [raw_first, raw_second] = ::fixy::fp::box_muller_polynomial(u1, u2);
         const auto [pinned_first, pinned_second] = Philox::box_muller_polynomial_det(u1, u2).peek();
-        CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uint32_t>(raw_first) == std::bit_cast<uint32_t>(pinned_first));
-        CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uint32_t>(raw_second) == std::bit_cast<uint32_t>(pinned_second));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::bit_cast<uint32_t>(raw_first) == ::fixy::bit_cast<uint32_t>(pinned_first));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             ::fixy::bit_cast<uint32_t>(raw_second) == ::fixy::bit_cast<uint32_t>(pinned_second));
     }
 }
 
 static void test_op_key_det_bit_equal() {
-    std::printf("  op_key_det bit-equality...\n");
+    ::fixy::report(::fixy::Sink::Out, "  op_key_det bit-equality...\n");
 
-    constexpr uint64_t masters[] = {0, 1, 0xFFFFFFFFFFFFFFFFull, 0xCAFEBABEDEADBEEFull};
-    constexpr uint32_t op_indices[] = {0, 1, 0xFFFFFFFFu, 42u};
-    const ContentHash content_hashes[] = {
+    constexpr ::fixy::FixedArray<uint64_t, 4> masters{0, 1, 0xFFFFFFFFFFFFFFFFull, 0xCAFEBABEDEADBEEFull};
+    constexpr ::fixy::FixedArray<uint32_t, 4> op_indices{0, 1, 0xFFFFFFFFu, 42u};
+    const ::fixy::FixedArray<ContentHash, 3> content_hashes{
         ContentHash{0},
         ContentHash{1},
         ContentHash{0xDEADBEEFCAFEBABEull},
@@ -212,7 +212,7 @@ static_assert(sizeof(DetSafe<DetSafeTier_v::PhiloxRng, Philox::NormalPair>) == s
 static_assert(sizeof(DetSafe<DetSafeTier_v::Pure, uint64_t>) == sizeof(uint64_t));
 
 static void test_chain_composition() {
-    std::printf("  chain composition: op_key_det → generate_det...\n");
+    ::fixy::report(::fixy::Sink::Out, "  chain composition: op_key_det → generate_det...\n");
 
     const auto key_pure = Philox::op_key_det(
         /*master=*/0xCAFEBABEDEADBEEFull,
@@ -352,10 +352,10 @@ static_assert(!satisfies_v<decltype(Philox::box_muller_polynomial_det(0u, 0u)), 
 // pay for a copy on the way out.
 
 static void test_move_semantics_through_wrapper() {
-    std::printf("  move-semantics through DetSafe wrapper...\n");
+    ::fixy::report(::fixy::Sink::Out, "  move-semantics through DetSafe wrapper...\n");
 
     auto rng = Philox::generate_det(uint64_t{1}, uint64_t{2});
-    static_assert(std::is_same_v<decltype(std::move(rng).consume()), Counter>,
+    static_assert(std::is_same_v<decltype(std::declval<decltype(rng)>().consume()), Counter>,
                   "DetSafe::consume() && MUST return T by value (move).");
 
     Counter extracted = std::move(rng).consume();
@@ -411,7 +411,7 @@ static_assert(band_tier_v<decltype(kChainConstexpr)> == DetSafeTier_v::PhiloxRng
 // else.  The bytes it produces are the bytes the peeked form
 // produces.
 static void test_typed_chain_bit_equal_to_peek_chain() {
-    std::printf("  typed chain bit-equality with peek chain...\n");
+    ::fixy::report(::fixy::Sink::Out, "  typed chain bit-equality with peek chain...\n");
 
     constexpr uint64_t offset = 0x1234567890ABCDEFull;
     constexpr uint64_t key_raw = 0xDEADBEEFCAFEBABEull;
@@ -431,7 +431,7 @@ static void test_typed_chain_bit_equal_to_peek_chain() {
 // peeked one, so no step in it drops the tier.
 
 static void test_e2e_typed_chain() {
-    std::printf("  end-to-end typed chain: op_key_det → relax → generate_det...\n");
+    ::fixy::report(::fixy::Sink::Out, "  end-to-end typed chain: op_key_det → relax → generate_det...\n");
 
     auto key_pure = Philox::op_key_det(0xCAFEBABEDEADBEEFull, 42u, ContentHash{0xDEADBEEFCAFEBABEull});
     static_assert(band_tier_v<decltype(key_pure)> == DetSafeTier_v::Pure);
@@ -448,7 +448,7 @@ static void test_e2e_typed_chain() {
 }
 
 int main() {
-    std::printf("test_philox_det\n");
+    ::fixy::report(::fixy::Sink::Out, "test_philox_det\n");
 
     test_generate_det_bit_equal_to_raw();
     test_to_uniform_det_bit_equal();
@@ -459,6 +459,6 @@ int main() {
     test_typed_chain_bit_equal_to_peek_chain();
     test_e2e_typed_chain();
 
-    std::printf("PASS\n");
+    ::fixy::check::pass(kTest, "PASS\n");
     return 0;
 }
