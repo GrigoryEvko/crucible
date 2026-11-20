@@ -63,7 +63,7 @@ constexpr ::fixy::FixedArray<::fixy::CText, 4> kKeptPlainNames{
 // The path of the fixture directory, which CMake gives as TMPDIR.
 [[nodiscard]] Path fixture_path() {
     Path host{};
-    fixy::env::switches().temporary_directory.match(
+    fixy::env::switches()->temporary_directory.match(
         [&host](fixy::env::TemporaryDirectoryPath checked) {
             host.append(checked.c_text()).expect("the path of TMPDIR fits a path");
         },

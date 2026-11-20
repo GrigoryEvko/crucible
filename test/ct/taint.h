@@ -60,6 +60,6 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // network: one lookup can take seconds.  test/ct/CMakeLists.txt removes the
 // variable from the environment of each taint test.  The environment door
 // reads the variable one time, before main.
-[[nodiscard]] inline bool names_debuginfod_server() noexcept { return ::fixy::env::switches().has_debuginfod_server; }
+[[nodiscard]] inline bool names_debuginfod_server() noexcept { return ::fixy::env::switches()->has_debuginfod_server; }
 
 }  // namespace ct_taint

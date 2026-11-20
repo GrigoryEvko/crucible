@@ -34,7 +34,7 @@ namespace detail {
 // infix, so the format is fixed:
 //   "[warden] <mechanism> unavailable[: error <number>]\n"
 [[gnu::cold]] inline void warn(::fixy::TextView mechanism, int err) noexcept {
-    if (::fixy::env::switches().is_warden_quiet) return;
+    if (::fixy::env::switches()->is_warden_quiet) return;
     if (err != 0) {
         ::fixy::report(::fixy::Sink::Err, "[warden] {} unavailable: error {}\n", mechanism, err);
     } else {
@@ -218,7 +218,7 @@ public:
         bool realtime_allowed = true;
         if (p.hot_sched != SchedClass::Other && g.pinned_cpu_ >= 0) {
             const bool on_isolcpu = isolated_cpus(ctx).contains(g.pinned_cpu_);
-            if (!on_isolcpu && !::fixy::env::switches().is_warden_forced) {
+            if (!on_isolcpu && !::fixy::env::switches()->is_warden_forced) {
                 ::fixy::report(::fixy::Sink::Err,
                                "[warden] CPU {} not isolated — skipping RT class "
                                "(set CRUCIBLE_WARDEN_FORCE=1 or boot isolcpus={}).\n",

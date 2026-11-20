@@ -145,9 +145,9 @@ concept CtxFitsBpfLoad =
 // environment at the start of the process (fixy/os/Environment.h).  A
 // setenv after the start has no effect.
 
-[[nodiscard]] inline bool quiet() noexcept { return ::fixy::env::switches().is_perf_quiet; }
+[[nodiscard]] inline bool quiet() noexcept { return ::fixy::env::switches()->is_perf_quiet; }
 
-[[nodiscard]] inline bool verbose() noexcept { return ::fixy::env::switches().is_perf_verbose; }
+[[nodiscard]] inline bool verbose() noexcept { return ::fixy::env::switches()->is_perf_verbose; }
 
 // libbpf prints to stderr by default, which is loud on a host without
 // CAP_BPF, so every libbpf line passes through this gate instead.

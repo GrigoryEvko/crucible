@@ -1324,7 +1324,7 @@ template <class Ctx>
 ::foundation::core::Result<Linear<TemporaryDirectory>, ::foundation::os::Errno>
 TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
     using ::foundation::os::Errno;
-    ::fixy::env::Switches const& switches = ::fixy::env::switches();
+    ::fixy::env::Switches const& switches = *::fixy::env::switches();
     ::foundation::core::TextView const host = detail::host_temporary_text_(switches);
     CRUCIBLE_TRY(host_path,
                  sanitize_path(mint_tagged<tags::source::External>(host)).map_err([](PathTraversalError) noexcept {
@@ -1453,7 +1453,7 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] ::foundation::core::Result<SweepReport, ::foundation::os::Errno>
 sweep_temporary_directories(Ctx const& ctx) noexcept {
     using ::foundation::os::Errno;
-    ::fixy::env::Switches const& switches = ::fixy::env::switches();
+    ::fixy::env::Switches const& switches = *::fixy::env::switches();
     CRUCIBLE_TRY(host_path, sanitize_path(mint_tagged<tags::source::External>(detail::host_temporary_text_(switches)))
                                 .map_err([](PathTraversalError) noexcept { return Errno::einval; }));
     CRUCIBLE_TRY(space, read_pid_namespace(ctx));

@@ -45,7 +45,7 @@ constexpr ::fixy::TestRunnerCtx kCtx{eff::testing::test()};
 // The temporary directory of the host: the path of TMPDIR, or /tmp.
 [[nodiscard]] Path host_directory() {
     Path host{};
-    fixy::env::switches().temporary_directory.match(
+    fixy::env::switches()->temporary_directory.match(
         [&host](fixy::env::TemporaryDirectoryPath checked) {
             host.append(checked.c_text()).expect("the path of TMPDIR fits a path");
         },

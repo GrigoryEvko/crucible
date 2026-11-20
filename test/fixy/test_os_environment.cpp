@@ -39,25 +39,25 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 namespace {
 
 [[nodiscard]] int check_switches() noexcept {
-    fixy::env::Switches const& switches = fixy::env::switches();
-    if (!switches.is_perf_quiet) return 1;
-    if (switches.is_perf_verbose) return 2;
-    if (switches.is_warden_quiet) return 3;
-    if (!switches.is_warden_forced) return 4;
-    std::uint64_t const period = fixy::env::switches().pmu_period_hardware.match(
+    fixy::Ref<fixy::env::Switches const, fixy::env::SwitchesBrand> const switches = fixy::env::switches();
+    if (!switches->is_perf_quiet) return 1;
+    if (switches->is_perf_verbose) return 2;
+    if (switches->is_warden_quiet) return 3;
+    if (!switches->is_warden_forced) return 4;
+    std::uint64_t const period = fixy::env::switches()->pmu_period_hardware.match(
         [](std::uint64_t value) noexcept { return value; }, [] noexcept { return std::uint64_t{0}; });
     if (period != 12345) return 5;
-    if (switches.pmu_period_dynamic.is_some()) return 6;
-    if (switches.pmu_period_software.is_some()) return 7;
-    bool const is_tmpdir_read = switches.temporary_directory.match(
+    if (switches->pmu_period_dynamic.is_some()) return 6;
+    if (switches->pmu_period_software.is_some()) return 7;
+    bool const is_tmpdir_read = switches->temporary_directory.match(
         [](fixy::env::TemporaryDirectoryPath const& path) noexcept {
             return path.c_text().view() == fixy::TextView{"/var/tmp/"};
         },
         [] noexcept { return false; });
     if (!is_tmpdir_read) return 8;
-    if (switches.has_debuginfod_server) return 9;
+    if (switches->has_debuginfod_server) return 9;
     // Each call gives the one record of the process, and no copy of it.
-    if (&fixy::env::switches() != &switches) return 10;
+    if (!fixy::same_object(fixy::env::switches(), switches)) return 10;
     return 0;
 }
 

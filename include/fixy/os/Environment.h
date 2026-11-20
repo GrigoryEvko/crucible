@@ -17,6 +17,7 @@
 #include <fixy/os/Path.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
 #include <foundation/core/Text.h>
 #include <foundation/os/PathText.h>
 
@@ -54,12 +55,19 @@ has_debuginfod_server(::foundation::core::Option<::foundation::core::TextView> v
                        [] noexcept { return false; });
 }
 
+// The brand of the record of the switches of the process.  The Ref that
+// switches() gives carries it, so the Ref names the record and not the
+// erased identity of each Ref of the type.
+struct SwitchesBrand final {};
+
 // The switches of the environment at the start of the process.  The record
 // holds parsed values only.  A path of the record is a parsed value too: the
 // hook checks the text of its variable, and the record holds the checked path
 // or no value.  A switch whose variable is absent has the value of its field
 // initializer.
 struct Switches {
+    using brand_type = SwitchesBrand;
+
     // CRUCIBLE_PERF_QUIET: the perf layer reports no failed load.  The
     // switch is on when its value starts with the character 1.
     bool is_perf_quiet = false;
@@ -96,12 +104,12 @@ struct Switches {
     ::foundation::core::Option<TemporaryDirectoryPath> temporary_directory{};
 };
 
-// The switches that the start-up hook read.  The call gives a reference to
-// the one record of the process, which has static storage and which no code
-// writes after the start.  So the call copies no byte of the record, takes no
-// lock and no atomic, and each thread can call it.  A caller reads a field of
-// the record in place: an Option field takes the borrow match, which keeps
-// the field as it is.
-[[nodiscard]] Switches const& switches() noexcept;
+// The switches that the start-up hook read.  The call gives a Ref of the one
+// record of the process, which has static storage and which no code writes
+// after the start.  So the call copies no byte of the record, takes no lock
+// and no atomic, and each thread can call it.  A caller reads a field of the
+// record in place through the Ref: an Option field takes the borrow match,
+// which keeps the field as it is.
+[[nodiscard]] ::foundation::core::Ref<Switches const, SwitchesBrand> switches() noexcept;
 
 }  // namespace fixy::env
