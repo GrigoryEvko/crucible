@@ -1207,6 +1207,11 @@ foundation_neg_compile_test(neg_signature_param_index_overflow
 foundation_neg_compile_test(neg_signature_param_index_on_nullary
   "template constraint failure"
   "the expression .I < foundation::reflect::signature_traits<FnPtr>::arity \\[with I = 0; FnPtr = &witness_nullary\\(\\)\\]. evaluated to .false.")
+# A list of reflections comes only from reflection_list, so no caller states
+# a pointer and a count that pass the array.
+foundation_neg_compile_test(neg_reflection_list_forged
+  "is private within this context"
+  "consteval foundation::reflect::ReflectionList::ReflectionList\\(const std::meta::info\\*, std::size_t\\)")
 
 foundation_neg_compile_test(neg_permission_root_ctx_refuses_row
   "constraints not satisfied"

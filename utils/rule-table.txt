@@ -807,6 +807,13 @@ witness <foundation/core/Text.h> private | foundation::core::TextView | foundati
 # keeps a zero after its last character, so no pointer that a caller holds
 # becomes a CText.
 witness <foundation/core/Text.h> private | foundation::core::CText | foundation::core::CText{forge::rvalue<char const*>(), forge::rvalue<unsigned long>()}
+# A list of reflections comes only from reflection_list, so no pointer and no
+# count that a caller holds become a list.  A cursor comes only from its list.
+# Each is a consteval-only class, so the construction stands in the
+# unevaluated operand of sizeof: the access check runs there, and no constant
+# evaluation of a value of the class starts.
+witness <foundation/reflect/ReflectionList.h> private | foundation::reflect::ReflectionList | sizeof(foundation::reflect::ReflectionList{forge::rvalue<std::meta::info const*>(), forge::rvalue<unsigned long>()})
+witness <foundation/reflect/ReflectionList.h> private | foundation::reflect::ReflectionCursor | sizeof(foundation::reflect::ReflectionCursor{forge::rvalue<std::meta::info const*>()})
 # A sole writer comes only from mint_sole_writer, and only the mint makes
 # the key of its constructor, so no caller makes a second writer of a cell.
 witness <foundation/core/Atomic.h> private | foundation::core::sole_writer_key | foundation::core::sole_writer_key{}

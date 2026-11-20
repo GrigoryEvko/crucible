@@ -16,6 +16,7 @@
 
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <array>
 #include <cstddef>
@@ -51,7 +52,9 @@ struct enum_pin {
 template <ScopedEnum E, std::size_t N>
 [[nodiscard]] consteval bool pin_enum(std::array<enum_pin<E>, N> const& expected) noexcept {
     using Underlying = std::underlying_type_t<E>;
-    static constexpr auto enumerators = std::define_static_array(
+    // The call names its namespace, so argument-dependent lookup adds no
+    // overload of another file.
+    static constexpr ReflectionList enumerators = ::foundation::reflect::reflection_list(
         static_cast<anchored_t<^^E, std::vector<std::meta::info>>>(std::meta::enumerators_of(^^E)));
     if (enumerators.size() != N) return false;
 
