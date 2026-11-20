@@ -53,10 +53,13 @@
 #include <fixy/os/Fd.h>
 #include <fixy/os/Handle.h>
 #include <foundation/Brand.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Index.h>
 #include <foundation/core/Owner.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/core/Region.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
@@ -70,6 +73,15 @@
 #include <meta>
 #include <type_traits>
 #include <utility>
+
+namespace fixy {
+
+// The owner of a mapping, below.  The shared words of fixy::mmap name it as
+// the friend that builds them.
+template <typename Tag, typename Prot, typename Share, typename Brand>
+class OwnedMmap;
+
+}  // namespace fixy
 
 namespace fixy::mmap {
 
@@ -298,6 +310,55 @@ concept MappingViewElement =
     && ::foundation::lifetime::ImplicitLifetimeThroughout<std::remove_const_t<T>> && (alignof(T) <= 4096)
     && (std::is_const_v<T> || (prot_bits_of(^^Prot) & ::foundation::os::kProtectWrite) != 0);
 
+// A word that another writer of a shared mapping stores and a reader loads
+// whole: an unsigned integer of at most eight bytes whose atomic load needs
+// no lock.
+template <typename T>
+concept SharedWord = ::foundation::core::UnsignedInteger<T> && (sizeof(T) <= sizeof(std::uint64_t))
+                  && __atomic_always_lock_free(sizeof(T), 0);
+
+// The byte offset of the first word of a run in a mapping.
+using MappingOffset = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>;
+
+// THE SHARED WORDS
+//   Count words of a shared mapping that another writer stores: the kernel,
+//   a BPF program or another process.  Each read is an acquire load, so the
+//   stores that the writer made before its store of a word are visible after
+//   the load that reads that word.  A View of the words would read them with
+//   plain loads, which the compiler can tear, merge or move.
+//
+//   The words borrow the mapping, as a View of view_at does.  The one door is
+//   OwnedMmap::shared_words_at, which checks the fit and the alignment and
+//   starts the lifetime of the words, so no pointer of a caller becomes a run
+//   of shared words.
+template <SharedWord T, std::size_t Count>
+    requires(Count != ::foundation::core::dynamic_extent) && ::foundation::core::IndexCount<Count>
+class SharedWords final {
+    T const* first_ = nullptr;
+    // The seal refuses a byte copy into a SharedWords, so no bytes become a
+    // run of shared words.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    template <typename, typename, typename, typename>
+    friend class ::fixy::OwnedMmap;
+
+    constexpr explicit SharedWords(T const* first) noexcept : first_{first} {}
+
+public:
+    // The count of the words.
+    [[nodiscard]] static constexpr std::size_t size() noexcept { return Count; }
+
+    // Each index of a word, in order.
+    [[nodiscard]] static constexpr ::foundation::core::IndexRange<Count> indices() noexcept {
+        return ::foundation::core::IndexRange<Count>{};
+    }
+
+    // The word at index, with an acquire load.  The index proves the bound.
+    [[nodiscard]] T load_acquire(::foundation::core::Index<Count> index) const noexcept {
+        return __atomic_load_n(first_ + index.raw(), __ATOMIC_ACQUIRE);
+    }
+};
+
 }  // namespace mmap
 
 // The core of foundation/core/Owner.h gives the moves and the end of a
@@ -495,6 +556,29 @@ public:
     void view_at(std::size_t) && = delete("a View of a temporary mapping dangles when the mapping unmaps");
     template <typename T, std::size_t Count>
     void view_at(std::size_t) const&& = delete("a View of a temporary mapping dangles when the mapping unmaps");
+
+    // The Count words of T from the byte offset of a shared mapping, which
+    // another writer stores (THE SHARED WORDS of fixy::mmap), or no value
+    // when they do not fit in the mapping or when the offset is not a
+    // multiple of the alignment of T.  The checks are those of view_at, and
+    // the call starts the lifetime of the Count words over their bytes.  The
+    // words borrow the mapping, so the overloads of an rvalue are deleted.
+    template <mmap::SharedWord T, std::size_t Count>
+        requires std::is_same_v<Share, mmap::share::Shared> && (Count != ::foundation::core::dynamic_extent)
+              && ::foundation::core::IndexCount<Count>
+    [[nodiscard]] ::foundation::core::Option<mmap::SharedWords<T, Count>>
+    shared_words_at(mmap::MappingOffset offset) const& noexcept {
+        using Result = ::foundation::core::Option<mmap::SharedWords<T, Count>>;
+        if (!fits_at_<T>(offset.raw(), Count)) return Result{::foundation::core::none};
+        return Result::some(mmap::SharedWords<T, Count>{start_at_<T const>(offset.raw(), Count)});
+    }
+
+    template <typename T, std::size_t Count>
+    void shared_words_at(mmap::MappingOffset) && = delete("shared words of a temporary mapping dangle when the "
+                                                          "mapping unmaps");
+    template <typename T, std::size_t Count>
+    void shared_words_at(mmap::MappingOffset) const&& = delete("shared words of a temporary mapping dangle when the "
+                                                               "mapping unmaps");
 
     // Hands the region to something that will unmap it on its own
     // schedule, such as a subsystem the kernel takes over.  Almost

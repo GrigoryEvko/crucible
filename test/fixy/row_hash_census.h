@@ -426,6 +426,7 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::fixy::io,
     ^^::fixy::fs,
     ^^::fixy::os,
+    ^^::fixy::mmap,
     ^^::fixy::numa,
     ^^::fixy::net,
     ^^::fixy::perf,
@@ -1041,6 +1042,9 @@ inline constexpr StatedZero kZeros[] = {
      "signature"},
     {^^::foundation::core::HexBytes,
      "an argument of a report: a borrow of the bytes that it writes, and never a value in a kernel signature"},
+    {^^::fixy::mmap::SharedWords,
+     "a borrow of the words of a shared mapping that another writer stores: it owns nothing and makes no claim "
+     "about what the words hold"},
     {^^::foundation::core::Record,
      "a product of values: it holds its parts and makes no claim about them, and a binding gives out each part"},
     {^^::foundation::core::Index,

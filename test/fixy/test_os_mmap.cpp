@@ -63,6 +63,9 @@ struct PooledRegion final {
 struct LeakedRegion final {
     using permission_row = eff::Row<>;
 };
+struct WordRegion final {
+    using permission_row = eff::Row<>;
+};
 
 // The rationale a deliberate leak names.  Here the region is unmapped by
 // hand right after, which is the one case a test can honestly claim.
@@ -192,6 +195,83 @@ region_of(fixy::Result<fixy::Linear<Region>, foundation::os::Errno> minted) {
         return 1;
     }
     return 0;
+}
+
+// The words of a shared mapping of a file, each read with an acquire load.
+// The words at an offset are the words of the file from that offset.  Words
+// past the end of the mapping, and an offset that is not a multiple of the
+// alignment of a word, give no value.  The mapping takes the permission of
+// its region, which the caller holds and ends after the mapping ends.
+template <class Brand>
+[[nodiscard]] int check_shared_words_of_the_file(perm::Permission<WordRegion, Brand> const& owner) {
+    IoBlockCtx ctx{eff::testing::test()};
+    auto const tmp = fixy::sanitize_path(fixy::mint_tagged<fixy::tags::source::External>(fixy::TextView{"/tmp"}))
+                         .expect("/tmp passes the check");
+    fixy::fs::DirectoryHandle const directory = fixy::fs::open_directory(ctx, tmp).expect("/tmp opens");
+    fixy::fs::TemporaryFile file =
+        fixy::fs::mint_temporary_file_at(ctx, directory.ref())
+            .match([](fixy::Linear<fixy::fs::TemporaryFile> opened) { return std::move(opened).consume(); },
+                   [](foundation::os::Errno) { return fixy::fs::TemporaryFile{}; });
+    if (!file.is_open()) {
+        fixy::report(fixy::Sink::Out, "[skipped] the file system of /tmp has no file with no name\n");
+        return 0;
+    }
+
+    // One page of words: the word at index i holds i + 1 times an odd
+    // constant, so no two words are equal.
+    constexpr std::size_t kWords = kPageBytes / sizeof(std::uint64_t);
+    fixy::FixedArray<std::uint64_t, kWords> words{};
+    for (fixy::Index<kWords> const index : words.indices()) {
+        words.at(index) = (index.raw() + 1) * 0x9E3779B97F4A7C15ULL;
+    }
+    if (fixy::fs::write_full(ctx, file.ref(), fixy::bytes(words)).is_err()) {
+        fixy::report(fixy::Sink::Err, "the write of the words into the file failed\n");
+        return 1;
+    }
+    auto mapped = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, owner, file.ref(), kPageBytes));
+    file = fixy::fs::TemporaryFile{};
+    if (mapped.is_err()) {
+        fixy::report(fixy::Sink::Err, "a shared read-only mapping of the file failed (errno {})\n",
+                     foundation::os::error_number_of(mapped));
+        return 1;
+    }
+    auto const region = std::move(mapped).expect("the mint gave a mapping");
+
+    using Offset = fixy::mmap::MappingOffset;
+    std::size_t loaded = 0;
+    for (fixy::mmap::SharedWords<std::uint64_t, 4> const shared :
+         region.template shared_words_at<std::uint64_t, 4>(Offset{2 * sizeof(std::uint64_t)})) {
+        for (fixy::Index<4> const index : shared.indices()) {
+            if (shared.load_acquire(index) != (index.raw() + 3) * 0x9E3779B97F4A7C15ULL) {
+                fixy::report(fixy::Sink::Err, "the shared word {} is not the word of the file\n", index.raw());
+                return 1;
+            }
+            ++loaded;
+        }
+    }
+    if (loaded != 4) {
+        fixy::report(fixy::Sink::Err, "the shared words at an offset inside the mapping gave no value\n");
+        return 1;
+    }
+    bool const is_last_word_given = region.template shared_words_at<std::uint64_t, 1>(Offset{kPageBytes - 8}).is_some();
+    bool const is_past_end_given = region.template shared_words_at<std::uint64_t, 2>(Offset{kPageBytes - 8}).is_some();
+    bool const is_misaligned_given = region.template shared_words_at<std::uint64_t, 1>(Offset{4}).is_some();
+    bool const is_narrow_word_given = region.template shared_words_at<std::uint32_t, 1>(Offset{4}).is_some();
+    if (!is_last_word_given || is_past_end_given || is_misaligned_given || !is_narrow_word_given) {
+        fixy::report(fixy::Sink::Err, "the checks of the shared words gave last {} past {} misaligned {} narrow {}\n",
+                     is_last_word_given, is_past_end_given, is_misaligned_given, is_narrow_word_given);
+        return 1;
+    }
+    return 0;
+}
+
+// The root of the region of the words ends at the one exit of this
+// function, after the mapping of the check ended.
+[[nodiscard]] int shared_words_load_the_file_words() {
+    auto owner = perm::mint_permission_root<WordRegion>();
+    int const result = check_shared_words_of_the_file(owner);
+    foundation::linear::drop(std::move(owner));
+    return result;
 }
 
 [[nodiscard]] int release_aware_advice_discards_the_pages() {
@@ -344,6 +424,7 @@ region_of(fixy::Result<fixy::Linear<Region>, foundation::os::Errno> minted) {
 int main() {
     if (const int rc = anonymous_mapping_carries_what_was_written(); rc != 0) return rc;
     if (const int rc = file_mapping_shows_the_file_bytes(); rc != 0) return rc;
+    if (const int rc = shared_words_load_the_file_words(); rc != 0) return rc;
     if (const int rc = release_aware_advice_discards_the_pages(); rc != 0) return rc;
     if (const int rc = the_pool_hands_back_the_exclusive_that_releases(); rc != 0) return rc;
     if (const int rc = the_leak_door_hands_back_the_mapping(); rc != 0) return rc;

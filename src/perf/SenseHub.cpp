@@ -52,12 +52,13 @@ Snapshot SenseHub::read(::foundation::effects::cap::Nondet /*nondet*/) const noe
             // The BPF producer bumps each counter with a full-barrier add, so
             // an acquire load here makes every kernel-side store that
             // precedes a bump visible, and stops the compiler hoisting later
-            // reads above it.  view_at of the mapping checks the bounds and
-            // the alignment, and it starts the lifetime of the counters.
-            for (::fixy::View<const uint64_t, NUM_COUNTERS> const counters :
-                 mapped.template view_at<const uint64_t, NUM_COUNTERS>(0)) {
+            // reads above it.  shared_words_at of the mapping checks the
+            // bounds and the alignment, and it starts the lifetime of the
+            // counters.
+            for (::fixy::mmap::SharedWords<uint64_t, NUM_COUNTERS> const counters :
+                 mapped.template shared_words_at<uint64_t, NUM_COUNTERS>(::fixy::mmap::MappingOffset{0})) {
                 for (::fixy::Index<NUM_COUNTERS> const i : counters.indices()) {
-                    snapshot.counters.at(i) = __atomic_load_n(&counters.at(i), __ATOMIC_ACQUIRE);
+                    snapshot.counters.at(i) = counters.load_acquire(i);
                 }
             }
         }

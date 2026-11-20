@@ -616,6 +616,9 @@ witness <fixy/os/TimingSink.h> private | fixy::observe::TimingSink<2>::Span | fi
 # A spin deadline comes only from a read of the counter through after, with
 # a context that holds Nondet, or from passed.
 witness <fixy/os/SpinBudget.h> private | fixy::time::SpinDeadline | fixy::time::SpinDeadline{std::uint64_t{1}}
+# The shared words of a mapping come only from shared_words_at of a shared
+# mapping, which checks the fit and the alignment and starts their lifetime.
+witness <fixy/os/OwnedMmap.h> private | fixy::mmap::SharedWords<std::uint64_t, 4> | fixy::mmap::SharedWords<std::uint64_t, 4>{forge::lvalue<std::uint64_t const*>()}
 # The entry of a waiter in an event count comes only from prepare_wait, which
 # enters the waiter in the count before it gives the entry.
 witness <fixy/concurrent/EventCount.h> private | fixy::concurrent::EventWait | fixy::concurrent::EventWait{forge::lvalue<fixy::concurrent::EventCount>(), std::uint32_t{0}}

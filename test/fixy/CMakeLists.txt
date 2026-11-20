@@ -5927,6 +5927,12 @@ fixy_neg_compile_test(neg_owned_mmap_view_at_of_temporary
 fixy_neg_compile_test(neg_owned_mmap_view_at_writes_a_read_only_mapping
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, \\{anonymous\\}::RegionBrand>::view_at<int, 4>\\(int\\)."
   "MappingViewElement<Prot, T>")
+fixy_neg_compile_test(neg_owned_mmap_shared_words_of_private_mapping
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, \\{anonymous\\}::RegionBrand>::shared_words_at<uint64_t, 4>\\(fixy::mmap::MappingOffset\\) const."
+  "the expression .is_same_v<Share, fixy::mmap::share::Shared> \\[with Share = fixy::mmap::share::Private\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_owned_mmap_shared_words_of_temporary
+  "use of deleted function .void fixy::OwnedMmap<Tag, Prot, Share, Brand>::shared_words_at\\("
+  "shared words of a temporary mapping dangle when the mapping unmaps")
 fixy_neg_compile_test(neg_owned_mmap_view_at_extent_zero
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadWrite, fixy::mmap::share::Anonymous, \\{anonymous\\}::RegionBrand>::view_at<int, 0>\\(int\\)."
   "ViewExtent<T, Count>")
