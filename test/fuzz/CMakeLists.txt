@@ -46,7 +46,7 @@ function(crucible_property_fuzzer name)
   if(ARGC GREATER 1)
     set(iterations ${ARGV1})
   endif()
-  add_executable(${name} property/${name}.cpp)
+  add_executable(${name} property/${name}.cpp property/property_main.cpp)
   target_link_libraries(${name} PRIVATE crucible)
   target_include_directories(${name} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/property)

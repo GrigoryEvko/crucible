@@ -30,11 +30,11 @@
 #include <cstddef>
 #include <cstdint>
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::detail_ser;
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(::fixy::os::args(argc, argv));
+    const Config cfg = parse_args(arguments);
 
     return run(
         "Serialize header write/read round-trip", cfg,
@@ -48,13 +48,14 @@ int main(int argc, char** argv) {
             // Pick from real TraceNodeKind values (REGION, BRANCH,
             // LOOP, TERMINAL).  Skip arbitrary u8 values to avoid
             // hitting the invalid-enum path the reader rejects.
-            static constexpr TraceNodeKind kKinds[] = {
+            static constexpr ::fixy::FixedArray<TraceNodeKind, 4> kKinds{
                 TraceNodeKind::REGION,
                 TraceNodeKind::BRANCH,
                 TraceNodeKind::LOOP,
                 TraceNodeKind::TERMINAL,
             };
-            t.kind = kKinds[rng.next_below(4)];
+            t.kind = kKinds.at(::fixy::Index<kKinds.size()>::check(rng.next_below(4))
+                                   .expect("a draw below 4 is an index of the four kinds"));
             t.mh = MerkleHash{rng.next64()};
             t.ch = ContentHash{rng.next64()};
             return t;

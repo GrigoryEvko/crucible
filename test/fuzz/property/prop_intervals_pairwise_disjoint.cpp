@@ -87,7 +87,7 @@ struct IntervalSet {
 
 // The run reads no argument of the command line.  Its seed and its count of
 // cases are fixed, so each run checks the same sets.
-int main() {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const /*arguments*/) {
     using namespace crucible::fuzz::prop;
     using ::foundation::decide::intervals_pairwise_disjoint;
 

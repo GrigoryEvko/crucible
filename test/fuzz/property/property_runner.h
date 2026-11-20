@@ -13,9 +13,9 @@
 //   #include "property_runner.h"
 //   #include "random_input.h"
 //
-//   int main(int argc, char** argv) {
+//   int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
 //       using namespace crucible::fuzz::prop;
-//       const Config cfg = parse_args(::fixy::os::args(argc, argv), 2'000'000);
+//       const Config cfg = parse_args(arguments, 2'000'000);
 //       return run("recipe_hash_determinism", cfg,
 //           [](Rng& rng) { return random_recipe(rng); },
 //           [](const NumericalRecipe& r) {
@@ -59,19 +59,20 @@
 #include <crucible/Philox.h>
 #include <fixy/Core.h>
 #include <fixy/os/Args.h>
+#include <foundation/os/Abort.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <limits>
 #include <meta>
-#include <string_view>
 #include <type_traits>
-#include <utility>
 
 namespace crucible::fuzz::prop {
+
+// The body of a property test, which each test defines.  main of
+// property_main.cpp gives it the arguments of the process, and its result
+// is the exit status of the test.
+[[nodiscard]] int run_property(::fixy::os::Args arguments);
 
 // ─── Dense enums ───────────────────────────────────────────────────
 //
@@ -84,8 +85,10 @@ namespace crucible::fuzz::prop {
 template <class E>
 [[nodiscard]] consteval bool enumerators_are_dense() noexcept {
     std::size_t index = 0;
+    // A negative value converts to a count past each index, so it is never
+    // equal to the index.
     for (const std::meta::info enumerator : std::meta::enumerators_of(^^E)) {
-        if (std::cmp_not_equal(std::to_underlying(std::meta::extract<E>(enumerator)), index)) return false;
+        if (static_cast<std::size_t>(std::meta::extract<E>(enumerator)) != index) return false;
         ++index;
     }
     return index != 0;
@@ -188,6 +191,18 @@ private:
     uint32_t cursor_ = 4;  // forces initial refill
 };
 
+// ─── Run-time reads ────────────────────────────────────────────────
+//
+// The value at the reference, read at run time.  The function is noipa,
+// so the caller does not know that the result is the argument.  The
+// optimizer then folds no check on the result at compile time, and it
+// merges no two calls of one function on two results.
+
+template <class T>
+[[gnu::noipa, nodiscard]] T const& read_at_run_time(T const& value) noexcept {
+    return value;
+}
+
 // ─── Configuration ─────────────────────────────────────────────────
 
 struct Config {
@@ -217,7 +232,7 @@ struct Config {
 // its coverage returns.  Complexity: linear in the characters of the
 // arguments.
 [[nodiscard]] inline Config parse_args(::fixy::os::Args const arguments,
-                                       uint64_t max_iterations = std::numeric_limits<uint64_t>::max()) noexcept {
+                                       uint64_t max_iterations = ::fixy::max_of<uint64_t>) noexcept {
     constexpr ::fixy::TextView kSeed{"--seed="};
     constexpr ::fixy::TextView kIterations{"--iters="};
     Config cfg{};
@@ -240,18 +255,16 @@ struct Config {
 // Prints the failure header, then aborts so the sanitizer state and
 // the stack frame are preserved for debugging.
 
-[[noreturn]] inline void report_failure(std::string_view name, uint64_t iteration, uint64_t seed) noexcept {
-    std::fprintf(stderr,
-                 "\n═══════════════════════════════════════════════════════════\n"
-                 "PROPERTY FAILED: %.*s\n"
-                 "  iteration: %llu\n"
-                 "  seed:      0x%llX\n"
-                 "  reproduce: re-run the binary with --seed=0x%llX --iters=%llu\n"
-                 "═══════════════════════════════════════════════════════════\n",
-                 static_cast<int>(name.size()), name.data(), static_cast<unsigned long long>(iteration),
-                 static_cast<unsigned long long>(seed), static_cast<unsigned long long>(seed),
-                 static_cast<unsigned long long>(iteration + 1));
-    std::abort();
+[[noreturn]] inline void report_failure(::fixy::TextView const name, const Config& cfg, uint64_t iteration) noexcept {
+    ::fixy::report(::fixy::Sink::Err,
+                   "\n═══════════════════════════════════════════════════════════\n"
+                   "PROPERTY FAILED: {}\n"
+                   "  iteration: {}\n"
+                   "  seed:      0x{}\n"
+                   "  reproduce: re-run the binary with --seed=0x{} --iters={}\n"
+                   "═══════════════════════════════════════════════════════════\n",
+                   name, iteration, ::fixy::Hex<16>{cfg.seed}, ::fixy::Hex<16>{cfg.seed}, iteration + 1);
+    ::foundation::os::abort_process();
 }
 
 // ─── The runner ────────────────────────────────────────────────────
@@ -261,24 +274,25 @@ struct Config {
 // On the first false return, it reports the iteration and the seed.
 
 template <typename Generator, typename Property>
-[[nodiscard]] inline int run(const char* name, const Config& cfg, Generator&& gen, Property&& check) noexcept {
-    std::fprintf(stderr, "[prop] %s: %llu iterations, seed=0x%llX\n", name,
-                 static_cast<unsigned long long>(cfg.iterations), static_cast<unsigned long long>(cfg.seed));
+[[nodiscard]] inline int run(::fixy::TextView const name, const Config& cfg, Generator&& gen,
+                             Property&& check) noexcept {
+    ::fixy::report(::fixy::Sink::Err, "[prop] {}: {} iterations, seed=0x{}\n", name, cfg.iterations,
+                   ::fixy::Hex<16>{cfg.seed});
 
     for (uint64_t i = 0; i < cfg.iterations; ++i) {
         Rng rng{cfg.seed, i};
         auto input = gen(rng);
 
         if (cfg.verbose && (i % 10000 == 0)) {
-            std::fprintf(stderr, "[prop]   iter %llu\n", static_cast<unsigned long long>(i));
+            ::fixy::report(::fixy::Sink::Err, "[prop]   iter {}\n", i);
         }
 
         if (!check(input)) {
-            report_failure(name, i, cfg.seed);
+            report_failure(name, cfg, i);
         }
     }
 
-    std::fprintf(stderr, "[prop] %s: PASSED %llu iterations\n", name, static_cast<unsigned long long>(cfg.iterations));
+    ::fixy::report(::fixy::Sink::Err, "[prop] {}: PASSED {} iterations\n", name, cfg.iterations);
     return 0;
 }
 

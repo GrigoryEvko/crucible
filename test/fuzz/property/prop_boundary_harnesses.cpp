@@ -79,9 +79,9 @@ Input edited_seed(crucible::fuzz::prop::Rng& rng) {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible::fuzz;
-    const prop::Config cfg = prop::parse_args(::fixy::os::args(argc, argv));
+    const prop::Config cfg = prop::parse_args(arguments);
     const auto run_harness = [](const Input& input) {
         kHarnesses[input.harness].run(std::span<const std::uint8_t>{input.bytes});
         return true;

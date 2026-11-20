@@ -48,7 +48,6 @@
 #include <fixy/Core.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
 
-#include <array>
 #include <cstdint>
 
 namespace {
@@ -71,7 +70,7 @@ struct PairSpec {
     Rational a{};
     Rational b{};
     Mode mode = Mode::Random;
-    uint8_t pad[7]{};
+    ::fixy::FixedArray<uint8_t, 7> pad{};
 };
 
 // One share of the carrier: den in [1, 2^31], num in [0, den].
@@ -81,8 +80,9 @@ struct PairSpec {
     return Rational{num, den};
 }
 [[nodiscard]] std::int64_t boundary_value(Rng& rng) noexcept {
-    constexpr std::array<std::int64_t, 5> corners{0, 1, std::int64_t{1} << 30, kMax - 1, kMax};
-    return corners[rng.next_below(5u)];
+    constexpr ::fixy::FixedArray<std::int64_t, 5> corners{0, 1, std::int64_t{1} << 30, kMax - 1, kMax};
+    return corners.at(
+        ::fixy::Index<corners.size()>::check(rng.next_below(5u)).expect("a draw below 5 is an index of the corners"));
 }
 [[nodiscard]] Rational gen_boundary(Rng& rng) noexcept {
     std::int64_t num = boundary_value(rng);
@@ -126,10 +126,10 @@ struct PairSpec {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible::fuzz::prop;
 
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 2000000);
+    const Config cfg = parse_args(arguments, 2000000);
 
     return run(
         "fractional_lattice", cfg,

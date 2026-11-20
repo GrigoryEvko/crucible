@@ -41,14 +41,13 @@
 #include <crucible/Types.h>
 
 #include <cstdint>
-#include <cstdio>
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::detail;
     using namespace crucible::fuzz::prop;
 
-    const Config cfg = parse_args(::fixy::os::args(argc, argv));
+    const Config cfg = parse_args(arguments);
 
     return run(
         "StorageNbytes SIMD bit-equivalence", cfg,
@@ -114,24 +113,26 @@ int main(int argc, char** argv) {
             const auto simd_v = compute_storage_nbytes_simd(external);
 
             if (scalar != simd_v) {
-                std::fprintf(stderr,
-                             "\nSIMD/scalar divergence:\n"
-                             "  scalar=%llu(clamped=%d) simd=%llu(clamped=%d)\n"
-                             "  ndim=%u dtype=%d\n"
-                             "  sizes=[",
-                             static_cast<unsigned long long>(scalar.value()), int(scalar.was_clamped()),
-                             static_cast<unsigned long long>(simd_v.value()), int(simd_v.was_clamped()),
-                             unsigned(meta.ndim), int(meta.dtype));
+                ::fixy::report(::fixy::Sink::Err,
+                               "\nSIMD/scalar divergence:\n"
+                               "  scalar={}(clamped={}) simd={}(clamped={})\n"
+                               "  ndim={} dtype={}\n"
+                               "  sizes=[",
+                               scalar.value(), static_cast<int>(scalar.was_clamped()), simd_v.value(),
+                               static_cast<int>(simd_v.was_clamped()), static_cast<unsigned>(meta.ndim),
+                               static_cast<int>(meta.dtype));
+                // The separator after each dimension but the last.
+                const auto separator_after = [&meta](uint8_t const d) noexcept {
+                    return d + 1 < meta.ndim ? ::fixy::TextView{","} : ::fixy::TextView{};
+                };
                 for (uint8_t d = 0; d < meta.ndim; ++d) {
-                    std::fprintf(stderr, "%lld%s", static_cast<long long>(meta.sizes[d].value()),
-                                 d + 1 < meta.ndim ? "," : "");
+                    ::fixy::report(::fixy::Sink::Err, "{}{}", meta.sizes[d].value(), separator_after(d));
                 }
-                std::fprintf(stderr, "] strides=[");
+                ::fixy::report(::fixy::Sink::Err, "] strides=[");
                 for (uint8_t d = 0; d < meta.ndim; ++d) {
-                    std::fprintf(stderr, "%lld%s", static_cast<long long>(meta.strides[d].value()),
-                                 d + 1 < meta.ndim ? "," : "");
+                    ::fixy::report(::fixy::Sink::Err, "{}{}", meta.strides[d].value(), separator_after(d));
                 }
-                std::fprintf(stderr, "]\n");
+                ::fixy::report(::fixy::Sink::Err, "]\n");
                 return false;
             }
             return true;

@@ -28,10 +28,10 @@
 #include <crucible/NumericalRecipe.h>
 #include <fixy/Core.h>
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(::fixy::os::args(argc, argv));
+    const Config cfg = parse_args(arguments);
 
     return run(
         "compute_recipe_hash field-disambiguation", cfg,

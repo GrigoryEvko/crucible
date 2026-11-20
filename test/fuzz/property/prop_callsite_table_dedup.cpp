@@ -89,7 +89,6 @@
 #include <fixy/Tags.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
 #include <cstdint>
 
 namespace {
@@ -97,8 +96,8 @@ namespace {
 // Small alphabet for random strings.  Lowercase + digits keeps the
 // output human-readable in failure reports without pulling in any
 // locale-sensitive character classes.  Length bounded at [4, 24].
-constexpr char kAlphabet[] = "abcdefghijklmnopqrstuvwxyz0123456789";
-constexpr uint32_t kAlphabetLen = sizeof(kAlphabet) - 1;  // exclude NUL
+constexpr ::fixy::TextView kAlphabet{"abcdefghijklmnopqrstuvwxyz0123456789"};
+constexpr uint32_t kAlphabetLen = static_cast<uint32_t>(kAlphabet.size());
 
 // The longest name that the generator writes.
 constexpr uint32_t kMaxIdentChars = 24;
@@ -109,38 +108,52 @@ using Ident = ::fixy::FixedText<kMaxIdentChars>;
     const uint32_t len = min_len + rng.next_below(max_len - min_len + 1);
     Ident s{};
     for (uint32_t i = 0; i < len; ++i) {
-        s.append(kAlphabet[rng.next_below(kAlphabetLen)]).expect("a name holds at most kMaxIdentChars characters");
+        s.append(kAlphabet.window(rng.next_below(kAlphabetLen), 1).expect("a draw below the count is in the alphabet"))
+            .expect("a name holds at most kMaxIdentChars characters");
     }
     return s;
 }
 
+// 48 tuples; the generator dedups the hashes within the batch up front so
+// the size invariant in the checker is exact rather than "≤ count,
+// adjusted for collisions".
+constexpr unsigned kRecords = 48;
+
+struct Record {
+    uint64_t hash_raw;
+    Ident filename;
+    Ident funcname;
+    int32_t lineno;
+};
+
+struct Batch {
+    ::fixy::FixedArray<Record, kRecords> recs{};
+    unsigned count;
+};
+
+// The record at position of a batch.  Each position that the test reads
+// is below the count, which is at most kRecords.
+[[nodiscard]] Record& record_at(Batch& batch, unsigned position) noexcept {
+    return batch.recs.at(::fixy::Index<kRecords>::check(position).expect("a position of a batch is below kRecords"));
+}
+[[nodiscard]] Record const& record_at(Batch const& batch, unsigned position) noexcept {
+    return batch.recs.at(::fixy::Index<kRecords>::check(position).expect("a position of a batch is below kRecords"));
+}
+
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
     // Each iteration does O(N) inserts + O(N²) append-order scan at
     // N=48; cap at 5k iters to keep the sanitizer-instrumented runtime
     // reasonable under ctest's budget.
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 5000);
+    const Config cfg = parse_args(arguments, 5000);
 
     return run(
         "CallSiteTable dedup + round-trip", cfg,
         [](Rng& rng) {
-            // 48 tuples; dedup the hashes within the batch up front so
-            // the size invariant in the checker is exact rather than
-            // "≤ count, adjusted for collisions".
-            constexpr unsigned N = 48;
-            struct Record {
-                uint64_t hash_raw;
-                Ident filename;
-                Ident funcname;
-                int32_t lineno;
-            };
-            struct Batch {
-                std::array<Record, N> recs;
-                unsigned count;
-            };
+            constexpr unsigned N = kRecords;
             Batch b{};
             b.count = 0;
 
@@ -156,14 +169,14 @@ int main(int argc, char** argv) {
                 // Intra-batch dedup — linear scan since N is tiny.
                 bool duplicate = false;
                 for (unsigned j = 0; j < b.count; ++j) {
-                    if (b.recs[j].hash_raw == h) {
+                    if (record_at(b, j).hash_raw == h) {
                         duplicate = true;
                         break;
                     }
                 }
                 if (duplicate) continue;
 
-                b.recs[b.count] = Record{
+                record_at(b, b.count) = Record{
                     .hash_raw = h,
                     .filename = random_ident(rng, 4, 24),
                     .funcname = random_ident(rng, 4, 16),
@@ -182,7 +195,7 @@ int main(int argc, char** argv) {
             // where seen[] is default-initialized to something other
             // than CallsiteHash{} sentinel.
             for (unsigned i = 0; i < b.count; ++i) {
-                if (t.has(CallsiteHash{b.recs[i].hash_raw})) return false;
+                if (t.has(CallsiteHash{record_at(b, i).hash_raw})) return false;
             }
 
             // ── Insert phase, via the source::External Tagged overload.
@@ -194,13 +207,14 @@ int main(int argc, char** argv) {
             // zero, and the generator excludes zero, so it never fires
             // here.
             for (unsigned i = 0; i < b.count; ++i) {
-                const CallsiteHash h{b.recs[i].hash_raw};
+                const Record& rec = record_at(b, i);
+                const CallsiteHash h{rec.hash_raw};
                 CallSiteTable::NonZeroHash nz = ::fixy::mint_refined<::fixy::non_zero>(h);
                 CallSiteTable::ExternalName fn =
-                    ::fixy::mint_tagged<::fixy::tags::source::External>(b.recs[i].filename.view());
+                    ::fixy::mint_tagged<::fixy::tags::source::External>(rec.filename.view());
                 CallSiteTable::ExternalName gn =
-                    ::fixy::mint_tagged<::fixy::tags::source::External>(b.recs[i].funcname.view());
-                if (!t.insert(alloc, std::move(nz), std::move(fn), std::move(gn), b.recs[i].lineno)) return false;
+                    ::fixy::mint_tagged<::fixy::tags::source::External>(rec.funcname.view());
+                if (!t.insert(alloc, std::move(nz), std::move(fn), std::move(gn), rec.lineno)) return false;
             }
 
             // Property (size == distinct count): the generator
@@ -212,14 +226,15 @@ int main(int argc, char** argv) {
             // row with the original payload.  Append order: the
             // record inserted at position i appears at entries[i].
             for (unsigned i = 0; i < b.count; ++i) {
-                const CallsiteHash h{b.recs[i].hash_raw};
+                const Record& rec = record_at(b, i);
+                const CallsiteHash h{rec.hash_raw};
                 if (!t.has(h)) return false;
 
                 const auto& e = t.entries[i];
                 if (e.hash != h) return false;
-                if (e.filename.value().view() != b.recs[i].filename.view()) return false;
-                if (e.funcname.value().view() != b.recs[i].funcname.view()) return false;
-                if (e.lineno.value() != b.recs[i].lineno) return false;
+                if (e.filename.value().view() != rec.filename.view()) return false;
+                if (e.funcname.value().view() != rec.funcname.view()) return false;
+                if (e.lineno.value() != rec.lineno) return false;
             }
 
             // ── Dedup phase: re-insert every record with DIFFERENT
@@ -228,20 +243,23 @@ int main(int argc, char** argv) {
             //    single most load-bearing invariant — the table's
             //    whole purpose is dedup.
             for (unsigned i = 0; i < b.count; ++i) {
-                const CallsiteHash h{b.recs[i].hash_raw};
+                const CallsiteHash h{record_at(b, i).hash_raw};
                 CallSiteTable::NonZeroHash nz = ::fixy::mint_refined<::fixy::non_zero>(h);
                 CallSiteTable::ExternalName fn =
                     ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"OVERWRITTEN"});
                 CallSiteTable::ExternalName gn =
                     ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"ATTEMPT"});
-                if (!t.insert(alloc, std::move(nz), std::move(fn), std::move(gn), b.recs[i].lineno + 777)) return false;
+                if (!t.insert(alloc, std::move(nz), std::move(fn), std::move(gn), record_at(b, i).lineno + 777)) {
+                    return false;
+                }
             }
             if (t.size() != b.count) return false;
             for (unsigned i = 0; i < b.count; ++i) {
+                const Record& rec = record_at(b, i);
                 const auto& e = t.entries[i];
-                if (e.filename.value().view() != b.recs[i].filename.view()) return false;
-                if (e.funcname.value().view() != b.recs[i].funcname.view()) return false;
-                if (e.lineno.value() != b.recs[i].lineno) return false;
+                if (e.filename.value().view() != rec.filename.view()) return false;
+                if (e.funcname.value().view() != rec.funcname.view()) return false;
+                if (e.lineno.value() != rec.lineno) return false;
             }
 
             // Property (sentinel rejection): has(CallsiteHash{}) is

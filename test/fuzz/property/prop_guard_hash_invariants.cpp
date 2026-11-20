@@ -67,7 +67,6 @@
 #include <fixy/Protocol.h>
 
 #include <cstdint>
-#include <cstring>
 #include <utility>
 
 namespace {
@@ -179,10 +178,10 @@ struct Payload {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(::fixy::os::args(argc, argv));
+    const Config cfg = parse_args(arguments);
 
     return run(
         "hash of a Guard invariants", cfg,
@@ -218,19 +217,18 @@ int main(int argc, char** argv) {
             return p;
         },
         [](const Payload& p) {
-            // Volatile barrier: the constexpr hash could
+            // Run-time barrier: the constexpr hash could
             // otherwise be constant-folded at compile time for a
-            // particular Guard the optimizer proves constant — forcing
-            // a runtime load through a volatile pointer matches the
-            // idiom in prop_compute_storage_nbytes_saturation.cpp.
-            const Guard* volatile bp = &p.base;
-            const Guard* volatile pp = &p.perturbed;
+            // particular Guard the optimizer proves constant.  Each
+            // read goes through read_at_run_time, so the optimizer
+            // also merges no two of the 8 calls below.  The idiom is
+            // the one of prop_compute_storage_nbytes_saturation.cpp.
 
             // P1. Determinism — 8 back-to-back invocations on `base`
             //                  all produce identical output.
-            const uint64_t h0 = ::fixy::hash(*bp).raw();
+            const uint64_t h0 = ::fixy::hash(read_at_run_time(p.base)).raw();
             for (int k = 0; k < 7; ++k) {
-                if (::fixy::hash(*bp).raw() != h0) return false;
+                if (::fixy::hash(read_at_run_time(p.base)).raw() != h0) return false;
             }
 
             // P2. Field-disambiguation — perturbed differs in EXACTLY
@@ -238,18 +236,17 @@ int main(int argc, char** argv) {
             //     (A collision here at ~2⁻⁶⁴ per iter is statistically
             //     impossible at 10⁵ iters; any observed failure is a
             //     real entropy-loss bug, not a random collision.)
-            const uint64_t hp = ::fixy::hash(*pp).raw();
+            const uint64_t hp = ::fixy::hash(read_at_run_time(p.perturbed)).raw();
             if (h0 == hp) return false;
 
             // P3. Equality concordance — a fresh Guard byte-identical
             //     to base MUST hash to the same value.  Constructed
-            //     via memcpy to bypass any compiler-elision of the
-            //     copy path and to guarantee byte equality including
-            //     pad[].
-            Guard copy{};
-            std::memcpy(&copy, bp, sizeof(Guard));
-            const Guard* volatile cp = &copy;
-            if (::fixy::hash(*cp).raw() != h0) return false;
+            //     from the bytes of base through decode, to bypass any
+            //     compiler-elision of the copy path and to guarantee
+            //     byte equality including pad[].
+            const Guard copy = ::fixy::decode<Guard>(read_at_run_time(p.base))
+                                   .expect("a Guard of valid fields decodes from its own bytes");
+            if (::fixy::hash(read_at_run_time(copy)).raw() != h0) return false;
 
             // P4. Non-zero output — a hash of a Guard stuck at zero is
             //     a degenerate fold.  Random Guards hash to zero at

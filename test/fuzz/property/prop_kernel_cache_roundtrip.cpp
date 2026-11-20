@@ -24,12 +24,10 @@
 
 #include <crucible/KernelCache.h>
 
-#include <array>
-
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 5000);  // O(N) per iter
+    const Config cfg = parse_args(arguments, 5000);  // O(N) per iter
 
     return run(
         "KernelCache insert + lookup round-trip", cfg,
@@ -39,14 +37,14 @@ int main(int argc, char** argv) {
             // the 50% load threshold so insert won't OOM the table.
             constexpr unsigned N = 64;
             struct Batch {
-                std::array<ContentHash, N> hashes;
+                ::fixy::FixedArray<ContentHash, N> hashes{};
             };
             Batch b{};
-            for (unsigned i = 0; i < N; ++i) {
+            for (const ::fixy::Index<N> i : ::fixy::IndexRange<N>{}) {
                 // Avoid the zero hash (KernelCache may reserve it
                 // as a slot-empty sentinel).  Add 1 to guarantee
                 // non-zero.
-                b.hashes[i] = ContentHash{rng.next64() | 1ULL};
+                b.hashes.at(i) = ContentHash{rng.next64() | 1ULL};
             }
             return b;
         },
@@ -72,14 +70,14 @@ int main(int argc, char** argv) {
                 // insert.  insert() returns
                 // KernelCache::InsertResult, and table-full is the only
                 // error.
-                auto ins = cache.insert(nondet, b.hashes[index.raw()], RowHash{}, kernel_of(index));
+                auto ins = cache.insert(nondet, b.hashes.at(index), RowHash{}, kernel_of(index));
                 if (ins.is_err()) return false;
             }
 
             // Lookup each — must return the SAME kernel.
             for (const ::fixy::Index<N> index : fakes.indices()) {
                 const std::size_t i = index.raw();
-                const KernelCache::FoundKernel actual = cache.lookup(nondet, b.hashes[i], RowHash{});
+                const KernelCache::FoundKernel actual = cache.lookup(nondet, b.hashes.at(index), RowHash{});
                 // Two paths the lookup can return a "wrong" kernel:
                 //   1. Returned someone else's kernel (probe bug)
                 //   2. Returned no kernel (table-full or lost insert)
@@ -92,7 +90,8 @@ int main(int argc, char** argv) {
                 // check in that rare case.
                 bool collision_with_later = false;
                 for (std::size_t j = i + 1; j < N; ++j) {
-                    if (b.hashes[j] == b.hashes[i]) {
+                    if (b.hashes.at(::fixy::Index<N>::check(j).expect("each later position is below N"))
+                        == b.hashes.at(index)) {
                         collision_with_later = true;
                         break;
                     }

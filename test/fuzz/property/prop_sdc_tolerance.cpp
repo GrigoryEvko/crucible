@@ -55,9 +55,7 @@
 #include <crucible/observe/SdcDetect.h>
 #include <fixy/Core.h>
 
-#include <cmath>
 #include <cstdint>
-#include <limits>
 #include <type_traits>
 
 namespace {
@@ -91,9 +89,9 @@ template <typename T>
         case 1:
             return T{1};
         case 2:
-            return std::numeric_limits<T>::max();
+            return ::fixy::max_of<T>;
         case 3:
-            return std::numeric_limits<T>::min();
+            return ::fixy::min_of<T>;
         case 4:
             return static_cast<T>(~T{0});  // all-ones: -1 signed / max unsigned
         default:
@@ -108,7 +106,7 @@ template <typename T>
         case 1:
             return 1u;
         case 2:
-            return std::numeric_limits<std::uint64_t>::max();
+            return ::fixy::max_of<std::uint64_t>;
         case 3:
             return rng.next_below(16u);
         default: {
@@ -146,17 +144,17 @@ template <typename T>
         case 3:
             return T{-1};
         case 4:
-            return std::numeric_limits<T>::infinity();
+            return ::fixy::infinity_of<T>;
         case 5:
-            return -std::numeric_limits<T>::infinity();
+            return -::fixy::infinity_of<T>;
         case 6:
-            return std::numeric_limits<T>::quiet_NaN();
+            return ::fixy::quiet_nan_of<T>;
         case 7:
-            return std::numeric_limits<T>::max();
+            return ::fixy::max_of<T>;
         case 8:
-            return std::numeric_limits<T>::lowest();
+            return ::fixy::min_of<T>;  // the lowest finite value
         case 9:
-            return std::numeric_limits<T>::denorm_min();
+            return ::fixy::min_subnormal_of<T>;
         default:
             if constexpr (sizeof(T) == 4) {
                 return ::fixy::decode<T>(rng.next32()).expect("each pattern of 32 bits is a value of a float");
@@ -167,7 +165,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] int run_int(const char* name, crucible::fuzz::prop::Config cfg) {
+[[nodiscard]] int run_int(::fixy::TextView const name, crucible::fuzz::prop::Config cfg) {
     return crucible::fuzz::prop::run(
         name, cfg,
         [](Rng& rng) noexcept -> IntSpec<T> {
@@ -192,7 +190,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] int run_float(const char* name, crucible::fuzz::prop::Config cfg) {
+[[nodiscard]] int run_float(::fixy::TextView const name, crucible::fuzz::prop::Config cfg) {
     return crucible::fuzz::prop::run(
         name, cfg,
         [](Rng& rng) noexcept -> FloatSpec<T> {
@@ -207,11 +205,11 @@ template <typename T>
             // Symmetry — fabs(a−b) == fabs(b−a) even when either is NaN.
             if (det::tolerance_equal<T>(b, a, tol) != got) return false;
             // Reflexivity is finite-only: NaN−NaN and inf−inf are NaN.
-            if (std::isfinite(a) && !det::tolerance_equal<T>(a, a, tol)) return false;
+            if (::fixy::fp::is_finite(a) && !det::tolerance_equal<T>(a, a, tol)) return false;
             // A NaN operand can never be within tolerance.
-            if ((std::isnan(a) || std::isnan(b)) && got) return false;
+            if ((::fixy::fp::is_nan(a) || ::fixy::fp::is_nan(b)) && got) return false;
             // Tolerance-monotonicity: equal at t ⇒ equal at the max tol.
-            if (got && !det::tolerance_equal<T>(a, b, std::numeric_limits<std::uint64_t>::max())) {
+            if (got && !det::tolerance_equal<T>(a, b, ::fixy::max_of<std::uint64_t>)) {
                 return false;
             }
             // equal at 0 ⇒ equal at any t (delta==0 ≤ every tolerance).
@@ -229,10 +227,10 @@ template <typename T>
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible::fuzz::prop;
 
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 2000000);
+    const Config cfg = parse_args(arguments, 2000000);
 
     int rc = 0;
     rc |= run_int<std::int8_t>("sdc_tol_i8", cfg);

@@ -42,7 +42,6 @@
 #include <crucible/Types.h>
 #include <fixy/Core.h>
 
-#include <array>
 #include <cstdint>
 
 namespace {
@@ -56,27 +55,42 @@ enum class Mode : uint8_t {
     Random = 2
 };
 
+template <class T>
+using Stream = ::fixy::FixedArray<T, kMaxLen>;
+
+// The element at position of a stream.  Each position that the test reads
+// is below the length of the stream, which is at most kMaxLen.
+template <class T>
+[[nodiscard]] T& at_position(Stream<T>& stream, uint32_t position) noexcept {
+    return stream.at(::fixy::Index<kMaxLen>::check(position).expect("a position of a stream is below kMaxLen"));
+}
+template <class T>
+[[nodiscard]] T const& at_position(Stream<T> const& stream, uint32_t position) noexcept {
+    return stream.at(::fixy::Index<kMaxLen>::check(position).expect("a position of a stream is below kMaxLen"));
+}
+
 struct StreamSpec {
-    std::array<uint64_t, kMaxLen> hashes{};
+    Stream<uint64_t> hashes{};
     uint32_t len = 0;
     Mode mode = Mode::Random;
-    uint8_t pad[3]{};
+    ::fixy::FixedArray<uint8_t, 3> pad{};
 };
 
 // Feed the whole stream through one detector, recording per-op results.
-void feed(const StreamSpec& spec, std::array<bool, kMaxLen>& out) noexcept {
+void feed(const StreamSpec& spec, Stream<bool>& out) noexcept {
     crucible::IterationDetector det{};
     for (uint32_t i = 0; i < spec.len; ++i) {
-        out[i] = det.check(::foundation::effects::testing::test().alloc, crucible::SchemaHash{spec.hashes[i]});
+        at_position(out, i) =
+            det.check(::foundation::effects::testing::test().alloc, crucible::SchemaHash{at_position(spec.hashes, i)});
     }
 }
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible::fuzz::prop;
 
-    Config cfg = parse_args(::fixy::os::args(argc, argv));
+    Config cfg = parse_args(arguments);
 
     return run(
         "iteration_detector", cfg,
@@ -91,7 +105,7 @@ int main(int argc, char** argv) {
                     spec.len = kK + rng.next_below(kMaxLen - kK);
                     const uint64_t base = 1u + rng.next_below(1000u);
                     for (uint32_t i = 0; i < spec.len; ++i)
-                        spec.hashes[i] = base + i;
+                        at_position(spec.hashes, i) = base + i;
                     break;
                 }
                 case Mode::Periodic: {
@@ -102,13 +116,13 @@ int main(int argc, char** argv) {
                     const uint64_t base = 1u + rng.next_below(1000u);
                     spec.len = period * reps;  // <= 13*7=91
                     for (uint32_t i = 0; i < spec.len; ++i)
-                        spec.hashes[i] = base + (i % period);
+                        at_position(spec.hashes, i) = base + (i % period);
                     break;
                 }
                 case Mode::Random: {
                     spec.len = rng.next_below(kMaxLen + 1u);  // [0, kMaxLen]
                     for (uint32_t i = 0; i < spec.len; ++i)
-                        spec.hashes[i] = rng.next64();
+                        at_position(spec.hashes, i) = rng.next64();
                     break;
                 }
                 default:
@@ -118,19 +132,19 @@ int main(int argc, char** argv) {
         },
         // ── Property: feed + check (P1)-(P4) + universal ──
         [](const StreamSpec& spec) noexcept -> bool {
-            std::array<bool, kMaxLen> r1{};
+            Stream<bool> r1{};
             feed(spec, r1);
 
             // Universal: signature-build phase (first min(K,len) ops) never fires.
             const uint32_t build_n = spec.len < kK ? spec.len : kK;
             for (uint32_t i = 0; i < build_n; ++i)
-                if (r1[i]) return false;
+                if (at_position(r1, i)) return false;
 
             // (P2) Determinism: a second fresh detector matches.
-            std::array<bool, kMaxLen> r2{};
+            Stream<bool> r2{};
             feed(spec, r2);
             for (uint32_t i = 0; i < spec.len; ++i)
-                if (r1[i] != r2[i]) return false;
+                if (at_position(r1, i) != at_position(r2, i)) return false;
 
             // (P4) Reset fidelity: reset mid-stream-fed detector, re-feed,
             //      must reproduce the from-fresh sequence.
@@ -138,12 +152,13 @@ int main(int argc, char** argv) {
                 crucible::IterationDetector det{};
                 // Dirty the detector with a prefix, then reset.
                 for (uint32_t i = 0; i < spec.len; ++i)
-                    (void)det.check(::foundation::effects::testing::test().alloc, crucible::SchemaHash{spec.hashes[i]});
+                    (void)det.check(::foundation::effects::testing::test().alloc,
+                                    crucible::SchemaHash{at_position(spec.hashes, i)});
                 det.reset();
                 for (uint32_t i = 0; i < spec.len; ++i) {
-                    const bool got =
-                        det.check(::foundation::effects::testing::test().alloc, crucible::SchemaHash{spec.hashes[i]});
-                    if (got != r1[i]) return false;
+                    const bool got = det.check(::foundation::effects::testing::test().alloc,
+                                               crucible::SchemaHash{at_position(spec.hashes, i)});
+                    if (got != at_position(r1, i)) return false;
                 }
             }
 
@@ -151,12 +166,12 @@ int main(int argc, char** argv) {
             if (spec.mode == Mode::Distinct) {
                 // (P1) No false positive on a never-repeating stream.
                 for (uint32_t i = 0; i < spec.len; ++i)
-                    if (r1[i]) return false;
+                    if (at_position(r1, i)) return false;
             } else if (spec.mode == Mode::Periodic) {
                 // (P3) A clean repeating period must fire at least once.
                 bool any = false;
                 for (uint32_t i = 0; i < spec.len; ++i)
-                    any = any || r1[i];
+                    any = any || at_position(r1, i);
                 if (!any) return false;
             }
             return true;

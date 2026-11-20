@@ -57,7 +57,6 @@
 
 #include <crucible/observe/HdrHistogram.h>
 
-#include <array>
 #include <cstdint>
 
 namespace {
@@ -80,7 +79,7 @@ using crucible::fuzz::prop::Rng;
 
 // Run A — pure layout-arithmetic invariants for one HdrHistogram shape.
 template <typename Hist>
-[[nodiscard]] int run_layout(const char* name, crucible::fuzz::prop::Config cfg) {
+[[nodiscard]] int run_layout(::fixy::TextView const name, crucible::fuzz::prop::Config cfg) {
     using Layout = typename Hist::layout_type;
     constexpr std::uint64_t kMax = Hist::max_trackable_value;
     constexpr std::size_t kSlots = Hist::bucket_slots;
@@ -111,18 +110,27 @@ template <typename Hist>
 inline constexpr std::size_t kMaxBatch = 32;
 
 struct BatchSpec {
-    std::array<std::uint64_t, kMaxBatch> values{};
+    ::fixy::FixedArray<std::uint64_t, kMaxBatch> values{};
     std::uint32_t count = 0;
-    std::uint8_t pad[4]{};
+    ::fixy::FixedArray<std::uint8_t, 4> pad{};
 };
+
+// The value at position of a batch.  Each position that the test reads is
+// below the count, which is below kMaxBatch.
+[[nodiscard]] std::uint64_t& value_at(BatchSpec& spec, std::uint32_t position) noexcept {
+    return spec.values.at(::fixy::Index<kMaxBatch>::check(position).expect("a position of a batch is below kMaxBatch"));
+}
+[[nodiscard]] std::uint64_t value_at(BatchSpec const& spec, std::uint32_t position) noexcept {
+    return spec.values.at(::fixy::Index<kMaxBatch>::check(position).expect("a position of a batch is below kMaxBatch"));
+}
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible::fuzz::prop;
     namespace obs = crucible::observe;
 
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 2000000);
+    const Config cfg = parse_args(arguments, 2000000);
 
     // ── Run A: layout arithmetic across four distinct shapes ──
     // Distinct (Significant, MaxValue) pairs exercise different
@@ -140,7 +148,7 @@ int main(int argc, char** argv) {
     constexpr std::uint64_t kMax = Hist::max_trackable_value;
 
     // Keep histogram-construction-per-iteration affordable on deep runs.
-    const Config batch_cfg = parse_args(::fixy::os::args(argc, argv), 100000);
+    const Config batch_cfg = parse_args(arguments, 100000);
 
     rc |= run(
         "hdr_percentile_monotonic", batch_cfg,
@@ -148,7 +156,7 @@ int main(int argc, char** argv) {
             BatchSpec spec{};
             spec.count = 1u + rng.next_below(static_cast<std::uint32_t>(kMaxBatch - 1));
             for (std::uint32_t i = 0; i < spec.count; ++i) {
-                spec.values[i] = log_uniform_below_or_eq(rng, kMax);
+                value_at(spec, i) = log_uniform_below_or_eq(rng, kMax);
             }
             return spec;
         },
@@ -156,13 +164,13 @@ int main(int argc, char** argv) {
             Hist hist;
             std::uint64_t max_recorded = 0;
             for (std::uint32_t i = 0; i < spec.count; ++i) {
-                hist.record(Hist::checked_value(spec.values[i]));
-                if (spec.values[i] > max_recorded) max_recorded = spec.values[i];
+                hist.record(Hist::checked_value(value_at(spec, i)));
+                if (value_at(spec, i) > max_recorded) max_recorded = value_at(spec, i);
             }
             if (hist.total_count() != spec.count) return false;
 
             // Percentile must be non-decreasing as pct climbs.
-            constexpr std::array<double, 10> points{0.5, 1.0, 5.0, 25.0, 50.0, 75.0, 90.0, 99.0, 99.9, 100.0};
+            constexpr ::fixy::FixedArray<double, 10> points{0.5, 1.0, 5.0, 25.0, 50.0, 75.0, 90.0, 99.0, 99.9, 100.0};
             std::uint64_t previous = 0;
             for (const double pct : points) {
                 const std::uint64_t quantile = hist.percentile(pct);

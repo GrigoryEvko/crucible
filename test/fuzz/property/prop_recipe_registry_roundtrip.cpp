@@ -38,10 +38,10 @@
 
 namespace names = crucible::recipe_names;
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 10000);  // setup-heavy
+    const Config cfg = parse_args(arguments, 10000);  // setup-heavy
 
     return run(
         "RecipeRegistry by_name ↔ by_hash circle", cfg,
@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
 
             // Phase 1: every starter name → canonical pointer →
             // by_hash recovers the same pointer.
-            const ::fixy::TextView kNames[] = {
+            const ::fixy::FixedArray<::fixy::TextView, 8> kNames{
                 names::kF32Strict,
                 names::kF32Ordered,
                 names::kF16F32AccumTc,

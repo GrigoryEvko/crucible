@@ -35,10 +35,10 @@
 
 #include <cstdint>
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(::fixy::os::args(argc, argv));
+    const Config cfg = parse_args(arguments);
 
     return run(
         "compute_storage_nbytes saturation under stress", cfg,
@@ -74,12 +74,12 @@ int main(int argc, char** argv) {
             return m;
         },
         [](const TensorMeta& m) {
-            // Volatile barrier breaks any constexpr propagation
+            // The run-time read breaks any constexpr propagation
             // GCC's contract-checker would otherwise attempt on
             // the constexpr compute_storage_nbytes — the
             // precondition must evaluate at RUNTIME with our random
-            // m, not be folded at compile time.
-            const TensorMeta* volatile mp = &m;
+            // m, not be folded at compile time.  Each call reads m
+            // again, so the optimizer merges no two calls.
 
             // Property 1: no crash.  Our generator keeps ndim ≤ 8
             // satisfying the precondition.  If the function
@@ -89,11 +89,11 @@ int main(int argc, char** argv) {
             // The routine returns fixy::Saturated<uint64_t>, and the
             // determinism check uses the defaulted operator==
             // (compares value AND clamped flag).
-            const auto r1 = compute_storage_nbytes(external_tensor_meta(*mp));
+            const auto r1 = compute_storage_nbytes(external_tensor_meta(read_at_run_time(m)));
 
             // Property 3: determinism.  Same input, repeated calls.
             for (int k = 0; k < 4; ++k) {
-                if (compute_storage_nbytes(external_tensor_meta(*mp)) != r1) {
+                if (compute_storage_nbytes(external_tensor_meta(read_at_run_time(m))) != r1) {
                     return false;
                 }
             }

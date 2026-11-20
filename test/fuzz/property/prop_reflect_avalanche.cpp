@@ -30,7 +30,6 @@
 #include <fixy/Protocol.h>
 
 #include <atomic>
-#include <cstdio>
 
 namespace {
 
@@ -50,10 +49,10 @@ struct PerturbedPair {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    Config cfg = parse_args(::fixy::os::args(argc, argv));
+    Config cfg = parse_args(arguments);
     if (cfg.iterations < 10000) cfg.iterations = 10000;
 
     // Aggregate stats across iterations.  static so the property
@@ -73,15 +72,27 @@ int main(int argc, char** argv) {
             p.base.d = rng.next64();
             p.perturbed = p.base;
             p.bit_idx = static_cast<uint8_t>(rng.next_below(256));
-            uint64_t* fields[4] = {&p.perturbed.a, &p.perturbed.b, &p.perturbed.c, &p.perturbed.d};
-            *fields[p.bit_idx / 64] ^= (uint64_t{1} << static_cast<unsigned>(p.bit_idx % 64));
+            // The field of the bit: a, b, c or d, for a bit below 256.
+            const auto field_of = [&p](unsigned const word) noexcept -> uint64_t& {
+                switch (word) {
+                    case 0:
+                        return p.perturbed.a;
+                    case 1:
+                        return p.perturbed.b;
+                    case 2:
+                        return p.perturbed.c;
+                    default:
+                        return p.perturbed.d;
+                }
+            };
+            field_of(p.bit_idx / 64u) ^= (uint64_t{1} << static_cast<unsigned>(p.bit_idx % 64));
             return p;
         },
         [](const PerturbedPair& p) {
             const uint64_t h_base = ::fixy::hash(p.base).raw();
             const uint64_t h_pert = ::fixy::hash(p.perturbed).raw();
             const uint64_t diff = h_base ^ h_pert;
-            const int popcount = __builtin_popcountll(static_cast<unsigned long long>(diff));
+            const int popcount = ::fixy::popcount(diff);
             total_flips += popcount;
             if (popcount < min_flips) min_flips = popcount;
             if (popcount > max_flips) max_flips = popcount;
@@ -94,28 +105,28 @@ int main(int argc, char** argv) {
 
     if (rc == 0) {
         const double mean = static_cast<double>(total_flips) / static_cast<double>(samples);
-        std::fprintf(stderr,
-                     "[prop] avalanche stats over %lld samples: "
-                     "mean=%.3f, min=%d, max=%d\n",
-                     static_cast<long long>(samples), mean, min_flips, max_flips);
+        ::fixy::report(::fixy::Sink::Err,
+                       "[prop] avalanche stats over {} samples: "
+                       "mean={}, min={}, max={}\n",
+                       samples, mean, min_flips, max_flips);
 
         // Aggregate property: after enough samples, mean should be
         // within ±2 of the ideal 32.0 (1.4σ from CLT noise floor
         // at 10K samples).  min/max gates catch outliers that the
         // per-iteration check might miss.
         if (mean < 30.0 || mean > 34.0) {
-            std::fprintf(stderr,
-                         "FAIL: mean flip-count %.3f outside [30, 34]; "
-                         "hash avalanche degraded.\n",
-                         mean);
+            ::fixy::report(::fixy::Sink::Err,
+                           "FAIL: mean flip-count {} outside [30, 34]; "
+                           "hash avalanche degraded.\n",
+                           mean);
             return 1;
         }
         if (min_flips < 8) {
-            std::fprintf(stderr, "FAIL: minimum flip-count %d < 8; stuck-bit anomaly.\n", min_flips);
+            ::fixy::report(::fixy::Sink::Err, "FAIL: minimum flip-count {} < 8; stuck-bit anomaly.\n", min_flips);
             return 1;
         }
         if (max_flips > 56) {
-            std::fprintf(stderr, "FAIL: maximum flip-count %d > 56; over-amplification.\n", max_flips);
+            ::fixy::report(::fixy::Sink::Err, "FAIL: maximum flip-count {} > 56; over-amplification.\n", max_flips);
             return 1;
         }
     }

@@ -32,11 +32,12 @@ namespace crucible::fuzz::prop {
 // to avoid the byte-0 sentinel collision class.  Edge sampling: bias
 // toward Float / Half / BFloat16 since those dominate real workloads.
 [[nodiscard]] inline ScalarType random_scalar_type(Rng& rng) noexcept {
-    static constexpr ScalarType kPool[] = {
+    static constexpr ::fixy::FixedArray<ScalarType, 10> kPool{
         ScalarType::Float,  ScalarType::Half, ScalarType::BFloat16, ScalarType::Float8_e4m3fn, ScalarType::Float8_e5m2,
         ScalarType::Double, ScalarType::Int,  ScalarType::Long,     ScalarType::Bool,          ScalarType::Byte,
     };
-    return kPool[rng.next_below(sizeof(kPool) / sizeof(kPool[0]))];
+    return kPool.at(::fixy::Index<kPool.size()>::check(rng.next_below(kPool.size()))
+                        .expect("a draw below the count of the pool is an index of the pool"));
 }
 
 // ─── NumericalRecipe ───────────────────────────────────────────────
@@ -97,13 +98,14 @@ namespace crucible::fuzz::prop {
     }
     m.dtype = random_scalar_type(rng);
     // device_type values map to c10 ordinals; restrict to common set.
-    static constexpr DeviceType kDevices[] = {
+    static constexpr ::fixy::FixedArray<DeviceType, 4> kDevices{
         DeviceType::CPU,
         DeviceType::CUDA,
         DeviceType::MPS,
         DeviceType::Meta,
     };
-    m.device_type = kDevices[rng.next_below(4)];
+    m.device_type = kDevices.at(::fixy::Index<kDevices.size()>::check(rng.next_below(4))
+                                    .expect("a draw below 4 is an index of the four devices"));
     m.device_idx = static_cast<int8_t>(rng.next_below(8));
     return m;
 }

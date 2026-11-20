@@ -51,11 +51,7 @@
 #include <crucible/TraceRing.h>
 #include <crucible/Types.h>
 
-#include <algorithm>
-#include <array>
 #include <cstdint>
-#include <cstring>
-#include <memory>
 
 namespace {
 
@@ -115,39 +111,51 @@ void fill_random_entry(crucible::fuzz::prop::Rng& rng, TraceRing::Entry& e) noex
 }
 
 // Compare two Entries byte-by-byte.  Entry has no padding (8+8+2+2+1+1
-// +1+1+40 = 64, all fields aligned naturally), so memcmp is the exact
-// equality predicate.
+// +1+1+40 = 64, all fields aligned naturally), so the compare of the
+// bytes is the exact equality predicate.
 [[nodiscard]] bool entry_equal(const TraceRing::Entry& a, const TraceRing::Entry& b) noexcept {
-    return std::memcmp(&a, &b, sizeof(TraceRing::Entry)) == 0;
+    return ::fixy::equal(::fixy::bytes(a), ::fixy::bytes(b));
 }
+
+using Mirror = ::fixy::FixedArray<MirrorSlot, MIRROR_CAPACITY>;
 
 struct Schedule {
     // phase_op[i] = true → append; false → drain.
-    std::array<bool, K_PHASES> is_append{};
+    ::fixy::FixedArray<bool, K_PHASES> is_append{};
     // count[i] in [0, MAX_OPS_PER_PHASE].
-    std::array<uint16_t, K_PHASES> count{};
+    ::fixy::FixedArray<uint16_t, K_PHASES> count{};
     // Precomputed random payloads for *every* potential append
     // across all phases.  Generated up-front so that generate() is
     // a pure function of the Rng state (no state held between the
     // generator and the property).
-    std::array<MirrorSlot, MIRROR_CAPACITY> payload{};
+    Mirror payload{};
 };
+
+// The slot at position of a mirror or a payload.  The mirror masks its
+// cursor with MIRROR_CAPACITY - 1, and a payload index stays below
+// MIRROR_CAPACITY, so each position is below the capacity.
+[[nodiscard]] MirrorSlot& slot_at(Mirror& slots, uint32_t position) noexcept {
+    return slots.at(::fixy::Index<MIRROR_CAPACITY>::check(position).expect("a slot position is below the capacity"));
+}
+[[nodiscard]] const MirrorSlot& slot_at(const Mirror& slots, uint32_t position) noexcept {
+    return slots.at(::fixy::Index<MIRROR_CAPACITY>::check(position).expect("a slot position is below the capacity"));
+}
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
 
     // Each iteration runs up to ~4K ring ops + O(N) mirror bookkeeping
     // — cap to keep 100K iters tractable in CI.
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 100000);
+    const Config cfg = parse_args(arguments, 100000);
 
     // Hoist the 5.25 MB ring out of the per-iteration allocation path.
     // reset() restores all three cursors (head, tail, cached_tail_)
     // between iterations; payload bytes in entries[] remain but are
     // invisible because size() == 0 after reset.
-    auto ring = std::make_unique<TraceRing>();
+    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
 
     // ── One-shot stress: fill-to-capacity + (CAP+1)-th rejects ─────
     //
@@ -164,28 +172,32 @@ int main(int argc, char** argv) {
         for (uint32_t i = 0; i < PREFILL; ++i) {
             TraceRing::Entry e{};
             e.schema_hash = SchemaHash{0xBEEF0000ULL | i};
-            if (!ring->try_append(e)) std::abort();
+            const bool is_appended = ring->try_append(e);
+            CRUCIBLE_FATAL_INVARIANT(is_appended);
         }
         ::fixy::FixedArray<TraceRing::Entry, PREFILL> discard{};
-        if (ring->drain(discard.view()) != PREFILL) std::abort();
+        const uint32_t discarded = ring->drain(discard.view());
+        CRUCIBLE_FATAL_INVARIANT(discarded == PREFILL);
 
         // Fill to exactly CAPACITY.
         for (uint32_t i = 0; i < CAP; ++i) {
             TraceRing::Entry e{};
             e.schema_hash = SchemaHash{uint64_t{i} + 1};  // non-zero, unique
             e.shape_hash = ShapeHash{~uint64_t{i} + 1};
-            if (!ring->try_append(e, MetaIndex{i}, ScopeHash{0xA0000000ULL | i}, CallsiteHash{0xB0000000ULL | i},
-                                  OpDepth{static_cast<uint16_t>(i)}))
-                std::abort();
+            const bool is_appended =
+                ring->try_append(e, MetaIndex{i}, ScopeHash{0xA0000000ULL | i}, CallsiteHash{0xB0000000ULL | i},
+                                 OpDepth{static_cast<uint16_t>(i)});
+            CRUCIBLE_FATAL_INVARIANT(is_appended);
         }
-        if (ring->size().peek() != CAP) std::abort();
+        CRUCIBLE_FATAL_INVARIANT(ring->size().peek() == CAP);
 
         // (CAP+1)-th must be rejected without mutating the ring.
         {
             TraceRing::Entry e{};
             e.schema_hash = SchemaHash{0xDEADBEEFCAFEBABEULL};
-            if (ring->try_append(e)) std::abort();  // must refuse
-            if (ring->size().peek() != CAP) std::abort();  // must not mutate
+            const bool is_appended = ring->try_append(e);
+            CRUCIBLE_FATAL_INVARIANT(!is_appended);  // must refuse
+            CRUCIBLE_FATAL_INVARIANT(ring->size().peek() == CAP);  // must not mutate
         }
 
         // Drain everything; verify FIFO order + wrap-around memcpy.
@@ -199,26 +211,26 @@ int main(int argc, char** argv) {
         uint32_t delivered = 0;
         while (delivered < CAP) {
             const uint32_t got = ring->drain(out_e.view(), out_m.view(), out_s.view(), out_c.view(), out_d.view());
-            if (got == 0) std::abort();  // ring has CAP entries, must deliver
+            CRUCIBLE_FATAL_INVARIANT(got != 0);  // ring has CAP entries, must deliver
             for (uint32_t k = 0; k < got; ++k) {
                 const uint32_t i = delivered + k;
                 const ::fixy::Index<CHUNK> slot = ::fixy::Index<CHUNK>::check(k).expect("a drain gives at most CHUNK");
-                if (out_e.at(slot).schema_hash != SchemaHash{uint64_t{i} + 1}) std::abort();
-                if (out_e.at(slot).shape_hash != ShapeHash{~uint64_t{i} + 1}) std::abort();
-                if (out_m.at(slot) != MetaIndex{i}) std::abort();
-                if (out_s.at(slot) != ScopeHash{0xA0000000ULL | i}) std::abort();
-                if (out_c.at(slot) != CallsiteHash{0xB0000000ULL | i}) std::abort();
+                CRUCIBLE_FATAL_INVARIANT(out_e.at(slot).schema_hash == SchemaHash{uint64_t{i} + 1});
+                CRUCIBLE_FATAL_INVARIANT(out_e.at(slot).shape_hash == ShapeHash{~uint64_t{i} + 1});
+                CRUCIBLE_FATAL_INVARIANT(out_m.at(slot) == MetaIndex{i});
+                CRUCIBLE_FATAL_INVARIANT(out_s.at(slot) == ScopeHash{0xA0000000ULL | i});
+                CRUCIBLE_FATAL_INVARIANT(out_c.at(slot) == CallsiteHash{0xB0000000ULL | i});
                 if (out_d.at(slot) != OpDepth{static_cast<uint16_t>(i)})
                     ::fixy::fatal("the drain changed the depth of an op");
             }
             delivered += got;
         }
-        if (ring->size().peek() != 0) std::abort();
+        CRUCIBLE_FATAL_INVARIANT(ring->size().peek() == 0);
 
         // Clean slate for the property loop.
         ring->reset();
-        if (ring->size().peek() != 0) std::abort();
-        if (ring->total_produced() != 0) std::abort();  // post() already checked, belt+braces
+        CRUCIBLE_FATAL_INVARIANT(ring->size().peek() == 0);
+        CRUCIBLE_FATAL_INVARIANT(ring->total_produced() == 0);  // post() already checked, belt+braces
     }
 
     // ── Randomised property loop ───────────────────────────────────
@@ -227,9 +239,9 @@ int main(int argc, char** argv) {
         "TraceRing SPSC append/drain round-trip", cfg,
         [](Rng& rng) {
             Schedule s{};
-            for (unsigned p = 0; p < K_PHASES; ++p) {
-                s.is_append[p] = (rng.next32() & 1u) != 0u;
-                s.count[p] = static_cast<uint16_t>(rng.next_below(MAX_OPS_PER_PHASE + 1));
+            for (const ::fixy::Index<K_PHASES> p : ::fixy::IndexRange<K_PHASES>{}) {
+                s.is_append.at(p) = (rng.next32() & 1u) != 0u;
+                s.count.at(p) = static_cast<uint16_t>(rng.next_below(MAX_OPS_PER_PHASE + 1));
             }
             for (auto& slot : s.payload) {
                 fill_random_entry(rng, slot.entry);
@@ -249,7 +261,7 @@ int main(int argc, char** argv) {
             // but the consumer hasn't drained yet.  Implemented as a
             // fixed-capacity circular buffer indexed by two cursors;
             // at any point the live region is [mirror_tail, mirror_head).
-            std::array<MirrorSlot, MIRROR_CAPACITY> mirror{};
+            Mirror mirror{};
             uint32_t mirror_head = 0;
             uint32_t mirror_tail = 0;
 
@@ -267,13 +279,13 @@ int main(int argc, char** argv) {
             ::fixy::FixedArray<CallsiteHash, MAX_OPS_PER_PHASE> out_c{};
             ::fixy::FixedArray<OpDepth, MAX_OPS_PER_PHASE> out_d{};
 
-            for (unsigned p = 0; p < K_PHASES; ++p) {
-                const uint16_t n = s.count[p];
+            for (const ::fixy::Index<K_PHASES> p : ::fixy::IndexRange<K_PHASES>{}) {
+                const uint16_t n = s.count.at(p);
 
-                if (s.is_append[p]) {
+                if (s.is_append.at(p)) {
                     for (uint16_t i = 0; i < n; ++i) {
                         if (pay_idx >= MIRROR_CAPACITY) break;  // defensive
-                        const MirrorSlot& src = s.payload[pay_idx++];
+                        const MirrorSlot& src = slot_at(s.payload, pay_idx++);
 
                         const uint32_t size_before = ring->size().peek();
                         const bool accepted =
@@ -285,7 +297,7 @@ int main(int argc, char** argv) {
                         if (ring->size().peek() != size_before + 1u) return false;
 
                         // Record on the mirror for later FIFO comparison.
-                        mirror[mirror_head & (MIRROR_CAPACITY - 1u)] = src;
+                        slot_at(mirror, mirror_head & (MIRROR_CAPACITY - 1u)) = src;
                         ++mirror_head;
 
                         // (C) producer cursor strictly advanced by 1.
@@ -305,12 +317,12 @@ int main(int argc, char** argv) {
                     const uint32_t mirror_live = mirror_head - mirror_tail;
                     if (got > want) return false;
                     if (got > mirror_live) return false;
-                    const uint32_t expected = std::min(want, mirror_live);
+                    const uint32_t expected = ::fixy::min(want, mirror_live);
                     if (got != expected) return false;
 
                     // (A) round-trip FIFO equality, field-by-field.
                     for (uint32_t k = 0; k < got; ++k) {
-                        const auto& want_slot = mirror[(mirror_tail + k) & (MIRROR_CAPACITY - 1u)];
+                        const auto& want_slot = slot_at(mirror, (mirror_tail + k) & (MIRROR_CAPACITY - 1u));
                         const ::fixy::Index<MAX_OPS_PER_PHASE> slot =
                             ::fixy::Index<MAX_OPS_PER_PHASE>::check(k).expect("a drain gives at most one phase");
                         if (!entry_equal(out_e.at(slot), want_slot.entry)) return false;

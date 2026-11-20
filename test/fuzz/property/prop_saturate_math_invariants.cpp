@@ -59,10 +59,10 @@
 
 #include "property_runner.h"
 
+#include <foundation/Quarantine.h>
 #include <foundation/core/Arithmetic.h>
 
 #include <cstdint>
-#include <limits>
 
 namespace {
 
@@ -77,6 +77,9 @@ struct RefResult {
     bool overflowed;
 };
 
+// The overflow builtins of GCC are the reference.  They stand apart from
+// the saturating forms of the base that the test checks.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: the overflow builtins of GCC are the model of the saturating operations")
 template <typename T>
 [[nodiscard]] constexpr RefResult<T> ref_add(T a, T b) noexcept {
     T r{};
@@ -97,6 +100,7 @@ template <typename T>
     const bool ov = __builtin_mul_overflow(a, b, &r);
     return {r, ov};
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // ─── Saturation sentinel selectors ────────────────────────────────
 //
@@ -107,18 +111,18 @@ template <typename T>
 template <typename T>
 [[nodiscard]] constexpr T expected_add_sat_overflow(T a, T /*b*/) noexcept {
     if constexpr (std::is_signed_v<T>) {
-        return (a < T{0}) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
+        return (a < T{0}) ? ::fixy::min_of<T> : ::fixy::max_of<T>;
     } else {
-        return std::numeric_limits<T>::max();
+        return ::fixy::max_of<T>;
     }
 }
 
 template <typename T>
 [[nodiscard]] constexpr T expected_sub_sat_overflow(T a, T /*b*/) noexcept {
     if constexpr (std::is_signed_v<T>) {
-        return (a < T{0}) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
+        return (a < T{0}) ? ::fixy::min_of<T> : ::fixy::max_of<T>;
     } else {
-        return std::numeric_limits<T>::min();  // = 0 for unsigned
+        return ::fixy::min_of<T>;  // = 0 for unsigned
     }
 }
 
@@ -126,9 +130,9 @@ template <typename T>
 [[nodiscard]] constexpr T expected_mul_sat_overflow(T a, T b) noexcept {
     if constexpr (std::is_signed_v<T>) {
         const bool neg = (a < T{0}) != (b < T{0});
-        return neg ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
+        return neg ? ::fixy::min_of<T> : ::fixy::max_of<T>;
     } else {
-        return std::numeric_limits<T>::max();
+        return ::fixy::max_of<T>;
     }
 }
 
@@ -181,8 +185,8 @@ template <typename T>
     using ::foundation::core::saturating_sub;
     constexpr T kZero = T{0};
     constexpr T kOne = T{1};
-    constexpr T kMin = std::numeric_limits<T>::min();
-    constexpr T kMax = std::numeric_limits<T>::max();
+    constexpr T kMin = ::fixy::min_of<T>;
+    constexpr T kMax = ::fixy::max_of<T>;
 
     // ── Algebraic identities (additive / multiplicative neutral) ──
     if (saturating_add<T>(a, kZero) != a) return false;
@@ -307,24 +311,23 @@ struct Input {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(::fixy::os::args(argc, argv));
+    const Config cfg = parse_args(arguments);
 
     return run(
         "saturate math invariants (u64/i64/u32/i32)", cfg, [](Rng& rng) { return generate(rng); },
         [](const Input& in) {
-            // Volatile barrier defeats constexpr folding of the
+            // The run-time read defeats constexpr folding of the
             // constexpr saturating forms.  Each iteration's (a, b)
             // must enter saturating_add / _sub / _mul at RUNTIME so
             // the __builtin_*_overflow codegen is actually exercised
-            // rather than constant-folded away.
-            const Input* volatile p = &in;
-
-            if (!check_sat_props<uint64_t>(p->u64_a, p->u64_b)) return false;
-            if (!check_sat_props<int64_t>(p->i64_a, p->i64_b)) return false;
-            if (!check_sat_props<uint32_t>(p->u32_a, p->u32_b)) return false;
-            if (!check_sat_props<int32_t>(p->i32_a, p->i32_b)) return false;
+            // rather than constant-folded away.  Each check reads the
+            // input again, as a read through a volatile pointer does.
+            if (!check_sat_props<uint64_t>(read_at_run_time(in).u64_a, read_at_run_time(in).u64_b)) return false;
+            if (!check_sat_props<int64_t>(read_at_run_time(in).i64_a, read_at_run_time(in).i64_b)) return false;
+            if (!check_sat_props<uint32_t>(read_at_run_time(in).u32_a, read_at_run_time(in).u32_b)) return false;
+            if (!check_sat_props<int32_t>(read_at_run_time(in).i32_a, read_at_run_time(in).i32_b)) return false;
             return true;
         });
 }

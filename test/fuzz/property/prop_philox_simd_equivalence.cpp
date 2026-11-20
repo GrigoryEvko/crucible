@@ -37,10 +37,8 @@
 #include <fixy/Core.h>
 #include <foundation/Simd.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 
 namespace {
 
@@ -49,31 +47,32 @@ namespace {
 // lane (operator[] is value-returning const).
 template <std::size_t Word, class Blocks>
 [[nodiscard]] foundation::simd::u32x8 lanes_of_word(Blocks const& blocks) noexcept {
-    return foundation::simd::u32x8(
-        [&](auto lane) noexcept -> uint32_t { return blocks[decltype(lane)::value].at(::fixy::index<Word>()); });
+    return foundation::simd::u32x8([&](auto lane) noexcept -> uint32_t {
+        return blocks.at(::fixy::index<decltype(lane)::value>()).at(::fixy::index<Word>());
+    });
 }
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::detail;
     using namespace crucible::fuzz::prop;
 
-    const Config cfg = parse_args(::fixy::os::args(argc, argv));
+    const Config cfg = parse_args(arguments);
 
     return run(
         "Philox SIMD bit-equivalence", cfg,
         [](Rng& rng) {
             // 8 octuples of (counter, key) = 8 × (4 + 2) = 48 u32 values.
             struct Inputs {
-                std::array<::fixy::Philox4x32::Counter, 8> counters;
-                std::array<::fixy::Philox4x32::Key, 8> keys;
+                ::fixy::FixedArray<::fixy::Philox4x32::Counter, 8> counters{};
+                ::fixy::FixedArray<::fixy::Philox4x32::Key, 8> keys{};
             };
             Inputs inputs{};
-            for (std::size_t i = 0; i < 8; ++i) {
-                inputs.counters[i] = {rng.next32(), rng.next32(), rng.next32(), rng.next32()};
-                inputs.keys[i] = {rng.next32(), rng.next32()};
+            for (const ::fixy::Index<8> i : ::fixy::IndexRange<8>{}) {
+                inputs.counters.at(i) = {rng.next32(), rng.next32(), rng.next32(), rng.next32()};
+                inputs.keys.at(i) = {rng.next32(), rng.next32()};
             }
             return inputs;
         },
@@ -92,9 +91,10 @@ int main(int argc, char** argv) {
 
             // For each lane, compute the scalar oracle and assert
             // bit-identical match across all 4 output words.
-            for (std::size_t lane = 0; lane < 8; ++lane) {
-                const auto& counter = inputs.counters[lane];
-                const auto& key = inputs.keys[lane];
+            for (const ::fixy::Index<8> lane_index : ::fixy::IndexRange<8>{}) {
+                const std::size_t lane = lane_index.raw();
+                const auto& counter = inputs.counters.at(lane_index);
+                const auto& key = inputs.keys.at(lane_index);
                 const auto scalar = ::fixy::Philox4x32::generate(counter, key);
                 const int li = static_cast<int>(lane);
                 const uint32_t word0 = scalar.at(::fixy::index<0>());
@@ -103,16 +103,18 @@ int main(int argc, char** argv) {
                 const uint32_t word3 = scalar.at(::fixy::index<3>());
 
                 if (batch.r0[li] != word0 || batch.r1[li] != word1 || batch.r2[li] != word2 || batch.r3[li] != word3) {
-                    std::fprintf(stderr,
-                                 "\n[lane %zu] SIMD/scalar divergence:\n"
-                                 "  ctr  = {%08x, %08x, %08x, %08x}\n"
-                                 "  key  = {%08x, %08x}\n"
-                                 "  scalar: %08x %08x %08x %08x\n"
-                                 "  simd:   %08x %08x %08x %08x\n",
-                                 lane, counter.at(::fixy::index<0>()), counter.at(::fixy::index<1>()),
-                                 counter.at(::fixy::index<2>()), counter.at(::fixy::index<3>()),
-                                 key.at(::fixy::index<0>()), key.at(::fixy::index<1>()), word0, word1, word2, word3,
-                                 batch.r0[li], batch.r1[li], batch.r2[li], batch.r3[li]);
+                    using Word = ::fixy::Hex<8>;
+                    ::fixy::report(::fixy::Sink::Err,
+                                   "\n[lane {}] SIMD/scalar divergence:\n"
+                                   "  ctr  = {{{}, {}, {}, {}}}\n"
+                                   "  key  = {{{}, {}}}\n"
+                                   "  scalar: {} {} {} {}\n"
+                                   "  simd:   {} {} {} {}\n",
+                                   lane, Word{counter.at(::fixy::index<0>())}, Word{counter.at(::fixy::index<1>())},
+                                   Word{counter.at(::fixy::index<2>())}, Word{counter.at(::fixy::index<3>())},
+                                   Word{key.at(::fixy::index<0>())}, Word{key.at(::fixy::index<1>())}, Word{word0},
+                                   Word{word1}, Word{word2}, Word{word3}, Word{batch.r0[li]}, Word{batch.r1[li]},
+                                   Word{batch.r2[li]}, Word{batch.r3[li]});
                     return false;
                 }
             }

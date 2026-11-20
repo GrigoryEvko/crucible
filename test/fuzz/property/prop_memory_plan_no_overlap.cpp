@@ -57,7 +57,6 @@
 #include <crucible/Types.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
 #include <cstdint>
 
 namespace {
@@ -81,14 +80,23 @@ struct SlotSpec {
     uint32_t death = 0;
     uint64_t nbytes = 0;  // [1, kMaxSlotBytes]
     bool is_external = false;  // ~25% of slots
-    uint8_t pad[3]{};
+    ::fixy::FixedArray<uint8_t, 3> pad{};
 };
 
 struct SlotSet {
-    std::array<SlotSpec, kMaxSlots> specs{};
+    ::fixy::FixedArray<SlotSpec, kMaxSlots> specs{};
     uint32_t count = 0;  // [1, kMaxSlots]
-    uint8_t pad[4]{};
+    ::fixy::FixedArray<uint8_t, 4> pad{};
 };
+
+// The spec at position of a set.  Each position that the test reads is
+// below the count, which is at most kMaxSlots.
+[[nodiscard]] SlotSpec& spec_at(SlotSet& set, uint32_t position) noexcept {
+    return set.specs.at(::fixy::Index<kMaxSlots>::check(position).expect("a position of a set is below kMaxSlots"));
+}
+[[nodiscard]] SlotSpec const& spec_at(SlotSet const& set, uint32_t position) noexcept {
+    return set.specs.at(::fixy::Index<kMaxSlots>::check(position).expect("a position of a set is below kMaxSlots"));
+}
 
 // Materialize a SlotSet into a fresh TensorSlot array and return the
 // maximum death_op (the upper bound of the no-overlap sweep).
@@ -102,7 +110,7 @@ struct SlotSet {
 
     uint32_t max_death = 0;
     for (uint32_t i = 0; i < set.count; ++i) {
-        const SlotSpec& spec = set.specs[i];
+        const SlotSpec& spec = spec_at(set, i);
         TensorSlot& slot = *out.get(i).expect("the slot array holds each slot of the set");
         slot = TensorSlot{.offset_bytes = 0,
                           .nbytes = spec.nbytes,
@@ -123,7 +131,7 @@ struct SlotSet {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible::fuzz::prop;
     using crucible::TensorSlot;
     using crucible::OpIndex;
@@ -131,7 +139,7 @@ int main(int argc, char** argv) {
     using crucible::PoolAllocator;
     using crucible::live_intervals_disjoint_at;
 
-    Config cfg = parse_args(::fixy::os::args(argc, argv));
+    Config cfg = parse_args(arguments);
 
     return run(
         "memory_plan_no_overlap", cfg,
@@ -142,10 +150,11 @@ int main(int argc, char** argv) {
             for (uint32_t i = 0; i < set.count; ++i) {
                 const uint32_t a = rng.next_below(kMaxOp);
                 const uint32_t b = rng.next_below(kMaxOp);
-                set.specs[i].birth = a < b ? a : b;
-                set.specs[i].death = a < b ? b : a;
-                set.specs[i].nbytes = 1ull + rng.next_below(static_cast<uint32_t>(kMaxSlotBytes));
-                set.specs[i].is_external = (rng.next_below(4) == 0);
+                SlotSpec& spec = spec_at(set, i);
+                spec.birth = a < b ? a : b;
+                spec.death = a < b ? b : a;
+                spec.nbytes = 1ull + rng.next_below(static_cast<uint32_t>(kMaxSlotBytes));
+                spec.is_external = (rng.next_below(4) == 0);
             }
             return set;
         },
@@ -171,7 +180,7 @@ int main(int argc, char** argv) {
 
             uint32_t want_external = 0;
             for (uint32_t i = 0; i < num_slots; ++i)
-                if (set.specs[i].is_external) ++want_external;
+                if (spec_at(set, i).is_external) ++want_external;
             if (plan1.num_external != want_external) return false;
 
             if (plan1.pool_bytes > PoolAllocator::kMaxPoolBytes) return false;

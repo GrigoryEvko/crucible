@@ -78,7 +78,7 @@ struct Spec {
     std::uint64_t hash_seed = 0;  // 0 half the time, else random
     std::uint64_t chunk_seed = 0;  // drives the Random-chunking split
     LenMode mode = LenMode::Random;
-    std::uint8_t pad[7]{};
+    ::fixy::FixedArray<std::uint8_t, 7> pad{};
 };
 
 [[nodiscard]] std::uint32_t gen_len(Rng& rng, LenMode mode) noexcept {
@@ -128,10 +128,10 @@ template <typename ChunkFn>
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible::fuzz::prop;
 
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 2000000);
+    const Config cfg = parse_args(arguments, 2000000);
 
     return run(
         "integrity_xxhash", cfg,

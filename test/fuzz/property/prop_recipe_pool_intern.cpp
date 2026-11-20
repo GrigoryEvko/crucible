@@ -28,24 +28,29 @@
 #include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
+namespace {
 
-int main(int argc, char** argv) {
+// M = 30 spans 3 grows from initial cap 8 (8 → 16 → 32 → 64).
+constexpr unsigned kRecipes = 30;
+
+using Recipes = ::fixy::FixedArray<crucible::NumericalRecipe, kRecipes>;
+
+}  // namespace
+
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 5000);  // O(M²) inner
+    const Config cfg = parse_args(arguments, 5000);  // O(M²) inner
 
     return run(
         "RecipePool intern iff semantic equal", cfg,
         [](Rng& rng) {
-            // M = 30 spans 3 grows from initial cap 8 (8 → 16 → 32 → 64).
-            constexpr unsigned M = 30;
-            std::array<NumericalRecipe, M> recipes{};
+            Recipes recipes{};
             for (auto& r : recipes)
                 r = random_recipe(rng);
             return recipes;
         },
-        [](const std::array<NumericalRecipe, 30>& recipes) {
+        [](const Recipes& recipes) {
             ::fixy::BumpArena arena{};
             // The test context comes from foundation::effects::testing.
             // RecipePool takes an Init context, because it allocates its
@@ -56,7 +61,7 @@ int main(int argc, char** argv) {
                             /*initial_capacity=*/8};
 
             // Phase 1: insert all, keep a Ref of each recipe.
-            ::fixy::FixedList<::fixy::Ref<const NumericalRecipe>, 30> interned{};
+            ::fixy::FixedList<::fixy::Ref<const NumericalRecipe>, kRecipes> interned{};
             for (const NumericalRecipe& recipe : recipes) {
                 const ::fixy::Ref<const NumericalRecipe> stored = pool.intern(init.alloc, recipe);
                 // Pool authority: returned recipe carries the
@@ -75,11 +80,12 @@ int main(int argc, char** argv) {
                     && a.scale_policy == b.scale_policy && a.softmax == b.softmax && a.determinism == b.determinism
                     && a.flags == b.flags;
             };
-            for (size_t i = 0; i < recipes.size(); ++i) {
-                for (size_t j = 0; j < recipes.size(); ++j) {
-                    const bool is_same_recipe = ::fixy::same_object(*interned.get(i).expect("each recipe has a Ref"),
-                                                                    *interned.get(j).expect("each recipe has a Ref"));
-                    const bool eq_fields = sem_eq(recipes[i], recipes[j]);
+            for (const ::fixy::Index<kRecipes> i : recipes.indices()) {
+                for (const ::fixy::Index<kRecipes> j : recipes.indices()) {
+                    const bool is_same_recipe =
+                        ::fixy::same_object(*interned.get(i.raw()).expect("each recipe has a Ref"),
+                                            *interned.get(j.raw()).expect("each recipe has a Ref"));
+                    const bool eq_fields = sem_eq(recipes.at(i), recipes.at(j));
                     if (is_same_recipe != eq_fields) return false;
                 }
             }

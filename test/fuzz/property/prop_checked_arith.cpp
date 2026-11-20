@@ -76,7 +76,7 @@ struct Spec {
     T a = 0;
     T b = 0;
     int shift = 0;
-    std::uint8_t pad[4]{};
+    ::fixy::FixedArray<std::uint8_t, 4> pad{};
 };
 
 template <typename T>
@@ -98,7 +98,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] int run_checked(const char* name, crucible::fuzz::prop::Config cfg) {
+[[nodiscard]] int run_checked(::fixy::TextView const name, crucible::fuzz::prop::Config cfg) {
     constexpr int bits = core::bits_of<T>;
     return crucible::fuzz::prop::run(
         name, cfg,
@@ -224,10 +224,10 @@ template <typename T>
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible::fuzz::prop;
 
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 2000000);
+    const Config cfg = parse_args(arguments, 2000000);
 
     int rc = 0;
     rc |= run_checked<std::int8_t>("checked_i8", cfg);

@@ -38,14 +38,12 @@
 #include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
-#include <algorithm>
-#include <array>
 #include <cstdint>
 
 namespace {
 
 // Bounds: up to 64 ops over up to 256 edges keeps each iteration cheap
-// under ASan (O(E log E) oracle sort + O(E) compares) while exercising
+// under ASan (O(V·E) oracle order + O(E) compares) while exercising
 // dense multi-edge buckets, self-loops, and empty-edge graphs.
 inline constexpr uint32_t kMaxOps = 64;
 inline constexpr uint32_t kMaxEdges = 256;
@@ -55,14 +53,55 @@ struct EdgeSpec {
     uint32_t dst = 0;  // in [0, num_ops)
     uint8_t src_port = 0;  // in [0, 63]
     uint8_t dst_port = 0;  // in [0, 63]
-    uint8_t pad[2]{};
+    ::fixy::FixedArray<uint8_t, 2> pad{};
 };
 
 struct GraphSpec {
-    std::array<EdgeSpec, kMaxEdges> edges{};
+    ::fixy::FixedArray<EdgeSpec, kMaxEdges> edges{};
     uint32_t num_edges = 0;
     uint32_t num_ops = 0;  // >= 1
 };
+
+// The edge spec at position e of a spec.  Each position that the test
+// reads is below the edge count, which is at most kMaxEdges.
+[[nodiscard]] EdgeSpec& edge_spec_at(GraphSpec& spec, uint32_t e) noexcept {
+    return spec.edges.at(::fixy::Index<kMaxEdges>::check(e).expect("a position of a spec is below kMaxEdges"));
+}
+[[nodiscard]] const EdgeSpec& edge_spec_at(const GraphSpec& spec, uint32_t e) noexcept {
+    return spec.edges.at(::fixy::Index<kMaxEdges>::check(e).expect("a position of a spec is below kMaxEdges"));
+}
+
+// The count at op v of a per-op count array.  Each op is below kMaxOps.
+[[nodiscard]] uint32_t& count_at(::fixy::FixedArray<uint32_t, kMaxOps>& counts, uint32_t v) noexcept {
+    return counts.at(::fixy::Index<kMaxOps>::check(v).expect("an op of a spec is below kMaxOps"));
+}
+
+using EdgeOrder = ::fixy::FixedArray<uint32_t, kMaxEdges>;
+
+// The stable order of the edge positions by a key of each edge: each key
+// from 0 to num_ops - 1 in turn, and for each key the positions in input
+// order.  That is the order of a stable sort of the positions by the key,
+// built by a scan with no sort and no count, apart from the counting sort
+// of build_csr.  Each key is below num_ops, so the order holds each
+// position one time.  Complexity: O(num_ops * num_edges).
+template <class KeyOf>
+[[nodiscard]] EdgeOrder stable_order_by(const GraphSpec& spec, KeyOf const& key_of) noexcept {
+    EdgeOrder order{};
+    uint32_t filled = 0;
+    for (uint32_t key = 0; key < spec.num_ops; ++key) {
+        for (uint32_t e = 0; e < spec.num_edges; ++e) {
+            if (key_of(edge_spec_at(spec, e)) != key) continue;
+            order.at(::fixy::Index<kMaxEdges>::check(filled).expect("the order holds each edge one time")) = e;
+            ++filled;
+        }
+    }
+    return order;
+}
+
+// The position at place k of an edge order.
+[[nodiscard]] uint32_t position_at(const EdgeOrder& order, uint32_t k) noexcept {
+    return order.at(::fixy::Index<kMaxEdges>::check(k).expect("a place of an order is below kMaxEdges"));
+}
 
 // Materialize the spec into the first edges of out, and give that run (kind
 // defaults to DATA_FLOW; bucketing depends only on src/dst, so a constant
@@ -74,11 +113,12 @@ struct GraphSpec {
     const ::fixy::View<Edge> run = out.window(0, spec.num_edges).expect("a spec holds at most kMaxEdges edges");
     uint32_t e = 0;
     for (Edge& edge : run) {
+        const EdgeSpec& edge_spec = edge_spec_at(spec, e);
         edge = Edge{};
-        edge.src = OpIndex{spec.edges[e].src};
-        edge.dst = OpIndex{spec.edges[e].dst};
-        edge.src_port = spec.edges[e].src_port;
-        edge.dst_port = spec.edges[e].dst_port;
+        edge.src = OpIndex{edge_spec.src};
+        edge.dst = OpIndex{edge_spec.dst};
+        edge.src_port = edge_spec.src_port;
+        edge.dst_port = edge_spec.dst_port;
         ++e;
     }
     return run;
@@ -101,7 +141,7 @@ struct GraphSpec {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible::fuzz::prop;
     using crucible::Edge;
     using crucible::OpIndex;
@@ -109,7 +149,7 @@ int main(int argc, char** argv) {
     using crucible::build_csr;
     using fixy::BumpArena;
 
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 20000);  // O(E log E) per iter
+    const Config cfg = parse_args(arguments, 20000);  // O(V·E) per iter
 
     return run(
         "trace_graph_csr", cfg,
@@ -119,10 +159,11 @@ int main(int argc, char** argv) {
             spec.num_ops = 1u + rng.next_below(kMaxOps);  // [1, kMaxOps]
             spec.num_edges = rng.next_below(kMaxEdges + 1u);  // [0, kMaxEdges]
             for (uint32_t e = 0; e < spec.num_edges; ++e) {
-                spec.edges[e].src = rng.next_below(spec.num_ops);
-                spec.edges[e].dst = rng.next_below(spec.num_ops);
-                spec.edges[e].src_port = static_cast<uint8_t>(rng.next_below(64));
-                spec.edges[e].dst_port = static_cast<uint8_t>(rng.next_below(64));
+                EdgeSpec& edge_spec = edge_spec_at(spec, e);
+                edge_spec.src = rng.next_below(spec.num_ops);
+                edge_spec.dst = rng.next_below(spec.num_ops);
+                edge_spec.src_port = static_cast<uint8_t>(rng.next_below(64));
+                edge_spec.dst_port = static_cast<uint8_t>(rng.next_below(64));
             }
             return spec;
         },
@@ -151,39 +192,31 @@ int main(int argc, char** argv) {
             }
 
             // (C) Degree consistency — count input edges per src / dst.
-            std::array<uint32_t, kMaxOps> src_count{};
-            std::array<uint32_t, kMaxOps> dst_count{};
+            ::fixy::FixedArray<uint32_t, kMaxOps> src_count{};
+            ::fixy::FixedArray<uint32_t, kMaxOps> dst_count{};
             for (uint32_t e = 0; e < num_edges; ++e) {
-                ++src_count[spec.edges[e].src];
-                ++dst_count[spec.edges[e].dst];
+                ++count_at(src_count, edge_spec_at(spec, e).src);
+                ++count_at(dst_count, edge_spec_at(spec, e).dst);
             }
             for (uint32_t v = 0; v < num_ops; ++v) {
-                if (offset_at(fwd, v + 1) - offset_at(fwd, v) != src_count[v]) return false;
-                if (offset_at(rev, v + 1) - offset_at(rev, v) != dst_count[v]) return false;
+                if (offset_at(fwd, v + 1) - offset_at(fwd, v) != count_at(src_count, v)) return false;
+                if (offset_at(rev, v + 1) - offset_at(rev, v) != count_at(dst_count, v)) return false;
             }
 
             // (B) Bucketing + stability + preservation via an INDEPENDENT
-            //     stable sort over edge indices (vs build_csr's counting
+            //     stable order of the edge indices (vs build_csr's counting
             //     sort).  Forward = stable-by-src, reverse = stable-by-dst.
             if (num_edges > 0) {
-                std::array<uint32_t, kMaxEdges> order{};
-                for (uint32_t e = 0; e < num_edges; ++e)
-                    order[e] = e;
-
-                // Forward: stable sort indices by src.
-                std::stable_sort(order.begin(), order.begin() + num_edges,
-                                 [&](uint32_t x, uint32_t y) { return spec.edges[x].src < spec.edges[y].src; });
+                // Forward: the stable order of the indices by src.
+                const EdgeOrder by_src = stable_order_by(spec, [](const EdgeSpec& edge) noexcept { return edge.src; });
                 for (uint32_t k = 0; k < num_edges; ++k) {
-                    if (!edge_eq(edge_at(graph.fwd_edges, k), edge_at(in_run, order[k]))) return false;
+                    if (!edge_eq(edge_at(graph.fwd_edges, k), edge_at(in_run, position_at(by_src, k)))) return false;
                 }
 
-                // Reverse: stable sort indices by dst.
-                for (uint32_t e = 0; e < num_edges; ++e)
-                    order[e] = e;
-                std::stable_sort(order.begin(), order.begin() + num_edges,
-                                 [&](uint32_t x, uint32_t y) { return spec.edges[x].dst < spec.edges[y].dst; });
+                // Reverse: the stable order of the indices by dst.
+                const EdgeOrder by_dst = stable_order_by(spec, [](const EdgeSpec& edge) noexcept { return edge.dst; });
                 for (uint32_t k = 0; k < num_edges; ++k) {
-                    if (!edge_eq(edge_at(graph.rev_edges, k), edge_at(in_run, order[k]))) return false;
+                    if (!edge_eq(edge_at(graph.rev_edges, k), edge_at(in_run, position_at(by_dst, k)))) return false;
                 }
             }
 

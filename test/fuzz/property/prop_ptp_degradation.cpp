@@ -35,14 +35,13 @@
 #include <crucible/topology/Ptp.h>
 
 #include <cstdint>
-#include <limits>
 
 namespace {
 
 namespace ct = crucible::topology;
 using crucible::fuzz::prop::Rng;
 
-inline constexpr std::uint64_t kU64Max = std::numeric_limits<std::uint64_t>::max();
+inline constexpr std::uint64_t kU64Max = ::fixy::max_of<std::uint64_t>;
 
 // 128-bit accumulators for the independent absolute-offset oracle.
 // __extension__ silences -Wpedantic (matches test/fuzz/property/prop_checked_arith.cpp).
@@ -63,9 +62,9 @@ struct Spec {
 [[nodiscard]] std::int64_t gen_offset(Rng& rng) noexcept {
     switch (rng.next_below(7u)) {
         case 0:
-            return std::numeric_limits<std::int64_t>::min();  // INT64_MIN abs edge
+            return ::fixy::min_of<std::int64_t>;  // INT64_MIN abs edge
         case 1:
-            return std::numeric_limits<std::int64_t>::max();
+            return ::fixy::max_of<std::int64_t>;
         case 2:
             return 0;
         case 3:
@@ -119,10 +118,10 @@ struct Spec {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible::fuzz::prop;
 
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 2000000);
+    const Config cfg = parse_args(arguments, 2000000);
 
     return run(
         "ptp_degradation", cfg,

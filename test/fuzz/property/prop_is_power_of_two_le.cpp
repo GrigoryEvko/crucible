@@ -45,9 +45,7 @@
 #include <fixy/Core.h>
 #include <foundation/contracts/Decide.h>
 
-#include <bit>
 #include <cstdint>
-#include <limits>
 #include <type_traits>
 
 namespace {
@@ -66,7 +64,7 @@ struct PowSpec {
     T x = 0;
     T bound = 0;
     Mode mode = Mode::Random;
-    uint8_t pad[3]{};
+    ::fixy::FixedArray<uint8_t, 3> pad{};
 };
 
 // Independent oracle: same 0 < x <= bound gate, but the power-of-two
@@ -77,11 +75,11 @@ template <typename T>
     if (x <= T{0}) return false;
     if (x > bound) return false;
     using U = std::make_unsigned_t<T>;
-    return std::popcount(static_cast<U>(x)) == 1;
+    return ::fixy::popcount(static_cast<U>(x)) == 1;
 }
 
 template <typename T>
-[[nodiscard]] int run_pow(const crucible::fuzz::prop::Config& cfg, const char* name) {
+[[nodiscard]] int run_pow(const crucible::fuzz::prop::Config& cfg, ::fixy::TextView const name) {
     using crucible::fuzz::prop::run;
     using ::foundation::decide::is_power_of_two_le;
     using U = std::make_unsigned_t<T>;
@@ -101,7 +99,7 @@ template <typename T>
                 case Mode::PowerInBound: {
                     const uint32_t k = rng.next_below(max_pow + 1u);  // [0, max_pow]
                     spec.x = static_cast<T>(static_cast<U>(1) << k);
-                    spec.bound = std::numeric_limits<T>::max();  // x <= bound always
+                    spec.bound = ::fixy::max_of<T>;  // x <= bound always
                     break;
                 }
                 case Mode::PowerOverBound: {
@@ -115,7 +113,7 @@ template <typename T>
                     // Bias toward non-powers: OR two random values so
                     // multiple bits are usually set; oracle is truth.
                     spec.x = static_cast<T>(rng.next32() | rng.next32());
-                    spec.bound = std::numeric_limits<T>::max();
+                    spec.bound = ::fixy::max_of<T>;
                     break;
                 }
                 case Mode::Random: {
@@ -153,9 +151,9 @@ template <typename T>
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(::fixy::os::args(argc, argv), 2000000);
+    const Config cfg = parse_args(arguments, 2000000);
 
     // Both instantiations run the full iteration budget; the signed
     // one exercises the x<=0 guard and negative-bound branch.
