@@ -11,8 +11,6 @@ format 1
 rule erased-brand
 include/fixy/handle/Published.h | erased-brand | 4 | foundation::core::Ref | holds the erased brand on purpose: a link of an arena graph and a published object live as long as their arena or store, not a frame, and a brand of that lifetime is planned work
 include/fixy/os/OwnedMmap.h | erased-brand | 1 | fixy::OwnedMmap | -
-include/fixy/session/Flow.h | erased-brand | 1 | foundation::permissions::LentPermission | -
-include/fixy/session/Flow.h | erased-brand | 4 | foundation::permissions::ReadLoan | -
 include/foundation/core/Link.h | erased-brand | 23 | foundation::core::Ref | holds the erased brand on purpose: a link of an arena graph and a published object live as long as their arena or store, not a frame, and a brand of that lifetime is planned work
 include/foundation/permissions/Permission.h | erased-brand | 1 | foundation::permissions::Permission | -
 test/fixy/neg/neg_borrowed_from_a_temporary.cpp | erased-brand | 1 | fixy::Borrowed | -
@@ -33,11 +31,7 @@ test/fixy/neg/neg_owned_mmap_release_without_leak_atom.cpp | erased-brand | 1 | 
 test/fixy/neg/neg_owned_region_does_not_erase_its_brand.cpp | erased-brand | 1 | fixy::OwnedRegion | -
 test/fixy/neg/neg_qtt_linear_over_permission.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/fixy/neg/neg_scoped_view_escapes_through_private_member.cpp | erased-brand | 1 | fixy::ScopedView | -
-test/fixy/neg/neg_sess_loop_iteration_sends_permission.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/fixy/neg/neg_sess_mint_unselected_arm_sends_unheld_permission.cpp | erased-brand | 1 | foundation::permissions::Permission | -
-test/fixy/neg/neg_sess_permissioned_session_flow_open.cpp | erased-brand | 1 | foundation::permissions::Permission | -
-test/fixy/neg/neg_sess_permissioned_session_row_refused.cpp | erased-brand | 1 | foundation::permissions::Permission | -
-test/fixy/neg/neg_sess_permissioned_session_token_kept.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/fixy/neg/neg_sess_send_unheld_permission.cpp | erased-brand | 2 | foundation::permissions::Permission | -
 test/fixy/neg/neg_shared_read_on_the_erased_brand.cpp | erased-brand | 1 | fixy::OwnedRegion | -
 test/fixy/neg/neg_shared_read_on_the_erased_brand.cpp | erased-brand | 1 | fixy::SharedRegion | -
@@ -102,11 +96,10 @@ test/fixy/test_row_hash_wrappers.cpp | erased-brand | 1 | foundation::permission
 test/fixy/test_row_hash_wrappers.cpp | erased-brand | 8 | foundation::permissions::SharedPermission | -
 test/fixy/test_scoped_view.cpp | erased-brand | 7 | fixy::LinearScopedView | -
 test/fixy/test_scoped_view.cpp | erased-brand | 2 | fixy::ScopedView | -
-test/fixy/test_session_handle.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/fixy/test_session_ownership_attacks.cpp | erased-brand | 1 | fixy::session::SharedReader | -
-test/fixy/test_session_ownership_attacks.cpp | erased-brand | 15 | foundation::permissions::Permission | -
-test/fixy/test_session_ownership_attacks.cpp | erased-brand | 3 | foundation::permissions::ReadLoan | -
-test/fixy/test_session_ownership_attacks.cpp | erased-brand | 16 | foundation::permissions::ReadView | -
+test/fixy/test_session_ownership_attacks.cpp | erased-brand | 10 | foundation::permissions::Permission | -
+test/fixy/test_session_ownership_attacks.cpp | erased-brand | 1 | foundation::permissions::ReadLoan | -
+test/fixy/test_session_ownership_attacks.cpp | erased-brand | 11 | foundation::permissions::ReadView | -
 test/fixy/test_session_ownership_attacks.cpp | erased-brand | 1 | foundation::permissions::SharedPermission | -
 test/fixy/test_session_ownership_attacks.cpp | erased-brand | 1 | foundation::permissions::SharedPermissionGuard | -
 test/fixy/test_shared_region.cpp | erased-brand | 1 | fixy::OwnedRegion | -
