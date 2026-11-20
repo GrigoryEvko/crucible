@@ -151,6 +151,7 @@
 #include <foundation/permissions/ReadView.h>
 #include <foundation/permissions/SharedPermission.h>
 #include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/Hash.h>
 #include <foundation/reflect/TypeComponents.h>
 #include <fixy/session/Classified.h>
 #include <fixy/session/Fold.h>
@@ -342,6 +343,66 @@ using ::fixy::session::transition::payload_role;
     const bool is_class = std::meta::is_class_type(bare) || std::meta::is_union_type(bare);
     if (!is_class || !std::meta::is_complete_type(bare)) return {};
     return ::fixy::session::transition::lookup_payload_rule(protocol_registry, bare);
+}
+
+// ── The spelling of a type with its brands erased ───────────────────
+//
+// A fresh brand is the closure type of a lambda at the site of a mint
+// (foundation/Brand.h), and GCC prints a closure by its place in the unit.
+// So the stable id of foundation/reflect/Hash.h refuses a type with a fresh
+// brand, and no unit can store a hash of such a spelling for another unit.
+// A hash that the program stores or that two units compare reads the type
+// with its brands erased.  The walk writes DefaultBrand, the erased identity,
+// at each brand position that the session layer knows: the brand argument of
+// a payload rule, and argument 1 of Permission, LentOut, BorrowedIn, ReadLoan
+// and LentPermission.  It erases inside each template argument that is a
+// type too, so a brand inside a marker, a Record or a permission set goes.
+//
+// A type with no brand at these positions keeps its spelling, so its hash
+// stays the same.  A brand at a position that the walk does not know stays,
+// and the stable id refuses it.
+
+// The brand position of a specialization that the session layer knows, or
+// npos.
+[[nodiscard]] consteval std::size_t known_brand_position(std::meta::info specialization) {
+    const std::meta::info family = std::meta::template_of(specialization);
+    if (family == ^^::foundation::permissions::Permission || family == ^^LentOut || family == ^^BorrowedIn
+        || family == ^^::foundation::permissions::ReadLoan || family == ^^::foundation::permissions::LentPermission) {
+        return 1;
+    }
+    const payload_lookup rule = payload_rule_of(specialization);
+    return rule.is_found ? rule.entry.brand_argument : ::fixy::session::transition::npos;
+}
+
+// The type with DefaultBrand at each brand position that the walk knows.
+// The answer is the reflection that the caller gave when the walk erases
+// nothing.  Complexity: linear in the template arguments of the tree of the
+// type, with one read of a payload rule for each specialization.
+[[nodiscard]] consteval std::meta::info brand_erased(std::meta::info type) {
+    const std::meta::info bare = std::meta::dealias(type);
+    if (!std::meta::is_type(bare) || !std::meta::has_template_arguments(bare)) return type;
+    const std::size_t brand_place = known_brand_position(bare);
+    const ::fixy::session::transition::static_run<std::meta::info> arguments =
+        ::fixy::session::transition::template_arguments_run(bare);
+    stack<std::meta::info> written{};
+    bool is_erased = false;
+    for (std::size_t place = 0; place < arguments.length; ++place) {
+        const std::meta::info argument = arguments[place];
+        std::meta::info erased = argument;
+        if (place == brand_place) {
+            erased = ^^::foundation::brand::DefaultBrand;
+        } else if (std::meta::is_type(argument)) {
+            erased = brand_erased(argument);
+        }
+        is_erased = is_erased || erased != argument;
+        push(written, erased);
+    }
+    return is_erased ? std::meta::substitute(std::meta::template_of(bare), written) : type;
+}
+
+// The stable id of the type with its brands erased.
+[[nodiscard]] consteval std::uint64_t brand_erased_type_id(std::meta::info type) {
+    return ::foundation::reflect::stable_type_id(brand_erased(type));
 }
 
 // True when a complete class states that it is data with a public member

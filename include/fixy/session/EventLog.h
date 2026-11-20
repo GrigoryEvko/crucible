@@ -47,7 +47,8 @@
 //     LostToCrashedPeer in the control byte, so replay can tell a
 //     message the peer got from one it never got.
 //   * The schema hash is the stable type id of foundation/reflect/
-//     Hash.h.
+//     Hash.h, of the spelling of the payload with each brand erased.  The
+//     recorder of fixy/session/Recording.h gives it (default_schema_hash).
 //   * A Select or an Offer of a keyed choice records the label word of
 //     the branch in the schema lane, beside the index of the branch.  A
 //     replay against a keyed choice needs the label word
@@ -656,14 +657,6 @@ decode_session_log(::foundation::core::Alloc allocation, ::foundation::core::Vie
     }
     return events;
 }
-
-// ── Hashes of types ─────────────────────────────────────────────────
-
-template <typename T>
-inline constexpr SchemaHash default_schema_hash{::foundation::reflect::stable_type_id(^^T)};
-
-template <typename T>
-inline constexpr StateHash default_proto_hash{::foundation::reflect::stable_type_id(^^T)};
 
 // ── The log ─────────────────────────────────────────────────────────
 

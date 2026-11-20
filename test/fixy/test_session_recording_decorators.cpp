@@ -225,4 +225,17 @@ int check_keyed_checkpoint() {
     return got == 5 ? 0 : fail("the keyed branch of a checkpoint session did not carry its value");
 }
 
+// ── A brand of a root site of this unit ─────────────────────────────
+//
+// The root mint gives each of its sites a fresh brand, which is a closure
+// type of this unit.  The recorder hashes the marker with its brand erased,
+// so this unit gives the hash that test_session_recording.cpp gives.
+
+s::SchemaHash schema_of_a_marker_of_the_second_unit() {
+    auto root = ::foundation::permissions::mint_permission_root<RecordedRegion>();
+    using Brand = ::foundation::brand::brand_of_t<decltype(root)>;
+    ::foundation::linear::drop(std::move(root));
+    return s::default_schema_hash<s::Transferable<int, RecordedRegion, Brand>>;
+}
+
 }  // namespace test_session_recording_types

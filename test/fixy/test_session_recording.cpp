@@ -381,6 +381,101 @@ int check_handoff_recording() {
 
 }  // namespace
 
+// ── A token of a fresh brand ────────────────────────────────────────
+//
+// The root mint gives each of its sites a fresh brand, which is a closure
+// type, and GCC prints a closure by its place in the unit.  So the stable id
+// refuses a type with such a brand.  The recorder hashes each payload with
+// each brand erased, so a recorded session carries a token of a fresh brand,
+// and two units give one hash for one payload.
+
+// The mailbox of one message.
+template <class Message>
+struct MessageBox {
+    ::fixy::FixedList<Message, 1> held{};
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+
+// A trying write that puts the message into an empty mailbox.
+template <class Message>
+[[nodiscard]] bool put_message(MessageBox<Message>& box, Message& message) noexcept {
+    if (box.held.size() != 0) return false;
+    static_cast<void>(box.held.append(std::move(message)).expect("the mailbox is empty"));
+    return true;
+}
+
+// A polling read that takes the message out of the mailbox.
+template <class Message>
+[[nodiscard]] ::fixy::Option<Message> take_message(MessageBox<Message>& box) noexcept {
+    return box.held.take_last();
+}
+
+// A brand with a declared name.  The stable id reads its name.
+struct NamedBrand {};
+
+namespace {
+
+int check_fresh_brand_recording() {
+    auto root = ::foundation::permissions::mint_permission_root<RecordedRegion>();
+    using Brand = ::foundation::brand::brand_of_t<decltype(root)>;
+    using Message = s::Transferable<int, RecordedRegion, Brand>;
+    // The singleton root of a tag has the erased brand, and its type has a
+    // stable id.
+    using SingletonToken = decltype(::foundation::permissions::mint_singleton_root<RecordedRegion>());
+    using ErasedMessage = s::Transferable<int, RecordedRegion, ::foundation::brand::brand_of_t<SingletonToken>>;
+    static_assert(!::foundation::reflect::HasStableIdentity<Message>,
+                  "the brand of a root site is a closure, which has no stable id");
+
+    // A fresh brand, a named brand and the erased brand give one hash.  A
+    // spelling with the erased brand, and a type with no brand, keep the
+    // stable id of their own spelling.
+    constexpr s::SchemaHash erased_hash = s::default_schema_hash<ErasedMessage>;
+    static_assert(erased_hash == s::SchemaHash{::foundation::reflect::stable_type_id(^^ErasedMessage)});
+    static_assert(s::default_schema_hash<Message> == erased_hash);
+    static_assert(s::default_schema_hash<s::Transferable<int, RecordedRegion, NamedBrand>> == erased_hash);
+    static_assert(s::default_schema_hash<decltype(root)> == s::default_schema_hash<SingletonToken>);
+    static_assert(s::default_schema_hash<SingletonToken>
+                  == s::SchemaHash{::foundation::reflect::stable_type_id(^^SingletonToken)});
+    static_assert(s::default_schema_hash<int> == s::SchemaHash{::foundation::reflect::stable_type_id(^^int)});
+    static_assert(s::default_proto_hash<s::Send<Message, s::End>>
+                  == s::default_proto_hash<s::Send<ErasedMessage, s::End>>);
+
+    s::SessionEventLog sender_log;
+    s::SessionEventLog receiver_log;
+    auto sender = s::mint_recorded_session(
+        s::mint_permissioned_session<s::Send<Message, s::End>>(bg_ctx(), MessageBox<Message>{}, std::move(root)),
+        s::mint_session_event_writer(sender_log), kSelf, kPeer);
+    MessageBox<Message> wire = std::move(sender).send(4, put_message<Message>).close();
+    auto receiver = s::mint_recorded_session(s::mint_session<s::Recv<Message, s::End>>(bg_ctx(), std::move(wire)),
+                                             s::mint_session_event_writer(receiver_log), kPeer, kSelf);
+    auto [value, at_end] = std::move(receiver).recv(take_message<Message>);
+    // The End handle gives the token back with the mailbox.
+    auto [box, token] = std::move(at_end).close();
+    const bool is_box_empty = box.held.size() == 0;
+    ::foundation::linear::drop(std::move(token));
+    ::foundation::linear::drop(std::move(box));
+
+    if (value != 4 || !is_box_empty) return fail("the recorded marker of a fresh brand did not carry its value");
+    if (sender_log.size() != 2 || sender_log[0].op() != s::SessionOp::Send
+        || sender_log[0].payload_schema() != erased_hash)
+        return fail("the send of a marker of a fresh brand did not record the erased schema");
+    if (receiver_log.size() != 2 || receiver_log[0].op() != s::SessionOp::Recv
+        || receiver_log[0].payload_schema() != erased_hash || receiver_log[1].op() != s::SessionOp::Close)
+        return fail("the receive of a marker of a fresh brand did not record the erased schema and the close");
+    if (schema_of_a_marker_of_the_second_unit() != erased_hash)
+        return fail("two units gave two schema hashes for one marker of the region");
+
+    // A replay compares the schema of each stored event with the payload of
+    // its own protocol, with the brand of its own root.  The recorded send
+    // and the recorded receive replay against the protocol of each side.
+    if (sender_log[0].payload_schema() != s::default_schema_hash<s::Send<Message, s::End>::message_type>
+        || receiver_log[0].payload_schema() != s::default_schema_hash<s::Recv<Message, s::End>::message_type>)
+        return fail("a stored step of a marker of a fresh brand did not replay against its protocol");
+    return 0;
+}
+
+}  // namespace
+
 // ── A keyed choice, and the replay of a choice ──────────────────────
 //
 // The two sides hold the labels in another order.  Each records the
@@ -478,6 +573,7 @@ int main() {
     if (const int rc = check_checkpoint_recording(); rc != 0) return rc;
     if (const int rc = check_pinned_roll_recording(); rc != 0) return rc;
     if (const int rc = check_handoff_recording(); rc != 0) return rc;
+    if (const int rc = check_fresh_brand_recording(); rc != 0) return rc;
     if (const int rc = check_keyed_recording(); rc != 0) return rc;
     if (const int rc = check_keyed_checkpoint(); rc != 0) return rc;
     return 0;

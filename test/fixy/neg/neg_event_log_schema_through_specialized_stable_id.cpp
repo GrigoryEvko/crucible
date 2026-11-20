@@ -1,11 +1,11 @@
-// A recorded session event carries the schema hash of its payload, and
-// the schema hash is the stable id of the payload type.  A unit that could
-// specialize the stable id would record one payload under the schema of
-// another, and a replay would read the event as the other payload.  The
-// stable id is a function that is not a template, so the specialization
+// A recorded session event carries the schema hash of its payload, the stable
+// id of the payload type with its brands erased (fixy/session/Recording.h).  A
+// unit that could specialize the stable id would record one payload under the
+// schema of another, and a replay would read the event as the other payload.
+// The stable id is a function that is not a template, so the specialization
 // does not compile.
 
-#include <fixy/session/EventLog.h>
+#include <fixy/session/Recording.h>
 
 #include <cstdint>
 

@@ -79,4 +79,15 @@ int check_checkpoint_recording();
 int check_pinned_roll_recording();
 int check_keyed_checkpoint();
 
+// The region of the token that the check of a fresh brand moves.  Each unit
+// of the test mints a root of the region at a site of its own, so each unit
+// holds a brand of its own.  The region carries no effect.
+struct RecordedRegion {
+    using permission_row = ::foundation::effects::Row<>;
+};
+
+// The schema hash that the recorder gives a marker of the region, with the
+// brand of a root site of test_session_recording_decorators.cpp.
+s::SchemaHash schema_of_a_marker_of_the_second_unit();
+
 }  // namespace test_session_recording_types

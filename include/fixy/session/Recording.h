@@ -58,6 +58,7 @@
 #include <foundation/NoObject.h>
 #include <foundation/reflect/Hash.h>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -77,6 +78,21 @@ namespace fixy::session {
 
 template <typename Inner>
 class Recorded;
+
+// ── Hashes of types ─────────────────────────────────────────────────
+//
+// An event names a payload, a protocol or a permission set by the stable id
+// of its spelling with each brand erased (brand_erased of
+// fixy/session/Classification.h).  A fresh brand is a closure type, whose
+// name depends on its unit, so no brand enters a stored hash.  Two units give
+// one hash for one payload, and a type with no brand keeps the stable id of
+// its own spelling.
+
+template <typename T>
+inline constexpr SchemaHash default_schema_hash{detail::brand_erased_type_id(^^T)};
+
+template <typename T>
+inline constexpr StateHash default_proto_hash{detail::brand_erased_type_id(^^T)};
 
 namespace detail::recording {
 
@@ -150,9 +166,8 @@ using hand_off_set_t = [:rule_argument_of(^^T, payload_rule_of(^^T).entry.set_ar
 template <typename T>
 [[nodiscard]] constexpr SessionEvent event_for_send(RoleTagId self, RoleTagId peer, DeliveryFate fate) noexcept {
     if constexpr (is_delegation_shape<T>::value) {
-        return SessionEvent::delegate_handoff(
-            self, peer, default_proto_hash<hand_off_protocol_t<T>>,
-            InnerPermSetHash{::foundation::reflect::stable_type_id(^^hand_off_set_t<T>)});
+        return SessionEvent::delegate_handoff(self, peer, default_proto_hash<hand_off_protocol_t<T>>,
+                                              InnerPermSetHash{brand_erased_type_id(^^hand_off_set_t<T>)});
     } else {
         return SessionEvent::send(self, peer, default_schema_hash<T>, PayloadHash{}, fate);
     }
@@ -161,9 +176,8 @@ template <typename T>
 template <typename T>
 [[nodiscard]] constexpr SessionEvent event_for_recv(RoleTagId self, RoleTagId peer) noexcept {
     if constexpr (is_delegation_shape<T>::value) {
-        return SessionEvent::accept_handoff(
-            self, peer, default_proto_hash<hand_off_protocol_t<T>>,
-            InnerPermSetHash{::foundation::reflect::stable_type_id(^^hand_off_set_t<T>)});
+        return SessionEvent::accept_handoff(self, peer, default_proto_hash<hand_off_protocol_t<T>>,
+                                            InnerPermSetHash{brand_erased_type_id(^^hand_off_set_t<T>)});
     } else {
         return SessionEvent::recv(self, peer, default_schema_hash<T>);
     }
@@ -212,6 +226,13 @@ concept inner_can_detect_crash = requires(Inner&& inner) { std::move(inner).recv
 
 template <typename Inner>
 concept inner_can_close = requires(Inner&& inner) { std::move(inner).close(); };
+
+// The close of the inner handle gives its Resource alone.  An End handle
+// that holds a token gives a Record of the Resource and the token.
+template <typename Inner>
+concept inner_closes_to_resource = requires(Inner&& inner) {
+    { std::move(inner).close() } -> std::same_as<typename Inner::resource_type>;
+};
 
 template <typename Inner>
 concept inner_can_crash = requires(Inner&& inner, CrashCause cause) { std::move(inner).crash(cause); };
@@ -649,9 +670,20 @@ public:
                                              "another shape can wait where the watch of fixy/session/Watch.h does not "
                                              "see it.");
 
+    // The close gives what the close of the inner handle gives: the Resource,
+    // or a Record of the Resource and the token of each tag that the End
+    // handle holds.
+    template <typename P = protocol>
+        requires is_terminal_state_v<P> && detail::recording::inner_closes_to_resource<Inner>
+    [[nodiscard]] constexpr resource_type close() && {
+        record_(SessionEvent::close(self_, peer_));
+        return std::move(inner_).close();
+    }
+
     template <typename P = protocol>
         requires is_terminal_state_v<P> && detail::recording::inner_can_close<Inner>
-    [[nodiscard]] constexpr resource_type close() && {
+              && (!detail::recording::inner_closes_to_resource<Inner>)
+    [[nodiscard]] constexpr auto close() && {
         record_(SessionEvent::close(self_, peer_));
         return std::move(inner_).close();
     }
