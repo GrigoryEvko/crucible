@@ -69,7 +69,9 @@ void advance_descriptor_generation_(int descriptor) noexcept {
 ::foundation::core::Result<int, ::foundation::os::Errno> open_descriptor_(char const* path, int flags,
                                                                           std::uint32_t mode) noexcept {
     namespace os = ::foundation::os;
-    return os::result_of(os::raw_syscall(os::Syscall::openat, os::kAtCurrentDirectory, path, flags, mode))
+    return os::result_of_restarted([path, flags, mode] {
+               return os::raw_syscall(os::Syscall::openat, os::kAtCurrentDirectory, path, flags, mode);
+           })
         .map([](std::uint64_t descriptor) noexcept { return static_cast<int>(descriptor); });
 }
 

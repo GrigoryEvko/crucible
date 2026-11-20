@@ -508,6 +508,35 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     return 0;
 }
 
+// The loop of the open doors starts a call again after eintr, with no bound,
+// and gives the first value or the first other error.  The call below gives
+// eintr two times and then the descriptor 7, or an error.
+[[nodiscard]] int restarted_call_ends_at_the_first_other_word() {
+    namespace os = foundation::os;
+    constexpr long kInterrupted = -static_cast<long>(std::to_underlying(os::Errno::eintr));
+    std::size_t calls = 0;
+    auto const opened = os::result_of_restarted([&calls] {
+        calls += 1;
+        return calls <= 2 ? kInterrupted : 7L;
+    });
+    if (!opened.is_ok_and([](std::uint64_t descriptor) noexcept { return descriptor == 7; }) || calls != 3) {
+        fixy::report(fixy::Sink::Err, "a call after two eintr words ended with errno {} after {} calls\n",
+                     errno_of(opened), calls);
+        return 1;
+    }
+    calls = 0;
+    auto const refused = os::result_of_restarted([&calls] {
+        calls += 1;
+        return calls == 1 ? kInterrupted : -static_cast<long>(std::to_underlying(os::Errno::enxio));
+    });
+    if (refused.err().value_or(os::Errno{}) != os::Errno::enxio || calls != 2) {
+        fixy::report(fixy::Sink::Err, "a call that the kernel refused ended with errno {} after {} calls\n",
+                     errno_of(refused), calls);
+        return 1;
+    }
+    return 0;
+}
+
 // The calls under a directory: a new directory, its open, a file under it
 // that a View and a TextView fill, a commit by a rename in the same
 // directory, a whole read, a check of an entry and a remove.  The report of
@@ -673,6 +702,7 @@ int main() {
     if (const int rc = exclusive_open_makes_a_new_file(scratch); rc != 0) return rc;
     if (const int rc = full_transfers_end_on_a_zero_step(); rc != 0) return rc;
     if (const int rc = open_beneath_ends_at_the_bound_of_its_tries(); rc != 0) return rc;
+    if (const int rc = restarted_call_ends_at_the_first_other_word(); rc != 0) return rc;
     if (const int rc = calls_under_a_directory(scratch); rc != 0) return rc;
     if (const int rc = open_under_a_directory_refuses_a_symbolic_link(); rc != 0) return rc;
     if (const int rc = has_entry_reads_a_full_path(); rc != 0) return rc;

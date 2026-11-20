@@ -119,8 +119,9 @@ constexpr int kDirectoryFlags = kOpenReadOnly | kOpenDirectory | kOpenCloseOnExe
 }  // namespace
 
 core::Result<core::Unit, Errno> list_directory_(core::CText path, EntryVisit visit) noexcept {
-    return result_of(
-               raw_syscall(Syscall::openat, kAtCurrentDirectory, core::detail::c_text_first_(path), kDirectoryFlags))
+    char const* const first = core::detail::c_text_first_(path);
+    return result_of_restarted(
+               [first] { return raw_syscall(Syscall::openat, kAtCurrentDirectory, first, kDirectoryFlags); })
         .and_then(
             [visit](std::uint64_t descriptor) noexcept { return walk_and_close(static_cast<int>(descriptor), visit); });
 }

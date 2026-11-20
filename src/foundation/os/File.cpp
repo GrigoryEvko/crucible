@@ -51,7 +51,8 @@ constexpr int kReadOnly = kOpenReadOnly | kOpenCloseOnExec;
 }  // namespace
 
 core::Result<std::size_t, Errno> read_file(core::CText path, core::View<char> buffer) noexcept {
-    return result_of(raw_syscall(Syscall::openat, kAtCurrentDirectory, core::detail::c_text_first_(path), kReadOnly))
+    char const* const first = core::detail::c_text_first_(path);
+    return result_of_restarted([first] { return raw_syscall(Syscall::openat, kAtCurrentDirectory, first, kReadOnly); })
         .and_then([&buffer](std::uint64_t descriptor) noexcept {
             return read_and_close(static_cast<int>(descriptor), buffer);
         });

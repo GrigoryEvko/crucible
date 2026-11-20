@@ -182,6 +182,22 @@ template <class T>
 // The error or the unit of a word that raw_syscall returned.
 [[nodiscard]] constexpr core::Result<core::Unit, Errno> unit_of(long word) noexcept { return unit_of(result_of(word)); }
 
+// Issues CALL until the kernel gives a value or an error other than eintr, and
+// gives that value or that error.  CALL() returns the word of raw_syscall.  A
+// signal whose handler has no SA_RESTART interrupts a call that waits, such as
+// an open of a FIFO with no writer, and the call gives eintr.  The loop starts
+// the call again with no bound, as each door of the base does, so a signal
+// fails no call.  Complexity: one call, and one more for each signal.
+template <class Call>
+[[nodiscard]] constexpr core::Result<std::uint64_t, Errno> result_of_restarted(Call call) noexcept {
+    constexpr long kInterrupted = -static_cast<long>(Errno::eintr);
+    long word = kInterrupted;
+    while (word == kInterrupted) {
+        word = call();
+    }
+    return result_of(word);
+}
+
 // The error number of the kernel, as the int of a std::error_code.  A door
 // that gives a std::error_code to its caller reads the number here.
 [[nodiscard]] constexpr int error_number(Errno error) noexcept { return static_cast<int>(error); }

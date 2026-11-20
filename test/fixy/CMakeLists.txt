@@ -5934,6 +5934,10 @@ fixy_neg_compile_test(neg_temporary_file_without_io
 # what the mints do: it runs the whole sequence in an mkdtemp directory.
 fixy_test(test_fs)
 
+# An open of a FIFO with no writer starts again after each timer signal whose
+# handler has no SA_RESTART, until a writer opens the FIFO.
+fixy_test(test_os_open_interrupted)
+
 # Each door under a directory refuses a path that escapes the directory: an
 # absolute path, a ".." part, a symbolic link and a magic link.
 fixy_test(test_fs_beneath)
