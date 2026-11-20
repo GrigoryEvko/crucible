@@ -88,7 +88,9 @@
 //   nodes with no choice of two or more branches, and O(N^2) for N distinct
 //   nodes at most with such choices, because each round of the walk reads
 //   each node at most one time.  The channels cost O(R^2 + A) for R roles
-//   and A actions, and the check of the system costs O(R + C + A).
+//   and A actions, and the check of the system costs O(R + C + A).  A unit
+//   reads each context one time (reading_of_), and each pair of a context
+//   and a channel type keeps its verdict in the instance of the door.
 
 #include <fixy/session/Projection.h>
 #include <foundation/algebra/net/Priority.h>
@@ -483,6 +485,13 @@ template <class Anchor = void>
     return reading;
 }
 
+// The reading of a context, one time in a unit.  find_context_fault, the
+// system, the verdict and the door read this constant, so a door that also
+// builds the system reads its context one time.
+template <typename Context>
+inline constexpr context_reading reading_of_ =
+    read_context<::foundation::reflect::anchored_t<^^Context, void>>(^^Context);
+
 // The name of a role: its identifier, or its display text for a role that
 // has no identifier, in static storage.  The reflection has the anchored
 // type, so the call depends on Anchor.
@@ -633,7 +642,7 @@ inline constexpr net::NetName not_live_class{"fixy::session::diagnostic [Context
 // local types, and O(R^2 + A).
 template <typename Context>
 [[nodiscard]] consteval ContextFault find_context_fault() noexcept {
-    return detail::context_net::read_context<::foundation::reflect::anchored_t<^^Context, void>>(^^Context).fault;
+    return detail::context_net::reading_of_<Context>.fault;
 }
 
 // The marked system of a context with no fault and with an action (THE
@@ -645,7 +654,7 @@ template <typename Context, typename Channel>
     namespace net = ::foundation::algebra::net;
     namespace cn = detail::context_net;
     using anchor = ::foundation::reflect::anchored_t<^^Context, void>;
-    constexpr cn::context_reading reading = cn::read_context<anchor>(^^Context);
+    constexpr cn::context_reading reading = cn::reading_of_<Context>;
     if constexpr (reading.fault.is_fault()) {
         static_assert(!reading.fault.is_fault(),
                       cn::door_text_of_(cn::outside_model_class, cn::explain_context_fault_<anchor>(reading)));
@@ -683,7 +692,7 @@ template <typename Context, typename Channel>
     requires StatesChannelCapacity<Channel>
 [[nodiscard]] consteval ::foundation::algebra::net::NetVerdict check_context_deadlock_freedom() noexcept {
     using anchor = ::foundation::reflect::anchored_t<^^Context, void>;
-    constexpr detail::context_net::context_reading reading = detail::context_net::read_context<anchor>(^^Context);
+    constexpr detail::context_net::context_reading reading = detail::context_net::reading_of_<Context>;
     if constexpr (reading.fault.is_fault()) {
         return detail::context_net::explain_context_fault_<anchor>(reading);
     } else if constexpr (reading.actions.size() == 0) {
@@ -701,7 +710,7 @@ template <typename Context, typename Channel>
 consteval void ensure_context_deadlock_free() noexcept {
     namespace cn = detail::context_net;
     using anchor = ::foundation::reflect::anchored_t<^^Context, void>;
-    constexpr cn::context_reading reading = cn::read_context<anchor>(^^Context);
+    constexpr cn::context_reading reading = cn::reading_of_<Context>;
     static_assert(!reading.fault.is_fault(),
                   cn::door_text_of_(cn::outside_model_class, cn::explain_context_fault_<anchor>(reading)));
     if constexpr (!reading.fault.is_fault() && reading.actions.size() != 0) {
