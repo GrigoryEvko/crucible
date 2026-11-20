@@ -364,10 +364,13 @@ int main(int argc, char* argv[]) {
             depth_batch.view().window(0, n).expect("the drain fills at most the batch");
 
         ::fixy::BumpArena scratch{1 << 20};
+        // No pipeline of the bench runs, so the proof stays valid for each
+        // iteration.
+        ::fixy::thread::QuiescenceProof<BackgroundThread> const quiescent = bg.prove_quiescence();
         return bench::run("build_trace (481 ops, full pipeline)", [&] {
             scratch.with_epoch([&]() noexcept {
                 repopulate_meta_log();
-                auto built = bg.build_trace_from(test.alloc, scratch, drained, drained_metas, drained_scopes,
+                auto built = bg.build_trace_from(quiescent, test.alloc, scratch, drained, drained_metas, drained_scopes,
                                                  drained_callsites, drained_depths, bg.numerics());
                 bench::do_not_optimize(built);
             });
@@ -402,13 +405,14 @@ int main(int argc, char* argv[]) {
             bg.bind_meta_log(meta_log);
             const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
             ::fixy::BumpArena scratch{arena_bytes};
+            ::fixy::thread::QuiescenceProof<BackgroundThread> const quiescent = bg.prove_quiescence();
 
             return bench::run(bench::format_name("build_trace ({} ops, from {})", trace.num_ops, path_view), [&] {
                 const LoadedTrace& loaded = trace;
                 scratch.with_epoch([&]() noexcept {
                     bench::refill_meta_log(meta_log, loaded);
                     auto built = bg.build_trace_from(
-                        test.alloc, scratch, loaded.entries.view(), loaded.meta_starts.view(),
+                        quiescent, test.alloc, scratch, loaded.entries.view(), loaded.meta_starts.view(),
                         loaded.scope_hashes.view(), loaded.callsite_hashes.view(), loaded.depths.view(), bg.numerics());
                     bench::do_not_optimize(built);
                 });

@@ -666,7 +666,7 @@ bool BackgroundThread::is_held_(ConstRegionLink region) const noexcept {
     }
     const uint32_t queued = uncompiled_regions_.size();
     for (uint32_t age = 0; age < queued; ++age) {
-        if (::fixy::same_target(uncompiled_regions_.at(age), region)) return true;
+        if (::fixy::same_target(uncompiled_regions_.slot_at_(age), region)) return true;
     }
     return false;
 }
@@ -834,9 +834,9 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         ::fixy::Option<BuiltRegion> built{::fixy::none};
         owner.build_scratch_.with_epoch([&]() noexcept {
             owner
-                .build_trace_from(ctx.cap().alloc, owner.build_scratch_, work->trace.view(), work->meta_starts.view(),
-                                  work->scope_hashes.view(), work->callsite_hashes.view(), work->depths.view(),
-                                  work->numerics)
+                .build_trace_(ctx.cap().alloc, owner.build_scratch_, work->trace.view(), work->meta_starts.view(),
+                              work->scope_hashes.view(), work->callsite_hashes.view(), work->depths.view(),
+                              work->numerics)
                 .match([&](BuiltTrace trace) noexcept { built = ::fixy::some(std::move(trace.region)); },
                        [](BuildRefusal /*refusal*/) noexcept {});
         });
@@ -978,14 +978,16 @@ void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trac
     // background context of that thread from the door.  It borrows this
     // object through the door, which keeps the thread in thread_.  The
     // process ends when the host has no resource for one more thread.  The
-    // run state is running before the thread starts, so a flush after this
-    // start waits for the pipeline, and the thread stores stopped at its end.
-    pipeline_run_.store_release(PipelineRun::running);
+    // start claims the run state before the thread starts, so a flush after
+    // this start waits for the pipeline, and the thread stores stopped at its
+    // end.  A start while a run of run_in_row is active ends the process at
+    // the claim.
+    claim_pipeline_run_();
     ::fixy::thread::mint_owner_thread<&BackgroundThread::thread_, &BackgroundThread::request_stop_>(
         startup, ::fixy::thread::ThreadOptions{}, *this,
         [](BackgroundThread& owner) noexcept {
             const ::fixy::BgLoadCtx ctx{::foundation::effects::host::BackgroundOwner::mint_background_context()};
-            owner.run_in_row(ctx);
+            owner.run_pipeline_(ctx);
             owner.end_pipeline_run_(ctx);
         })
         .expect("the thread door starts the pipeline thread");

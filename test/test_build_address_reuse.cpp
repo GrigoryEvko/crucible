@@ -138,9 +138,9 @@ struct Work {
 
     [[nodiscard]] BackgroundThread::BuiltRegion build(BackgroundThread& bt) const {
         ::fixy::BumpArena scratch{size_t{1} << 16};
-        auto built = bt.build_trace_from(::foundation::effects::testing::test().alloc, scratch, first_ops(trace),
-                                         first_ops(meta_starts), first_ops(scope_hashes), first_ops(callsite_hashes),
-                                         first_ops(depths), bt.numerics());
+        auto built = bt.build_trace_from(bt.prove_quiescence(), ::foundation::effects::testing::test().alloc, scratch,
+                                         first_ops(trace), first_ops(meta_starts), first_ops(scope_hashes),
+                                         first_ops(callsite_hashes), first_ops(depths), bt.numerics());
         return std::move(built).expect("a work with the metadata of each op builds").region;
     }
 };

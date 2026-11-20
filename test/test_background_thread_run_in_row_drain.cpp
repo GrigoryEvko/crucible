@@ -7,6 +7,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/effects/Effect.h>
 
 #include <chrono>
@@ -41,8 +42,9 @@ void test_t04_runtime_smoke() {
     bt.stop_requested.signal();
 
     bool done = false;
+    ::fixy::thread::QuiescenceProof<BackgroundThread> const proof = bt.prove_quiescence();
     std::jthread t([&]() {
-        bt.run_in_row(bg_load_ctx());
+        bt.run_in_row(proof, bg_load_ctx());
         done = true;
     });
     t.join();
@@ -67,7 +69,8 @@ void test_concurrent_spsc_drain() {
     bt.bind_meta_log(*metalog);
     bt.rearm_stop();
 
-    std::jthread bg_thread([&]() { bt.run_in_row(bg_load_ctx()); });
+    ::fixy::thread::QuiescenceProof<BackgroundThread> const proof = bt.prove_quiescence();
+    std::jthread bg_thread([&]() { bt.run_in_row(proof, bg_load_ctx()); });
 
     // Each entry carries its own schema hash so the iteration detector never
     // matches a signature.
@@ -112,7 +115,8 @@ void test_large_batch_drain() {
     bt.bind_meta_log(*metalog);
     bt.rearm_stop();
 
-    std::jthread bg_thread([&]() { bt.run_in_row(bg_load_ctx()); });
+    ::fixy::thread::QuiescenceProof<BackgroundThread> const proof = bt.prove_quiescence();
+    std::jthread bg_thread([&]() { bt.run_in_row(proof, bg_load_ctx()); });
 
     constexpr uint32_t TOTAL = 32;
     for (uint32_t i = 0; i < TOTAL; ++i) {
@@ -161,7 +165,8 @@ void test_rearm_cycle() {
     for (uint32_t cycle = 0; cycle < 2; ++cycle) {
         bt.rearm_stop();
 
-        std::jthread bg([&]() { bt.run_in_row(bg_load_ctx()); });
+        ::fixy::thread::QuiescenceProof<BackgroundThread> const proof = bt.prove_quiescence();
+        std::jthread bg([&]() { bt.run_in_row(proof, bg_load_ctx()); });
 
         for (uint32_t i = 0; i < PER_CYCLE; ++i) {
             crucible::TraceRing::Entry e{};
@@ -195,6 +200,31 @@ void test_rearm_cycle() {
                         "  rearm_cycle:                               "
                         "PASSED (total={} over 2 cycles)\n",
                         static_cast<unsigned long long>(bt.total_processed.load_acquire()));
+}
+
+// Two runs of one pipeline at the same time would write each stage from two
+// threads.  A run claims the run state, so the second claim ends the process,
+// whichever of the two threads claims second.  No stop comes, so the first
+// run does not end before the second claim.  The two runs start in a child
+// through expect_dies of the Check family, as two bodies of run_joined, and
+// each body takes its own proof of quiescence.
+void test_second_run_ends_the_process(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] {
+            static TraceRing ring{};
+            static MetaLog metalog{::foundation::effects::testing::test().alloc};
+            BackgroundThread bt{::foundation::effects::testing::test().alloc};
+            bt.bind_ring(ring);
+            bt.bind_meta_log(metalog);
+            bt.rearm_stop();
+            auto first = [&bt]() noexcept { bt.run_in_row(bt.prove_quiescence(), bg_load_ctx()); };
+            auto second = [&bt]() noexcept { bt.run_in_row(bt.prove_quiescence(), bg_load_ctx()); };
+            ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
+            static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, first, second));
+        },
+        ::fixy::TextView{"a run of the pipeline while another run of it is active"});
+    ::fixy::check::pass(test, "  second_run_ends_the_process:               PASSED\n");
 }
 
 }  // namespace test_background_thread_run_in_row

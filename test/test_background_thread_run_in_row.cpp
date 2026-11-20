@@ -109,10 +109,12 @@ void test_t02_context_matrix() {
 // decltype, where it is unevaluated, and only its type is taken.
 void test_t03_api_surface_pinned() {
     BackgroundThread* bt_ptr = nullptr;
-    using ReturnT = decltype(bt_ptr->run_in_row(std::declval<::fixy::BgLoadCtx const&>()));
-    static_assert(std::is_same_v<ReturnT, void>, "run_in_row(ctx) returns void.");
-    static_assert(noexcept(bt_ptr->run_in_row(std::declval<::fixy::BgLoadCtx const&>())),
-                  "run_in_row(ctx) is noexcept, because the pipeline thread runs it as its entry.");
+    using Proof = ::fixy::thread::QuiescenceProof<BackgroundThread>;
+    using ReturnT =
+        decltype(bt_ptr->run_in_row(std::declval<Proof const&>(), std::declval<::fixy::BgLoadCtx const&>()));
+    static_assert(std::is_same_v<ReturnT, void>, "run_in_row(proof, ctx) returns void.");
+    static_assert(noexcept(bt_ptr->run_in_row(std::declval<Proof const&>(), std::declval<::fixy::BgLoadCtx const&>())),
+                  "run_in_row(proof, ctx) is noexcept, because a test runs it as the entry of a thread.");
 
     ::fixy::check::pass(kTest, "  T03 api_surface_pinned:                    PASSED\n");
 }
@@ -142,69 +144,80 @@ void test_cross_fence_consistency() {
 
 // The retained-region queue is bounded, so a process that publishes forever
 // holds a constant number of pointers rather than one per region.  Driving
-// past the bound directly is the only way to see the wrap.
+// past the bound directly is the only way to see the wrap.  A read of a slot
+// takes the publish-stage proof.  No pipeline of the owner runs, so its job
+// runs on this thread with the proof.
 void test_uncompiled_queue_is_bounded() {
-    constexpr uint32_t CAP = crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE;
-    BackgroundThread::UncompiledRegionQueue queue{::foundation::effects::testing::test().alloc,
-                                                  ::fixy::Quantity<::fixy::unit::Element, uint32_t>{CAP}};
+    BackgroundThread owner{::foundation::effects::testing::test().alloc};
+    owner.run_on_publish_stage([](BackgroundThread::PublishStageView&,
+                                  BackgroundThread::PublishStage const& stage) noexcept {
+        constexpr uint32_t CAP = crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE;
+        BackgroundThread::UncompiledRegionQueue queue{::foundation::effects::testing::test().alloc,
+                                                      ::fixy::Quantity<::fixy::unit::Element, uint32_t>{CAP}};
 
-    CRUCIBLE_TEST_ASSERT(kTest, queue.size() == 0u);
-    CRUCIBLE_TEST_ASSERT(kTest, queue.total() == 0u);
+        CRUCIBLE_TEST_ASSERT(kTest, queue.size() == 0u);
+        CRUCIBLE_TEST_ASSERT(kTest, queue.total() == 0u);
 
-    // The queue never reads a region, so default nodes stand in for the
-    // published regions.  Each push names a node of its own.
-    constexpr uint64_t OVERRUN = 4u * CAP + 3u;
-    static ::fixy::FixedArray<crucible::RegionNode, OVERRUN> regions{};
-    auto region_at = [](uint64_t i) {
-        return ::fixy::some(
-            ::fixy::erase_brand(regions.get(i).expect("a test reads an element at or past the count of its array")));
-    };
+        // The queue never reads a region, so default nodes stand in for the
+        // published regions.  Each push names a node of its own.
+        constexpr uint64_t OVERRUN = 4u * CAP + 3u;
+        static ::fixy::FixedArray<crucible::RegionNode, OVERRUN> regions{};
+        auto region_at = [](uint64_t i) {
+            return ::fixy::some(::fixy::erase_brand(
+                regions.get(i).expect("a test reads an element at or past the count of its array")));
+        };
 
-    for (uint64_t i = 0; i < CAP; ++i) {
-        queue.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
-        CRUCIBLE_TEST_ASSERT(kTest, queue.total() == i + 1);
-        CRUCIBLE_TEST_ASSERT(kTest, queue.size() == i + 1);
-        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(queue.at(0), region_at(i)) && "age 0 is the newest");
-    }
+        for (uint64_t i = 0; i < CAP; ++i) {
+            queue.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
+            CRUCIBLE_TEST_ASSERT(kTest, queue.total() == i + 1);
+            CRUCIBLE_TEST_ASSERT(kTest, queue.size() == i + 1);
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(queue.at(stage, 0), region_at(i)) && "age 0 is the newest");
+        }
 
-    // One past the bound: the total keeps counting, the retention does not.
-    for (uint64_t i = CAP; i < OVERRUN; ++i)
-        queue.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
+        // One past the bound: the total keeps counting, the retention does not.
+        for (uint64_t i = CAP; i < OVERRUN; ++i)
+            queue.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
 
-    CRUCIBLE_TEST_ASSERT(kTest, queue.total() == OVERRUN);
-    CRUCIBLE_TEST_ASSERT(kTest, queue.size() == CAP && "retention must stop at the bound");
-    for (uint32_t age = 0; age < CAP; ++age)
-        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(queue.at(age), region_at(OVERRUN - 1 - age))
-                                        && "the bound keeps the newest CAP, in order");
+        CRUCIBLE_TEST_ASSERT(kTest, queue.total() == OVERRUN);
+        CRUCIBLE_TEST_ASSERT(kTest, queue.size() == CAP && "retention must stop at the bound");
+        for (uint32_t age = 0; age < CAP; ++age)
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(queue.at(stage, age), region_at(OVERRUN - 1 - age))
+                                            && "the bound keeps the newest CAP, in order");
 
-    ::fixy::check::pass(kTest,
-                        "  uncompiled_queue_bounded:                  "
-                        "PASSED (pushed={}, retained={})\n",
-                        static_cast<unsigned long long>(queue.total()), queue.size());
+        ::fixy::check::pass(kTest,
+                            "  uncompiled_queue_bounded:                  "
+                            "PASSED (pushed={}, retained={})\n",
+                            static_cast<unsigned long long>(queue.total()), queue.size());
+    });
 }
 
 // The capacity of the queue is a limit of the pipeline.  A queue of three
 // keeps the three newest regions and drops each older one.  A queue of zero
-// keeps no region and only counts.
-void test_uncompiled_queue_refuses_past_its_capacity(::fixy::TestRunnerCtx const& test) {
-    using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
-    static ::fixy::FixedArray<crucible::RegionNode, 8> regions{};
-    BackgroundThread::UncompiledRegionQueue three{::foundation::effects::testing::test().alloc, Count{3}};
-    BackgroundThread::UncompiledRegionQueue none{::foundation::effects::testing::test().alloc, Count{0}};
-    CRUCIBLE_TEST_ASSERT(test, three.capacity() == 3 && none.capacity() == 0);
-    for (uint64_t i = 0; i < 8; ++i) {
-        three.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
-        none.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
-    }
-    CRUCIBLE_TEST_ASSERT(test, three.total() == 8 && three.size() == 3);
-    for (uint32_t age = 0; age < 3; ++age) {
-        CRUCIBLE_TEST_ASSERT(
-            test, ::fixy::same_target(three.at(age), ::fixy::some(regions.get(uint64_t{7} - age)
-                                                                      .expect("a test reads an element at or past "
-                                                                              "the count of its array"))));
-    }
-    CRUCIBLE_TEST_ASSERT(test, none.total() == 8 && none.size() == 0);
-    ::fixy::check::pass(test, "  uncompiled_queue_refuses_past_its_capacity: PASSED\n");
+// keeps no region and only counts.  The reads run in a job, as above.
+void test_uncompiled_queue_refuses_past_its_capacity() {
+    BackgroundThread owner{::foundation::effects::testing::test().alloc};
+    owner.run_on_publish_stage(
+        [](BackgroundThread::PublishStageView&, BackgroundThread::PublishStage const& stage) noexcept {
+            using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
+            static ::fixy::FixedArray<crucible::RegionNode, 8> regions{};
+            BackgroundThread::UncompiledRegionQueue three{::foundation::effects::testing::test().alloc, Count{3}};
+            BackgroundThread::UncompiledRegionQueue none{::foundation::effects::testing::test().alloc, Count{0}};
+            CRUCIBLE_TEST_ASSERT(kTest, three.capacity() == 3 && none.capacity() == 0);
+            for (uint64_t i = 0; i < 8; ++i) {
+                three.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
+                none.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
+            }
+            CRUCIBLE_TEST_ASSERT(kTest, three.total() == 8 && three.size() == 3);
+            for (uint32_t age = 0; age < 3; ++age) {
+                CRUCIBLE_TEST_ASSERT(kTest,
+                                     ::fixy::same_target(three.at(stage, age),
+                                                         ::fixy::some(regions.get(uint64_t{7} - age)
+                                                                          .expect("a test reads an element at or past "
+                                                                                  "the count of its array"))));
+            }
+            CRUCIBLE_TEST_ASSERT(kTest, none.total() == 8 && none.size() == 0);
+            ::fixy::check::pass(kTest, "  uncompiled_queue_refuses_past_its_capacity: PASSED\n");
+        });
 }
 
 }  // namespace
@@ -223,10 +236,11 @@ int main() {
     test_concurrent_spsc_drain();
     test_large_batch_drain();
     test_rearm_cycle();
+    test_second_run_ends_the_process(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
     // These run last because they seal the global schema and kernel tables,
     // which every group above deliberately avoids.
     test_uncompiled_queue_is_bounded();
-    test_uncompiled_queue_refuses_past_its_capacity(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
+    test_uncompiled_queue_refuses_past_its_capacity();
     test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
     test_reset_drops_inflight_regions();
     test_reset_applies_at_its_point();

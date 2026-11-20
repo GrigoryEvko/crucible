@@ -222,17 +222,17 @@ void job_runs_on_the_stage_while_it_runs() {
 
 // A job that posts a second job to the same background thread would wait
 // on itself, because the thread that runs it holds the stage.  The view of a
-// job has no door that posts a job, so the job reaches the background thread
-// through a Ref that it captures.  The contract ends the process instead of
-// letting it hang.  The refused call runs in a child through expect_dies of
-// the Check family, before the test starts a thread.
+// job has no door that posts a job, and the door refuses a capture that
+// reaches the background thread, so the job names a background thread of
+// static storage, which it does not capture.  The contract ends the process
+// instead of letting it hang.  The refused call runs in a child through
+// expect_dies of the Check family, before the test starts a thread.
 void nested_job_ends_the_process() {
-    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
+    static crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
     background.run_on_publish_stage(
-        [owner = ::fixy::to(background)](crucible::BackgroundThread::PublishStageView&,
-                                         crucible::BackgroundThread::PublishStage const&) noexcept {
-            owner->run_on_publish_stage([](crucible::BackgroundThread::PublishStageView&,
-                                           crucible::BackgroundThread::PublishStage const&) noexcept {});
+        [](crucible::BackgroundThread::PublishStageView&, crucible::BackgroundThread::PublishStage const&) noexcept {
+            background.run_on_publish_stage([](crucible::BackgroundThread::PublishStageView&,
+                                               crucible::BackgroundThread::PublishStage const&) noexcept {});
         });
 }
 

@@ -60,6 +60,12 @@ struct BuildScratchOfBench {
     }
     [[nodiscard]] static uint8_t& map_generation(BackgroundThread& bg) noexcept { return bg.map_gen_; }
     [[nodiscard]] static uint32_t slot_capacity(BackgroundThread const& bg) noexcept { return bg.slot_cap_max_.get(); }
+    // The growth of the scratch buffers that the build makes after its scan.
+    // The counts pass through as the build gives them.
+    template <class... Counts>
+    static void ensure_buffers(BackgroundThread& bg, ::foundation::effects::Alloc alloc, Counts... counts) {
+        bg.ensure_scratch_buffers(alloc, counts...);
+    }
 };
 
 }  // namespace crucible
@@ -115,11 +121,13 @@ void check_ops_without_metas(::fixy::View<const TraceEntry> ops, ::fixy::View<co
 }
 
 // Builds the trace graph of the recorded trace into scratch.  The build reads
-// the arrays of the trace and does not write them.
+// the arrays of the trace and does not write them.  No pipeline of the bench
+// runs, so each build takes a fresh proof of quiescence.
 BackgroundThread::TraceBuild build_recorded(BackgroundThread& bg, ::fixy::BumpArena& scratch,
                                             const LoadedTrace& trace) {
-    return bg.build_trace_from(A, scratch, trace.entries.view(), trace.meta_starts.view(), trace.scope_hashes.view(),
-                               trace.callsite_hashes.view(), trace.depths.view(), bg.numerics());
+    return bg.build_trace_from(bg.prove_quiescence(), A, scratch, trace.entries.view(), trace.meta_starts.view(),
+                               trace.scope_hashes.view(), trace.callsite_hashes.view(), trace.depths.view(),
+                               bg.numerics());
 }
 
 // ── Top-level Report via bench::run ──────────────────────────────────
@@ -338,7 +346,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         ::fixy::HeapArray<int64_t> scalar_buffer = ::fixy::mint_heap_array(A, total_scalars, int64_t{0});
         ::fixy::HeapArray<OpIndex> producer_buffer = ::fixy::mint_heap_array(A, total_inputs, OpIndex{});
         ::fixy::HeapArray<SlotId> slot_buffer = ::fixy::mint_heap_array(A, total_inputs + total_outputs, SlotId{});
-        bg.ensure_scratch_buffers(A, total_inputs, total_outputs);
+        BuildScratchOfBench::ensure_buffers(bg, A, total_inputs, total_outputs);
         const uint32_t slot_cap = ::fixy::min(BuildScratchOfBench::slot_capacity(bg),
                                               ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
         for (BackgroundThread::SlotInfo& slot_info : BuildScratchOfBench::slots(bg)

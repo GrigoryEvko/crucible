@@ -22,6 +22,7 @@ void test_t04_runtime_smoke();
 void test_concurrent_spsc_drain();
 void test_large_batch_drain();
 void test_rearm_cycle();
+void test_second_run_ends_the_process(::fixy::TestRunnerCtx const& test);
 
 // The divergence reset and the publish stage
 // (test_background_thread_run_in_row_publish.cpp).

@@ -104,12 +104,12 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 // PublishStageView, not the class.  So the class states that two threads
 // can write it at the same time.
 //
-// The statement relies on the callers of some public doors.  build_trace_from
-// and ensure_scratch_buffers write the scratch of the build stage, and
-// run_in_row runs a pipeline, so call them only on an object whose pipeline
-// thread does not run.  pending_op_count, detector_history_count and at() of
-// the uncompiled queue read the state of a stage, so read them only as their
-// comments tell.
+// Each public door that writes or reads the state of a stage from outside
+// the pipeline takes a proof.  run_in_row, build_trace_from, pending_op_count
+// and detector_history_count take the proof that no pipeline runs
+// (prove_quiescence), and at() of the uncompiled queue takes the
+// publish-stage proof.  The mailbox of the publish stage and its two
+// sentinels are private.
 struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // A vendor-encoded hardware identity measured by the startup calibration
     // pass, not synthesized or defaulted.  Zero marks the pre-init state.
@@ -323,8 +323,10 @@ public:
     // PublishStage token as its parameters.  The token is the proof of the
     // fields of the publish stage.  The view gives only the doors of the
     // publish stage, and the door builds it on the thread that owns those
-    // fields.  So a job captures no `this` and no BackgroundThread, and
-    // through the view it reaches no state of another stage.
+    // fields.  A job captures no `this` and no BackgroundThread: the door
+    // refuses each capture that reaches a BackgroundThread, through a Ref, a
+    // reference, a pointer or a part of a class.  So through the view a job
+    // reaches no state of another stage.
     //
     // THE CLOSURE OF A JOB.  The door checks the closure of the job under
     // publish_job_policy (foundation/Closure.h).  The caller waits while the
@@ -372,6 +374,15 @@ public:
         static_assert(std::is_void_v<Value> || ::foundation::transfer::Sendable<Value>,
                       "run_on_publish_stage: the value of the job crosses from the thread of the publish stage to the "
                       "caller, so it is Sendable");
+        // A job that the closure check refuses gives that one error.
+        static_assert(
+            !verdict.is_admitted()
+                || !::foundation::reflect::any_component_satisfies<[](::foundation::reflect::TypeNode node) consteval {
+                       return ::foundation::reflect::bare_type(node.type) == ^^BackgroundThread;
+                   }>(^^std::remove_cvref_t<Job>),
+            "run_on_publish_stage: a capture of the job reaches a BackgroundThread, such as a Ref, a "
+            "reference or a pointer of it.  The job then reaches the state of each stage.  Capture no "
+            "BackgroundThread: the PublishStageView of the job gives the doors of the publish stage");
         if constexpr (std::is_void_v<Value>) {
             auto with_owner = [&job, this](PublishStage const& stage) noexcept {
                 PublishStageView view{*this};
@@ -410,10 +421,10 @@ private:
             }
             if (::fixy::same_target(seen, closed_mark_())) {
                 if (owner_mailbox_.cas_acq_rel(seen, inline_mark_()).is_ok()) {
-                    const StageHolder held_before = stage_held_by_this_thread_;
-                    stage_held_by_this_thread_ = stage_holder_();
+                    const StageHolder held_before = stage_held_by_this_thread_();
+                    stage_held_by_this_thread_() = stage_holder_();
                     request.call(PublishStage{});
-                    stage_held_by_this_thread_ = held_before;
+                    stage_held_by_this_thread_() = held_before;
                     owner_mailbox_.store_release(closed_mark_());
                     return;
                 }
@@ -429,9 +440,14 @@ private:
     IterationDetector detector_;
 
 public:
-    // The count of ops in the history of the detector.  Read it only after a
-    // flush, when the detect stage waits for ops, as pending_op_count.
-    [[nodiscard]] uint64_t detector_history_count() const noexcept { return detector_.pos_ - detector_.base_; }
+    // The count of ops in the history of the detector.  The detect stage
+    // writes the detector with no order, so the read takes the proof that no
+    // pipeline runs (prove_quiescence).
+    [[nodiscard]] uint64_t
+    detector_history_count(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
+        expect_quiescent_(proof);
+        return detector_.pos_ - detector_.base_;
+    }
 
     // The ops that the detect stage holds, from the oldest op that a future
     // iteration can hold to the newest op.  It is a ring of six parallel
@@ -532,9 +548,15 @@ private:
     }
 
 public:
-    // Read the count only after a flush, when the detect stage waits for
-    // ops.
-    [[nodiscard]] uint64_t pending_op_count() const noexcept { return pending_ops_.size(); }
+    // The count of the ops that the detect stage holds.  The detect stage
+    // writes the count with no order, so the read takes the proof that no
+    // pipeline runs (prove_quiescence).  The ops stay after stop(), and a
+    // later start reads them.
+    [[nodiscard]] uint64_t
+    pending_op_count(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
+        expect_quiescent_(proof);
+        return pending_ops_.size();
+    }
 
     // Own cache line: the background writes it, the foreground reads it for
     // diagnostics.  Sharing a line with the held ops above would invalidate
@@ -737,6 +759,8 @@ private:
     void sweep_regions_(PublishStage const& stage) noexcept;
 
     // True when the uncompiled queue or the marks of the owner name region.
+    // Only the sweep of the publish stage asks it, so it reads the slots of
+    // the queue with the proof of the sweep.
     [[nodiscard]] bool is_held_(ConstRegionLink region) const noexcept;
 
 public:
@@ -757,10 +781,9 @@ public:
     //
     // The publish stage is the sole writer, and only it reaches push through
     // a BackgroundThread.  Each thread can read total(), size() and
-    // capacity().  at() reads a slot that the publish stage writes, so read
-    // it in a job of run_on_publish_stage or while no pipeline runs.  The
-    // region store keeps each region that the queue holds, so the queue keeps
-    // at most capacity() regions alive.
+    // capacity().  at() reads a slot that the publish stage writes, so it
+    // takes the publish-stage proof.  The region store keeps each region that
+    // the queue holds, so the queue keeps at most capacity() regions alive.
     class UncompiledRegionQueue {
     public:
         // A queue that keeps the capacity newest regions, in slots that the
@@ -798,7 +821,20 @@ public:
         // empty reference a never-written slot still holds.  The clause is the
         // in-body macro because its predicate reaches a member through
         // `this`, which a plain pre() skips when the compiler folds this body.
-        [[nodiscard]] RegionLink at(uint32_t age) const noexcept {
+        // The publish stage writes the slots with no order, so the read takes
+        // the publish-stage proof: a job of run_on_publish_stage holds it,
+        // and so does its caller while no publish stage runs.
+        [[nodiscard]] RegionLink at(PublishStage const& /*stage*/, uint32_t age) const noexcept {
+            return slot_at_(age);
+        }
+
+    private:
+        // The sweep of the publish stage reads the slots through slot_at_,
+        // with the proof of the sweep.
+        friend struct BackgroundThread;
+
+        // The read of at(), for a caller that holds the publish stage.
+        [[nodiscard]] RegionLink slot_at_(uint32_t age) const noexcept {
             CRUCIBLE_PRE(age < size());
             const uint64_t seen = total_.get();
             const uint64_t capacity = slots_.size();
@@ -806,7 +842,6 @@ public:
                         .expect("a count modulo the capacity is below it");
         }
 
-    private:
         ::fixy::HeapArray<RegionLink> slots_;
         ::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> total_ =
             ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
@@ -976,8 +1011,8 @@ private:
     void apply_due_reset_() noexcept;
 
     // The mailbox of the publish-stage state.  It holds one of four values:
-    //   mailbox_closed_   no publish stage runs, so a caller may own the state
-    //   mailbox_inline_   a caller runs a job while no publish stage runs
+    //   closed_mark_()    no publish stage runs, so a caller may own the state
+    //   inline_mark_()    a caller runs a job while no publish stage runs
     //   empty             the publish stage runs and no job waits
     //   a job             the publish stage runs, and this job waits for it
     // The publish stage opens it as its first act and closes it as its last,
@@ -985,25 +1020,24 @@ private:
     // job runs on its caller.  The stage waits to open while a caller runs a
     // job inline.  No job is claimed twice, because each side claims it by
     // one compare-and-swap on this word.
-    // Defined after the class: a job's member initializers are not usable
-    // until the enclosing class is complete.  A static member is no part of
-    // an object, so the two stay public, and only their addresses matter.
-public:
-    static OwnerJob mailbox_closed_;
-    static OwnerJob mailbox_inline_;
-
-private:
-    // The references of the two sentinels.
+    //
     // A job of the mailbox, or no job.  A job lives in the frame of its
     // caller, and the sentinels live as long as the process, so the mailbox
     // holds each one on the erased brand.
     using JobLink = ::fixy::Option<::fixy::Ref<OwnerJob>>;
 
-    [[nodiscard]] static JobLink closed_mark_() noexcept {
-        return ::fixy::some(::fixy::erase_brand(::fixy::to(mailbox_closed_)));
+    // The references of the two sentinels.  Only the address of a sentinel
+    // matters, so each is one object for the process: a job of one shared
+    // library compares against the address that the stage of another one
+    // stored.  Each sentinel is a static local of its function, so it is no
+    // member, and no splice of a member reaches it.
+    CRUCIBLE_PROCESS_WIDE [[nodiscard]] static JobLink closed_mark_() noexcept {
+        static constinit OwnerJob closed{};
+        return ::fixy::some(::fixy::erase_brand(::fixy::to(closed)));
     }
-    [[nodiscard]] static JobLink inline_mark_() noexcept {
-        return ::fixy::some(::fixy::erase_brand(::fixy::to(mailbox_inline_)));
+    CRUCIBLE_PROCESS_WIDE [[nodiscard]] static JobLink inline_mark_() noexcept {
+        static constinit OwnerJob opened_inline{};
+        return ::fixy::some(::fixy::erase_brand(::fixy::to(opened_inline)));
     }
 
     alignas(64)::fixy::Atomic<JobLink> owner_mailbox_{closed_mark_()};
@@ -1060,18 +1094,20 @@ private:
 
     // True when this thread holds the stage of this background thread.
     [[nodiscard]] bool holds_stage_on_this_thread_() const noexcept {
-        return ::fixy::same_target(stage_held_by_this_thread_, stage_holder_());
+        return ::fixy::same_target(stage_held_by_this_thread_(), stage_holder_());
     }
 
     // The background thread whose stage this thread holds, or an empty
     // reference.  Read only by the contracts of run_on_publish_stage and of
-    // flush, on the cold path.  It is one object for the process, so every shared library
-    // reads the same copy on a thread.  A static member is no part of an
-    // object, so it stays public.
-public:
-    CRUCIBLE_PROCESS_WIDE static inline thread_local StageHolder stage_held_by_this_thread_{};
+    // flush, on the cold path.  It is one object for each thread of the
+    // process, so each shared library reads the same copy on a thread.  It is
+    // a static local of its function, so it is no member, and no splice of a
+    // member reaches it.
+    CRUCIBLE_PROCESS_WIDE [[nodiscard]] static StageHolder& stage_held_by_this_thread_() noexcept {
+        static thread_local constinit StageHolder held{};
+        return held;
+    }
 
-private:
     // The publish stage holds the mailbox open for as long as this scope
     // lives, so every way out of the stage closes it.  A mailbox left open
     // would make each later job wait for a stage that no longer runs.  The
@@ -1080,12 +1116,12 @@ private:
     class OwnerMailboxScope {
     public:
         OwnerMailboxScope(BackgroundThread& owner, PublishStage const&) noexcept
-            : owner_{owner}, held_before_{stage_held_by_this_thread_} {
+            : owner_{owner}, held_before_{stage_held_by_this_thread_()} {
             owner_.open_owner_mailbox_();
-            stage_held_by_this_thread_ = owner_.stage_holder_();
+            stage_held_by_this_thread_() = owner_.stage_holder_();
         }
         ~OwnerMailboxScope() {
-            stage_held_by_this_thread_ = held_before_;
+            stage_held_by_this_thread_() = held_before_;
             owner_.close_owner_mailbox_(PublishStage{});
         }
         OwnerMailboxScope(const OwnerMailboxScope&) = delete("the scope closes the mailbox once");
@@ -1233,9 +1269,8 @@ public:
     };
 
     // Seals the global schema and kernel tables, sets the ring and the
-    // metadata log, and starts the pipeline thread.  The thread runs
-    // run_in_row under the background context, which it takes from the
-    // door.
+    // metadata log, and starts the pipeline thread.  The thread runs the
+    // pipeline under the background context, which it takes from the door.
     //
     // Sealing the global registration tables here turns "all registrations
     // complete before the background thread starts" into a load-bearing
@@ -1448,13 +1483,13 @@ private:
     ::fixy::Monotonic<uint32_t> slot_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
     ::fixy::Monotonic<uint32_t> edge_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
 
-public:
-    // build_trace_from calls this after its scan of the trace, which
-    // supplies exact counts.  Buffers grow and never shrink, so the cost
-    // amortizes across iterations.  It writes the scratch of the build
-    // stage, as build_trace_from does.
+    // build_trace_ calls this after its scan of the trace, which supplies
+    // exact counts.  Buffers grow and never shrink, so the cost amortizes
+    // across iterations.  It writes the scratch of the build stage, as
+    // build_trace_ does.
     void ensure_scratch_buffers(::foundation::effects::Alloc a, uint32_t total_inputs, uint32_t total_outputs);
 
+public:
     // The bytes of the storage of a slot that the tensor reaches: from the
     // first byte of the storage to the end of the extent of the tensor.  A
     // slot holds the largest span of the tensors in it, so the view of each
@@ -1560,13 +1595,26 @@ public:
                   "row of fixy::BgLoadCtx.  Adding or removing an atom changes the context every site that runs "
                   "this thread must hand in.");
 
+    // The proof that no pipeline thread of this object runs (THE QUIESCENCE
+    // OF AN OWNER of fixy/os/OwnedThread.h).  A run of the pipeline on a
+    // thread of the caller, a build of a trace with no pipeline and a read of
+    // the state of a stage take it.  A call while the pipeline thread of
+    // start() runs ends the process.
+    [[nodiscard]] ::fixy::thread::QuiescenceProof<BackgroundThread> prove_quiescence() const noexcept {
+        return thread_.quiescence(*this);
+    }
+
     // The context is the evidence for the row.  It comes from the door of
     // the background context, or from the test witness, and nothing else
     // builds one.
     //
-    // Runs the four pipeline stages, and returns when the publish stage
-    // gets the stop sentinel.  The drain stage sends that sentinel after a
-    // signal on stop_requested.
+    // Runs the four pipeline stages on the thread of the caller, and returns
+    // when the publish stage gets the stop sentinel.  The drain stage sends
+    // that sentinel after a signal on stop_requested.  A test runs it on a
+    // thread of its own.  The proof shows that no pipeline thread of start()
+    // runs, and the run claims the run state, so a second run while this one
+    // runs ends the process.  The pipeline thread of start() runs the body
+    // itself.
     //
     // CtxAdmits holds only for a context over the background capability
     // whose row names all four atoms.  fixy::BgLoadCtx is that context, so
@@ -1575,15 +1623,37 @@ public:
     // convert.
     template <class Ctx>
         requires ::foundation::effects::CtxAdmits<Ctx, run_required_row>
-    void run_in_row(Ctx const& ctx) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    void run_in_row(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof, Ctx const& ctx) noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(proof.holds_part(thread_) && proof.is_quiescent());
+        claim_pipeline_run_();
         run_pipeline_(ctx);
+        end_pipeline_run_(ctx);
     }
 
 private:
-    // The body of run_in_row, in src/BackgroundThread.cpp.  Only that
-    // translation unit instantiates the stages, the channels and the
+    // The body of a run of the pipeline, in src/BackgroundThread.cpp.  Only
+    // that translation unit instantiates the stages, the channels and the
     // pipeline.
     void run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+
+    // Stores running in the run state, which holds stopped.  A run state of
+    // running means that a pipeline runs already, and the claim then ends the
+    // process.
+    void claim_pipeline_run_() noexcept {
+        if (pipeline_run_.cas_acq_rel(PipelineRun::stopped, PipelineRun::running).is_err()) [[unlikely]] {
+            ::fixy::fatal("BackgroundThread: a run of the pipeline while another run of it is active.  Stop the "
+                          "first run before the second one starts");
+        }
+    }
+
+    // Ends the process unless the proof names this object, no pipeline
+    // thread of start() runs, and no run of the pipeline is active.  A door
+    // that writes or reads the state of a stage with no pipeline asks it.
+    void expect_quiescent_(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
+        CRUCIBLE_PRE(proof.holds_part(thread_) && proof.is_quiescent());
+        CRUCIBLE_PRE(pipeline_run_.load_acquire() == PipelineRun::stopped);
+    }
 
 public:
     static constexpr uint32_t MAX_SLOTS = 65536;
@@ -1605,25 +1675,39 @@ public:
     using TraceBuild = ::fixy::Result<BuiltTrace, BuildRefusal>;
 
     // Turns the ring entries of trace and their tensor metadata into a CSR
-    // property graph in scratch, and the parts of its region.  The caller
-    // owns the five arrays, which hold one element for each op:
-    // meta_starts, scope_hashes, callsite_hashes and depths are parallel to
-    // trace.  meta_starts holds MetaIndex::none() for an op with no tensor
-    // arguments.  The build stage calls it on each work item.  It reads the
-    // metadata log and never writes its tail.  The graph and its CSR arrays
-    // go into scratch.  The ops, their tensor metadata, their side arrays
-    // and their slots go into the parts of the region, which own their
-    // memory.
-    // The content hash of the region folds numerics, the numerics of the
-    // stream at the cut of the ops (BgBuildWork::numerics).
+    // property graph in scratch, and the parts of its region, with the
+    // scratch buffers of the build stage.  A test or a bench builds a trace
+    // with no pipeline, and the proof shows that no stage writes those
+    // buffers (prove_quiescence).  The build stage calls build_trace_
+    // itself, on each work item.  The caller owns the five arrays, which
+    // hold one element for each op: meta_starts, scope_hashes,
+    // callsite_hashes and depths are parallel to trace.  meta_starts holds
+    // MetaIndex::none() for an op with no tensor arguments.  The build reads
+    // the metadata log and never writes its tail.  The graph and its CSR
+    // arrays go into scratch.  The ops, their tensor metadata, their side
+    // arrays and their slots go into the parts of the region, which own
+    // their memory.  The content hash of the region folds numerics, the
+    // numerics of the stream at the cut of the ops (BgBuildWork::numerics).
     [[nodiscard]] TraceBuild
-    build_trace_from(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch,
-                     ::fixy::View<const TraceRing::Entry> trace, ::fixy::View<const MetaIndex> meta_starts,
-                     ::fixy::View<const ScopeHash> scope_hashes, ::fixy::View<const CallsiteHash> callsite_hashes,
-                     ::fixy::View<const OpDepth> depths, NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+    build_trace_from(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof, ::foundation::effects::Alloc a,
+                     ::fixy::BumpArena& scratch, ::fixy::View<const TraceRing::Entry> trace,
+                     ::fixy::View<const MetaIndex> meta_starts, ::fixy::View<const ScopeHash> scope_hashes,
+                     ::fixy::View<const CallsiteHash> callsite_hashes, ::fixy::View<const OpDepth> depths,
+                     NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        expect_quiescent_(proof);
+        return build_trace_(a, scratch, trace, meta_starts, scope_hashes, callsite_hashes, depths, numerics);
+    }
 
 private:
-    // The body of build_trace_from.  Each column is a fixy::BrandedView of
+    // The build of build_trace_from, which the build stage calls on its own
+    // thread, in src/BackgroundThreadTraceBuild.cpp.
+    [[nodiscard]] TraceBuild
+    build_trace_(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, ::fixy::View<const TraceRing::Entry> trace,
+                 ::fixy::View<const MetaIndex> meta_starts, ::fixy::View<const ScopeHash> scope_hashes,
+                 ::fixy::View<const CallsiteHash> callsite_hashes, ::fixy::View<const OpDepth> depths,
+                 NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+
+    // The body of build_trace_.  Each column is a fixy::BrandedView of
     // one branded scope over the ops, so one index of an op reads each
     // column with no check.  Only src/BackgroundThread.cpp instantiates it.
     // The noexcept lambda of the branded scope calls it.  The body is
@@ -1667,23 +1751,25 @@ private:
     // not join.  The stage reads the signal at the end of its sleep.
     void request_stop_() noexcept { stop_requested.signal(); }
 
-    // Whether a pipeline thread runs: start() stores running before it starts
-    // the thread, and the thread stores stopped after run_in_row returns.
+    // Whether a run of the pipeline is active: start() stores running before
+    // it starts the thread, and run_in_row claims running on the thread of its
+    // caller.  Each run stores stopped after the pipeline returns.
     enum class PipelineRun : uint8_t {
         stopped,
         running,
     };
 
-    // The end of a run of the pipeline thread.  The pipeline joined each
-    // stage, so each count of total_processed comes before this release
-    // store.  The notify then wakes each flush that waits.
+    // The end of a run of the pipeline.  The pipeline joined each stage, so
+    // each count of total_processed comes before this release store.  The
+    // notify then wakes each flush that waits.
     void end_pipeline_run_(::fixy::BgLoadCtx const& ctx) noexcept {
         pipeline_run_.store_release(PipelineRun::stopped);
         processed_events_.notify_all(ctx);
     }
 
-    // The thread that holds the BackgroundThread and start() write the run
-    // state, and each flush reads it.  It has a line of its own.
+    // The thread that holds the BackgroundThread, start() and a run of
+    // run_in_row write the run state, and each flush reads it.  It has a line
+    // of its own.
     alignas(64)::fixy::Atomic<PipelineRun> pipeline_run_{PipelineRun::stopped};
 
     // The event count of each flush that waits.  The publish stage notifies
@@ -1691,17 +1777,11 @@ private:
     // its end.  The count has a line of its own (fixy/concurrent/EventCount.h).
     ::fixy::concurrent::EventCount processed_events_{};
 
-    // The thread that runs run_in_row, while one runs.  start() gives it a
+    // The thread that runs the pipeline, while one runs.  start() gives it a
     // thread, and stop() and the end of this object call request_stop_ and
     // join it.  It is the last data member, so it ends first, and each other
     // member is alive while the thread ends.
     ::fixy::thread::OwnerThread<BackgroundThread> thread_{};
 };
-
-// The two sentinels of the owner mailbox.  Only their addresses matter, so
-// each is one object for the process.  A job run from one shared library
-// then compares against the address that the stage in another one stored.
-CRUCIBLE_PROCESS_WIDE inline constinit BackgroundThread::OwnerJob BackgroundThread::mailbox_closed_{};
-CRUCIBLE_PROCESS_WIDE inline constinit BackgroundThread::OwnerJob BackgroundThread::mailbox_inline_{};
 
 }  // namespace crucible

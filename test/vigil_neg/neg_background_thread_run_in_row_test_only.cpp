@@ -15,6 +15,6 @@ namespace eff = ::foundation::effects;
 int main() {
     ::crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
     const eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>> ctx{eff::testing::test()};
-    bt.run_in_row(ctx);
+    bt.run_in_row(bt.prove_quiescence(), ctx);
     return 0;
 }

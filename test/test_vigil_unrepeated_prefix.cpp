@@ -197,10 +197,13 @@ void test_detect_stage_holds_a_bounded_trace() {
     const uint64_t target = ring.total_produced();
     while (bt.total_processed.load_acquire() < target)
         (void)pause.sleep_for(kPollNanos);
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         bt.pending_op_count() <= IterationDetector::HISTORY_MAX_CAPACITY / 2 + IterationDetector::K);
-    CRUCIBLE_TEST_ASSERT(kTest, bt.detector_history_count() <= IterationDetector::HISTORY_MAX_CAPACITY);
+    // The detect stage keeps its ops and its detector after the stop, and
+    // the stop gives the proof that no stage writes them.
     bt.stop();
+    ::fixy::thread::QuiescenceProof<BackgroundThread> const quiescent = bt.prove_quiescence();
+    CRUCIBLE_TEST_ASSERT(kTest, bt.pending_op_count(quiescent)
+                                    <= IterationDetector::HISTORY_MAX_CAPACITY / 2 + IterationDetector::K);
+    CRUCIBLE_TEST_ASSERT(kTest, bt.detector_history_count(quiescent) <= IterationDetector::HISTORY_MAX_CAPACITY);
 }
 
 }  // namespace

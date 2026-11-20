@@ -1,6 +1,6 @@
 // The bodies of the trace build of crucible/BackgroundThread.h: the scratch
-// buffers of the build, build_trace_from and build_trace_columns_.  The
-// build stage of the pipeline calls build_trace_from for each work item.
+// buffers of the build, build_trace_ and build_trace_columns_.  The build
+// stage of the pipeline calls build_trace_ for each work item.
 //
 // The trace build is a unit of its own, so its compile runs beside the
 // compile of the pipeline unit src/BackgroundThread.cpp.
@@ -58,11 +58,13 @@ void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a, ui
     }
 }
 
-BackgroundThread::TraceBuild BackgroundThread::build_trace_from(
-    ::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, ::fixy::View<const TraceRing::Entry> trace,
-    ::fixy::View<const MetaIndex> meta_starts, ::fixy::View<const ScopeHash> scope_hashes,
-    ::fixy::View<const CallsiteHash> callsite_hashes, ::fixy::View<const OpDepth> depths,
-    NumericsHash numerics) noexcept {
+BackgroundThread::TraceBuild BackgroundThread::build_trace_(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch,
+                                                            ::fixy::View<const TraceRing::Entry> trace,
+                                                            ::fixy::View<const MetaIndex> meta_starts,
+                                                            ::fixy::View<const ScopeHash> scope_hashes,
+                                                            ::fixy::View<const CallsiteHash> callsite_hashes,
+                                                            ::fixy::View<const OpDepth> depths,
+                                                            NumericsHash numerics) noexcept {
     CRUCIBLE_PRE(meta_starts.size() == trace.size());
     CRUCIBLE_PRE(scope_hashes.size() == trace.size());
     CRUCIBLE_PRE(callsite_hashes.size() == trace.size());

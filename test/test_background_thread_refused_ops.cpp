@@ -121,13 +121,15 @@ void test_refused_ops_give_no_wrong_region() {
     // A slot of the queue is state of the publish stage, so the read runs in
     // a job.
     uint32_t foreign_regions = 0;
-    bt.run_on_publish_stage(
-        [&foreign_regions](BackgroundThread::PublishStageView& view, BackgroundThread::PublishStage const&) noexcept {
-            BackgroundThread::UncompiledRegionQueue const& queue = view.uncompiled_regions();
-            for (uint32_t age = 0; age < queue.size(); ++age) {
-                if (!is_one_iteration(queue.at(age).expect("a queued slot holds a region")->ops)) ++foreign_regions;
+    bt.run_on_publish_stage([&foreign_regions](BackgroundThread::PublishStageView& view,
+                                               BackgroundThread::PublishStage const& stage) noexcept {
+        BackgroundThread::UncompiledRegionQueue const& queue = view.uncompiled_regions();
+        for (uint32_t age = 0; age < queue.size(); ++age) {
+            if (!is_one_iteration(queue.at(stage, age).expect("a queued slot holds a region")->ops)) {
+                ++foreign_regions;
             }
-        });
+        }
+    });
     CRUCIBLE_TEST_ASSERT(kTest, foreign_regions == 0 && "a region holds ops that are not one iteration of the loop");
 }
 

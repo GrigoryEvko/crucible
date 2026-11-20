@@ -85,11 +85,11 @@ using QueuedHashes = ::fixy::FixedArray<crucible::ContentHash, crucible::Pipelin
 QueuedHashes queued_hashes(BackgroundThread& bt) {
     QueuedHashes hashes{};
     bt.run_on_publish_stage(
-        [&hashes](BackgroundThread::PublishStageView& view, BackgroundThread::PublishStage const&) noexcept {
+        [&hashes](BackgroundThread::PublishStageView& view, BackgroundThread::PublishStage const& stage) noexcept {
             BackgroundThread::UncompiledRegionQueue const& queue = view.uncompiled_regions();
             for (uint32_t age = 0; age < queue.size(); ++age) {
                 *hashes.get(age).expect("the queue holds at most its default capacity") =
-                    queue.at(age).expect("a queued slot holds a region")->content_hash;
+                    queue.at(stage, age).expect("a queued slot holds a region")->content_hash;
             }
         });
     return hashes;

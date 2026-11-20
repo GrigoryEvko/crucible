@@ -2096,6 +2096,16 @@ crucible_neg_compile_test(neg_built_region_buffer_assignment
 crucible_neg_compile_test(neg_publish_job_captures_this
   "static assertion failed: run_on_publish_stage: the body captures .this. \\(field __this, type \\{anonymous\\}::Owner\\*\\)"
   "Capture the parts that the body uses, not the whole object")
+# A build of a trace outside the pipeline writes the scratch of the build
+# stage, so it takes the proof that no pipeline runs.
+crucible_neg_compile_test(neg_background_thread_build_trace_without_a_proof
+  "no matching function for call to .crucible::BackgroundThread::build_trace_from\\(foundation::core::Alloc, foundation::core::BumpArena&"
+  "candidate expects 9 arguments, 8 provided")
+# A job reaches the publish stage only through its view, so the door refuses a
+# capture that reaches the BackgroundThread, such as a Ref of it.
+crucible_neg_compile_test(neg_publish_job_captures_a_ref_of_the_background_thread
+  "static assertion failed: run_on_publish_stage: a capture of the job reaches a BackgroundThread"
+  "Capture no BackgroundThread: the PublishStageView of the job gives the doors of the publish stage")
 crucible_neg_compile_test(neg_publish_stage_forged_by_bit_cast
   "no matching function for call to .bit_cast<crucible::BackgroundThread::PublishStage>\\(char\\)."
   ".crucible::BackgroundThread::PublishStage. is not trivially copyable")
@@ -3957,12 +3967,12 @@ crucible_neg_compile_test(neg_validated_op_unchecked_entry
   "could not convert .crucible::mint_ffi_entry\\(entry\\). from .Tagged<"
   "fixy::tags::vessel_trust::FromPytorch>. to .Tagged<.....,fixy::tags::vessel_trust::Validated>")
 
-# BackgroundThread::run_in_row(ctx) requires CtxAdmits<Ctx, Row<Bg,
+# BackgroundThread::run_in_row(proof, ctx) requires CtxAdmits<Ctx, Row<Bg,
 # Alloc, IO, Block>>.  Each fixture hands in a context whose row lacks
 # one required atom or more.  The first regex pins the refused context,
 # the second pins the gate and the row it demands.
 set(BG_RUN_GATE "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Nondet, foundation::effects::Effect::Div> >.")
-set(BG_RUN_CALL "no matching function for call to .crucible::BackgroundThread::run_in_row\\(const foundation::effects::ExecCtx<")
+set(BG_RUN_CALL "no matching function for call to .crucible::BackgroundThread::run_in_row\\(fixy::thread::QuiescenceProof<crucible::BackgroundThread>, const foundation::effects::ExecCtx<")
 crucible_neg_compile_test(neg_background_thread_run_in_row_empty
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<> >&\\)" "${BG_RUN_GATE}")
 crucible_neg_compile_test(neg_background_thread_run_in_row_bg_only
