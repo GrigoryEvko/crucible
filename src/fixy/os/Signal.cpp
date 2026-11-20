@@ -31,6 +31,16 @@ static_assert(::fixy::process::detail::kTerminalInputSignal == SIGTTIN,
               "fixy::process::detail::kTerminalInputSignal is not SIGTTIN of <signal.h>");
 static_assert(::fixy::process::detail::kTerminalOutputSignal == SIGTTOU,
               "fixy::process::detail::kTerminalOutputSignal is not SIGTTOU of <signal.h>");
+static_assert(::fixy::signal::number_of(::fixy::signal::FatalSignal::illegal_instruction) == SIGILL,
+              "fixy::signal::FatalSignal::illegal_instruction is not SIGILL of <signal.h>");
+static_assert(::fixy::signal::number_of(::fixy::signal::FatalSignal::abort) == SIGABRT,
+              "fixy::signal::FatalSignal::abort is not SIGABRT of <signal.h>");
+static_assert(::fixy::signal::number_of(::fixy::signal::FatalSignal::bus_error) == SIGBUS,
+              "fixy::signal::FatalSignal::bus_error is not SIGBUS of <signal.h>");
+static_assert(::fixy::signal::number_of(::fixy::signal::FatalSignal::floating_point) == SIGFPE,
+              "fixy::signal::FatalSignal::floating_point is not SIGFPE of <signal.h>");
+static_assert(::fixy::signal::number_of(::fixy::signal::FatalSignal::segmentation_fault) == SIGSEGV,
+              "fixy::signal::FatalSignal::segmentation_fault is not SIGSEGV of <signal.h>");
 
 namespace fixy::signal::detail {
 
@@ -150,5 +160,14 @@ install_fatal_handlers_(FatalReport report) noexcept {
 void stop_self_() noexcept { static_cast<void>(::raise(SIGSTOP)); }
 
 void end_process_(std::int32_t process) noexcept { static_cast<void>(::kill(process, SIGKILL)); }
+
+void reset_to_default_(FatalSignal fatal_signal) noexcept {
+    struct ::sigaction action{};
+    action.sa_handler = SIG_DFL;
+    static_cast<void>(::sigemptyset(&action.sa_mask));
+    if (::sigaction(static_cast<int>(number_of(fatal_signal)), &action, nullptr) != 0) {
+        ::foundation::core::fatal("the signal door: sigaction did not put back the default action of a fatal signal");
+    }
+}
 
 }  // namespace fixy::signal::detail

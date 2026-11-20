@@ -43,8 +43,11 @@
 //
 // THE CHILD DOOR
 //   spawn_child(test, body) starts a child process that runs body and then
-//   ends with the exit code 0.  The standard error of the child goes to a
-//   pipe.  wait(std::move(child)) reads that pipe to its end, waits for the
+//   ends with the exit code 0.  A body can take a ForkedChild const&: the
+//   proof that it runs in the child, after the fork.  Only the child door
+//   builds that proof, so a door that takes it changes the state of the
+//   child only, and no parent reaches it.  The standard error of the child
+//   goes to a pipe.  wait(std::move(child)) reads that pipe to its end, waits for the
 //   end of the child, and gives a ChildReport: the exit code or the signal,
 //   and the last kChildOutputCapacity bytes of the standard error.
 //   exit_now(test, code) ends the calling process with code, and runs no
@@ -318,6 +321,24 @@ private:
     ::foundation::core::FixedText<kChildOutputCapacity> output_{};
 };
 
+// The proof that the code that holds it runs in a child of the child door,
+// after the fork (THE CHILD DOOR).  Only spawn_child builds one, in the
+// child, and it gives the body a reference to it.  The proof does not copy
+// or move, so it stays in the call of the body.
+class ForkedChild final {
+public:
+    ForkedChild(ForkedChild const&) = delete("the proof belongs to the one call of the body in the child");
+    ForkedChild(ForkedChild&&) = delete("the proof belongs to the one call of the body in the child");
+    ForkedChild& operator=(ForkedChild const&) = delete("the proof belongs to the one call of the body in the child");
+    ForkedChild& operator=(ForkedChild&&) = delete("the proof belongs to the one call of the body in the child");
+    ~ForkedChild() = default;
+
+private:
+    ForkedChild() noexcept = default;
+
+    friend struct detail::ChildDoor;
+};
+
 // One child process that runs, and the read end of the pipe of its standard
 // error.  Only spawn_child makes a Child that names a process, and wait
 // takes it.  A Child that no wait took waits for its child in its
@@ -487,6 +508,9 @@ struct ChildDoor {
     [[nodiscard]] static Child make(std::int32_t child, std::int32_t error_output) noexcept {
         return Child{child, error_output};
     }
+
+    // The proof of the child.  Only the child branch of spawn_child calls it.
+    [[nodiscard]] static ForkedChild make_forked_child() noexcept { return ForkedChild{}; }
 
     // The parts of the child.  The Child then names no process.
     [[nodiscard]] static ChildParts take(Child& child) noexcept {
@@ -659,12 +683,18 @@ SyscallStop::read_text(ChildAddress address, ::foundation::core::FixedText<Capac
     }
 }
 
+// A body of the child door: a call with no argument, or a call with the
+// proof of the child (THE CHILD DOOR).
+template <typename Body>
+concept ChildBody = std::is_invocable_v<Body&> || std::is_invocable_v<Body&, ForkedChild const&>;
+
 // Starts a child process that runs body, and then ends with the exit code 0
 // (THE CHILD DOOR).  The parent gets the Child, or the error of the pipe or
 // of the fork.  The body runs only in the child, and it may use only what is
-// safe after a fork.
+// safe after a fork.  A body that takes a ForkedChild gets the proof of the
+// child.
 template <eff::IsExecCtx Ctx, typename Body>
-    requires CtxFitsChildProcess<Ctx> && std::is_invocable_v<Body&>
+    requires CtxFitsChildProcess<Ctx> && ChildBody<Body>
 [[nodiscard]] ::foundation::core::Result<Child, ::foundation::os::Errno> spawn_child(Ctx const& /*test*/,
                                                                                      Body&& body) noexcept {
     namespace os = ::foundation::os;
@@ -674,7 +704,12 @@ template <eff::IsExecCtx Ctx, typename Body>
     return os::detail::start_child_().match(
         [&body](os::detail::ChildStart start) noexcept -> Spawned {
             if (start.child == 0) {
-                body();
+                if constexpr (std::is_invocable_v<Body&, ForkedChild const&>) {
+                    ForkedChild const proof = detail::ChildDoor::make_forked_child();
+                    body(proof);
+                } else {
+                    body();
+                }
                 os::detail::exit_child_(0);
             }
             return detail::ChildDoor::make(start.child, start.error_output);

@@ -54,6 +54,19 @@ void report_unexpected_end_(::fixy::process::ChildReport const& report, core::Te
     end_at(site);
 }
 
+void report_unexpected_signal_(::fixy::process::ChildReport const& report, ::fixy::signal::FatalSignal expected,
+                               core::Site site) noexcept {
+    ::foundation::os::ChildEnd const end = report.end();
+    core::TextView const how = end.kind == ::foundation::os::ChildEndKind::signaled ? core::TextView{"the signal"}
+                                                                                    : core::TextView{"the exit code"};
+    core::report(core::Sink::Err,
+                 "expect_dies_by: the test expects the end by the signal {}.\n"
+                 "expect_dies_by: the child ended by {} {}.  Its standard error ({} earlier bytes dropped):\n{}\n",
+                 static_cast<unsigned>(::fixy::signal::number_of(expected)), how, static_cast<unsigned>(end.number),
+                 report.dropped_bytes(), report.output());
+    end_at(site);
+}
+
 void report_child_error_(::foundation::os::Errno error, core::Site site) noexcept {
     core::report(core::Sink::Err, "expect_dies: the child door failed with the error number {}.\n",
                  ::foundation::os::error_number(error));

@@ -1049,6 +1049,11 @@ witness <fixy/os/Process.h> private | fixy::process::TracedChild | fixy::process
 # private, and only trace_within builds one, from the stop that the kernel
 # gives.
 witness <fixy/os/Process.h> private | fixy::process::SyscallStop | fixy::process::SyscallStop{}
+# A forked child claims that the code that holds it runs in a child of the
+# child door, after the fork, so a door that takes it changes no state of the
+# parent.  Its default constructor is private, and only spawn_child builds
+# one, in the child branch.
+witness <fixy/os/Process.h> private | fixy::process::ForkedChild | fixy::process::ForkedChild{}
 # A replay of a property gives the body the words of a shrunk choice
 # sequence.  Its constructor from those words is private, and only the
 # runner of fixy/check/Property.h replays a failure.  The public constructor

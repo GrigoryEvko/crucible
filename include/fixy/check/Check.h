@@ -11,6 +11,10 @@
 //                                      ends the test when the child does
 //                                      not end by SIGABRT with text on its
 //                                      standard error
+//   expect_dies_by(test, body, signal) runs body in a child process with
+//                                      the default action of signal, and
+//                                      ends the test when the child does
+//                                      not end by that signal
 //   Tally checks{test, name}           counts the failed checks of a test
 //   CRUCIBLE_TEST_EXPECT(checks, cond) writes the text of cond and the site,
 //                                      and counts a failure, when cond is
@@ -39,6 +43,15 @@
 //   On each other end, the test writes the end and the output of the child,
 //   and ends with the site of the call.
 //
+// THE DEATH BY A SIGNAL
+//   expect_dies_by tests a body that ends by a signal of the kernel, such as
+//   a read of a page with no access.  The child first puts back the default
+//   action of the signal (THE CHILD RESET of fixy/os/Signal.h).  Then no
+//   handler of the process or of a sanitizer turns the end into an exit or
+//   writes a report.  A child that ends by that signal passes, and the test
+//   reads no text.  On each other end, the test writes the end and the
+//   output of the child, and ends with the site of the call.
+//
 // THE COUNTING CHECK
 //   A test that reads many facts in one run can count its failures in place
 //   of an end at the first one.  Then one run of the test gives each failed
@@ -57,6 +70,7 @@
 // reports.
 
 #include <fixy/os/Process.h>
+#include <fixy/os/Signal.h>
 #include <foundation/Linear.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Algorithms.h>
@@ -88,6 +102,13 @@ namespace detail {
 [[noreturn, gnu::cold]] void report_unexpected_end_(::fixy::process::ChildReport const& report,
                                                     ::foundation::core::TextView expected,
                                                     ::foundation::core::Site site) noexcept;
+
+// Writes the end and the output of a child that did not end by the signal
+// that expect_dies_by expects, and ends the process with the site of the
+// call of expect_dies_by.
+[[noreturn, gnu::cold]] void report_unexpected_signal_(::fixy::process::ChildReport const& report,
+                                                       ::fixy::signal::FatalSignal expected,
+                                                       ::foundation::core::Site site) noexcept;
 
 // Writes the error of the child door, and ends the process with the site of
 // the call of expect_dies.
@@ -162,6 +183,39 @@ void expect_dies(Ctx const& test, Body&& body, ::foundation::core::TextView expe
             bool const has_text = core::find(report.output(), expected).is_some();
             if (!is_abort || !has_text) [[unlikely]] {
                 detail::report_unexpected_end_(report, expected, site);
+            }
+        },
+        [](os::Errno const&) noexcept {});
+}
+
+// Runs body in a child process with the default action of FATAL_SIGNAL (THE
+// DEATH BY A SIGNAL).  The test continues when the child ends by that
+// signal.  Each other end, and an error of the child door, ends the test with
+// the site of the call.  Complexity: one child process, and O(n) in the bytes
+// of its output.
+template <TestContext Ctx, typename Body>
+    requires std::is_invocable_v<Body&>
+void expect_dies_by(Ctx const& test, Body&& body, ::fixy::signal::FatalSignal fatal_signal,
+                    ::foundation::core::Site site = ::foundation::core::Site{}) noexcept {
+    namespace core = ::foundation::core;
+    namespace os = ::foundation::os;
+    namespace process = ::fixy::process;
+    using Collected = core::Result<process::ChildReport, os::Errno>;
+    Collected collected =
+        process::spawn_child(test,
+                             [&test, &body, fatal_signal](process::ForkedChild const& child) noexcept {
+                                 ::fixy::signal::reset_to_default(test, child, fatal_signal);
+                                 body();
+                             })
+            .match([](process::Child child) noexcept -> Collected { return process::wait(std::move(child)); },
+                   [](os::Errno error) noexcept -> Collected { return core::err(error); });
+    if (collected.is_err()) [[unlikely]] {
+        detail::report_child_error_(collected.err().value_or(os::Errno::eio), site);
+    }
+    collected.match(
+        [fatal_signal, &site](process::ChildReport const& report) noexcept {
+            if (!report.is_signaled_by(::fixy::signal::number_of(fatal_signal))) [[unlikely]] {
+                detail::report_unexpected_signal_(report, fatal_signal, site);
             }
         },
         [](os::Errno const&) noexcept {});

@@ -21,7 +21,18 @@
 //   call replaced (rule R20 of misc/01_10_2026_quarantine.md).  So the gate
 //   of install_fatal_handlers asks for a context that owns Effect::Init, and
 //   the door installs the handlers one time for each process.  A second call
-//   gives Errno::ebusy and changes nothing.
+//   gives Errno::ebusy and changes nothing.  THE CHILD RESET is the one
+//   other case.
+//
+// THE CHILD RESET
+//   reset_to_default(test, child, signal) puts back the default action of
+//   one fatal signal in a child of the child door of fixy/os/Process.h, so a
+//   death test sees the end by that signal.  Without it, the handler of
+//   AddressSanitizer turns a fault into the exit code 1, and the handler of
+//   THE HANDLERS writes a report first.  The call takes a context that owns
+//   the Test capability, and the ForkedChild proof that only the child door
+//   gives its body.  So only a test calls it, and only in a child.  The child
+//   ends after its body, and no disposition of the parent changes.
 //
 // THE ALTERNATE STACK
 //   The kernel delivers a signal with SA_ONSTACK on the alternate stack of
@@ -46,6 +57,7 @@
 // This header is in the layer X3_os of utils/rule-table.txt.  The door file
 // is src/fixy/os/Signal.cpp, the one includer of <signal.h>.
 
+#include <fixy/os/Process.h>
 #include <foundation/core/Choice.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
@@ -60,6 +72,22 @@ namespace fixy::signal {
 // number of the signal.  It runs in the handler, so it calls only functions
 // that are safe in a signal handler.
 using FatalReport = void (*)(int signal_number) noexcept;
+
+// A fatal signal of THE HANDLERS: its default action ends the process.  The
+// values are the numbers of Linux on x86_64 and on aarch64, and
+// src/fixy/os/Signal.cpp checks each against <signal.h>.
+enum class FatalSignal : std::uint8_t {
+    illegal_instruction = 4,
+    abort = 6,
+    bus_error = 7,
+    floating_point = 8,
+    segmentation_fault = 11,
+};
+
+// The number of the signal, as a ChildReport of fixy/os/Process.h reads it.
+[[nodiscard]] constexpr std::uint8_t number_of(FatalSignal fatal_signal) noexcept {
+    return static_cast<std::uint8_t>(fatal_signal);
+}
 
 namespace detail {
 
@@ -92,7 +120,21 @@ void restore_alternate_stack_(PreviousStack const& previous) noexcept;
 void stop_self_() noexcept;
 void end_process_(std::int32_t process) noexcept;
 
+// Puts back the default action of FATAL_SIGNAL in the calling process (THE
+// CHILD RESET).  A refused sigaction ends the process.
+void reset_to_default_(FatalSignal fatal_signal) noexcept;
+
 }  // namespace detail
+
+// Puts back the default action of FATAL_SIGNAL in the child of the child
+// door that runs the call (THE CHILD RESET).  Only a test calls it, and only
+// in the body of a child, which holds the proof.
+template <class Ctx>
+    requires ::fixy::process::CtxFitsChildProcess<Ctx>
+void reset_to_default(Ctx const& /*test*/, ::fixy::process::ForkedChild const& /*child*/,
+                      FatalSignal fatal_signal) noexcept {
+    detail::reset_to_default_(fatal_signal);
+}
 
 // A context that can change a signal disposition: one that owns Effect::Init.
 template <class Ctx>

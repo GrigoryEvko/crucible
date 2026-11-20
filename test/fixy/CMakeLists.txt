@@ -5225,6 +5225,15 @@ fixy_neg_compile_test(neg_spawn_child_without_test_context
 fixy_neg_compile_test(neg_exit_now_without_test_context
   "no matching function for call to .exit_now"
   "CtxFitsChildProcess")
+# THE CHILD RESET of fixy/os/Signal.h: a reset of a signal action from a
+# context with no Test capability, and a proof of a child that the test
+# builds itself.
+fixy_neg_compile_test(neg_signal_reset_without_test_context
+  "no matching function for call to .reset_to_default"
+  "CtxFitsChildProcess")
+fixy_neg_compile_test(neg_signal_reset_outside_child
+  "is private within this context"
+  "fixy::process::ForkedChild::ForkedChild")
 
 # The Check family of fixy/check/Check.h: pass, CRUCIBLE_TEST_ASSERT and
 # expect_dies, with the refusal of an exit, of a different text and of an end

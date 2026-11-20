@@ -2,16 +2,22 @@
 // expect_dies and the counting check of a Tally, and run_of of
 // fixy/check/Fixture.h.  A death test passes for a body that ends by SIGABRT with the
 // expected text, and it ends the test for each other end: an exit, a
-// different text, and an end by a different signal.  Each such refusal runs
-// inside an outer expect_dies, which requires the report of the inner one.
+// different text, and an end by a different signal.  A death test by a
+// signal passes for a fault and for an abort that it expects, and it ends
+// the test for an abort and an exit that it does not expect.  Each such
+// refusal runs inside an outer expect_dies, which requires the report of the
+// inner one.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/check/Fixture.h>
 #include <fixy/os/Process.h>
+#include <fixy/os/Signal.h>
 #include <foundation/Linear.h>
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/os/PageSource.h>
 
 #include <cstdint>
 #include <utility>
@@ -19,7 +25,9 @@
 namespace {
 
 using ::fixy::check::expect_dies;
+using ::fixy::check::expect_dies_by;
 using ::fixy::check::pass;
+using ::fixy::signal::FatalSignal;
 
 constexpr ::fixy::TextView kRefusal{"expect_dies: the body did not end as the test expects"};
 
@@ -97,6 +105,46 @@ void exit_with_text_is_refused(::fixy::TestRunnerCtx const& test) {
         },
         ::fixy::TextView{"the child ended by the exit code 9"});
     pass(test, "  exit_with_text_is_refused: PASSED\n");
+}
+
+// Reads the first byte of a page with no access, so the kernel ends the
+// process by SIGSEGV.  The page is a reservation of the page source.
+void read_a_page_with_no_access() noexcept {
+    ::foundation::os::Reservation page =
+        ::foundation::os::reserve(::fixy::ByteCount{4096}, ::foundation::os::ReserveAlignment::page)
+            .expect("the host gives a reservation of one page");
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a read of a page with no access ends the process by a fault")
+    std::uintptr_t const address = page.address_of(page.whole());
+    std::uint8_t const value = *__builtin_bit_cast(std::uint8_t const volatile*, address);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    ::fixy::report(::fixy::Sink::Err, "the read of a page with no access gave {}\n", value);
+}
+
+// A fault in the body ends the child by SIGSEGV, also in a build whose
+// sanitizer handles a fault, and the death test by a signal passes.  An
+// abort passes when the test expects SIGABRT.
+void death_by_a_signal(::fixy::TestRunnerCtx const& test) {
+    expect_dies_by(test, [] noexcept { read_a_page_with_no_access(); }, FatalSignal::segmentation_fault);
+    expect_dies_by(test, [] noexcept { ::fixy::fatal("the body ends here"); }, FatalSignal::abort);
+    pass(test, "  death_by_a_signal: PASSED\n");
+}
+
+// The inner body aborts, or it returns, and the inner test expects SIGSEGV.
+// So the inner test ends its child, the outer child, by SIGABRT with its
+// report.
+void other_end_than_the_signal_is_refused(::fixy::TestRunnerCtx const& test) {
+    expect_dies(
+        test,
+        [&test] noexcept {
+            expect_dies_by(test, [] noexcept { ::fixy::fatal("the body aborts"); }, FatalSignal::segmentation_fault);
+        },
+        ::fixy::TextView{"expect_dies_by: the child ended by the signal 6"});
+    expect_dies(
+        test, [&test] noexcept { expect_dies_by(test, [] noexcept {}, FatalSignal::segmentation_fault); },
+        ::fixy::TextView{"expect_dies_by: the child ended by the exit code 0"});
+    expect_dies(
+        test, [&test] noexcept { expect_dies_by(test, [] noexcept {}, FatalSignal::segmentation_fault); }, kRefusal);
+    pass(test, "  other_end_than_the_signal_is_refused: PASSED\n");
 }
 
 // A Tally whose checks hold closes with no end of the test.
@@ -204,6 +252,8 @@ int main() {
     exit_is_refused(test);
     other_text_is_refused(test);
     exit_with_text_is_refused(test);
+    death_by_a_signal(test);
+    other_end_than_the_signal_is_refused(test);
     tally_of_held_checks_closes(test);
     tally_of_failed_checks_ends_at_close(test);
     tally_with_no_close_ends_the_test(test);
