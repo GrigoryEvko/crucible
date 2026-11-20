@@ -6087,8 +6087,9 @@ set_tests_properties(test_os_environment PROPERTIES ENVIRONMENT_MODIFICATION
 # The tree removal under a directory.  The setup test makes the fixture tree
 # with two links in the directory of the test before each run.
 fixy_test(test_os_remove_tree)
-add_test(NAME test_os_remove_tree_setup
-  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/remove_tree_fixture.cmake)
+crucible_script_test(NAME test_os_remove_tree_setup
+  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/remove_tree_fixture.cmake
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 set_tests_properties(test_os_remove_tree_setup PROPERTIES LABELS "fixy" FIXTURES_SETUP remove_tree_fixture)
 set_tests_properties(test_os_remove_tree PROPERTIES FIXTURES_REQUIRED remove_tree_fixture)
 
