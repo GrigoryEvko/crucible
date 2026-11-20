@@ -50,6 +50,17 @@ static_assert(!RegisterLanes<i64x8, std::int64_t const, 4>, "a load reads each l
 static_assert(!RegisterLanes<i64x8, std::uint64_t const, 8>, "the lanes have the lane type of the vector");
 static_assert(!RegisterLanes<u8x16, std::uint8_t const, 16>, "a View of bytes takes the load of RegisterBytes");
 
+// A store into lanes writes exactly the lanes of one register, of the lane
+// type of the vector, through a View whose lanes are not const.  A View of
+// bytes takes the store of RegisterBytes.
+template <typename V, typename Lane, std::size_t Lanes>
+concept can_store_lanes = requires(V value, core::View<Lane, Lanes> lanes) { store(value, lanes); };
+static_assert(can_store_lanes<u64x4, std::uint64_t, 4> && can_store_lanes<u32x8, std::uint32_t, 8>);
+static_assert(!can_store_lanes<u64x4, std::uint64_t const, 4>, "a store writes no const lane");
+static_assert(!can_store_lanes<u64x4, std::uint64_t, 2>, "a store writes each lane of one register");
+static_assert(!can_store_lanes<i64x8, std::uint64_t, 8>, "the lanes have the lane type of the vector");
+static_assert(can_store_lanes<u8x16, std::uint8_t, 16>, "a View of bytes takes the store of RegisterBytes");
+
 // A sign gather reads a register of one-byte lanes, a vec or a mask.
 static_assert(ByteLaneRegister<vec<std::int8_t, 16>> && ByteLaneRegister<vec<char, 32>>
               && ByteLaneRegister<u8x32::mask_type> && ByteLaneRegister<vec<std::uint8_t, 64>>);

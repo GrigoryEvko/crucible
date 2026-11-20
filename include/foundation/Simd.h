@@ -372,6 +372,17 @@ CRUCIBLE_INLINE void store(V value, core::View<Byte, Bytes> bytes) noexcept {
     __builtin_memcpy(first_of_(core::detail::ViewDoor::key(), bytes), &raw, sizeof(raw));
 }
 
+// The store of a vector into the lanes of one register, the lowest lane
+// first: the mirror of the load from lanes.  The type of the View proves the
+// count, so the copy has no check, and the lanes need no alignment beyond the
+// alignment of their type.  A View of bytes takes the store of RegisterBytes.
+template <typename V, typename Lane, std::size_t Lanes>
+    requires RegisterLanes<V, Lane, Lanes> && (!std::is_const_v<Lane>)
+CRUCIBLE_INLINE void store(V value, core::View<Lane, Lanes> lanes) noexcept {
+    const typename V::raw_type raw = value.raw();
+    __builtin_memcpy(first_of_(core::detail::ViewDoor::key(), lanes), &raw, sizeof(raw));
+}
+
 namespace detail {
 
 // The mask of the first bytes of a register of 64, 32 or 16 bytes: bit i set

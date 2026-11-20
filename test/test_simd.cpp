@@ -140,6 +140,35 @@ static void test_store_bytes_and_bit_cast() {
     ::fixy::check::pass(kTest, "  test_store_bytes_and_bit_cast: PASSED\n");
 }
 
+// A store into the lanes of one register writes each lane into its element,
+// the lowest lane first, and touches no element outside the window.  The
+// window starts one element in, so the store writes an address that has only
+// the alignment of the element.  A load of the same window gives the vector
+// back.
+static void test_store_lanes() {
+    ::foundation::core::FixedArray<int64_t, 10> lanes{};
+    simd::i64x8 const v = simd::iota_v<simd::i64x8>() * simd::i64x8{int64_t{-3}} + simd::i64x8{int64_t{7}};
+    simd::store(v, lanes.view().window<8>(1).expect("8 lanes fit after the first"));
+    for (auto index : lanes.indices()) {
+        auto const lane = static_cast<int64_t>(index.raw());
+        auto const expected = index.raw() == 0 || index.raw() == 9 ? int64_t{0} : (lane - 1) * -3 + 7;
+        CRUCIBLE_TEST_ASSERT(kTest, lanes.at(index) == expected);
+    }
+    auto const back = simd::load<simd::i64x8>(lanes.view().window<8>(1).expect("8 lanes fit after the first"));
+    for (int lane = 0; lane < 8; ++lane) {
+        CRUCIBLE_TEST_ASSERT(kTest, back[lane] == v[lane]);
+    }
+
+    ::foundation::core::FixedArray<std::uint32_t, 10> words{};
+    simd::u32x8 const w = simd::iota_v<simd::u32x8>() + simd::u32x8{std::uint32_t{0xA0000000U}};
+    simd::store(w, words.view().window<8>(2).expect("8 lanes fit after the second"));
+    for (auto index : words.indices()) {
+        auto const expected = index.raw() < 2 ? 0U : 0xA0000000U + static_cast<std::uint32_t>(index.raw() - 2);
+        CRUCIBLE_TEST_ASSERT(kTest, words.at(index) == expected);
+    }
+    ::fixy::check::pass(kTest, "  test_store_lanes: PASSED\n");
+}
+
 // The sign bit and the equal bit of each lane, at one width.  One lane at a
 // time differs from the others, so a lost or a moved lane fails.  Lanes 7
 // and 15 hold the top byte of a 64-bit word.  The Debug build has no AVX2
@@ -405,6 +434,7 @@ int main() {
     test_load_bytes();
     test_load_lanes();
     test_store_bytes_and_bit_cast();
+    test_store_lanes();
     test_collect_bits();
     test_for_each_register_run();
     test_reduce_xor_sum();
