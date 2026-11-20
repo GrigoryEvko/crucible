@@ -9,14 +9,17 @@
 
 #include <foundation/Lifetime.h>
 #include <foundation/Quarantine.h>
+#include <foundation/core/Algorithms.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Region.h>
+#include <foundation/core/Scalar.h>
 
-#include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 
 namespace {
 
+namespace core = ::foundation::core;
 namespace lifetime = ::foundation::lifetime;
 
 struct Pair {
@@ -24,6 +27,14 @@ struct Pair {
     std::uint32_t second;
 };
 
+// The storage of each probe.  A FixedArray holds its elements at its own
+// address, so the alignment of the array is the alignment of its bytes.
+using StoreBytes = core::FixedArray<unsigned char, 8>;
+using PairBytes = core::FixedArray<std::byte, 2 * sizeof(Pair)>;
+using EmptyBytes = core::FixedArray<unsigned char, 4>;
+
+// The probes start a lifetime over the raw address of a storage.  The start
+// gives its objects as a std::span, and each probe reads that span.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the checked lifetime start reads raw bytes through pointers of two types")
 // An integer store, then a float store through a second pointer to the same
 // bytes, then a read through a new integer over the bytes.  The function is
@@ -37,34 +48,53 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the checked lifetime start reads raw bytes
     return lifetime::start_as_array<std::uint32_t>(storage, 1).front();
 }
 
-// The read sees the last store, which is the float.
-[[nodiscard]] int read_sees_the_last_store() {
-    alignas(8) unsigned char storage[8]{};
-    const std::uint32_t bits = read_after_a_store_of_another_type(storage, storage);
-    return bits == std::bit_cast<std::uint32_t>(1.0F) ? 0 : 1;
+// The bits of the read after the two stores, with the two pointers at the
+// first byte of the storage.
+[[nodiscard]] std::uint32_t read_through_two_types(StoreBytes& storage) {
+    return read_after_a_store_of_another_type(core::foreign_first(storage.view()), core::foreign_first(storage.view()));
 }
 
-// Const storage gives const elements, and each element holds the bytes that
-// the storage held before the start.
-[[nodiscard]] int const_storage_reads_its_bytes() {
-    alignas(Pair) unsigned char storage[2 * sizeof(Pair)]{};
-    const Pair written[2] = {{1, 2}, {3, 4}};
-    std::memcpy(storage, written, sizeof(written));
-    const unsigned char* const view = storage;
-    const auto pairs = lifetime::start_as_array<Pair>(view, 2);
+// Starts two pairs over the const storage.  Returns 0 when the two pairs hold
+// the values 1 and 2, then 3 and 4.  Each other value names the check that
+// fails.
+[[nodiscard]] int read_pairs_of(PairBytes const& storage) {
+    const auto pairs = lifetime::start_as_array<Pair>(core::foreign_first(storage.view()), 2);
     if (pairs.size() != 2) return 1;
     if (pairs[0].first != 1 || pairs[0].second != 2 || pairs[1].first != 3 || pairs[1].second != 4) return 2;
     return 0;
 }
 
-// A count of zero is an empty span that starts at the storage.
-[[nodiscard]] int zero_count_is_empty_at_the_storage() {
-    alignas(4) unsigned char storage[4]{};
-    const auto none = lifetime::start_as_array<std::uint32_t>(storage, 0);
+// Starts no object over the storage.  Returns 0 when the span is empty and
+// starts at the storage.  Each other value names the check that fails.
+[[nodiscard]] int read_none_of(EmptyBytes& storage) {
+    const auto none = lifetime::start_as_array<std::uint32_t>(core::foreign_first(storage.view()), 0);
     if (!none.empty()) return 1;
-    return static_cast<const void*>(none.data()) == static_cast<const void*>(storage) ? 0 : 2;
+    const bool starts_at_the_storage =
+        static_cast<const void*>(none.data()) == static_cast<const void*>(core::foreign_first(storage.view()));
+    return starts_at_the_storage ? 0 : 2;
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// The read sees the last store, which is the float.
+[[nodiscard]] int read_sees_the_last_store() {
+    alignas(8) StoreBytes storage{};
+    return read_through_two_types(storage) == core::bit_cast<std::uint32_t>(1.0F) ? 0 : 1;
+}
+
+// Const storage gives const elements, and each element holds the bytes that
+// the storage held before the start.
+[[nodiscard]] int const_storage_reads_its_bytes() {
+    alignas(Pair) PairBytes storage{};
+    const core::FixedArray<Pair, 2> written{Pair{1, 2}, Pair{3, 4}};
+    core::copy(storage.view(), core::bytes(written));
+    return read_pairs_of(storage);
+}
+
+// A count of zero is an empty span that starts at the storage.
+[[nodiscard]] int zero_count_is_empty_at_the_storage() {
+    alignas(4) EmptyBytes storage{};
+    return read_none_of(storage);
+}
 
 }  // namespace
 
