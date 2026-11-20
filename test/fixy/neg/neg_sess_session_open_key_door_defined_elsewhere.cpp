@@ -28,13 +28,11 @@ namespace fixy::session {
 class AsyncChannelDoor {
 public:
     static auto open(neg_sess_session_open_key_door_defined_elsewhere_types::Wire wire) {
-        return HandleFactory::open_<
-            Recv<int, End>, neg_sess_session_open_key_door_defined_elsewhere_types::Wire, check::Enforced,
-            ::foundation::permissions::PermSet<neg_sess_session_open_key_door_defined_elsewhere_types::Region>>(
-            SessionOpenKey{}, wire,
-            HoldFactory::slots_of(::foundation::permissions::mint_permission_root<
-                                  neg_sess_session_open_key_door_defined_elsewhere_types::Region>()),
-            std::source_location::current());
+        auto root = ::foundation::permissions::mint_permission_root<
+            neg_sess_session_open_key_door_defined_elsewhere_types::Region>();
+        return HandleFactory::open_<Recv<int, End>, neg_sess_session_open_key_door_defined_elsewhere_types::Wire,
+                                    check::Enforced, ::foundation::permissions::PermSet<decltype(root)>>(
+            SessionOpenKey{}, wire, HoldFactory::slots_of(std::move(root)), std::source_location::current());
     }
 };
 }  // namespace fixy::session

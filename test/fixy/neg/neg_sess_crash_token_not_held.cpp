@@ -13,9 +13,10 @@ struct Wire {};
 struct Region {
     using permission_row = foundation::effects::Row<>;
 };
+struct RegionBrand {};
 }  // namespace
 
-using Proto = s::Select<s::Send<s::Transferable<int, Region>, s::End>>;
+using Proto = s::Select<s::Send<s::Transferable<int, Region, RegionBrand>, s::End>>;
 
 int main() {
     s::CrashCell<Bob, Alice> cell;

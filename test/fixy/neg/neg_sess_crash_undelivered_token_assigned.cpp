@@ -15,8 +15,9 @@ namespace s = ::fixy::session;
 
 namespace neg_sess_crash_undelivered_token_assigned_types {
 struct TokenTag {};
+struct TokenBrand {};
 struct NextHandle {};
-using Token = s::Transferable<int, TokenTag>;
+using Token = s::Transferable<int, TokenTag, TokenBrand>;
 }  // namespace neg_sess_crash_undelivered_token_assigned_types
 
 int main() {

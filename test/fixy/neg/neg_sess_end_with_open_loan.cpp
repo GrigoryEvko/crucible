@@ -13,8 +13,9 @@ namespace s = ::fixy::session;
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
+struct RegionBrand {};
 struct Wire {};
-using Refused = s::Handle<s::End, ::foundation::permissions::PermSet<s::LentOut<Region>>, Wire>;
+using Refused = s::Handle<s::End, ::foundation::permissions::PermSet<s::LentOut<Region, RegionBrand>>, Wire>;
 }  // namespace
 
 static_assert(sizeof(Refused) > 0);

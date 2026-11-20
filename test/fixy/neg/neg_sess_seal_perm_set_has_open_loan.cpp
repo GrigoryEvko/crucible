@@ -14,7 +14,8 @@ namespace neg_sess_seal_perm_set_has_open_loan_types {
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
-using Lent = ::foundation::permissions::PermSet<::fixy::session::LentOut<Region>>;
+struct RegionBrand {};
+using Lent = ::foundation::permissions::PermSet<::fixy::session::LentOut<Region, RegionBrand>>;
 }  // namespace neg_sess_seal_perm_set_has_open_loan_types
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")

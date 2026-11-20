@@ -222,8 +222,11 @@ static_assert(!std::is_same_v<CancelHandle, EnforcedHandle>);
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
+// The brand of the type checks.  No check mints a token of it.
+struct HandleBrand {};
+using Token = ::foundation::permissions::Permission<Region, HandleBrand>;
 using NoPerms = ::foundation::permissions::EmptyPermSet;
-using HoldsRegion = ::foundation::permissions::PermSet<Region>;
+using HoldsRegion = ::foundation::permissions::PermSet<Token>;
 
 static_assert(std::is_same_v<s::Handle<s::End, NoPerms, ValueWire>, AtEnd>);
 static_assert(std::is_same_v<typename AtSend::perm_set, NoPerms>);
@@ -262,8 +265,7 @@ static_assert(
 // it.  A sender that does not hold the region cannot send the token, and
 // a receiver that holds it already cannot receive a second owner.  End
 // refuses an open loan and admits an owned tag.
-using Token = ::foundation::permissions::Permission<Region>;
-using LendsRegion = ::foundation::permissions::PermSet<s::LentOut<Region>>;
+using LendsRegion = ::foundation::permissions::PermSet<s::LentOut<Region, HandleBrand>>;
 static_assert(::foundation::permissions::perm_set_equal(^^s::detail::perm_set_after_send_t<HoldsRegion, Token>,
                                                         ^^NoPerms));
 static_assert(::foundation::permissions::perm_set_equal(^^s::detail::perm_set_after_recv_t<NoPerms, Token>,
@@ -278,7 +280,7 @@ static_assert(!s::detail::perm_set_admits_close_v<LendsRegion>);
 
 // The mint walks every path, so an arm that no run selects is checked.
 // Each refused protocol differs from its admitted neighbour in one step.
-using Lend = s::Borrowed<int, Region>;
+using Lend = s::Borrowed<int, Region, HandleBrand>;
 static_assert(s::PermissionFlowCloses<s::Send<Token, s::End>, HoldsRegion>);
 static_assert(!s::PermissionFlowCloses<s::Send<Token, s::End>, NoPerms>);
 static_assert(!s::PermissionFlowCloses<s::Select<s::End, s::Send<Token, s::End>>, NoPerms>,
@@ -341,8 +343,14 @@ template <class Moves>
                                    NoPerms>;
 }
 static_assert(moves_the_region<Token>());
-static_assert(moves_the_region<s::Transferable<int, Region>>());
-static_assert(moves_the_region<s::Returned<int, Region>>());
+static_assert(moves_the_region<s::Transferable<int, Region, HandleBrand>>());
+static_assert(moves_the_region<s::Returned<int, Region, HandleBrand>>());
+// A payload of another brand of the tag moves a token that the set does not
+// hold, so the send of the first step is refused.
+struct OtherBrand {};
+static_assert(!s::PermissionFlowCloses<s::Send<s::Transferable<int, Region, OtherBrand>, s::End>, HoldsRegion>);
+static_assert(
+    !s::PermissionFlowCloses<s::Send<::foundation::permissions::Permission<Region, OtherBrand>, s::End>, HoldsRegion>);
 
 // A vendor pin is a declaration for the layer above.  The handle steps the
 // protocol that the pin wraps, at the top and after a step.
@@ -720,10 +728,12 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
     using Forever = s::Loop<s::Send<Ping, s::Continue>>;
     using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
     const BgCtx ctx{::foundation::effects::testing::bg()};
-    auto head = s::mint_permissioned_session<Forever, s::check::Enforced>(
-        ctx, ValueWire{}, ::foundation::permissions::mint_permission_root<Region>());
-    static_assert(std::is_same_v<typename decltype(head)::perm_set, HoldsRegion>);
-    static_assert(std::is_same_v<typename decltype(head)::loop_ctx, s::detail::PermLoopFrame<Forever, HoldsRegion>>);
+    auto root = ::foundation::permissions::mint_permission_root<Region>();
+    using RootSet = ::foundation::permissions::PermSet<
+        ::foundation::permissions::Permission<Region, ::foundation::brand::brand_of_t<decltype(root)>>>;
+    auto head = s::mint_permissioned_session<Forever, s::check::Enforced>(ctx, ValueWire{}, std::move(root));
+    static_assert(std::is_same_v<typename decltype(head)::perm_set, RootSet>);
+    static_assert(std::is_same_v<typename decltype(head)::loop_ctx, s::detail::PermLoopFrame<Forever, RootSet>>);
     for (int round = 0; round < 3; ++round) {
         auto next = std::move(head).send(Ping{round}, [](ValueWire& w, Ping& p) noexcept {
             w.last_sent = p.value;
@@ -798,29 +808,35 @@ using PinnedLoop = s::VendorPinned<::fixy::session::VendorBackend::NV, s::Loop<P
 // gives the token back with the Resource.  The Resource is the wire: the
 // sender closes with the token in it, and the receiver opens on it.
 
+template <class TokenType>
 struct TokenWire {
-    ::fixy::FixedList<Token, 1> slot{};
+    ::fixy::FixedList<TokenType, 1> slot{};
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 [[nodiscard]] int move_token_through_session() {
     using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
     const BgCtx ctx{::foundation::effects::testing::bg()};
-    auto sender = s::mint_permissioned_session<s::Send<Token, s::End>, s::check::Enforced>(
-        ctx, TokenWire{}, ::foundation::permissions::mint_permission_root<Region>());
-    auto sender_done = std::move(sender).send([](TokenWire& w, Token& token) noexcept {
+    auto root = ::foundation::permissions::mint_permission_root<Region>();
+    using RootToken = decltype(root);
+    using Wire = TokenWire<RootToken>;
+    auto sender =
+        s::mint_permissioned_session<s::Send<RootToken, s::End>, s::check::Enforced>(ctx, Wire{}, std::move(root));
+    auto sender_done = std::move(sender).send([](Wire& w, RootToken& token) noexcept {
         static_cast<void>(w.slot.append(std::move(token)).expect("the wire is empty"));
         return true;
     });
     static_assert(std::is_same_v<typename decltype(sender_done)::perm_set, NoPerms>);
-    TokenWire wire = std::move(sender_done).close();
+    Wire wire = std::move(sender_done).close();
 
-    auto receiver = s::mint_session<s::Recv<Token, s::End>>(ctx, std::move(wire));
-    auto receiver_done = std::move(receiver).recv([](TokenWire& w) noexcept { return w.slot.take_last(); });
-    static_assert(
-        ::foundation::permissions::perm_set_equal(^^typename decltype(receiver_done)::perm_set, ^^HoldsRegion),
-        "the receive puts the token into the slots, and the caller holds no token");
+    auto receiver = s::mint_session<s::Recv<RootToken, s::End>>(ctx, std::move(wire));
+    auto receiver_done = std::move(receiver).recv([](Wire& w) noexcept { return w.slot.take_last(); });
+    static_assert(::foundation::permissions::perm_set_equal(^^typename decltype(receiver_done)::perm_set,
+                                                            ^^::foundation::permissions::PermSet<RootToken>),
+                  "the receive puts the token into the slots, and the caller holds no token");
     auto [back, token] = std::move(receiver_done).close();
+    static_assert(std::is_same_v<decltype(token), RootToken>,
+                  "the token leaves the session with the brand of its root");
     const bool is_wire_empty = back.slot.size() == 0;
     ::foundation::linear::drop(std::move(token));
     ::foundation::linear::drop(std::move(back));

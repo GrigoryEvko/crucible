@@ -21,14 +21,16 @@ struct Region {
     using permission_row = eff::Row<>;
 };
 struct Wire {};
-using Token = perm::Permission<Region>;
+// The one root site of Region, so the protocol names the brand of its root.
+[[nodiscard]] inline auto mint_region_root() noexcept { return perm::mint_permission_root<Region>(); }
+using Token = decltype(mint_region_root());
 using SendsTwice = s::Send<Token, s::Send<Token, s::End>>;
 }  // namespace flow_open_fixture
 
 int main() {
     using namespace flow_open_fixture;
     const eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
-    auto head = s::mint_permissioned_session<SendsTwice>(ctx, Wire{}, perm::mint_permission_root<Region>());
+    auto head = s::mint_permissioned_session<SendsTwice>(ctx, Wire{}, mint_region_root());
     std::move(head).detach(s::detach_reason::TestInstrumentation{});
     return 0;
 }

@@ -74,17 +74,6 @@ bool report_counts(const s::CrashCellCore& cell, std::uint64_t count) {
     return witness && std::to_underlying(witness->messages_sent) == count;
 }
 
-bool take_token_back(::fixy::Option<Token> undelivered, int payload) {
-    return std::move(undelivered)
-        .match(
-            [payload](Token token) noexcept {
-                const bool is_same_payload = token.peek() == payload;
-                ::foundation::linear::drop(std::move(token));
-                return is_same_payload;
-            },
-            []() noexcept { return false; });
-}
-
 void p_sends(CellOfP& cell_p, const CellOfQ& cell_q, Mailbox& in, Mailbox& out, int first, int count) {
     using Stream = s::Loop<s::Select<s::Send<int, s::Continue>>>;
     auto p = s::mint_crash_session<Stream, P, Q>(bg_ctx(), Port{&in, &out}, cell_q, s::mint_crash_writer(cell_p));
@@ -308,7 +297,7 @@ static_assert(carrier_of<std::unique_ptr<ForeignBox<int>>> == DelegationCarrier:
 // specialization it reaches, so a later explicit specialization of it is
 // ill-formed: neg_sess_crash_delegation_specialized_after_query.
 static_assert(carrier_of<Mention<Delegated>> == DelegationCarrier::HandOff);
-static_assert(carrier_of<s::Transferable<Delegated, X>> == DelegationCarrier::HandOff);
+static_assert(carrier_of<s::Transferable<Delegated, X, XBrand>> == DelegationCarrier::HandOff);
 static_assert(carrier_of<CapturesEndpoint> == DelegationCarrier::Endpoint);
 static_assert(carrier_of<HoldsOnlyAnUnnamedBitField> == DelegationCarrier::UnreadableState);
 static_assert(carrier_of<std::function<void()>> == DelegationCarrier::TypeErasure);
@@ -352,7 +341,7 @@ static_assert(carrier_of<PlainMessage> == DelegationCarrier::None);
 static_assert(carrier_of<s::Send<int, s::End>> == DelegationCarrier::None);
 static_assert(carrier_of<s::VendorPinned<s::VendorBackend::Portable, s::End>> == DelegationCarrier::None);
 static_assert(carrier_of<s::Crash<P>> == DelegationCarrier::None);
-static_assert(carrier_of<s::Transferable<int, X>> == DelegationCarrier::None);
+static_assert(carrier_of<Token> == DelegationCarrier::None);
 static_assert(carrier_of<std::string> == DelegationCarrier::None);
 static_assert(carrier_of<std::vector<int>> == DelegationCarrier::None);
 static_assert(carrier_of<std::optional<PlainMessage>> == DelegationCarrier::None);
@@ -434,7 +423,7 @@ static_assert(s::checkpoint_verdict_of(^^CrashInsideCheckpoint,
 
 // A crash session cannot start with a token: its mint has an empty set,
 // so the only token in flight is one it received.
-using SendsToken = s::Select<s::Send<s::Transferable<int, X>, s::End>>;
+using SendsToken = s::Select<s::Send<Token, s::End>>;
 static_assert(!s::CrashSessionAdmissible<SendsToken, Q, P, s::NoReliableRoles>);
 
 // A reception hidden in a loop, one step after the guarded choice.

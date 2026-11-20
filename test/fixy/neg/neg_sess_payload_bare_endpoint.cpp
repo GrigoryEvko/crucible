@@ -13,12 +13,13 @@ namespace neg_sess_payload_bare_endpoint_types {
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
+struct RegionBrand {};
 struct Wire {
     [[no_unique_address]] ::fixy::session::MoveOnlyResource one_holder{};
 };
-using Endpoint =
-    ::fixy::session::SessionHandle<::fixy::session::Recv<int, ::fixy::session::End>, Wire, void,
-                                   ::fixy::session::check::Enforced, ::foundation::permissions::PermSet<Region>>;
+using Endpoint = ::fixy::session::SessionHandle<
+    ::fixy::session::Recv<int, ::fixy::session::End>, Wire, void, ::fixy::session::check::Enforced,
+    ::foundation::permissions::PermSet<::foundation::permissions::Permission<Region, RegionBrand>>>;
 struct Envelope {
     int sequence = 0;
     Endpoint endpoint;

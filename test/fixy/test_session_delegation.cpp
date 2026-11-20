@@ -177,13 +177,20 @@ static_assert(s::payload_conveys_delegation_v<Carried>);
 struct HandedRegion {
     using permission_row = eff::Row<>;
 };
-using CarriesRegion = s::DelegatedSession<Inner, Wire, s::DefaultAbandonmentPolicy, fp::PermSet<HandedRegion>>;
-static_assert(!s::PermissionFlowCloses<s::Send<CarriesRegion, s::End>, fp::PermSet<HandedRegion>>,
+// The brands of the type checks.  No check mints a token of them.
+struct HandedBrand {};
+struct OtherHandedBrand {};
+using HandedToken = fp::Permission<HandedRegion, HandedBrand>;
+using CarriesRegion = s::DelegatedSession<Inner, Wire, s::DefaultAbandonmentPolicy, fp::PermSet<HandedToken>>;
+static_assert(!s::PermissionFlowCloses<s::Send<CarriesRegion, s::End>, fp::PermSet<HandedToken>>,
               "the sender and the endpoint that it sends would each claim the region");
+static_assert(!s::PermissionFlowCloses<s::Send<CarriesRegion, s::End>,
+                                       fp::PermSet<fp::Permission<HandedRegion, OtherHandedBrand>>>,
+              "a token of the tag under another brand is the same region of a set, so the claims still meet");
 static_assert(s::PermissionFlowCloses<s::Send<CarriesRegion, s::End>, fp::EmptyPermSet>,
               "the endpoint carries its own token, so the sender holds none");
 static_assert(s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::EmptyPermSet>);
-static_assert(!s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::PermSet<HandedRegion>>,
+static_assert(!s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::PermSet<HandedToken>>,
               "the recipient and the endpoint that it receives would each claim the region");
 
 [[nodiscard]] static int fail(const char* what) {
@@ -260,25 +267,32 @@ static_assert(std::is_nothrow_move_constructible_v<Carried> && std::is_nothrow_m
 //
 // An endpoint whose permission set holds a tag keeps the token of that tag
 // in its slots, so it is delegated alone.  The recipient gets the token with
-// the handle that claims its region, and it sends the region with it.
+// the handle that claims its region, and it sends the region with it.  Each
+// protocol names the brand of the root, so it is a template over the brand.
 struct Region {
     using permission_row = eff::Row<>;
 };
-using SendsRegion = s::Send<s::Transferable<int, Region>, s::End>;
+template <class Brand>
+using SendsRegion = s::Send<s::Transferable<int, Region, Brand>, s::End>;
+template <class Brand>
+using HoldsRegion = fp::PermSet<fp::Permission<Region, Brand>>;
 
 template <typename H>
 concept Delegates = requires(H handle) { s::mint_delegated_session(std::move(handle)); };
 
 [[nodiscard]] static int tokens_travel_with_the_endpoint() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto handle = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, fp::mint_permission_root<Region>());
+    auto root = fp::mint_permission_root<Region>();
+    using Brand = ::foundation::brand::brand_of_t<decltype(root)>;
+    auto handle = s::mint_permissioned_session<SendsRegion<Brand>>(ctx, Wire{}, std::move(root));
     static_assert(Delegates<decltype(handle)>, "a handle whose set holds a tag carries its token in its slots");
 
     auto parcel = s::mint_delegated_session(std::move(handle));
-    static_assert(std::is_same_v<typename decltype(parcel)::inner_perm_set, fp::PermSet<Region>>);
+    static_assert(std::is_same_v<typename decltype(parcel)::inner_perm_set, HoldsRegion<Brand>>);
     auto received = std::move(parcel).accept();
-    static_assert(std::is_same_v<typename decltype(received)::perm_set, fp::PermSet<Region>>);
-    auto at_end = std::move(received).send(9, [](Wire& wire, s::Transferable<int, Region>& sent) noexcept {
+    static_assert(std::is_same_v<typename decltype(received)::perm_set, HoldsRegion<Brand>>,
+                  "the token travels with the brand of its root");
+    auto at_end = std::move(received).send(9, [](Wire& wire, s::Transferable<int, Region, Brand>& sent) noexcept {
         wire.sent = sent.peek();
         return true;
     });
@@ -294,13 +308,15 @@ concept Delegates = requires(H handle) { s::mint_delegated_session(std::move(han
 // hold the token of Region, and its own set stays empty.  The recipient
 // accepts the endpoint, and it holds the region through it: its read of the
 // region goes through the token that the endpoint sends.
-using HandsRegion =
-    s::Send<s::DelegatedSession<SendsRegion, Wire, s::DefaultAbandonmentPolicy, fp::PermSet<Region>>, s::End>;
-using ParcelOfRegion = s::DelegatedSession<SendsRegion, Wire, s::DefaultAbandonmentPolicy, fp::PermSet<Region>>;
+template <class Brand>
+using ParcelOfRegion = s::DelegatedSession<SendsRegion<Brand>, Wire, s::DefaultAbandonmentPolicy, HoldsRegion<Brand>>;
+template <class Brand>
+using HandsRegion = s::Send<ParcelOfRegion<Brand>, s::End>;
 
 // The sender puts the endpoint into the slot, and the recipient takes it
 // out, as in delegate_over_a_channel.
-[[nodiscard]] static bool put_parcel(SenderEndOf<ParcelOfRegion>& end, ParcelOfRegion& parcel) noexcept {
+template <class Brand>
+[[nodiscard]] static bool put_parcel(SenderEndOf<ParcelOfRegion<Brand>>& end, ParcelOfRegion<Brand>& parcel) noexcept {
     if (end.slot->held.has_value()) return false;
     end.slot->held.emplace(std::move(parcel));
     return true;
@@ -309,36 +325,41 @@ using ParcelOfRegion = s::DelegatedSession<SendsRegion, Wire, s::DefaultAbandonm
 // The read waits in its declared form, so it gives the endpoint with no
 // Option around it.  The sender fills the slot on the same thread before the
 // read, so the read does not wait.
-[[nodiscard]] static ParcelOfRegion take_parcel(RecipientEndOf<ParcelOfRegion>& end, s::watch::wait_scope&) noexcept {
+template <class Brand>
+[[nodiscard]] static ParcelOfRegion<Brand> take_parcel(RecipientEndOf<ParcelOfRegion<Brand>>& end,
+                                                       s::watch::wait_scope&) noexcept {
     if (!end.slot->held.has_value()) ::fixy::fatal("the sender put no endpoint into the slot");
-    ParcelOfRegion taken = std::move(*end.slot->held);
+    ParcelOfRegion<Brand> taken = std::move(*end.slot->held);
     end.slot->held.reset();
     return taken;
 }
 
 [[nodiscard]] static int sender_without_tags_hands_off_a_region() {
-    SlotOf<ParcelOfRegion> slot{};
+    auto root = fp::mint_permission_root<Region>();
+    using Brand = ::foundation::brand::brand_of_t<decltype(root)>;
+    using Parcel = ParcelOfRegion<Brand>;
+    SlotOf<Parcel> slot{};
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto [sender, recipient] = s::mint_test_channel<HandsRegion>(ctx, SenderEndOf<ParcelOfRegion>{&slot},
-                                                                 RecipientEndOf<ParcelOfRegion>{&slot});
+    auto [sender, recipient] =
+        s::mint_test_channel<HandsRegion<Brand>>(ctx, SenderEndOf<Parcel>{&slot}, RecipientEndOf<Parcel>{&slot});
     static_assert(std::is_same_v<typename decltype(sender)::perm_set, fp::EmptyPermSet>);
-    auto inner = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, fp::mint_permission_root<Region>());
-    auto sender_done = std::move(sender).send(s::mint_delegated_session(std::move(inner)), put_parcel);
+    auto inner = s::mint_permissioned_session<SendsRegion<Brand>>(ctx, Wire{}, std::move(root));
+    auto sender_done = std::move(sender).send(s::mint_delegated_session(std::move(inner)), put_parcel<Brand>);
     static_assert(std::is_same_v<typename decltype(sender_done)::perm_set, fp::EmptyPermSet>,
                   "the sender holds no token of the endpoint, before the send and after it");
     // The sender closes before the recipient waits, so the waiting thread
     // holds no peer of the endpoint that it waits on.
     static_cast<void>(std::move(sender_done).close());
-    auto [received, recipient_done] = std::move(recipient).recv(take_parcel);
+    auto [received, recipient_done] = std::move(recipient).recv(take_parcel<Brand>);
     static_assert(std::is_same_v<typename decltype(recipient_done)::perm_set, fp::EmptyPermSet>,
                   "the recipient holds the region through the endpoint, and not in its own set");
     static_cast<void>(std::move(recipient_done).close());
     if (slot.held.has_value()) return fail("the recipient left the endpoint in the slot");
 
     auto accepted = std::move(received).accept();
-    static_assert(std::is_same_v<typename decltype(accepted)::perm_set, fp::PermSet<Region>>,
-                  "the endpoint keeps the token of the region in its slots");
-    auto at_end = std::move(accepted).send(11, [](Wire& wire, s::Transferable<int, Region>& sent) noexcept {
+    static_assert(std::is_same_v<typename decltype(accepted)::perm_set, HoldsRegion<Brand>>,
+                  "the endpoint keeps the token of the region in its slots, with its brand");
+    auto at_end = std::move(accepted).send(11, [](Wire& wire, s::Transferable<int, Region, Brand>& sent) noexcept {
         wire.sent = sent.peek();
         return true;
     });

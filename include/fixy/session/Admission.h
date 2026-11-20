@@ -797,15 +797,20 @@ concept RecoverAdmitted =
 
 }  // namespace detail
 
-template <typename Ctx, typename Proto, typename Resource, typename... Tags>
+// The gate of a session that starts with the tokens Tokens, each a
+// Permission<Tag, Brand>.  The set of the first handle holds each token with
+// its brand, so the flow closes only when each marker of the protocol names
+// the brand of the token that it moves.
+template <typename Ctx, typename Proto, typename Resource, typename... Tokens>
 concept CtxFitsSessionFrom =
-    ::foundation::effects::IsExecCtx<Ctx> && ::foundation::permissions::DistinctTags<Tags...>
-    && (::foundation::permissions::CtxAdmitsPermission<Tags, Ctx> && ...)
+    ::foundation::effects::IsExecCtx<Ctx> && (::foundation::permissions::IsPermission<Tokens> && ...)
+    && ::foundation::permissions::DistinctTags<::foundation::permissions::permission_tag_t<Tokens>...>
+    && (::foundation::permissions::CtxAdmitsPermission<::foundation::permissions::permission_tag_t<Tokens>, Ctx> && ...)
     && WellFormedRunnableProtocol<Proto> && PlainSessionResource<Resource>
-    && PermissionFlowCloses<Proto, ::foundation::permissions::PermSet<Tags...>> && CtxAdmitsProtocolRow<Ctx, Proto>;
+    && PermissionFlowCloses<Proto, ::foundation::permissions::PermSet<Tokens...>> && CtxAdmitsProtocolRow<Ctx, Proto>;
 
-template <typename Ctx, typename Proto, typename Resource, typename... Tags>
-concept CtxFitsPermissionedSession = sizeof...(Tags) != 0 && CtxFitsSessionFrom<Ctx, Proto, Resource, Tags...>;
+template <typename Ctx, typename Proto, typename Resource, typename... Tokens>
+concept CtxFitsPermissionedSession = sizeof...(Tokens) != 0 && CtxFitsSessionFrom<Ctx, Proto, Resource, Tokens...>;
 
 // The row gate of a channel.  Each channel mint gives one context to the
 // two sides of the channel.  So the context must admit the row of each

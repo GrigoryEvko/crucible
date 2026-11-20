@@ -2500,10 +2500,10 @@ fixy_neg_compile_test(neg_sess_delegated_session_forged
   "DelegatedSession.const fixy::session::DelegationKey&, handle_type&&.")
 fixy_neg_compile_test(neg_sess_hand_off_to_holder_of_region
   "no matching function for call to .mint_permissioned_session<neg_sess_hand_off_to_holder_of_region_types::TakesParcel>"
-  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >")
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tokens ...> >")
 fixy_neg_compile_test(neg_sess_hand_off_from_holder_of_region
   "no matching function for call to .mint_permissioned_session<neg_sess_hand_off_from_holder_of_region_types::GivesParcel>"
-  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >")
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tokens ...> >")
 fixy_neg_compile_test(neg_sess_delegated_session_forged_by_bit_cast
   "no matching function for call to .bit_cast<neg_sess_delegated_session_forged_by_bit_cast_types::Carried>"
   "is_trivially_copyable_v<_To>")
@@ -3204,7 +3204,7 @@ fixy_neg_compile_test(neg_sess_cancel_policy_without_channel
 # open, also when no run selects that arm.
 fixy_neg_compile_test(neg_sess_end_with_open_loan
   "static assertion failed: fixy::session::diagnostic \\[PermissionImbalance\\]: the protocol reaches End"
-  "the expression .!.perm_set_has_open_loan_v<PS>. .with PS = foundation::permissions::PermSet<fixy::session::LentOut<.unnamed.::Region> >")
+  "the expression .!.perm_set_has_open_loan_v<PS>. .with PS = foundation::permissions::PermSet<fixy::session::LentOut<.unnamed.::Region, .unnamed.::RegionBrand> >")
 fixy_neg_compile_test(neg_sess_send_unheld_permission
   "no matching function for call to .mint_session<.anonymous.::Proto>"
   "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags \\.\\.\\.> >. \\[with Proto = fixy::session::Send<foundation::permissions::Permission<.*. Tags = \\{\\}\\]")
@@ -3217,23 +3217,23 @@ fixy_neg_compile_test(neg_sess_mint_unselected_arm_sends_unheld_permission
 # lvalue fails at its copy, before the gate.
 fixy_neg_compile_test(neg_sess_loop_iteration_sends_permission
   "no matching function for call to .mint_permissioned_session<loop_iteration_fixture::Forever>"
-  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Loop<fixy::session::Send<"
+  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tokens ...> >. .with Proto = fixy::session::Loop<fixy::session::Send<"
   "permission_flow_closes\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Loop<.*evaluated to .false.")
 fixy_neg_compile_test(neg_sess_unselected_arm_leaves_loan_open
   "no matching function for call to .mint_permissioned_session<unselected_arm_fixture::Proto>"
-  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<fixy::session::Borrowed<int, unselected_arm_fixture::Region>"
+  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tokens ...> >. .with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<fixy::session::Borrowed<int, unselected_arm_fixture::Region, "
   "permission_flow_closes\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Select<.*evaluated to .false.")
 fixy_neg_compile_test(neg_sess_permissioned_session_flow_open
   "no matching function for call to .mint_permissioned_session<flow_open_fixture::SendsTwice>"
-  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Send<foundation::permissions::Permission<flow_open_fixture::Region"
+  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tokens ...> >. .with Proto = fixy::session::Send<foundation::permissions::Permission<flow_open_fixture::Region"
   "permission_flow_closes\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Send<.*evaluated to .false.")
 fixy_neg_compile_test(neg_sess_permissioned_session_row_refused
   "no matching function for call to .mint_permissioned_session<row_refused_fixture::SendsRegion>"
-  "CtxAdmitsPermission<Tags, Ctx> && \\.\\.\\.\\) .with Tags = \\{row_refused_fixture::DiskRegion\\}"
+  "CtxAdmitsPermission<typename std::remove_cvref<Tokens>::remove_cvref_t<Tokens>::tag_type, Ctx> && \\.\\.\\.\\) .with Tokens = \\{foundation::permissions::Permission<row_refused_fixture::DiskRegion, "
   "evaluated to .false.")
 fixy_neg_compile_test(neg_sess_permissioned_session_no_tokens
   "no matching function for call to .mint_permissioned_session<no_tokens_fixture::SendsPing>\\(const foundation::effects::detail::ctx_witnesses::BgWitness&, no_tokens_fixture::Wire\\)"
-  "sizeof \\.\\.\\. \\(Tags \\.\\.\\.\\) != 0 .with Tags = \\{\\}"
+  "sizeof \\.\\.\\. \\(Tokens \\.\\.\\.\\) != 0 .with Tokens = \\{\\}"
   "evaluated to .false.")
 fixy_neg_compile_test(neg_sess_permissioned_session_token_kept
   "use of deleted function .foundation::permissions::Permission<Tag, Brand>::Permission\\(const foundation::permissions::Permission<Tag, Brand>&\\) .with Tag = token_kept_fixture::Region"
@@ -3255,7 +3255,7 @@ fixy_neg_compile_test(neg_sess_recv_token_to_the_caller
   "fixy::session::SessionHandle<fixy::session::End, neg_sess_recv_token_to_the_caller_types::Wire")
 fixy_neg_compile_test(neg_sess_token_in_a_member_of_a_payload
   "no matching function for call to .mint_permissioned_session<neg_sess_token_in_a_member_of_a_payload_types::SendsCarrier>"
-  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >")
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tokens ...> >")
 # HS14 for mint_session of Entry.h.  Its gate is CtxFitsSessionFrom with no
 # tag, and each fixture fails one clause: the context, the permission flow
 # from the empty set, and the Resource.
@@ -3265,7 +3265,7 @@ fixy_neg_compile_test(neg_sess_mint_session_not_a_context
   "satisfaction of .CtxFitsSession<Ctx, Proto, Resource>.")
 fixy_neg_compile_test(neg_sess_mint_session_flow_open
   "no matching function for call to .mint_session<flow_open_fixture::SendsRegion>"
-  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Send<fixy::session::Transferable<int, flow_open_fixture::Region>, fixy::session::End>. Tags = \\{\\}"
+  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tokens ...> >. .with Proto = fixy::session::Send<fixy::session::Transferable<int, flow_open_fixture::Region, flow_open_fixture::RegionBrand>, fixy::session::End>. Tokens = \\{\\}"
   "permission_flow_closes\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Send<.*PS = foundation::permissions::PermSet<>.*evaluated to .false.")
 fixy_neg_compile_test(neg_sess_mint_session_pointer_resource
   "no matching function for call to .mint_session<pointer_resource_fixture::Proto>"
@@ -3293,8 +3293,8 @@ fixy_neg_compile_test(neg_sess_mint_session_payload_unclassified
 # region, and a delivered tag that declares no row stops the build.
 fixy_neg_compile_test(neg_sess_mint_session_receives_region_outside_ctx
   "no matching function for call to .mint_session<receives_region_fixture::Proto>"
-  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>."
-  "is_subrow\\(.*\\^\\^ typename Ctx::row_type\\) .with Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>")
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion, receives_region_fixture::IoBrand>, fixy::session::End>."
+  "is_subrow\\(.*\\^\\^ typename Ctx::row_type\\) .with Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion, receives_region_fixture::IoBrand>, fixy::session::End>")
 fixy_neg_compile_test(neg_sess_mint_session_delegated_region_outside_ctx
   "no matching function for call to .mint_session<delegated_region_fixture::Proto>"
   "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*Proto = fixy::session::Recv<fixy::session::DelegatedSession<fixy::session::End, delegated_region_fixture::Wire, "
@@ -3302,7 +3302,7 @@ fixy_neg_compile_test(neg_sess_mint_session_delegated_region_outside_ctx
 fixy_neg_compile_test(neg_sess_mint_session_delivered_region_without_row
   "no matching function for call to .mint_session<region_without_row_fixture::Proto>"
   "uncaught exception of type .std::meta::exception.. .what\\(\\).: .fixy::session::diagnostic \\[Delivered_Region_Without_Row\\]: a receive of the protocol delivers a permission of the region region_without_row_fixture::BareRegion, and its tag declares no permission row"
-  "using fixy::session::protocol_delivered_permission_row_t = .* \\[with Proto = fixy::session::Recv<fixy::session::Transferable<int, region_without_row_fixture::BareRegion>, fixy::session::End>\\]")
+  "using fixy::session::protocol_delivered_permission_row_t = .* \\[with Proto = fixy::session::Recv<fixy::session::Transferable<int, region_without_row_fixture::BareRegion, region_without_row_fixture::BareBrand>, fixy::session::End>\\]")
 # The context-bound with_session lends its Resource for the body only.
 # A body that returns before End, keeps the handle, or returns the End
 # handle of another session fails the body gate, and a Resource passed as
@@ -3567,7 +3567,7 @@ fixy_neg_compile_test(neg_sess_crash_cell_of_another_pair
 # over it drops a token.
 fixy_neg_compile_test(neg_sess_crash_undelivered_token_assigned
   "an assignment drops the payload that the Option holds, and a linear payload must not be dropped"
-  "Option<fixy::session::Transferable<int, neg_sess_crash_undelivered_token_assigned_types::TokenTag> >")
+  "Option<fixy::session::Transferable<int, neg_sess_crash_undelivered_token_assigned_types::TokenTag, neg_sess_crash_undelivered_token_assigned_types::TokenBrand> >")
 fixy_neg_compile_test(neg_sess_crash_third_pair_missing
   "no matching function for call to .mint_crash_session<neg_sess_crash_third_pair_missing_types::ToThird,"
   "is_third_receiver\\(.*\\)\\(\\^\\^ Proto, \\^\\^ Peer, \\^\\^ Third\\) \\[with Proto = fixy::session::Send<fixy::session::PeerMsg<neg_sess_crash_third_pair_missing_types::Third, .*Third = fixy::session::NoThirdRole\\]. evaluated to .false.")
@@ -4210,7 +4210,7 @@ fixy_neg_compile_test(neg_sess_recover_label_branch
   "I = 0. LoopCtx = void. PS = foundation::permissions::PermSet<>.. evaluated to .false.")
 fixy_neg_compile_test(neg_sess_recover_permission_held
   "no matching function for call to .fixy::session::HandleFactory::recover<1>"
-  "I = 1. LoopCtx = void. PS = foundation::permissions::PermSet<neg_sess_recover_permission_held_types::Region>.. evaluated to .false.")
+  "I = 1. LoopCtx = void. PS = foundation::permissions::PermSet<foundation::permissions::Permission<neg_sess_recover_permission_held_types::Region, .*evaluated to .false.")
 
 fixy_neg_compile_test(neg_sess_strip_peers_not_a_local_type
   "invalid use of incomplete type .struct fixy::session::detail::proj::peer_walk<"
@@ -4356,9 +4356,27 @@ fixy_test(test_session_payload_seal)
 # through expect_dies, and each test passes only on its diagnostic.
 fixy_test(test_session_hold_consumed_aborts)
 fixy_test(test_session_hold_open_loan_aborts)
-# A token that leaves a hold is on the erased identity, so the release of a
-# singleton root refuses it in a child process.
-fixy_test(test_session_erase_hole)
+# A hold keeps the brand of each token, so a token leaves the hold with the
+# brand of its root, and a singleton root leaves as the same root.
+fixy_test(test_session_hold_keeps_the_brand)
+# A token of a brand that leaves a hold or crosses a session is no singleton
+# root, so the release of a singleton root refuses it.
+fixy_neg_compile_test(neg_sess_hold_token_is_no_singleton_root
+  "no matching function for call to .release_singleton_root\\(std::remove_reference<foundation::permissions::Permission<neg_sess_hold_token_is_no_singleton_root_tags::Region, "
+  "mismatched types .foundation::brand::DefaultBrand. and ")
+fixy_neg_compile_test(neg_sess_received_token_is_no_singleton_root
+  "no matching function for call to .release_singleton_root\\(std::remove_reference<foundation::permissions::Permission<neg_sess_received_token_is_no_singleton_root_tags::Region, "
+  "mismatched types .foundation::brand::DefaultBrand. and ")
+# A marker moves the token of the brand that it names, so a protocol that
+# names another brand of the tag of the token of a session does not close.
+fixy_neg_compile_test(neg_sess_send_marker_of_another_brand
+  "no matching function for call to .mint_permissioned_session<fixy::session::Send<fixy::session::Transferable<int, neg_sess_send_marker_of_another_brand_types::Region, neg_sess_send_marker_of_another_brand_types::OtherRootBrand>"
+  "required for the satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tokens \\.\\.\\.> >.")
+# A held set names a token form for each region, so a bare tag in a held
+# set stops the build.
+fixy_neg_compile_test(neg_sess_held_set_of_a_bare_tag
+  "PermissionImbalance.: an element of a held permission set is no token form"
+  "A bare tag names a region and no brand")
 
 # An accept after a move, a delegation with a consumed hold, and an
 # assignment over a live delegated endpoint each abort with a named
@@ -4368,7 +4386,7 @@ fixy_test(test_session_delegation_aborts)
 # An assignment over a live Released would drop the read loan of the target,
 # so the move assignment of the marker is deleted.
 fixy_neg_compile_test(neg_session_released_assigned_over_live
-  "use of deleted function .fixy::session::Released<T, Tag>& fixy::session::Released<T, Tag>::operator=\\(fixy::session::Released<T, Tag>&&\\)"
+  "use of deleted function .fixy::session::Released<T, Tag, Brand>& fixy::session::Released<T, Tag, Brand>::operator=\\(fixy::session::Released<T, Tag, Brand>&&\\)"
   "Released carries one read loan back, and an assignment would drop the loan of the target")
 
 # The payload walk refuses a token laundered through a pair, behind a
@@ -4397,7 +4415,7 @@ fixy_neg_compile_test(neg_sess_payload_bare_endpoint
   "payload_perm_delta<neg_sess_payload_bare_endpoint_types::Envelope>")
 fixy_neg_compile_test(neg_sess_payload_bare_endpoint_mint
   "no matching function for call to .mint_session<neg_sess_payload_bare_endpoint_mint_types::Carrier"
-  "required for the satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags \\.\\.\\.> >. .with Proto = fixy::session::Send<fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>.*. Tags = \\{\\}.")
+  "required for the satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tokens \\.\\.\\.> >. .with Proto = fixy::session::Send<fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>.*. Tokens = \\{\\}.")
 # Each verdict of the payload walk is a concept, so a user specialization
 # of one no longer compiles.  Each of these specializations compiled while
 # the verdict was a variable template, and it flipped a send, a receive,
@@ -4406,7 +4424,7 @@ fixy_neg_compile_test(neg_sess_seal_is_permission_classified
   "template-id .is_permission_classified_v<neg_sess_seal_is_permission_classified_types::Evil>. used as a declarator"
   "too many template headers for .fixy::session::is_permission_classified_v.")
 fixy_neg_compile_test(neg_sess_seal_is_plain_payload
-  "template-id .is_plain_payload_v<fixy::session::Transferable<int, neg_sess_seal_is_plain_payload_types::Region> >. used as a declarator"
+  "template-id .is_plain_payload_v<fixy::session::Transferable<int, neg_sess_seal_is_plain_payload_types::Region, neg_sess_seal_is_plain_payload_types::RegionBrand> >. used as a declarator"
   "too many template headers for .fixy::session::is_plain_payload_v.")
 fixy_neg_compile_test(neg_sess_seal_payload_conveys_delegation
   "template-id .payload_conveys_delegation_v<fixy::session::DelegatedSession<fixy::session::End, neg_sess_seal_payload_conveys_delegation_types::Wire"
@@ -4415,19 +4433,19 @@ fixy_neg_compile_test(neg_sess_seal_delegates_to_own_peer
   "template-id .delegates_to_own_peer_v<fixy::session::Send<fixy::session::PeerMsg<neg_sess_seal_delegates_to_own_peer_types::Bob"
   "too many template headers for .fixy::session::delegates_to_own_peer_v.")
 fixy_neg_compile_test(neg_sess_seal_perm_set_has_open_loan
-  "template-id .perm_set_has_open_loan_v<foundation::permissions::PermSet<fixy::session::LentOut<neg_sess_seal_perm_set_has_open_loan_types::Region> > >. used as a declarator"
+  "template-id .perm_set_has_open_loan_v<foundation::permissions::PermSet<fixy::session::LentOut<neg_sess_seal_perm_set_has_open_loan_types::Region, neg_sess_seal_perm_set_has_open_loan_types::RegionBrand> > >. used as a declarator"
   "too many template headers for .fixy::session::perm_set_has_open_loan_v.")
 fixy_neg_compile_test(neg_sess_seal_plain_tag
-  "template-id .PlainTag<fixy::session::LentOut<neg_sess_seal_plain_tag_types::Region> >. used as a declarator"
+  "template-id .PlainTag<fixy::session::LentOut<neg_sess_seal_plain_tag_types::Region, neg_sess_seal_plain_tag_types::RegionBrand> >. used as a declarator"
   "too many template headers for .fixy::session::detail::PlainTag.")
 fixy_neg_compile_test(neg_sess_seal_handle_admits_send
-  "template-id .handle_admits_send_v<foundation::permissions::PermSet<>, fixy::session::Transferable<int, neg_sess_seal_handle_admits_send_types::Region> >. used as a declarator"
+  "template-id .handle_admits_send_v<foundation::permissions::PermSet<>, fixy::session::Transferable<int, neg_sess_seal_handle_admits_send_types::Region, neg_sess_seal_handle_admits_send_types::RegionBrand> >. used as a declarator"
   "too many template headers for .fixy::session::detail::handle_admits_send_v.")
 fixy_neg_compile_test(neg_sess_seal_handle_admits_recv
-  "template-id .handle_admits_recv_v<foundation::permissions::PermSet<neg_sess_seal_handle_admits_recv_types::Region>, fixy::session::Transferable<int, neg_sess_seal_handle_admits_recv_types::Region"
+  "template-id .handle_admits_recv_v<foundation::permissions::PermSet<foundation::permissions::Permission<neg_sess_seal_handle_admits_recv_types::Region, neg_sess_seal_handle_admits_recv_types::RegionBrand> >, fixy::session::Transferable<int, neg_sess_seal_handle_admits_recv_types::Region, neg_sess_seal_handle_admits_recv_types::RegionBrand"
   "too many template headers for .fixy::session::detail::handle_admits_recv_v.")
 fixy_neg_compile_test(neg_sess_seal_perm_set_admits_close
-  "template-id .perm_set_admits_close_v<foundation::permissions::PermSet<fixy::session::LentOut<neg_sess_seal_perm_set_admits_close_types::Region> > >. used as a declarator"
+  "template-id .perm_set_admits_close_v<foundation::permissions::PermSet<fixy::session::LentOut<neg_sess_seal_perm_set_admits_close_types::Region, neg_sess_seal_perm_set_admits_close_types::RegionBrand> > >. used as a declarator"
   "too many template headers for .fixy::session::detail::perm_set_admits_close_v.")
 fixy_neg_compile_test(neg_sess_payload_hand_off_behind_pointer
   "Payload_Refused.: the payload cannot travel on a session channel, because it reaches a DelegatedSession through a pointer"
@@ -4452,10 +4470,10 @@ fixy_neg_compile_test(neg_session_hold_duplicate_tag
 # definition of the factory is a redefinition.
 fixy_neg_compile_test(neg_sess_hold_friend_specialized
   "is private within this context"
-  "fixy::session::PermHold<foundation::permissions::PermSet<neg_sess_hold_friend_specialized_types::Region> >::slots_")
+  "fixy::session::PermHold<foundation::permissions::PermSet<foundation::permissions::Permission<neg_sess_hold_friend_specialized_types::Region, neg_sess_hold_friend_specialized_types::RegionBrand> > >::slots_")
 fixy_neg_compile_test(neg_sess_hold_loan_by_specialization
   "is private within this context"
-  "fixy::session::Borrowed<int, neg_sess_hold_loan_by_specialization_types::Region>::loan_")
+  "fixy::session::Borrowed<int, neg_sess_hold_loan_by_specialization_types::Region, neg_sess_hold_loan_by_specialization_types::RegionBrand>::loan_")
 fixy_neg_compile_test(neg_sess_hold_factory_redefined
   "redefinition of .class fixy::session::HoldFactory."
   "previous definition of .class fixy::session::HoldFactory.")
@@ -4463,14 +4481,14 @@ fixy_neg_compile_test(neg_sess_hold_factory_redefined
 # A read loan carries a read proof of its own region, and a hold lends
 # only a region it holds.
 fixy_neg_compile_test(neg_session_borrowed_without_proof
-  "no matching function for call to .fixy::session::Borrowed<int, .anonymous.::Region>::Borrowed\\("
+  "no matching function for call to .fixy::session::Borrowed<int, .anonymous.::Region, .anonymous.::RegionBrand>::Borrowed\\("
   "candidate expects 2 arguments, 1 provided")
 fixy_neg_compile_test(neg_session_borrowed_proof_of_another_region
-  "no matching function for call to .fixy::session::Borrowed<int, neg_session_borrowed_proof_of_another_region_types::Region>::Borrowed\\("
-  "ReadLoan<neg_session_borrowed_proof_of_another_region_types::Other, foundation::brand::DefaultBrand>.\\} to .foundation::permissions::ReadLoan<neg_session_borrowed_proof_of_another_region_types::Region, foundation::brand::DefaultBrand>&&.")
+  "no matching function for call to .fixy::session::Borrowed<int, neg_session_borrowed_proof_of_another_region_types::Region, "
+  "no known conversion for argument 2 from .std::remove_reference<foundation::permissions::ReadLoan<neg_session_borrowed_proof_of_another_region_types::Other, ")
 fixy_neg_compile_test(neg_session_hold_lend_without_token
-  "no matching function for call to .fixy::session::PermHold<foundation::permissions::PermSet<.anonymous.::Other> >::lend<.anonymous.::Region>"
-  "required for the satisfaction of .SendablePayload<fixy::session::Borrowed<T, Tag>")
+  "no matching function for call to .fixy::session::PermHold<foundation::permissions::PermSet<foundation::permissions::Permission<.anonymous.::Other, "
+  "the expression .holds_token_of\\(.*\\)\\(\\^\\^ Set, \\^\\^ Tag\\) .with Set = foundation::permissions::PermSet<foundation::permissions::Permission<<unnamed>::Other, .*Tag = <unnamed>::Region.*evaluated to .false.")
 
 # A read through a reader or a hold that stays named.  read consumes the
 # object for the call and hands it back, so a body cannot end the share
@@ -4484,19 +4502,19 @@ fixy_neg_compile_test(neg_session_hold_read_by_name
 
 # A read of a region the hold does not borrow.  read is gated by the set.
 fixy_neg_compile_test(neg_session_hold_read_without_borrow
-  "no matching function for call to .fixy::session::PermHold<foundation::permissions::PermSet<.anonymous.::Region> >::read<.anonymous.::Region>"
-  "perm_set_contains\\(.*\\)\\(\\^\\^ foundation::permissions::Set, \\^\\^ fixy::session::BorrowedIn<Tag>\\) .with Elems = .<unnamed>::Region.. Tag = <unnamed>::Region.*evaluated to .false.")
+  "no matching function for call to .fixy::session::PermHold<foundation::permissions::PermSet<foundation::permissions::Permission<.anonymous.::Region, "
+  "holds_loan_of\\(.*\\)\\(\\^\\^ foundation::permissions::Set, \\^\\^ Tag\\) .*evaluated to .false.")
 
 # A release with no loan.  The release carries the loan back, and the
 # lender gets its token only with that loan.
 fixy_neg_compile_test(neg_session_released_without_loan
-  "no matching function for call to .fixy::session::Released<int, .anonymous.::Region>::Released\\("
+  "no matching function for call to .fixy::session::Released<int, .anonymous.::Region, .anonymous.::RegionBrand>::Released\\("
   "candidate expects 2 arguments, 1 provided")
 
 # A borrow of the payload of a temporary marker.  The reference would
 # dangle at the end of the full expression, so peek() of an rvalue is deleted.
 fixy_neg_compile_test(neg_session_marker_peek_of_temporary
-  "use of deleted function .const T& fixy::session::Transferable<T, Tag>::peek\\(\\) const &&"
+  "use of deleted function .const T& fixy::session::Transferable<T, Tag, Brand>::peek\\(\\) const &&"
   "a reference into a temporary marker dangles at the end of the full expression")
 
 # A classified value travels only in DeclassifyOnSend under an admitted

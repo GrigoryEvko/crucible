@@ -13,8 +13,9 @@
 namespace flow_open_fixture {
 namespace s = ::fixy::session;
 struct Region {};
+struct RegionBrand {};
 struct Wire {};
-using SendsRegion = s::Send<s::Transferable<int, Region>, s::End>;
+using SendsRegion = s::Send<s::Transferable<int, Region, RegionBrand>, s::End>;
 }  // namespace flow_open_fixture
 
 int main() {

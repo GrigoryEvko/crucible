@@ -24,9 +24,13 @@ struct Region {
 struct Wire {
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
-using Inner = s::Send<s::Transferable<int, Region>, s::End>;
+// The brand of the root of the endpoint, another root of Region.  One tag is
+// one region of a set, so the claims meet.
+struct ParcelBrand {};
+using Inner = s::Send<s::Transferable<int, Region, ParcelBrand>, s::End>;
 using Parcel =
-    s::DelegatedSession<Inner, Wire, s::DefaultAbandonmentPolicy, ::foundation::permissions::PermSet<Region>>;
+    s::DelegatedSession<Inner, Wire, s::DefaultAbandonmentPolicy,
+                        ::foundation::permissions::PermSet<::foundation::permissions::Permission<Region, ParcelBrand>>>;
 using TakesParcel = s::Recv<Parcel, s::End>;
 }  // namespace neg_sess_hand_off_to_holder_of_region_types
 

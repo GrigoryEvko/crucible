@@ -16,7 +16,7 @@ struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
 
-sess::Transferable<int, Region> packed() noexcept {
+auto packed() noexcept {
     auto [message, rest] = sess::mint_permission_hold(fp::mint_permission_root<Region>()).template pack<Region>(1);
     static_cast<void>(std::move(rest).into_permissions());
     return std::move(message);

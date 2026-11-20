@@ -24,8 +24,10 @@ struct Wire {};
 struct IoRegion {
     using permission_row = eff::Row<eff::Effect::IO>;
 };
+struct IoBrand {};
 using Endpoint =
-    s::DelegatedSession<s::End, Wire, s::DefaultAbandonmentPolicy, ::foundation::permissions::PermSet<IoRegion>>;
+    s::DelegatedSession<s::End, Wire, s::DefaultAbandonmentPolicy,
+                        ::foundation::permissions::PermSet<::foundation::permissions::Permission<IoRegion, IoBrand>>>;
 using Proto = s::Recv<Endpoint, s::End>;
 using BgCtx = eff::detail::ctx_witnesses::BgWitness;
 }  // namespace delegated_region_fixture

@@ -305,6 +305,8 @@ static_assert(std::is_move_constructible_v<CheckedP>);
 struct Region {
     using permission_row = eff::Row<>;
 };
+// The brand of the set of the check.  No check mints a token of it.
+struct RegionBrand {};
 using Waits = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, s::End>>;
 using ReceivesIoOnCrash = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, s::Recv<IoPayload, s::End>>>;
 template <std::size_t I, typename PS, typename Ctx = BgCtx, typename Choice = Waits>
@@ -314,7 +316,9 @@ constexpr bool recovers =
     };
 static_assert(recovers<1, ::foundation::permissions::EmptyPermSet>);
 static_assert(!recovers<0, ::foundation::permissions::EmptyPermSet>, "branch 0 is a label, which the peer picks");
-static_assert(!recovers<1, ::foundation::permissions::PermSet<Region>>, "the handle holds a token");
+static_assert(
+    !recovers<1, ::foundation::permissions::PermSet<::foundation::permissions::Permission<Region, RegionBrand>>>,
+    "the handle holds a token");
 static_assert(!recovers<2, ::foundation::permissions::EmptyPermSet>, "the Offer has two branches");
 static_assert(!recovers<1, ::foundation::permissions::EmptyPermSet, int>, "an int is not an execution context");
 static_assert(!recovers<1, ::foundation::permissions::EmptyPermSet, BgCtx, ReceivesIoOnCrash>,

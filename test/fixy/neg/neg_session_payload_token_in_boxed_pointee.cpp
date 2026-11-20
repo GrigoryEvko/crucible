@@ -16,7 +16,8 @@ namespace {
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
-using TX = sess::Transferable<int, Region>;
+struct RegionBrand {};
+using TX = sess::Transferable<int, Region, RegionBrand>;
 
 template <class T>
 struct Box {

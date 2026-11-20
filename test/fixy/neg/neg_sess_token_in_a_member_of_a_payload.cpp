@@ -21,10 +21,14 @@ namespace s = ::fixy::session;
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
-struct CarrierBrand final {};
+// The one root site of Region, so the member names the token of the root that
+// the session holds, and the member is the one fault.
+[[nodiscard]] inline auto mint_region_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<Region>();
+}
 struct CarriesToken {
     int value = 0;
-    ::foundation::permissions::Permission<Region, CarrierBrand> token;
+    decltype(mint_region_root()) token;
 };
 struct Wire {
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
@@ -36,8 +40,7 @@ int main() {
     namespace s = ::fixy::session;
     using namespace neg_sess_token_in_a_member_of_a_payload_types;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto head = s::mint_permissioned_session<SendsCarrier>(ctx, Wire{},
-                                                           ::foundation::permissions::mint_permission_root<Region>());
+    auto head = s::mint_permissioned_session<SendsCarrier>(ctx, Wire{}, mint_region_root());
     std::move(head).detach(s::detach_reason::TestInstrumentation{});
     return 0;
 }

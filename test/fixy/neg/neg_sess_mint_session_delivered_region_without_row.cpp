@@ -19,7 +19,8 @@ namespace s = ::fixy::session;
 namespace eff = ::foundation::effects;
 struct Wire {};
 struct BareRegion {};
-using Proto = s::Recv<s::Transferable<int, BareRegion>, s::End>;
+struct BareBrand {};
+using Proto = s::Recv<s::Transferable<int, BareRegion, BareBrand>, s::End>;
 using BgCtx = eff::detail::ctx_witnesses::BgWitness;
 }  // namespace region_without_row_fixture
 

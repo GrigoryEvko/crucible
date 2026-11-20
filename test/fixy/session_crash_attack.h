@@ -13,6 +13,8 @@
 #include <fixy/session/Projection.h>
 #include <fixy/session/Recording.h>
 
+#include <foundation/Brand.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
@@ -74,7 +76,13 @@ struct Port {
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
-using Token = s::Transferable<int, X>;
+// The one root site of X in the attacks.  One site gives one brand, so the
+// protocols of the attacks name the brand of each token that a read packs,
+// and each root of the site is a token of that brand.
+[[nodiscard]] inline auto mint_x_root() noexcept { return fp::mint_permission_root<X>(); }
+using XBrand = ::foundation::brand::brand_of_t<decltype(mint_x_root())>;
+
+using Token = s::Transferable<int, X, XBrand>;
 
 // The cells of the two pairs of p and q.  The cell of p watches p for q:
 // the crash of p and the count of the messages of p to q.
@@ -95,8 +103,19 @@ void crash_endpoint(s::CrashCellCore& cell, Mailbox& inbox, s::CrashCause cause)
 [[nodiscard]] bool report_counts(const s::CrashCellCore& cell, std::uint64_t count);
 
 // True when a send gave its token back, and the token holds `payload`.
-// The token ends here, through the drop door of foundation/Linear.h.
-[[nodiscard]] bool take_token_back(::fixy::Option<Token> undelivered, int payload);
+// The token ends here, through the drop door of foundation/Linear.h.  A fresh
+// brand is a closure type with no linkage, so each unit has its own Token,
+// and the function is inline in each unit.
+[[nodiscard]] inline bool take_token_back(::fixy::Option<Token> undelivered, int payload) {
+    return std::move(undelivered)
+        .match(
+            [payload](Token token) noexcept {
+                const bool is_same_payload = token.peek() == payload;
+                ::foundation::linear::drop(std::move(token));
+                return is_same_payload;
+            },
+            []() noexcept { return false; });
+}
 
 // p as a real crash session: it sends `count` messages, each the label 0
 // and the value first, first + 1, and so on, into `out`, and its cell
@@ -139,8 +158,7 @@ inline constexpr auto read_token = [](Port& port) noexcept -> ::fixy::Option<Tok
     port.in->slots.pop_front();
     // Only the door of a hold builds a marker: the wire carries the value,
     // and the read packs it with a token of its own.
-    auto [message, rest] =
-        s::mint_permission_hold(fp::mint_permission_root<X>()).template pack<X>(static_cast<int>(slot));
+    auto [message, rest] = s::mint_permission_hold(mint_x_root()).template pack<X>(static_cast<int>(slot));
     static_cast<void>(std::move(rest).into_permissions());
     return ::fixy::some(std::move(message));
 };

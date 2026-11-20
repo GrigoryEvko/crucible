@@ -9,13 +9,15 @@
 // each move the token, and a Borrowed and its Released lend the region and
 // give it back.  test_session_handle moves a bare Permission.  The Resource of each pair is the wire: one
 // side closes with the message in it, or the test moves the message from
-// the Resource of one live handle to the Resource of the other.
+// the Resource of one live handle to the Resource of the other.  Each
+// protocol names the brand of the root, and each token comes back with it.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
+#include <foundation/Brand.h>
 #include <foundation/Linear.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -41,8 +43,13 @@ struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
 
-using HoldsRegion = fp::PermSet<Region>;
+// The set that holds the token of Region with the brand Brand.
+template <class Brand>
+using HoldsRegion = fp::PermSet<fp::Permission<Region, Brand>>;
 using NoTags = fp::EmptyPermSet;
+
+// A brand for the checks of the layout, which mint no token.
+struct LayoutBrand {};
 
 // One message at a time passes through the mailbox.  A FixedList of one
 // element holds a linear message, which an Option cannot take by assignment.
@@ -84,13 +91,15 @@ void carry(Mailbox<Message>& from, Mailbox<Message>& to) noexcept {
 //
 // The sender gives the value of the marker, and its End handle holds no
 // tag.  The receiver gets the value of the marker, and its End handle gives
-// the token back at close().
-template <class Message>
+// the token back at close(), with the brand of the root.
+template <template <class, class, class> class Marker>
 [[nodiscard]] int move_in_a_marker(int value) {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto sender = s::mint_permissioned_session<s::Send<Message, s::End>>(ctx, Mailbox<Message>{},
-                                                                         fp::mint_permission_root<Region>());
-    static_assert(std::is_same_v<typename decltype(sender)::perm_set, HoldsRegion>);
+    auto root = fp::mint_permission_root<Region>();
+    using Brand = ::foundation::brand::brand_of_t<decltype(root)>;
+    using Message = Marker<int, Region, Brand>;
+    auto sender = s::mint_permissioned_session<s::Send<Message, s::End>>(ctx, Mailbox<Message>{}, std::move(root));
+    static_assert(std::is_same_v<typename decltype(sender)::perm_set, HoldsRegion<Brand>>);
     auto sender_done = std::move(sender).send(value, put_message<Message>);
     static_assert(std::is_same_v<typename decltype(sender_done)::perm_set, NoTags>,
                   "the sender gave the token of the slots away");
@@ -99,8 +108,10 @@ template <class Message>
     auto receiver = s::mint_session<s::Recv<Message, s::End>>(ctx, std::move(wire));
     auto [received, receiver_done] = std::move(receiver).recv(take_message<Message>);
     static_assert(std::is_same_v<decltype(received), int>, "the receive gives the value of the marker");
-    static_assert(std::is_same_v<typename decltype(receiver_done)::perm_set, HoldsRegion>);
+    static_assert(std::is_same_v<typename decltype(receiver_done)::perm_set, HoldsRegion<Brand>>);
     auto [back, token] = std::move(receiver_done).close();
+    static_assert(std::is_same_v<decltype(token), fp::Permission<Region, Brand>>,
+                  "the token leaves the session with the brand of its root");
     const bool is_mailbox_empty = back.held.size() == 0;
     ::foundation::linear::drop(std::move(token));
     ::foundation::linear::drop(std::move(back));
@@ -115,44 +126,47 @@ template <class Message>
 // receives the loan into its slots, reads the region through the handle,
 // and sends the release, which carries the loan back.  The lender then holds
 // the token again, and its End handle gives it back.
-using Lend = s::Borrowed<int, Region>;
-using Release = s::Released<int, Region>;
-using Lends = s::Send<Lend, s::Recv<Release, s::End>>;
-using Borrows = s::Recv<Lend, s::Send<Release, s::End>>;
-
+template <class Brand>
 struct LoanWire {
-    Mailbox<Lend> lent{};
-    Mailbox<Release> released{};
+    Mailbox<s::Borrowed<int, Region, Brand>> lent{};
+    Mailbox<s::Released<int, Region, Brand>> released{};
     int region_value = 0;
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 [[nodiscard]] int lend_and_release() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto lender =
-        s::mint_permissioned_session<Lends>(ctx, LoanWire{.region_value = 40}, fp::mint_permission_root<Region>());
+    auto root = fp::mint_permission_root<Region>();
+    using Brand = ::foundation::brand::brand_of_t<decltype(root)>;
+    using Lend = s::Borrowed<int, Region, Brand>;
+    using Release = s::Released<int, Region, Brand>;
+    using Lends = s::Send<Lend, s::Recv<Release, s::End>>;
+    using Borrows = s::Recv<Lend, s::Send<Release, s::End>>;
+    using Wire = LoanWire<Brand>;
+    auto lender = s::mint_permissioned_session<Lends>(ctx, Wire{.region_value = 40}, std::move(root));
     auto lender_waits =
-        std::move(lender).send(1, [](LoanWire& wire, Lend& lend) noexcept { return put_message(wire.lent, lend); });
-    static_assert(fp::perm_set_equal(^^typename decltype(lender_waits)::perm_set, ^^fp::PermSet<s::LentOut<Region>>),
-                  "the token of the lender is parked in the LentOut slot");
+        std::move(lender).send(1, [](Wire& wire, Lend& lend) noexcept { return put_message(wire.lent, lend); });
+    static_assert(
+        fp::perm_set_equal(^^typename decltype(lender_waits)::perm_set, ^^fp::PermSet<s::LentOut<Region, Brand>>),
+        "the token of the lender is parked in the LentOut slot");
 
-    auto borrower = s::mint_session<Borrows>(ctx, LoanWire{});
+    auto borrower = s::mint_session<Borrows>(ctx, Wire{});
     carry(lender_waits.resource().lent, borrower.resource().lent);
-    auto [ticket, borrowing] =
-        std::move(borrower).recv([](LoanWire& wire) noexcept { return take_message(wire.lent); });
-    static_assert(fp::perm_set_equal(^^typename decltype(borrowing)::perm_set, ^^fp::PermSet<s::BorrowedIn<Region>>));
+    auto [ticket, borrowing] = std::move(borrower).recv([](Wire& wire) noexcept { return take_message(wire.lent); });
+    static_assert(
+        fp::perm_set_equal(^^typename decltype(borrowing)::perm_set, ^^fp::PermSet<s::BorrowedIn<Region, Brand>>));
     const int region_value = lender_waits.resource().region_value;
-    auto [seen, reading] =
-        std::move(borrowing).template read<Region>([region_value](auto const&) noexcept { return region_value; });
+    auto [seen, reading] = std::move(borrowing).template read<Region>(
+        [region_value](fp::ReadView<Region, Brand> const&) noexcept { return region_value; });
     auto borrower_done = std::move(reading).send(
-        seen + ticket, [](LoanWire& wire, Release& release) noexcept { return put_message(wire.released, release); });
+        seen + ticket, [](Wire& wire, Release& release) noexcept { return put_message(wire.released, release); });
     static_assert(std::is_same_v<typename decltype(borrower_done)::perm_set, NoTags>,
                   "the release carries the loan back out of the slots of the borrower");
 
     carry(borrower_done.resource().released, lender_waits.resource().released);
     auto [answer, lender_done] =
-        std::move(lender_waits).recv([](LoanWire& wire) noexcept { return take_message(wire.released); });
-    static_assert(std::is_same_v<typename decltype(lender_done)::perm_set, HoldsRegion>,
+        std::move(lender_waits).recv([](Wire& wire) noexcept { return take_message(wire.released); });
+    static_assert(std::is_same_v<typename decltype(lender_done)::perm_set, HoldsRegion<Brand>>,
                   "the release unparks the token of the lender");
     ::foundation::linear::drop(std::move(borrower_done).close());
     auto [wire, token] = std::move(lender_done).close();
@@ -166,18 +180,19 @@ struct LoanWire {
 template <class PS, class Policy>
 using SendsPing = s::Handle<s::Send<int, s::End>, PS, Mailbox<int>, void, Policy>;
 
-static_assert(sizeof(SendsPing<HoldsRegion, s::check::Off>) == sizeof(SendsPing<NoTags, s::check::Off>));
-static_assert(sizeof(SendsPing<HoldsRegion, s::check::Enforced>) == sizeof(SendsPing<NoTags, s::check::Enforced>));
-static_assert(sizeof(SendsPing<fp::PermSet<s::LentOut<Region>>, s::check::Enforced>)
+static_assert(sizeof(SendsPing<HoldsRegion<LayoutBrand>, s::check::Off>) == sizeof(SendsPing<NoTags, s::check::Off>));
+static_assert(sizeof(SendsPing<HoldsRegion<LayoutBrand>, s::check::Enforced>)
               == sizeof(SendsPing<NoTags, s::check::Enforced>));
-static_assert(sizeof(SendsPing<fp::PermSet<s::BorrowedIn<Region>>, s::check::Off>)
+static_assert(sizeof(SendsPing<fp::PermSet<s::LentOut<Region, LayoutBrand>>, s::check::Enforced>)
+              == sizeof(SendsPing<NoTags, s::check::Enforced>));
+static_assert(sizeof(SendsPing<fp::PermSet<s::BorrowedIn<Region, LayoutBrand>>, s::check::Off>)
               == sizeof(SendsPing<NoTags, s::check::Off>));
 
 }  // namespace
 
 int main() {
-    if (const int rc = move_in_a_marker<s::Transferable<int, Region>>(7); rc != 0) return rc;
-    if (const int rc = move_in_a_marker<s::Returned<int, Region>>(9); rc != 0) return rc;
+    if (const int rc = move_in_a_marker<s::Transferable>(7); rc != 0) return rc;
+    if (const int rc = move_in_a_marker<s::Returned>(9); rc != 0) return rc;
     if (const int rc = lend_and_release(); rc != 0) return rc;
     ::fixy::check::pass(kTest, "test_session_slot_forms: OK\n");
     return 0;

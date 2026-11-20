@@ -6,7 +6,9 @@
 // claims on one region before the send.  The send of the hand-off checks
 // that the tags of the endpoint name no region of the set of the sender,
 // so the mint refuses the protocol.  Before the slots, the hand-off moved
-// the tag of the sender, and this file compiled.
+// the tag of the sender, and this file compiled.  The token of the endpoint
+// has the brand of another root of Region, and one tag is one region of a set,
+// so the claims meet.
 //
 // Expected diagnostic: the permission flow of the protocol does not close.
 
@@ -25,9 +27,12 @@ struct Region {
 struct Wire {
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
-using Inner = s::Send<s::Transferable<int, Region>, s::End>;
+// The brand of the root of the endpoint.
+struct ParcelBrand {};
+using Inner = s::Send<s::Transferable<int, Region, ParcelBrand>, s::End>;
 using Parcel =
-    s::DelegatedSession<Inner, Wire, s::DefaultAbandonmentPolicy, ::foundation::permissions::PermSet<Region>>;
+    s::DelegatedSession<Inner, Wire, s::DefaultAbandonmentPolicy,
+                        ::foundation::permissions::PermSet<::foundation::permissions::Permission<Region, ParcelBrand>>>;
 using GivesParcel = s::Send<Parcel, s::End>;
 }  // namespace neg_sess_hand_off_from_holder_of_region_types
 

@@ -51,9 +51,15 @@ struct Counter {
 
 struct Region {};
 
+// The brand of the markers of the type checks.  No check mints a token of it.
+struct EntryBrand {};
+
+template <class Tag>
+using EntryToken = ::foundation::permissions::Permission<Tag, EntryBrand>;
+
 using Once = s::Send<int, s::End>;
 using Stream = s::Loop<s::Select<s::Send<int, s::Continue>, s::End>>;
-using SendsRegion = s::Send<s::Transferable<int, Region>, s::End>;
+using SendsRegion = s::Send<s::Transferable<int, Region, EntryBrand>, s::End>;
 
 constexpr auto count_one = [](Counter& counter, int&) noexcept {
     ++counter.sent;
@@ -75,7 +81,7 @@ static_assert(!s::CtxFitsSession<BgCtx, SendsRegion, Counter>, "the empty set ho
 using PeerLoop = s::Loop<s::Send<s::PeerMsg<test_session_entry_roles::Peer, test_session_entry_roles::Key, int>,
                                  s::Select<s::Send<int, s::Continue>, s::End>>>;
 using LocalChoice = s::Select<s::Send<int, s::Continue>, s::End>;
-using HoldsRegion = ::foundation::permissions::PermSet<Region>;
+using HoldsRegion = ::foundation::permissions::PermSet<EntryToken<Region>>;
 template <class Inner>
 using Branded = s::detail::session_brand<test_session_entry_roles::Brand, Inner>;
 template <class LoopType>
@@ -109,7 +115,7 @@ using BranchRows = s::Loop<s::Select<s::Send<AllocWork, s::Continue>, s::Recv<Io
 using DelegatesIo =
     s::Send<s::DelegatedSession<SendsIo, Counter, s::DefaultAbandonmentPolicy, ::foundation::permissions::EmptyPermSet>,
             s::End>;
-using SendsAllocRegion = s::Send<s::Transferable<AllocWork, Region>, s::End>;
+using SendsAllocRegion = s::Send<s::Transferable<AllocWork, Region, EntryBrand>, s::End>;
 
 static_assert(std::is_same_v<s::protocol_payload_row_t<Once>, eff::Row<>>, "an int carries no effect");
 static_assert(std::is_same_v<s::protocol_payload_row_t<SendsIo>, eff::Row<eff::Effect::IO>>);
@@ -143,17 +149,20 @@ struct PureRegion {
 };
 
 using Policy = s::DefaultAbandonmentPolicy;
-using ReceivesIoRegion = s::Recv<s::Transferable<int, IoRegion>, s::End>;
+using ReceivesIoRegion = s::Recv<s::Transferable<int, IoRegion, EntryBrand>, s::End>;
 using ReceivesIoEndpoint =
-    s::Recv<s::DelegatedSession<s::End, Counter, Policy, ::foundation::permissions::PermSet<IoRegion>>, s::End>;
+    s::Recv<s::DelegatedSession<s::End, Counter, Policy, ::foundation::permissions::PermSet<EntryToken<IoRegion>>>,
+            s::End>;
 using ReceivesIoThroughEndpoint =
     s::Recv<s::DelegatedSession<ReceivesIoRegion, Counter, Policy, ::foundation::permissions::EmptyPermSet>, s::End>;
-using ReceivesIoInBranch = s::Offer<s::Recv<int, s::End>, s::Recv<s::Transferable<int, IoRegion>, s::End>>;
+using ReceivesIoInBranch = s::Offer<s::Recv<int, s::End>, s::Recv<s::Transferable<int, IoRegion, EntryBrand>, s::End>>;
 using ReceivesPureEndpoint =
-    s::Recv<s::DelegatedSession<s::End, Counter, Policy, ::foundation::permissions::PermSet<PureRegion>>, s::End>;
-using ReceivesLoanInEndpoint = s::Recv<s::DelegatedSession<s::Send<s::Released<int, IoRegion>, s::End>, Counter, Policy,
-                                                           ::foundation::permissions::PermSet<s::BorrowedIn<IoRegion>>>,
-                                       s::End>;
+    s::Recv<s::DelegatedSession<s::End, Counter, Policy, ::foundation::permissions::PermSet<EntryToken<PureRegion>>>,
+            s::End>;
+using ReceivesLoanInEndpoint =
+    s::Recv<s::DelegatedSession<s::Send<s::Released<int, IoRegion, EntryBrand>, s::End>, Counter, Policy,
+                                ::foundation::permissions::PermSet<s::BorrowedIn<IoRegion, EntryBrand>>>,
+            s::End>;
 
 static_assert(std::is_same_v<s::protocol_delivered_regions_t<Once>, ::foundation::permissions::PermSet<>>);
 static_assert(std::is_same_v<s::protocol_delivered_regions_t<SendsRegion>, ::foundation::permissions::PermSet<>>,
@@ -191,8 +200,10 @@ static_assert(s::CtxFitsSession<BgCtx, ReceivesPureEndpoint, Counter>, "a pure r
 // One context runs the two sides of a channel.  A permission that one
 // side sends arrives at the other side, so the row gate of the channel
 // holds its row.
-static_assert(!s::CtxAdmitsChannelRow<BgCtx, s::Send<s::Transferable<int, IoRegion>, s::End>, ReceivesIoRegion>);
-static_assert(s::CtxAdmitsChannelRow<BgIoCtx, s::Send<s::Transferable<int, IoRegion>, s::End>, ReceivesIoRegion>);
+static_assert(
+    !s::CtxAdmitsChannelRow<BgCtx, s::Send<s::Transferable<int, IoRegion, EntryBrand>, s::End>, ReceivesIoRegion>);
+static_assert(
+    s::CtxAdmitsChannelRow<BgIoCtx, s::Send<s::Transferable<int, IoRegion, EntryBrand>, s::End>, ReceivesIoRegion>);
 
 [[nodiscard]] int mint_walks_to_end() {
     const BgCtx ctx{eff::testing::bg()};

@@ -9,13 +9,14 @@
 //
 // The markers:
 //
-//   Transferable<T, Tag>     The sender gives the token to the recipient.
-//   Returned<T, Tag>         The same move.  The type records that it
+//   Transferable<T, Tag, Brand>
+//                            The sender gives the token to the recipient.
+//   Returned<T, Tag, Brand>  The same move.  The type records that it
 //                            closes an exclusive loan.
-//   Borrowed<T, Tag>         A read loan.  The sender keeps the token
+//   Borrowed<T, Tag, Brand>  A read loan.  The sender keeps the token
 //                            parked and cannot use it until the loan
 //                            ends.  The recipient gets the ReadLoan.
-//   Released<T, Tag>         The end of a read loan.  It carries the
+//   Released<T, Tag, Brand>  The end of a read loan.  It carries the
 //                            ReadLoan back, and the lender gets its token
 //                            back only with that loan.
 //   DelegatedSession<P, R, Pol, PS>
@@ -23,7 +24,7 @@
 //                            protocol P over Resource R
 //                            (fixy/session/Delegate.h).  The tokens in PS
 //                            move with it.
-//   SharedReader<Tag>        A read share of a pool.  No set changes,
+//   SharedReader<Tag, Brand> A read share of a pool.  No set changes,
 //                            because the pool counts its shares.
 //   PeerMsg<Q, L, U>, Labelled<L, U>
 //                            A keyed message.  Its payload U changes the
@@ -31,7 +32,23 @@
 //                            value step of the handle moves U after the
 //                            label word (fixy/session/Handle.h).
 //
-// A bare Permission in a payload moves as a Transferable does.
+// A bare Permission<Tag, Brand> in a payload moves as a Transferable does.
+//
+// ── The brand ───────────────────────────────────────────────────────
+//
+// Each marker names the brand of its token, and so does each element of a
+// held set (fixy/session/Classification.h).  The protocol is one type for
+// the two ends of a session, so the receiver knows the brand of each token
+// that it gets from the protocol alone.  A token keeps its brand in the
+// slots and in each message, and it leaves the session with that brand.
+// So no token leaves a session on the erased identity unless it entered on
+// it, as a singleton root (foundation/permissions/Permission.h).
+//
+// A protocol that moves the token of a root names the brand of that root:
+// it names brand_of_t of foundation/Brand.h after the root exists, or it is
+// a template over the brand.  A marker whose brand is not the brand of the
+// token in the set of the sender is refused, as a marker of a tag that the
+// set does not hold is.
 //
 // The four markers that carry a token or a loan are linear
 // (foundation/Linear.h).  A receive is their door: the handle takes the
@@ -42,11 +59,12 @@
 // A read proof that travels to a different thread lets the recipient
 // read the region while the sender continues.  So the sender must not
 // write the region, or give it away, until the proof comes back.  The
-// set records this.  A send of Borrowed<T, Tag> takes Tag out of the
-// sender's set and puts LentOut<Tag> in its place, and the recipient's
-// set takes BorrowedIn<Tag>.  A send of Released<T, Tag> reverses both.
-// While LentOut<Tag> is in the set, no send can move Tag or lend it
-// again, because Tag is not in the set.  That is the rule of Saffrich,
+// set records this.  A send of Borrowed<T, Tag, Brand> takes the token
+// Permission<Tag, Brand> out of the sender's set and puts LentOut<Tag, Brand>
+// in its place, and the recipient's set takes BorrowedIn<Tag, Brand>.  A send
+// of Released<T, Tag, Brand> reverses both.  While LentOut<Tag, Brand> is in
+// the set, no send can move the token or lend it again, because the token is
+// not in the set.  That is the rule of Saffrich,
 // Spaderna, Thiemann and Vasconcelos, "Borrowing from Session Types",
 // OOPSLA 2025, errata: a borrowed prefix on a different thread stops the
 // suffix until something consumes the prefix.
@@ -127,10 +145,11 @@ namespace fixy::session {
 // from outside the slots enters a message.  A transport reads the payload
 // through peek() to write it to the wire.  peek() of a temporary marker is
 // deleted, because the reference dangles at the end of the full expression.
-template <class T, class Tag>
+template <class T, class Tag, class Brand>
 struct [[nodiscard]][[= ::foundation::linear::linear{}]] Transferable {
     using payload_type = T;
     using transferred_perm = Tag;
+    using brand_type = Brand;
 
     Transferable(const Transferable&) = delete("Transferable carries a linear token. A copy is a second owner");
     Transferable&
@@ -151,20 +170,21 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Transferable {
 private:
     friend class HoldFactory;
 
-    // A protocol names the tag and not the instance, so the message holds
-    // the token of the slots, which is on the erased identity of its tag.
-    constexpr Transferable(T v, ::foundation::permissions::ErasedPermission<Tag>&& p) noexcept(
+    // The message holds the token of the slots, with the brand that the
+    // protocol names.
+    constexpr Transferable(T v, ::foundation::permissions::Permission<Tag, Brand>&& p) noexcept(
         std::is_nothrow_move_constructible_v<T>)
         : value_{std::move(v)}, perm_{std::move(p)} {}
 
     T value_;
-    [[no_unique_address]] ::foundation::permissions::ErasedPermission<Tag> perm_;
+    [[no_unique_address]] ::foundation::permissions::Permission<Tag, Brand> perm_;
 };
 
-template <class T, class Tag>
+template <class T, class Tag, class Brand>
 struct [[nodiscard]][[= ::foundation::linear::linear{}]] Returned {
     using payload_type = T;
     using returned_perm = Tag;
+    using brand_type = Brand;
 
     Returned(const Returned&) = delete("Returned carries a linear token. A copy is a second owner");
     Returned& operator=(const Returned&) = delete("Returned carries a linear token. A copy is a second owner");
@@ -181,22 +201,23 @@ private:
     friend class HoldFactory;
 
     // The token comes from the slots, as it does for Transferable.
-    constexpr Returned(T v, ::foundation::permissions::ErasedPermission<Tag>&& p) noexcept(
+    constexpr Returned(T v, ::foundation::permissions::Permission<Tag, Brand>&& p) noexcept(
         std::is_nothrow_move_constructible_v<T>)
         : value_{std::move(v)}, perm_{std::move(p)} {}
 
     T value_;
-    [[no_unique_address]] ::foundation::permissions::ErasedPermission<Tag> perm_;
+    [[no_unique_address]] ::foundation::permissions::Permission<Tag, Brand> perm_;
 };
 
 // The loan comes from mint_read_loan, which parks the token of the tag.
 // There is no constructor that takes no loan, so a Borrowed cannot exist
 // without a parked token.  The loan is private: the recipient reaches it
 // only through accept_loan, and reads only through the door of its hold.
-template <class T, class Tag>
+template <class T, class Tag, class Brand>
 struct [[nodiscard]][[= ::foundation::linear::linear{}]] Borrowed {
     using payload_type = T;
     using borrowed_perm = Tag;
+    using brand_type = Brand;
 
     Borrowed(const Borrowed&) = delete("Borrowed is one read loan. A copy is a second loan that no set records");
     Borrowed&
@@ -215,24 +236,24 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Borrowed {
 private:
     friend class HoldFactory;
 
-    // The loan is on the erased identity, because the hold that lends it
-    // keeps each token on the erased identity of its tag.
-    constexpr Borrowed(T v, ::foundation::permissions::ReadLoan<Tag>&& loan) noexcept(
+    // The loan has the brand of the token that the lender parks.
+    constexpr Borrowed(T v, ::foundation::permissions::ReadLoan<Tag, Brand>&& loan) noexcept(
         std::is_nothrow_move_constructible_v<T>)
         : value_{std::move(v)}, loan_{std::move(loan)} {}
 
     T value_;
-    [[no_unique_address]] ::foundation::permissions::ReadLoan<Tag> loan_;
+    [[no_unique_address]] ::foundation::permissions::ReadLoan<Tag, Brand> loan_;
 };
 
 // The end of a read loan carries the loan back.  The lender gets its
 // token only from the parked token and this loan together, so a release
 // that no borrower sent cannot reopen the region.  The type-level check
-// makes the send sound too: the sender must hold BorrowedIn<Tag>.
-template <class T, class Tag>
+// makes the send sound too: the sender must hold BorrowedIn<Tag, Brand>.
+template <class T, class Tag, class Brand>
 struct [[nodiscard]][[= ::foundation::linear::linear{}]] Released {
     using payload_type = T;
     using released_perm = Tag;
+    using brand_type = Brand;
 
     Released(const Released&) = delete("Released ends one read loan. A copy ends it a second time");
     Released& operator=(const Released&) = delete("Released ends one read loan. A copy ends it a second time");
@@ -251,13 +272,13 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Released {
 private:
     friend class HoldFactory;
 
-    // The loan is on the erased identity, as the loan of Borrowed is.
-    constexpr Released(T v, ::foundation::permissions::ReadLoan<Tag>&& loan) noexcept(
+    // The loan has the brand of the loan of Borrowed.
+    constexpr Released(T v, ::foundation::permissions::ReadLoan<Tag, Brand>&& loan) noexcept(
         std::is_nothrow_move_constructible_v<T>)
         : value_{std::move(v)}, loan_{std::move(loan)} {}
 
     T value_;
-    [[no_unique_address]] ::foundation::permissions::ReadLoan<Tag> loan_;
+    [[no_unique_address]] ::foundation::permissions::ReadLoan<Tag, Brand> loan_;
 };
 
 // A reader's share of a pool, which a message can carry to a reader on
@@ -316,14 +337,16 @@ private:
 
 // The payload rules of the markers (fixy/session/Registry.h).  The payload
 // walk of fixy/session/Classification.h reads the tag of a marker at
-// argument 1 and its value at argument 0.  A share changes no set.  The row
-// of a marker is the row of its value, and a share carries no row.
+// argument 1, its brand at argument 2 and its value at argument 0.  A share
+// changes no set.  The row of a marker is the row of its value, and a share
+// carries no row.
 namespace combinators::perm {
 
 inline constexpr ::fixy::session::transition::payload_rule transferable{
     .shape = ^^Transferable,
     .role = ::fixy::session::transition::payload_role::moves,
     .tag_argument = 1,
+    .brand_argument = 2,
     .value_argument = 0,
     .row_arguments = std::uint64_t{1}};
 
@@ -331,6 +354,7 @@ inline constexpr ::fixy::session::transition::payload_rule returned{
     .shape = ^^Returned,
     .role = ::fixy::session::transition::payload_role::moves,
     .tag_argument = 1,
+    .brand_argument = 2,
     .value_argument = 0,
     .row_arguments = std::uint64_t{1}};
 
@@ -338,6 +362,7 @@ inline constexpr ::fixy::session::transition::payload_rule borrowed{
     .shape = ^^Borrowed,
     .role = ::fixy::session::transition::payload_role::lends,
     .tag_argument = 1,
+    .brand_argument = 2,
     .value_argument = 0,
     .row_arguments = std::uint64_t{1}};
 
@@ -345,6 +370,7 @@ inline constexpr ::fixy::session::transition::payload_rule released{
     .shape = ^^Released,
     .role = ::fixy::session::transition::payload_role::releases,
     .tag_argument = 1,
+    .brand_argument = 2,
     .value_argument = 0,
     .row_arguments = std::uint64_t{1}};
 
@@ -630,16 +656,6 @@ concept DelegatesToNoOwnPeer = !delegates_to_own_peer_v<Proto>;
 
 namespace detail {
 
-// The region a set element names: Tag for LentOut<Tag> and BorrowedIn<Tag>,
-// and the element itself for any other tag.
-[[nodiscard]] consteval std::meta::info region_of(std::meta::info element) {
-    const std::meta::info bare = std::meta::dealias(element);
-    if (payload_family_is(bare, ^^LentOut) || payload_family_is(bare, ^^BorrowedIn)) {
-        return std::meta::dealias(std::meta::template_arguments_of(bare)[0]);
-    }
-    return bare;
-}
-
 // True when no element of `gains` names a region that an element of
 // `kept` already names.  One region in two states at once is two claims
 // on it, which a set must not hold.
@@ -770,8 +786,8 @@ private:
     // over, and the protocol of each such endpoint.
     static consteval tr::static_run<DeliveryItem> items_of(const PayloadFacts& facts) {
         tr::stack<DeliveryItem> items{};
-        // The set of a delegated endpoint can hold a loan state, and the
-        // region of LentOut<Tag> or BorrowedIn<Tag> is Tag.
+        // The region of each element is its tag, so the delivered set is a
+        // set of regions.
         const std::vector<std::meta::info> elements = std::meta::template_arguments_of(facts.receiver_gains);
         const std::meta::info* const element = elements.data();
         const std::size_t element_count = elements.size();
@@ -937,10 +953,10 @@ using perm_set_after_recv_t = ::foundation::permissions::perm_set_union_t<
 //   Move      a Transferable or a Returned whose value is plain
 //   Lend      a Borrowed whose value is plain
 //   Release   a Released whose value is plain
-//   Token     a bare Permission of the erased identity
-//   Outside   a token or a loan in a member of the payload, in the value of
-//             a marker, or a token of a brand.  No step can take it out of
-//             the slots, so a send and a receive refuse it.
+//   Token     a bare Permission<Tag, Brand>
+//   Outside   a token or a loan in a member of the payload, or in the value
+//             of a marker.  No step can take it out of the slots, so a send
+//             and a receive refuse it.
 //
 // A keyed message, a PeerMsg or a Labelled, has the form of its payload.  A
 // hand-off keeps the tokens of its endpoint in the slots of the endpoint, so
@@ -985,10 +1001,7 @@ namespace detail {
     }
     if (payload_family_is(message, ^^Borrowed)) return is_value_plain ? SlotForm::Lend : SlotForm::Outside;
     if (payload_family_is(message, ^^Released)) return is_value_plain ? SlotForm::Release : SlotForm::Outside;
-    if (payload_family_is(message, ^^::foundation::permissions::Permission)
-        && std::meta::dealias(argument[1]) == ^^::foundation::brand::DefaultBrand) {
-        return SlotForm::Token;
-    }
+    if (payload_family_is(message, ^^::foundation::permissions::Permission)) return SlotForm::Token;
     return SlotForm::Outside;
 }
 
@@ -1038,10 +1051,11 @@ concept perm_set_has_open_loan_v = detail::holds_open_loan(^^PS);
 // ── The tokens of a set, held ───────────────────────────────────────
 //
 // A PermHold keeps the token object for each element of its set: the
-// Permission of each plain tag, the LentPermission of each LentOut tag,
-// and the ReadLoan of each BorrowedIn tag.  Every transition consumes
-// the hold and returns the next one, whose set is the set after the
-// step.  So the tokens and the set cannot disagree:
+// Permission<Tag, Brand> of each token, the LentPermission<Tag, Brand> of
+// each LentOut<Tag, Brand>, and the ReadLoan<Tag, Brand> of each
+// BorrowedIn<Tag, Brand>.  Every transition consumes the hold and returns
+// the next one, whose set is the set after the step.  So the tokens and the
+// set cannot disagree:
 //
 //   take / put         a token leaves or enters the hold
 //   pack / unpack      the same, inside a Transferable
@@ -1072,27 +1086,67 @@ class PermHold;
 
 namespace detail {
 
-// The object that a hold keeps for one element of its set.
+// The object that a hold keeps for one element of its set.  An element that
+// is no token, no parked token and no loan names no object, and it stops the
+// build: a bare tag names a region and no brand.
 [[nodiscard]] consteval std::meta::info hold_slot_of(std::meta::info element) {
     const std::meta::info bare = std::meta::dealias(element);
     if (payload_family_is(bare, ^^LentOut)) {
         return std::meta::substitute(^^::foundation::permissions::LentPermission,
-                                     {std::meta::template_arguments_of(bare)[0]});
+                                     std::meta::template_arguments_of(bare));
     }
     if (payload_family_is(bare, ^^BorrowedIn)) {
-        return std::meta::substitute(^^::foundation::permissions::ReadLoan,
-                                     {std::meta::template_arguments_of(bare)[0]});
+        return std::meta::substitute(^^::foundation::permissions::ReadLoan, std::meta::template_arguments_of(bare));
     }
-    return std::meta::substitute(^^::foundation::permissions::Permission, {bare});
+    if (payload_family_is(bare, ^^::foundation::permissions::Permission)) return bare;
+    throw std::meta::exception(u8"fixy::session::diagnostic [PermissionImbalance]: an element of a held permission "
+                               u8"set is no token form.  A held set names Permission<Tag, Brand>, "
+                               u8"LentOut<Tag, Brand> or BorrowedIn<Tag, Brand>, so that each slot keeps the brand "
+                               u8"of its token.  A bare tag names a region and no brand.",
+                               bare);
 }
 
 template <class Element>
 using hold_slot_t = [:hold_slot_of(^^Element):];
 
-// True when the element is a plain tag, and not a loan state.
-template <class Element>
-concept PlainTag = !payload_family_is(std::meta::dealias(^^Element), ^^LentOut)
-                && !payload_family_is(std::meta::dealias(^^Element), ^^BorrowedIn);
+// True when the tag of a token is a plain tag, and not a loan state.
+template <class Tag>
+concept PlainTag = !payload_family_is(std::meta::dealias(^^Tag), ^^LentOut)
+                && !payload_family_is(std::meta::dealias(^^Tag), ^^BorrowedIn);
+
+// The element of the set whose region is the tag, or a null reflection.  A
+// set holds one element for each region.  Complexity: linear in the size of
+// the set.
+[[nodiscard]] consteval std::meta::info element_of_region(std::meta::info set, std::meta::info tag) {
+    const std::meta::info wanted = std::meta::dealias(tag);
+    for (const std::meta::info element : ::fixy::session::transition::template_arguments_run(std::meta::dealias(set))) {
+        if (region_of(element) == wanted) return std::meta::dealias(element);
+    }
+    return {};
+}
+
+// True when the set holds an element of the family `family` for the region
+// of the tag: a token, a LentOut or a BorrowedIn.
+[[nodiscard]] consteval bool holds_element_of(std::meta::info set, std::meta::info tag, std::meta::info family) {
+    const std::meta::info element = element_of_region(set, tag);
+    return element != std::meta::info{} && payload_family_is(element, family);
+}
+
+[[nodiscard]] consteval bool holds_token_of(std::meta::info set, std::meta::info tag) {
+    return holds_element_of(set, tag, ^^::foundation::permissions::Permission);
+}
+
+[[nodiscard]] consteval bool holds_loan_of(std::meta::info set, std::meta::info tag) {
+    return holds_element_of(set, tag, ^^BorrowedIn);
+}
+
+// The element of the set for the region of the tag, and its brand.  Each
+// spelling stands after a gate that the set holds that element.
+template <class Set, class Tag>
+using element_of_t = [:element_of_region(^^Set, ^^Tag):];
+
+template <class Set, class Tag>
+using element_brand_t = [:std::meta::template_arguments_of(element_of_region(^^Set, ^^Tag))[1]:];
 
 // True when the message moves its token to the recipient: a Transferable
 // or a Returned, received as an rvalue.
@@ -1100,13 +1154,21 @@ template <class Message>
 concept MovesAToken = payload_family_is(^^Message, ^^Transferable) || payload_family_is(^^Message, ^^Returned);
 
 // The gate of a read loan that a hold of Set lends as a Borrowed of T,
-// and of a read loan that a hold of Set accepts.  HoldFactory and each
-// member of PermHold read the same gate.
+// and of a read loan that a hold of Set accepts.  The loan takes the brand
+// of the token that the set holds for the tag.  HoldFactory and each member
+// of PermHold read the same gate.
 template <class Set, class Tag, class T>
-concept HoldCanLend = SendablePayload<Borrowed<T, Tag>, Set> && ::foundation::permissions::ReadViewNeedsNoCtx<Tag>;
+concept HoldCanLend = holds_token_of(^^Set, ^^Tag) && SendablePayload<Borrowed<T, Tag, element_brand_t<Set, Tag>>, Set>
+                   && ::foundation::permissions::ReadViewNeedsNoCtx<Tag>;
 
-template <class Set, class T, class Tag>
-concept HoldCanAcceptLoan = ReceivablePayload<Borrowed<T, Tag>, Set>;
+template <class Set, class T, class Tag, class Brand>
+concept HoldCanAcceptLoan = ReceivablePayload<Borrowed<T, Tag, Brand>, Set>;
+
+// The gate of a release that a hold of Set sends for the region of the tag.
+// The release takes the brand of the loan that the set holds.
+template <class Set, class Tag, class T>
+concept HoldCanRelease =
+    holds_loan_of(^^Set, ^^Tag) && SendablePayload<Released<T, Tag, element_brand_t<Set, Tag>>, Set>;
 
 [[noreturn]] CRUCIBLE_COLD inline void hold_consumed_abort_() noexcept {
     std::fputs("fixy::session::diagnostic [Hold_Consumed]: a PermHold was used after a move or a transition "
@@ -1181,6 +1243,10 @@ inline constexpr std::size_t slot_index_v = [] consteval {
 template <class Message>
 using marker_tag_t = [:std::meta::template_arguments_of(std::meta::dealias(^^Message))[1]:];
 
+// The brand that a marker names.
+template <class Message>
+using marker_brand_t = [:std::meta::template_arguments_of(std::meta::dealias(^^Message))[2]:];
+
 // True when a step builds the message from the slots of a set, or puts the
 // message into them: a marker of the slot form Move, Lend or Release that
 // the set can send or receive.
@@ -1193,6 +1259,12 @@ concept BuildsFromSlots = IsSlotMarker<Message> && SendablePayload<Message, Set>
 
 template <class Message, class Set>
 concept PutsIntoSlots = IsSlotMarker<Message> && ReceivablePayload<Message, Set>;
+
+// The gate of a pack of the token of the tag into a Transferable of T.  The
+// marker takes the brand of the token that the set holds for the tag.
+template <class Set, class Tag, class T>
+concept HoldCanPack = PlainTag<Tag> && holds_token_of(^^Set, ^^Tag)
+                   && BuildsFromSlots<Transferable<T, Tag, element_brand_t<Set, Tag>>, Set>;
 
 }  // namespace detail
 
@@ -1234,12 +1306,12 @@ class HoldFactory final : ::foundation::NoObject<HoldFactory> {
     // has the name and the position of the pack of CtxFitsSessionFrom of
     // fixy/session/Admission.h, because GCC prints one name for two packs at
     // one position, and the diagnostics of the mints name that pack.
-    template <class Next, class Set, class Incoming, class... Tags>
+    template <class Next, class Set, class Incoming, class... Tokens>
     [[nodiscard]] static constexpr HoldSlots<Next>
     build_(HoldSlots<Set>&& from, Incoming&& incoming,
-           std::type_identity<::foundation::permissions::PermSet<Tags...>>) noexcept {
-        return HoldSlots<Next>{detail::hold_from_slots{}, typename HoldSlots<Next>::parts_type{
-                                                              pick_<Tags>(from, std::forward<Incoming>(incoming))...}};
+           std::type_identity<::foundation::permissions::PermSet<Tokens...>>) noexcept {
+        return HoldSlots<Next>{detail::hold_from_slots{}, typename HoldSlots<Next>::parts_type{pick_<Tokens>(
+                                                              from, std::forward<Incoming>(incoming))...}};
     }
 
     template <class Next, class Set, class Incoming = no_incoming>
@@ -1275,16 +1347,15 @@ class HoldFactory final : ::foundation::NoObject<HoldFactory> {
 public:
     // ── The slots ──────────────────────────────────────────────────
 
-    // Consumes the tokens and builds the slots of their set.  The brand of
-    // each token drops through the session erase door, so the slots name
-    // regions by tag, as a set does.
+    // Consumes the tokens and builds the slots of their set.  Each token is
+    // an element of the set, with its brand, and one tag is one region.
     template <class... Tags, class... Brands>
         requires ::foundation::permissions::DistinctTags<Tags...>
-    [[nodiscard]] static constexpr HoldSlots<::foundation::permissions::PermSet<Tags...>>
+    [[nodiscard]] static constexpr HoldSlots<
+        ::foundation::permissions::PermSet<::foundation::permissions::Permission<Tags, Brands>...>>
     slots_of(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
-        return HoldSlots<::foundation::permissions::PermSet<Tags...>>{
-            detail::hold_from_slots{}, typename HoldSlots<::foundation::permissions::PermSet<Tags...>>::parts_type{
-                                           ::foundation::permissions::SessionEraseDoor::erase_(std::move(tokens))...}};
+        using Set = ::foundation::permissions::PermSet<::foundation::permissions::Permission<Tags, Brands>...>;
+        return HoldSlots<Set>{detail::hold_from_slots{}, typename HoldSlots<Set>::parts_type{std::move(tokens)...}};
     }
 
     // The slots of a set under another spelling of the same set.  A step
@@ -1300,25 +1371,29 @@ public:
         }
     }
 
-    // A token leaves the slots.
+    // The token of the region of the tag leaves the slots, with its brand.
     template <class Tag, class Set>
-        requires(::foundation::permissions::perm_set_contains(^^Set, ^^Tag) && detail::PlainTag<Tag>)
-    [[nodiscard]] static constexpr auto take_slot(HoldSlots<Set>&& slots) noexcept
-        -> ::foundation::core::Record<detail::hold_slot_t<Tag>,
-                                      HoldSlots<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
-        detail::hold_slot_t<Tag> token = std::move(slot_<Tag>(slots));
+        requires(detail::PlainTag<Tag> && detail::holds_token_of(^^Set, ^^Tag))
+    [[nodiscard]] static constexpr auto take_slot(HoldSlots<Set>&& slots) noexcept -> ::foundation::core::Record<
+        detail::element_of_t<Set, Tag>,
+        HoldSlots<::foundation::permissions::perm_set_remove_t<Set, detail::element_of_t<Set, Tag>>>> {
+        using Token = detail::element_of_t<Set, Tag>;
+        Token token = std::move(slot_<Token>(slots));
         return {std::move(token),
-                transition_<::foundation::permissions::perm_set_remove_t<Set, Tag>>(std::move(slots))};
+                transition_<::foundation::permissions::perm_set_remove_t<Set, Token>>(std::move(slots))};
     }
 
-    // A token enters the slots.
+    // A token enters the slots, with its brand.  The set must hold no element
+    // of its region.
     template <class Set, class Tag, class Brand>
         requires(detail::PlainTag<Tag> && detail::regions_disjoint(^^Set, ^^::foundation::permissions::PermSet<Tag>))
     [[nodiscard]] static constexpr auto put_slot(HoldSlots<Set>&& slots,
                                                  ::foundation::permissions::Permission<Tag, Brand> token) noexcept
-        -> HoldSlots<::foundation::permissions::perm_set_insert_t<Set, Tag>> {
-        return transition_<::foundation::permissions::perm_set_insert_t<Set, Tag>>(
-            std::move(slots), ::foundation::permissions::SessionEraseDoor::erase_(std::move(token)));
+        -> HoldSlots<
+            ::foundation::permissions::perm_set_insert_t<Set, ::foundation::permissions::Permission<Tag, Brand>>> {
+        return transition_<
+            ::foundation::permissions::perm_set_insert_t<Set, ::foundation::permissions::Permission<Tag, Brand>>>(
+            std::move(slots), std::move(token));
     }
 
     // Builds the message of a send from the slots, around the value that
@@ -1333,16 +1408,18 @@ public:
                                                            typename Message::payload_type value) noexcept
         -> ::foundation::core::Record<Message, HoldSlots<perm_set_after_send_t<Set, Message>>> {
         using Tag = detail::marker_tag_t<Message>;
+        using Brand = detail::marker_brand_t<Message>;
+        using Token = ::foundation::permissions::Permission<Tag, Brand>;
         using Next = perm_set_after_send_t<Set, Message>;
         if constexpr (slot_form_v<Message> == SlotForm::Move) {
-            Message message{std::move(value), std::move(slot_<Tag>(slots))};
+            Message message{std::move(value), std::move(slot_<Token>(slots))};
             return {std::move(message), transition_<Next>(std::move(slots))};
         } else if constexpr (slot_form_v<Message> == SlotForm::Lend) {
-            auto [loan, parked] = ::foundation::permissions::mint_read_loan(std::move(slot_<Tag>(slots)));
+            auto [loan, parked] = ::foundation::permissions::mint_read_loan(std::move(slot_<Token>(slots)));
             Message message{std::move(value), std::move(loan)};
             return {std::move(message), transition_<Next>(std::move(slots), std::move(parked))};
         } else {
-            Message message{std::move(value), std::move(slot_<BorrowedIn<Tag>>(slots))};
+            Message message{std::move(value), std::move(slot_<BorrowedIn<Tag, Brand>>(slots))};
             return {std::move(message), transition_<Next>(std::move(slots))};
         }
     }
@@ -1357,6 +1434,7 @@ public:
     [[nodiscard]] static constexpr auto value_into_slots(HoldSlots<Set>&& slots, Message&& message) noexcept
         -> ::foundation::core::Record<typename Message::payload_type, HoldSlots<perm_set_after_recv_t<Set, Message>>> {
         using Tag = detail::marker_tag_t<Message>;
+        using Brand = detail::marker_brand_t<Message>;
         using Next = perm_set_after_recv_t<Set, Message>;
         typename Message::payload_type value = std::move(message.value_);
         if constexpr (slot_form_v<Message> == SlotForm::Move) {
@@ -1364,7 +1442,7 @@ public:
         } else if constexpr (slot_form_v<Message> == SlotForm::Lend) {
             return {std::move(value), transition_<Next>(std::move(slots), std::move(message.loan_))};
         } else {
-            ::foundation::permissions::LentPermission<Tag>& parked = slot_<LentOut<Tag>>(slots);
+            ::foundation::permissions::LentPermission<Tag, Brand>& parked = slot_<LentOut<Tag, Brand>>(slots);
             return {std::move(value),
                     transition_<Next>(std::move(slots), ::foundation::permissions::mint_permission_after_loan(
                                                             std::move(parked), std::move(message.loan_)))};
@@ -1372,15 +1450,18 @@ public:
     }
 
     // Runs the body with a read view of a region that the slots borrow, and
-    // puts the loan back.  A body that returns nothing gives nothing back.
+    // puts the loan back.  The view has the brand of the loan.  A body that
+    // returns nothing gives nothing back.
     template <class Tag, class Set, class Body>
-        requires(::foundation::permissions::perm_set_contains(^^Set, ^^BorrowedIn<Tag>))
-             && ::foundation::permissions::ReadViewBody<Body, Tag, ::foundation::brand::DefaultBrand>
+        requires(detail::holds_loan_of(^^Set, ^^Tag))
+             && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<Set, Tag>>
     [[nodiscard]] static constexpr auto read_slot(HoldSlots<Set>& slots, Body&& body) noexcept(
-        ::foundation::permissions::detail::read_view_door_nothrow_v<detail::hold_slot_t<BorrowedIn<Tag>>, Body>) {
-        detail::hold_slot_t<BorrowedIn<Tag>>& slot = slot_<BorrowedIn<Tag>>(slots);
+        ::foundation::permissions::detail::read_view_door_nothrow_v<detail::hold_slot_t<detail::element_of_t<Set, Tag>>,
+                                                                    Body>) {
+        using Loan = detail::element_of_t<Set, Tag>;
+        detail::hold_slot_t<Loan>& slot = slot_<Loan>(slots);
         auto lent = ::foundation::permissions::with_read_view(std::move(slot), std::forward<Body>(body));
-        if constexpr (std::is_same_v<decltype(lent), detail::hold_slot_t<BorrowedIn<Tag>>>) {
+        if constexpr (std::is_same_v<decltype(lent), detail::hold_slot_t<Loan>>) {
             slot = std::move(lent);
         } else {
             auto [value, loan] = std::move(lent);
@@ -1415,16 +1496,17 @@ public:
     // the gate of mint_permission_hold.
     template <class... Tags, class... Brands>
         requires ::foundation::permissions::DistinctTags<Tags...>
-    [[nodiscard]] static constexpr PermHold<::foundation::permissions::PermSet<Tags...>>
+    [[nodiscard]] static constexpr PermHold<
+        ::foundation::permissions::PermSet<::foundation::permissions::Permission<Tags, Brands>...>>
     from_tokens(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
         return hold_(slots_of(std::move(tokens)...));
     }
 
     template <class Tag, class Set>
-        requires(::foundation::permissions::perm_set_contains(^^Set, ^^Tag) && detail::PlainTag<Tag>)
-    [[nodiscard]] static constexpr auto take(PermHold<Set>&& hold) noexcept
-        -> ::foundation::core::Record<detail::hold_slot_t<Tag>,
-                                      PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
+        requires(detail::PlainTag<Tag> && detail::holds_token_of(^^Set, ^^Tag))
+    [[nodiscard]] static constexpr auto take(PermHold<Set>&& hold) noexcept -> ::foundation::core::Record<
+        detail::element_of_t<Set, Tag>,
+        PermHold<::foundation::permissions::perm_set_remove_t<Set, detail::element_of_t<Set, Tag>>>> {
         auto [token, rest] = take_slot<Tag>(spend_(std::move(hold)));
         return {std::move(token), hold_(std::move(rest))};
     }
@@ -1433,17 +1515,20 @@ public:
         requires(detail::PlainTag<Tag> && detail::regions_disjoint(^^Set, ^^::foundation::permissions::PermSet<Tag>))
     [[nodiscard]] static constexpr auto put(PermHold<Set>&& hold,
                                             ::foundation::permissions::Permission<Tag, Brand> token) noexcept
-        -> PermHold<::foundation::permissions::perm_set_insert_t<Set, Tag>> {
+        -> PermHold<
+            ::foundation::permissions::perm_set_insert_t<Set, ::foundation::permissions::Permission<Tag, Brand>>> {
         return hold_(put_slot(spend_(std::move(hold)), std::move(token)));
     }
 
+    // The marker takes the brand of the token that the hold keeps for the
+    // tag.
     template <class Tag, class Set, class T>
-        requires(::foundation::permissions::perm_set_contains(^^Set, ^^Tag) && detail::PlainTag<Tag>)
-             && detail::BuildsFromSlots<Transferable<T, Tag>, Set>
-    [[nodiscard]] static constexpr auto pack(PermHold<Set>&& hold, T value) noexcept
-        -> ::foundation::core::Record<Transferable<T, Tag>,
-                                      PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
-        auto [message, rest] = message_from_slots<Transferable<T, Tag>>(spend_(std::move(hold)), std::move(value));
+        requires detail::HoldCanPack<Set, Tag, T>
+    [[nodiscard]] static constexpr auto pack(PermHold<Set>&& hold, T value) noexcept -> ::foundation::core::Record<
+        Transferable<T, Tag, detail::element_brand_t<Set, Tag>>,
+        PermHold<::foundation::permissions::perm_set_remove_t<Set, detail::element_of_t<Set, Tag>>>> {
+        auto [message, rest] = message_from_slots<Transferable<T, Tag, detail::element_brand_t<Set, Tag>>>(
+            spend_(std::move(hold)), std::move(value));
         return {std::move(message), hold_(std::move(rest))};
     }
 
@@ -1455,35 +1540,42 @@ public:
         return {std::move(value), hold_(std::move(rest))};
     }
 
+    // The loan takes the brand of the token that the hold keeps for the tag.
     template <class Tag, class Set, class T>
         requires detail::HoldCanLend<Set, Tag, T>
-    [[nodiscard]] static constexpr auto lend(PermHold<Set>&& hold, T value) noexcept
-        -> ::foundation::core::Record<Borrowed<T, Tag>, PermHold<perm_set_after_send_t<Set, Borrowed<T, Tag>>>> {
-        auto [message, rest] = message_from_slots<Borrowed<T, Tag>>(spend_(std::move(hold)), std::move(value));
+    [[nodiscard]] static constexpr auto lend(PermHold<Set>&& hold, T value) noexcept -> ::foundation::core::Record<
+        Borrowed<T, Tag, detail::element_brand_t<Set, Tag>>,
+        PermHold<perm_set_after_send_t<Set, Borrowed<T, Tag, detail::element_brand_t<Set, Tag>>>>> {
+        auto [message, rest] = message_from_slots<Borrowed<T, Tag, detail::element_brand_t<Set, Tag>>>(
+            spend_(std::move(hold)), std::move(value));
         return {std::move(message), hold_(std::move(rest))};
     }
 
-    template <class Set, class T, class Tag>
-        requires ReceivablePayload<Released<T, Tag>, Set>
-    [[nodiscard]] static constexpr auto end_loan(PermHold<Set>&& hold, Released<T, Tag>&& message) noexcept
-        -> ::foundation::core::Record<T, PermHold<perm_set_after_recv_t<Set, Released<T, Tag>>>> {
+    template <class Set, class T, class Tag, class Brand>
+        requires ReceivablePayload<Released<T, Tag, Brand>, Set>
+    [[nodiscard]] static constexpr auto end_loan(PermHold<Set>&& hold, Released<T, Tag, Brand>&& message) noexcept
+        -> ::foundation::core::Record<T, PermHold<perm_set_after_recv_t<Set, Released<T, Tag, Brand>>>> {
         auto [value, rest] = value_into_slots(spend_(std::move(hold)), std::move(message));
         return {std::move(value), hold_(std::move(rest))};
     }
 
-    template <class Set, class T, class Tag>
-        requires detail::HoldCanAcceptLoan<Set, T, Tag>
-    [[nodiscard]] static constexpr auto accept_loan(PermHold<Set>&& hold, Borrowed<T, Tag>&& message) noexcept
-        -> ::foundation::core::Record<T, PermHold<perm_set_after_recv_t<Set, Borrowed<T, Tag>>>> {
+    template <class Set, class T, class Tag, class Brand>
+        requires detail::HoldCanAcceptLoan<Set, T, Tag, Brand>
+    [[nodiscard]] static constexpr auto accept_loan(PermHold<Set>&& hold, Borrowed<T, Tag, Brand>&& message) noexcept
+        -> ::foundation::core::Record<T, PermHold<perm_set_after_recv_t<Set, Borrowed<T, Tag, Brand>>>> {
         auto [value, rest] = value_into_slots(spend_(std::move(hold)), std::move(message));
         return {std::move(value), hold_(std::move(rest))};
     }
 
+    // The release takes the brand of the loan that the hold keeps for the
+    // tag.
     template <class Tag, class Set, class T>
-        requires SendablePayload<Released<T, Tag>, Set>
-    [[nodiscard]] static constexpr auto release(PermHold<Set>&& hold, T value) noexcept
-        -> ::foundation::core::Record<Released<T, Tag>, PermHold<perm_set_after_send_t<Set, Released<T, Tag>>>> {
-        auto [message, rest] = message_from_slots<Released<T, Tag>>(spend_(std::move(hold)), std::move(value));
+        requires detail::HoldCanRelease<Set, Tag, T>
+    [[nodiscard]] static constexpr auto release(PermHold<Set>&& hold, T value) noexcept -> ::foundation::core::Record<
+        Released<T, Tag, detail::element_brand_t<Set, Tag>>,
+        PermHold<perm_set_after_send_t<Set, Released<T, Tag, detail::element_brand_t<Set, Tag>>>>> {
+        auto [message, rest] = message_from_slots<Released<T, Tag, detail::element_brand_t<Set, Tag>>>(
+            spend_(std::move(hold)), std::move(value));
         return {std::move(message), hold_(std::move(rest))};
     }
 
@@ -1498,11 +1590,12 @@ public:
 // Consumes the tokens and returns the hold of their set.  Each token is
 // a parameter by value, so an lvalue token is refused: it would leave a
 // second name for a token that the hold now owns.  One tag twice is
-// refused, because a set holds each tag once.  The brand of each token is
-// erased, so the hold names regions by tag, as a permission set does.
+// refused, because a set holds each tag once.  Each token keeps its brand, so
+// into_permissions gives back the tokens that the hold took.
 template <class... Tags, class... Brands>
     requires ::foundation::permissions::DistinctTags<Tags...>
-[[nodiscard]] constexpr PermHold<::foundation::permissions::PermSet<Tags...>>
+[[nodiscard]] constexpr PermHold<
+    ::foundation::permissions::PermSet<::foundation::permissions::Permission<Tags, Brands>...>>
 mint_permission_hold(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
     return HoldFactory::from_tokens(std::move(tokens)...);
 }
@@ -1531,7 +1624,7 @@ public:
     // ── A token leaves or enters the hold ──────────────────────────
 
     template <class Tag>
-        requires(::foundation::permissions::perm_set_contains(^^Set, ^^Tag) && detail::PlainTag<Tag>)
+        requires(detail::PlainTag<Tag> && detail::holds_token_of(^^Set, ^^Tag))
     [[nodiscard]] constexpr auto take() && noexcept {
         return HoldFactory::take<Tag>(std::move(*this));
     }
@@ -1545,8 +1638,7 @@ public:
     // ── Moves inside a message ─────────────────────────────────────
 
     template <class Tag, class T>
-        requires(::foundation::permissions::perm_set_contains(^^Set, ^^Tag) && detail::PlainTag<Tag>)
-             && detail::BuildsFromSlots<Transferable<T, Tag>, Set>
+        requires detail::HoldCanPack<Set, Tag, T>
     [[nodiscard]] constexpr auto pack(T value) && noexcept {
         return HoldFactory::pack<Tag>(std::move(*this), std::move(value));
     }
@@ -1567,19 +1659,19 @@ public:
         return HoldFactory::lend<Tag>(std::move(*this), std::move(value));
     }
 
-    template <class T, class Tag>
-        requires ReceivablePayload<Released<T, Tag>, Set>
+    template <class T, class Tag, class Brand>
+        requires ReceivablePayload<Released<T, Tag, Brand>, Set>
     [[nodiscard]] constexpr auto
-    end_loan(Released<T, Tag>&& message) && noexcept(std::is_nothrow_move_constructible_v<T>) {
+    end_loan(Released<T, Tag, Brand>&& message) && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return HoldFactory::end_loan(std::move(*this), std::move(message));
     }
 
     // ── A read loan, borrower side ─────────────────────────────────
 
-    template <class T, class Tag>
-        requires detail::HoldCanAcceptLoan<Set, T, Tag>
+    template <class T, class Tag, class Brand>
+        requires detail::HoldCanAcceptLoan<Set, T, Tag, Brand>
     [[nodiscard]] constexpr auto
-    accept_loan(Borrowed<T, Tag>&& message) && noexcept(std::is_nothrow_move_constructible_v<T>) {
+    accept_loan(Borrowed<T, Tag, Brand>&& message) && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return HoldFactory::accept_loan(std::move(*this), std::move(message));
     }
 
@@ -1590,10 +1682,11 @@ public:
     // hold back, and a body that returns a value gives a Record of that
     // value and the hold.
     template <class Tag, class Body>
-        requires(::foundation::permissions::perm_set_contains(^^Set, ^^BorrowedIn<Tag>))
-             && ::foundation::permissions::ReadViewBody<Body, Tag, ::foundation::brand::DefaultBrand>
+        requires(detail::holds_loan_of(^^Set, ^^Tag))
+             && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<Set, Tag>>
     [[nodiscard]] constexpr auto read(Body&& body) && noexcept(
-        ::foundation::permissions::detail::read_view_door_nothrow_v<detail::hold_slot_t<BorrowedIn<Tag>>, Body>) {
+        ::foundation::permissions::detail::read_view_door_nothrow_v<detail::hold_slot_t<detail::element_of_t<Set, Tag>>,
+                                                                    Body>) {
         require_live_();
         PermHold held{std::move(*this)};
         using Result = decltype(HoldFactory::read_slot<Tag>(held.slots_, std::forward<Body>(body)));
@@ -1607,7 +1700,7 @@ public:
     }
 
     template <class Tag, class T>
-        requires SendablePayload<Released<T, Tag>, Set>
+        requires detail::HoldCanRelease<Set, Tag, T>
     [[nodiscard]] constexpr auto release(T value) && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return HoldFactory::release<Tag>(std::move(*this), std::move(value));
     }

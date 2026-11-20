@@ -19,6 +19,8 @@ struct Region {
 struct ForgeTag {
     using permission_row = ::foundation::effects::Row<>;
 };
+struct RegionBrand {};
+using RegionToken = ::foundation::permissions::Permission<Region, RegionBrand>;
 }  // namespace neg_sess_hold_friend_specialized_types
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges a PermHold that reads the tokens of a real hold")
@@ -27,7 +29,7 @@ template <>
 class PermHold<::foundation::permissions::PermSet<neg_sess_hold_friend_specialized_types::ForgeTag>> {
 public:
     static auto
-    steal(PermHold<::foundation::permissions::PermSet<neg_sess_hold_friend_specialized_types::Region>>& held) {
+    steal(PermHold<::foundation::permissions::PermSet<neg_sess_hold_friend_specialized_types::RegionToken>>& held) {
         return std::move(held.slots_);
     }
 };

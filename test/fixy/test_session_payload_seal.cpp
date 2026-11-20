@@ -25,6 +25,8 @@ namespace fp = ::foundation::permissions;
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
+// The brand of the sets of the checks.  No check mints a token of it.
+struct SealBrand {};
 struct Wire {
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
@@ -32,7 +34,8 @@ struct Alice {};
 struct Bob {};
 
 // A payload that holds a live endpoint by value.  The walk refuses it.
-using Endpoint = s::SessionHandle<s::Recv<int, s::End>, Wire, void, s::check::Enforced, fp::PermSet<Region>>;
+using Endpoint = s::SessionHandle<s::Recv<int, s::End>, Wire, void, s::check::Enforced,
+                                  fp::PermSet<fp::Permission<Region, SealBrand>>>;
 struct Evil {
     int sequence = 0;
     Endpoint endpoint;
@@ -43,7 +46,7 @@ struct Evil {
 using Handed = s::DelegatedSession<s::End, Wire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
 
 // A set with a region lent out.
-using Lent = fp::PermSet<s::LentOut<Region>>;
+using Lent = fp::PermSet<s::LentOut<Region, SealBrand>>;
 
 using SendsEvil = s::Send<Evil, s::End>;
 

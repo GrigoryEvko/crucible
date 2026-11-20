@@ -14,7 +14,8 @@ namespace neg_sess_seal_is_plain_payload_types {
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
-using Moves = ::fixy::session::Transferable<int, Region>;
+struct RegionBrand {};
+using Moves = ::fixy::session::Transferable<int, Region, RegionBrand>;
 }  // namespace neg_sess_seal_is_plain_payload_types
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")

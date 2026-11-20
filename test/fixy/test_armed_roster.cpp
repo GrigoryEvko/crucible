@@ -656,21 +656,23 @@ static_assert(fc::armed_cell_holds_v<sess::is_well_formed>);
 // The payload walk of fixy/session/Classification.h.  A token reached
 // owned is classified, and a token behind a pointer, in an optional, or a
 // read proof outside its marker is refused.
+namespace armed_roster_witness {
+using MovesHugePage = sess::Transferable<int, fp::tag::HugePageTag, RegionBrand>;
+}  // namespace armed_roster_witness
+
 template <>
 struct foundation::contracts::armed_cell<sess::is_permission_classified> {
-    using accepts = witnesses<int, sess::Transferable<int, fp::tag::HugePageTag>,
-                              std::pair<sess::Transferable<int, fp::tag::HugePageTag>, int>>;
-    using refuses =
-        witnesses<sess::Transferable<int, fp::tag::HugePageTag>*,
-                  std::optional<sess::Transferable<int, fp::tag::HugePageTag>>, fp::ReadView<fp::tag::HugePageTag>>;
+    using accepts =
+        witnesses<int, armed_roster_witness::MovesHugePage, std::pair<armed_roster_witness::MovesHugePage, int>>;
+    using refuses = witnesses<armed_roster_witness::MovesHugePage*, std::optional<armed_roster_witness::MovesHugePage>,
+                              fp::ReadView<fp::tag::HugePageTag>>;
 };
 
 template <>
 struct foundation::contracts::armed_cell<sess::is_plain_payload> {
     using accepts = witnesses<int, std::pair<int, double>>;
-    using refuses = witnesses<sess::Transferable<int, fp::tag::HugePageTag>,
-                              std::pair<sess::Transferable<int, fp::tag::HugePageTag>, int>,
-                              sess::Transferable<int, fp::tag::HugePageTag>*>;
+    using refuses = witnesses<armed_roster_witness::MovesHugePage, std::pair<armed_roster_witness::MovesHugePage, int>,
+                              armed_roster_witness::MovesHugePage*>;
 };
 
 namespace {

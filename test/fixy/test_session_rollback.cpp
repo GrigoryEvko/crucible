@@ -131,9 +131,11 @@ static_assert(s::checkpoint_verdict_of(^^s::Select<s::End, s::Abort>, ^^s::Offer
 static_assert(!s::is_well_formed_v<Decide>);
 
 // A permission cannot cross a checkpoint session, and neither can a
-// crash record.
-static_assert(s::checkpoint_verdict_of(^^s::Select<s::Commit<s::Send<s::Transferable<int, Region>, s::End>>, s::Roll>,
-                                       ^^s::Offer<s::Commit<s::Recv<s::Transferable<int, Region>, s::End>>, s::Roll>)
+// crash record.  The brand of the marker is a brand of the check alone.
+struct MovedBrand {};
+using MovesRegion = s::Transferable<int, Region, MovedBrand>;
+static_assert(s::checkpoint_verdict_of(^^s::Select<s::Commit<s::Send<MovesRegion, s::End>>, s::Roll>,
+                                       ^^s::Offer<s::Commit<s::Recv<MovesRegion, s::End>>, s::Roll>)
               == s::CheckpointVerdict::NotCheckpointShaped);
 struct Peer {};
 static_assert(s::checkpoint_verdict_of(^^s::Select<s::Commit<s::Recv<s::Crash<Peer>, s::End>>, s::Roll>,

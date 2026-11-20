@@ -22,7 +22,8 @@ struct Wire {};
 struct IoRegion {
     using permission_row = eff::Row<eff::Effect::IO>;
 };
-using Proto = s::Recv<s::Transferable<int, IoRegion>, s::End>;
+struct IoBrand {};
+using Proto = s::Recv<s::Transferable<int, IoRegion, IoBrand>, s::End>;
 using BgCtx = eff::detail::ctx_witnesses::BgWitness;
 }  // namespace receives_region_fixture
 

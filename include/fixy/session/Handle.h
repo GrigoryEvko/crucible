@@ -1242,8 +1242,8 @@ public:
     // body that returns a value gives a Record of that value and the handle.
     template <typename Tag, typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
               typename Body>
-        requires(::foundation::permissions::perm_set_contains(^^PS, ^^BorrowedIn<Tag>))
-             && ::foundation::permissions::ReadViewBody<Body, Tag, ::foundation::brand::DefaultBrand>
+        requires(detail::holds_loan_of(^^PS, ^^Tag))
+             && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<PS, Tag>>
     [[nodiscard]] static constexpr auto read(SessionHandle<Proto, Resource, LoopCtx, Policy, PS>&& handle,
                                              Body&& body) {
         core_(handle).require_live_();
@@ -1382,8 +1382,8 @@ public:
     // object parameter names the handle class, so the read needs no cast
     // from the core to the handle.
     template <typename Tag, typename Self, typename Body>
-        requires(!std::is_reference_v<Self>) && (::foundation::permissions::perm_set_contains(^^PS, ^^BorrowedIn<Tag>))
-             && ::foundation::permissions::ReadViewBody<Body, Tag, ::foundation::brand::DefaultBrand>
+        requires(!std::is_reference_v<Self>) && (detail::holds_loan_of(^^PS, ^^Tag))
+             && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<PS, Tag>>
     [[nodiscard]] constexpr auto read(this Self&& self, Body&& body) {
         return HandleFactory::template read<Tag>(std::move(self), std::forward<Body>(body));
     }
@@ -2360,16 +2360,17 @@ public:
     }
 
     // mint_permissioned_session: consumes one token for each tag, and
-    // opens the session with the set of those tags.  The first handle keeps
-    // the tokens in its slots, so the set of the handle and its tokens are
-    // one ledger from the first step on.
+    // opens the session with the set of those tokens, each with its brand.
+    // The first handle keeps the tokens in its slots, so the set of the handle
+    // and its tokens are one ledger from the first step on.
     template <typename Proto, AbandonmentPolicy Policy, typename Ctx, typename Resource, typename... Tags,
               typename... Brands>
-        requires CtxFitsPermissionedSession<Ctx, Proto, Resource, Tags...>
+        requires CtxFitsPermissionedSession<Ctx, Proto, Resource,
+                                            ::foundation::permissions::Permission<Tags, Brands>...>
     [[nodiscard]] static constexpr auto
     open_permissioned(Ctx const&, Resource resource,
                       ::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
-        using Set = ::foundation::permissions::PermSet<Tags...>;
+        using Set = ::foundation::permissions::PermSet<::foundation::permissions::Permission<Tags, Brands>...>;
         return open_end_<Proto, detail::one_end_peer, Resource, Resource, Policy, Set>(
             std::forward<Resource>(resource), HoldFactory::slots_of(std::move(tokens)...),
             detail::mint_site_{std::source_location::current()});

@@ -23,15 +23,21 @@ struct DiskRegion {
     using permission_row = eff::Row<eff::Effect::IO>;
 };
 struct Wire {};
-using SendsRegion = s::Send<perm::Permission<DiskRegion>, s::End>;
+using TestCtx = eff::detail::ctx_witnesses::TestRunnerCtx;
+// The one root site of DiskRegion, so the protocol names the brand of its
+// root.
+[[nodiscard]] inline auto mint_disk_root(TestCtx const& ctx) noexcept {
+    return perm::mint_permission_root<DiskRegion>(ctx);
+}
+using DiskToken = decltype(mint_disk_root(std::declval<TestCtx const&>()));
+using SendsRegion = s::Send<DiskToken, s::End>;
 }  // namespace row_refused_fixture
 
 int main() {
     using namespace row_refused_fixture;
-    const eff::detail::ctx_witnesses::TestRunnerCtx test_ctx{eff::testing::test()};
+    const TestCtx test_ctx{eff::testing::test()};
     const eff::detail::ctx_witnesses::BgWitness drain_ctx{eff::testing::bg()};
-    auto head =
-        s::mint_permissioned_session<SendsRegion>(drain_ctx, Wire{}, perm::mint_permission_root<DiskRegion>(test_ctx));
+    auto head = s::mint_permissioned_session<SendsRegion>(drain_ctx, Wire{}, mint_disk_root(test_ctx));
     std::move(head).detach(s::detach_reason::TestInstrumentation{});
     return 0;
 }

@@ -32,24 +32,26 @@ namespace fixy::session {
 // The permission set of a handle names the regions whose tokens its
 // messages can move.  mint_session starts with the empty set.
 // mint_permissioned_session consumes one token for each tag, and starts
-// the session with the set of those tags.  It returns the first handle,
-// which carries the set as a type and keeps the tokens in its slots.  Each
-// step that moves a token takes it out of the slots, so the caller gives
-// the value of a marker and never its token.  This is the CSL frame rule at
-// the start of a session: the set of the handle is backed by tokens that no
-// other holder has, and each region has one owner (Actris per-message
-// resources).
+// the session with the set of those tokens.  Each element of the set is the
+// type of its token, with its brand (fixy/session/Classification.h).  It
+// returns the first handle, which carries the set as a type and keeps the
+// tokens in its slots.  Each step that moves a token takes it out of the
+// slots, so the caller gives the value of a marker and never its token.  This
+// is the CSL frame rule at the start of a session: the set of the handle is
+// backed by tokens that no other holder has, and each region has one owner
+// (Actris per-message resources).
 //
-// The gate is one concept, CtxFitsSessionFrom, for every set of tags.  The
+// The gate is one concept, CtxFitsSessionFrom, for every set of tokens.  The
 // context is an execution context, and it admits the permission row of
 // each tag (foundation/permissions/Permission.h).  The tags are distinct.
 // The protocol is runnable, the Resource is a SessionResource, and the
 // permission flow of the whole protocol closes from the set of the
-// tokens, on every branch.  The context holds each effect that a payload
+// tokens, on every branch.  So each marker of the protocol names the brand
+// of the token that it moves.  The context holds each effect that a payload
 // of the protocol carries, and the row of each permission that the
 // protocol delivers to the endpoint (CtxAdmitsProtocolRow).  This mint
-// asks for one tag or more.  mint_session of fixy/session/Entry.h reads
-// the same concept with no tag.
+// asks for one token or more.  mint_session of fixy/session/Entry.h reads
+// the same concept with no token.
 //
 // The tokens are the last parameters, so the mint cannot take a
 // source_location after them.  The session records the site of the mint.
@@ -57,7 +59,7 @@ namespace fixy::session {
 
 template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource,
           typename... Tags, typename... Brands>
-    requires CtxFitsPermissionedSession<Ctx, Proto, Resource, Tags...>
+    requires CtxFitsPermissionedSession<Ctx, Proto, Resource, ::foundation::permissions::Permission<Tags, Brands>...>
 [[nodiscard]] constexpr auto
 mint_permissioned_session(Ctx const& ctx, Resource resource,
                           ::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {

@@ -23,6 +23,7 @@
 #include <fixy/session/Classified.h>
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Flow.h>
+#include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
 #include <foundation/Quarantine.h>
@@ -105,23 +106,32 @@ struct Y {
 };
 using XAlias = X;
 
-using TX = sess::Transferable<int, X>;
-using TY = sess::Transferable<int, Y>;
-using BX = sess::Borrowed<int, X>;
-using RX = sess::Released<int, X>;
+// The brand of the type checks.  No check mints a token of it.  A second
+// brand stands for a second root of one tag.
+struct TestBrand {};
+struct OtherBrand {};
+
+// The token of each region, as an element of a held set.
+using TokenX = fp::Permission<X, TestBrand>;
+using TokenY = fp::Permission<Y, TestBrand>;
+
+using TX = sess::Transferable<int, X, TestBrand>;
+using TY = sess::Transferable<int, Y, TestBrand>;
+using BX = sess::Borrowed<int, X, TestBrand>;
+using RX = sess::Released<int, X, TestBrand>;
 
 using Refusal = sess::detail::PayloadRefusal;
 
 template <class P>
 inline constexpr Refusal refusal_of = sess::detail::payload_facts_of(^^P).refusal;
 
-template <class P, class... Tags>
+template <class P, class... Elements>
 inline constexpr bool sender_requires_exactly =
-    fp::perm_set_equal(^^typename sess::payload_perm_delta<P>::sender_requires, ^^fp::PermSet<Tags...>);
+    fp::perm_set_equal(^^typename sess::payload_perm_delta<P>::sender_requires, ^^fp::PermSet<Elements...>);
 
-template <class P, class... Tags>
+template <class P, class... Elements>
 inline constexpr bool receiver_gains_exactly =
-    fp::perm_set_equal(^^typename sess::payload_perm_delta<P>::receiver_gains, ^^fp::PermSet<Tags...>);
+    fp::perm_set_equal(^^typename sess::payload_perm_delta<P>::receiver_gains, ^^fp::PermSet<Elements...>);
 
 // ── Laundering a token through a container or a wrapper ─────────────
 //
@@ -149,7 +159,7 @@ private:
     TX token;
 };
 struct HoldsCompactToken {
-    [[no_unique_address]] fp::Permission<X> token;
+    [[no_unique_address]] TokenX token;
     int value = 0;
 };
 struct Derived : TX {
@@ -163,7 +173,7 @@ struct HoldsStatic {
     int value = 0;
 };
 union RawUnion {
-    fp::Permission<X> token;
+    TokenX token;
     int value;
     ~RawUnion() {}
 };
@@ -176,18 +186,23 @@ struct BoxesToken {
     TX token;
 };
 
-// Counted, not laundered: the walk reaches the token owned.
-static_assert(sender_requires_exactly<std::tuple<TX, int>, X>);
-static_assert(sender_requires_exactly<std::pair<int, TX>, X>);
-static_assert(sender_requires_exactly<Wrap<Wrap<Wrap<TX>>>, X>);
-static_assert(sender_requires_exactly<Derived, X>, "a base is owned, so inheritance moves the token");
-static_assert(sender_requires_exactly<HoldsPrivate, X>, "a private member is read, so access hides nothing");
-static_assert(sender_requires_exactly<HoldsCompactToken, X>);
-static_assert(sender_requires_exactly<fp::Permission<X>, X>, "a bare token moves as a Transferable does");
-static_assert(sender_requires_exactly<std::tuple<TX, TY>, X, Y>);
-static_assert(sender_requires_exactly<sess::Transferable<TY, X>, X, Y>, "a token inside a marker is counted too");
-static_assert(sender_requires_exactly<sess::Borrowed<TY, X>, X, Y>);
-static_assert(receiver_gains_exactly<sess::Borrowed<TY, X>, sess::BorrowedIn<X>, Y>);
+// Counted, not laundered: the walk reaches the token owned, with its brand.
+static_assert(sender_requires_exactly<std::tuple<TX, int>, TokenX>);
+static_assert(sender_requires_exactly<std::pair<int, TX>, TokenX>);
+static_assert(sender_requires_exactly<Wrap<Wrap<Wrap<TX>>>, TokenX>);
+static_assert(sender_requires_exactly<Derived, TokenX>, "a base is owned, so inheritance moves the token");
+static_assert(sender_requires_exactly<HoldsPrivate, TokenX>, "a private member is read, so access hides nothing");
+static_assert(sender_requires_exactly<HoldsCompactToken, TokenX>);
+static_assert(sender_requires_exactly<TokenX, TokenX>, "a bare token moves as a Transferable does");
+static_assert(sender_requires_exactly<std::tuple<TX, TY>, TokenX, TokenY>);
+static_assert(sender_requires_exactly<sess::Transferable<TY, X, TestBrand>, TokenX, TokenY>,
+              "a token inside a marker is counted too");
+static_assert(sender_requires_exactly<sess::Borrowed<TY, X, TestBrand>, TokenX, TokenY>);
+static_assert(receiver_gains_exactly<sess::Borrowed<TY, X, TestBrand>, sess::BorrowedIn<X, TestBrand>, TokenY>);
+static_assert(sender_requires_exactly<sess::Transferable<int, X, OtherBrand>, fp::Permission<X, OtherBrand>>,
+              "the marker names the brand of the token that it moves");
+static_assert(!sender_requires_exactly<sess::Transferable<int, X, OtherBrand>, TokenX>,
+              "a marker of one brand needs no token of another brand");
 
 // Refused behind a pointer or a reference: a second name for a token
 // that stays with the sender.
@@ -272,16 +287,17 @@ static_assert(refusal_of<DeclaredTemplate<int>*> == Refusal::IncompleteType);
 // Refused as one tag twice.
 static_assert(refusal_of<std::pair<TX, TX>> == Refusal::DuplicateTag);
 static_assert(refusal_of<std::pair<TX, BX>> == Refusal::DuplicateTag, "a move and a loan of one region");
-static_assert(refusal_of<std::tuple<TX, sess::Returned<int, X>>> == Refusal::DuplicateTag);
-static_assert(refusal_of<std::pair<TX, sess::Transferable<int, XAlias>>> == Refusal::DuplicateTag,
+static_assert(refusal_of<std::tuple<TX, sess::Returned<int, X, TestBrand>>> == Refusal::DuplicateTag);
+static_assert(refusal_of<std::pair<TX, sess::Transferable<int, XAlias, TestBrand>>> == Refusal::DuplicateTag,
               "an alias of a tag is the same tag");
-static_assert(refusal_of<std::pair<fp::Permission<X>, TX>> == Refusal::DuplicateTag);
+static_assert(refusal_of<std::pair<TokenX, TX>> == Refusal::DuplicateTag);
+static_assert(refusal_of<std::pair<TX, sess::Transferable<int, X, OtherBrand>>> == Refusal::DuplicateTag,
+              "two brands of one tag are one region, because a set holds one element for each tag");
 struct DelegatedWire {};
-static_assert(
-    refusal_of<
-        std::pair<TX, sess::DelegatedSession<sess::End, DelegatedWire, sess::DefaultAbandonmentPolicy, fp::PermSet<X>>>>
-        == Refusal::DuplicateTag,
-    "a delegated endpoint carries its tags");
+static_assert(refusal_of<std::pair<TX, sess::DelegatedSession<sess::End, DelegatedWire, sess::DefaultAbandonmentPolicy,
+                                                              fp::PermSet<TokenX>>>>
+                  == Refusal::DuplicateTag,
+              "a delegated endpoint carries its tags");
 
 // Refused as a read proof or a share outside its marker.
 static_assert(refusal_of<fp::ReadView<X>> == Refusal::BareBorrowOrShare);
@@ -313,7 +329,7 @@ struct EndpointWire {
 };
 using LoopedEndpoint =
     sess::SessionHandle<sess::Send<int, sess::Continue>, EndpointWire, sess::Loop<sess::Send<int, sess::Continue>>,
-                        sess::check::Enforced, fp::PermSet<X>>;
+                        sess::check::Enforced, fp::PermSet<TokenX>>;
 using PlainEndpoint = sess::SessionHandle<sess::Recv<int, sess::End>, EndpointWire>;
 struct HoldsEndpoint {
     int sequence = 0;
@@ -321,7 +337,7 @@ struct HoldsEndpoint {
 };
 template <class T>
 struct Mentions {};
-using Handed = sess::DelegatedSession<sess::End, EndpointWire, sess::DefaultAbandonmentPolicy, fp::PermSet<X>>;
+using Handed = sess::DelegatedSession<sess::End, EndpointWire, sess::DefaultAbandonmentPolicy, fp::PermSet<TokenX>>;
 struct Stepper {
     void step() noexcept {}
 };
@@ -365,11 +381,14 @@ static_assert(sender_requires_exactly<Handed> && receiver_gains_exactly<Handed>
                   && fp::perm_set_equal(^^sess::payload_perm_delta<Handed>::receiver_requires, ^^fp::PermSet<>),
               "a hand-off by value moves no tag of the sets that carry it");
 static_assert(sess::SendablePayload<Handed, fp::PermSet<>> && sess::ReceivablePayload<Handed, fp::PermSet<>>);
-static_assert(!sess::SendablePayload<Handed, fp::PermSet<X>> && !sess::ReceivablePayload<Handed, fp::PermSet<X>>,
+static_assert(!sess::SendablePayload<Handed, fp::PermSet<TokenX>>
+                  && !sess::ReceivablePayload<Handed, fp::PermSet<TokenX>>,
               "the set of the sender or of the recipient names a region of the endpoint");
+static_assert(!sess::SendablePayload<Handed, fp::PermSet<fp::Permission<X, OtherBrand>>>,
+              "a token of another brand of the same tag is the same region");
 static_assert(sess::is_plain_payload_v<Mentions<Handed>>, "a type that names a hand-off holds no endpoint");
 static_assert(!sess::SendablePayload<LoopedEndpoint, fp::PermSet<>>
-              && !sess::SendablePayload<LoopedEndpoint, fp::PermSet<X>>);
+              && !sess::SendablePayload<LoopedEndpoint, fp::PermSet<TokenX>>);
 static_assert(!sess::PermissionFlowCloses<sess::Send<LoopedEndpoint, sess::End>, fp::PermSet<>>);
 static_assert(!sess::PermissionFlowCloses<sess::Recv<HoldsEndpoint, sess::End>, fp::PermSet<>>);
 
@@ -464,47 +483,58 @@ static_assert(!std::is_copy_constructible_v<sess::DeclassifyOnSend<int, Wire>>);
 
 // ── Moving, lending and releasing against the set ───────────────────
 
-template <class... Tags>
-using PS = fp::PermSet<Tags...>;
-using sess::BorrowedIn;
-using sess::LentOut;
+template <class... Elements>
+using PS = fp::PermSet<Elements...>;
+using LentX = sess::LentOut<X, TestBrand>;
+using LentY = sess::LentOut<Y, TestBrand>;
+using BorrowedX = sess::BorrowedIn<X, TestBrand>;
+using BorrowedY = sess::BorrowedIn<Y, TestBrand>;
 
 // A token the sender does not hold.
 static_assert(!sess::SendablePayload<TX, PS<>>);
+// A token of the tag under another brand: a marker moves the token of its own
+// brand, and the set holds no such token.
+static_assert(!sess::SendablePayload<TX, PS<fp::Permission<X, OtherBrand>>>);
+static_assert(!sess::SendablePayload<BX, PS<fp::Permission<X, OtherBrand>>>);
 // A token the sender lent out: the borrowed prefix holds the suffix.
-static_assert(!sess::SendablePayload<TX, PS<LentOut<X>>>);
+static_assert(!sess::SendablePayload<TX, PS<LentX>>);
 // A second loan of a region that is lent.
-static_assert(!sess::SendablePayload<BX, PS<LentOut<X>>>);
+static_assert(!sess::SendablePayload<BX, PS<LentX>>);
 // A release by an endpoint that holds no loan, and by the owner.
 static_assert(!sess::SendablePayload<RX, PS<>>);
-static_assert(!sess::SendablePayload<RX, PS<X>>);
-static_assert(!sess::SendablePayload<RX, PS<LentOut<X>>>);
-// A borrower that forwards the loan: it holds BorrowedIn<X>, not X.
-static_assert(!sess::SendablePayload<BX, PS<BorrowedIn<X>>>);
-static_assert(!sess::SendablePayload<TX, PS<BorrowedIn<X>>>);
+static_assert(!sess::SendablePayload<RX, PS<TokenX>>);
+static_assert(!sess::SendablePayload<RX, PS<LentX>>);
+// A borrower that forwards the loan: it holds BorrowedIn<X, B>, not the token.
+static_assert(!sess::SendablePayload<BX, PS<BorrowedX>>);
+static_assert(!sess::SendablePayload<TX, PS<BorrowedX>>);
 // A release that nobody lent.
 static_assert(!sess::ReceivablePayload<RX, PS<>>);
-static_assert(!sess::ReceivablePayload<RX, PS<X>>);
+static_assert(!sess::ReceivablePayload<RX, PS<TokenX>>);
+// A release of a loan of another brand of the tag.
+static_assert(!sess::ReceivablePayload<RX, PS<sess::LentOut<X, OtherBrand>>>);
 // A token that the recipient already holds, lends or borrows.
-static_assert(!sess::ReceivablePayload<TX, PS<X>>);
-static_assert(!sess::ReceivablePayload<TX, PS<LentOut<X>>>);
-static_assert(!sess::ReceivablePayload<TX, PS<BorrowedIn<X>>>);
+static_assert(!sess::ReceivablePayload<TX, PS<TokenX>>);
+static_assert(!sess::ReceivablePayload<TX, PS<LentX>>);
+static_assert(!sess::ReceivablePayload<TX, PS<BorrowedX>>);
+// A token of a tag whose other brand the recipient holds: one tag is one
+// region of a set.
+static_assert(!sess::ReceivablePayload<TX, PS<fp::Permission<X, OtherBrand>>>);
 // A loan of a region that the recipient holds, or borrows already.
-static_assert(!sess::ReceivablePayload<BX, PS<X>>);
-static_assert(!sess::ReceivablePayload<BX, PS<BorrowedIn<X>>>);
+static_assert(!sess::ReceivablePayload<BX, PS<TokenX>>);
+static_assert(!sess::ReceivablePayload<BX, PS<BorrowedX>>);
 // Unrelated regions do not block each other.
-static_assert(sess::SendablePayload<TX, PS<X, BorrowedIn<Y>>>);
-static_assert(sess::ReceivablePayload<TX, PS<LentOut<Y>>>);
+static_assert(sess::SendablePayload<TX, PS<TokenX, BorrowedY>>);
+static_assert(sess::ReceivablePayload<TX, PS<LentY>>);
 
 // The loan round trip.  The second release has nothing to release.
-using LenderAfterLend = sess::perm_set_after_send_t<PS<X>, BX>;
+using LenderAfterLend = sess::perm_set_after_send_t<PS<TokenX>, BX>;
 using BorrowerAfterLoan = sess::perm_set_after_recv_t<PS<>, BX>;
 using BorrowerAfterRelease = sess::perm_set_after_send_t<BorrowerAfterLoan, RX>;
 using LenderAfterRelease = sess::perm_set_after_recv_t<LenderAfterLend, RX>;
-static_assert(fp::perm_set_equal(^^LenderAfterLend, ^^PS<LentOut<X>>));
-static_assert(fp::perm_set_equal(^^BorrowerAfterLoan, ^^PS<BorrowedIn<X>>));
+static_assert(fp::perm_set_equal(^^LenderAfterLend, ^^PS<LentX>));
+static_assert(fp::perm_set_equal(^^BorrowerAfterLoan, ^^PS<BorrowedX>));
 static_assert(fp::perm_set_equal(^^BorrowerAfterRelease, ^^PS<>));
-static_assert(fp::perm_set_equal(^^LenderAfterRelease, ^^PS<X>));
+static_assert(fp::perm_set_equal(^^LenderAfterRelease, ^^PS<TokenX>), "the token comes back with its brand");
 static_assert(!sess::SendablePayload<RX, BorrowerAfterRelease>, "a loan is released once");
 static_assert(!sess::ReceivablePayload<RX, LenderAfterRelease>, "a loan is closed once");
 static_assert(sess::perm_set_has_open_loan_v<LenderAfterLend>);
@@ -512,9 +542,9 @@ static_assert(sess::perm_set_has_open_loan_v<BorrowerAfterLoan>);
 static_assert(!sess::perm_set_has_open_loan_v<LenderAfterRelease>);
 
 // A move and a loan in one message.
-using Mixed = std::pair<TX, sess::Borrowed<int, Y>>;
-static_assert(fp::perm_set_equal(^^sess::perm_set_after_send_t<PS<X, Y>, Mixed>, ^^PS<LentOut<Y>>));
-static_assert(fp::perm_set_equal(^^sess::perm_set_after_recv_t<PS<>, Mixed>, ^^PS<X, BorrowedIn<Y>>));
+using Mixed = std::pair<TX, sess::Borrowed<int, Y, TestBrand>>;
+static_assert(fp::perm_set_equal(^^sess::perm_set_after_send_t<PS<TokenX, TokenY>, Mixed>, ^^PS<LentY>));
+static_assert(fp::perm_set_equal(^^sess::perm_set_after_recv_t<PS<>, Mixed>, ^^PS<TokenX, BorrowedY>));
 
 // ── Forging a token or a proof with no constructor ──────────────────
 
@@ -540,13 +570,14 @@ static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<BX>);
 // linear, and a receive is its door.
 static_assert(::foundation::linear::is_marked_linear(^^TX) && ::foundation::linear::is_marked_linear(^^BX)
               && ::foundation::linear::is_marked_linear(^^RX)
-              && ::foundation::linear::is_marked_linear(^^sess::Returned<int, X>));
+              && ::foundation::linear::is_marked_linear(^^sess::Returned<int, X, TestBrand>));
 // A marker cannot be built without its token or its proof.
 static_assert(!std::is_constructible_v<TX, int>);
 static_assert(!std::is_constructible_v<BX, int>);
-static_assert(!std::is_constructible_v<BX, int, fp::ReadLoan<Y>&&>, "a loan of one region does not lend another");
-static_assert(!std::is_constructible_v<sess::Released<int, X>, int>, "a release carries the loan back");
-static_assert(!std::is_constructible_v<sess::Released<int, X>, int, fp::ReadLoan<Y>&&>);
+static_assert(!std::is_constructible_v<BX, int, fp::ReadLoan<Y, TestBrand>&&>,
+              "a loan of one region does not lend another");
+static_assert(!std::is_constructible_v<RX, int>, "a release carries the loan back");
+static_assert(!std::is_constructible_v<RX, int, fp::ReadLoan<Y, TestBrand>&&>);
 static_assert(!std::is_default_constructible_v<fp::ReadView<X>>);
 static_assert(!std::is_copy_constructible_v<TX> && !std::is_copy_constructible_v<BX>);
 
@@ -556,8 +587,8 @@ static_assert(!std::is_copy_constructible_v<TX> && !std::is_copy_constructible_v
 // member that the set gates, so an attack on the hold is a call that must
 // not resolve.
 
-template <class... Tags>
-using Hold = sess::PermHold<PS<Tags...>>;
+template <class... Elements>
+using Hold = sess::PermHold<PS<Elements...>>;
 
 template <class H, class Tag>
 concept CanTake = requires(H hold) { std::move(hold).template take<Tag>(); };
@@ -579,41 +610,42 @@ template <class... Args>
 concept CanMintHold = requires(Args&&... args) { sess::mint_permission_hold(std::forward<Args>(args)...); };
 
 // A token the hold does not have, and a token that is lent out.
-static_assert(!CanTake<Hold<Y>, X>);
-static_assert(!CanTake<Hold<LentOut<X>>, X>, "a lent token is parked, and take cannot reach it");
-static_assert(!CanTake<Hold<LentOut<X>>, LentOut<X>>, "a loan state is not a token");
-static_assert(!CanTake<Hold<BorrowedIn<X>>, X>);
+static_assert(!CanTake<Hold<TokenY>, X>);
+static_assert(!CanTake<Hold<LentX>, X>, "a lent token is parked, and take cannot reach it");
+static_assert(!CanTake<Hold<LentX>, LentX>, "a loan state is not a token");
+static_assert(!CanTake<Hold<BorrowedX>, X>);
 // A move of a lent or borrowed region.
-static_assert(!CanPack<Hold<LentOut<X>>, X>, "the borrowed prefix holds the move of the region");
-static_assert(!CanPack<Hold<BorrowedIn<X>>, X>, "a borrower cannot give away what it borrows");
+static_assert(!CanPack<Hold<LentX>, X>, "the borrowed prefix holds the move of the region");
+static_assert(!CanPack<Hold<BorrowedX>, X>, "a borrower cannot give away what it borrows");
 // A second loan, and a loan of a borrowed region.
-static_assert(!CanLend<Hold<LentOut<X>>, X>);
-static_assert(!CanLend<Hold<BorrowedIn<X>>, X>, "a borrower cannot lend what it borrows");
+static_assert(!CanLend<Hold<LentX>, X>);
+static_assert(!CanLend<Hold<BorrowedX>, X>, "a borrower cannot lend what it borrows");
 // A loan end that nobody lent, and a release that nobody borrowed.
-static_assert(!CanEndLoan<Hold<X>, RX>);
+static_assert(!CanEndLoan<Hold<TokenX>, RX>);
 static_assert(!CanEndLoan<Hold<>, RX>);
-static_assert(!CanRelease<Hold<X>, X>);
-static_assert(!CanRelease<Hold<LentOut<X>>, X>);
+static_assert(!CanEndLoan<Hold<sess::LentOut<X, OtherBrand>>, RX>, "a release of another brand closes no loan");
+static_assert(!CanRelease<Hold<TokenX>, X>);
+static_assert(!CanRelease<Hold<LentX>, X>);
 // A second release: the hold after the first one has no loan.
 static_assert(!CanRelease<Hold<>, X>, "a loan is released once");
 // A token of a region the recipient holds in some state.
-static_assert(!CanUnpack<Hold<X>, TX>);
-static_assert(!CanUnpack<Hold<LentOut<X>>, TX>);
-static_assert(!CanUnpack<Hold<BorrowedIn<X>>, TX>);
-static_assert(!CanAcceptLoan<Hold<X>, BX>);
-static_assert(!CanAcceptLoan<Hold<BorrowedIn<X>>, BX>, "a region is borrowed once");
+static_assert(!CanUnpack<Hold<TokenX>, TX>);
+static_assert(!CanUnpack<Hold<LentX>, TX>);
+static_assert(!CanUnpack<Hold<BorrowedX>, TX>);
+static_assert(!CanAcceptLoan<Hold<TokenX>, BX>);
+static_assert(!CanAcceptLoan<Hold<BorrowedX>, BX>, "a region is borrowed once");
 // The end of a hold with a loan open, on either side.
-static_assert(!CanEnd<Hold<LentOut<X>>>);
-static_assert(!CanEnd<Hold<BorrowedIn<X>>>);
-static_assert(CanEnd<Hold<X, Y>>);
+static_assert(!CanEnd<Hold<LentX>>);
+static_assert(!CanEnd<Hold<BorrowedX>>);
+static_assert(CanEnd<Hold<TokenX, TokenY>>);
 // A token passed by name, and one tag twice.
 static_assert(!CanMintHold<fp::Permission<X>&>, "a token named after the hold took it is a second owner");
 static_assert(!CanMintHold<const fp::Permission<X>&>);
 static_assert(!CanMintHold<fp::Permission<X>, fp::Permission<X>>, "one tag twice");
 static_assert(CanMintHold<fp::Permission<X>, fp::Permission<Y>>);
 // A hold is not copied, not assigned, and not built from bytes.
-static_assert(!std::is_copy_constructible_v<Hold<X>> && !std::is_move_assignable_v<Hold<X>>);
-static_assert(!BuiltFromBytes<Hold<X>> && !std::is_implicit_lifetime_v<Hold<X>>);
+static_assert(!std::is_copy_constructible_v<Hold<TokenX>> && !std::is_move_assignable_v<Hold<TokenX>>);
+static_assert(!BuiltFromBytes<Hold<TokenX>> && !std::is_implicit_lifetime_v<Hold<TokenX>>);
 static_assert(!std::is_copy_constructible_v<sess::SharedReader<X>>);
 
 // ── The run-time attacks ────────────────────────────────────────────
@@ -770,37 +802,42 @@ private:
 };
 
 // The region is written only through its token and read only through a
-// proof, so the type of each access says who may make it.
+// proof, so the type of each access says who may make it.  Each door takes
+// the brand of the root that the attack mints.
 int region_value = 0;
-void write_region(fp::Permission<X>& token, int value) {
+template <class Brand>
+void write_region(fp::Permission<X, Brand>& token, int value) {
     (void)token;
     region_value = value;
 }
-int read_region(fp::ReadView<X> const& proof) {
+template <class Brand>
+int read_region(fp::ReadView<X, Brand> const& proof) {
     (void)proof;
     return region_value;
 }
 
 // A borrowed prefix on thread B while thread A runs the suffix.  A lends
-// X to B and continues.  A's hold then has LentOut<X>, so no call of A
+// X to B and continues.  A's hold then has LentOut<X, Brand>, so no call of A
 // reaches the token until the release comes back.  Under tsan, a write by
 // A during the loan would race with the read by B.
 void borrowed_prefix_on_another_thread() {
     const Watchdog watchdog{"borrowed_prefix_on_another_thread", std::chrono::seconds{20}};
-    auto hold = sess::mint_permission_hold(fp::mint_permission_root<X>());
+    auto root = fp::mint_permission_root<X>();
+    using Brand = ::foundation::brand::brand_of_t<decltype(root)>;
+    auto hold = sess::mint_permission_hold(std::move(root));
     auto [first_token, without_token] = std::move(hold).template take<X>();
     write_region(first_token, 10);
     auto lender = std::move(without_token).put(std::move(first_token));
 
-    Slot<BX> to_borrower;
-    Slot<RX> to_lender;
+    Slot<sess::Borrowed<int, X, Brand>> to_borrower;
+    Slot<sess::Released<int, X, Brand>> to_lender;
     auto [loan, lent] = std::move(lender).template lend<X>(1);
     static_assert(!CanTake<decltype(lent), X>, "the suffix of A cannot reach the lent token");
     std::jthread borrower_thread{[&] {
         auto borrower = sess::mint_permission_hold();
         auto [ticket, borrowing] = std::move(borrower).accept_loan(to_borrower.take());
         auto [seen, reading] = std::move(borrowing).template read<X>(
-            [](fp::ReadView<X> const& proof) noexcept { return read_region(proof); });
+            [](fp::ReadView<X, Brand> const& proof) noexcept { return read_region(proof); });
         auto [release, done] = std::move(reading).template release<X>(seen + ticket);
         to_lender.put(std::move(release));
         auto nothing = std::move(done).into_permissions();
@@ -811,8 +848,8 @@ void borrowed_prefix_on_another_thread() {
     require(answer == 11, "the borrower read the value written before the loan");
     auto [token, empty] = std::move(closed).template take<X>();
     write_region(token, 20);
-    auto [after, token_back] =
-        fp::with_read_view(std::move(token), [](fp::ReadView<X> const& proof) noexcept { return read_region(proof); });
+    auto [after, token_back] = fp::with_read_view(
+        std::move(token), [](fp::ReadView<X, Brand> const& proof) noexcept { return read_region(proof); });
     require(after == 20, "the lender writes after the loan closes");
     ::foundation::linear::drop(std::move(token_back));
     auto ended = std::move(empty).into_permissions();
@@ -846,8 +883,7 @@ concept ProofStoresPastItsFrame =
 template <class Tag>
 concept LoanCopies = std::is_copy_constructible_v<fp::ReadLoan<Tag>>;
 template <class H, class Tag>
-concept CanReadThrough =
-    requires(H hold) { std::move(hold).template read<Tag>([](fp::ReadView<Tag> const&) noexcept {}); };
+concept CanReadThrough = requires(H hold) { std::move(hold).template read<Tag>([](auto const&) noexcept {}); };
 // clang-format off: 22.1.8 and 23.1.0 disagree on the & of a lambda parameter in a requires body.
 template <class Tag>
 concept ProofLeavesAsResult = requires(fp::Permission<Tag>&& token) {
@@ -858,10 +894,10 @@ concept ProofLeavesAsResult = requires(fp::Permission<Tag>&& token) {
 static_assert(!ProofCopiesOrMoves<X>, "a read proof does not leave the frame of its door by value");
 static_assert(!ProofStoresPastItsFrame<X>, "a read proof is not built in place in a longer-lived object");
 static_assert(!LoanCopies<X>, "one parked token has one loan");
-static_assert(CanReadThrough<Hold<BorrowedIn<X>>, X>, "a borrower reads through its hold");
+static_assert(CanReadThrough<Hold<BorrowedX>, X>, "a borrower reads through its hold");
 static_assert(!CanReadThrough<Hold<>, X>, "a borrower that released its loan reads nothing");
-static_assert(!CanReadThrough<Hold<X>, X>, "an owner reads through its token, not through a loan");
-static_assert(!CanReadThrough<Hold<LentOut<X>>, X>, "a lender reads nothing while its loan is out");
+static_assert(!CanReadThrough<Hold<TokenX>, X>, "an owner reads through its token, not through a loan");
+static_assert(!CanReadThrough<Hold<LentX>, X>, "a lender reads nothing while its loan is out");
 
 namespace {
 
@@ -873,7 +909,7 @@ void read_proof_ends_with_the_loan() {
     auto [loan, lent] = std::move(lender).template lend<X>(0);
     auto [value, borrowing] = sess::mint_permission_hold().accept_loan(std::move(loan));
     auto [seen, reading] =
-        std::move(borrowing).template read<X>([](fp::ReadView<X> const& proof) noexcept { return read_region(proof); });
+        std::move(borrowing).template read<X>([](auto const& proof) noexcept { return read_region(proof); });
     auto [release, done] = std::move(reading).template release<X>(value + seen);
     static_assert(!CanReadThrough<decltype(done), X>, "the release ends every read of the borrower");
     auto [back, closed] = std::move(lent).end_loan(std::move(release));

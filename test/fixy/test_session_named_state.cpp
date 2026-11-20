@@ -56,7 +56,10 @@ struct Bob {};
 struct Region {
     using permission_row = fe::Row<>;
 };
-using HoldsRegion = fp::PermSet<Region>;
+// The brands of the type checks.  No check mints a token of them.
+struct TokenBrand final {};
+struct OtherBrand final {};
+using HoldsRegion = fp::PermSet<fp::Permission<Region, TokenBrand>>;
 
 // ── Names ────────────────────────────────────────────────────────────
 
@@ -139,21 +142,26 @@ static_assert(!s::NamesAtMostOnePeer<s::Named<TwoPeers>>);
 
 // A loan that stays open at End, and a token that the set does not hold.
 struct Lends {
-    using protocol = s::Send<s::Borrowed<int, Region>, s::End>;
+    using protocol = s::Send<s::Borrowed<int, Region, TokenBrand>, s::End>;
 };
-// A message that moves the token of a region.  A bare token of a brand is
-// no slot form: the slots keep each token on the identity of its tag, so a
-// step cannot give a token of a brand.
-struct TokenBrand final {};
+// A message that moves the token of a region.  The slots keep each token
+// with its brand, so a step gives a bare token of the brand of the set, and
+// no token of another brand.
 struct SendsToken {
-    using protocol = s::Send<s::Transferable<int, Region>, s::End>;
+    using protocol = s::Send<s::Transferable<int, Region, TokenBrand>, s::End>;
 };
-struct SendsBrandedToken {
+struct SendsBareToken {
     using protocol = s::Send<fp::Permission<Region, TokenBrand>, s::End>;
+};
+struct SendsOtherToken {
+    using protocol = s::Send<fp::Permission<Region, OtherBrand>, s::End>;
 };
 static_assert(s::PermissionFlowCloses<s::Named<SendsToken>, HoldsRegion>);
 static_assert(!s::PermissionFlowCloses<s::Named<SendsToken>, fp::EmptyPermSet>);
-static_assert(!s::PermissionFlowCloses<s::Named<SendsBrandedToken>, HoldsRegion>, "the slots give no token of a brand");
+static_assert(s::PermissionFlowCloses<s::Named<SendsBareToken>, HoldsRegion>,
+              "the slots give a bare token of the brand of the set");
+static_assert(!s::PermissionFlowCloses<s::Named<SendsOtherToken>, HoldsRegion>,
+              "the slots give no token of another brand of the tag");
 static_assert(!s::PermissionFlowCloses<s::Select<s::End, s::Named<Lends>>, HoldsRegion>);
 
 // The row of a name is the row of its protocol.

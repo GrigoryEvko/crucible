@@ -28,13 +28,11 @@ class DelegatedSession<neg_sess_handle_factory_friend_specialized_types::ForgeTa
                        ::foundation::permissions::EmptyPermSet> {
 public:
     static auto forge(neg_sess_handle_factory_friend_specialized_types::Wire wire) {
-        return HandleFactory::make_<
-            Recv<int, End>, neg_sess_handle_factory_friend_specialized_types::Wire, void, check::Enforced,
-            ::foundation::permissions::PermSet<neg_sess_handle_factory_friend_specialized_types::Region>>(
-            wire,
-            HoldFactory::slots_of(::foundation::permissions::mint_permission_root<
-                                  neg_sess_handle_factory_friend_specialized_types::Region>()),
-            {}, {});
+        auto root =
+            ::foundation::permissions::mint_permission_root<neg_sess_handle_factory_friend_specialized_types::Region>();
+        return HandleFactory::make_<Recv<int, End>, neg_sess_handle_factory_friend_specialized_types::Wire, void,
+                                    check::Enforced, ::foundation::permissions::PermSet<decltype(root)>>(
+            wire, HoldFactory::slots_of(std::move(root)), {}, {});
     }
 };
 }  // namespace fixy::session

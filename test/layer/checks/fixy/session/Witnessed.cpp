@@ -70,8 +70,9 @@ using AtSend = ::fixy::session::SessionHandle<Sending, probe_wire>;
 using AtEnd = ::fixy::session::SessionHandle<::fixy::session::End, probe_wire>;
 using AtSendOtherWire = ::fixy::session::SessionHandle<Sending, other_wire>;
 using AtSendUnchecked = ::fixy::session::SessionHandle<Sending, probe_wire, void, ::fixy::session::check::Off>;
-using AtSendHolding = ::fixy::session::SessionHandle<Sending, probe_wire, void, ::fixy::session::check::Enforced,
-                                                     ::foundation::permissions::PermSet<probe_region>>;
+using AtSendHolding = ::fixy::session::SessionHandle<
+    Sending, probe_wire, void, ::fixy::session::check::Enforced,
+    ::foundation::permissions::PermSet<::foundation::permissions::Permission<probe_region, probe_brand>>>;
 using SendWitness = witness::AtProtocol<AtSend>;
 
 static_assert(Discharges<SendWitness, AtSend>, "a handle of the type of the mint passes the gate");

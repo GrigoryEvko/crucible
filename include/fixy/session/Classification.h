@@ -11,7 +11,7 @@
 // The walk reads every component of the payload, as
 // foundation/reflect/TypeComponents.h defines a component.  A walk that
 // read the marker only at the top of the payload would send
-// std::pair<Transferable<int, X>, int> with an empty set, and the sender
+// std::pair<Transferable<int, X, B>, int> with an empty set, and the sender
 // would keep X in its set while the recipient held the token.  The walk
 // also knows how each component was reached:
 //
@@ -171,15 +171,24 @@
 
 namespace fixy::session {
 
-// ── Loan states in a permission set ─────────────────────────────────
+// ── The elements of a held permission set ───────────────────────────
 //
-// Each is an empty tag, so a PermSet holds it as it holds any other tag.
-// The region of LentOut<Tag> and of BorrowedIn<Tag> is Tag.
+// The set of a session handle or a hold names the token object that it
+// keeps for each region, so each element carries the brand of its token:
+//
+//   Permission<Tag, Brand>   the token of the region Tag
+//   LentOut<Tag, Brand>      the token, parked while a read loan is out
+//   BorrowedIn<Tag, Brand>   a read loan of the region, from another set
+//
+// The region of each element is Tag.  A set holds one element for each
+// region, so a step names a region by its tag.  A loan state is an empty
+// class, so a PermSet holds it as it holds a token type.  A set of regions,
+// such as the regions that a protocol delivers, holds bare tags.
 
-template <class Tag>
+template <class Tag, class Brand>
 struct LentOut {};
 
-template <class Tag>
+template <class Tag, class Brand>
 struct BorrowedIn {};
 
 // The first component of a payload that gives authority over a session
@@ -288,6 +297,29 @@ inline constexpr std::meta::info payload_type_erasure_families[] = {
 
 [[nodiscard]] consteval bool holds_type(const stack<std::meta::info>& types, std::meta::info type) {
     return holds_type(types.items, types.top, type);
+}
+
+// ── The region of an element ────────────────────────────────────────
+
+// True when the element is a token, a parked token or a read loan.
+[[nodiscard]] consteval bool is_held_element(std::meta::info element) noexcept {
+    const std::meta::info bare = std::meta::dealias(element);
+    return payload_family_is(bare, ^^::foundation::permissions::Permission) || payload_family_is(bare, ^^LentOut)
+        || payload_family_is(bare, ^^BorrowedIn);
+}
+
+// The region that a set element names: Tag for each element of a held set,
+// and the element itself for a bare tag of a set of regions.
+[[nodiscard]] consteval std::meta::info region_of(std::meta::info element) {
+    const std::meta::info bare = std::meta::dealias(element);
+    if (is_held_element(bare)) return std::meta::dealias(std::meta::template_arguments_of(bare)[0]);
+    return bare;
+}
+
+// The loan state `state`, LentOut or BorrowedIn, of the region and the brand
+// of the token `token`.
+[[nodiscard]] consteval std::meta::info loan_state_of(std::meta::info state, std::meta::info token) {
+    return std::meta::substitute(state, std::meta::template_arguments_of(std::meta::dealias(token)));
 }
 
 // ── The rule of a family ────────────────────────────────────────────
@@ -430,10 +462,10 @@ void a_payload_rule_names_an_argument_that_the_payload_lacks() noexcept;
 // Each other family comes from the role of its payload rule.
 enum class PayloadFamily : std::uint8_t {
     Other,
-    Token,  // Permission<Tag>
-    Moves,  // the role moves: Transferable<T, Tag>, Returned<T, Tag>
-    Lends,  // the role lends: Borrowed<T, Tag>
-    Releases,  // the role releases: Released<T, Tag>
+    Token,  // Permission<Tag, Brand>
+    Moves,  // the role moves: Transferable<T, Tag, Brand>, Returned<T, Tag, Brand>
+    Lends,  // the role lends: Borrowed<T, Tag, Brand>
+    Releases,  // the role releases: Released<T, Tag, Brand>
     Share,  // the role share: SharedReader<Tag, Brand>
     Keyed,  // the role message: PeerMsg<Q, L, U>, Labelled<L, U>
     Declassified,  // the role declassified: DeclassifyOnSend<T, Policy>
@@ -495,12 +527,13 @@ struct PayloadNode {
 // lives only inside a constant evaluation.  payload_facts below keeps the
 // results in a form that a static data member can hold.
 struct PayloadCensus {
-    // The tags that the payload moves, lends and releases.
+    // The token types, Permission<Tag, Brand>, that the payload moves, lends
+    // and releases.
     stack<std::meta::info> moved;
     stack<std::meta::info> lent;
     stack<std::meta::info> released;
-    // Each DelegatedSession that the payload holds by value, and the tags
-    // that the endpoints of those hand-offs hold.
+    // Each DelegatedSession that the payload holds by value, and the elements
+    // of the sets that the endpoints of those hand-offs hold.
     stack<std::meta::info> hand_offs;
     stack<std::meta::info> handed;
     bool carries_share = false;
@@ -550,21 +583,26 @@ consteval void note_carrier(PayloadWalk& walk, std::optional<DelegationCarrier> 
     walk.census.carrier_type = type;
 }
 
-// Records one tag that the payload moves, lends or releases, and refuses
-// a tag that the payload names already.  A refused payload changes no
-// set, so the walk records nothing after a refusal.
-consteval void record_payload_tag(PayloadWalk& walk, stack<std::meta::info> PayloadCensus::* into, std::meta::info tag,
-                                  std::meta::info at) {
+// Records one element that the payload moves, lends, releases or hands
+// over, and refuses an element whose region the payload names already.  Two
+// brands of one tag are one region here, because a set holds one element for
+// each tag.  A refused payload changes no set, so the walk records nothing
+// after a refusal.  Complexity: linear in the elements that the walk recorded.
+consteval void record_payload_element(PayloadWalk& walk, stack<std::meta::info> PayloadCensus::* into,
+                                      std::meta::info element, std::meta::info at) {
     if (walk.census.refusal != PayloadRefusal::None) return;
-    const std::meta::info bare_tag = std::meta::dealias(tag);
+    const std::meta::info bare = std::meta::dealias(element);
+    const std::meta::info region = region_of(bare);
     for (const auto held :
          {&PayloadCensus::moved, &PayloadCensus::lent, &PayloadCensus::released, &PayloadCensus::handed}) {
-        if (holds_type(walk.census.*held, bare_tag)) {
+        const stack<std::meta::info>& recorded = walk.census.*held;
+        for (std::size_t place = 0; place < recorded.top; ++place) {
+            if (region_of(recorded.items[place]) != region) continue;
             refuse_payload(walk, PayloadRefusal::DuplicateTag, at);
             return;
         }
     }
-    push(walk.census.*into, bare_tag);
+    push(walk.census.*into, bare);
 }
 
 [[nodiscard]] consteval PayloadRefusal payload_refusal_for_reach(PayloadReach reach) noexcept {
@@ -619,17 +657,17 @@ consteval void record_payload_tag(PayloadWalk& walk, stack<std::meta::info> Payl
 
 consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node);
 
-// A hand-off records the tags of the set of its endpoint, and it moves
+// A hand-off records the elements of the set of its endpoint, and it moves
 // none of them: the endpoint keeps their tokens in its own slots, so the
 // set of the sender and the set of the receiver do not change.  The gates
-// of fixy/session/Flow.h refuse a hand-off whose tags name a region of the
-// set of the sender or of the receiver.  A hand-off that a template
+// of fixy/session/Flow.h refuse a hand-off whose elements name a region of
+// the set of the sender or of the receiver.  A hand-off that a template
 // argument names holds no endpoint.  A hand-off behind a pointer, in a
 // union or in an array is refused: it travels by value, one time, so that
 // one recipient holds the endpoint and its tokens.  The first token of a
-// hand-off is the hand-off, when its set holds a tag.  `argument` points to
-// the `count` template arguments of the hand-off, and the rule names the
-// argument of the set.
+// hand-off is the hand-off, when its set holds an element.  `argument`
+// points to the `count` template arguments of the hand-off, and the rule
+// names the argument of the set.
 [[nodiscard]] consteval std::meta::info take_hand_off(PayloadWalk& walk, const PayloadNode& node,
                                                       const std::meta::info* argument, std::size_t count,
                                                       const payload_lookup& rule) {
@@ -639,24 +677,29 @@ consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node
         return {};
     }
     const std::meta::info inner_set = std::meta::dealias(rule_argument(argument, count, rule.entry.set_argument));
-    const std::vector<std::meta::info> inner_tags = std::meta::template_arguments_of(inner_set);
-    const std::meta::info* const tag = inner_tags.data();
-    const std::size_t tag_count = inner_tags.size();
-    for (std::size_t place = 0; place < tag_count; ++place)
-        record_payload_tag(walk, &PayloadCensus::handed, tag[place], node.type);
+    const std::vector<std::meta::info> inner_elements = std::meta::template_arguments_of(inner_set);
+    const std::meta::info* const element = inner_elements.data();
+    const std::size_t element_count = inner_elements.size();
+    for (std::size_t place = 0; place < element_count; ++place)
+        record_payload_element(walk, &PayloadCensus::handed, element[place], node.type);
     if (walk.census.refusal == PayloadRefusal::None) push(walk.census.hand_offs, node.type);
-    return tag_count == 0 ? std::meta::info{} : node.type;
+    return element_count == 0 ? std::meta::info{} : node.type;
 }
 
-// A marker records its tag, and the value that it carries is a by-value
-// member of the marker.  `argument` points to the `count` template
-// arguments of the marker, and the rule names the tag and the value.
+// A marker records its token, Permission<Tag, Brand>, and the value that it
+// carries is a by-value member of the marker.  `argument` points to the
+// `count` template arguments of the marker, and the rule names the tag, the
+// brand and the value.  A rule that names no brand stops the build.
 [[nodiscard]] consteval std::meta::info take_marker(PayloadWalk& walk, const PayloadNode& node,
                                                     const std::meta::info* argument, std::size_t count,
                                                     const payload_lookup& rule,
                                                     stack<std::meta::info> PayloadCensus::* into) {
     if (!is_owned_or_refused(walk, node)) return {};
-    record_payload_tag(walk, into, rule_argument(argument, count, rule.entry.tag_argument), node.type);
+    record_payload_element(walk, into,
+                           std::meta::substitute(^^::foundation::permissions::Permission,
+                                                 {rule_argument(argument, count, rule.entry.tag_argument),
+                                                  rule_argument(argument, count, rule.entry.brand_argument)}),
+                           node.type);
     static_cast<void>(visit_payload_node(
         walk, PayloadNode{::foundation::reflect::bare_type(rule_argument(argument, count, rule.entry.value_argument)),
                           true, PayloadReach::Owned}));
@@ -795,7 +838,7 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
     switch (family) {
         case PayloadFamily::Token:
             if (!is_owned_or_refused(walk, node)) return {};
-            record_payload_tag(walk, &PayloadCensus::moved, argument[0], type);
+            record_payload_element(walk, &PayloadCensus::moved, type, type);
             return type;
         case PayloadFamily::Moves:
             return take_marker(walk, node, argument, argument_count, rule, &PayloadCensus::moved);
@@ -926,7 +969,8 @@ struct PayloadFacts {
     std::meta::info sender_gains{};
     std::meta::info receiver_requires{};
     std::meta::info receiver_gains{};
-    // The tags that the endpoints of the hand-offs hold, as a PermSet.
+    // The elements of the sets that the endpoints of the hand-offs hold, as a
+    // PermSet.
     std::meta::info hand_off_tags{};
     bool carries_share = false;
     // Each DelegatedSession that the payload holds by value, in a static
@@ -945,21 +989,23 @@ struct PayloadFacts {
                                  std::span<const std::meta::info>{elements.items, elements.top});
 }
 
-[[nodiscard]] consteval std::meta::info payload_wrap_each(std::meta::info wrapper, const stack<std::meta::info>& tags) {
+// The PermSet of the loan state `state` of each token of a stack.
+[[nodiscard]] consteval std::meta::info payload_wrap_each(std::meta::info state, const stack<std::meta::info>& tokens) {
     stack<std::meta::info> wrapped{};
-    for (std::size_t place = 0; place < tags.top; ++place)
-        push(wrapped, std::meta::substitute(wrapper, {tags.items[place]}));
+    for (std::size_t place = 0; place < tokens.top; ++place)
+        push(wrapped, loan_state_of(state, tokens.items[place]));
     return payload_perm_set_of(wrapped);
 }
 
 // The walk of one payload, and its four sets.  The sender loses what it
 // must hold, and the recipient loses what it must hold, so two sets name
-// each side's loss too:
+// each side's loss too.  Each element keeps the brand of its token t, which
+// is Permission<Tag, Brand>:
 //
-//   sender requires   moved, lent, and BorrowedIn<t> for each released t
-//   sender gains      LentOut<t> for each lent t
-//   receiver requires LentOut<t> for each released t
-//   receiver gains    moved, BorrowedIn<t> for each lent t, and released
+//   sender requires   moved, lent, and BorrowedIn<Tag, Brand> for each released t
+//   sender gains      LentOut<Tag, Brand> for each lent t
+//   receiver requires LentOut<Tag, Brand> for each released t
+//   receiver gains    moved, BorrowedIn<Tag, Brand> for each lent t, and released
 [[nodiscard]] consteval PayloadFacts payload_facts(std::meta::info payload) {
     namespace refl = ::foundation::reflect;
     PayloadWalk walk;
@@ -989,14 +1035,14 @@ struct PayloadFacts {
         push(receiver_gains, census.moved.items[place]);
     }
     for (std::size_t place = 0; place < census.lent.top; ++place) {
-        const std::meta::info tag = census.lent.items[place];
-        push(sender_requires, tag);
-        push(receiver_gains, std::meta::substitute(^^BorrowedIn, {tag}));
+        const std::meta::info token = census.lent.items[place];
+        push(sender_requires, token);
+        push(receiver_gains, loan_state_of(^^BorrowedIn, token));
     }
     for (std::size_t place = 0; place < census.released.top; ++place) {
-        const std::meta::info tag = census.released.items[place];
-        push(sender_requires, std::meta::substitute(^^BorrowedIn, {tag}));
-        push(receiver_gains, tag);
+        const std::meta::info token = census.released.items[place];
+        push(sender_requires, loan_state_of(^^BorrowedIn, token));
+        push(receiver_gains, token);
     }
     facts.sender_requires = payload_perm_set_of(sender_requires);
     facts.sender_gains = payload_wrap_each(^^LentOut, census.lent);
@@ -1059,7 +1105,8 @@ struct PayloadVerdict {
             return "it names one permission tag twice.  A permission set holds each tag once";
         case PayloadRefusal::BareBorrowOrShare:
             return "it holds a read proof, a share or a pool outside its marker.  A read proof travels only as "
-                   "Borrowed<T, Tag>, and a share only as SharedReader<Tag>, so that a set records the loan";
+                   "Borrowed<T, Tag, Brand>, and a share only as SharedReader<Tag, Brand>, so that a set records "
+                   "the loan";
         case PayloadRefusal::TypeErasure:
             return "it holds a type-erasure family.  The static type does not name what it holds, so a token "
                    "inside it would move with no set change";

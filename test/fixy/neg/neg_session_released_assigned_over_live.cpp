@@ -12,7 +12,9 @@ struct Pages {
     using permission_row = ::foundation::effects::Row<>;
 };
 
-using Release = ::fixy::session::Released<int, Pages>;
+struct PagesBrand {};
+
+using Release = ::fixy::session::Released<int, Pages, PagesBrand>;
 
 void assign_over(Release& target, Release&& source) noexcept;
 

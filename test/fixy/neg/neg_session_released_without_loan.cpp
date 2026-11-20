@@ -15,10 +15,11 @@ namespace {
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
+struct RegionBrand {};
 
 }  // namespace
 
 int main() {
-    sess::Released<int, Region> message{1};
+    sess::Released<int, Region, RegionBrand> message{1};
     return message.peek();
 }

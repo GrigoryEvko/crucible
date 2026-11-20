@@ -14,14 +14,16 @@ namespace neg_sess_seal_handle_admits_recv_types {
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
-using Moves = ::fixy::session::Transferable<int, Region>;
+struct RegionBrand {};
+using RegionToken = ::foundation::permissions::Permission<Region, RegionBrand>;
+using Moves = ::fixy::session::Transferable<int, Region, RegionBrand>;
 }  // namespace neg_sess_seal_handle_admits_recv_types
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::session::detail {
 template <>
 inline constexpr bool
-    handle_admits_recv_v<::foundation::permissions::PermSet<neg_sess_seal_handle_admits_recv_types::Region>,
+    handle_admits_recv_v<::foundation::permissions::PermSet<neg_sess_seal_handle_admits_recv_types::RegionToken>,
                          neg_sess_seal_handle_admits_recv_types::Moves> = true;
 }  // namespace fixy::session::detail
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

@@ -36,7 +36,8 @@ using Inner = s::Send<int, s::End>;
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
-using SendsRegion = s::Send<s::Transferable<int, Region>, s::End>;
+template <class Brand>
+using SendsRegion = s::Send<s::Transferable<int, Region, Brand>, s::End>;
 
 void accept_after_a_move() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
@@ -49,7 +50,9 @@ void accept_after_a_move() {
 
 void delegate_a_consumed_handle() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto handle = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, fp::mint_permission_root<Region>());
+    auto root = fp::mint_permission_root<Region>();
+    using Brand = ::foundation::brand::brand_of_t<decltype(root)>;
+    auto handle = s::mint_permissioned_session<SendsRegion<Brand>>(ctx, Wire{}, std::move(root));
     auto kept = std::move(handle);
     auto parcel = s::mint_delegated_session(std::move(handle));
     (void)kept;

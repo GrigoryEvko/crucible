@@ -1416,27 +1416,27 @@
       "header": "fixy/session/EventLog.h"
     },
     {
-      "type": "fixy::session::PermHold<foundation::permissions::PermSet<foundation::permissions::tag::HugePageTag>>",
+      "type": "fixy::session::PermHold<foundation::permissions::PermSet<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag, forge::brand>>>",
       "header": "fixy/session/Flow.h"
     },
     {
-      "type": "fixy::session::HoldSlots<foundation::permissions::PermSet<foundation::permissions::tag::HugePageTag>>",
+      "type": "fixy::session::HoldSlots<foundation::permissions::PermSet<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag, forge::brand>>>",
       "header": "fixy/session/Flow.h"
     },
     {
-      "type": "fixy::session::Transferable<int, foundation::permissions::tag::HugePageTag>",
+      "type": "fixy::session::Transferable<int, foundation::permissions::tag::HugePageTag, forge::brand>",
       "header": "fixy/session/Flow.h"
     },
     {
-      "type": "fixy::session::Returned<int, foundation::permissions::tag::HugePageTag>",
+      "type": "fixy::session::Returned<int, foundation::permissions::tag::HugePageTag, forge::brand>",
       "header": "fixy/session/Flow.h"
     },
     {
-      "type": "fixy::session::Borrowed<int, foundation::permissions::tag::HugePageTag>",
+      "type": "fixy::session::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>",
       "header": "fixy/session/Flow.h"
     },
     {
-      "type": "fixy::session::Released<int, foundation::permissions::tag::HugePageTag>",
+      "type": "fixy::session::Released<int, foundation::permissions::tag::HugePageTag, forge::brand>",
       "header": "fixy/session/Flow.h"
     },
     {

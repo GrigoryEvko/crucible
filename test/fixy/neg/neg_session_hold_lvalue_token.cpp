@@ -21,7 +21,8 @@ struct Region {
 struct Other {
     using permission_row = ::foundation::effects::Row<>;
 };
-using TX = sess::Transferable<int, Region>;
+struct RegionBrand {};
+using TX = sess::Transferable<int, Region, RegionBrand>;
 }  // namespace
 
 int main() {

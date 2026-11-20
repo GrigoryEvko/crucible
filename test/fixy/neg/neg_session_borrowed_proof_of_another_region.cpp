@@ -27,9 +27,10 @@ struct Other {
 using namespace neg_session_borrowed_proof_of_another_region_types;
 
 int main() {
-    // The singleton root of Other is on the erased identity, as the loan of a
-    // Borrowed is, so only the tags differ.
-    auto [loan, lent] = fp::mint_read_loan(fp::mint_singleton_root<Other>());
-    sess::Borrowed<int, Region> message{1, std::move(loan)};
+    // The marker names the brand of the root of Other, so only the tags differ.
+    auto root = fp::mint_permission_root<Other>();
+    using Brand = ::foundation::brand::brand_of_t<decltype(root)>;
+    auto [loan, lent] = fp::mint_read_loan(std::move(root));
+    sess::Borrowed<int, Region, Brand> message{1, std::move(loan)};
     return message.peek();
 }

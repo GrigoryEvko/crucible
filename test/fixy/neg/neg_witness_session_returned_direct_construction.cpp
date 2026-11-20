@@ -1,8 +1,8 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// fixy::session::Returned<int, foundation::permissions::tag::HugePageTag> in utils/rule-table.txt.  Edit the row, not this file.
+// fixy::session::Returned<int, foundation::permissions::tag::HugePageTag, forge::brand> in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// fixy::session::Returned<int, foundation::permissions::tag::HugePageTag> attests to a fact that it cannot see.  The expression below is
+// fixy::session::Returned<int, foundation::permissions::tag::HugePageTag, forge::brand> attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
 // shut: the compiler must refuse the construction with "is private within this context".
 //
@@ -21,9 +21,13 @@ namespace forge {
 // construction, so no fixture links, and neither stand-in has a body.
 template <class T> T& lvalue() noexcept;
 template <class T> T&& rvalue() noexcept;
+
+// The brand that the expression names.  It is empty, which is all that
+// foundation::brand::IsBrand asks of a brand.
+struct brand {};
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::session::Returned<int, foundation::permissions::tag::HugePageTag>{1, forge::rvalue<fixy::session::detail::hold_slot_t<foundation::permissions::tag::HugePageTag>>()};
+    [[maybe_unused]] auto forged = fixy::session::Returned<int, foundation::permissions::tag::HugePageTag, forge::brand>{1, forge::rvalue<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag, forge::brand>>()};
     return 0;
 }

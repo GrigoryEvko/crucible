@@ -23,13 +23,17 @@ struct Region {
     using permission_row = eff::Row<>;
 };
 struct Wire {};
-using Proto = s::Select<s::End, s::Send<s::Borrowed<int, Region>, s::End>>;
+// The one root site of Region, so the protocol names the brand of its root.
+[[nodiscard]] inline auto mint_region_root() noexcept { return perm::mint_permission_root<Region>(); }
+using Proto =
+    s::Select<s::End,
+              s::Send<s::Borrowed<int, Region, ::foundation::brand::brand_of_t<decltype(mint_region_root())>>, s::End>>;
 }  // namespace unselected_arm_fixture
 
 int main() {
     using namespace unselected_arm_fixture;
     const eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
-    auto head = s::mint_permissioned_session<Proto>(ctx, Wire{}, perm::mint_permission_root<Region>());
+    auto head = s::mint_permissioned_session<Proto>(ctx, Wire{}, mint_region_root());
     auto at_end = std::move(head).select<0>([](Wire&, std::size_t) noexcept { return true; });
     auto [wire, token] = std::move(at_end).close();
     ::foundation::linear::drop(std::move(token));
