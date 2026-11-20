@@ -45,6 +45,15 @@ check_temporary_directory(::foundation::core::TextView value) noexcept {
     return ::foundation::core::Option<TemporaryDirectoryPath>::some(path);
 }
 
+// The DEBUGINFOD_URLS switch of a value of the variable: on when the value
+// holds one character or more, and off for an empty value and for no
+// variable.
+[[nodiscard]] constexpr bool
+has_debuginfod_server(::foundation::core::Option<::foundation::core::TextView> value) noexcept {
+    return value.match([](::foundation::core::TextView text) noexcept { return text.size() != 0; },
+                       [] noexcept { return false; });
+}
+
 // The switches of the environment at the start of the process.  The record
 // holds parsed values only.  A path of the record is a parsed value too: the
 // hook checks the text of its variable, and the record holds the checked path
@@ -66,7 +75,7 @@ struct Switches {
     bool is_warden_forced = false;
     // DEBUGINFOD_URLS: the servers that valgrind asks for the debug
     // information of each loaded object at its start.  The switch is on when
-    // the value holds one character or more.
+    // the value holds one character or more (has_debuginfod_server).
     bool has_debuginfod_server = false;
     std::uint8_t pad_after_flags = 0;
     std::uint16_t pad_before_periods = 0;

@@ -16,7 +16,9 @@
 // into the field of a different switch fails a check.  The check also
 // proves that the link keeps the hook, and that the hook runs before main.
 // The cases of check_temporary_directory give the check of TMPDIR each text
-// that it refuses, and the longest path that it takes.
+// that it refuses, and the longest path that it takes.  The cases of
+// has_debuginfod_server give the check of DEBUGINFOD_URLS the on state, which
+// no run of a test can set, and the off state.
 
 #include <fixy/Core.h>
 #include <fixy/os/Environment.h>
@@ -91,11 +93,26 @@ namespace {
     return 0;
 }
 
+// True when the switch of DEBUGINFOD_URLS is on for the value text.
+[[nodiscard]] bool is_debuginfod_on(fixy::TextView text) noexcept {
+    return fixy::env::has_debuginfod_server(fixy::Option<fixy::TextView>::some(text));
+}
+
+[[nodiscard]] int check_debuginfod_cases() noexcept {
+    if (fixy::env::has_debuginfod_server(fixy::none)) return 31;
+    if (is_debuginfod_on("")) return 32;
+    if (!is_debuginfod_on(" ")) return 33;
+    if (!is_debuginfod_on("0")) return 34;
+    if (!is_debuginfod_on("https://debuginfod.example.org/")) return 35;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     int failed = check_switches();
     if (failed == 0) failed = check_temporary_directory_cases();
+    if (failed == 0) failed = check_debuginfod_cases();
     if (failed != 0) {
         fixy::report(fixy::Sink::Err, "test_os_environment: check {} failed\n", failed);
         return failed;
