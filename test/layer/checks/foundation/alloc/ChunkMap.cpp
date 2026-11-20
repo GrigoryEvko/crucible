@@ -1,0 +1,66 @@
+// The compile-time checks of foundation/alloc/ChunkMap.h.
+
+#include <foundation/alloc/ChunkMap.h>
+
+#include <foundation/alloc/Layout.h>
+#include <foundation/core/Index.h>
+
+#include <cstdint>
+#include <type_traits>
+
+namespace foundation::alloc {
+
+// The geometry: a chunk of 2 MiB is the chunk of a medium slab, a unit is the
+// unit of a small slab, and an extent of 1 GiB holds 512 chunks.
+static_assert(kChunkBytes == kSlabChunkBytes);
+static_assert(kUnitsPerChunk == 32 && kSlabUnitBytes * kUnitsPerChunk == kChunkBytes);
+static_assert(kChunksPerExtent == 512 && kExtentBytes == kChunkBytes * kChunksPerExtent);
+
+// The owner entry is 16 bits, zero bytes are no owner, and 0xFFFF is a span.
+static_assert(sizeof(ChunkOwner) == 2);
+static_assert(ChunkOwner{} == ChunkOwner::none);
+static_assert(static_cast<std::uint16_t>(ChunkOwner::span) == 0xFFFF);
+
+// The ids of the heap table are 1 to 65,534, so no id is the entry of no
+// owner or of a span.
+static_assert(heap_id_of(HeapSlot{::foundation::core::StaticIndex<0>{}}) == HeapId{1});
+static_assert(heap_id_of(HeapSlot{::foundation::core::StaticIndex<kHeapCount - 1>{}}) == HeapId{kLastHeapId});
+static_assert(owner_entry_of(HeapId{kFirstHeapId}) != ChunkOwner::none);
+static_assert(owner_entry_of(HeapId{kLastHeapId}) != ChunkOwner::span);
+static_assert(heap_of(ChunkOwner::none).is_none());
+static_assert(heap_of(ChunkOwner::span).is_none());
+static_assert(heap_of(owner_entry_of(HeapId{7})).value_or(HeapId{1}) == HeapId{7});
+
+// The last chunk of each extent is its guard.
+static_assert(!is_guard_chunk(ChunkIndex{0}));
+static_assert(is_guard_chunk(ChunkIndex{511}));
+static_assert(!is_guard_chunk(ChunkIndex{512}));
+static_assert(is_guard_chunk(ChunkIndex{1023}));
+
+// The map is one word, and a record is five words that copy as words.
+static_assert(sizeof(BiasedChunkMap) == 8);
+static_assert(BiasedChunkMap{}.is_empty());
+static_assert(sizeof(WindowRecord) == 40);
+static_assert(std::is_trivially_copyable_v<WindowRecord>);
+
+// The empty record holds no address, and a new table holds the empty record
+// in each slot.
+static_assert(WindowRecord{}.is_empty());
+static_assert(!WindowRecord{}.is_in_window(AddressWord{0}));
+static_assert(!WindowRecord{}.is_in_window(AddressWord{4096}));
+
+namespace chunk_map_check {
+
+[[nodiscard]] consteval bool is_new_table_empty() noexcept {
+    WindowTable const table{};
+    bool is_empty = table.host().is_empty();
+    is_empty = is_empty && table.record(WindowSlot{::foundation::core::StaticIndex<kWindowSlots - 1>{}}).is_empty();
+    return is_empty;
+}
+
+}  // namespace chunk_map_check
+
+static_assert(chunk_map_check::is_new_table_empty());
+static_assert(!std::is_copy_constructible_v<WindowTable>);
+
+}  // namespace foundation::alloc

@@ -2835,6 +2835,12 @@ foundation_neg_compile_test(neg_core_pack_index_of_twice
 # are refused.
 foundation_test(test_core_heap)
 foundation_test(test_alloc_size_class)
+# The window door of foundation/alloc/Window.h: the ladder under a cap, a map
+# that reads no owner, the records inside the region, the fault of a guard
+# chunk, and a count of mappings that follows the extents.  The death test of
+# the guard chunk runs through the Check family of fixy.
+foundation_test(test_alloc_chunk_map)
+target_link_libraries(test_alloc_chunk_map PRIVATE fixy)
 foundation_test(test_core_ref)
 
 # A Link gives its object as a Ref of const through a const Link, and its
