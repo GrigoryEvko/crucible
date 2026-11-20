@@ -258,46 +258,115 @@ inline void blake3_g_lanes_(Blake3Lanes<Width> (&state)[16], int first, int seco
     state[second] = blake3_rotr_lanes_<7, Width>(state[second] ^ state[third]);
 }
 
-// The lane of an exchange of the blocks of Distance lanes between a row with
-// no bit Distance in its index (lower) and the row with it (upper).  The
-// exchange swaps one bit of the index of a row with the same bit of the
-// index of a lane, so the stages of all bits transpose the rows.
-template <std::size_t Width, std::size_t Distance, bool IsUpper>
-[[nodiscard]] consteval int blake3_exchange_index_(std::size_t position) noexcept {
-    if constexpr (!IsUpper) {
-        return static_cast<int>((position & Distance) != 0 ? Width + position - Distance : position);
+// The count of words of one part of a vector of Width lanes.  A vector of 8
+// or 16 lanes has two parts, so one load of a part of a block of one input
+// and one insert of the same part of the block of a second input give the
+// first stage of the transpose.  A vector of 4 lanes has one part.
+template <std::size_t Width>
+inline constexpr std::size_t blake3_part_words = Width >= 8 ? Width / 2 : Width;
+
+// The kinds of an unpack of two vectors: the low or the high half of the
+// words, of the pairs of words or of the quads of words of each block of 4,
+// 4 or 8 words, from the two vectors in turn.  Each is one instruction of
+// the target: an unpack of words or of pairs in each block of 128 bits, or a
+// permute of two vectors for the quads.
+enum class Blake3Unpack : std::uint8_t {
+    words_low,
+    words_high,
+    pairs_low,
+    pairs_high,
+    quads_low,
+    quads_high
+};
+
+// The source lane of the lane at position of an unpack of Kind, where a lane
+// at Width or above is a lane of the second vector.
+template <std::size_t Width, Blake3Unpack Kind>
+[[nodiscard]] consteval int blake3_unpack_index_(std::size_t position) noexcept {
+    std::size_t const block = position / 4 * 4;
+    std::size_t const inner = position % 4;
+    std::size_t const quad_block = position / 8 * 8;
+    std::size_t const quad_inner = position % 8;
+    std::size_t source = 0;
+    if constexpr (Kind == Blake3Unpack::words_low || Kind == Blake3Unpack::words_high) {
+        std::size_t const half = Kind == Blake3Unpack::words_high ? 2 : 0;
+        source = (inner % 2 == 0 ? 0 : Width) + block + half + inner / 2;
+    } else if constexpr (Kind == Blake3Unpack::pairs_low || Kind == Blake3Unpack::pairs_high) {
+        std::size_t const half = Kind == Blake3Unpack::pairs_high ? 2 : 0;
+        source = (inner < 2 ? 0 : Width) + block + half + inner % 2;
     } else {
-        return static_cast<int>((position & Distance) != 0 ? Width + position : position + Distance);
+        std::size_t const half = Kind == Blake3Unpack::quads_high ? 4 : 0;
+        source = (quad_inner < 4 ? 0 : Width) + quad_block + half + quad_inner % 4;
     }
+    return static_cast<int>(source);
 }
 
-template <std::size_t Width, std::size_t Distance, bool IsUpper, std::size_t... Positions>
-[[nodiscard]] inline Blake3Lanes<Width> blake3_exchange_(Blake3Lanes<Width> lower, Blake3Lanes<Width> upper,
-                                                         std::index_sequence<Positions...>) noexcept {
-    return __builtin_shufflevector(lower, upper, blake3_exchange_index_<Width, Distance, IsUpper>(Positions)...);
+template <std::size_t Width, Blake3Unpack Kind, std::size_t... Positions>
+[[nodiscard]] inline Blake3Lanes<Width> blake3_unpack_(Blake3Lanes<Width> first, Blake3Lanes<Width> second,
+                                                       std::index_sequence<Positions...>) noexcept {
+    return __builtin_shufflevector(first, second, blake3_unpack_index_<Width, Kind>(Positions)...);
 }
 
-template <std::size_t Width, std::size_t Distance>
-inline void blake3_transpose_stage_(Blake3Lanes<Width> (&rows)[Width]) noexcept {
-    if constexpr (Distance < Width) {
-        for (std::size_t lower = 0; lower < Width; ++lower) {
-            if ((lower & Distance) != 0) continue;
-            Blake3Lanes<Width> const low = rows[lower];
-            Blake3Lanes<Width> const high = rows[lower + Distance];
-            rows[lower] = blake3_exchange_<Width, Distance, false>(low, high, std::make_index_sequence<Width>{});
-            rows[lower + Distance] =
-                blake3_exchange_<Width, Distance, true>(low, high, std::make_index_sequence<Width>{});
+// Transposes each part of the rows: lane j of part h of row k moves to lane
+// k of part h of row j.  An unpack of the words and an unpack of the pairs
+// transpose each block of 4 words, and for parts of 8 words an unpack of the
+// quads moves the blocks.  The transpose is its own inverse.
+template <std::size_t Width>
+inline void blake3_transpose_parts_(Blake3Lanes<Width> (&rows)[blake3_part_words<Width>]) noexcept {
+    constexpr std::size_t part = blake3_part_words<Width>;
+    constexpr auto positions = std::make_index_sequence<Width>{};
+    Blake3Lanes<Width> words[part] = {};
+    for (std::size_t pair = 0; pair < part / 2; ++pair) {
+        words[2 * pair] = blake3_unpack_<Width, Blake3Unpack::words_low>(rows[2 * pair], rows[2 * pair + 1], positions);
+        words[2 * pair + 1] =
+            blake3_unpack_<Width, Blake3Unpack::words_high>(rows[2 * pair], rows[2 * pair + 1], positions);
+    }
+    Blake3Lanes<Width> pairs[part] = {};
+    for (std::size_t block = 0; block < part; block += 4) {
+        for (std::size_t half = 0; half < 2; ++half) {
+            Blake3Lanes<Width> const low = words[block + half];
+            Blake3Lanes<Width> const high = words[block + half + 2];
+            pairs[block + 2 * half] = blake3_unpack_<Width, Blake3Unpack::pairs_low>(low, high, positions);
+            pairs[block + 2 * half + 1] = blake3_unpack_<Width, Blake3Unpack::pairs_high>(low, high, positions);
+        }
+    }
+    if constexpr (part == 8) {
+        for (std::size_t row = 0; row < 4; ++row) {
+            rows[row] = blake3_unpack_<Width, Blake3Unpack::quads_low>(pairs[row], pairs[row + 4], positions);
+            rows[row + 4] = blake3_unpack_<Width, Blake3Unpack::quads_high>(pairs[row], pairs[row + 4], positions);
+        }
+    } else {
+        for (std::size_t row = 0; row < part; ++row) {
+            rows[row] = pairs[row];
         }
     }
 }
 
-// Transposes the rows: lane j of row k moves to lane k of row j.
-template <std::size_t Width>
-inline void blake3_transpose_(Blake3Lanes<Width> (&rows)[Width]) noexcept {
-    blake3_transpose_stage_<Width, 1>(rows);
-    blake3_transpose_stage_<Width, 2>(rows);
-    blake3_transpose_stage_<Width, 4>(rows);
-    blake3_transpose_stage_<Width, 8>(rows);
+// The vector of the words from first of input lower in its first part and
+// of input upper in its second part: one load and one insert.  A vector of 4
+// lanes has one part, from input lower.
+template <std::size_t Width, std::size_t... Positions>
+[[nodiscard]] inline Blake3Lanes<Width> blake3_load_parts_(std::byte const* lower, std::byte const* upper,
+                                                           std::index_sequence<Positions...>) noexcept {
+    constexpr std::size_t part = blake3_part_words<Width>;
+    if constexpr (part == Width) {
+        Blake3Lanes<Width> words{};
+        __builtin_memcpy(&words, lower, sizeof(words));
+        return words;
+    } else {
+        Blake3Lanes<part> low{};
+        Blake3Lanes<part> high{};
+        __builtin_memcpy(&low, lower, sizeof(low));
+        __builtin_memcpy(&high, upper, sizeof(high));
+        return __builtin_shufflevector(low, high, Positions...);
+    }
+}
+
+// The part from the lane at index Part times at of a vector.
+template <std::size_t Width, std::size_t At, std::size_t... Positions>
+[[nodiscard]] inline Blake3Lanes<blake3_part_words<Width>> blake3_part_of_(Blake3Lanes<Width> words,
+                                                                           std::index_sequence<Positions...>) noexcept {
+    return __builtin_shufflevector(words, words, (At * blake3_part_words<Width> + Positions)...);
 }
 
 // The 7 rounds over the state of the lanes, with the order of the message
@@ -334,73 +403,90 @@ struct Blake3Input final {
     std::uint32_t end_flags = 0;
 };
 
-// The chaining values of count inputs, at most Width, in the lanes.  A lane
-// past count repeats input 0, and a lane past the blocks of its input keeps
-// its value and reads its last block again, so no lane reads past its
-// input.  The time of a run hardly depends on count: the lanes run in
-// parallel, where one input alone waits for each step of its rounds.
-// Complexity: one compression of the lanes for each block of the longest
-// input.
+// The chaining values of count inputs, at most Width, in the lanes.  Each
+// step compresses one block of each lane.  The run has a step for each block
+// of its longest input, and an input of fewer blocks waits: it reads the
+// bytes before its first block while it waits, and it takes the key as its
+// value at its first block, so each lane ends at the last step and no lane
+// keeps a value of its own across the rounds.  Thus an input of fewer blocks
+// needs as many readable bytes before it as the blocks it waits.  A lane
+// past count repeats input 0.  The time of a run hardly depends on count: the
+// lanes run in parallel, where one input alone waits for each step of its
+// rounds.  Complexity: one compression of the lanes for each block of the
+// longest input.
 template <std::size_t Width>
 inline void blake3_run_lanes_(Blake3Cv key, Blake3Input const* inputs, std::size_t count, std::uint32_t flags,
                               Blake3Cv* out) noexcept {
     using Lanes = Blake3Lanes<Width>;
+    constexpr std::size_t part = blake3_part_words<Width>;
     std::uint32_t key_words[8] = {};
     __builtin_memcpy(&key_words[0], &key.low, sizeof(key.low));
     __builtin_memcpy(&key_words[4], &key.high, sizeof(key.high));
-    Lanes value[8];
-    for (int word = 0; word < 8; ++word) {
-        value[word] = Lanes{} + key_words[word];
+    std::size_t steps = 0;
+    for (std::size_t lane = 0; lane < count; ++lane) {
+        steps = steps < inputs[lane].blocks ? inputs[lane].blocks : steps;
     }
-    Blake3Input lanes[Width];
-    std::size_t longest = 0;
-    for (std::size_t lane = 0; lane < Width; ++lane) {
-        lanes[lane] = inputs[lane < count ? lane : 0];
-        longest = longest < lanes[lane].blocks ? lanes[lane].blocks : longest;
-    }
+    std::byte const* firsts[Width] = {};
     std::uint32_t counter_low[Width] = {};
     std::uint32_t counter_high[Width] = {};
     std::uint32_t start_flags[Width] = {};
     std::uint32_t end_flags[Width] = {};
-    std::uint32_t last_block[Width] = {};
+    std::uint32_t waits[Width] = {};
+    std::size_t longest_wait = 0;
     for (std::size_t lane = 0; lane < Width; ++lane) {
-        counter_low[lane] = static_cast<std::uint32_t>(lanes[lane].counter);
-        counter_high[lane] = static_cast<std::uint32_t>(lanes[lane].counter >> 32);
-        start_flags[lane] = lanes[lane].start_flags;
-        end_flags[lane] = lanes[lane].end_flags;
-        last_block[lane] = static_cast<std::uint32_t>(lanes[lane].blocks - 1);
+        Blake3Input const& input = inputs[lane < count ? lane : 0];
+        std::size_t const wait = steps - input.blocks;
+        firsts[lane] = input.first - wait * blake3_block_bytes;
+        counter_low[lane] = static_cast<std::uint32_t>(input.counter);
+        counter_high[lane] = static_cast<std::uint32_t>(input.counter >> 32);
+        start_flags[lane] = input.start_flags;
+        end_flags[lane] = input.end_flags;
+        waits[lane] = static_cast<std::uint32_t>(wait);
+        longest_wait = longest_wait < wait ? wait : longest_wait;
     }
-    Lanes low_lanes;
-    Lanes high_lanes;
-    Lanes start_lanes;
-    Lanes end_lanes;
-    Lanes last_lanes;
+    Lanes low_lanes{};
+    Lanes high_lanes{};
+    Lanes start_lanes{};
+    Lanes end_lanes{};
+    Lanes wait_lanes{};
     __builtin_memcpy(&low_lanes, counter_low, sizeof(Lanes));
     __builtin_memcpy(&high_lanes, counter_high, sizeof(Lanes));
     __builtin_memcpy(&start_lanes, start_flags, sizeof(Lanes));
     __builtin_memcpy(&end_lanes, end_flags, sizeof(Lanes));
-    __builtin_memcpy(&last_lanes, last_block, sizeof(Lanes));
-    constexpr std::size_t groups = 16 / Width;
-    for (std::size_t block = 0; block < longest; ++block) {
-        Lanes message[16];
-        for (std::size_t group = 0; group < groups; ++group) {
-            Lanes rows[Width];
-            for (std::size_t lane = 0; lane < Width; ++lane) {
-                std::size_t const read = block < lanes[lane].blocks ? block : lanes[lane].blocks - 1;
-                __builtin_memcpy(&rows[lane], lanes[lane].first + read * blake3_block_bytes + group * Width * 4,
-                                 sizeof(Lanes));
-            }
-            blake3_transpose_<Width>(rows);
-            for (std::size_t word = 0; word < Width; ++word) {
-                message[group * Width + word] = rows[word];
+    __builtin_memcpy(&wait_lanes, waits, sizeof(Lanes));
+    Lanes value[8] = {};
+    for (int word = 0; word < 8; ++word) {
+        value[word] = Lanes{} + key_words[word];
+    }
+    for (std::size_t step = 0; step < steps; ++step) {
+        Lanes step_flags = Lanes{} + flags;
+        if (step <= longest_wait) {
+            // All ones in each lane whose first block is at this step.
+            Lanes const is_first = static_cast<Lanes>(wait_lanes == static_cast<std::uint32_t>(step));
+            step_flags |= is_first & start_lanes;
+            if (step != 0) {
+                for (int word = 0; word < 8; ++word) {
+                    value[word] = (value[word] & ~is_first) | ((Lanes{} + key_words[word]) & is_first);
+                }
             }
         }
-        Lanes const block_lanes = Lanes{} + static_cast<std::uint32_t>(block);
-        // All ones in a lane whose block is its last, and in a lane that
-        // still runs.
-        Lanes const is_last = static_cast<Lanes>(block_lanes == last_lanes);
-        Lanes const is_running = static_cast<Lanes>(block_lanes <= last_lanes);
-        Lanes const block_flags = (Lanes{} + flags) | (block == 0 ? start_lanes : Lanes{}) | (is_last & end_lanes);
+        if (step + 1 == steps) step_flags |= end_lanes;
+        // The words of the block of each lane: one load of a part of the
+        // block of one lane, one insert of the same part of the block of a
+        // second lane, and a transpose of the parts.
+        Lanes message[16] = {};
+        for (std::size_t group = 0; group < 16 / part; ++group) {
+            Lanes rows[part] = {};
+            for (std::size_t row = 0; row < part; ++row) {
+                std::size_t const offset = step * blake3_block_bytes + group * part * 4;
+                rows[row] = blake3_load_parts_<Width>(firsts[row] + offset, firsts[(row + part) % Width] + offset,
+                                                      std::make_index_sequence<Width>{});
+            }
+            blake3_transpose_parts_<Width>(rows);
+            for (std::size_t word = 0; word < part; ++word) {
+                message[group * part + word] = rows[word];
+            }
+        }
         Lanes state[16] = {value[0],
                            value[1],
                            value[2],
@@ -416,19 +502,32 @@ inline void blake3_run_lanes_(Blake3Cv key, Blake3Input const* inputs, std::size
                            low_lanes,
                            high_lanes,
                            Lanes{} + static_cast<std::uint32_t>(blake3_block_bytes),
-                           block_flags};
+                           step_flags};
         blake3_rounds_lanes_<Width>(state, message, std::make_index_sequence<7>{});
         for (int word = 0; word < 8; ++word) {
-            value[word] = ((state[word] ^ state[word + 8]) & is_running) | (value[word] & ~is_running);
+            value[word] = state[word] ^ state[word + 8];
         }
     }
-    std::uint32_t words[8][Width] = {};
-    for (int word = 0; word < 8; ++word) {
-        __builtin_memcpy(&words[word][0], &value[word], sizeof(Lanes));
-    }
-    for (std::size_t lane = 0; lane < count; ++lane) {
-        out[lane].low = Blake3Row{words[0][lane], words[1][lane], words[2][lane], words[3][lane]};
-        out[lane].high = Blake3Row{words[4][lane], words[5][lane], words[6][lane], words[7][lane]};
+    // The values go out by the transpose of the parts: each part of a row
+    // then holds part words of the value of one lane.
+    for (std::size_t group = 0; group < 8 / part; ++group) {
+        Lanes rows[part] = {};
+        for (std::size_t row = 0; row < part; ++row) {
+            rows[row] = value[group * part + row];
+        }
+        blake3_transpose_parts_<Width>(rows);
+        for (std::size_t row = 0; row < part; ++row) {
+            Blake3Lanes<part> const low = blake3_part_of_<Width, 0>(rows[row], std::make_index_sequence<part>{});
+            Blake3Lanes<part> const high =
+                blake3_part_of_<Width, Width / part - 1>(rows[row], std::make_index_sequence<part>{});
+            std::byte* const words_first = static_cast<std::byte*>(static_cast<void*>(out)) + group * part * 4;
+            if (row < count) {
+                __builtin_memcpy(words_first + row * sizeof(Blake3Cv), &low, sizeof(low));
+            }
+            if (part != Width && row + part < count) {
+                __builtin_memcpy(words_first + (row + part) * sizeof(Blake3Cv), &high, sizeof(high));
+            }
+        }
     }
 }
 
