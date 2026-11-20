@@ -1286,10 +1286,11 @@ public:
         "the table admits.  A transport of the caller would move the values of one channel in two ways.");
 
     // Sends a bare Permission.  The token comes from the slots of the
-    // handle, so the caller gives no value.
+    // handle, so the caller gives no value.  No pole table moves a token, so
+    // a pole of a channel refuses the send of a token.
     template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
               typename Transport>
-        requires(!is_keyed_step_v<Send<T, R>>) && (slot_form_v<T> == SlotForm::Token)
+        requires(!is_keyed_step_v<Send<T, R>>) && (slot_form_v<T> == SlotForm::Token) && (!ChannelPole<Resource>)
              && WriteTransport<Transport, Resource, T>
     [[nodiscard]] static constexpr auto
     send(SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>&& handle,
@@ -1312,11 +1313,22 @@ public:
                                                          HoldFactory::as_set<Next>(std::move(rest)), origin);
     }
 
+    template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
+              typename Arg>
+        requires(!is_keyed_step_v<Send<T, R>>) && (slot_form_v<T> == SlotForm::Token) && ChannelPole<Resource>
+    static void send(SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>&&, Arg&&) = delete(
+        "[Pole_Owns_Its_Transport] a token send over a pole of a channel writes a token, and the pole table of its "
+        "channel (fixy/session/Admission.h) moves no token.  The send needs a pole table that moves the token.  A "
+        "write of the caller would move the values of one channel in two ways.");
+
     // Sends the label word of a keyed message.  The returned handle stands
-    // at the value step, or past the message when its payload is void.
+    // at the value step, or past the message when its payload is void.  No
+    // pole table moves a label word, so a pole of a channel refuses a keyed
+    // send.
     template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
               typename Transport>
-        requires is_keyed_step_v<Send<T, R>> && WriteTransport<Transport, Resource, std::size_t>
+        requires is_keyed_step_v<Send<T, R>> && (!ChannelPole<Resource>)
+              && WriteTransport<Transport, Resource, std::size_t>
     [[nodiscard]] static constexpr auto
     send(SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>&& handle,
          Transport transport) noexcept(detail::write_is_nothrow<Transport, Resource, std::size_t>()
@@ -1337,6 +1349,14 @@ public:
         return step_<keyed_landing_t<Send<T, R>>, Resource, LoopCtx, Policy, PS>(core.take_resource_(),
                                                                                  std::move(slots), origin);
     }
+
+    template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
+              typename Arg>
+        requires is_keyed_step_v<Send<T, R>> && ChannelPole<Resource>
+    static void send(SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>&&, Arg&&) = delete(
+        "[Pole_Owns_Its_Transport] a keyed send over a pole of a channel writes a label word, and the pole table of "
+        "its channel (fixy/session/Admission.h) moves no label word.  The send needs a pole table that moves the "
+        "label word.  A write of the caller would move the words of one channel in two ways.");
 
     // Receives a value.  The pair is the value and the handle at the
     // continuation.  A polling read that finds the message costs one call.
@@ -1404,10 +1424,13 @@ public:
     // the value step, or past the message when its payload is void.  A
     // word other than the label word of this message ends the process with
     // Keyed_Label_Word_Mismatch: the peer sent a label that this position
-    // does not accept, as a word that names no branch of an Offer does.
+    // does not accept, as a word that names no branch of an Offer does.  No
+    // pole table moves a label word, so a pole of a channel refuses a keyed
+    // receive.
     template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
               typename Transport>
-        requires is_keyed_step_v<Recv<T, R>> && ReadTransport<Transport, Resource, std::size_t>
+        requires is_keyed_step_v<Recv<T, R>> && (!ChannelPole<Resource>)
+              && ReadTransport<Transport, Resource, std::size_t>
     [[nodiscard]] static constexpr auto recv(SessionHandle<Recv<T, R>, Resource, LoopCtx, Policy, PS>&& handle,
                                              Transport transport) {
         static_assert(detail::handle_admits_recv_v<PS, T>,
@@ -1427,6 +1450,14 @@ public:
                                                                                  std::move(slots), origin);
     }
 
+    template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
+              typename Arg>
+        requires is_keyed_step_v<Recv<T, R>> && ChannelPole<Resource>
+    static void recv(SessionHandle<Recv<T, R>, Resource, LoopCtx, Policy, PS>&&, Arg&&) = delete(
+        "[Pole_Owns_Its_Transport] a keyed receive over a pole of a channel reads a label word, and the pole table of "
+        "its channel (fixy/session/Admission.h) moves no label word.  The receive needs a pole table that moves the "
+        "label word.  A read of the caller would move the words of one channel in two ways.");
+
     // Picks branch I and signals the choice to the peer through Transport,
     // a write of a std::size_t word.  The Transport receives the wire word
     // of branch I: its label word in a keyed choice, and I in a positional
@@ -1437,10 +1468,14 @@ public:
     // The index bound is a body static_assert rather than a
     // requires-clause so that an out-of-range index reports the named
     // diagnostic instead of a bare unsatisfied-constraint message.
+    //
+    // No pole table moves a label word, so a select over a pole of a
+    // channel takes only no_label, and the choice puts no word on the wire.
     template <std::size_t I, typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
               typename PS, typename Transport>
         requires WriteTransport<Transport, Resource, std::size_t>
               && WritesTheLabel<Transport, Resource, Select<Branches...>, LoopCtx>
+              && (!ChannelPole<Resource> || std::is_same_v<Transport, no_label_t>)
     [[nodiscard]] static constexpr auto
     select(SessionHandle<Select<Branches...>, Resource, LoopCtx, Policy, PS>&& handle,
            Transport transport) noexcept(detail::write_is_nothrow<Transport, Resource, std::size_t>()
@@ -1461,6 +1496,14 @@ public:
         HoldSlots<PS> slots = core.take_slots_();
         return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots), origin);
     }
+
+    template <std::size_t I, typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
+              typename PS, typename Transport>
+        requires ChannelPole<Resource> && (!std::is_same_v<Transport, no_label_t>)
+    static void select(SessionHandle<Select<Branches...>, Resource, LoopCtx, Policy, PS>&&, Transport) = delete(
+        "[Pole_Owns_Its_Transport] a select over a pole of a channel puts no label on the wire, because the pole "
+        "table of its channel (fixy/session/Admission.h) moves no label word.  Call select<I>(no_label) on a pole that "
+        "states the Local network.  A select with a label needs a pole table that moves the label word.");
 
     // Enters branch I of a Select WITHOUT telling the peer which branch was
     // picked.  The context holds the Test capability.
@@ -1490,10 +1533,11 @@ public:
     // or past the message when its payload is void.  A word that names no
     // branch ends the process with Word_Names_No_Branch: the peer has sent a
     // label this protocol does not define, so the two endpoints no longer
-    // agree.
+    // agree.  A select over a pole of a channel puts no label on the wire, so
+    // a pole refuses a branch.
     template <typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
               typename Transport, typename Handler>
-        requires ReadTransport<Transport, Resource, std::size_t>
+        requires(!ChannelPole<Resource>) && ReadTransport<Transport, Resource, std::size_t>
     static constexpr auto branch(SessionHandle<Offer<Branches...>, Resource, LoopCtx, Policy, PS>&& handle,
                                  Transport transport, Handler handler) {
         using Choice = Offer<Branches...>;
@@ -1507,11 +1551,19 @@ public:
             std::make_index_sequence<Choice::branch_count>{});
     }
 
+    template <typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
+              typename Transport, typename Handler>
+        requires ChannelPole<Resource>
+    static void branch(SessionHandle<Offer<Branches...>, Resource, LoopCtx, Policy, PS>&&, Transport, Handler) = delete(
+        "[Pole_Owns_Its_Transport] a branch over a pole of a channel reads a label word, and the pole table of its "
+        "channel (fixy/session/Admission.h) moves no label word: a select over a pole puts no label on the wire.  The "
+        "branch needs a pole table that moves the label word.  A test picks a branch with pick_local<I>(ctx).");
+
     // The step of branch, with the index of the branch given to the
     // handler first, as std::integral_constant<std::size_t, I>.
     template <typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
               typename Transport, typename Handler>
-        requires ReadTransport<Transport, Resource, std::size_t>
+        requires(!ChannelPole<Resource>) && ReadTransport<Transport, Resource, std::size_t>
     static constexpr auto branch_indexed(SessionHandle<Offer<Branches...>, Resource, LoopCtx, Policy, PS>&& handle,
                                          Transport transport, Handler handler) {
         using Choice = Offer<Branches...>;
@@ -1524,6 +1576,15 @@ public:
                                                                       origin, std::move(handler),
                                                                       std::make_index_sequence<Choice::branch_count>{});
     }
+
+    template <typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
+              typename Transport, typename Handler>
+        requires ChannelPole<Resource>
+    static void
+    branch_indexed(SessionHandle<Offer<Branches...>, Resource, LoopCtx, Policy, PS>&&, Transport, Handler) = delete(
+        "[Pole_Owns_Its_Transport] a branch over a pole of a channel reads a label word, and the pole table of its "
+        "channel (fixy/session/Admission.h) moves no label word: a select over a pole puts no label on the wire.  The "
+        "branch needs a pole table that moves the label word.  A test picks a branch with pick_local<I>(ctx).");
 
     // Enters branch I of an Offer WITHOUT receiving the peer's label.  The
     // context holds the Test capability.
@@ -1869,14 +1930,23 @@ public:
         "the slots, and the set of the handle would claim a token that it does not hold.");
 
     // Sends a bare Permission.  The token comes from the slots of the
-    // handle, so the caller gives no value.
+    // handle, so the caller gives no value.  No pole table moves a token, so
+    // a pole of a channel refuses the send of a token.
     template <typename Transport>
-        requires(!is_keyed) && (slot_form == SlotForm::Token) && WriteTransport<Transport, Resource, T>
+        requires(!is_keyed) && (slot_form == SlotForm::Token) && (!ChannelPole<Resource>)
+             && WriteTransport<Transport, Resource, T>
     [[nodiscard]] constexpr auto
     send(Transport transport) && noexcept(detail::write_is_nothrow<Transport, Resource, T>()
                                           && std::is_nothrow_move_constructible_v<Resource>) {
         return HandleFactory::send(std::move(*this), std::move(transport));
     }
+
+    template <typename Arg>
+        requires(!is_keyed) && (slot_form == SlotForm::Token) && ChannelPole<Resource>
+    void send(Arg&&) && = delete(
+        "[Pole_Owns_Its_Transport] a token send over a pole of a channel writes a token, and the pole table of its "
+        "channel (fixy/session/Admission.h) moves no token.  The send needs a pole table that moves the token.  A "
+        "write of the caller would move the values of one channel in two ways.");
 
     template <typename U, typename Transport>
         requires(!is_keyed) && (slot_form == SlotForm::Token)
@@ -1888,17 +1958,25 @@ public:
     // Sends the label word of the message through Transport, a write of a
     // std::size_t word.  The peer can hold an Offer with more labels, and
     // it enters the branch of this word.  The returned handle stands at the
-    // value step, or past the message when its payload is void.
+    // value step, or past the message when its payload is void.  No pole
+    // table moves a label word, so a pole of a channel refuses a keyed send.
     template <typename Transport>
-        requires is_keyed && WriteTransport<Transport, Resource, std::size_t>
+        requires is_keyed && (!ChannelPole<Resource>) && WriteTransport<Transport, Resource, std::size_t>
     [[nodiscard]] constexpr auto
     send(Transport transport) && noexcept(detail::write_is_nothrow<Transport, Resource, std::size_t>()
                                           && std::is_nothrow_move_constructible_v<Resource>) {
         return HandleFactory::send(std::move(*this), std::move(transport));
     }
 
+    template <typename Arg>
+        requires is_keyed && ChannelPole<Resource>
+    void send(Arg&&) && = delete(
+        "[Pole_Owns_Its_Transport] a keyed send over a pole of a channel writes a label word, and the pole table of "
+        "its channel (fixy/session/Admission.h) moves no label word.  The send needs a pole table that moves the "
+        "label word.  A write of the caller would move the words of one channel in two ways.");
+
     template <typename Transport>
-        requires is_keyed && (!WriteTransport<Transport, Resource, std::size_t>)
+        requires is_keyed && (!ChannelPole<Resource>) && (!WriteTransport<Transport, Resource, std::size_t>)
     void send(Transport) && = delete("[Transport_Shape] a write of a word either tries, as "
                                      "bool(Resource&, std::size_t), or declares its wait, as "
                                      "void(Resource&, std::size_t, fixy::session::watch::wait_scope&).  A write of "
@@ -1969,15 +2047,23 @@ public:
     // the message when its payload is void.  A word other than the label
     // word of this message ends the process with Keyed_Label_Word_Mismatch:
     // the peer sent a label that this position does not accept, as a word
-    // that names no branch of an Offer does.
+    // that names no branch of an Offer does.  No pole table moves a label
+    // word, so a pole of a channel refuses a keyed receive.
     template <typename Transport>
-        requires is_keyed && ReadTransport<Transport, Resource, std::size_t>
+        requires is_keyed && (!ChannelPole<Resource>) && ReadTransport<Transport, Resource, std::size_t>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
         return HandleFactory::recv(std::move(*this), std::move(transport));
     }
 
+    template <typename Arg>
+        requires is_keyed && ChannelPole<Resource>
+    void recv(Arg&&) && = delete(
+        "[Pole_Owns_Its_Transport] a keyed receive over a pole of a channel reads a label word, and the pole table of "
+        "its channel (fixy/session/Admission.h) moves no label word.  The receive needs a pole table that moves the "
+        "label word.  A read of the caller would move the words of one channel in two ways.");
+
     template <typename Transport>
-        requires is_keyed && (!ReadTransport<Transport, Resource, std::size_t>)
+        requires is_keyed && (!ChannelPole<Resource>) && (!ReadTransport<Transport, Resource, std::size_t>)
     void recv(Transport) && = delete("[Transport_Shape] a read of a word either polls, as "
                                      "fixy::Option<std::size_t>(Resource&), or declares its wait, as "
                                      "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read of another "
@@ -2024,10 +2110,13 @@ public:
     // diagnostic instead of a bare unsatisfied-constraint message.
     // Transport still gates overload resolution.
     // A carrier with no peer passes no_label as the Transport, so the
-    // choice puts no word on a wire (Local choices, above).
+    // choice puts no word on a wire (Local choices, above).  No pole table
+    // moves a label word, so a select over a pole of a channel takes only
+    // no_label.
     template <std::size_t I, typename Transport>
         requires WriteTransport<Transport, Resource, std::size_t>
               && WritesTheLabel<Transport, Resource, Select<Branches...>, LoopCtx>
+              && (!ChannelPole<Resource> || std::is_same_v<Transport, no_label_t>)
     [[nodiscard]] constexpr auto
     select(Transport transport) && noexcept(detail::write_is_nothrow<Transport, Resource, std::size_t>()
                                             && std::is_nothrow_move_constructible_v<Resource>) {
@@ -2050,6 +2139,14 @@ public:
                                        "Resource that states session_network = Network::Local, over a protocol that "
                                        "names no peer, takes no_label.  Give the peer the word with a write, or use "
                                        "select_local<I>(ctx) with a test context.");
+
+    template <std::size_t I, typename Transport>
+        requires WriteTransport<Transport, Resource, std::size_t> && ChannelPole<Resource>
+                  && (!std::is_same_v<Transport, no_label_t>)
+    void select(Transport) && = delete(
+        "[Pole_Owns_Its_Transport] a select over a pole of a channel puts no label on the wire, because the pole "
+        "table of its channel (fixy/session/Admission.h) moves no label word.  Call select<I>(no_label) on a pole that "
+        "states the Local network.  A select with a label needs a pole table that moves the label word.");
 
     // Advances the local handle WITHOUT telling the peer which branch
     // was picked.  The context holds the Test capability: a test that
@@ -2126,8 +2223,11 @@ public:
     // A word that names no branch aborts.  The peer has sent a label this
     // protocol does not define, so the two endpoints no longer agree
     // and no branch can be entered safely.
+    //
+    // A select over a pole of a channel puts no label on the wire, so a
+    // pole refuses a branch.
     template <typename Transport, typename Handler>
-        requires ReadTransport<Transport, Resource, std::size_t>
+        requires(!ChannelPole<Resource>) && ReadTransport<Transport, Resource, std::size_t>
     constexpr auto branch(Transport transport, Handler handler) && {
         return HandleFactory::branch(std::move(*this), std::move(transport), std::move(handler));
     }
@@ -2137,13 +2237,27 @@ public:
     // branches can enter at the same handle type, and the index tells them
     // apart.
     template <typename Transport, typename Handler>
-        requires ReadTransport<Transport, Resource, std::size_t>
+        requires(!ChannelPole<Resource>) && ReadTransport<Transport, Resource, std::size_t>
     constexpr auto branch_indexed(Transport transport, Handler handler) && {
         return HandleFactory::branch_indexed(std::move(*this), std::move(transport), std::move(handler));
     }
 
     template <typename Transport, typename Handler>
-        requires(!ReadTransport<Transport, Resource, std::size_t>)
+        requires ChannelPole<Resource>
+    void branch(Transport, Handler) && = delete(
+        "[Pole_Owns_Its_Transport] a branch over a pole of a channel reads a label word, and the pole table of its "
+        "channel (fixy/session/Admission.h) moves no label word: a select over a pole puts no label on the wire.  The "
+        "branch needs a pole table that moves the label word.  A test picks a branch with pick_local<I>(ctx).");
+
+    template <typename Transport, typename Handler>
+        requires ChannelPole<Resource>
+    void branch_indexed(Transport, Handler) && = delete(
+        "[Pole_Owns_Its_Transport] a branch over a pole of a channel reads a label word, and the pole table of its "
+        "channel (fixy/session/Admission.h) moves no label word: a select over a pole puts no label on the wire.  The "
+        "branch needs a pole table that moves the label word.  A test picks a branch with pick_local<I>(ctx).");
+
+    template <typename Transport, typename Handler>
+        requires(!ChannelPole<Resource>) && (!ReadTransport<Transport, Resource, std::size_t>)
     void branch(Transport, Handler) && = delete("[Transport_Shape] a read of a word either polls, as "
                                                 "fixy::Option<std::size_t>(Resource&), or declares its wait, as "
                                                 "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read "

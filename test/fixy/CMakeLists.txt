@@ -4667,6 +4667,42 @@ fixy_neg_compile_test(neg_sess_factory_pole_send_with_a_caller_transport
 fixy_neg_compile_test(neg_sess_factory_pole_recv_with_a_caller_transport
   "use of deleted function .static void fixy::session::HandleFactory::recv\\(fixy::session::SessionHandle<fixy::session::Recv<T, R>, Resource, LoopCtx, Policy, PS>&&, Arg&&\\)"
   "Pole_Owns_Its_Transport. a session over a pole of a channel receives through the read that the pole table")
+fixy_neg_compile_test(neg_sess_pole_select_with_a_caller_transport
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Select<Branches \\.\\.\\.>, Resource, LoopCtx, Policy, PS>::select\\(Transport\\) &&"
+  "Pole_Owns_Its_Transport. a select over a pole of a channel puts no label on the wire")
+fixy_neg_compile_test(neg_sess_factory_pole_select_with_a_caller_transport
+  "use of deleted function .static void fixy::session::HandleFactory::select\\(fixy::session::SessionHandle<fixy::session::Select<Branches \\.\\.\\.>, Resource, LoopCtx, Policy, PS>&&, Transport\\)"
+  "Pole_Owns_Its_Transport. a select over a pole of a channel puts no label on the wire")
+fixy_neg_compile_test(neg_sess_pole_keyed_send_with_a_caller_transport
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send\\(Arg&&\\) &&"
+  "Pole_Owns_Its_Transport. a keyed send over a pole of a channel writes a label word")
+fixy_neg_compile_test(neg_sess_factory_pole_keyed_send_with_a_caller_transport
+  "use of deleted function .static void fixy::session::HandleFactory::send\\(fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>&&, Arg&&\\)"
+  "Pole_Owns_Its_Transport. a keyed send over a pole of a channel writes a label word")
+fixy_neg_compile_test(neg_sess_pole_keyed_recv_with_a_caller_transport
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Recv<T, R>, Resource, LoopCtx, Policy, PS>::recv\\(Arg&&\\) &&"
+  "Pole_Owns_Its_Transport. a keyed receive over a pole of a channel reads a label word")
+fixy_neg_compile_test(neg_sess_factory_pole_keyed_recv_with_a_caller_transport
+  "use of deleted function .static void fixy::session::HandleFactory::recv\\(fixy::session::SessionHandle<fixy::session::Recv<T, R>, Resource, LoopCtx, Policy, PS>&&, Arg&&\\)"
+  "Pole_Owns_Its_Transport. a keyed receive over a pole of a channel reads a label word")
+fixy_neg_compile_test(neg_sess_pole_token_send_with_a_caller_transport
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send\\(Arg&&\\) &&"
+  "Pole_Owns_Its_Transport. a token send over a pole of a channel writes a token")
+fixy_neg_compile_test(neg_sess_factory_pole_token_send_with_a_caller_transport
+  "use of deleted function .static void fixy::session::HandleFactory::send\\(fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>&&, Arg&&\\)"
+  "Pole_Owns_Its_Transport. a token send over a pole of a channel writes a token")
+fixy_neg_compile_test(neg_sess_pole_branch_with_a_caller_transport
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Offer<Branches \\.\\.\\.>, Resource, LoopCtx, Policy, PS>::branch\\(Transport, Handler\\) &&"
+  "Pole_Owns_Its_Transport. a branch over a pole of a channel reads a label word")
+fixy_neg_compile_test(neg_sess_factory_pole_branch_with_a_caller_transport
+  "use of deleted function .static void fixy::session::HandleFactory::branch\\(fixy::session::SessionHandle<fixy::session::Offer<Branches \\.\\.\\.>, Resource, LoopCtx, Policy, PS>&&, Transport, Handler\\)"
+  "Pole_Owns_Its_Transport. a branch over a pole of a channel reads a label word")
+fixy_neg_compile_test(neg_sess_pole_branch_indexed_with_a_caller_transport
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Offer<Branches \\.\\.\\.>, Resource, LoopCtx, Policy, PS>::branch_indexed\\(Transport, Handler\\) &&"
+  "Pole_Owns_Its_Transport. a branch over a pole of a channel reads a label word")
+fixy_neg_compile_test(neg_sess_factory_pole_branch_indexed_with_a_caller_transport
+  "use of deleted function .static void fixy::session::HandleFactory::branch_indexed\\(fixy::session::SessionHandle<fixy::session::Offer<Branches \\.\\.\\.>, Resource, LoopCtx, Policy, PS>&&, Transport, Handler\\)"
+  "Pole_Owns_Its_Transport. a branch over a pole of a channel reads a label word")
 fixy_neg_compile_test(neg_sess_mint_site_from_a_run_time_location
   "call to consteval function .fixy::session::detail::mint_site_\\(policy\\..*construction_loc\\(\\)\\). is not a constant expression"
   "the value of .policy. is not usable in a constant expression")
@@ -4676,6 +4712,18 @@ fixy_neg_compile_test(neg_sess_recorded_pole_send_with_a_caller_transport
 fixy_neg_compile_test(neg_sess_recorded_pole_recv_with_a_caller_transport
   "use of deleted function .void fixy::session::Recorded<Inner>::recv\\(Arg&&\\) &&"
   "Pole_Owns_Its_Transport. a session over a pole of a channel receives through the read that the pole table")
+fixy_neg_compile_test(neg_sess_recorded_pole_select_with_a_caller_transport
+  "use of deleted function .void fixy::session::Recorded<Inner>::select\\(Transport\\) &&"
+  "Pole_Owns_Its_Transport. a select over a pole of a channel puts no label on the wire")
+fixy_neg_compile_test(neg_sess_recorded_pole_keyed_send_with_a_caller_transport
+  "use of deleted function .void fixy::session::Recorded<Inner>::send\\(Arg&&\\) &&"
+  "Pole_Owns_Its_Transport. a keyed send over a pole of a channel writes a label word")
+fixy_neg_compile_test(neg_sess_recorded_pole_keyed_recv_with_a_caller_transport
+  "use of deleted function .void fixy::session::Recorded<Inner>::recv\\(Arg&&\\) &&"
+  "Pole_Owns_Its_Transport. a keyed receive over a pole of a channel reads a label word")
+fixy_neg_compile_test(neg_sess_recorded_pole_branch_with_a_caller_transport
+  "use of deleted function .void fixy::session::Recorded<Inner>::branch\\(Reader, Handler\\) &&"
+  "Pole_Owns_Its_Transport. a branch over a pole of a channel reads a label word")
 fixy_neg_compile_test(neg_substrate_session_lvalue_handle
   "no matching function for call to .mint_substrate_session<substrate_lvalue_fixture::Channel"
   "cannot convert .producer.")

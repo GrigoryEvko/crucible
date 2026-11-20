@@ -25,6 +25,7 @@
 #include "session_recording.h"
 
 #include <fixy/Core.h>
+#include <fixy/channels/LocalLogSession.h>
 #include <fixy/session/Entry.h>
 #include <foundation/core/Array.h>
 #include <foundation/permissions/PermSet.h>
@@ -596,6 +597,40 @@ int check_keyed_recording() {
     return 0;
 }
 
+// ── A select over a pole of a log ───────────────────────────────────
+//
+// A select over a pole of a channel takes only no_label, and the recorder
+// gives no_label itself to the inner handle.  The choice puts no word on the
+// wire, so the event records it as delivered, with no label word.
+
+struct RecordedLog {
+    using value_type = int;
+    struct ProducerHandle {
+        using channel_type = RecordedLog;
+        static constexpr s::Network session_network = s::Network::Local;
+        [[no_unique_address]] s::MoveOnlyResource move_only{};
+    };
+    struct ConsumerHandle {
+        using channel_type = RecordedLog;
+        static constexpr s::Network session_network = s::Network::Local;
+        [[no_unique_address]] s::MoveOnlyResource move_only{};
+    };
+};
+
+int check_pole_select_recording() {
+    s::SessionEventLog log;
+    auto recorded = s::mint_recorded_session(
+        s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(bg_ctx(), RecordedLog::ProducerHandle{}),
+        s::mint_session_event_writer(log), kSelf, kPeer);
+    auto at_end = std::move(recorded).select<1>(s::no_label);
+    (void)std::move(at_end).close();
+    if (log.size() != 2 || log[0].op() != s::SessionOp::Select || log[0].branch_index() != 1
+        || log[0].delivery_fate() != s::DeliveryFate::Delivered || log[0].label_word() != s::LabelWord{}
+        || log[1].op() != s::SessionOp::Close)
+        return fail("the select over a pole of a log did not record a delivered choice with no label word");
+    return 0;
+}
+
 }  // namespace
 
 }  // namespace test_session_recording_types
@@ -613,5 +648,6 @@ int main() {
     if (const int rc = check_fresh_brand_recording(); rc != 0) return rc;
     if (const int rc = check_keyed_recording(); rc != 0) return rc;
     if (const int rc = check_keyed_checkpoint(); rc != 0) return rc;
+    if (const int rc = check_pole_select_recording(); rc != 0) return rc;
     return 0;
 }

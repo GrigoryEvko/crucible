@@ -290,6 +290,21 @@ class RecordingDoor final : ::foundation::NoObject<RecordingDoor> {
         return ::foundation::core::Record{std::move(value), wrap_(recorder, std::move(next))};
     }
 
+    // Records the select of branch I with its fate, and the checkpoint of the
+    // branch when it opens one, and gives the recorder of the successor.  The
+    // transport form and the form of a pole of a select both end here.
+    template <std::size_t I, typename Inner, typename Next>
+    [[nodiscard]] static constexpr auto selected_(Recorded<Inner>& recorder, Next next, DeliveryFate fate) {
+        using Wire = detail::recording::wire_protocol_t<Inner>;
+        record_(recorder, SessionEvent::select(recorder.self_, recorder.peer_, static_cast<std::uint8_t>(I), fate,
+                                               detail::recording::label_word_for_select<Wire, I>()));
+        using Branch = std::tuple_element_t<I, typename Inner::protocol::branches_tuple>;
+        if (const auto event =
+                detail::recording::checkpoint_event<Branch>(recorder.self_, recorder.peer_, CheckpointRole::Active))
+            record_(recorder, *event);
+        return wrap_(recorder, std::move(next));
+    }
+
     template <typename Branches, typename Inner, std::size_t... Is>
     static void record_passive_checkpoint_(Recorded<Inner>& recorder, std::size_t taken, std::index_sequence<Is...>) {
         (
@@ -384,6 +399,7 @@ public:
     // one more Send event, of the payload.
     template <typename Inner, typename Transport>
         requires is_send_v<typename Inner::protocol> && is_keyed_step_v<typename Inner::protocol>
+              && (!ChannelPole<typename Inner::resource_type>)
               && WriteTransport<Transport, typename Inner::resource_type, std::size_t>
     [[nodiscard]] static constexpr auto send(Recorded<Inner>&& recorder, Transport transport) {
         using Message = typename Inner::protocol::message_type;
@@ -410,6 +426,7 @@ public:
     // value.
     template <typename Inner, typename Transport>
         requires is_recv_v<typename Inner::protocol> && is_keyed_step_v<typename Inner::protocol>
+              && (!ChannelPole<typename Inner::resource_type>)
               && ReadTransport<Transport, typename Inner::resource_type, std::size_t>
     [[nodiscard]] static constexpr auto recv(Recorded<Inner>&& recorder, Transport transport) {
         auto next = std::move(recorder.inner_).recv(std::move(transport));
@@ -428,26 +445,29 @@ public:
         return std::pair{record, wrap_(recorder, std::move(next))};
     }
 
+    // A select over a pole of a channel takes only no_label, and the inner
+    // handle takes no_label itself: the choice puts no word on the wire, so
+    // it is delivered.
     template <std::size_t I, typename Inner, typename Transport>
         requires is_select_v<typename Inner::protocol>
               && WriteTransport<Transport, typename Inner::resource_type, std::size_t>
+              && (!ChannelPole<typename Inner::resource_type> || std::is_same_v<Transport, no_label_t>)
     [[nodiscard]] static constexpr auto select(Recorded<Inner>&& recorder, Transport transport) {
         using Wire = detail::recording::wire_protocol_t<Inner>;
         static_assert(Wire::branch_count <= detail::recording::recordable_branch_limit,
                       "fixy::session::diagnostic [Recording_Branch_Lane_Too_Small]: the event records the branch "
                       "index in one byte, and this Select has more than 256 branches.");
-        bool is_delivered = false;
-        auto marked = detail::observed_write<std::size_t, typename Inner::resource_type>(
-            transport, [&is_delivered]() noexcept { is_delivered = true; });
-        auto next = std::move(recorder.inner_).template select<I>(marked);
-        record_(recorder, SessionEvent::select(recorder.self_, recorder.peer_, static_cast<std::uint8_t>(I),
-                                               is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer,
-                                               detail::recording::label_word_for_select<Wire, I>()));
-        using Branch = std::tuple_element_t<I, typename Inner::protocol::branches_tuple>;
-        if (const auto event =
-                detail::recording::checkpoint_event<Branch>(recorder.self_, recorder.peer_, CheckpointRole::Active))
-            record_(recorder, *event);
-        return wrap_(recorder, std::move(next));
+        if constexpr (ChannelPole<typename Inner::resource_type>) {
+            auto next = std::move(recorder.inner_).template select<I>(transport);
+            return selected_<I, Inner>(recorder, std::move(next), DeliveryFate::Delivered);
+        } else {
+            bool is_delivered = false;
+            auto marked = detail::observed_write<std::size_t, typename Inner::resource_type>(
+                transport, [&is_delivered]() noexcept { is_delivered = true; });
+            auto next = std::move(recorder.inner_).template select<I>(marked);
+            return selected_<I, Inner>(recorder, std::move(next),
+                                       is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer);
+        }
     }
 
     // The label reader is whatever the inner handle takes: a polling read
@@ -456,7 +476,7 @@ public:
     // handle a read of the same shape, keeps the word it read, and names
     // the branch that the word names in the protocol of the wire.
     template <typename Inner, typename Reader, typename Handler>
-        requires is_offer_v<typename Inner::protocol>
+        requires is_offer_v<typename Inner::protocol> && (!ChannelPole<typename Inner::resource_type>)
               && ReadTransport<Reader, typename Inner::resource_type, std::size_t>
     static constexpr auto branch(Recorded<Inner>&& recorder, Reader reader, Handler handler) {
         using P = typename Inner::protocol;
@@ -599,14 +619,21 @@ public:
     // This send writes the word, and the value step that follows is a plain
     // send.
     template <typename Transport>
-        requires is_send_v<protocol> && is_keyed_step_v<protocol>
+        requires is_send_v<protocol> && is_keyed_step_v<protocol> && (!ChannelPole<resource_type>)
               && WriteTransport<Transport, resource_type, std::size_t>
     [[nodiscard]] constexpr auto send(Transport transport) && {
         return RecordingDoor::send(std::move(*this), std::move(transport));
     }
 
+    template <typename Arg>
+        requires is_send_v<protocol> && is_keyed_step_v<protocol> && ChannelPole<resource_type>
+    void send(Arg&&) && = delete(
+        "[Pole_Owns_Its_Transport] a keyed send over a pole of a channel writes a label word, and the pole table of "
+        "its channel (fixy/session/Admission.h) moves no label word.  The send needs a pole table that moves the "
+        "label word.  A write of the caller would move the words of one channel in two ways.");
+
     template <typename Transport>
-        requires is_send_v<protocol> && is_keyed_step_v<protocol>
+        requires is_send_v<protocol> && is_keyed_step_v<protocol> && (!ChannelPole<resource_type>)
                   && (!WriteTransport<Transport, resource_type, std::size_t>)
     void send(Transport) && = delete("[Transport_Shape] a write of a word either tries, as "
                                      "bool(Resource&, std::size_t), or declares its wait, as "
@@ -617,14 +644,21 @@ public:
     // value step, or past the message when the payload is void, and no
     // value.
     template <typename Transport>
-        requires is_recv_v<protocol> && is_keyed_step_v<protocol>
+        requires is_recv_v<protocol> && is_keyed_step_v<protocol> && (!ChannelPole<resource_type>)
               && ReadTransport<Transport, resource_type, std::size_t>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
         return RecordingDoor::recv(std::move(*this), std::move(transport));
     }
 
+    template <typename Arg>
+        requires is_recv_v<protocol> && is_keyed_step_v<protocol> && ChannelPole<resource_type>
+    void recv(Arg&&) && = delete(
+        "[Pole_Owns_Its_Transport] a keyed receive over a pole of a channel reads a label word, and the pole table of "
+        "its channel (fixy/session/Admission.h) moves no label word.  The receive needs a pole table that moves the "
+        "label word.  A read of the caller would move the words of one channel in two ways.");
+
     template <typename Transport>
-        requires is_recv_v<protocol> && is_keyed_step_v<protocol>
+        requires is_recv_v<protocol> && is_keyed_step_v<protocol> && (!ChannelPole<resource_type>)
                   && (!ReadTransport<Transport, resource_type, std::size_t>)
     void recv(Transport) && = delete("[Transport_Shape] a read of a word either polls, as "
                                      "fixy::Option<std::size_t>(Resource&), or declares its wait, as "
@@ -638,11 +672,22 @@ public:
         return RecordingDoor::recv(std::move(*this));
     }
 
+    // A select over a pole of a channel takes only no_label, as the select of
+    // the inner handle does.
     template <std::size_t I, typename Transport>
         requires is_select_v<protocol> && WriteTransport<Transport, resource_type, std::size_t>
+              && (!ChannelPole<resource_type> || std::is_same_v<Transport, no_label_t>)
     [[nodiscard]] constexpr auto select(Transport transport) && {
         return RecordingDoor::template select<I>(std::move(*this), std::move(transport));
     }
+
+    template <std::size_t I, typename Transport>
+        requires is_select_v<protocol> && WriteTransport<Transport, resource_type, std::size_t>
+                  && ChannelPole<resource_type> && (!std::is_same_v<Transport, no_label_t>)
+    void select(Transport) && = delete(
+        "[Pole_Owns_Its_Transport] a select over a pole of a channel puts no label on the wire, because the pole "
+        "table of its channel (fixy/session/Admission.h) moves no label word.  Call select<I>(no_label) on a pole that "
+        "states the Local network.  A select with a label needs a pole table that moves the label word.");
 
     template <std::size_t I, typename Transport>
         requires is_select_v<protocol> && (!WriteTransport<Transport, resource_type, std::size_t>)
@@ -658,13 +703,22 @@ public:
     // handle a read of the same shape, keeps the word it read, and names
     // the branch that the word names in the protocol of the wire.
     template <typename Reader, typename Handler>
-        requires is_offer_v<protocol> && ReadTransport<Reader, resource_type, std::size_t>
+        requires is_offer_v<protocol> && (!ChannelPole<resource_type>)
+              && ReadTransport<Reader, resource_type, std::size_t>
     constexpr auto branch(Reader reader, Handler handler) && {
         return RecordingDoor::branch(std::move(*this), std::move(reader), std::move(handler));
     }
 
     template <typename Reader, typename Handler>
-        requires is_offer_v<protocol> && (!ReadTransport<Reader, resource_type, std::size_t>)
+        requires is_offer_v<protocol> && ChannelPole<resource_type>
+    void branch(Reader, Handler) && = delete(
+        "[Pole_Owns_Its_Transport] a branch over a pole of a channel reads a label word, and the pole table of its "
+        "channel (fixy/session/Admission.h) moves no label word: a select over a pole puts no label on the wire.  The "
+        "branch needs a pole table that moves the label word.  A test picks a branch with pick_local<I>(ctx).");
+
+    template <typename Reader, typename Handler>
+        requires is_offer_v<protocol> && (!ChannelPole<resource_type>)
+                  && (!ReadTransport<Reader, resource_type, std::size_t>)
     void branch(Reader, Handler) && = delete("[Transport_Shape] a read of a word either polls, as "
                                              "fixy::Option<std::size_t>(Resource&), or declares its wait, as "
                                              "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read of "

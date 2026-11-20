@@ -1,0 +1,62 @@
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+//
+// The branch_indexed of the handle factory is the step that the
+// branch_indexed of a handle calls.  A unit plants a pole table, in a probe
+// region that the plugin rules admit, whose pole offers two branches.  A
+// select over a pole puts no label on the wire, and the pole table moves no
+// label word, so the factory refuses a read of the caller on a pole, as the
+// branch_indexed of the handle does.
+//
+// Expected diagnostic: [Pole_Owns_Its_Transport] at the branch_indexed of the
+// handle factory.
+
+#include <fixy/Ctx.h>
+#include <fixy/session/Handle.h>
+
+#include <foundation/Quarantine.h>
+#include <foundation/effects/Ctx.h>
+
+#include <concepts>
+#include <cstddef>
+#include <utility>
+
+namespace factory_pole_branch_indexed_fixture {
+namespace s = ::fixy::session;
+struct OfferChannel {
+    struct ProducerHandle {
+        using channel_type = OfferChannel;
+        [[no_unique_address]] s::MoveOnlyResource move_only{};
+    };
+    struct ConsumerHandle {
+        using channel_type = OfferChannel;
+        [[no_unique_address]] s::MoveOnlyResource move_only{};
+    };
+};
+}  // namespace factory_pole_branch_indexed_fixture
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a pole table whose pole offers two branches")
+namespace fixy::session::pole_tables::factory_branch_indexed_probe {
+template <class Pole>
+    requires std::same_as<Pole, factory_pole_branch_indexed_fixture::OfferChannel::ConsumerHandle>
+struct offer_protocols {
+    using self_protocol = ::fixy::session::Loop<
+        ::fixy::session::Offer<::fixy::session::Recv<int, ::fixy::session::Continue>, ::fixy::session::End>>;
+    using peer_protocol = ::fixy::session::dual_of_t<self_protocol>;
+};
+inline constexpr ::fixy::session::pole_table offer_table{.table = ^^offer_protocols};
+inline constexpr ::fixy::session::transition::seal table_seal{.kind = ^^::fixy::session::pole_table, .count = 1};
+}  // namespace fixy::session::pole_tables::factory_branch_indexed_probe
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+int main() {
+    using namespace factory_pole_branch_indexed_fixture;
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(ctx, OfferChannel::ConsumerHandle{});
+    s::HandleFactory::branch_indexed(
+        std::move(head),
+        [](OfferChannel::ConsumerHandle&) noexcept -> ::fixy::Option<std::size_t> {
+            return ::fixy::Option<std::size_t>{};
+        },
+        [](auto /*index*/, auto next) noexcept { std::move(next).detach(s::detach_reason::TestInstrumentation{}); });
+    return 0;
+}
