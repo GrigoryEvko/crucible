@@ -20,11 +20,13 @@
 #error "Compile this test with CRUCIBLE_CONTRACT_IGNORE_OPTIONS.  It measures the ignore arm of CRUCIBLE_PRE."
 #endif
 
+#include <foundation/Quarantine.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Report.h>
 
 #include <cstddef>
-#include <cstdio>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the linker gives the bounds of a section as the C symbols __start_ and __stop_")
 extern "C" {
 
 // Declared because `-Werror=missing-declarations` demands it.  The
@@ -61,19 +63,38 @@ extern char __stop_crucible_assume_probe[];
 
 }  // extern "C"
 
+namespace {
+
+// The byte counts of the two probe sections, from the bounds that the
+// linker gives.
+struct ProbeSizes {
+    std::ptrdiff_t pre = 0;
+    std::ptrdiff_t assume = 0;
+};
+
+// A cast on these subtractions would trip `-Werror=useless-cast`.
+[[nodiscard]] ProbeSizes probe_sizes() noexcept {
+    return ProbeSizes{__stop_crucible_pre_probe - __start_crucible_pre_probe,
+                      __stop_crucible_assume_probe - __start_crucible_assume_probe};
+}
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 int main() {
+    namespace core = ::foundation::core;
     // Unreferenced, the probes are discarded along with their sections.
     int volatile sink = 0;
     sink += crucible_pre_probe_fn(7);
     sink += crucible_assume_probe_fn(7);
     if (sink != 28) {
-        std::fprintf(stderr, "test_pre_post_cost: probe sink wrong (%d)\n", sink);
+        core::report(core::Sink::Err, "test_pre_post_cost: probe sink wrong ({})\n", int{sink});
         return 1;
     }
 
-    // A cast on these subtractions would trip `-Werror=useless-cast`.
-    std::ptrdiff_t const pre_size = __stop_crucible_pre_probe - __start_crucible_pre_probe;
-    std::ptrdiff_t const assume_size = __stop_crucible_assume_probe - __start_crucible_assume_probe;
+    ProbeSizes const sizes = probe_sizes();
+    std::ptrdiff_t const pre_size = sizes.pre;
+    std::ptrdiff_t const assume_size = sizes.assume;
 
     // The tolerance is zero on purpose, and the delta in the message is
     // the byte count of the regression.  Should function-section alignment
@@ -81,12 +102,12 @@ int main() {
     // `[[gnu::aligned(1)]]` on the probe declarations.  Widening the
     // tolerance instead would hide exactly what this compares.
     if (pre_size != assume_size) {
-        std::fprintf(stderr,
+        core::report(core::Sink::Err,
                      "test_pre_post_cost: CRUCIBLE_PRE NOT zero-cost under "
                      "the ignore semantic\n"
-                     "  CRUCIBLE_PRE  probe .text section = %td bytes\n"
-                     "  bare [[assume]] probe .text section = %td bytes\n"
-                     "  delta = %td bytes\n"
+                     "  CRUCIBLE_PRE  probe .text section = {} bytes\n"
+                     "  bare [[assume]] probe .text section = {} bytes\n"
+                     "  delta = {} bytes\n"
                      "\n"
                      "CRUCIBLE_PRE must emit no runtime code under the ignore semantic.\n"
                      "A non-zero delta means it now emits some.\n"
@@ -100,9 +121,9 @@ int main() {
     // Two empty sections also compare equal.  The linker can still drop
     // both if the sink path is itself optimized away.
     if (pre_size <= 0 || assume_size <= 0) {
-        std::fprintf(stderr,
+        core::report(core::Sink::Err,
                      "test_pre_post_cost: probe section was empty "
-                     "(pre=%td, assume=%td)\n",
+                     "(pre={}, assume={})\n",
                      pre_size, assume_size);
         return 1;
     }

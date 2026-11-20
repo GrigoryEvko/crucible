@@ -23,15 +23,15 @@
 #include <foundation/algebra/lattices/SeqPrefixLattice.h>
 #include <foundation/algebra/lattices/StalenessSemiring.h>
 #include <foundation/algebra/lattices/TrustLattice.h>
+#include <foundation/effects/Effect.h>
 
-#include <bit>
-#include <cmath>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <functional>
-#include <limits>
-#include <source_location>
 #include <type_traits>
 #include <utility>
 
@@ -109,13 +109,7 @@ static_assert(fa::Semiring<fl::QttSemiring> && !fa::LatticeShape<fl::QttSemiring
 static_assert(fa::Semiring<fl::StalenessSemiring> && fa::BoundedLattice<fl::StalenessSemiring>);
 static_assert(fa::SemiringShape<fl::FractionalLattice> && fa::BoundedLattice<fl::FractionalLattice>);
 
-int failed_checks = 0;
-
-void expect(bool holds, std::source_location where = std::source_location::current()) noexcept {
-    if (holds) return;
-    std::fprintf(stderr, "check failed at %s:%u\n", where.file_name(), where.line());
-    ++failed_checks;
-}
+using ::fixy::check::Tally;
 
 // The value comes back through a call that no optimization looks into, so
 // each operation below runs on a run-time argument, and each contract
@@ -128,7 +122,7 @@ template <typename T>
 // Equality on a floating-point value is an error under the project
 // warning set, so a double is compared by its bits.
 [[nodiscard]] bool same_bits(double left, double right) noexcept {
-    return std::bit_cast<std::uint64_t>(left) == std::bit_cast<std::uint64_t>(right);
+    return ::fixy::bit_cast<std::uint64_t>(left) == ::fixy::bit_cast<std::uint64_t>(right);
 }
 
 // A reduced rational is compared member by member.  Its operator== cross
@@ -137,79 +131,79 @@ template <typename T>
     return value.num == num && value.den == den;
 }
 
-void bool_lattice_runs_at_run_time() {
+void bool_lattice_runs_at_run_time(Tally& checks) {
     using namespace fl::detail;
     using L = fl::BoolLattice<positive>;
     const L::element_type a = opaque(L::bottom());
     const L::element_type b = opaque(L::top());
-    expect(L::leq(a, b) && L::leq(b, a));
-    expect(L::join(a, b) == L::top());
-    expect(L::meet(a, b) == L::bottom());
+    CRUCIBLE_TEST_EXPECT(checks, L::leq(a, b) && L::leq(b, a));
+    CRUCIBLE_TEST_EXPECT(checks, L::join(a, b) == L::top());
+    CRUCIBLE_TEST_EXPECT(checks, L::meet(a, b) == L::bottom());
 
     // The lattice holds only the identity of each predicate.  The checks
     // themselves are what a wrapper runs at construction.
-    expect(positive::check(opaque(1)) && !positive::check(opaque(0)));
-    expect(non_negative::check(opaque(0)) && !non_negative::check(opaque(-1)));
-    expect(non_zero::check(opaque(-1)) && !non_zero::check(opaque(0)));
+    CRUCIBLE_TEST_EXPECT(checks, positive::check(opaque(1)) && !positive::check(opaque(0)));
+    CRUCIBLE_TEST_EXPECT(checks, non_negative::check(opaque(0)) && !non_negative::check(opaque(-1)));
+    CRUCIBLE_TEST_EXPECT(checks, non_zero::check(opaque(-1)) && !non_zero::check(opaque(0)));
 
     const OneByteValue value{opaque('*')};
     const RefinedPositive<OneByteValue> initial{test_authority::key(), value, L::bottom()};
     const auto widened = initial.weaken(L::top());
     auto composed = initial.compose(widened);
-    expect(widened.peek().c == '*' && composed.peek().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, widened.peek().c == '*' && composed.peek().c == '*');
     RefinedPositive<OneByteValue> moved = std::move(composed).compose(initial);
-    expect(std::move(moved).consume().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, std::move(moved).consume().c == '*');
 }
 
-void trust_lattice_runs_at_run_time() {
+void trust_lattice_runs_at_run_time(Tally& checks) {
     using namespace fl::detail;
     using L = fl::TrustLattice<source::Sanitized>;
     const L::element_type a = opaque(L::bottom());
     const L::element_type b = opaque(L::top());
-    expect(L::leq(a, b) && L::leq(b, a));
-    expect(L::join(a, b) == L::top());
-    expect(L::meet(a, b) == L::bottom());
+    CRUCIBLE_TEST_EXPECT(checks, L::leq(a, b) && L::leq(b, a));
+    CRUCIBLE_TEST_EXPECT(checks, L::join(a, b) == L::top());
+    CRUCIBLE_TEST_EXPECT(checks, L::meet(a, b) == L::bottom());
 
     const OneByteValue value{opaque('*')};
     const TaggedSanitized<OneByteValue> initial{test_authority::key(), value, L::bottom()};
     const auto composed = initial.compose(initial.weaken(L::top()));
-    expect(composed.peek().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, composed.peek().c == '*');
 
     // inject() is reachable only because the modality is RelativeMonad.
     auto injected =
         TaggedSanitized<OneByteValue>::inject(test_authority::key(), OneByteValue{opaque('c')}, L::bottom());
-    expect(std::move(injected).consume().c == 'c');
+    CRUCIBLE_TEST_EXPECT(checks, std::move(injected).consume().c == 'c');
 }
 
-void conf_lattice_runs_at_run_time() {
+void conf_lattice_runs_at_run_time(Tally& checks) {
     using namespace fl::detail;
     using fl::Conf;
     using fl::ConfLattice;
     const Conf lower = opaque(Conf::Public);
     const Conf upper = opaque(Conf::Secret);
-    expect(ConfLattice::leq(lower, upper));
-    expect(!ConfLattice::leq(upper, lower));
-    expect(ConfLattice::join(lower, upper) == Conf::Secret);
-    expect(ConfLattice::join(upper, lower) == Conf::Secret);
-    expect(ConfLattice::meet(lower, upper) == Conf::Public);
-    expect(ConfLattice::bottom() == Conf::Public);
-    expect(ConfLattice::top() == Conf::Secret);
+    CRUCIBLE_TEST_EXPECT(checks, ConfLattice::leq(lower, upper));
+    CRUCIBLE_TEST_EXPECT(checks, !ConfLattice::leq(upper, lower));
+    CRUCIBLE_TEST_EXPECT(checks, ConfLattice::join(lower, upper) == Conf::Secret);
+    CRUCIBLE_TEST_EXPECT(checks, ConfLattice::join(upper, lower) == Conf::Secret);
+    CRUCIBLE_TEST_EXPECT(checks, ConfLattice::meet(lower, upper) == Conf::Public);
+    CRUCIBLE_TEST_EXPECT(checks, ConfLattice::bottom() == Conf::Public);
+    CRUCIBLE_TEST_EXPECT(checks, ConfLattice::top() == Conf::Secret);
 
     const OneByteValue value{opaque('*')};
     const SecretGraded<OneByteValue> initial{test_authority::key(), value, fl::conf::SecretTier::bottom()};
     auto composed = initial.compose(initial.weaken(fl::conf::SecretTier::top()));
 
     // extract() is reachable only because the modality is Comonad.
-    expect(std::move(composed).extract().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, std::move(composed).extract().c == '*');
 
     // A pinned element converts to the classification it pins.
     const fl::conf::SecretTier::element_type secret_grade = opaque(fl::conf::SecretTier::top());
-    expect(static_cast<Conf>(secret_grade) == Conf::Secret);
+    CRUCIBLE_TEST_EXPECT(checks, static_cast<Conf>(secret_grade) == Conf::Secret);
     const fl::conf::PublicTier::element_type public_grade = opaque(fl::conf::PublicTier::top());
-    expect(static_cast<Conf>(public_grade) == Conf::Public);
+    CRUCIBLE_TEST_EXPECT(checks, static_cast<Conf>(public_grade) == Conf::Public);
 }
 
-void qtt_semiring_runs_at_run_time() {
+void qtt_semiring_runs_at_run_time(Tally& checks) {
     using namespace fl::detail;
     using fl::QttGrade;
     using fl::QttSemiring;
@@ -217,71 +211,72 @@ void qtt_semiring_runs_at_run_time() {
     const QttGrade one = opaque(QttGrade::One);
     const QttGrade omega = opaque(QttGrade::Omega);
     const QttGrade at_most_one = opaque(QttGrade::AtMostOne);
-    expect(!QttSemiring::leq(zero, one) && !QttSemiring::leq(one, zero));
-    expect(QttSemiring::leq(zero, at_most_one) && QttSemiring::leq(one, at_most_one));
-    expect(QttSemiring::leq(at_most_one, omega) && !QttSemiring::leq(omega, one));
-    expect(QttSemiring::join(zero, one) == QttGrade::AtMostOne);
-    expect(QttSemiring::join(one, omega) == QttGrade::Omega);
-    expect(QttSemiring::join(one, one) == QttGrade::One);
+    CRUCIBLE_TEST_EXPECT(checks, !QttSemiring::leq(zero, one) && !QttSemiring::leq(one, zero));
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::leq(zero, at_most_one) && QttSemiring::leq(one, at_most_one));
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::leq(at_most_one, omega) && !QttSemiring::leq(omega, one));
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::join(zero, one) == QttGrade::AtMostOne);
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::join(one, omega) == QttGrade::Omega);
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::join(one, one) == QttGrade::One);
 
     // Two uses of a value are not one use: add saturates where join does not.
-    expect(QttSemiring::add(one, one) == QttGrade::Omega);
-    expect(QttSemiring::add(zero, one) == QttGrade::One);
-    expect(QttSemiring::mul(zero, omega) == QttGrade::Zero);
-    expect(QttSemiring::mul(one, omega) == QttGrade::Omega);
-    expect(QttSemiring::mul(omega, omega) == QttGrade::Omega);
-    expect(QttSemiring::mul(at_most_one, at_most_one) == QttGrade::AtMostOne);
-    expect(QttSemiring::add(at_most_one, at_most_one) == QttGrade::Omega);
-    expect(QttSemiring::zero() == QttGrade::Zero);
-    expect(QttSemiring::one() == QttGrade::One);
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::add(one, one) == QttGrade::Omega);
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::add(zero, one) == QttGrade::One);
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::mul(zero, omega) == QttGrade::Zero);
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::mul(one, omega) == QttGrade::Omega);
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::mul(omega, omega) == QttGrade::Omega);
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::mul(at_most_one, at_most_one) == QttGrade::AtMostOne);
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::add(at_most_one, at_most_one) == QttGrade::Omega);
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::zero() == QttGrade::Zero);
+    CRUCIBLE_TEST_EXPECT(checks, QttSemiring::one() == QttGrade::One);
 
     const OneByteValue value{opaque('*')};
     const LinearGraded<OneByteValue> initial{test_authority::key(), value, fl::qtt::LinearGrade::bottom()};
     auto composed = initial.compose(initial.weaken(fl::qtt::LinearGrade::top()));
-    expect(composed.peek().c == '*');
-    expect(std::move(composed).consume().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, composed.peek().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, std::move(composed).consume().c == '*');
 }
 
-void monotone_lattice_runs_at_run_time() {
+void monotone_lattice_runs_at_run_time(Tally& checks) {
     using namespace fl::detail;
     const std::uint64_t low = opaque(std::uint64_t{100});
     const std::uint64_t high = opaque(std::uint64_t{1000});
 
-    expect(MonU64Less::leq(low, high) && !MonU64Less::leq(high, low));
-    expect(MonU64Less::join(low, high) == 1000 && MonU64Less::meet(low, high) == 100);
-    expect(MonU64Less::bottom() == 0);
-    expect(MonU64Less::top() == std::numeric_limits<std::uint64_t>::max());
+    CRUCIBLE_TEST_EXPECT(checks, MonU64Less::leq(low, high) && !MonU64Less::leq(high, low));
+    CRUCIBLE_TEST_EXPECT(checks, MonU64Less::join(low, high) == 1000 && MonU64Less::meet(low, high) == 100);
+    CRUCIBLE_TEST_EXPECT(checks, MonU64Less::bottom() == 0);
+    CRUCIBLE_TEST_EXPECT(checks, MonU64Less::top() == ::fixy::max_of<std::uint64_t>);
 
     // The reversed comparison reverses the order: the join is the smaller
     // number.
-    expect(MonU64Greater::leq(high, low) && !MonU64Greater::leq(low, high));
-    expect(MonU64Greater::join(low, high) == 100 && MonU64Greater::meet(low, high) == 1000);
+    CRUCIBLE_TEST_EXPECT(checks, MonU64Greater::leq(high, low) && !MonU64Greater::leq(low, high));
+    CRUCIBLE_TEST_EXPECT(checks, MonU64Greater::join(low, high) == 100 && MonU64Greater::meet(low, high) == 1000);
 
     // The value is its grade, so a rebuild at a higher grade is a larger
     // value.
     const MonotonicGraded<std::uint64_t> initial{low};
-    expect(initial.grade() == 100 && initial.weaken(low).grade() == 100);
+    CRUCIBLE_TEST_EXPECT(checks, initial.grade() == 100 && initial.weaken(low).grade() == 100);
     auto raised = initial.weaken(high);
-    expect(raised.grade() == 1000 && raised.peek() == 1000);
+    CRUCIBLE_TEST_EXPECT(checks, raised.grade() == 1000 && raised.peek() == 1000);
     const auto composed = initial.compose(raised);
-    expect(composed.grade() == 1000);
+    CRUCIBLE_TEST_EXPECT(checks, composed.grade() == 1000);
     auto moved = std::move(raised).weaken(high);
-    expect(std::move(moved).consume() == 1000);
+    CRUCIBLE_TEST_EXPECT(checks, std::move(moved).consume() == 1000);
 
     const double minus_one = opaque(-1.0);
     const double zero = opaque(0.0);
-    const double infinity = opaque(std::numeric_limits<double>::infinity());
-    expect(MonF64Less::leq(minus_one, zero) && !MonF64Less::leq(zero, minus_one));
-    expect(same_bits(MonF64Less::join(minus_one, infinity), std::numeric_limits<double>::infinity()));
-    expect(same_bits(MonF64Less::meet(minus_one, infinity), -1.0));
-    expect(MonF64Less::is_nan_safe(minus_one) && MonF64Less::is_nan_safe(zero) && MonF64Less::is_nan_safe(infinity));
+    const double infinity = opaque(::fixy::infinity_of<double>);
+    CRUCIBLE_TEST_EXPECT(checks, MonF64Less::leq(minus_one, zero) && !MonF64Less::leq(zero, minus_one));
+    CRUCIBLE_TEST_EXPECT(checks, same_bits(MonF64Less::join(minus_one, infinity), ::fixy::infinity_of<double>));
+    CRUCIBLE_TEST_EXPECT(checks, same_bits(MonF64Less::meet(minus_one, infinity), -1.0));
+    CRUCIBLE_TEST_EXPECT(checks, MonF64Less::is_nan_safe(minus_one) && MonF64Less::is_nan_safe(zero)
+                                     && MonF64Less::is_nan_safe(infinity));
 
     // A NaN never reaches leq, join or meet: the invariant there would
     // abort the test.  The test that keeps it out answers no.
-    expect(!MonF64Less::is_nan_safe(opaque(std::nan(""))));
+    CRUCIBLE_TEST_EXPECT(checks, !MonF64Less::is_nan_safe(opaque(::fixy::quiet_nan_of<double>)));
 }
 
-void seq_prefix_lattice_runs_at_run_time() {
+void seq_prefix_lattice_runs_at_run_time(Tally& checks) {
     using namespace fa;
     using namespace fl;
     using namespace fl::detail;
@@ -290,11 +285,11 @@ void seq_prefix_lattice_runs_at_run_time() {
     Length<EventA> a{n_a};
     Length<EventA> b{n_b};
 
-    expect(LatA::leq(a, b) && !LatA::leq(b, a));
-    expect(LatA::join(a, b).length == 17 && LatA::meet(a, b).length == 5);
-    expect(LatA::join(b, a).length == 17 && LatA::meet(b, a).length == 5);
-    expect(LatA::bottom().length == 0);
-    expect(LatA::top().length == std::numeric_limits<std::size_t>::max());
+    CRUCIBLE_TEST_EXPECT(checks, LatA::leq(a, b) && !LatA::leq(b, a));
+    CRUCIBLE_TEST_EXPECT(checks, LatA::join(a, b).length == 17 && LatA::meet(a, b).length == 5);
+    CRUCIBLE_TEST_EXPECT(checks, LatA::join(b, a).length == 17 && LatA::meet(b, a).length == 5);
+    CRUCIBLE_TEST_EXPECT(checks, LatA::bottom().length == 0);
+    CRUCIBLE_TEST_EXPECT(checks, LatA::top().length == ::fixy::max_of<std::size_t>);
 
     // A longer prefix is the stronger claim.  The prefix is derived from
     // the log, and it is never stored beside a value.
@@ -304,54 +299,56 @@ void seq_prefix_lattice_runs_at_run_time() {
     [[maybe_unused]] auto v2 = std::move(log).consume().size();
 }
 
-void staleness_semiring_runs_at_run_time() {
+void staleness_semiring_runs_at_run_time(Tally& checks) {
     using namespace fl::detail;
     using fl::StalenessSemiring;
     const StalenessSemiring::element_type fresher{opaque(std::uint64_t{5})};
     const StalenessSemiring::element_type staler{opaque(std::uint64_t{17})};
-    expect(StalenessSemiring::leq(fresher, staler) && !StalenessSemiring::leq(staler, fresher));
-    expect(StalenessSemiring::join(fresher, staler).value == 17);
-    expect(StalenessSemiring::meet(fresher, staler).value == 5);
+    CRUCIBLE_TEST_EXPECT(checks, StalenessSemiring::leq(fresher, staler) && !StalenessSemiring::leq(staler, fresher));
+    CRUCIBLE_TEST_EXPECT(checks, StalenessSemiring::join(fresher, staler).value == 17);
+    CRUCIBLE_TEST_EXPECT(checks, StalenessSemiring::meet(fresher, staler).value == 5);
 
     // Tropical add picks the fresher estimate, and tropical mul adds the
     // steps along a chain.
-    expect(StalenessSemiring::add(fresher, staler).value == 5);
-    expect(StalenessSemiring::mul(fresher, staler).value == 22);
-    expect(StalenessSemiring::mul(fresher, StalenessSemiring::top()).is_infinite());
-    const StalenessSemiring::element_type near_top{opaque(std::numeric_limits<std::uint64_t>::max() - 5)};
-    expect(StalenessSemiring::mul(near_top, staler).is_infinite());
-    expect(fl::staleness::at(opaque(std::uint64_t{5})) == fresher);
+    CRUCIBLE_TEST_EXPECT(checks, StalenessSemiring::add(fresher, staler).value == 5);
+    CRUCIBLE_TEST_EXPECT(checks, StalenessSemiring::mul(fresher, staler).value == 22);
+    CRUCIBLE_TEST_EXPECT(checks, StalenessSemiring::mul(fresher, StalenessSemiring::top()).is_infinite());
+    const StalenessSemiring::element_type near_top{opaque(::fixy::max_of<std::uint64_t> - 5)};
+    CRUCIBLE_TEST_EXPECT(checks, StalenessSemiring::mul(near_top, staler).is_infinite());
+    CRUCIBLE_TEST_EXPECT(checks, fl::staleness::at(opaque(std::uint64_t{5})) == fresher);
 
     const OneByteValue value{opaque('*')};
     const StaleGraded<OneByteValue> initial{test_authority::key(), value, StalenessSemiring::bottom()};
     const auto raised = initial.weaken(fresher).weaken(staler);
-    expect(raised.grade().value == 17 && raised.peek().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, raised.grade().value == 17 && raised.peek().c == '*');
     auto composed = initial.compose(raised);
-    expect(composed.grade().value == 17);
-    expect(std::move(composed).consume().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, composed.grade().value == 17);
+    CRUCIBLE_TEST_EXPECT(checks, std::move(composed).consume().c == '*');
 }
 
-void fractional_lattice_runs_at_run_time() {
+void fractional_lattice_runs_at_run_time(Tally& checks) {
     using namespace fa;
     using namespace fl;
     using namespace fl::detail;
     const Rational a{opaque(std::int64_t{1}), opaque(std::int64_t{4})};
     const Rational b{opaque(std::int64_t{1}), opaque(std::int64_t{2})};
-    expect(FractionalLattice::leq(a, b) && !FractionalLattice::leq(b, a));
-    expect(is_exactly(FractionalLattice::join(a, b), 1, 2));
-    expect(is_exactly(FractionalLattice::meet(a, b), 1, 4));
+    CRUCIBLE_TEST_EXPECT(checks, FractionalLattice::leq(a, b) && !FractionalLattice::leq(b, a));
+    CRUCIBLE_TEST_EXPECT(checks, is_exactly(FractionalLattice::join(a, b), 1, 2));
+    CRUCIBLE_TEST_EXPECT(checks, is_exactly(FractionalLattice::meet(a, b), 1, 4));
 
     // add and mul hand back the reduced form.
-    expect(is_exactly(FractionalLattice::add(a, b), 3, 4));
-    expect(is_exactly(FractionalLattice::add(b, b), 1, 1));
-    expect(is_exactly(FractionalLattice::mul(a, b), 1, 8));
-    expect(is_exactly(simplify(Rational{opaque(std::int64_t{2}), opaque(std::int64_t{6})}), 1, 3));
+    CRUCIBLE_TEST_EXPECT(checks, is_exactly(FractionalLattice::add(a, b), 3, 4));
+    CRUCIBLE_TEST_EXPECT(checks, is_exactly(FractionalLattice::add(b, b), 1, 1));
+    CRUCIBLE_TEST_EXPECT(checks, is_exactly(FractionalLattice::mul(a, b), 1, 8));
+    CRUCIBLE_TEST_EXPECT(checks,
+                         is_exactly(simplify(Rational{opaque(std::int64_t{2}), opaque(std::int64_t{6})}), 1, 3));
 
     // The carrier is the unit interval, so a share above one is not well
     // formed.
-    expect(!Rational{opaque(std::int64_t{3}), opaque(std::int64_t{2})}.is_well_formed());
-    expect(Rational{opaque(std::int64_t{2}), opaque(std::int64_t{2})}.is_well_formed());
-    expect(FractionalLattice::is_sum_defined(a, b) && !FractionalLattice::is_sum_defined(b, Rational{3, 4}));
+    CRUCIBLE_TEST_EXPECT(checks, !Rational{opaque(std::int64_t{3}), opaque(std::int64_t{2})}.is_well_formed());
+    CRUCIBLE_TEST_EXPECT(checks, Rational{opaque(std::int64_t{2}), opaque(std::int64_t{2})}.is_well_formed());
+    CRUCIBLE_TEST_EXPECT(checks, FractionalLattice::is_sum_defined(a, b)
+                                     && !FractionalLattice::is_sum_defined(b, Rational{3, 4}));
 
     // Only the comparison is exercised at the bound.  Adding or multiplying two
     // shares this large produces an unreduced denominator past the bound even
@@ -359,10 +356,12 @@ void fractional_lattice_runs_at_run_time() {
     // rather than the comparison this probe is about.
     const Rational large_lo{1, opaque(Rational::MAX_SAFE_MAGNITUDE)};
     const Rational large_hi{opaque(Rational::MAX_SAFE_MAGNITUDE - 1), Rational::MAX_SAFE_MAGNITUDE};
-    expect(FractionalLattice::leq(large_lo, large_hi) && !FractionalLattice::leq(large_hi, large_lo));
-    expect(is_exactly(FractionalLattice::join(large_lo, large_hi), Rational::MAX_SAFE_MAGNITUDE - 1,
-                      Rational::MAX_SAFE_MAGNITUDE));
-    expect(is_exactly(FractionalLattice::meet(large_lo, large_hi), 1, Rational::MAX_SAFE_MAGNITUDE));
+    CRUCIBLE_TEST_EXPECT(checks,
+                         FractionalLattice::leq(large_lo, large_hi) && !FractionalLattice::leq(large_hi, large_lo));
+    CRUCIBLE_TEST_EXPECT(checks, is_exactly(FractionalLattice::join(large_lo, large_hi),
+                                            Rational::MAX_SAFE_MAGNITUDE - 1, Rational::MAX_SAFE_MAGNITUDE));
+    CRUCIBLE_TEST_EXPECT(checks,
+                         is_exactly(FractionalLattice::meet(large_lo, large_hi), 1, Rational::MAX_SAFE_MAGNITUDE));
 
     // A share is stored through the order dual.  A weaker grade is a
     // smaller share, and the shares below are built in descending
@@ -381,21 +380,23 @@ void fractional_lattice_runs_at_run_time() {
 
     // compose keeps the payload and grades it at the join of the two grades.
     using SharedLattice = SharedPermissionGraded<OneByteValue>::lattice_type;
-    expect(composed.grade() == SharedLattice::join(initial.grade(), rv_widen.grade()));
-    expect(composed.peek().c == 42 && consumed.c == 42);
+    CRUCIBLE_TEST_EXPECT(checks, composed.grade() == SharedLattice::join(initial.grade(), rv_widen.grade()));
+    CRUCIBLE_TEST_EXPECT(checks, composed.peek().c == 42 && consumed.c == 42);
 }
 
 }  // namespace
 
 int main() {
-    bool_lattice_runs_at_run_time();
-    trust_lattice_runs_at_run_time();
-    conf_lattice_runs_at_run_time();
-    qtt_semiring_runs_at_run_time();
-    monotone_lattice_runs_at_run_time();
-    seq_prefix_lattice_runs_at_run_time();
-    staleness_semiring_runs_at_run_time();
-    fractional_lattice_runs_at_run_time();
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    Tally checks{test, "test_lattices_core"};
+    bool_lattice_runs_at_run_time(checks);
+    trust_lattice_runs_at_run_time(checks);
+    conf_lattice_runs_at_run_time(checks);
+    qtt_semiring_runs_at_run_time(checks);
+    monotone_lattice_runs_at_run_time(checks);
+    seq_prefix_lattice_runs_at_run_time(checks);
+    staleness_semiring_runs_at_run_time(checks);
+    fractional_lattice_runs_at_run_time(checks);
 
     // Each regime built at runtime with non-constant operands.
     int value = 7;  // deliberately not constexpr
@@ -405,10 +406,11 @@ int main() {
     StaleU64 stale{test_authority::key(), static_cast<std::uint64_t>(value),
                    fl::staleness::at(static_cast<std::uint64_t>(value))};
     SharedU64 shared{test_authority::key(), static_cast<std::uint64_t>(value), fl::Rational{1, 2}};
-    if (refined.peek() != value) return 1;
-    if (monotonic.grade() != static_cast<std::uint64_t>(value)) return 2;
-    if (log.grade().length != 0) return 3;
-    if (stale.grade().value != static_cast<std::uint64_t>(value)) return 4;
-    if (!(shared.grade() == fl::Rational{2, 4})) return 5;
-    return failed_checks == 0 ? 0 : 6;
+    CRUCIBLE_TEST_EXPECT(checks, refined.peek() == value);
+    CRUCIBLE_TEST_EXPECT(checks, monotonic.grade() == static_cast<std::uint64_t>(value));
+    CRUCIBLE_TEST_EXPECT(checks, log.grade().length == 0);
+    CRUCIBLE_TEST_EXPECT(checks, stale.grade().value == static_cast<std::uint64_t>(value));
+    CRUCIBLE_TEST_EXPECT(checks, shared.grade() == fl::Rational{2, 4});
+    std::move(checks).close();
+    return 0;
 }

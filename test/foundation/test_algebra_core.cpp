@@ -11,13 +11,15 @@
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/Modality.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
+
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <meta>
-#include <source_location>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -60,13 +62,7 @@ static_assert(sizeof(EmptyGraded) == sizeof(int));
 static_assert(fa::IsGraded<EmptyGraded>);
 static_assert(fa::is_graded_specialization_v<EmptyGraded const&>);
 
-int failed_checks = 0;
-
-void expect(bool holds, std::source_location where = std::source_location::current()) noexcept {
-    if (holds) return;
-    std::fprintf(stderr, "check failed at %s:%u\n", where.file_name(), where.line());
-    ++failed_checks;
-}
+using ::fixy::check::Tally;
 
 // The value comes back through a call that no optimization looks into, so
 // each operation below runs on a run-time argument, and each contract
@@ -76,142 +72,144 @@ template <typename T>
     return value;
 }
 
-void lattice_runs_at_run_time() {
+void lattice_runs_at_run_time(Tally& checks) {
     using namespace fa;
     using namespace fa::detail;
     using L = TrivialBoolLattice;
     const bool truth = opaque(true);
     const bool falsity = opaque(false);
 
-    expect(!L::bottom());
-    expect(L::top());
-    expect(!L::leq(truth, falsity));
-    expect(L::leq(falsity, truth));
-    expect(L::leq(truth, truth));
-    expect(L::join(truth, falsity));
-    expect(!L::join(falsity, falsity));
-    expect(!L::meet(truth, falsity));
-    expect(L::meet(truth, truth));
+    CRUCIBLE_TEST_EXPECT(checks, !L::bottom());
+    CRUCIBLE_TEST_EXPECT(checks, L::top());
+    CRUCIBLE_TEST_EXPECT(checks, !L::leq(truth, falsity));
+    CRUCIBLE_TEST_EXPECT(checks, L::leq(falsity, truth));
+    CRUCIBLE_TEST_EXPECT(checks, L::leq(truth, truth));
+    CRUCIBLE_TEST_EXPECT(checks, L::join(truth, falsity));
+    CRUCIBLE_TEST_EXPECT(checks, !L::join(falsity, falsity));
+    CRUCIBLE_TEST_EXPECT(checks, !L::meet(truth, falsity));
+    CRUCIBLE_TEST_EXPECT(checks, L::meet(truth, truth));
 
-    expect(subsumes<L>(falsity, truth));
-    expect(!subsumes<L>(truth, falsity));
-    expect(equivalent<L>(truth, truth));
-    expect(!equivalent<L>(falsity, truth));
-    expect(strictly_less<L>(falsity, truth));
-    expect(!strictly_less<L>(truth, truth));
+    CRUCIBLE_TEST_EXPECT(checks, subsumes<L>(falsity, truth));
+    CRUCIBLE_TEST_EXPECT(checks, !subsumes<L>(truth, falsity));
+    CRUCIBLE_TEST_EXPECT(checks, equivalent<L>(truth, truth));
+    CRUCIBLE_TEST_EXPECT(checks, !equivalent<L>(falsity, truth));
+    CRUCIBLE_TEST_EXPECT(checks, strictly_less<L>(falsity, truth));
+    CRUCIBLE_TEST_EXPECT(checks, !strictly_less<L>(truth, truth));
 
     using S = TrivialBoolSemiring;
-    expect(!S::zero());
-    expect(S::one());
-    expect(S::add(truth, falsity));
-    expect(!S::add(falsity, falsity));
-    expect(!S::mul(truth, falsity));
-    expect(S::mul(truth, truth));
+    CRUCIBLE_TEST_EXPECT(checks, !S::zero());
+    CRUCIBLE_TEST_EXPECT(checks, S::one());
+    CRUCIBLE_TEST_EXPECT(checks, S::add(truth, falsity));
+    CRUCIBLE_TEST_EXPECT(checks, !S::add(falsity, falsity));
+    CRUCIBLE_TEST_EXPECT(checks, !S::mul(truth, falsity));
+    CRUCIBLE_TEST_EXPECT(checks, S::mul(truth, truth));
 
     // A row is a set of atoms, one bit for each atom.
     const TrivialAtom write = opaque(TrivialAtom::Write);
     const unsigned char write_row = TrivialRow::single(write);
-    expect(write_row == 2);
-    expect(TrivialRow::contains(write_row, TrivialAtom::Write));
-    expect(!TrivialRow::contains(write_row, TrivialAtom::Read));
+    CRUCIBLE_TEST_EXPECT(checks, write_row == 2);
+    CRUCIBLE_TEST_EXPECT(checks, TrivialRow::contains(write_row, TrivialAtom::Write));
+    CRUCIBLE_TEST_EXPECT(checks, !TrivialRow::contains(write_row, TrivialAtom::Read));
     const unsigned char both = TrivialRow::join(write_row, TrivialRow::single(TrivialAtom::Read));
-    expect(both == TrivialRow::top());
-    expect(TrivialRow::meet(both, write_row) == write_row);
-    expect(subsumes<TrivialRow>(write_row, both));
-    expect(!subsumes<TrivialRow>(both, write_row));
-    expect(subsumes<TrivialRow>(TrivialRow::bottom(), write_row));
+    CRUCIBLE_TEST_EXPECT(checks, both == TrivialRow::top());
+    CRUCIBLE_TEST_EXPECT(checks, TrivialRow::meet(both, write_row) == write_row);
+    CRUCIBLE_TEST_EXPECT(checks, subsumes<TrivialRow>(write_row, both));
+    CRUCIBLE_TEST_EXPECT(checks, !subsumes<TrivialRow>(both, write_row));
+    CRUCIBLE_TEST_EXPECT(checks, subsumes<TrivialRow>(TrivialRow::bottom(), write_row));
 }
 
 // modality_name is consteval.  The run-time name read is enum_name, which
 // modality_name calls, so a kind that arrives at run time names itself
 // and a byte outside the enum reaches the sentinel.
-void modality_runs_at_run_time() {
+void modality_runs_at_run_time(Tally& checks) {
     using namespace fa;
     using ::foundation::reflect::enum_name;
     const ModalityKind comonad = opaque(modality::Comonad_t::kind);
     const ModalityKind stepping = opaque(modality::Stepping_t::kind);
-    expect(comonad == ModalityKind::Comonad);
-    expect(stepping == ModalityKind::Stepping);
-    expect(comonad != stepping);
-    expect(enum_name(comonad) == "Comonad");
-    expect(enum_name(stepping) == "Stepping");
-    expect(enum_name(opaque(static_cast<ModalityKind>(200))) == "<unknown ModalityKind>");
+    CRUCIBLE_TEST_EXPECT(checks, comonad == ModalityKind::Comonad);
+    CRUCIBLE_TEST_EXPECT(checks, stepping == ModalityKind::Stepping);
+    CRUCIBLE_TEST_EXPECT(checks, comonad != stepping);
+    CRUCIBLE_TEST_EXPECT(checks, enum_name(comonad) == "Comonad");
+    CRUCIBLE_TEST_EXPECT(checks, enum_name(stepping) == "Stepping");
+    CRUCIBLE_TEST_EXPECT(checks, enum_name(opaque(static_cast<ModalityKind>(200))) == "<unknown ModalityKind>");
 
     static_assert(has_unit_v<ModalityKind::RelativeMonad> && !has_unit_v<ModalityKind::Comonad>);
     static_assert(has_counit_v<ModalityKind::Comonad> && !has_counit_v<ModalityKind::Absolute>);
     static_assert(has_grade_only_v<ModalityKind::Absolute> && !has_grade_only_v<ModalityKind::RelativeMonad>);
 }
 
-void graded_runs_at_run_time() {
+void graded_runs_at_run_time(Tally& checks) {
     using namespace fa;
     using namespace fa::detail;
-    const auto key = self_test_authority::key;
+    const auto key = [] noexcept { return self_test_authority::key(); };
     const OneByteValue value{opaque('*')};
 
     // The stored regime: each rebuild keeps the value and moves the grade
     // up by the order.
     GOneByte initial{key(), value, opaque(false)};
-    expect(!initial.grade() && initial.peek().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, !initial.grade() && initial.peek().c == '*');
     GOneByte widened = initial.weaken(opaque(true));
-    expect(widened.grade() && widened.peek().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, widened.grade() && widened.peek().c == '*');
     GOneByte composed = initial.compose(widened);
-    expect(composed.grade() && composed.peek().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, composed.grade() && composed.peek().c == '*');
     GOneByte kept_at_bottom = initial.compose(initial);
-    expect(!kept_at_bottom.grade());
+    CRUCIBLE_TEST_EXPECT(checks, !kept_at_bottom.grade());
     GOneByte moved = std::move(widened).weaken(true);
-    expect(moved.grade() && moved.peek().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, moved.grade() && moved.peek().c == '*');
     GOneByte moved_composed = std::move(initial).compose(composed);
-    expect(moved_composed.grade());
-    expect(std::move(moved_composed).consume().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, moved_composed.grade());
+    CRUCIBLE_TEST_EXPECT(checks, std::move(moved_composed).consume().c == '*');
 
     // A swap moves each value with its own grade.
     GOneByte left{key(), OneByteValue{opaque('l')}, false};
     GOneByte right{key(), OneByteValue{opaque('r')}, true};
     swap(left, right);
-    expect(left.peek().c == 'r' && left.grade());
-    expect(right.peek().c == 'l' && !right.grade());
+    CRUCIBLE_TEST_EXPECT(checks, left.peek().c == 'r' && left.grade());
+    CRUCIBLE_TEST_EXPECT(checks, right.peek().c == 'l' && !right.grade());
 
     // The keyed write in place leaves the grade where it was, and so does
     // the keyless one under a grade that any bytes satisfy.
     GOneByte written{key(), value, false};
     written.peek_mut(key()).c = static_cast<char>(value.c + 1);
-    expect(written.peek().c == '+' && !written.grade());
+    CRUCIBLE_TEST_EXPECT(checks, written.peek().c == '+' && !written.grade());
     GSlotOneByte slot = GSlotOneByte::at_bottom();
-    expect(!slot.grade() && slot.peek().c == 0);
+    CRUCIBLE_TEST_EXPECT(checks, !slot.grade() && slot.peek().c == 0);
     slot.peek_mut().c = value.c;
-    expect(!slot.grade() && slot.peek().c == '*');
+    CRUCIBLE_TEST_EXPECT(checks, !slot.grade() && slot.peek().c == '*');
 
     // The grade is the value.  The keyed form checks its witness with a
     // run-time argument.
     const GBoolElement element_bottom = GBoolElement::at_bottom();
-    expect(!element_bottom.grade() && !element_bottom.peek());
+    CRUCIBLE_TEST_EXPECT(checks, !element_bottom.grade() && !element_bottom.peek());
     const GBoolElement element_checked{key(), opaque(TrivialBoolLattice::bottom()), TrivialBoolLattice::bottom()};
-    expect(!element_checked.grade());
+    CRUCIBLE_TEST_EXPECT(checks, !element_checked.grade());
     const GBoolElement element_top{opaque(true)};
-    expect(element_top.grade() && element_top.peek());
+    CRUCIBLE_TEST_EXPECT(checks, element_top.grade() && element_top.peek());
 
     // The grade is derived from the value, and it follows a keyed write.
     const GDerivedSeq derived_bottom = GDerivedSeq::at_bottom();
-    expect(derived_bottom.grade() == 0);
+    CRUCIBLE_TEST_EXPECT(checks, derived_bottom.grade() == 0);
     const GDerivedSeq derived_checked{key(), MiniContainer{opaque(std::size_t{0})}, MiniDerivedLattice::bottom()};
-    expect(derived_checked.grade() == 0);
+    CRUCIBLE_TEST_EXPECT(checks, derived_checked.grade() == 0);
     GDerivedSeq derived_three{MiniContainer{opaque(std::size_t{3})}};
-    expect(derived_three.grade() == 3);
+    CRUCIBLE_TEST_EXPECT(checks, derived_three.grade() == 3);
     derived_three.peek_mut(key()) = MiniContainer{opaque(std::size_t{5})};
-    expect(derived_three.grade() == 5);
+    CRUCIBLE_TEST_EXPECT(checks, derived_three.grade() == 5);
 
     // A chain whose carrier holds bytes outside the order.  The bounds
     // checks run with a run-time grade.
     const unsigned char chain_grade = opaque(static_cast<unsigned char>(2));
     const GChainOneByte chain_checked{key(), value, chain_grade};
-    expect(chain_checked.grade() == 2);
-    expect(chain_checked.weaken(static_cast<unsigned char>(3)).grade() == 3);
-    expect(chain_checked.compose(GChainOneByte{key(), value, opaque(static_cast<unsigned char>(1))}).grade() == 2);
+    CRUCIBLE_TEST_EXPECT(checks, chain_checked.grade() == 2);
+    CRUCIBLE_TEST_EXPECT(checks, chain_checked.weaken(static_cast<unsigned char>(3)).grade() == 3);
+    CRUCIBLE_TEST_EXPECT(
+        checks, chain_checked.compose(GChainOneByte{key(), value, opaque(static_cast<unsigned char>(1))}).grade() == 2);
     const GChainElement chain_element{chain_grade};
-    expect(chain_element.compose(chain_element).grade() == 2);
-    expect(chain_element.compose(GChainElement{opaque(static_cast<unsigned char>(1))}).grade() == 2);
+    CRUCIBLE_TEST_EXPECT(checks, chain_element.compose(chain_element).grade() == 2);
+    CRUCIBLE_TEST_EXPECT(checks,
+                         chain_element.compose(GChainElement{opaque(static_cast<unsigned char>(1))}).grade() == 2);
     const GChainElement chain_raised = chain_element.weaken(opaque(static_cast<unsigned char>(3)));
-    expect(chain_raised.grade() == 3 && chain_raised.peek() == 3);
+    CRUCIBLE_TEST_EXPECT(checks, chain_raised.grade() == 3 && chain_raised.peek() == 3);
 
     // Each door of the carrier opens under one modality.  A stored grade
     // that is not empty names the value under every modality but Absolute,
@@ -232,13 +230,13 @@ void graded_runs_at_run_time() {
 
 // The traits have nothing to run.  The function builds a substrate that
 // GradedTrait.h names, so its assertions hold for a type that was built.
-void graded_trait_runs_at_run_time() {
+void graded_trait_runs_at_run_time(Tally& checks) {
     using namespace fa;
     using namespace fa::detail;
     const GraderAB raised{opaque(true)};
-    expect(raised.grade() && raised.peek());
+    CRUCIBLE_TEST_EXPECT(checks, raised.grade() && raised.peek());
     const GraderAB lowered = GraderAB::at_bottom();
-    expect(!lowered.grade() && !lowered.peek());
+    CRUCIBLE_TEST_EXPECT(checks, !lowered.grade() && !lowered.peek());
     static_assert(is_graded_specialization_v<decltype(raised)> && is_graded_specialization_v<decltype((raised))>);
     static_assert(!is_graded_specialization_v<int>);
     static_assert(graded_modality_v<decltype(raised)> == ModalityKind::Absolute);
@@ -247,9 +245,12 @@ void graded_trait_runs_at_run_time() {
 }  // namespace
 
 int main() {
-    lattice_runs_at_run_time();
-    modality_runs_at_run_time();
-    graded_runs_at_run_time();
-    graded_trait_runs_at_run_time();
-    return failed_checks == 0 ? 0 : 1;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    Tally checks{test, "test_algebra_core"};
+    lattice_runs_at_run_time(checks);
+    modality_runs_at_run_time(checks);
+    graded_runs_at_run_time(checks);
+    graded_trait_runs_at_run_time(checks);
+    std::move(checks).close();
+    return 0;
 }

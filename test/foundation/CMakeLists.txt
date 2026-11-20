@@ -27,8 +27,12 @@ endfunction()
 
 foundation_test(test_platform)
 foundation_test(test_signature)
+# The two sentinels count their failed checks in a Tally of the Check family,
+# whose cold reports are in the library fixy.
 foundation_test(test_algebra_core)
+target_link_libraries(test_algebra_core PRIVATE fixy)
 foundation_test(test_lattices_core)
+target_link_libraries(test_lattices_core PRIVATE fixy)
 # Each operation of each lattice keeps its carrier or refuses.  The test
 # runs add and mul under the abort probe.
 foundation_test(test_lattice_closure)
