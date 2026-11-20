@@ -176,7 +176,6 @@ that the axis does not apply to the row.
 | `mint_band` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 11 |
 | `mint_borrowed` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | HS14: 15 |
 | `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 15 |
-| `mint_borrowed_ref` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_bounded_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 7 |
@@ -321,7 +320,7 @@ that the axis does not apply to the row.
 | `mint_bit_set_from_bits` | `include/foundation/core/BitSet.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_box(T0_1, T0_2&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 19 |
 | `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 19 |
-| `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 5 |
+| `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 6 |
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 2 |
 | `mint_foreign_run_address` | `include/foundation/core/DataAddress.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_foreign_text` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 2 |
@@ -397,4 +396,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 80 | 46 | 25 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 163 | 62 | 97 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 162 | 62 | 96 | 4 | 0 | 3 |

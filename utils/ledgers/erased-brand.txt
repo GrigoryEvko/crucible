@@ -37,7 +37,6 @@ test/fixy/neg/neg_shared_read_on_the_erased_brand.cpp | erased-brand | 1 | fixy:
 test/fixy/neg/neg_shared_read_on_the_erased_brand.cpp | erased-brand | 1 | fixy::SharedRegion | -
 test/fixy/neg/neg_spin_lock_without_permission.cpp | erased-brand | 1 | fixy::spin::SpinGuard | -
 test/fixy/neg/neg_witness_borrowed_direct_construction.cpp | erased-brand | 1 | fixy::Borrowed | -
-test/fixy/neg/neg_witness_borrowedref_direct_construction.cpp | erased-brand | 1 | fixy::BorrowedRef | -
 test/fixy/neg/neg_witness_disjoint_direct_construction.cpp | erased-brand | 1 | fixy::Disjoint | -
 test/fixy/neg/neg_witness_numaplacement_direct_construction.cpp | erased-brand | 1 | fixy::NumaBindableRegion | -
 test/fixy/neg/neg_witness_numaplacement_direct_construction.cpp | erased-brand | 1 | fixy::NumaPlacement | -
@@ -58,7 +57,6 @@ test/fixy/neg/neg_witness_permissions_sharedpermissionpool_direct_construction.c
 test/fixy/neg/neg_witness_scopedview_direct_construction.cpp | erased-brand | 1 | fixy::ScopedView | -
 test/fixy/neg/neg_witness_sharedread_direct_construction.cpp | erased-brand | 1 | fixy::SharedRead | -
 test/fixy/row_hash_census.h | erased-brand | 1 | fixy::Borrowed | -
-test/fixy/row_hash_census.h | erased-brand | 1 | fixy::BorrowedRef | -
 test/fixy/row_hash_census.h | erased-brand | 1 | fixy::Disjoint | -
 test/fixy/row_hash_census.h | erased-brand | 1 | fixy::OwnedRegion | -
 test/fixy/row_hash_census.h | erased-brand | 1 | fixy::ScopedView | -
@@ -76,7 +74,6 @@ test/fixy/test_armed_roster.cpp | erased-brand | 2 | foundation::permissions::Pe
 test/fixy/test_armed_roster.cpp | erased-brand | 1 | foundation::permissions::ReadView | -
 test/fixy/test_armed_roster.cpp | erased-brand | 2 | foundation::permissions::SharedPermission | -
 test/fixy/test_borrowed.cpp | erased-brand | 6 | fixy::Borrowed | -
-test/fixy/test_borrowed.cpp | erased-brand | 14 | fixy::BorrowedRef | -
 test/fixy/test_cheat_probe.cpp | erased-brand | 1 | fixy::Borrowed | -
 test/fixy/test_cheat_probe.cpp | erased-brand | 1 | fixy::OwnedRegion | -
 test/fixy/test_forgeable_proofs.cpp | erased-brand | 1 | fixy::session::SharedReader | -
@@ -141,7 +138,6 @@ test/foundation/test_read_view.cpp | erased-brand | 3 | foundation::permissions:
 test/foundation/test_read_view.cpp | erased-brand | 10 | foundation::permissions::ReadView | -
 test/foundation/test_read_view_escape_attacks.cpp | erased-brand | 1 | foundation::permissions::ReadView | -
 test/layer/checks/fixy/Borrowed.cpp | erased-brand | 29 | fixy::Borrowed | -
-test/layer/checks/fixy/Borrowed.cpp | erased-brand | 26 | fixy::BorrowedRef | -
 test/layer/checks/fixy/OwnedRegion.cpp | erased-brand | 4 | fixy::Disjoint | -
 test/layer/checks/fixy/OwnedRegion.cpp | erased-brand | 7 | fixy::OwnedRegion | -
 test/layer/checks/fixy/OwnedRegion.cpp | erased-brand | 2 | foundation::permissions::Permission | -

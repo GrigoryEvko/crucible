@@ -123,7 +123,7 @@ bench/ | opted-out | 2 | MEASURE: the relaxed load of std::atomic is the row of 
 bench/ | opted-out | 11 | MEASURE: the rows of the allocators run their workers on std::jthread | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
 bench/ | opted-out | 11 | MEASURE: the rows of the bare rings run their workers on std::jthread | the rows of bench_thread_scaling measure the bare rings and their pinned references, whose two sides share plain positions that no type states, so their workers run on std::jthread and pin themselves
 bench/ | opted-out | 28 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
-bench/ | raw-pointer-object | 20 | - | -
+bench/ | raw-pointer-object | 17 | - | -
 bench/ | region | 2 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 bench/ | region | 1 | ABI: the BPF program of SchedSwitch writes the timeline that the harness reads | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 bench/ | region | 1 | ABI: the BPF programs of the perf facades write the timeline rings that the bench reads | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
@@ -172,7 +172,7 @@ include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, 
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 1 | ABI: libbpf opened the descriptor of the BPF map, and the map door maps it | libbpf gives the descriptor of a BPF map as a raw int, and map_foreign_region is the door that maps a descriptor that a C library opened
 include/fixy/ | base-std-entity | 271 | - | -
-include/fixy/ | base-std-object | 150 | - | -
+include/fixy/ | base-std-object | 148 | - | -
 include/fixy/ | replace-pending:<array> | 4 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/ | replace-pending:<bit> | 2 | - | -
@@ -347,7 +347,7 @@ test/ | opted-out | 6 | PROBE: the test sets the current directory, the modes an
 test/ | opted-out | 26 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | raw-function-pointer | 13 | - | -
 test/ | raw-new-delete | 37 | - | -
-test/ | raw-pointer-object | 283 | - | -
+test/ | raw-pointer-object | 273 | - | -
 test/ | region | 1 | ABI: dlsym finds each entry point of a test library by its C name | the case fallbacks of test_process_wide_across_libraries finds the two entry points of each test library by their C names with dlsym, as Python finds the entry points of the vessel, so the two declarations have C linkage
 test/ | region | 1 | PROBE: probe of the run-time check of a thread-bound object | -
 test/ | region | 4 | PROBE: the address of a body tells which unit of the link holds it | PROBE: test_crucible_target_units reads the address of a kernel in each of two units of two targets, a probe of the raw behavior of the link.  The test test_target_units of foundation holds the same regions
@@ -371,9 +371,9 @@ test/ct/ | opted-out | 8 | ABI: a client request of valgrind is inline asm over 
 test/ct/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 test/ct/ | region | 1 | ABI: a client request of valgrind is inline asm over a C array of words | -
 test/ct/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
-test/dag_neg/ | opted-out | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
+test/dag_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
-test/dag_neg/ | region | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
+test/dag_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/fixy/ | c-array-object | 79 | - | -
 test/fixy/ | c-library-call | 979 | - | -
@@ -452,11 +452,11 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2300 | - | -
+test/fixy/ | std-entity | 2299 | - | -
 test/fixy/ | std-object | 814 | - | -
 test/fixy/neg/ | c-array-object | 54 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
-test/fixy/neg/ | detail-use | 322 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | detail-use | 321 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -496,7 +496,7 @@ test/fixy/neg/ | opted-out | 2 | PROBE: the fixture takes the address of a membe
 test/fixy/neg/ | opted-out | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | raw-function-pointer | 2 | - | -
 test/fixy/neg/ | raw-new-delete | 1 | - | -
-test/fixy/neg/ | raw-pointer-object | 17 | - | -
+test/fixy/neg/ | raw-pointer-object | 16 | - | -
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges a CheckpointHandle that builds a handle around a plain one | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -536,7 +536,7 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member m
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/neg/ | std-entity | 80 | - | -
+test/fixy/neg/ | std-entity | 78 | - | -
 test/fixy/neg/ | std-object | 33 | - | -
 test/foundation/ | c-array-object | 9 | - | -
 test/foundation/ | c-library-call | 17 | - | -
@@ -690,7 +690,7 @@ test/layer/checks/crucible/mimic/ | std-object | 1 | - | -
 test/layer/checks/crucible/observe/ | std-entity | 1 | - | -
 test/layer/checks/fixy/ | c-array-object | 9 | - | -
 test/layer/checks/fixy/ | c-library-call | 1 | - | -
-test/layer/checks/fixy/ | raw-pointer-object | 10 | - | -
+test/layer/checks/fixy/ | raw-pointer-object | 9 | - | -
 test/layer/checks/fixy/ | region | 1 | PROBE: a bump arena of a test gives the raw pointer of the arena door | the bump arenas of the tests of OwnedRegion give the raw pointer of the arena door through foreign_first, and the door asks for that shape
 test/layer/checks/fixy/ | std-entity | 100 | - | -
 test/layer/checks/fixy/ | std-object | 8 | - | -
@@ -745,10 +745,10 @@ test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family pr
 test/tensor_neg/ | opted-out | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/tensor_neg/ | region | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/vigil_neg/ | opted-out | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
-test/vigil_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
+test/vigil_neg/ | opted-out | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/vigil_neg/ | opted-out | 1 | PROBE: the fixture starts the lifetime of an object in raw bytes | -
 test/vigil_neg/ | region | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
-test/vigil_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
+test/vigil_neg/ | region | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/vigil_neg/ | region | 1 | PROBE: the fixture starts the lifetime of an object in raw bytes | -
 vessel/torch/ | opted-out | 44 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
 vessel/torch/ | opted-out | 27 | ABI: ctypes binds these entries by name, so they take and give only C types | the layout note of the vessel declares the C entries of the dispatch library, its host tool reads the layout of the C structs that ctypes mirrors, and the check of the layout digest reads a raw pointer, a C array and an entry with C linkage
