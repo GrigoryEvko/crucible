@@ -12,19 +12,13 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
+#include <fixy/os/Fs.h>
 #include <foundation/effects/Row.h>
-#include "scratch_dir.h"
+#include <foundation/os/PathText.h>
 
-#include <charconv>
-#include <cstdio>
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <string>
-#include <system_error>
+#include <cstdint>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace {
 
@@ -44,15 +38,31 @@ using crucible::ContentHash;
 namespace eff = ::foundation::effects;
 
 // The text of the root copies the characters of the directory.
-[[nodiscard]] static Cipher open_cipher(const std::string& dir) {
+[[nodiscard]] static Cipher open_cipher(::fixy::TextView dir) {
     ::foundation::core::GrowText root = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);
-    for (std::size_t index = 0; index < dir.size(); ++index) {
-        root.append(store_ctx().cap().alloc, dir[index]).expect("the text holds each character of the directory");
+    for (const char character : dir) {
+        root.append(store_ctx().cap().alloc, character).expect("the text holds each character of the directory");
     }
     ::foundation::core::HeapText const root_path = ::foundation::core::freeze(std::move(root));
     return Cipher::open(store_ctx(), store_ctx().cap().alloc,
                         ::fixy::mint_tagged<::fixy::tags::source::External>(root_path.view()))
         .expect("the test opens its store");
+}
+
+// The store at the path name under the scratch directory of the test.  The
+// open makes the directory of the store when it is missing.
+[[nodiscard]] static Cipher open_store(::fixy::fs::TemporaryDirectory const& scratch, ::fixy::TextView name) {
+    ::foundation::os::PathText<Cipher::MAX_ROOT_PATH_BYTES> path{};
+    path.append(scratch.path().view()).expect("the scratch directory fits the path of the store");
+    path.append('/').expect("the path of the store holds its slash");
+    path.append(name).expect("the name fits the path of the store");
+    return open_cipher(path.c_text().view());
+}
+
+// Makes the directory name under the scratch directory.  A directory that is
+// there already is no error.
+static void make_store_directory(::fixy::fs::TemporaryDirectory const& scratch, ::fixy::CText name) {
+    static_cast<void>(::fixy::fs::make_directory_at(store_ctx(), scratch.ref(), name).is_ok());
 }
 
 // Records one event and requires that the commit happened.
@@ -68,28 +78,58 @@ static void record(Cipher& cipher, Ctx const& ctx, Cipher::OpenView const& view,
     return recorded.err().expect("the commit failed");
 }
 
-// The whole content of a file, or an empty string when it does not open.
-[[nodiscard]] static std::string read_file(const std::string& path) {
-    std::ifstream file(path);
-    return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+// True when the whole content of the file path under the scratch directory is
+// text.  A file that does not read holds no text.
+[[nodiscard]] static bool holds_text(::fixy::fs::TemporaryDirectory const& scratch, ::fixy::CText path,
+                                     ::fixy::TextView text) {
+    ::fixy::GrowText read = ::fixy::mint_grow_text(Cipher::MAX_OBJECT_BYTES);
+    const bool is_read =
+        ::fixy::fs::read_whole_at(store_ctx(), store_ctx().cap().alloc, scratch.ref(), path, read).is_ok();
+    return is_read && read.with_view([text](::fixy::TextView held) noexcept { return held == text; });
 }
 
-// The third field of each line of the log: the place of each commit, in
-// the order of the commits.
-[[nodiscard]] static std::vector<std::uint64_t> log_orders(const std::string& dir) {
-    std::vector<std::uint64_t> orders;
-    std::ifstream log(dir + "/log");
-    std::string line;
-    while (std::getline(log, line)) {
-        const std::size_t second_comma = line.find(',', line.find(',') + 1);
-        CRUCIBLE_TEST_ASSERT(kTest, second_comma != std::string::npos);
-        std::uint64_t order = 0;
-        const char* const end = line.data() + line.size();
-        const auto [stop, error] = std::from_chars(line.data() + second_comma + 1, end, order);
-        CRUCIBLE_TEST_ASSERT(kTest, error == std::errc{} && stop == end);
-        orders.push_back(order);
-    }
-    return orders;
+// The largest count of the lines of a log that a test reads.
+constexpr std::size_t kLogLines = 64;
+
+// The place of each commit of a log.
+using LogOrders = ::fixy::FixedList<std::uint64_t, kLogLines>;
+
+// The third field of one line of the log: the field after the second comma.
+[[nodiscard]] static std::uint64_t order_of_line(::fixy::TextView line) noexcept {
+    // The search for the second comma starts after the first comma, or at
+    // the start of the line when the line holds no comma.
+    const std::size_t after_first = ::fixy::find(line, ',').match([](std::size_t first) noexcept { return first + 1; },
+                                                                  [] noexcept { return std::size_t{0}; });
+    const ::fixy::TextView tail = line.window(after_first, line.size() - after_first).expect("the tail is in the line");
+    const ::fixy::Option<std::size_t> second_comma = ::fixy::find(tail, ',');
+    CRUCIBLE_TEST_ASSERT(kTest, second_comma.is_some());
+    const std::size_t field_start = after_first + ::fixy::Option<std::size_t>{second_comma}.value_or(0) + 1;
+    const ::fixy::TextView field =
+        line.window(field_start, line.size() - field_start).expect("the field is inside the line");
+    ::fixy::Result<std::uint64_t, ::fixy::ParseError> order = ::fixy::parse<std::uint64_t>(field);
+    CRUCIBLE_TEST_ASSERT(kTest, order.is_ok());
+    return std::move(order).value_or(0);
+}
+
+// The third field of each line of the log at the path under the scratch
+// directory: the place of each commit, in the order of the commits.
+// Complexity: linear in the size of the log.
+[[nodiscard]] static LogOrders log_orders(::fixy::fs::TemporaryDirectory const& scratch, ::fixy::CText path) {
+    ::fixy::GrowText log = ::fixy::mint_grow_text(Cipher::MAX_OBJECT_BYTES);
+    static_cast<void>(
+        ::fixy::fs::read_whole_at(store_ctx(), store_ctx().cap().alloc, scratch.ref(), path, log).is_ok());
+    return log.with_view([](::fixy::TextView text) noexcept {
+        LogOrders orders{};
+        ::fixy::TextView rest = text;
+        while (rest.size() > 0) {
+            const std::size_t end = ::fixy::find(rest, '\n').value_or(rest.size());
+            const ::fixy::TextView line = rest.window(0, end).expect("the line is inside the log");
+            static_cast<void>(orders.append(order_of_line(line)).is_ok());
+            const std::size_t next = end < rest.size() ? end + 1 : end;
+            rest = rest.window(next, rest.size() - next).expect("the rest of the log is inside the log");
+        }
+        return orders;
+    });
 }
 
 // The directory of the root of cipher.
@@ -204,22 +244,21 @@ static void test_t03_subrow_rejected_shapes() {
 // The commit is durable: a Cipher opened again on the same directory
 // reads the head and the step from the files that record_event wrote.
 
-static void test_t04_record_event_is_durable(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/t04";
-    std::filesystem::create_directories(dir);
+static void test_t04_record_event_is_durable(::fixy::fs::TemporaryDirectory const& scratch) {
+    make_store_directory(scratch, "t04");
 
     constexpr ContentHash kHash{0xC0FFEEBA12345678ULL};
     constexpr std::uint64_t kStep = 42u;
     {
-        auto cipher = open_cipher(dir);
+        auto cipher = open_store(scratch, "t04");
         auto view = cipher.mint_open_view(store_ctx());
         record(cipher, store_ctx(), view, kHash, kStep);
     }
 
     // The head file holds sixteen hex digits and a newline.
-    CRUCIBLE_TEST_ASSERT(kTest, read_file(dir + "/HEAD") == "c0ffeeba12345678\n");
+    CRUCIBLE_TEST_ASSERT(kTest, holds_text(scratch, "t04/HEAD", "c0ffeeba12345678\n"));
 
-    auto reopened = open_cipher(dir);
+    auto reopened = open_store(scratch, "t04");
     auto view = reopened.mint_open_view(store_ctx());
     CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == kHash);
     CRUCIBLE_TEST_ASSERT(kTest, reopened.hash_at_step(view, kStep) == kHash);
@@ -227,10 +266,9 @@ static void test_t04_record_event_is_durable(const char* base_dir) {
     ::fixy::check::pass(kTest, "  T04 record_event_is_durable:             PASSED\n");
 }
 
-static void test_t05_round_trip(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/t05";
-    std::filesystem::create_directories(dir);
-    auto cipher = open_cipher(dir);
+static void test_t05_round_trip(::fixy::fs::TemporaryDirectory const& scratch) {
+    make_store_directory(scratch, "t05");
+    auto cipher = open_store(scratch, "t05");
     auto view = cipher.mint_open_view(store_ctx());
 
     constexpr ContentHash kHash{0xDEADBEEFCAFEBABEULL};
@@ -250,10 +288,9 @@ static void test_t05_round_trip(const char* base_dir) {
 // The context of a background thread carries more than the two required
 // atoms, and is accepted because it carries them both.
 
-static void test_t06_bg_superset_row(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/t06";
-    std::filesystem::create_directories(dir);
-    auto cipher = open_cipher(dir);
+static void test_t06_bg_superset_row(::fixy::fs::TemporaryDirectory const& scratch) {
+    make_store_directory(scratch, "t06");
+    auto cipher = open_store(scratch, "t06");
     auto view = cipher.mint_open_view(store_ctx());
 
     const ::fixy::BgLoadCtx bg_ctx{::foundation::effects::testing::bg()};
@@ -270,10 +307,9 @@ static void test_t06_bg_superset_row(const char* base_dir) {
 
 // The startup context carries Init on top of the two required atoms.
 
-static void test_t07_startup_superset_row(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/t07";
-    std::filesystem::create_directories(dir);
-    auto cipher = open_cipher(dir);
+static void test_t07_startup_superset_row(::fixy::fs::TemporaryDirectory const& scratch) {
+    make_store_directory(scratch, "t07");
+    auto cipher = open_store(scratch, "t07");
     auto view = cipher.mint_open_view(store_ctx());
 
     const ::fixy::InitLoadCtx init_ctx{::foundation::effects::testing::init()};
@@ -288,10 +324,9 @@ static void test_t07_startup_superset_row(const char* base_dir) {
 // Recording an ordered sequence and querying it back shows that the
 // precondition on step order holds on the recorded log.
 
-static void test_t08_monotonic_steps(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/t08";
-    std::filesystem::create_directories(dir);
-    auto cipher = open_cipher(dir);
+static void test_t08_monotonic_steps(::fixy::fs::TemporaryDirectory const& scratch) {
+    make_store_directory(scratch, "t08");
+    auto cipher = open_store(scratch, "t08");
     auto view = cipher.mint_open_view(store_ctx());
     const auto ctx = store_ctx();
 
@@ -312,10 +347,9 @@ static void test_t08_monotonic_steps(const char* base_dir) {
     ::fixy::check::pass(kTest, "  T08 monotonic_steps:                     PASSED\n");
 }
 
-static void test_t09_multiple_events_monotonic(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/t09";
-    std::filesystem::create_directories(dir);
-    auto cipher = open_cipher(dir);
+static void test_t09_multiple_events_monotonic(::fixy::fs::TemporaryDirectory const& scratch) {
+    make_store_directory(scratch, "t09");
+    auto cipher = open_store(scratch, "t09");
     auto view = cipher.mint_open_view(store_ctx());
     const auto ctx = store_ctx();
 
@@ -340,10 +374,9 @@ static void test_t09_multiple_events_monotonic(const char* base_dir) {
 // compiling for a caller who holds no evidence and lose the fence, so the
 // argument list and the result type are pinned here.
 
-static void test_t10_api_surface_pinned(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/t10";
-    std::filesystem::create_directories(dir);
-    auto cipher = open_cipher(dir);
+static void test_t10_api_surface_pinned(::fixy::fs::TemporaryDirectory const& scratch) {
+    make_store_directory(scratch, "t10");
+    auto cipher = open_store(scratch, "t10");
     auto view = cipher.mint_open_view(store_ctx());
 
     using Ctx = ::fixy::TestRunnerCtx;
@@ -365,10 +398,9 @@ static void test_t10_api_surface_pinned(const char* base_dir) {
 // Each log line holds the place of its commit: one for the first commit,
 // and one more for each commit after it.
 
-static void test_t11_log_holds_the_places(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/t11";
-    std::filesystem::create_directories(dir);
-    auto cipher = open_cipher(dir);
+static void test_t11_log_holds_the_places(::fixy::fs::TemporaryDirectory const& scratch) {
+    make_store_directory(scratch, "t11");
+    auto cipher = open_store(scratch, "t11");
     auto view = cipher.mint_open_view(store_ctx());
     const auto ctx = store_ctx();
 
@@ -378,10 +410,12 @@ static void test_t11_log_holds_the_places(const char* base_dir) {
                static_cast<std::uint64_t>(i));
     }
 
-    const std::vector<std::uint64_t> orders = log_orders(dir);
+    const LogOrders orders = log_orders(scratch, "t11/log");
     CRUCIBLE_TEST_ASSERT(kTest, orders.size() == static_cast<std::size_t>(N));
-    for (std::size_t i = 0; i < orders.size(); ++i) {
-        CRUCIBLE_TEST_ASSERT(kTest, orders[i] == i + 1);
+    std::uint64_t place = 0;
+    for (const std::uint64_t order : orders) {
+        ++place;
+        CRUCIBLE_TEST_ASSERT(kTest, order == place);
     }
 
     ::fixy::check::pass(kTest, "  T11 log_holds_the_places:                PASSED\n");
@@ -398,9 +432,9 @@ static void record_one_computation(Cipher& cipher) {
     record(cipher, store_ctx(), view, ContentHash{0x3003u}, 4u);
 }
 
-static void test_t12_two_runs_write_one_log(const crucible::test::ScratchDir& scratch) {
-    auto first = open_cipher(scratch.file("t12_first"));
-    auto second = open_cipher(scratch.file("t12_second"));
+static void test_t12_two_runs_write_one_log(::fixy::fs::TemporaryDirectory const& scratch) {
+    auto first = open_store(scratch, "t12_first");
+    auto second = open_store(scratch, "t12_second");
     record_one_computation(first);
     record_one_computation(second);
 
@@ -418,14 +452,14 @@ static void test_t12_two_runs_write_one_log(const crucible::test::ScratchDir& sc
 // A store that opens again continues the count from the place of the last
 // line of its log.
 
-static void test_t13_reopen_continues_the_places(const crucible::test::ScratchDir& scratch) {
+static void test_t13_reopen_continues_the_places(::fixy::fs::TemporaryDirectory const& scratch) {
     {
-        auto cipher = open_cipher(scratch.file("t13"));
+        auto cipher = open_store(scratch, "t13");
         const auto view = cipher.mint_open_view(store_ctx());
         record(cipher, store_ctx(), view, ContentHash{0x4001u}, 1u);
         record(cipher, store_ctx(), view, ContentHash{0x4002u}, 2u);
     }
-    auto cipher = open_cipher(scratch.file("t13"));
+    auto cipher = open_store(scratch, "t13");
     const auto view = cipher.mint_open_view(store_ctx());
     record(cipher, store_ctx(), view, ContentHash{0x4003u}, 3u);
 
@@ -441,12 +475,12 @@ static void test_t13_reopen_continues_the_places(const crucible::test::ScratchDi
 // A line whose place does not grow is a corrupt line, and the open skips
 // it.  The count continues from the last line that the open reads.
 
-static void test_t14_open_skips_a_place_that_does_not_grow(const crucible::test::ScratchDir& scratch) {
-    write_log_of(open_cipher(scratch.file("t14")), ::fixy::TextView{"1,0000000000005001,5\n"
-                                                                    "2,0000000000005002,5\n"
-                                                                    "3,0000000000005003,4\n"
-                                                                    "4,0000000000005004,6\n"});
-    auto cipher = open_cipher(scratch.file("t14"));
+static void test_t14_open_skips_a_place_that_does_not_grow(::fixy::fs::TemporaryDirectory const& scratch) {
+    write_log_of(open_store(scratch, "t14"), ::fixy::TextView{"1,0000000000005001,5\n"
+                                                              "2,0000000000005002,5\n"
+                                                              "3,0000000000005003,4\n"
+                                                              "4,0000000000005004,6\n"});
+    auto cipher = open_store(scratch, "t14");
     const auto view = cipher.mint_open_view(store_ctx());
     CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x5004u});
     CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 2u) == ContentHash{0x5001u});
@@ -467,10 +501,10 @@ static void test_t14_open_skips_a_place_that_does_not_grow(const crucible::test:
 // A log whose last place is the largest count leaves the next commit no
 // place.  The commit reports it, and the head does not move.
 
-static void test_t15_no_place_after_the_largest(const crucible::test::ScratchDir& scratch) {
+static void test_t15_no_place_after_the_largest(::fixy::fs::TemporaryDirectory const& scratch) {
     constexpr ::fixy::TextView largest{"1,0000000000006001,18446744073709551615\n"};
-    write_log_of(open_cipher(scratch.file("t15")), largest);
-    auto cipher = open_cipher(scratch.file("t15"));
+    write_log_of(open_store(scratch, "t15"), largest);
+    auto cipher = open_store(scratch, "t15");
     const auto view = cipher.mint_open_view(store_ctx());
     CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x6001u});
 
@@ -505,12 +539,11 @@ static void test_required_row_header_fence() {
 // that shows only after several records, or only on some hash values,
 // needs a longer and more varied sequence than that.
 
-static void test_multi_event_durability(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/multi_event";
-    std::filesystem::create_directories(dir);
+static void test_multi_event_durability(::fixy::fs::TemporaryDirectory const& scratch) {
+    make_store_directory(scratch, "multi_event");
 
-    constexpr int N = 16;
-    constexpr std::uint64_t kHashes[N] = {
+    constexpr std::size_t N = 16;
+    constexpr ::fixy::FixedArray<std::uint64_t, N> kHashes{
         0x0001000100010001ULL, 0xFFFE000200030004ULL, 0xC0FFEE00000000ULL,   0xDEADBEEFCAFEBABEULL,
         0x123456789ABCDEF0ULL, 0xFEDCBA9876543210ULL, 0x5555555555555555ULL, 0xAAAAAAAAAAAAAAAAULL,
         0x0F0F0F0F0F0F0F0FULL, 0xF0F0F0F0F0F0F0F0ULL, 0x1111222233334444ULL, 0x4444333322221111ULL,
@@ -518,23 +551,22 @@ static void test_multi_event_durability(const char* base_dir) {
     };
 
     {
-        auto cipher = open_cipher(dir);
+        auto cipher = open_store(scratch, "multi_event");
         auto view = cipher.mint_open_view(store_ctx());
         const auto ctx = store_ctx();
-        for (int i = 0; i < N; ++i) {
-            record(cipher, ctx, view, ContentHash{kHashes[i]}, static_cast<std::uint64_t>(i));
+        for (::fixy::Index<N> const i : kHashes.indices()) {
+            record(cipher, ctx, view, ContentHash{kHashes.at(i)}, std::uint64_t{i.raw()});
         }
     }
 
-    CRUCIBLE_TEST_ASSERT(kTest, read_file(dir + "/HEAD") == "fedcba9876543211\n");
-    CRUCIBLE_TEST_ASSERT(kTest, log_orders(dir).size() == static_cast<std::size_t>(N));
+    CRUCIBLE_TEST_ASSERT(kTest, holds_text(scratch, "multi_event/HEAD", "fedcba9876543211\n"));
+    CRUCIBLE_TEST_ASSERT(kTest, log_orders(scratch, "multi_event/log").size() == N);
 
-    auto reopened = open_cipher(dir);
+    auto reopened = open_store(scratch, "multi_event");
     auto view = reopened.mint_open_view(store_ctx());
-    CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == ContentHash{kHashes[N - 1]});
-    for (int i = 0; i < N; ++i) {
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             reopened.hash_at_step(view, static_cast<std::uint64_t>(i)) == ContentHash{kHashes[i]});
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == ContentHash{kHashes.at(::fixy::index<N - 1>())});
+    for (::fixy::Index<N> const i : kHashes.indices()) {
+        CRUCIBLE_TEST_ASSERT(kTest, reopened.hash_at_step(view, std::uint64_t{i.raw()}) == ContentHash{kHashes.at(i)});
     }
 
     ::fixy::check::pass(kTest, "  multi_event_durability:                 PASSED\n");
@@ -562,10 +594,9 @@ static void test_external_visibility() {
 // Each context that fits the commit is interchangeable at a call site,
 // including a context narrowed to the two required atoms.
 
-static void test_canonical_row_acceptance(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/canonical_row";
-    std::filesystem::create_directories(dir);
-    auto cipher = open_cipher(dir);
+static void test_canonical_row_acceptance(::fixy::fs::TemporaryDirectory const& scratch) {
+    make_store_directory(scratch, "canonical_row");
+    auto cipher = open_store(scratch, "canonical_row");
     auto view = cipher.mint_open_view(store_ctx());
 
     record(cipher, store_ctx(), view, ContentHash{0xAAAA}, 1u);
@@ -591,10 +622,9 @@ static void test_canonical_row_acceptance(const char* base_dir) {
 // process, so what is checked here is that a caller who satisfies the
 // gate still gets the ordered behaviour the precondition describes.
 
-static void test_pre_clause_orthogonal(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/pre_clause";
-    std::filesystem::create_directories(dir);
-    auto cipher = open_cipher(dir);
+static void test_pre_clause_orthogonal(::fixy::fs::TemporaryDirectory const& scratch) {
+    make_store_directory(scratch, "pre_clause");
+    auto cipher = open_store(scratch, "pre_clause");
     auto view = cipher.mint_open_view(store_ctx());
     const auto ctx = store_ctx();
 
@@ -619,13 +649,13 @@ static void test_pre_clause_orthogonal(const char* base_dir) {
 
 // The log append is the commit.  When it fails, the commit reports the
 // failure and the head does not move, in memory and in HEAD.
-static void test_failed_log_append_moves_no_head(const crucible::test::ScratchDir& scratch) {
-    CRUCIBLE_TEST_ASSERT(kTest, open_cipher(scratch.file("log_blocked/log")).is_open());
+static void test_failed_log_append_moves_no_head(::fixy::fs::TemporaryDirectory const& scratch) {
+    CRUCIBLE_TEST_ASSERT(kTest, open_store(scratch, "log_blocked/log").is_open());
 
     constexpr ContentHash kHash{0xA11CE5EEDULL};
     constexpr std::uint64_t kStep = 3u;
     {
-        auto cipher = open_cipher(scratch.file("log_blocked"));
+        auto cipher = open_store(scratch, "log_blocked");
         auto view = cipher.mint_open_view(store_ctx());
         CRUCIBLE_TEST_ASSERT(kTest, failure_of(cipher.record_event(store_ctx(), view, kHash, kStep))
                                         == Cipher::CommitError::log_append);
@@ -635,7 +665,7 @@ static void test_failed_log_append_moves_no_head(const crucible::test::ScratchDi
 
     // The log holds no commit, so the open reads HEAD.  The failed commit
     // wrote no HEAD, so the reopen has no head.
-    auto reopened = open_cipher(scratch.file("log_blocked"));
+    auto reopened = open_store(scratch, "log_blocked");
     auto view = reopened.mint_open_view(store_ctx());
     CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == ContentHash{});
     CRUCIBLE_TEST_ASSERT(kTest, reopened.hash_at_step(view, kStep) == ContentHash{});
@@ -647,11 +677,11 @@ static void test_failed_log_append_moves_no_head(const crucible::test::ScratchDi
 // reports the failure, and the commit stands: the head moves in memory,
 // and a reopen takes the same head from the log, while HEAD names no
 // commit.  The write leaves no temporary file of its own.
-static void test_failed_head_write_keeps_the_logged_commit(const crucible::test::ScratchDir& scratch) {
+static void test_failed_head_write_keeps_the_logged_commit(::fixy::fs::TemporaryDirectory const& scratch) {
     constexpr ContentHash kFirst{0x0F1257ULL};
     constexpr ContentHash kSecond{0x5EC0DDULL};
     {
-        auto cipher = open_cipher(scratch.file("head_blocked"));
+        auto cipher = open_store(scratch, "head_blocked");
         auto view = cipher.mint_open_view(store_ctx());
         record(cipher, store_ctx(), view, kFirst, 1u);
 
@@ -667,7 +697,7 @@ static void test_failed_head_write_keeps_the_logged_commit(const crucible::test:
         CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 2u) == kSecond);
     }
 
-    auto reopened = open_cipher(scratch.file("head_blocked"));
+    auto reopened = open_store(scratch, "head_blocked");
     auto view = reopened.mint_open_view(store_ctx());
     CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == kSecond);
     CRUCIBLE_TEST_ASSERT(kTest, reopened.hash_at_step(view, 1u) == kFirst);
@@ -679,16 +709,16 @@ static void test_failed_head_write_keeps_the_logged_commit(const crucible::test:
 // The open reads HEAD when the log holds no commit.  HEAD holds sixteen
 // hexadecimal digits and a newline, and the open reads the digits before
 // the newline.  The store then has a head and no logged step.
-static void test_head_without_logged_commit(const crucible::test::ScratchDir& scratch) {
+static void test_head_without_logged_commit(::fixy::fs::TemporaryDirectory const& scratch) {
     constexpr ContentHash kHash{0xABCDEF0123456789ULL};
     {
-        auto cipher = open_cipher(scratch.file("head_only"));
+        auto cipher = open_store(scratch, "head_only");
         auto view = cipher.mint_open_view(store_ctx());
         record(cipher, store_ctx(), view, kHash, 1u);
     }
 
-    std::filesystem::remove(scratch.file("head_only/log"));
-    auto reopened = open_cipher(scratch.file("head_only"));
+    static_cast<void>(::fixy::fs::unlink_at(store_ctx(), scratch.ref(), "head_only/log").is_ok());
+    auto reopened = open_store(scratch, "head_only");
     auto view = reopened.mint_open_view(store_ctx());
     CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == kHash);
     CRUCIBLE_TEST_ASSERT(kTest, reopened.hash_at_step(view, 1u) == ContentHash{});
@@ -697,33 +727,35 @@ static void test_head_without_logged_commit(const crucible::test::ScratchDir& sc
 }
 
 int main() {
-    // A scratch directory of this process, so the test is hermetic.
-    const crucible::test::ScratchDir scratch{"crucible_test_record_event"};
-    CRUCIBLE_TEST_ASSERT(kTest, scratch.is_ready());
-    const std::string base = scratch.path();
+    // A scratch directory of this process, so the test is hermetic.  The end
+    // of its owner removes it with each store below it.
+    const ::fixy::fs::TemporaryDirectory scratch =
+        std::move(::fixy::fs::mint_temporary_directory(store_ctx()).expect("the test makes its scratch directory"))
+            .consume();
+    CRUCIBLE_TEST_ASSERT(kTest, scratch.is_open());
 
     ::fixy::report(::fixy::Sink::Out, "test_cipher_record_event\n");
     test_t01_required_row_pinned();
     test_t02_subrow_accepted_shapes();
     test_t03_subrow_rejected_shapes();
-    test_t04_record_event_is_durable(base.c_str());
-    test_t05_round_trip(base.c_str());
-    test_t06_bg_superset_row(base.c_str());
-    test_t07_startup_superset_row(base.c_str());
-    test_t08_monotonic_steps(base.c_str());
-    test_t09_multiple_events_monotonic(base.c_str());
-    test_t10_api_surface_pinned(base.c_str());
-    test_t11_log_holds_the_places(base.c_str());
+    test_t04_record_event_is_durable(scratch);
+    test_t05_round_trip(scratch);
+    test_t06_bg_superset_row(scratch);
+    test_t07_startup_superset_row(scratch);
+    test_t08_monotonic_steps(scratch);
+    test_t09_multiple_events_monotonic(scratch);
+    test_t10_api_surface_pinned(scratch);
+    test_t11_log_holds_the_places(scratch);
     test_t12_two_runs_write_one_log(scratch);
     test_t13_reopen_continues_the_places(scratch);
     test_t14_open_skips_a_place_that_does_not_grow(scratch);
     test_t15_no_place_after_the_largest(scratch);
 
     test_required_row_header_fence();
-    test_multi_event_durability(base.c_str());
+    test_multi_event_durability(scratch);
     test_external_visibility();
-    test_canonical_row_acceptance(base.c_str());
-    test_pre_clause_orthogonal(base.c_str());
+    test_canonical_row_acceptance(scratch);
+    test_pre_clause_orthogonal(scratch);
     test_failed_log_append_moves_no_head(scratch);
     test_failed_head_write_keeps_the_logged_commit(scratch);
     test_head_without_logged_commit(scratch);
