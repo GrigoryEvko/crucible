@@ -3,17 +3,17 @@
 // template of its axis, so a row refuses it and it names no budget of
 // the catalog.
 
+#include <foundation/core/Text.h>
 #include <foundation/effects/Resources.h>
 
 #include <cstdint>
-#include <string_view>
 
 namespace fe = ::foundation::effects;
 
 struct LookalikeSmBudget {
     static constexpr fe::ResourceKind kind = fe::ResourceKind::Sm;
     static constexpr std::uint64_t value = 32;
-    static constexpr std::string_view name = "SmBudget";
+    static constexpr ::foundation::core::TextView name{"SmBudget"};
 };
 
 template <fe::ResourceTag Tag>

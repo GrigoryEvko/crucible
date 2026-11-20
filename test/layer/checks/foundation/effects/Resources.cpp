@@ -2,6 +2,8 @@
 
 #include <foundation/effects/Resources.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 namespace foundation::effects {
 
 namespace detail::resources_self_test {
@@ -15,7 +17,8 @@ static_assert(resource_kind_count == std::meta::enumerators_of(^^ResourceKind).s
 // Each axis has exactly one tag template, and its tags are resource
 // tags.  Each tag template has a top-level alias of its own name.
 [[nodiscard]] consteval bool every_axis_has_one_tag_template() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^ResourceKind));
     bool all_found = true;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -95,7 +98,8 @@ static_assert(std::is_same_v<std::underlying_type_t<ResourceKind>, std::uint8_t>
               "The ResourceKind underlying type is no longer uint8_t, which changes the ABI.");
 
 [[nodiscard]] consteval std::size_t count_accepted_kinds_() noexcept {
-    static constexpr auto enums = std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
+    static constexpr ::foundation::reflect::ReflectionList enums =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^ResourceKind));
     std::size_t n = 0;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -118,11 +122,11 @@ static_assert(!IsResourceKind<static_cast<ResourceKind>(23)>);
 
 // The name of an axis is the identifier of its enumerator.  A value
 // that no enumerator holds reads as the sentinel.
-static_assert(::foundation::reflect::enum_name(ResourceKind::Sm) == std::string_view{"Sm"});
-static_assert(::foundation::reflect::enum_name(ResourceKind::CarbonGramsPerKwh)
-              == std::string_view{"CarbonGramsPerKwh"});
-static_assert(::foundation::reflect::enum_name(static_cast<ResourceKind>(99))
-              == std::string_view{"<unknown ResourceKind>"});
+static_assert(::foundation::core::enum_name_text(ResourceKind::Sm) == ::foundation::core::TextView{"Sm"});
+static_assert(::foundation::core::enum_name_text(ResourceKind::CarbonGramsPerKwh)
+              == ::foundation::core::TextView{"CarbonGramsPerKwh"});
+static_assert(::foundation::core::enum_name_text(static_cast<ResourceKind>(99))
+              == ::foundation::core::TextView{"<unknown ResourceKind>"});
 
 static_assert(std::is_default_constructible_v<resource::SmBudget<32>>);
 static_assert(std::is_trivially_copyable_v<resource::SmBudget<32>>);
@@ -137,11 +141,11 @@ static_assert(std::is_same_v<HbmBytes<80000000000ULL>, resource::HbmBytes<800000
 
 static_assert(resource::SmBudget<32>::kind == ResourceKind::Sm);
 static_assert(resource::SmBudget<32>::value == 32);
-static_assert(resource::SmBudget<32>::name == std::string_view{"SmBudget"});
+static_assert(resource::SmBudget<32>::name == ::foundation::core::TextView{"SmBudget"});
 
 static_assert(resource::HbmBytes<80000000000ULL>::kind == ResourceKind::HbmBytes);
 static_assert(resource::HbmBytes<80000000000ULL>::value == 80000000000ULL);
-static_assert(resource::HbmBytes<80000000000ULL>::name == std::string_view{"HbmBytes"});
+static_assert(resource::HbmBytes<80000000000ULL>::name == ::foundation::core::TextView{"HbmBytes"});
 
 // One literal past the reach of uint32_t, so that a narrowing of the
 // budget parameter cannot pass unnoticed.
@@ -165,7 +169,7 @@ static_assert(!ResourceTag<ResourceKind>);
 struct lookalike_tag {
     static constexpr ResourceKind kind = ResourceKind::Sm;
     static constexpr std::uint64_t value = 32;
-    static constexpr std::string_view name = "SmBudget";
+    static constexpr ::foundation::core::TextView name{"SmBudget"};
 };
 static_assert(!ResourceTag<lookalike_tag>);
 
@@ -177,7 +181,7 @@ static_assert(!ResourceTag<volatile resource::SmBudget<32>>);
 // of the value range, and at the end of the catalog.
 static_assert(tag_descriptor<resource::SmBudget<32>>().kind == ResourceKind::Sm);
 static_assert(tag_descriptor<resource::SmBudget<32>>().value == 32);
-static_assert(tag_descriptor<resource::SmBudget<32>>().name == std::string_view{"SmBudget"});
+static_assert(tag_descriptor<resource::SmBudget<32>>().name == ::foundation::core::TextView{"SmBudget"});
 
 static_assert(tag_descriptor<resource::HbmBytes<80000000000ULL>>().kind == ResourceKind::HbmBytes);
 static_assert(tag_descriptor<resource::HbmBytes<80000000000ULL>>().value == 80000000000ULL);
@@ -187,7 +191,7 @@ static_assert(tag_descriptor<resource::CarbonGramsPerKwh<400>>().value == 400);
 
 static_assert(ResourceTagDescriptor{}.kind == ResourceKind::Sm);
 static_assert(ResourceTagDescriptor{}.value == 0);
-static_assert(ResourceTagDescriptor{}.name == std::string_view{"<absent>"});
+static_assert(ResourceTagDescriptor{}.name == ::foundation::core::TextView{"<absent>"});
 
 // The run-time half of these checks lives in
 // test/foundation/test_effects_resources.cpp, which calls every

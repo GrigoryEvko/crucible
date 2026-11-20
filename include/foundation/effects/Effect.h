@@ -64,6 +64,7 @@
 //     reads each spelling.
 
 #include <foundation/core/Heap.h>
+#include <foundation/core/Text.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/os/KernelFloor.h>
 #include <foundation/reflect/Anchor.h>
@@ -74,7 +75,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -103,16 +103,17 @@ inline constexpr std::size_t effect_count = 8;
 // declares, read by reflection, so a new atom is named the moment it is
 // declared and no arm can go missing.  A value outside the enum yields
 // "<unknown Effect>", the same sentinel the hand-written switch
-// returned.
+// returned.  The name is a TextView of the base (enum_name_text of
+// foundation/core/Text.h), with static storage.
 //
 // constexpr rather than consteval so the runtime smoke test can call
 // this with a non-constant argument.  Consteval contexts still fold it.
 // It is a template on the one type Effect, so that only a unit that asks
-// for a name pays for the walk of enum_name.  A function that is not a
-// template makes each includer walk the enumerators where it is defined.
+// for a name pays for the walk of the enumerators.  A function that is not
+// a template makes each includer walk the enumerators where it is defined.
 template <std::same_as<Effect> E>
-[[nodiscard]] constexpr std::string_view effect_name(E e) noexcept {
-    return ::foundation::reflect::enum_name(e);
+[[nodiscard]] constexpr ::foundation::core::TextView effect_name(E e) noexcept {
+    return ::foundation::core::enum_name_text(e);
 }
 
 // The gate reads the catalog through reflection so that a new atom

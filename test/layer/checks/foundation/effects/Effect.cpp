@@ -2,6 +2,8 @@
 
 #include <foundation/effects/Effect.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 #include <cstdint>
 #include <type_traits>
 
@@ -17,7 +19,8 @@ namespace detail {
 // observed value in a bitmask and refuses a repeat.  The first check
 // below calls it.
 [[nodiscard]] consteval bool every_effect_underlying_distinct_() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^Effect));
     using U = std::underlying_type_t<Effect>;
     std::uint64_t seen = 0;
 #pragma GCC diagnostic push
@@ -43,7 +46,8 @@ namespace detail {
 // It does not catch an unclassified atom on its own.  The pin of
 // effect_count below does that.
 consteval bool every_effect_observability_classified_() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^Effect));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) { (void)is_observable_effect_atom_<([:en:])>(); }
@@ -81,7 +85,8 @@ template <class C>
     static_assert(!std::is_default_constructible_v<C>,
                   "A context's default constructor must stay private.  Build one through a friended entry "
                   "point, or through the test witness.");
-    static_assert(effect_name(C::own_effect) == std::meta::identifier_of(^^C),
+    static_assert(effect_name(C::own_effect)
+                      == ::foundation::core::mint_static_text(std::meta::identifier_of(^^C).data()),
                   "A context is named after its own atom.");
     return true;
 }
@@ -112,7 +117,7 @@ static_assert(detail::every_effect_underlying_distinct_(),
 
 namespace detail {
 
-static_assert(effect_count == std::meta::enumerators_of(^^Effect).size(),
+static_assert(effect_count == ::foundation::reflect::enum_count<Effect>,
               "effect_count is a literal count of the enumerators of Effect, so that no includer of the header "
               "walks the enum.  A new Effect enumerator needs a deliberate observable-or-not decision in "
               "is_observable_effect_atom_, a name pin and a value pin below, and this count raised to match.  "
@@ -211,7 +216,8 @@ static_assert(IsEffect<Effect::Nondet>);
 static_assert(IsEffect<Effect::Div>);
 
 [[nodiscard]] consteval std::size_t count_accepted_effects_() noexcept {
-    static constexpr auto enums = std::define_static_array(std::meta::enumerators_of(^^Effect));
+    static constexpr ::foundation::reflect::ReflectionList enums =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^Effect));
     std::size_t n = 0;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -230,12 +236,12 @@ static_assert(!IsEffect<static_cast<Effect>(99)>);
 static_assert(!IsEffect<static_cast<Effect>(255)>);
 static_assert(!IsEffect<static_cast<Effect>(8)>);
 
-static_assert(!effect_name(Effect::Alloc).empty());
-static_assert(!effect_name(Effect::IO).empty());
-static_assert(!effect_name(Effect::Block).empty());
-static_assert(!effect_name(Effect::Bg).empty());
-static_assert(!effect_name(Effect::Init).empty());
-static_assert(!effect_name(Effect::Test).empty());
+static_assert(effect_name(Effect::Alloc).size() != 0);
+static_assert(effect_name(Effect::IO).size() != 0);
+static_assert(effect_name(Effect::Block).size() != 0);
+static_assert(effect_name(Effect::Bg).size() != 0);
+static_assert(effect_name(Effect::Init).size() != 0);
+static_assert(effect_name(Effect::Test).size() != 0);
 
 static_assert(effect_name(Effect::Alloc) != "<unknown Effect>");
 static_assert(effect_name(Effect::IO) != "<unknown Effect>");

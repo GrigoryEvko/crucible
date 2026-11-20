@@ -5,15 +5,14 @@
 // cannot check.
 
 #include <foundation/Quarantine.h>
+#include <foundation/core/Text.h>
 #include <foundation/effects/Concurrent.h>
 #include <foundation/effects/Resources.h>
-#include <foundation/reflect/EnumName.h>
 
 #include <fixy/Core.h>
 
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 
 // Attacks on the tag gate that are legal C++.  Each explicit
@@ -31,7 +30,7 @@ template <std::uint64_t N>
 struct SmBudget {
     static constexpr fe::ResourceKind kind = fe::ResourceKind::Sm;
     static constexpr std::uint64_t value = N;
-    static constexpr std::string_view name = "SmBudget";
+    static constexpr ::foundation::core::TextView name{"SmBudget"};
 };
 
 }  // namespace tag_gate_attacks
@@ -43,21 +42,21 @@ template <>
 struct foundation::effects::resource::SmBudget<7> {
     static constexpr ResourceKind kind = ResourceKind::NicQp;
     static constexpr std::uint64_t value = 7;
-    static constexpr std::string_view name = "SmBudget";
+    static constexpr ::foundation::core::TextView name{"SmBudget"};
 };
 
 template <>
 struct foundation::effects::resource::SmBudget<9> {
     static constexpr ResourceKind kind = ResourceKind::Sm;
     static constexpr std::uint64_t value = 0;
-    static constexpr std::string_view name = "SmBudget";
+    static constexpr ::foundation::core::TextView name{"SmBudget"};
 };
 
 template <>
 struct foundation::effects::resource::SmBudget<11> {
     static constexpr ResourceKind kind = ResourceKind::Sm;
     static constexpr std::uint64_t value = 11;
-    static constexpr std::string_view name = "HbmBytes";
+    static constexpr ::foundation::core::TextView name{"HbmBytes"};
 };
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
@@ -117,12 +116,12 @@ static_assert(every_kind.size() == fe::resource_kind_count,
 [[nodiscard]] bool every_kind_has_a_name_at_run_time() noexcept {
     for (fe::ResourceKind kind : every_kind) {
         volatile fe::ResourceKind loaded = kind;
-        std::string_view const name = ::foundation::reflect::enum_name(static_cast<fe::ResourceKind>(loaded));
-        if (name.empty() || name == std::string_view{"<unknown ResourceKind>"}) return false;
+        ::fixy::TextView const name = ::foundation::core::enum_name_text(static_cast<fe::ResourceKind>(loaded));
+        if (name.size() == 0 || name == ::fixy::TextView{"<unknown ResourceKind>"}) return false;
     }
     volatile std::uint8_t unnamed = 99;
-    return ::foundation::reflect::enum_name(static_cast<fe::ResourceKind>(unnamed))
-        == std::string_view{"<unknown ResourceKind>"};
+    return ::foundation::core::enum_name_text(static_cast<fe::ResourceKind>(unnamed))
+        == ::fixy::TextView{"<unknown ResourceKind>"};
 }
 
 // A tag is one empty byte on its own, and it carries its kind and its

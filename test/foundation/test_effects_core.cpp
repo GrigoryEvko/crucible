@@ -2,13 +2,14 @@
 // headers carry their static_asserts.  This file includes the headers
 // and holds the runtime cells that concern atoms, contexts and rows.
 
+#include <foundation/core/Text.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 
 namespace {
@@ -37,8 +38,8 @@ static_assert(noexcept(fe::testing::bg()) && noexcept(fe::testing::init()) && no
 [[nodiscard]] consteval std::size_t contexts_that_are_not_final() {
     std::size_t contexts = 0;
     std::size_t open = 0;
-    for (const std::meta::info member :
-         std::meta::members_of(^^::foundation::effects, std::meta::access_context::current())) {
+    for (const std::meta::info member : ::foundation::reflect::reflection_list(
+             std::meta::members_of(^^::foundation::effects, std::meta::access_context::current()))) {
         if (!std::meta::is_type(member) || !std::meta::can_substitute(^^fe::IsContext, {member})) continue;
         if (!std::meta::extract<bool>(std::meta::substitute(^^fe::IsContext, {member}))) continue;
         ++contexts;
@@ -137,7 +138,8 @@ static_assert(!fe::IsEffectRow<fe::Effect const&>);
 // membership for every atom.
 static_assert(::foundation::algebra::Row<fe::EffectRowLattice>);
 [[nodiscard]] consteval bool every_atom_agrees_across_spellings() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^fe::Effect));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^fe::Effect));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -175,17 +177,17 @@ static_assert(projections_taking<int> == 0 && projections_taking<fe::Effect> == 
 // static_assert walls only prove the constant-evaluated path.
 void every_accessor_runs_at_run_time() {
     fe::Effect e = fe::Effect::Alloc;
-    [[maybe_unused]] std::string_view n1 = fe::effect_name(e);
+    [[maybe_unused]] ::foundation::core::TextView n1 = fe::effect_name(e);
     e = fe::Effect::IO;
-    [[maybe_unused]] std::string_view n2 = fe::effect_name(e);
+    [[maybe_unused]] ::foundation::core::TextView n2 = fe::effect_name(e);
     e = fe::Effect::Block;
-    [[maybe_unused]] std::string_view n3 = fe::effect_name(e);
+    [[maybe_unused]] ::foundation::core::TextView n3 = fe::effect_name(e);
     e = fe::Effect::Bg;
-    [[maybe_unused]] std::string_view n4 = fe::effect_name(e);
+    [[maybe_unused]] ::foundation::core::TextView n4 = fe::effect_name(e);
     e = fe::Effect::Init;
-    [[maybe_unused]] std::string_view n5 = fe::effect_name(e);
+    [[maybe_unused]] ::foundation::core::TextView n5 = fe::effect_name(e);
     e = fe::Effect::Test;
-    [[maybe_unused]] std::string_view n6 = fe::effect_name(e);
+    [[maybe_unused]] ::foundation::core::TextView n6 = fe::effect_name(e);
 
     [[maybe_unused]] auto bg_ctx = fe::testing::bg();
     [[maybe_unused]] auto init_ctx = fe::testing::init();
