@@ -136,13 +136,39 @@ void check_ci_stable(const CI_t& a, const CI_t& b) {
     }
 }
 
+// The values as a run of samples of the base, the type that the percentiles
+// and the bootstrap read.
+[[nodiscard]] ::fixy::HeapArray<double> samples_of(std::vector<double> const& values) {
+    return ::fixy::mint_heap_array_with<double>(::foundation::effects::testing::test().alloc, values.size(),
+                                                [&values](std::size_t position) noexcept { return values[position]; });
+}
+
+// The percentile frac of sorted values.
+[[nodiscard]] double interp_of(std::vector<double> const& sorted, double frac) {
+    const ::fixy::HeapArray<double> samples = samples_of(sorted);
+    return bench::percentile_interp(::fixy::View<const double>{samples.view()}, frac);
+}
+
+// The percentiles of the values.
+[[nodiscard]] bench::Percentiles percentiles_of(std::vector<double> const& values) {
+    ::fixy::HeapArray<double> samples = samples_of(values);
+    return bench::Percentiles::compute(samples);
+}
+
+// The bootstrap interval of the percentile frac of the values.
+[[nodiscard]] bench::CI bootstrap_of(std::vector<double> const& values, double frac, std::size_t resamples,
+                                     double alpha = kAlpha, std::uint64_t seed = kDefaultSeed) {
+    const ::fixy::HeapArray<double> samples = samples_of(values);
+    return bench::bootstrap_ci(::fixy::View<const double>{samples.view()}, frac, resamples, alpha, seed);
+}
+
 // The comparison reads only the samples and the percentiles, so a report
 // can be assembled directly instead of running a measurement.
-[[nodiscard]] bench::Report make_report_from(const char* name, std::vector<double> samples) {
+[[nodiscard]] bench::Report make_report_from(const char* name, std::vector<double> const& samples) {
     bench::Report r;
     r.name = name;
-    r.samples = samples;
-    r.pct = bench::Percentiles::compute(samples);
+    r.samples = samples_of(samples);
+    r.pct = percentiles_of(samples);
     return r;
 }
 
@@ -153,40 +179,40 @@ void test_percentile_interp() {
 #ifdef NDEBUG
     {
         const std::vector<double> empty;
-        CHECK(approx(bench::percentile_interp(empty, 0.5), 0.0));
+        CHECK(approx(interp_of(empty, 0.5), 0.0));
     }
 #endif
 
     {
         const std::vector<double> one{42.5};
-        CHECK(approx(bench::percentile_interp(one, 0.0), 42.5));
-        CHECK(approx(bench::percentile_interp(one, 0.5), 42.5));
-        CHECK(approx(bench::percentile_interp(one, 1.0), 42.5));
+        CHECK(approx(interp_of(one, 0.0), 42.5));
+        CHECK(approx(interp_of(one, 0.5), 42.5));
+        CHECK(approx(interp_of(one, 1.0), 42.5));
     }
 
     // With five samples every quartile lands on a sample, so these
     // expectations involve no interpolation at all.
     {
         const std::vector<double> x{1.0, 2.0, 3.0, 4.0, 5.0};
-        CHECK(approx(bench::percentile_interp(x, 0.00), 1.0));
-        CHECK(approx(bench::percentile_interp(x, 0.25), 2.0));
-        CHECK(approx(bench::percentile_interp(x, 0.50), 3.0));
-        CHECK(approx(bench::percentile_interp(x, 0.75), 4.0));
-        CHECK(approx(bench::percentile_interp(x, 1.00), 5.0));
+        CHECK(approx(interp_of(x, 0.00), 1.0));
+        CHECK(approx(interp_of(x, 0.25), 2.0));
+        CHECK(approx(interp_of(x, 0.50), 3.0));
+        CHECK(approx(interp_of(x, 0.75), 4.0));
+        CHECK(approx(interp_of(x, 1.00), 5.0));
     }
 
     // With four samples the median falls between two of them, which is
     // where the interpolation rule actually shows.
     {
         const std::vector<double> x{1.0, 2.0, 3.0, 4.0};
-        CHECK(approx(bench::percentile_interp(x, 0.5), 2.5));
+        CHECK(approx(interp_of(x, 0.5), 2.5));
     }
 }
 
 void test_percentiles_compute() {
     {
-        std::vector<double> empty;
-        const bench::Percentiles p = bench::Percentiles::compute(empty);
+        const std::vector<double> empty;
+        const bench::Percentiles p = percentiles_of(empty);
         CHECK(p.n == 0);
         CHECK(approx(p.p50, 0.0));
         CHECK(approx(p.p99, 0.0));
@@ -201,8 +227,8 @@ void test_percentiles_compute() {
     // the deviation is zero, which is the case a divide-by-spread bug
     // would show up in.
     {
-        std::vector<double> uniform{5.0, 5.0, 5.0, 5.0, 5.0};
-        const bench::Percentiles p = bench::Percentiles::compute(uniform);
+        const std::vector<double> uniform{5.0, 5.0, 5.0, 5.0, 5.0};
+        const bench::Percentiles p = percentiles_of(uniform);
         CHECK(p.n == 5);
         CHECK(approx(p.p50, 5.0));
         CHECK(approx(p.p75, 5.0));
@@ -223,8 +249,8 @@ void test_percentiles_compute() {
     // given out of order so that a missing internal sort shows up in the
     // minimum and maximum.
     {
-        std::vector<double> sym{3.0, 1.0, 4.0, 5.0, 2.0};
-        const bench::Percentiles p = bench::Percentiles::compute(sym);
+        const std::vector<double> sym{3.0, 1.0, 4.0, 5.0, 2.0};
+        const bench::Percentiles p = percentiles_of(sym);
         CHECK(p.n == 5);
         CHECK(approx(p.min, 1.0));
         CHECK(approx(p.max, 5.0));
@@ -235,24 +261,26 @@ void test_percentiles_compute() {
     }
 }
 
-// The bounds themselves depend on how the generator draws its
-// resamples, so nothing here asserts a numeric interval.  What is
-// asserted is that the same seed reproduces the same bounds exactly.
+// The bounds depend on the draws of the Philox stream, so the exact
+// interval is not pinned.  The same seed reproduces the same bounds bit for
+// bit, and the interval of the median of the ramp 1 to 100 holds its median
+// 50.5.
 void test_bootstrap_ci() {
     {
         std::vector<double> small(kSmallN);
         for (std::size_t i = 0; i < kSmallN; ++i) {
             small[i] = static_cast<double>(i + 1);
         }
-        auto result = bench::bootstrap_ci(small, 0.5, /*B=*/100);
+        auto result = bootstrap_of(small, 0.5, /*resamples=*/100);
         check_ci_is_empty(result);
     }
 
     {
         const auto& big = ramp_1_to_N();
-        auto a = bench::bootstrap_ci(big, 0.5, kBootstrapB, kAlpha, kDefaultSeed);
-        auto b = bench::bootstrap_ci(big, 0.5, kBootstrapB, kAlpha, kDefaultSeed);
+        auto a = bootstrap_of(big, 0.5, kBootstrapB, kAlpha, kDefaultSeed);
+        auto b = bootstrap_of(big, 0.5, kBootstrapB, kAlpha, kDefaultSeed);
         check_ci_stable(a, b);
+        CHECK(a.lo <= 50.5 && a.hi >= 50.5);
     }
 }
 

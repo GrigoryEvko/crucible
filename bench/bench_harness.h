@@ -55,7 +55,6 @@
 #include <cstring>
 #include <expected>
 #include <optional>
-#include <random>
 #include <span>
 #include <string>
 #include <system_error>
@@ -88,6 +87,7 @@
 #include <fixy/os/Sched.h>
 #include <fixy/os/Time.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/Philox.h>
 #include <foundation/core/Sort.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Directory.h>
@@ -1387,37 +1387,49 @@ namespace detail {
 // frac * (n-1). Removes the integer-floor bias that otherwise appears
 // in commit-to-commit diffs.
 
-[[nodiscard]] inline double percentile_interp(const std::vector<double>& sorted, double frac) noexcept {
+// A frac outside [0, 1] names no sample, and the read of it ends the process.
+// Complexity: two reads.
+[[nodiscard]] inline double percentile_interp(::fixy::View<const double> sorted, double frac) noexcept {
     const size_t n = sorted.size();
     if (n == 0) return 0.0;
-    if (n == 1) return sorted.front();
+    if (n == 1) return *sorted.get(0).expect("a run of one sample holds its first sample");
     const double q = frac * static_cast<double>(n - 1);
     const size_t lo = static_cast<size_t>(q);
     const size_t hi = (lo + 1 < n) ? (lo + 1) : lo;
     const double f = q - static_cast<double>(lo);
-    return sorted[lo] * (1.0 - f) + sorted[hi] * f;
+    return *sorted.get(lo).expect("a fraction in [0, 1] names a sample") * (1.0 - f)
+         + *sorted.get(hi).expect("the sample after the low sample is in the run") * f;
 }
 
-// The median of the samples of one part of a run, such as a window or a half,
-// with the interpolation of percentile_interp at 0.5.  The part sorts in its
-// own storage by sort_stably and Ascending, with a scratch from the heap.  A
-// sample is a time of at least zero with no NaN, so Ascending gives the order
-// of <.  An empty part gives 0.  Complexity: one sort of the part, and one
-// pass up to its middle.
-[[nodiscard]] inline double median_of_part(::fixy::HeapArray<double> part) noexcept {
-    std::size_t const count = part.size();
-    if (count == 0) return 0.0;
+// The samples in ascending order, sorted in their own storage by sort_stably
+// and Ascending, with a scratch from the heap.  A sample is a time of at
+// least zero with no NaN, so Ascending gives the order of <.  Complexity: one
+// radix sort of the samples, and one allocation of the scratch.
+[[nodiscard]] inline ::fixy::HeapArray<double> sorted_samples(::fixy::HeapArray<double> samples) noexcept {
+    std::size_t const count = samples.size();
+    if (count == 0) return samples;
     auto const alloc = ::foundation::effects::testing::test().alloc;
     ::fixy::HeapArray<double> scratch = ::fixy::mint_heap_array(alloc, count, 0.0);
     bool is_sorted = false;
-    part = ::fixy::with_mut(std::move(part), [&scratch, &is_sorted](auto elements) noexcept {
+    samples = ::fixy::with_mut(std::move(samples), [&scratch, &is_sorted](auto elements) noexcept {
         scratch = ::fixy::with_mut(std::move(scratch), [&elements, &is_sorted](auto room) noexcept {
             is_sorted =
                 ::foundation::core::sort_stably(std::move(elements), std::move(room), ::foundation::core::Ascending{})
                     .is_ok();
         });
     });
-    if (!is_sorted) ::fixy::fatal("the scratch of the sort of a part of a run has the count of the part");
+    if (!is_sorted) ::fixy::fatal("the scratch of the sort of the samples of a run has the count of the samples");
+    return samples;
+}
+
+// The median of the samples of one part of a run, such as a window or a half,
+// with the interpolation of percentile_interp at 0.5, from sorted_samples.  An
+// empty part gives 0.  Complexity: one sort of the part, and one pass up to
+// its middle.
+[[nodiscard]] inline double median_of_part(::fixy::HeapArray<double> unsorted) noexcept {
+    std::size_t const count = unsorted.size();
+    if (count == 0) return 0.0;
+    ::fixy::HeapArray<double> const part = sorted_samples(std::move(unsorted));
     double const middle = 0.5 * static_cast<double>(count - 1);
     auto const low_position = static_cast<std::size_t>(middle);
     std::size_t const high_position = low_position + 1 < count ? low_position + 1 : low_position;
@@ -1446,13 +1458,15 @@ struct PartEnd final {};
 
 // A copy of the samples from first up to end, the part of median_of_part.
 // Complexity: one allocation and one copy of the part.
-[[nodiscard]] inline ::fixy::HeapArray<double> part_of_samples(std::vector<double> const& samples,
+[[nodiscard]] inline ::fixy::HeapArray<double> part_of_samples(::fixy::View<const double> samples,
                                                                ::fixy::Side<side::PartFirst, std::size_t> first,
                                                                ::fixy::Side<side::PartEnd, std::size_t> end) noexcept {
     std::size_t const begin = first.value();
+    ::fixy::View<const double> const part =
+        samples.window(begin, end.value() - begin).expect("a part of the samples lies inside the samples");
     return ::fixy::mint_heap_array_with<double>(
-        ::foundation::effects::testing::test().alloc, end.value() - begin,
-        [&samples, begin](std::size_t position) noexcept { return samples[begin + position]; });
+        ::foundation::effects::testing::test().alloc, part.size(),
+        [&part](std::size_t position) noexcept { return *part.get(position).expect("a position below the count"); });
 }
 
 struct Percentiles {
@@ -1461,21 +1475,25 @@ struct Percentiles {
     double min = 0, max = 0, mean = 0, stddev = 0, cv = 0;
     size_t n = 0;
 
-    [[nodiscard]] static Percentiles compute(std::vector<double>& ns_samples) noexcept {
+    // Sorts the samples in place (sorted_samples) and reads the percentiles,
+    // the mean and the deviation of the sorted samples.  Complexity: one sort
+    // and one pass of the samples.
+    [[nodiscard]] static Percentiles compute(::fixy::HeapArray<double>& ns_samples) noexcept {
         Percentiles p{};
         p.n = ns_samples.size();
         if (p.n == 0) return p;
 
-        std::sort(ns_samples.begin(), ns_samples.end());
-        p.min = ns_samples.front();
-        p.max = ns_samples.back();
-        p.p50 = percentile_interp(ns_samples, 0.50);
-        p.p75 = percentile_interp(ns_samples, 0.75);
-        p.p90 = percentile_interp(ns_samples, 0.90);
-        p.p95 = percentile_interp(ns_samples, 0.95);
-        p.p99 = percentile_interp(ns_samples, 0.99);
-        p.p99_9 = percentile_interp(ns_samples, 0.999);
-        p.p99_99 = percentile_interp(ns_samples, 0.9999);
+        ns_samples = sorted_samples(std::move(ns_samples));
+        ::fixy::View<const double> const sorted{ns_samples.view()};
+        p.min = *sorted.get(0).expect("a run of samples holds its first sample");
+        p.max = *sorted.get(p.n - 1).expect("a run of samples holds its last sample");
+        p.p50 = percentile_interp(sorted, 0.50);
+        p.p75 = percentile_interp(sorted, 0.75);
+        p.p90 = percentile_interp(sorted, 0.90);
+        p.p95 = percentile_interp(sorted, 0.95);
+        p.p99 = percentile_interp(sorted, 0.99);
+        p.p99_9 = percentile_interp(sorted, 0.999);
+        p.p99_99 = percentile_interp(sorted, 0.9999);
 
         // Welford's one-pass online algorithm with IEEE 754 binary64
         // (double) accumulators, for two reasons:
@@ -1501,7 +1519,7 @@ struct Percentiles {
         double mean = 0.0;
         double m2 = 0.0;
         size_t k = 0;
-        for (double v : ns_samples) {
+        for (double v : sorted) {
             ++k;
             const double delta = v - mean;
             mean += delta / static_cast<double>(k);
@@ -1525,26 +1543,41 @@ struct CI {
     double hi = 0;
 };
 
-[[nodiscard]] inline CI bootstrap_ci(const std::vector<double>& ns_samples, double frac, size_t B = 1000,
+// The interval of the percentile frac of the samples from B resamples, each a
+// draw of n samples with replacement.  Draw d of the run takes the word d mod
+// 4 of the Philox4x32-10 block of the counter d / 4 under the key seed, and
+// the high 32 bits of its product with n are the position of the drawn
+// sample.  The samples of one run are fewer than 2^32, so the product fits 64
+// bits.  One seed gives the same interval on each run and each host.  Fewer
+// than 30 samples or no resample gives the interval {0, 0}.  Complexity: B
+// resamples, each with n draws and one radix sort of n samples.
+[[nodiscard]] inline CI bootstrap_ci(::fixy::View<const double> ns_samples, double frac, size_t B = 1000,
                                      double alpha = 0.05, uint64_t seed = 0xBEEFCAFEDEADF00Dull) {
     const size_t n = ns_samples.size();
     if (n < 30 || B == 0) return CI{};
 
-    std::mt19937_64 rng(seed);
-    std::uniform_int_distribution<size_t> pick(0, n - 1);
-
-    std::vector<double> buf(n);
-    std::vector<double> estimates(B);
+    auto const alloc = ::foundation::effects::testing::test().alloc;
+    uint64_t draw = 0;
+    ::foundation::core::Philox4x32::Counter block{};
+    const auto pick = [&ns_samples, &draw, &block, n, seed](std::size_t) noexcept {
+        const uint64_t lane = draw % 4;
+        if (lane == 0) block = ::foundation::core::Philox4x32::generate(draw / 4, seed);
+        ++draw;
+        const uint64_t word = block.at(::fixy::Index<4>::check(lane).expect("a lane of a block is below 4"));
+        const std::size_t position = (word * uint64_t{n}) >> 32;
+        return *ns_samples.get(position).expect("the high half of a product with n is below n");
+    };
+    ::fixy::HeapArray<double> estimates = ::fixy::mint_heap_array(alloc, B, 0.0);
     for (size_t b = 0; b < B; ++b) {
-        for (size_t i = 0; i < n; ++i)
-            buf[i] = ns_samples[pick(rng)];
-        std::sort(buf.begin(), buf.end());
-        estimates[b] = percentile_interp(buf, frac);
+        const ::fixy::HeapArray<double> resample = sorted_samples(::fixy::mint_heap_array_with<double>(alloc, n, pick));
+        *estimates.get(b).expect("b is below the count of the resamples") =
+            percentile_interp(::fixy::View<const double>{resample.view()}, frac);
     }
-    std::sort(estimates.begin(), estimates.end());
+    estimates = sorted_samples(std::move(estimates));
+    const ::fixy::View<const double> sorted{estimates.view()};
     return {
-        percentile_interp(estimates, alpha / 2.0),
-        percentile_interp(estimates, 1.0 - alpha / 2.0),
+        percentile_interp(sorted, alpha / 2.0),
+        percentile_interp(sorted, 1.0 - alpha / 2.0),
     };
 }
 
@@ -1710,7 +1743,7 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     uint32_t sched_offcpu_count = 0;  // total events
 #endif
 
-    std::vector<double> samples;  // kept for bootstrap_ci, compare
+    ::fixy::HeapArray<double> samples{};  // kept for bootstrap_ci, compare
 
     // Report owns a potentially-large sample vector (~100k doubles by
     // default = 800 KB). Copying is almost always an accidental pessim-
@@ -1734,7 +1767,9 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     // this project aborts() per the MemSafe axiom, so throwing here is
     // structurally impossible and std::terminate via the noexcept barrier
     // is the desired outcome if an allocator ever did throw.
-    [[nodiscard]] CI ci(double frac, size_t B = 1000) const noexcept { return bootstrap_ci(samples, frac, B); }
+    [[nodiscard]] CI ci(double frac, size_t B = 1000) const noexcept {
+        return bootstrap_ci(::fixy::View<const double>{samples.view()}, frac, B);
+    }
 
     // Same as ci() but distinguishes "insufficient samples" (nullopt)
     // from a computed interval. Implicitly wraps the CI-returning
@@ -1743,7 +1778,7 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     // samples.size() >= 30 before consulting the return.
     [[nodiscard]] std::optional<CI> ci_opt(double frac, size_t B = 1000) const {
         if (samples.size() < 30) return std::nullopt;
-        return bootstrap_ci(samples, frac, B);
+        return bootstrap_ci(::fixy::View<const double>{samples.view()}, frac, B);
     }
 
     [[nodiscard]] bool noisy(double cv_threshold = 0.05) const noexcept { return pct.cv > cv_threshold; }
@@ -2229,16 +2264,40 @@ struct Compare {
         return c;
     }
 
+    // The union of the samples of A and B, each with its source, in the order
+    // of the samples: sort_stably by the key v, a radix sort.  A sample is a
+    // time of at least zero with no NaN, so the order of the key is the order
+    // of <.  The ranks below read each tie group whole, so the order inside a
+    // group does not change them.
     struct Tagged {
-        double v;
-        uint8_t src;
+        double v = 0.0;
+        uint8_t src = 0;
     };
-    std::vector<Tagged> all(n1 + n2);
-    for (size_t i = 0; i < n1; ++i)
-        all[i] = {a.samples[i], 0};
-    for (size_t i = 0; i < n2; ++i)
-        all[n1 + i] = {b.samples[i], 1};
-    std::sort(all.begin(), all.end(), [](Tagged const& x, Tagged const& y) { return x.v < y.v; });
+    const ::fixy::View<const double> a_samples{a.samples.view()};
+    const ::fixy::View<const double> b_samples{b.samples.view()};
+    auto const alloc = ::foundation::effects::testing::test().alloc;
+    ::fixy::HeapArray<Tagged> tagged = ::fixy::mint_heap_array_with<Tagged>(
+        alloc, n1 + n2, [&a_samples, &b_samples, n1](std::size_t position) noexcept {
+            if (position < n1) return Tagged{.v = *a_samples.get(position).expect("a position of A"), .src = 0};
+            return Tagged{.v = *b_samples.get(position - n1).expect("a position of B"), .src = 1};
+        });
+    ::fixy::HeapArray<Tagged> scratch = ::fixy::mint_heap_array(alloc, n1 + n2, Tagged{});
+    bool is_sorted = false;
+    tagged = ::fixy::with_mut(std::move(tagged), [&scratch, &is_sorted](auto elements) noexcept {
+        scratch = ::fixy::with_mut(std::move(scratch), [&elements, &is_sorted](auto room) noexcept {
+            is_sorted = ::foundation::core::sort_stably(std::move(elements), std::move(room),
+                                                        ::foundation::core::order_by_key(&Tagged::v))
+                            .is_ok();
+        });
+    });
+    if (!is_sorted) ::fixy::fatal("the scratch of the sort of the union of two runs has the count of the union");
+    const ::fixy::View<const Tagged> all{tagged.view()};
+    const auto value_at = [&all](std::size_t position) noexcept {
+        return all.get(position).expect("a position of the union is below its count")->v;
+    };
+    const auto source_at = [&all](std::size_t position) noexcept {
+        return all.get(position).expect("a position of the union is below its count")->src;
+    };
 
     // Rank the union of A and B. In a tie group spanning positions
     // [i..j] (inclusive), every element gets the average of the ranks
@@ -2256,14 +2315,14 @@ struct Compare {
     size_t i = 0;
     while (i < all.size()) {
         size_t j = i;
-        while (j + 1 < all.size() && !(all[j + 1].v < all[i].v) && !(all[i].v < all[j + 1].v)) {
+        while (j + 1 < all.size() && !(value_at(j + 1) < value_at(i)) && !(value_at(i) < value_at(j + 1))) {
             ++j;
         }
         const double avg_rank = (static_cast<double>(i + j) + 2.0) / 2.0;
         const double t = static_cast<double>(j - i + 1);
         tie_sum += t * t * t - t;  // 0 for tie groups of size 1
         for (size_t k = i; k <= j; ++k) {
-            if (all[k].src == 0) r1 += avg_rank;
+            if (source_at(k) == 0) r1 += avg_rank;
         }
         i = j + 1;
     }
@@ -2515,7 +2574,8 @@ public:
         // Pre-sized to S; if the wall-cap cutoff fires early, we trim to
         // `filled` below so downstream stats (sort, percentile) only see
         // real samples — never default-zero trailing slots.
-        std::vector<double> ns_samples(S);
+        ::fixy::HeapArray<double> ns_samples =
+            ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, S, 0.0);
         size_t filled = 0;
 
         SampleWindow window = start_window_(pinned_cpu);
@@ -2547,7 +2607,10 @@ public:
                 // can happen after a long runtime on a 4+ GHz core.
                 const uint64_t raw = t1 - t0;
                 const uint64_t d = (raw > ovh) ? (raw - ovh) : 0;
-                ns_samples[filled] = (static_cast<double>(d) * nspc) / static_cast<double>(batch);
+                // After the reading of the end, so the check of the position
+                // is outside the timed region.  The windows share S samples.
+                *ns_samples.get(filled).expect("the windows take at most S samples") =
+                    (static_cast<double>(d) * nspc) / static_cast<double>(batch);
                 ++filled;
                 // The reading of the end of the sample is the clock of the
                 // part of the time of the window, so the check costs no read.
@@ -2556,7 +2619,7 @@ public:
             static_cast<void>(window.ends.append(filled));
             close_window_(window);
         }
-        return close_(std::move(opening), window, std::move(ns_samples), filled, batch, wall0);
+        return close_(std::move(opening), window, ns_samples, filled, batch, wall0);
     }
 
 private:
@@ -2696,10 +2759,13 @@ private:
     // Ends the measurement and builds its report from the samples that the
     // sampled loop filled.
     [[nodiscard, gnu::noinline]] Report close_(MeasureOpening opening, SampleWindow const& window,
-                                               std::vector<double> ns_samples, size_t filled, size_t batch,
+                                               ::fixy::HeapArray<double> const& taken, size_t filled, size_t batch,
                                                std::chrono::steady_clock::time_point wall0) const {
         const PauseReading pause_after = detail::read_pause();
-        ns_samples.resize(filled);
+        // The samples that the loop filled, the first filled of taken.
+        ::fixy::HeapArray<double> ns_samples =
+            part_of_samples(::fixy::View<const double>{taken.view()}, ::fixy::side_as<side::PartFirst>(std::size_t{0}),
+                            ::fixy::side_as<side::PartEnd>(filled));
         const CpuId pinned_cpu = opening.pin.cpu;
         const uint64_t freq_start = window.freq_start;
 
@@ -2733,12 +2799,13 @@ private:
         double drift = 0;
         bool drift_flag = false;
         const size_t N = ns_samples.size();
+        const ::fixy::View<const double> loop_order{ns_samples.view()};
         if (N >= 200) {
             std::size_t const half = (N + 1) / 2;
             const double m1 = median_of_part(part_of_samples(
-                ns_samples, ::fixy::side_as<side::PartFirst>(std::size_t{0}), ::fixy::side_as<side::PartEnd>(half)));
+                loop_order, ::fixy::side_as<side::PartFirst>(std::size_t{0}), ::fixy::side_as<side::PartEnd>(half)));
             const double m2 = median_of_part(
-                part_of_samples(ns_samples, ::fixy::side_as<side::PartFirst>(half), ::fixy::side_as<side::PartEnd>(N)));
+                part_of_samples(loop_order, ::fixy::side_as<side::PartFirst>(half), ::fixy::side_as<side::PartEnd>(N)));
             const double m = (m1 + m2) / 2.0;
             drift = (m > 0) ? std::abs(m1 - m2) / m * 100.0 : 0.0;
             drift_flag = drift > 10.0;
@@ -2751,7 +2818,7 @@ private:
         for (std::size_t const window_end : window.ends) {
             if (window_end > window_begin) {
                 static_cast<void>(window_medians.append(
-                    median_of_part(part_of_samples(ns_samples, ::fixy::side_as<side::PartFirst>(window_begin),
+                    median_of_part(part_of_samples(loop_order, ::fixy::side_as<side::PartFirst>(window_begin),
                                                    ::fixy::side_as<side::PartEnd>(window_end)))));
             }
             window_begin = window_end;

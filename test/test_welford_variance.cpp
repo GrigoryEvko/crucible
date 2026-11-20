@@ -76,6 +76,15 @@ static_assert(std::is_same_v<decltype(bench::Percentiles{}.cv), double>, "Percen
     return (sumsq - (sum * sum) / n) / (n - 1.0);
 }
 
+// The percentiles of the values, through a run of samples of the base, the
+// type that Percentiles::compute sorts.
+[[nodiscard]] bench::Percentiles percentiles_of(const std::vector<double>& xs) {
+    ::fixy::HeapArray<double> samples =
+        ::fixy::mint_heap_array_with<double>(::foundation::effects::testing::test().alloc, xs.size(),
+                                             [&xs](std::size_t position) noexcept { return xs[position]; });
+    return bench::Percentiles::compute(samples);
+}
+
 int g_failures = 0;
 
 #define WELFORD_CHECK(cond)                                                                                    \
@@ -90,8 +99,8 @@ int g_failures = 0;
 void test_welford_well_conditioned() {
     // Mean 3, squared deviations 4 + 1 + 0 + 1 + 4 = 10, and the
     // Bessel-corrected variance is 10 / 4 = 2.5.
-    std::vector<double> xs{1.0, 2.0, 3.0, 4.0, 5.0};
-    const bench::Percentiles p = bench::Percentiles::compute(xs);
+    const std::vector<double> xs{1.0, 2.0, 3.0, 4.0, 5.0};
+    const bench::Percentiles p = percentiles_of(xs);
 
     WELFORD_CHECK(p.n == 5);
     WELFORD_CHECK(approx(p.mean, 3.0, 1e-12));
@@ -116,7 +125,7 @@ void test_welford_ill_conditioned() {
         kBase + 1.0, kBase + 2.0, kBase + 3.0, kBase + 4.0, kBase + 5.0,
     };
 
-    const bench::Percentiles p = bench::Percentiles::compute(xs);
+    const bench::Percentiles p = percentiles_of(xs);
 
     WELFORD_CHECK(p.n == 5);
     WELFORD_CHECK(approx(p.mean, kBase + 3.0, 1e-3));
@@ -149,13 +158,13 @@ void test_welford_ill_conditioned() {
 
 // The online update is order-dependent, and the order is fixed by the sort
 // that compute() performs, so the same multiset of samples yields the same
-// bits on every run.
+// bits on every run and in each order of the input.
 void test_welford_deterministic() {
-    std::vector<double> xs_a{17.0, 23.0, 31.0, 41.0, 59.0, 67.0, 73.0};
-    std::vector<double> xs_b = xs_a;
+    const std::vector<double> xs_a{17.0, 23.0, 31.0, 41.0, 59.0, 67.0, 73.0};
+    const std::vector<double> xs_b{73.0, 41.0, 17.0, 67.0, 23.0, 59.0, 31.0};
 
-    const bench::Percentiles a = bench::Percentiles::compute(xs_a);
-    const bench::Percentiles b = bench::Percentiles::compute(xs_b);
+    const bench::Percentiles a = percentiles_of(xs_a);
+    const bench::Percentiles b = percentiles_of(xs_b);
 
     // Comparing the copied-out bits rather than the doubles gives exact
     // equality and keeps the float-equality diagnostic satisfied.
