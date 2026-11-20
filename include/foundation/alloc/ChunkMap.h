@@ -28,8 +28,8 @@
 //   WindowRecord                   the base, the length, the biased map and
 //                                  the metadata region of one window
 //   WindowTable                    the record of each window: slot 0 is the
-//                                  host, and the other slots wait for the
-//                                  windows of the devices
+//                                  host, and slots 1 to 63 hold the windows
+//                                  of the devices
 //
 // THE WINDOW
 //   One range of address space holds each small, medium and large block of
@@ -321,8 +321,13 @@ private:
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
 
-// The count of the slots of the table of windows: the host and 15 devices.
-inline constexpr std::size_t kWindowSlots = 16;
+// The count of the slots of the table of windows: the host and 63 devices.
+// A process sees the accelerators of its own node, and a node of today holds
+// at most 8, as the bench host does.  So 63 slots leave room for a node of
+// many more devices.  The table is 64 records of 40 bytes, 2,560 bytes in the
+// root.  A device past the table gets the error table_full from the window
+// door, and the process does not end.
+inline constexpr std::size_t kWindowSlots = 64;
 
 // The slot of a window in the table.
 using WindowSlot = ::foundation::core::Index<kWindowSlots>;
@@ -330,10 +335,18 @@ using WindowSlot = ::foundation::core::Index<kWindowSlots>;
 // The slot of the host window.
 inline constexpr WindowSlot kHostWindow{::foundation::core::StaticIndex<0>{}};
 
+// The refusal of the window door to put a record into the table.
+enum class WindowTableError : std::uint8_t {
+    // Each slot of a device holds the record of a window.
+    table_full,
+};
+
 // The record of each window (THE WINDOW).  A new table holds the empty record
-// in each slot.  The window door writes the record of a slot, one time, before
-// it gives a block of the window, and only the init of the root calls it.
-// After that, each read is a plain load.
+// in each slot.  The window door writes the record of a slot one time, before
+// it gives a block of the window: the record of the host at the init of the
+// root, and the record of a device at the init of the window of the device.
+// The caller of each write holds the table alone, and each reader of a slot
+// got a heap of its window after the write.  So each read is a plain load.
 class WindowTable final {
 public:
     constexpr WindowTable() noexcept = default;

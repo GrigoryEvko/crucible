@@ -92,4 +92,9 @@ namespace chunk_map_check {
 static_assert(chunk_map_check::is_new_table_empty());
 static_assert(!std::is_copy_constructible_v<WindowTable>);
 
+// The table holds one record for each slot and no other byte, and the host
+// takes the first slot.
+static_assert(sizeof(WindowTable) == kWindowSlots * sizeof(WindowRecord));
+static_assert(kHostWindow.raw() == 0);
+
 }  // namespace foundation::alloc

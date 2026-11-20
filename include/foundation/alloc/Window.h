@@ -20,6 +20,10 @@
 //   publish_host_window(window, table)
 //                                    writes the record of the window into the
 //                                    host slot of the table
+//   publish_device_window(record, table)
+//                                    writes the record of the window of a
+//                                    device into the first empty slot of a
+//                                    device, or gives table_full
 //
 // THE LADDER
 //   The sizes are 1 TiB, 256 GiB, 64 GiB, 16 GiB, 4 GiB and 1 GiB.  A build
@@ -169,5 +173,14 @@ reserve_window(::foundation::os::ReserveCap cap) noexcept;
 // init of the root calls it, one time, before it gives a block of the
 // window.
 void publish_host_window(Window const& window, WindowTable& table) noexcept;
+
+// Writes the record of the window of a device into the first empty slot after
+// the host slot, and gives that slot.  When each of the kWindowSlots - 1
+// slots of a device holds a record, the door writes nothing and gives
+// table_full.  The record is not empty.  Only the init of the window of a
+// device calls it, one time for each device, and the caller holds the table
+// alone.  Complexity: O(kWindowSlots).
+[[nodiscard]] ::foundation::core::Result<WindowSlot, WindowTableError>
+publish_device_window(WindowRecord record, WindowTable& table) noexcept;
 
 }  // namespace foundation::alloc

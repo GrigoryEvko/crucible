@@ -18,6 +18,8 @@
 //     for each section of records.  A line of another mapping, such as a map
 //     of a sanitizer for itself, does not count.
 //   - publish_host_window fills the host slot and no other slot.
+//   - publish_device_window fills the 63 slots of the devices in order, and
+//     the next device gets table_full with no end of the process.
 
 #include <foundation/alloc/ChunkMap.h>
 #include <foundation/alloc/Metadata.h>
@@ -259,6 +261,31 @@ void host_slot_only(TestRunnerCtx const& test) {
     pass(test, "  host_slot_only: PASSED\n");
 }
 
+// The 63 slots of the devices take records in order from slot 1, and the
+// 64th device gets table_full with no end of the process.  The table does not
+// compare records, so one window stands for each device here.
+void device_slots_fill_then_refuse(TestRunnerCtx const& test) {
+    alloc::Window const window = reserve_capped(4 * kGibibyte);
+    alloc::WindowTable table{};
+    alloc::publish_host_window(window, table);
+    bool is_in_order = true;
+    for (std::size_t device = 1; device < alloc::kWindowSlots; ++device) {
+        alloc::WindowSlot const expected = alloc::WindowSlot::check(device).expect("a slot below kWindowSlots");
+        bool const is_expected = alloc::publish_device_window(window.record(), table)
+                                     .match([expected](alloc::WindowSlot slot) noexcept { return slot == expected; },
+                                            [](alloc::WindowTableError) noexcept { return false; });
+        is_in_order = is_in_order && is_expected;
+    }
+    CRUCIBLE_TEST_ASSERT(test, is_in_order);
+    bool const is_full =
+        alloc::publish_device_window(window.record(), table)
+            .match([](alloc::WindowSlot) noexcept { return false; },
+                   [](alloc::WindowTableError error) noexcept { return error == alloc::WindowTableError::table_full; });
+    CRUCIBLE_TEST_ASSERT(test, is_full);
+    CRUCIBLE_TEST_ASSERT(test, table.host().base() == window.record().base());
+    pass(test, "  device_slots_fill_then_refuse: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -271,6 +298,7 @@ int main() {
     guard_chunk_faults(test);
     mappings_follow_extents(test);
     host_slot_only(test);
+    device_slots_fill_then_refuse(test);
     pass(test, "test_alloc_chunk_map: PASSED\n");
     return 0;
 }

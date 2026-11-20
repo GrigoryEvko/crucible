@@ -188,4 +188,14 @@ void publish_host_window(Window const& window, WindowTable& table) noexcept {
     detail::WindowRecordDoor::place(table, kHostWindow, window.record());
 }
 
+core::Result<WindowSlot, WindowTableError> publish_device_window(WindowRecord record, WindowTable& table) noexcept {
+    CRUCIBLE_FATAL_INVARIANT(!record.is_empty());
+    for (WindowSlot const slot : core::IndexRange<kWindowSlots>{}) {
+        if (slot == kHostWindow || !table.record(slot).is_empty()) continue;
+        detail::WindowRecordDoor::place(table, slot, record);
+        return slot;
+    }
+    return core::err(WindowTableError::table_full);
+}
+
 }  // namespace foundation::alloc
