@@ -157,7 +157,8 @@ struct AlignedBytesDoor {
 // The layout of the storage of a block from its two fields (THE STORAGE): the
 // unaligned storage of the layout of the block, as the two doors of a block
 // take it.  The fields come from a Layout, so the one check of the layout
-// holds.  Complexity: O(1).
+// holds.  The check stays a call of its own, so a unit at its inline budget
+// keeps the inline members of a block.  Complexity: O(1).
 [[nodiscard]] constexpr ::foundation::alloc::Layout stored_block_layout(std::size_t bytes,
                                                                         std::size_t alignment) noexcept {
     return ::foundation::alloc::mint_layout(core::ByteCount{bytes}, ::foundation::alloc::Alignment{alignment})
@@ -201,9 +202,10 @@ struct AlignedBytesState {
 
     // The storage of a block of the layout, from the door of the kind (THE
     // STORAGE).  The layout of the caller holds each fact, so its unaligned
-    // storage needs no check.  Complexity: one allocation.
-    [[nodiscard]] static AlignedBytesState allocated(::foundation::alloc::Layout layout,
-                                                     ::foundation::detail::BlockStorage kind) noexcept {
+    // storage needs no check.  The take and the release of a block are
+    // always inline (foundation/core/Owner.h).  Complexity: one allocation.
+    [[nodiscard]] CRUCIBLE_INLINE static AlignedBytesState allocated(::foundation::alloc::Layout layout,
+                                                                     ::foundation::detail::BlockStorage kind) noexcept {
         ::foundation::alloc::Layout const stored = layout.unaligned_storage();
         void* const taken =
             kind == ::foundation::detail::BlockStorage::zeroed ? heap_allocate_zeroed_(stored) : heap_allocate_(stored);
@@ -214,7 +216,7 @@ struct AlignedBytesState {
     // Gives the storage back to the allocation door with the layout of the
     // storage, as the two doors of a block take it.  The release checks the
     // layout of its fields one time.
-    static constexpr void release(AlignedBytesState const& state) noexcept {
+    CRUCIBLE_INLINE static constexpr void release(AlignedBytesState const& state) noexcept {
         if (state.storage != nullptr) {
             heap_release_(state.storage, ::foundation::detail::stored_block_layout(state.bytes, state.alignment));
         }
@@ -252,9 +254,11 @@ public:
         delete("an AlignedBytes owns its block alone: a copy would give it back two times");
 
     // The assignment gives the block of this owner back after it takes the
-    // block of other.
-    AlignedBytes(AlignedBytes&&) noexcept = default;
-    AlignedBytes& operator=(AlignedBytes&&) noexcept = default;
+    // block of other.  The moves and the end are always inline, as those of
+    // the core are (foundation/core/Owner.h).
+    CRUCIBLE_INLINE AlignedBytes(AlignedBytes&&) noexcept = default;
+    CRUCIBLE_INLINE AlignedBytes& operator=(AlignedBytes&&) noexcept = default;
+    CRUCIBLE_INLINE constexpr ~AlignedBytes() = default;
 
     // The end of the block and reset() are constexpr, so a class with an
     // empty block member stays a literal type.  No constant evaluation
@@ -316,8 +320,10 @@ public:
         delete("an UnwrittenBytes owns its block alone: a copy would give it back two times");
     UnwrittenBytes& operator=(UnwrittenBytes const&) =
         delete("an UnwrittenBytes owns its block alone: a copy would give it back two times");
-    UnwrittenBytes(UnwrittenBytes&&) noexcept = default;
-    UnwrittenBytes& operator=(UnwrittenBytes&&) noexcept = default;
+    // The moves and the end are always inline, as those of the core are.
+    CRUCIBLE_INLINE UnwrittenBytes(UnwrittenBytes&&) noexcept = default;
+    CRUCIBLE_INLINE UnwrittenBytes& operator=(UnwrittenBytes&&) noexcept = default;
+    CRUCIBLE_INLINE constexpr ~UnwrittenBytes() = default;
 
     // The count of bytes that the mint asked for, without the round up.
     [[nodiscard]] std::size_t size() const noexcept { return state_.bytes; }

@@ -44,6 +44,13 @@
 // state away calls take_state_, which copies in the same way.  The shape
 // probe owner_take_and_end of test/shape/core_shapes.cpp holds this code.
 //
+// The moves, the end, take_state_ and reset_ are always inline.  GCC stops
+// the inlining of a unit when the unit grows past --param inline-unit-growth,
+// and a call that stays out of line takes the address of a state, which
+// then goes through the stack.  So the hot path of an owner does not depend
+// on the inline budget of its unit.  The release of a state that is small
+// and hot is always inline too, as AlignedBytesState::release is.
+//
 // THE MARKER
 // A state opts in to the core with the member
 //
@@ -60,6 +67,8 @@
 // test/foundation/test_core_owner_probe.cpp, names each home in an
 // OwnerHomes list and reads the homes through count_owner_roster_gaps, so a
 // new owner on the core is in its roster at once.
+
+#include <foundation/Platform.h>
 
 #include <cstddef>
 #include <meta>
@@ -109,7 +118,7 @@ protected:
     constexpr explicit OwnerCore(State const& state) noexcept : state_{state} {}
 
     // The state moves through a local (THE COPY OF A STATE).
-    constexpr OwnerCore(OwnerCore&& other) noexcept {
+    CRUCIBLE_INLINE constexpr OwnerCore(OwnerCore&& other) noexcept {
         State taken = other.take_state_();
         state_ = taken;
     }
@@ -117,7 +126,7 @@ protected:
     // The five steps of THE ORDER OF A MOVE ASSIGNMENT.  The steps work on
     // the states, so no step builds a second core.  take_state_ does steps
     // 1 and 2.
-    constexpr OwnerCore& operator=(OwnerCore&& other) noexcept {
+    CRUCIBLE_INLINE constexpr OwnerCore& operator=(OwnerCore&& other) noexcept {
         State taken = other.take_state_();
         State held = state_;
         state_ = taken;
@@ -129,11 +138,11 @@ protected:
     OwnerCore&
     operator=(OwnerCore const&) = delete("an owner owns its storage alone: a copy would release it two times");
 
-    constexpr ~OwnerCore() { State::release(state_); }
+    CRUCIBLE_INLINE constexpr ~OwnerCore() { State::release(state_); }
 
     // Gives the state to the caller, and leaves the emptied state in this
     // owner.  The caller then owns what the state owns.
-    [[nodiscard]] constexpr State take_state_() noexcept {
+    [[nodiscard]] CRUCIBLE_INLINE constexpr State take_state_() noexcept {
         State taken = state_;
         state_ = State::emptied(taken);
         return taken;
@@ -141,7 +150,7 @@ protected:
 
     // Releases the value, and leaves the owner empty.  The owner is empty
     // before the release starts, as in a move assignment.
-    constexpr void reset_() noexcept {
+    CRUCIBLE_INLINE constexpr void reset_() noexcept {
         State held = take_state_();
         State::release(held);
     }
