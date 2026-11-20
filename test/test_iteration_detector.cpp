@@ -12,9 +12,9 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
+#include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <vector>
+#include <utility>
 
 namespace {
 
@@ -48,30 +48,74 @@ struct Boundary {
     uint32_t length = 0;
 };
 
-std::vector<Boundary> feed(IterationDetector& detector, const std::vector<Op>& body, uint32_t iterations,
-                           uint64_t first_op_index = 0, uint32_t first_offset = 0) {
-    std::vector<Boundary> boundaries;
-    uint64_t op_index = first_op_index;
-    const uint64_t total = uint64_t{iterations} * body.size();
+// The boundaries of one feed.  The longest stream of the test has 2688 ops,
+// and each period has K ops or more, so a feed reports at most 538.
+inline constexpr std::size_t kBoundaryCapacity = 1024;
+using Boundaries = ::fixy::FixedList<Boundary, kBoundaryCapacity>;
+
+// The ops of the recorded MLP of inference_mlp_body.
+inline constexpr std::size_t kMlpOps = 46;
+
+// The count of the iterations of a body in a feed.
+enum class Iterations : std::uint32_t {
+};
+
+// The absolute index of the first op of a feed in the stream of the detector.
+enum class StreamOp : std::uint64_t {
+};
+
+// A position in a body, such as the first op of a feed or the first op of a
+// window.
+enum class BodyOffset : std::uint32_t {
+};
+
+// A period of a stream, as a count of ops.
+enum class Period : std::uint32_t {
+};
+
+// The count of the last boundaries that assert_settles_on checks.
+enum class TailCount : std::size_t {
+};
+
+// The op of the body at position, which wraps around the end of the body.
+[[nodiscard]] Op op_at(::fixy::View<Op const> body, BodyOffset position) {
+    return *body.get(std::to_underlying(position) % body.size()).expect("a position modulo the size is in the body");
+}
+
+// The boundaries of iterations copies of body, from the op of body at
+// first_offset.  The first op of the stream has the index first_op_index.
+[[nodiscard]] Boundaries feed(IterationDetector& detector, ::fixy::View<Op const> body, Iterations iterations,
+                              StreamOp first_op_index = StreamOp{0}, BodyOffset first_offset = BodyOffset{0}) {
+    Boundaries boundaries{};
+    uint64_t op_index = std::to_underlying(first_op_index);
+    const uint64_t total = uint64_t{std::to_underlying(iterations)} * body.size();
     for (uint64_t n = 0; n < total; ++n, ++op_index) {
-        const Op& op = body[(first_offset + n) % body.size()];
+        const Op op = *body.get((std::to_underlying(first_offset) + n) % body.size())
+                           .expect("a position modulo the size is in the body");
         if (detector.check(kAlloc, SchemaHash{op.schema}, ShapeHash{op.shape}))
-            boundaries.push_back({op_index, detector.last_completed_len});
+            static_cast<void>(boundaries.append(Boundary{op_index, detector.last_completed_len})
+                                  .expect("the boundaries of one feed fit kBoundaryCapacity"));
     }
     return boundaries;
 }
 
+// The boundary at position of a feed.
+[[nodiscard]] Boundary boundary_at(Boundaries const& boundaries, std::size_t position) {
+    return *boundaries.get(position).expect("the feed reported the boundary");
+}
+
 // The smallest period of the stream body^infinity that is K or more: the
 // smallest multiple of the primitive period of the body. O(L^2).
-uint32_t expected_period(const std::vector<Op>& body) {
+[[nodiscard]] Period expected_period(::fixy::View<Op const> body) {
     const auto length = static_cast<uint32_t>(body.size());
     uint32_t primitive = length;
     for (uint32_t divisor = 1; divisor < length; ++divisor) {
         if (length % divisor != 0) continue;
         bool is_period = true;
         for (uint32_t i = 0; i < length && is_period; ++i) {
-            is_period = body[i].schema == body[(i + divisor) % length].schema
-                     && body[i].shape == body[(i + divisor) % length].shape;
+            const Op here = op_at(body, BodyOffset{i});
+            const Op there = op_at(body, BodyOffset{i + divisor});
+            is_period = here.schema == there.schema && here.shape == there.shape;
         }
         if (is_period) {
             primitive = divisor;
@@ -81,18 +125,18 @@ uint32_t expected_period(const std::vector<Op>& body) {
     uint32_t period = primitive;
     while (period < K)
         period += primitive;
-    return period;
+    return Period{period};
 }
 
 // How many of the body's circular K-op windows equal the one at phase. O(L*K).
-uint32_t window_count(const std::vector<Op>& body, uint32_t phase) {
+[[nodiscard]] uint32_t window_count(::fixy::View<Op const> body, BodyOffset phase) {
     const auto length = static_cast<uint32_t>(body.size());
     uint32_t count = 0;
     for (uint32_t other = 0; other < length; ++other) {
         bool same = true;
         for (uint32_t i = 0; i < K && same; ++i) {
-            const Op& a = body[(phase + i) % length];
-            const Op& b = body[(other + i) % length];
+            const Op a = op_at(body, BodyOffset{std::to_underlying(phase) + i});
+            const Op b = op_at(body, BodyOffset{other + i});
             same = a.schema == b.schema && a.shape == b.shape;
         }
         count += same ? 1u : 0u;
@@ -103,11 +147,12 @@ uint32_t window_count(const std::vector<Op>& body, uint32_t phase) {
 // Checks that a stream settles on its true period: the tail of the report is
 // all one length, that length is the true period, and consecutive reports are
 // exactly one period apart.
-void assert_settles_on(const std::vector<Boundary>& boundaries, uint32_t period, size_t tail) {
-    CRUCIBLE_TEST_ASSERT(kTest, boundaries.size() > tail);
-    for (size_t i = boundaries.size() - tail; i < boundaries.size(); ++i) {
-        CRUCIBLE_TEST_ASSERT(kTest, boundaries[i].length == period);
-        CRUCIBLE_TEST_ASSERT(kTest, boundaries[i].op_index - boundaries[i - 1].op_index == period);
+void assert_settles_on(Boundaries const& boundaries, Period period, TailCount tail) {
+    CRUCIBLE_TEST_ASSERT(kTest, boundaries.size() > std::to_underlying(tail));
+    for (size_t i = boundaries.size() - std::to_underlying(tail); i < boundaries.size(); ++i) {
+        CRUCIBLE_TEST_ASSERT(kTest, boundary_at(boundaries, i).length == std::to_underlying(period));
+        CRUCIBLE_TEST_ASSERT(kTest, boundary_at(boundaries, i).op_index - boundary_at(boundaries, i - 1).op_index
+                                        == std::to_underlying(period));
     }
 }
 
@@ -124,7 +169,7 @@ uint64_t next_random(uint64_t& state) {
 // nested ops in post-order, ReLU records two. Schema and shape hashes are the
 // recorded ones. Layers 0 to 2 are identical op for op, so the signature
 // matches at every layer and any two adjacent layers form a square.
-std::vector<Op> inference_mlp_body() {
+[[nodiscard]] ::fixy::FixedList<Op, kMlpOps> inference_mlp_body() {
     constexpr uint64_t AS_STRIDED = 0xd5788a09ae51260bULL;
     constexpr uint64_t TRANSPOSE = 0xcf885c3f9f1760a9ULL;
     constexpr uint64_t T = 0x5c094a679434c76dULL;
@@ -136,23 +181,40 @@ std::vector<Op> inference_mlp_body() {
     constexpr uint64_t CLAMP_MIN = 0x7452edb687fccec9ULL;
     constexpr uint64_t RELU = 0x4e408bc8ab40f455ULL;
 
-    const std::vector<Op> hidden = {
-        {AS_STRIDED, 0xe8173d7fadd93585ULL},   {TRANSPOSE, 0xe8173d7fadd93585ULL},    {T, 0xe8173d7fadd93585ULL},
-        {AS_STRIDED, 0xcffdb162079a442cULL},   {EXPAND, 0xcffdb162079a442cULL},       {COPY, 0x2441b799b8336b25ULL},
-        {RESOLVE_CONJ, 0x48cf127885f01d25ULL}, {RESOLVE_CONJ, 0x48cf127885f01d25ULL}, {ADDMM, 0x1ec472dd81226a98ULL},
-        {LINEAR, 0xf96bd5f4ed8bab4cULL},       {CLAMP_MIN, 0x48cf127885f01d25ULL},    {RELU, 0x48cf127885f01d25ULL},
+    const ::fixy::FixedArray<Op, 12> hidden = {
+        Op{AS_STRIDED, 0xe8173d7fadd93585ULL},
+        Op{TRANSPOSE, 0xe8173d7fadd93585ULL},
+        Op{T, 0xe8173d7fadd93585ULL},
+        Op{AS_STRIDED, 0xcffdb162079a442cULL},
+        Op{EXPAND, 0xcffdb162079a442cULL},
+        Op{COPY, 0x2441b799b8336b25ULL},
+        Op{RESOLVE_CONJ, 0x48cf127885f01d25ULL},
+        Op{RESOLVE_CONJ, 0x48cf127885f01d25ULL},
+        Op{ADDMM, 0x1ec472dd81226a98ULL},
+        Op{LINEAR, 0xf96bd5f4ed8bab4cULL},
+        Op{CLAMP_MIN, 0x48cf127885f01d25ULL},
+        Op{RELU, 0x48cf127885f01d25ULL},
     };
-    const std::vector<Op> head = {
-        {AS_STRIDED, 0x7ef93346e220078fULL},   {TRANSPOSE, 0x7ef93346e220078fULL},    {T, 0x7ef93346e220078fULL},
-        {AS_STRIDED, 0x98b982a64e5976e6ULL},   {EXPAND, 0x98b982a64e5976e6ULL},       {COPY, 0xf67909131a9e601dULL},
-        {RESOLVE_CONJ, 0x0137544d7ba3f1efULL}, {RESOLVE_CONJ, 0x48cf127885f01d25ULL}, {ADDMM, 0x79016729776b50c0ULL},
-        {LINEAR, 0xd6d938c419a8e840ULL},
+    const ::fixy::FixedArray<Op, 10> head = {
+        Op{AS_STRIDED, 0x7ef93346e220078fULL},
+        Op{TRANSPOSE, 0x7ef93346e220078fULL},
+        Op{T, 0x7ef93346e220078fULL},
+        Op{AS_STRIDED, 0x98b982a64e5976e6ULL},
+        Op{EXPAND, 0x98b982a64e5976e6ULL},
+        Op{COPY, 0xf67909131a9e601dULL},
+        Op{RESOLVE_CONJ, 0x0137544d7ba3f1efULL},
+        Op{RESOLVE_CONJ, 0x48cf127885f01d25ULL},
+        Op{ADDMM, 0x79016729776b50c0ULL},
+        Op{LINEAR, 0xd6d938c419a8e840ULL},
     };
 
-    std::vector<Op> body;
-    for (int layer = 0; layer < 3; ++layer)
-        body.insert(body.end(), hidden.begin(), hidden.end());
-    body.insert(body.end(), head.begin(), head.end());
+    ::fixy::FixedList<Op, kMlpOps> body{};
+    for (int layer = 0; layer < 3; ++layer) {
+        for (const Op op : hidden)
+            static_cast<void>(body.append(op).expect("the MLP has 46 ops"));
+    }
+    for (const Op op : head)
+        static_cast<void>(body.append(op).expect("the MLP has 46 ops"));
     return body;
 }
 
@@ -170,7 +232,7 @@ void test_signature_build_requires_K_ops() {
 
 void test_boundary_needs_two_equal_iterations() {
     IterationDetector d;
-    const SchemaHash sig[5] = {H(100), H(200), H(300), H(400), H(500)};
+    const ::fixy::FixedArray<SchemaHash, 5> sig{H(100), H(200), H(300), H(400), H(500)};
     for (auto h : sig)
         CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, h));
     // One repeat is one iteration and nothing to compare it with.
@@ -179,11 +241,11 @@ void test_boundary_needs_two_equal_iterations() {
     CRUCIBLE_TEST_ASSERT(kTest, !d.confirmed);
     CRUCIBLE_TEST_ASSERT(kTest, d.boundaries_detected.get() == 0);
     // The third copy completes the square. The boundary fires on its last op.
-    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, sig[0]));
-    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, sig[1]));
-    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, sig[2]));
-    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, sig[3]));
-    CRUCIBLE_TEST_ASSERT(kTest, d.check(kAlloc, sig[4]));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, sig.at(::fixy::index<0>())));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, sig.at(::fixy::index<1>())));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, sig.at(::fixy::index<2>())));
+    CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, sig.at(::fixy::index<3>())));
+    CRUCIBLE_TEST_ASSERT(kTest, d.check(kAlloc, sig.at(::fixy::index<4>())));
     CRUCIBLE_TEST_ASSERT(kTest, d.confirmed);
     CRUCIBLE_TEST_ASSERT(kTest, d.last_completed_len == 5);
     CRUCIBLE_TEST_ASSERT(kTest, d.boundaries_detected.get() == 1);
@@ -195,7 +257,7 @@ void test_unequal_iterations_do_not_fire() {
     // Three signature matches whose gaps differ. The old matcher reported a
     // boundary here, of whatever length the last gap had.
     IterationDetector d;
-    const SchemaHash sig[5] = {H(1), H(2), H(3), H(4), H(5)};
+    const ::fixy::FixedArray<SchemaHash, 5> sig{H(1), H(2), H(3), H(4), H(5)};
     for (auto h : sig)
         CRUCIBLE_TEST_ASSERT(kTest, !d.check(kAlloc, h));
     for (auto h : sig)
@@ -211,9 +273,9 @@ void test_unequal_iterations_do_not_fire() {
 
 void test_broken_period_is_refuted() {
     IterationDetector d;
-    std::vector<Op> body = {{1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}};
-    auto boundaries = feed(d, body, 4);
-    CRUCIBLE_TEST_ASSERT(kTest, !boundaries.empty());
+    const ::fixy::FixedArray<Op, 5> body{Op{1, 0}, Op{2, 0}, Op{3, 0}, Op{4, 0}, Op{5, 0}};
+    const Boundaries boundaries = feed(d, body.view(), Iterations{4});
+    CRUCIBLE_TEST_ASSERT(kTest, boundaries.size() != 0);
     CRUCIBLE_TEST_ASSERT(kTest, d.confirmed);
 
     // The next iteration breaks after three ops.
@@ -232,25 +294,25 @@ void test_sub_period_signature_mlp_aten_level() {
     // three times, then t, addmm. The signature t addmm relu t addmm matches
     // at offsets 0, 3 and 6 of every iteration. The old matcher reported
     // boundaries of 6 and 5 ops in turn, and every other replay diverged.
-    std::vector<Op> body;
+    ::fixy::FixedList<Op, 11> body{};
     for (int layer = 0; layer < 3; ++layer) {
-        body.push_back({1, 0});
-        body.push_back({2, 0});
-        body.push_back({3, 0});
+        static_cast<void>(body.append(Op{1, 0}).expect("the body has 11 ops"));
+        static_cast<void>(body.append(Op{2, 0}).expect("the body has 11 ops"));
+        static_cast<void>(body.append(Op{3, 0}).expect("the body has 11 ops"));
     }
-    body.push_back({1, 0});
-    body.push_back({2, 0});
+    static_cast<void>(body.append(Op{1, 0}).expect("the body has 11 ops"));
+    static_cast<void>(body.append(Op{2, 0}).expect("the body has 11 ops"));
 
     IterationDetector d;
-    auto boundaries = feed(d, body, 40);
-    CRUCIBLE_TEST_ASSERT(kTest, !boundaries.empty());
+    const Boundaries boundaries = feed(d, body.view(), Iterations{40});
+    CRUCIBLE_TEST_ASSERT(kTest, boundaries.size() != 0);
     for (const auto& boundary : boundaries)
         CRUCIBLE_TEST_ASSERT(kTest, boundary.length == 11);
     // The square is complete after two iterations. The first boundary then
     // waits for the earliest window that occurs once per iteration, t addmm
     // relu t addmm occurs three times, and 2 3 1 2 1 at offset 7 once.
-    CRUCIBLE_TEST_ASSERT(kTest, boundaries.front().op_index == 2 * 11 + 7 + K - 1);
-    assert_settles_on(boundaries, 11, boundaries.size() - 1);
+    CRUCIBLE_TEST_ASSERT(kTest, boundary_at(boundaries, 0).op_index == 2 * 11 + 7 + K - 1);
+    assert_settles_on(boundaries, Period{11}, TailCount{boundaries.size() - 1});
     ::fixy::check::pass(kTest, "  test_sub_period_aten_level:      PASSED\n");
 }
 
@@ -262,8 +324,8 @@ void test_repeated_layers_recorded_mlp() {
     CRUCIBLE_TEST_ASSERT(kTest, body.size() == 46);
 
     IterationDetector d;
-    auto boundaries = feed(d, body, 30);
-    assert_settles_on(boundaries, 46, 20);
+    const Boundaries boundaries = feed(d, body.view(), Iterations{30});
+    assert_settles_on(boundaries, Period{46}, TailCount{20});
     size_t wrong = 0;
     for (const auto& boundary : boundaries)
         wrong += boundary.length != 46 ? 1u : 0u;
@@ -273,9 +335,9 @@ void test_repeated_layers_recorded_mlp() {
     // foreground cannot align at a hidden layer. Every such window touches
     // the head layer, and the earliest one starts four ops before it.
     CRUCIBLE_TEST_ASSERT(kTest, d.phase_is_unique);
-    const uint64_t iteration_start = boundaries.back().op_index + 1 - K;
+    const uint64_t iteration_start = boundary_at(boundaries, boundaries.size() - 1).op_index + 1 - K;
     const auto phase = static_cast<uint32_t>(iteration_start % 46);
-    CRUCIBLE_TEST_ASSERT(kTest, window_count(body, phase) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, window_count(body.view(), BodyOffset{phase}) == 1);
     CRUCIBLE_TEST_ASSERT(kTest, phase == 32);
     ::fixy::check::pass(kTest, "  test_repeated_layers_mlp:        PASSED ({} early boundaries)\n", wrong);
 }
@@ -292,7 +354,7 @@ void test_refuted_period_survives_divergence_restart() {
     uint64_t op_index = 0;
     bool accepted_layer = false;
     for (; op_index < 46 * 4; ++op_index) {
-        const Op& op = body[op_index % 46];
+        const Op op = op_at(body.view(), BodyOffset{static_cast<uint32_t>(op_index % 46)});
         if (d.check(kAlloc, SchemaHash{op.schema}, ShapeHash{op.shape}) && d.last_completed_len == 12) {
             accepted_layer = true;
             break;
@@ -306,11 +368,11 @@ void test_refuted_period_survives_divergence_restart() {
     CRUCIBLE_TEST_ASSERT(kTest, d.signature_len.get() == 0);
 
     // Resume one op into a hidden layer.
-    auto boundaries = feed(d, body, 20, 0, 13);
-    CRUCIBLE_TEST_ASSERT(kTest, !boundaries.empty());
+    const Boundaries boundaries = feed(d, body.view(), Iterations{20}, StreamOp{0}, BodyOffset{13});
+    CRUCIBLE_TEST_ASSERT(kTest, boundaries.size() != 0);
     for (const auto& boundary : boundaries)
         CRUCIBLE_TEST_ASSERT(kTest, boundary.length == 46);
-    assert_settles_on(boundaries, 46, boundaries.size() - 1);
+    assert_settles_on(boundaries, Period{46}, TailCount{boundaries.size() - 1});
     ::fixy::check::pass(kTest, "  test_refuted_survives_restart:   PASSED\n");
 }
 
@@ -320,11 +382,12 @@ void test_divergence_after_a_second_period_refutes_nothing() {
     // layer region, and that is what diverges. The restart must not refute
     // the true period, or the next search can only find two iterations.
     const auto body = inference_mlp_body();
-    for (const bool true_period_reported : {false, true}) {
+    constexpr ::fixy::FixedArray<bool, 2> kTruePeriodReported{false, true};
+    for (const bool true_period_reported : kTruePeriodReported) {
         IterationDetector d;
         uint64_t op_index = 0;
         for (; op_index < 46 * 6; ++op_index) {
-            const Op& op = body[op_index % 46];
+            const Op op = op_at(body.view(), BodyOffset{static_cast<uint32_t>(op_index % 46)});
             const bool fired = d.check(kAlloc, SchemaHash{op.schema}, ShapeHash{op.shape});
             if (d.period_ == 46 && (!true_period_reported || fired)) break;
         }
@@ -333,10 +396,10 @@ void test_divergence_after_a_second_period_refutes_nothing() {
 
         d.restart_after_divergence();
         CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 1);
-        auto boundaries = feed(d, body, 20, 0, 13);
+        const Boundaries boundaries = feed(d, body.view(), Iterations{20}, StreamOp{0}, BodyOffset{13});
         for (const auto& boundary : boundaries)
             CRUCIBLE_TEST_ASSERT(kTest, boundary.length == 46);
-        assert_settles_on(boundaries, 46, boundaries.size() - 1);
+        assert_settles_on(boundaries, Period{46}, TailCount{boundaries.size() - 1});
     }
     ::fixy::check::pass(kTest, "  test_second_period_not_refuted:  PASSED\n");
 }
@@ -345,36 +408,59 @@ void test_gap_in_the_recording_does_not_refute() {
     // The foreground records nothing while it aligns or replays, so the
     // stream the detector sees can skip ops with no restart. The gap breaks
     // the true period once. It must hold again afterwards.
-    std::vector<Op> body;
+    ::fixy::FixedList<Op, 8> body{};
     for (uint64_t i = 0; i < 8; ++i)
-        body.push_back({0x100 + i, 0x200 + i});
+        static_cast<void>(body.append(Op{0x100 + i, 0x200 + i}).expect("the body has 8 ops"));
     IterationDetector d;
-    auto before = feed(d, body, 4);
-    CRUCIBLE_TEST_ASSERT(kTest, !before.empty());
+    const Boundaries before = feed(d, body.view(), Iterations{4});
+    CRUCIBLE_TEST_ASSERT(kTest, before.size() != 0);
     // Resume three ops into an iteration.
-    auto after = feed(d, body, 20, 0, 3);
+    const Boundaries after = feed(d, body.view(), Iterations{20}, StreamOp{0}, BodyOffset{3});
     CRUCIBLE_TEST_ASSERT(kTest, !d.is_refuted(8, d.period_body_sum_));
-    assert_settles_on(after, 8, 10);
+    assert_settles_on(after, Period{8}, TailCount{10});
     ::fixy::check::pass(kTest, "  test_gap_does_not_refute:        PASSED\n");
 }
 
+// A body of at most seven ops, and the period that its stream settles on.  The
+// ops after the length are empty, and no feed reads them.
+using ShortOps = ::fixy::FixedArray<Op, 7>;
+struct ShortBody {
+    ShortOps ops{};
+    std::size_t length = 0;
+    Period period{};
+};
+
 void test_short_periods() {
     // A period below K gets its smallest multiple that is K or more.
-    const std::vector<std::vector<Op>> bodies = {
-        {{1, 0}},  // 1 -> 5
-        {{1, 0}, {2, 0}},  // 2 -> 6
-        {{1, 0}, {2, 0}, {3, 0}},  // 3 -> 6
-        {{1, 0}, {2, 0}, {1, 0}, {2, 0}, {3, 0}, {3, 0}},  // 6
-        {{1, 0}, {2, 0}, {1, 0}, {2, 0}, {1, 0}, {2, 0}, {3, 0}},  // 7
-        {{1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {2, 0}},  // 6, the signature is five equal ops
+    const Op empty{};
+    const ::fixy::FixedArray<ShortBody, 6> bodies{
+        ShortBody{.ops = ShortOps{Op{1, 0}, empty, empty, empty, empty, empty, empty},
+                  .length = 1,
+                  .period = Period{5}},  // 1 -> 5
+        ShortBody{.ops = ShortOps{Op{1, 0}, Op{2, 0}, empty, empty, empty, empty, empty},
+                  .length = 2,
+                  .period = Period{6}},  // 2 -> 6
+        ShortBody{.ops = ShortOps{Op{1, 0}, Op{2, 0}, Op{3, 0}, empty, empty, empty, empty},
+                  .length = 3,
+                  .period = Period{6}},  // 3 -> 6
+        ShortBody{.ops = ShortOps{Op{1, 0}, Op{2, 0}, Op{1, 0}, Op{2, 0}, Op{3, 0}, Op{3, 0}, empty},
+                  .length = 6,
+                  .period = Period{6}},  // 6
+        ShortBody{.ops = ShortOps{Op{1, 0}, Op{2, 0}, Op{1, 0}, Op{2, 0}, Op{1, 0}, Op{2, 0}, Op{3, 0}},
+                  .length = 7,
+                  .period = Period{7}},  // 7
+        ShortBody{.ops = ShortOps{Op{1, 0}, Op{1, 0}, Op{1, 0}, Op{1, 0}, Op{1, 0}, Op{2, 0}, empty},
+                  .length = 6,
+                  .period = Period{6}},  // 6, the signature is five equal ops
     };
-    const uint32_t expected[] = {5, 6, 6, 6, 7, 6};
-    for (size_t i = 0; i < bodies.size(); ++i) {
-        CRUCIBLE_TEST_ASSERT(kTest, expected_period(bodies[i]) == expected[i]);
+    for (const ShortBody& short_body : bodies) {
+        const ::fixy::View<Op const> body =
+            short_body.ops.view().window(0, short_body.length).expect("the length of a body is at most seven");
+        CRUCIBLE_TEST_ASSERT(kTest, expected_period(body) == short_body.period);
         IterationDetector d;
-        const auto iterations = static_cast<uint32_t>(400 / bodies[i].size());
-        auto boundaries = feed(d, bodies[i], iterations);
-        assert_settles_on(boundaries, expected[i], 10);
+        const auto iterations = static_cast<uint32_t>(400 / body.size());
+        const Boundaries boundaries = feed(d, body, Iterations{iterations});
+        assert_settles_on(boundaries, short_body.period, TailCount{10});
     }
     ::fixy::check::pass(kTest, "  test_short_periods:              PASSED\n");
 }
@@ -387,16 +473,17 @@ void test_random_bodies_settle_on_true_period() {
     uint32_t streams = 0;
     for (uint32_t length = 3; length <= 24; ++length) {
         for (uint32_t trial = 0; trial < 40; ++trial) {
-            std::vector<Op> body(length);
-            for (auto& op : body)
-                op.schema = 1 + next_random(state) % 3;
-            const uint32_t period = expected_period(body);
+            ::fixy::FixedList<Op, 24> body{};
+            for (uint32_t position = 0; position < length; ++position)
+                static_cast<void>(
+                    body.append(Op{1 + next_random(state) % 3, 0}).expect("a random body has at most 24 ops"));
+            const Period period = expected_period(body.view());
             const auto offset = static_cast<uint32_t>(next_random(state) % length);
 
             IterationDetector d;
             const uint32_t iterations = 12 + 2400 / length;
-            auto boundaries = feed(d, body, iterations, 0, offset);
-            assert_settles_on(boundaries, period, 8);
+            const Boundaries boundaries = feed(d, body.view(), Iterations{iterations}, StreamOp{0}, BodyOffset{offset});
+            assert_settles_on(boundaries, period, TailCount{8});
             ++streams;
         }
     }
@@ -406,21 +493,23 @@ void test_random_bodies_settle_on_true_period() {
 void test_restart_without_unique_phase_refutes_nothing() {
     // A stream of one repeated op has no window that occurs once per period.
     // A divergence then says nothing about the period, so it stays eligible.
+    const ::fixy::FixedArray<Op, 1> body{Op{7, 0}};
     IterationDetector d;
-    auto boundaries = feed(d, {{7, 0}}, 30);
-    CRUCIBLE_TEST_ASSERT(kTest, !boundaries.empty());
+    const Boundaries boundaries = feed(d, body.view(), Iterations{30});
+    CRUCIBLE_TEST_ASSERT(kTest, boundaries.size() != 0);
     CRUCIBLE_TEST_ASSERT(kTest, !d.phase_is_unique);
     d.restart_after_divergence();
     CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 0);
-    boundaries = feed(d, {{7, 0}}, 30);
-    assert_settles_on(boundaries, 5, 3);
+    const Boundaries again = feed(d, body.view(), Iterations{30});
+    assert_settles_on(again, Period{5}, TailCount{3});
     ::fixy::check::pass(kTest, "  test_restart_no_unique_phase:    PASSED\n");
 }
 
 void test_reset_clears_everything() {
     IterationDetector d;
-    auto boundaries = feed(d, inference_mlp_body(), 6);
-    CRUCIBLE_TEST_ASSERT(kTest, !boundaries.empty());
+    const auto body = inference_mlp_body();
+    const Boundaries boundaries = feed(d, body.view(), Iterations{6});
+    CRUCIBLE_TEST_ASSERT(kTest, boundaries.size() != 0);
     CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ > 0);
 
     d.reset();
@@ -452,7 +541,7 @@ void test_typestate_witness_minting() {
         CRUCIBLE_TEST_ASSERT(kTest, building_view->signature_len.get() == 0);
     }
 
-    const SchemaHash sig[5] = {H(11), H(22), H(33), H(44), H(55)};
+    const ::fixy::FixedArray<SchemaHash, 5> sig{H(11), H(22), H(33), H(44), H(55)};
     for (auto h : sig)
         (void)d.check(kAlloc, h);
     CRUCIBLE_TEST_ASSERT(kTest, d.signature_len.get() == K);
