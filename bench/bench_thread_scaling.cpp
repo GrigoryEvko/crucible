@@ -1025,10 +1025,12 @@ template <OpKind Kind, class Consumer>
 // that the pool lends, and the worker of the last slot pops through the
 // consumer handle.  The producer of slot k of a lanes channel pushes into
 // lane k.  Each worker owns its end in its own frame, so no end shares a line
-// with an object that the main thread writes.
+// with an object that the main thread writes.  The channel of a row lives in
+// the frame of the row, and the row is not inline, so the stack holds the
+// channel of one row at a time and not the channels of each count of threads.
 template <OpKind Kind, std::uint32_t Threads, std::size_t... Producers>
-[[nodiscard]] RowResult run_permissioned_row(bench::Spread const& spread,
-                                             std::index_sequence<Producers...> /*pushers*/) {
+[[nodiscard, gnu::noinline]] RowResult run_permissioned_row(bench::Spread const& spread,
+                                                            std::index_sequence<Producers...> /*pushers*/) {
     auto root =
         perm::mint_permission_root<::fixy::concurrent::channel_tag::Whole<kRowForm<Kind>, PermissionedRowTag>>();
     using Channel = typename RowChannel<Kind, Threads, decltype(root)>::type;
