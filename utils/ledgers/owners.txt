@@ -234,7 +234,6 @@ test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace):
 test/foundation/test_permissions_compile.cpp | detail-use | 1 | (anonymous namespace)::test_perm_set_compile(): foundation::permissions::detail | runs the permission-set smoke namespace
 test/foundation/test_platform.cpp | detail-use | 2 | main(): foundation::detail | asks the layer whether a debugger is attached
 test/foundation/test_row_hash.cpp | detail-use | 16 | namespace-scope: foundation::diag::detail | tests the sort helper of the row hash
-test/foundation/test_row_mismatch.cpp | detail-use | 3 | (anonymous namespace)::test_message_builder_format_shape(): foundation::diag::detail | reads the text of a row mismatch diagnostic
 test/layer/checks/fixy/Machine.cpp | unchecked-use | 1 | namespace-scope: std::meta::access_context::unchecked | reads each data member of a machine, the private ones too, to check that each member has an initializer
 test/layer/checks/fixy/PredicateImplies.cpp | unchecked-use | 1 | fixy::detail::refined_edge_walk::narrowing_edge_count(): std::meta::access_context::unchecked | the implication relation moved from fixy/Predicates.h to fixy/PredicateImplies.h, and its walks of admitted_implications moved with it
 test/layer/checks/fixy/Secret.cpp | unchecked-use | admit | fixy::detail::secret_policy_relation::every_edge_is_a_policy_exit(): std::meta::access_context::unchecked | walks the admitted declassification policies to check that each edge is a policy exit
