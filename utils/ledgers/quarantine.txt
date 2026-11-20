@@ -292,12 +292,12 @@ include/foundation/diag/ | replace-pending:<string> | 1 | - | -
 include/foundation/diag/ | replace-pending:<string_view> | 6 | - | -
 include/foundation/diag/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/diag/ | replace-pending:<vector> | 3 | - | -
-include/foundation/effects/ | base-std-entity | 61 | - | -
-include/foundation/effects/ | base-std-object | 20 | - | -
+include/foundation/effects/ | base-std-entity | 60 | - | -
+include/foundation/effects/ | base-std-object | 17 | - | -
 include/foundation/effects/ | replace-pending:<array> | 3 | - | -
 include/foundation/effects/ | replace-pending:<atomic> | 1 | - | -
 include/foundation/effects/ | replace-pending:<bit> | 2 | - | -
-include/foundation/effects/ | replace-pending:<string_view> | 5 | - | -
+include/foundation/effects/ | replace-pending:<string_view> | 3 | - | -
 include/foundation/effects/ | replace-pending:<vector> | 5 | - | -
 include/foundation/permissions/ | base-std-entity | 120 | - | -
 include/foundation/permissions/ | base-std-object | 32 | - | -
@@ -355,7 +355,7 @@ test/ | region | 1 | PROBE: the test sets the current directory, the modes and t
 test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | replace-pending:<limits> | 8 | - | -
 test/ | replace-pending:std::bit_cast | 51 | - | -
-test/ | std-entity | 959 | - | -
+test/ | std-entity | 949 | - | -
 test/ | std-object | 334 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
@@ -568,7 +568,7 @@ test/foundation/ | opted-out | 1 | PROBE: the child reads a reserved page that n
 test/foundation/ | opted-out | 3 | PROBE: the identity walk reads a pointer, a member pointer and a bfloat16 value | -
 test/foundation/ | opted-out | 1 | PROBE: the layout test reads the address of the first element of each array of a buffer | the layout test of the SwissTableBuffer reads the address of the first element of each array as an integer, and no type of the base gives the address of a View as an integer
 test/foundation/ | opted-out | 1 | PROBE: the signature reflection reads a raw pointer parameter | -
-test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/foundation/ | opted-out | 3 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | opted-out | 2 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -
 test/foundation/ | opted-out | 2 | PROBE: the walk of the extract gate reads the target of a raw pointer member | -
 test/foundation/ | opted-out | 3 | PROBE: valid_span judges a raw pointer with a count, the form of a drain | -
@@ -611,8 +611,8 @@ test/foundation/ | region | 1 | PROBE: the walk of the Protocol family over a C 
 test/foundation/ | region | 2 | PROBE: the walk of the extract gate reads the target of a raw pointer member | -
 test/foundation/ | region | 2 | PROBE: valid_span judges a raw pointer with a count, the form of a drain | -
 test/foundation/ | replace-pending:std::bit_cast | 1 | - | -
-test/foundation/ | std-entity | 301 | - | -
-test/foundation/ | std-object | 101 | - | -
+test/foundation/ | std-entity | 284 | - | -
+test/foundation/ | std-object | 85 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
 test/foundation/neg/ | detail-use | 122 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type or a range or a cursor that the fixture forges
@@ -662,7 +662,7 @@ test/foundation/neg/ | region | 6 | PROBE: the fixture specializes a trait of th
 test/foundation/neg/ | region | 1 | PROBE: the probe forges a niche of a Ref to show that Ref gives a niche no friend | -
 test/foundation/neg/ | region | 1 | PROBE: the probe specializes the Ref door to show that it cannot write the pointer | -
 test/foundation/neg/ | std-entity | 46 | - | -
-test/foundation/neg/ | std-object | 14 | - | -
+test/foundation/neg/ | std-object | 12 | - | -
 test/fuzz/boundary/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
 test/fuzz/boundary/ | opted-out | 15 | ABI: the death path runs in a signal handler and in the death callback of the sanitizer | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
 test/fuzz/boundary/ | opted-out | 1 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the entry view_entry.cpp of a fuzz harness of base types takes the input and the seeds of the runner as a std::span and a std::vector in one ABI region, and the test of the cap of a heap image takes a View of a map of 4 GiB of the guarded region door in one ABI region
@@ -684,17 +684,16 @@ test/layer/checks/crucible/ | std-entity | 20 | - | -
 test/layer/checks/crucible/ | std-object | 3 | - | -
 test/layer/checks/crucible/cog/ | std-object | 19 | - | -
 test/layer/checks/crucible/mimic/ | std-entity | 3 | - | -
-test/layer/checks/crucible/mimic/ | std-object | 3 | - | -
+test/layer/checks/crucible/mimic/ | std-object | 1 | - | -
 test/layer/checks/crucible/observe/ | std-entity | 1 | - | -
-test/layer/checks/crucible/topology/ | std-object | 1 | - | -
 test/layer/checks/fixy/ | c-array-object | 9 | - | -
 test/layer/checks/fixy/ | c-library-call | 1 | - | -
 test/layer/checks/fixy/ | raw-pointer-object | 10 | - | -
 test/layer/checks/fixy/ | region | 1 | PROBE: a bump arena of a test gives the raw pointer of the arena door | the bump arenas of the tests of OwnedRegion give the raw pointer of the arena door through foreign_first, and the door asks for that shape
 test/layer/checks/fixy/ | std-entity | 100 | - | -
-test/layer/checks/fixy/ | std-object | 10 | - | -
-test/layer/checks/fixy/atoms/ | std-entity | 24 | - | -
-test/layer/checks/fixy/atoms/ | std-object | 11 | - | -
+test/layer/checks/fixy/ | std-object | 8 | - | -
+test/layer/checks/fixy/atoms/ | std-entity | 18 | - | -
+test/layer/checks/fixy/atoms/ | std-object | 4 | - | -
 test/layer/checks/fixy/collision/ | std-entity | 16 | - | -
 test/layer/checks/fixy/collision/ | std-object | 7 | - | -
 test/layer/checks/fixy/concurrent/ | c-array-object | 3 | - | -
@@ -706,22 +705,20 @@ test/layer/checks/fixy/os/ | std-entity | 7 | - | -
 test/layer/checks/fixy/session/ | replace-pending:std::source_location | 1 | - | -
 test/layer/checks/fixy/session/ | std-entity | 2 | - | -
 test/layer/checks/fixy/session/ | std-object | 1 | - | -
-test/layer/checks/foundation/ | c-array-object | 2 | - | -
 test/layer/checks/foundation/ | opted-out | 3 | PROBE: the walk of a value of a cell reads raw pointers and pointers to members | a PROBE region of each new fixture and of the check file of foundation/ThreadLocalRef.h holds the pointers to members and the raw pointer that the walk of a value of a cell refuses and admits
 test/layer/checks/foundation/ | raw-pointer-object | 1 | - | -
 test/layer/checks/foundation/ | region | 1 | PROBE: the walk of a value of a cell reads raw pointers and pointers to members | a PROBE region of each new fixture and of the check file of foundation/ThreadLocalRef.h holds the pointers to members and the raw pointer that the walk of a value of a cell refuses and admits
 test/layer/checks/foundation/ | std-entity | 1 | - | -
-test/layer/checks/foundation/algebra/ | std-entity | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | c-array-object | 1 | - | -
-test/layer/checks/foundation/algebra/lattices/ | std-entity | 41 | - | -
-test/layer/checks/foundation/algebra/lattices/ | std-object | 13 | - | -
+test/layer/checks/foundation/algebra/lattices/ | std-entity | 40 | - | -
+test/layer/checks/foundation/algebra/lattices/ | std-object | 7 | - | -
 test/layer/checks/foundation/contracts/ | c-array-object | 4 | - | -
-test/layer/checks/foundation/diag/ | std-entity | 102 | - | -
-test/layer/checks/foundation/diag/ | std-object | 36 | - | -
+test/layer/checks/foundation/diag/ | std-entity | 98 | - | -
+test/layer/checks/foundation/diag/ | std-object | 35 | - | -
 test/layer/checks/foundation/effects/ | c-array-object | 2 | - | -
 test/layer/checks/foundation/effects/ | raw-function-pointer | 1 | - | -
-test/layer/checks/foundation/effects/ | std-entity | 46 | - | -
-test/layer/checks/foundation/effects/ | std-object | 11 | - | -
+test/layer/checks/foundation/effects/ | std-entity | 33 | - | -
+test/layer/checks/foundation/effects/ | std-object | 3 | - | -
 test/layer/checks/foundation/permissions/ | raw-new-delete | 1 | - | -
 test/layer/checks/foundation/permissions/ | raw-pointer-object | 1 | - | -
 test/layer/checks/foundation/permissions/ | std-entity | 6 | - | -
