@@ -342,8 +342,11 @@ struct RawRun final {
     T* first = nullptr;
     std::size_t count = 0;
 
-    explicit RawRun(std::size_t elements) noexcept
-        : first{static_cast<T*>(__builtin_malloc(elements * sizeof(T)))}, count{elements} {
+    // A run of no element holds no storage, so it makes no allocation of zero
+    // bytes.
+    explicit RawRun(std::size_t elements) noexcept : count{elements} {
+        if (elements == 0) return;
+        first = static_cast<T*>(__builtin_malloc(elements * sizeof(T)));
         if (first == nullptr) fixy::fatal("the raw run of the bench got its storage");
     }
     RawRun(RawRun&& other) noexcept : first{other.first}, count{other.count} { other.first = nullptr; }
