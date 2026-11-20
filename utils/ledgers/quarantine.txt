@@ -83,7 +83,6 @@ reason src/fixy/ | The slices 4.1, 4.6 and 4.9 of section 13.1 of the plan misc/
 reason src/foundation/ | The slices 4.5 and 4.8 of section 13.1 of the plan misc/01_10_2026_quarantine.md move the source files of foundation onto the families of the base
 reason test/ | The units harness, tests and fixtures of section 14.1 of the plan misc/01_10_2026_quarantine.md move test/ onto the types of the base
 reason test/fuzz/ | The unit fuzz of section 14.1 of the plan misc/01_10_2026_quarantine.md moves test/fuzz/ onto the types of the base, and the entry of libFuzzer keeps a region
-reason utils/tools/ | The unit tools of section 14.1 of the plan misc/01_10_2026_quarantine.md moves utils/tools/ onto the types of the base
 reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_quarantine.md moves vessel/ onto the types of the base, and the ABI of PyTorch stays behind regions
 @build/ | opted-out | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
 @build/ | region | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
@@ -318,7 +317,6 @@ src/foundation/ | base-std-object | 14 | - | -
 src/foundation/ | replace-pending:<atomic> | 1 | - | -
 src/foundation/ | replace-pending:<csignal> | 1 | - | -
 src/foundation/os/ | base-std-entity | 28 | - | -
-src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | opted-out | 3 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
 src/perf/ | opted-out | 2 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
 src/perf/ | region | 1 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
@@ -757,8 +755,6 @@ test/vigil_neg/ | opted-out | 1 | PROBE: the fixture starts the lifetime of an o
 test/vigil_neg/ | region | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
 test/vigil_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/vigil_neg/ | region | 1 | PROBE: the fixture starts the lifetime of an object in raw bytes | -
-utils/tools/lsp_code_action_plugin/ | std-entity | 97 | - | -
-utils/tools/lsp_code_action_plugin/ | std-object | 27 | - | -
 vessel/torch/ | opted-out | 44 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
 vessel/torch/ | opted-out | 27 | ABI: ctypes binds these entries by name, so they take and give only C types | the layout note of the vessel declares the C entries of the dispatch library, its host tool reads the layout of the C structs that ctypes mirrors, and the check of the layout digest reads a raw pointer, a C array and an entry with C linkage
 vessel/torch/ | opted-out | 9 | ABI: the helpers give a type to the handle and the meta array of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
