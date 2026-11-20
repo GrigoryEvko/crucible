@@ -128,6 +128,97 @@ static_assert(net::find_canonical_form(chain_net).hash
 static_assert(cc::StageGraphWellFormed<OneStage>);
 static_assert(net::check_forest(cc::net_of_stage_graph<OneStage>()).is_admitted());
 
+// The marked system of a stage graph (fixy/concurrent/StageNet.h).  The
+// diamond has four stages, a source and a sink, and four edges, an input end
+// and an output end.  The fake handles state no capacity, so each channel is
+// a rendezvous.  The upper path of the diamond enters input 0 of the fan-in,
+// and the fan-out sends on it first, so the system is live.
+inline constexpr net::ProcessSystem<6, 6, 12> diamond_system = cc::marked_system_of_stage_graph<Diamond<1>>();
+static_assert(diamond_system.process_names[0] == net::NetName{"stage 0"});
+static_assert(diamond_system.process_names[3] == net::NetName{"stage 3"});
+static_assert(diamond_system.process_names[4] == net::NetName{"source"});
+static_assert(diamond_system.process_names[5] == net::NetName{"sink"});
+static_assert(diamond_system.channels[1].name == net::NetName{"edge 1"});
+static_assert(diamond_system.channels[4].name == net::NetName{"input 0"});
+static_assert(diamond_system.channels[5].name == net::NetName{"output 0"});
+static_assert(diamond_system.channels[0].capacity == 0 && diamond_system.channels[5].capacity == 0);
+// The fan-out receives the input end, and then it sends on its two edges.
+static_assert(diamond_system.actions[0].channel == net::ChannelId{4}
+              && diamond_system.actions[0].move == net::Move::Receive);
+static_assert(diamond_system.actions[1].channel == net::ChannelId{0}
+              && diamond_system.actions[1].move == net::Move::Send);
+static_assert(diamond_system.actions[2].channel == net::ChannelId{1}
+              && diamond_system.actions[2].move == net::Move::Send);
+// The source sends the input end, and the sink receives the output end.
+static_assert(diamond_system.actions[10].process == net::ProcessId{4}
+              && diamond_system.actions[10].channel == net::ChannelId{4});
+static_assert(diamond_system.actions[11].process == net::ProcessId{5}
+              && diamond_system.actions[11].move == net::Move::Receive);
+inline constexpr net::NetVerdict diamond_liveness = net::check_liveness(diamond_system);
+static_assert(diamond_liveness.is_admitted(), diamond_liveness);
+
+// Handles that state the capacity of their channel: a queue of four values.
+template <typename T>
+struct SlottedConsumer {
+    using channel_type = FakeChannel<T>;
+    static constexpr std::size_t per_call_working_set = 64;
+    static constexpr std::size_t channel_capacity = 4;
+    [[nodiscard]] ::fixy::Option<T> try_pop() noexcept { return {}; }
+};
+
+template <typename T>
+struct SlottedProducer {
+    using channel_type = FakeChannel<T>;
+    static constexpr std::size_t per_call_working_set = 64;
+    static constexpr std::size_t channel_capacity = 4;
+    [[nodiscard]] bool try_push(T const&) noexcept { return true; }
+};
+
+static void slotted_body(SlottedConsumer<int>&&, SlottedProducer<int>&&) noexcept { dag_calls.add(1); }
+
+using SlottedStage = cc::Stage<&slotted_body, fixy::HotFgCtx>;
+using SlottedChain = cc::StageGraph<cc::StagePack<SlottedStage, SlottedStage>, cc::EdgePack<cc::StageEdge<0, 1>>>;
+
+static_assert(cc::StatesHandleCapacity<SlottedProducer<int>> && cc::StatesHandleCapacity<SlottedConsumer<int>>);
+static_assert(!cc::StatesHandleCapacity<FakeProducer<int>>);
+
+// Each channel of the chain takes the capacity of its handle: the edge and
+// the output end from the producer, and the input end from the consumer.
+inline constexpr net::ProcessSystem<4, 3, 6> slotted_system = cc::marked_system_of_stage_graph<SlottedChain>();
+static_assert(slotted_system.channels[0].capacity == 4 && slotted_system.channels[1].capacity == 4
+              && slotted_system.channels[2].capacity == 4);
+static_assert(net::check_liveness(slotted_system).is_admitted());
+
+static void slotted_fan_out_body(SlottedConsumer<int>&&, SlottedProducer<int>&&, SlottedProducer<int>&&) noexcept {
+    dag_calls.add(1);
+}
+static void slotted_fan_in_body(SlottedConsumer<int>&&, SlottedConsumer<int>&&, SlottedProducer<int>&&) noexcept {
+    dag_calls.add(1);
+}
+
+using SlottedFanOutStage = cc::MpmcStage<&slotted_fan_out_body, fixy::HotFgCtx>;
+using SlottedFanInStage = cc::MpmcStage<&slotted_fan_in_body, fixy::HotFgCtx>;
+
+// A fan-in that receives its inputs in another order than the fan-out sends
+// them.  The fan-out sends to input 1 of the fan-in first.  The fan-in
+// receives input 0 first, which comes through the middle stage from the
+// second send of the fan-out.  Each edge runs forward, and the gate holds.  On
+// rendezvous channels each send waits for its receive, so the system holds a
+// cycle of waits with no token.  A queue of one value or more on each channel
+// admits it, because then each wait goes forward in the order of the stages.
+template <class FanOut, class Middle, class FanIn>
+using CrossedFanIn =
+    cc::StageGraph<cc::StagePack<FanOut, Middle, FanIn>,
+                   cc::EdgePack<cc::StageEdge<0, 2, 0, 1>, cc::StageEdge<0, 1, 1, 0>, cc::StageEdge<1, 2, 0, 0>>>;
+static_assert(cc::StageGraphWellFormed<CrossedFanIn<FanOutStage, PlainStage, FanInStage>>);
+static_assert(net::check_liveness(cc::marked_system_of_stage_graph<CrossedFanIn<FanOutStage, PlainStage, FanInStage>>())
+                  .says("liveness: a cycle of waits holds no token: 'edge 0' step 0 from stage 0 to stage 2 <- 'edge "
+                        "2' step 0 from stage 1 to stage 2 <- 'edge 1' step 0 from stage 0 to stage 1.  No action of "
+                        "the cycle can start."));
+static_assert(net::check_liveness(
+                  cc::marked_system_of_stage_graph<CrossedFanIn<SlottedFanOutStage, SlottedStage, SlottedFanInStage>>())
+                  .is_admitted());
+
 // The coordinating context must admit the row of every stage, so the row
 // of a pipeline is the union of the stage rows, and no effect more.
 namespace eff = ::foundation::effects;
