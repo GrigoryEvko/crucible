@@ -12,13 +12,11 @@ rule erased-brand
 include/fixy/handle/Published.h | erased-brand | 4 | foundation::core::Ref | holds the erased brand on purpose: a link of an arena graph and a published object live as long as their arena or store, not a frame, and a brand of that lifetime is planned work
 include/fixy/os/OwnedMmap.h | erased-brand | 1 | fixy::OwnedMmap | -
 include/fixy/session/Flow.h | erased-brand | 1 | foundation::permissions::LentPermission | -
-include/fixy/session/Flow.h | erased-brand | 2 | foundation::permissions::Permission | -
 include/fixy/session/Flow.h | erased-brand | 4 | foundation::permissions::ReadLoan | -
 include/foundation/core/Link.h | erased-brand | 23 | foundation::core::Ref | holds the erased brand on purpose: a link of an arena graph and a published object live as long as their arena or store, not a frame, and a brand of that lifetime is planned work
 include/foundation/permissions/Permission.h | erased-brand | 1 | foundation::permissions::Permission | -
 test/fixy/neg/neg_borrowed_from_a_temporary.cpp | erased-brand | 1 | fixy::Borrowed | -
 test/fixy/neg/neg_borrowed_of_a_braced_list.cpp | erased-brand | 1 | fixy::Borrowed | -
-test/fixy/neg/neg_disjoint_receipt_from_another_split.cpp | erased-brand | 1 | fixy::OwnedRegion | -
 test/fixy/neg/neg_os_mmap_release_erased_mapping.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/fixy/neg/neg_os_numa_placement_bit_cast.cpp | erased-brand | 1 | fixy::NumaPlacement | -
 test/fixy/neg/neg_os_numa_placement_copied.cpp | erased-brand | 1 | fixy::NumaPlacement | -
@@ -97,7 +95,7 @@ test/fixy/test_forgeable_proofs.cpp | erased-brand | 1 | foundation::permissions
 test/fixy/test_forgeable_proofs.cpp | erased-brand | 1 | foundation::permissions::SharedPermissionPool | -
 test/fixy/test_os_numa_placement.cpp | erased-brand | 1 | fixy::NumaBindableRegion | -
 test/fixy/test_owned_mmap.cpp | erased-brand | 2 | fixy::OwnedMmap | -
-test/fixy/test_owned_region.cpp | erased-brand | 11 | fixy::OwnedRegion | -
+test/fixy/test_owned_region.cpp | erased-brand | 10 | fixy::OwnedRegion | -
 test/fixy/test_owned_region.cpp | erased-brand | 2 | foundation::permissions::Permission | -
 test/fixy/test_row_hash_wrappers.cpp | erased-brand | 5 | foundation::permissions::Permission | -
 test/fixy/test_row_hash_wrappers.cpp | erased-brand | 1 | foundation::permissions::ReadView | -

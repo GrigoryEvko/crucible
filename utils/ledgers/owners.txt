@@ -164,6 +164,7 @@ test/fixy/test_session_async_channel.cpp | detail-use | 1 | namespace-scope: fou
 test/fixy/test_session_bridges.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
 test/fixy/test_session_crash_stop.cpp | detail-use | 5 | namespace-scope: fixy::session::detail | walks the crash projection helpers
 test/fixy/test_session_crash_stop.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_entry.cpp | detail-use | 2 | namespace-scope: fixy::session::detail | names the session brand and the loop frame, the two forms of a loop context that the admission of a local choice reads through, which no public door builds
 test/fixy/test_session_entry.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
 test/fixy/test_session_global_crash.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
 test/fixy/test_session_global_types.cpp | detail-use | 4 | namespace-scope: fixy::session::detail | ties the merge fuel of the projection to projection_unfold_limit, and merges a loop that needs each unfold, which no public door gives
