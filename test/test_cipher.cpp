@@ -578,13 +578,18 @@ int main() {
             lf << "0x14,deadbeef00000002,2000\n";  // bad: step_id with a hex prefix
             lf << "20,GHI,2000\n";  // bad: invalid hex
             lf << "30,deadbeef00000003\n";  // bad: missing field
-            lf << "40,deadbeef00000004,4000";  // valid, and the last line has no newline
+            // valid, and then a sound line with no newline, which is a torn record
+            lf << "40,deadbeef00000004,4000\n50,deadbeef00000005,5000";
         }
 
         auto cipher = open_cipher(dir2);
         auto ov = cipher.mint_open_view(store_ctx());
         CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(ov, 10) == crucible::ContentHash{0xdeadbeef00000001ULL});
         CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(ov, 40) == crucible::ContentHash{0xdeadbeef00000004ULL});
+        // A writer ends each record with a newline in the same write, so the
+        // last line is a record whose append did not end, and it is no commit.
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(ov, 50) == crucible::ContentHash{0xdeadbeef00000004ULL}
+                                        && "a last line with no newline is a torn record");
         // Step 30 falls where a skipped line claimed a commit.  It must
         // resolve back to step 10, which is what shows the bad line was
         // dropped rather than half-parsed.
@@ -915,6 +920,64 @@ int main() {
                                              crucible::Cipher::CommitError::step_order));
         commit_head(at_ceiling, at_ceiling_ov, crucible::ContentHash{0x5900000000000006ULL},
                     crucible::Cipher::MAX_COMMIT_STEP);
+    }
+
+    // A crash in the middle of an append leaves a torn last record with no
+    // newline.  The next commit cuts the torn record and appends after the
+    // last whole line, so a reopen finds the commit.  The old store wrote the
+    // commit after the torn bytes, and the two joined into one line.  A torn
+    // record of other characters made a line that does not parse, and the
+    // commit was lost.  A torn record of digits only made the commit at step 3
+    // a line of the step 13.
+    {
+        const crucible::Cipher anchor = open_cipher(dir);
+        const crucible::Cipher torn_made = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_log"});
+        write_store_file(torn_made.root(), "log", ::fixy::TextView{"1,5b00000000000001,1\n0,01234"});
+        {
+            auto cipher = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_log"});
+            auto ov = cipher.mint_open_view(store_ctx());
+            CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == crucible::ContentHash{0x5b00000000000001ULL});
+            commit_head(cipher, ov, crucible::ContentHash{0x5b00000000000002ULL}, 2);
+        }
+        const crucible::Cipher torn_reopened = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_log"});
+        CRUCIBLE_TEST_ASSERT(kTest, torn_reopened.head() == crucible::ContentHash{0x5b00000000000002ULL}
+                                        && "the commit after a torn record loads at the reopen");
+
+        const crucible::Cipher digit_made = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_digit"});
+        write_store_file(digit_made.root(), "log", ::fixy::TextView{"1,5b00000000000003,1\n1"});
+        {
+            auto cipher = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_digit"});
+            auto ov = cipher.mint_open_view(store_ctx());
+            commit_head(cipher, ov, crucible::ContentHash{0x5b00000000000004ULL}, 3);
+        }
+        auto digit_reopened = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_digit"});
+        auto digit_ov = digit_reopened.mint_open_view(store_ctx());
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             digit_reopened.hash_at_step(digit_ov, 5) == crucible::ContentHash{0x5b00000000000004ULL}
+                                 && "the commit after a torn digit keeps its step 3");
+    }
+
+    // A torn last line of a session-event index, and a persist of a second
+    // batch after it.  The persist cuts the torn line, so the load gives the
+    // events of the two batches.  The old index joined the line of the second
+    // batch to the torn line, and the load skipped the second batch.
+    {
+        const crucible::Cipher anchor = open_cipher(dir);
+        auto cipher = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_index"});
+        auto ov = cipher.mint_open_view(store_ctx());
+        const auto first_batch = session_batch(10, 5);
+        const auto second_batch = session_batch(15, 5);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view()).is_ok());
+        const ::fixy::session::SessionTagId session =
+            first_batch.view().get(0).expect("the first batch holds five events")->session();
+        append_index_line(cipher, session, ::fixy::TextView{"15,1"});
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             cipher.persist_session_events(store_ctx(), ov, g_test.alloc, second_batch.view()).is_ok());
+        const auto loaded = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
+        CRUCIBLE_TEST_ASSERT(kTest, loaded.events.size() == 10 && loaded.skipped_batches == 0
+                                        && "the batch after a torn index line loads");
+        CRUCIBLE_TEST_ASSERT(kTest, step_at(loaded, 0) == 10 && step_at(loaded, 9) == 19);
     }
 
     std::filesystem::remove_all(dir);

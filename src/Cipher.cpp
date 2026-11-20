@@ -185,32 +185,108 @@ template <class Ctx, class Bytes>
     return is_renamed && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir.ref()).is_ok();
 }
 
+// The bytes of one read of the scan of whole_lines_size_.  A torn record is
+// at most one record of at most 96 bytes, so one read finds the last newline
+// of each file that a writer of the store made.
+inline constexpr std::size_t kTailChunkBytes = 256;
+
+// The offset after the last newline of the first size bytes of file, zero
+// when they hold no newline, or none when a read fails.  The scan reads the
+// file back from size, one chunk at a time.  Complexity: one read for each
+// chunk from size back to the last newline.
+template <class Ctx, ::fixy::os::RightSet Rights>
+[[nodiscard]] ::fixy::Option<::fixy::fs::FileOffset> whole_lines_size_(Ctx const& ctx, ::fixy::fs::FileRef<Rights> file,
+                                                                       ::fixy::fs::FileOffset size) noexcept {
+    ::fixy::FixedArray<std::byte, kTailChunkBytes> chunk{};
+    std::int64_t end = size.raw();
+    while (end > 0) {
+        const std::int64_t start = ::fixy::max(end - static_cast<std::int64_t>(kTailChunkBytes), std::int64_t{0});
+        const std::size_t count = static_cast<std::size_t>(end - start);
+        const ::fixy::View<std::byte> part = chunk.view().window(0, count).expect("a read takes at most one chunk");
+        if (::fixy::fs::read_full_at(ctx, file, part, ::fixy::fs::FileOffset{start}).value_or(0) != count) {
+            return ::fixy::none;
+        }
+        for (std::size_t back = count; back > 0; --back) {
+            if (*part.get(back - 1).expect("the position is inside the chunk") == std::byte{'\n'}) {
+                return ::fixy::some(::fixy::fs::FileOffset{start + static_cast<std::int64_t>(back)});
+            }
+        }
+        end = start;
+    }
+    return ::fixy::some(::fixy::fs::FileOffset{0});
+}
+
+// Cuts a torn last record of the file at path under dir, which file holds
+// open for appends, and gives the size of its whole lines: the offset after
+// its last newline.  A writer ends each record with a newline in the same
+// write, so the bytes after the last newline are a record that a crash or a
+// failed write tore.  Without the cut, the next record joins them, and the
+// line of the two holds no record that a reader can trust.  The cut is
+// durable before the next append.  A file of an append open holds no read
+// right, so the scan opens the file again for reading.  A read, a cut or a
+// sync that fails gives none, and the caller appends nothing.
+template <class Ctx, class AppendFile>
+[[nodiscard]] ::fixy::Option<::fixy::fs::FileOffset>
+cut_torn_record_(Ctx const& ctx, ::fixy::fs::DirectoryHandle const& dir, ::fixy::CText path,
+                 AppendFile const& file) noexcept {
+    const std::int64_t size = ::fixy::fs::file_size(ctx, file.ref()).value_or(-1);
+    if (size < 0) return ::fixy::none;
+    if (size == 0) return ::fixy::some(::fixy::fs::FileOffset{0});
+    using ReadFile = ::fixy::fs::FileOf<::fixy::fs::read_only>;
+    const ::fixy::Option<::fixy::fs::FileOffset> whole =
+        ::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir.ref(), path)
+            .match(
+                [&](::fixy::Linear<ReadFile> opened) {
+                    const ReadFile reader = std::move(opened).consume();
+                    return whole_lines_size_(ctx, reader.ref(), ::fixy::fs::FileOffset{size});
+                },
+                [](::foundation::os::Errno) -> ::fixy::Option<::fixy::fs::FileOffset> { return ::fixy::none; });
+    for (const ::fixy::fs::FileOffset good : whole) {
+        if (good.raw() == size) return ::fixy::some(good);
+        const bool is_cut = ::fixy::fs::set_file_size(ctx, file.ref(), good).is_ok()
+                         && ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file.ref()).is_ok();
+        if (!is_cut) return ::fixy::none;
+        return ::fixy::some(good);
+    }
+    return ::fixy::none;
+}
+
 // Atomic append for the monotonically-growing files: the event log and
 // the session-event index.  O_APPEND makes the kernel advance the offset
 // to end of file before writing, and POSIX makes that write atomic
 // within one filesystem block, 4096 bytes on ext4 and XFS.  The records
-// are at most 64 and 96 bytes, so they sit inside the window.
+// are at most 64 and 96 bytes, so they sit inside the window.  Each record
+// is one line with its newline.
 //
 // The parent-dir fsync only matters for the first record, which creates
 // the file.  Later records mutate an existing inode, where fdatasync
 // alone would do.
 //
 // Write-tmp-and-rename is the alternative and it loses here: logs grow
-// without bound and a rename does not compose with an append.  If a
-// crash tears a record that straddles the block boundary, load_log skips
-// the malformed trailing line.  The commit of that record then did not
-// happen, and HEAD did not move, because a commit writes HEAD only after
-// its log record is durable.
+// without bound and a rename does not compose with an append.  A crash or
+// a failed write can tear a record, and the torn bytes have no newline.
+// The append first cuts them (cut_torn_record_), so the record goes after
+// the last whole line, and a reader skips a last line with no newline.  The
+// commit of a torn record did not happen, and HEAD did not move, because a
+// commit writes HEAD only after its log record is durable.
 //
-// The doors retry EINTR on write, fdatasync and fsync.  Failure needs no
-// cleanup, since the file is append-only by construction.  Returns true
-// only when both the record bytes and the directory entry are durable.  The
-// fsync reaches the directory of the file only when path is one name in
+// A write or a flush that fails cuts the file back to its whole lines.  A
+// failed write can leave a part of the record, and the cut removes it.  The
+// cut can fail too, and the next append then cuts the torn bytes.  One
+// writer appends to a file at a time: the log has the one owner of the
+// store, and the index of a session has the one writer of the session.  A
+// second writer could append between the scan and the cut of the first.
+//
+// The doors retry EINTR on write, fdatasync, fsync and ftruncate.  Returns
+// true only when both the record bytes and the directory entry are durable.
+// The fsync reaches the directory of the file only when path is one name in
 // dir, so a path with a slash ends the process.
 template <class Ctx>
 [[nodiscard]] bool append_entry_at_(Ctx const& ctx, ::fixy::fs::DirectoryHandle const& dir, ::fixy::CText path,
                                     ::fixy::TextView record) noexcept {
     CRUCIBLE_PRE(::fixy::find(path.view(), '/').is_none());
+    CRUCIBLE_PRE(
+        ::fixy::find(record, '\n').is_some_and([&record](std::size_t at) noexcept { return at + 1 == record.size(); }));
     using WriteAppend = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteAppend>;
     // With O_APPEND and a record smaller than a block, a write either fails
     // outright or writes every byte.  The door writes again after a short
@@ -222,8 +298,18 @@ template <class Ctx>
             .match(
                 [&](::fixy::Linear<AppendFile> opened) {
                     const AppendFile file = std::move(opened).consume();
-                    return ::fixy::fs::write_full(ctx, file.ref(), record).is_ok()
-                        && ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file.ref()).is_ok();
+                    for (const ::fixy::fs::FileOffset whole : cut_torn_record_(ctx, dir, path, file)) {
+                        const bool is_durable =
+                            ::fixy::fs::write_full(ctx, file.ref(), record).is_ok()
+                            && ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file.ref()).is_ok();
+                        if (!is_durable) {
+                            static_cast<void>(
+                                ::fixy::fs::set_file_size(ctx, file.ref(), whole).is_ok()
+                                && ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file.ref()).is_ok());
+                        }
+                        return is_durable;
+                    }
+                    return false;
                 },
                 [](::foundation::os::Errno) { return false; });
     // Makes the file's existence durable for the first record.
@@ -428,18 +514,26 @@ read_batch_at_(Ctx const& ctx, ::foundation::effects::Alloc allocation, ::fixy::
 }
 
 // The first line of a text, without its newline, and the text after the
-// newline.  A text with no newline is one line.
+// newline.  A text with no newline is one line, and no newline ends it.
 struct LineSplit {
     ::fixy::TextView line{};
     ::fixy::TextView rest{};
+    // True when a newline ends the line.  A writer of the log and of an index
+    // ends each record with a newline in the same write, so a last line with
+    // no newline is a record that a crash or a failed write tore.  The next
+    // append cuts it (cut_torn_record_), and a reader skips it.
+    bool is_terminated = false;
 };
 
 [[nodiscard]] LineSplit split_line_(::fixy::TextView text) noexcept {
-    const std::size_t length = ::fixy::find(text, '\n').value_or(text.size());
+    ::fixy::Option<std::size_t> newline = ::fixy::find(text, '\n');
+    const bool is_terminated = newline.is_some();
+    const std::size_t length = std::move(newline).value_or(text.size());
     const std::size_t next = ::fixy::min(length + 1, text.size());
     return LineSplit{
         .line = text.window(0, length).value_or(::fixy::TextView{}),
         .rest = text.window(next, text.size() - next).value_or(::fixy::TextView{}),
+        .is_terminated = is_terminated,
     };
 }
 
@@ -733,10 +827,11 @@ Cipher::PersistResult Cipher::persist_session_events_(FileCtx const& file_ctx, O
     // well under the 4096-byte window in which POSIX makes a single
     // O_APPEND write to a regular file atomic.
     //
-    // load_session_events tolerates a malformed trailing line, so a
-    // crash mid-record drops one index entry.  The batch file itself is
-    // already on disk, and the next persist_session_events call
-    // re-appends the entry.
+    // A crash in the middle of a record leaves a torn last line with no
+    // newline.  The next append cuts it, and load_session_events skips it,
+    // so a crash drops one index entry.  The batch file itself is already
+    // on disk, and the next persist_session_events call re-appends the
+    // entry.
     const ::fixy::FixedText<16> hash_digits = hex_digits_(hash.raw());
     ::fixy::FixedText<96> record{};
     const ::fixy::TextView index_line =
@@ -793,7 +888,8 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
 
     // The index has no bound of its own, so the text takes the largest
     // count of a view.  A failed read leaves the bytes that it read in the
-    // text, and the parse reads them: a torn last line fails its parse.
+    // text, and the parse reads them: a torn last line has no newline, and
+    // the loop stops at it.
     ::fixy::GrowText index_text = ::fixy::mint_grow_text(::fixy::max_of<std::size_t>);
     static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return ::fixy::fs::read_whole_at(ctx, allocation, session_dir.ref(), "index", index_text).is_ok();
@@ -874,9 +970,11 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
     for (::fixy::TextView rest = index.view(); rest.size() != 0;) {
         const LineSplit split = split_line_(rest);
         rest = split.rest;
-        // A line that does not parse names no batch.  A crash in the middle
-        // of an append leaves such a line, and the next persist of its batch
-        // appends the line again.
+        // A last line with no newline is a torn line, also when it parses.
+        // Its append did not end, and the next append cuts it.
+        if (!split.is_terminated) break;
+        // A line that does not parse names no batch.  The next persist of its
+        // batch appends the line again.
         ::fixy::Option<IndexLine> parsed = parse_index_line_(split.line);
         if (parsed.is_none()) continue;
         const IndexLine index_line = std::move(parsed).expect("the index line parsed");
@@ -1214,7 +1312,8 @@ Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocat
 void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation) {
     // The log has no bound of its own, so the text takes the largest count
     // of a view.  A failed read leaves the bytes that it read in the text,
-    // and the parse reads them: a torn last line fails its parse.
+    // and the parse reads them: a torn last line has no newline, and the
+    // loop stops at it.
     ::fixy::GrowText text = ::fixy::mint_grow_text(::fixy::max_of<std::size_t>);
     static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return ::fixy::fs::read_whole_at(ctx, allocation, root_directory_.ref(), "log", text).is_ok();
@@ -1223,6 +1322,10 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
     for (::fixy::TextView rest = log_text.view(); rest.size() != 0;) {
         const LineSplit split = split_line_(rest);
         rest = split.rest;
+        // A last line with no newline is a torn record, also when it parses.
+        // Its append did not end, so advance_head reported no commit and HEAD
+        // did not move.  The next append cuts it.
+        if (!split.is_terminated) break;
         ::fixy::Option<LogLine> parsed = parse_log_line_(split.line);
         if (parsed.is_none()) continue;
         const LogLine line = std::move(parsed).expect("the log line parsed");
