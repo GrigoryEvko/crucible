@@ -22,8 +22,9 @@ THE BRANDED TEMPLATES
     branded too when such a parameter has a default that names DefaultBrand.
     The position of that parameter is the
     count of arguments that a spelling with no brand holds.  The rule knows a
-    template by its full name.  fixy::Borrowed is then branded, and
-    fixy::session::Borrowed is a different template.  Two primary
+    template by its full name.  foundation::core::Ref is then branded, and a
+    template of the name Ref in a different namespace is a different
+    template.  Two primary
     declarations of one name with the brand at two positions give an error
     of the kind ambiguous-template.  A spelling of that name then has no one
     meaning.  `guard explain erased-brand` prints each branded template and

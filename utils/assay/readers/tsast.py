@@ -2788,7 +2788,7 @@ def template_functions(root: Node) -> Iterator[tuple[tuple[str, ...], Node]]:
 # ── Name lookup ──────────────────────────────────────────────────────────────
 #
 # A guard that asks which declaration a spelled name refers to cannot compare
-# the last part of the name alone: fixy::session::Borrowed and fixy::Borrowed
+# the last part of the name alone: two templates of one name in two namespaces
 # are two templates.  The helpers below model the part of C++ name lookup that
 # a type name at namespace scope needs.  The kit does not preprocess, so a
 # name that a macro of another file forms stays out of reach.
