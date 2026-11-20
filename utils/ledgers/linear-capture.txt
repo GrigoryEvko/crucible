@@ -8,5 +8,5 @@ reason test/ | the tests capture tokens, parts and handles by reference in a lam
 bench/ | reference-capture | 20 | - | -
 include/fixy/session/ | reference-capture | 1 | - | -
 test/ | reference-capture | 2 | - | -
-test/fixy/ | reference-capture | 7 | - | -
+test/fixy/ | reference-capture | 8 | - | -
 test/foundation/ | reference-capture | 3 | - | -
