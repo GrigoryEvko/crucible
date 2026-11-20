@@ -20,6 +20,7 @@
 #include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Stage.h>
+#include <fixy/concurrent/StageNet.h>
 #include <fixy/os/Futex.h>
 #include <fixy/os/OwnedThread.h>
 #include <fixy/os/SpinBudget.h>
@@ -222,6 +223,78 @@ template <class T>
 [[nodiscard]] bool is_unset_or_holds(::fixy::WriteOnceNonNull<T*> const& slot, T const& object) noexcept {
     return !slot.has_value() || ::fixy::same_object(::fixy::to(*slot), ::fixy::to(object));
 }
+
+// THE LOOP OF THE VIGIL.  The foreground records each op into the trace ring,
+// the four stages make the regions of the ops, and the publish stage counts
+// the ops that it processed.  A flush of the foreground waits on that count.
+// A job of the foreground waits for a free owner mailbox, and then for its
+// done mark.  run_pipeline_ states this loop over the four stages that it
+// mints, and the door ensure_loop_live of fixy/concurrent/StageNet.h checks
+// the loop at compile time (THE LOOP).
+//
+// The publish stage serves the mailbox before each receive, and it goes on
+// when the mailbox is empty.  So a job is a branch of the stage, and the door
+// checks one loop for each arm.  In the flush arm, the stage serves no job.
+// In the job arm, the foreground records, posts a job, waits on its done mark
+// and then flushes, and the stage serves the job before its receive.
+//
+// Each channel of the loop states its capacity.  The ring holds
+// TraceRing::CAPACITY ops, and a full ring refuses an op with no wait, so the
+// record never waits on the drain stage.  The count holds each bump, so the
+// publish stage never waits on it.  The mailbox holds one job, and the done
+// mark of a job is one flag.  The handles of the three channels between the
+// stages state the capacities of those channels.
+//
+// The regions that the foreground holds are a sequence lock (HeldRegions of
+// crucible/Vigil.h).  The foreground writes them in a bracket, and the region
+// callback of the publish stage reads them, with a wait while a bracket is
+// open.  The loop states the two ends of the lock.  The door checks that one
+// process writes the lock and one other process reads it, and it reads no
+// wait inside a bracket.
+//
+// A proof of the base holds some ends at each call: RecordProof the publish
+// of the head of the ring, PublishStageAuth the bump of the count, and
+// PublishStage the serve of the mailbox and the region callback.  The drain
+// end of the ring and the two ends of the lock have no proof, so the loop
+// states them and no call checks them.
+//
+// These cells wait on nothing, so the loop holds no end of them: the metadata
+// log, which gives an op no records when it is full and releases its tail
+// with no wait, the publication slot, which keeps the newest region, and the
+// stop signal, which the drain stage reads after each sleep.
+
+// The names of the processes of the loop.
+struct ForegroundName {
+    static constexpr ::foundation::algebra::net::NetName process_name{"foreground"};
+};
+struct DrainName {
+    static constexpr ::foundation::algebra::net::NetName process_name{"drain"};
+};
+struct DetectName {
+    static constexpr ::foundation::algebra::net::NetName process_name{"detect"};
+};
+struct BuildName {
+    static constexpr ::foundation::algebra::net::NetName process_name{"build"};
+};
+struct PublishName {
+    static constexpr ::foundation::algebra::net::NetName process_name{"publish"};
+};
+
+// The cells of the loop around the stages, each with its capacity.  The
+// count reads as a channel of the top capacity of a channel of a system.
+struct RingChannel {
+    static constexpr uint32_t channel_capacity = TraceRing::CAPACITY;
+};
+struct ProcessedCountChannel {
+    static constexpr uint32_t channel_capacity = ~uint32_t{0};
+};
+struct OwnerMailboxChannel {
+    static constexpr uint32_t channel_capacity = 1;
+};
+struct JobDoneChannel {
+    static constexpr uint32_t channel_capacity = 1;
+};
+struct HeldRegionsLock {};
 
 }  // namespace detail::bg_pipeline
 
@@ -1057,6 +1130,43 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
     auto publish_stage = ::fixy::concurrent::mint_stage<&Pipeline::MakeRegionFn>(
         ctx, std::move(publish_cons),
         Pipeline::BgSinkProducerHandle{::fixy::some(::fixy::erase_brand(::fixy::to(*this)))});
+
+    // The loop of the Vigil over the four stages, in its two arms (THE LOOP
+    // OF THE VIGIL).  The doors run at compile time.
+    namespace cc = ::fixy::concurrent;
+    namespace loop = detail::bg_pipeline;
+    using drain_process =
+        cc::LoopProcess<loop::DrainName, cc::ReceivesOn<loop::RingChannel>, cc::OutputsOf<decltype(drain_stage)>>;
+    using detect_process =
+        cc::LoopProcess<loop::DetectName, cc::InputsOf<decltype(detect_stage)>, cc::OutputsOf<decltype(detect_stage)>>;
+    using build_process =
+        cc::LoopProcess<loop::BuildName, cc::InputsOf<decltype(build_stage)>, cc::OutputsOf<decltype(build_stage)>>;
+    using flush_arm = cc::StageLoop<
+        cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::RingChannel>, cc::WritesLock<loop::HeldRegionsLock>,
+                        cc::ReceivesOn<loop::ProcessedCountChannel>>,
+        drain_process, detect_process, build_process,
+        cc::LoopProcess<loop::PublishName, cc::InputsOf<decltype(publish_stage)>, cc::ReadsLock<loop::HeldRegionsLock>,
+                        cc::SendsOn<loop::ProcessedCountChannel>>>;
+    using job_arm = cc::StageLoop<
+        cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::RingChannel>, cc::SendsOn<loop::OwnerMailboxChannel>,
+                        cc::ReceivesOn<loop::JobDoneChannel>, cc::WritesLock<loop::HeldRegionsLock>,
+                        cc::ReceivesOn<loop::ProcessedCountChannel>>,
+        drain_process, detect_process, build_process,
+        cc::LoopProcess<loop::PublishName, cc::ReceivesOn<loop::OwnerMailboxChannel>, cc::SendsOn<loop::JobDoneChannel>,
+                        cc::InputsOf<decltype(publish_stage)>, cc::ReadsLock<loop::HeldRegionsLock>,
+                        cc::SendsOn<loop::ProcessedCountChannel>>>;
+    cc::ensure_loop_live<flush_arm>();
+    cc::ensure_loop_live<job_arm>();
+    // The channels of the flush arm are the ring, the count and the three
+    // channels between the stages, and each takes the capacity of its type.
+    static_assert([] consteval noexcept {
+        constexpr auto marked = cc::marked_system_of_loop<flush_arm>();
+        return marked.channels[0].capacity == TraceRing::CAPACITY
+            && marked.channels[1].capacity == loop::ProcessedCountChannel::channel_capacity
+            && marked.channels[2].capacity == Pipeline::TraceBatchChannel::channel_capacity
+            && marked.channels[3].capacity == Pipeline::BuildWorkChannel::channel_capacity
+            && marked.channels[4].capacity == Pipeline::GraphPublishChannel::channel_capacity;
+    }());
 
     auto pipeline = ::fixy::concurrent::mint_pipeline(ctx, std::move(drain_stage), std::move(detect_stage),
                                                       std::move(build_stage), std::move(publish_stage));
