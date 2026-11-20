@@ -168,14 +168,13 @@ enum class Category : std::uint8_t {
     HugePageAllocationFailed = 29,
     PublishOnceDoublePublish = 30,
     BitsInvariantViolation = 31,
-    BorrowedBoundsViolation = 32,
-    AllocationSizeOverflow = 33,
+    AllocationSizeOverflow = 32,
 };
 
 // The count of the enumerators, which is the count of the tags.  It is a
 // literal, so that no includer walks the enum.  The check file of
 // foundation/diag/Catalog.h derives the count and pins the literal to it.
-inline constexpr std::size_t catalog_size = 34;
+inline constexpr std::size_t catalog_size = 33;
 
 namespace detail {
 
