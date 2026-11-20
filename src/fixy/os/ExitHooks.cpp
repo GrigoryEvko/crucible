@@ -80,6 +80,12 @@ constexpr std::size_t kLongestValue = static_cast<std::size_t>(__PTRDIFF_MAX__);
         [] noexcept -> Period { return core::none; });
 }
 
+// The checked path that the variable name holds (check_temporary_directory).
+[[nodiscard]] core::Option<TemporaryDirectoryPath> read_temporary_directory(core::CText name) noexcept {
+    return read_value(name).match([](core::TextView value) noexcept { return check_temporary_directory(value); },
+                                  [] noexcept -> core::Option<TemporaryDirectoryPath> { return core::none; });
+}
+
 // The switches of the process.  The hook below writes the record one time,
 // before main, or in the dlopen of the shared library that holds the door.
 // No code writes it after that, and each read comes after the write: the
@@ -102,6 +108,7 @@ constinit Switches switches_at_start{};
         .pmu_period_hardware = read_period("CRUCIBLE_PERF_PMU_PERIOD_HW"),
         .pmu_period_dynamic = read_period("CRUCIBLE_PERF_PMU_PERIOD_IBS"),
         .pmu_period_software = read_period("CRUCIBLE_PERF_PMU_PERIOD_SW"),
+        .temporary_directory = read_temporary_directory("TMPDIR"),
     };
 }
 

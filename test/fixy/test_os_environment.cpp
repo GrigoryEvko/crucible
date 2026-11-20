@@ -9,9 +9,12 @@
 //   CRUCIBLE_PERF_PMU_PERIOD_HW=12345 the period 12345
 //   CRUCIBLE_PERF_PMU_PERIOD_IBS=0    no period: zero turns the sampling off
 //   CRUCIBLE_PERF_PMU_PERIOD_SW=-5    no period: the grammar refuses a sign
+//   TMPDIR=/var/tmp/                  the checked path /var/tmp/
 // The values differ between the switches, so a hook that reads a switch
 // into the field of a different switch fails a check.  The check also
 // proves that the link keeps the hook, and that the hook runs before main.
+// The cases of check_temporary_directory give the check of TMPDIR each text
+// that it refuses, and the longest path that it takes.
 
 #include <fixy/Core.h>
 #include <fixy/os/Environment.h>
@@ -38,13 +41,52 @@ namespace {
     if (fixy::env::switches().pmu_period_hardware.value_or(0) != 12345) return 5;
     if (switches.pmu_period_dynamic.is_some()) return 6;
     if (switches.pmu_period_software.is_some()) return 7;
+    bool const is_tmpdir_read = switches.temporary_directory.match(
+        [](fixy::env::TemporaryDirectoryPath const& path) noexcept {
+            return path.c_text().view() == fixy::TextView{"/var/tmp/"};
+        },
+        [] noexcept { return false; });
+    if (!is_tmpdir_read) return 8;
+    return 0;
+}
+
+// True when the check takes text as its path, with no change.
+[[nodiscard]] bool is_taken(fixy::TextView text) noexcept {
+    return fixy::env::check_temporary_directory(text).match(
+        [text](fixy::env::TemporaryDirectoryPath path) noexcept { return path.c_text().view() == text; },
+        [] noexcept { return false; });
+}
+
+// True when the check refuses text.
+[[nodiscard]] bool is_refused(fixy::TextView text) noexcept {
+    return fixy::env::check_temporary_directory(text).is_none();
+}
+
+[[nodiscard]] int check_temporary_directory_cases() noexcept {
+    if (!is_taken("/tmp")) return 21;
+    if (!is_taken("/")) return 22;
+    if (!is_taken("/a/..b/./c")) return 23;
+    if (!is_refused("relative/dir")) return 24;
+    if (!is_refused("")) return 25;
+    if (!is_refused("/a/../b")) return 26;
+    if (!is_refused("/a/..")) return 27;
+    // The longest path that the check takes, and one character more.
+    fixy::FixedText<fixy::env::kTemporaryDirectoryBytes + 1> longest{};
+    longest.append('/').expect("the text holds the slash");
+    while (longest.size() < fixy::env::kTemporaryDirectoryBytes) {
+        longest.append('a').expect("the text holds each character");
+    }
+    if (!is_taken(longest.view())) return 28;
+    longest.append('a').expect("the text holds one character more");
+    if (!is_refused(longest.view())) return 29;
     return 0;
 }
 
 }  // namespace
 
 int main() {
-    int const failed = check_switches();
+    int failed = check_switches();
+    if (failed == 0) failed = check_temporary_directory_cases();
     if (failed != 0) {
         fixy::report(fixy::Sink::Err, "test_os_environment: check {} failed\n", failed);
         return failed;

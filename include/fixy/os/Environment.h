@@ -14,15 +14,42 @@
 // The record names each switch that a program of the tree reads.  A new
 // switch adds one field here and one read to the hook.
 
+#include <fixy/os/Path.h>
+#include <foundation/core/Algorithms.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Text.h>
+#include <foundation/os/PathText.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace fixy::env {
 
+// The largest count of the characters of the path of TMPDIR.  A program makes
+// paths under the temporary directory, so the bound keeps most of the
+// kPathBytes characters of a path for them.
+inline constexpr std::size_t kTemporaryDirectoryBytes = 1024;
+
+// The checked path of TMPDIR.
+using TemporaryDirectoryPath = ::foundation::os::PathText<kTemporaryDirectoryBytes>;
+
+// The checked path of a value of TMPDIR: an absolute path with no ".." part,
+// of at most kTemporaryDirectoryBytes characters.  A value that fails a check
+// gives no value.  Complexity: linear in the size of the value.
+[[nodiscard]] constexpr ::foundation::core::Option<TemporaryDirectoryPath>
+check_temporary_directory(::foundation::core::TextView value) noexcept {
+    if (!::foundation::core::starts_with(value, "/")) return ::foundation::core::none;
+    if (::fixy::sanitize::path_traversal::check_no_dotdot(value).is_err()) return ::foundation::core::none;
+    TemporaryDirectoryPath path{};
+    if (path.append(value).is_err()) return ::foundation::core::none;
+    return ::foundation::core::Option<TemporaryDirectoryPath>::some(path);
+}
+
 // The switches of the environment at the start of the process.  The record
-// holds parsed values only, and no text of the environment.  A switch whose
-// variable is absent has the value of its field initializer.
+// holds parsed values only.  A path of the record is a parsed value too: the
+// hook checks the text of its variable, and the record holds the checked path
+// or no value.  A switch whose variable is absent has the value of its field
+// initializer.
 struct Switches {
     // CRUCIBLE_PERF_QUIET: the perf layer reports no failed load.  The
     // switch is on when its value starts with the character 1.
@@ -48,6 +75,11 @@ struct Switches {
     ::foundation::core::Option<std::uint64_t> pmu_period_hardware{};
     ::foundation::core::Option<std::uint64_t> pmu_period_dynamic{};
     ::foundation::core::Option<std::uint64_t> pmu_period_software{};
+    // TMPDIR: the temporary directory of the host, which the temporary
+    // directory door of fixy/os/Fs.h reads.  No value stands for an absent
+    // variable and for a value that check_temporary_directory refuses, and
+    // the door then takes /tmp.
+    ::foundation::core::Option<TemporaryDirectoryPath> temporary_directory{};
 };
 
 // The switches that the start-up hook read.  The call copies a record that
