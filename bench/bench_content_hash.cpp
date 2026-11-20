@@ -55,7 +55,7 @@ int main() {
         Config{1024, 8, 3, "1024 ops × 3×8D"},
     };
 
-    ::fixy::report(::fixy::Sink::Out, "=== content_hash ===\n\n");
+    bench::print("=== content_hash ===\n\n");
 
     // One arena + ops vector per config; kept alive in outer scope so
     // the body can reference the span by value-into-reference.

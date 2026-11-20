@@ -40,8 +40,8 @@ int main() {
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }
 
-    ::fixy::report(::fixy::Sink::Out, "=== ckernel ===\n");
-    ::fixy::report(::fixy::Sink::Out, "  table entries: {} (log2 = ~8 probes)\n\n", N);
+    bench::print("=== ckernel ===\n");
+    bench::print("  table entries: {} (log2 = ~8 probes)\n\n", N);
 
     ::fixy::FixedArray<bench::Report, 3> reports{
         // Rotating hit — indices march forward, pointer-chasing into the
@@ -90,7 +90,7 @@ int main() {
     // Hit vs. hot: same classify() path, same table; the only difference
     // is branch predictability of the recurrent-vs-rotating access. The
     // delta is a clean measurement of the branch-predictor win.
-    ::fixy::report(::fixy::Sink::Out, "\n=== compare ===\n");
+    bench::print("\n=== compare ===\n");
     bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())).print_text();
 
     bench::emit_reports_json(reports.view(), json);

@@ -94,13 +94,12 @@ int main() {
     ::fixy::FixedArray<bench::Report, 2> reports{empty_set_send(), permitted_send()};
     bench::emit_reports_text(reports.view());
 
-    ::fixy::report(::fixy::Sink::Out, "\n=== permission set: pair delta ===\n");
+    bench::print("\n=== permission set: pair delta ===\n");
     ::fixy::FixedArray<bench::Compare, 1> const compares{
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>()))};
     bench::emit_compares(compares.view());
 
-    ::fixy::report(::fixy::Sink::Out,
-                   "\n  The static_assert carries the claim.  The timed pair is for inspection only.\n");
+    bench::print("\n  The static_assert carries the claim.  The timed pair is for inspection only.\n");
     bench::emit_reports_json(reports.view(), bench::env_json());
     return 0;
 }

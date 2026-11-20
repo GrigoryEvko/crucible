@@ -1890,6 +1890,22 @@ template <class... Args>
     return name;
 }
 
+// Writes a line of a bench, such as its header, to standard output, with the
+// text and the arguments of the Report family.  A bench writes each of its
+// lines through print(), and an error line through report() to Sink::Err.
+//
+// report() is a cold function.  GCC takes each block after a call of a cold
+// function in main for code that runs rarely, so a report() before the rows
+// moves the rows to main.cold: GCC optimizes them for size, and it calls the
+// body of each row in place of an inline copy.  print() is not cold and not
+// inline, so a call of it keeps the rows after it in the hot code of main.
+template <class... Args>
+    requires(::fixy::Formattable<Args> && ...)
+[[gnu::noinline]] void print(::fixy::Fmt<std::type_identity_t<Args>...> const& fmt, Args... args) noexcept {
+    detail::flush_standard_output();
+    ::fixy::report(::fixy::Sink::Out, fmt, args...);
+}
+
 namespace detail {
 
 // The text of a time in nanoseconds for the columns of a report: the value
@@ -3400,8 +3416,10 @@ private:
 
 // Prints the facts of the host and of the run: the processor, the governor,
 // the profile, the CPUs, the cores of the run, the TSC and the BPF senses.
-// Call it first in main, before a Run pins the thread.
-inline void print_system_info() {
+// Call it first in main, before a Run pins the thread.  It is not inline, so
+// its report() calls stay out of main, and the rows after it stay in the hot
+// code of main, as for print().
+[[gnu::noinline]] inline void print_system_info() {
     using ::fixy::Sink;
     using ::fixy::TextView;
     detail::flush_standard_output();

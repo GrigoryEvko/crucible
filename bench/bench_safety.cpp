@@ -111,7 +111,7 @@ int main() {
     volatile uint32_t a = 0xFFFFFFFFu;
     volatile uint32_t b = 0x00000000u;
 
-    ::fixy::report(::fixy::Sink::Out, "=== safety ===\n\n");
+    bench::print("=== safety ===\n\n");
 
     // Layout: pairs of (bare, wrapped) at indices (0,1), (2,3), … for
     // trivial compare() at the end.
@@ -235,12 +235,12 @@ int main() {
 
     // One compare() per (bare, wrapped) pair. Zero-cost wrappers show
     // [indistinguishable]; any [REGRESS] flag is a real finding.
-    ::fixy::report(::fixy::Sink::Out, "\n=== compare — zero-cost proof ===\n");
+    bench::print("\n=== compare — zero-cost proof ===\n");
     constexpr ::fixy::FixedArray<::fixy::TextView, 5> pair_labels{
         "Linear<Resource>", "Refined<positive,int>", "Secret<uint64>", "Tagged<int,source>", "Machine<ConnState>",
     };
     for (auto const [p, label] : pair_labels.enumerate()) {
-        ::fixy::report(::fixy::Sink::Out, "  [{}]\n  ", *label);
+        bench::print("  [{}]\n  ", *label);
         bench::compare(*reports.get(2 * p.raw()).expect("the bare row of a pair"),
                        *reports.get(2 * p.raw() + 1).expect("the wrapped row of a pair"))
             .print_text();

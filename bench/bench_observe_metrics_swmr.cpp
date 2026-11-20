@@ -53,13 +53,12 @@ int main() {
     const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};
     auto observed = reader.load(spin);
 
-    using ::fixy::Sink;
     using ::fixy::TextView;
     bench::emit_reports_text(reports.view());
-    ::fixy::report(Sink::Out, "\nbench_observe_metrics_swmr:\n");
-    ::fixy::report(Sink::Out, "  target_p99_lt_100ns: {}\n",
-                   reports.at(::fixy::index<0>()).pct.p99 < 100.0 ? TextView{"yes"} : TextView{"no"});
-    ::fixy::report(Sink::Out, "  final_lambda_max:    {}\n", ::fixy::Fixed<0>{observed.peek().meb_lambda_max});
+    bench::print("\nbench_observe_metrics_swmr:\n");
+    bench::print("  target_p99_lt_100ns: {}\n",
+                 reports.at(::fixy::index<0>()).pct.p99 < 100.0 ? TextView{"yes"} : TextView{"no"});
+    bench::print("  final_lambda_max:    {}\n", ::fixy::Fixed<0>{observed.peek().meb_lambda_max});
     bench::emit_reports_json(reports.view(), bench::env_json());
 
     return 0;

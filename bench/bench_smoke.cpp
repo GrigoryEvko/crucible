@@ -45,7 +45,7 @@ int main() {
 
     auto run = [&](::fixy::TextView name, auto&& body) { return bench::Run(name).core(core).measure(body); };
 
-    ::fixy::report(::fixy::Sink::Out, "=== smoke ===\n");
+    bench::print("=== smoke ===\n");
 
     ::fixy::FixedArray<bench::Report, 3> reports{
         // (1) Integer increment + do_not_optimize. One ALU add + register
@@ -86,14 +86,13 @@ int main() {
     const bench::Report& r_add = reports.at(::fixy::index<0>());
     const bench::Report& r_xor = reports.at(::fixy::index<1>());
     const auto cmp = bench::compare(r_add, r_xor);
-    ::fixy::report(::fixy::Sink::Out, "\n=== compare ===\n");
+    bench::print("\n=== compare ===\n");
     cmp.print_text();
 
     // Bootstrap CI on a tail percentile — exercises the Efron path in
     // Report::ci() so a regression there doesn't sneak through silently.
     const auto ci99 = r_add.ci(0.99);
-    ::fixy::report(::fixy::Sink::Out, "  add.u64 p99 95% CI: [{}, {}] ns\n", ::fixy::Fixed<2>{ci99.lo},
-                   ::fixy::Fixed<2>{ci99.hi});
+    bench::print("  add.u64 p99 95% CI: [{}, {}] ns\n", ::fixy::Fixed<2>{ci99.lo}, ::fixy::Fixed<2>{ci99.hi});
 
     bench::emit_reports_json(reports.view(), json);
     return 0;

@@ -59,8 +59,7 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    using ::fixy::Sink;
-    ::fixy::report(Sink::Out, "=== serialize ===\n\n");
+    bench::print("=== serialize ===\n\n");
 
     // Two rows for each of the three sizes.
     ::fixy::FixedList<bench::Report, 6> reports{};
@@ -101,11 +100,11 @@ int main() {
                               bench::do_not_optimize(is_loaded);
                           }));
 
-        ::fixy::report(Sink::Out, "  [{} ops] wire = {} bytes ({} B/op)\n", num_ops, serial_len,
-                       ::fixy::Fixed<1>{static_cast<double>(serial_len) / num_ops});
+        bench::print("  [{} ops] wire = {} bytes ({} B/op)\n", num_ops, serial_len,
+                     ::fixy::Fixed<1>{static_cast<double>(serial_len) / num_ops});
     }
 
-    ::fixy::report(Sink::Out, "\n");
+    bench::print("\n");
     bench::emit_reports(reports.view(), json);
     return 0;
 }

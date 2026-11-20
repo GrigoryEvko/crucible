@@ -135,13 +135,12 @@ int main() {
     using ::fixy::Align;
     using ::fixy::Fixed;
     using ::fixy::Padded;
-    using ::fixy::Sink;
     using ::fixy::TextView;
 
-    ::fixy::report(Sink::Out, "=== concurrent_saturation ===\n");
-    ::fixy::report(Sink::Out, "  Item: uint64_t (8 bytes)\n");
-    ::fixy::report(Sink::Out, "  Ring: SpscRing<uint64_t, 1M>\n");
-    ::fixy::report(Sink::Out, "\n");
+    bench::print("=== concurrent_saturation ===\n");
+    bench::print("  Item: uint64_t (8 bytes)\n");
+    bench::print("  Ring: SpscRing<uint64_t, 1M>\n");
+    bench::print("\n");
 
     ::fixy::FixedArray<bench::Report, 15> reports{
         // Single-call SPSC — N=1 baseline.
@@ -177,18 +176,18 @@ int main() {
     bench::emit_reports_text(reports.view());
 
     // ── Per-item cost table (the headline) ────────────────────────────
-    ::fixy::report(Sink::Out, "\n=== saturation table (per-item cost) ===\n");
-    ::fixy::report(Sink::Out, "\n  {}  {}  {}\n", Padded<50, Align::Left>{TextView{"Bench"}},
-                   Padded<12>{TextView{"ns/item"}}, Padded<12>{TextView{"GB/s"}});
+    bench::print("\n=== saturation table (per-item cost) ===\n");
+    bench::print("\n  {}  {}  {}\n", Padded<50, Align::Left>{TextView{"Bench"}}, Padded<12>{TextView{"ns/item"}},
+                 Padded<12>{TextView{"GB/s"}});
     constexpr TextView kDashes12{"------------"};
-    ::fixy::report(Sink::Out, "  {}  {}  {}\n", TextView{"--------------------------------------------------"},
-                   kDashes12, kDashes12);
+    bench::print("  {}  {}  {}\n", TextView{"--------------------------------------------------"}, kDashes12,
+                 kDashes12);
 
     auto print_row = [](const bench::Report& r, std::size_t batch_items) {
         const double per_item = per_item_ns(r.pct.p50, batch_items);
         const double gbps = bytes_per_sec(r.pct.p50, batch_items) / 1e9;
-        ::fixy::report(Sink::Out, "  {}  {} ns  {} GB/s\n", Padded<50, Align::Left>{r.name.view()},
-                       Fixed<4, 10>{per_item}, Fixed<2, 8>{gbps});
+        bench::print("  {}  {} ns  {} GB/s\n", Padded<50, Align::Left>{r.name.view()}, Fixed<4, 10>{per_item},
+                     Fixed<2, 8>{gbps});
     };
 
     // Single-call: N=1
@@ -211,7 +210,7 @@ int main() {
     print_row(reports.at(::fixy::index<14>()), 1024);
 
     // ── L1d-port ceiling theory vs observed ───────────────────────────
-    ::fixy::report(Sink::Out, "\n=== Zen 3 L1d-port ceiling analysis ===\n");
+    bench::print("\n=== Zen 3 L1d-port ceiling analysis ===\n");
     {
         // Round-trip per item = 1 store (push) + 1 load + 1 store (pop)
         // = 3 mem-ops.  L1d ports = 3 mem-ops/cycle on Zen 3.
@@ -224,15 +223,14 @@ int main() {
         // so one item per cycle.  At 4.6 GHz:
         //   1 item / 4.6e9 s = 0.217 ns/item.
         const double ns_floor_per_item = 0.217;
-        ::fixy::report(Sink::Out, "  Theoretical L1d-port floor (Zen 3 @ 4.6 GHz):\n");
-        ::fixy::report(Sink::Out, "    1 item per cycle × 0.217 ns/cycle = {} ns/item\n", Fixed<3>{ns_floor_per_item});
-        ::fixy::report(Sink::Out, "  Largest observed (N=1024 batch round-trip):\n");
+        bench::print("  Theoretical L1d-port floor (Zen 3 @ 4.6 GHz):\n");
+        bench::print("    1 item per cycle × 0.217 ns/cycle = {} ns/item\n", Fixed<3>{ns_floor_per_item});
+        bench::print("  Largest observed (N=1024 batch round-trip):\n");
         const double obs = per_item_ns(reports.at(::fixy::index<11>()).pct.p50, 1024);
-        ::fixy::report(Sink::Out, "    {} ns/item — gap to ceiling = {}×\n", Fixed<3>{obs},
-                       Fixed<2>{obs / ns_floor_per_item});
-        ::fixy::report(Sink::Out, "  Raw memcpy reference (N=1024, no atomics):\n");
+        bench::print("    {} ns/item — gap to ceiling = {}×\n", Fixed<3>{obs}, Fixed<2>{obs / ns_floor_per_item});
+        bench::print("  Raw memcpy reference (N=1024, no atomics):\n");
         const double mref = per_item_ns(reports.at(::fixy::index<14>()).pct.p50, 1024);
-        ::fixy::report(Sink::Out, "    {} ns/item — pure-bandwidth floor\n", Fixed<3>{mref});
+        bench::print("    {} ns/item — pure-bandwidth floor\n", Fixed<3>{mref});
     }
 
     bench::emit_reports_json(reports.view(), json);

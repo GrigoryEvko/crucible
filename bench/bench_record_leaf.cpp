@@ -437,17 +437,15 @@ int main() {
         bench::pin_calling_thread_to(cores.record).expect("the pin of the producer to the core of slot 0");
     }
     if (!cores.record.is_valid()) {
-        ::fixy::report(::fixy::Sink::Out,
-                       "  NOTE: no isolated core in the affinity: the harness picks the core, and the numbers are "
-                       "noisy.\n");
+        bench::print(
+            "  NOTE: no isolated core in the affinity: the harness picks the core, and the numbers are noisy.\n");
     } else if (cores.vigil.size() < kVigilThreads) {
-        ::fixy::report(::fixy::Sink::Out,
-                       "  NOTE: {} isolated cores for the {} background threads of each Vigil, so some of them share "
-                       "a core.  Run the bench through loop bench, which claims its six cores.\n",
-                       cores.vigil.size(), kVigilThreads);
+        bench::print("  NOTE: {} isolated cores for the {} background threads of each Vigil, so some of them share "
+                     "a core.  Run the bench through loop bench, which claims its six cores.\n",
+                     cores.vigil.size(), kVigilThreads);
     } else {
-        ::fixy::report(::fixy::Sink::Out, "  producer on cpu{}, the background threads of each Vigil on {} cores\n",
-                       cores.record.raw(), cores.vigil.size());
+        bench::print("  producer on cpu{}, the background threads of each Vigil on {} cores\n", cores.record.raw(),
+                     cores.vigil.size());
     }
     bench::elevate_priority();
 
@@ -626,7 +624,7 @@ int main() {
         return has_baseline_file ? 1 : 0;
     }
 
-    ::fixy::report(Sink::Out, "\n=== gate (ceiling = baseline x {}) ===\n", Fixed<2>{kTolerance});
+    bench::print("\n=== gate (ceiling = baseline x {}) ===\n", Fixed<2>{kTolerance});
     int failures = 0;
     int skipped = 0;
     for (const auto& report : reports) {
@@ -634,37 +632,36 @@ int main() {
         for (const Ceiling& c : baseline.rows)
             if (c.name == report.name) want = ::fixy::some(c);
         if (want.is_none()) {
-            ::fixy::report(Sink::Out, "  {} NO-BASELINE\n", Padded<44, Align::Left>{report.name.view()});
+            bench::print("  {} NO-BASELINE\n", Padded<44, Align::Left>{report.name.view()});
             failures++;
             continue;
         }
         const Ceiling ceiling = std::move(want).value_or(Ceiling{});
         if (!ceiling.gate) {
-            ::fixy::report(Sink::Out, "  {} ADVISORY  p50 {} ns   p99 {} ns   (recorded {} / {})\n",
-                           Padded<44, Align::Left>{report.name.view()}, Fixed<2, 8>{report.pct.p50},
-                           Fixed<2, 8>{report.pct.p99}, Fixed<2, 6>{ceiling.p50_ns}, Fixed<2, 6>{ceiling.p99_ns});
+            bench::print("  {} ADVISORY  p50 {} ns   p99 {} ns   (recorded {} / {})\n",
+                         Padded<44, Align::Left>{report.name.view()}, Fixed<2, 8>{report.pct.p50},
+                         Fixed<2, 8>{report.pct.p99}, Fixed<2, 6>{ceiling.p50_ns}, Fixed<2, 6>{ceiling.p99_ns});
             continue;
         }
         if (report.drift_flag) {
-            ::fixy::report(Sink::Out,
-                           "  {} SKIP      the run drifted {}% between its first and second half; "
-                           "the machine changed under it\n",
-                           Padded<44, Align::Left>{report.name.view()}, Fixed<1>{report.drift_pct});
+            bench::print("  {} SKIP      the run drifted {}% between its first and second half; "
+                         "the machine changed under it\n",
+                         Padded<44, Align::Left>{report.name.view()}, Fixed<1>{report.drift_pct});
             skipped++;
             continue;
         }
         const double p50_max = ceiling.p50_ns * kTolerance;
         const double p99_max = ceiling.p99_ns * kTolerance;
         const bool ok = report.pct.p50 <= p50_max && (!kGateOnP99 || report.pct.p99 <= p99_max);
-        ::fixy::report(Sink::Out, "  {} {}  p50 {} / {} ns   p99 {} (recorded {}, not gated)\n",
-                       Padded<44, Align::Left>{report.name.view()}, ok ? TextView{"PASS"} : TextView{"FAIL"},
-                       Fixed<2, 6>{report.pct.p50}, Fixed<2, 6>{p50_max}, Fixed<2, 6>{report.pct.p99},
-                       Fixed<2, 6>{ceiling.p99_ns});
+        bench::print("  {} {}  p50 {} / {} ns   p99 {} (recorded {}, not gated)\n",
+                     Padded<44, Align::Left>{report.name.view()}, ok ? TextView{"PASS"} : TextView{"FAIL"},
+                     Fixed<2, 6>{report.pct.p50}, Fixed<2, 6>{p50_max}, Fixed<2, 6>{report.pct.p99},
+                     Fixed<2, 6>{ceiling.p99_ns});
         if (!ok) failures++;
     }
 
-    ::fixy::report(Sink::Out, "=== verdict: {} ({} failed, {} skipped for drift) ===\n",
-                   failures == 0 ? TextView{"PASS"} : TextView{"FAIL"}, failures, skipped);
+    bench::print("=== verdict: {} ({} failed, {} skipped for drift) ===\n",
+                 failures == 0 ? TextView{"PASS"} : TextView{"FAIL"}, failures, skipped);
     bench::emit_reports_json(reports.view(), json);
     return failures == 0 ? 0 : 1;
 }

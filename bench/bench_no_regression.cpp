@@ -574,17 +574,14 @@ int main() {
     using ::fixy::Padded;
     using ::fixy::TextView;
     using Name = Padded<26, Align::Left>;
-    constexpr ::fixy::Sink kOut = ::fixy::Sink::Out;
-    ::fixy::report(kOut, "=== parallelism rule no-regression ===\n");
-    ::fixy::report(kOut, "  samples={} forced_workers={} pieces={}\n", samples, forced_workers, kPieces);
-    ::fixy::report(kOut,
-                   "  gates: small tiers forced>=sequential/1.05, "
-                   "rule<=forced*1.05, and inline overhead<=5% or {}ns\n",
-                   Fixed<0>{kInlineAbsoluteToleranceNs});
-    ::fixy::report(kOut,
-                   "         large tiers rule<=sequential/{} and "
-                   "rule<=forced*0.50\n\n",
-                   Fixed<1>{kParallelWinFactor});
+    bench::print("=== parallelism rule no-regression ===\n");
+    bench::print("  samples={} forced_workers={} pieces={}\n", samples, forced_workers, kPieces);
+    bench::print("  gates: small tiers forced>=sequential/1.05, "
+                 "rule<=forced*1.05, and inline overhead<=5% or {}ns\n",
+                 Fixed<0>{kInlineAbsoluteToleranceNs});
+    bench::print("         large tiers rule<=sequential/{} and "
+                 "rule<=forced*0.50\n\n",
+                 Fixed<1>{kParallelWinFactor});
 
     PieceTable pieces = make_piece_table();
 
@@ -596,7 +593,7 @@ int main() {
         (void)placement.core(core);
     }
     bench::Run::PinResult placement_pin = placement.pin_calling_thread();
-    ::fixy::report(kOut, "  data built on cpu{}\n\n", placement_pin.cpu.raw());
+    bench::print("  data built on cpu{}\n\n", placement_pin.cpu.raw());
 
     std::array<Workload, 4> workloads{make_l1(forced_workers), make_l2(forced_workers), make_l3(forced_workers),
                                       make_dram(forced_workers)};
@@ -618,7 +615,7 @@ int main() {
 
     int failures = 0;
     int reruns = 0;
-    ::fixy::report(kOut, "=== measuring ===\n");
+    bench::print("=== measuring ===\n");
     for (std::size_t i = 0; i < workloads.size(); ++i) {
         Workload& w = workloads[i];
         Trio trio = run_workload(w, pieces, samples, cores);
@@ -629,7 +626,7 @@ int main() {
 
     bench::emit_reports_text(reports.view());
 
-    ::fixy::report(kOut, "\n=== no-regression gates ===\n");
+    bench::print("\n=== no-regression gates ===\n");
     for (std::size_t i = 0; i < workloads.size(); ++i) {
         const bench::Report& seq = *reports.get(i * 3 + 0).expect("the sequential row of a workload");
         const bench::Report& rul = *reports.get(i * 3 + 1).expect("the rule row of a workload");
@@ -639,16 +636,15 @@ int main() {
         const double rul_p50 = rul.pct.p50;
         const double frc_p50 = frc.pct.p50;
         const auto dec = fc::ParallelismRule::recommend(w.budget);
-        ::fixy::report(kOut,
-                       "  {} tier={} rule={} factor={} "
-                       "rule/seq={}x rule/forced={}x\n",
-                       Name{w.name}, static_cast<unsigned>(dec.tier),
-                       dec.is_parallel() ? TextView{"parallel"} : TextView{"sequential"}, dec.factor,
-                       Fixed<3>{ratio(rul_p50, seq_p50)}, Fixed<3>{ratio(rul_p50, frc_p50)});
+        bench::print("  {} tier={} rule={} factor={} "
+                     "rule/seq={}x rule/forced={}x\n",
+                     Name{w.name}, static_cast<unsigned>(dec.tier),
+                     dec.is_parallel() ? TextView{"parallel"} : TextView{"sequential"}, dec.factor,
+                     Fixed<3>{ratio(rul_p50, seq_p50)}, Fixed<3>{ratio(rul_p50, frc_p50)});
 
         const bool small = w.inputs.kind == WorkloadKind::L1ArraySum || w.inputs.kind == WorkloadKind::L2MatrixMultiply;
         if (small && dec.is_parallel()) {
-            ::fixy::report(kOut, "  FAIL {} expected sequential decision for small tier\n", Name{w.name});
+            bench::print("  FAIL {} expected sequential decision for small tier\n", Name{w.name});
             ++failures;
         }
 
@@ -658,25 +654,24 @@ int main() {
         const bool noisy = seq.noisy(0.05) || rul.noisy(0.05) || frc.noisy(0.05);
         if (noisy) {
             if (seq.noisy(0.05))
-                ::fixy::report(kOut, "  RUN AGAIN {} sequential cv={}% > 5%\n", Name{w.name},
-                               Fixed<1>{seq.pct.cv * 100.0});
+                bench::print("  RUN AGAIN {} sequential cv={}% > 5%\n", Name{w.name}, Fixed<1>{seq.pct.cv * 100.0});
             if (rul.noisy(0.05))
-                ::fixy::report(kOut, "  RUN AGAIN {} rule cv={}% > 5%\n", Name{w.name}, Fixed<1>{rul.pct.cv * 100.0});
+                bench::print("  RUN AGAIN {} rule cv={}% > 5%\n", Name{w.name}, Fixed<1>{rul.pct.cv * 100.0});
             if (frc.noisy(0.05))
-                ::fixy::report(kOut, "  RUN AGAIN {} forced cv={}% > 5%\n", Name{w.name}, Fixed<1>{frc.pct.cv * 100.0});
+                bench::print("  RUN AGAIN {} forced cv={}% > 5%\n", Name{w.name}, Fixed<1>{frc.pct.cv * 100.0});
             ++reruns;
             continue;
         }
 
         if (small) {
             if (frc_p50 * kGateTolerance < seq_p50) {
-                ::fixy::report(kOut, "  FAIL {} forced parallel beat sequential by >5%: {}x\n", Name{w.name},
-                               Fixed<3>{ratio(frc_p50, seq_p50)});
+                bench::print("  FAIL {} forced parallel beat sequential by >5%: {}x\n", Name{w.name},
+                             Fixed<3>{ratio(frc_p50, seq_p50)});
                 ++failures;
             }
             if (rul_p50 > frc_p50 * kGateTolerance) {
-                ::fixy::report(kOut, "  FAIL {} rule slower than forced by >5%: {}x\n", Name{w.name},
-                               Fixed<3>{ratio(rul_p50, frc_p50)});
+                bench::print("  FAIL {} rule slower than forced by >5%: {}x\n", Name{w.name},
+                             Fixed<3>{ratio(rul_p50, frc_p50)});
                 ++failures;
             }
         }
@@ -688,32 +683,31 @@ int main() {
         // beat the two other arms.
         if (!dec.is_parallel()) {
             if (rul_p50 > seq_p50 * kGateTolerance && (rul_p50 - seq_p50) > kInlineAbsoluteToleranceNs) {
-                ::fixy::report(kOut, "  FAIL {} rule inline overhead exceeded budget: {}x\n", Name{w.name},
-                               Fixed<3>{ratio(rul_p50, seq_p50)});
+                bench::print("  FAIL {} rule inline overhead exceeded budget: {}x\n", Name{w.name},
+                             Fixed<3>{ratio(rul_p50, seq_p50)});
                 ++failures;
             }
         } else {
             if (rul_p50 * kParallelWinFactor > seq_p50) {
-                ::fixy::report(kOut, "  FAIL {} rule did not beat sequential by {}x: {}x\n", Name{w.name},
-                               Fixed<1>{kParallelWinFactor}, Fixed<3>{ratio(rul_p50, seq_p50)});
+                bench::print("  FAIL {} rule did not beat sequential by {}x: {}x\n", Name{w.name},
+                             Fixed<1>{kParallelWinFactor}, Fixed<3>{ratio(rul_p50, seq_p50)});
                 ++failures;
             }
             if (rul_p50 > frc_p50 * 0.50) {
-                ::fixy::report(kOut, "  FAIL {} rule did not beat forced by 2x: {}x\n", Name{w.name},
-                               Fixed<3>{ratio(rul_p50, frc_p50)});
+                bench::print("  FAIL {} rule did not beat forced by 2x: {}x\n", Name{w.name},
+                             Fixed<3>{ratio(rul_p50, frc_p50)});
                 ++failures;
             }
         }
     }
 
-    ::fixy::report(kOut, "\n=== verdict ===\n");
+    bench::print("\n=== verdict ===\n");
     if (failures == 0) {
-        ::fixy::report(kOut,
-                       "  PASS - the parallelism rule stayed within the cache-tier gates.  Workloads to run again for "
-                       "a variation above 5%, with no gate: {}.\n",
-                       reruns);
+        bench::print("  PASS - the parallelism rule stayed within the cache-tier gates.  Workloads to run again for "
+                     "a variation above 5%, with no gate: {}.\n",
+                     reruns);
     } else {
-        ::fixy::report(kOut, "  FAIL - {} no-regression gate(s) failed.\n", failures);
+        bench::print("  FAIL - {} no-regression gate(s) failed.\n", failures);
     }
 
     bench::emit_reports_json(reports.view(), bench::env_json());

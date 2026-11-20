@@ -92,8 +92,8 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    ::fixy::report(::fixy::Sink::Out, "=== iteration_detector ===\n");
-    ::fixy::report(::fixy::Sink::Out, "  sizeof(IterationDetector): {} bytes\n\n", sizeof(IterationDetector));
+    bench::print("=== iteration_detector ===\n");
+    bench::print("  sizeof(IterationDetector): {} bytes\n\n", sizeof(IterationDetector));
 
     init_random_hashes();
 

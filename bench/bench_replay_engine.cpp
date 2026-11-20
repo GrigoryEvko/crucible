@@ -154,11 +154,10 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    using ::fixy::Sink;
-    ::fixy::report(Sink::Out, "=== replay_engine ===\n");
-    ::fixy::report(Sink::Out, "  sizeof(ReplayEngine)    : {} B\n", sizeof(ReplayEngine));
-    ::fixy::report(Sink::Out, "  sizeof(CrucibleContext) : {} B\n", sizeof(CrucibleContext));
-    ::fixy::report(Sink::Out, "  sizeof(TraceEntry)      : {} B\n\n", sizeof(TraceEntry));
+    bench::print("=== replay_engine ===\n");
+    bench::print("  sizeof(ReplayEngine)    : {} B\n", sizeof(ReplayEngine));
+    bench::print("  sizeof(CrucibleContext) : {} B\n", sizeof(CrucibleContext));
+    bench::print("  sizeof(TraceEntry)      : {} B\n\n", sizeof(TraceEntry));
 
     // Four rows for each of the three sizes.
     ::fixy::FixedList<bench::Report, 12> reports{};
@@ -208,7 +207,7 @@ int main() {
     // Per-op amortized cost at N=1000 ops: report p50 / 1000 ns per op.
     // advance-only at 1000 ops vs. 100 ops should reveal whether the
     // walk is purely linear (ratio ≈ 10) or has startup overhead.
-    ::fixy::report(Sink::Out, "\n=== compare — per-op scaling (advance-only) ===\n  ");
+    bench::print("\n=== compare — per-op scaling (advance-only) ===\n  ");
     bench::compare(*reports.get(4).expect("the advance row of 100 ops"),
                    *reports.get(8).expect("the advance row of 1000 ops"))
         .print_text();

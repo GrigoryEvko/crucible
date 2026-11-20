@@ -42,8 +42,8 @@ int main() {
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }
 
-    ::fixy::report(::fixy::Sink::Out, "=== schema_table ===\n");
-    ::fixy::report(::fixy::Sink::Out, "  table entries: {} (log2 = ~8 probes)\n\n", N);
+    bench::print("=== schema_table ===\n");
+    bench::print("  table entries: {} (log2 = ~8 probes)\n\n", N);
 
     ::fixy::FixedArray<bench::Report, 3> reports{
         [&] {

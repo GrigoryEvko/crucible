@@ -66,18 +66,17 @@ int main() {
     // so readers know exactly which SIMD path was exercised.
 
     using namespace foundation::simd;
-    using ::fixy::Sink;
     using ::fixy::TextView;
     constexpr TextView yes{"yes"};
     constexpr TextView no{"no"};
-    ::fixy::report(Sink::Out, "=== simd architecture ===\n");
-    ::fixy::report(Sink::Out, "  compile-time: avx512={} avx2={} sse42={} neon={}\n", kAvx512Available ? yes : no,
-                   kAvx2Available ? yes : no, kSse42Available ? yes : no, kNeonAvailable ? yes : no);
+    bench::print("=== simd architecture ===\n");
+    bench::print("  compile-time: avx512={} avx2={} sse42={} neon={}\n", kAvx512Available ? yes : no,
+                 kAvx2Available ? yes : no, kSse42Available ? yes : no, kNeonAvailable ? yes : no);
 #if defined(__x86_64__) || defined(__i386__)
-    ::fixy::report(Sink::Out, "  runtime CPU:  avx512={} avx2={} sse42={}\n", runtime_supports_avx512() ? yes : no,
-                   runtime_supports_avx2() ? yes : no, runtime_supports_sse42() ? yes : no);
+    bench::print("  runtime CPU:  avx512={} avx2={} sse42={}\n", runtime_supports_avx512() ? yes : no,
+                 runtime_supports_avx2() ? yes : no, runtime_supports_sse42() ? yes : no);
 #endif
-    ::fixy::report(Sink::Out, "\n");
+    bench::print("\n");
 
     // ── Volatile inputs to defeat constant folding ────────────────
 
@@ -101,7 +100,7 @@ int main() {
     };
     auto load_u64x8 = []() { return foundation::simd::load<u64x8>(v_in.view()); };
 
-    ::fixy::report(Sink::Out, "=== simd ===\n\n");
+    bench::print("=== simd ===\n\n");
 
     ::fixy::FixedArray<bench::Report, 23> reports{
         // ─── Facade primitives ──────────────────────────────────────

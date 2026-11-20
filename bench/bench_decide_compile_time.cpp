@@ -108,7 +108,7 @@ int main() {
         next_lo += 100;
     }
 
-    ::fixy::report(::fixy::Sink::Out, "=== decide ===\n\n");
+    bench::print("=== decide ===\n\n");
 
     // Each `bench::run(name, body)` is one Report.  Auto-batching
     // averages the lambda over 2^k calls until the timed region
