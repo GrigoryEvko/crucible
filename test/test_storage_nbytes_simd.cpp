@@ -1,24 +1,19 @@
 // The vector path must return output bit-identical to the scalar path.
 // The cases below are hand-picked to cover the algorithmically distinct
-// parts of the input space.
+// parts of the input space.  The two random cases draw their inputs from
+// Philox4x32-10, so each run and each host draws the same inputs.
 
 #include <crucible/StorageNbytes.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 
-#include <array>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstring>
 #include <initializer_list>
-#include <memory>
-#include <random>
 #include <type_traits>
 #include <utility>
 
@@ -26,6 +21,64 @@ namespace {
 
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+// The bounds of a draw of a random case: the smallest and the largest value.
+struct DrawBounds {
+    int64_t lowest = 0;
+    int64_t highest = 0;
+};
+
+// The bounds of the inputs of a random case.
+struct RandomInputs {
+    DrawBounds sizes{};
+    DrawBounds strides{};
+};
+
+// The Philox key of each random case.
+enum class RandomKey : uint64_t {
+    well_bounded = 0xCAFEBABEDEADBEEFULL,
+    extreme = 0xFEEDFACEBADC0DE5ULL,
+};
+
+// The number of a trial of a random case.
+enum class Trial : uint64_t {
+};
+
+// The blocks of one trial: one for the rank, and one for each dimension.
+constexpr uint64_t kBlocksPerTrial = 9;
+
+// The word of 64 bits of the two words of the block from the first one, the
+// high word first.
+[[nodiscard]] uint64_t word_pair(::fixy::Philox4x32::Counter const& block, ::fixy::Index<3> first) noexcept {
+    uint64_t const high = *block.get(first.raw()).expect("a block holds four words");
+    uint64_t const low = *block.get(first.raw() + 1).expect("a block holds four words");
+    return (high << 32) | low;
+}
+
+// A value of the bounds from the two words of the block from the first one:
+// the lowest value plus their word modulo the count of the values of the
+// bounds.
+[[nodiscard]] int64_t draw_in(DrawBounds bounds, ::fixy::Philox4x32::Counter const& block,
+                              ::fixy::Index<3> first) noexcept {
+    uint64_t const span = static_cast<uint64_t>(bounds.highest) - static_cast<uint64_t>(bounds.lowest) + 1;
+    return static_cast<int64_t>(static_cast<uint64_t>(bounds.lowest) + word_pair(block, first) % span);
+}
+
+// The descriptor of a trial of a random case: a rank from one to eight, and a
+// size and a stride of the bounds for each dimension, all of Float.
+[[nodiscard]] ::crucible::TensorMeta random_meta(RandomKey key, RandomInputs inputs, Trial trial) noexcept {
+    uint64_t const first = std::to_underlying(trial) * kBlocksPerTrial;
+    ::fixy::Philox4x32::Counter const rank = ::fixy::Philox4x32::generate(first, std::to_underlying(key));
+    ::crucible::TensorMeta meta{};
+    meta.ndim = static_cast<uint8_t>(1 + *rank.get(0).expect("a block holds four words") % 8);
+    meta.dtype = ::crucible::ScalarType::Float;
+    for (uint8_t d = 0; d < meta.ndim; ++d) {
+        ::fixy::Philox4x32::Counter const block = ::fixy::Philox4x32::generate(first + 1 + d, std::to_underlying(key));
+        meta.sizes[d] = ::crucible::tensor_dim(draw_in(inputs.sizes, block, ::fixy::index<0>()));
+        meta.strides[d] = ::crucible::tensor_dim(draw_in(inputs.strides, block, ::fixy::index<2>()));
+    }
+    return meta;
+}
 
 }  // namespace
 
@@ -50,11 +103,15 @@ static_assert(sizeof(StorageNbytesDet) == sizeof(::fixy::Saturated<uint64_t>));
     meta.ndim = static_cast<uint8_t>(sizes.size());
     meta.dtype = dtype;
 
-    auto si = sizes.begin();
-    auto ti = strides.begin();
-    for (size_t d = 0; d < sizes.size(); ++d) {
-        meta.sizes[d] = ::crucible::tensor_dim(*si++);
-        meta.strides[d] = ::crucible::tensor_dim(*ti++);
+    size_t d = 0;
+    for (int64_t const size : sizes) {
+        meta.sizes[d] = ::crucible::tensor_dim(size);
+        ++d;
+    }
+    d = 0;
+    for (int64_t const stride : strides) {
+        meta.strides[d] = ::crucible::tensor_dim(stride);
+        ++d;
     }
     return meta;
 }
@@ -63,7 +120,7 @@ static_assert(sizeof(StorageNbytesDet) == sizeof(::fixy::Saturated<uint64_t>));
     return external_tensor_meta(meta);
 }
 
-static void check_equiv(const TensorMeta& meta, const char* what) noexcept {
+static void check_equiv(const TensorMeta& meta, ::fixy::TextView what) noexcept {
     // Equality on the saturated type is defaulted, so it compares the
     // value and the clamped flag together.  Both paths must agree on
     // both: a difference in the flag alone would mean one path saturated
@@ -76,23 +133,23 @@ static void check_equiv(const TensorMeta& meta, const char* what) noexcept {
     CRUCIBLE_TEST_ASSERT(kTest, scalar_det.peek() == scalar);
     CRUCIBLE_TEST_ASSERT(kTest, simd_det.peek() == simd_v);
     if (scalar != simd_v) {
-        std::fprintf(stderr,
-                     "[%s] MISMATCH: scalar=%llu(clamped=%d) simd=%llu(clamped=%d)\n"
-                     "  ndim=%u dtype=%d sizes=[",
-                     what, static_cast<unsigned long long>(scalar.value()), int(scalar.was_clamped()),
-                     static_cast<unsigned long long>(simd_v.value()), int(simd_v.was_clamped()), unsigned(meta.ndim),
-                     int(meta.dtype));
+        ::fixy::report(::fixy::Sink::Err,
+                       "[{}] MISMATCH: scalar={}(clamped={}) simd={}(clamped={})\n"
+                       "  ndim={} dtype={} sizes=[",
+                       what, scalar.value(), static_cast<int>(scalar.was_clamped()), simd_v.value(),
+                       static_cast<int>(simd_v.was_clamped()), static_cast<unsigned>(meta.ndim),
+                       static_cast<int>(meta.dtype));
         for (uint8_t d = 0; d < meta.ndim; ++d) {
-            std::fprintf(stderr, "%lld%s", static_cast<long long>(crucible::raw_tensor_dim(meta.sizes[d])),
-                         d + 1 < meta.ndim ? "," : "");
+            ::fixy::report(::fixy::Sink::Err, "{}{}", crucible::raw_tensor_dim(meta.sizes[d]),
+                           d + 1 < meta.ndim ? ::fixy::TextView{","} : ::fixy::TextView{""});
         }
-        std::fprintf(stderr, "] strides=[");
+        ::fixy::report(::fixy::Sink::Err, "] strides=[");
         for (uint8_t d = 0; d < meta.ndim; ++d) {
-            std::fprintf(stderr, "%lld%s", static_cast<long long>(crucible::raw_tensor_dim(meta.strides[d])),
-                         d + 1 < meta.ndim ? "," : "");
+            ::fixy::report(::fixy::Sink::Err, "{}{}", crucible::raw_tensor_dim(meta.strides[d]),
+                           d + 1 < meta.ndim ? ::fixy::TextView{","} : ::fixy::TextView{""});
         }
-        std::fprintf(stderr, "]\n");
-        std::abort();
+        ::fixy::report(::fixy::Sink::Err, "]\n");
+        ::fixy::fatal("the scalar path and the vector path give two sizes of storage");
     }
 }
 
@@ -156,27 +213,22 @@ static void test_common_shapes() {
     ::fixy::check::pass(kTest, "  test_common_shapes: PASSED\n");
 }
 
+// A TensorMeta one natural alignment past a boundary of 64 bytes: the lead
+// fills the bytes before it.
+struct alignas(64) MisalignedMeta {
+    ::fixy::FixedArray<uint8_t, alignof(TensorMeta)> lead{};
+    TensorMeta meta{};
+};
+
 static void test_natural_tensor_meta_alignment() {
     // The buffers a TensorMeta arrives in guarantee its natural
     // alignment only, never 64-byte vector alignment.  The vector path
     // must therefore load the metadata fields element-aligned.
-    alignas(TensorMeta) std::array<std::byte, sizeof(TensorMeta) + 64> storage{};
-    std::uintptr_t chosen = 0;
-    const std::uintptr_t base = std::bit_cast<std::uintptr_t>(storage.data());
-    for (std::size_t offset = 0; offset < 64; ++offset) {
-        const std::uintptr_t candidate = base + offset;
-        if (candidate % alignof(TensorMeta) == 0 && candidate % 64 != 0) {
-            chosen = candidate;
-            break;
-        }
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, chosen != 0);
-
-    auto* meta = std::construct_at(std::bit_cast<TensorMeta*>(chosen), make_meta({16, 32, 64}, {2048, 64, 1}));
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         !::fixy::address_of(::fixy::to(meta->sizes.lanes().at(::fixy::index<0>()))).is_aligned<64>());
-    check_equiv(*meta, "natural-align-not-vector-align");
-    std::destroy_at(meta);
+    MisalignedMeta holder{};
+    holder.meta = make_meta({16, 32, 64}, {2048, 64, 1});
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !::fixy::address_of(::fixy::to(holder.meta.sizes.lanes().at(::fixy::index<0>()))).is_aligned<64>());
+    check_equiv(holder.meta, "natural-align-not-vector-align");
 
     ::fixy::check::pass(kTest, "  test_natural_tensor_meta_alignment: PASSED\n");
 }
@@ -214,13 +266,17 @@ static void test_stride_zero() {
     ::fixy::check::pass(kTest, "  test_stride_zero: PASSED\n");
 }
 
+// The dtypes of test_dtype_variations.
+constexpr ::fixy::FixedArray<ScalarType, 8> kDtypes{ScalarType::Byte,  ScalarType::Char,  ScalarType::Short,
+                                                    ScalarType::Int,   ScalarType::Long,  ScalarType::Half,
+                                                    ScalarType::Float, ScalarType::Double};
+
 static void test_dtype_variations() {
     auto sizes_strides = []() {
         return make_meta({3, 4}, {4, 1});  // 12 elements
     };
 
-    for (auto dt : {ScalarType::Byte, ScalarType::Char, ScalarType::Short, ScalarType::Int, ScalarType::Long,
-                    ScalarType::Half, ScalarType::Float, ScalarType::Double}) {
+    for (ScalarType const dt : kDtypes) {
         auto m = sizes_strides();
         m.dtype = dt;
         check_equiv(m, "dtype-variation");
@@ -336,21 +392,12 @@ static void test_dead_lanes_hold_extremes() {
 // the fallback never runs here.
 
 static void test_random_well_bounded() {
-    std::mt19937_64 rng{0xCAFEBABEDEADBEEFULL};
-    std::uniform_int_distribution<int> ndim_dist(1, 8);
-    std::uniform_int_distribution<int64_t> size_dist(1, 1024);
-    std::uniform_int_distribution<int64_t> stride_dist(-1024, 1024);
+    constexpr RandomInputs kInputs{.sizes = {.lowest = 1, .highest = 1024},
+                                   .strides = {.lowest = -1024, .highest = 1024}};
 
     constexpr int N_TRIALS = 1000;
     for (int t = 0; t < N_TRIALS; ++t) {
-        TensorMeta m{};
-        m.ndim = static_cast<uint8_t>(ndim_dist(rng));
-        m.dtype = ScalarType::Float;
-        for (uint8_t d = 0; d < m.ndim; ++d) {
-            m.sizes[d] = ::crucible::tensor_dim(size_dist(rng));
-            m.strides[d] = ::crucible::tensor_dim(stride_dist(rng));
-        }
-        check_equiv(m, "random-bounded");
+        check_equiv(random_meta(RandomKey::well_bounded, kInputs, Trial{static_cast<uint64_t>(t)}), "random-bounded");
     }
 
     ::fixy::check::pass(kTest, "  test_random_well_bounded: PASSED ({} trials)\n", N_TRIALS);
@@ -360,21 +407,12 @@ static void test_random_well_bounded() {
 // drives the fallback instead.
 
 static void test_random_extreme() {
-    std::mt19937_64 rng{0xFEEDFACEBADC0DE5ULL};
-    std::uniform_int_distribution<int> ndim_dist(1, 8);
-    std::uniform_int_distribution<int64_t> size_dist(1, int64_t{1} << 40);
-    std::uniform_int_distribution<int64_t> stride_dist(-(int64_t{1} << 40), int64_t{1} << 40);
+    constexpr RandomInputs kInputs{.sizes = {.lowest = 1, .highest = int64_t{1} << 40},
+                                   .strides = {.lowest = -(int64_t{1} << 40), .highest = int64_t{1} << 40}};
 
     constexpr int N_TRIALS = 500;
     for (int t = 0; t < N_TRIALS; ++t) {
-        TensorMeta m{};
-        m.ndim = static_cast<uint8_t>(ndim_dist(rng));
-        m.dtype = ScalarType::Float;
-        for (uint8_t d = 0; d < m.ndim; ++d) {
-            m.sizes[d] = ::crucible::tensor_dim(size_dist(rng));
-            m.strides[d] = ::crucible::tensor_dim(stride_dist(rng));
-        }
-        check_equiv(m, "random-extreme");
+        check_equiv(random_meta(RandomKey::extreme, kInputs, Trial{static_cast<uint64_t>(t)}), "random-extreme");
     }
 
     ::fixy::check::pass(kTest, "  test_random_extreme: PASSED ({} trials)\n", N_TRIALS);
