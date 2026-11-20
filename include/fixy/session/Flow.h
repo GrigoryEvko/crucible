@@ -915,8 +915,8 @@ using perm_set_after_recv_t = ::foundation::permissions::perm_set_union_t<
 
 // ── The slot form of a payload ──────────────────────────────────────
 //
-// A session handle keeps the token of each plain tag of its set, the parked
-// token of each LentOut and the loan of each BorrowedIn, in its slots
+// A session handle keeps each token of its set, the parked token of each
+// LentOut and the loan of each BorrowedIn, with their brands, in its slots
 // (HoldSlots below).  A message that moves a token or a loan takes
 // it out of the slots of the sender and puts it into the slots of the
 // receiver.  So the set of a handle and its slots are one ledger.  The step
