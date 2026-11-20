@@ -138,9 +138,7 @@ template <typename Ct>
     return Ct::eq(::fixy::bytes(in.left), ::fixy::bytes(in.right)) ? 1u : 0u;
 }
 [[gnu::noinline]] std::uint64_t probe_fixy_eq_static(Input const& in) noexcept {
-    return ::fixy::ct::eq(std::span<const std::byte, kBytes>{in.left}, std::span<const std::byte, kBytes>{in.right})
-             ? 1u
-             : 0u;
+    return ::fixy::ct::eq(::fixy::bytes(in.left), ::fixy::bytes(in.right)) ? 1u : 0u;
 }
 
 // The leaking control: a byte comparison that stops at the first

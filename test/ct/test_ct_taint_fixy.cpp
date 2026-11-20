@@ -54,7 +54,7 @@ struct FixyCt {
     }
     template <std::size_t N>
     static bool eq_static(std::array<std::byte, N> const& a, std::array<std::byte, N> const& b) noexcept {
-        return ::fixy::ct::eq(std::span<const std::byte, N>{a}, std::span<const std::byte, N>{b});
+        return ::fixy::ct::eq(::fixy::bytes(a), ::fixy::bytes(b));
     }
 };
 

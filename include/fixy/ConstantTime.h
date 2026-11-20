@@ -20,7 +20,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -85,82 +84,68 @@ template <std::unsigned_integral T>
 }
 
 namespace detail {
-// The element of a span that eq reads: a byte, const or not.
+// The element of a View that eq reads: a byte, const or not.
 template <class E>
 concept ByteElement = std::same_as<std::remove_const_t<E>, std::byte>;
 
-// The XOR of the word of eight bytes at index Word of two byte arrays.  A
-// byte copy reads each word, so the arrays need no alignment.
-template <std::size_t Word, ByteElement A, ByteElement B, std::size_t N>
+// The XOR of the word of eight bytes at index Word of two runs of N bytes.
+// A byte copy reads each word, so the runs need no alignment.
+template <std::size_t Word, std::size_t N>
     requires((Word + 1) * sizeof(std::uint64_t) <= N)
-[[nodiscard]] CRUCIBLE_INLINE std::uint64_t word_difference(std::span<A, N> a, std::span<B, N> b) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE std::uint64_t word_difference(std::byte const* left_first,
+                                                            std::byte const* right_first) noexcept {
     std::uint64_t left = 0;
     std::uint64_t right = 0;
-    __builtin_memcpy(&left, a.data() + Word * sizeof(std::uint64_t), sizeof(std::uint64_t));
-    __builtin_memcpy(&right, b.data() + Word * sizeof(std::uint64_t), sizeof(std::uint64_t));
+    __builtin_memcpy(&left, left_first + Word * sizeof(std::uint64_t), sizeof(std::uint64_t));
+    __builtin_memcpy(&right, right_first + Word * sizeof(std::uint64_t), sizeof(std::uint64_t));
     return left ^ right;
 }
 }  // namespace detail
 
-// Equality of two byte arrays whose length is part of the type.  The
-// run-time fold below has no loop, so the compiled body carries no branch
-// at all.  The disassembly guard checks that claim on the compiled code.
+// Equality of two byte views of one static extent, such as two tags of a
+// keyed hash.  Its timing depends only on the extent, which is public.
+// The run-time fold below has no loop, so the compiled body carries no
+// branch at all.  The rule codegen-shapes checks that claim on the
+// compiled code.
 //
-// At run time, the fold reads the arrays in words of eight bytes and ORs
+// At run time, the fold reads the views in words of eight bytes and ORs
 // the differences of the words.  A word holds each byte in a lane of its
 // own, so the order of the bytes in a word does not change the zero test.
 // The bytes after the last full word OR into the same accumulator.  A
 // constant evaluation cannot copy bytes into a word, so it ORs the
-// difference of each byte.  The two forms give the same result.
-template <detail::ByteElement A, detail::ByteElement B, std::size_t N>
-    requires(N != std::dynamic_extent)
-[[nodiscard]] constexpr bool eq(std::span<A, N> a, std::span<B, N> b) noexcept {
+// difference of each byte.  The two forms give the same result.  Two views
+// of different static extents reach the deleted form below, and not the
+// dynamic form above.
+template <std::size_t N>
+    requires(N != ::foundation::core::dynamic_extent)
+[[nodiscard]] constexpr bool eq(::foundation::core::View<std::byte const, N> a,
+                                ::foundation::core::View<std::byte const, N> b) noexcept {
     constexpr std::size_t word_bytes = sizeof(std::uint64_t);
     constexpr std::size_t words = N / word_bytes;
     std::uint64_t acc = 0;
     if consteval {
-        for (std::size_t i = 0; i < N; ++i) {
-            acc |= static_cast<std::uint64_t>(a[i] ^ b[i]);
+        auto cursor = b.begin();
+        for (std::byte const byte : a) {
+            acc |= static_cast<std::uint64_t>(byte ^ *cursor);
+            ++cursor;
         }
     } else {
+        std::byte const* const left = first_of_(::foundation::core::detail::ViewDoor::key(), a);
+        std::byte const* const right = first_of_(::foundation::core::detail::ViewDoor::key(), b);
         [&]<std::size_t... W>(std::index_sequence<W...>) {
-            ((acc |= detail::word_difference<W>(a, b)), ...);
+            ((acc |= detail::word_difference<W, N>(left, right)), ...);
         }(std::make_index_sequence<words>{});
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-            ((acc |= static_cast<std::uint64_t>(a[words * word_bytes + I] ^ b[words * word_bytes + I])), ...);
+            ((acc |= static_cast<std::uint64_t>(left[words * word_bytes + I] ^ right[words * word_bytes + I])), ...);
         }(std::make_index_sequence<N % word_bytes>{});
     }
     return detail::is_zero_without_compare(acc);
 }
 
-// Equality of two byte views of one static extent, such as two tags of a
-// keyed hash.  It ORs the difference of each pair of bytes and reads the
-// accumulator once, so its timing depends only on the extent, which is
-// public.  Two views of different static extents reach the deleted form
-// below, and not the dynamic form above.
-template <std::size_t N>
-    requires(N != ::foundation::core::dynamic_extent)
-[[nodiscard]] constexpr bool eq(::foundation::core::View<std::byte const, N> a,
-                                ::foundation::core::View<std::byte const, N> b) noexcept {
-    std::uint64_t acc = 0;
-    auto cursor = b.begin();
-    for (std::byte const byte : a) {
-        acc |= static_cast<std::uint64_t>(byte ^ *cursor);
-        ++cursor;
-    }
-    return detail::is_zero_without_compare(acc);
-}
-
 // Two static extents that differ cannot name one tag, so the pair does
-// not compile.  Without this overload, two spans have no form to reach,
-// and two Views convert to the dynamic form above, whose precondition
-// stops the mismatch only at run time.
-template <detail::ByteElement A, detail::ByteElement B, std::size_t N, std::size_t M>
-    requires(N != std::dynamic_extent && M != std::dynamic_extent && N != M)
-bool eq(std::span<A, N>, std::span<B, M>) =
-    delete("fixy::ct::eq: the two spans have static extents that differ, so they cannot hold one tag.  Compare "
-           "spans of one length.");
-
+// not compile.  Without this overload, the two Views convert to the
+// dynamic form above, whose precondition stops the mismatch only at run
+// time.
 template <detail::ByteElement A, detail::ByteElement B, std::size_t N, std::size_t M>
     requires(N != ::foundation::core::dynamic_extent && M != ::foundation::core::dynamic_extent && N != M)
 bool eq(::foundation::core::View<A, N>, ::foundation::core::View<B, M>) =

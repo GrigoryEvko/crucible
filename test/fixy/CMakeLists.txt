@@ -2188,9 +2188,6 @@ fixy_neg_compile_test(neg_ct_eq_length_mismatch_at_consteval
 # type with the template parameter names of the first template that made
 # the same type, so the first regex accepts each name.  The bindings after
 # "with" still pin the two extents.
-fixy_neg_compile_test(neg_ct_eq_static_extent_mismatch
-  "use of deleted function .bool fixy::ct::eq\\(std::span<[A-Za-z]+, [A-Za-z]+>, std::span<[A-Za-z]+, [A-Za-z]+>\\) .with A = const std::byte. B = const std::byte. long unsigned int N = 3. long unsigned int M = 5."
-  "fixy::ct::eq: the two spans have static extents that differ, so they cannot hold one tag")
 fixy_neg_compile_test(neg_ct_eq_static_view_extent_mismatch
   "use of deleted function .bool fixy::ct::eq\\(foundation::core::View<[A-Za-z]+, [A-Za-z]+>, foundation::core::View<[A-Za-z]+, [A-Za-z]+>\\) .with A = const std::byte. B = const std::byte. long unsigned int N = 3. long unsigned int M = 5."
   "fixy::ct::eq: the two views have static extents that differ, so they cannot hold one tag")

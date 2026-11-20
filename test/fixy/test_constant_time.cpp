@@ -39,35 +39,30 @@ inline constexpr bool less_takes_unsigned_only = ((less_accepts<Widths> == std::
 static_assert(less_takes_unsigned_only<std::int8_t, std::uint8_t, std::int16_t, std::uint16_t, std::int32_t,
                                        std::uint32_t, std::int64_t, std::uint64_t>);
 
-// eq takes two spans of one static extent through the fold, whether the
-// bytes are const or not.  Two static extents that differ do not compile,
-// for spans and for Views.  A View of dynamic extent on either side goes
-// to the loop, whose precondition checks the lengths.  A span of dynamic
-// extent has no form.
+// eq takes two Views of one static extent through the fold, and a View of
+// bytes that are not const through the dynamic form.  Two static extents
+// that differ do not compile.  A View of dynamic extent on either side
+// goes to the loop, whose precondition checks the lengths.  A span has no
+// form.
 template <class A, class B>
 concept eq_accepts = requires(A lhs, B rhs) { ct::eq(lhs, rhs); };
 
-using Const3 = std::span<const std::byte, 3>;
-using Const5 = std::span<const std::byte, 5>;
-using Mutable3 = std::span<std::byte, 3>;
-using Mutable5 = std::span<std::byte, 5>;
-using ConstAny = std::span<const std::byte>;
 using View3 = ::fixy::View<std::byte const, 3>;
 using View5 = ::fixy::View<std::byte const, 5>;
+using ViewMutable3 = ::fixy::View<std::byte, 3>;
 using ViewMutable5 = ::fixy::View<std::byte, 5>;
 using ViewAny = ::fixy::View<std::byte const>;
 
-static_assert(eq_accepts<Const3, Const3> && eq_accepts<Mutable3, Const3> && eq_accepts<Mutable5, Mutable5>);
-static_assert(!eq_accepts<Const3, Const5> && !eq_accepts<Mutable3, Const5> && !eq_accepts<Mutable5, Mutable3>);
-static_assert(!eq_accepts<ConstAny, Const5> && !eq_accepts<Const3, ConstAny> && !eq_accepts<ConstAny, ConstAny>);
-static_assert(eq_accepts<View3, View3> && eq_accepts<ViewAny, View5> && eq_accepts<View3, ViewAny>);
-static_assert(eq_accepts<ViewAny, ViewAny> && eq_accepts<ViewMutable5, ViewMutable5>);
-static_assert(!eq_accepts<View3, View5> && !eq_accepts<ViewMutable5, View3>);
+static_assert(eq_accepts<View3, View3> && eq_accepts<ViewMutable3, View3> && eq_accepts<ViewMutable5, ViewMutable5>);
+static_assert(!eq_accepts<View3, View5> && !eq_accepts<ViewMutable3, View5> && !eq_accepts<ViewMutable5, ViewMutable3>);
+static_assert(eq_accepts<ViewAny, View5> && eq_accepts<View3, ViewAny> && eq_accepts<ViewAny, ViewAny>);
+static_assert(!eq_accepts<std::span<std::byte const, 3>, std::span<std::byte const, 3>>);
+static_assert(!eq_accepts<std::span<std::byte const>, std::span<std::byte const>>);
 
-constexpr std::byte tag_a[3]{std::byte{1}, std::byte{2}, std::byte{3}};
-constexpr std::byte tag_b[3]{std::byte{1}, std::byte{2}, std::byte{4}};
-static_assert(ct::eq(Const3{tag_a}, Const3{tag_a}));
-static_assert(!ct::eq(Const3{tag_a}, Const3{tag_b}));
+constexpr ::fixy::FixedArray<std::byte, 3> tag_a{std::byte{1}, std::byte{2}, std::byte{3}};
+constexpr ::fixy::FixedArray<std::byte, 3> tag_b{std::byte{1}, std::byte{2}, std::byte{4}};
+static_assert(ct::eq(tag_a.view(), tag_a.view()));
+static_assert(!ct::eq(tag_a.view(), tag_b.view()));
 
 // less agrees with the plain comparison at every 8-bit pair.  A same
 // width subtraction discards the borrow, so this is the check that
@@ -110,13 +105,16 @@ int check_eq_finds_every_difference_position() {
     ::fixy::FixedArray<std::byte, len> const& right = b;
 
     if (!ct::eq(ViewAny{left.view()}, ViewAny{right.view()})) return 10;
+    if (!ct::eq(left.view(), right.view())) return 13;
 
     for (::fixy::Index<len> const pos : b.indices()) {
         const std::byte saved = b.at(pos);
         b.at(pos) = static_cast<std::byte>(std::to_integer<unsigned>(saved) ^ 0xFFu);
         if (ct::eq(ViewAny{left.view()}, ViewAny{right.view()})) return 11;
+        if (ct::eq(left.view(), right.view())) return 14;
         b.at(pos) = saved;
         if (!ct::eq(ViewAny{left.view()}, ViewAny{right.view()})) return 12;
+        if (!ct::eq(left.view(), right.view())) return 15;
     }
     return 0;
 }

@@ -2217,13 +2217,12 @@ def wrapper_source(cases: Mapping[str, tuple[tuple[str, bool, str], ...]]) -> tu
             names[name] = "*" in parameters
             lines.append(f'extern "C" {result} {name}({parameters}) noexcept {{ {body} }}')
     for length in STATIC_EQ_LENGTHS:
+        # A View of a fixed extent holds one pointer and copies trivially, so it comes in a register as a pointer
+        # does, and the wrapper makes no View from a pointer.
         name = f"ct_fixy_eq_static_{length}"
         names[name] = True
-        lines.append(
-            f'extern "C" bool {name}(const std::byte* a, const std::byte* b) noexcept {{ '
-            f"return {ns}::eq(std::span<const std::byte, {length}>{{a, {length}}}, "
-            f"std::span<const std::byte, {length}>{{b, {length}}}); }}"
-        )
+        view = f"::foundation::core::View<std::byte const, {length}>"
+        lines.append(f'extern "C" bool {name}({view} a, {view} b) noexcept {{ return {ns}::eq(a, b); }}')
     for rel, file_cases in cases.items():
         # A case of a header includes the header here.  A case of a source file includes its own headers.
         if rel.startswith("include/"):

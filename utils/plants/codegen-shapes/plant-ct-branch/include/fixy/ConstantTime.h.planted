@@ -6,9 +6,23 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <type_traits>
 #include <utility>
+
+// A stand-in for the View of the base: a pointer, and also a count for the
+// dynamic extent.
+namespace foundation::core {
+inline constexpr std::size_t dynamic_extent = static_cast<std::size_t>(-1);
+template <class T, std::size_t Extent = dynamic_extent>
+struct View {
+    T* first = nullptr;
+};
+template <class T>
+struct View<T, dynamic_extent> {
+    T* first = nullptr;
+    std::size_t size = 0;
+};
+}  // namespace foundation::core
 
 namespace fixy::ct {
 
@@ -42,36 +56,39 @@ template <std::unsigned_integral T>
 template <class E>
 concept ByteElement = std::same_as<std::remove_const_t<E>, std::byte>;
 
-template <std::size_t Word, ByteElement A, ByteElement B, std::size_t N>
+template <std::size_t Word, std::size_t N>
     requires((Word + 1) * sizeof(std::uint64_t) <= N)
-[[nodiscard, gnu::always_inline]] inline std::uint64_t word_difference(std::span<A, N> a, std::span<B, N> b) noexcept {
+[[nodiscard, gnu::always_inline]] inline std::uint64_t word_difference(std::byte const* left_first,
+                                                                       std::byte const* right_first) noexcept {
     std::uint64_t left = 0;
     std::uint64_t right = 0;
-    __builtin_memcpy(&left, a.data() + Word * sizeof(std::uint64_t), sizeof(std::uint64_t));
-    __builtin_memcpy(&right, b.data() + Word * sizeof(std::uint64_t), sizeof(std::uint64_t));
+    __builtin_memcpy(&left, left_first + Word * sizeof(std::uint64_t), sizeof(std::uint64_t));
+    __builtin_memcpy(&right, right_first + Word * sizeof(std::uint64_t), sizeof(std::uint64_t));
     return left ^ right;
 }
 }  // namespace detail
 
-[[nodiscard]] constexpr bool eq(std::span<const std::byte> a, std::span<const std::byte> b) noexcept {
+[[nodiscard]] constexpr bool eq(::foundation::core::View<std::byte const> a,
+                                ::foundation::core::View<std::byte const> b) noexcept {
     std::byte acc{0};
-    for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) {
-        acc |= a[i] ^ b[i];
+    for (std::size_t i = 0; i < a.size && i < b.size; ++i) {
+        acc |= a.first[i] ^ b.first[i];
     }
     return detail::is_zero_without_compare(static_cast<std::uint8_t>(acc));
 }
 
-template <detail::ByteElement A, detail::ByteElement B, std::size_t N>
-    requires(N != std::dynamic_extent)
-[[nodiscard]] constexpr bool eq(std::span<A, N> a, std::span<B, N> b) noexcept {
+template <std::size_t N>
+    requires(N != ::foundation::core::dynamic_extent)
+[[nodiscard]] constexpr bool eq(::foundation::core::View<std::byte const, N> a,
+                                ::foundation::core::View<std::byte const, N> b) noexcept {
     constexpr std::size_t word_bytes = sizeof(std::uint64_t);
     constexpr std::size_t words = N / word_bytes;
     std::uint64_t acc = 0;
     [&]<std::size_t... W>(std::index_sequence<W...>) {
-        ((acc |= detail::word_difference<W>(a, b)), ...);
+        ((acc |= detail::word_difference<W, N>(a.first, b.first)), ...);
     }(std::make_index_sequence<words>{});
     [&]<std::size_t... I>(std::index_sequence<I...>) {
-        ((acc |= static_cast<std::uint64_t>(a[words * word_bytes + I] ^ b[words * word_bytes + I])), ...);
+        ((acc |= static_cast<std::uint64_t>(a.first[words * word_bytes + I] ^ b.first[words * word_bytes + I])), ...);
     }(std::make_index_sequence<N % word_bytes>{});
     return detail::is_zero_without_compare(acc);
 }

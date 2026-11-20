@@ -160,8 +160,8 @@ include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 1 | ABI: libbpf opened the descriptor of the BPF map, and the map door maps it | libbpf gives the descriptor of a BPF map as a raw int, and map_foreign_region is the door that maps a descriptor that a C library opened
-include/fixy/ | base-std-entity | 279 | - | -
-include/fixy/ | base-std-object | 158 | - | -
+include/fixy/ | base-std-entity | 271 | - | -
+include/fixy/ | base-std-object | 150 | - | -
 include/fixy/ | replace-pending:<array> | 4 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/ | replace-pending:<bit> | 2 | - | -
@@ -170,7 +170,7 @@ include/fixy/ | replace-pending:<functional> | 1 | - | -
 include/fixy/ | replace-pending:<limits> | 2 | - | -
 include/fixy/ | replace-pending:<memory> | 2 | - | -
 include/fixy/ | replace-pending:<optional> | 4 | - | -
-include/fixy/ | replace-pending:<span> | 5 | - | -
+include/fixy/ | replace-pending:<span> | 4 | - | -
 include/fixy/ | replace-pending:<string> | 5 | - | -
 include/fixy/ | replace-pending:<string_view> | 12 | - | -
 include/fixy/ | replace-pending:<tuple> | 4 | - | -
@@ -232,8 +232,8 @@ include/fixy/os/ | replace-pending:<string> | 1 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 403 | - | -
-include/fixy/session/ | base-std-object | 176 | - | -
+include/fixy/session/ | base-std-entity | 401 | - | -
+include/fixy/session/ | base-std-object | 175 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
 include/fixy/session/ | replace-pending:<atomic> | 1 | - | -
@@ -245,7 +245,7 @@ include/fixy/session/ | replace-pending:<functional> | 5 | - | -
 include/fixy/session/ | replace-pending:<limits> | 1 | - | -
 include/fixy/session/ | replace-pending:<optional> | 5 | - | -
 include/fixy/session/ | replace-pending:<source_location> | 8 | - | -
-include/fixy/session/ | replace-pending:<span> | 6 | - | -
+include/fixy/session/ | replace-pending:<span> | 5 | - | -
 include/fixy/session/ | replace-pending:<string> | 6 | - | -
 include/fixy/session/ | replace-pending:<string_view> | 10 | - | -
 include/fixy/session/ | replace-pending:<tuple> | 7 | - | -
@@ -362,13 +362,13 @@ test/ct/ | c-array-object | 5 | - | -
 test/ct/ | c-library-call | 14 | - | -
 test/ct/ | inline-asm | 5 | - | -
 test/ct/ | raw-pointer-object | 4 | - | -
-test/ct/ | std-entity | 18 | - | -
-test/ct/ | std-object | 12 | - | -
+test/ct/ | std-entity | 14 | - | -
+test/ct/ | std-object | 8 | - | -
 test/dag_neg/ | opted-out | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/dag_neg/ | region | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
-test/fixy/ | c-array-object | 85 | - | -
+test/fixy/ | c-array-object | 81 | - | -
 test/fixy/ | c-library-call | 991 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 9 | - | -
@@ -438,9 +438,9 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2340 | - | -
+test/fixy/ | std-entity | 2331 | - | -
 test/fixy/ | std-object | 839 | - | -
-test/fixy/neg/ | c-array-object | 57 | - | -
+test/fixy/neg/ | c-array-object | 54 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 323 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
@@ -522,7 +522,7 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member m
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/neg/ | std-entity | 87 | - | -
+test/fixy/neg/ | std-entity | 83 | - | -
 test/fixy/neg/ | std-object | 34 | - | -
 test/foundation/ | c-array-object | 10 | - | -
 test/foundation/ | c-library-call | 17 | - | -
@@ -749,11 +749,6 @@ test/vigil_neg/ | opted-out | 1 | PROBE: the fixture starts the lifetime of an o
 test/vigil_neg/ | region | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
 test/vigil_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/vigil_neg/ | region | 1 | PROBE: the fixture starts the lifetime of an object in raw bytes | -
-utils/tools/ | c-array-object | 1 | - | -
-utils/tools/ | c-library-call | 9 | - | -
-utils/tools/ | raw-pointer-object | 1 | - | -
-utils/tools/ | std-entity | 15 | - | -
-utils/tools/ | std-object | 1 | - | -
 utils/tools/lsp_code_action_plugin/ | std-entity | 97 | - | -
 utils/tools/lsp_code_action_plugin/ | std-object | 27 | - | -
 vessel/torch/ | opted-out | 44 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
