@@ -11,15 +11,13 @@
 // informative even when paths are cache-hot.
 
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <filesystem>
-#include <memory>
+#include <utility>
 
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/Fs.h>
 
 #include "bench_harness.h"
 
@@ -72,14 +70,25 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    // Isolated tmp dir per run.
-    char tmpl[] = "/tmp/crucible_bench_cipher_XXXXXX";
-    char* dir = ::mkdtemp(tmpl);
-    if (dir == nullptr) {
-        std::perror("mkdtemp");
+    // Isolated tmp dir per run.  Its owner removes the tree at its end.
+    using ::fixy::fs::TemporaryDirectory;
+    using Made = ::fixy::Result<::fixy::Linear<TemporaryDirectory>, ::foundation::os::Errno>;
+    Made made = ::fixy::fs::mint_temporary_directory(store_ctx());
+    if (made.is_err()) {
+        ::fixy::report(::fixy::Sink::Err, "bench_cipher: the temporary directory does not open (error {})\n",
+                       ::foundation::os::error_number(std::move(made).err().value_or(::foundation::os::Errno{})));
         return 1;
     }
-    std::printf("=== cipher ===\n  tmpdir: %s\n\n", dir);
+    TemporaryDirectory scratch = std::move(made).expect("the test above found the directory").consume();
+    // A copy of the path, which the last line prints after the end of the
+    // owner.
+    ::foundation::core::GrowText dir_copy = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);
+    for (char const character : scratch.path().view()) {
+        dir_copy.append(A, character).expect("the text holds each character of the directory");
+    }
+    ::foundation::core::HeapText const dir_text = ::foundation::core::freeze(std::move(dir_copy));
+    const ::fixy::TextView dir = dir_text.view();
+    bench::print("=== cipher ===\n  tmpdir: {}\n\n", dir);
 
     // 6 Runs × 2 region sizes = 12 Reports. Each (num_ops) scope holds
     // its Cipher + warm-region fixture across the per-size lambdas.
@@ -89,15 +98,16 @@ int main() {
     std::size_t idx_256_ca_warm = 0;
     std::size_t idx_256_record_event = 0;
 
-    for (uint32_t num_ops : {16u, 256u}) {
+    ::fixy::FixedArray<uint32_t, 2> const op_counts{16u, 256u};
+    for (uint32_t const num_ops : op_counts.view()) {
         // Cipher + warm_region live in THIS scope, shared across the
         // three benches for this num_ops.  Distinct 'salt' per size
         // avoids collisions in the dedup hash space.
         const auto ctx = store_ctx();
         // The text of the root copies the characters of the directory.
         ::foundation::core::GrowText root = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);
-        for (std::size_t index = 0; dir[index] != '\0'; ++index) {
-            root.append(A, dir[index]).expect("the text holds each character of the directory");
+        for (char const character : dir) {
+            root.append(A, character).expect("the text holds each character of the directory");
         }
         ::foundation::core::HeapText const root_path = ::foundation::core::freeze(std::move(root));
         auto cipher = Cipher::open(ctx, A, ::fixy::mint_tagged<::fixy::tags::source::External>(root_path.view()))
@@ -184,17 +194,18 @@ int main() {
     // full write.
     const bench::Report& cold_256 = *reports.get(idx_256_cold).expect("the cold store row of 256 ops");
     const bench::Report& warm_256 = *reports.get(idx_256_warm).expect("the warm store row of 256 ops");
-    std::printf("\n=== compare — store dedup win (256 ops) ===\n  ");
+    bench::print("\n=== compare — store dedup win (256 ops) ===\n  ");
     bench::compare(cold_256, warm_256).print_text();
 
-    std::printf("\n=== compare — ContentAddressed wrapper overhead (256 ops) ===\n  ");
+    bench::print("\n=== compare — ContentAddressed wrapper overhead (256 ops) ===\n  ");
     bench::compare(warm_256, *reports.get(idx_256_ca_warm).expect("the CA store row of 256 ops")).print_text();
 
-    std::printf("\n=== compare — unified log write vs warm store (256 ops) ===\n  ");
+    bench::print("\n=== compare — unified log write vs warm store (256 ops) ===\n  ");
     bench::compare(warm_256, *reports.get(idx_256_record_event).expect("the record row of 256 ops")).print_text();
 
-    std::filesystem::remove_all(dir);
-    std::printf("\n%s: cleaned\n", dir);
+    // The end of the owner removes the tree of the directory.
+    { TemporaryDirectory const ended = std::move(scratch); }
+    bench::print("\n{}: cleaned\n", dir);
 
     bench::emit_reports_json(reports.view(), json);
     return 0;
