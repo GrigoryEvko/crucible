@@ -61,17 +61,21 @@
 
 namespace fixy {
 
+using ::foundation::core::Align;
 using ::foundation::core::append_hex;
 using ::foundation::core::fatal;
+using ::foundation::core::Fixed;
 using ::foundation::core::Fmt;
 using ::foundation::core::format;
 using ::foundation::core::Formattable;
 using ::foundation::core::Hex;
 using ::foundation::core::HexBytes;
+using ::foundation::core::Padded;
 using ::foundation::core::parse;
 using ::foundation::core::ParseError;
 using ::foundation::core::ParseErrorKind;
 using ::foundation::core::report;
+using ::foundation::core::SignMark;
 using ::foundation::core::Sink;
 using ::foundation::core::Site;
 using ::foundation::core::unreachable;

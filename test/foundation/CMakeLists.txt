@@ -2250,6 +2250,12 @@ foundation_neg_compile_test(neg_core_hex_width_cuts_digits
 foundation_neg_compile_test(neg_core_hex_signed_value
   "use of deleted function .foundation::core::Hex<Width>::Hex\\(T\\) \\[with T = (long int|long); long unsigned int Width = 16\\]."
   "a Hex takes an unsigned integer")
+foundation_neg_compile_test(neg_core_fixed_integer_value
+  "use of deleted function .foundation::core::Fixed<"
+  "a Fixed takes a float or a double")
+foundation_neg_compile_test(neg_core_padded_float_value
+  "use of deleted function .foundation::core::Padded<"
+  "a Padded takes a TextView or an integer")
 foundation_neg_compile_test(neg_core_fatal_runtime_text
   "no matching function for call to .fatal\\(const char\\*\\)."
   "no known conversion for argument 1 from .const char\\*. to .foundation::core::Fmt<>.")
@@ -3190,6 +3196,9 @@ foundation_test(test_core_scalar)
 # Each operation of the family gives the answer of its std form for each
 # input that the std form defines.
 foundation_test(test_core_scalar_oracle)
+# The fixed text and the padded text of the Report family give the text of
+# printf for each value, count of decimals, width, side and sign.
+foundation_test(test_core_fixed_text)
 
 foundation_neg_compile_test(neg_core_decode_pointer_member
   "no matching function for call to .decode<HoldsAddress>\\(uint64_t\\)."

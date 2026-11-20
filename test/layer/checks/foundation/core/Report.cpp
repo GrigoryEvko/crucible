@@ -203,6 +203,58 @@ static_assert(fmt_arg_of_(Hex<16>{0xABCDU}).kind == FmtArgKind::hex_digits);
 static_assert(fmt_arg_of_(Hex<16>{0xABCDU}).bits == 0xABCDU && fmt_arg_of_(Hex<16>{0xABCDU}).size == 16);
 static_assert(fmt_arg_of_(Hex<2>{static_cast<unsigned char>(0xFFU)}).size == 2);
 
+// A Fixed of each count and a Padded of each width are arguments, and each
+// is the value of one word or of one text.  A cv-qualified Fixed or Padded is
+// refused as each other cv-qualified type, and no other class passes for
+// one: the concept asks for the class of the counts of the type.
+struct LooksLikeFixed {
+    static constexpr std::size_t decimals = 2;
+    static constexpr std::size_t width = 0;
+    static constexpr Align side = Align::Right;
+    static constexpr SignMark sign = SignMark::NegativeOnly;
+};
+struct LooksLikePadded {
+    static constexpr std::size_t width = 8;
+    static constexpr Align side = Align::Left;
+};
+static_assert(TakesArguments<Fixed<0>, Fixed<2>, Fixed<20, 255, Align::Left, SignMark::Always>>);
+static_assert(TakesArguments<Padded<0>, Padded<9>, Padded<255, Align::Left>>);
+static_assert(!TakesArguments<Fixed<2> const> && !TakesArguments<Padded<9> const>);
+static_assert(!TakesArguments<LooksLikeFixed> && !TakesArguments<LooksLikePadded>);
+static_assert(sizeof(Fixed<3>) == sizeof(std::uint64_t) && std::is_trivially_copyable_v<Fixed<3>>);
+static_assert(std::is_nothrow_copy_constructible_v<Padded<9>> && std::is_trivially_destructible_v<Padded<9>>);
+
+// A Fixed takes a float or a double, and a Padded a TextView or an integer.
+// Each other type is refused, and no number converts to either with no call.
+static_assert(std::is_constructible_v<Fixed<2>, double> && std::is_constructible_v<Fixed<2>, float>);
+static_assert(!std::is_constructible_v<Fixed<2>, int> && !std::is_constructible_v<Fixed<2>, long double>);
+static_assert(!std::is_constructible_v<Fixed<2>, bool> && !std::is_constructible_v<Fixed<2>, TextView>);
+static_assert(!std::is_convertible_v<double, Fixed<2>>);
+static_assert(std::is_constructible_v<Padded<4>, TextView> && std::is_constructible_v<Padded<4>, std::uint32_t>);
+static_assert(std::is_constructible_v<Padded<4>, std::int64_t> && std::is_constructible_v<Padded<4>, unsigned char>);
+static_assert(!std::is_constructible_v<Padded<4>, double> && !std::is_constructible_v<Padded<4>, bool>);
+static_assert(!std::is_constructible_v<Padded<4>, char> && !std::is_constructible_v<Padded<4>, char const*>);
+static_assert(!std::is_convertible_v<TextView, Padded<4>> && !std::is_convertible_v<int, Padded<4>>);
+
+// Each Fixed and Padded reaches the cold formatter as its bits and its
+// layout word.
+static_assert(fmt_arg_of_(Fixed<3, 9, Align::Left, SignMark::Always>{-2.0}).kind == FmtArgKind::fixed_binary64);
+static_assert(fmt_arg_of_(Fixed<3, 9, Align::Left, SignMark::Always>{-2.0}).bits == 0xC000000000000000ULL);
+static_assert(fmt_arg_of_(Fixed<3, 9, Align::Left, SignMark::Always>{-2.0}).size
+              == fmt_layout_(3, 9, Align::Left, SignMark::Always));
+static_assert(fmt_arg_of_(Fixed<1>{1.0f}).bits == 0x3FF0000000000000ULL);
+static_assert(fmt_arg_of_(Padded<7>{TextView{"abc"}}).kind == FmtArgKind::padded_text);
+static_assert(fmt_arg_of_(Padded<7>{TextView{"abc"}}).size == 3);
+static_assert(fmt_arg_of_(Padded<7>{TextView{"abc"}}).bits == fmt_layout_(0, 7, Align::Right, SignMark::NegativeOnly));
+static_assert(fmt_arg_of_(Padded<4, Align::Left>{-3}).kind == FmtArgKind::padded_signed);
+static_assert(fmt_arg_of_(Padded<4, Align::Left>{-3}).bits == ~0ULL - 2U);
+static_assert(fmt_arg_of_(Padded<4, Align::Left>{-3}).size == fmt_layout_(0, 4, Align::Left, SignMark::NegativeOnly));
+static_assert(fmt_arg_of_(Padded<4>{7U}).kind == FmtArgKind::padded_unsigned && fmt_arg_of_(Padded<4>{7U}).bits == 7U);
+
+// The layout word keeps each part in its own bits.
+static_assert(fmt_layout_(20, 255, Align::Left, SignMark::Always) == (255U | (1U << 16U) | (1U << 17U) | (20U << 24U)));
+static_assert(fmt_layout_(0, 0, Align::Right, SignMark::NegativeOnly) == 0U);
+
 // Each argument reaches the cold formatter as its kind and its bits.  A
 // signed value keeps its two's complement bits.
 static_assert(fmt_arg_of_(-1).kind == FmtArgKind::signed_integer && fmt_arg_of_(-1).bits == ~0ULL);
@@ -222,10 +274,11 @@ static_assert(noexcept(unreachable()));
 // Each public member of a type of the family is a shared verb, a language
 // protocol or a name of the family list of plan section 11.8: each name of
 // the API table, and the enumeration and the two members kind and position
-// of ParseError, the classes Hex and HexBytes, the width of a Hex, and the
-// mark of a HexBytes.
+// of ParseError, the classes Hex and HexBytes, the width of a Hex, the mark
+// of a HexBytes, and the classes Fixed and Padded with their counts.
 inline constexpr TextView report_names{"Site Fmt report Sink fatal unreachable format Formattable parse ParseError "
-                                       "ParseErrorKind kind position Hex HexBytes width report_mark"};
+                                       "ParseErrorKind kind position Hex HexBytes width report_mark Fixed Padded "
+                                       "decimals side sign"};
 CRUCIBLE_CLOSED_SURFACE(report_names, Site);
 CRUCIBLE_CLOSED_SURFACE(report_names, Hex<8>);
 CRUCIBLE_CLOSED_SURFACE(report_names, HexBytes);
@@ -233,6 +286,8 @@ CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<>);
 CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<int, TextView, bool>);
 CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<float, double>);
 CRUCIBLE_CLOSED_SURFACE(report_names, ParseError);
+CRUCIBLE_CLOSED_SURFACE(report_names, Fixed<2>);
+CRUCIBLE_CLOSED_SURFACE(report_names, Padded<9>);
 
 }  // namespace detail::report_checks
 

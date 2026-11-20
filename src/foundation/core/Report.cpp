@@ -189,6 +189,42 @@ public:
         trim();
     }
 
+    // this = this / 2^bits, with the bits below that place dropped.
+    void shift_right(std::uint32_t bits) noexcept {
+        std::size_t const word_shift = bits / 32U;
+        std::uint32_t const bit_shift = bits % 32U;
+        if (word_shift >= size_) {
+            clear_from(0);
+            return;
+        }
+        std::size_t const kept = size_ - word_shift;
+        for (std::size_t index = 0; index < kept; ++index) {
+            std::uint64_t value = std::uint64_t{words_[index + word_shift]} >> bit_shift;
+            if (bit_shift != 0U && index + word_shift + 1 < size_) {
+                value |= std::uint64_t{words_[index + word_shift + 1]} << (32U - bit_shift);
+            }
+            words_[index] = static_cast<std::uint32_t>(value);
+        }
+        clear_from(kept);
+        trim();
+    }
+
+    // The order of this mod 2^bits and half of 2^bits: a negative value,
+    // zero or a positive value when the low bits are less than, equal to or
+    // more than half.  bits is at least 1.
+    [[nodiscard]] int compare_low_bits_with_half(std::uint32_t bits) const noexcept {
+        std::uint32_t const half = bits - 1U;
+        if (!has_bit(half)) return -1;
+        std::size_t const half_word = half / 32U;
+        for (std::size_t index = 0; index < half_word; ++index) {
+            if (word_at(index) != 0U) return 1;
+        }
+        std::uint32_t const below_half = (std::uint32_t{1} << (half % 32U)) - 1U;
+        return (word_at(half_word) & below_half) != 0U ? 1 : 0;
+    }
+
+    [[nodiscard]] bool is_odd() const noexcept { return (word_at(0) & 1U) != 0U; }
+
     // Divides this by divisor in place, and gives the remainder.  The
     // divisor is not zero.
     [[nodiscard]] std::uint32_t divide(std::uint32_t divisor) noexcept {
@@ -216,6 +252,18 @@ public:
 
 private:
     [[nodiscard]] std::uint32_t word_at(std::size_t index) const noexcept { return index < size_ ? words_[index] : 0U; }
+
+    [[nodiscard]] bool has_bit(std::uint32_t place) const noexcept {
+        return ((word_at(place / 32U) >> (place % 32U)) & 1U) != 0U;
+    }
+
+    // Zeroes each word from first to the old count, and makes first the
+    // count.
+    void clear_from(std::size_t first) noexcept {
+        for (std::size_t index = first; index < size_; ++index)
+            words_[index] = 0U;
+        size_ = first;
+    }
 
     void push_carry(std::uint64_t carry) noexcept {
         if (carry == 0U) return;
@@ -472,6 +520,156 @@ void put_float(Window& window, std::uint64_t bits, FloatLayout layout) noexcept 
     window.put(static_cast<char>('0' + magnitude % 10U));
 }
 
+// ── The fixed text of a float and the padded text ──────────────────────
+//
+// Report.h gives the two forms (THE FIXED TEXT OF A FLOAT and THE PADDED
+// TEXT).  A finite double is mantissa * 2^exponent, so value * 10^decimals is
+// mantissa * 10^decimals * 2^exponent.  With an exponent of at least zero
+// that is an integer.  With a negative exponent -k, the quotient by 2^k is
+// rounded with its remainder: up when the remainder is more than half of
+// 2^k, and to the even quotient when it is exactly half.  The digits of the
+// rounded integer are the digits of the text, with the point before the last
+// decimals of them.  Each step is integer arithmetic on the bits, as for the
+// shortest text.  Complexity: O(D * W) word operations, for D digits and W
+// words: at most 329 digits and 35 words.
+
+// The parts of a layout word (fmt_layout_ of Report.h).
+struct Layout {
+    std::size_t decimals = 0;
+    std::size_t width = 0;
+    Align side = Align::Right;
+    SignMark sign = SignMark::NegativeOnly;
+};
+
+[[nodiscard]] constexpr Layout layout_of(std::uint64_t word) noexcept {
+    return Layout{.decimals = (word >> 24U) & 0xFFU,
+                  .width = word & 0xFFFFU,
+                  .side = ((word >> 16U) & 1U) != 0U ? Align::Left : Align::Right,
+                  .sign = ((word >> 17U) & 1U) != 0U ? SignMark::Always : SignMark::NegativeOnly};
+}
+
+static_assert(layout_of(fmt_layout_(fixed_decimals_max, padded_width_max, Align::Left, SignMark::Always)).decimals
+              == fixed_decimals_max);
+static_assert(layout_of(fmt_layout_(fixed_decimals_max, padded_width_max, Align::Left, SignMark::Always)).width
+              == padded_width_max);
+static_assert(layout_of(fmt_layout_(0, 0, Align::Left, SignMark::NegativeOnly)).side == Align::Left);
+static_assert(layout_of(fmt_layout_(0, 0, Align::Right, SignMark::Always)).sign == SignMark::Always);
+static_assert(layout_of(fmt_layout_(3, 9, Align::Right, SignMark::NegativeOnly)).side == Align::Right);
+
+// The digits of the integer part of the largest double, and the most
+// characters of a fixed text: a sign, those digits, a point and the most
+// decimals.
+constexpr std::size_t largest_integer_digits = 309;
+constexpr std::size_t fixed_text_max = 1 + largest_integer_digits + 1 + fixed_decimals_max;
+
+// The words of the largest scaled value: mantissa * 10^decimals * 2^971 has
+// at most 53 + 67 + 971 bits, since 10^20 is less than 2^67.
+static_assert(53U + 67U + static_cast<std::uint32_t>(largest_exponent_of(binary64_layout))
+              <= 32U * Natural::natural_words);
+
+void put_blanks(Window& window, std::size_t count) noexcept {
+    for (std::size_t index = 0; index < count; ++index)
+        window.put(' ');
+}
+
+// Writes the length bytes of text, and blanks to the width of the layout on
+// the side that it gives.
+void put_in_width(Window& window, char const* text, std::size_t length, Layout const& layout) noexcept {
+    std::size_t const blanks = layout.width > length ? layout.width - length : 0;
+    if (layout.side == Align::Right) put_blanks(window, blanks);
+    window.put(text, length);
+    if (layout.side == Align::Left) put_blanks(window, blanks);
+}
+
+// Writes the fixed text of the double with the bits of `bits`.
+void put_fixed(Window& window, std::uint64_t bits, Layout const& layout) noexcept {
+    char text[fixed_text_max] = {};
+    std::size_t length = 0;
+    if ((bits >> 63U) != 0U) {
+        text[length] = '-';
+        ++length;
+    } else if (layout.sign == SignMark::Always) {
+        text[length] = '+';
+        ++length;
+    }
+    std::uint64_t const fraction = bits & ((std::uint64_t{1} << binary64_layout.fraction_bits) - 1U);
+    std::uint64_t const biased = (bits >> binary64_layout.fraction_bits) & 0x7FFU;
+    if (biased == 0x7FFU) {
+        char const* const word = fraction == 0U ? "inf" : "nan";
+        for (std::size_t index = 0; index < 3; ++index)
+            text[length + index] = word[index];
+        put_in_width(window, text, length + 3, layout);
+        return;
+    }
+    std::uint64_t mantissa = fraction;
+    std::int32_t exponent = smallest_exponent_of(binary64_layout);
+    if (biased != 0U) {
+        mantissa |= std::uint64_t{1} << binary64_layout.fraction_bits;
+        exponent = static_cast<std::int32_t>(biased) - bias_of(binary64_layout)
+                 - static_cast<std::int32_t>(binary64_layout.fraction_bits);
+    }
+    Natural scaled{mantissa};
+    scaled.multiply_power_of_ten(static_cast<std::uint32_t>(layout.decimals));
+    if (exponent >= 0) {
+        scaled.shift_left(static_cast<std::uint32_t>(exponent));
+    } else {
+        std::uint32_t const dropped = static_cast<std::uint32_t>(-exponent);
+        int const half = scaled.compare_low_bits_with_half(dropped);
+        scaled.shift_right(dropped);
+        if (half > 0 || (half == 0 && scaled.is_odd())) scaled.add(Natural{1});
+    }
+    char digits[largest_integer_digits + fixed_decimals_max] = {};
+    std::size_t count = 0;
+    do {
+        if (count == sizeof digits) fatal("the fixed text of a floating value holds more digits than a double has");
+        digits[count] = static_cast<char>('0' + scaled.divide(10U));
+        ++count;
+    } while (!scaled.is_zero());
+    while (count <= layout.decimals) {
+        digits[count] = '0';
+        ++count;
+    }
+    for (std::size_t place = count; place-- > layout.decimals;) {
+        text[length] = digits[place];
+        ++length;
+    }
+    if (layout.decimals > 0) {
+        text[length] = '.';
+        ++length;
+        for (std::size_t place = layout.decimals; place-- > 0;) {
+            text[length] = digits[place];
+            ++length;
+        }
+    }
+    put_in_width(window, text, length, layout);
+}
+
+// Writes the integer with the bits of `bits`, signed for padded_signed and
+// unsigned for padded_unsigned, with blanks to the width of the layout.
+void put_padded_integer(Window& window, std::uint64_t bits, FmtArgKind kind, Layout const& layout) noexcept {
+    char text[21] = {};
+    std::size_t length = 0;
+    std::uint64_t magnitude = bits;
+    if (kind == FmtArgKind::padded_signed && (bits >> 63U) != 0U) {
+        text[length] = '-';
+        ++length;
+        magnitude = 0U - bits;
+    }
+    char digits[20] = {};
+    std::size_t count = 0;
+    do {
+        digits[count] = static_cast<char>('0' + magnitude % 10U);
+        ++count;
+        magnitude /= 10U;
+    } while (magnitude != 0U);
+    while (count > 0) {
+        --count;
+        text[length] = digits[count];
+        ++length;
+    }
+    put_in_width(window, text, length, layout);
+}
+
 void put_argument(Window& window, FmtArg const& argument) noexcept {
     switch (argument.kind) {
         case FmtArgKind::signed_integer:
@@ -502,6 +700,16 @@ void put_argument(Window& window, FmtArg const& argument) noexcept {
         case FmtArgKind::hex_bytes:
             for (std::size_t index = 0; index < argument.size; ++index)
                 put_hex(window, static_cast<unsigned char>(argument.first[index]), 2);
+            return;
+        case FmtArgKind::fixed_binary64:
+            put_fixed(window, argument.bits, layout_of(argument.size));
+            return;
+        case FmtArgKind::padded_text:
+            put_in_width(window, argument.first, argument.size, layout_of(argument.bits));
+            return;
+        case FmtArgKind::padded_signed:
+        case FmtArgKind::padded_unsigned:
+            put_padded_integer(window, argument.bits, argument.kind, layout_of(argument.size));
             return;
         default:
             // A kind outside the enumerators writes nothing.  The inline
