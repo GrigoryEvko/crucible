@@ -4,12 +4,8 @@
 #include "bench_harness.h"
 
 #include <atomic>
-#include <array>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
-#include <expected>
-#include <span>
 #include <utility>
 
 namespace {
@@ -19,10 +15,13 @@ using crucible::ContentHash;
 using crucible::KernelCache;
 using crucible::RowHash;
 
-constexpr std::array<std::uint64_t, 8> kRowClusterSlotBases{
+constexpr ::fixy::FixedArray<std::uint64_t, 8> kRowClusterSlotBases{
     1536, 1793, 2050, 2307, 2564, 2821, 3078, 3335,
 };
 constexpr std::uint64_t kRowsPerCluster = 128;
+// The kernels of each seed: the hot set, and the row siblings of the
+// clusters.
+constexpr std::size_t kSeedKernels = 1024;
 
 // The tag of Nondet of each lookup and each insert of the bench.
 constexpr ::foundation::effects::cap::Nondet kNondet = ::foundation::effects::testing::test().nondet;
@@ -36,6 +35,14 @@ struct FakeKernel {
 [[nodiscard]] KernelCache::KernelRef kernel_ref(FakeKernel& kernel) noexcept {
     return ::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&kernel)));
 }
+
+}  // namespace
+
+// The raw triple table is the reference of the typed cache: three
+// std::atomic words in each entry of a table from calloc, as KernelCache had
+// before its typed slot.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw triple table of calloc is the reference of the typed kernel cache")
+namespace {
 
 class RawKernelCache {
 public:
@@ -152,29 +159,34 @@ private:
     std::uint32_t capacity_ = 0;
 };
 
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+namespace {
+
 template <typename Cache>
-void seed_cache(Cache& cache, std::span<FakeKernel> kernels) {
-    for (std::size_t i = 0; i < kernels.size(); ++i) {
-        kernels[i].id = i + 1;
-        auto inserted = cache.insert(kNondet, ContentHash{0x1000 + static_cast<std::uint64_t>(i)}, RowHash{0},
-                                     kernel_ref(kernels[i]));
+void seed_cache(Cache& cache, ::fixy::FixedArray<FakeKernel, kSeedKernels>& kernels) {
+    for (auto [index, kernel] : kernels.view().enumerate()) {
+        kernel->id = index.raw() + 1;
+        auto inserted = cache.insert(kNondet, ContentHash{0x1000 + static_cast<std::uint64_t>(index.raw())}, RowHash{0},
+                                     kernel_ref(*kernel));
         CRUCIBLE_BENCH_CHECK(inserted.is_ok());
     }
 }
 
 template <typename Cache>
-void seed_row_siblings(Cache& cache, std::span<FakeKernel> kernels) {
+void seed_row_siblings(Cache& cache, ::fixy::FixedArray<FakeKernel, kSeedKernels>& kernels) {
     const std::size_t required = kRowClusterSlotBases.size() * static_cast<std::size_t>(kRowsPerCluster);
     CRUCIBLE_BENCH_CHECK(kernels.size() >= required);
 
     std::size_t cursor = 0;
-    for (std::size_t cluster = 0; cluster < kRowClusterSlotBases.size(); ++cluster) {
-        const std::uint64_t content = 0xABC00000ULL | kRowClusterSlotBases[cluster];
+    for (auto [cluster, base] : kRowClusterSlotBases.view().enumerate()) {
+        const std::uint64_t content = 0xABC00000ULL | *base;
         for (std::uint64_t row = 0; row < kRowsPerCluster; ++row) {
-            kernels[cursor].id = 0xA000 + cursor;
-            auto inserted =
-                cache.insert(kNondet, ContentHash{content}, RowHash{0x200 + (cluster * kRowsPerCluster) + row},
-                             kernel_ref(kernels[cursor]));
+            FakeKernel& kernel = *kernels.get(cursor).expect("the seed holds a kernel for each row of a cluster");
+            kernel.id = 0xA000 + cursor;
+            auto inserted = cache.insert(kNondet, ContentHash{content},
+                                         RowHash{0x200 + (cluster.raw() * kRowsPerCluster) + row}, kernel_ref(kernel));
             CRUCIBLE_BENCH_CHECK(inserted.is_ok());
             ++cursor;
         }
@@ -198,8 +210,9 @@ template <typename Cache>
         const std::uint64_t idx = i++ & 1023U;
         const std::uint64_t cluster = idx / kRowsPerCluster;
         const std::uint64_t row = idx % kRowsPerCluster;
-        auto hit = cache.lookup(kNondet, ContentHash{0xABC00000ULL | kRowClusterSlotBases[cluster]},
-                                RowHash{0x200 + (cluster * kRowsPerCluster) + row});
+        auto hit = cache.lookup(
+            kNondet, ContentHash{0xABC00000ULL | *kRowClusterSlotBases.get(cluster).expect("idx / 128 is below 8")},
+            RowHash{0x200 + (cluster * kRowsPerCluster) + row});
         bench::do_not_optimize(hit);
     });
 }
@@ -225,13 +238,13 @@ int main() {
     RawKernelCache raw{4096};
     KernelCache typed{::foundation::effects::testing::test().alloc, 4096};
 
-    std::array<FakeKernel, 1024> raw_hot{};
-    std::array<FakeKernel, 1024> typed_hot{};
+    ::fixy::FixedArray<FakeKernel, kSeedKernels> raw_hot{};
+    ::fixy::FixedArray<FakeKernel, kSeedKernels> typed_hot{};
     seed_cache(raw, raw_hot);
     seed_cache(typed, typed_hot);
 
-    std::array<FakeKernel, 1024> raw_rows{};
-    std::array<FakeKernel, 1024> typed_rows{};
+    ::fixy::FixedArray<FakeKernel, kSeedKernels> raw_rows{};
+    ::fixy::FixedArray<FakeKernel, kSeedKernels> typed_rows{};
     seed_row_siblings(raw, raw_rows);
     seed_row_siblings(typed, typed_rows);
 
@@ -246,11 +259,11 @@ int main() {
 
     bench::emit_reports_text(reports.view());
 
-    std::puts("\n=== comparisons ===");
+    bench::print("\n=== comparisons ===\n");
     bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())).print_text();
     bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<3>())).print_text();
     bench::compare(reports.at(::fixy::index<4>()), reports.at(::fixy::index<5>())).print_text();
     bench::emit_reports_json(reports.view(), bench::env_json());
 
-    return EXIT_SUCCESS;
+    return 0;
 }
