@@ -22,7 +22,7 @@ using ::foundation::core::KeyedHashKeyBytes;
 using ::foundation::core::TextView;
 using ::foundation::core::View;
 
-constexpr std::size_t kLongest = 102400;
+constexpr std::size_t kLongest = 132097;
 
 // The input of the vectors: the byte i % 251 at i.
 template <std::size_t Length>
@@ -96,6 +96,25 @@ constexpr FixedArray<Vector, 16> kVectors{
     Vector{102400, "1c35d1a5811083fd7119f5d5d1ba027b4d01c0c6c49fb6ff2cf75393ea5db4a7"},
 };
 
+// The output of the pinned official C (utils/pins.txt, the commit 657284b1)
+// for the same key and input at the sizes where the run-time arm changes its
+// form: a region record of one full and one short chunk, counts of chunks
+// that are powers of two, the byte after one, a short last chunk after 4, 16
+// and 127 full chunks, and one and two chunks after a batch of 64.
+constexpr FixedArray<Vector, 11> kBoundaries{
+    Vector{1828, "34fe5e78be92dbc5178dbab749a0c3ac4ddb99fa3232142c8b1cf087c487c900"},
+    Vector{4096, "befc660aea2f1718884cd8deb9902811d332f4fc4a38cf7c7300d597a081bfc0"},
+    Vector{4097, "00df940cd36bb9fa7cbbc3556744e0dbc8191401afe70520ba292ee3ca80abbc"},
+    Vector{4596, "dac0443a923ee5a00981037269aaabbb2b479d7b30141b2dcacd3b1999292fa3"},
+    Vector{16384, "9e9fc4eb7cf081ea7c47d1807790ed211bfec56aa25bb7037784c13c4b707b0d"},
+    Vector{16884, "be7fbc9b79697b52f4134ac5cf8883265fdea3add4189f4d2bd264cf86a3193c"},
+    Vector{65536, "160fb7538a11d83b9b311825a6baef08484d6aabb8276900a1fb08648085cca2"},
+    Vector{66560, "81e7031a0dde0c1e4dd38695c833df4b4bc80118da33371948069ae8df84f9b9"},
+    Vector{130772, "7546f98b959731acce6a465606a6c209dc1ec47b8eb1cbd4b3a26c5b8c8e9080"},
+    Vector{131072, "def66234dd1a614a994a3dbe7bbc8edf9bbc3fae90222334c8a77320f94d3fe8"},
+    Vector{132097, "bc0b30ee821a95da717a00e80447ec45dcaca453b3f88f36020aac884a1ed57a"},
+};
+
 // The keyed hash of the first length bytes of the input.
 template <std::size_t Length>
 [[nodiscard]] constexpr Hash256 hash_of_prefix(VectorInput<Length> const& input, std::size_t length) noexcept {
@@ -116,6 +135,13 @@ constexpr bool constant_arm_gives_the_vectors() noexcept {
 void test_vectors() {
     static VectorInput<kLongest> const input{};
     for (Vector const& vector : kVectors) {
+        CRUCIBLE_FATAL_INVARIANT(hash_of_prefix(input, vector.length) == hash_of_hex(vector.hex));
+    }
+}
+
+void test_boundaries() {
+    static VectorInput<kLongest> const input{};
+    for (Vector const& vector : kBoundaries) {
         CRUCIBLE_FATAL_INVARIANT(hash_of_prefix(input, vector.length) == hash_of_hex(vector.hex));
     }
 }
@@ -163,6 +189,7 @@ void test_key_and_message_take_part() {
 
 int main() {
     test_vectors();
+    test_boundaries();
     test_constant_arm();
     test_bytes_of_an_output();
     test_key_and_message_take_part();
