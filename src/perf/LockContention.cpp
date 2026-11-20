@@ -40,8 +40,8 @@ LockContention::~LockContention() = default;
 
 uint64_t LockContention::wait_count() const noexcept { return detail::ring_count(state_); }
 
-::fixy::Borrowed<const TimelineLockEvent, LockContention> LockContention::timeline_view() const noexcept {
-    return detail::ring_events<LockContention>(state_);
+::fixy::View<const TimelineLockEvent> LockContention::timeline_view() const noexcept {
+    return detail::ring_events(state_);
 }
 
 uint64_t LockContention::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }

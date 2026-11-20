@@ -1,9 +1,9 @@
 #pragma once
 
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
+#include <fixy/os/OwnedMmap.h>
 #include <foundation/core/Array.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
@@ -147,7 +147,9 @@ public:
     // the live counters each take the bare tag of Nondet.
     [[nodiscard]] Snapshot read(::foundation::effects::cap::Nondet nondet) const noexcept;
 
-    [[nodiscard]] ::fixy::Borrowed<const volatile uint64_t, SenseHub>
+    // The live counters in the mapping, each read with an acquire load, or no
+    // value for a moved-from hub.  The words borrow the mapping of the hub.
+    [[nodiscard]] ::fixy::Option<::fixy::mmap::SharedWords<uint64_t, NUM_COUNTERS>>
     counters_view(::foundation::effects::cap::Nondet nondet) const noexcept;
 
     // An unattachable tracepoint drops one program silently, so these

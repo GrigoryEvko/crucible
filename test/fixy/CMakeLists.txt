@@ -1735,7 +1735,7 @@ fixy_neg_compile_test(neg_secret_mint_from_call_throwing_call
   "no matching function for call to .mint_secret_from_call"
   "the expression .is_nothrow_invocable_v<Make&&> .with Make = .* evaluated to .false.")
 
-# ── Stale, OwnedRegion, Borrowed, ScopedView, Machine ─────────────────
+# ── Stale, OwnedRegion, ScopedView, Machine ───────────────────────────
 fixy_test(test_stale)
 fixy_test(test_versioned_budgeted)
 fixy_test(test_versioned_budgeted_attacks)
@@ -1750,7 +1750,6 @@ fixy_test(test_splice_access_attacks)
 # so that no translation unit compiles all of them.
 fixy_test(test_owned_region test_owned_region.cpp test_owned_region_split.cpp test_owned_region_every_total_0.cpp
   test_owned_region_every_total_1.cpp test_owned_region_every_total_2.cpp)
-fixy_test(test_borrowed)
 # Each subscript of the base checks its index in each build, and each check
 # ends the process in a child process of expect_dies, in the release preset
 # too.
@@ -1789,62 +1788,15 @@ fixy_neg_compile_test(neg_machine_step_after_move
   "in .constexpr. expansion of .fixy::transition_to<int, int, \\^\\^machine::no_edges>\\("
   "fixy/Machine\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
-# A Borrowed of a const element type built from a temporary vector
-# selects the deleted rvalue-range twin of the span constructor.
-fixy_neg_compile_test(neg_borrowed_from_a_temporary
+# The borrow of a region is a View of its elements.  The deleted rvalue
+# twin refuses a temporary region, and the mint takes only a region.
+fixy_neg_compile_test(neg_borrowed_of_a_temporary_region
   "use of deleted function"
-  "fixy::Borrowed<T, Source, Brand>::Borrowed\\(R&&\\) \\[with R = std::vector<int>.*\\]"
-  "Borrowed of a temporary range dangles")
-
-# A braced list reaches the span constructor through span's own
-# initializer_list constructor, and deduces no range for the twin, so
-# the deleted initializer_list constructor is what refuses it.
-fixy_neg_compile_test(neg_borrowed_of_a_braced_list
-  "use of deleted function .fixy::Borrowed<T, Source, Brand>::Borrowed\\(std::initializer_list<"
-  "Borrowed of a braced list dangles")
-
-# A brand has no data member.  The IsBrand check in the class body
-# refuses one that does.
-fixy_neg_compile_test(neg_borrowed_brand_not_empty
-  "static assertion failed"
-  "Borrowed<T, Source, Brand>: Brand must be an empty class type")
-
-# The doors that take an address are erased, because an address names no
-# identity a brand could claim, and a branded borrow never rebrands.
-fixy_neg_compile_test(neg_borrowed_branded_from_pointer_and_count
-  "no matching function for call to .fixy::Borrowed<int, .anonymous.::Owner, .anonymous.::ClaimedBrand>::Borrowed"
-  "required by the constraints of .template<class T, class Source, class Brand> constexpr fixy::Borrowed<T, Source, Brand>::Borrowed\\(T\\*, std::size_t\\) requires +is_same_v<Brand, foundation::brand::DefaultBrand>.")
-fixy_neg_compile_test(neg_borrowed_rebrand
-  "no matching function for call to .fixy::Borrowed<int, .anonymous.::Owner, fixy::<lambda\\(\\)> >::Borrowed"
-  "the expression .is_same_v<Brand, foundation::brand::DefaultBrand> \\[with Brand = fixy::")
-
-# A caller cannot give a mint of a borrow the brand of a borrow that it
-# holds.  An explicit template argument lands in the pack Refused, and the
-# binding of a target type cannot deduce the brand of the result.
-fixy_neg_compile_test(neg_borrowed_names_held_brand
-  "no matching function for call to .mint_borrowed<.anonymous.::Owner, int \\(&\\)\\[2\\], HeldBrand>"
-  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int \\(&\\)\\[2\\], ")
-fixy_neg_compile_test(neg_borrowed_view_names_held_brand
-  "no matching function for call to .mint_borrowed<.anonymous.::Owner, foundation::core::View<int, 2>, HeldBrand>"
-  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{foundation::core::View<int, 2>, ")
-fixy_neg_compile_test(neg_borrowed_address_names_held_brand
-  "invalid initialization of non-const reference of type .HeldBorrow \\(&\\)\\(int \\(&\\)\\[2\\]\\) noexcept."
-  "from an rvalue of type .<unresolved overloaded function type>.")
-fixy_neg_compile_test(neg_borrowed_span_names_held_brand
-  "no matching function for call to .mint_borrowed<.anonymous.::Owner, std::span<int, [0-9]+>, HeldBrand>"
-  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{std::span<int, [0-9]+>, ")
-fixy_neg_compile_test(neg_borrowed_span_address_names_held_brand
-  "invalid initialization of non-const reference of type .HeldBorrow \\(&\\)\\(std::span<int>&&\\) noexcept."
-  "from an rvalue of type .<unresolved overloaded function type>.")
-
-# The two extractors read a member of the wrapper, and each refuses a
-# type that has the member but is not the wrapper.
-fixy_neg_compile_test(neg_borrowed_value_of_a_span
-  "template constraint failure for .template<class T> +requires +IsBorrowed<T> using fixy::borrowed_value_t"
-  "required for the satisfaction of .IsBorrowed<T>. \\[with T = std::span<int")
-fixy_neg_compile_test(neg_borrowed_source_of_a_look_alike
-  "template constraint failure for .template<class T> +requires +IsBorrowed<T> using fixy::borrowed_source_t"
-  "required for the satisfaction of .IsBorrowed<T>. \\[with T = <unnamed>::LookalikeBorrow\\]")
+  "mint_borrowed\\(OwnedRegion<T, Tag, Brand>&&\\)"
+  "a borrow of a temporary region outlives it")
+fixy_neg_compile_test(neg_borrowed_of_an_array
+  "no matching function for call to .mint_borrowed\\(foundation::core::FixedArray<int, 2>&\\)."
+  ".foundation::core::FixedArray<int, 2>. is not derived from .fixy::OwnedRegion<T, Tag, Brand>.")
 
 # weaken towards a fresher grade in a constant expression reaches the
 # CRUCIBLE_PRE trap inside Stale::weaken.
@@ -6997,25 +6949,6 @@ fixy_neg_compile_test(neg_linear_view_names_held_brand
   "no matching function for call to .mint_linear_view<fixy::detail::sv_test_tag, fixy::detail::sv_test_carrier, HeldBrand>"
   "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{fixy::detail::sv_test_carrier, ")
 
-# Two mints of a borrow are two brands.
-fixy_neg_compile_test(neg_brand_borrowed_cross_brand
-  "no matching function for call to .same_minting\\("
-  "deduced conflicting types for parameter .Brand. \\(.fixy::<lambda\\(\\)>. and .fixy::<lambda\\(\\)>.\\)")
-
-# The twins of the borrow mint.  The template-argument list the compiler
-# prints opens with `[` and carries a `;` between arguments, and CMake
-# counts brackets when it splits a list: an unbalanced `[` in one regex
-# swallows the `;` and the regex that follows it.  So the bracket is
-# matched by `.` and the argument list is cut before its first separator.
-fixy_neg_compile_test(neg_brand_mint_borrowed_from_temporary_range
-  "use of deleted function"
-  "mint_borrowed\\(R&&\\) .with Source = \\{anonymous\\}::Owner"
-  "a borrow of a temporary range dangles at the end of the full expression")
-fixy_neg_compile_test(neg_brand_mint_borrowed_from_temporary_owner
-  "use of deleted function"
-  "mint_borrowed\\(R&&\\) .with Source = \\{anonymous\\}::Owner. R = foundation::core::FixedArray<int, 3>"
-  "a borrow of a temporary owner dangles at the end of the full expression")
-
 # ── Disjointness: one split, one receipt, one rebuild ─────────────────
 #
 # A shard says which split cut it and the receipt says which split wrote
@@ -7260,8 +7193,8 @@ fixy_neg_compile_test(neg_witness_discharges_specialized
 # The mint refuses a tag that states no obligation, rather than minting
 # a witness every context discharges.
 fixy_neg_compile_test(neg_witnessed_under_a_tag_with_no_row
-  "no matching function for call to .mint_witnessed_under\\("
-  "has_permission_row\\(.*\\)\\(\\^\\^ typename UBorrow::source_type\\) .with UBorrow = fixy::Borrowed<long unsigned int, <unnamed>::Unrowed, .*evaluated to .false.")
+  "no matching function for call to .mint_witnessed_under<.anonymous.::Unrowed>\\("
+  "required for the satisfaction of .WitnessableUnder<UBorrow, Tag>.")
 
 # The position a borrow names has to outlive the borrow.
 fixy_neg_compile_test(neg_witnessed_at_from_a_temporary_handle

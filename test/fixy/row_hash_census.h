@@ -26,7 +26,6 @@
 #include <fixy/Axis.h>
 #include <fixy/Bands.h>
 #include <fixy/Bits.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Budgeted.h>
 #include <fixy/CanonicalOrder.h>
 #include <fixy/channels/Endpoint.h>
@@ -716,7 +715,7 @@ using SwmrWitness =
     ::fixy::channels::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand, SwmrWriterBrand>;
 
 using PureDet = fa::lattices::DetSafeLattice::At<fa::lattices::DetSafeTier::Pure>;
-using BorrowedInt = ::fixy::Borrowed<int, PureRegionTag>;
+using ViewInt = ::foundation::core::View<int>;
 
 // The pin proof and the placement proof.  Each is named and never built,
 // because each one comes only from its mint.
@@ -798,7 +797,6 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^fe::resource::RackPowerKw, ^^fe::resource::RackPowerKw<1>},
     {^^fe::resource::CarbonGramsPerKwh, ^^fe::resource::CarbonGramsPerKwh<1>},
 
-    {^^::fixy::Borrowed, ^^BorrowedInt},
     {^^::fixy::OwnedRegion, ^^::fixy::OwnedRegion<int, PureRegionTag>},
     {^^::fixy::fn, ^^::fixy::role::PureCopy<int>},
     {^^::fixy::graded_facade, ^^::fixy::graded_facade<fa::ModalityKind::Absolute, PureDet, int>},
@@ -830,7 +828,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::ScopedView, ^^::fixy::ScopedView<::fixy::detail::sv_test_carrier, ::fixy::detail::sv_test_tag>},
     {^^::fixy::SharedRead, ^^::fixy::SharedRead<int, PureRegionTag>},
     {^^::fixy::session::Witnessed,
-     ^^::fixy::session::Witnessed<BorrowedInt, ::fixy::session::witness::UnderRow<PureRegionTag>>},
+     ^^::fixy::session::Witnessed<ViewInt, ::fixy::session::witness::UnderRow<PureRegionTag>>},
 
     {^^::fixy::session::SessionHandle, ^^::fixy::session::SessionHandle<::fixy::session::End, int>},
     {^^::fixy::session::SessionFromMachine, ^^::fixy::session::SessionFromMachine<MachineState, ::fixy::session::End>},

@@ -1664,21 +1664,21 @@ namespace detail {
 // not written yet, and it does not count.  The acquire load of the stamp
 // pairs with the compiler barrier of the BPF program before its store.
 // Complexity: linear in the events of the window.
-[[nodiscard]] inline OffCpuTop
-top_offcpu_of(::fixy::Borrowed<const ::crucible::perf::TimelineSchedEvent, ::crucible::perf::SchedSwitch> view,
-              ::fixy::Side<side::ReadingBefore, std::uint64_t> pre,
-              ::fixy::Side<side::ReadingAfter, std::uint64_t> post) noexcept {
+[[nodiscard]] inline OffCpuTop top_offcpu_of(::fixy::View<const ::crucible::perf::TimelineSchedEvent> view,
+                                             ::fixy::Side<side::ReadingBefore, std::uint64_t> pre,
+                                             ::fixy::Side<side::ReadingAfter, std::uint64_t> post) noexcept {
     OffCpuTop top{};
-    const ::crucible::perf::TimelineSchedEvent* const events = view.data();
-    if (events == nullptr || post.value() <= pre.value()) return top;
+    if (view.size() == 0 || post.value() <= pre.value()) return top;
     const uint64_t window_size =
         ::fixy::min(post.value() - pre.value(), static_cast<uint64_t>(::crucible::perf::TIMELINE_CAPACITY));
     for (uint64_t i = 0; i < window_size; ++i) {
         const uint64_t global_idx = post.value() - 1 - i;
         const uint32_t slot = static_cast<uint32_t>(global_idx & ::crucible::perf::TIMELINE_MASK);
-        const uint64_t ts = __atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE);
-        if (ts == 0) continue;
-        top.keep(OffCpuSpike{.off_ns = events[slot].off_cpu_ns, .cpu = events[slot].on_cpu});
+        for (auto const event : view.get(slot)) {
+            const uint64_t ts = __atomic_load_n(&event->ts_ns, __ATOMIC_ACQUIRE);
+            if (ts == 0) continue;
+            top.keep(OffCpuSpike{.off_ns = event->off_cpu_ns, .cpu = event->on_cpu});
+        }
     }
     return top;
 }
@@ -3263,7 +3263,7 @@ private:
         r.sched_post_idx = sched_post_idx;
         // With no scheduler counter, the view stays empty and both indexes
         // stay zero, so the walk below does nothing.
-        ::fixy::Borrowed<const ::crucible::perf::TimelineSchedEvent, ::crucible::perf::SchedSwitch> view{};
+        ::fixy::View<const ::crucible::perf::TimelineSchedEvent> view{};
         for (auto const sw : window.sw)
             view = sw->timeline_view();
         r.sched_offcpu = detail::top_offcpu_of(view, ::fixy::side_as<side::ReadingBefore>(sched_pre_idx),

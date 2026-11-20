@@ -6,7 +6,7 @@
 
 #include <fixy/session/Witnessed.h>
 
-#include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
@@ -35,13 +35,13 @@ struct Wire {
 };
 using Sending = s::Send<Ping, s::End>;
 using FgCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
-std::uint64_t storage[3] = {1, 2, 3};
+::fixy::FixedArray<std::uint64_t, 3> storage{1, 2, 3};
 }  // namespace
 
 int main() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto at_send = s::mint_session<Sending>(ctx, Wire{});
-    auto borrow = ::fixy::mint_borrowed<Cache>(storage);
+    auto borrow = storage.view();
     auto witnessed = s::mint_witnessed_at(at_send, borrow);
     auto at_end = std::move(at_send).send(Ping{1}, [](Wire& w, Ping& p) noexcept {
         w.last_sent = p.value;

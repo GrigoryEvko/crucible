@@ -24,14 +24,14 @@ v2::GaugeSnapshot SenseHubV2::read_gauges(::foundation::effects::cap::Nondet /*n
     return v2::GaugeSnapshot{};
 }
 
-::fixy::Borrowed<const volatile uint64_t, SenseHubV2>
+::fixy::Option<::fixy::mmap::SharedWords<uint64_t, v2::NUM_COUNTERS>>
 SenseHubV2::counters_view(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
-    return ::fixy::Borrowed<const volatile uint64_t, SenseHubV2>{};
+    return ::fixy::none;
 }
 
-::fixy::Borrowed<const volatile uint64_t, SenseHubV2>
+::fixy::Option<::fixy::mmap::SharedWords<uint64_t, v2::NUM_GAUGES>>
 SenseHubV2::gauges_view(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
-    return ::fixy::Borrowed<const volatile uint64_t, SenseHubV2>{};
+    return ::fixy::none;
 }
 
 v2::LoadReport SenseHubV2::coverage() const noexcept { return v2::LoadReport{}; }

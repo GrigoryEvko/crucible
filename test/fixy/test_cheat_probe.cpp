@@ -50,7 +50,6 @@
 // Bits has no detection surface, so no cheat targets it.
 
 #include <fixy/Bands.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Machine.h>
 #include <fixy/Mutation.h>
 #include <fixy/OwnedRegion.h>
@@ -412,7 +411,6 @@ static_assert(!fixy::IsBand<::Cheat23_FakeBand>, "[CHEAT 23 ADMITTED] is_band_v 
 //     REJECTED by the instance query.  The query has no value spelling,
 //     so no specialization can mark the class.
 
-struct FakeSource {};
 struct FakeOwnedTag {};
 
 // Linear and Affine: one class template, two grades.
@@ -508,28 +506,6 @@ struct Cheat37_FakeStaleInstance {
     int payload{0};
 };
 static_assert(!fixy::IsStale<::Cheat37_FakeStaleInstance>, "[CHEAT 37 ADMITTED] a lookalike passed IsStale");
-
-struct Cheat38_DerivedFromBorrowed : fixy::Borrowed<int, FakeSource> {};
-static_assert(!fixy::IsBorrowed<Cheat38_DerivedFromBorrowed>,
-              "[CHEAT 38 ADMITTED] derived-from-Borrowed passed IsBorrowed");
-
-struct Cheat39_FakeBorrowed {
-    int payload{0};
-};
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: cheat 39 forges is_borrowed_v, and IsBorrowed must refuse it")
-namespace fixy {
-template <>
-inline constexpr bool is_borrowed_v<::Cheat39_FakeBorrowed> = true;
-}  // namespace fixy
-CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-static_assert(fixy::is_borrowed_v<::Cheat39_FakeBorrowed>, "the injection did not take");
-static_assert(!fixy::IsBorrowed<::Cheat39_FakeBorrowed>,
-              "[CHEAT 39 ADMITTED] is_borrowed_v injection reached IsBorrowed");
-
-struct Cheat40_FakeBorrowedInstance {
-    int payload{0};
-};
-static_assert(!fixy::IsBorrowed<::Cheat40_FakeBorrowedInstance>, "[CHEAT 40 ADMITTED] a lookalike passed IsBorrowed");
 
 struct Cheat41_DerivedFromOwnedRegion : fixy::OwnedRegion<int, FakeOwnedTag> {};
 static_assert(!fixy::IsOwnedRegion<Cheat41_DerivedFromOwnedRegion>,

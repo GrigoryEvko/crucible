@@ -162,21 +162,17 @@ int main() {
         // A successful load leaves the mapping live, so the view
         // borrows the whole counter array.
         const auto view = hub.counters_view(::foundation::effects::testing::test().nondet);
-        static_assert(std::is_same_v<decltype(view),
-                                     const ::fixy::Borrowed<const volatile std::uint64_t, crucible::perf::SenseHub>>);
-        // The view must span exactly the whole counter array.  A
-        // mismatch means the wrapper lost the count, since a wrongly
-        // sized map would have been rejected by the verifier.
-        if (view.size() != crucible::perf::NUM_COUNTERS) {
-            ::fixy::report(::fixy::Sink::Err,
-                           "perf::SenseHub::counters_view() — expected NUM_COUNTERS "
-                           "(96) elements, got {}\n",
-                           view.size());
-            return 1;
-        }
-        if (view.empty()) {
-            ::fixy::report(::fixy::Sink::Err, "perf::SenseHub::counters_view() — view should be "
-                                              "non-empty when the load gave a hub\n");
+        static_assert(std::is_same_v<
+                      decltype(view),
+                      const ::fixy::Option<::fixy::mmap::SharedWords<std::uint64_t, crucible::perf::NUM_COUNTERS>>>);
+        // The words span exactly the whole counter array, and the type holds
+        // the count.  A wrongly sized map would have been rejected by the
+        // verifier.
+        static_assert(::fixy::mmap::SharedWords<std::uint64_t, crucible::perf::NUM_COUNTERS>::size()
+                      == crucible::perf::NUM_COUNTERS);
+        if (view.is_none()) {
+            ::fixy::report(::fixy::Sink::Err, "perf::SenseHub::counters_view() — the words should be "
+                                              "present when the load gave a hub\n");
             return 1;
         }
 
@@ -202,11 +198,9 @@ int main() {
                 return 1;
             }
         }
-        if (!empty_view.empty()) {
-            ::fixy::report(::fixy::Sink::Err,
-                           "perf::SenseHub::counters_view() on moved-from — "
-                           "expected empty Borrowed, got size={}\n",
-                           empty_view.size());
+        if (empty_view.is_some()) {
+            ::fixy::report(::fixy::Sink::Err, "perf::SenseHub::counters_view() on moved-from — "
+                                              "expected no words\n");
             return 1;
         }
         if (attached_after.value() != 0u || failures_after.value() != 0u) {

@@ -66,17 +66,14 @@ Snapshot SenseHub::read(::foundation::effects::cap::Nondet /*nondet*/) const noe
     return snapshot;
 }
 
-::fixy::Borrowed<const volatile uint64_t, SenseHub>
+::fixy::Option<::fixy::mmap::SharedWords<uint64_t, NUM_COUNTERS>>
 SenseHub::counters_view(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
     for (::fixy::Box<State> const& state : state_) {
         for (detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped : state->counters) {
-            for (::fixy::View<const uint64_t, NUM_COUNTERS> const counters :
-                 mapped.template view_at<const uint64_t, NUM_COUNTERS>(0)) {
-                return ::fixy::Borrowed<const volatile uint64_t, SenseHub>{counters};
-            }
+            return mapped.template shared_words_at<uint64_t, NUM_COUNTERS>(::fixy::mmap::MappingOffset{0});
         }
     }
-    return ::fixy::Borrowed<const volatile uint64_t, SenseHub>{};
+    return ::fixy::none;
 }
 
 ::fixy::Refined<::fixy::bounded_above<64>, std::size_t> SenseHub::attached_programs() const noexcept {

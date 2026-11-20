@@ -1,6 +1,5 @@
 #pragma once
 
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
@@ -80,7 +79,7 @@ public:
     // non-scalar element.  The kernel writes this memory while the
     // reader walks it, so read ts_ns through an acquire load of its
     // own and trust the rest of the slot only when ts_ns is non-zero.
-    [[nodiscard]] ::fixy::Borrowed<const PmuSampleEvent, PmuSample> timeline_view() const noexcept;
+    [[nodiscard]] ::fixy::View<const PmuSampleEvent> timeline_view() const noexcept;
 
     // Slot order, not ts_ns, is the order in which samples were
     // recorded.  Cores overflow in parallel, so two samples can carry

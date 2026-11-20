@@ -125,15 +125,17 @@ namespace {
 // The kernel writes the stamp of a slot last, so an acquire load of the stamp
 // orders the read of the rest of the slot.  Capacity is a power of two.  The
 // body is inline in each drain row, so the row times the loads and no call.
-template <std::uint64_t Capacity, class Span>
+// Each read of a slot checks the slot against the count of the view.
+template <std::uint64_t Capacity, class Events>
 [[nodiscard, gnu::always_inline]] inline std::uint64_t
-count_live_newest(Span const& view, ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end) noexcept {
+count_live_newest(Events const& view, ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end) noexcept {
     constexpr std::uint64_t mask = Capacity - 1;
     std::uint64_t live = 0;
     for (std::uint64_t i = 0; i < 64; ++i) {
         const std::uint64_t slot = (end.value() - 1 - i) & mask;
-        const std::uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
-        if (ts != 0) ++live;
+        for (auto const event : view.get(slot)) {
+            if (__atomic_load_n(&event->ts_ns, __ATOMIC_ACQUIRE) != 0) ++live;
+        }
     }
     return live;
 }
@@ -143,19 +145,20 @@ count_live_newest(Span const& view, ::fixy::Side<bench::side::ReadingAfter, std:
 // oldest first.  When the window holds more than Capacity new events, the
 // ring wrote over the older ones, and the count stops at Capacity.
 // Complexity: linear in the window.
-template <std::uint64_t Capacity, class Span>
-[[nodiscard]] std::size_t count_live_window(Span const& events,
+template <std::uint64_t Capacity, class Events>
+[[nodiscard]] std::size_t count_live_window(Events const& events,
                                             ::fixy::Side<bench::side::ReadingBefore, std::uint64_t> pre,
                                             ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> post) noexcept {
-    if (events.empty()) return 0;
+    if (events.size() == 0) return 0;
     constexpr std::uint64_t mask = Capacity - 1;
     const std::uint64_t delta = (post.value() >= pre.value()) ? (post.value() - pre.value()) : 0;
     const std::size_t to_walk = (delta > Capacity) ? Capacity : static_cast<std::size_t>(delta);
     std::size_t live = 0;
     for (std::size_t i = 0; i < to_walk; ++i) {
         const std::uint64_t slot = (pre.value() + i) & mask;
-        const std::uint64_t ts = __atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE);
-        if (ts != 0) ++live;
+        for (auto const event : events.get(slot)) {
+            if (__atomic_load_n(&event->ts_ns, __ATOMIC_ACQUIRE) != 0) ++live;
+        }
     }
     return live;
 }
@@ -442,8 +445,8 @@ int main() {
             });
         }(),
         // (I) timeline_view() — the drain-path entry.  Each call
-        // returns a Borrowed<TimelineXxxEvent> span over the mmap'd
-        // ring buffer (no syscall, no copy — just a span constructor
+        // returns a View<const TimelineXxxEvent> over the mmap'd
+        // ring buffer (no syscall, no copy — just a View constructor
         // wrapping the cached mmap base).  Cost: ~1-3 ns.  Consumer
         // pattern: call timeline_view() once + read timeline_write_index()
         // once + walk the index range checking ts_ns != 0 per event.
@@ -452,7 +455,7 @@ int main() {
         // baseline overhead even when the workload produced zero new
         // events in the window.
         [&] {
-            return bench::run("sched_switch->timeline_view() [Borrowed span ctor]", [&] {
+            return bench::run("sched_switch->timeline_view() [View ctor]", [&] {
                 for (auto const h : s.sched_switch()) {
                     const auto v = h->timeline_view();
                     bench::do_not_optimize(v);
@@ -460,7 +463,7 @@ int main() {
             });
         }(),
         [&] {
-            return bench::run("pmu_sample->timeline_view() [Borrowed span ctor]", [&] {
+            return bench::run("pmu_sample->timeline_view() [View ctor]", [&] {
                 for (auto const h : s.pmu_sample()) {
                     const auto v = h->timeline_view();
                     bench::do_not_optimize(v);
@@ -468,7 +471,7 @@ int main() {
             });
         }(),
         [&] {
-            return bench::run("lock_contention->timeline_view() [Borrowed span ctor]", [&] {
+            return bench::run("lock_contention->timeline_view() [View ctor]", [&] {
                 for (auto const h : s.lock_contention()) {
                     const auto v = h->timeline_view();
                     bench::do_not_optimize(v);
@@ -476,7 +479,7 @@ int main() {
             });
         }(),
         [&] {
-            return bench::run("syscall_latency->timeline_view() [Borrowed span ctor]", [&] {
+            return bench::run("syscall_latency->timeline_view() [View ctor]", [&] {
                 for (auto const h : s.syscall_latency()) {
                     const auto v = h->timeline_view();
                     bench::do_not_optimize(v);
@@ -484,7 +487,7 @@ int main() {
             });
         }(),
         [&] {
-            return bench::run("sched_tp_btf->timeline_view() [Borrowed span ctor]", [&] {
+            return bench::run("sched_tp_btf->timeline_view() [View ctor]", [&] {
                 for (auto const h : s.sched_tp_btf()) {
                     const auto v = h->timeline_view();
                     bench::do_not_optimize(v);
@@ -492,7 +495,7 @@ int main() {
             });
         }(),
         [&] {
-            return bench::run("syscall_tp_btf->timeline_view() [Borrowed span ctor]", [&] {
+            return bench::run("syscall_tp_btf->timeline_view() [View ctor]", [&] {
                 for (auto const h : s.syscall_tp_btf()) {
                     const auto v = h->timeline_view();
                     bench::do_not_optimize(v);
@@ -513,7 +516,7 @@ int main() {
             return bench::run("sched_switch drain 64 events [64x acquire-load]", [&] {
                 for (auto const h : s.sched_switch()) {
                     const auto view = h->timeline_view();
-                    if (view.empty()) {
+                    if (view.size() == 0) {
                         bench::do_not_optimize(view);
                         return;
                     }
@@ -527,7 +530,7 @@ int main() {
             return bench::run("pmu_sample drain 64 events [64x acquire-load]", [&] {
                 for (auto const h : s.pmu_sample()) {
                     const auto view = h->timeline_view();
-                    if (view.empty()) {
+                    if (view.size() == 0) {
                         bench::do_not_optimize(view);
                         return;
                     }
@@ -541,7 +544,7 @@ int main() {
             return bench::run("lock_contention drain 64 events [64x acquire-load]", [&] {
                 for (auto const h : s.lock_contention()) {
                     const auto view = h->timeline_view();
-                    if (view.empty()) {
+                    if (view.size() == 0) {
                         bench::do_not_optimize(view);
                         return;
                     }
@@ -555,7 +558,7 @@ int main() {
             return bench::run("syscall_latency drain 64 events [64x acquire-load]", [&] {
                 for (auto const h : s.syscall_latency()) {
                     const auto view = h->timeline_view();
-                    if (view.empty()) {
+                    if (view.size() == 0) {
                         bench::do_not_optimize(view);
                         return;
                     }
@@ -569,7 +572,7 @@ int main() {
             return bench::run("sched_tp_btf drain 64 events [64x acquire-load]", [&] {
                 for (auto const h : s.sched_tp_btf()) {
                     const auto view = h->timeline_view();
-                    if (view.empty()) {
+                    if (view.size() == 0) {
                         bench::do_not_optimize(view);
                         return;
                     }
@@ -583,7 +586,7 @@ int main() {
             return bench::run("syscall_tp_btf drain 64 events [64x acquire-load]", [&] {
                 for (auto const h : s.syscall_tp_btf()) {
                     const auto view = h->timeline_view();
-                    if (view.empty()) {
+                    if (view.size() == 0) {
                         bench::do_not_optimize(view);
                         return;
                     }

@@ -202,24 +202,26 @@ void test_split_and_recombine_every_total_and_count(TestRunnerCtx const& test) {
 }
 
 // The brand travels with the region: a region minted from a branded
-// permission carries that brand, so do the shards of its split, so does
-// a borrow of it, and the recombined whole carries it back out.  No
-// conversion reaches the erased spelling from any of them.
+// permission carries that brand, so do the shards of its split, and the
+// recombined whole carries it back out.  No conversion reaches the erased
+// spelling from any of them.  A borrow of the region is a View, which
+// names no brand.
 void test_brand_travels_through_split_and_recombine(TestRunnerCtx const& test) {
     static std::uint64_t storage[8] = {};
     auto perm = mint_permission_root<DataA>();
     using Brand = ::foundation::brand::brand_of_t<decltype(perm)>;
     auto region = ::fixy::mint_owned_region(storage, std::size_t{8}, std::move(perm));
     static_assert(std::is_same_v<decltype(region), OwnedRegion<std::uint64_t, DataA, Brand>>);
+    using Region = decltype(region);
 
     auto borrow = ::fixy::mint_borrowed(region);
-    static_assert(::foundation::brand::SameBrand<decltype(borrow), decltype(region)>);
+    static_assert(std::is_same_v<decltype(borrow), ::fixy::View<std::uint64_t>>);
     CRUCIBLE_TEST_ASSERT(test, borrow.size() == 8);
 
     auto parts = ::fixy::mint_split<2>(std::move(region));
     auto& [s0, s1] = parts.shards;
-    static_assert(::foundation::brand::SameBrand<decltype(s0), decltype(borrow)>);
-    static_assert(::foundation::brand::SameBrand<decltype(s1), decltype(borrow)>);
+    static_assert(::foundation::brand::SameBrand<decltype(s0), Region>);
+    static_assert(::foundation::brand::SameBrand<decltype(s1), Region>);
     CRUCIBLE_TEST_ASSERT(test, s0.size() == 4 && s1.size() == 4);
 
     // The receipt names the region that was split, so its brand is the
@@ -228,7 +230,7 @@ void test_brand_travels_through_split_and_recombine(TestRunnerCtx const& test) {
     static_assert(decltype(parts.witness)::shard_count == 2);
 
     auto whole = OwnedRegion<std::uint64_t, DataA, Brand>::recombine(std::move(parts.witness), std::move(parts.shards));
-    static_assert(::foundation::brand::SameBrand<decltype(whole), decltype(borrow)>);
+    static_assert(::foundation::brand::SameBrand<decltype(whole), Region>);
     CRUCIBLE_TEST_ASSERT(test, whole.size() == 8);
     CRUCIBLE_TEST_ASSERT(test, whole.data() == storage);
     static_assert(!std::is_constructible_v<OwnedRegion<std::uint64_t, DataA>, decltype(whole)&&>,

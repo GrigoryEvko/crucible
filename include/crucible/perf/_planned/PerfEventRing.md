@@ -99,9 +99,9 @@ public:
     [[nodiscard]] uint32_t drain(
         std::span<PerfEventSample> out_buf) noexcept;
 
-    // Borrowed view over the mmap'd ring (advanced — for SIMD-batched
+    // View over the mmap'd ring (advanced — for SIMD-batched
     // userspace decoders).
-    [[nodiscard]] ::fixy::Borrowed<const std::byte, PerfEventRing>
+    [[nodiscard]] ::fixy::View<const std::byte>
         raw_ring_view() const noexcept;
 };
 ```

@@ -1,10 +1,10 @@
 // The witnessed deref: a borrow that names what has to be presented
 // before it can be read.
 //
-// fixy/Borrowed.h ties a borrow to an owner tag and a brand, and leaves
-// WHEN it may be read to lexical scope.  That is the whole of what Rust
-// gives.  The cells below stand on the two obligations this tree can
-// state instead: a protocol position, and an effect row.
+// A View borrows a run of elements, and it leaves WHEN it may be read to
+// lexical scope.  That is the whole of what Rust gives.  The cells below
+// stand on the two obligations this tree can state instead: a protocol
+// position, and an effect row.
 //
 // Each cell is a pair.  The read that is admitted is shown to reach the
 // bytes, and the neighbouring read that is refused is shown to be
@@ -13,7 +13,6 @@
 
 #include <fixy/session/Witnessed.h>
 
-#include <fixy/Borrowed.h>
 #include <fixy/Ctx.h>
 #include <fixy/OwnedRegion.h>
 #include <fixy/session/Entry.h>
@@ -67,15 +66,20 @@ constexpr auto send_ping = [](Wire& wire, Ping& ping) noexcept {
     return true;
 };
 
-// The bytes that each protocol cell borrows.
-std::uint64_t protocol_storage[3] = {5, 6, 7};
+// The elements that each protocol cell borrows.
+::fixy::FixedArray<std::uint64_t, 3> protocol_storage{5, 6, 7};
 
-// A named brand for the type-level cells.  A borrow that names no brand
-// is DefaultBrand, which the rule erased-brand counts and
-// does not let a new file add; every claim below reads the same at
-// either brand.  The runtime cells mint their borrows, so they carry a
-// fresh brand and never spell this one.
-struct probe_brand {};
+// The borrow of the type-level cells.
+using StorageView = ::fixy::View<std::uint64_t>;
+
+// The element at position of a read, or a value that no cell stores.
+[[nodiscard]] std::uint64_t element_of(StorageView read, std::size_t position) noexcept {
+    std::uint64_t element = ~std::uint64_t{0};
+    for (auto const found : read.get(position)) {
+        element = *found;
+    }
+    return element;
+}
 
 // The question every cell asks of the gate, written once.
 template <typename Wit, typename Presented>
@@ -85,8 +89,8 @@ concept CanDeref = requires(Wit const& witnessed, Presented const& presented) { 
 // is written rather than answered, so the accessor question lives in a
 // concept too.
 template <typename Wit>
-concept HasBareAccessor = requires(Wit const& w) { w.size(); } || requires(Wit const& w) { w.data(); }
-                       || requires(Wit const& w) { w[std::size_t{0}]; };
+concept HasBareAccessor = requires(Wit const& w) { w.size(); } || requires(Wit const& w) { w.get(std::size_t{0}); }
+                       || requires(Wit const& w) { w.begin(); };
 
 // ── EFFECT ───────────────────────────────────────────────────────────
 
@@ -96,16 +100,15 @@ void test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it(::fixy::Te
 
     auto region = ::fixy::mint_owned_region(storage, std::size_t{4}, perm::mint_permission_root<Cache>());
     auto borrow = ::fixy::mint_borrowed(region);
-    auto witnessed = ::fixy::session::mint_witnessed_under(borrow);
+    auto witnessed = ::fixy::session::mint_witnessed_under<Cache>(borrow);
 
-    // The obligation is the tag's, read off the borrow rather than
-    // spelled by the caller, so there is nothing here to spell wrongly.
+    // The obligation is the row of the tag that the caller names.
     static_assert(std::is_same_v<decltype(witnessed)::witness_type, ::fixy::session::witness::UnderRow<Cache>>);
 
     auto read = deref(witnessed, ctx);
     CRUCIBLE_TEST_ASSERT(test, read.size() == 4);
-    CRUCIBLE_TEST_ASSERT(test, read[0] == 2);
-    CRUCIBLE_TEST_ASSERT(test, read[3] == 8);
+    CRUCIBLE_TEST_ASSERT(test, element_of(read, 0) == 2);
+    CRUCIBLE_TEST_ASSERT(test, element_of(read, 3) == 8);
 
     std::uint64_t sum = 0;
     for (std::uint64_t value : read)
@@ -114,10 +117,8 @@ void test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it(::fixy::Te
 }
 
 void test_a_context_that_refuses_the_row_refuses_the_read() {
-    using CacheBorrow = ::fixy::Borrowed<std::uint64_t, Cache, probe_brand>;
-    using SpilledBorrow = ::fixy::Borrowed<std::uint64_t, Spilled, probe_brand>;
-    using CacheWitnessed = ::fixy::session::Witnessed<CacheBorrow, ::fixy::session::witness::UnderRow<Cache>>;
-    using SpilledWitnessed = ::fixy::session::Witnessed<SpilledBorrow, ::fixy::session::witness::UnderRow<Spilled>>;
+    using CacheWitnessed = ::fixy::session::Witnessed<StorageView, ::fixy::session::witness::UnderRow<Cache>>;
+    using SpilledWitnessed = ::fixy::session::Witnessed<StorageView, ::fixy::session::witness::UnderRow<Spilled>>;
 
     // A region whose tag costs nothing is read from anywhere.  One whose
     // tag says IO is read only where IO is permitted, and the refusal is
@@ -132,7 +133,7 @@ void test_a_context_that_refuses_the_row_refuses_the_read() {
 void test_a_protocol_witnessed_borrow_reads_while_the_session_is_there(::fixy::TestRunnerCtx const& test) {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto handle = s::mint_session<Sending>(ctx, Wire{});
-    auto borrow = ::fixy::mint_borrowed<Cache>(protocol_storage);
+    auto borrow = protocol_storage.view();
     auto witnessed = ::fixy::session::mint_witnessed_at(handle, borrow);
 
     static_assert(
@@ -141,7 +142,7 @@ void test_a_protocol_witnessed_borrow_reads_while_the_session_is_there(::fixy::T
 
     auto read = deref(witnessed, handle);
     CRUCIBLE_TEST_ASSERT(test, read.size() == 3);
-    CRUCIBLE_TEST_ASSERT(test, read[1] == 6);
+    CRUCIBLE_TEST_ASSERT(test, element_of(read, 1) == 6);
 
     // Advancing the session consumes the handle and hands back one at
     // the next position.  The borrow's witness names the old handle, so
@@ -161,8 +162,7 @@ void test_the_position_is_the_witness_and_not_the_spelling() {
     using AtSend = s::SessionHandle<Sending, Wire>;
     using AtEnd = s::SessionHandle<s::End, Wire>;
     using AtSendOtherWire = s::SessionHandle<Sending, OtherWire>;
-    using SendBorrow = ::fixy::Borrowed<std::uint64_t, Cache, probe_brand>;
-    using Witnessed = ::fixy::session::Witnessed<SendBorrow, ::fixy::session::witness::AtProtocol<AtSend>>;
+    using Witnessed = ::fixy::session::Witnessed<StorageView, ::fixy::session::witness::AtProtocol<AtSend>>;
 
     static_assert(CanDeref<Witnessed, AtSend>);
     static_assert(!CanDeref<Witnessed, AtEnd>, "the same handle spelling at another position is another witness");
@@ -190,7 +190,7 @@ void test_a_witness_refuses_another_session_of_the_same_type(::fixy::TestRunnerC
     auto first = s::mint_session<Sending>(ctx, Wire{});
     auto second = s::mint_session<Sending>(ctx, Wire{});
     static_assert(std::is_same_v<decltype(first), decltype(second)>);
-    auto witnessed = ::fixy::session::mint_witnessed_at(first, ::fixy::mint_borrowed<Cache>(protocol_storage));
+    auto witnessed = ::fixy::session::mint_witnessed_at(first, protocol_storage.view());
 
     CRUCIBLE_TEST_ASSERT(test, deref(witnessed, first).size() == 3);
     ::fixy::check::expect_dies(
@@ -203,7 +203,7 @@ void test_a_witness_refuses_another_session_of_the_same_type(::fixy::TestRunnerC
 void test_a_witness_refuses_the_same_session_after_a_loop_iteration(::fixy::TestRunnerCtx const& test) {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto head = s::mint_session<Looping>(ctx, Wire{});
-    auto witnessed = ::fixy::session::mint_witnessed_at(head, ::fixy::mint_borrowed<Cache>(protocol_storage));
+    auto witnessed = ::fixy::session::mint_witnessed_at(head, protocol_storage.view());
     CRUCIBLE_TEST_ASSERT(test, deref(witnessed, head).size() == 3);
 
     head = std::move(head).send(Ping{3}, send_ping);
@@ -219,7 +219,7 @@ void test_a_witness_refuses_the_same_session_after_a_loop_iteration(::fixy::Test
 void test_a_witness_follows_a_move_of_the_handle(::fixy::TestRunnerCtx const& test) {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto head = s::mint_session<Sending>(ctx, Wire{});
-    auto witnessed = ::fixy::session::mint_witnessed_at(head, ::fixy::mint_borrowed<Cache>(protocol_storage));
+    auto witnessed = ::fixy::session::mint_witnessed_at(head, protocol_storage.view());
     auto moved = std::move(head);
 
     CRUCIBLE_TEST_ASSERT(test, deref(witnessed, moved).size() == 3);
@@ -234,7 +234,7 @@ void test_a_witness_refuses_a_later_session_on_the_same_record(::fixy::TestRunne
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto first = s::mint_session<Sending>(ctx, Wire{});
     const s::watch::endpoint_id record = first.watch_endpoint();
-    auto witnessed = ::fixy::session::mint_witnessed_at(first, ::fixy::mint_borrowed<Cache>(protocol_storage));
+    auto witnessed = ::fixy::session::mint_witnessed_at(first, protocol_storage.view());
     static_cast<void>(std::move(first).send(Ping{5}, send_ping).close());
 
     auto second = s::mint_session<Sending>(ctx, Wire{});
@@ -249,10 +249,9 @@ void test_a_witness_refuses_a_later_session_on_the_same_record(::fixy::TestRunne
 // ── One gate, two kinds ──────────────────────────────────────────────
 
 void test_a_witness_of_one_kind_is_not_the_other() {
-    using CacheBorrow = ::fixy::Borrowed<std::uint64_t, Cache, probe_brand>;
-    using RowWitnessed = ::fixy::session::Witnessed<CacheBorrow, ::fixy::session::witness::UnderRow<Cache>>;
+    using RowWitnessed = ::fixy::session::Witnessed<StorageView, ::fixy::session::witness::UnderRow<Cache>>;
     using AtSend = s::SessionHandle<Sending, Wire>;
-    using PositionWitnessed = ::fixy::session::Witnessed<CacheBorrow, ::fixy::session::witness::AtProtocol<AtSend>>;
+    using PositionWitnessed = ::fixy::session::Witnessed<StorageView, ::fixy::session::witness::AtProtocol<AtSend>>;
 
     static_assert(CanDeref<RowWitnessed, FgCtx>);
     static_assert(!CanDeref<RowWitnessed, AtSend>, "a handle does not stand in for a row");

@@ -165,9 +165,10 @@ static_assert(!ArrayArena<BumpArena, ::foundation::permissions::Permission<test_
 static_assert(!ArrayArena<BumpArena, HoldsPermission>,
               "the arena must not start the lifetime of an aggregate that holds a proof type");
 
-// A region minted from a branded permission carries that brand and its
-// borrow carries it.  The split and the recombine are not constexpr, so
-// the brand of a shard is pinned at runtime in test/fixy/test_owned_region.cpp.
+// A region minted from a branded permission carries that brand.  Its borrow
+// is a View of its elements, which names no brand.  The split and the
+// recombine are not constexpr, so the brand of a shard is pinned at runtime
+// in test/fixy/test_owned_region.cpp.
 [[nodiscard]] consteval bool region_carries_its_permission_brand() noexcept {
     int storage[4] = {1, 2, 3, 4};
     auto perm = ::foundation::permissions::mint_permission_root<test_tag_a>();
@@ -176,8 +177,12 @@ static_assert(!ArrayArena<BumpArena, HoldsPermission>,
     static_assert(std::is_same_v<decltype(region), OwnedRegion<int, test_tag_a, Brand>>);
     static_assert(::foundation::brand::IsBranded<decltype(region)>);
     auto borrow = mint_borrowed(region);
-    static_assert(std::is_same_v<decltype(borrow), Borrowed<int, test_tag_a, Brand>>);
-    return borrow.size() == 4 && borrow[2] == 3 && region.data() == storage;
+    static_assert(std::is_same_v<decltype(borrow), ::foundation::core::View<int>>);
+    bool is_third_three = false;
+    for (auto const third : borrow.get(2)) {
+        is_third_three = *third == 3;
+    }
+    return borrow.size() == 4 && is_third_three && region.data() == storage;
 }
 static_assert(region_carries_its_permission_brand());
 

@@ -5,7 +5,7 @@
 
 #include <fixy/session/Witnessed.h>
 
-#include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/session/Handle.h>
 #include <foundation/effects/Effect.h>
 
@@ -24,9 +24,8 @@ struct Ping {
 struct Wire {
     int last_sent = 0;
 };
-struct probe_brand {};
 using Sending = s::Send<Ping, s::End>;
-using CacheBorrow = ::fixy::Borrowed<std::uint64_t, Cache, probe_brand>;
+using CacheBorrow = ::fixy::View<std::uint64_t>;
 using Unchecked = s::SessionHandle<Sending, Wire, void, s::check::Off>;
 
 [[maybe_unused]] void witness_an_unchecked_handle(Unchecked const& unchecked, CacheBorrow borrow) {

@@ -5,11 +5,12 @@
 // [base, base + count) for as long as the region is alive.
 //
 // The region carries the brand of the permission it was built from, so
-// the region's identity is the permission's: a borrow of this region
-// carries the same brand, and a borrow of another region of the same
-// tag cannot stand in for it.  A region built from a permission on the
-// erased identity is itself erased.  foundation/Brand.h states the
-// facts a brand rests on.
+// the region's identity is the permission's: a shard of this region
+// carries the same brand, and a shard of another region of the same tag
+// cannot stand in for it.  A region built from a permission on the
+// erased identity is itself erased.  foundation/Brand.h states the facts
+// a brand rests on.  A borrow of the elements is a View, which names no
+// brand: no arena gives a range a brand of its instance.
 //
 // mint_split partitions the index space, not the allocation.  Every
 // sub-region points into the same buffer at a distinct chunk offset,
@@ -32,7 +33,6 @@
 // argument proves nothing, and it can mint a Permission for any tag
 // from any translation unit.
 
-#include <fixy/Borrowed.h>
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
@@ -144,6 +144,11 @@ struct owned_region;
 template <std::size_t N>
 struct disjoint;
 }  // namespace row_discipline
+
+// Declared here so that the receipt and the shards of a split can name a
+// region.  The defaulted brand is on the declaration below.
+template <typename T, typename Tag, typename Brand>
+class OwnedRegion;
 
 // A receipt is a linear value: recombine is its one door.
 template <typename Tag, typename Brand, typename SplitName, std::size_t N>
@@ -469,20 +474,22 @@ mint_owned_region(::foundation::effects::Alloc alloc_token, Allocator& arena, st
     return OwnedRegion<T, Tag, Brand>{base, count, std::move(perm)};
 }
 
-// A borrow of a region carries the region's brand and its tag as the
-// owner.  The region is taken by lvalue reference and the twin refuses
-// a temporary region, whose storage may be gone at the end of the
-// statement.  Declared in Borrowed.h, which befriends it.
+// A borrow of a region: a View of its elements, which names no brand.  The
+// region holds its elements while it lives, so the View lives no longer
+// than the region.  The region is taken by lvalue reference and the twin
+// refuses a temporary region, whose storage may be gone at the end of the
+// statement.  A region adopts its base and its count from its caller, so
+// view_over_ checks the two in each build.
 template <typename T, typename Tag, typename Brand>
     requires ::foundation::brand::IsBrand<Brand>
-[[nodiscard]] constexpr Borrowed<T, Tag, Brand> mint_borrowed(OwnedRegion<T, Tag, Brand>& region
-                                                              CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return Borrowed<T, Tag, Brand>{detail::borrow_mint_t{}, region.span()};
+[[nodiscard]] constexpr ::foundation::core::View<T> mint_borrowed(OwnedRegion<T, Tag, Brand>& region
+                                                                  CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return ::foundation::core::detail::view_over_(region.data(), region.size());
 }
 
 template <typename T, typename Tag, typename Brand>
     requires ::foundation::brand::IsBrand<Brand>
-constexpr Borrowed<T, Tag, Brand> mint_borrowed(OwnedRegion<T, Tag, Brand>&&) =
+constexpr ::foundation::core::View<T> mint_borrowed(OwnedRegion<T, Tag, Brand>&&) =
     delete("a borrow of a temporary region outlives it; bind the region to a name that outlives the borrow");
 
 template <std::size_t N, typename... Never, typename T, typename Tag, typename Brand, typename SplitName>

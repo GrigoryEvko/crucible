@@ -8,7 +8,6 @@
 #include <crucible/perf/SchedSwitch.h>  // TimelineHeader, TIMELINE_CAPACITY
 #include <crucible/perf/detail/BpfLoader.h>
 
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/os/OwnedMmap.h>
@@ -353,16 +352,16 @@ struct RingLayout {
     // bounds and the alignment, and it starts the lifetime of the events
     // over their bytes.  A View holds no volatile element, so a consumer
     // does its own atomic load at each field access.
-    template <class Owner, class Tag>
-    [[nodiscard]] static ::fixy::Borrowed<const Event, Owner>
+    template <class Tag>
+    [[nodiscard]] static ::fixy::View<const Event>
     events(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
         for (ReadOnlyMapping<Tag> const& mapped : mapping) {
             for (::fixy::View<const Event, Capacity> const ring :
                  mapped.template view_at<const Event, Capacity>(sizeof(Header))) {
-                return ::fixy::Borrowed<const Event, Owner>{ring};
+                return ::fixy::View<const Event>{ring};
             }
         }
-        return ::fixy::Borrowed<const Event, Owner>{};
+        return ::fixy::View<const Event>{};
     }
 
     // The header binds to a reference to volatile, so the read of write_idx
@@ -399,10 +398,7 @@ struct RingState : ::foundation::NonMovable<RingState<Tag, Event>> {
     // syscall through this fd.  A missing map leaves it at -1.
     Fd counter = ::fixy::mint_tagged<source::BpfMap>(-1);
 
-    template <class Owner>
-    [[nodiscard]] ::fixy::Borrowed<const Event, Owner> events() const noexcept {
-        return layout::template events<Owner>(timeline);
-    }
+    [[nodiscard]] ::fixy::View<const Event> events() const noexcept { return layout::events(timeline); }
 
     [[nodiscard]] uint64_t write_index() const noexcept { return layout::write_index(timeline); }
 
@@ -477,11 +473,10 @@ template <class State>
     return read_held(held, uint64_t{0}, [](State const& state) noexcept { return state.write_index(); });
 }
 
-template <class Owner, class State>
-[[nodiscard]] ::fixy::Borrowed<const typename State::event_type, Owner>
-ring_events(HeldState<State> const& held) noexcept {
-    return read_held(held, ::fixy::Borrowed<const typename State::event_type, Owner>{},
-                     [](State const& state) noexcept { return state.template events<Owner>(); });
+template <class State>
+[[nodiscard]] ::fixy::View<const typename State::event_type> ring_events(HeldState<State> const& held) noexcept {
+    return read_held(held, ::fixy::View<const typename State::event_type>{},
+                     [](State const& state) noexcept { return state.events(); });
 }
 
 // A moved-from facade reports zero for both attach counts.

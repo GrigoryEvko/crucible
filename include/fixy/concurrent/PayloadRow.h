@@ -58,7 +58,6 @@
 // header names, so a rule does not change an answer of this header.
 
 #include <fixy/Bands.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Mutation.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
@@ -127,7 +126,6 @@ inline constexpr std::meta::info transparent_payload_families[] = {
     ^^::fixy::Secret,
     ^^::fixy::Stale,
     ^^::fixy::Qtt,  // Linear and Affine are one template
-    ^^::fixy::Borrowed,
     ^^::fixy::Monotonic,
     ^^::fixy::AppendOnly,
     ^^::fixy::WriteOnce,

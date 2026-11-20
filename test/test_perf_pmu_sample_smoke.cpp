@@ -113,9 +113,7 @@ int main() {
 
         // The view spans the whole ring, not just the written prefix.
         const auto view = hub.timeline_view();
-        static_assert(
-            std::is_same_v<decltype(view),
-                           const ::fixy::Borrowed<const crucible::perf::PmuSampleEvent, crucible::perf::PmuSample>>);
+        static_assert(std::is_same_v<decltype(view), const ::fixy::View<const crucible::perf::PmuSampleEvent>>);
         if (view.size() != crucible::perf::PMU_SAMPLE_CAPACITY) {
             ::fixy::report(::fixy::Sink::Err,
                            "perf::PmuSample::timeline_view() — expected "
@@ -123,7 +121,7 @@ int main() {
                            crucible::perf::PMU_SAMPLE_CAPACITY, view.size());
             return 1;
         }
-        if (view.empty()) {
+        if (view.size() == 0) {
             ::fixy::report(::fixy::Sink::Err, "perf::PmuSample::timeline_view() — should be "
                                               "non-empty when the load gave a hub\n");
             return 1;
@@ -133,12 +131,12 @@ int main() {
         static_assert(std::is_same_v<decltype(write_idx), const uint64_t>);
         (void)write_idx;
 
-        // The pointer is the start of the events array, one header past a
-        // page-aligned mapping. Its alignment cannot be checked from here
-        // without reaching into the mapping, so only non-nullness is pinned.
-        if (view.data() == nullptr) {
-            ::fixy::report(::fixy::Sink::Err, "perf::PmuSample::timeline_view() — data() is null "
-                                              "when the load gave a hub\n");
+        // The view starts at the events array, one header past a page-aligned
+        // mapping.  Its alignment cannot be checked from here without reaching
+        // into the mapping, so only the read of the first event is pinned.
+        if (view.get(0).is_none()) {
+            ::fixy::report(::fixy::Sink::Err, "perf::PmuSample::timeline_view() — the first event "
+                                              "cannot be read when the load gave a hub\n");
             return 1;
         }
 
@@ -155,10 +153,10 @@ int main() {
                            write_idx_after);
             return 1;
         }
-        if (!view_after.empty()) {
+        if (view_after.size() != 0) {
             ::fixy::report(::fixy::Sink::Err,
                            "PmuSample::timeline_view() on moved-from — expected "
-                           "empty Borrowed, got size={}\n",
+                           "an empty View, got size={}\n",
                            view_after.size());
             return 1;
         }

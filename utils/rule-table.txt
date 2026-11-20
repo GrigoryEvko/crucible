@@ -959,11 +959,10 @@ witness <fixy/Budgeted.h> private | fixy::BudgetStamp | fixy::BudgetStamp{forge:
 # Each of these carries a brand, the type that names one instance, and a
 # brand is only worth what its door is worth: a caller who can spell a
 # brand onto a second object has proved nothing.  So the branded
-# constructor is private behind fixy::detail::borrow_mint_t, which only
-# the mints hold, and the public constructors beside it are constrained
-# to the erased brand.  The expressions below hand the door its key and
-# are refused anyway, because the key is not the door.
-witness <fixy/Borrowed.h> private | fixy::Borrowed<int, int> | fixy::Borrowed<int, int>{fixy::detail::borrow_mint_t{}, std::span<int>{}}
+# constructor is private, and only the mints reach it.  The expressions
+# below hand the door its key and are refused anyway, because the key is
+# not the door.
+#
 # A region's constructor takes the base pointer and the count beside the
 # permission, so a forger who reaches it describes a region that need
 # not be the one the permission covers.
@@ -981,7 +980,7 @@ witness <fixy/SharedRegion.h> private | fixy::SharedRead<int, foundation::permis
 # The obligation is the whole value of the type, so a carrier assembled
 # beside the mint carries one nobody weighed.  The key is handed over in
 # the expression below and the door is shut anyway.
-witness <fixy/session/Witnessed.h> private | fixy::session::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::session::witness::UnderRow<foundation::permissions::tag::HugePageTag>> | fixy::session::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::session::witness::UnderRow<foundation::permissions::tag::HugePageTag>>{fixy::session::detail::witnessed_mint_t{}, forge::rvalue<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>>()}
+witness <fixy/session/Witnessed.h> private | fixy::session::Witnessed<foundation::core::View<int>, fixy::session::witness::UnderRow<foundation::permissions::tag::HugePageTag>> | fixy::session::Witnessed<foundation::core::View<int>, fixy::session::witness::UnderRow<foundation::permissions::tag::HugePageTag>>{fixy::session::detail::witnessed_mint_t{}, forge::rvalue<foundation::core::View<int>>()}
 
 # The receipt a split writes.  Its key is a public empty struct, because
 # the door is the constructor and not the key: handing the key over is

@@ -43,8 +43,8 @@ SyscallTpBtf::~SyscallTpBtf() = default;
 
 uint64_t SyscallTpBtf::total_syscalls() const noexcept { return detail::ring_count(state_); }
 
-::fixy::Borrowed<const TimelineSyscallEvent, SyscallTpBtf> SyscallTpBtf::timeline_view() const noexcept {
-    return detail::ring_events<SyscallTpBtf>(state_);
+::fixy::View<const TimelineSyscallEvent> SyscallTpBtf::timeline_view() const noexcept {
+    return detail::ring_events(state_);
 }
 
 uint64_t SyscallTpBtf::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }

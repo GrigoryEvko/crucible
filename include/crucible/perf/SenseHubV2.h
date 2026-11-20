@@ -1,9 +1,9 @@
 #pragma once
 
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
+#include <fixy/os/OwnedMmap.h>
 #include <foundation/core/Array.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
@@ -447,10 +447,13 @@ public:
         return {read_counters(nondet), read_gauges(nondet)};
     }
 
-    [[nodiscard]] ::fixy::Borrowed<const volatile uint64_t, SenseHubV2>
+    // The live slots in the mapping, each read with an acquire load, as the
+    // view of SenseHub gives them.  The stub has no mapping, so each gives no
+    // value.
+    [[nodiscard]] ::fixy::Option<::fixy::mmap::SharedWords<uint64_t, v2::NUM_COUNTERS>>
     counters_view(::foundation::effects::cap::Nondet nondet) const noexcept;
 
-    [[nodiscard]] ::fixy::Borrowed<const volatile uint64_t, SenseHubV2>
+    [[nodiscard]] ::fixy::Option<::fixy::mmap::SharedWords<uint64_t, v2::NUM_GAUGES>>
     gauges_view(::foundation::effects::cap::Nondet nondet) const noexcept;
 
     [[nodiscard]] v2::LoadReport coverage() const noexcept;

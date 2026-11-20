@@ -2,12 +2,11 @@
 
 // A borrow that names what has to be presented before it can be read.
 //
-// fixy/Borrowed.h gives a borrow an owner tag and a brand, so a borrow
-// of one region cannot stand in for a borrow of another.  Neither says
-// WHEN the borrow may be read.  Its element accessors are callable from
-// anywhere the value is in scope, and lexical scope is the only thing
-// standing between a borrow and a read.  That is the guarantee Rust
-// gives, and it is the whole of it.
+// A View of the Region family (foundation/core/Region.h) borrows a run of
+// elements, and it does not say WHEN the borrow may be read.  Its element
+// accessors are callable from anywhere the value is in scope, and lexical
+// scope is the only thing standing between a borrow and a read.  That is
+// the guarantee Rust gives, and it is the whole of it.
 //
 // A witnessed borrow says more.  It is minted against a witness, it
 // exposes no accessor of its own, and the one way to the borrow inside
@@ -42,13 +41,13 @@
 //     one of them.  Validity is one handle at one time, not lexical
 //     scope.
 //
-//   UnderRow<Tag> — EFFECT.  A borrow of a region carries the region's
-//     owner tag, and permission_row<Tag> says what touching that region
-//     costs: DiskSpilledRegionTag is Row<IO, Block>, GpuMemoryTag is
-//     Row<Alloc>.  A plain borrow does not check that row.  A witnessed
-//     borrow is read only against a context whose own row admits the
-//     tag's, which is the same Subrow test the permission pool applies
-//     to a lend.
+//   UnderRow<Tag> — EFFECT.  The mint takes the permission tag of the
+//     region that the borrow views, and permission_row<Tag> says what
+//     touching that region costs: DiskSpilledRegionTag is Row<IO, Block>,
+//     GpuMemoryTag is Row<Alloc>.  A plain borrow does not check that row.
+//     A witnessed borrow is read only against a context whose own row
+//     admits the tag's, which is the same Subrow test the permission pool
+//     applies to a lend.
 //
 //   EPOCH is not built.  It needs an advance that mints a fresh epoch
 //     brand and consumes the old one, and neither include/foundation
@@ -73,14 +72,16 @@
 //     it.  A handle at End, and a handle of a constant evaluation, have
 //     no record either, and a read against them ends the process.
 //   - An UnderRow witness is a type and carries no value, so two regions under
-//     one tag share one UnderRow witness.  The brand on the borrow is
-//     what separates those, and it is a separate axis.
+//     one tag share one UnderRow witness.  A View names no region, so
+//     nothing here separates those.
+//   - The caller names the tag of an UnderRow witness, and nothing checks
+//     that the View is of a region under that tag.
 
-#include <fixy/Borrowed.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/Watch.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Fatal.h>
+#include <foundation/core/Region.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/reflect/Instance.h>
@@ -232,12 +233,22 @@ constexpr void require_same_time(handle_stamp const& minted, Handle const& prese
 
 }  // namespace detail
 
+// A borrow that a witness can guard: a View of the Region family.
+template <typename UBorrow>
+concept WitnessableBorrow = ::foundation::reflect::IsInstanceOf<UBorrow, ^^::foundation::core::View>;
+
 // The gate of mint_witnessed_at: a borrow, and a handle under a policy
 // that keeps the record of its session in the watch.  Under check::Off the
 // handle keeps no record and no count of steps, so the read could not
 // check the time.
 template <typename UBorrow, typename Policy>
-concept WitnessableAt = IsBorrowed<UBorrow> && AbandonmentPolicy<Policy> && bool{Policy::checks_abandonment};
+concept WitnessableAt = WitnessableBorrow<UBorrow> && AbandonmentPolicy<Policy> && bool{Policy::checks_abandonment};
+
+// The gate of mint_witnessed_under: a borrow, and a tag that declares the
+// row of its region.  A tag with no row is refused, because
+// has_permission_row answers false for it.
+template <typename UBorrow, typename Tag>
+concept WitnessableUnder = WitnessableBorrow<UBorrow> && ::foundation::permissions::has_permission_row(^^Tag);
 
 // ── The carrier ──────────────────────────────────────────────────────
 //
@@ -246,14 +257,12 @@ concept WitnessableAt = IsBorrowed<UBorrow> && AbandonmentPolicy<Policy> && bool
 // only through deref.  A carrier that forwarded even size() would be a
 // second door with no witness on it.
 template <typename Borrow, typename Witness>
-    requires(IsBorrowed<Borrow> && IsWitnessKind<Witness>)
+    requires(WitnessableBorrow<Borrow> && IsWitnessKind<Witness>)
 class [[nodiscard]] Witnessed {
 public:
     using borrow_type = Borrow;
     using witness_type = Witness;
     using element_type = typename Borrow::element_type;
-    using source_type = typename Borrow::source_type;
-    using brand_type = typename Borrow::brand_type;
     using row_discipline = ::fixy::row_discipline::witnessed<Witness>;
     using row_payload = Borrow;
 
@@ -276,10 +285,9 @@ private:
     mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy, PS> const& handle,
                       UBorrow borrow) noexcept;
 
-    template <typename UBorrow>
-        requires(IsBorrowed<UBorrow> && ::foundation::permissions::has_permission_row(^^typename UBorrow::source_type))
-    friend constexpr Witnessed<UBorrow, witness::UnderRow<typename UBorrow::source_type>>
-    mint_witnessed_under(UBorrow borrow) noexcept;
+    template <typename Tag, typename UBorrow>
+        requires WitnessableUnder<UBorrow, Tag>
+    friend constexpr Witnessed<UBorrow, witness::UnderRow<Tag>> mint_witnessed_under(UBorrow borrow) noexcept;
 
 public:
     // There is no default: a witnessed borrow nobody minted carries an
@@ -336,19 +344,18 @@ mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Polic
 // against one is witnessed against a position already gone.
 template <typename UBorrow, typename Proto, typename Resource, typename LoopCtx,
           ::fixy::session::AbandonmentPolicy Policy, typename PS>
-    requires IsBorrowed<UBorrow>
+    requires WitnessableBorrow<UBorrow>
 constexpr auto mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy, PS> const&&,
                                  UBorrow) = delete("the handle is released at the end of the full expression, so the "
                                                    "protocol position the borrow would name is already gone; give the "
                                                    "handle a name that outlives the borrow");
 
-// EFFECT.  The tag is the borrow's own source, so there is nothing for
-// the caller to spell and nothing to spell wrongly.
-template <typename UBorrow>
-    requires(IsBorrowed<UBorrow> && ::foundation::permissions::has_permission_row(^^typename UBorrow::source_type))
-[[nodiscard]] constexpr Witnessed<UBorrow, witness::UnderRow<typename UBorrow::source_type>>
-mint_witnessed_under(UBorrow borrow) noexcept {
-    return Witnessed<UBorrow, witness::UnderRow<typename UBorrow::source_type>>{detail::witnessed_mint_t{}, borrow};
+// EFFECT.  The caller names the permission tag of the region that the
+// borrow views: mint_witnessed_under<Tag>(view).
+template <typename Tag, typename UBorrow>
+    requires WitnessableUnder<UBorrow, Tag>
+[[nodiscard]] constexpr Witnessed<UBorrow, witness::UnderRow<Tag>> mint_witnessed_under(UBorrow borrow) noexcept {
+    return Witnessed<UBorrow, witness::UnderRow<Tag>>{detail::witnessed_mint_t{}, borrow};
 }
 
 }  // namespace fixy::session

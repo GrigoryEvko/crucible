@@ -292,10 +292,9 @@ namespace {
         ctx, [&ctx](detail::FacadeDoor::State<PmuSample>& state) noexcept { return fill_state(state, ctx); });
 }
 
-::fixy::Borrowed<const PmuSampleEvent, PmuSample> PmuSample::timeline_view() const noexcept {
-    return detail::read_held(
-        state_, ::fixy::Borrowed<const PmuSampleEvent, PmuSample>{},
-        [](State const& state) noexcept { return PmuSampleRing::events<PmuSample>(state.timeline); });
+::fixy::View<const PmuSampleEvent> PmuSample::timeline_view() const noexcept {
+    return detail::read_held(state_, ::fixy::View<const PmuSampleEvent>{},
+                             [](State const& state) noexcept { return PmuSampleRing::events(state.timeline); });
 }
 
 uint64_t PmuSample::timeline_write_index() const noexcept {

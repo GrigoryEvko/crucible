@@ -117,7 +117,7 @@ All three are "extra cost on rare events" — sample period unchanged.
 2. Add userspace env-var: `CRUCIBLE_PERF_PMU_RICH=1` to opt into
    shape-(B) extended ring.
 3. Extend `PmuSample.h` with `extended_view()` accessor returning
-   `Borrowed<const PmuSampleExtended, PmuSample>` parallel to
+   `View<const PmuSampleExtended>` parallel to
    `timeline_view()`.
 4. Extend sentinel test with offset asserts on the extended struct.
 5. Add 2 neg-compile fixtures: extended_view returns empty span

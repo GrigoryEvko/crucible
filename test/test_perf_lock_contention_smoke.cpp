@@ -115,8 +115,7 @@ int main() {
 
         // The view spans the whole ring, not just the written prefix.
         const auto timeline = hub.timeline_view();
-        static_assert(std::is_same_v<decltype(timeline), const ::fixy::Borrowed<const crucible::perf::TimelineLockEvent,
-                                                                                crucible::perf::LockContention>>);
+        static_assert(std::is_same_v<decltype(timeline), const ::fixy::View<const crucible::perf::TimelineLockEvent>>);
         if (timeline.size() != crucible::perf::TIMELINE_CAPACITY) {
             ::fixy::report(::fixy::Sink::Err,
                            "perf::LockContention::timeline_view() — expected "
@@ -124,7 +123,7 @@ int main() {
                            crucible::perf::TIMELINE_CAPACITY, timeline.size());
             return 1;
         }
-        if (timeline.empty()) {
+        if (timeline.size() == 0) {
             ::fixy::report(::fixy::Sink::Err, "perf::LockContention::timeline_view() — view should "
                                               "be non-empty when the load gave a hub\n");
             return 1;
@@ -157,10 +156,10 @@ int main() {
                            write_idx_after);
             return 1;
         }
-        if (!view_after.empty()) {
+        if (view_after.size() != 0) {
             ::fixy::report(::fixy::Sink::Err,
                            "perf::LockContention::timeline_view() on moved-from "
-                           "— expected empty Borrowed, got size={}\n",
+                           "— expected an empty View, got size={}\n",
                            view_after.size());
             return 1;
         }

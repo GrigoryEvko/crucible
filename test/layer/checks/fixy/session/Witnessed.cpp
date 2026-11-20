@@ -20,15 +20,15 @@ struct unrowed_tag {};
 using FgCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
 using IoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO>>;
 
-// The borrows are spelled at a named brand rather than at the erased
-// one.  A borrow spelled with no brand argument is DefaultBrand, which
-// the rule erased-brand counts and does not let a new file add,
-// and every claim below reads the same at either brand.
+// The permission of a handle below is spelled at a named brand rather
+// than at the erased one.  A permission spelled with no brand argument is
+// DefaultBrand, which the rule erased-brand counts and does not let a new
+// file add, and every claim below reads the same at either brand.
 struct probe_brand {};
 
-using PureBorrow = ::fixy::Borrowed<int, pure_tag, probe_brand>;
-using SpilledBorrow = ::fixy::Borrowed<int, spilled_tag, probe_brand>;
-using UnrowedBorrow = ::fixy::Borrowed<int, unrowed_tag, probe_brand>;
+// The borrow of each cell.  A View names no region, so the tag of a cell
+// is the argument of its witness.
+using ProbeView = ::foundation::core::View<int>;
 
 // The recogniser answers for both kinds and for nothing else.  An empty
 // recogniser fails the first line, a universal one the second.
@@ -36,7 +36,7 @@ static_assert(IsWitnessKind<witness::AtProtocol<::fixy::session::End>>);
 static_assert(IsWitnessKind<witness::UnderRow<pure_tag>>);
 static_assert(!IsWitnessKind<int>);
 static_assert(!IsWitnessKind<pure_tag>);
-static_assert(!IsWitnessKind<PureBorrow>);
+static_assert(!IsWitnessKind<ProbeView>);
 
 // EFFECT, as a type question.  A pure tag is admitted by a foreground
 // context and a spilled one is not, and the context that carries IO
@@ -95,37 +95,39 @@ static_assert(!Discharges<witness::UnderRow<pure_tag>, AtSend>, "and a handle do
 // The carrier publishes no accessor, so a read that skipped the gate
 // has nothing to call.
 template <typename W>
-concept HasBareAccessor = requires(W const& w) { w.size(); } || requires(W const& w) { w.data(); }
-                       || requires(W const& w) { w[std::size_t{0}]; };
-static_assert(!HasBareAccessor<Witnessed<PureBorrow, witness::UnderRow<pure_tag>>>,
+concept HasBareAccessor = requires(W const& w) { w.size(); } || requires(W const& w) { w.get(std::size_t{0}); }
+                       || requires(W const& w) { w.begin(); };
+static_assert(!HasBareAccessor<Witnessed<ProbeView, witness::UnderRow<pure_tag>>>,
               "a witnessed borrow that forwarded an accessor would be a second door with no witness on it");
 
 // And deref is refused for a context that does not admit the row, at
 // the same carrier that admits the one that does.
 template <typename Wit, typename Ctx>
 concept CanDeref = requires(Wit const& w, Ctx const& ctx) { deref(w, ctx); };
-static_assert(CanDeref<Witnessed<PureBorrow, witness::UnderRow<pure_tag>>, FgCtx>);
-static_assert(!CanDeref<Witnessed<SpilledBorrow, witness::UnderRow<spilled_tag>>, FgCtx>);
-static_assert(CanDeref<Witnessed<SpilledBorrow, witness::UnderRow<spilled_tag>>, IoCtx>);
+static_assert(CanDeref<Witnessed<ProbeView, witness::UnderRow<pure_tag>>, FgCtx>);
+static_assert(!CanDeref<Witnessed<ProbeView, witness::UnderRow<spilled_tag>>, FgCtx>);
+static_assert(CanDeref<Witnessed<ProbeView, witness::UnderRow<spilled_tag>>, IoCtx>);
 
 // A tag that declares no row cannot be witnessed under one, because
-// there is no row to weigh a context against.
-template <typename B>
-concept CanMintUnder = requires(B b) { mint_witnessed_under(b); };
-static_assert(CanMintUnder<PureBorrow>);
-static_assert(!CanMintUnder<UnrowedBorrow>, "a tag that declares no row states no obligation");
+// there is no row to weigh a context against.  The witnessed value is a
+// View.
+template <typename B, typename Tag>
+concept CanMintUnder = requires(B b) { mint_witnessed_under<Tag>(b); };
+static_assert(CanMintUnder<ProbeView, pure_tag>);
+static_assert(!CanMintUnder<ProbeView, unrowed_tag>, "a tag that declares no row states no obligation");
+static_assert(!CanMintUnder<int, pure_tag>, "the witnessed value is a borrow");
 
 // A protocol witness checks the time of the handle at the read, from the
 // record of the session.  A handle under check::Off keeps no record, so
 // the gate of the mint refuses its policy.
-static_assert(WitnessableAt<PureBorrow, check::Enforced>);
-static_assert(WitnessableAt<PureBorrow, check::Cancel>);
-static_assert(!WitnessableAt<PureBorrow, check::Off>, "a handle under check::Off keeps no record to check");
+static_assert(WitnessableAt<ProbeView, check::Enforced>);
+static_assert(WitnessableAt<ProbeView, check::Cancel>);
+static_assert(!WitnessableAt<ProbeView, check::Off>, "a handle under check::Off keeps no record to check");
 static_assert(!WitnessableAt<int, check::Enforced>, "the witnessed value is a borrow");
 
 // The carrier is the borrow and the obligation is a type, so it costs
 // what the borrow costs.
-static_assert(sizeof(Witnessed<PureBorrow, witness::UnderRow<pure_tag>>) == sizeof(PureBorrow));
+static_assert(sizeof(Witnessed<ProbeView, witness::UnderRow<pure_tag>>) == sizeof(ProbeView));
 
 }  // namespace detail::witnessed_self_test
 

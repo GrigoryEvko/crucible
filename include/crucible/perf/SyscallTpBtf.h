@@ -2,7 +2,6 @@
 
 #include <crucible/perf/SyscallLatency.h>  // for TimelineSyscallEvent, TimelineHeader, TIMELINE_CAPACITY
 
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
@@ -46,7 +45,7 @@ public:
     // non-scalar element.  The kernel writes this memory while the
     // reader walks it, so read ts_ns through an acquire load of its
     // own and trust the rest of the slot only when ts_ns is non-zero.
-    [[nodiscard]] ::fixy::Borrowed<const TimelineSyscallEvent, SyscallTpBtf> timeline_view() const noexcept;
+    [[nodiscard]] ::fixy::View<const TimelineSyscallEvent> timeline_view() const noexcept;
 
     // The index counts events forever, so the most recently written
     // slot is `(write_idx - 1) & TIMELINE_MASK`.

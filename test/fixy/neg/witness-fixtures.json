@@ -57,11 +57,6 @@
       "constructor": "\\bBindingKey\\("
     },
     {
-      "name": "neg_witness_borrowed_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bBorrowed\\("
-    },
-    {
       "name": "neg_witness_boundedmonotonic_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bBoundedMonotonic\\("
@@ -1945,10 +1940,6 @@
       "header": "fixy/Budgeted.h"
     },
     {
-      "type": "fixy::Borrowed<int, int>",
-      "header": "fixy/Borrowed.h"
-    },
-    {
       "type": "fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag>",
       "header": "fixy/OwnedRegion.h"
     },
@@ -1961,7 +1952,7 @@
       "header": "fixy/SharedRegion.h"
     },
     {
-      "type": "fixy::session::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::session::witness::UnderRow<foundation::permissions::tag::HugePageTag>>",
+      "type": "fixy::session::Witnessed<foundation::core::View<int>, fixy::session::witness::UnderRow<foundation::permissions::tag::HugePageTag>>",
       "header": "fixy/session/Witnessed.h"
     },
     {

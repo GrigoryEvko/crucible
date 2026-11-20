@@ -63,7 +63,6 @@
 //   Whether the bytes mean anything.  The composition proves the read is
 //   authorized.  It does not prove the region was ever written.
 
-#include <fixy/Borrowed.h>
 #include <fixy/OwnedRegion.h>
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>

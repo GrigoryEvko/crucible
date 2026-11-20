@@ -7,10 +7,9 @@
 //
 // The subscripts: AppendOnly (operator[], front and back), OrderedAppendOnly
 // and SessionEventLog, which read through AppendOnly, static_run, and the
-// lane of a mask and of a vector of the Simd facade.  test_borrowed.cpp holds
-// the deaths of the accessors of Borrowed, and test_shared_region.cpp holds
-// the death of the subscript of SharedRead, because those tests hold a borrow
-// and a share.
+// lane of a mask and of a vector of the Simd facade.  test_shared_region.cpp
+// holds the death of the subscript of SharedRead, because those tests hold a
+// borrow and a share.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>

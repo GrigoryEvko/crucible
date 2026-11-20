@@ -2,8 +2,8 @@
 // there is nothing for the binding to hold, and a binding over one would
 // describe the referent's discipline while owning none of it.
 //
-// The payload to name instead is the referent, or fixy::Borrowed for a
-// borrow whose lifetime the type system tracks.
+// The payload to name instead is the referent, or a fixy::Ref for a
+// borrow of one object.
 
 #include <fixy/Fn.h>
 
