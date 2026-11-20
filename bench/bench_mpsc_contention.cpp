@@ -32,7 +32,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <cstdio>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -52,6 +51,15 @@ constexpr std::size_t kPerProducer = 5000;  // items per producer / iter
 constexpr std::size_t kSamples = 32;  // ≥30 for Mann-Whitney
 constexpr std::size_t kWarmup = 3;
 constexpr std::size_t kMaxWallMs = 60000;
+
+}  // namespace
+
+// The rows time the bare ring, which holds no permission of its two sides.
+// The thread doors of the base refuse a borrow of such a ring beside the
+// caller, so each cycle starts its producers and its consumer on
+// std::jthread, as the rows of the bare rings of bench_thread_scaling do.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: each cycle of the bare MPSC ring runs its threads on std::jthread")
+namespace {
 
 // Producer-side single-call write loop.  Each producer pushes K items
 // via individual try_push calls.  Spin-yield if full.
@@ -157,6 +165,11 @@ void run_cycle(std::size_t producer_count) {
     consumer.join();
 }
 
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+namespace {
+
 template <typename Worker>
 [[nodiscard]] bench::Report run_one(::fixy::TextView label, std::size_t producer_count) {
     return bench::Run{bench::format_name("{} P={}", label, producer_count)}
@@ -176,17 +189,18 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== mpsc_contention ===\n");
-    std::printf("  Item:              uint64_t\n");
-    std::printf("  Cap:               %zu cells\n", kCap);
-    std::printf("  Items per producer: %zu / iteration\n", kPerProducer);
-    std::printf("  Samples:           %zu (warmup %zu)\n", kSamples, kWarmup);
-    std::printf("  Body:              spawn P producers + drain consumer + join\n");
-    std::printf("\n");
+    bench::print("=== mpsc_contention ===\n");
+    bench::print("  Item:              uint64_t\n");
+    bench::print("  Cap:               {} cells\n", kCap);
+    bench::print("  Items per producer: {} / iteration\n", kPerProducer);
+    bench::print("  Samples:           {} (warmup {})\n", kSamples, kWarmup);
+    bench::print("  Body:              spawn P producers + drain consumer + join\n");
+    bench::print("\n");
 
     // 4 producer counts × 3 API kinds = 12 cells.
     ::fixy::FixedList<bench::Report, 12> reports{};
-    for (std::size_t P : {std::size_t{1}, std::size_t{2}, std::size_t{4}, std::size_t{8}}) {
+    ::fixy::FixedArray<std::size_t, 4> const producer_counts{1, 2, 4, 8};
+    for (std::size_t const P : producer_counts.view()) {
         bench::add_report(reports, run_one<SinglePushWorker>("single", P));
         bench::add_report(reports, run_one<BatchedPushWorker<16>>("batched<16>", P));
         bench::add_report(reports, run_one<BatchedPushWorker<64>>("batched<64>", P));
@@ -200,9 +214,9 @@ int main() {
     //
     // Items moved per cycle = P × kPerProducer; cycle wall = pct.p50.
     // Aggregate items/sec = items / wall.
-    std::printf("\n=== contention reduction (single → batched<64>) ===\n");
-    std::printf("  P    single (Mitems/s)    batched<64> (Mitems/s)   speedup\n");
-    std::printf("  --   ------------------  ------------------------  -------\n");
+    bench::print("\n=== contention reduction (single → batched<64>) ===\n");
+    bench::print("  P    single (Mitems/s)    batched<64> (Mitems/s)   speedup\n");
+    bench::print("  --   ------------------  ------------------------  -------\n");
     for (std::size_t pi = 0; pi < 4; ++pi) {
         const std::size_t P = std::size_t{1} << pi;  // 1, 2, 4, 8
         const bench::Report& s = *reports.get(pi * 3 + 0).expect("the single row of a producer count");
@@ -211,7 +225,8 @@ int main() {
         const double s_rate = items / (s.pct.p50 * 1e-9);
         const double b_rate = items / (b64.pct.p50 * 1e-9);
         const double ratio = b_rate / s_rate;
-        std::printf("  %2zu      %14.2f      %18.2f       %5.2f×\n", P, s_rate / 1e6, b_rate / 1e6, ratio);
+        bench::print("  {}      {}      {}       {}×\n", ::fixy::Padded<2>{P}, ::fixy::Fixed<2, 14>{s_rate / 1e6},
+                     ::fixy::Fixed<2, 18>{b_rate / 1e6}, ::fixy::Fixed<2, 5>{ratio});
     }
 
     // ── Statistical significance: Mann-Whitney U sweep across P ─────
@@ -219,21 +234,21 @@ int main() {
     // bench::compare gives Mann-Whitney U + tie-corrected z; bench
     // marks distinguishable iff |z| > 2.576 (p < 0.01).  We expect
     // batched<64> to IMPROVE over single at every contention level.
-    std::printf("\n=== significance (single vs batched<64>) ===\n");
+    bench::print("\n=== significance (single vs batched<64>) ===\n");
     for (std::size_t pi = 0; pi < 4; ++pi) {
         const bench::Report& s = *reports.get(pi * 3 + 0).expect("the single row of a producer count");
         const bench::Report& b64 = *reports.get(pi * 3 + 2).expect("the batched<64> row of a producer count");
         bench::compare(s, b64).print_text();
     }
 
-    std::printf("\n  Interpretation:\n");
-    std::printf("  • At P=1 (no contention), batched API gives the single-thread\n");
-    std::printf("    speedup (~4.5×).\n");
-    std::printf("  • At P=2..8 (contention rises), the gap widens: batched API\n");
-    std::printf("    does 1 CAS per N items, so head_ contention is reduced N×\n");
-    std::printf("    vs single-call which CASes per item.\n");
-    std::printf("  • CV >5%% on any cell indicates throttling — re-run on a\n");
-    std::printf("    quiet machine and check `dmesg | grep thermal`.\n");
+    bench::print("\n  Interpretation:\n");
+    bench::print("  • At P=1 (no contention), batched API gives the single-thread\n");
+    bench::print("    speedup (~4.5×).\n");
+    bench::print("  • At P=2..8 (contention rises), the gap widens: batched API\n");
+    bench::print("    does 1 CAS per N items, so head_ contention is reduced N×\n");
+    bench::print("    vs single-call which CASes per item.\n");
+    bench::print("  • CV >5% on any cell indicates throttling — re-run on a\n");
+    bench::print("    quiet machine and check `dmesg | grep thermal`.\n");
 
     bench::emit_reports_json(reports.view(), json);
     return 0;
