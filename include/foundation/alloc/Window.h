@@ -55,6 +55,7 @@
 // utils/rule-table.txt, and src/foundation/alloc/Window.cpp holds the
 // bodies.
 
+#include <foundation/Brand.h>
 #include <foundation/alloc/ChunkMap.h>
 #include <foundation/alloc/Metadata.h>
 #include <foundation/core/Array.h>
@@ -84,7 +85,7 @@ public:
     ~Window() = default;
 
     [[nodiscard]] WindowRecord record() const noexcept { return record_; }
-    [[nodiscard]] MetadataLayout const& layout() const noexcept { return layout_; }
+    [[nodiscard]] MetadataLayout layout() const noexcept { return layout_; }
 
     // True when the extent of the chunk is committed.
     [[nodiscard]] bool is_extent_committed(ChunkIndex chunk) const noexcept;
@@ -101,16 +102,36 @@ public:
     void set_owner(ChunkIndex chunk, ChunkOwner owner) noexcept;
 
     // The record of a chunk, constructed in zero bytes after the commit of
-    // its step (THE COMMITS).
-    [[nodiscard]] ::foundation::core::Result<::foundation::core::Ref<ChunkMeta>, ::foundation::os::Errno>
-    start_chunk_meta(ChunkIndex chunk) noexcept;
+    // its step (THE COMMITS).  The Ref has the fresh brand of the call, and
+    // the pack refuses each explicit template argument.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] ::foundation::core::Result<
+        ::foundation::core::Ref<ChunkMeta, ::foundation::brand::undeducible_brand_t<Fresh>>, ::foundation::os::Errno>
+    start_chunk_meta(ChunkIndex chunk) noexcept {
+        CRUCIBLE_TRY(meta, start_chunk_meta_(chunk));
+        return ::foundation::core::detail::RefDoor::lend<::foundation::brand::undeducible_brand_t<Fresh>>(*meta);
+    }
 
     // The record of a unit of a chunk, the same way.
-    [[nodiscard]] ::foundation::core::Result<::foundation::core::Ref<SlabMeta>, ::foundation::os::Errno>
-    start_slab_meta(ChunkIndex chunk, UnitIndex unit) noexcept;
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] ::foundation::core::Result<
+        ::foundation::core::Ref<SlabMeta, ::foundation::brand::undeducible_brand_t<Fresh>>, ::foundation::os::Errno>
+    start_slab_meta(ChunkIndex chunk, UnitIndex unit) noexcept {
+        CRUCIBLE_TRY(meta, start_slab_meta_(chunk, unit));
+        return ::foundation::core::detail::RefDoor::lend<::foundation::brand::undeducible_brand_t<Fresh>>(*meta);
+    }
 
 private:
     friend struct detail::WindowRecordDoor;
+
+    // The cold bodies of the two starts: the commit of the step and the
+    // construction of the record.  Each gives the address of the record.
+    [[nodiscard]] ::foundation::core::Result<ChunkMeta*, ::foundation::os::Errno>
+    start_chunk_meta_(ChunkIndex chunk) noexcept;
+    [[nodiscard]] ::foundation::core::Result<SlabMeta*, ::foundation::os::Errno>
+    start_slab_meta_(ChunkIndex chunk, UnitIndex unit) noexcept;
 
     Window(::foundation::os::Reservation&& window, ::foundation::os::Reservation&& region, MetadataLayout layout,
            WindowRecord record) noexcept;

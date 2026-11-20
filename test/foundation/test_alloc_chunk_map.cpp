@@ -125,7 +125,7 @@ void new_map_reads_no_owner(TestRunnerCtx const& test) {
 void records_inside_the_region(TestRunnerCtx const& test) {
     alloc::Window window = reserve_capped(4 * kGibibyte);
     alloc::WindowRecord const record = window.record();
-    alloc::MetadataLayout const& layout = window.layout();
+    alloc::MetadataLayout const layout = window.layout();
     alloc::ChunkIndex const first{0};
     alloc::ChunkIndex const last{static_cast<std::uint32_t>(record.chunk_count() - 1)};
     alloc::UnitIndex const last_unit{::foundation::core::StaticIndex<alloc::kUnitsPerChunk - 1>{}};
@@ -135,15 +135,15 @@ void records_inside_the_region(TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, layout.chunk_meta_offset(last).raw() + alloc::kChunkMetaBytes <= region - guard);
     std::size_t const last_slab_end = layout.slab_meta_offset(last, last_unit).raw() + alloc::kSlabMetaBytes;
     CRUCIBLE_TEST_ASSERT(test, last_slab_end <= region - guard);
-    ::foundation::core::Ref<alloc::ChunkMeta> const first_meta = window.start_chunk_meta(first).expect("a commit");
-    ::foundation::core::Ref<alloc::ChunkMeta> const last_meta = window.start_chunk_meta(last).expect("a commit");
-    ::foundation::core::Ref<alloc::SlabMeta> const last_slab =
-        window.start_slab_meta(last, last_unit).expect("a commit");
-    CRUCIBLE_TEST_ASSERT(test, first_meta->owner == alloc::ChunkOwner::none);
-    CRUCIBLE_TEST_ASSERT(test, last_meta->state == alloc::ChunkState::clean);
-    CRUCIBLE_TEST_ASSERT(test, last_meta->source_word == alloc::SourceWord{});
-    CRUCIBLE_TEST_ASSERT(test, last_meta->mark_stamp == alloc::MarkStamp{});
-    CRUCIBLE_TEST_ASSERT(test, last_slab->free_count == 0 && last_slab->summary == 0);
+    auto const first_meta = window.start_chunk_meta(first).expect("a commit of the step of the record");
+    auto const last_meta = window.start_chunk_meta(last).expect("a commit of the step of the record");
+    auto const last_slab = window.start_slab_meta(last, last_unit).expect("a commit of the step of the record");
+    CRUCIBLE_TEST_ASSERT(test, first_meta->owner() == alloc::ChunkOwner::none);
+    CRUCIBLE_TEST_ASSERT(test, last_meta->state() == alloc::ChunkState::clean);
+    CRUCIBLE_TEST_ASSERT(test, last_meta->source_word() == alloc::SourceWord{});
+    CRUCIBLE_TEST_ASSERT(test, last_meta->mark_stamp() == alloc::MarkStamp{});
+    CRUCIBLE_TEST_ASSERT(test, last_slab->free_count().raw() == 0);
+    CRUCIBLE_TEST_ASSERT(test, last_slab->summary() == alloc::SummaryBits{});
     pass(test, "  records_inside_the_region: PASSED\n");
 }
 

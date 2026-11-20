@@ -53,6 +53,7 @@
 #include <foundation/alloc/Layout.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Id.h>
+#include <foundation/core/Index.h>
 #include <foundation/core/Quantity.h>
 
 #include <cstddef>
@@ -109,47 +110,119 @@ enum class SourceWord : std::uint64_t {
 enum class MarkStamp : std::uint64_t {
 };
 
-// The record of one chunk (THE RECORDS): one cache line.
-struct alignas(64) ChunkMeta {
-    ChunkOwner owner{ChunkOwner::none};
-    PlacementId placement{0};
-    Partition partition{Partition::data};
-    ChunkPageKind page_kind{ChunkPageKind::base};
-    ChunkState state{ChunkState::clean};
-    std::uint8_t state_padding{0};
-    UnitMap free_units{};
-    std::uint32_t unit_padding{0};
-    DecayStamp decay_stamp{};
-    SourceWord source_word{};
-    MarkStamp mark_stamp{};
-    std::uint8_t spare[24]{};
-
+// The record of one chunk (THE RECORDS): one cache line.  Each read gives a
+// field by value, and each write sets one field, so no caller holds the
+// address of a field.
+class alignas(64) ChunkMeta final {
+public:
     constexpr ChunkMeta() noexcept = default;
     ChunkMeta(ChunkMeta const&) = delete("a record lives at its place in the region: read its fields in place");
     ChunkMeta& operator=(ChunkMeta const&) = delete("a record lives at its place in the region");
+
+    [[nodiscard]] constexpr ChunkOwner owner() const noexcept { return owner_; }
+    [[nodiscard]] constexpr PlacementId placement() const noexcept { return placement_; }
+    [[nodiscard]] constexpr Partition partition() const noexcept { return partition_; }
+    [[nodiscard]] constexpr ChunkPageKind page_kind() const noexcept { return page_kind_; }
+    [[nodiscard]] constexpr ChunkState state() const noexcept { return state_; }
+    [[nodiscard]] constexpr UnitMap free_units() const noexcept { return free_units_; }
+    [[nodiscard]] constexpr DecayStamp decay_stamp() const noexcept { return decay_stamp_; }
+    [[nodiscard]] constexpr SourceWord source_word() const noexcept { return source_word_; }
+    [[nodiscard]] constexpr MarkStamp mark_stamp() const noexcept { return mark_stamp_; }
+
+    constexpr void set_owner(ChunkOwner owner) noexcept { owner_ = owner; }
+    constexpr void set_placement(PlacementId placement) noexcept { placement_ = placement; }
+    constexpr void set_partition(Partition partition) noexcept { partition_ = partition; }
+    constexpr void set_page_kind(ChunkPageKind page_kind) noexcept { page_kind_ = page_kind; }
+    constexpr void set_state(ChunkState state) noexcept { state_ = state; }
+    constexpr void set_free_units(UnitMap free_units) noexcept { free_units_ = free_units; }
+    constexpr void set_decay_stamp(DecayStamp decay_stamp) noexcept { decay_stamp_ = decay_stamp; }
+    constexpr void set_source_word(SourceWord source_word) noexcept { source_word_ = source_word; }
+    constexpr void set_mark_stamp(MarkStamp mark_stamp) noexcept { mark_stamp_ = mark_stamp; }
+
+    // True when each field is at its offset, so each byte of the line is a
+    // named field (THE RECORDS).  The check file of this header holds it.
+    [[nodiscard]] static consteval bool has_named_bytes() noexcept {
+        return offsetof(ChunkMeta, owner_) == 0 && offsetof(ChunkMeta, placement_) == 2
+            && offsetof(ChunkMeta, partition_) == 4 && offsetof(ChunkMeta, page_kind_) == 5
+            && offsetof(ChunkMeta, state_) == 6 && offsetof(ChunkMeta, state_padding_) == 7
+            && offsetof(ChunkMeta, free_units_) == 8 && offsetof(ChunkMeta, unit_padding_) == 12
+            && offsetof(ChunkMeta, decay_stamp_) == 16 && offsetof(ChunkMeta, source_word_) == 24
+            && offsetof(ChunkMeta, mark_stamp_) == 32 && offsetof(ChunkMeta, spare_) == 40 && sizeof(spare_) == 24;
+    }
+
+private:
+    ChunkOwner owner_{ChunkOwner::none};
+    PlacementId placement_{0};
+    Partition partition_{Partition::data};
+    ChunkPageKind page_kind_{ChunkPageKind::base};
+    ChunkState state_{ChunkState::clean};
+    std::uint8_t state_padding_{0};
+    UnitMap free_units_{};
+    std::uint32_t unit_padding_{0};
+    DecayStamp decay_stamp_{};
+    SourceWord source_word_{};
+    MarkStamp mark_stamp_{};
+    std::uint8_t spare_[24]{};
 };
 
 // The count of the words of the bitmap of a slab: 4096 slots of the smallest
 // class in one unit.
 inline constexpr std::size_t kSlabBitmapWords = kSlabUnitBytes / kSlotStepBytes / 64;
 
+// The index of a word of the bitmap of a slab.
+using BitmapWordIndex = ::foundation::core::Index<kSlabBitmapWords>;
+
+// The free slots of a slab: at most 4096.
+using SlabSlotCount = ::foundation::core::Quantity<::foundation::core::unit::Element, std::uint16_t>;
+
+// One word of the bitmap of a slab: bit k is set when slot k of the word is
+// free.
+enum class SlotBits : std::uint64_t {
+};
+
+// The summary of a slab: bit k is set when word k of the bitmap holds a free
+// slot.
+enum class SummaryBits : std::uint64_t {
+};
+
 // The record of one unit (THE RECORDS): a header of one cache line and a
 // bitmap of 512 bytes.  A set bit is a free slot.  Bit k of the summary word
-// is set when word k of the bitmap holds a free slot.
-struct alignas(64) SlabMeta {
-    // The class of the slab of the unit.  Zero names no class: the unit holds
-    // no slab.
-    SizeClass size_class{};
-    std::uint8_t class_padding{0};
-    std::uint16_t free_count{0};
-    std::uint32_t count_padding{0};
-    std::uint64_t summary{0};
-    std::uint8_t spare[48]{};
-    std::uint64_t bitmap[kSlabBitmapWords]{};
-
+// is set when word k of the bitmap holds a free slot.  The class of a unit
+// with no slab is zero, which names no class.
+class alignas(64) SlabMeta final {
+public:
     constexpr SlabMeta() noexcept = default;
     SlabMeta(SlabMeta const&) = delete("a record lives at its place in the region: read its fields in place");
     SlabMeta& operator=(SlabMeta const&) = delete("a record lives at its place in the region");
+
+    [[nodiscard]] constexpr SizeClass size_class() const noexcept { return size_class_; }
+    [[nodiscard]] constexpr SlabSlotCount free_count() const noexcept { return SlabSlotCount{free_count_}; }
+    [[nodiscard]] constexpr SummaryBits summary() const noexcept { return summary_; }
+    [[nodiscard]] constexpr SlotBits bitmap_word(BitmapWordIndex word) const noexcept { return bitmap_[word.raw()]; }
+
+    constexpr void set_size_class(SizeClass size_class) noexcept { size_class_ = size_class; }
+    constexpr void set_free_count(SlabSlotCount free_count) noexcept { free_count_ = free_count.raw(); }
+    constexpr void set_summary(SummaryBits summary) noexcept { summary_ = summary; }
+    constexpr void set_bitmap_word(BitmapWordIndex word, SlotBits bits) noexcept { bitmap_[word.raw()] = bits; }
+
+    // True when each field is at its offset, so each byte of the header is a
+    // named field and the bitmap starts at the second line (THE RECORDS).
+    // The check file of this header holds it.
+    [[nodiscard]] static consteval bool has_named_bytes() noexcept {
+        return offsetof(SlabMeta, size_class_) == 0 && offsetof(SlabMeta, class_padding_) == 1
+            && offsetof(SlabMeta, free_count_) == 2 && offsetof(SlabMeta, count_padding_) == 4
+            && offsetof(SlabMeta, summary_) == 8 && offsetof(SlabMeta, spare_) == 16 && sizeof(spare_) == 48
+            && offsetof(SlabMeta, bitmap_) == 64;
+    }
+
+private:
+    SizeClass size_class_{};
+    std::uint8_t class_padding_{0};
+    std::uint16_t free_count_{0};
+    std::uint32_t count_padding_{0};
+    SummaryBits summary_{};
+    std::uint8_t spare_[48]{};
+    SlotBits bitmap_[kSlabBitmapWords]{};
 };
 
 inline constexpr std::size_t kChunkMetaBytes = 64;

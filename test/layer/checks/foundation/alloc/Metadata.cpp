@@ -7,38 +7,27 @@
 #include <foundation/core/Quantity.h>
 
 #include <cstddef>
-#include <meta>
 #include <type_traits>
 
 namespace foundation::alloc {
 
-// A ChunkMeta is one cache line, and each byte is a named member.
+// A ChunkMeta is one cache line, and each byte is a named member: owner,
+// placement, partition, page kind, state, its padding, the unit map, its
+// padding, the decay stamp, the source word, the mark stamp and 24 spare
+// bytes.
 static_assert(sizeof(ChunkMeta) == kChunkMetaBytes && alignof(ChunkMeta) == 64);
-static_assert(std::meta::offset_of(^^ChunkMeta::owner).bytes == 0);
-static_assert(std::meta::offset_of(^^ChunkMeta::placement).bytes == 2);
-static_assert(std::meta::offset_of(^^ChunkMeta::partition).bytes == 4);
-static_assert(std::meta::offset_of(^^ChunkMeta::page_kind).bytes == 5);
-static_assert(std::meta::offset_of(^^ChunkMeta::state).bytes == 6);
-static_assert(std::meta::offset_of(^^ChunkMeta::state_padding).bytes == 7);
-static_assert(std::meta::offset_of(^^ChunkMeta::free_units).bytes == 8);
-static_assert(std::meta::offset_of(^^ChunkMeta::unit_padding).bytes == 12);
-static_assert(std::meta::offset_of(^^ChunkMeta::decay_stamp).bytes == 16);
-static_assert(std::meta::offset_of(^^ChunkMeta::source_word).bytes == 24);
-static_assert(std::meta::offset_of(^^ChunkMeta::mark_stamp).bytes == 32);
-static_assert(std::meta::offset_of(^^ChunkMeta::spare).bytes == 40);
-static_assert(sizeof(ChunkMeta::spare) == 24);
+static_assert(ChunkMeta::has_named_bytes());
 
 // A SlabMeta is a header of one cache line and a bitmap of 512 bytes, and
-// each byte of the header is a named member.
+// each byte of the header is a named member: the class, its padding, the free
+// count, its padding, the summary, 48 spare bytes and the bitmap.
 static_assert(sizeof(SlabMeta) == kSlabMetaBytes && alignof(SlabMeta) == 64);
 static_assert(kSlabBitmapWords == 64);
-static_assert(std::meta::offset_of(^^SlabMeta::size_class).bytes == 0);
-static_assert(std::meta::offset_of(^^SlabMeta::class_padding).bytes == 1);
-static_assert(std::meta::offset_of(^^SlabMeta::free_count).bytes == 2);
-static_assert(std::meta::offset_of(^^SlabMeta::count_padding).bytes == 4);
-static_assert(std::meta::offset_of(^^SlabMeta::summary).bytes == 8);
-static_assert(std::meta::offset_of(^^SlabMeta::spare).bytes == 16);
-static_assert(std::meta::offset_of(^^SlabMeta::bitmap).bytes == 64);
+static_assert(SlabMeta::has_named_bytes());
+
+// A new record reads as the state of a chunk or a unit that no heap took.
+static_assert(ChunkMeta{}.owner() == ChunkOwner::none && ChunkMeta{}.state() == ChunkState::clean);
+static_assert(SlabMeta{}.free_count().raw() == 0 && SlabMeta{}.summary() == SummaryBits{});
 
 // A record lives at its place in the region.
 static_assert(!std::is_copy_constructible_v<ChunkMeta> && !std::is_copy_assignable_v<ChunkMeta>);

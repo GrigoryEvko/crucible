@@ -270,9 +270,10 @@ public:
     WindowTable(WindowTable const&) = delete("the table holds the one record of each window");
     WindowTable& operator=(WindowTable const&) = delete("the table holds the one record of each window");
 
-    [[nodiscard]] constexpr WindowRecord const& record(WindowSlot slot) const noexcept { return records_[slot.raw()]; }
+    // A record is five words, so each read gives a copy.
+    [[nodiscard]] constexpr WindowRecord record(WindowSlot slot) const noexcept { return records_[slot.raw()]; }
 
-    [[nodiscard]] constexpr WindowRecord const& host() const noexcept { return records_[kHostWindow.raw()]; }
+    [[nodiscard]] constexpr WindowRecord host() const noexcept { return records_[kHostWindow.raw()]; }
 
 private:
     friend struct detail::WindowRecordDoor;

@@ -148,22 +148,22 @@ core::Result<core::Unit, os::Errno> Window::grow_section_(RecordSection section,
     return core::Unit{};
 }
 
-core::Result<core::Ref<ChunkMeta>, os::Errno> Window::start_chunk_meta(ChunkIndex chunk) noexcept {
+core::Result<ChunkMeta*, os::Errno> Window::start_chunk_meta_(ChunkIndex chunk) noexcept {
     std::size_t const offset = layout_.chunk_meta_offset(chunk).raw();
     std::size_t const in_section = offset - layout_.chunk_records_offset().raw();
     CRUCIBLE_TRY(grown, grow_section_(RecordSection::chunk_records, core::ByteCount{in_section + kChunkMetaBytes}));
     static_cast<void>(grown);
     void* const place = __builtin_bit_cast(void*, static_cast<std::uint64_t>(record_.region_base()) + offset);
-    return core::Ref<ChunkMeta>{core::to(*::new(place) ChunkMeta{})};
+    return ::new(place) ChunkMeta{};
 }
 
-core::Result<core::Ref<SlabMeta>, os::Errno> Window::start_slab_meta(ChunkIndex chunk, UnitIndex unit) noexcept {
+core::Result<SlabMeta*, os::Errno> Window::start_slab_meta_(ChunkIndex chunk, UnitIndex unit) noexcept {
     std::size_t const offset = layout_.slab_meta_offset(chunk, unit).raw();
     std::size_t const in_section = offset - layout_.slab_records_offset().raw();
     CRUCIBLE_TRY(grown, grow_section_(RecordSection::slab_records, core::ByteCount{in_section + kSlabMetaBytes}));
     static_cast<void>(grown);
     void* const place = __builtin_bit_cast(void*, static_cast<std::uint64_t>(record_.region_base()) + offset);
-    return core::Ref<SlabMeta>{core::to(*::new(place) SlabMeta{})};
+    return ::new(place) SlabMeta{};
 }
 
 core::Result<Window, os::Errno> reserve_window() noexcept { return climb_ladder(os::ReserveCap{~std::size_t{0}}); }
