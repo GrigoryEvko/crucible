@@ -306,9 +306,11 @@ public:
 
 // A value of a channel: a value of a ring that moves to another thread
 // (foundation/Transfer.h), because a push on one thread gives it to a pop on
-// another thread.
+// another thread.  The producer can end before the pop, so the value holds
+// no borrow: it is SendableOwned, and an owner such as the word of a Box
+// passes.
 template <class T>
-concept ChannelValue = RingValue<T> && ::foundation::transfer::Sendable<T>;
+concept ChannelValue = RingValue<T> && ::foundation::transfer::Sendable<T> && ::foundation::transfer::SendableOwned<T>;
 
 namespace detail {
 

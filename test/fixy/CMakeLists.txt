@@ -4575,6 +4575,14 @@ fixy_neg_compile_test(neg_mpsc_box_channel_of_linear_payload
 fixy_neg_compile_test(neg_channel_of_unsendable_payload
   "required for the satisfaction of .ChannelValue<T>. \\[with T = int\\*\\]"
   "required for the satisfaction of .Sendable<T>. \\[with T = int\\*\\]")
+# A producer can end before the consumer pops its value, so a value of a
+# channel holds no borrow at any depth.
+fixy_neg_compile_test(neg_channel_of_a_weak_reference
+  "required for the satisfaction of .ChannelValue<T>. \\[with T = fixy::WeakRef<const int>\\]"
+  "required for the satisfaction of .SendableOwned<T>. \\[with T = fixy::WeakRef<const int>\\]")
+fixy_neg_compile_test(neg_channel_of_a_message_with_a_borrow
+  "required for the satisfaction of .ChannelValue<T>. \\[with T = .*Message\\]"
+  "required for the satisfaction of .SendableOwned<T>. \\[with T = .*Message\\]")
 fixy_neg_compile_test(neg_box_channel_of_unsendable_payload
   "template constraint failure for .template<fixy::concurrent::ChannelForm Form, class T, long unsigned int Capacity, class UserTag, class Brand>"
   "required for the satisfaction of .Sendable<T>. \\[with T = .*Parcel\\]")

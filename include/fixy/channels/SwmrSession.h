@@ -37,6 +37,7 @@
 #include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
 
@@ -104,8 +105,13 @@ concept SwmrWriterHandleOf = std::same_as<Handle, typename Swmr::WriterHandle>;
 // concurrent publish.  The writer handle gives the claim back when it
 // ends.  The writer brand is never the erased brand, because a token of
 // every brand converts to that brand and would open the writer.
+//
+// A reader on another thread loads a value that the writer published, maybe
+// after the frame of the writer ended, so a value holds no borrow: it is
+// SendableOwned (foundation/Transfer.h).
 template <::fixy::concurrent::SnapshotValue T, typename WriterTag, typename ReaderTag,
           ::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsFreshBrand WriterBrand>
+    requires ::foundation::transfer::SendableOwned<T>
 class SwmrSession : public ::foundation::Pinned<SwmrSession<T, WriterTag, ReaderTag, ReaderBrand, WriterBrand>> {
 public:
     using value_type = T;

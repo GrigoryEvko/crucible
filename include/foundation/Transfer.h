@@ -20,6 +20,10 @@
 //                      write each object that the value refers to, so each
 //                      such object is Synchronized (THE VALUE BESIDE ITS
 //                      SENDER).
+//     SendableOwned<T> a value of T holds no borrow, so it can move to a
+//                      thread that uses it after its sender ends, as a value
+//                      of a channel does (THE VALUE THAT OUTLIVES ITS
+//                      SENDER).
 //
 // THE RULES
 //     The walk asks one property of one type, and the first rule that applies
@@ -96,6 +100,17 @@
 //     Sendable.  So a View of const int is Sendable, but it is not
 //     SendableBeside: the sender can write the ints while the other thread
 //     reads them, and no type tells that it does not.
+//
+// THE VALUE THAT OUTLIVES ITS SENDER
+//     SendableOwned is Sendable with a rule 1 that refuses each borrow.  A
+//     reference, and a class that states refers{}, refers_unique{} or
+//     refers_deep{}, name an object that can end before the value does, so
+//     they do not hold it.  Each other rule is the rule of Sendable, and
+//     sendable{}, not_sendable{} and thread_bound{} state it as they state
+//     Sendable.  So an owner, such as a Box, holds it when the object that it
+//     owns holds it.  A channel asks it of its values: a producer can push a
+//     value and end before a consumer on another thread pops the value.  Rust
+//     asks Send and 'static of such a value for the same reason.
 //
 // THE ANNOTATIONS
 //     A class states a property that its fields hide with one annotation, the
@@ -210,13 +225,14 @@ struct opaque_seal {
     std::size_t count = 0;
 };
 
-// The properties that first_refusal walks (THE THREE PROPERTIES and THE
-// VALUE BESIDE ITS SENDER).  The shared write has a walk of its own,
-// is_synchronized.
+// The properties that first_refusal walks (THE THREE PROPERTIES, THE VALUE
+// BESIDE ITS SENDER and THE VALUE THAT OUTLIVES ITS SENDER).  The shared
+// write has a walk of its own, is_synchronized.
 enum class Property : unsigned char {
     Send = 0,
     Share = 1,
     SendBeside = 2,
+    SendOwned = 3,
 };
 
 // True when the type holds the property (THE RULES).  The definition follows
@@ -371,8 +387,8 @@ void a_class_has_two_statements_of_transfer_facts() noexcept;
 }
 
 // The annotation that states the property, and the one that refuses it.
-// sendable{} and not_sendable{} state SendableBeside too (THE VALUE BESIDE
-// ITS SENDER).
+// sendable{} and not_sendable{} state SendableBeside and SendableOwned too
+// (THE VALUE BESIDE ITS SENDER, THE VALUE THAT OUTLIVES ITS SENDER).
 [[nodiscard]] consteval std::meta::info stating_annotation(Property property) {
     return property == Property::Share ? ^^shareable : ^^sendable;
 }
@@ -458,7 +474,8 @@ void a_class_has_two_statements_of_transfer_facts() noexcept;
 // property.  A reference to const asks Shareable of the target.  A reference
 // to a target that is not const holds when two threads can write the target,
 // and refuses otherwise.  For SendableBeside, each reference holds only when
-// two threads can write the target (THE VALUE BESIDE ITS SENDER).
+// two threads can write the target (THE VALUE BESIDE ITS SENDER).  For
+// SendableOwned, each reference refuses (THE VALUE THAT OUTLIVES ITS SENDER).
 struct ReferenceAnswer {
     bool is_refused = false;
     Goal next{};
@@ -466,6 +483,7 @@ struct ReferenceAnswer {
 };
 
 [[nodiscard]] consteval ReferenceAnswer answer_reference(::foundation::reflect::TypeNode target, Property property) {
+    if (property == Property::SendOwned) return ReferenceAnswer{.is_refused = true};
     if (property == Property::SendBeside) return ReferenceAnswer{.is_refused = !is_shared_writable(target.type)};
     if (target.was_const) {
         return ReferenceAnswer{.is_refused = false, .next = Goal{target.type, Property::Share}, .has_next = true};
@@ -547,7 +565,7 @@ struct ReferenceAnswer {
         if (detail::states(bare, ^^payload_cell)) {
             const std::meta::info payload = detail::payload_of_cell(bare);
             if (payload == std::meta::info{}) return bare;
-            const Property moved = goal.property == Property::SendBeside ? Property::SendBeside : Property::Send;
+            const Property moved = goal.property == Property::Share ? Property::Send : goal.property;
             pending.push(detail::Goal{payload, moved, detail::Reach::Part});
             continue;
         }
@@ -571,6 +589,9 @@ struct ReferenceAnswer {
             const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
             if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
             const std::meta::info target = arguments.begin()->type;
+            // The target can end before the value (THE VALUE THAT OUTLIVES
+            // ITS SENDER).
+            if (goal.property == Property::SendOwned) return bare;
             // Beside its sender, the target is also the sender's (THE VALUE
             // BESIDE ITS SENDER), so it falls to the shared write below.
             if (goal.property == Property::Send) {
@@ -648,12 +669,15 @@ struct ReferenceAnswer {
 // each property that the statement gives (THE OPAQUE TYPES).  The file that
 // defines a class with a statement asserts it beside the definition.  A
 // property that the statement does not give asks nothing, so a statement can
-// give less than the definition holds.  The class must be complete.
+// give less than the definition holds.  The walk answers SendableBeside and
+// SendableOwned of a declared class with is_sendable, so a statement of
+// is_sendable asks the three of the definition.  The class must be complete.
 [[nodiscard]] consteval bool holds_its_statement(std::meta::info type) {
     const opaque_facts statement = detail::statement_of(type);
     if (statement.type == std::meta::info{} || !std::meta::is_complete_type(std::meta::dealias(type))) return false;
     if (statement.is_sendable && !holds(type, Property::Send)) return false;
     if (statement.is_sendable && !holds(type, Property::SendBeside)) return false;
+    if (statement.is_sendable && !holds(type, Property::SendOwned)) return false;
     if (statement.is_shareable && !holds(type, Property::Share)) return false;
     if (statement.is_synchronized && !is_synchronized(type)) return false;
     return true;
@@ -679,6 +703,11 @@ concept Shareable = holds(^^T, Property::Share);
 // VALUE BESIDE ITS SENDER).
 template <class T>
 concept SendableBeside = holds(^^T, Property::SendBeside);
+
+// A value of T holds no borrow, so it can move to a thread that uses it after
+// its sender ends (THE VALUE THAT OUTLIVES ITS SENDER).
+template <class T>
+concept SendableOwned = holds(^^T, Property::SendOwned);
 
 // Two threads can write one object of T through a reference that is not const
 // at the same time.

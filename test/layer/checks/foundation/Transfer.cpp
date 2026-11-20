@@ -296,6 +296,25 @@ consteval bool are_refs_checked_beside() {
 }
 static_assert(are_refs_checked_beside());
 
+// THE VALUE THAT OUTLIVES ITS SENDER: each reference and each class that
+// refers to an object refuses, also a reference to an Atomic.  An owner holds
+// it when the object that it owns holds it, and a statement of sendable wins
+// as it does for Send.
+static_assert(Sendable<IntReads> && !SendableOwned<IntReads> && !SendableOwned<IntRun>);
+static_assert(Sendable<AtomicRef> && !SendableOwned<AtomicRef> && !SendableOwned<ConstRef>);
+static_assert(!SendableOwned<int const&> && !SendableOwned<CopiesFromConst<int>> && !SendableOwned<int*>);
+static_assert(SendableOwned<int> && SendableOwned<Plain> && SendableOwned<Node> && SendableOwned<StatedSend>);
+static_assert(SendableOwned<::foundation::core::Box<int>> && !SendableOwned<::foundation::core::Box<IntReads>>);
+static_assert(SendableOwned<::foundation::core::BoxWord<Plain, DeclaredAuthority>>);
+static_assert(SendableOwned<::foundation::core::Atomic<int>> && !SendableOwned<RefusedSend>);
+static_assert(first_refusal(^^HoldsOne<IntReads>, Property::SendOwned) == std::meta::dealias(^^IntReads));
+consteval bool are_refs_owned() {
+    ::foundation::core::Atomic<int> cell{0};
+    return holds(^^decltype(::foundation::core::to(cell)), Property::Send)
+        && !holds(^^decltype(::foundation::core::to(cell)), Property::SendOwned);
+}
+static_assert(are_refs_owned());
+
 // THE OPAQUE TYPES: a class that is only declared holds what the statement of
 // its registry gives.  A definition must hold each property that its
 // statement gives, so the definition of StatedWithBorrow, whose reference
@@ -308,6 +327,9 @@ struct StatedPlain {
 struct StatedWithBorrow {
     int& target;
 };
+struct StatedWithCellBorrow {
+    ::foundation::core::Atomic<int>& cell;
+};
 namespace transfer_facts {
 // No thread writes the handle after its build.
 inline constexpr opaque_facts opaque_handle{.type = ^^OpaqueHandle, .is_sendable = true, .is_shareable = true};
@@ -315,7 +337,10 @@ inline constexpr opaque_facts opaque_handle{.type = ^^OpaqueHandle, .is_sendable
 inline constexpr opaque_facts stated_plain{.type = ^^StatedPlain, .is_sendable = true, .is_shareable = true};
 // A statement that the definition of the class refuses.
 inline constexpr opaque_facts stated_with_borrow{.type = ^^StatedWithBorrow, .is_shareable = true};
-inline constexpr opaque_seal seal{.count = 3};
+// A statement of Send that the definition refuses, because its reference to
+// an Atomic can outlive the cell (THE VALUE THAT OUTLIVES ITS SENDER).
+inline constexpr opaque_facts stated_with_cell_borrow{.type = ^^StatedWithCellBorrow, .is_sendable = true};
+inline constexpr opaque_seal seal{.count = 4};
 }  // namespace transfer_facts
 struct ReadsOpaque {
     OpaqueHandle const& handle;
@@ -333,6 +358,8 @@ static_assert(!Sendable<ReadsUnstated> && first_refusal(^^ReadsUnstated, Propert
 static_assert(Sendable<::foundation::core::Box<OpaqueHandle>> && Shareable<::foundation::core::Box<OpaqueHandle>>);
 static_assert(!Sendable<::foundation::core::Box<UnstatedHandle>>);
 static_assert(holds_its_statement(^^StatedPlain) && !holds_its_statement(^^StatedWithBorrow));
+static_assert(Sendable<StatedWithCellBorrow> && SendableBeside<StatedWithCellBorrow>
+              && !holds_its_statement(^^StatedWithCellBorrow));
 static_assert(!holds_its_statement(^^Plain), "a class with no statement holds none");
 
 }  // namespace detail::transfer_self_test
