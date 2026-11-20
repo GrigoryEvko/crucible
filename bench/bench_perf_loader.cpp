@@ -63,65 +63,113 @@
 // To run as root (alternative):
 //   sudo ./build-bench/bench/bench_perf_loader
 
-#include <chrono>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <meta>
-#include <thread>
 #include <utility>
-
-#include <unistd.h>  // ::getpid (workload-shaped demo syscall driver)
 
 #include <crucible/perf/Senses.h>
 #include <crucible/perf/SenseHub.h>
+#include <fixy/os/Process.h>
+#include <fixy/os/ThreadTasks.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include "bench_harness.h"
 
 namespace {
 
-using steady = std::chrono::steady_clock;
+namespace eff = ::foundation::effects;
 
-// Wall-clock millisecond delta — used to time one-shot libbpf loads
-// without a bench loop.  load() takes 50-200 ms; bench loops would
-// never finish.  We measure once with steady_clock + format as a banner.
-[[nodiscard]] long long elapsed_ms(steady::time_point t0, steady::time_point t1) noexcept {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+// The nanoseconds in one millisecond.
+inline constexpr std::uint64_t kNsPerMs = 1000000;
+
+// The milliseconds between two readings of the monotonic clock, in
+// nanoseconds.  It times the one-shot libbpf loads without a bench loop: a
+// load takes 50-200 ms, so a bench loop would never finish.
+[[nodiscard]] std::uint64_t elapsed_ms(::fixy::Side<bench::side::ReadingBefore, std::uint64_t> start_ns,
+                                       ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end_ns) noexcept {
+    return end_ns.value() > start_ns.value() ? (end_ns.value() - start_ns.value()) / kNsPerMs : 0;
 }
+
+// The text of a flag of the coverage, as the C form %d of a bool printed it.
+[[nodiscard]] constexpr int flag_of(bool is_attached) noexcept { return is_attached ? 1 : 0; }
 
 void print_coverage(const crucible::perf::CoverageReport& cov) {
     // The denominator is the number of facade flags in CoverageReport,
     // read by reflection, so a facade added to the aggregator moves it.
     static constexpr std::size_t kFacadeCount =
-        std::meta::nonstatic_data_members_of(^^crucible::perf::CoverageReport, std::meta::access_context::current())
+        ::foundation::reflect::reflection_list(
+            std::meta::nonstatic_data_members_of(^^crucible::perf::CoverageReport,
+                                                 std::meta::access_context::current()))
             .size();
-    std::printf("  attached: %zu/%zu", cov.attached_count(), kFacadeCount);
+    bench::print("  attached: {}/{}", cov.attached_count(), kFacadeCount);
     if (cov.attached_count() == 0) {
         // No attached facade is the most common surprise.  Tell the user how to
         // fix it instead of leaving them to grep.  Two recovery paths:
         //   • the launcher /usr/local/bin/crucible-caps  (as `loop bench` runs it)
         //   • sudo ./bench_perf_loader  (per-invocation)
-        std::printf(" — run it through /usr/local/bin/crucible-caps, as `loop bench` does,"
-                    " or invoke under sudo");
+        bench::print(" — run it through /usr/local/bin/crucible-caps, as `loop bench` does, or invoke under sudo");
     }
-    std::printf("\n  sense_hub=%d sched_switch=%d pmu_sample=%d "
-                "lock_contention=%d syscall_latency=%d "
-                "sched_tp_btf=%d syscall_tp_btf=%d\n",
-                cov.sense_hub_attached, cov.sched_switch_attached, cov.pmu_sample_attached,
-                cov.lock_contention_attached, cov.syscall_latency_attached, cov.sched_tp_btf_attached,
-                cov.syscall_tp_btf_attached);
+    bench::print("\n  sense_hub={} sched_switch={} pmu_sample={} lock_contention={} syscall_latency={} "
+                 "sched_tp_btf={} syscall_tp_btf={}\n",
+                 flag_of(cov.sense_hub_attached), flag_of(cov.sched_switch_attached), flag_of(cov.pmu_sample_attached),
+                 flag_of(cov.lock_contention_attached), flag_of(cov.syscall_latency_attached),
+                 flag_of(cov.sched_tp_btf_attached), flag_of(cov.syscall_tp_btf_attached));
 }
 
 }  // namespace
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the BPF programs of the perf facades write the timeline rings that the bench reads")
+namespace {
+
+// The count of the events with a stamp that is not zero in the 64 slots of a
+// timeline ring of Capacity slots before the slot end, newest first.  The
+// kernel writes the stamp of a slot last, so an acquire load of the stamp
+// orders the read of the rest of the slot.  Capacity is a power of two.  The
+// body is inline in each drain row, so the row times the loads and no call.
+template <std::uint64_t Capacity, class Span>
+[[nodiscard, gnu::always_inline]] inline std::uint64_t count_live_newest(Span const& view, std::uint64_t end) noexcept {
+    constexpr std::uint64_t mask = Capacity - 1;
+    std::uint64_t live = 0;
+    for (std::uint64_t i = 0; i < 64; ++i) {
+        const std::uint64_t slot = (end - 1 - i) & mask;
+        const std::uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+        if (ts != 0) ++live;
+    }
+    return live;
+}
+
+// The count of the events with a stamp that is not zero from the slot of pre
+// up to post in a timeline ring of Capacity slots, at most Capacity of them,
+// oldest first.  When the window holds more than Capacity new events, the
+// ring wrote over the older ones, and the count stops at Capacity.
+// Complexity: linear in the window.
+template <std::uint64_t Capacity, class Span>
+[[nodiscard]] std::size_t count_live_window(Span const& events,
+                                            ::fixy::Side<bench::side::ReadingBefore, std::uint64_t> pre,
+                                            ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> post) noexcept {
+    if (events.empty()) return 0;
+    constexpr std::uint64_t mask = Capacity - 1;
+    const std::uint64_t delta = (post.value() >= pre.value()) ? (post.value() - pre.value()) : 0;
+    const std::size_t to_walk = (delta > Capacity) ? Capacity : static_cast<std::size_t>(delta);
+    std::size_t live = 0;
+    for (std::size_t i = 0; i < to_walk; ++i) {
+        const std::uint64_t slot = (pre.value() + i) & mask;
+        const std::uint64_t ts = __atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE);
+        if (ts != 0) ++live;
+    }
+    return live;
+}
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     bench::print_system_info();
     bench::elevate_priority();
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== senses ===\n");
+    bench::print("=== senses ===\n");
 
     // ── (A) ONE-SHOT loads ─────────────────────────────────────────────
     //
@@ -130,11 +178,12 @@ int main() {
     // THE load we actually keep — measuring a temporary load() and then
     // doing it again would (a) double the libbpf attach cost (~130 ms on
     // this hardware) and (b) double the partial-attach noise on stderr.
-    const auto t0 = steady::now();
+    const std::uint64_t t0 = bench::detail::read_monotonic_ns();
     auto s = crucible::perf::Senses::load_all(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-    const auto t1 = steady::now();
+    const std::uint64_t t1 = bench::detail::read_monotonic_ns();
     const auto cov = s.coverage();
-    std::printf("load_all: %lld ms\n", elapsed_ms(t0, t1));
+    bench::print("load_all: {} ms\n", elapsed_ms(::fixy::side_as<bench::side::ReadingBefore>(t0),
+                                                 ::fixy::side_as<bench::side::ReadingAfter>(t1)));
     print_coverage(cov);
 
     // load_subset cost-discipline path: callers that want predictable
@@ -142,7 +191,7 @@ int main() {
     // ~0.05 %) and skip the timeline rings.  The result is discarded
     // immediately — we're showing the load cost shape, not retaining
     // a second handle on top of `s` above.
-    const auto t2 = steady::now();
+    const std::uint64_t t2 = bench::detail::read_monotonic_ns();
     {
         auto sub = crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
                                                        crucible::perf::SensesMask{
@@ -151,8 +200,10 @@ int main() {
                                                        });
         bench::do_not_optimize(sub);
     }
-    const auto t3 = steady::now();
-    std::printf("load_subset(sense_hub|pmu_sample): %lld ms\n", elapsed_ms(t2, t3));
+    const std::uint64_t t3 = bench::detail::read_monotonic_ns();
+    bench::print(
+        "load_subset(sense_hub|pmu_sample): {} ms\n",
+        elapsed_ms(::fixy::side_as<bench::side::ReadingBefore>(t2), ::fixy::side_as<bench::side::ReadingAfter>(t3)));
 
     // ── (B), (C), (D), (E) — per-call benches ──────────────────────────
     //
@@ -467,14 +518,8 @@ int main() {
                         bench::do_not_optimize(view);
                         return;
                     }
-                    const uint64_t end = h->timeline_write_index();
-                    const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
-                    uint64_t live = 0;
-                    for (uint64_t i = 0; i < 64; ++i) {
-                        const uint64_t slot = (end - 1 - i) & mask;
-                        const uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
-                        if (ts != 0) ++live;
-                    }
+                    const std::uint64_t live =
+                        count_live_newest<crucible::perf::TIMELINE_CAPACITY>(view, h->timeline_write_index());
                     bench::do_not_optimize(live);
                 }
             });
@@ -487,14 +532,8 @@ int main() {
                         bench::do_not_optimize(view);
                         return;
                     }
-                    const uint64_t end = h->timeline_write_index();
-                    const uint64_t mask = crucible::perf::PMU_SAMPLE_CAPACITY - 1;
-                    uint64_t live = 0;
-                    for (uint64_t i = 0; i < 64; ++i) {
-                        const uint64_t slot = (end - 1 - i) & mask;
-                        const uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
-                        if (ts != 0) ++live;
-                    }
+                    const std::uint64_t live =
+                        count_live_newest<crucible::perf::PMU_SAMPLE_CAPACITY>(view, h->timeline_write_index());
                     bench::do_not_optimize(live);
                 }
             });
@@ -507,14 +546,8 @@ int main() {
                         bench::do_not_optimize(view);
                         return;
                     }
-                    const uint64_t end = h->timeline_write_index();
-                    const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
-                    uint64_t live = 0;
-                    for (uint64_t i = 0; i < 64; ++i) {
-                        const uint64_t slot = (end - 1 - i) & mask;
-                        const uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
-                        if (ts != 0) ++live;
-                    }
+                    const std::uint64_t live =
+                        count_live_newest<crucible::perf::TIMELINE_CAPACITY>(view, h->timeline_write_index());
                     bench::do_not_optimize(live);
                 }
             });
@@ -527,14 +560,8 @@ int main() {
                         bench::do_not_optimize(view);
                         return;
                     }
-                    const uint64_t end = h->timeline_write_index();
-                    const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
-                    uint64_t live = 0;
-                    for (uint64_t i = 0; i < 64; ++i) {
-                        const uint64_t slot = (end - 1 - i) & mask;
-                        const uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
-                        if (ts != 0) ++live;
-                    }
+                    const std::uint64_t live =
+                        count_live_newest<crucible::perf::TIMELINE_CAPACITY>(view, h->timeline_write_index());
                     bench::do_not_optimize(live);
                 }
             });
@@ -547,14 +574,8 @@ int main() {
                         bench::do_not_optimize(view);
                         return;
                     }
-                    const uint64_t end = h->timeline_write_index();
-                    const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
-                    uint64_t live = 0;
-                    for (uint64_t i = 0; i < 64; ++i) {
-                        const uint64_t slot = (end - 1 - i) & mask;
-                        const uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
-                        if (ts != 0) ++live;
-                    }
+                    const std::uint64_t live =
+                        count_live_newest<crucible::perf::TIMELINE_CAPACITY>(view, h->timeline_write_index());
                     bench::do_not_optimize(live);
                 }
             });
@@ -567,14 +588,8 @@ int main() {
                         bench::do_not_optimize(view);
                         return;
                     }
-                    const uint64_t end = h->timeline_write_index();
-                    const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
-                    uint64_t live = 0;
-                    for (uint64_t i = 0; i < 64; ++i) {
-                        const uint64_t slot = (end - 1 - i) & mask;
-                        const uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
-                        if (ts != 0) ++live;
-                    }
+                    const std::uint64_t live =
+                        count_live_newest<crucible::perf::TIMELINE_CAPACITY>(view, h->timeline_write_index());
                     bench::do_not_optimize(live);
                 }
             });
@@ -586,10 +601,10 @@ int main() {
     // Diagnostic banner for the read-skipped case so a user staring at
     // "1.5 ns" for sense_hub->read() knows it didn't actually attach.
     if (!cov.sense_hub_attached) {
-        std::printf("\n[note] sense_hub not attached; the last two reports "
-                    "measure only the safety branch (~1-2 ns), NOT the\n"
-                    "       12-cache-line read.  Grant CAP_BPF+CAP_PERFMON "
-                    "to see the real read cost.\n");
+        bench::print("\n[note] sense_hub not attached; the last two reports "
+                     "measure only the safety branch (~1-2 ns), NOT the\n"
+                     "       12-cache-line read.  Grant CAP_BPF+CAP_PERFMON "
+                     "to see the real read cost.\n");
     }
 
     // ── (H) Consumer-shaped workload demo ──────────────────────────────
@@ -607,8 +622,8 @@ int main() {
     // When CAP_BPF is missing the deltas are all zero — the print
     // banner is still useful as a "what fields are available" reference
     // for prospective consumers writing against the same API.
-    std::printf("\n=== consumer-shaped workload demo ===\n");
-    std::printf("Pattern: snapshot pre → run nudge workload → snapshot post → print delta\n");
+    bench::print("\n=== consumer-shaped workload demo ===\n");
+    bench::print("Pattern: snapshot pre → run nudge workload → snapshot post → print delta\n");
 
     // Pre snapshots
     crucible::perf::Snapshot sh_pre{};
@@ -641,27 +656,35 @@ int main() {
     // to be visible above noise floor on a quiet system.
     {
         std::uint64_t spin_acc = 0;
-        const auto spin_until = steady::now() + std::chrono::milliseconds(30);
-        while (steady::now() < spin_until) {
+        const std::uint64_t spin_until = bench::detail::read_monotonic_ns() + 30 * kNsPerMs;
+        while (bench::detail::read_monotonic_ns() < spin_until) {
             for (int i = 0; i < 1024; ++i) {
                 spin_acc += static_cast<std::uint64_t>(i) * std::uint64_t{2654435761};
             }
             bench::do_not_optimize(spin_acc);
         }
+        // Each read of the id of the process is one getpid call.
+        const ::fixy::InitLoadCtx startup{eff::testing::init()};
         for (int i = 0; i < 200; ++i)
-            (void)::getpid();
-        std::atomic_flag gate = ATOMIC_FLAG_INIT;
-        gate.test_and_set(std::memory_order_release);
-        std::jthread releaser{[&gate] {
-            const auto release_at = steady::now() + std::chrono::milliseconds(1);
-            while (steady::now() < release_at) {
+            static_cast<void>(::fixy::process::current_process(startup));
+        // The gate is closed before the releaser starts.  The releaser spins
+        // for 1 ms and opens it, and the main thread spins until then.
+        ::fixy::Atomic<bool> is_gate_closed{true};
+        auto releaser = [&is_gate_closed]() noexcept {
+            const std::uint64_t release_at = bench::detail::read_monotonic_ns() + kNsPerMs;
+            while (bench::detail::read_monotonic_ns() < release_at) {
                 CRUCIBLE_SPIN_PAUSE;
             }
-            gate.clear(std::memory_order_release);
-        }};
-        while (gate.test(std::memory_order_acquire)) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
+            is_gate_closed.store_release(false);
+        };
+        auto waiter = [&is_gate_closed]() noexcept {
+            while (is_gate_closed.load_acquire()) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
+        };
+        using Starter = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
+        ::fixy::thread::run_beside(Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, releaser, waiter)
+            .expect("the thread door starts the releaser of the gate");
     }
 
     // Post snapshots
@@ -691,117 +714,94 @@ int main() {
     if (cov.sense_hub_attached) {
         using Idx = crucible::perf::Idx;
         const auto sh_d = sh_post - sh_pre;
-        std::printf("  SenseHub.delta:        ctx_vol=%llu  ctx_invol=%llu  migrations=%llu  "
-                    "futex_waits=%llu\n",
-                    static_cast<unsigned long long>(sh_d[Idx::SCHED_CTX_VOL]),
-                    static_cast<unsigned long long>(sh_d[Idx::SCHED_CTX_INVOL]),
-                    static_cast<unsigned long long>(sh_d[Idx::SCHED_MIGRATIONS]),
-                    static_cast<unsigned long long>(sh_d[Idx::FUTEX_WAIT_COUNT]));
+        bench::print("  SenseHub.delta:        ctx_vol={}  ctx_invol={}  migrations={}  futex_waits={}\n",
+                     std::uint64_t{sh_d[Idx::SCHED_CTX_VOL]}, std::uint64_t{sh_d[Idx::SCHED_CTX_INVOL]},
+                     std::uint64_t{sh_d[Idx::SCHED_MIGRATIONS]}, std::uint64_t{sh_d[Idx::FUTEX_WAIT_COUNT]});
     }
     if (cov.sched_switch_attached) {
         const auto d = ss_post - ss_pre;
-        std::printf("  SchedSwitch.delta:     ctx_switches=%llu  timeline_events=%llu\n",
-                    static_cast<unsigned long long>(d.ctx_switches), static_cast<unsigned long long>(d.timeline_index));
+        bench::print("  SchedSwitch.delta:     ctx_switches={}  timeline_events={}\n", std::uint64_t{d.ctx_switches},
+                     std::uint64_t{d.timeline_index});
     }
     if (cov.pmu_sample_attached) {
         const auto d = pm_post - pm_pre;
-        std::printf("  PmuSample.delta:       samples=%llu\n", static_cast<unsigned long long>(d.samples));
+        bench::print("  PmuSample.delta:       samples={}\n", std::uint64_t{d.samples});
     }
     if (cov.lock_contention_attached) {
         const auto d = lc_post - lc_pre;
-        std::printf("  LockContention.delta:  wait_count=%llu  timeline_events=%llu\n",
-                    static_cast<unsigned long long>(d.wait_count), static_cast<unsigned long long>(d.timeline_index));
+        bench::print("  LockContention.delta:  wait_count={}  timeline_events={}\n", std::uint64_t{d.wait_count},
+                     std::uint64_t{d.timeline_index});
     }
     if (cov.syscall_latency_attached) {
         const auto d = sl_post - sl_pre;
-        std::printf("  SyscallLatency.delta:  total_syscalls=%llu  timeline_events=%llu\n",
-                    static_cast<unsigned long long>(d.total_syscalls),
-                    static_cast<unsigned long long>(d.timeline_index));
+        bench::print("  SyscallLatency.delta:  total_syscalls={}  timeline_events={}\n",
+                     std::uint64_t{d.total_syscalls}, std::uint64_t{d.timeline_index});
     }
     if (cov.sched_tp_btf_attached) {
         const auto d = stp_post - stp_pre;
-        std::printf("  SchedTpBtf.delta:      ctx_switches=%llu  timeline_events=%llu\n",
-                    static_cast<unsigned long long>(d.ctx_switches), static_cast<unsigned long long>(d.timeline_index));
+        bench::print("  SchedTpBtf.delta:      ctx_switches={}  timeline_events={}\n", std::uint64_t{d.ctx_switches},
+                     std::uint64_t{d.timeline_index});
     }
     if (cov.syscall_tp_btf_attached) {
         const auto d = syt_post - syt_pre;
-        std::printf("  SyscallTpBtf.delta:    total_syscalls=%llu  timeline_events=%llu\n",
-                    static_cast<unsigned long long>(d.total_syscalls),
-                    static_cast<unsigned long long>(d.timeline_index));
+        bench::print("  SyscallTpBtf.delta:    total_syscalls={}  timeline_events={}\n",
+                     std::uint64_t{d.total_syscalls}, std::uint64_t{d.timeline_index});
     }
     if (cov.attached_count() == 0) {
-        std::printf("  (no facades attached; deltas would have been printed here.\n"
-                    "   Grant CAP_BPF+CAP_PERFMON to see real metric movement.)\n");
+        bench::print("  (no facades attached; deltas would have been printed here.\n"
+                     "   Grant CAP_BPF+CAP_PERFMON to see real metric movement.)\n");
     }
 
     // Drain pass — consumer pattern of "walk the new events in the ring
-    // buffer and process each".  Counts events with ts_ns != 0 in the
-    // [pre.timeline_index, post.timeline_index) range, masked into the
-    // capacity-bounded ring.  When the window contains more than
-    // TIMELINE_CAPACITY new events the older ones got overwritten and
-    // the count saturates at capacity — that's the structural cost
-    // of the consumer falling behind.
-    auto drain_count = []<class Span, class Event>(Span events, std::size_t capacity, uint64_t pre_idx,
-                                                   uint64_t post_idx) -> std::size_t {
-        if (events.empty()) return 0;
-        const uint64_t delta = (post_idx >= pre_idx) ? (post_idx - pre_idx) : 0;
-        const std::size_t to_walk = (delta > capacity) ? capacity : static_cast<std::size_t>(delta);
-        const uint64_t mask = capacity - 1;
-        std::size_t live = 0;
-        for (std::size_t i = 0; i < to_walk; ++i) {
-            const uint64_t slot = (pre_idx + i) & mask;
-            // Volatile load of ts_ns — completion marker per wire contract.
-            const uint64_t ts = __atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE);
-            if (ts != 0) ++live;
-        }
-        return live;
-    };
+    // buffer and process each" (count_live_window).
+    using bench::side::ReadingAfter;
+    using bench::side::ReadingBefore;
     if (cov.sched_switch_attached) {
         for (auto const h : s.sched_switch()) {
-            const auto view = h->timeline_view();
-            const std::size_t n = drain_count.template operator()<decltype(view), crucible::perf::TimelineSchedEvent>(
-                view, crucible::perf::TIMELINE_CAPACITY, ss_pre.timeline_index, ss_post.timeline_index);
-            std::printf("  SchedSwitch.drain:     %zu live event(s) in window\n", n);
+            const std::size_t n = count_live_window<crucible::perf::TIMELINE_CAPACITY>(
+                h->timeline_view(), ::fixy::side_as<ReadingBefore>(ss_pre.timeline_index),
+                ::fixy::side_as<ReadingAfter>(ss_post.timeline_index));
+            bench::print("  SchedSwitch.drain:     {} live event(s) in window\n", n);
         }
     }
     if (cov.pmu_sample_attached) {
         for (auto const h : s.pmu_sample()) {
-            const auto view = h->timeline_view();
-            const std::size_t n = drain_count.template operator()<decltype(view), crucible::perf::PmuSampleEvent>(
-                view, crucible::perf::PMU_SAMPLE_CAPACITY, pm_pre.samples, pm_post.samples);
-            std::printf("  PmuSample.drain:       %zu live sample(s) in window\n", n);
+            const std::size_t n = count_live_window<crucible::perf::PMU_SAMPLE_CAPACITY>(
+                h->timeline_view(), ::fixy::side_as<ReadingBefore>(pm_pre.samples),
+                ::fixy::side_as<ReadingAfter>(pm_post.samples));
+            bench::print("  PmuSample.drain:       {} live sample(s) in window\n", n);
         }
     }
     if (cov.lock_contention_attached) {
         for (auto const h : s.lock_contention()) {
-            const auto view = h->timeline_view();
-            const std::size_t n = drain_count.template operator()<decltype(view), crucible::perf::TimelineLockEvent>(
-                view, crucible::perf::TIMELINE_CAPACITY, lc_pre.timeline_index, lc_post.timeline_index);
-            std::printf("  LockContention.drain:  %zu live event(s) in window\n", n);
+            const std::size_t n = count_live_window<crucible::perf::TIMELINE_CAPACITY>(
+                h->timeline_view(), ::fixy::side_as<ReadingBefore>(lc_pre.timeline_index),
+                ::fixy::side_as<ReadingAfter>(lc_post.timeline_index));
+            bench::print("  LockContention.drain:  {} live event(s) in window\n", n);
         }
     }
     if (cov.syscall_latency_attached) {
         for (auto const h : s.syscall_latency()) {
-            const auto view = h->timeline_view();
-            const std::size_t n = drain_count.template operator()<decltype(view), crucible::perf::TimelineSyscallEvent>(
-                view, crucible::perf::TIMELINE_CAPACITY, sl_pre.timeline_index, sl_post.timeline_index);
-            std::printf("  SyscallLatency.drain:  %zu live event(s) in window\n", n);
+            const std::size_t n = count_live_window<crucible::perf::TIMELINE_CAPACITY>(
+                h->timeline_view(), ::fixy::side_as<ReadingBefore>(sl_pre.timeline_index),
+                ::fixy::side_as<ReadingAfter>(sl_post.timeline_index));
+            bench::print("  SyscallLatency.drain:  {} live event(s) in window\n", n);
         }
     }
     if (cov.sched_tp_btf_attached) {
         for (auto const h : s.sched_tp_btf()) {
-            const auto view = h->timeline_view();
-            const std::size_t n = drain_count.template operator()<decltype(view), crucible::perf::TimelineSchedEvent>(
-                view, crucible::perf::TIMELINE_CAPACITY, stp_pre.timeline_index, stp_post.timeline_index);
-            std::printf("  SchedTpBtf.drain:      %zu live event(s) in window\n", n);
+            const std::size_t n = count_live_window<crucible::perf::TIMELINE_CAPACITY>(
+                h->timeline_view(), ::fixy::side_as<ReadingBefore>(stp_pre.timeline_index),
+                ::fixy::side_as<ReadingAfter>(stp_post.timeline_index));
+            bench::print("  SchedTpBtf.drain:      {} live event(s) in window\n", n);
         }
     }
     if (cov.syscall_tp_btf_attached) {
         for (auto const h : s.syscall_tp_btf()) {
-            const auto view = h->timeline_view();
-            const std::size_t n = drain_count.template operator()<decltype(view), crucible::perf::TimelineSyscallEvent>(
-                view, crucible::perf::TIMELINE_CAPACITY, syt_pre.timeline_index, syt_post.timeline_index);
-            std::printf("  SyscallTpBtf.drain:    %zu live event(s) in window\n", n);
+            const std::size_t n = count_live_window<crucible::perf::TIMELINE_CAPACITY>(
+                h->timeline_view(), ::fixy::side_as<ReadingBefore>(syt_pre.timeline_index),
+                ::fixy::side_as<ReadingAfter>(syt_post.timeline_index));
+            bench::print("  SyscallTpBtf.drain:    {} live event(s) in window\n", n);
         }
     }
 
