@@ -207,6 +207,53 @@ static_assert(check_context_deadlock_freedom<UnevenPeriods, OneSlot>().says(
 using LoopOnce = TypingContext<At<P, Loop<Out<Q, X, End>>>, At<Q, In<P, X, End>>>;
 static_assert(check_context_deadlock_freedom<LoopOnce, OneSlot>().is_admitted());
 
+// ── Choices ─────────────────────────────────────────────────────────────
+//
+// The arms of a choice that wait the same way are one sequence of actions.
+
+// The Ring global type of section 1.2 of the attack test: P sends Add to Q,
+// Q chooses Add or Sub for R, and R answers P with the same label.  Each
+// choice has two arms with the same waits.
+struct Add {};
+struct Sub {};
+using Ring = g::Rec<g::Msg<P, Q, Add, int,
+                           g::Comm<Q, R, g::Branch<Add, int, g::Msg<R, P, Add, int, g::Var>>,
+                                   g::Branch<Sub, int, g::Msg<R, P, Sub, int, g::Var>>>>>;
+using RingContext = projected_context_t<Ring>;
+inline constexpr net::ProcessSystem<3, 3, 6> ring_system{
+    .process_names = {"P", "Q", "R"},
+    .channels = {{.name = "P to Q", .capacity = 1},
+                 {.name = "Q to R", .capacity = 1},
+                 {.name = "R to P", .capacity = 1}},
+    .actions = {send_on(process_p, pq), receive_on(process_p, rp), receive_on(process_q, pq), send_on(process_q, qr),
+                receive_on(process_r, qr), send_on(process_r, rp)}};
+static_assert(is_same_system(marked_system_of_context<RingContext, OneSlot>(), ring_system));
+static_assert(check_context_deadlock_freedom<RingContext, OneSlot>().is_admitted());
+
+// A choice inside one arm: each arm sends two messages to Q.
+using NestedP = Select<Out<Q, X, Select<Out<Q, X, End>, Out<Q, Y, End>>>, Out<Q, Y, Out<Q, X, End>>>;
+using NestedQ = Offer<Sender<P>, In<P, X, Offer<Sender<P>, In<P, X, End>, In<P, Y, End>>>, In<P, Y, In<P, X, End>>>;
+using NestedChoices = TypingContext<At<P, NestedP>, At<Q, NestedQ>>;
+static_assert(marked_system_of_context<NestedChoices, OneSlot>().actions[1].move == net::Move::Send);
+static_assert(check_context_deadlock_freedom<NestedChoices, OneSlot>().is_admitted());
+
+// The arms of one role wait on two channels.  Two branches of one choice
+// carry two labels, because a choice with one label two times is not well
+// formed.
+using TwoChannels =
+    TypingContext<At<P, Select<Out<Q, X, End>, Out<R, Y, End>>>, At<Q, In<P, X, End>>, At<R, In<P, Y, End>>>;
+static_assert(find_context_fault<TwoChannels>().code == ContextFaultCode::ArmsWaitDifferently);
+static_assert(find_context_fault<TwoChannels>().type == ^^Select<Out<Q, X, End>, Out<R, Y, End>>);
+
+// A loop with an exit: one arm continues, and the other ends.
+using ExitP = Loop<Select<Out<Q, X, Continue>, Out<Q, Y, End>>>;
+using ExitQ = Loop<Offer<Sender<P>, In<P, X, Continue>, In<P, Y, End>>>;
+using LoopWithExit = TypingContext<At<P, ExitP>, At<Q, ExitQ>>;
+static_assert(find_context_fault<LoopWithExit>().code == ContextFaultCode::ArmsWaitDifferently);
+static_assert(check_context_deadlock_freedom<LoopWithExit, OneSlot>().starts_with(
+    "context: a choice of the role 'P' has arms that wait on other channels, or that end in other ways: "
+    "fixy::session::Select<"));
+
 // ── The faults ──────────────────────────────────────────────────────────
 
 static_assert(find_context_fault<int>().code == ContextFaultCode::NotAContext);
@@ -229,7 +276,7 @@ static_assert(find_context_fault<BinaryStep>().code == ContextFaultCode::NodeOut
 static_assert(check_context_deadlock_freedom<BinaryStep, OneSlot>().says(
     "context: the local type of the role 'P' holds a node that the check does not read: "
     "fixy::session::Send<int, fixy::session::End>.  The check reads End, one Loop around the whole type with its "
-    "Continue, and the Send and Recv steps of a PeerMsg."));
+    "Continue, the Send and Recv steps of a PeerMsg, and a Select or an Offer whose arms wait the same way."));
 
 using Stranger = TypingContext<At<P, Out<R, X, End>>, At<Q, End>>;
 static_assert(find_context_fault<Stranger>().code == ContextFaultCode::PeerOutsideContext);

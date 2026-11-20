@@ -58,9 +58,21 @@
 //
 //   Each other node is outside the model, and the context then has no marked
 //   system: a Loop below the top of a local type, a loop with no action in
-//   its period, a choice of two or more branches, a step whose payload names
-//   no peer, a wrapper, a marker and a terminal other than End.
-//   find_context_fault names the first such node.
+//   its period, a choice whose arms wait differently (THE UNION OF THE ARMS),
+//   a step whose payload names no peer, a wrapper, a marker and a terminal
+//   other than End.  find_context_fault names the first such node.
+//
+// THE UNION OF THE ARMS
+//   A Select or an Offer of two or more branches is the union of its arms.
+//   The walk follows each arm at the same time.  At each step, each arm sends
+//   or receives on one channel with one move, or each arm reaches End, or
+//   each arm reaches the Continue of the loop.  Then each run of the role
+//   makes the same waits, whatever branch it takes, so one sequence of
+//   actions stands for the role, and the labels change no wait.  The
+//   projections of the ring of three roles meet this rule, with two labels
+//   on each channel.  A choice whose arms wait differently, such as a loop
+//   with an exit, needs one context for each set of arms that the roles take
+//   together.
 //
 // THE LIMITS
 //   The check reads the waits, not the labels and not the payloads.  The
@@ -72,9 +84,11 @@
 //   fixy/session/Watch.h, at run time, on the run that waits.
 //
 // THE COSTS
-//   One walk of the type graph of each local type, linear in its distinct
-//   nodes.  The channels cost O(R^2 + A) for R roles and A actions, and the
-//   check of the system costs O(R + C + A).
+//   One walk of the type graph of each local type: linear in its distinct
+//   nodes with no choice of two or more branches, and O(N^2) for N distinct
+//   nodes at most with such choices, because each round of the walk reads
+//   each node at most one time.  The channels cost O(R^2 + A) for R roles
+//   and A actions, and the check of the system costs O(R + C + A).
 
 #include <fixy/session/Projection.h>
 #include <foundation/algebra/net/Priority.h>
@@ -106,6 +120,9 @@ enum class ContextFaultCode : std::uint8_t {
     LoopNotWhole = 6,
     // The fault names the role that loops, and the role that runs one time.
     LoopMeetsRun = 7,
+    // The fault names the role, and the type of its first choice of two or
+    // more branches.
+    ArmsWaitDifferently = 8,
 };
 
 // The fault that find_context_fault finds.  The code tells which fields it
@@ -195,12 +212,118 @@ template <std::meta::info Family>
     return ContextFault{.code = code, .role = role, .type = type};
 }
 
+// What the arm of a choice does next: an action, End, or the Continue of
+// the loop around the whole local type.
+enum class ArmStep : std::uint8_t {
+    Acts = 0,
+    Ends = 1,
+    Continues = 2,
+};
+
+// The next step of one arm, and its action when it acts.
+struct arm_head {
+    ArmStep step = ArmStep::Acts;
+    read_action act{};
+};
+
+// Two arms wait the same way when they end the same way, or when each acts
+// on one channel with one move.  The two arguments can swap with no change
+// of meaning.
+[[nodiscard]] consteval bool is_same_wait_(arm_head const& left, arm_head const& right) {
+    if (left.step != right.step) return false;
+    if (left.step != ArmStep::Acts) return true;
+    return left.act.sender == right.act.sender && left.act.receiver == right.act.receiver
+        && left.act.move == right.act.move;
+}
+
+// The state of the walk of the arms of one local type (THE UNION OF THE
+// ARMS).  cursors holds the node after the last action of each arm, and
+// heads holds each node that a cursor reaches through its choices, one
+// time.  seen holds the round in which the expansion last read each node.
+// choice is the type of the first choice of two or more branches.
+struct arm_walk {
+    tr::stack<std::size_t> cursors{};
+    tr::stack<std::size_t> heads{};
+    tr::stack<std::size_t> pending{};
+    tr::stack<std::uint32_t> seen{};
+    std::uint32_t round = 0;
+    std::meta::info choice{};
+};
+
+// Gives the heads of the arms: each node that a cursor reaches through the
+// choices below it.  A choice of one branch is a keyed step, and a choice
+// of two or more branches gives one arm for each branch.  Complexity:
+// linear in the nodes that the cursors reach.
+consteval void expand_arms_(tr::graph_view const& graph, arm_walk& walk) {
+    ++walk.round;
+    walk.heads.top = 0;
+    walk.pending.top = 0;
+    for (std::size_t const cursor : walk.cursors)
+        tr::push(walk.pending, cursor);
+    while (walk.pending.top != 0) {
+        --walk.pending.top;
+        std::size_t const index = walk.pending.items[walk.pending.top];
+        if (walk.seen.items[index] == walk.round) continue;
+        walk.seen.items[index] = walk.round;
+        tr::graph_node const& node = graph.nodes[index];
+        if (node.entry.kind != tr::shape_kind::choice || node.child_count == 0) {
+            tr::push(walk.heads, index);
+            continue;
+        }
+        if (node.child_count > 1 && walk.choice == std::meta::info{}) walk.choice = node.type;
+        for (std::size_t branch = 0; branch < node.child_count; ++branch)
+            tr::push(walk.pending, graph.children[node.first_child + branch]);
+    }
+}
+
+// The next step of the arm at a node, or the fault of a node that the walk
+// cannot read (THE MODEL OF THE CHECK).  The root of a graph is its node 0,
+// so a Loop around the whole local type is the binder of node 0, and its
+// Continue is a back node to node 0.
+[[nodiscard]] consteval ContextFault head_of_arm_(tr::graph_view const& graph, tr::graph_node const& node,
+                                                  net::ProcessId self, tr::stack<std::meta::info> const& roles,
+                                                  arm_head& head) {
+    bool const is_loop_at_top = graph.nodes[0].entry.kind == tr::shape_kind::binder;
+    switch (node.entry.kind) {
+        case tr::shape_kind::terminal:
+            if (node.entry.shape != ^^::fixy::session::End) {
+                return local_fault_(ContextFaultCode::NodeOutsideModel, self, node.type);
+            }
+            head.step = ArmStep::Ends;
+            return ContextFault{};
+        case tr::shape_kind::back:
+            if (!is_loop_at_top || node.next != 0) {
+                return local_fault_(ContextFaultCode::LoopNotWhole, self, graph.nodes[0].type);
+            }
+            head.step = ArmStep::Continues;
+            return ContextFault{};
+        case tr::shape_kind::binder:
+            return local_fault_(ContextFaultCode::LoopNotWhole, self, node.type);
+        case tr::shape_kind::step:
+            break;
+        default:
+            return local_fault_(ContextFaultCode::NodeOutsideModel, self, node.type);
+    }
+    std::meta::info const peer = peer_of_step_(node);
+    if (peer == std::meta::info{}) return local_fault_(ContextFaultCode::NodeOutsideModel, self, node.type);
+    std::uint32_t const place = place_of_role_(roles, peer);
+    if (place == no_place) return local_fault_(ContextFaultCode::PeerOutsideContext, self, peer);
+    bool const is_send = node.entry.direction == tr::polarity::output;
+    net::ProcessId const other{place};
+    head.step = ArmStep::Acts;
+    head.act = read_action{.process = self,
+                           .sender = is_send ? self : other,
+                           .receiver = is_send ? other : self,
+                           .move = is_send ? net::Move::Send : net::Move::Receive};
+    return ContextFault{};
+}
+
 // Pushes the actions of the local type of one role, after the actions of
 // the roles before it, and sets the shape of the role, or gives the fault of
-// the first node that the walk cannot read (THE MODEL OF THE CHECK).  The
-// root of a graph is its node 0, so a Loop around the whole local type is
-// the binder of node 0, and its Continue is a back node to node 0.
-// Complexity: linear in the distinct nodes of the local type.
+// the first node that the walk cannot read (THE MODEL OF THE CHECK, THE
+// UNION OF THE ARMS).  Complexity: O(N^2) for N distinct nodes of the local
+// type at most, because each round reads each node at most one time, and a
+// round passes one action of each arm.
 [[nodiscard]] consteval ContextFault read_local_(std::meta::info local, net::ProcessId self,
                                                  tr::stack<std::meta::info> const& roles,
                                                  tr::stack<read_action>& actions, RunShape& shape) {
@@ -214,46 +337,42 @@ template <std::meta::info Family>
     }
     std::size_t const first_action = actions.top;
     bool const is_loop_at_top = graph.nodes[0].entry.kind == tr::shape_kind::binder;
-    // The walk passes each binder only at the root, and it stops at each back
-    // node, so it visits each node at most one time.
-    std::size_t index = is_loop_at_top ? graph.nodes[0].next : 0;
-    for (std::size_t visits = 0; visits <= graph.nodes.size(); ++visits) {
-        tr::graph_node const& node = graph.nodes[index];
-        if (node.entry.kind == tr::shape_kind::terminal) {
-            if (node.entry.shape != ^^::fixy::session::End) {
-                return local_fault_(ContextFaultCode::NodeOutsideModel, self, node.type);
+    arm_walk walk{};
+    tr::make_room(walk.seen, graph.nodes.size());
+    for (std::size_t index = 0; index < graph.nodes.size(); ++index)
+        walk.seen.items[index] = 0;
+    tr::push(walk.cursors, is_loop_at_top ? graph.nodes[0].next : std::size_t{0});
+    // Each round passes one action, and no path through the actions of a
+    // local type repeats a node before its back node, so the walk ends
+    // within one round for each node.
+    for (std::size_t rounds = 0; rounds <= graph.nodes.size(); ++rounds) {
+        expand_arms_(graph, walk);
+        arm_head first{};
+        for (std::size_t place = 0; place < walk.heads.top; ++place) {
+            arm_head head{};
+            ContextFault const fault = head_of_arm_(graph, graph.nodes[walk.heads.items[place]], self, roles, head);
+            if (fault.is_fault()) return fault;
+            if (place == 0) first = head;
+            if (!is_same_wait_(head, first)) {
+                std::meta::info const choice = walk.choice == std::meta::info{} ? local : walk.choice;
+                return local_fault_(ContextFaultCode::ArmsWaitDifferently, self, choice);
             }
+        }
+        if (first.step == ArmStep::Ends) {
             shape = actions.top == first_action ? RunShape::NoAction : RunShape::RunsOnce;
             return ContextFault{};
         }
-        if (node.entry.kind == tr::shape_kind::back) {
-            if (!is_loop_at_top || node.next != 0 || actions.top == first_action) {
+        if (first.step == ArmStep::Continues) {
+            if (actions.top == first_action) {
                 return local_fault_(ContextFaultCode::LoopNotWhole, self, graph.nodes[0].type);
             }
             shape = RunShape::Loops;
             return ContextFault{};
         }
-        if (node.entry.kind == tr::shape_kind::binder) {
-            return local_fault_(ContextFaultCode::LoopNotWhole, self, node.type);
-        }
-        if (node.entry.kind == tr::shape_kind::choice && node.child_count == 1) {
-            index = graph.children[node.first_child];
-            continue;
-        }
-        if (node.entry.kind != tr::shape_kind::step) {
-            return local_fault_(ContextFaultCode::NodeOutsideModel, self, node.type);
-        }
-        std::meta::info const peer = peer_of_step_(node);
-        if (peer == std::meta::info{}) return local_fault_(ContextFaultCode::NodeOutsideModel, self, node.type);
-        std::uint32_t const place = place_of_role_(roles, peer);
-        if (place == no_place) return local_fault_(ContextFaultCode::PeerOutsideContext, self, peer);
-        bool const is_send = node.entry.direction == tr::polarity::output;
-        net::ProcessId const other{place};
-        tr::push(actions, read_action{.process = self,
-                                      .sender = is_send ? self : other,
-                                      .receiver = is_send ? other : self,
-                                      .move = is_send ? net::Move::Send : net::Move::Receive});
-        index = node.next;
+        tr::push(actions, first.act);
+        walk.cursors.top = 0;
+        for (std::size_t place = 0; place < walk.heads.top; ++place)
+            tr::push(walk.cursors, graph.nodes[walk.heads.items[place]].next);
     }
     return local_fault_(ContextFaultCode::NodeOutsideModel, self, local);
 }
@@ -417,8 +536,8 @@ consteval void push_name_(tr::stack<char>& text, net::NetName name) {
                 .put_name(role_name())
                 .put("' holds a node that the check does not read: ")
                 .put_name(name_of_type_(fault.type))
-                .put(".  The check reads End, one Loop around the whole type with its Continue, and the Send and "
-                     "Recv steps of a PeerMsg.");
+                .put(".  The check reads End, one Loop around the whole type with its Continue, the Send and Recv "
+                     "steps of a PeerMsg, and a Select or an Offer whose arms wait the same way.");
         case ContextFaultCode::PeerOutsideContext:
             return net::NetVerdict::refuse("context: the local type of the role '")
                 .put_name(role_name())
@@ -438,6 +557,12 @@ consteval void push_name_(tr::stack<char>& text, net::NetName name) {
                 .put_name(name_of_role_(fault.type))
                 .put("' runs one time, and a channel joins them.  Along each channel the two roles loop, or the "
                      "two run one time.");
+        case ContextFaultCode::ArmsWaitDifferently:
+            return net::NetVerdict::refuse("context: a choice of the role '")
+                .put_name(role_name())
+                .put("' has arms that wait on other channels, or that end in other ways: ")
+                .put_name(name_of_type_(fault.type))
+                .put(".  Do a check of one context for each set of arms that the roles take together.");
         default:
             break;
     }
