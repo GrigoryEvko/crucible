@@ -63,8 +63,8 @@ struct[[= ::fixy::derive_protocol{}]] Wide {
     uint32_t num_inputs;
     uint32_t num_outputs;
     uint8_t op_flags;
-    uint8_t pad[7];
-    int64_t scalars[5];
+    ::fixy::FixedArray<uint8_t, 7> pad{};
+    ::fixy::FixedArray<int64_t, 5> scalars{};
 };
 
 // The count of records of a batch row.
@@ -364,8 +364,8 @@ int main() {
         w.num_inputs = 2;
         w.num_outputs = 1;
         w.op_flags = 0x1;
-        w.scalars[0] = 1;
-        w.scalars[1] = 2;
+        w.scalars.at(::fixy::index<0>()) = 1;
+        w.scalars.at(::fixy::index<1>()) = 2;
         return w;
     };
 
