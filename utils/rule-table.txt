@@ -441,6 +441,7 @@ enforce test/layer/checks/crucible/warden/ error
 enforce test/layer/checks/fixy/channels/ error
 enforce test/layer/checks/fixy/check/ error
 enforce test/layer/checks/foundation/algebra/net/ error
+enforce test/layer/checks/foundation/core/ error
 enforce test/layer/checks/foundation/os/ error
 enforce test/memory_neg/ error
 enforce test/mimic_neg/ error
