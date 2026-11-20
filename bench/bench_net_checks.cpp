@@ -14,14 +14,18 @@
 // linear or near linear in its input, so no known method is faster by more
 // than a constant:
 //   - the sort of Kahn over the wires of the chain, for the dataflow
-//   - the union-find over the agents of the chain, for the forest
-//   - the union-find over the agents and the wires of the chain, one edge for
-//     each port, for the criterion of a net with no par group
+//   - the union-find over the agents of the chain, for the forest, and for
+//     the criterion of a net with no par group.  The graph of the agents and
+//     the wires, with one edge for each port, is the graph of the agents with
+//     each wire cut in two, so it is a tree exactly when the agents and the
+//     wires form one tree
 //   - the contraction of Danos by passes over the fork tree, for the
 //     criterion with par groups
 //   - the walk of the principal ports of the chain, for the vicious circles
-//   - the sort of Kahn over the edges with no token of the marked graph of
-//     the ring, for the liveness
+//   - the sort of Kahn over a list of the edges with no token of the marked
+//     graph of the ring, for the liveness, and the sort over the same edges
+//     read from the arrays of the steps, as the body reads them, with no check
+//     of the names, the sides and the ranges of the system
 //   - the walk of the chain from its boundary agent with an explicit stack,
 //     for the canonical form.  It folds the same count of words into four
 //     chains, as the body does, and its word of a kind is the index of the
@@ -312,47 +316,6 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the plain loops over the nets and the ri
     return joined;
 }
 
-// The criterion of a net with no par group as a plain union-find: the graph
-// of the 1,000 agents and the 999 wires of the chain, with one edge from each
-// agent to the wire of each of its ports, is a tree.  Vertex 1000 + w is wire
-// w.  Gives 1 for a tree, and 0 for a cycle or a second part.
-[[gnu::noipa]] std::uint32_t check_tree_by_union_find(LineNet const& chain) noexcept {
-    std::uint32_t parent[1999]{};
-    std::uint32_t size[1999]{};
-    for (std::uint32_t vertex = 0; vertex < 1999; ++vertex) {
-        parent[vertex] = vertex;
-        size[vertex] = 1;
-    }
-    auto const find = [&](std::uint32_t vertex) noexcept {
-        while (parent[vertex] != vertex) {
-            parent[vertex] = parent[parent[vertex]];
-            vertex = parent[vertex];
-        }
-        return vertex;
-    };
-    std::uint32_t parts = 1999;
-    // Joins an agent and a wire.  False when the two are in one part.
-    auto const join = [&](AgentId agent, std::uint32_t wire_vertex) noexcept {
-        std::uint32_t left = find(net::index_of(agent));
-        std::uint32_t right = find(wire_vertex);
-        if (left == right) return false;
-        if (size[left] < size[right]) {
-            std::uint32_t const smaller = left;
-            left = right;
-            right = smaller;
-        }
-        parent[right] = left;
-        size[left] += size[right];
-        --parts;
-        return true;
-    };
-    for (std::uint32_t index = 0; index < 999; ++index) {
-        Wire const& wire = chain.wires[index];
-        if (!join(wire.left.agent, 1000 + index) || !join(wire.right.agent, 1000 + index)) return 0;
-    }
-    return parts == 1 ? 1 : 0;
-}
-
 // The criterion of Danos and Regnier on the fork tree as a plain contraction
 // by passes.  Vertex a is agent a, and vertex 1001 + w is wire w.  The edge of
 // each port outside a par group joins its agent and its wire.  Then each pass
@@ -578,6 +541,101 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the plain loops over the nets and the ri
     return order_count == node_count ? order_count : 0;
 }
 
+// The liveness of the ring as a plain sort of Kahn over the same edges, read
+// from the arrays of the steps: each action leaves an edge to the node of the
+// next action of its process, and on a channel of capacity k, send s leaves
+// an edge to receive s, and receive s to send s + k.  The send of a
+// rendezvous names the receive of its node, whose process goes on after the
+// node.  Gives the count of the nodes that the sort orders, or 0 when a cycle
+// leaves a node out.
+[[gnu::noipa]] std::uint32_t sort_steps_by_kahn(RingSystem const& ring) noexcept {
+    constexpr std::uint32_t none = 0xFFFFFFFFu;
+    std::uint32_t step_of[4000]{};
+    std::uint32_t step_count[2000]{};
+    for (std::uint32_t index = 0; index < 4000; ++index) {
+        net::Action const& act = ring.actions[index];
+        std::uint32_t const side =
+            2 * static_cast<std::uint32_t>(act.channel) + (act.move == net::Move::Send ? 0u : 1u);
+        step_of[index] = step_count[side];
+        ++step_count[side];
+    }
+    std::uint32_t step_first[1000]{};
+    std::uint32_t steps = 0;
+    for (std::uint32_t channel = 0; channel < 1000; ++channel) {
+        step_first[channel] = steps;
+        steps += step_count[2 * channel];
+    }
+    std::uint32_t send_at[4000]{};
+    std::uint32_t receive_at[4000]{};
+    for (std::uint32_t index = 0; index < 4000; ++index) {
+        net::Action const& act = ring.actions[index];
+        std::uint32_t const step = step_first[static_cast<std::uint32_t>(act.channel)] + step_of[index];
+        if (act.move == net::Move::Send) {
+            send_at[step] = index;
+        } else {
+            receive_at[step] = index;
+        }
+    }
+    std::uint32_t node_of[4000]{};
+    std::uint32_t indegree[4000]{};
+    std::uint32_t process_target[4000]{};
+    std::uint32_t channel_target[4000]{};
+    std::uint32_t last_of[1000]{};
+    for (std::uint32_t& slot : last_of)
+        slot = none;
+    std::uint32_t node_count = 0;
+    for (std::uint32_t index = 0; index < 4000; ++index) {
+        net::Action const& act = ring.actions[index];
+        auto const channel = static_cast<std::uint32_t>(act.channel);
+        auto const process = static_cast<std::uint32_t>(act.process);
+        std::uint32_t const capacity = ring.channels[channel].capacity;
+        std::uint32_t const step = step_of[index];
+        std::uint32_t const slot = step_first[channel] + step;
+        bool const is_send = act.move == net::Move::Send;
+        bool const is_joined = !is_send && capacity == 0u;
+        std::uint32_t const node = is_joined ? send_at[slot] : index;
+        node_of[index] = node;
+        if (!is_joined) ++node_count;
+        process_target[index] = none;
+        if (last_of[process] != none) {
+            process_target[last_of[process]] = node;
+            ++indegree[node];
+        }
+        last_of[process] = index;
+        if (capacity == 0u) {
+            channel_target[index] = is_send ? receive_at[slot] : none;
+            continue;
+        }
+        if (!is_send || step >= capacity) ++indegree[index];
+        if (is_send) {
+            channel_target[index] = receive_at[slot];
+        } else {
+            channel_target[index] = capacity < step_count[2 * channel] - step ? send_at[slot + capacity] : none;
+        }
+    }
+    std::uint32_t order[4000]{};
+    std::uint32_t order_count = 0;
+    for (std::uint32_t index = 0; index < 4000; ++index) {
+        if (node_of[index] == index && indegree[index] == 0u) order[order_count++] = index;
+    }
+    auto const release = [&](std::uint32_t target) noexcept {
+        if (target == none) return;
+        if (--indegree[target] == 0u) order[order_count++] = target;
+    };
+    for (std::uint32_t read = 0; read < order_count; ++read) {
+        std::uint32_t const node = order[read];
+        release(process_target[node]);
+        std::uint32_t const waiting = channel_target[node];
+        if (waiting == none) continue;
+        if (node_of[waiting] == node) {
+            release(process_target[waiting]);
+        } else {
+            release(waiting);
+        }
+    }
+    return order_count == node_count ? order_count : 0;
+}
+
 // The canonical form of the chain as plain loops: the peer of each port, the
 // boundary agents first, a walk from each with an explicit stack, and the fold
 // of the entry of each number into chain n % 4, as the body folds it.  Gives
@@ -684,7 +742,7 @@ void bench_chain(LineNet const& chain) {
     if (sort_by_kahn(chain) != 1000 || join_by_union_find(chain) != 999) {
         fixy::fatal("the references read the chain as a forest with no cycle of waits");
     }
-    if (check_tree_by_union_find(chain) != 1 || walk_principal_ports(chain) != 1 || number_by_walk(chain) == 0) {
+    if (walk_principal_ports(chain) != 1 || number_by_walk(chain) == 0) {
         fixy::fatal("the references read the chain as a tree with no vicious circle and with a canonical form");
     }
     if (net::find_canonical_form(chain).fault.is_fault()) fixy::fatal("the chain has a canonical form");
@@ -738,9 +796,6 @@ void bench_chain(LineNet const& chain) {
     bench::Report const union_find =
         measure_row(bench::Run{"union-find chain"}, [&] { bench::do_not_optimize(join_by_union_find(chain)); });
     print_row("reference union-find, chain of 1000", union_find);
-    bench::Report const tree_check =
-        measure_row(bench::Run{"tree check chain"}, [&] { bench::do_not_optimize(check_tree_by_union_find(chain)); });
-    print_row("reference tree check by union-find, chain of 1000", tree_check);
     bench::Report const principal_walk =
         measure_row(bench::Run{"principal walk chain"}, [&] { bench::do_not_optimize(walk_principal_ports(chain)); });
     print_row("reference walk of the principal ports, chain of 1000", principal_walk);
@@ -752,7 +807,7 @@ void bench_chain(LineNet const& chain) {
     print_ratio("find_canonical_form / find_wiring_fault", form, wiring);
     print_ratio("find_dataflow_fault sealed / reference sort of Kahn", sealed_dataflow, kahn);
     print_ratio("find_forest_fault sealed / reference union-find", sealed_forest, union_find);
-    print_ratio("find_proof_net_fault sealed / reference tree check by union-find", sealed_proof_net, tree_check);
+    print_ratio("find_proof_net_fault sealed / reference union-find", sealed_proof_net, union_find);
     print_ratio("find_vicious_fault sealed / reference walk of the principal ports", sealed_vicious, principal_walk);
     print_ratio("find_canonical_form / reference canonical walk", form, canonical_walk);
     print_ratio("find_canonical_form sealed / reference canonical walk", sealed_form, canonical_walk);
@@ -776,14 +831,20 @@ void bench_fork_tree(ForkNet const& tree) {
 }
 
 void bench_ring(RingSystem const& ring) {
-    if (sort_marked_by_kahn(ring) == 0) fixy::fatal("the reference reads the ring as a live system");
+    if (sort_marked_by_kahn(ring) == 0 || sort_steps_by_kahn(ring) == 0) {
+        fixy::fatal("the references read the ring as a live system");
+    }
     bench::Report const liveness =
         measure_row(bench::Run{"liveness ring"}, [&] { bench::do_not_optimize(net::find_liveness_fault(ring).code); });
     print_row("find_liveness_fault, ring of 4000 actions", liveness);
     bench::Report const marked_kahn =
         measure_row(bench::Run{"marked kahn ring"}, [&] { bench::do_not_optimize(sort_marked_by_kahn(ring)); });
     print_row("reference sort of Kahn of the marked graph, ring of 4000 actions", marked_kahn);
+    bench::Report const steps_kahn =
+        measure_row(bench::Run{"steps kahn ring"}, [&] { bench::do_not_optimize(sort_steps_by_kahn(ring)); });
+    print_row("reference sort of Kahn over the arrays of the steps, ring of 4000 actions", steps_kahn);
     print_ratio("find_liveness_fault / reference sort of Kahn of the marked graph", liveness, marked_kahn);
+    print_ratio("find_liveness_fault / reference sort of Kahn over the arrays of the steps", liveness, steps_kahn);
 }
 
 }  // namespace
