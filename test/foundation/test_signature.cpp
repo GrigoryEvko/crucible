@@ -14,6 +14,7 @@
 // the header's wall.
 
 #include <fixy/Core.h>
+#include <foundation/Quarantine.h>
 #include <foundation/reflect/Signature.h>
 
 #include <type_traits>
@@ -43,7 +44,9 @@ void witness_unary_int(int) noexcept {}
 void witness_unary_int_ref(int&) noexcept {}
 void witness_unary_int_rref(int&&) noexcept {}
 void witness_unary_int_cref(int const&) noexcept {}
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the signature reflection reads a raw pointer parameter")
 void witness_unary_int_ptr(int*) noexcept {}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 void witness_binary(int, double) noexcept {}
 void witness_ternary(int, double, char) noexcept {}

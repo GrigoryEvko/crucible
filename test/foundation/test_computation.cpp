@@ -1,6 +1,7 @@
 // Sentinel TU for Computation: both smoke tests, the size and wrapper
 // pins, and the substrate view.
 
+#include <foundation/Quarantine.h>
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>
@@ -283,9 +284,11 @@ struct HoldsCapability {
     fe::Capability<Effect::IO, fe::Bg> held;
 };
 struct DerivesCapability : fe::Capability<Effect::IO, fe::Bg> {};
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the walk of the extract gate reads the target of a raw pointer member")
 struct PointsAtCapability {
     fe::Capability<Effect::IO, fe::Bg>* held = nullptr;
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 struct HoldsPermissionByReference {
     fp::Permission<PureRegionTag> const& held;
 };
@@ -323,10 +326,12 @@ static_assert(!fe::detail::extract_admits_payload_v<fe::Computation<Row<>, Value
               "whose arguments name nothing");
 
 // The admitting direction for the same shapes, with no authority inside.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the walk of the extract gate reads the target of a raw pointer member")
 struct HoldsPlain {
     PlainPayload inner;
     int* pointer = nullptr;
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(fe::detail::extract_admits_payload_v<HoldsPlain>);
 static_assert(requires(fe::Computation<Row<>, HoldsPlain> const& c) { c.extract(); });
 

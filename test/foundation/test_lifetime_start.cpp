@@ -8,6 +8,7 @@
 // stores do not overlap.  A Release build then reads the first store.
 
 #include <foundation/Lifetime.h>
+#include <foundation/Quarantine.h>
 
 #include <bit>
 #include <cstddef>
@@ -23,6 +24,7 @@ struct Pair {
     std::uint32_t second;
 };
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the checked lifetime start reads raw bytes through pointers of two types")
 // An integer store, then a float store through a second pointer to the same
 // bytes, then a read through a new integer over the bytes.  The function is
 // not inlined, so GCC cannot see that the two pointers are equal.  Returns
@@ -62,6 +64,7 @@ struct Pair {
     if (!none.empty()) return 1;
     return static_cast<const void*>(none.data()) == static_cast<const void*>(storage) ? 0 : 2;
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 }  // namespace
 

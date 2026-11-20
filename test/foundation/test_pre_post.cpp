@@ -11,9 +11,8 @@
 // that as false, and it checks each shape with a violated predicate too.
 
 #include <fixy/Core.h>
+#include <foundation/Quarantine.h>
 #include <foundation/contracts/Post.h>
-
-#include <contracts>
 
 #include <cstdint>
 #include <type_traits>
@@ -55,10 +54,12 @@ struct R {
 }
 
 // Shape 5: struct through a const pointer.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a precondition reads a struct through a raw pointer and tests it for null")
 [[nodiscard]] constexpr std::uint64_t pre_struct_cptr(S const* s) noexcept {
     CRUCIBLE_PRE(s != nullptr && s->nz());
     return s->lo;
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // Shape 6: post on a named scalar result.
 [[nodiscard]] constexpr int post_scalar(int const x) noexcept {

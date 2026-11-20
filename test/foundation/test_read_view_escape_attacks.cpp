@@ -6,6 +6,7 @@
 // static assertion.  An attack that still succeeds is an entry of the
 // ledger at the foot of this file, and the ledger only shrinks.
 
+#include <foundation/Quarantine.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 
@@ -15,7 +16,6 @@
 #include <coroutine>
 #include <cstdlib>
 #include <functional>
-#include <string_view>
 #include <utility>
 
 namespace read_view_escape_attacks {
@@ -27,12 +27,14 @@ struct Region {
 };
 using View = fp::ReadView<Region>;
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: an attack carries a view out of its door in a std type or a raw address")
 struct HoldsUntyped {
     void const* address;
 };
 struct HoldsCall {
     void (*call)();
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 struct Plain {
     int count;
     double mean;
@@ -43,10 +45,12 @@ struct Plain {
 // Type erasure keeps a view behind an untyped address, so a result that
 // holds one is refused: std::function, std::move_only_function, std::any,
 // a coroutine handle, a pointer to void, and a class with such a member.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: an attack carries a view out of its door in a std type or a raw address")
 static_assert(!fp::ReadViewResultStaysInside<std::function<void()>>);
 static_assert(!fp::ReadViewResultStaysInside<std::move_only_function<void()>>);
 static_assert(!fp::ReadViewResultStaysInside<std::any>);
 static_assert(!fp::ReadViewResultStaysInside<std::coroutine_handle<>>);
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(!fp::ReadViewResultStaysInside<void const*>);
 static_assert(!fp::ReadViewResultStaysInside<HoldsUntyped>);
 static_assert(!fp::ReadViewResultStaysInside<HoldsCall>);
@@ -58,7 +62,7 @@ static_assert(!fp::ReadViewResultStaysInside<View const&>);
 // A plain value leaves the frame.
 static_assert(fp::ReadViewResultStaysInside<int>);
 static_assert(fp::ReadViewResultStaysInside<Plain>);
-static_assert(fp::ReadViewResultStaysInside<std::pair<int, double>>);
+static_assert(fp::ReadViewResultStaysInside<::fixy::Record<int, double>>);
 
 // ── The ledger ───────────────────────────────────────────────────────
 
@@ -92,11 +96,13 @@ int main() {
 
     // The ledger entry reproduces: the address escapes through a capture.
     // It is never used after the door returns.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: an attack carries a view out of its door in a std type or a raw address")
     void const* leaked = nullptr;
     auto back = fp::with_read_view(std::move(source), [&leaked](auto const& view) noexcept { leaked = &view; });
     expect(leaked != nullptr,
            "stale ledger entry: a body no longer stores the address of its view through a capture, delete it");
     (void)back;
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
     if (failures != 0) return EXIT_FAILURE;
     ::fixy::report(::fixy::Sink::Out,

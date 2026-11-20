@@ -8,12 +8,11 @@
 // still succeeds is an entry of the ledger at the foot of this file, and
 // the ledger only shrinks.
 
+#include <foundation/Quarantine.h>
 #include <foundation/reflect/Hash.h>
 
 #include <fixy/Core.h>
 
-#include <array>
-#include <bit>
 #include <cstdint>
 #include <cstdlib>
 #include <meta>
@@ -32,9 +31,11 @@ template <int& Reference>
 struct HoldsReference {};
 template <std::meta::info Named>
 struct HoldsReflection {};
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the identity walk reads a pointer, a member pointer and a bfloat16 value")
 struct Address {
     int const* pointer;
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 struct Named {};
 
 // A variable and a function with internal linkage.  Every translation
@@ -87,8 +88,10 @@ static_assert(!HasStableIdentity<HoldsBoundReference<named_bound>>);
 struct Member {
     int field;
 };
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the identity walk reads a pointer, a member pointer and a bfloat16 value")
 using NullMember = int Member::*;
 inline constexpr NullMember null_member = nullptr;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // Two different values that print one text: a NaN prints without its
 // payload, and a union value without its active member.  The walk
@@ -100,7 +103,7 @@ union Either {
 struct HoldsEither {
     Either either;
 };
-inline constexpr double payload_nan = std::bit_cast<double>(std::uint64_t{0x7ff8000000001234});
+inline constexpr double payload_nan = ::fixy::bit_cast<double>(std::uint64_t{0x7ff8000000001234});
 static_assert(!HasStableIdentity<Holds<payload_nan>>);
 static_assert(!HasStableIdentity<Holds<Either{.first = 1}>>);
 static_assert(!HasStableIdentity<Holds<HoldsEither{Either{.second = 1}}>>);
@@ -157,11 +160,11 @@ static_assert(!HasStableIdentity<decltype(local_of<Named>())>);
 // type or guard can refuse it.  It is empty, and it only shrinks.
 
 struct KnownLimit {
-    std::string_view attack;
-    std::string_view reason;
+    ::fixy::TextView attack;
+    ::fixy::TextView reason;
 };
 
-inline constexpr std::array<KnownLimit, 0> kLedger{};
+inline constexpr ::fixy::View<KnownLimit const> kLedger{};
 
 }  // namespace identity_attacks
 
@@ -188,8 +191,10 @@ int main() {
            "a char16_t and an unsigned char of one value share an id");
     expect(stable_type_id(^^Holds<null_member>) != stable_type_id(^^Holds<-1>),
            "a null member pointer and the int -1 share an id");
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the identity walk reads a pointer, a member pointer and a bfloat16 value")
     expect(stable_type_id(^^Holds<static_cast<std::bfloat16_t>(1.5)>) != stable_type_id(^^Holds<1.5>),
            "a bfloat16 and a double of one value share an id");
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     expect(stable_type_id(^^Holds<1>) == stable_type_id(^^Holds<1>), "one value gives two ids");
 
     if (failures != 0) return EXIT_FAILURE;
