@@ -1123,7 +1123,9 @@ foundation_neg_compile_test(neg_fail_closed_unique_target_specialized
 foundation_test(test_permissions_compile)
 foundation_test(test_permission_shared)
 foundation_test(test_permission_shared_xor_exclusive)
+# The reader of a loan runs on the thread door of fixy.
 foundation_test(test_read_view)
+target_link_libraries(test_read_view PRIVATE fixy)
 # Legal C++ that tries to carry a view out of the door.  An attack that
 # still succeeds is a row of the shrink-only ledger in the file.
 foundation_test(test_read_view_escape_attacks)
@@ -1973,7 +1975,7 @@ foreach(_claim_library producer_claim_winner producer_claim_owner)
 endforeach()
 foundation_test(test_producer_claim_across_libraries)
 target_link_libraries(test_producer_claim_across_libraries PRIVATE
-  test_producer_claim_winner test_producer_claim_owner)
+  test_producer_claim_winner test_producer_claim_owner fixy)
 foundation_neg_compile_test(neg_host_owner_defined_again
   "redefinition of .struct foundation::effects::host::ForegroundOwner."
   "neg_host_owner_defined_again.cpp:9")

@@ -1,5 +1,7 @@
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -7,9 +9,7 @@
 #include <foundation/permissions/ReadView.h>
 #include <foundation/permissions/SharedPermission.h>
 
-#include <atomic>
 #include <cstdint>
-#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -261,26 +261,31 @@ void test_door_over_a_share_guard(::fixy::TestRunnerCtx const& test) {
 }
 
 // A loan travels to a reader on another thread.  The lender holds a
-// LentPermission, which gives no access, until the loan comes back.
+// LentPermission, which gives no access, until the loan comes back.  The
+// reader runs on the thread door, and the join of the door orders its
+// reads before the check.
 void test_loan_across_threads(::fixy::TestRunnerCtx const& test) {
     auto token = mint_permission_root<ConfigData>();
     auto [loan, lent] = mint_read_loan(std::move(token));
 
-    std::atomic<int> reads{0};
+    ::fixy::Atomic<std::uint32_t, ::fixy::Counter> reads{0};
     ReadLoan<ConfigData, decltype(token)::brand_type> returned = [&] {
         auto reader_loan = std::move(loan);
-        std::jthread reader{[&reads, &reader_loan] {
+        auto reader = [&reads, &reader_loan] noexcept {
             for (int round = 0; round < 3; ++round) {
                 reader_loan = with_read_view(std::move(reader_loan), [&reads](auto const&) noexcept {
-                    reads.fetch_add(1, std::memory_order_relaxed);
+                    static_cast<void>(reads.fetch_add_relaxed(1));
                 });
             }
-        }};
-        reader.join();
+        };
+        ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+        ::fixy::thread::run_joined_raw_probe(ctx, test, "the reader takes the loan by reference on purpose",
+                                             ::fixy::thread::ThreadOptions{}, reader)
+            .expect("the thread door starts the reader");
         return reader_loan;
     }();
 
-    CRUCIBLE_TEST_ASSERT(test, reads.load() == 3);
+    CRUCIBLE_TEST_ASSERT(test, reads.load_acquire() == 3);
     auto back = mint_permission_after_loan(std::move(lent), std::move(returned));
     static_assert(std::is_same_v<decltype(back), decltype(token)>, "the token comes back with its own brand");
     ::foundation::linear::drop(std::move(back));

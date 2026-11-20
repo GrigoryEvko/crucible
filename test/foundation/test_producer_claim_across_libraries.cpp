@@ -17,8 +17,9 @@
 #include "producer_claim_libraries.h"
 
 #include <fixy/Core.h>
-
-#include <thread>
+#include <fixy/Ctx.h>
+#include <fixy/os/ThreadTasks.h>
+#include <foundation/effects/Effect.h>
 
 namespace {
 
@@ -34,7 +35,12 @@ void cycle_on_this_thread() {
 
 int main() {
     cycle_on_this_thread();
-    { std::jthread second_thread{cycle_on_this_thread}; }
+    auto second_cycle = [] noexcept { cycle_on_this_thread(); };
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    ::fixy::thread::run_joined_raw_probe(ctx, test, "the second cycle wins the claim on a thread of its own",
+                                         ::fixy::thread::ThreadOptions{}, second_cycle)
+        .expect("the thread door starts the second cycle");
     ::fixy::report(::fixy::Sink::Out,
                    "test_producer_claim_across_libraries: a claim won in one shared object and destroyed in another "
                    "leaves the record it entered\n");

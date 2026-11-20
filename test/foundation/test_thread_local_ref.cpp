@@ -7,14 +7,13 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/core/SipHash.h>
 #include <foundation/core/StableIdentity.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/Hash.h>
 
-#include <bit>
 #include <cstdint>
-#include <thread>
 
 // A tag needs a stable identity, so the tags stand in a named namespace.
 namespace thread_local_ref_test {
@@ -90,7 +89,7 @@ using DoubleOther = fnd::ThreadLocalRef<thread_local_ref_test::OtherTag, double>
 [[nodiscard]] int floating_cell_round_trips() {
     const DoubleOther other{};
     other.store(2.5);
-    const bool same_bits = std::bit_cast<std::uint64_t>(other.peek()) == std::bit_cast<std::uint64_t>(2.5);
+    const bool same_bits = ::fixy::bit_cast<std::uint64_t>(other.peek()) == ::fixy::bit_cast<std::uint64_t>(2.5);
     other.reset();
     return same_bits ? 0 : 1;
 }
@@ -106,18 +105,24 @@ struct FirstValues {
 };
 
 // A second thread starts each cell at T{}: an int and a struct of scalars.
-// Its write does not reach the cell of this thread.
+// Its write does not reach the cell of this thread.  The worker runs on the
+// thread door, and the join of the door orders its writes before the reads.
 [[nodiscard]] int each_thread_has_its_own_cell() {
     const IntCounter counter{};
     counter.store(5);
     FirstValues seen_by_worker{};
     {
-        std::jthread worker{[&seen_by_worker] {
+        auto worker = [&seen_by_worker] noexcept {
             const IntCounter worker_counter{};
             seen_by_worker.counter = worker_counter.peek();
             seen_by_worker.scalars_bits = ::fixy::bit_cast<std::uint64_t>(ScalarsCell{}.peek());
             worker_counter.store(99);
-        }};
+        };
+        const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
+        const ::fixy::BgLoadCtx ctx{::foundation::effects::testing::bg()};
+        ::fixy::thread::run_joined_raw_probe(ctx, test, "the worker writes the values of this thread on purpose",
+                                             ::fixy::thread::ThreadOptions{}, worker)
+            .expect("the thread door starts the worker");
     }
     const bool isolated = seen_by_worker.counter == 0 && counter.peek() == 5;
     counter.reset();
