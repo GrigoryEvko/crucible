@@ -107,9 +107,9 @@
 //                  after the rounds show the memory that ended threads keep
 //   The rows of the base:
 //   class          one thread takes and releases a block of each of the 64
-//                  size classes of the allocator design: 16 to 128 bytes in
-//                  steps of 16, then four classes for each doubling to
-//                  2 MiB.  The block is a Constant of the base, and a Block
+//                  size classes of the base (foundation/alloc/Layout.h): 16
+//                  to 128 bytes in steps of 16, then four classes for each
+//                  doubling to 2 MiB.  The block is a Constant of the base, and a Block
 //                  of a reference
 //   pair           one producer and one consumer with blocks of 64 bytes,
 //                  the consumer in the L3 group of the producer, in another
@@ -2013,15 +2013,15 @@ void run_round_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const>
 
 // ── The rows of one thread ─────────────────────────────────────────────
 
-// The bytes of the size class Class of the allocator design: 16 to 128
-// bytes in steps of 16, then four classes for each doubling to 2 MiB.
-[[nodiscard]] consteval std::size_t class_bytes(std::size_t size_class) noexcept {
-    if (size_class < 8) return 16 * (size_class + 1);
-    std::size_t const above = size_class - 8;
-    return (std::size_t{128} << (above / 4)) * (4 + above % 4 + 1) / 4;
+// The bytes of the slot of the size class at the position position of the
+// classes of the base, from 0 (THE SIZE CLASSES of foundation/alloc/Layout.h):
+// 16 to 128 bytes in steps of 16, then four classes for each doubling to
+// 2 MiB.
+[[nodiscard]] consteval std::size_t class_bytes(std::size_t position) noexcept {
+    return ::fixy::slot_bytes(::fixy::SizeClass{static_cast<std::uint8_t>(position + 1)}).raw();
 }
 
-constexpr std::size_t kSizeClasses = 64;
+constexpr std::size_t kSizeClasses = ::fixy::kSizeClassCount;
 
 // The run of the row of one size class on the CPU cpu.  One take and release
 // of a small block is shorter than the resolution of the clock, so the

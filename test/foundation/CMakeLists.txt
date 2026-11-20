@@ -2821,11 +2821,14 @@ foundation_neg_compile_test(neg_core_pack_index_of_twice
 
 # ── The Ref family: the allocation door and Box ───────────────────────
 #
-# The allocation door refuses a request of zero bytes and an alignment that
-# is not a power of two.  A Box owns one object on the heap and comes only
-# from mint_box, which takes the allocation capability.  A copy and a borrow
-# of a temporary are refused.
+# The allocation door takes a Layout, whose doors refuse zero bytes and an
+# alignment that is not a power of two.  The run-time path of the size
+# classes of the layout agrees with the slots of the classes for each size to
+# 2 MiB.  A Box owns one object on the heap and comes only from mint_box,
+# which takes the allocation capability.  A copy and a borrow of a temporary
+# are refused.
 foundation_test(test_core_heap)
+foundation_test(test_alloc_size_class)
 foundation_test(test_core_ref)
 
 # A Link gives its object as a Ref of const through a const Link, and its

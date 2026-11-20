@@ -76,4 +76,92 @@ static_assert(std::is_nothrow_copy_constructible_v<Layout>);
 static_assert(!std::is_trivially_copyable_v<Layout>);
 static_assert(!std::is_implicit_lifetime_v<Layout>);
 
+// ── The size classes ───────────────────────────────────────────────────
+
+namespace layout_check {
+
+[[nodiscard]] consteval SizeClass class_at(std::uint8_t value) { return SizeClass{value}; }
+
+[[nodiscard]] consteval std::size_t slot_at(std::uint8_t value) { return slot_bytes(class_at(value)).raw(); }
+
+// The class of a layout of bytes at the alignment, or 0 for none.
+[[nodiscard]] consteval std::uint8_t class_value_for(std::size_t bytes, std::size_t alignment) {
+    core::Option<SizeClass> found =
+        class_for(mint_layout(core::ByteCount{bytes}, Alignment{alignment}).expect("a check gives a layout"));
+    return static_cast<std::uint8_t>(static_cast<core::Option<SizeClass>&&>(found).value_or(SizeClass{0}));
+}
+
+// Each class holds its slot and not one byte more, and the next class takes
+// the next byte.  The slots rise, each is a whole count of 16 bytes, and the
+// slot of a class above 128 bytes is less than 5/4 of the smallest request
+// of the class.  Complexity: O(64).
+[[nodiscard]] consteval bool classes_hold_their_bounds() {
+    for (std::uint8_t value = 1; value <= kSizeClassCount; ++value) {
+        std::size_t const slot = slot_at(value);
+        if (slot % kSlotStepBytes != 0) return false;
+        if (class_value_for(slot, 1) != value) return false;
+        if (value < kSizeClassCount && class_value_for(slot + 1, 1) != value + 1) return false;
+        if (value == 1) continue;
+        std::size_t const smallest = slot_at(static_cast<std::uint8_t>(value - 1)) + 1;
+        if (class_value_for(smallest, 1) != value) return false;
+        if (slot <= kSmallClassBytes) continue;
+        if (slot * 4 >= smallest * 5) return false;
+    }
+    return true;
+}
+
+// For each alignment from 1 byte to 2 MiB and each class bound, the slot of
+// class_for holds the bytes and is a whole count of the alignment, and the
+// class below it does not hold both.  Complexity: O(22 * 64).
+[[nodiscard]] consteval bool classes_hold_each_alignment() {
+    for (std::size_t alignment = 1; alignment <= kLargestSlotBytes; alignment *= 2) {
+        for (std::uint8_t value = 1; value <= kSizeClassCount; ++value) {
+            std::size_t const bytes = slot_at(value);
+            std::uint8_t const found = class_value_for(bytes, alignment);
+            if (found == 0) return false;
+            std::size_t const slot = slot_at(found);
+            if (slot < bytes || slot % alignment != 0) return false;
+            if (found == 1) continue;
+            std::size_t const below = slot_at(static_cast<std::uint8_t>(found - 1));
+            if (below >= bytes && below % alignment == 0) return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace layout_check
+
+static_assert(slot_bytes(SizeClass{1}).raw() == 16);
+static_assert(slot_bytes(SizeClass{8}).raw() == 128);
+static_assert(slot_bytes(SizeClass{9}).raw() == 160);
+static_assert(slot_bytes(SizeClass{12}).raw() == 256);
+static_assert(slot_bytes(SizeClass{32}).raw() == 8192);
+static_assert(slot_bytes(SizeClass{52}).raw() == 256 * 1024);
+static_assert(slot_bytes(SizeClass{64}).raw() == kLargestSlotBytes);
+static_assert(layout_check::classes_hold_their_bounds());
+static_assert(layout_check::classes_hold_each_alignment());
+
+// A request past the largest class, or at an alignment past it, has no class.
+static_assert(layout_check::class_value_for(kLargestSlotBytes + 1, 1) == 0);
+static_assert(layout_check::class_value_for(16, kLargestSlotBytes * 2) == 0);
+static_assert(layout_check::class_value_for(1, 1) == 1);
+static_assert(layout_check::class_value_for(1, 64) == 4);
+
+// The slabs and the bins of the classes at the bounds of each kind.
+static_assert(!is_size_class(SizeClass{0}));
+static_assert(!is_size_class(SizeClass{65}));
+static_assert(slab_kind_of(SizeClass{32}) == SlabKind::small);
+static_assert(slab_kind_of(SizeClass{33}) == SlabKind::medium);
+static_assert(slab_kind_of(SizeClass{52}) == SlabKind::medium);
+static_assert(slab_kind_of(SizeClass{53}) == SlabKind::large);
+static_assert(slab_slots(SizeClass{1}) == 4096);
+static_assert(slab_slots(SizeClass{32}) == 8);
+static_assert(slab_slots(SizeClass{33}) == 204);
+static_assert(slab_slots(SizeClass{52}) == 8);
+static_assert(slab_slots(SizeClass{64}) == 1);
+static_assert(bin_capacity(SizeClass{8}) == 128);
+static_assert(bin_capacity(SizeClass{12}) == 64);
+static_assert(bin_capacity(SizeClass{32}) == 2);
+static_assert(bin_capacity(SizeClass{64}) == 2);
+
 }  // namespace foundation::alloc

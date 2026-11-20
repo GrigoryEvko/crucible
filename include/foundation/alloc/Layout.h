@@ -17,6 +17,16 @@
 //                                  alignment, or an error of LayoutError
 //   layout.bytes(), layout.alignment()
 //
+//   SizeClass                      one of the 64 slot sizes of the allocator
+//                                  of the base, 1 to 64 (THE SIZE CLASSES)
+//   slot_bytes(size_class)         the bytes of one slot of the class
+//   class_for(layout)              the smallest class whose slot holds the
+//                                  bytes and is a whole count of the
+//                                  alignment, or none past 2 MiB
+//   slab_kind_of(size_class)       the kind of the slab of the class
+//   slab_slots(size_class)         the slots of one slab of the class
+//   bin_capacity(size_class)       the slots that the bin of a thread holds
+//
 // THE LAYOUT
 //   The allocation door of foundation/core/Heap.h takes one Layout.  So a
 //   count of bytes and an alignment cannot swap at a call, and no call gives
@@ -37,7 +47,35 @@
 //   register, and no number converts to it.  Its value names a power of two
 //   by its contract, but a cast can name each number.  So mint_layout tests
 //   the power again, and only a Layout holds the fact.
+//
+// THE SIZE CLASSES
+//   Classes 1 to 8 hold 16 to 128 bytes in steps of 16.  Above 128 bytes each
+//   doubling has four classes, at 5/4, 6/4, 7/4 and 2 times the doubling
+//   below, to 2 MiB in class 64.  So a slot above 128 bytes holds less than a
+//   quarter more than the smallest request of its class, the bound of the
+//   classes of jemalloc.  Each slot is a whole count of 16 bytes, and the last
+//   class of each doubling is a power of two.
+//
+//   The class of bytes takes one compare to choose between two formulas, and
+//   each formula has no branch:
+//     to 128 bytes:  (bytes + 15) >> 4
+//     above:         last = bytes - 1, top = the index of the highest bit of
+//                    last, class = (top - 5) * 4 + ((last >> (top - 2)) & 3) + 1
+//   class_for adds one compare of the alignment.  An alignment above 16 steps
+//   up at most three classes, because the last class of a doubling is a power
+//   of two, and that power is a whole count of each smaller power of two.  A
+//   constant layout folds its class at compile time.  Each compare of the
+//   run-time path is one test, because -fharden-compares doubles a compound
+//   condition.
+//
+//   The slab of a class:
+//     small   one unit of 64 KiB, classes 1 to 32 (slots to 8 KiB)
+//     medium  one chunk of 2 MiB, classes 33 to 52 (slots to 256 KiB)
+//     large   a run of units of 64 KiB that holds one slot, classes 53 to 64
+//   The bin of a thread holds 128 slots of a class to 128 bytes, then the
+//   slots of 16 KiB, and at least two slots.
 
+#include <foundation/contracts/Pre.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Quantity.h>
@@ -151,6 +189,128 @@ constexpr auto Layout::of_array(::foundation::core::ElementCount count) noexcept
     std::size_t const rounded = ::foundation::core::align_up(bytes.raw(), step).value_or(0);
     if (rounded == 0 || rounded > kMaxLayoutBytes) return LayoutResult{::foundation::core::err(LayoutError::too_large)};
     return LayoutResult{Layout{bytes, alignment}};
+}
+
+// ── The size classes ───────────────────────────────────────────────────
+
+// One of the 64 slot sizes of the allocator of the base, 1 to 64 (THE SIZE
+// CLASSES).  A value outside 1 to 64 names no class, and each query below
+// refuses it.
+enum class SizeClass : std::uint8_t {
+};
+
+inline constexpr std::uint8_t kSizeClassCount = 64;
+
+// The bytes of the classes 1 to 8, in steps of kSlotStepBytes.
+inline constexpr std::size_t kSlotStepBytes = 16;
+inline constexpr std::size_t kSmallClassBytes = 128;
+
+// The bytes of the largest class, 64.  A larger request has no class.
+inline constexpr std::size_t kLargestSlotBytes = std::size_t{2} << 20;
+
+// The unit of a small or a large slab, and the chunk of a medium slab.
+inline constexpr std::size_t kSlabUnitBytes = std::size_t{64} << 10;
+inline constexpr std::size_t kSlabChunkBytes = std::size_t{2} << 20;
+
+// The last class of each slab kind.
+inline constexpr std::uint8_t kLastSmallClass = 32;
+inline constexpr std::uint8_t kLastMediumClass = 52;
+
+// The slots of a bin of a class to 128 bytes, the bytes of the slots of the
+// bin of a larger class, and the fewest slots of a bin.
+inline constexpr std::uint32_t kSmallBinSlots = 128;
+inline constexpr std::size_t kBinBytes = std::size_t{16} << 10;
+inline constexpr std::uint32_t kFewestBinSlots = 2;
+
+// The kind of the slab of a class (THE SIZE CLASSES).
+enum class SlabKind : std::uint8_t {
+    small,
+    medium,
+    large,
+};
+
+// True when the value names a class, 1 to 64.
+[[nodiscard]] constexpr bool is_size_class(SizeClass size_class) noexcept {
+    auto const value = static_cast<std::uint8_t>(size_class);
+    return value - 1u < kSizeClassCount;
+}
+
+// The bytes of one slot of the class.  Complexity: O(1), one compare.
+[[nodiscard]] constexpr ::foundation::core::ByteCount slot_bytes(SizeClass size_class) noexcept {
+    CRUCIBLE_PRE(is_size_class(size_class));
+    std::size_t const value = static_cast<std::uint8_t>(size_class);
+    if (value <= kSmallClassBytes / kSlotStepBytes) return ::foundation::core::ByteCount{value * kSlotStepBytes};
+    std::size_t const above = value - kSmallClassBytes / kSlotStepBytes - 1;
+    return ::foundation::core::ByteCount{((kSmallClassBytes << (above >> 2)) * (5 + (above & 3))) >> 2};
+}
+
+namespace detail {
+
+// The smallest class whose slot holds bytes bytes, which are above zero and
+// at most kLargestSlotBytes (THE SIZE CLASSES).  Complexity: O(1), one
+// compare.
+[[nodiscard]] constexpr SizeClass class_of_bytes_(std::size_t bytes) noexcept {
+    if (bytes <= kSmallClassBytes) return SizeClass{static_cast<std::uint8_t>((bytes + kSlotStepBytes - 1) >> 4)};
+    std::size_t const last = bytes - 1;
+    auto const top = static_cast<std::size_t>(63 - ::foundation::core::countl_zero(last));
+    return SizeClass{static_cast<std::uint8_t>((top - 5) * 4 + ((last >> (top - 2)) & 3) + 1)};
+}
+
+}  // namespace detail
+
+// The smallest class whose slot holds the bytes of the layout and is a whole
+// count of its alignment, or none for a layout past kLargestSlotBytes or for
+// an alignment past it (THE SIZE CLASSES).  Complexity: O(1), at most four
+// steps for an alignment above 16.
+[[nodiscard]] constexpr ::foundation::core::Option<SizeClass> class_for(Layout const& layout) noexcept {
+    std::size_t const bytes = layout.bytes().raw();
+    auto const alignment = static_cast<std::size_t>(layout.alignment());
+    if (alignment <= kSlotStepBytes) {
+        if (bytes > kLargestSlotBytes) return ::foundation::core::none;
+        return ::foundation::core::Option<SizeClass>::some(detail::class_of_bytes_(bytes));
+    }
+    std::size_t const wanted = bytes < alignment ? alignment : bytes;
+    if (wanted > kLargestSlotBytes) return ::foundation::core::none;
+    auto value = static_cast<std::uint8_t>(detail::class_of_bytes_(wanted));
+    while (slot_bytes(SizeClass{value}).raw() % alignment != 0) {
+        ++value;
+    }
+    return ::foundation::core::Option<SizeClass>::some(SizeClass{value});
+}
+
+[[nodiscard]] constexpr SlabKind slab_kind_of(SizeClass size_class) noexcept {
+    CRUCIBLE_PRE(is_size_class(size_class));
+    auto const value = static_cast<std::uint8_t>(size_class);
+    if (value <= kLastSmallClass) return SlabKind::small;
+    if (value <= kLastMediumClass) return SlabKind::medium;
+    return SlabKind::large;
+}
+
+// The slots of one slab of the class: the slots of a unit, of a chunk, or one
+// slot of a run of units.  Complexity: O(1), one division.
+[[nodiscard]] constexpr std::uint32_t slab_slots(SizeClass size_class) noexcept {
+    std::size_t const slot = slot_bytes(size_class).raw();
+    switch (slab_kind_of(size_class)) {
+        case SlabKind::small:
+            return static_cast<std::uint32_t>(kSlabUnitBytes / slot);
+        case SlabKind::medium:
+            return static_cast<std::uint32_t>(kSlabChunkBytes / slot);
+        case SlabKind::large:
+            return 1;
+        default:
+            break;
+    }
+    ::foundation::core::unreachable();
+}
+
+// The slots that the bin of a thread holds for the class (THE SIZE CLASSES).
+// Complexity: O(1), one division.
+[[nodiscard]] constexpr std::uint32_t bin_capacity(SizeClass size_class) noexcept {
+    std::size_t const slot = slot_bytes(size_class).raw();
+    if (slot <= kSmallClassBytes) return kSmallBinSlots;
+    std::size_t const slots = kBinBytes / slot;
+    if (slots < kFewestBinSlots) return kFewestBinSlots;
+    return static_cast<std::uint32_t>(slots);
 }
 
 }  // namespace foundation::alloc

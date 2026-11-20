@@ -390,6 +390,18 @@ using ::foundation::alloc::LayoutResult;
 using ::foundation::alloc::mint_alignment;
 using ::foundation::alloc::mint_layout;
 
+// The 64 size classes of the allocator of the base, their slabs and their
+// bins (THE SIZE CLASSES of foundation/alloc/Layout.h).
+using ::foundation::alloc::bin_capacity;
+using ::foundation::alloc::class_for;
+using ::foundation::alloc::is_size_class;
+using ::foundation::alloc::kSizeClassCount;
+using ::foundation::alloc::SizeClass;
+using ::foundation::alloc::slab_kind_of;
+using ::foundation::alloc::slab_slots;
+using ::foundation::alloc::SlabKind;
+using ::foundation::alloc::slot_bytes;
+
 using ::foundation::core::ElementCount;
 using ::foundation::core::Quantity;
 using ::foundation::core::QuantityUnit;
