@@ -149,9 +149,10 @@ struct DrainWorker {
 }  // namespace
 
 // The rows time the bare ring, which holds no permission of its two sides.
-// Each cycle times its thread starts, and a cycle through the raw probe door
-// of the base costs much more than a cycle of std::jthread.  So the thread
-// starts stay on std::jthread, and the workers are outside the region.
+// Each cycle times its thread starts.  On the one core of this bench, a
+// cycle through the raw probe door of the base costs much more than a cycle
+// of std::jthread.  So the thread starts stay on std::jthread, and the
+// workers are outside the region.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: each cycle of the bare MPSC ring starts its threads on std::jthread")
 namespace {
 
