@@ -21,10 +21,10 @@ static_assert(IsScopedView<ScopedView<detail::sv_test_carrier, detail::sv_test_t
 static_assert(!IsScopedView<detail::sv_test_carrier>);
 static_assert(!IsScopedView<void>);
 
-// The erasure runs one way, and a view of one brand is not a view of
-// another.
-static_assert(std::is_convertible_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_a>,
-                                    ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
+// No conversion drops the brand of a view, erase_brand is the one door to
+// the erased identity, and a view of one brand is not a view of another.
+static_assert(!std::is_constructible_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag>,
+                                       ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_a>>);
 static_assert(!std::is_constructible_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_a>,
                                        ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
 static_assert(!std::is_constructible_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_a>,
@@ -45,7 +45,7 @@ namespace detail::scoped_view_self_test {
     auto of_branded = mint_view<sv_test_tag>(branded);
     static_assert(std::is_same_v<::foundation::brand::brand_of_t<decltype(of_branded)>, sv_brand_a>,
                   "a view of a branded carrier takes the carrier's brand");
-    ScopedView<sv_test_carrier, sv_test_tag> erased = first;
+    ScopedView<sv_test_carrier, sv_test_tag> const erased = erase_brand(first);
     return erased.operator->() == &plain && of_branded->value == 1;
 }
 static_assert(mints_brand());

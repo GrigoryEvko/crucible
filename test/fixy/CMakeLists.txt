@@ -6904,6 +6904,13 @@ fixy_neg_compile_test(neg_brand_scoped_view_cross_brand
   "no matching function for call to .same_minting\\("
   "deduced conflicting types for parameter .Brand. \\(.fixy::<lambda\\(\\)>. and .fixy::<lambda\\(\\)>.\\)")
 
+# No conversion drops the brand of a view.  erase_brand(view) is the one
+# door to the erased identity.
+fixy_neg_compile_test(neg_scoped_view_erases_implicitly
+  "conversion from .ScopedView<\\[\\.\\.\\.\\],\\[\\.\\.\\.\\],fixy::<lambda\\(\\)>>."
+  "to non-scalar type .ScopedView<\\[\\.\\.\\.\\],\\[\\.\\.\\.\\],foundation::brand::DefaultBrand>. requested"
+  "neg_scoped_view_erases_implicitly\\.cpp:22:[0-9]+: error")
+
 # A view of a temporary carrier: the refusal by value category, which
 # is the deleted rvalue twin.
 fixy_neg_compile_test(neg_brand_scoped_view_from_temporary_carrier

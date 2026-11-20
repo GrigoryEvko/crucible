@@ -306,7 +306,7 @@ private:
     // `this` would skip.
     [[nodiscard]] CRUCIBLE_INLINE constexpr ActiveView active_view_() const noexcept {
         CRUCIBLE_PRE(is_initialized());
-        return ::fixy::mint_view<engine_state::Active>(*this);
+        return ::fixy::erase_brand(::fixy::mint_view<engine_state::Active>(*this));
     }
 
     // The rewind of the context after an advance that gave COMPLETE.  That

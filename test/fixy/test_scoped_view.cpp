@@ -174,7 +174,7 @@ static void use_active(::fixy::TestRunnerCtx const& test, ActiveView const& v) {
 static void test_pass_to_callee(::fixy::TestRunnerCtx const& test) {
     DummyCarrier c{};
     c.active = true;
-    use_active(test, mint_view<dummy_state::Active>(c));
+    use_active(test, erase_brand(mint_view<dummy_state::Active>(c)));
 }
 
 static void test_optional_storage_via_emplace(::fixy::TestRunnerCtx const& test) {
@@ -185,7 +185,7 @@ static void test_optional_storage_via_emplace(::fixy::TestRunnerCtx const& test)
 
     // Assigning into the optional does not compile: the deleted assignment
     // operator propagates through it.  Emplacement constructs instead.
-    opt.emplace(mint_view<dummy_state::Active>(c));
+    opt.emplace(erase_brand(mint_view<dummy_state::Active>(c)));
     CRUCIBLE_TEST_ASSERT(test, opt.has_value());
     CRUCIBLE_TEST_ASSERT(test, (*opt)->value == 42);
 

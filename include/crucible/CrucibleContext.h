@@ -225,7 +225,7 @@ struct CrucibleContext {
     // minted only on the thread that holds the producer claim of its Vigil.
     [[nodiscard]] CRUCIBLE_INLINE constexpr CompiledView mint_compiled_view(VigilFgCtx const&) const noexcept {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
-        return ::fixy::mint_view<ctx_mode::Compiled>(*this);
+        return ::fixy::erase_brand(::fixy::mint_view<ctx_mode::Compiled>(*this));
     }
 
     // These overloads take the proof in place of the mode check. A proof that

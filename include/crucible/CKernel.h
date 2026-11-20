@@ -90,8 +90,9 @@ public:
     // read it.  The same holds for every function below that calls it.
     [[nodiscard]] bool is_sealed() const noexcept { return seal_.is_sealed(); }
 
-    // A view is minted with a fresh brand and kept on the erased identity,
-    // so the table hands out one view type for each state.
+    // A view is minted with a fresh brand and kept on the erased identity
+    // through erase_brand, so the table hands out one view type for each
+    // state.
     using MutableView = ::fixy::ScopedView<CKernelTable, ckernel_state::Mutable>;
     using SealedView = ::fixy::ScopedView<CKernelTable, ckernel_state::Sealed>;
 
@@ -109,12 +110,12 @@ public:
     [[nodiscard]] ::fixy::Option<MutableView> mint_mutable_view(VigilFgCtx const& fg) const noexcept {
         ::foundation::effects::host::require_brand_thread(fg);
         if (is_sealed()) return ::fixy::none;
-        return ::fixy::Option<MutableView>::some(::fixy::mint_view<ckernel_state::Mutable>(*this));
+        return ::fixy::Option<MutableView>::some(::fixy::erase_brand(::fixy::mint_view<ckernel_state::Mutable>(*this)));
     }
 
     [[nodiscard]] SealedView mint_sealed_view() const noexcept {
         CRUCIBLE_PRE(is_sealed());
-        return ::fixy::mint_view<ckernel_state::Sealed>(*this);
+        return ::fixy::erase_brand(::fixy::mint_view<ckernel_state::Sealed>(*this));
     }
 
     // Found by argument-dependent lookup from mint_view.

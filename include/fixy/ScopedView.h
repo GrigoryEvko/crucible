@@ -11,12 +11,14 @@
 // carrier may coexist.  Assignment is not, because reassigning a view
 // hides the state transition that should have re-minted it.
 //
-// A view carries a brand: the carrier's own when the carrier has one,
-// so the view is pinned to that instance, and a fresh one per mint
-// site otherwise.  A callee that wants a view of a particular carrier
-// asks for the carrier's brand, and a view of another carrier of the
-// same type fails to unify.  A view spelled without a brand is on the
-// erased identity.
+// A view is a typestate over a Ref of the const carrier
+// (foundation/core/Ref.h).  It carries the brand of that Ref: the
+// carrier's own when the carrier has one, so the view is pinned to that
+// instance, and a fresh one per mint site otherwise.  A callee that wants
+// a view of a particular carrier asks for the carrier's brand, and a view
+// of another carrier of the same type fails to unify.  A view spelled
+// without a brand is on the erased identity, and erase_brand(view) is the
+// one door to it.
 //
 // A carrier opts into the field audit by writing a static_assert on
 // no_scoped_view_field_check for its own type.
@@ -26,6 +28,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Ref.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -144,24 +147,29 @@ class [[nodiscard]] ScopedView {
                                                        "class type: the carrier's own, a mint's fresh brand, or "
                                                        "DefaultBrand.");
 
-    // The pointer is const because the view is proof, not a handle.  A
-    // method that mutates the carrier already holds its own reference.
-    // Holding a const pointer is also what lets a const member
-    // function mint a view of itself.
-    Carrier const* ptr_;
-    // No byte route builds a view, so a view names only a carrier that a
-    // mint checked.
-    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+    // The Ref is of a const carrier because the view is proof, not a
+    // handle.  A method that mutates the carrier already holds its own
+    // reference.  A Ref of a const carrier is also what lets a const
+    // member function mint a view of itself.
+    // The Ref holds a byte seal, so no byte route builds a view, and a view
+    // names only a carrier that a mint checked.
+    ::foundation::core::Ref<Carrier const, Brand> ref_;
 
-    constexpr explicit ScopedView(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept : ptr_{&c} {}
+    constexpr explicit ScopedView(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept
+        : ref_{::foundation::core::detail::RefDoor::lend<Brand>(c)} {}
+
+    constexpr explicit ScopedView(::foundation::core::Ref<Carrier const, Brand> ref) noexcept : ref_{ref} {}
 
     // The twin that makes the bound above a rule.  A const lvalue
-    // reference binds a temporary, so the view would hold a pointer to
-    // a carrier that died at the end of the statement.  The rvalue
+    // reference binds a temporary, so the view would hold a Ref of a
+    // carrier that died at the end of the statement.  The rvalue
     // reference is the better match for a prvalue, so such a call names
     // a deleted function instead.
     explicit ScopedView(Carrier const&&) =
         delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
+
+    template <typename UCarrier, typename UTag, ::foundation::core::ErasableBrand UBrand>
+    friend constexpr auto erase_brand(ScopedView<UCarrier, UTag, UBrand> const& view) noexcept;
 
     // The constraint is repeated here because a friend declaration whose
     // constraints differ from the factory's declares a different
@@ -198,14 +206,8 @@ public:
     ScopedView& operator=(ScopedView&&) = delete("ScopedView is single-binding; assignment hides state transitions");
     constexpr ~ScopedView() = default;
 
-    // Erasure, one way only: a view of one instance becomes a view on
-    // the erased identity.  Nothing gives an erased view a brand.
-    template <typename Other>
-        requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
-    constexpr ScopedView(ScopedView<Carrier, Tag, Other> const& other) noexcept : ptr_{other.operator->()} {}
-
-    [[nodiscard]] constexpr Carrier const* operator->() const noexcept { return ptr_; }
-    [[nodiscard]] constexpr Carrier const& carrier() const noexcept { return *ptr_; }
+    [[nodiscard]] constexpr Carrier const* operator->() const noexcept { return __builtin_addressof(*ref_); }
+    [[nodiscard]] constexpr Carrier const& carrier() const noexcept { return *ref_; }
 
     // Without these deletes a caller could reach the public copy
     // constructor through `new` and escape the stack frame.  The
@@ -239,6 +241,17 @@ mint_linear_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept {
     CRUCIBLE_PRE(view_ok(c, std::type_identity<Tag>{}));
     return mint_linear<ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>>(
         ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>{c});
+}
+
+// The one door that drops the brand of a view: a view of one instance
+// becomes a view on the erased identity, through erase_brand of its Ref.
+// Nothing gives an erased view a brand back, and a scope brand does not
+// leave its scope, so the door refuses it.  The result is a view on
+// DefaultBrand, and the body names it, so the erased brand of a view has
+// one spelling in this door.
+template <typename Carrier, typename Tag, ::foundation::core::ErasableBrand Brand>
+[[nodiscard]] constexpr auto erase_brand(ScopedView<Carrier, Tag, Brand> const& view) noexcept {
+    return ScopedView<Carrier, Tag, ::foundation::brand::DefaultBrand>{::foundation::core::erase_brand(view.ref_)};
 }
 
 template <typename T>

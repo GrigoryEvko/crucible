@@ -306,7 +306,7 @@ public:
         // at consteval.  Every in-body precondition of the Cipher, here and
         // in src/Cipher.cpp, has the same reason.
         CRUCIBLE_PRE(is_open());
-        return ::fixy::mint_view<cipher_state::Open>(*this);
+        return ::fixy::erase_brand(::fixy::mint_view<cipher_state::Open>(*this));
     }
 
     [[nodiscard]] friend constexpr bool view_ok(Cipher const& c, std::type_identity<cipher_state::Open>) noexcept {

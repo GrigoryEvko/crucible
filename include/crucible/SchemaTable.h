@@ -109,12 +109,12 @@ public:
     [[nodiscard]] ::fixy::Option<MutableView> mint_mutable_view(VigilFgCtx const& fg) const noexcept {
         ::foundation::effects::host::require_brand_thread(fg);
         if (is_sealed()) return ::fixy::none;
-        return ::fixy::Option<MutableView>::some(::fixy::mint_view<schema_state::Mutable>(*this));
+        return ::fixy::Option<MutableView>::some(::fixy::erase_brand(::fixy::mint_view<schema_state::Mutable>(*this)));
     }
 
     [[nodiscard]] SealedView mint_sealed_view() const noexcept {
         CRUCIBLE_PRE(is_sealed());
-        return ::fixy::mint_view<schema_state::Sealed>(*this);
+        return ::fixy::erase_brand(::fixy::mint_view<schema_state::Sealed>(*this));
     }
 
     // Found by argument-dependent lookup from mint_view.

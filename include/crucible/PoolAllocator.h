@@ -348,7 +348,7 @@ private:
     // `this` would skip.
     [[nodiscard]] CRUCIBLE_INLINE constexpr InitializedView initialized_view_() const noexcept {
         CRUCIBLE_PRE(is_initialized());
-        return ::fixy::mint_view<pool_state::Initialized>(*this);
+        return ::fixy::erase_brand(::fixy::mint_view<pool_state::Initialized>(*this));
     }
 
     // The address of the first byte of the pool, or no address for a pool of
