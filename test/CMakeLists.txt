@@ -243,6 +243,7 @@ crucible_test(test_cntp_congestion_control)
 crucible_test_reads_emulator(test_cntp_congestion_control)
 crucible_test(test_cntp_incast_control)
 crucible_test(test_cntp_mtls_transport)
+crucible_test(test_cntp_mtls_key_zeroize)
 crucible_test(test_cntp_path_swap)
 crucible_test(test_cntp_pacing)
 # qemu user mode has no SO_MAX_PACING_RATE, and the test accepts its

@@ -7,6 +7,7 @@
 #include <fixy/Qtt.h>
 #include <fixy/Secret.h>
 #include <fixy/Tagged.h>
+#include <foundation/core/Zeroize.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -125,12 +126,14 @@ struct MtlsPrivateKeyBytes {
 
     [[nodiscard]] constexpr std::size_t size() const noexcept { return nbytes; }
 
+    // Clears each field with the volatile clear of the base, so the optimizer
+    // keeps the clear also in the destructor, where the life of the key ends.
+    // A plain store there is dead, and GCC removes it at -O3.  The zero byte of
+    // the algorithm is MtlsKeyAlgorithm::Ed25519.
     constexpr void zeroize() noexcept {
-        for (auto& b : bytes) {
-            b = std::byte{0};
-        }
-        nbytes = 0;
-        algorithm = MtlsKeyAlgorithm::Ed25519;
+        ::foundation::core::zeroize_bytes(bytes);
+        ::foundation::core::zeroize_bytes(nbytes);
+        ::foundation::core::zeroize_bytes(algorithm);
     }
 };
 
