@@ -16,12 +16,43 @@
 // unpatched compiler cannot compile this file.  main() checks the same
 // searches through the library routes, against run-time answers that no
 // fold can reach.
+//
+// The builtins, the raw text and the std routes are the subject of the
+// probe, so they stand in a region of the class PROBE.  The verdict and the
+// report of each route use the base.
+
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/Quarantine.h>
+#include <foundation/effects/Effect.h>
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdio>
 #include <string_view>
 
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+// The roles of the two answers of one search.
+struct FoldedRole final {};
+struct RuntimeRole final {};
+using FoldedAnswer = ::fixy::Side<FoldedRole, std::size_t>;
+using RuntimeAnswer = ::fixy::Side<RuntimeRole, std::size_t>;
+
+// Compares one answer with the run-time answer.  Returns true when they agree.
+bool agrees(::fixy::TextView route, FoldedAnswer const& folded, RuntimeAnswer const& runtime) {
+    if (folded.value() == runtime.value()) return true;
+    ::fixy::report(::fixy::Sink::Err, "{}: the folded answer is {}, and the run-time answer is {}\n", route,
+                   folded.value(), runtime.value());
+    return false;
+}
+
+}  // namespace
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test probes the fold of the search builtins and the std routes on raw text")
 namespace {
 
 // The offset of the first ',' in [text, text + count), or count.
@@ -70,16 +101,9 @@ static_assert(string_view_find("0,1,2,3", 2) == 3);
 static_assert(std_find_offset("0,1,2,3" + 2, 5) == 1);
 static_assert(ranges_find_offset("0,1,2,3" + 2, 5) == 1);
 
-// Compares one answer with the run-time answer.  Returns true when they agree.
-bool agrees(const char* route, std::size_t folded, std::size_t runtime) {
-    if (folded == runtime) return true;
-    std::fprintf(stderr, "%s: the folded answer is %zu, and the run-time answer is %zu\n", route, folded, runtime);
-    return false;
-}
-
-}  // namespace
-
-int main() {
+// True when each route gives the folded answer of the literal arguments and
+// the run-time answer the same offset.
+bool does_every_route_agree() {
     // A volatile pointer keeps the run-time calls out of every fold.  The
     // calls with literal arguments are the ones that the front end folds at
     // -O1 and above.
@@ -87,12 +111,22 @@ int main() {
     const char* const text = runtime_text;
 
     bool all_agree = true;
-    all_agree &= agrees("__builtin_memchr", memchr_offset("0,1,2,3" + 2, 5), memchr_offset(text + 2, 5));
-    all_agree &= agrees("std::string_view::find", string_view_find("0,1,2,3", 2),
-                        string_view_find(std::string_view{text, 7}, 2));
-    all_agree &= agrees("std::find", std_find_offset("0,1,2,3" + 2, 5), std_find_offset(text + 2, 5));
-    all_agree &= agrees("std::ranges::find", ranges_find_offset("0,1,2,3" + 2, 5), ranges_find_offset(text + 2, 5));
-    if (!all_agree) return 1;
-    std::printf("test_gcc_memchr_fold: every route gives the correct offset\n");
+    all_agree &= agrees("__builtin_memchr", FoldedAnswer{memchr_offset("0,1,2,3" + 2, 5)},
+                        RuntimeAnswer{memchr_offset(text + 2, 5)});
+    all_agree &= agrees("std::string_view::find", FoldedAnswer{string_view_find("0,1,2,3", 2)},
+                        RuntimeAnswer{string_view_find(std::string_view{text, 7}, 2)});
+    all_agree &= agrees("std::find", FoldedAnswer{std_find_offset("0,1,2,3" + 2, 5)},
+                        RuntimeAnswer{std_find_offset(text + 2, 5)});
+    all_agree &= agrees("std::ranges::find", FoldedAnswer{ranges_find_offset("0,1,2,3" + 2, 5)},
+                        RuntimeAnswer{ranges_find_offset(text + 2, 5)});
+    return all_agree;
+}
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+int main() {
+    if (!does_every_route_agree()) return 1;
+    ::fixy::check::pass(kTest, "test_gcc_memchr_fold: every route gives the correct offset\n");
     return 0;
 }
