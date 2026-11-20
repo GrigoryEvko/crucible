@@ -31,7 +31,9 @@ struct StageOf<::foundation::core::Walk<S>> {
 };
 
 using Dynamic = ResultOf<decltype(&::foundation::core::View<int>::walk)>::type;
-using Fixed = ResultOf<decltype(&::foundation::core::View<int, 4>::walk)>::type;
+// The name is not Fixed: the parameter list of the specialization below is in
+// the scope of foundation::core, where Fixed names the fixed text of a report.
+using FixedWalk = ResultOf<decltype(&::foundation::core::View<int, 4>::walk)>::type;
 
 }  // namespace
 
@@ -39,9 +41,9 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a forged zip of a dynamic extent shows tha
 template <>
 template <>
 constexpr foundation::core::Result<
-    foundation::core::Walk<foundation::core::detail::ZipStage<StageOf<Dynamic>::type, StageOf<Fixed>::type, Held>>,
+    foundation::core::Walk<foundation::core::detail::ZipStage<StageOf<Dynamic>::type, StageOf<FixedWalk>::type, Held>>,
     foundation::core::LengthMismatch>
-Dynamic::try_zip<>(Fixed&& second) && noexcept {
+Dynamic::try_zip<>(FixedWalk&& second) && noexcept {
     static_cast<void>(second);
     foundation::core::fatal("a forged try_zip gives no walk");
 }

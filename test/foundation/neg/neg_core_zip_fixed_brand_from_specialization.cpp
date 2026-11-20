@@ -30,8 +30,10 @@ struct StageOf<::foundation::core::Walk<S>> {
     using type = S;
 };
 
-using Fixed = ResultOf<decltype(&::foundation::core::View<int, 4>::walk)>::type;
-using Root = StageOf<Fixed>::type;
+// The name is not Fixed: the parameter list of the specialization below is in
+// the scope of foundation::core, where Fixed names the fixed text of a report.
+using FixedWalk = ResultOf<decltype(&::foundation::core::View<int, 4>::walk)>::type;
+using Root = StageOf<FixedWalk>::type;
 
 }  // namespace
 
@@ -39,7 +41,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a forged zip of one fixed extent shows tha
 template <>
 template <>
 constexpr foundation::core::Walk<foundation::core::detail::ZipStage<Root, Root, Held>>
-Fixed::zip<>(Fixed&& second) && noexcept {
+FixedWalk::zip<>(FixedWalk&& second) && noexcept {
     static_cast<void>(second);
     foundation::core::fatal("a forged zip gives no walk");
 }
