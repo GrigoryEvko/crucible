@@ -24,7 +24,7 @@ static_assert(every_os_tag_namespace_holds_only_tags_(),
 // The walk sees whatever is declared, so it cannot notice a tag that
 // was deleted.  This count is what does.  Raise it when a namespace
 // gains a tag, and say which one in the commit.
-static_assert(os_tag_count_() == 45, "fixy/atoms/Os.h: the ten tag namespaces hold a different number of tags "
+static_assert(os_tag_count_() == 46, "fixy/atoms/Os.h: the ten tag namespaces hold a different number of tags "
                                      "than this pin records.  A new tag raises the count; a tag that "
                                      "disappeared is a deletion somebody has to justify.");
 
