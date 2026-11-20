@@ -2,8 +2,8 @@
 // mode with 32 bytes of output.  The oracle is the file test_vectors.json of
 // the official BLAKE3 repository at the commit 657284b1: the key is the text
 // "whats the Elvish word for friend", and the input of length n holds the
-// bytes i % 251.  The scalar arm of a constant evaluation and the arm of the
-// rows at run time give the same bytes.
+// bytes i % 251.  The scalar arm of a constant evaluation and the run-time
+// arm give the same bytes.
 
 #include <foundation/core/KeyedHash.h>
 
@@ -132,15 +132,13 @@ constexpr bool constant_arm_gives_the_vectors() noexcept {
     return true;
 }
 
+// The run-time arm gives the vectors, and the outputs of the official C at the
+// sizes where it changes its form, from one input.
 void test_vectors() {
     static VectorInput<kLongest> const input{};
     for (Vector const& vector : kVectors) {
         CRUCIBLE_FATAL_INVARIANT(hash_of_prefix(input, vector.length) == hash_of_hex(vector.hex));
     }
-}
-
-void test_boundaries() {
-    static VectorInput<kLongest> const input{};
     for (Vector const& vector : kBoundaries) {
         CRUCIBLE_FATAL_INVARIANT(hash_of_prefix(input, vector.length) == hash_of_hex(vector.hex));
     }
@@ -172,24 +170,24 @@ void test_bytes_of_an_output() { static_assert(bytes_follow_the_vector()); }
 
 // Two keys give two hashes, and so do two messages that differ in one byte.
 void test_key_and_message_take_part() {
-    static VectorInput<kLongest> input{};
+    constexpr std::size_t length = 200;
+    static VectorInput<length> input{};
     FixedArray<std::byte, 32> other_key_bytes{};
     other_key_bytes.at(::foundation::core::index<0>()) = std::byte{1};
     KeyedHashKeyBytes const other_key{other_key_bytes.view()};
-    View<std::byte const> const message = input.bytes.view().window(0, 200).expect("200 bytes");
+    View<std::byte const> const message = input.bytes.view().window(0, length).expect("200 bytes");
     CRUCIBLE_FATAL_INVARIANT(keyed_hash(vector_key(), message) != keyed_hash(other_key, message));
     Hash256 const before = keyed_hash(vector_key(), message);
     // The byte at 150 holds 150, and the change puts 7 in its place.
-    input.bytes.at(Index<kLongest>::check(150).expect("a byte of the message")) = std::byte{7};
+    input.bytes.at(Index<length>::check(150).expect("a byte of the message")) = std::byte{7};
     CRUCIBLE_FATAL_INVARIANT(keyed_hash(vector_key(), message) != before);
-    input.bytes.at(Index<kLongest>::check(150).expect("a byte of the message")) = std::byte{150};
+    input.bytes.at(Index<length>::check(150).expect("a byte of the message")) = std::byte{150};
 }
 
 }  // namespace
 
 int main() {
     test_vectors();
-    test_boundaries();
     test_constant_arm();
     test_bytes_of_an_output();
     test_key_and_message_take_part();

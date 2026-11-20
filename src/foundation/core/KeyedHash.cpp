@@ -1,9 +1,9 @@
 // The run-time arm of the keyed hash of foundation/core/KeyedHash.h (THE ARMS
-// of that header): the rows for a message of one chunk, and the lanes for the
-// chunks of a longer message, the full blocks of its last chunk and the
-// parents of its full subtrees.  The arm is in a source of the base, so each
-// unit that includes the header compiles only its scalar arm.  The arm gives
-// the bits of the scalar arm at each ISA level.
+// of that header): the rows for a message of one chunk, and for a longer
+// message the lanes or the stacked rows for its chunks and for each level of
+// their parents.  The arm is in a source of the base, so each unit that
+// includes the header compiles only its scalar arm.  The arm gives the bits of
+// the scalar arm at each ISA level.
 //
 // The helpers of the arm follow the vector instructions of the target, so
 // they are in the target namespace.  The entry compute_keyed_hash_ is outside

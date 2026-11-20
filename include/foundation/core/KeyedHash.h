@@ -31,18 +31,21 @@
 // THE ARMS.  A constant evaluation runs the scalar compression.  At run time
 // a message of one chunk runs in the rows: the compression holds the 4 rows
 // of the state in vectors of 4 words, the columns in one step and the
-// diagonals after a rotation of the lanes.  A longer message runs in the
-// lanes: a vector holds one word of the state of each of 4, 8 or 16 inputs,
-// as wide as the target holds, so the inputs run in parallel where one input
-// waits for each step of its rounds.  The inputs are the chunks, the full
-// blocks of the last chunk before its output block, and each level of the
-// parents of the full subtrees.  With AVX-512 a rotation is one instruction,
-// with SSSE3 or NEON a rotation by 16 or by 8 is one shuffle of bytes, and
-// else it is two shifts and an or.  Each arm gives the bits of the scalar
-// form.  The run-time arm is in src/foundation/core/KeyedHash.cpp, so a unit
-// that includes this header compiles only the scalar arm.  The run-time arm
-// instantiates wide vector code, and a build with a sanitizer compiles it in
-// that one source and not in each unit that hashes a key.
+// diagonals after a rotation of three rows.  A longer message runs its chunks
+// and then each level of their parents, up to the root.  Many inputs run in
+// the lanes: a vector holds one word of the state of each of 4, 8 or 16
+// inputs, as wide as the target holds, so the inputs run in parallel where
+// one input waits for each step of its rounds.  Two to four inputs run in
+// stacked rows: the rows of each input in their own block of 128 bits of one
+// vector.  A short last chunk runs its full blocks beside the other chunks
+// and its last block alone.  With AVX-512 a rotation is one instruction, with
+// SSSE3 or NEON a rotation by 8 is one shuffle of bytes, a rotation by 16 is
+// one shuffle, and else a rotation is two shifts and an or.  Each arm gives
+// the bits of the scalar form.  The run-time arm is in
+// src/foundation/core/KeyedHash.cpp, so a unit that includes this header
+// compiles only the scalar arm.  The run-time arm instantiates wide vector
+// code, and a build with a sanitizer compiles it in that one source and not
+// in each unit that hashes a key.
 //
 // THE ENTRY.  The library gives the run-time arm through one symbol,
 // detail::compute_keyed_hash_, whose name holds no target.  So a unit of each
