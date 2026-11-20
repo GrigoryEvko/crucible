@@ -2,8 +2,8 @@
 
 // The file syscalls: open, the two syncs, the atomic commit, and the
 // directory descriptor that flushes an entry.  The removal of a tree under a
-// directory, and the owner of a temporary directory that removes its tree at
-// its end.
+// directory, the owner of a temporary directory that removes its tree at its
+// end, and the sweep of the temporary trees of ended processes.
 //
 // An atom pack says how a file is opened — its mode, its flags, and the
 // durability and commit it is opened FOR — and the pack is read twice.
@@ -58,14 +58,17 @@
 #include <fixy/os/Process.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Algorithms.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Grow.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/Parse.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Text.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
+#include <foundation/os/Directory.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/OpenFlags.h>
 #include <foundation/os/PathText.h>
@@ -1092,12 +1095,76 @@ inline constexpr std::size_t kTemporaryDirectoryTries = 64;
 // digits of a process id and of a count, and the dash between them.
 inline constexpr std::size_t kTemporaryNameBytes = 64;
 
+// The name of a temporary directory under the temporary directory of the host.
+using TemporaryName = ::foundation::os::PathText<kTemporaryNameBytes>;
+
+// The count of the name of a temporary directory.
+enum class TemporaryCount : std::uint64_t {
+};
+
 namespace detail {
 
 // The count that the next mint of a temporary directory takes.  One count for
 // the process, whatever shared library makes the directory, so two libraries
 // do not try one name.  Only mint_temporary_directory changes it.
 CRUCIBLE_PROCESS_WIDE inline constinit ::foundation::core::Atomic<std::uint64_t> temporary_directory_count{0};
+
+// The name crucible-PROCESS-COUNT of the two numbers, each in decimal digits
+// with no zero before a digit.  The name of the largest id and the largest
+// count has 40 characters, so each part fits in kTemporaryNameBytes.
+[[nodiscard]] constexpr TemporaryName make_temporary_name_(::fixy::process::ProcessId process,
+                                                           TemporaryCount count) noexcept {
+    TemporaryName name{};
+    name.append(::foundation::core::TextView{"crucible-"}).expect("the name of two numbers fits its text");
+    name.append_decimal(std::to_underlying(process)).expect("the name of two numbers fits its text");
+    name.append('-').expect("the name of two numbers fits its text");
+    name.append_decimal(std::to_underlying(count)).expect("the name of two numbers fits its text");
+    return name;
+}
+
+// The id of the process of the name, when the name has the form
+// crucible-PROCESS-COUNT of the mint, or no value.  The name has the form when
+// make_temporary_name_ gives the same text for the two numbers of the name.
+// So a sign, a prefix 0x, a zero before a digit, a third part and a number
+// out of the range of its type give no value.  Complexity: linear in the size
+// of the name.
+[[nodiscard]] constexpr ::foundation::core::Option<::fixy::process::ProcessId>
+parse_temporary_name_(::foundation::core::TextView name) noexcept {
+    namespace core = ::foundation::core;
+    using Process = core::Option<::fixy::process::ProcessId>;
+    constexpr core::TextView prefix{"crucible-"};
+    if (!core::starts_with(name, prefix)) return core::none;
+    core::TextView const rest = name.window(prefix.size(), name.size() - prefix.size()).value_or(core::TextView{});
+    std::size_t const dash = core::find(rest, '-').value_or(rest.size());
+    if (dash == rest.size()) return core::none;
+    core::Option<std::uint32_t> process =
+        core::parse<std::uint32_t>(rest.window(0, dash).value_or(core::TextView{})).ok();
+    core::Option<std::uint64_t> count =
+        core::parse<std::uint64_t>(rest.window(dash + 1, rest.size() - dash - 1).value_or(core::TextView{})).ok();
+    if (process.is_none() || count.is_none()) return core::none;
+    ::fixy::process::ProcessId const id{std::move(process).value_or(0)};
+    TemporaryName const rebuilt = make_temporary_name_(id, TemporaryCount{std::move(count).value_or(0)});
+    if (rebuilt.c_text().view() != name) return core::none;
+    return Process::some(id);
+}
+
+// The temporary directory of the host in the switches: the checked path of
+// TMPDIR, or /tmp.  The text borrows the switches.
+[[nodiscard]] inline ::foundation::core::TextView host_temporary_text_(::fixy::env::Switches const& switches) noexcept {
+    return switches.temporary_directory.match(
+        [](::fixy::env::TemporaryDirectoryPath const& checked) noexcept { return checked.c_text().view(); },
+        [] noexcept { return ::foundation::core::TextView{"/tmp"}; });
+}
+::foundation::core::TextView host_temporary_text_(::fixy::env::Switches const&& switches) =
+    delete("the text of temporary switches dangles at the end of the full expression");
+
+// The owner of the directory NAME of the directory DIRECTORY.  The door opens
+// NAME beneath DIRECTORY with O_PATH, O_DIRECTORY and O_NOFOLLOW, reads the
+// owner of the open directory with fstat, and closes it.  A file and a
+// symbolic link give enotdir, and no entry gives enoent.  NAME is one final
+// name, with no slash.
+[[nodiscard]] ::foundation::core::Result<::fixy::process::UserId, ::foundation::os::Errno>
+directory_owner_beneath_(int directory, ::foundation::core::CText name) noexcept;
 
 }  // namespace detail
 
@@ -1166,7 +1233,7 @@ private:
     DirectoryHandle directory_{};
     // The absolute path of the new directory, and its name under the parent.
     ::foundation::os::PathText<kPathBytes> path_{};
-    ::foundation::os::PathText<kTemporaryNameBytes> name_{};
+    TemporaryName name_{};
 };
 
 // Declared here and defined below TemporaryDirectoryDoor, because the door
@@ -1203,9 +1270,7 @@ template <class Ctx>
 TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
     using ::foundation::os::Errno;
     ::fixy::env::Switches const& switches = ::fixy::env::switches();
-    ::foundation::core::TextView const host = switches.temporary_directory.match(
-        [](::fixy::env::TemporaryDirectoryPath const& checked) noexcept { return checked.c_text().view(); },
-        [] noexcept { return ::foundation::core::TextView{"/tmp"}; });
+    ::foundation::core::TextView const host = detail::host_temporary_text_(switches);
     CRUCIBLE_TRY(host_path,
                  sanitize_path(mint_tagged<tags::source::External>(host)).map_err([](PathTraversalError) noexcept {
                      return Errno::einval;
@@ -1219,14 +1284,10 @@ TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
     ::foundation::core::Option<Errno> failure{};
     for (std::size_t tried = 0; tried < kTemporaryDirectoryTries && !is_made && failure.is_none(); ++tried) {
         std::uint64_t const count = detail::temporary_directory_count.fetch_add_acq_rel(std::uint64_t{1});
-        owner.name_ = ::foundation::os::PathText<kTemporaryNameBytes>{};
+        owner.name_ = detail::make_temporary_name_(process, TemporaryCount{count});
         owner.path_ = ::foundation::os::PathText<kPathBytes>{};
         // The path comes before the make, so a path that does not fit makes no
         // directory.
-        CRUCIBLE_TRY(_, owner.name_.append(::foundation::core::TextView{"crucible-"}));
-        CRUCIBLE_TRY(_, owner.name_.append_decimal(std::to_underlying(process)));
-        CRUCIBLE_TRY(_, owner.name_.append('-'));
-        CRUCIBLE_TRY(_, owner.name_.append_decimal(count));
         CRUCIBLE_TRY(_, owner.path_.append(host));
         CRUCIBLE_TRY(_, owner.path_.append('/'));
         CRUCIBLE_TRY(_, owner.path_.append(owner.name_.c_text()));
@@ -1252,6 +1313,99 @@ TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
                     ::fixy::os::detail::HandleDoor::descriptor_of(parent.ref()), owner.name_.c_text()));
                 return ::foundation::core::err(error);
             });
+}
+
+// THE SWEEP
+//   sweep_temporary_directories removes each tree under the temporary
+//   directory of the host that a process left with no end of its owner, such
+//   as a process that aborted.  The door lists the temporary directory of the
+//   host one time.  It removes the tree of an entry with remove_tree_at only
+//   when each of these conditions holds:
+//     - The name of the entry has the form crucible-PROCESS-COUNT of the mint:
+//       the builder of the mint gives the same text for the two numbers of
+//       the name.
+//     - The entry is a directory, and the effective user id of the process
+//       owns it.  An open with O_DIRECTORY and O_NOFOLLOW refuses a file and a
+//       symbolic link, and the owner is the owner of the open directory.
+//     - The probe of the process of the name answers gone (THE PROCESS PROBE
+//       of fixy/os/Process.h).  An answer alive or unknown keeps the tree.
+//   The removal follows no symbolic link (THE TREE REMOVAL).
+//
+//   The report counts the trees that the sweep removed, and the trees of ended
+//   processes whose removal failed.  Other processes can make, remove and
+//   sweep their trees at the time of the sweep.  So an entry that is gone at a
+//   step counts in no count, and the error of one entry stops no sweep.  Only
+//   an error of the open or of the listing of the temporary directory of the
+//   host is the error of the sweep.
+//
+//   The checks and the removal are two steps.  Between them, only the owner of
+//   an entry can replace it in a temporary directory with the sticky bit, such
+//   as /tmp, and the removal has only the rights of the caller.  The probe
+//   reads the id in the pid namespace of the caller.  So a tree of a live
+//   process of another namespace, with the same temporary directory and the
+//   same user, looks like a tree of an ended process.
+//
+//   Complexity: one listing of the temporary directory of the host, an open,
+//   a status read and a probe for each entry of the form, and the tree removal
+//   of each tree of an ended process.
+
+// What a sweep did (THE SWEEP).
+struct SweepReport {
+    // The count of the trees that the sweep removed.
+    std::size_t removed = 0;
+    // The count of the trees of ended processes whose removal failed.
+    std::size_t failed = 0;
+};
+
+namespace detail {
+
+// True when the entry name of the directory of the descriptor directory is a
+// tree of an ended process that the user user owns (THE SWEEP).  An error of
+// the owner read, such as enotdir for a file or a symbolic link, keeps the
+// entry.
+template <class Ctx>
+[[nodiscard]] bool is_stale_tree_(Ctx const& ctx, int directory, ::foundation::core::CText name,
+                                  ::fixy::process::UserId user) noexcept {
+    using ::fixy::process::UserId;
+    return parse_temporary_name_(name.view())
+        .match(
+            [&ctx, directory, name, user](::fixy::process::ProcessId process) noexcept {
+                bool const is_owned = directory_owner_beneath_(directory, name)
+                                          .match([user](UserId owner) noexcept { return owner == user; },
+                                                 [](::foundation::os::Errno) noexcept { return false; });
+                return is_owned && ::fixy::process::probe_process(ctx, process) == ::fixy::process::ProcessState::gone;
+            },
+            [] noexcept { return false; });
+}
+
+}  // namespace detail
+
+// Removes each tree of an ended process under the temporary directory of the
+// host (THE SWEEP).  Not a mint: the door makes nothing.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsTemporaryDirectoryMint<Ctx>
+[[nodiscard]] ::foundation::core::Result<SweepReport, ::foundation::os::Errno>
+sweep_temporary_directories(Ctx const& ctx) noexcept {
+    using ::foundation::os::Errno;
+    ::fixy::env::Switches const& switches = ::fixy::env::switches();
+    CRUCIBLE_TRY(host_path, sanitize_path(mint_tagged<tags::source::External>(detail::host_temporary_text_(switches)))
+                                .map_err([](PathTraversalError) noexcept { return Errno::einval; }));
+    CRUCIBLE_TRY(host, open_directory(ctx, host_path));
+    ::fixy::process::UserId const user = ::fixy::process::detail::current_user_();
+    int const listed = ::fixy::os::detail::HandleDoor::descriptor_of(host.ref());
+    SweepReport report{};
+    auto visit = [&ctx, &host, &report, listed, user](::foundation::core::CText name) noexcept {
+        if (!detail::is_stale_tree_(ctx, listed, name, user)) return ::foundation::os::Visit::proceed;
+        remove_tree_at(ctx, host.ref(), name)
+            .match([&report](::foundation::core::Unit) noexcept { report.removed += 1; },
+                   [&report](Errno error) noexcept {
+                       if (error != Errno::enoent) report.failed += 1;
+                   });
+        return ::foundation::os::Visit::proceed;
+    };
+    CRUCIBLE_TRY(
+        _, ::foundation::os::detail::list_open_directory_(listed, ::foundation::os::detail::erase_visitor_(visit)));
+    return report;
 }
 
 // The calls below read and write through a handle that is open.  A signal

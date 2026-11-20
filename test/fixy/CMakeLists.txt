@@ -6142,6 +6142,16 @@ add_test(NAME test_os_temporary_directory_tmpdir COMMAND test_os_temporary_direc
 set_tests_properties(test_os_temporary_directory_tmpdir PROPERTIES LABELS "fixy"
   ENVIRONMENT_MODIFICATION "TMPDIR=set:${CMAKE_CURRENT_BINARY_DIR}")
 
+# The sweep of the temporary trees.  The setup test makes the fixture
+# directory before each run, and the test takes it as its TMPDIR.
+fixy_test(test_os_temporary_sweep)
+crucible_script_test(NAME test_os_temporary_sweep_setup
+  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/temporary_sweep_fixture.cmake
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(test_os_temporary_sweep_setup PROPERTIES LABELS "fixy" FIXTURES_SETUP temporary_sweep_fixture)
+set_tests_properties(test_os_temporary_sweep PROPERTIES FIXTURES_REQUIRED temporary_sweep_fixture
+  ENVIRONMENT_MODIFICATION "TMPDIR=set:${CMAKE_CURRENT_BINARY_DIR}/temporary_sweep_fixture")
+
 # mint_temporary_directory makes a directory, which is IO, and it reads the id
 # of the process, which is Nondet.  One fixture for each missing effect.
 fixy_neg_compile_test(neg_temporary_directory_without_io

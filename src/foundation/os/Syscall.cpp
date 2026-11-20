@@ -297,6 +297,8 @@ constexpr long kNoCall = -1;
             return __NR_getcpu;
         case Syscall::pidfd_open:
             return __NR_pidfd_open;
+        case Syscall::geteuid:
+            return __NR_geteuid;
         default:
             return kNoCall;
     }
@@ -491,7 +493,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // renameat2 in 3.15, mlock2 in 4.4, copy_file_range in 4.5, io_uring_setup in
 // 5.1 and openat2 in 5.6.  ptrace came before 2.6.0, and the trace door of
 // fixy/os/Process.h reads each stop with PTRACE_GET_SYSCALL_INFO, which came in
-// 5.3.  pidfd_open came in 5.3.  mincore, gettid, clock_gettime,
+// 5.3.  pidfd_open came in 5.3.  mincore, gettid, geteuid, clock_gettime,
 // clock_nanosleep and mremap came before 2.6.0, and getcpu came in 2.6.19.
 // The file door opens
 // each path under a directory with openat2 and RESOLVE_BENEATH, and an open
@@ -582,6 +584,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::munlock:
         case Syscall::prctl:
         case Syscall::gettid:
+        case Syscall::geteuid:
         case Syscall::clock_gettime:
         case Syscall::clock_nanosleep:
         case Syscall::pread:

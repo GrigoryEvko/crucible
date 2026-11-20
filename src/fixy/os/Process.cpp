@@ -1,6 +1,7 @@
 // The process doors of fixy (fixy/os/Process.h).  The identity door issues
-// the raw primitive of foundation/os/Syscall.h: the kernel gives each id as a
-// positive word, and the two calls cannot fail.  The child door reads the
+// the raw primitive of foundation/os/Syscall.h: the kernel gives the id of the
+// process and of the thread as a positive word and the effective user id as a
+// word that is not negative, and the three calls cannot fail.  The child door reads the
 // output of a child and waits for it through the steps of
 // foundation/os/ChildProcess.h.  The trace door issues each ptrace call raw,
 // and this file is the one includer of <linux/ptrace.h>, which gives the
@@ -397,6 +398,10 @@ ProcessId current_process_() noexcept {
 
 ThreadId current_thread_() noexcept {
     return static_cast<ThreadId>(static_cast<std::uint32_t>(os::raw_syscall(os::Syscall::gettid)));
+}
+
+UserId current_user_() noexcept {
+    return static_cast<UserId>(static_cast<std::uint32_t>(os::raw_syscall(os::Syscall::geteuid)));
 }
 
 // The flags word of pidfd_open is zero: a descriptor of the process, with the

@@ -150,6 +150,9 @@ enum class Syscall : std::uint8_t {
     // The probe of a process of the process door (fixy/os/Process.h): a
     // descriptor of the process, which the door closes at once.
     pidfd_open,
+    // The effective user id of the process, which owns each file that the
+    // process makes, for the sweep of the file door (fixy/os/Fs.h).
+    geteuid,
 };
 
 // True when the call can wait for a long time: for another thread or process

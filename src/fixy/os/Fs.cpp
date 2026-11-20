@@ -399,6 +399,19 @@ UnitResult remove_empty_directory_beneath_(int directory, core::CText path) noex
         directory, path, [](int parent, char const* name) { return remove_directory_entry(parent, name); });
 }
 
+// An O_PATH descriptor reads no data, and fstat reads its inode.
+core::Result<::fixy::process::UserId, os::Errno> directory_owner_beneath_(int directory, core::CText name) noexcept {
+    constexpr int kDirectoryOnlyFlags = os::kOpenPath | os::kOpenDirectory | os::kOpenNoFollow | os::kOpenCloseOnExec;
+    return open_beneath_(directory, core::detail::c_text_first_(name), kDirectoryOnlyFlags, 0)
+        .and_then([](int entry) noexcept -> core::Result<::fixy::process::UserId, os::Errno> {
+            ::stat status{};
+            long const word = os::raw_syscall(os::Syscall::fstat, entry, static_cast<void const*>(&status));
+            close_descriptor_(entry);
+            return os::result_of(word).map(
+                [&status](std::uint64_t) noexcept { return static_cast<::fixy::process::UserId>(status.st_uid); });
+        });
+}
+
 core::Result<bool, os::Errno> has_entry_at_(int directory, char const* path) noexcept {
     ::stat status{};
     long word = 0;

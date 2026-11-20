@@ -1538,6 +1538,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::fs::FileDoor, kDescriptorDoor},
     {^^::fixy::fs::TemporaryDirectory, kDescriptor},
     {^^::fixy::fs::TemporaryDirectoryDoor, kDescriptorDoor},
+    {^^::fixy::fs::SweepReport, kPayload},
     {^^::fixy::numa::PageNodeCensus, kPayload},
     {^^::fixy::NumaNodeMask, kPayload},
     {^^::fixy::numa::NodeAllocationCounters, kPayload},

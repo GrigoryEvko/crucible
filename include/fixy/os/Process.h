@@ -133,6 +133,11 @@ enum class ProcessId : std::uint32_t {
 enum class ThreadId : std::uint32_t {
 };
 
+// The id of a user.  The effective user id of a process owns each file that
+// the process makes, with no change of its file system id.
+enum class UserId : std::uint32_t {
+};
+
 // The answer of the probe of a process (THE PROCESS PROBE).
 enum class ProcessState : std::uint8_t {
     alive,
@@ -149,10 +154,13 @@ enum class ProcessState : std::uint8_t {
 
 namespace detail {
 
-// The three calls of the door file.
+// The calls of the door file.  current_user_ gives the effective user id of
+// the process (geteuid), which cannot fail.  Only the sweep of fixy/os/Fs.h
+// reads it.
 [[nodiscard]] ProcessId current_process_() noexcept;
 [[nodiscard]] ThreadId current_thread_() noexcept;
 [[nodiscard]] ProcessState probe_process_(ProcessId process) noexcept;
+[[nodiscard]] UserId current_user_() noexcept;
 
 }  // namespace detail
 
