@@ -258,6 +258,16 @@ class RecordingDoor final : ::foundation::NoObject<RecordingDoor> {
         recorder.record_(event);
     }
 
+    // Records the receive of a value, and gives the value and the recorder
+    // of the successor.  The transport form and the pole form of a receive
+    // both end here.
+    template <typename Inner, typename Value, typename Next>
+    [[nodiscard]] static constexpr auto received_(Recorded<Inner>& recorder, Value value, Next next) {
+        record_(recorder, detail::recording::event_for_recv<typename Inner::protocol::message_type>(recorder.self_,
+                                                                                                    recorder.peer_));
+        return std::pair{std::move(value), wrap_(recorder, std::move(next))};
+    }
+
     template <typename Branches, typename Inner, std::size_t... Is>
     static void record_passive_checkpoint_(Recorded<Inner>& recorder, std::size_t taken, std::index_sequence<Is...>) {
         (
@@ -293,6 +303,7 @@ public:
     // plain send does.  It keeps no moved-from copy of the payload.
     template <typename Inner, typename T, typename Transport>
         requires is_send_v<typename Inner::protocol> && (!is_keyed_step_v<typename Inner::protocol>)
+              && (!ChannelPole<typename Inner::resource_type>)
               && WriteTransport<Transport, typename Inner::resource_type, typename Inner::protocol::message_type>
     [[nodiscard]] static constexpr auto send(Recorded<Inner>&& recorder, T&& value, Transport transport) {
         using Message = typename Inner::protocol::message_type;
@@ -313,12 +324,35 @@ public:
 
     template <typename Inner, typename Transport>
         requires is_recv_v<typename Inner::protocol> && (!is_keyed_step_v<typename Inner::protocol>)
+              && (!ChannelPole<typename Inner::resource_type>)
               && ReadTransport<Transport, typename Inner::resource_type, typename Inner::protocol::message_type>
     [[nodiscard]] static constexpr auto recv(Recorded<Inner>&& recorder, Transport transport) {
         auto [value, next] = std::move(recorder.inner_).recv(std::move(transport));
-        record_(recorder, detail::recording::event_for_recv<typename Inner::protocol::message_type>(recorder.self_,
-                                                                                                    recorder.peer_));
-        return std::pair{std::move(value), wrap_(recorder, std::move(next))};
+        return received_(recorder, std::move(value), std::move(next));
+    }
+
+    // A recorded session over a pole of a channel steps through the pole form
+    // of the inner handle, which uses the transport of the pole table.  No
+    // mint wraps a pole in a crash watch (fixy/channels/EndpointMint.h), so a
+    // send of a pole returns only when the write of its table took the
+    // payload, and the event records the payload as delivered.
+    template <typename Inner, typename Ctx, typename T>
+        requires is_send_v<typename Inner::protocol> && (!is_keyed_step_v<typename Inner::protocol>)
+              && PoleWritesIn<typename Inner::resource_type, Ctx, typename Inner::protocol::message_type>
+    [[nodiscard]] static constexpr auto send(Recorded<Inner>&& recorder, Ctx const& ctx, T&& value) {
+        using Message = typename Inner::protocol::message_type;
+        auto next = std::move(recorder.inner_).send(ctx, std::forward<T>(value));
+        record_(recorder,
+                detail::recording::event_for_send<Message>(recorder.self_, recorder.peer_, DeliveryFate::Delivered));
+        return wrap_(recorder, std::move(next));
+    }
+
+    template <typename Inner, typename Ctx>
+        requires is_recv_v<typename Inner::protocol> && (!is_keyed_step_v<typename Inner::protocol>)
+              && PoleReadsIn<typename Inner::resource_type, Ctx, typename Inner::protocol::message_type>
+    [[nodiscard]] static constexpr auto recv(Recorded<Inner>&& recorder, Ctx const& ctx) {
+        auto [value, next] = std::move(recorder.inner_).recv(ctx);
+        return received_(recorder, std::move(value), std::move(next));
     }
 
     // A keyed message is its label word and then the value of its payload.
@@ -476,14 +510,14 @@ public:
     // lost to the crashed peer.  A write of a shape that the inner handle
     // refuses reaches the refusal of the inner handle.
     template <typename T, typename Transport>
-        requires is_send_v<protocol> && (!is_keyed_step_v<protocol>)
+        requires is_send_v<protocol> && (!is_keyed_step_v<protocol>) && (!ChannelPole<resource_type>)
               && WriteTransport<Transport, resource_type, typename protocol::message_type>
     [[nodiscard]] constexpr auto send(T&& value, Transport transport) && {
         return RecordingDoor::send(std::move(*this), std::forward<T>(value), std::move(transport));
     }
 
     template <typename T, typename Transport>
-        requires is_send_v<protocol> && (!is_keyed_step_v<protocol>)
+        requires is_send_v<protocol> && (!is_keyed_step_v<protocol>) && (!ChannelPole<resource_type>)
                   && (!WriteTransport<Transport, resource_type, typename protocol::message_type>)
     void send(T, Transport) && = delete("[Transport_Shape] a write either tries, as bool(Resource&, T&), and returns "
                                         "false with the value unchanged while it has no room, or declares its wait, "
@@ -492,19 +526,52 @@ public:
                                         "it.");
 
     template <typename Transport>
-        requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>)
+        requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>) && (!ChannelPole<resource_type>)
               && ReadTransport<Transport, resource_type, typename protocol::message_type>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
         return RecordingDoor::recv(std::move(*this), std::move(transport));
     }
 
     template <typename Transport>
-        requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>)
+        requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>) && (!ChannelPole<resource_type>)
                   && (!ReadTransport<Transport, resource_type, typename protocol::message_type>)
     void recv(Transport) && = delete("[Transport_Shape] a read either polls, as fixy::Option<T>(Resource&), and "
                                      "returns no value while nothing is there, or declares its wait, as "
                                      "T(Resource&, fixy::session::watch::wait_scope&).  A read of another shape can "
                                      "wait where the watch of fixy/session/Watch.h does not see it.");
+
+    // A recorded session over a pole of a channel steps in the context of
+    // the step, through the transport of the pole table, as the inner handle
+    // does.
+    template <typename Ctx, typename T>
+        requires is_send_v<protocol> && (!is_keyed_step_v<protocol>)
+              && PoleWritesIn<resource_type, Ctx, typename protocol::message_type>
+    [[nodiscard]] constexpr auto send(Ctx const& ctx, T&& value) && {
+        return RecordingDoor::send(std::move(*this), ctx, std::forward<T>(value));
+    }
+
+    template <typename First, typename Second>
+        requires is_send_v<protocol> && (!is_keyed_step_v<protocol>) && ChannelPole<resource_type>
+                  && (!PoleWritesIn<resource_type, std::remove_cvref_t<First>, typename protocol::message_type>)
+    void send(First&&, Second&&) && = delete(
+        "[Pole_Owns_Its_Transport] a session over a pole of a channel sends through the write that the pole table of "
+        "its channel names (fixy/session/Admission.h).  Call send(ctx, value) with a context that the write of the "
+        "table admits.  A transport of the caller would move the values of one channel in two ways.");
+
+    template <typename Ctx>
+        requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>)
+              && PoleReadsIn<resource_type, Ctx, typename protocol::message_type>
+    [[nodiscard]] constexpr auto recv(Ctx const& ctx) && {
+        return RecordingDoor::recv(std::move(*this), ctx);
+    }
+
+    template <typename Arg>
+        requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>) && ChannelPole<resource_type>
+                  && (!PoleReadsIn<resource_type, std::remove_cvref_t<Arg>, typename protocol::message_type>)
+    void recv(Arg&&) && = delete(
+        "[Pole_Owns_Its_Transport] a session over a pole of a channel receives through the read that the pole table "
+        "of its channel names (fixy/session/Admission.h).  Call recv(ctx) with a context that the read of the table "
+        "admits.  A transport of the caller would move the values of one channel in two ways.");
 
     // A keyed message is its label word and then the value of its payload.
     // This send writes the word, and the value step that follows is a plain

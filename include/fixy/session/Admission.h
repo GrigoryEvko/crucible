@@ -1048,6 +1048,16 @@ concept ChannelSidesAgree =
 // the protocol of one pole.  SessionMintDoor::open_pole asks the relation
 // of the two sides of these two protocols in its one member.
 //
+// The specialization also names the transport of the pole: a static write,
+// bool(Ctx const&, Pole&, T&), for a pole that sends, and a static read,
+// fixy::Option<T>(Ctx const&, Pole&), for a pole that receives.  Each is
+// noexcept and tries one time, and the handle waits through the watch and
+// tries again.  A step of a session over the pole takes the context of the
+// step and calls the write or the read of the table, so no caller writes the
+// transport of a pole, and each session over the pole moves its values in
+// one way.  A write or a read that needs a property of the context asks it
+// in its own constraint.
+//
 // The registration stands in the file of its template, which is the header
 // of the channel or of the bridge of the channel.  The door reads the
 // tables where its gate is asked, so a unit that does not include the
@@ -1089,13 +1099,33 @@ void two_pole_tables_know_one_pole() noexcept;
 template <typename Pole>
 concept HasPoleTable = detail::pole_table_entry(^^pole_tables, ^^Pole) != std::meta::info{};
 
+// The specialization of the table that knows the pole.
+template <HasPoleTable Pole>
+using pole_table_t = typename[:detail::pole_table_entry(^^pole_tables, ^^Pole):];
+
 // The protocol of the pole, and the protocol of each pole of the other side
 // of its channel, from the table that knows the pole.
 template <HasPoleTable Pole>
-using pole_protocol_t = typename[:detail::pole_table_entry(^^pole_tables, ^^Pole):] ::self_protocol;
+using pole_protocol_t = typename pole_table_t<Pole>::self_protocol;
 
 template <HasPoleTable Pole>
-using pole_peer_protocol_t = typename[:detail::pole_table_entry(^^pole_tables, ^^Pole):] ::peer_protocol;
+using pole_peer_protocol_t = typename pole_table_t<Pole>::peer_protocol;
+
+// The table of the pole writes a value of type T in the context Ctx.
+template <typename Pole, typename Ctx, typename T>
+concept PoleWritesIn = ChannelPole<Pole> && HasPoleTable<Pole> && ::foundation::effects::IsExecCtx<Ctx>
+                    && requires(Ctx const& ctx, Pole& pole, T& value) {
+                           { pole_table_t<Pole>::write(ctx, pole, value) } noexcept -> std::same_as<bool>;
+                       };
+
+// The table of the pole reads a value of type T in the context Ctx.
+template <typename Pole, typename Ctx, typename T>
+concept PoleReadsIn = ChannelPole<Pole> && HasPoleTable<Pole> && ::foundation::effects::IsExecCtx<Ctx>
+                   && requires(Ctx const& ctx, Pole& pole) {
+                          {
+                              pole_table_t<Pole>::read(ctx, pole)
+                          } noexcept -> std::same_as<::foundation::core::Option<T>>;
+                      };
 
 // The whole gate of SessionMintDoor::open_pole: a pole of a channel held by
 // value, which a table knows, two protocols of the table whose sides agree,

@@ -214,8 +214,8 @@ void test_session_send_recv() {
     auto reader_session =
         ses::mint_reader_runtime_session<Swmr>(ctx, std::move(reader).expect("the pool lends a share"));
 
-    auto next_writer = std::move(writer_session).send(91, ses::publish_value);
-    auto [value, next_reader] = std::move(reader_session).recv(ses::load_value);
+    auto next_writer = std::move(writer_session).send(ctx, 91);
+    auto [value, next_reader] = std::move(reader_session).recv(ctx);
 
     CRUCIBLE_REQUIRE(value == 91);
 

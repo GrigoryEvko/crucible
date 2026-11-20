@@ -100,9 +100,8 @@ bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle&& producer,
     std::optional cons{ses::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(consumer))};
     std::uint32_t i = 0;
     auto report = bench::run("round-trip: typed session send + recv", [&] {
-        prod.emplace(
-            std::move(*prod).select<0>(::fixy::session::no_label).send(make_meta(++i), ses::append_one_in(ctx)));
-        auto [meta, next] = std::move(*cons).select<0>(::fixy::session::no_label).recv(ses::drain_one);
+        prod.emplace(std::move(*prod).select<0>(::fixy::session::no_label).send(ctx, make_meta(++i)));
+        auto [meta, next] = std::move(*cons).select<0>(::fixy::session::no_label).recv(ctx);
         bench::do_not_optimize(meta.version);
         cons.emplace(std::move(next));
     });

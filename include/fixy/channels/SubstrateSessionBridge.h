@@ -110,18 +110,41 @@ concept IsBridgeableDirection = detail::HasHandleFor<Substr, Dir> && detail::Has
 // The pole table of the bridge (fixy/session/Admission.h, section The pole
 // table of a channel): a handle of a bridged channel runs the protocol of
 // its direction, and each handle of the other direction runs the protocol of
-// that direction.
+// that direction.  The producer writes with try_push and the consumer reads
+// with try_pop.  The pop of a merge takes the bare tag of Nondet from the
+// context of the step, so that context holds Nondet.
 template <class Pole>
     requires detail::IsBridgedChannel<typename Pole::channel_type>
           && (std::same_as<Pole, typename Pole::channel_type::ProducerHandle>
               || std::same_as<Pole, typename Pole::channel_type::ConsumerHandle>)
 struct bridged_pole_protocols {
+    using value_type = typename Pole::channel_type::value_type;
     static constexpr Direction direction =
         std::same_as<Pole, typename Pole::channel_type::ProducerHandle> ? Direction::Producer : Direction::Consumer;
     static constexpr Direction other_direction =
         direction == Direction::Producer ? Direction::Consumer : Direction::Producer;
     using self_protocol = default_proto_for_t<typename Pole::channel_type, direction>;
     using peer_protocol = default_proto_for_t<typename Pole::channel_type, other_direction>;
+
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires(direction == Direction::Producer)
+    [[nodiscard]] static constexpr bool write(Ctx const& /*ctx*/, Pole& pole, value_type& value) noexcept {
+        return pole.try_push(value);
+    }
+
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires(direction == Direction::Consumer)
+             && (!::fixy::concurrent::is_merge_consumer_handle_v<Pole>
+                 || ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>)
+    [[nodiscard]] static constexpr ::fixy::Option<value_type> read([[maybe_unused]] Ctx const& ctx,
+                                                                   Pole& pole) noexcept {
+        if constexpr (::fixy::concurrent::is_merge_consumer_handle_v<Pole>) {
+            return pole.try_pop(
+                ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx));
+        } else {
+            return pole.try_pop();
+        }
+    }
 };
 
 // The gate of mint_substrate_session: a bridgeable direction, and the gate

@@ -53,7 +53,10 @@
 // ring and over a mock all use the same handle and differ only in the
 // callable they pass.  A callable has one of the shapes of
 // fixy/session/Transport.h, and no shape waits where the watch of
-// fixy/session/Watch.h cannot see the wait.
+// fixy/session/Watch.h cannot see the wait.  A session over a pole of a
+// channel takes no callable: its send and its receive take the context of
+// the step, and they call the write and the read of the pole table of the
+// channel (fixy/session/Admission.h).
 //
 // ── The word of a choice ────────────────────────────────────────────
 //
@@ -1522,9 +1525,11 @@ public:
     // has one of the two write shapes of fixy/session/Transport.h.  The
     // returned handle sits at the continuation, with Continue and Loop
     // already resolved.  For a marker, the value is the value of the
-    // marker, and the Transport gets the marker that the step builds.
+    // marker, and the Transport gets the marker that the step builds.  A
+    // pole of a channel takes no Transport: its table names the write.
     template <typename Transport>
-        requires(!is_keyed) && (slot_form != SlotForm::Token) && WriteTransport<Transport, Resource, T>
+        requires(!is_keyed) && (slot_form != SlotForm::Token) && (!ChannelPole<Resource>)
+             && WriteTransport<Transport, Resource, T>
     [[nodiscard]] constexpr auto send(detail::sent_value_t<T> value, Transport transport) && noexcept(
         detail::write_is_nothrow<Transport, Resource, T>()
         && std::is_nothrow_move_constructible_v<Resource> && std::is_nothrow_move_constructible_v<T>) {
@@ -1532,11 +1537,33 @@ public:
     }
 
     template <typename Transport>
-        requires(!is_keyed) && (slot_form != SlotForm::Token) && (!WriteTransport<Transport, Resource, T>)
+        requires(!is_keyed) && (slot_form != SlotForm::Token) && (!ChannelPole<Resource>)
+                 && (!WriteTransport<Transport, Resource, T>)
     void send(detail::sent_value_t<T>, Transport) && = delete(
         "[Transport_Shape] a write either tries, as bool(Resource&, T&), and returns false with the value unchanged "
         "while it has no room, or declares its wait, as void(Resource&, T&&, fixy::session::watch::wait_scope&).  A "
         "write of another shape can wait where the watch of fixy/session/Watch.h does not see it.");
+
+    // A session over a pole of a channel sends through the write of the pole
+    // table of its channel (fixy/session/Admission.h), in the context of the
+    // step.  The write takes a reference to the context for the step only.
+    template <typename Ctx>
+        requires(!is_keyed) && (slot_form == SlotForm::Plain) && PoleWritesIn<Resource, Ctx, T>
+    [[nodiscard]] constexpr auto send(Ctx const& ctx,
+                                      T value) && noexcept(std::is_nothrow_move_constructible_v<Resource>
+                                                           && std::is_nothrow_move_constructible_v<T>) {
+        return HandleFactory::send(std::move(*this), std::move(value),
+                                   [&ctx](Resource& pole, T& sent) noexcept -> bool {
+                                       return pole_table_t<Resource>::write(ctx, pole, sent);
+                                   });
+    }
+
+    template <typename First, typename Second>
+        requires(!is_keyed) && ChannelPole<Resource> && (!PoleWritesIn<Resource, std::remove_cvref_t<First>, T>)
+    void send(First&&, Second&&) && = delete(
+        "[Pole_Owns_Its_Transport] a session over a pole of a channel sends through the write that the pole table of "
+        "its channel names (fixy/session/Admission.h).  Call send(ctx, value) with a context that the write of the "
+        "table admits.  A transport of the caller would move the values of one channel in two ways.");
 
     // A marker that the caller built carries a token from outside the slots
     // of the handle.
@@ -1609,24 +1636,45 @@ public:
     // Offer does.  The value step then reads the value.
     static constexpr bool is_keyed = is_keyed_step_v<Recv<T, R>>;
 
-    // The Transport has one of the two read shapes of
-    // fixy/session/Transport.h.  The pair is the received value and the
+    // The source of the read is a Transport with one of the two read shapes
+    // of fixy/session/Transport.h.  The pair is the received value and the
     // handle at the continuation.  A polling read that finds the message
-    // costs one call.
-    template <typename Transport>
-        requires(!is_keyed) && ReadTransport<Transport, Resource, T>
-    [[nodiscard]] constexpr auto recv(Transport transport) && noexcept(detail::read_is_nothrow<Transport, Resource, T>()
-                                                                       && std::is_nothrow_move_constructible_v<Resource>
-                                                                       && std::is_nothrow_move_constructible_v<T>) {
-        return HandleFactory::recv(std::move(*this), std::move(transport));
+    // costs one call.  A session over a pole of a channel takes the context
+    // of the step in place of a Transport, and it receives through the read
+    // of the pole table of its channel (fixy/session/Admission.h).  The read
+    // takes a reference to the context for the step only.  One member holds
+    // the two forms, so the pair of each receive of a value has one source.
+    template <typename Source>
+        requires(!is_keyed)
+             && ((!ChannelPole<Resource> && ReadTransport<std::remove_cvref_t<Source>, Resource, T>)
+                 || PoleReadsIn<Resource, std::remove_cvref_t<Source>, T>)
+    [[nodiscard]] constexpr auto recv(Source&& source) && noexcept(
+        std::is_nothrow_move_constructible_v<Resource> && std::is_nothrow_move_constructible_v<T>
+        && (ChannelPole<Resource>
+            || (detail::read_is_nothrow<std::remove_cvref_t<Source>, Resource, T>()
+                && std::is_nothrow_constructible_v<std::remove_cvref_t<Source>, Source>))) {
+        if constexpr (ChannelPole<Resource>) {
+            return HandleFactory::recv(std::move(*this), [&source](Resource& pole) noexcept -> ::fixy::Option<T> {
+                return pole_table_t<Resource>::read(source, pole);
+            });
+        } else {
+            return HandleFactory::recv(std::move(*this), std::forward<Source>(source));
+        }
     }
 
     template <typename Transport>
-        requires(!is_keyed) && (!ReadTransport<Transport, Resource, T>)
+        requires(!is_keyed) && (!ChannelPole<Resource>) && (!ReadTransport<Transport, Resource, T>)
     void recv(Transport) && = delete("[Transport_Shape] a read either polls, as fixy::Option<T>(Resource&), and "
                                      "returns no value while nothing is there, or declares its wait, as "
                                      "T(Resource&, fixy::session::watch::wait_scope&).  A read of another shape can "
                                      "wait where the watch of fixy/session/Watch.h does not see it.");
+
+    template <typename Arg>
+        requires(!is_keyed) && ChannelPole<Resource> && (!PoleReadsIn<Resource, std::remove_cvref_t<Arg>, T>)
+    void recv(Arg&&) && = delete(
+        "[Pole_Owns_Its_Transport] a session over a pole of a channel receives through the read that the pole table "
+        "of its channel names (fixy/session/Admission.h).  Call recv(ctx) with a context that the read of the table "
+        "admits.  A transport of the caller would move the values of one channel in two ways.");
 
     // Reads the label word of the message through Transport, a read of a
     // std::size_t word.  It returns the handle at the value step, or past

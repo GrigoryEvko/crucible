@@ -22,9 +22,11 @@
 // picks its branch with select<I>(fixy::session::no_label), and the relation
 // of a local choice of that header holds for the two protocols.
 //
-// A transport of this facade tries once and reports whether it took or
-// found a record.  When the log is full, or holds nothing, the handle
-// waits through the watch of fixy/session/Watch.h and tries again.
+// Each step takes the context of the step and no transport.  The log table
+// of fixy/channels/LocalLogSession.h appends with try_append_one_pure in
+// that context and drains with try_drain_one, each one time.  When the log
+// is full, or holds nothing, the handle waits through the watch of
+// fixy/session/Watch.h and tries again.
 
 #include <crucible/MetaLog.h>
 #include <crucible/PermissionedMetaLog.h>
@@ -46,8 +48,8 @@ namespace crucible::metalog_session {
 using MetaLogRecord = ::crucible::TensorMeta;
 
 // The shape of a permissioned log that the facade uses: the brand, the
-// three tags, the two role-typed handles, and the operations the
-// transports call.
+// three tags, the two role-typed handles, and the operations that the log
+// table calls.
 template <typename Log>
 concept MetaLogSessionSurface =
     requires(Log& log, typename Log::ProducerHandle& producer, typename Log::ConsumerHandle& consumer,
@@ -72,28 +74,6 @@ concept MetaLogSessionSurface =
         { producer.try_append_one_pure(pure, record) } -> std::same_as<bool>;
         { consumer.try_drain_one() } -> std::same_as<::fixy::Option<MetaLogRecord>>;
     };
-
-// The trying write of the producer under the pure context ctx: true when the
-// log took the record.  The append of the producer takes the context of its
-// caller, so the transport holds a reference to it, and the context lives
-// for each send of the transport.
-template <::foundation::effects::IsExecCtx Ctx>
-    requires ::foundation::effects::CtxHasPureSource<Ctx>
-[[nodiscard]] constexpr auto append_one_in(Ctx const& ctx) noexcept {
-    return [&ctx](auto& producer, MetaLogRecord& record) -> bool { return producer.try_append_one_pure(ctx, record); };
-}
-
-// The transport holds a reference to the context.  A temporary context ends
-// at the end of the statement, and this twin refuses it.
-template <::foundation::effects::IsExecCtx Ctx>
-void append_one_in(Ctx const&&) = delete("the transport holds a reference to the context, and a temporary context ends "
-                                         "at the end of the statement. Give a context that has a name");
-
-// The polling read of the consumer: the next record, or none while the log
-// holds nothing.
-inline constexpr auto drain_one = [](auto& consumer) -> ::fixy::Option<MetaLogRecord> {
-    return consumer.try_drain_one();
-};
 
 // The gate of each mint: a log of the right shape, the handle of the
 // mint's role passed by move, and the gate of the pole door of

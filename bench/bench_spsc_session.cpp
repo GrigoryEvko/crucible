@@ -2,10 +2,10 @@
 //
 // mint_substrate_session (fixy/channels/SubstrateSessionBridge.h) takes a
 // channel handle by move, so the session owns the handle for its whole
-// life, and a send or a receive goes through a transport: a trying write
-// (bool(handle&, Item&)) or a polling read (fixy::Option<Item>(handle&)).
-// A full or an empty channel makes the session wait through its watch and
-// try again.
+// life.  A send or a receive goes through the write or the read of the pole
+// table of the bridge: a trying push or a polling pop of the handle, in the
+// context of the step.  A full or an empty channel makes the session wait
+// through its watch and try again.
 //
 // Four arms form a 2x2 matrix, each a round trip of one push and one pop,
 // so the ring holds zero or one item for the whole run.  A push-only body
@@ -70,11 +70,9 @@ auto arm_root() noexcept {
 template <int Arm>
 using Channel = cc::channel_t<Item, kRingSlots, decltype(arm_root<Arm>())>;
 
+// The context of each typed step.  The pole table of the bridge writes and
+// reads the ring, each one time.
 constexpr auto kForeground = ::foundation::effects::testing::foreground();
-
-// The transports of the typed arms: each tries once.
-constexpr auto try_push_item = [](auto& producer, Item& item) noexcept { return producer.try_push(item); };
-constexpr auto try_pop_item = [](auto& consumer) noexcept -> ::fixy::Option<Item> { return consumer.try_pop(); };
 
 // A rejected push means the next pop finds an empty ring, so the arm does
 // not measure a round trip.  The arm stops at the first one.
@@ -118,7 +116,7 @@ struct Rig {
         channels::mint_substrate_session<Channel<1>, channels::Direction::Producer>(kForeground, std::move(producer))};
     Item item = 0;
     auto report = bench::run(name, [&] {
-        session.emplace(std::move(*session).send(++item, try_push_item));
+        session.emplace(std::move(*session).send(kForeground, ++item));
         bench::do_not_optimize(pop_value(consumer));
     });
     std::move(*session).detach(s::detach_reason::InfiniteLoopProtocol{});
@@ -135,7 +133,7 @@ struct Rig {
     auto report = bench::run(name, [&] {
         if (!producer.try_push(++item)) [[unlikely]]
             stop_on_rejected_push(name);
-        auto [value, next] = std::move(*session).recv(try_pop_item);
+        auto [value, next] = std::move(*session).recv(kForeground);
         bench::do_not_optimize(value);
         session.emplace(std::move(next));
     });
@@ -153,8 +151,8 @@ struct Rig {
         channels::mint_substrate_session<Channel<3>, channels::Direction::Consumer>(kForeground, std::move(consumer))};
     Item item = 0;
     auto report = bench::run(name, [&] {
-        sender.emplace(std::move(*sender).send(++item, try_push_item));
-        auto [value, next] = std::move(*receiver).recv(try_pop_item);
+        sender.emplace(std::move(*sender).send(kForeground, ++item));
+        auto [value, next] = std::move(*receiver).recv(kForeground);
         bench::do_not_optimize(value);
         receiver.emplace(std::move(next));
     });

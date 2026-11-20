@@ -59,15 +59,15 @@ static_assert(!ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, Permiss
 static_assert(!ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, PermissionedLog::ProducerHandle&>,
               "the mint takes the handle by move");
 
-// The transport of the producer holds a reference to a pure context.  It
-// refuses a temporary context and a context whose source permits atoms.
+// The write of the log table appends in the context of the step, so that
+// context has a pure source.  A context whose source permits atoms does not
+// step the producer.  The read takes each context.
 template <typename Ctx>
-concept MakesAppendTransport = requires(Ctx&& ctx) { ms::append_one_in(static_cast<Ctx&&>(ctx)); };
-static_assert(MakesAppendTransport<FgCtx const&>);
-static_assert(!MakesAppendTransport<FgCtx>, "a temporary context ends at the end of the statement");
-static_assert(!MakesAppendTransport<::fixy::TestRunnerCtx const&>);
-static_assert(!MakesAppendTransport<
-              ::foundation::effects::ExecCtx<::foundation::effects::Test, ::foundation::effects::Row<>> const&>);
+concept AppendsIn = ::fixy::session::PoleWritesIn<PermissionedLog::ProducerHandle, Ctx, ms::MetaLogRecord>;
+static_assert(AppendsIn<FgCtx>);
+static_assert(!AppendsIn<::fixy::TestRunnerCtx>);
+static_assert(!AppendsIn<::foundation::effects::ExecCtx<::foundation::effects::Test, ::foundation::effects::Row<>>>);
+static_assert(::fixy::session::PoleReadsIn<PermissionedLog::ConsumerHandle, ::fixy::TestRunnerCtx, ms::MetaLogRecord>);
 
 // A mint cannot throw.
 static_assert(noexcept(ms::mint_metalog_producer_session<PermissionedLog>(
@@ -315,8 +315,7 @@ void test_typed_session_round_trip() {
         const FgCtx ctx = ::foundation::effects::testing::foreground();
         std::optional head{ms::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(producer))};
         for (int i = 0; i < kCount; ++i) {
-            head.emplace(
-                std::move(*head).select<0>(::fixy::session::no_label).send(make_meta(i + 10), ms::append_one_in(ctx)));
+            head.emplace(std::move(*head).select<0>(::fixy::session::no_label).send(ctx, make_meta(i + 10)));
         }
         auto back = std::move(*head).select<1>(::fixy::session::no_label).close();
         producer_handle_back.store(back.size_approx(kSnapshot) <= static_cast<std::uint32_t>(kCount),
@@ -328,7 +327,7 @@ void test_typed_session_round_trip() {
         const BgCtx ctx{::foundation::effects::testing::bg()};
         std::optional head{ms::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(consumer))};
         for (int i = 0; i < kCount; ++i) {
-            auto [meta, next] = std::move(*head).select<0>(::fixy::session::no_label).recv(ms::drain_one);
+            auto [meta, next] = std::move(*head).select<0>(::fixy::session::no_label).recv(ctx);
             matched_count += same_meta(meta, make_meta(i + 10)) ? 1 : 0;
             head.emplace(std::move(next));
         }

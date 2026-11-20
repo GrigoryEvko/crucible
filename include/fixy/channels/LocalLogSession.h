@@ -20,13 +20,16 @@
 // stated relation.  A local choice is no agreement: the sides do not agree on
 // when to stop.  The producer can stop before the consumer drains the last
 // record, and the consumer can stop with records in the log.  A consumer at
-// its receive after the producer stopped finds no record, and its transport
+// its receive after the producer stopped finds no record, and its handle
 // waits.  The steps of the two sides face each other only while both go on.
 //
 // A channel is a log when it names value_type, ProducerHandle and
 // ConsumerHandle, and each of its two handles states the Local network.  The
 // table knows the two handles of such a channel.  crucible/MetaLogSession.h
-// opens the poles of the MetaLog through this table.
+// opens the poles of the MetaLog through this table.  The write of the table
+// appends one record with try_append_one_pure in the context of the step, so
+// that context has a pure source.  The read drains one record with
+// try_drain_one.  Each tries one time.
 
 #include <fixy/session/Admission.h>
 #include <fixy/session/Fold.h>
@@ -172,6 +175,23 @@ struct log_pole_protocols {
         std::same_as<Pole, typename ::fixy::session::pole_channel_t<Pole>::ProducerHandle>;
     using self_protocol = std::conditional_t<is_producer, producer_protocol, consumer_protocol>;
     using peer_protocol = std::conditional_t<is_producer, consumer_protocol, producer_protocol>;
+
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires is_producer && requires(Ctx const& ctx, Pole& pole, value_type const& value) {
+            { pole.try_append_one_pure(ctx, value) } -> std::same_as<bool>;
+        }
+    [[nodiscard]] static constexpr bool write(Ctx const& ctx, Pole& pole, value_type& value) noexcept {
+        return pole.try_append_one_pure(ctx, value);
+    }
+
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires(!is_producer) && requires(Pole& pole) {
+            { pole.try_drain_one() } -> std::same_as<::foundation::core::Option<value_type>>;
+        }
+    [[nodiscard]] static constexpr ::foundation::core::Option<value_type> read(Ctx const& /*ctx*/,
+                                                                               Pole& pole) noexcept {
+        return pole.try_drain_one();
+    }
 };
 
 }  // namespace fixy::channels

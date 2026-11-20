@@ -19,8 +19,8 @@
 // second writer.  A claim on the writer role refuses a second live
 // writer of one brand.  The handles bind their session through
 // foundation::ChannelBinding, so a moved-from handle cannot publish or
-// load.  The read transport is a polling read over try_load, so the
-// handle waits through the watch while a write is in flight.
+// load.  The read of the pole table is a polling read over try_load, so
+// the handle waits through the watch while a write is in flight.
 //
 // The writer handle is linear (foundation/Linear.h).  Its door is
 // release(), which gives the writer role back to the session and the
@@ -297,17 +297,33 @@ template <SwmrSessionSurface Swmr>
 
 // The pole table of a session (fixy/session/Admission.h, section The pole
 // table of a channel): the writer handle runs the writer protocol, and each
-// reader handle runs the reader protocol.
+// reader handle runs the reader protocol.  A publish never lacks room, so
+// the write always takes the value.  The read gives the snapshot, or none
+// while a write is in flight.  Neither reads the context of the step.
 template <class Pole>
     requires SwmrSessionSurface<typename Pole::channel_type>
           && (std::same_as<Pole, typename Pole::channel_type::WriterHandle>
               || std::same_as<Pole, typename Pole::channel_type::ReaderHandle>)
 struct swmr_pole_protocols {
+    using value_type = typename Pole::channel_type::value_type;
     static constexpr bool is_writer = std::same_as<Pole, typename Pole::channel_type::WriterHandle>;
-    using writer_protocol = WriterRuntimeProto<typename Pole::channel_type::value_type>;
-    using reader_protocol = ReaderRuntimeProto<typename Pole::channel_type::value_type>;
+    using writer_protocol = WriterRuntimeProto<value_type>;
+    using reader_protocol = ReaderRuntimeProto<value_type>;
     using self_protocol = std::conditional_t<is_writer, writer_protocol, reader_protocol>;
     using peer_protocol = std::conditional_t<is_writer, reader_protocol, writer_protocol>;
+
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires is_writer
+    [[nodiscard]] static constexpr bool write(Ctx const& /*ctx*/, Pole& pole, value_type& value) noexcept {
+        pole.publish(value);
+        return true;
+    }
+
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires(!is_writer)
+    [[nodiscard]] static constexpr ::fixy::Option<value_type> read(Ctx const& /*ctx*/, Pole& pole) noexcept {
+        return pole.try_load();
+    }
 };
 
 // The gate of each session mint: a channel of the right shape, the
@@ -339,17 +355,6 @@ template <typename Swmr, typename Ctx, typename Handle>
     return ::fixy::session::SessionMintDoor::open_pole<::fixy::session::DefaultAbandonmentPolicy>(
         ctx, std::forward<Handle>(handle));
 }
-
-// The write of the writer session: a publish never lacks room, so the
-// trying write always takes the value.
-inline constexpr auto publish_value = [](auto& writer, auto& value) noexcept -> bool {
-    writer.publish(value);
-    return true;
-};
-
-// The read of the reader session: the snapshot, or none while a write is
-// in flight.  The handle then waits through the watch and reads again.
-inline constexpr auto load_value = [](auto& reader) noexcept { return reader.try_load(); };
 
 // The tags and the brands that only checks name.  The witness roster
 // (the witness rows of utils/rule-table.txt), the permission-row roster of

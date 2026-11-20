@@ -51,10 +51,10 @@ constexpr ::foundation::effects::cap::Nondet kSnapshot = ::foundation::effects::
     return 1;
 }
 
-// The transports of the channel protocols try once.  A full channel or an
-// empty one makes the session wait and try again.
-constexpr auto push_int = [](auto& handle, int& value) noexcept -> bool { return handle.try_push(value); };
-constexpr auto pop_int = [](auto& handle) noexcept -> ::fixy::Option<int> { return handle.try_pop(); };
+// A session over a channel handle steps through the write and the read of
+// the pole table of the bridge, so each step takes a context and no
+// transport.  A full channel or an empty one makes the session wait and try
+// again.
 
 // ── The bridge ───────────────────────────────────────────────────────
 
@@ -79,7 +79,7 @@ static_assert(!channels::IsBridgeableDirection<BridgeSpsc, static_cast<channels:
     std::optional producer{channels::mint_substrate_session<BridgeSpsc, channels::Direction::Producer>(
         ctx, channel.producer(std::move(producer_perm)))};
     for (int value = 1; value <= 3; ++value) {
-        producer.emplace(std::move(*producer).send(value * 10, push_int));
+        producer.emplace(std::move(*producer).send(ctx, value * 10));
     }
     std::move(*producer).detach(s::detach_reason::InfiniteLoopProtocol{});
     if (channel.size_approx(kSnapshot) != 3) return fail("the producer session left the wrong number of values");
@@ -87,7 +87,7 @@ static_assert(!channels::IsBridgeableDirection<BridgeSpsc, static_cast<channels:
     std::optional consumer{channels::mint_substrate_session<BridgeSpsc, channels::Direction::Consumer>(
         ctx, channel.consumer(std::move(consumer_perm)))};
     for (int value = 1; value <= 3; ++value) {
-        auto [got, next] = std::move(*consumer).recv(pop_int);
+        auto [got, next] = std::move(*consumer).recv(ctx);
         if (got != value * 10) return fail("the consumer session read the wrong value");
         consumer.emplace(std::move(next));
     }
@@ -144,9 +144,9 @@ static_assert(ReadsSnapshot<channels::Endpoint<EndpointSpsc, channels::Direction
 
     // into_session starts the default protocol over the same handle.
     std::optional session{std::move(consumer).into_session()};
-    auto [first, after_first] = std::move(*session).recv(pop_int);
+    auto [first, after_first] = std::move(*session).recv(ctx);
     session.emplace(std::move(after_first));
-    auto [second, after_second] = std::move(*session).recv(pop_int);
+    auto [second, after_second] = std::move(*session).recv(ctx);
     session.emplace(std::move(after_second));
     if (first != 8 || second != 9) return fail("the endpoint session read the wrong values");
     std::move(*session).detach(s::detach_reason::InfiniteLoopProtocol{});
@@ -374,7 +374,7 @@ using RecordSpsc = c::channel_t<int, 8, decltype(record_root())>;
         channels::mint_recording_endpoint(channels::mint_endpoint<RecordSpsc, channels::Direction::Producer>(
                                               ctx, channel.producer(std::move(producer_perm))),
                                           s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
-    auto after_send = std::move(recorded).send(11, push_int);
+    auto after_send = std::move(recorded).send(ctx, 11);
     std::move(after_send).detach(s::detach_reason::InfiniteLoopProtocol{});
 
     if (consumer.try_pop().value_or(-1) != 11) return fail("the recorded endpoint did not send its value");

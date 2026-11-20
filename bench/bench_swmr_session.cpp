@@ -94,7 +94,7 @@ template <typename Body>
         ses::mint_writer_runtime_session<Swmr>(kForeground, ses::mint_swmr_writer<Swmr>(swmr, writer_root()))};
     std::uint64_t seq = 0;
     auto report = measure("SwmrSession session send", [&] {
-        session.emplace(std::move(*session).send(payload_at(++seq), ses::publish_value));
+        session.emplace(std::move(*session).send(kForeground, payload_at(++seq)));
         bench::do_not_optimize(seq);
     });
     std::move(*session).detach(s::detach_reason::InfiniteLoopProtocol{});
@@ -132,7 +132,7 @@ template <typename Body>
     Swmr swmr{reader_root(), payload_at(123)};
     std::optional session{ses::mint_reader_runtime_session<Swmr>(kForeground, take_reader(swmr))};
     auto report = measure("SwmrSession session recv", [&] {
-        auto [observed, next] = std::move(*session).recv(ses::load_value);
+        auto [observed, next] = std::move(*session).recv(kForeground);
         bench::do_not_optimize(observed);
         session.emplace(std::move(next));
     });
