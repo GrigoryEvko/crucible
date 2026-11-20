@@ -22,7 +22,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <type_traits>
 #include <vector>
@@ -79,12 +78,13 @@ static_assert(std::is_same_v<decltype(bench::Percentiles{}.cv), double>, "Percen
 
 int g_failures = 0;
 
-#define WELFORD_CHECK(cond)                                                                       \
-    do {                                                                                          \
-        if (!(cond)) {                                                                            \
-            std::fprintf(stderr, "[FAIL] %s:%d  WELFORD_CHECK(%s)\n", __FILE__, __LINE__, #cond); \
-            ++g_failures;                                                                         \
-        }                                                                                         \
+#define WELFORD_CHECK(cond)                                                                                    \
+    do {                                                                                                       \
+        if (!(cond)) {                                                                                         \
+            ::fixy::report(::fixy::Sink::Err, "[FAIL] {}:{}  WELFORD_CHECK({})\n", ::fixy::TextView{__FILE__}, \
+                           __LINE__, ::fixy::TextView{#cond});                                                 \
+            ++g_failures;                                                                                      \
+        }                                                                                                      \
     } while (0)
 
 void test_welford_well_conditioned() {
@@ -181,9 +181,9 @@ int main() {
         ::fixy::check::pass(kTest, "Welford variance sentinel: PASS\n");
         return 0;
     }
-    std::fprintf(stderr,
-                 "Welford variance sentinel: FAIL "
-                 "(%d WELFORD_CHECK failure(s))\n",
-                 g_failures);
+    ::fixy::report(::fixy::Sink::Err,
+                   "Welford variance sentinel: FAIL "
+                   "({} WELFORD_CHECK failure(s))\n",
+                   g_failures);
     return 1;
 }

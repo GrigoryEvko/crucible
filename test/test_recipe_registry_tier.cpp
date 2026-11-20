@@ -12,7 +12,6 @@
 #include <foundation/effects/Effect.h>
 
 #include <fixy/check/Check.h>
-#include <cstdio>
 #include <type_traits>
 #include <utility>
 
@@ -421,6 +420,6 @@ template <class Found>
                                         == RecipeError::ToleranceMismatch);
     }
 
-    std::puts("ok");
+    ::fixy::check::pass(kTest, "ok\n");
     return 0;
 }

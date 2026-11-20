@@ -24,7 +24,6 @@
 #include <bit>
 #include <chrono>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <thread>
@@ -114,10 +113,7 @@ void feed_one_region(crucible::Vigil& vigil, uint32_t first_iter) {
     }
 }
 
-[[noreturn]] void fail(const char* what) {
-    std::fprintf(stderr, "FAIL: %s\n", what);
-    std::exit(1);
-}
+[[noreturn]] void fail(::fixy::TextView what) { ::fixy::fatal("FAIL: {}\n", what); }
 
 // Each rollback here is issued while the background thread may still be
 // publishing the region fed just before it, so the log sees a rollback and

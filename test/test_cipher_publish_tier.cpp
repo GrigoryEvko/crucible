@@ -17,7 +17,6 @@
 #include <fixy/check/Fixture.h>
 #include <foundation/effects/Effect.h>
 
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <type_traits>
@@ -464,6 +463,6 @@ int main() {
     test_content_addressed_publish_overloads(dir);
 
     std::filesystem::remove_all(dir);
-    std::puts("ok");
+    ::fixy::check::pass(kTest, "ok\n");
     return 0;
 }

@@ -3,7 +3,7 @@
 
 #include <crucible/mimic/Fence.h>
 
-#include <cstdio>
+#include <fixy/Core.h>
 
 namespace mf = crucible::mimic;
 using BS = foundation::algebra::lattices::BarrierStrength;
@@ -45,7 +45,7 @@ int main() {
     auto strength = sel == 0 ? BS::SeqCst : BS::None;
     auto spec = mf::fence_spec_for(strength, MS::System, FA::X86);
     if (spec.kind != mf::FenceKind::X86Mfence) {
-        std::fprintf(stderr, "fence: x86 system seqcst must lower to mfence\n");
+        ::fixy::report(::fixy::Sink::Err, "fence: x86 system seqcst must lower to mfence\n");
         return 1;
     }
     ::fixy::report(::fixy::Sink::Out, "fence lowering OK ({})\n", mf::fence_mnemonic(spec));

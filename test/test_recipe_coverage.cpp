@@ -29,7 +29,6 @@
 #include <array>
 #include <fixy/check/Check.h>
 #include <cstdint>
-#include <cstdio>
 #include <string_view>
 
 namespace {
@@ -407,7 +406,7 @@ int main() {
         }
         for (std::size_t i = 0; i < kExpectedCategorizationSize; ++i) {
             if (!covered[i]) {
-                std::fprintf(stderr, "CKernelId value %zu has no row in kCategorization\n", i);
+                ::fixy::report(::fixy::Sink::Err, "CKernelId value {} has no row in kCategorization\n", i);
                 CRUCIBLE_TEST_ASSERT(kTest, false && "missing CKernelId categorization");
             }
         }

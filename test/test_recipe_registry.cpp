@@ -25,7 +25,6 @@
 
 #include <fixy/check/Check.h>
 #include <cinttypes>
-#include <cstdio>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -342,9 +341,9 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
             }
         }
         if (any_drift) {
-            std::fprintf(stderr, "  update the pinned golden hashes\n"
-                                 "  audit every persisted consumer of the drifted hashes\n"
-                                 "  consider bumping the persisted-format version\n");
+            ::fixy::report(::fixy::Sink::Err, "  update the pinned golden hashes\n"
+                                              "  audit every persisted consumer of the drifted hashes\n"
+                                              "  consider bumping the persisted-format version\n");
             CRUCIBLE_TEST_ASSERT(kTest, !any_drift && "recipe-hash golden mismatch");
         }
     }

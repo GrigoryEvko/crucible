@@ -12,7 +12,6 @@
 #include <fixy/check/Fixture.h>
 #include <foundation/effects/Effect.h>
 
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -171,6 +170,6 @@ int main() {
     test_e2e_block_fence_consumer(dir);
 
     std::filesystem::remove_all(dir);
-    std::puts("ok");
+    ::fixy::check::pass(kTest, "ok\n");
     return 0;
 }

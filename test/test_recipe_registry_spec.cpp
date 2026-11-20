@@ -17,7 +17,6 @@
 
 #include <fixy/check/Check.h>
 #include <array>
-#include <cstdio>
 #include <type_traits>
 #include <utility>
 
@@ -497,6 +496,6 @@ template <class Found>
         CRUCIBLE_TEST_ASSERT(kTest, !::fixy::admits(none_spec, Tolerance::BITEXACT, RecipeFamily::Any));
     }
 
-    std::puts("ok");
+    ::fixy::check::pass(kTest, "ok\n");
     return 0;
 }

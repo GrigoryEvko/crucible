@@ -21,7 +21,6 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include <cstdio>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -463,6 +462,6 @@ int main() {
     test_move_only_witness();
     test_api_completeness_matrix();
 
-    std::puts("ok");
+    ::fixy::check::pass(kTest, "ok\n");
     return 0;
 }

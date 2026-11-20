@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstdio>
 #include <initializer_list>
 #include <string>
 #include <string_view>
@@ -114,12 +113,13 @@ constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
 
 constexpr ::fixy::FixedArray<std::uint64_t, 4096> kReadOnlyWords = make_read_only_words();
 
-#define CHECK(cond, msg)                                                                     \
-    do {                                                                                     \
-        if (!(cond)) {                                                                       \
-            std::fprintf(stderr, "FAIL %s:%d  %s — %s\n", __FILE__, __LINE__, #cond, (msg)); \
-            ++failures;                                                                      \
-        }                                                                                    \
+#define CHECK(cond, msg)                                                                                     \
+    do {                                                                                                     \
+        if (!(cond)) {                                                                                       \
+            ::fixy::report(::fixy::Sink::Err, "FAIL {}:{}  {} — {}\n", ::fixy::TextView{__FILE__}, __LINE__, \
+                           ::fixy::TextView{#cond}, ::fixy::TextView{msg});                                  \
+            ++failures;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
 void test_topology_basic() {
@@ -804,6 +804,6 @@ int main() {
         ::fixy::check::pass(kTest, "test_warden_policy: OK\n");
         return 0;
     }
-    std::fprintf(stderr, "test_warden_policy: %d FAILURES\n", failures);
+    ::fixy::report(::fixy::Sink::Err, "test_warden_policy: {} FAILURES\n", failures);
     return 1;
 }

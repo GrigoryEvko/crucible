@@ -304,6 +304,6 @@ int main() {
     test_chain_composition();
     test_e2e_fence_checked_consumer();
     test_pool_base_pinned_with_huge_alignment();
-    std::puts("ok");
+    ::fixy::check::pass(kTest, "ok\n");
     return 0;
 }
