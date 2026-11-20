@@ -13,7 +13,6 @@
 #include <fixy/os/Time.h>
 
 #include <cstdint>
-#include <cstdio>
 #include <expected>
 #include <system_error>
 #include <type_traits>
@@ -112,12 +111,12 @@ int main() {
         // every diagnostic is still at its initial value.
         if (watchdog.baseline_count() != 0u || watchdog.latest_count() != 0u || watchdog.window_started_ns() != 0u
             || watchdog.misses_in_window() != 0u) {
-            std::fprintf(stderr,
-                         "the diagnostics of a watchdog with no source should be all "
-                         "zero; got baseline=%llu latest=%llu window=%llu\n",
-                         static_cast<unsigned long long>(watchdog.baseline_count()),
-                         static_cast<unsigned long long>(watchdog.latest_count()),
-                         static_cast<unsigned long long>(watchdog.window_started_ns()));
+            ::fixy::report(::fixy::Sink::Err,
+                           "the diagnostics of a watchdog with no source should be all "
+                           "zero; got baseline={} latest={} window={}\n",
+                           static_cast<unsigned long long>(watchdog.baseline_count()),
+                           static_cast<unsigned long long>(watchdog.latest_count()),
+                           static_cast<unsigned long long>(watchdog.window_started_ns()));
             ++failures;
         }
     }
@@ -133,7 +132,7 @@ int main() {
             ++failures;
         }
         if (watchdog.miss_budget() != 0u) {
-            std::fprintf(stderr, "budget getter returns %u; expected 0\n", watchdog.miss_budget());
+            ::fixy::report(::fixy::Sink::Err, "budget getter returns {}; expected 0\n", watchdog.miss_budget());
             ++failures;
         }
     }
@@ -157,8 +156,8 @@ int main() {
             }
         }
         if (watchdog.window_ns() != 0u) {
-            std::fprintf(stderr, "window_ns() = %llu; expected 0 for window_sec=0\n",
-                         static_cast<unsigned long long>(watchdog.window_ns()));
+            ::fixy::report(::fixy::Sink::Err, "window_ns() = {}; expected 0 for window_sec=0\n",
+                           static_cast<unsigned long long>(watchdog.window_ns()));
             ++failures;
         }
     }
@@ -167,27 +166,27 @@ int main() {
     // and stops at the floor.  The idle class is not a weaker
     // real-time class but a separate thing, so it stays put.
     if (demote_one_step(SchedClass::Deadline) != SchedClass::Fifo) {
-        std::fprintf(stderr, "demote(Deadline) wrong: expected Fifo\n");
+        ::fixy::report(::fixy::Sink::Err, "demote(Deadline) wrong: expected Fifo\n");
         ++failures;
     }
     if (demote_one_step(SchedClass::Fifo) != SchedClass::Other) {
-        std::fprintf(stderr, "demote(Fifo) wrong: expected Other\n");
+        ::fixy::report(::fixy::Sink::Err, "demote(Fifo) wrong: expected Other\n");
         ++failures;
     }
     if (demote_one_step(SchedClass::RoundRobin) != SchedClass::Other) {
-        std::fprintf(stderr, "demote(RoundRobin) wrong: expected Other\n");
+        ::fixy::report(::fixy::Sink::Err, "demote(RoundRobin) wrong: expected Other\n");
         ++failures;
     }
     if (demote_one_step(SchedClass::Other) != SchedClass::Other) {
-        std::fprintf(stderr, "demote(Other) wrong: expected Other (already at floor)\n");
+        ::fixy::report(::fixy::Sink::Err, "demote(Other) wrong: expected Other (already at floor)\n");
         ++failures;
     }
     if (demote_one_step(SchedClass::Batch) != SchedClass::Other) {
-        std::fprintf(stderr, "demote(Batch) wrong: expected Other (same-tier downshift)\n");
+        ::fixy::report(::fixy::Sink::Err, "demote(Batch) wrong: expected Other (same-tier downshift)\n");
         ++failures;
     }
     if (demote_one_step(SchedClass::Idle) != SchedClass::Idle) {
-        std::fprintf(stderr, "demote(Idle) wrong: expected Idle (not an RT class)\n");
+        ::fixy::report(::fixy::Sink::Err, "demote(Idle) wrong: expected Idle (not an RT class)\n");
         ++failures;
     }
 
@@ -195,20 +194,20 @@ int main() {
         Policy policy = Policy::production();
         DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/::fixy::none, policy);
         if (watchdog.miss_budget() != policy.deadline_miss_budget) {
-            std::fprintf(stderr, "miss_budget() = %u; expected %u\n", watchdog.miss_budget(),
-                         policy.deadline_miss_budget);
+            ::fixy::report(::fixy::Sink::Err, "miss_budget() = {}; expected {}\n", watchdog.miss_budget(),
+                           policy.deadline_miss_budget);
             ++failures;
         }
         const uint64_t expected_window_ns = static_cast<uint64_t>(policy.watchdog_window_sec) * 1000000000ull;
         if (watchdog.window_ns() != expected_window_ns) {
-            std::fprintf(stderr, "window_ns() = %llu; expected %llu\n",
-                         static_cast<unsigned long long>(watchdog.window_ns()),
-                         static_cast<unsigned long long>(expected_window_ns));
+            ::fixy::report(::fixy::Sink::Err, "window_ns() = {}; expected {}\n",
+                           static_cast<unsigned long long>(watchdog.window_ns()),
+                           static_cast<unsigned long long>(expected_window_ns));
             ++failures;
         }
         if (watchdog.baseline_count() != 0u || watchdog.latest_count() != 0u || watchdog.window_started_ns() != 0u
             || watchdog.misses_in_window() != 0u) {
-            std::fprintf(stderr, "fresh watchdog diagnostics not at zero\n");
+            ::fixy::report(::fixy::Sink::Err, "fresh watchdog diagnostics not at zero\n");
             ++failures;
         }
     }
@@ -221,7 +220,7 @@ int main() {
         (void)watchdog.observe(runner);  // no source, so no state changes
         watchdog.reset();
         if (watchdog.baseline_count() != 0u || watchdog.latest_count() != 0u || watchdog.window_started_ns() != 0u) {
-            std::fprintf(stderr, "reset() should zero diagnostics\n");
+            ::fixy::report(::fixy::Sink::Err, "reset() should zero diagnostics\n");
             ++failures;
         }
     }
@@ -236,7 +235,7 @@ int main() {
         Policy policy = Policy::production();
         DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/::fixy::none, policy);
         if (watchdog.observe_at(runner, failed_read) != WatchdogVerdict::InsufficientData) {
-            std::fprintf(stderr, "a failed clock read must give InsufficientData\n");
+            ::fixy::report(::fixy::Sink::Err, "a failed clock read must give InsufficientData\n");
             ++failures;
         }
 
@@ -256,7 +255,7 @@ int main() {
             const auto reading = boot_clock.read(
                 ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(runner));
             if (reading.is_err()) {
-                std::fprintf(stderr, "a read of the boot clock failed\n");
+                ::fixy::report(::fixy::Sink::Err, "a read of the boot clock failed\n");
                 ++failures;
             } else {
                 (void)sensing.observe_at(runner, reading);
@@ -266,12 +265,12 @@ int main() {
                     reading.match([](::fixy::BootClockBytes<uint64_t> const& stamp) { return stamp.peek(); },
                                   [](::foundation::os::Errno const&) { return uint64_t{0}; });
                 if (window_started != read_ns) {
-                    std::fprintf(stderr, "a real reading did not open the window\n");
+                    ::fixy::report(::fixy::Sink::Err, "a real reading did not open the window\n");
                     ++failures;
                 }
                 if (sensing.observe_at(runner, failed_read) != WatchdogVerdict::InsufficientData
                     || sensing.window_started_ns() != window_started || sensing.latest_count() != latest) {
-                    std::fprintf(stderr, "a failed clock read changed the state of the watchdog\n");
+                    ::fixy::report(::fixy::Sink::Err, "a failed clock read changed the state of the watchdog\n");
                     ++failures;
                 }
             }

@@ -34,7 +34,6 @@
 
 #include <cerrno>
 #include <cstdint>
-#include <cstdio>
 #include <ctime>
 #include <limits>
 #include <utility>
@@ -117,17 +116,17 @@ using foundation::os::Errno;
 // Says whether a read gave the error `expected` and no reading.  It prints
 // the case when the read did not.
 template <typename Result>
-[[nodiscard]] bool is_refused_with(Result const& result, Errno expected, char const* what) {
+[[nodiscard]] bool is_refused_with(Result const& result, Errno expected, ::fixy::TextView what) {
     return result.match(
         [what](auto const& reading) {
-            std::fprintf(stderr, "%s: the read gave the reading %llu, and it must give an error\n", what,
-                         static_cast<unsigned long long>(reading.peek()));
+            ::fixy::report(::fixy::Sink::Err, "{}: the read gave the reading {}, and it must give an error\n", what,
+                           static_cast<unsigned long long>(reading.peek()));
             return false;
         },
         [what, expected](Errno const& error) {
             if (error != expected) {
-                std::fprintf(stderr, "%s: the read gave the error number %d, and it must give %d\n", what,
-                             foundation::os::error_number(error), foundation::os::error_number(expected));
+                ::fixy::report(::fixy::Sink::Err, "{}: the read gave the error number {}, and it must give {}\n", what,
+                               foundation::os::error_number(error), foundation::os::error_number(expected));
                 return false;
             }
             return true;
@@ -137,20 +136,21 @@ template <typename Result>
 // Says whether a read gave the reading `expected_nanos`.  It prints the case
 // when the read did not.
 template <typename Result>
-[[nodiscard]] bool is_reading_of(Result const& result, std::uint64_t expected_nanos, char const* what) {
+[[nodiscard]] bool is_reading_of(Result const& result, std::uint64_t expected_nanos, ::fixy::TextView what) {
     return result.match(
         [what, expected_nanos](auto const& reading) {
             if (reading.peek() != expected_nanos) {
-                std::fprintf(stderr, "%s: the read gave the reading %llu, and it must give %llu\n", what,
-                             static_cast<unsigned long long>(reading.peek()),
-                             static_cast<unsigned long long>(expected_nanos));
+                ::fixy::report(::fixy::Sink::Err, "{}: the read gave the reading {}, and it must give {}\n", what,
+                               static_cast<unsigned long long>(reading.peek()),
+                               static_cast<unsigned long long>(expected_nanos));
                 return false;
             }
             return true;
         },
         [what, expected_nanos](Errno const& error) {
-            std::fprintf(stderr, "%s: the read gave the error number %d, and it must give the reading %llu\n", what,
-                         foundation::os::error_number(error), static_cast<unsigned long long>(expected_nanos));
+            ::fixy::report(::fixy::Sink::Err,
+                           "{}: the read gave the error number {}, and it must give the reading {}\n", what,
+                           foundation::os::error_number(error), static_cast<unsigned long long>(expected_nanos));
             return false;
         });
 }
@@ -283,14 +283,15 @@ private:
 
 // Says whether a transaction holds the place `expected` in the order of the
 // events of its log.
-[[nodiscard]] bool holds_place(crucible::Transaction const* tx, std::uint64_t expected, char const* what) {
+[[nodiscard]] bool holds_place(crucible::Transaction const* tx, std::uint64_t expected, ::fixy::TextView what) {
     if (tx == nullptr) {
-        std::fprintf(stderr, "%s: the log gave no transaction\n", what);
+        ::fixy::report(::fixy::Sink::Err, "{}: the log gave no transaction\n", what);
         return false;
     }
     if (tx->event_order.get() != expected) {
-        std::fprintf(stderr, "%s: the transaction holds the place %llu, and it must hold %llu\n", what,
-                     static_cast<unsigned long long>(tx->event_order.get()), static_cast<unsigned long long>(expected));
+        ::fixy::report(::fixy::Sink::Err, "{}: the transaction holds the place {}, and it must hold {}\n", what,
+                       static_cast<unsigned long long>(tx->event_order.get()),
+                       static_cast<unsigned long long>(expected));
         return false;
     }
     return true;
@@ -325,7 +326,7 @@ void transaction_stamps_read_no_clock(Tally& tally) {
                                         committed_region(test, arena, ops[2])};
     for (crucible::RegionNode const* region : regions) {
         if (region == nullptr || region->merkle_hash.raw() == 0) {
-            std::fprintf(stderr, "the test could not build a region with a merkle root\n");
+            ::fixy::report(::fixy::Sink::Err, "the test could not build a region with a merkle root\n");
             tally.expect(false);
             return;
         }
@@ -459,7 +460,7 @@ int main() {
     transaction_stamps_read_no_clock(tally);
     session_watch_traces_at_its_poll_count(tally);
     if (tally.failures != 0) {
-        std::fprintf(stderr, "test_clock_failed_read: %d check(s) failed\n", tally.failures);
+        ::fixy::report(::fixy::Sink::Err, "test_clock_failed_read: {} check(s) failed\n", tally.failures);
         return 1;
     }
     ::fixy::check::pass(kTest, "test_clock_failed_read: all cases passed\n");

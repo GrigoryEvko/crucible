@@ -15,9 +15,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 
-#include <array>
 #include <cstdint>
-#include <cstdio>
 #include <utility>
 
 namespace {
@@ -81,26 +79,31 @@ inline constexpr std::uint64_t cache_key_for_subset =
     cipher::computation_cache_key_in_row<&cache_key_pins::canonical_pin_fn, subset_row<Mask>, int>;
 
 template <std::size_t... Is>
-consteval std::array<std::uint64_t, 64> build_all_keys(std::index_sequence<Is...>) noexcept {
-    return std::array<std::uint64_t, 64>{cache_key_for_subset<static_cast<unsigned>(Is)>...};
+consteval ::fixy::FixedArray<std::uint64_t, 64> build_all_keys(std::index_sequence<Is...>) noexcept {
+    return ::fixy::FixedArray<std::uint64_t, 64>{cache_key_for_subset<static_cast<unsigned>(Is)>...};
 }
 
-inline constexpr std::array<std::uint64_t, 64> all_subset_keys = build_all_keys(std::make_index_sequence<64>{});
+inline constexpr ::fixy::FixedArray<std::uint64_t, 64> all_subset_keys = build_all_keys(std::make_index_sequence<64>{});
 
-// O(N²) at consteval: 2016 comparisons for N of 64.
+// O(N²) at consteval: 2016 comparisons for N of 64.  The inner walk compares
+// only the positions after the outer one.
 
 template <std::size_t N>
-consteval bool all_pairwise_distinct(const std::array<std::uint64_t, N>& keys) noexcept {
-    for (std::size_t i = 0; i < N; ++i) {
-        for (std::size_t j = i + 1; j < N; ++j) {
-            if (keys[i] == keys[j]) return false;
+consteval bool all_pairwise_distinct(const ::fixy::FixedArray<std::uint64_t, N>& keys) noexcept {
+    std::size_t outer = 0;
+    for (std::uint64_t const left : keys) {
+        std::size_t inner = 0;
+        for (std::uint64_t const right : keys) {
+            if (inner > outer && left == right) return false;
+            ++inner;
         }
+        ++outer;
     }
     return true;
 }
 
 template <std::size_t N>
-consteval bool all_nonzero(const std::array<std::uint64_t, N>& keys) noexcept {
+consteval bool all_nonzero(const ::fixy::FixedArray<std::uint64_t, N>& keys) noexcept {
     for (auto k : keys)
         if (k == 0) return false;
     return true;
@@ -131,9 +134,9 @@ static_assert(cache_key_for_subset<0b000000> == cache_key_for_subset<0b000000>);
 static_assert(cache_key_for_subset<0b111111> == cache_key_for_subset<0b111111>);
 
 // The index-sequence construction must not re-order or drop subsets.
-static_assert(all_subset_keys[0] == cache_key_for_subset<0u>);
-static_assert(all_subset_keys[1] == cache_key_for_subset<1u>);
-static_assert(all_subset_keys[63] == cache_key_for_subset<63u>);
+static_assert(all_subset_keys.at(::fixy::index<0>()) == cache_key_for_subset<0u>);
+static_assert(all_subset_keys.at(::fixy::index<1>()) == cache_key_for_subset<1u>);
+static_assert(all_subset_keys.at(::fixy::index<63>()) == cache_key_for_subset<63u>);
 
 // The 64-key matrix only ever builds atoms in ascending order, so it
 // never compares two rows that are permutations of each other.  These
@@ -174,27 +177,27 @@ static_assert(cipher::computation_cache_key_in_row<&cache_key_pins::canonical_pi
 // The variadic form keeps unparenthesised template-argument commas
 // from being read as macro-argument separators.
 
-#define ASSERT_TRUE(...)                                                                                    \
-    do {                                                                                                    \
-        if (!(__VA_ARGS__)) {                                                                               \
-            std::fprintf(stderr, "    ASSERT_TRUE failed: %s (%s:%d)\n", #__VA_ARGS__, __FILE__, __LINE__); \
-            std::abort();                                                                                   \
-        }                                                                                                   \
+#define ASSERT_TRUE(...)                                                                          \
+    do {                                                                                          \
+        if (!(__VA_ARGS__)) {                                                                     \
+            ::fixy::fatal("    ASSERT_TRUE failed: {} ({}:{})\n", ::fixy::TextView{#__VA_ARGS__}, \
+                          ::fixy::TextView{__FILE__}, __LINE__);                                  \
+        }                                                                                         \
     } while (0)
 
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "test_computation_cache_invalidation:\n");
+    ::fixy::report(::fixy::Sink::Err, "test_computation_cache_invalidation:\n");
 
     // The compile-time assertions above could all hold while runtime
     // evaluation diverges.  The volatile reads keep the optimizer from
     // folding this sample back into constants.
 
-    std::fprintf(stderr, "  runtime_equivalence_sentinel: ");
+    ::fixy::report(::fixy::Sink::Err, "  runtime_equivalence_sentinel: ");
 
     // Sample 6 subset masks covering edge + interior cases.
-    constexpr unsigned sample_masks[] = {0u, 1u, 2u, 4u, 0b101010u, 63u};
+    constexpr ::fixy::FixedArray<unsigned, 6> sample_masks{0u, 1u, 2u, 4u, 0b101010u, 63u};
     for (unsigned m : sample_masks) {
         // The loop variable is not constexpr, so the switch maps it
         // back to the consteval values.
@@ -219,28 +222,28 @@ int main() {
                 consteval_value = cache_key_for_subset<63u>;
                 break;
             default:
-                std::abort();  // unreachable under sample_masks
+                ::fixy::unreachable();
         }
         volatile std::uint64_t runtime_value = consteval_value;
-        if (runtime_value == 0) std::abort();
+        if (runtime_value == 0) ::fixy::fatal("the run-time key of a sample mask is zero");
     }
-    std::fprintf(stderr, "PASSED\n");
+    ::fixy::report(::fixy::Sink::Err, "PASSED\n");
 
-    std::fprintf(stderr,
-                 "  subset_coverage_report: %zu subsets, "
-                 "all keys non-zero, all pairwise-distinct: ",
-                 all_subset_keys.size());
+    ::fixy::report(::fixy::Sink::Err,
+                   "  subset_coverage_report: {} subsets, "
+                   "all keys non-zero, all pairwise-distinct: ",
+                   all_subset_keys.size());
 
     bool every_nonzero = true;
     for (auto k : all_subset_keys)
         if (k == 0) every_nonzero = false;
     ASSERT_TRUE(every_nonzero);
 
-    ASSERT_TRUE(all_subset_keys[0] != 0);
-    ASSERT_TRUE(all_subset_keys[63] != 0);
-    ASSERT_TRUE(all_subset_keys[0] != all_subset_keys[63]);
+    ASSERT_TRUE(all_subset_keys.at(::fixy::index<0>()) != 0);
+    ASSERT_TRUE(all_subset_keys.at(::fixy::index<63>()) != 0);
+    ASSERT_TRUE(all_subset_keys.at(::fixy::index<0>()) != all_subset_keys.at(::fixy::index<63>()));
 
-    std::fprintf(stderr, "PASSED\n");
+    ::fixy::report(::fixy::Sink::Err, "PASSED\n");
 
     ::fixy::check::pass(kTest, "\n2 runtime checks passed; the invalidation invariants are "
                                "pinned at compile time.\n");

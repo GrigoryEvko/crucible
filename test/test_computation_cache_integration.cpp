@@ -15,9 +15,7 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
 #include <cstdint>
-#include <cstdio>
 
 namespace {
 
@@ -47,11 +45,15 @@ using BgIOR = eff::Row<eff::Effect::Bg, eff::Effect::IO>;
 // hundred and twenty comparisons, and folds into one assertion rather
 // than a hundred and twenty.
 template <std::size_t N>
-constexpr bool all_pairwise_distinct(const std::array<std::uint64_t, N>& keys) noexcept {
-    for (std::size_t i = 0; i < N; ++i) {
-        for (std::size_t j = i + 1; j < N; ++j) {
-            if (keys[i] == keys[j]) return false;
+constexpr bool all_pairwise_distinct(const ::fixy::FixedArray<std::uint64_t, N>& keys) noexcept {
+    std::size_t outer = 0;
+    for (std::uint64_t const left : keys) {
+        std::size_t inner = 0;
+        for (std::uint64_t const right : keys) {
+            if (inner > outer && left == right) return false;
+            ++inner;
         }
+        ++outer;
     }
     return true;
 }
@@ -116,25 +118,25 @@ cipher::CompiledBody hot_body{};
 // Variadic, so that a comma inside a template argument list is not
 // taken for a macro argument separator.  The single-argument assertion
 // macro cannot express these calls.
-#define ASSERT_TRUE(...)                                                                                    \
-    do {                                                                                                    \
-        if (!(__VA_ARGS__)) {                                                                               \
-            std::fprintf(stderr, "    ASSERT_TRUE failed: %s (%s:%d)\n", #__VA_ARGS__, __FILE__, __LINE__); \
-            std::abort();                                                                                   \
-        }                                                                                                   \
+#define ASSERT_TRUE(...)                                                                          \
+    do {                                                                                          \
+        if (!(__VA_ARGS__)) {                                                                     \
+            ::fixy::fatal("    ASSERT_TRUE failed: {} ({}:{})\n", ::fixy::TextView{#__VA_ARGS__}, \
+                          ::fixy::TextView{__FILE__}, __LINE__);                                  \
+        }                                                                                         \
     } while (0)
 
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "test_computation_cache_integration:\n");
+    ::fixy::report(::fixy::Sink::Err, "test_computation_cache_integration:\n");
 
     // A dispatcher looks up, branches to the cached body on a hit, and
     // compiles and inserts on a miss.  If a lookup after an insert ever
     // missed, every call would compile again and the compiled bodies
     // would never hold a stable identity.
     {
-        std::fprintf(stderr, "  scenario 1 (compile_then_cache_fast_path): ");
+        ::fixy::report(::fixy::Sink::Err, "  scenario 1 (compile_then_cache_fast_path): ");
 
         ASSERT_TRUE(cipher::lookup_computation_cache<&ic_unary, int>().is_none());
 
@@ -146,7 +148,7 @@ int main() {
             ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_unary, int>(), fast_path_body));
         }
 
-        std::fprintf(stderr, "PASSED\n");
+        ::fixy::report(::fixy::Sink::Err, "PASSED\n");
     }
 
     // A refactor that routed the row-blind and the row-aware lookups to
@@ -154,7 +156,7 @@ int main() {
     // row to a caller that asked for one.  That is the whole of what
     // the row-aware side is for.
     {
-        std::fprintf(stderr, "  scenario 2 (row_blind_aware_disjoint): ");
+        ::fixy::report(::fixy::Sink::Err, "  scenario 2 (row_blind_aware_disjoint): ");
 
         cipher::insert_computation_cache_in_row<&ic_binary, EmptyR, int, double>(::fixy::to(aware_body));
 
@@ -169,7 +171,7 @@ int main() {
         ASSERT_TRUE(holds(cipher::lookup_computation_cache_in_row<&ic_binary, EmptyR, int, double>(), aware_body));
         ASSERT_TRUE(!::fixy::same_object(::fixy::to(blind_body), ::fixy::to(aware_body)));
 
-        std::fprintf(stderr, "PASSED\n");
+        ::fixy::report(::fixy::Sink::Err, "PASSED\n");
     }
 
     // One function under two different rows is one logical operation
@@ -177,7 +179,7 @@ int main() {
     // either body to the other's caller is the confusion this guards
     // against.
     {
-        std::fprintf(stderr, "  scenario 3 (cross_row_body_isolation): ");
+        ::fixy::report(::fixy::Sink::Err, "  scenario 3 (cross_row_body_isolation): ");
 
         cipher::insert_computation_cache_in_row<&ic_void, EmptyR>(::fixy::to(empty_row_body));
         cipher::insert_computation_cache_in_row<&ic_void, BgR>(::fixy::to(bg_row_body));
@@ -196,7 +198,7 @@ int main() {
         static_assert(cipher::computation_cache_key_in_row<&ic_void, EmptyR>
                       != cipher::computation_cache_key_in_row<&ic_void, IOR>);
 
-        std::fprintf(stderr, "PASSED\n");
+        ::fixy::report(::fixy::Sink::Err, "PASSED\n");
     }
 
     // Sixteen live slots at once, across both lookup paths.  The whole
@@ -204,7 +206,7 @@ int main() {
     // template its own object, and a handful of slots would not show a
     // failure of that.
     {
-        std::fprintf(stderr, "  scenario 4 (population_disjointness): ");
+        ::fixy::report(::fixy::Sink::Err, "  scenario 4 (population_disjointness): ");
 
         cipher::insert_computation_cache<&ic_pop1, int>(::fixy::to(body_at(blind_population, 0)));
         cipher::insert_computation_cache<&ic_pop2, int>(::fixy::to(body_at(blind_population, 1)));
@@ -256,7 +258,7 @@ int main() {
         // distinct pointers but shared a key would owe that only to
         // each having its own static, and would alias one another the
         // moment the keys rather than the pointers travelled.
-        constexpr std::array<std::uint64_t, 16> all_keys = {
+        constexpr ::fixy::FixedArray<std::uint64_t, 16> all_keys = {
             cipher::computation_cache_key<&ic_pop1, int>,
             cipher::computation_cache_key<&ic_pop2, int>,
             cipher::computation_cache_key<&ic_pop3, int>,
@@ -280,7 +282,7 @@ int main() {
         volatile bool runtime_distinct = all_pairwise_distinct(all_keys);
         ASSERT_TRUE(runtime_distinct);
 
-        std::fprintf(stderr, "PASSED\n");
+        ::fixy::report(::fixy::Sink::Err, "PASSED\n");
     }
 
     // The slots have static storage duration and so last as long as
@@ -290,17 +292,17 @@ int main() {
     // next.  The two blocks below share no variable but the body, which
     // the second block only compares against.
     {
-        std::fprintf(stderr, "  scenario 5a (lifetime_persist_insert): ");
+        ::fixy::report(::fixy::Sink::Err, "  scenario 5a (lifetime_persist_insert): ");
         cipher::insert_computation_cache<&ic_lifetime, int>(::fixy::to(lifetime_body));
         ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_lifetime, int>(), lifetime_body));
-        std::fprintf(stderr, "PASSED\n");
+        ::fixy::report(::fixy::Sink::Err, "PASSED\n");
     }
     {
-        std::fprintf(stderr, "  scenario 5b (lifetime_persist_lookup): ");
+        ::fixy::report(::fixy::Sink::Err, "  scenario 5b (lifetime_persist_lookup): ");
         const Slot recovered = cipher::lookup_computation_cache<&ic_lifetime, int>();
         ASSERT_TRUE(recovered.is_some());
         ASSERT_TRUE(holds(recovered, lifetime_body));
-        std::fprintf(stderr, "PASSED\n");
+        ::fixy::report(::fixy::Sink::Err, "PASSED\n");
     }
 
     // The key is a compile-time computation and also a cross-process
@@ -308,7 +310,7 @@ int main() {
     // assertion did would miss silently, so each key is read once at
     // compile time and once at run time and the two are compared.
     {
-        std::fprintf(stderr, "  scenario 6 (federation_key_consteval_runtime_eq): ");
+        ::fixy::report(::fixy::Sink::Err, "  scenario 6 (federation_key_consteval_runtime_eq): ");
 
         constexpr std::uint64_t key_blind_consteval = cipher::computation_cache_key<&ic_unary, int>;
         constexpr std::uint64_t key_aware_consteval = cipher::computation_cache_key_in_row<&ic_unary, EmptyR, int>;
@@ -341,7 +343,7 @@ int main() {
 
         // Four shapes for one function and argument list: no row at
         // all, and rows of zero, one and two effects.
-        constexpr std::array<std::uint64_t, 4> row_shape_keys = {
+        constexpr ::fixy::FixedArray<std::uint64_t, 4> row_shape_keys = {
             key_blind_consteval,
             key_aware_consteval,
             key_bg_consteval,
@@ -355,14 +357,14 @@ int main() {
         ASSERT_TRUE(key_bg_consteval != 0);
         ASSERT_TRUE(key_bgio_consteval != 0);
 
-        std::fprintf(stderr, "PASSED\n");
+        ::fixy::report(::fixy::Sink::Err, "PASSED\n");
     }
 
     // Once the cache is warm every lookup in the dispatcher's loop
     // must hit.  A single miss among a thousand would mean the slot was
     // reset or evicted, or that the lookup keeps state of its own.
     {
-        std::fprintf(stderr, "  scenario 7 (hot_loop_hit_rate): ");
+        ::fixy::report(::fixy::Sink::Err, "  scenario 7 (hot_loop_hit_rate): ");
 
         cipher::insert_computation_cache<&ic_hotloop, int>(::fixy::to(hot_body));
 
@@ -370,7 +372,7 @@ int main() {
             ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_hotloop, int>(), hot_body));
         }
 
-        std::fprintf(stderr, "PASSED\n");
+        ::fixy::report(::fixy::Sink::Err, "PASSED\n");
     }
 
     ::fixy::check::pass(kTest, "\n8 scenarios passed.\n");

@@ -16,7 +16,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
@@ -114,7 +113,7 @@ constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
     ::fixy::HeapArray<std::byte> buf = ::fixy::mint_heap_array(bg.alloc, 65536, std::byte{0});
     const size_t n = build_and_serialize(bg, buf.view());
     if (n == 0) {
-        std::fprintf(stderr, "serialize failed\n");
+        ::fixy::report(::fixy::Sink::Err, "serialize failed\n");
         return 1;
     }
     const ::fixy::View<const std::byte> image = buf.view().window(0, n).expect("the writer writes inside its image");
@@ -122,7 +121,7 @@ constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
     // Untouched bytes must still round-trip: a gate that rejects
     // everything would pass every case below.
     if (is_rejected(bg, image)) {
-        std::fprintf(stderr, "happy path wrongly rejected — gate broke success path\n");
+        ::fixy::report(::fixy::Sink::Err, "happy path wrongly rejected — gate broke success path\n");
         return 2;
     }
 
@@ -130,11 +129,11 @@ constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
     // value the predicate rejects, and assert the malformed input is
     // rejected.  Each case copies the pristine bytes first.
     struct Corruption {
-        const char* name;
+        ::fixy::TextView name;
         size_t off;
         uint8_t bad;
     };
-    const Corruption cases[] = {
+    const ::fixy::FixedArray<Corruption, 10> cases{
         // The node kind runs to a terminal value, so 99 is far out of range.
         {"header.kind", kKindOffset, 99},
         // A tensor has at most 8 dimensions, so 200 is out of range.
@@ -159,7 +158,8 @@ constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
 
     for (const auto& c : cases) {
         if (c.off >= n) {
-            std::fprintf(stderr, "offset for %s (%zu) past wire size %zu — layout drift\n", c.name, c.off, n);
+            ::fixy::report(::fixy::Sink::Err, "offset for {} ({}) past wire size {} — layout drift\n", c.name, c.off,
+                           n);
             return 3;
         }
         ::fixy::HeapArray<std::byte> corrupt = ::fixy::mint_heap_array(bg.alloc, n, std::byte{0});
@@ -168,15 +168,15 @@ constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
         // Confirm we are actually flipping the byte to a DIFFERENT value
         // (otherwise the test would pass vacuously).
         if (target == std::byte{c.bad}) {
-            std::fprintf(stderr, "%s: corrupt byte equals original — no mutation\n", c.name);
+            ::fixy::report(::fixy::Sink::Err, "{}: corrupt byte equals original — no mutation\n", c.name);
             return 4;
         }
         target = std::byte{c.bad};
         if (!is_rejected(bg, corrupt.view())) {
-            std::fprintf(stderr,
-                         "%s: malformed byte 0x%02x at offset %zu NOT rejected "
-                         "(release-stripped contract let it through)\n",
-                         c.name, c.bad, c.off);
+            ::fixy::report(::fixy::Sink::Err,
+                           "{}: malformed byte {} at offset {} NOT rejected "
+                           "(release-stripped contract let it through)\n",
+                           c.name, c.bad, c.off);
             return 5;
         }
         if (!is_rejected_as_field_out_of_range(bg, corrupt.view())) {
