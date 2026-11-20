@@ -10,9 +10,11 @@
 //     region, and each starts as zero bytes.
 //   - A read of the guard chunk of an extent ends the child by SIGSEGV, and
 //     a read of the chunk below it gives zero.
-//   - The count of the lines of /proc/self/maps does not grow with the
-//     chunks of a committed extent.  After 4096 chunks of 9 extents it grows
-//     by at most two lines for each extent and for each section of records.
+//   - The count of the lines of /proc/self/maps inside the window and its
+//     region does not grow with the chunks of a committed extent.  After 4096
+//     chunks of 9 extents it grows by at most two lines for each extent and
+//     for each section of records.  A line of another mapping, such as a map
+//     of a sanitizer for itself, does not count.
 //   - publish_host_window fills the host slot and no other slot.
 
 #include <foundation/alloc/ChunkMap.h>
@@ -53,12 +55,35 @@ constinit ::foundation::core::FixedText<kMapsBytes> maps_text{};
     return alloc::reserve_window(os::ReserveCap{cap}).expect("the ladder gives a window under the cap");
 }
 
-// The count of the lines of /proc/self/maps: one line for each mapping.
-[[nodiscard]] std::size_t count_mappings(TestRunnerCtx const& test) noexcept {
+// The count of the lines of /proc/self/maps whose first address lies in the
+// window or in its region: one line for each mapping of the two
+// reservations.  A sanitizer or the C library can map memory for itself at
+// each time, so the lines of other mappings do not count.  Complexity: O(n)
+// in the bytes of the file.
+[[nodiscard]] std::size_t count_window_mappings(TestRunnerCtx const& test, alloc::WindowRecord record) noexcept {
     CRUCIBLE_TEST_ASSERT(test, os::read_file("/proc/self/maps", maps_text).is_ok());
+    std::uint64_t const window_base = static_cast<std::uint64_t>(record.base());
+    std::uint64_t const region_base = static_cast<std::uint64_t>(record.region_base());
     std::size_t lines = 0;
+    std::uint64_t start = 0;
+    bool is_reading_start = true;
     for (char const character : maps_text.view()) {
-        if (character == '\n') ++lines;
+        if (character == '\n') {
+            start = 0;
+            is_reading_start = true;
+            continue;
+        }
+        if (!is_reading_start) continue;
+        if (character == '-') {
+            is_reading_start = false;
+            bool const is_in_window = start - window_base < record.length().raw();
+            bool const is_in_region = start - region_base < record.region_length().raw();
+            if (is_in_window || is_in_region) ++lines;
+            continue;
+        }
+        std::uint64_t const digit = character <= '9' ? static_cast<std::uint64_t>(character - '0')
+                                                     : static_cast<std::uint64_t>(character - 'a' + 10);
+        start = start * 16 + digit;
     }
     return lines;
 }
@@ -167,7 +192,7 @@ void mappings_follow_extents(TestRunnerCtx const& test) {
     alloc::UnitIndex const first_unit{::foundation::core::StaticIndex<0>{}};
     constexpr std::size_t kChunks = 4096;
     CRUCIBLE_TEST_ASSERT(test, record.chunk_count() >= kChunks + kChunks / alloc::kChunksPerExtent + 1);
-    std::size_t const before = count_mappings(test);
+    std::size_t const before = count_window_mappings(test, record);
     std::size_t after_first = 0;
     std::size_t taken = 0;
     std::uint32_t extents = 0;
@@ -180,12 +205,12 @@ void mappings_follow_extents(TestRunnerCtx const& test) {
         CRUCIBLE_TEST_ASSERT(test, window.start_slab_meta(chunk, first_unit).is_ok());
         window.set_owner(chunk, alloc::owner_entry_of(alloc::HeapId{1}));
         ++taken;
-        if (taken == 1) after_first = count_mappings(test);
+        if (taken == 1) after_first = count_window_mappings(test, record);
         if (taken == alloc::kChunksPerExtent - 1) {
-            CRUCIBLE_TEST_ASSERT(test, count_mappings(test) == after_first);
+            CRUCIBLE_TEST_ASSERT(test, count_window_mappings(test, record) == after_first);
         }
     }
-    std::size_t const after = count_mappings(test);
+    std::size_t const after = count_window_mappings(test, record);
     std::size_t const sections = 2;
     CRUCIBLE_TEST_ASSERT(test, extents == 9);
     CRUCIBLE_TEST_ASSERT(test, after <= before + 2 * extents + 2 * sections);
