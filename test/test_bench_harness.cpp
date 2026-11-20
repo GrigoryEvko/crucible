@@ -967,6 +967,11 @@ void test_pins_of_the_threads_of_a_run() {
     });
     CHECK(held_count == 1u && started_count == 1u);
     CHECK(affinity_cpu_count() == unpinned_count);
+    // The one read of the current CPU of the harness gives the core of the
+    // hold.
+    const bench::CpuId held_cpu =
+        bench::run_on_core(bench::CpuId{first_cpu}, []() noexcept { return bench::detail::calling_cpu(); });
+    CHECK(held_cpu == bench::CpuId{first_cpu});
     const std::size_t free_count =
         bench::run_on_core(bench::CpuId::none(), []() noexcept { return affinity_cpu_count(); });
     CHECK(free_count == unpinned_count);

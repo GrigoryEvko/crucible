@@ -61,12 +61,6 @@
 #include <utility>
 #include <vector>
 
-#ifdef __linux__
-#include <sched.h>
-#include <unistd.h>
-#include <sys/resource.h>
-#endif
-
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
 // Bench BPF sensing uses the production observability substrate directly.
 #include <crucible/perf/SenseHub.h>
@@ -1342,8 +1336,14 @@ inline void print_thread_cpus(::fixy::TextView label) noexcept {
 namespace detail {
 
 // The CPU on which the calling thread runs, or none when the kernel gives no
-// CPU: the one read of the current CPU in the harness.
-[[nodiscard]] inline CpuId calling_cpu() noexcept { return CpuId{sched_getcpu()}; }
+// CPU: the one read of the current CPU in the harness, through the door of
+// fixy/os/Sched.h.
+[[nodiscard]] inline CpuId calling_cpu() noexcept {
+    const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+    return ::fixy::sched::read_current_cpu(startup).match(
+        [](::fixy::sched::CpuIndex cpu) noexcept { return CpuId{::fixy::narrow<int>(cpu.raw()).value_or(-1)}; },
+        []() noexcept { return CpuId::none(); });
+}
 
 }  // namespace detail
 
