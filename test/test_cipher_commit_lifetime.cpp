@@ -19,13 +19,12 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/Fs.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/os/PathText.h>
 
 #include <cstdint>
-#include <filesystem>
 #include <memory>
-#include <random>
-#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -57,12 +56,20 @@ static auto g_test = ::foundation::effects::testing::test();
 // The region that a lifetime band holds.  A Ref is never null.
 using RegionRef = ::fixy::Ref<const RegionNode>;
 
-// The text of the root copies the characters of the directory.
-[[nodiscard]] static Cipher open_cipher(const std::filesystem::path& dir) {
+// The root of the store of one test: a new temporary directory of the base,
+// and the path of the store of the test in it.  The open of the store makes
+// the directory of the store, and the end of the temporary directory removes
+// it with each entry below it.
+struct StoreRoot {
+    ::fixy::fs::TemporaryDirectory directory{};
+    ::foundation::os::PathText<Cipher::MAX_ROOT_PATH_BYTES> path{};
+};
+
+// The text of the root copies the characters of the path of the store.
+[[nodiscard]] static Cipher open_cipher(StoreRoot const& dir) {
     ::foundation::core::GrowText root = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);
-    const char* const chars = dir.c_str();
-    for (std::size_t index = 0; chars[index] != '\0'; ++index) {
-        root.append(g_test.alloc, chars[index]).expect("the text holds each character of the directory");
+    for (const char character : dir.path.c_text().view()) {
+        root.append(g_test.alloc, character).expect("the text holds each character of the directory");
     }
     ::foundation::core::HeapText const root_path = ::foundation::core::freeze(std::move(root));
     return Cipher::open(store_ctx(), g_test.alloc,
@@ -76,15 +83,20 @@ template <Lifetime_v Scope>
     return ::fixy::mint_band<OpaqueLifetime<Scope, RegionRef>>(region);
 }
 
-// A random suffix and an up-front remove_all, so that a rerun on a
-// machine that still holds a previous run's files starts clean.
-static std::filesystem::path tmp_root_for(const char* tag) {
-    static std::random_device rd;
-    static std::mt19937_64 gen{rd()};
-    auto p = std::filesystem::temp_directory_path()
-           / ("crucible_commit_lifetime_" + std::string{tag} + "_" + std::to_string(gen()));
-    std::filesystem::remove_all(p);
-    return p;
+// The root of the store tag of one test.  The temporary directory has a new
+// name, so a rerun on a machine that still holds the files of a previous run
+// starts clean.
+static StoreRoot tmp_root_for(::fixy::TextView tag) {
+    StoreRoot root{
+        .directory =
+            std::move(::fixy::fs::mint_temporary_directory(store_ctx()).expect("the test makes a temporary directory"))
+                .consume(),
+    };
+    root.path.append(root.directory.path().view()).expect("the temporary directory fits the path of the store");
+    root.path.append('/').expect("the path of the store holds its slash");
+    root.path.append(::fixy::TextView{"crucible_commit_lifetime_"}).expect("the prefix fits the path of the store");
+    root.path.append(tag).expect("the tag fits the path of the store");
+    return root;
 }
 
 // Distinct hash_seed values give distinct schema hashes, and therefore
@@ -106,14 +118,13 @@ static void test_commit_per_fleet_type_identity() {
 
     auto wrapped = pinned<Lifetime_v::PER_FLEET>(region);
 
-    using Got = decltype(c.commit_per_fleet(c.mint_open_view(store_ctx()), std::move(wrapped)));
+    using Got = decltype(c.commit_per_fleet(c.mint_open_view(store_ctx()), std::declval<decltype(wrapped)&&>()));
     using Want = Cold<ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "commit_per_fleet must return CipherTier<Cold, ContentHash>");
     static_assert(::fixy::band_tier_v<Got> == CipherTierTag_v::Cold);
 
     auto result = c.commit_per_fleet(c.mint_open_view(store_ctx()), pinned<Lifetime_v::PER_FLEET>(region));
     (void)std::move(result).consume();
-    std::filesystem::remove_all(tmp);
 }
 
 static void test_commit_per_program_type_identity() {
@@ -124,7 +135,8 @@ static void test_commit_per_program_type_identity() {
 
     auto wrapped = pinned<Lifetime_v::PER_PROGRAM>(region);
 
-    using Got = decltype(c.commit_per_program(store_ctx(), c.mint_open_view(store_ctx()), std::move(wrapped)));
+    using Got =
+        decltype(c.commit_per_program(store_ctx(), c.mint_open_view(store_ctx()), std::declval<decltype(wrapped)&&>()));
     using Want = Warm<ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "commit_per_program must return CipherTier<Warm, ContentHash>");
     static_assert(::fixy::band_tier_v<Got> == CipherTierTag_v::Warm);
@@ -134,7 +146,6 @@ static void test_commit_per_program_type_identity() {
     ContentHash hash = std::move(result).consume();
     // Warm is the tier with a real store behind it, so a hash comes back.
     CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(hash));
-    std::filesystem::remove_all(tmp);
 }
 
 static void test_commit_per_request_type_identity() {
@@ -145,11 +156,10 @@ static void test_commit_per_request_type_identity() {
 
     auto wrapped = pinned<Lifetime_v::PER_REQUEST>(region);
 
-    using Got = decltype(c.commit_per_request(c.mint_open_view(store_ctx()), std::move(wrapped)));
+    using Got = decltype(c.commit_per_request(c.mint_open_view(store_ctx()), std::declval<decltype(wrapped)&&>()));
     using Want = Hot<ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "commit_per_request must return CipherTier<Hot, ContentHash>");
     static_assert(::fixy::band_tier_v<Got> == CipherTierTag_v::Hot);
-    std::filesystem::remove_all(tmp);
 }
 
 static void test_fleet_satisfies_request() {
@@ -165,7 +175,6 @@ static void test_fleet_satisfies_request() {
     static_assert(std::is_same_v<Got, Hot<ContentHash>>,
                   "commit_per_request always returns Hot, regardless of input scope");
     (void)std::move(result).consume();
-    std::filesystem::remove_all(tmp);
 }
 
 static void test_fleet_satisfies_program() {
@@ -180,7 +189,6 @@ static void test_fleet_satisfies_program() {
     static_assert(std::is_same_v<decltype(result), Warm<ContentHash>>);
     ContentHash hash = std::move(result).consume();
     CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(hash));
-    std::filesystem::remove_all(tmp);
 }
 
 static void test_program_satisfies_request() {
@@ -194,7 +202,6 @@ static void test_program_satisfies_request() {
     auto result = c.commit_per_request(c.mint_open_view(store_ctx()), std::move(program_wrapped));
     static_assert(std::is_same_v<decltype(result), Hot<ContentHash>>);
     (void)std::move(result).consume();
-    std::filesystem::remove_all(tmp);
 }
 
 static void test_program_self_match() {
@@ -208,7 +215,6 @@ static void test_program_self_match() {
     static_assert(std::is_same_v<decltype(result), Warm<ContentHash>>);
     ContentHash hash = std::move(result).consume();
     CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(hash));
-    std::filesystem::remove_all(tmp);
 }
 
 static void test_single_open_view_type_identity() {
@@ -222,11 +228,13 @@ static void test_single_open_view_type_identity() {
     auto w_program = pinned<Lifetime_v::PER_PROGRAM>(region);
     auto w_request = pinned<Lifetime_v::PER_REQUEST>(region);
 
-    static_assert(std::is_same_v<decltype(c.commit_per_fleet(view, std::move(w_fleet))), Cold<ContentHash>>);
     static_assert(
-        std::is_same_v<decltype(c.commit_per_program(store_ctx(), view, std::move(w_program))), Warm<ContentHash>>);
-    static_assert(std::is_same_v<decltype(c.commit_per_request(view, std::move(w_request))), Hot<ContentHash>>);
-    std::filesystem::remove_all(tmp);
+        std::is_same_v<decltype(c.commit_per_fleet(view, std::declval<decltype(w_fleet)&&>())), Cold<ContentHash>>);
+    static_assert(
+        std::is_same_v<decltype(c.commit_per_program(store_ctx(), view, std::declval<decltype(w_program)&&>())),
+                       Warm<ContentHash>>);
+    static_assert(
+        std::is_same_v<decltype(c.commit_per_request(view, std::declval<decltype(w_request)&&>())), Hot<ContentHash>>);
 }
 
 static void test_round_trip_via_program_commit() {
@@ -248,7 +256,6 @@ static void test_round_trip_via_program_commit() {
             .expect("the store loads the region it wrote")
             .get();
     CRUCIBLE_TEST_ASSERT(kTest, loaded->content_hash == original_hash);
-    std::filesystem::remove_all(tmp);
 }
 
 // A band holds a Ref of its region, so no commit gets a null region.  A
@@ -329,7 +336,6 @@ static void test_relax_down_then_commit_per_request() {
     auto result = c.commit_per_request(c.mint_open_view(store_ctx()), std::move(request));
     static_assert(std::is_same_v<decltype(result), Hot<ContentHash>>);
     (void)std::move(result).consume();
-    std::filesystem::remove_all(tmp);
 }
 
 // The scope is read off the type, whether the site names the band or a
@@ -371,7 +377,6 @@ static void test_idempotent_commit_per_program() {
 
     CRUCIBLE_TEST_ASSERT(kTest, first_hash == second_hash);
     CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(first_hash));
-    std::filesystem::remove_all(tmp);
 }
 
 // A commit consumes the band by value, so the band moves into the call.
@@ -413,7 +418,6 @@ static void test_api_completeness_matrix() {
     (void)std::move(a).consume();
     (void)std::move(b).consume();
     (void)std::move(d).consume();
-    std::filesystem::remove_all(tmp);
 }
 
 static void test_content_hash_equality_across_overlay() {
@@ -435,8 +439,6 @@ static void test_content_hash_equality_across_overlay() {
     ContentHash via_overlay = std::move(result).consume();
 
     CRUCIBLE_TEST_ASSERT(kTest, bare_hash == via_overlay);
-    std::filesystem::remove_all(tmp);
-    std::filesystem::remove_all(tmp2);
 }
 
 int main() {
