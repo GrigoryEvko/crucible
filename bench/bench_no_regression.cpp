@@ -25,16 +25,8 @@
 
 #include "bench_harness.h"
 
-#include <algorithm>
-#include <array>
-#include <charconv>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <limits>
-#include <string>
-#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -104,10 +96,10 @@ struct Range {
 }
 
 [[nodiscard]] constexpr Range split_range(std::size_t total, std::size_t index, std::size_t count) noexcept {
-    const std::size_t safe_count = std::max<std::size_t>(1, count);
+    const std::size_t safe_count = ::fixy::max(std::size_t{1}, count);
     const std::size_t chunk = (total + safe_count - 1) / safe_count;
-    const std::size_t begin = std::min(total, index * chunk);
-    const std::size_t end = std::min(total, begin + chunk);
+    const std::size_t begin = ::fixy::min(total, index * chunk);
+    const std::size_t end = ::fixy::min(total, begin + chunk);
     return Range{begin, end};
 }
 
@@ -171,12 +163,12 @@ struct ProductWhole {
 
 // The piece table that the rule arm splits.  Element i names piece i
 // of the work, and a shard runs the pieces of its slice.
-using PieceTable = std::array<std::uint32_t, kPieces>;
+using PieceTable = ::fixy::FixedArray<std::uint32_t, kPieces>;
 
 [[nodiscard]] PieceTable make_piece_table() noexcept {
     PieceTable table{};
-    for (std::uint32_t piece = 0; piece < kPieces; ++piece) {
-        table[piece] = piece;
+    for (::fixy::Index<kPieces> const piece : table.indices()) {
+        table.at(piece) = static_cast<std::uint32_t>(piece.raw());
     }
     return table;
 }
@@ -316,7 +308,8 @@ void run_rule(Workload& w, Sink& sink, PieceTable& pieces, bench::CpuTally& tall
         ::foundation::linear::drop(std::move(whole));
         return;
     }
-    auto region = ::fixy::mint_owned_region(pieces.data(), kPieces, perm::mint_permission_root<PieceTableWhole>());
+    auto region = ::fixy::mint_owned_region(::foundation::core::foreign_first(pieces.view()), kPieces,
+                                            perm::mint_permission_root<PieceTableWhole>());
     auto whole =
         ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent, kPieces>(
             ctx, test, w.budget, std::move(region),
@@ -497,7 +490,7 @@ namespace {
     }
     bench::CpuTally tally{};
     bench::Report report =
-        run.samples(samples).warmup(std::max<std::size_t>(2, samples / 6)).batch(1).max_wall_ms(8000).measure([&] {
+        run.samples(samples).warmup(::fixy::max(std::size_t{2}, samples / 6)).batch(1).max_wall_ms(8000).measure([&] {
             // A new sink for each sample, so the fold of one sample starts at 0.
             Sink sink{};
             switch (strategy) {
@@ -522,7 +515,7 @@ namespace {
 [[nodiscard]] bench::Report measure_stable(bench::RunName const& name, Strategy strategy, Workload& w,
                                            PieceTable& pieces, std::size_t samples, bench::Cores const& cores) {
     bench::Report best;
-    double best_cv = std::numeric_limits<double>::infinity();
+    double best_cv = ::fixy::infinity_of<double>;
     for (int attempt = 0; attempt < 3; ++attempt) {
         bench::Report current = measure_once(name, strategy, w, pieces, samples, cores);
         if (!current.noisy(0.05)) return current;
@@ -565,9 +558,9 @@ int main() {
     // library loads, so the placement pin below does not change it.
     const auto& topo = ::fixy::topology::Topology::instance();
     const std::size_t default_forced_workers =
-        std::max<std::size_t>(2, std::min<std::size_t>(1024, topo.process_cpu_count() * 32));
+        ::fixy::max(std::size_t{2}, ::fixy::min(std::size_t{1024}, std::size_t{topo.process_cpu_count()} * 32));
     const std::size_t forced_workers = env_usize("CRUCIBLE_NO_REGRESSION_FORCED_WORKERS", default_forced_workers);
-    const std::size_t samples = std::max<std::size_t>(10, env_usize("CRUCIBLE_NO_REGRESSION_SAMPLES", 12));
+    const std::size_t samples = ::fixy::max(std::size_t{10}, env_usize("CRUCIBLE_NO_REGRESSION_SAMPLES", 12));
 
     using ::fixy::Align;
     using ::fixy::Fixed;
@@ -595,8 +588,9 @@ int main() {
     bench::Run::PinResult placement_pin = placement.pin_calling_thread();
     bench::print("  data built on cpu{}\n\n", placement_pin.cpu.raw());
 
-    std::array<Workload, 4> workloads{make_l1(forced_workers), make_l2(forced_workers), make_l3(forced_workers),
-                                      make_dram(forced_workers)};
+    constexpr std::size_t kWorkloads = 4;
+    ::fixy::FixedArray<Workload, kWorkloads> workloads{make_l1(forced_workers), make_l2(forced_workers),
+                                                       make_l3(forced_workers), make_dram(forced_workers)};
 
     // The data is in place, so the pin ends.  Each Run pins again, and a
     // fan-out Run starts from the whole affinity of the thread.
@@ -616,8 +610,9 @@ int main() {
     int failures = 0;
     int reruns = 0;
     bench::print("=== measuring ===\n");
-    for (std::size_t i = 0; i < workloads.size(); ++i) {
-        Workload& w = workloads[i];
+    for (::fixy::Index<kWorkloads> const workload : workloads.indices()) {
+        const std::size_t i = workload.raw();
+        Workload& w = workloads.at(workload);
         Trio trio = run_workload(w, pieces, samples, cores);
         *reports.get(i * 3 + 0).expect("the sequential row of a workload") = std::move(trio.sequential);
         *reports.get(i * 3 + 1).expect("the rule row of a workload") = std::move(trio.rule);
@@ -627,11 +622,12 @@ int main() {
     bench::emit_reports_text(reports.view());
 
     bench::print("\n=== no-regression gates ===\n");
-    for (std::size_t i = 0; i < workloads.size(); ++i) {
+    for (::fixy::Index<kWorkloads> const workload : workloads.indices()) {
+        const std::size_t i = workload.raw();
         const bench::Report& seq = *reports.get(i * 3 + 0).expect("the sequential row of a workload");
         const bench::Report& rul = *reports.get(i * 3 + 1).expect("the rule row of a workload");
         const bench::Report& frc = *reports.get(i * 3 + 2).expect("the forced row of a workload");
-        const Workload& w = workloads[i];
+        const Workload& w = workloads.at(workload);
         const double seq_p50 = seq.pct.p50;
         const double rul_p50 = rul.pct.p50;
         const double frc_p50 = frc.pct.p50;
