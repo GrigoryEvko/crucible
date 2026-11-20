@@ -4,6 +4,7 @@
 
 #include <foundation/os/GuardedRegion.h>
 
+#include <foundation/Platform.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Report.h>
@@ -34,17 +35,23 @@ constexpr std::size_t kLargestUsable = ~std::size_t{0} - 2 * kGuardBytes;
 // The file descriptor of a map with no file.
 constexpr int kNoFile = -1;
 
-}  // namespace
+// The usable bytes of a region of USABLE_BYTES: a multiple of kGuardBytes,
+// and kGuardBytes for zero.  The caller refuses a count above kLargestUsable
+// first.
+[[nodiscard]] std::size_t round_usable(std::size_t usable_bytes) noexcept {
+    return usable_bytes == 0 ? kGuardBytes
+                             : core::align_up(usable_bytes, kGuardBytes)
+                                   .expect("a usable size at most kLargestUsable fits in size_t after its rounding");
+}
 
-core::Result<GuardedRegion, Errno> map_guarded_region(std::size_t usable_bytes) noexcept {
-    if (usable_bytes > kLargestUsable) return core::err(Errno::enomem);
-    std::size_t const rounded =
-        usable_bytes == 0 ? kGuardBytes
-                          : core::align_up(usable_bytes, kGuardBytes)
-                                .expect("a usable size at most kLargestUsable fits in size_t after its rounding");
+// Maps the guard and the ROUNDED usable bytes with no access, at the address
+// WANTED and with the map flags FLAGS.  Then it gives read and write access
+// to the usable bytes, and gives the region of the map.  A refused access
+// unmaps the whole map and gives the error of the kernel.  Each raw call of a
+// map of the door is here.
+[[nodiscard]] core::Result<GuardedRegion, Errno> map_region(Word wanted, int flags, std::size_t rounded) noexcept {
     std::size_t const total = kGuardBytes + rounded;
-    CRUCIBLE_TRY(address,
-                 result_of(raw_syscall(Syscall::mmap, Word{}, total, kProtectNone, kMapPrivateAnonymous, kNoFile, 0)));
+    CRUCIBLE_TRY(address, result_of(raw_syscall(Syscall::mmap, wanted, total, kProtectNone, flags, kNoFile, 0)));
     char* const first = __builtin_bit_cast(char*, address);
     core::Result<std::uint64_t, Errno> const opened =
         result_of(raw_syscall(Syscall::mprotect, first + kGuardBytes, rounded, kProtectReadWrite));
@@ -53,6 +60,26 @@ core::Result<GuardedRegion, Errno> map_guarded_region(std::size_t usable_bytes) 
         return core::err(opened.err().value_or(Errno::enomem));
     }
     return detail::GuardedRegionDoor::build(first, total);
+}
+
+}  // namespace
+
+core::Result<GuardedRegion, Errno> map_guarded_region(std::size_t usable_bytes) noexcept {
+    if (usable_bytes > kLargestUsable) return core::err(Errno::enomem);
+    return map_region(Word{}, kMapPrivateAnonymous, round_usable(usable_bytes));
+}
+
+core::Result<GuardedRegion, Errno> map_guarded_region_at(RegionAddress first_usable,
+                                                         std::size_t usable_bytes) noexcept {
+    if (usable_bytes > kLargestUsable) return core::err(Errno::enomem);
+    std::uint64_t const usable_at = static_cast<std::uint64_t>(first_usable);
+    if (usable_at < kGuardBytes) return core::err(Errno::einval);
+    char* const wanted = __builtin_bit_cast(char*, usable_at - kGuardBytes);
+    CRUCIBLE_TRY(region, map_region(wanted, kMapPrivateAnonymous | kMapFixedNoReplace, round_usable(usable_bytes)));
+    // The row map_fixed_no_replace is of the need each_call, so each kernel
+    // that the start-up check permits maps at the address or refuses.
+    CRUCIBLE_FATAL_INVARIANT(region.address() == first_usable);
+    return region;
 }
 
 GuardedRegion::~GuardedRegion() {

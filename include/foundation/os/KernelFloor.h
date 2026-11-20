@@ -113,6 +113,8 @@ enum class KernelFlag : std::uint8_t {
     map_huge_tlb,
     // MAP_HUGE_2MB, the size of the huge pages of such a map.
     map_huge_2mb,
+    // MAP_FIXED_NOREPLACE of the fixed map of foundation/os/GuardedRegion.h.
+    map_fixed_no_replace,
     // MADV_REMOVE of the release of a range of a shared map.
     advise_remove,
     // MADV_HUGEPAGE and MADV_NOHUGEPAGE of fixy/os/Pages.h.
@@ -255,6 +257,8 @@ struct FlagFloor {
                              .word = "MAP_HUGE_2MB",
                              .fallback = "The map gives the error of the kernel. The caller maps pages of the base "
                                          "size."};
+        case KernelFlag::map_fixed_no_replace:
+            return FlagFloor{.release = {4, 17, 0}, .need = FlagNeed::each_call, .word = "MAP_FIXED_NOREPLACE"};
         case KernelFlag::advise_remove:
             return FlagFloor{.release = {2, 6, 16},
                              .need = FlagNeed::fallback,

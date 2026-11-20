@@ -4235,6 +4235,12 @@ foundation_test(test_os_x86_level)
 foundation_test(test_os_page_source)
 target_link_libraries(test_os_page_source PRIVATE fixy)
 
+# The fixed map of the guarded memory door: an ended range maps again at its
+# address, a live range gives eexist, and the refusals of a bad address and
+# of a count that does not round.
+foundation_test(test_os_guarded_region)
+target_link_libraries(test_os_guarded_region PRIVATE fixy)
+
 # The CText of a temporary PathText would point into an object that the
 # full expression ends.
 foundation_neg_compile_test(neg_os_path_text_of_temporary

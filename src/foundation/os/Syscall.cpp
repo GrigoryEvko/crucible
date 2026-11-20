@@ -96,6 +96,8 @@ static_assert(kMapNoReserve == MAP_NORESERVE, "kMapNoReserve is not MAP_NORESERV
 static_assert(kMapPopulate == MAP_POPULATE, "kMapPopulate is not MAP_POPULATE of <linux/mman.h>");
 static_assert(kMapHugeTlb == MAP_HUGETLB, "kMapHugeTlb is not MAP_HUGETLB of <linux/mman.h>");
 static_assert(kMapHuge2Mb == MAP_HUGE_2MB, "kMapHuge2Mb is not MAP_HUGE_2MB of <linux/mman.h>");
+static_assert(kMapFixedNoReplace == MAP_FIXED_NOREPLACE,
+              "kMapFixedNoReplace is not MAP_FIXED_NOREPLACE of <linux/mman.h>");
 static_assert(kAdviseRandom == MADV_RANDOM, "kAdviseRandom is not MADV_RANDOM of <linux/mman.h>");
 static_assert(kAdviseSequential == MADV_SEQUENTIAL, "kAdviseSequential is not MADV_SEQUENTIAL of <linux/mman.h>");
 static_assert(kAdviseWillNeed == MADV_WILLNEED, "kAdviseWillNeed is not MADV_WILLNEED of <linux/mman.h>");

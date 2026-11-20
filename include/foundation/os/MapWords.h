@@ -54,6 +54,11 @@ inline constexpr int kMapHugeTlb = 0x40000;
 // The size of each huge page of a map, 2 MiB.  MAP_HUGE_2MB.
 inline constexpr int kMapHuge2Mb = 21 << 26;
 
+// A map at the address of the first argument.  The kernel refuses it with
+// EEXIST when a map holds a part of the range, so it replaces no map, as
+// MAP_FIXED does.  MAP_FIXED_NOREPLACE.
+inline constexpr int kMapFixedNoReplace = 0x100000;
+
 // A private map of memory with no file.  MAP_PRIVATE | MAP_ANONYMOUS.
 inline constexpr int kMapPrivateAnonymous = kMapPrivate | kMapAnonymous;
 
