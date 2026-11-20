@@ -271,6 +271,58 @@ static void write_store_file(::fixy::TextView root, ::fixy::CText name, ::fixy::
     CRUCIBLE_TEST_ASSERT(kTest, is_written && "the test writes the file of the store");
 }
 
+// The path of the file beside the object of hash under the root of a store:
+// "objects/<2 digits>/<14 digits>" and then suffix.
+[[nodiscard]] static ::foundation::os::PathText<64> beside_object_path(crucible::ContentHash hash,
+                                                                       ::fixy::TextView suffix) {
+    ::foundation::os::PathText<64> path{};
+    path.append(::fixy::TextView{"objects/"}).expect("the object path fits its text");
+    path.append_hex<2>(hash.raw() >> 56U).expect("the object path fits its text");
+    path.append('/').expect("the object path fits its text");
+    path.append_hex<14>(hash.raw()).expect("the object path fits its text");
+    path.append(suffix).expect("the object path fits its text");
+    return path;
+}
+
+// Writes text to the file beside the object of hash, as another writer of the
+// store can, and makes the directory of the object when it is missing.
+static void write_beside_object(::fixy::TextView root, crucible::ContentHash hash, ::fixy::TextView suffix,
+                                ::fixy::TextView text) {
+    const ::fixy::TestRunnerCtx ctx = store_ctx();
+    const ::fixy::fs::DirectoryHandle root_dir =
+        ::fixy::fs::open_directory(ctx, ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(root))
+                                            .expect("the root of a store is a sanitized path"))
+            .expect("the root of the store opens");
+    ::foundation::os::PathText<64> shard{};
+    shard.append(::fixy::TextView{"objects/"}).expect("the shard path fits its text");
+    shard.append_hex<2>(hash.raw() >> 56U).expect("the shard path fits its text");
+    static_cast<void>(::fixy::fs::make_directory_at(ctx, root_dir.ref(), shard.c_text()).is_ok());
+    const ::foundation::os::PathText<64> path = beside_object_path(hash, suffix);
+    using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+    const bool is_written = ::fixy::fs::mint_file_at<WriteTruncate>(ctx, root_dir.ref(), path.c_text())
+                                .match(
+                                    [&](::fixy::Linear<::fixy::fs::FileOf<WriteTruncate>> opened) {
+                                        const ::fixy::fs::FileOf<WriteTruncate> file = std::move(opened).consume();
+                                        return ::fixy::fs::write_full(ctx, file.ref(), text).is_ok();
+                                    },
+                                    [](::foundation::os::Errno) { return false; });
+    CRUCIBLE_TEST_ASSERT(kTest, is_written && "the test writes the file beside the object");
+}
+
+// True when the file beside the object of hash holds the characters of text.
+[[nodiscard]] static bool holds_beside_object(::fixy::TextView root, crucible::ContentHash hash,
+                                              ::fixy::TextView suffix, ::fixy::TextView text) {
+    const ::fixy::TestRunnerCtx ctx = store_ctx();
+    const ::fixy::fs::DirectoryHandle root_dir =
+        ::fixy::fs::open_directory(ctx, ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(root))
+                                            .expect("the root of a store is a sanitized path"))
+            .expect("the root of the store opens");
+    const ::foundation::os::PathText<64> path = beside_object_path(hash, suffix);
+    ::fixy::GrowText read = ::fixy::mint_grow_text(4096);
+    const bool is_read = ::fixy::fs::read_whole_at(ctx, g_test.alloc, root_dir.ref(), path.c_text(), read).is_ok();
+    return is_read && read.with_view([text](::fixy::TextView held) noexcept { return held == text; });
+}
+
 // True when a commit gives the error error.
 [[nodiscard]] static bool is_commit_error(crucible::Cipher::CommitResult const& committed,
                                           crucible::Cipher::CommitError error) {
@@ -301,6 +353,257 @@ static_assert(!std::is_constructible_v<crucible::Cipher::ContentAddressedRegionP
 static_assert(!std::is_default_constructible_v<crucible::Cipher::ContentAddressedRegionPayload>);
 static_assert(sizeof(crucible::Cipher::LoadedContentAddressedRegionPayload::Value) == sizeof(crucible::RegionNode*),
               "the value of a load is a Ref, which holds one pointer");
+
+// A store whose log holds the commits of the steps 1 to 10, and a second open
+// of the store.  A commit at a step below the last commit is an error of the
+// commit, and the process goes on.  A commit at the last step and after it
+// passes.  Each commit runs in a child, so a commit that ends its process
+// shows as a child that does not exit with 0.  Each store of this test and of
+// the tests below is a directory under root.
+static void test_commit_below_the_last_step(::fixy::TextView root) {
+    {
+        auto first_run = open_cipher_under(root, ::fixy::TextView{"steps"});
+        auto first_ov = first_run.mint_open_view(store_ctx());
+        for (std::uint64_t step = 1; step <= 10; ++step) {
+            commit_head(first_run, first_ov, crucible::ContentHash{0x5700000000000000ULL + step}, step);
+        }
+    }
+    auto second_run = open_cipher_under(root, ::fixy::TextView{"steps"});
+    auto second_ov = second_run.mint_open_view(store_ctx());
+    CRUCIBLE_TEST_ASSERT(kTest, second_run.last_committed_step().is_some_and([](::fixy::session::StepId step) {
+        return step.value == 10;
+    }) && "the open gives the step of the last commit of the log");
+    const ::fixy::TestRunnerCtx child_ctx = store_ctx();
+    const auto commit_in_child = [&](std::uint64_t step, bool is_refusal_expected) {
+        return ::fixy::process::wait(::fixy::process::spawn_child(
+                                         child_ctx,
+                                         [&second_run, &second_ov, &child_ctx, step, is_refusal_expected] noexcept {
+                                             const bool is_refused =
+                                                 second_run
+                                                     .record_event(child_ctx, second_ov,
+                                                                   crucible::ContentHash{0x5800000000000000ULL}, step)
+                                                     .is_err();
+                                             if (is_refused != is_refusal_expected) {
+                                                 ::fixy::fatal("the commit gave another result than the test expects");
+                                             }
+                                         })
+                                         .expect("the test starts a child"))
+            .expect("the test waits for its child");
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, commit_in_child(1, true).is_exit_with(0)
+                                    && "a commit below the last step is an error, not the end of the process");
+    CRUCIBLE_TEST_ASSERT(kTest, commit_in_child(9, true).is_exit_with(0));
+    CRUCIBLE_TEST_ASSERT(kTest, commit_in_child(10, false).is_exit_with(0));
+    CRUCIBLE_TEST_ASSERT(kTest, commit_in_child(11, false).is_exit_with(0));
+
+    // The refusals in this process give their errors, and they take no place.
+    // Each child above wrote its line with the place 11 of its own count, so
+    // the commit here also takes the place 11 when no refusal took a place.  A
+    // reopen skips each line whose place does not grow, so its head is the
+    // commit of the first child.
+    using crucible::Cipher;
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         is_commit_error(second_run.record_event(store_ctx(), second_ov,
+                                                                 crucible::ContentHash{0x5800000000000001ULL}, 1),
+                                         Cipher::CommitError::step_order));
+    CRUCIBLE_TEST_ASSERT(kTest, is_commit_error(second_run.record_event(store_ctx(), second_ov,
+                                                                        crucible::ContentHash{0x5800000000000002ULL},
+                                                                        Cipher::MAX_COMMIT_STEP + 1),
+                                                Cipher::CommitError::step_above_limit));
+    commit_head(second_run, second_ov, crucible::ContentHash{0x5800000000000003ULL}, 10);
+    CRUCIBLE_TEST_ASSERT(kTest, second_run.head() == crucible::ContentHash{0x5800000000000003ULL});
+    CRUCIBLE_TEST_ASSERT(kTest, second_run.last_committed_step().is_some_and(
+                                    [](::fixy::session::StepId step) { return step.value == 10; }));
+    const crucible::Cipher third_run = open_cipher_under(root, ::fixy::TextView{"steps"});
+    CRUCIBLE_TEST_ASSERT(kTest, third_run.head() == crucible::ContentHash{0x5800000000000000ULL}
+                                    && "a refused commit takes no place of the count");
+}
+
+// A log whose last line holds the step 2^64 - 1.  The line is corrupt, so the
+// open skips it, and a commit after the step of the line before it passes.
+// The old store took the line, and each later commit ended its process.  A
+// line at MAX_COMMIT_STEP is a sound commit, and a commit below it gives
+// step_order.
+static void test_step_above_the_ceiling_is_corrupt(::fixy::TextView root) {
+    const crucible::Cipher made = open_cipher_under(root, ::fixy::TextView{"high_step"});
+    write_store_file(made.root(), "log",
+                     ::fixy::TextView{"5,5900000000000001,1\n18446744073709551615,5900000000000002,2\n"});
+    auto cipher = open_cipher_under(root, ::fixy::TextView{"high_step"});
+    auto ov = cipher.mint_open_view(store_ctx());
+    CRUCIBLE_TEST_ASSERT(
+        kTest, cipher.last_committed_step().is_some_and([](::fixy::session::StepId step) { return step.value == 5; }));
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == crucible::ContentHash{0x5900000000000001ULL}
+                                    && "the line of the step 2^64 - 1 is no commit");
+    const ::fixy::TestRunnerCtx child_ctx = store_ctx();
+    const ::fixy::process::ChildReport report =
+        ::fixy::process::wait(
+            ::fixy::process::spawn_child(
+                child_ctx,
+                [&cipher, &ov, &child_ctx] noexcept {
+                    if (cipher.record_event(child_ctx, ov, crucible::ContentHash{0x5900000000000003ULL}, 6).is_err()) {
+                        ::fixy::fatal("a commit after the last sound step fails");
+                    }
+                })
+                .expect("the test starts a child"))
+            .expect("the test waits for its child");
+    CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0) && "a corrupt step of the log ends no later commit");
+
+    const crucible::Cipher at_ceiling_made = open_cipher_under(root, ::fixy::TextView{"ceiling_step"});
+    write_store_file(at_ceiling_made.root(), "log", ::fixy::TextView{"4611686018427387903,5900000000000004,1\n"});
+    auto at_ceiling = open_cipher_under(root, ::fixy::TextView{"ceiling_step"});
+    auto at_ceiling_ov = at_ceiling.mint_open_view(store_ctx());
+    CRUCIBLE_TEST_ASSERT(kTest, at_ceiling.last_committed_step().is_some_and([](::fixy::session::StepId step) {
+        return step.value == crucible::Cipher::MAX_COMMIT_STEP;
+    }) && "a line at the ceiling is a commit");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         is_commit_error(at_ceiling.record_event(store_ctx(), at_ceiling_ov,
+                                                                 crucible::ContentHash{0x5900000000000005ULL}, 1),
+                                         crucible::Cipher::CommitError::step_order));
+    commit_head(at_ceiling, at_ceiling_ov, crucible::ContentHash{0x5900000000000006ULL},
+                crucible::Cipher::MAX_COMMIT_STEP);
+}
+
+// A crash in the middle of an append leaves a torn last record with no
+// newline.  The next commit cuts the torn record and appends after the last
+// whole line, so a reopen finds the commit.  The old store wrote the commit
+// after the torn bytes, and the two joined into one line.  A torn record of
+// other characters made a line that does not parse, and the commit was lost.
+// A torn record of digits only made the commit at step 3 a line of the step
+// 13.
+static void test_commit_after_a_torn_record(::fixy::TextView root) {
+    const crucible::Cipher torn_made = open_cipher_under(root, ::fixy::TextView{"torn_log"});
+    write_store_file(torn_made.root(), "log", ::fixy::TextView{"1,5b00000000000001,1\n0,01234"});
+    {
+        auto cipher = open_cipher_under(root, ::fixy::TextView{"torn_log"});
+        auto ov = cipher.mint_open_view(store_ctx());
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == crucible::ContentHash{0x5b00000000000001ULL});
+        commit_head(cipher, ov, crucible::ContentHash{0x5b00000000000002ULL}, 2);
+    }
+    const crucible::Cipher torn_reopened = open_cipher_under(root, ::fixy::TextView{"torn_log"});
+    CRUCIBLE_TEST_ASSERT(kTest, torn_reopened.head() == crucible::ContentHash{0x5b00000000000002ULL}
+                                    && "the commit after a torn record loads at the reopen");
+
+    const crucible::Cipher digit_made = open_cipher_under(root, ::fixy::TextView{"torn_digit"});
+    write_store_file(digit_made.root(), "log", ::fixy::TextView{"1,5b00000000000003,1\n1"});
+    {
+        auto cipher = open_cipher_under(root, ::fixy::TextView{"torn_digit"});
+        auto ov = cipher.mint_open_view(store_ctx());
+        commit_head(cipher, ov, crucible::ContentHash{0x5b00000000000004ULL}, 3);
+    }
+    auto digit_reopened = open_cipher_under(root, ::fixy::TextView{"torn_digit"});
+    auto digit_ov = digit_reopened.mint_open_view(store_ctx());
+    CRUCIBLE_TEST_ASSERT(kTest, digit_reopened.hash_at_step(digit_ov, 5) == crucible::ContentHash{0x5b00000000000004ULL}
+                                    && "the commit after a torn digit keeps its step 3");
+}
+
+// Another writer holds the temporary file <leaf>.tmp of an object.  A store of
+// the object writes a temporary file of its own, and it leaves the file of the
+// other writer as it is.  The old store opened <leaf>.tmp with O_TRUNC, cut
+// the bytes of the other writer and renamed that file onto the object.  A
+// sound object of a hash with other bytes, here the image of another variant,
+// stays as it is, and the store reports it durable.
+static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) {
+    auto cipher = open_cipher_under(root, ::fixy::TextView{"writers"});
+    auto ov = cipher.mint_open_view(store_ctx());
+    ::fixy::BumpArena writers_dag{1 << 16};
+    const crucible::RegionNode& writer_region = *make_test_region(writers_dag, 0x61);
+    const crucible::ContentHash writer_hash = writer_region.content_hash;
+    write_beside_object(cipher.root(), writer_hash, ::fixy::TextView{".tmp"}, ::fixy::TextView{"another writer"});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(writer_region)))
+                             == writer_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, holds_beside_object(cipher.root(), writer_hash, ::fixy::TextView{".tmp"},
+                                                    ::fixy::TextView{"another writer"})
+                                    && "the store leaves the temporary file of another writer");
+    {
+        const crucible::Cipher fresh = open_cipher_under(root, ::fixy::TextView{"writers"});
+        const auto fresh_ov = fresh.mint_open_view(store_ctx());
+        ::fixy::BumpArena fresh_arena{1 << 16};
+        const auto loaded = fresh.load_content_addressed(store_ctx(), fresh_ov, g_test.alloc, writer_hash, fresh_arena);
+        CRUCIBLE_TEST_ASSERT(kTest, loaded.is_ok() && !is_cache_hit(loaded) && "the stored object loads from the disk");
+    }
+
+    crucible::RegionNode& variant = *make_test_region(writers_dag, 0x62);
+    variant.variant_id.advance(7);
+    ::fixy::HeapArray<std::byte> variant_image = ::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0});
+    const std::size_t variant_bytes =
+        crucible::serialize_region(crucible::SerializedRegion{variant}, variant_image.view());
+    CRUCIBLE_TEST_ASSERT(kTest, variant_bytes > 0);
+    write_object_file(cipher.root(), variant.content_hash,
+                      variant_image.view().window(0, variant_bytes).expect("the writer writes inside its image"));
+    const crucible::RegionNode& plain = *make_test_region(writers_dag, 0x62);
+    CRUCIBLE_TEST_ASSERT(kTest, plain.content_hash == variant.content_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(plain)))
+                                    == plain.content_hash);
+    const crucible::Cipher fresh = open_cipher_under(root, ::fixy::TextView{"writers"});
+    const auto fresh_ov = fresh.mint_open_view(store_ctx());
+    ::fixy::BumpArena fresh_arena{1 << 16};
+    const auto loaded =
+        fresh.load_content_addressed(store_ctx(), fresh_ov, g_test.alloc, plain.content_hash, fresh_arena);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.is_ok() && region_of(loaded).variant_id.get() == 7
+                                    && "a store keeps a sound object of its hash");
+}
+
+// Two child processes store one region at the same time, again and again, and
+// each removes the object before each store.  So the two write one entry at
+// the same time.  Each store gives the hash, and the object loads after the
+// two end.  This holds for each order of the steps of the two.  With one
+// shared temporary name, a writer could cut the file of the other or rename it
+// away, and a store gave the none hash.
+static void test_two_writers_of_one_object(::fixy::TextView root) {
+    auto cipher = open_cipher_under(root, ::fixy::TextView{"two_writers"});
+    auto ov = cipher.mint_open_view(store_ctx());
+    ::fixy::BumpArena two_dag{1 << 16};
+    const crucible::RegionNode& two_region = *make_test_region(two_dag, 0x63);
+    const ::fixy::fs::DirectoryHandle two_root = root_directory_of(cipher);
+    const ::foundation::os::PathText<64> object = beside_object_path(two_region.content_hash, ::fixy::TextView{});
+    const ::fixy::TestRunnerCtx child_ctx = store_ctx();
+    const auto store_again_and_again = [&cipher, &ov, &child_ctx, &two_region, &two_root, &object] noexcept {
+        for (std::size_t round = 0; round < 40; ++round) {
+            static_cast<void>(::fixy::fs::unlink_at(child_ctx, two_root.ref(), object.c_text()).is_ok());
+            const crucible::ContentHash stored =
+                cipher.store(child_ctx, ov, crucible::Cipher::content_addressed(::fixy::to(two_region)));
+            if (stored != two_region.content_hash) ::fixy::fatal("a store of one of two writers gave no hash");
+        }
+    };
+    ::fixy::process::Child first =
+        ::fixy::process::spawn_child(child_ctx, store_again_and_again).expect("the test starts a child");
+    ::fixy::process::Child second =
+        ::fixy::process::spawn_child(child_ctx, store_again_and_again).expect("the test starts a child");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, ::fixy::process::wait(std::move(first)).expect("the test waits for its child").is_exit_with(0));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, ::fixy::process::wait(std::move(second)).expect("the test waits for its child").is_exit_with(0));
+    const crucible::Cipher fresh = open_cipher_under(root, ::fixy::TextView{"two_writers"});
+    const auto fresh_ov = fresh.mint_open_view(store_ctx());
+    ::fixy::BumpArena fresh_arena{1 << 16};
+    CRUCIBLE_TEST_ASSERT(
+        kTest,
+        fresh.load_content_addressed(store_ctx(), fresh_ov, g_test.alloc, two_region.content_hash, fresh_arena).is_ok()
+            && "the object of two writers loads");
+}
+
+// A torn last line of a session-event index, and a persist of a second batch
+// after it.  The persist cuts the torn line, so the load gives the events of
+// the two batches.  The old index joined the line of the second batch to the
+// torn line, and the load skipped the second batch.
+static void test_batch_after_a_torn_index_line(::fixy::TextView root) {
+    auto cipher = open_cipher_under(root, ::fixy::TextView{"torn_index"});
+    auto ov = cipher.mint_open_view(store_ctx());
+    const auto first_batch = session_batch(10, 5);
+    const auto second_batch = session_batch(15, 5);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view()).is_ok());
+    const ::fixy::session::SessionTagId session =
+        first_batch.view().get(0).expect("the first batch holds five events")->session();
+    append_index_line(cipher, session, ::fixy::TextView{"15,1"});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         cipher.persist_session_events(store_ctx(), ov, g_test.alloc, second_batch.view()).is_ok());
+    const auto loaded = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.events.size() == 10 && loaded.skipped_batches == 0
+                                    && "the batch after a torn index line loads");
+    CRUCIBLE_TEST_ASSERT(kTest, step_at(loaded, 0) == 10 && step_at(loaded, 9) == 19);
+}
 
 int main() {
     char tmpdir[] = "/tmp/crucible_cipher_XXXXXX";
@@ -461,9 +764,11 @@ int main() {
         const std::string path = object_path(dir_ca, hash);
         CRUCIBLE_TEST_ASSERT(kTest, std::filesystem::exists(path));
 
-        // Overwriting the object with something shorter makes the next
-        // store detectable: if it rewrote the bytes, the file would
-        // grow back to its original size.
+        // A short object is a damaged object, such as one that a crash left
+        // before its bytes reached the disk.  The store does not count it as
+        // durable: it writes the object again, and the file grows back to its
+        // full size.  A sound object stays as it is (the block of the
+        // temporary file of another writer below).
         {
             std::ofstream f(path, std::ios::binary | std::ios::trunc);
             f << "hash-only";
@@ -472,8 +777,8 @@ int main() {
 
         const crucible::ContentHash second = cipher.store(store_ctx(), ov, ca_payload);
         CRUCIBLE_TEST_ASSERT(kTest, second == hash);
-        CRUCIBLE_TEST_ASSERT(kTest, std::filesystem::file_size(path) == corrupted_size
-                                        && "duplicate ContentAddressed store must not rewrite bytes");
+        CRUCIBLE_TEST_ASSERT(kTest, std::filesystem::file_size(path) > corrupted_size
+                                        && "a store writes a damaged object of its hash again");
 
         // Deleting the object leaves the load no disk to fall back on,
         // so a successful read can only have come from memory.
@@ -809,175 +1114,17 @@ int main() {
         std::filesystem::remove_all(dir_cache);
     }
 
-    // A store whose log holds the commits of the steps 1 to 10, and a second
-    // open of the store.  A commit at a step below the last commit is an
-    // error of the commit, and the process goes on.  A commit at the last
-    // step and after it passes.  Each commit runs in a child, so a commit
-    // that ends its process shows as a child that does not exit with 0.
+    // The tests of the order of the steps, of a torn record, of the writers
+    // of one object and of a torn index line.  Each store is a directory under
+    // the root of the test.
     {
         const crucible::Cipher anchor = open_cipher(dir);
-        {
-            auto first_run = open_cipher_under(anchor.root(), ::fixy::TextView{"steps"});
-            auto first_ov = first_run.mint_open_view(store_ctx());
-            for (std::uint64_t step = 1; step <= 10; ++step) {
-                commit_head(first_run, first_ov, crucible::ContentHash{0x5700000000000000ULL + step}, step);
-            }
-        }
-        auto second_run = open_cipher_under(anchor.root(), ::fixy::TextView{"steps"});
-        auto second_ov = second_run.mint_open_view(store_ctx());
-        CRUCIBLE_TEST_ASSERT(kTest, second_run.last_committed_step().is_some_and([](::fixy::session::StepId step) {
-            return step.value == 10;
-        }) && "the open gives the step of the last commit of the log");
-        const ::fixy::TestRunnerCtx child_ctx = store_ctx();
-        const auto commit_in_child = [&](std::uint64_t step, bool is_refusal_expected) {
-            return ::fixy::process::wait(
-                       ::fixy::process::spawn_child(
-                           child_ctx,
-                           [&second_run, &second_ov, &child_ctx, step, is_refusal_expected] noexcept {
-                               const bool is_refused =
-                                   second_run
-                                       .record_event(child_ctx, second_ov, crucible::ContentHash{0x5800000000000000ULL},
-                                                     step)
-                                       .is_err();
-                               if (is_refused != is_refusal_expected) {
-                                   ::fixy::fatal("the commit gave another result than the test expects");
-                               }
-                           })
-                           .expect("the test starts a child"))
-                .expect("the test waits for its child");
-        };
-        CRUCIBLE_TEST_ASSERT(kTest, commit_in_child(1, true).is_exit_with(0)
-                                        && "a commit below the last step is an error, not the end of the process");
-        CRUCIBLE_TEST_ASSERT(kTest, commit_in_child(9, true).is_exit_with(0));
-        CRUCIBLE_TEST_ASSERT(kTest, commit_in_child(10, false).is_exit_with(0));
-        CRUCIBLE_TEST_ASSERT(kTest, commit_in_child(11, false).is_exit_with(0));
-
-        // The refusals in this process give their errors, and they take no
-        // place.  Each child above wrote its line with the place 11 of its own
-        // count, so the commit here also takes the place 11 when no refusal
-        // took a place.  A reopen skips each line whose place does not grow,
-        // so its head is the commit of the first child.
-        using crucible::Cipher;
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             is_commit_error(second_run.record_event(store_ctx(), second_ov,
-                                                                     crucible::ContentHash{0x5800000000000001ULL}, 1),
-                                             Cipher::CommitError::step_order));
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             is_commit_error(second_run.record_event(store_ctx(), second_ov,
-                                                                     crucible::ContentHash{0x5800000000000002ULL},
-                                                                     Cipher::MAX_COMMIT_STEP + 1),
-                                             Cipher::CommitError::step_above_limit));
-        commit_head(second_run, second_ov, crucible::ContentHash{0x5800000000000003ULL}, 10);
-        CRUCIBLE_TEST_ASSERT(kTest, second_run.head() == crucible::ContentHash{0x5800000000000003ULL});
-        CRUCIBLE_TEST_ASSERT(kTest, second_run.last_committed_step().is_some_and(
-                                        [](::fixy::session::StepId step) { return step.value == 10; }));
-        const crucible::Cipher third_run = open_cipher_under(anchor.root(), ::fixy::TextView{"steps"});
-        CRUCIBLE_TEST_ASSERT(kTest, third_run.head() == crucible::ContentHash{0x5800000000000000ULL}
-                                        && "a refused commit takes no place of the count");
-    }
-
-    // A log whose last line holds the step 2^64 - 1.  The line is corrupt, so
-    // the open skips it, and a commit after the step of the line before it
-    // passes.  The old store took the line, and each later commit ended its
-    // process.  A line at MAX_COMMIT_STEP is a sound commit, and a commit
-    // below it gives step_order.
-    {
-        const crucible::Cipher anchor = open_cipher(dir);
-        const crucible::Cipher made = open_cipher_under(anchor.root(), ::fixy::TextView{"high_step"});
-        write_store_file(made.root(), "log",
-                         ::fixy::TextView{"5,5900000000000001,1\n18446744073709551615,5900000000000002,2\n"});
-        auto cipher = open_cipher_under(anchor.root(), ::fixy::TextView{"high_step"});
-        auto ov = cipher.mint_open_view(store_ctx());
-        CRUCIBLE_TEST_ASSERT(kTest, cipher.last_committed_step().is_some_and(
-                                        [](::fixy::session::StepId step) { return step.value == 5; }));
-        CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == crucible::ContentHash{0x5900000000000001ULL}
-                                        && "the line of the step 2^64 - 1 is no commit");
-        const ::fixy::TestRunnerCtx child_ctx = store_ctx();
-        const ::fixy::process::ChildReport report =
-            ::fixy::process::wait(
-                ::fixy::process::spawn_child(
-                    child_ctx,
-                    [&cipher, &ov, &child_ctx] noexcept {
-                        if (cipher.record_event(child_ctx, ov, crucible::ContentHash{0x5900000000000003ULL}, 6)
-                                .is_err()) {
-                            ::fixy::fatal("a commit after the last sound step fails");
-                        }
-                    })
-                    .expect("the test starts a child"))
-                .expect("the test waits for its child");
-        CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0) && "a corrupt step of the log ends no later commit");
-
-        const crucible::Cipher at_ceiling_made = open_cipher_under(anchor.root(), ::fixy::TextView{"ceiling_step"});
-        write_store_file(at_ceiling_made.root(), "log", ::fixy::TextView{"4611686018427387903,5900000000000004,1\n"});
-        auto at_ceiling = open_cipher_under(anchor.root(), ::fixy::TextView{"ceiling_step"});
-        auto at_ceiling_ov = at_ceiling.mint_open_view(store_ctx());
-        CRUCIBLE_TEST_ASSERT(kTest, at_ceiling.last_committed_step().is_some_and([](::fixy::session::StepId step) {
-            return step.value == crucible::Cipher::MAX_COMMIT_STEP;
-        }) && "a line at the ceiling is a commit");
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             is_commit_error(at_ceiling.record_event(store_ctx(), at_ceiling_ov,
-                                                                     crucible::ContentHash{0x5900000000000005ULL}, 1),
-                                             crucible::Cipher::CommitError::step_order));
-        commit_head(at_ceiling, at_ceiling_ov, crucible::ContentHash{0x5900000000000006ULL},
-                    crucible::Cipher::MAX_COMMIT_STEP);
-    }
-
-    // A crash in the middle of an append leaves a torn last record with no
-    // newline.  The next commit cuts the torn record and appends after the
-    // last whole line, so a reopen finds the commit.  The old store wrote the
-    // commit after the torn bytes, and the two joined into one line.  A torn
-    // record of other characters made a line that does not parse, and the
-    // commit was lost.  A torn record of digits only made the commit at step 3
-    // a line of the step 13.
-    {
-        const crucible::Cipher anchor = open_cipher(dir);
-        const crucible::Cipher torn_made = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_log"});
-        write_store_file(torn_made.root(), "log", ::fixy::TextView{"1,5b00000000000001,1\n0,01234"});
-        {
-            auto cipher = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_log"});
-            auto ov = cipher.mint_open_view(store_ctx());
-            CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == crucible::ContentHash{0x5b00000000000001ULL});
-            commit_head(cipher, ov, crucible::ContentHash{0x5b00000000000002ULL}, 2);
-        }
-        const crucible::Cipher torn_reopened = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_log"});
-        CRUCIBLE_TEST_ASSERT(kTest, torn_reopened.head() == crucible::ContentHash{0x5b00000000000002ULL}
-                                        && "the commit after a torn record loads at the reopen");
-
-        const crucible::Cipher digit_made = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_digit"});
-        write_store_file(digit_made.root(), "log", ::fixy::TextView{"1,5b00000000000003,1\n1"});
-        {
-            auto cipher = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_digit"});
-            auto ov = cipher.mint_open_view(store_ctx());
-            commit_head(cipher, ov, crucible::ContentHash{0x5b00000000000004ULL}, 3);
-        }
-        auto digit_reopened = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_digit"});
-        auto digit_ov = digit_reopened.mint_open_view(store_ctx());
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             digit_reopened.hash_at_step(digit_ov, 5) == crucible::ContentHash{0x5b00000000000004ULL}
-                                 && "the commit after a torn digit keeps its step 3");
-    }
-
-    // A torn last line of a session-event index, and a persist of a second
-    // batch after it.  The persist cuts the torn line, so the load gives the
-    // events of the two batches.  The old index joined the line of the second
-    // batch to the torn line, and the load skipped the second batch.
-    {
-        const crucible::Cipher anchor = open_cipher(dir);
-        auto cipher = open_cipher_under(anchor.root(), ::fixy::TextView{"torn_index"});
-        auto ov = cipher.mint_open_view(store_ctx());
-        const auto first_batch = session_batch(10, 5);
-        const auto second_batch = session_batch(15, 5);
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view()).is_ok());
-        const ::fixy::session::SessionTagId session =
-            first_batch.view().get(0).expect("the first batch holds five events")->session();
-        append_index_line(cipher, session, ::fixy::TextView{"15,1"});
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             cipher.persist_session_events(store_ctx(), ov, g_test.alloc, second_batch.view()).is_ok());
-        const auto loaded = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
-        CRUCIBLE_TEST_ASSERT(kTest, loaded.events.size() == 10 && loaded.skipped_batches == 0
-                                        && "the batch after a torn index line loads");
-        CRUCIBLE_TEST_ASSERT(kTest, step_at(loaded, 0) == 10 && step_at(loaded, 9) == 19);
+        test_commit_below_the_last_step(anchor.root());
+        test_step_above_the_ceiling_is_corrupt(anchor.root());
+        test_commit_after_a_torn_record(anchor.root());
+        test_store_leaves_the_file_of_another_writer(anchor.root());
+        test_two_writers_of_one_object(anchor.root());
+        test_batch_after_a_torn_index_line(anchor.root());
     }
 
     std::filesystem::remove_all(dir);

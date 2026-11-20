@@ -612,8 +612,10 @@ static void test_pre_clause_orthogonal(const char* base_dir) {
 }
 
 // A store opened at a path makes a directory there.  A directory at the
-// path of the log or of the temporary HEAD file makes that write fail,
-// also for the root user.
+// path of the log makes its append fail, and a directory at the path of
+// HEAD makes the rename of the new HEAD fail, also for the root user.  Each
+// writer of HEAD writes a temporary file of its own name, so no directory
+// at a temporary name blocks the write.
 
 // The log append is the commit.  When it fails, the commit reports the
 // failure and the head does not move, in memory and in HEAD.
@@ -643,8 +645,8 @@ static void test_failed_log_append_moves_no_head(const crucible::test::ScratchDi
 
 // A failed HEAD write comes after a durable log append.  The commit
 // reports the failure, and the commit stands: the head moves in memory,
-// and a reopen takes the same head from the log, while HEAD still names
-// the commit before it.
+// and a reopen takes the same head from the log, while HEAD names no
+// commit.  The write leaves no temporary file of its own.
 static void test_failed_head_write_keeps_the_logged_commit(const crucible::test::ScratchDir& scratch) {
     constexpr ContentHash kFirst{0x0F1257ULL};
     constexpr ContentHash kSecond{0x5EC0DDULL};
@@ -653,10 +655,14 @@ static void test_failed_head_write_keeps_the_logged_commit(const crucible::test:
         auto view = cipher.mint_open_view(store_ctx());
         record(cipher, store_ctx(), view, kFirst, 1u);
 
-        CRUCIBLE_TEST_ASSERT(kTest, open_cipher(scratch.file("head_blocked/HEAD.tmp")).is_open());
+        const ::fixy::fs::DirectoryHandle root = root_directory_of(cipher);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fs::unlink_at(store_ctx(), root.ref(), "HEAD").is_ok()
+                                        && ::fixy::fs::make_directory_at(store_ctx(), root.ref(), "HEAD").is_ok());
 
         CRUCIBLE_TEST_ASSERT(kTest, failure_of(cipher.record_event(store_ctx(), view, kSecond, 2u))
                                         == Cipher::CommitError::head_write);
+        CRUCIBLE_TEST_ASSERT(kTest, !::fixy::fs::has_entry_at(store_ctx(), root.ref(), "HEAD.tmp-00").value_or(true)
+                                        && "a failed HEAD write removes its temporary file");
         CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == kSecond);
         CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 2u) == kSecond);
     }

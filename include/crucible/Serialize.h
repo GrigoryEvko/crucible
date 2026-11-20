@@ -567,7 +567,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
         const ::fixy::FixedArray<std::byte, kRegionChecksumBytes> checksum =
             region_checksum(image.window(0, w.pos).expect("the writer wrote inside its image"));
         for (const std::byte byte : checksum) {
-            w.write_word(std::to_integer<uint8_t>(byte));
+            w.write_word(static_cast<uint8_t>(byte));
         }
     }
 
@@ -809,6 +809,25 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     // The node is rebuilt from Cipher bytes, and the fold above matched the
     // content hash that the image records, so it crosses the edge to Loaded.
     return ::fixy::mint_tagged<::fixy::tags::source::Replayed>(node).retag<::fixy::tags::source::Loaded>();
+}
+
+// The fault of a stored image of the region of hash, or none, with no parse of
+// its body: a header of a region of this version, the content hash hash in
+// that header, and the checksum at the end (THE CHECKSUM OF A REGION IMAGE).
+// The object store reads it before it counts an object that a writer stored
+// as durable, so a torn or a cut object does not count.  A hostile writer can
+// compute the checksum, so the load of deserialize_region stays the check of
+// the fields.  Complexity: linear in the size of the image.
+[[nodiscard]] inline ::fixy::Option<LoadError> stored_region_fault(::fixy::View<const std::byte> image,
+                                                                   ContentHash hash) {
+    using namespace detail_ser;
+    Reader r{.image = image};
+    const Header hdr = read_header(r);
+    for (const LoadError fault : header_fault(r, hdr, TraceNodeKind::REGION))
+        return ::fixy::some(fault);
+    if (hdr.content_hash != hash) return ::fixy::some(LoadError::object_hash_mismatch);
+    if (image.size() < kHeaderWireBytes + kRegionChecksumBytes) return ::fixy::some(LoadError::truncated);
+    return checksum_fault(image, image.size() - kRegionChecksumBytes);
 }
 
 // Writes the image of the branch into the first bytes of image.  Returns the
