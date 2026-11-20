@@ -3,6 +3,7 @@
 #include <foundation/core/Text.h>
 
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 
 namespace foundation::core {
@@ -27,6 +28,13 @@ static_assert(TextView{}.size() == 0);
 static_assert(TextView{""}.size() == 0);
 static_assert(TextView{"abc"}.size() == 3);
 static_assert(TextView{"abc"} == TextView{"abc"});
+
+// A static text gives the view of its characters before its zero: the text
+// of a literal, and of std::define_static_string, which is the static text
+// of a reflected name.
+static_assert(mint_static_text("abc") == TextView{"abc"});
+static_assert(mint_static_text("").size() == 0);
+static_assert(mint_static_text(std::define_static_string("reflected")) == TextView{"reflected"});
 static_assert(!(TextView{"abc"} == TextView{"abd"}));
 static_assert(!(TextView{"abc"} == TextView{"ab"}));
 static_assert(TextView{} == TextView{""});

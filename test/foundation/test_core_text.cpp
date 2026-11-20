@@ -205,6 +205,16 @@ void test_format_keeps_a_long_text() {
     CRUCIBLE_TEST_ASSERT(kTest, text.size() == 112);
 }
 
+// A static text gives a view of its characters before its zero, which a
+// report then writes as each other TextView.
+void test_static_text_gives_its_characters() {
+    constexpr TextView text = ::foundation::core::mint_static_text("the static text");
+    CRUCIBLE_TEST_ASSERT(kTest, text == TextView{"the static text"});
+    CRUCIBLE_TEST_ASSERT(kTest, text.size() == 15);
+    FixedText<32> written;
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(written, "[{}]", text)) == TextView{"[the static text]"});
+}
+
 // A Hex writes its width in lower-case digits with the zeros that lead, and
 // the digits are the digits of append_hex for the same value.
 void test_format_writes_hex_digits() {
@@ -274,6 +284,7 @@ int main() {
     test_format_keeps_a_long_text();
     test_format_writes_hex_digits();
     test_format_writes_hex_bytes();
+    test_static_text_gives_its_characters();
     ::fixy::check::pass(kTest, "test_core_text: all tests passed\n");
     return 0;
 }

@@ -170,19 +170,15 @@ namespace detail {
         || !std::meta::has_identifier(member);
 }
 
-// A static text of a text that reflection gives.  The static string has a
-// zero after its last character and no zero before it, because a reflected
-// name holds no zero, so it is a CText.  Anchor is the checked type, so a
-// call that names it depends on the template of the walk, and only a unit
-// that runs the check instantiates std::define_static_string.  Complexity:
-// linear in the length of the text.
+// A static text of a text that reflection gives, through mint_static_text
+// of foundation/core/Text.h.  The static string has a zero after its last
+// character and no zero before it, because a reflected name holds no zero.
+// Anchor is the checked type, so a call that names it depends on the
+// template of the walk, and only a unit that runs the check instantiates
+// std::define_static_string.  Complexity: linear in the length of the text.
 template <std::meta::info Anchor, class Text>
 [[nodiscard]] consteval TextView static_text_(Text const& text) {
-    char const* const first = std::define_static_string(text);
-    std::size_t size = 0;
-    while (first[size] != '\0')
-        ++size;
-    return c_text_over_(first, size).view();
+    return mint_static_text(std::define_static_string(text));
 }
 
 // The verdict of the public members of type, and of its public bases, for

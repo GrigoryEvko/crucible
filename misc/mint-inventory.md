@@ -334,6 +334,7 @@ that the axis does not apply to the row.
 | `mint_slot_map` | `include/foundation/core/SlotMap.h` | Y | - | Y | Y | token | · | HS14: 6 |
 | `mint_small_list` | `include/foundation/core/SmallList.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 | `mint_sole_writer` | `include/foundation/core/Atomic.h` | Y | - | Y | Y | token | · | HS14: 10 |
+| `mint_static_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 2 |
 | `mint_strided_rows` | `include/foundation/core/StridedRows.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_strided_scope` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_strided_view` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 17 |
@@ -388,4 +389,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 80 | 46 | 25 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 159 | 61 | 94 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 160 | 61 | 95 | 4 | 0 | 3 |

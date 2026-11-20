@@ -2259,6 +2259,12 @@ foundation_neg_compile_test(neg_core_text_view_no_terminating_zero
 foundation_neg_compile_test(neg_core_text_view_from_pointer
   "no matching function for call to .foundation::core::TextView::TextView\\(<brace-enclosed initializer list>\\)."
   "mismatched types .const char \\[Length\\]. and .const char\\*.")
+foundation_neg_compile_test(neg_core_static_text_from_runtime_pointer
+  "call to consteval function .foundation::core::mint_static_text\\(.*letter.*\\). is not a constant expression"
+  "the value of .letter. is not usable in a constant expression")
+foundation_neg_compile_test(neg_core_static_text_no_terminating_zero
+  ".\\*\\(text \\+ \\(\\(sizetype\\)size\\)\\). is not a constant expression"
+  "mint_static_text")
 foundation_neg_compile_test(neg_core_c_text_no_terminating_zero
   "in .constexpr. expansion of .*foundation::core::CText::CText<3>\\(letters\\)."
   "call to non-.constexpr. function .void foundation::core::detail::text_literal_has_no_terminating_zero\\(\\).")

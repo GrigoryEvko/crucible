@@ -369,7 +369,7 @@ test/dag_neg/ | opted-out | 3 | PROBE: the fixture gives a raw pointer to a type
 test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/dag_neg/ | region | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
-test/fixy/ | c-array-object | 81 | - | -
+test/fixy/ | c-array-object | 80 | - | -
 test/fixy/ | c-library-call | 989 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 9 | - | -
@@ -443,7 +443,7 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2331 | - | -
+test/fixy/ | std-entity | 2330 | - | -
 test/fixy/ | std-object | 836 | - | -
 test/fixy/neg/ | c-array-object | 54 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -

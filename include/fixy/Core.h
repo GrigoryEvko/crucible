@@ -88,6 +88,7 @@ using ::foundation::core::HeapText;
 using ::foundation::core::mint_c_text;
 using ::foundation::core::mint_foreign_text;
 using ::foundation::core::mint_grow_text;
+using ::foundation::core::mint_static_text;
 using ::foundation::core::TextView;
 
 using ::foundation::core::niche_key;

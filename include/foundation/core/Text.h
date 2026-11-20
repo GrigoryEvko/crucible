@@ -389,6 +389,25 @@ constexpr void put_hex_digits_(std::uint64_t value, std::size_t count, char* out
     return Option<CText>::some(detail::c_text_over_(first, size - 1));
 }
 
+// The TextView of a static text: a run of characters with static storage
+// and a zero after its last character, such as a string literal or a string
+// that std::define_static_string gives.  The view holds the characters
+// before the first zero.  The mint is consteval, so the text is a constant
+// of the compile: a pointer that is no constant expression, a null pointer
+// and a run with no zero before the end of its object stop the build, and a
+// view of an object that ends before the compile ends is no constant result.
+// So the view never dangles.  Complexity: linear in the length, at compile
+// time only.
+[[nodiscard]] consteval TextView mint_static_text(char const* text) noexcept {
+    // A compare of the address of a static string with null is no constant
+    // expression in GCC, so the mint does not test the pointer.  The read of
+    // the first character through a null pointer stops the build itself.
+    std::size_t size = 0;
+    while (text[size] != '\0')
+        ++size;
+    return detail::text_over_(text, size);
+}
+
 // Puts the low Digits hexadecimal digits of value after the last character
 // of text, the most significant first, in lower case and with the zeros
 // that lead.  When they do not fit, it gives Full<char>, and text keeps the
