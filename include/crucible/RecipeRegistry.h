@@ -47,11 +47,35 @@ enum class RecipeError : uint8_t {
             return ::fixy::Tolerance::ULP_FP8;
         case ScalarType::Float8_e5m2:
             return ::fixy::Tolerance::ULP_FP8;
+        // A fnuz type differs from its fn twin only in the bias of its
+        // exponent and in its zero and NaN, so it has the same mantissa.
+        case ScalarType::Float8_e4m3fnuz:
+        case ScalarType::Float8_e5m2fnuz:
+            return ::fixy::Tolerance::ULP_FP8;
         case ScalarType::Char:
         case ScalarType::Byte:
             return ::fixy::Tolerance::ULP_INT8;
-        default:
+        // The e8m0 type has no mantissa bit and the e2m1 type one, so 1 ULP is
+        // a factor of two or a half of the value, coarser than each ULP class.
+        case ScalarType::Float8_e8m0fnu:
+        case ScalarType::Float4_e2m1fn_x2:
             return ::fixy::Tolerance::RELAXED;
+        // No ULP class states the budget of a wider integer, of a complex
+        // value, of a bool or of no type, so each admits at the bottom.
+        case ScalarType::Short:
+        case ScalarType::Int:
+        case ScalarType::Long:
+        case ScalarType::ComplexHalf:
+        case ScalarType::ComplexFloat:
+        case ScalarType::ComplexDouble:
+        case ScalarType::Bool:
+        case ScalarType::Undefined:
+            return ::fixy::Tolerance::RELAXED;
+        default:
+            // Each enumerator has its arm, so a new enumerator takes a
+            // decision here.  A value outside the enumeration ends the
+            // process.
+            ::fixy::unreachable();
     }
 }
 

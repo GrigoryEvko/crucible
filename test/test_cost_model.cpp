@@ -91,6 +91,40 @@ static void test_ridge_point() {
     ::fixy::check::pass(kTest, "  test_ridge_point:               PASSED\n");
 }
 
+// Each FP8 type is rated at the FP8 peak, and the FP4 type at the FP4 peak.
+// The old dispatch named four FP8 types and sent Float8_e8m0fnu and
+// Float4_e2m1fn_x2 to its default arm, the FP32 peak.
+static void test_peak_of_each_narrow_type() {
+    auto const hw = blackwell_b200();
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Float8_e5m2) == hw.peak_fp8);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Float8_e4m3fn) == hw.peak_fp8);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Float8_e5m2fnuz) == hw.peak_fp8);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Float8_e4m3fnuz) == hw.peak_fp8);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Float8_e8m0fnu) == hw.peak_fp8
+                                    && "the scale type of a block-scaled format is rated at the FP8 peak");
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Float4_e2m1fn_x2) == hw.peak_fp4
+                                    && "the FP4 type is rated at the FP4 peak");
+    ::fixy::check::pass(kTest, "  test_peak_of_each_narrow_type:  PASSED\n");
+}
+
+// Each other type has its own arm: an 8-bit integer at the INT8 peak, a
+// complex type at the peak of its real type, a wider integer and a bool at
+// the FP32 peak, and no type at no rate.
+static void test_peak_of_each_other_type() {
+    auto const hw = blackwell_b200();
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Byte) == hw.peak_int8);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Char) == hw.peak_int8);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::ComplexHalf) == hw.peak_fp16);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::ComplexFloat) == hw.peak_fp32);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::ComplexDouble) == hw.peak_fp64);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Short) == hw.peak_fp32);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Int) == hw.peak_fp32);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Long) == hw.peak_fp32);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Bool) == hw.peak_fp32);
+    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Undefined) == FlopRate{0.0});
+    ::fixy::check::pass(kTest, "  test_peak_of_each_other_type:   PASSED\n");
+}
+
 // evaluate_cost against the same formula on plain doubles, bit for bit.
 // The memory time is the latency plus the bytes over the bandwidth per
 // nanosecond, and the compute time is the flops over the peak per
@@ -270,6 +304,8 @@ static void test_pure_context_gate() {
 int main() {
     test_preset_sanity();
     test_ridge_point();
+    test_peak_of_each_narrow_type();
+    test_peak_of_each_other_type();
     test_evaluate_cost();
     test_wave_efficiency();
     test_sm_occupancy();

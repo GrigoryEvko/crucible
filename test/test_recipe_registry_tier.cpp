@@ -85,6 +85,18 @@ template <class Found>
         static_assert(tolerance_for_dtype(ScalarType::Undefined) == Tolerance::RELAXED);
     }
 
+    // A fnuz type of FP8 has the mantissa of its fn twin, so it has the FP8
+    // class.  The e8m0 type has no mantissa bit and the e2m1 type one, so 1
+    // ULP of each is a factor of two or a half of the value, coarser than each
+    // ULP class, and each admits at the bottom.  The old dispatch gave the two
+    // fnuz types RELAXED from its default arm.
+    {
+        CRUCIBLE_TEST_ASSERT(kTest, tolerance_for_dtype(ScalarType::Float8_e5m2fnuz) == Tolerance::ULP_FP8);
+        CRUCIBLE_TEST_ASSERT(kTest, tolerance_for_dtype(ScalarType::Float8_e4m3fnuz) == Tolerance::ULP_FP8);
+        CRUCIBLE_TEST_ASSERT(kTest, tolerance_for_dtype(ScalarType::Float8_e8m0fnu) == Tolerance::RELAXED);
+        CRUCIBLE_TEST_ASSERT(kTest, tolerance_for_dtype(ScalarType::Float4_e2m1fn_x2) == Tolerance::RELAXED);
+    }
+
     // An ordered reduction can land up to 4 ULP away, which is coarser
     // than any of the 1-ULP-at-precision classes, so it maps to the
     // weakest class rather than to the one its output dtype suggests.

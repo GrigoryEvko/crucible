@@ -125,6 +125,8 @@ struct HardwareProfile {
         return static_cast<uint64_t>(num_sms) * max_threads_per_sm();
     }
 
+    // Each enumerator of ScalarType has its arm, so a new enumerator takes a
+    // decision here.  A value outside the enumeration ends the process.
     [[nodiscard]] constexpr FlopRate select_peak_rate(ScalarType dtype) const {
         switch (dtype) {
             case ScalarType::Double:
@@ -135,13 +137,41 @@ struct HardwareProfile {
                 return peak_fp16;
             case ScalarType::BFloat16:
                 return peak_bf16;
+            // An e8m0 tensor holds the shared scales of a block-scaled 8-bit
+            // format, and the tensor cores read the scales at the rate of the
+            // 8-bit values.
             case ScalarType::Float8_e5m2:
             case ScalarType::Float8_e4m3fn:
             case ScalarType::Float8_e5m2fnuz:
             case ScalarType::Float8_e4m3fnuz:
+            case ScalarType::Float8_e8m0fnu:
                 return peak_fp8;
-            default:
+            case ScalarType::Float4_e2m1fn_x2:
+                return peak_fp4;
+            case ScalarType::Byte:
+            case ScalarType::Char:
+                return peak_int8;
+            // The real and the imaginary part of a complex value compute at
+            // the rate of their real type.
+            case ScalarType::ComplexHalf:
+                return peak_fp16;
+            case ScalarType::ComplexFloat:
                 return peak_fp32;
+            case ScalarType::ComplexDouble:
+                return peak_fp64;
+            // The profile states no rate for wider integers or for a bool.
+            // The vector units issue them at about the FP32 rate.
+            case ScalarType::Short:
+            case ScalarType::Int:
+            case ScalarType::Long:
+            case ScalarType::Bool:
+                return peak_fp32;
+            // A kernel with no type has no rate, and evaluate_cost then gives
+            // it no compute time, as for a part with no rate of a type.
+            case ScalarType::Undefined:
+                return FlopRate{0.0};
+            default:
+                ::fixy::unreachable();
         }
     }
 
