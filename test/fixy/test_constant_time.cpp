@@ -9,6 +9,7 @@
 // ones cannot.  The anchors are the small-magnitude cases.
 
 #include <fixy/ConstantTime.h>
+#include <fixy/Core.h>
 
 #include <concepts>
 #include <cstddef>
@@ -39,9 +40,10 @@ static_assert(less_takes_unsigned_only<std::int8_t, std::uint8_t, std::int16_t, 
                                        std::uint32_t, std::int64_t, std::uint64_t>);
 
 // eq takes two spans of one static extent through the fold, whether the
-// bytes are const or not.  Two static extents that differ do not compile.
-// A span of dynamic extent on either side goes to the loop, whose
-// precondition checks the lengths.
+// bytes are const or not.  Two static extents that differ do not compile,
+// for spans and for Views.  A View of dynamic extent on either side goes
+// to the loop, whose precondition checks the lengths.  A span of dynamic
+// extent has no form.
 template <class A, class B>
 concept eq_accepts = requires(A lhs, B rhs) { ct::eq(lhs, rhs); };
 
@@ -50,10 +52,17 @@ using Const5 = std::span<const std::byte, 5>;
 using Mutable3 = std::span<std::byte, 3>;
 using Mutable5 = std::span<std::byte, 5>;
 using ConstAny = std::span<const std::byte>;
+using View3 = ::fixy::View<std::byte const, 3>;
+using View5 = ::fixy::View<std::byte const, 5>;
+using ViewMutable5 = ::fixy::View<std::byte, 5>;
+using ViewAny = ::fixy::View<std::byte const>;
 
 static_assert(eq_accepts<Const3, Const3> && eq_accepts<Mutable3, Const3> && eq_accepts<Mutable5, Mutable5>);
 static_assert(!eq_accepts<Const3, Const5> && !eq_accepts<Mutable3, Const5> && !eq_accepts<Mutable5, Mutable3>);
-static_assert(eq_accepts<ConstAny, Const5> && eq_accepts<Const3, ConstAny>);
+static_assert(!eq_accepts<ConstAny, Const5> && !eq_accepts<Const3, ConstAny> && !eq_accepts<ConstAny, ConstAny>);
+static_assert(eq_accepts<View3, View3> && eq_accepts<ViewAny, View5> && eq_accepts<View3, ViewAny>);
+static_assert(eq_accepts<ViewAny, ViewAny> && eq_accepts<ViewMutable5, ViewMutable5>);
+static_assert(!eq_accepts<View3, View5> && !eq_accepts<ViewMutable5, View3>);
 
 constexpr std::byte tag_a[3]{std::byte{1}, std::byte{2}, std::byte{3}};
 constexpr std::byte tag_b[3]{std::byte{1}, std::byte{2}, std::byte{4}};
@@ -87,24 +96,27 @@ static_assert(less_matches_ordering_exhaustively_u8());
 }
 static_assert(is_zero_matches_exhaustively_u8());
 
-// eq finds a difference wherever it sits, not only near the front.
+// eq finds a difference wherever it sits, not only near the front.  The
+// Views of dynamic extent take the loop of the dynamic form.
 int check_eq_finds_every_difference_position() {
     constexpr std::size_t len = 32;
-    std::byte a[len]{};
-    std::byte b[len]{};
-    for (std::size_t i = 0; i < len; ++i) {
-        a[i] = static_cast<std::byte>(i);
-        b[i] = static_cast<std::byte>(i);
+    ::fixy::FixedArray<std::byte, len> a{};
+    ::fixy::FixedArray<std::byte, len> b{};
+    for (::fixy::Index<len> const i : a.indices()) {
+        a.at(i) = static_cast<std::byte>(i.raw());
+        b.at(i) = static_cast<std::byte>(i.raw());
     }
+    ::fixy::FixedArray<std::byte, len> const& left = a;
+    ::fixy::FixedArray<std::byte, len> const& right = b;
 
-    if (!ct::eq(std::span<const std::byte>{a}, std::span<const std::byte>{b})) return 10;
+    if (!ct::eq(ViewAny{left.view()}, ViewAny{right.view()})) return 10;
 
-    for (std::size_t pos = 0; pos < len; ++pos) {
-        const std::byte saved = b[pos];
-        b[pos] = static_cast<std::byte>(std::to_integer<unsigned>(saved) ^ 0xFFu);
-        if (ct::eq(std::span<const std::byte>{a}, std::span<const std::byte>{b})) return 11;
-        b[pos] = saved;
-        if (!ct::eq(std::span<const std::byte>{a}, std::span<const std::byte>{b})) return 12;
+    for (::fixy::Index<len> const pos : b.indices()) {
+        const std::byte saved = b.at(pos);
+        b.at(pos) = static_cast<std::byte>(std::to_integer<unsigned>(saved) ^ 0xFFu);
+        if (ct::eq(ViewAny{left.view()}, ViewAny{right.view()})) return 11;
+        b.at(pos) = saved;
+        if (!ct::eq(ViewAny{left.view()}, ViewAny{right.view()})) return 12;
     }
     return 0;
 }
@@ -173,8 +185,8 @@ int check_every_width_and_corner() {
     if (ct::is_zero<std::uint32_t>(seed32) != 0u) return 51;
     if (ct::is_zero<std::uint64_t>(seed64) != 0u) return 52;
 
-    // Two empty spans carry no differing byte, so they compare equal.
-    if (!ct::eq(std::span<const std::byte>{}, std::span<const std::byte>{})) return 53;
+    // Two empty Views carry no differing byte, so they compare equal.
+    if (!ct::eq(ViewAny{}, ViewAny{})) return 53;
 
     return 0;
 }

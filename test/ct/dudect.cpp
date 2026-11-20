@@ -18,6 +18,7 @@
 // a harness that sees nothing proves nothing.
 
 #include <fixy/ConstantTime.h>
+#include <fixy/Core.h>
 
 #include <algorithm>
 #include <array>
@@ -134,7 +135,7 @@ template <typename Ct>
 }
 template <typename Ct>
 [[gnu::noinline]] std::uint64_t probe_eq(Input const& in) noexcept {
-    return Ct::eq(std::span<const std::byte>{in.left}, std::span<const std::byte>{in.right}) ? 1u : 0u;
+    return Ct::eq(::fixy::bytes(in.left), ::fixy::bytes(in.right)) ? 1u : 0u;
 }
 [[gnu::noinline]] std::uint64_t probe_fixy_eq_static(Input const& in) noexcept {
     return ::fixy::ct::eq(std::span<const std::byte, kBytes>{in.left}, std::span<const std::byte, kBytes>{in.right})
@@ -161,7 +162,9 @@ struct FixyCt {
     static std::uint64_t less(std::uint64_t a, std::uint64_t b) noexcept { return ::fixy::ct::less(a, b); }
     static std::uint64_t is_zero(std::uint64_t x) noexcept { return ::fixy::ct::is_zero(x); }
     static void cswap(std::uint64_t bit, std::uint64_t& a, std::uint64_t& b) noexcept { ::fixy::ct::cswap(bit, a, b); }
-    static bool eq(std::span<const std::byte> a, std::span<const std::byte> b) noexcept { return ::fixy::ct::eq(a, b); }
+    static bool eq(::fixy::View<std::byte const> a, ::fixy::View<std::byte const> b) noexcept {
+        return ::fixy::ct::eq(a, b);
+    }
 };
 
 struct Target {

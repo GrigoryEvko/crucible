@@ -49,7 +49,9 @@ struct FixyCt {
     static void cswap(T cond01, T& a, T& b) noexcept {
         ::fixy::ct::cswap(cond01, a, b);
     }
-    static bool eq(std::span<const std::byte> a, std::span<const std::byte> b) noexcept { return ::fixy::ct::eq(a, b); }
+    static bool eq(::fixy::View<std::byte const> a, ::fixy::View<std::byte const> b) noexcept {
+        return ::fixy::ct::eq(a, b);
+    }
     template <std::size_t N>
     static bool eq_static(std::array<std::byte, N> const& a, std::array<std::byte, N> const& b) noexcept {
         return ::fixy::ct::eq(std::span<const std::byte, N>{a}, std::span<const std::byte, N>{b});

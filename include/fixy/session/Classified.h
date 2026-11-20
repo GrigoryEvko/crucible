@@ -35,12 +35,13 @@
 #include <fixy/ConstantTime.h>
 #include <fixy/Secret.h>
 #include <fixy/session/Registry.h>
+#include <foundation/core/Algorithms.h>
+#include <foundation/core/Region.h>
 #include <foundation/core/Zeroize.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -127,10 +128,13 @@ public:
         delete("a CTPayload compares only through fixy::session::eq, whose time does not depend on the content");
 
     // The object representation, for the constant-time comparison.  This
-    // is the only read that does not consume the carrier.
-    [[nodiscard]] std::span<const std::byte> bytes() const noexcept {
-        return std::as_bytes(std::span<const T, 1>{&value_, 1});
+    // is the only read that does not consume the carrier.  Each byte of T
+    // is a value byte (ByteImageable), so no padding byte reaches the
+    // comparison.  The View borrows the carrier.
+    [[nodiscard]] ::foundation::core::View<std::byte const, sizeof(T)> bytes() const& noexcept {
+        return ::foundation::core::bytes(value_);
     }
+    void bytes() const&& = delete("the bytes of a temporary CTPayload dangle at the end of the full expression");
 
     // The value leaves the carrier under an admitted policy that releases
     // the payload, at a named site.

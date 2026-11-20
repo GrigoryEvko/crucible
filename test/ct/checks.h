@@ -57,7 +57,7 @@ template <typename Ct, typename T>
     Ct::cswap(cond01, a, b);
 }
 template <typename Ct>
-[[gnu::noinline]] bool eq_outline(std::span<const std::byte> a, std::span<const std::byte> b) noexcept {
+[[gnu::noinline]] bool eq_outline(::fixy::View<std::byte const> a, ::fixy::View<std::byte const> b) noexcept {
     return Ct::eq(a, b);
 }
 
@@ -133,9 +133,11 @@ void check_eq_length(Tally& tally) noexcept {
         make_secret_bytes(b.data(), b.size());
 
         bool const expected = diff_at == N;
-        tally.expect(make_public(Ct::eq(std::span<const std::byte>{a}, std::span<const std::byte>{b})) == expected,
+        tally.expect(make_public(Ct::eq(::fixy::View<std::byte const>{::fixy::bytes(a)},
+                                        ::fixy::View<std::byte const>{::fixy::bytes(b)}))
+                         == expected,
                      "eq");
-        tally.expect(make_public(eq_outline<Ct>(a, b)) == expected, "eq, out of line");
+        tally.expect(make_public(eq_outline<Ct>(::fixy::bytes(a), ::fixy::bytes(b))) == expected, "eq, out of line");
         if constexpr (requires { Ct::template eq_static<N>(a, b); }) {
             tally.expect(make_public(Ct::template eq_static<N>(a, b)) == expected, "eq, static extent");
         }

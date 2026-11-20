@@ -61,22 +61,25 @@ template <std::unsigned_integral T>
 }
 }  // namespace detail
 
-// Equality of two byte buffers whose timing depends only on the
-// length, which is public, and not on where the first difference is.
+// Equality of two byte views whose timing depends only on the length,
+// which is public, and not on where the first difference is.  It ORs the
+// difference of each pair of bytes and reads the accumulator once.
 //
-// The parameters are spans rather than pointer-and-length triples
-// because a span is structurally non-null at any non-zero length.  An
-// empty span pair compares equal, which is the vacuous truth over no
-// bytes.
+// The parameters are Views of the base, so no null pointer with a count
+// reaches the loop.  An empty pair compares equal, which is the vacuous
+// truth over no bytes.
 //
 // A length mismatch is a caller bug and traps.  Every real use of this
-// primitive compares tags of a statically known length, so a mismatch
-// means corruption or a mis-edit, and returning false would hide it.
-[[nodiscard]] constexpr bool eq(std::span<const std::byte> a, std::span<const std::byte> b) noexcept {
+// primitive compares tags of one known length, so a mismatch means
+// corruption or a mis-edit, and returning false would hide it.
+[[nodiscard]] constexpr bool eq(::foundation::core::View<std::byte const> a,
+                                ::foundation::core::View<std::byte const> b) noexcept {
     CRUCIBLE_PRE(a.size() == b.size());
     std::byte acc{0};
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        acc |= a[i] ^ b[i];
+    auto cursor = b.begin();
+    for (std::byte const byte : a) {
+        acc |= byte ^ *cursor;
+        ++cursor;
     }
     return detail::is_zero_without_compare(static_cast<std::uint8_t>(acc));
 }
@@ -133,7 +136,8 @@ template <detail::ByteElement A, detail::ByteElement B, std::size_t N>
 // Equality of two byte views of one static extent, such as two tags of a
 // keyed hash.  It ORs the difference of each pair of bytes and reads the
 // accumulator once, so its timing depends only on the extent, which is
-// public.  Two views of different extents give no candidate of this form.
+// public.  Two views of different static extents reach the deleted form
+// below, and not the dynamic form above.
 template <std::size_t N>
     requires(N != ::foundation::core::dynamic_extent)
 [[nodiscard]] constexpr bool eq(::foundation::core::View<std::byte const, N> a,
@@ -148,13 +152,20 @@ template <std::size_t N>
 }
 
 // Two static extents that differ cannot name one tag, so the pair does
-// not compile.  Without this overload, both spans convert to the dynamic
-// form above, and its precondition stops the mismatch only at run time.
+// not compile.  Without this overload, two spans have no form to reach,
+// and two Views convert to the dynamic form above, whose precondition
+// stops the mismatch only at run time.
 template <detail::ByteElement A, detail::ByteElement B, std::size_t N, std::size_t M>
     requires(N != std::dynamic_extent && M != std::dynamic_extent && N != M)
 bool eq(std::span<A, N>, std::span<B, M>) =
     delete("fixy::ct::eq: the two spans have static extents that differ, so they cannot hold one tag.  Compare "
            "spans of one length.");
+
+template <detail::ByteElement A, detail::ByteElement B, std::size_t N, std::size_t M>
+    requires(N != ::foundation::core::dynamic_extent && M != ::foundation::core::dynamic_extent && N != M)
+bool eq(::foundation::core::View<A, N>, ::foundation::core::View<B, M>) =
+    delete("fixy::ct::eq: the two views have static extents that differ, so they cannot hold one tag.  Compare "
+           "views of one length.");
 
 // Returns 1 when a < b and 0 otherwise.
 //
