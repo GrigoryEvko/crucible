@@ -33,6 +33,17 @@
 // address: step 3 reads the emptied state of step 2, so step 5 releases
 // nothing, and step 4 gives the value back.
 //
+// THE COPY OF A STATE
+// Each copy of a state goes through a local state of the core, and no local
+// state is const.  GCC keeps a const local aggregate in memory, and it copies
+// an aggregate from memory to memory with one 16-byte access and one 8-byte
+// access.  A field that a narrow store wrote then reaches a wide load, and
+// the load waits for a store forward that cannot occur.  GCC keeps a local
+// state that is not const in registers, so a copy between a state in memory
+// and a local reads and writes one field at a time.  An owner that gives its
+// state away calls take_state_, which copies in the same way.  The shape
+// probe owner_take_and_end of test/shape/core_shapes.cpp holds this code.
+//
 // THE MARKER
 // A state opts in to the core with the member
 //
@@ -97,14 +108,18 @@ protected:
     constexpr OwnerCore() noexcept = default;
     constexpr explicit OwnerCore(State const& state) noexcept : state_{state} {}
 
-    constexpr OwnerCore(OwnerCore&& other) noexcept : state_{other.state_} { other.state_ = State::emptied(state_); }
+    // The state moves through a local (THE COPY OF A STATE).
+    constexpr OwnerCore(OwnerCore&& other) noexcept {
+        State taken = other.take_state_();
+        state_ = taken;
+    }
 
     // The five steps of THE ORDER OF A MOVE ASSIGNMENT.  The steps work on
-    // the states, so no step builds a second core.
+    // the states, so no step builds a second core.  take_state_ does steps
+    // 1 and 2.
     constexpr OwnerCore& operator=(OwnerCore&& other) noexcept {
-        State const taken = other.state_;
-        other.state_ = State::emptied(taken);
-        State const held = state_;
+        State taken = other.take_state_();
+        State held = state_;
         state_ = taken;
         State::release(held);
         return *this;
@@ -116,11 +131,18 @@ protected:
 
     constexpr ~OwnerCore() { State::release(state_); }
 
+    // Gives the state to the caller, and leaves the emptied state in this
+    // owner.  The caller then owns what the state owns.
+    [[nodiscard]] constexpr State take_state_() noexcept {
+        State taken = state_;
+        state_ = State::emptied(taken);
+        return taken;
+    }
+
     // Releases the value, and leaves the owner empty.  The owner is empty
     // before the release starts, as in a move assignment.
     constexpr void reset_() noexcept {
-        State const held = state_;
-        state_ = State::emptied(held);
+        State held = take_state_();
         State::release(held);
     }
 };

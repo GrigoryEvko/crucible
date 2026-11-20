@@ -279,13 +279,6 @@ public:
 class [[nodiscard]] UnwrittenBytes final : public core::OwnerCore<core::detail::owner::AlignedBytesState> {
     using State = core::detail::owner::AlignedBytesState;
 
-    // Gives the fields to the caller and leaves this block empty.
-    [[nodiscard]] State give_up_() noexcept {
-        State const given = state_;
-        state_ = State::emptied(given);
-        return given;
-    }
-
     // The View of the count bytes from the first byte of the block of the
     // fields, for a door that writes each byte (THE STORAGE).  The View is no
     // part of the surface, so no read reaches a byte with no value.
@@ -322,9 +315,11 @@ public:
     [[nodiscard]] std::size_t alignment() const noexcept { return state_.alignment; }
 
     // Writes value into each byte, and gives the block as an AlignedBytes.
-    // This block is then empty.  Complexity: O(size()).
+    // This block is then empty.  The local state of fill and of write is not
+    // const, so it stays in registers (THE COPY OF A STATE of
+    // foundation/core/Owner.h).  Complexity: O(size()).
     [[nodiscard]] AlignedBytes fill(std::uint8_t value) && noexcept {
-        State const given = give_up_();
+        State given = take_state_();
         core::fill(written_run_(given), value);
         return AlignedBytes{detail::AlignedBytesDoor::key(), given};
     }
@@ -337,7 +332,7 @@ public:
     template <class Writer>
         requires std::is_nothrow_invocable_v<Writer&, core::WriteLease<std::uint8_t>&>
     [[nodiscard]] AlignedBytes write(Writer writer) && noexcept {
-        State const given = give_up_();
+        State given = take_state_();
         core::View<std::uint8_t> const run = written_run_(given);
         core::WriteLease<std::uint8_t> lease{core::detail::HeapArrayDoor::key(),
                                              first_of_(core::detail::ViewDoor::key(), run), given.bytes};

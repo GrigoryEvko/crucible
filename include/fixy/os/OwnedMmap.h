@@ -597,8 +597,7 @@ public:
     // when the call returns, and no unmap runs.
     template <atom::IsLeakAtom LeakAtom>
     [[nodiscard]] std::pair<void*, std::size_t> release(LeakAtom) && noexcept {
-        State const held = this->state_;
-        this->state_ = State::emptied(held);
+        State held = this->take_state_();
         return {held.address, held.length};
     }
 

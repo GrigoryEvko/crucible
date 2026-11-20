@@ -726,6 +726,12 @@ PROBES: tuple[Probe, ...] = (
         "view in memory, and the loop then loads the base pointer of each column from the stack for each element",
     ),
     Probe(
+        "owner_take_and_end",
+        "a take of an owner on the core, a read of one field, and the end of the owner through a const local are the "
+        "loads of the three raw words, the stores of the emptied words, the test of the first word and the release.  "
+        "The core moves a state through a local that is not const, so no copy of the state goes to the stack",
+    ),
+    Probe(
         "box_read",
         "A read through the dereference of a Box adds one test and one branch to a call of the fatal exit",
         checks=("fatal",),

@@ -668,6 +668,49 @@ using ShapeKinds =
     return value;
 }
 
+// ── The owner core ──────────────────────────────────────────────────────────
+
+// The release of a probe owner adds two words of its state to this cell, so
+// the optimizer keeps each read of the state.
+constinit fixy::Atomic<std::uint64_t> released_words{std::uint64_t{0}};
+
+// The state of a probe owner on the core: three words, as the state of
+// AlignedBytes.
+struct ThreeWordState final {
+    using owner_state_mark = fixy::OwnerStateMark;
+
+    std::uint64_t first = 0;
+    std::uint64_t second = 0;
+    std::uint64_t third = 0;
+
+    [[nodiscard]] static constexpr ThreeWordState emptied(ThreeWordState const& /*state*/) noexcept {
+        return ThreeWordState{};
+    }
+
+    static void release(ThreeWordState const& state) noexcept {
+        if (state.first != 0) static_cast<void>(released_words.fetch_add_acq_rel(state.second + state.third));
+    }
+};
+
+class ThreeWordOwner final : public fixy::OwnerCore<ThreeWordState> {
+public:
+    ThreeWordOwner(ThreeWordOwner&&) noexcept = default;
+    ThreeWordOwner& operator=(ThreeWordOwner&&) noexcept = default;
+
+    [[nodiscard]] std::uint64_t second() const noexcept { return state_.second; }
+};
+
+// The take of an owner out of its place, a read of one field, and the end of
+// the owner through a const local.  The core moves the state through a local
+// that is not const, so the state stays in registers, and no copy of it goes
+// to the stack (THE COPY OF A STATE of foundation/core/Owner.h).
+[[gnu::used]] std::uint64_t owner_take_and_end(ThreeWordOwner& source) noexcept {
+    ThreeWordOwner taken{std::move(source)};
+    std::uint64_t const second = taken.second();
+    ThreeWordOwner const ended{std::move(taken)};
+    return second;
+}
+
 // ── Ref, Choice and Report ──────────────────────────────────────────────────
 
 [[gnu::used]] std::uint32_t box_read(fixy::Box<Payload>& box) noexcept { return box->value; }
@@ -1850,6 +1893,25 @@ struct RawSlots final {
         sum += *cursor;
     }
     return sum;
+}
+
+// The three words of a probe owner.  The release adds to the cell of the
+// family side, so the two sides do the same atomic work.
+struct RawOwnerWords final {
+    std::uint64_t first = 0;
+    std::uint64_t second = 0;
+    std::uint64_t third = 0;
+};
+
+[[gnu::used]] std::uint64_t owner_take_and_end_raw(RawOwnerWords& source) noexcept {
+    std::uint64_t const first = source.first;
+    std::uint64_t const second = source.second;
+    std::uint64_t const third = source.third;
+    source.first = 0;
+    source.second = 0;
+    source.third = 0;
+    if (first != 0) static_cast<void>(released_words.fetch_add_acq_rel(second + third));
+    return second;
 }
 
 [[gnu::used]] std::uint32_t box_read_raw(std::unique_ptr<Payload>& box) noexcept { return box->value; }

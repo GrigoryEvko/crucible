@@ -755,8 +755,7 @@ public:
 // empty with its maximum.  A lent text ends the process (THE LEND COUNT).
 // Only an rvalue freezes, so the call shows the move.  Complexity: O(1).
 [[nodiscard]] constexpr auto freeze(GrowText&& text) noexcept -> HeapText {
-    detail::owner::GrowTextState const frozen = text.state_;
-    text.state_ = detail::owner::GrowTextState::emptied(frozen);
+    detail::owner::GrowTextState frozen = text.take_state_();
     return HeapText{detail::owner::HeapTextState{frozen.first, frozen.size, frozen.capacity}};
 }
 
