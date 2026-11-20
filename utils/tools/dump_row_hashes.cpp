@@ -66,6 +66,7 @@
 // portable, and that is a defect rather than a ceremony.
 
 #include <fixy/Budgeted.h>
+#include <fixy/Core.h>
 #include <fixy/EpochVersioned.h>
 #include <fixy/Fn.h>
 #include <fixy/Mutation.h>
@@ -96,11 +97,8 @@
 #include <foundation/permissions/SharedPermission.h>
 #include <foundation/reflect/Hash.h>
 
-#include <array>
-#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 
 namespace fa = ::foundation::algebra;
 namespace fd = ::foundation::diag;
@@ -298,11 +296,11 @@ using X02_ExecCtxBg = fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg>>;
 using X03_CapabilityAllocBg = fe::Capability<fe::Effect::Alloc, fe::Bg>;
 
 struct LabeledEntry {
-    const char* label;
-    std::uint64_t value;
+    ::fixy::TextView label{};
+    std::uint64_t value = 0;
 };
 
-inline constexpr std::array<LabeledEntry, 59> kEntries = {{
+inline constexpr ::fixy::FixedArray<LabeledEntry, 59> kEntries{
     {"G01_Linear", row_hash_contribution_v<G01_Linear>},
     {"G02_Affine", row_hash_contribution_v<G02_Affine>},
     {"G03_TaggedVerified", row_hash_contribution_v<G03_TaggedVerified>},
@@ -362,7 +360,7 @@ inline constexpr std::array<LabeledEntry, 59> kEntries = {{
     {"X01_ContextBg", row_hash_contribution_v<X01_ContextBg>},
     {"X02_ExecCtxBg", row_hash_contribution_v<X02_ExecCtxBg>},
     {"X03_CapabilityAllocBg", row_hash_contribution_v<X03_CapabilityAllocBg>},
-}};
+};
 
 inline constexpr std::size_t kEntryCount = kEntries.size();
 
@@ -490,15 +488,15 @@ static_assert(no_reserved_values(), "an entry took a reserved row_hash value. Ze
 // tag and the width are both inputs of a clock.  A value graded on one of
 // these must never reach a cache entry filed under another.
 [[nodiscard]] consteval bool counters_and_clocks_are_distinct() noexcept {
-    std::uint64_t const values[] = {
+    ::fixy::FixedArray<std::uint64_t, 7> const values{
         row_hash_contribution_v<K02_OnDualGeneration>, row_hash_contribution_v<K03_OnPeakBytes>,
         row_hash_contribution_v<K04_OnBitsBudget>,     row_hash_contribution_v<K05_OnDualEpoch>,
         row_hash_contribution_v<H01_ClockOfFour>,      row_hash_contribution_v<H02_ClockOfFourTagged>,
         row_hash_contribution_v<H03_ClockOfEight>,
     };
-    for (std::size_t i = 0; i < std::size(values); ++i) {
-        for (std::size_t j = i + 1; j < std::size(values); ++j) {
-            if (values[i] == values[j]) return false;
+    for (::fixy::Index<7> const i : values.indices()) {
+        for (::fixy::Index<7> const j : values.indices()) {
+            if (i.raw() < j.raw() && values.at(i) == values.at(j)) return false;
         }
     }
     return true;
@@ -510,10 +508,10 @@ static_assert(counters_and_clocks_are_distinct(), "two counter axes, or two cloc
 // Every entry is distinct except the repeats named above.
 [[nodiscard]] consteval std::size_t distinct_value_count() noexcept {
     std::size_t distinct = 0;
-    for (std::size_t i = 0; i < kEntryCount; ++i) {
+    for (::fixy::Index<kEntryCount> const i : kEntries.indices()) {
         bool seen_before = false;
-        for (std::size_t j = 0; j < i; ++j) {
-            if (kEntries[j].value == kEntries[i].value) seen_before = true;
+        for (::fixy::Index<kEntryCount> const j : kEntries.indices()) {
+            if (j.raw() < i.raw() && kEntries.at(j).value == kEntries.at(i).value) seen_before = true;
         }
         if (!seen_before) ++distinct;
     }
@@ -536,18 +534,28 @@ int main() {
     // printed because it is the discriminator a cross-toolchain
     // federation keys through, and a reader comparing two goldens needs
     // to know whether the two builds shared a toolchain.
-    std::printf("# row_hash cross-build witness\n");
-    std::printf("# format-version:  1\n");
-    std::printf("# matrix-size:     %zu\n", kEntryCount);
-    std::printf("# fold-seed:       0x%016" PRIx64 "\n", kFoldSeed);
-    std::printf("# fold-anchor:     0x%016" PRIx64 "\n", kFoldAnchor);
-    std::printf("# toolchain-tag:   0x%016" PRIx64 "\n", fd::federation_toolchain_tag());
-    std::printf("# (a diff means a row_hash_contribution specialisation moved. "
-                "Name the ceremony in the commit message and recapture this golden.)\n");
-    std::printf("# (the R** lines fold no reflected name and are portable across "
-                "toolchains. Every other line is not.)\n");
-    for (auto const& entry : kEntries) {
-        std::printf("%-24s 0x%016" PRIx64 "\n", entry.label, entry.value);
+    using ::fixy::Hex;
+    using ::fixy::report;
+    using ::fixy::Sink;
+    report(Sink::Out, "# row_hash cross-build witness\n");
+    report(Sink::Out, "# format-version:  1\n");
+    report(Sink::Out, "# matrix-size:     {}\n", kEntryCount);
+    report(Sink::Out, "# fold-seed:       0x{}\n", Hex<16>{kFoldSeed});
+    report(Sink::Out, "# fold-anchor:     0x{}\n", Hex<16>{kFoldAnchor});
+    report(Sink::Out, "# toolchain-tag:   0x{}\n", Hex<16>{fd::federation_toolchain_tag()});
+    report(Sink::Out, "# (a diff means a row_hash_contribution specialisation moved. "
+                      "Name the ceremony in the commit message and recapture this golden.)\n");
+    report(Sink::Out, "# (the R** lines fold no reflected name and are portable across "
+                      "toolchains. Every other line is not.)\n");
+    // The label column is 24 characters wide.  A shorter label takes spaces
+    // after it, and a longer one takes none.
+    ::fixy::TextView const label_column{"                        "};
+    for (LabeledEntry const& entry : kEntries) {
+        std::size_t const width = entry.label.size();
+        ::fixy::TextView const pad =
+            label_column.window(0, width < label_column.size() ? label_column.size() - width : 0)
+                .expect("the pad is a part of the label column");
+        report(Sink::Out, "{}{} 0x{}\n", entry.label, pad, Hex<16>{entry.value});
     }
     return 0;
 }
