@@ -2,17 +2,15 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
 #include <fixy/session/Entry.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
-#include <atomic>
 #include <cstdint>
 #include <cstdio>
-#include <functional>
-#include <limits>
 #include <optional>
 #include <string_view>
-#include <thread>
 #include <type_traits>
 
 namespace {
@@ -65,6 +63,27 @@ cntp::DeclaredPathSwapPlan make_other_plan() { return make_plan_for(11, 40, 50);
                                            std::uint64_t new_path_id) noexcept {
     return (flow_id == 10 && old_path_id == 20 && new_path_id == 30)
         || (flow_id == 11 && old_path_id == 40 && new_path_id == 50);
+}
+
+// A count that each thread of a race adds to.
+using RaceCount = ::fixy::Atomic<std::uint32_t, ::fixy::Counter>;
+
+// Runs the bodies of one race, each on a thread of its own, and joins each
+// thread.  The bodies share the swapper on purpose, so the race goes through
+// the raw probe of the thread door.  The door starts the threads in the order
+// of the bodies.
+template <typename... Bodies>
+void run_race(::fixy::BgLoadCtx const& bg, Bodies&... bodies) noexcept {
+    ::fixy::thread::run_joined_raw_probe(bg, kTest, "the threads of a race of the swapper share the swapper on purpose",
+                                         ::fixy::thread::ThreadOptions{}, bodies...)
+        .expect("the thread door starts each thread of the race");
+}
+
+// Spins until the gate of a race opens.
+void wait_for_start(::fixy::Atomic<bool> const& start) noexcept {
+    while (!start.load_acquire()) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
 }
 
 void test_admission() {
@@ -144,17 +163,17 @@ void test_concurrent_observer_sees_only_valid_states() {
 
     auto swapper = cntp::mint_path_swapper<16>(init);
 
-    std::atomic<bool> writer_done{false};
-    std::atomic<std::uint32_t> torn_observations{0};
-    std::atomic<std::uint32_t> total_observations{0};
-    std::jthread observer{[&]() noexcept {
+    ::fixy::Atomic<bool> writer_done{false};
+    RaceCount torn_observations{0};
+    RaceCount total_observations{0};
+    auto observer = [&swapper, &writer_done, &torn_observations, &total_observations] noexcept {
         // The loop runs its body before testing the flag, so at least
         // one observation happens even when the writer finishes first.
         // The claim under test is that no read is torn, not that the
         // observer wins the start-up race.
         do {
             const auto observed = swapper.state();
-            total_observations.fetch_add(1, std::memory_order_relaxed);
+            static_cast<void>(total_observations.fetch_add_relaxed(1));
             switch (observed) {
                 case cntp::SwapState::Stable:
                 case cntp::SwapState::Draining:
@@ -164,24 +183,25 @@ void test_concurrent_observer_sees_only_valid_states() {
                 case cntp::SwapState::Failed:
                     break;
                 default:
-                    torn_observations.fetch_add(1, std::memory_order_relaxed);
+                    static_cast<void>(torn_observations.fetch_add_relaxed(1));
             }
-        } while (!writer_done.load(std::memory_order_acquire));
-    }};
+        } while (!writer_done.load_acquire());
+    };
 
     auto plan = make_plan();
-    for (std::uint32_t cycle = 0; cycle < 2000; ++cycle) {
-        const std::uint64_t base = static_cast<std::uint64_t>(cycle) * 100;
-        CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(bg, plan, base + 1).is_ok());
-        CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(bg, base + 2).is_ok());
-        CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(bg, base + 3).is_ok());
-        CRUCIBLE_TEST_ASSERT(kTest, swapper.complete_receiver(bg, base + 4).is_ok());
-    }
-
-    writer_done.store(true, std::memory_order_release);
-    observer.join();
-    CRUCIBLE_TEST_ASSERT(kTest, torn_observations.load(std::memory_order_acquire) == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, total_observations.load(std::memory_order_acquire) > 0);
+    auto writer = [&swapper, &plan, &writer_done](::fixy::BgLoadCtx const& ctx) noexcept {
+        for (std::uint32_t cycle = 0; cycle < 2000; ++cycle) {
+            const std::uint64_t base = static_cast<std::uint64_t>(cycle) * 100;
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(ctx, plan, base + 1).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(ctx, base + 2).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(ctx, base + 3).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.complete_receiver(ctx, base + 4).is_ok());
+        }
+        writer_done.store_release(true);
+    };
+    run_race(bg, observer, writer);
+    CRUCIBLE_TEST_ASSERT(kTest, torn_observations.load_acquire() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, total_observations.load_acquire() > 0);
 
     ::fixy::check::pass(kTest, "  test_concurrent_observer_sees_only_valid_states: PASSED\n");
 }
@@ -251,39 +271,53 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
     CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(bg, 300).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, swapper.event_count(bg) == 3);
 
-    std::atomic<int> winners{0};
-    std::atomic<int> losers{0};
-    std::atomic<bool> start{false};
+    RaceCount winners{0};
+    RaceCount losers{0};
+    RaceCount next_racer{0};
+    ::fixy::Atomic<bool> start{false};
 
-    std::jthread racers[kRacers];
-    for (int idx = 0; idx < kRacers; ++idx) {
-        racers[idx] = std::jthread{[&, idx]() noexcept {
-            // The threads are held at this gate so that they enter the
-            // exchange having seen the same state.  Without the gate the
-            // first thread to wake usually finishes before the others
-            // start and the race never happens.
-            while (!start.load(std::memory_order_acquire)) {
-                // Yielding rather than spinning: this gate is off any
-                // hot path, and yielding behaves the same everywhere.
-                std::this_thread::yield();
-            }
-            const std::uint64_t now_ns = 400 + static_cast<std::uint64_t>(idx);
-            auto result = swapper.complete_receiver(bg, now_ns);
-            if (result.is_ok()) {
-                winners.fetch_add(1, std::memory_order_relaxed);
-            } else {
-                CRUCIBLE_TEST_ASSERT(kTest, result.err() == ::fixy::some(cntp::SwapError::InvalidTransition));
-                losers.fetch_add(1, std::memory_order_relaxed);
-            }
-        }};
-    }
+    auto racer = [&swapper, &winners, &losers, &next_racer, &start](::fixy::BgLoadCtx const& ctx) noexcept {
+        const std::uint32_t idx = next_racer.fetch_add_relaxed(1);
+        // The threads are held at this gate so that they enter the
+        // exchange having seen the same state.  Without the gate the
+        // first thread to wake usually finishes before the others
+        // start and the race never happens.
+        wait_for_start(start);
+        const std::uint64_t now_ns = 400 + static_cast<std::uint64_t>(idx);
+        auto result = swapper.complete_receiver(ctx, now_ns);
+        if (result.is_ok()) {
+            static_cast<void>(winners.fetch_add_relaxed(1));
+        } else {
+            CRUCIBLE_TEST_ASSERT(kTest, result.err() == ::fixy::some(cntp::SwapError::InvalidTransition));
+            static_cast<void>(losers.fetch_add_relaxed(1));
+        }
+    };
+    // The opener starts after each racer, and it opens the gate at once.
+    auto opener = [&start] noexcept { start.store_release(true); };
 
-    start.store(true, std::memory_order_release);
-    for (auto& racer : racers)
-        racer.join();
+    auto racer_01 = racer;
+    auto racer_02 = racer;
+    auto racer_03 = racer;
+    auto racer_04 = racer;
+    auto racer_05 = racer;
+    auto racer_06 = racer;
+    auto racer_07 = racer;
+    auto racer_08 = racer;
+    auto racer_09 = racer;
+    auto racer_10 = racer;
+    auto racer_11 = racer;
+    auto racer_12 = racer;
+    auto racer_13 = racer;
+    auto racer_14 = racer;
+    auto racer_15 = racer;
+    run_race(bg, racer, racer_01, racer_02, racer_03, racer_04, racer_05, racer_06, racer_07, racer_08, racer_09,
+             racer_10, racer_11, racer_12, racer_13, racer_14, racer_15, opener);
 
-    CRUCIBLE_TEST_ASSERT(kTest, winners.load() == 1);
-    CRUCIBLE_TEST_ASSERT(kTest, losers.load() == kRacers - 1);
+    // Each racer of the list above took one index, so the list holds kRacers
+    // racers.
+    CRUCIBLE_TEST_ASSERT(kTest, next_racer.load_acquire() == kRacers);
+    CRUCIBLE_TEST_ASSERT(kTest, winners.load_acquire() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, losers.load_acquire() == kRacers - 1);
 
     // One winner is not enough on its own: the log must have gained one
     // event and not one per thread that observed the source state.
@@ -307,41 +341,42 @@ void test_plan_reader_races_the_writer() {
     const auto first = make_plan();
     const auto second = make_other_plan();
 
-    std::atomic<bool> writer_done{false};
-    std::atomic<std::uint32_t> mixed_reads{0};
-    std::jthread reader{[&]() noexcept {
+    ::fixy::Atomic<bool> writer_done{false};
+    RaceCount mixed_reads{0};
+    auto reader = [&swapper, &writer_done, &mixed_reads](::fixy::BgLoadCtx const& ctx) noexcept {
         do {
-            auto const seen = swapper.plan(bg);
+            auto const seen = swapper.plan(ctx);
             for (cntp::PathSwapPlan const& plan : seen) {
                 if (!names_one_declared_plan(plan.flow_id().value(), plan.old_path().value(),
                                              plan.new_path().value())) {
-                    mixed_reads.fetch_add(1, std::memory_order_relaxed);
+                    static_cast<void>(mixed_reads.fetch_add_relaxed(1));
                 }
             }
-            if (swapper.event_count(bg) > 0) {
+            if (swapper.event_count(ctx) > 0) {
                 // The latest event.  The ring holds each event at its
                 // sequence number minus one, modulo the ring size.
-                const auto event = swapper.event_at(bg, swapper.sequence(bg) - 1);
+                const auto event = swapper.event_at(ctx, swapper.sequence(ctx) - 1);
                 if (!names_one_declared_plan(event.flow_id, event.old_path, event.new_path)
                     || !cntp::is_valid_path_swap_transition(event.from, event.to)) {
-                    mixed_reads.fetch_add(1, std::memory_order_relaxed);
+                    static_cast<void>(mixed_reads.fetch_add_relaxed(1));
                 }
             }
-        } while (!writer_done.load(std::memory_order_acquire));
-    }};
+        } while (!writer_done.load_acquire());
+    };
 
-    for (std::uint32_t cycle = 0; cycle < 2000; ++cycle) {
-        const std::uint64_t base = static_cast<std::uint64_t>(cycle) * 100;
-        const auto& plan = (cycle % 2u == 0u) ? first : second;
-        CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(bg, plan, base + 1).is_ok());
-        CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(bg, base + 2).is_ok());
-        CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(bg, base + 3).is_ok());
-        CRUCIBLE_TEST_ASSERT(kTest, swapper.complete_receiver(bg, base + 4).is_ok());
-    }
-
-    writer_done.store(true, std::memory_order_release);
-    reader.join();
-    CRUCIBLE_TEST_ASSERT(kTest, mixed_reads.load(std::memory_order_acquire) == 0);
+    auto writer = [&swapper, &first, &second, &writer_done](::fixy::BgLoadCtx const& ctx) noexcept {
+        for (std::uint32_t cycle = 0; cycle < 2000; ++cycle) {
+            const std::uint64_t base = static_cast<std::uint64_t>(cycle) * 100;
+            const auto& plan = (cycle % 2u == 0u) ? first : second;
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(ctx, plan, base + 1).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(ctx, base + 2).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(ctx, base + 3).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.complete_receiver(ctx, base + 4).is_ok());
+        }
+        writer_done.store_release(true);
+    };
+    run_race(bg, reader, writer);
+    CRUCIBLE_TEST_ASSERT(kTest, mixed_reads.load_acquire() == 0);
 
     ::fixy::check::pass(kTest, "  test_plan_reader_races_the_writer: PASSED\n");
 }
@@ -360,22 +395,23 @@ void test_concurrent_begin_swap_keeps_the_winning_plan() {
 
     for (int round = 0; round < kRounds; ++round) {
         auto swapper = cntp::mint_path_swapper<8>(init);
-        std::atomic<bool> start{false};
-        std::atomic<int> winners{0};
-        auto race = [&](cntp::DeclaredPathSwapPlan const& plan) noexcept {
-            while (!start.load(std::memory_order_acquire)) {
-                std::this_thread::yield();
-            }
-            if (swapper.begin_swap(bg, plan, 100).is_ok()) {
-                winners.fetch_add(1, std::memory_order_relaxed);
+        ::fixy::Atomic<bool> start{false};
+        RaceCount winners{0};
+        auto left = [&swapper, &start, &winners, &first](::fixy::BgLoadCtx const& ctx) noexcept {
+            wait_for_start(start);
+            if (swapper.begin_swap(ctx, first, 100).is_ok()) {
+                static_cast<void>(winners.fetch_add_relaxed(1));
             }
         };
-        {
-            std::jthread left{race, std::cref(first)};
-            std::jthread right{race, std::cref(second)};
-            start.store(true, std::memory_order_release);
-        }
-        CRUCIBLE_TEST_ASSERT(kTest, winners.load(std::memory_order_acquire) == 1);
+        auto right = [&swapper, &start, &winners, &second](::fixy::BgLoadCtx const& ctx) noexcept {
+            wait_for_start(start);
+            if (swapper.begin_swap(ctx, second, 100).is_ok()) {
+                static_cast<void>(winners.fetch_add_relaxed(1));
+            }
+        };
+        auto opener = [&start] noexcept { start.store_release(true); };
+        run_race(bg, left, right, opener);
+        CRUCIBLE_TEST_ASSERT(kTest, winners.load_acquire() == 1);
         cntp::PathSwapPlan const held = swapper.plan(bg).expect("one racer won the swap");
         CRUCIBLE_TEST_ASSERT(kTest, swapper.event_count(bg) == 1);
         const auto event = swapper.event_at(bg, 0);
@@ -414,7 +450,7 @@ void test_deadline_overflow() {
 
     auto swapper = cntp::mint_path_swapper<4>(init);
     auto plan = make_plan();
-    auto overflow = swapper.begin_swap(bg, plan, std::numeric_limits<std::uint64_t>::max() - 10);
+    auto overflow = swapper.begin_swap(bg, plan, ::fixy::max_of<std::uint64_t> - 10);
     CRUCIBLE_TEST_ASSERT(kTest, overflow.err() == ::fixy::some(cntp::SwapError::DeadlineOverflow));
     CRUCIBLE_TEST_ASSERT(kTest, swapper.state() == cntp::SwapState::Stable);
     CRUCIBLE_TEST_ASSERT(kTest, swapper.plan(bg).is_none());
