@@ -21,14 +21,16 @@
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/effects/Effect.h>
 
+#include <utility>
+
 namespace {
 
 using producer_claim_libraries::SharedBrand;
 
 void cycle_on_this_thread() {
-    SharedBrand* brand = producer_claim_libraries::make_brand();
+    ::fixy::Box<SharedBrand> brand = producer_claim_libraries::make_brand();
     producer_claim_libraries::win_claim(*brand);
-    producer_claim_libraries::destroy_brand(brand);
+    producer_claim_libraries::destroy_brand(std::move(brand));
 }
 
 }  // namespace

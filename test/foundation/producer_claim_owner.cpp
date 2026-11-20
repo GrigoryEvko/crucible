@@ -3,12 +3,23 @@
 
 #include "producer_claim_libraries.h"
 
+#include <foundation/effects/Effect.h>
+
+#include <utility>
+
 namespace producer_claim_libraries {
 
-// Value-initialization, not aggregate initialization: the implicit default
-// constructor of the brand builds the claim, and only the brand has access.
-SharedBrand* make_brand() { return new SharedBrand(); }
+// The Box builds the brand with value-initialization, not aggregate
+// initialization: the implicit default constructor of the brand builds the
+// claim, and only the brand has access.
+::foundation::core::Box<SharedBrand> make_brand() noexcept {
+    return ::foundation::core::mint_box<SharedBrand>(::foundation::effects::testing::test().alloc);
+}
 
-void destroy_brand(SharedBrand* brand) { delete brand; }
+// The local Box ends at the end of this body, so the destructor of the claim
+// runs in this shared object.
+void destroy_brand(::foundation::core::Box<SharedBrand>&& brand) noexcept {
+    ::foundation::core::Box<SharedBrand> const ended{std::move(brand)};
+}
 
 }  // namespace producer_claim_libraries
