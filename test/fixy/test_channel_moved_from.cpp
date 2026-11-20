@@ -69,14 +69,24 @@ static_assert(foundation::linear::is_linear_v<Spsc::ProducerHandle>);
 static_assert(foundation::linear::is_linear_v<Mpsc::ConsumerHandle>);
 static_assert(!foundation::linear::is_linear_v<Mpsc::ProducerHandle>);
 
+// A class that binds a handle to itself, as a channel does: only it builds
+// the key of a binding to it.
+struct BoundValue {
+    [[nodiscard]] foundation::ChannelBinding<BoundValue> bind() noexcept {
+        return foundation::ChannelBinding<BoundValue>{*this, foundation::BindingKey<BoundValue>{}};
+    }
+
+    int value = 5;
+};
+
 // The binding on its own: a move leaves the source empty, and the moved-into
 // binding reaches the object.
 [[nodiscard]] int binding_moves_its_pointer() {
-    int target = 5;
-    foundation::ChannelBinding<int> first{target};
-    if (!first.is_bound() || *first != 5) return 1;
-    foundation::ChannelBinding<int> second{std::move(first)};
-    if (first.is_bound() || !second.is_bound() || *second != 5) return 1;
+    BoundValue target{};
+    foundation::ChannelBinding<BoundValue> first = target.bind();
+    if (!first.is_bound() || first->value != 5) return 1;
+    foundation::ChannelBinding<BoundValue> second{std::move(first)};
+    if (first.is_bound() || !second.is_bound() || second->value != 5) return 1;
     second.unbind();
     if (second.is_bound()) return 1;
     return 0;
@@ -148,9 +158,9 @@ void mpsc_consumer() {
 }
 
 void binding_after_move() {
-    int target = 5;
-    foundation::ChannelBinding<int> first{target};
-    [[maybe_unused]] foundation::ChannelBinding<int> second{std::move(first)};
+    BoundValue target{};
+    foundation::ChannelBinding<BoundValue> first = target.bind();
+    [[maybe_unused]] foundation::ChannelBinding<BoundValue> second{std::move(first)};
     (void)*opaque_ref(first);
 }
 

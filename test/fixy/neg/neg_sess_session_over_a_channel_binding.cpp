@@ -20,7 +20,12 @@
 #include <utility>
 
 namespace binding_fixture {
-struct Log {};
+// A class that binds a handle to itself, as a channel does.
+struct Log {
+    [[nodiscard]] ::foundation::ChannelBinding<Log> bind() noexcept {
+        return ::foundation::ChannelBinding<Log>{*this, ::foundation::BindingKey<Log>{}};
+    }
+};
 template <class Binding>
 struct BindsALog {
     Binding binding;
@@ -34,7 +39,7 @@ int main() {
     namespace eff = ::foundation::effects;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Log log{};
-    ::foundation::ChannelBinding<Log> binding{log};
+    ::foundation::ChannelBinding<Log> binding = log.bind();
     auto held = ::fixy::to(binding);
     auto head = s::mint_session<s::Send<int, s::End>>(ctx, BindsALog<decltype(held)>{.binding = held});
     std::move(head).detach(s::detach_reason::TestInstrumentation{});

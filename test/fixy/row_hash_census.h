@@ -907,6 +907,9 @@ inline constexpr StatedZero kZeros[] = {
      "value"},
     {^^::foundation::ChannelBinding,
      "a handle's binding to its channel: a member of a handle, never a kernel signature argument"},
+    {^^::foundation::BindingKey,
+     "the key of a binding to a channel: it holds nothing, only the channel builds it, and it is never a kernel "
+     "signature argument"},
     {^^::foundation::ChannelIdentity,
      "the identity of a channel instance, which a pipeline mint compares: never a kernel signature argument"},
     {^^::foundation::EndpointClaim,

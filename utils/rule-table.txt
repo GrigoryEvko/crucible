@@ -790,6 +790,9 @@ witness <foundation/core/DataAddress.h> no-match | foundation::core::DataAddress
 witness <foundation/AlignedBytes.h> no-match | foundation::AlignedBytes | foundation::AlignedBytes{forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
 witness <foundation/AlignedBytes.h> no-match | foundation::UnwrittenBytes | foundation::UnwrittenBytes{forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
 witness <foundation/AlignedBytes.h> private | foundation::detail::AlignedBytesKey | foundation::detail::AlignedBytesKey{}
+# The key of a binding to a channel: only the channel builds one, for the
+# handles that it makes (foundation/ChannelBinding.h).
+witness <foundation/ChannelBinding.h> private | foundation::BindingKey<int> | foundation::BindingKey<int>{}
 witness <foundation/core/Identity.h> private | foundation::core::Identity | foundation::core::Identity{forge::rvalue<unsigned long>()}
 # A View comes only from an owner of the base layer, so no pointer and no
 # count that a caller holds become a View.  The door from a reference to an

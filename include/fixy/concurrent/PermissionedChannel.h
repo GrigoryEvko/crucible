@@ -333,10 +333,16 @@ concept LanesFitForm = sizeof...(Lanes) == (Form == ChannelForm::lanes ? std::si
 // token of every root site open the endpoints.  The lanes form names the
 // count of its lanes after the brand, and each other form names none, so the
 // type of a wire or a merge keeps its five arguments.
+//
+// The producer handles push and the consumer handle pops on their threads at
+// the same time by design.  The ring keeps its indexes, and each index has
+// the one writer that the role claims and the Permissions of the handles
+// name.  Each member is private, and only the handles reach the ring, so the
+// channel states synchronized{} (foundation/Transfer.h).
 template <ChannelForm Form, ChannelValue T, std::size_t Capacity, typename UserTag,
           ::foundation::brand::IsFreshBrand Brand, LaneCount... Lanes>
     requires LanesFitForm<Form, Lanes...>
-class PermissionedChannel
+class[[= ::foundation::transfer::synchronized{}]] PermissionedChannel
     : public ::foundation::Pinned<PermissionedChannel<Form, T, Capacity, UserTag, Brand, Lanes...>> {
     using parts = detail::channel_form_parts<Form, T, Capacity, detail::lane_count_of_v<Lanes...>,
                                              channel_tag::Producer<Form, UserTag>, Brand, PermissionedChannel>;
@@ -395,11 +401,11 @@ public:
 
         constexpr ProducerHandle(PermissionedChannel& channel, typename parts::producer_share&& share) noexcept
             requires(Form != ChannelForm::lanes)
-            : ch_{channel}, share_{std::move(share)} {}
+            : ch_{channel, ::foundation::BindingKey<PermissionedChannel>{}}, share_{std::move(share)} {}
         constexpr ProducerHandle(PermissionedChannel& channel, typename parts::producer_share&& share,
                                  lane_index lane) noexcept
             requires(Form == ChannelForm::lanes)
-            : ch_{channel}, share_{std::move(share)}, lane_{lane} {}
+            : ch_{channel, ::foundation::BindingKey<PermissionedChannel>{}}, share_{std::move(share)}, lane_{lane} {}
         friend class PermissionedChannel;
 
     public:
@@ -524,7 +530,7 @@ public:
 
         constexpr ConsumerHandle(PermissionedChannel& channel,
                                  ::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept
-            : ch_{channel}, perm_{std::move(perm)} {}
+            : ch_{channel, ::foundation::BindingKey<PermissionedChannel>{}}, perm_{std::move(perm)} {}
         friend class PermissionedChannel;
         friend class detail::consumer_pops<Form, T, ConsumerHandle>;
 

@@ -40,6 +40,7 @@
 // The permissioned channels of fixy/concurrent and crucible/
 // PermissionedMetaLog.h hold their channel through this binding.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Report.h>
@@ -72,15 +73,33 @@ private:
     Channel const* instance_ = nullptr;
 };
 
-// A binding points at a channel that its handles on several threads use at
-// once by design, so it moves between threads as its channel does
-// (foundation/Transfer.h).
+// The key of a binding to a channel of the type Channel.  Only Channel and
+// its nested handles build one, for the handles that the channel makes, so
+// no other code binds a handle to an object that is no channel.  The seal
+// closes the byte routes to a key.
 template <typename Channel>
-class[[= ::foundation::transfer::by_arguments{}]] ChannelBinding {
+class BindingKey final {
+    friend Channel;
+    constexpr BindingKey() noexcept = default;
+
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+
+// A binding points at a channel that its handles on several threads use at
+// once by design.  So it moves between threads as a reference to its
+// channel does: only when two threads can write the channel
+// (foundation/Transfer.h).  Each channel states that with synchronized{}
+// and its reason.  A binding owns nothing, so a value that holds one is not
+// SendableOwned, and no channel takes a handle as its value.
+//
+// The constructor takes the key of the channel, BindingKey<Channel>, which
+// only the channel builds.
+template <typename Channel>
+class[[= ::foundation::transfer::refers{}]] ChannelBinding {
 public:
     using channel_type = Channel;
 
-    explicit constexpr ChannelBinding(Channel& channel) noexcept : channel_{&channel} {}
+    explicit constexpr ChannelBinding(Channel& channel, BindingKey<Channel> /*key*/) noexcept : channel_{&channel} {}
 
     ChannelBinding(const ChannelBinding&) = delete("a copy would bind a second handle to the channel of the first one");
     ChannelBinding&

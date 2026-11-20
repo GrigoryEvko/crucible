@@ -33,6 +33,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Linear.h>
+#include <foundation/Transfer.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -66,8 +67,14 @@ struct Consumer {
 // UserTag and Brand have no default.  A default tag would give every log
 // that omits it one set of Permission types.  The erased brand would let a
 // token of every root site open the endpoints.
+//
+// The producer handle appends and the consumer handle drains on their threads
+// at the same time by design.  The log keeps its head and its tail, and each
+// has the one writer that the role claims and the Permissions of the handles
+// name.  Each member is private, and only the handles reach the log, so the
+// wrapper states synchronized{} (foundation/Transfer.h).
 template <typename UserTag, ::foundation::brand::IsFreshBrand Brand>
-class PermissionedMetaLog {
+class[[= ::foundation::transfer::synchronized{}]] PermissionedMetaLog {
 public:
     using value_type = ::crucible::TensorMeta;
     using user_tag = UserTag;
@@ -96,7 +103,7 @@ public:
 
         constexpr ProducerHandle(PermissionedMetaLog& wrapper,
                                  ::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept
-            : ch_{wrapper}, perm_{std::move(perm)} {}
+            : ch_{wrapper, ::foundation::BindingKey<PermissionedMetaLog>{}}, perm_{std::move(perm)} {}
         friend class PermissionedMetaLog;
 
     public:
@@ -175,7 +182,7 @@ public:
 
         constexpr ConsumerHandle(PermissionedMetaLog& wrapper,
                                  ::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept
-            : ch_{wrapper}, perm_{std::move(perm)} {}
+            : ch_{wrapper, ::foundation::BindingKey<PermissionedMetaLog>{}}, perm_{std::move(perm)} {}
         friend class PermissionedMetaLog;
 
     public:

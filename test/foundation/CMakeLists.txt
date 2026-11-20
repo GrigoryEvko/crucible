@@ -3339,6 +3339,11 @@ foundation_neg_compile_test(neg_transfer_statement_outside_its_seal
   "a_statement_of_transfer_facts_stands_outside_its_seal"
   "foundation::transfer::detail::statement_of"
   "non-constant condition for static assertion")
+# A binding takes the key of its channel, and only the channel builds the
+# key, so code outside the channel binds nothing.
+foundation_neg_compile_test(neg_channel_binding_with_a_key_from_outside_its_channel
+  "foundation::BindingKey<Channel>::BindingKey\\(\\) \\[with Channel = outside_key::Plain\\]. is private within this context"
+  "neg_channel_binding_with_a_key_from_outside_its_channel\\.cpp:21:[0-9]+: error:")
 # A class that states synchronized{} keeps each part that a holder writes
 # with no order private, and the walk names a public plain member.
 foundation_neg_compile_test(neg_transfer_synchronized_with_a_public_plain_member

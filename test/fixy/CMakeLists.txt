@@ -6441,6 +6441,16 @@ fixy_neg_compile_test(neg_thread_run_joined_captures_a_timing_sink
 fixy_neg_compile_test(neg_thread_run_joined_captures_a_cell_of_a_timing_sink
   "static assertion failed: run_joined: the body captures .cell. \\(field [_a-z]+, type foundation::core::Atomic<fixy::WeakRef<fixy::observe::TimingSink<2> > >&\\)"
   "its type is not Sendable")
+# A binding refers to its channel, so it moves beside its sender only when two
+# threads can write the channel.
+fixy_neg_compile_test(neg_thread_run_beside_writes_through_a_binding_of_a_plain_channel
+  "static assertion failed: run_beside: the body captures .binding. \\(field [_a-z]+, type foundation::ChannelBinding<PlainChannel>\\)"
+  "its type is not SendableBeside")
+# A handle borrows its channel, so a message that carries one is no value of a
+# channel.
+fixy_neg_compile_test(neg_box_channel_of_a_message_with_a_channel_handle
+  "template constraint failure for .template<fixy::concurrent::ChannelForm Form, class T, long unsigned int Capacity, class UserTag, class Brand>"
+  "required for the satisfaction of .SendableOwned<T>. \\[with T = .*Parcel\\]")
 # A statement of shareable{} gives the read of two threads, and no write.  Two
 # bodies that write a plain field of such a class race.
 fixy_neg_compile_test(neg_thread_run_joined_writes_a_field_of_a_shareable_class

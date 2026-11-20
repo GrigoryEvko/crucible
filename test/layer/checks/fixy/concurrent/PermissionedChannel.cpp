@@ -128,6 +128,18 @@ using WideWire = PermissionedChannel<ChannelForm::wire, int, 64, WitnessTag, Oth
 static_assert(WideWire::ProducerHandle::channel_capacity == WideWire::channel_capacity
               && WideWire::ConsumerHandle::channel_capacity == 64);
 
+// Two threads write a channel at the same time through its handles, so a
+// handle moves to another thread, also beside its sender, as the value of a
+// body or a stage.  A handle borrows its channel, which can end before a pop
+// on another thread, so a handle is no value of a channel.
+static_assert(::foundation::transfer::Synchronized<Wire> && ::foundation::transfer::Synchronized<Merge>
+              && ::foundation::transfer::Synchronized<Lanes>);
+static_assert(::foundation::transfer::Sendable<Merge::ProducerHandle>
+              && ::foundation::transfer::SendableBeside<Merge::ProducerHandle>
+              && !::foundation::transfer::SendableOwned<Merge::ProducerHandle>);
+static_assert(::foundation::transfer::Sendable<Wire::ConsumerHandle>
+              && !::foundation::transfer::SendableOwned<Wire::ConsumerHandle>);
+
 }  // namespace detail::channel_self_test
 
 }  // namespace fixy::concurrent

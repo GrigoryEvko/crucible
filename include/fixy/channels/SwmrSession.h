@@ -109,10 +109,17 @@ concept SwmrWriterHandleOf = std::same_as<Handle, typename Swmr::WriterHandle>;
 // A reader on another thread loads a value that the writer published, maybe
 // after the frame of the writer ended, so a value holds no borrow: it is
 // SendableOwned (foundation/Transfer.h).
+//
+// The writer handle publishes and the reader handles load on their threads at
+// the same time by design.  The snapshot cell orders each publish and each
+// load, the pool counts the shares of the readers, and the claim keeps one
+// writer.  Each member is private, and only the handles reach them, so the
+// session states synchronized{} (foundation/Transfer.h).
 template <::fixy::concurrent::SnapshotValue T, typename WriterTag, typename ReaderTag,
           ::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsFreshBrand WriterBrand>
     requires ::foundation::transfer::SendableOwned<T>
-class SwmrSession : public ::foundation::Pinned<SwmrSession<T, WriterTag, ReaderTag, ReaderBrand, WriterBrand>> {
+class[[= ::foundation::transfer::synchronized{}]] SwmrSession
+    : public ::foundation::Pinned<SwmrSession<T, WriterTag, ReaderTag, ReaderBrand, WriterBrand>> {
 public:
     using value_type = T;
     using writer_tag = WriterTag;
@@ -137,7 +144,7 @@ public:
 
         constexpr WriterHandle(SwmrSession& session,
                                ::foundation::permissions::Permission<writer_tag, writer_brand>&& perm) noexcept
-            : session_{session}, perm_{std::move(perm)} {}
+            : session_{session, ::foundation::BindingKey<SwmrSession>{}}, perm_{std::move(perm)} {}
 
         // A moved-from handle holds no claim, so only the bound one gives
         // the role back.
@@ -192,7 +199,7 @@ public:
         constexpr ReaderHandle(
             SwmrSession& session,
             ::foundation::permissions::SharedPermissionGuard<reader_tag, reader_brand>&& guard) noexcept
-            : session_{session}, guard_{std::move(guard)} {}
+            : session_{session, ::foundation::BindingKey<SwmrSession>{}}, guard_{std::move(guard)} {}
 
         friend class SwmrSession;
 
