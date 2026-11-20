@@ -57,10 +57,12 @@
 //   the consteval door check_liveness and a program at run time, as the find
 //   functions of Net.h do.  explain_liveness_fault makes the text from the
 //   fault and the system.  A run-time call keeps the arrays of the check on
-//   the stack, about 64 bytes for each action.  A program calls it on a
-//   system that it holds as a parameter or as a variable, never on a
-//   constant, because the compiler folds a call on a constant into a second
-//   run of the check (THE RUN-TIME FORM of foundation/algebra/net/Net.h).
+//   the stack: about 32 bytes for each action, 20 for each channel and 4 for
+//   each process.  The walk of a cycle adds about 9 bytes for each action in
+//   a frame of its own.  A program calls it on a system that it holds as a
+//   parameter or as a variable, never on a constant, because the compiler
+//   folds a call on a constant into a second run of the check (THE RUN-TIME
+//   FORM of foundation/algebra/net/Net.h).
 //
 // THE LIMITS
 //   A branch and a choice have no form here: a caller checks one system for
@@ -73,9 +75,9 @@
 //   the channel, which holds only while each push wakes its parked consumer.
 //
 // THE COSTS
-//   O(P + C + A), with arrays of at most 2A edges.  The ring of 1,000
-//   processes and 4,000 actions of test_algebra_net_scale.cpp checks in its
-//   unit.
+//   O(P + C + A).  The edges of a node come from the arrays of the steps, so
+//   the check keeps no list of the edges.  The ring of 1,000 processes and
+//   4,000 actions of test_algebra_net_scale.cpp checks in its unit.
 
 #include <foundation/algebra/net/Net.h>
 
@@ -198,10 +200,100 @@ constexpr void put_wait_(NetVerdict& text, ProcessSystem<Processes, Channels, Ac
         .put_number(static_cast<std::uint32_t>(step));
 }
 
+// The marked graph of a system whose processes, channels and actions passed
+// the checks of their form (THE MODEL), as arrays over its actions.
+template <std::size_t Channels, std::size_t Actions>
+struct MarkedGraph {
+    // The step of each action among the sends, or among the receives, of its
+    // channel.
+    std::uint32_t step_of[Actions]{};
+    // The first slot of the steps of each channel in send_at and receive_at.
+    std::uint32_t step_first[Channels]{};
+    // The send and the receive of each step of each channel.
+    std::uint32_t send_at[Actions]{};
+    std::uint32_t receive_at[Actions]{};
+    // The node of each action: the action, or the send of the receive of a
+    // rendezvous.
+    std::uint32_t node_of[Actions]{};
+    // The count of the edges with no token into each node.  After the sort, a
+    // node that the sort ordered holds 0, and each other node holds the count
+    // of its edges from the nodes that the sort left.
+    std::uint32_t indegree[Actions]{};
+};
+
+// The fault of a cycle that the sort left (THE FAULT).  Each node that the
+// sort left waits on another such node, so a walk back along these waits
+// repeats a node.  Each node keeps the last of its edges from a node that the
+// sort left, in the order of the actions, with the edge of the process before
+// the edge of the channel.  The walk starts at the first node that the sort
+// left.  Complexity: O(P + A).
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard, gnu::cold, gnu::noinline]] constexpr LivenessFault
+find_liveness_cycle_(ProcessSystem<Processes, Channels, Actions> const& protocol,
+                     MarkedGraph<Channels, Actions> const& graph) noexcept {
+    constexpr std::uint32_t none = no_index;
+    std::uint32_t wait_of[Actions]{};
+    for (std::uint32_t& slot : wait_of)
+        slot = none;
+    // An edge with no token: from the node that goes first to the node that
+    // waits on it.
+    struct WaitEdge {
+        std::uint32_t from = 0;
+        std::uint32_t to = 0;
+    };
+    // Keeps an edge between two nodes that the sort left.
+    auto const keep = [&](WaitEdge edge) constexpr noexcept {
+        if (graph.indegree[edge.from] != 0u && graph.indegree[edge.to] != 0u) wait_of[edge.to] = edge.from;
+    };
+    std::uint32_t last_of_process[Processes]{};
+    for (std::uint32_t& slot : last_of_process)
+        slot = none;
+    for (std::uint32_t index = 0; index < Actions; ++index) {
+        Action const& act = protocol.actions[index];
+        auto const process = static_cast<std::uint32_t>(act.process);
+        auto const channel = static_cast<std::uint32_t>(act.channel);
+        std::uint32_t const capacity = protocol.channels[channel].capacity;
+        std::uint32_t const step = graph.step_of[index];
+        std::uint32_t const first = graph.step_first[channel];
+        if (last_of_process[process] != none) {
+            keep({.from = graph.node_of[last_of_process[process]], .to = graph.node_of[index]});
+        }
+        last_of_process[process] = index;
+        if (act.move == Move::Receive && capacity != 0u) keep({.from = graph.send_at[first + step], .to = index});
+        if (act.move == Move::Send && capacity != 0u && step >= capacity) {
+            keep({.from = graph.receive_at[first + step - capacity], .to = index});
+        }
+    }
+    std::uint32_t walk = none;
+    for (std::uint32_t index = 0; index < Actions; ++index) {
+        if (graph.node_of[index] == index && graph.indegree[index] != 0u) {
+            walk = index;
+            break;
+        }
+    }
+    bool is_seen[Actions]{};
+    while (!is_seen[walk]) {
+        is_seen[walk] = true;
+        walk = wait_of[walk];
+    }
+    LivenessFault fault{.code = LivenessFaultCode::CycleWithoutToken};
+    std::uint32_t member = walk;
+    do {
+        fault.path[fault.path_count] = ActionId{member};
+        ++fault.path_count;
+        member = wait_of[member];
+    } while (member != walk && fault.path_count < max_liveness_path);
+    fault.is_path_cut = member != walk;
+    return fault;
+}
+
 }  // namespace detail
 
 // The first fault of the marked graph of the system (THE MODEL), or
-// NoFault.  Complexity: O(P + C + A).
+// NoFault.  The edges with no token leave each action to at most two
+// actions: the next action of its process, and the action of its channel that
+// waits on it.  So the sort of Kahn reads the edges of a node from the arrays
+// of the steps, with no list of the edges.  Complexity: O(P + C + A).
 template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
 [[nodiscard]] constexpr LivenessFault
 find_liveness_fault(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept {
@@ -220,7 +312,7 @@ find_liveness_fault(ProcessSystem<Processes, Channels, Actions> const& protocol)
     // The step of each action on its side of its channel, the count of the
     // sends and of the receives of each channel, and the process that holds
     // each side.  Side 0 of channel c is the slot 2c, and side 1 is 2c + 1.
-    std::uint32_t step_of[Actions]{};
+    detail::MarkedGraph<Channels, Actions> graph{};
     std::uint32_t step_count[2 * Channels]{};
     std::uint32_t holder[2 * Channels]{};
     for (std::uint32_t& slot : holder)
@@ -240,146 +332,105 @@ find_liveness_fault(ProcessSystem<Processes, Channels, Actions> const& protocol)
                                  .channel = act.channel,
                                  .action = ActionId{index}};
         }
-        step_of[index] = step_count[slot];
+        graph.step_of[index] = step_count[slot];
         ++step_count[slot];
     }
 
     // The action of each step: the steps of channel c are at step_first[c].
-    std::uint32_t step_first[Channels]{};
     std::uint32_t steps = 0;
     for (std::uint32_t channel = 0; channel < Channels; ++channel) {
         if (step_count[2 * channel] != step_count[2 * channel + 1]) {
             return LivenessFault{.code = LivenessFaultCode::SendsWithoutReceives, .channel = ChannelId{channel}};
         }
-        step_first[channel] = steps;
+        graph.step_first[channel] = steps;
         steps += step_count[2 * channel];
     }
-    std::uint32_t send_at[Actions]{};
-    std::uint32_t receive_at[Actions]{};
     for (std::uint32_t index = 0; index < Actions; ++index) {
         Action const& act = protocol.actions[index];
-        std::uint32_t const step = step_first[static_cast<std::uint32_t>(act.channel)] + step_of[index];
+        std::uint32_t const step = graph.step_first[static_cast<std::uint32_t>(act.channel)] + graph.step_of[index];
         if (act.move == Move::Send) {
-            send_at[step] = index;
+            graph.send_at[step] = index;
         } else {
-            receive_at[step] = index;
+            graph.receive_at[step] = index;
         }
     }
 
-    // The node of each action.  The receive of a rendezvous joins the node of
-    // its send.
-    std::uint32_t node_of[Actions]{};
-    for (std::uint32_t index = 0; index < Actions; ++index) {
-        Action const& act = protocol.actions[index];
-        bool const is_joined =
-            act.move == Move::Receive && protocol.channels[static_cast<std::uint32_t>(act.channel)].capacity == 0u;
-        node_of[index] =
-            is_joined ? send_at[step_first[static_cast<std::uint32_t>(act.channel)] + step_of[index]] : index;
-    }
-
-    // The edges with no token: at most one from the order of the process and
-    // one from the channel for each action.  An edge of the order of a
-    // process can join a node to itself, which is a cycle.
-    std::uint32_t edge_from[2 * Actions]{};
-    std::uint32_t edge_to[2 * Actions]{};
-    std::uint32_t edge_count = 0;
+    // The node of each action, and the count of the edges with no token into
+    // each node.  The receive of a rendezvous joins the node of its send.  An
+    // edge of the order of a process can join a node to itself, which is a
+    // cycle.  process_target holds the node of the next action of the
+    // process of each action.  channel_target holds, for an action on a
+    // channel of capacity k, the action that waits on it: receive s for send
+    // s, and send s + k for receive s.  For the send of a rendezvous, it holds
+    // the receive of its node, whose process goes on after the node.
+    std::uint32_t process_target[Actions]{};
+    std::uint32_t channel_target[Actions]{};
     std::uint32_t last_of_process[Processes]{};
     for (std::uint32_t& slot : last_of_process)
         slot = none;
+    std::uint32_t node_count = 0;
     for (std::uint32_t index = 0; index < Actions; ++index) {
         Action const& act = protocol.actions[index];
         auto const process = static_cast<std::uint32_t>(act.process);
         auto const channel = static_cast<std::uint32_t>(act.channel);
         std::uint32_t const capacity = protocol.channels[channel].capacity;
-        std::uint32_t const step = step_of[index];
+        std::uint32_t const step = graph.step_of[index];
+        std::uint32_t const slot = graph.step_first[channel] + step;
+        bool const is_send = act.move == Move::Send;
+        bool const is_joined = !is_send && capacity == 0u;
+        std::uint32_t const node = is_joined ? graph.send_at[slot] : index;
+        graph.node_of[index] = node;
+        if (!is_joined) ++node_count;
+        process_target[index] = none;
         if (last_of_process[process] != none) {
-            edge_from[edge_count] = node_of[last_of_process[process]];
-            edge_to[edge_count] = node_of[index];
-            ++edge_count;
+            process_target[last_of_process[process]] = node;
+            ++graph.indegree[node];
         }
         last_of_process[process] = index;
-        if (act.move == Move::Receive && capacity != 0u) {
-            edge_from[edge_count] = send_at[step_first[channel] + step];
-            edge_to[edge_count] = index;
-            ++edge_count;
+        if (capacity == 0u) {
+            channel_target[index] = is_send ? graph.receive_at[slot] : none;
+            continue;
         }
-        if (act.move == Move::Send && capacity != 0u && step >= capacity) {
-            edge_from[edge_count] = receive_at[step_first[channel] + step - capacity];
-            edge_to[edge_count] = index;
-            ++edge_count;
+        if (!is_send || step >= capacity) ++graph.indegree[index];
+        if (is_send) {
+            channel_target[index] = graph.receive_at[slot];
+        } else {
+            channel_target[index] = capacity < step_count[2 * channel] - step ? graph.send_at[slot + capacity] : none;
         }
     }
 
-    // The sort of Kahn over the nodes, with a compressed list of the edges.
-    std::uint32_t indegree[Actions]{};
-    std::uint32_t out_first[Actions + 1]{};
-    for (std::uint32_t edge = 0; edge < edge_count; ++edge) {
-        ++indegree[edge_to[edge]];
-        ++out_first[edge_from[edge] + 1];
-    }
-    for (std::uint32_t node = 0; node < Actions; ++node)
-        out_first[node + 1] += out_first[node];
-    std::uint32_t fill[Actions]{};
-    for (std::uint32_t node = 0; node < Actions; ++node)
-        fill[node] = out_first[node];
-    std::uint32_t out_edge[2 * Actions]{};
-    for (std::uint32_t edge = 0; edge < edge_count; ++edge) {
-        out_edge[fill[edge_from[edge]]] = edge;
-        ++fill[edge_from[edge]];
-    }
+    // The sort of Kahn over the nodes.  A node releases the node of the next
+    // action of each of its processes, and the action that waits on it on a
+    // channel with a capacity.
     std::uint32_t order[Actions]{};
     std::uint32_t order_count = 0;
-    std::uint32_t node_count = 0;
     for (std::uint32_t index = 0; index < Actions; ++index) {
-        if (node_of[index] != index) continue;
-        ++node_count;
-        if (indegree[index] == 0u) {
+        if (graph.node_of[index] == index && graph.indegree[index] == 0u) {
             order[order_count] = index;
             ++order_count;
         }
     }
+    auto const release = [&](std::uint32_t node) constexpr noexcept {
+        if (node == none) return;
+        --graph.indegree[node];
+        if (graph.indegree[node] == 0u) {
+            order[order_count] = node;
+            ++order_count;
+        }
+    };
     for (std::uint32_t read = 0; read < order_count; ++read) {
         std::uint32_t const node = order[read];
-        for (std::uint32_t slot = out_first[node]; slot < out_first[node + 1]; ++slot) {
-            std::uint32_t const target = edge_to[out_edge[slot]];
-            --indegree[target];
-            if (indegree[target] == 0u) {
-                order[order_count] = target;
-                ++order_count;
-            }
+        release(process_target[node]);
+        std::uint32_t const waiting = channel_target[node];
+        if (waiting == none) continue;
+        if (graph.node_of[waiting] == node) {
+            release(process_target[waiting]);
+        } else {
+            release(waiting);
         }
     }
     if (order_count == node_count) return LivenessFault{};
-
-    // A cycle remains.  Each node that the sort left waits on another such
-    // node, so a walk back along these waits repeats a node.
-    std::uint32_t into[Actions]{};
-    for (std::uint32_t& slot : into)
-        slot = none;
-    for (std::uint32_t edge = 0; edge < edge_count; ++edge) {
-        if (indegree[edge_from[edge]] != 0u && indegree[edge_to[edge]] != 0u) into[edge_to[edge]] = edge;
-    }
-    std::uint32_t walk = none;
-    for (std::uint32_t index = 0; index < Actions; ++index) {
-        if (node_of[index] == index && indegree[index] != 0u) {
-            walk = index;
-            break;
-        }
-    }
-    bool is_seen[Actions]{};
-    while (!is_seen[walk]) {
-        is_seen[walk] = true;
-        walk = edge_from[into[walk]];
-    }
-    LivenessFault fault{.code = LivenessFaultCode::CycleWithoutToken};
-    std::uint32_t member = walk;
-    do {
-        fault.path[fault.path_count] = ActionId{member};
-        ++fault.path_count;
-        member = edge_from[into[member]];
-    } while (member != walk && fault.path_count < max_liveness_path);
-    fault.is_path_cut = member != walk;
-    return fault;
+    return detail::find_liveness_cycle_(protocol, graph);
 }
 
 namespace detail {
