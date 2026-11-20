@@ -3747,8 +3747,13 @@ foundation_neg_compile_test(neg_core_grow_text_view_across_append
   "has no member named .view."
   "foundation::core::GrowText")
 foundation_neg_compile_test(neg_core_grow_list_frame_gives_view
-  "use of deleted function .void foundation::core::GrowList<T>::with_view\\(Body&&\\) &"
+  "use of deleted function .void foundation::core::GrowList<T>::with_view\\(Body&&\\) const &"
   "the result of a frame door holds no borrow: the next append can end the storage of the list")
+# The frame door with_view gives a View of the const elements, so no two
+# copies of its View write the elements of one list.
+foundation_neg_compile_test(neg_core_grow_list_two_mutable_views
+  "no match for .operator=. .operand types are .foundation::core::View<int>. and .foundation::core::View<const int, 18446744073709551615>.."
+  "neg_core_grow_list_two_mutable_views\\.cpp:18:")
 
 # A BitSet and a HeapBitSet set, reset and test each index, walk the indexes
 # in their order, and agree with a model of plain flags at counts that end

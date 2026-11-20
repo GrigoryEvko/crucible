@@ -93,7 +93,7 @@ constexpr ::fixy::TextView kLentChange{
 
 void append_from_callee() noexcept {
     core::GrowList<int> list = small_list();
-    static_cast<void>(list.with_view([&list](core::View<int> view) noexcept {
+    static_cast<void>(list.with_view([&list](core::View<int const> view) noexcept {
         append_to(list);
         return view.size();
     }));
@@ -112,7 +112,8 @@ void clear_from_callee() noexcept {
 
 void move_from_callee() noexcept {
     core::GrowList<int> list = small_list();
-    static_cast<void>(list.with_view([&list](core::View<int> view) noexcept { return move_out(list) + view.size(); }));
+    static_cast<void>(
+        list.with_view([&list](core::View<int const> view) noexcept { return move_out(list) + view.size(); }));
 }
 
 void text_append_from_callee() noexcept {
@@ -143,7 +144,8 @@ void end_from_callee() noexcept {
 // The move would give the lent storage to a second frame.
 void unique_frame_from_callee() noexcept {
     core::GrowList<int> list = small_list();
-    static_cast<void>(list.with_view([&list](core::View<int> view) noexcept { return frame_of(list) + view.size(); }));
+    static_cast<void>(
+        list.with_view([&list](core::View<int const> view) noexcept { return frame_of(list) + view.size(); }));
 }
 
 void overflow_the_count() noexcept {
@@ -174,7 +176,7 @@ int main() {
 
     // The controls: the same changes after the frame, and 255 nested lends.
     core::GrowList<int> list = small_list();
-    std::size_t const before = list.with_view([](core::View<int> view) noexcept { return view.size(); });
+    std::size_t const before = list.with_view([](core::View<int const> view) noexcept { return view.size(); });
     append_to(list);
     CRUCIBLE_TEST_ASSERT(test, frame_of(list) == 4 && list.size() == 4);
     clear(list);

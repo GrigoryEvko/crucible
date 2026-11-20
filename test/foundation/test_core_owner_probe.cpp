@@ -501,7 +501,7 @@ struct GrowListProbe : ElementArms<GrowListProbe> {
             Owner const target{static_cast<Owner&&>(through(source))};
             CRUCIBLE_FATAL_INVARIANT(target.size() == 2);
             CRUCIBLE_FATAL_INVARIANT(
-                through(source).with_view([](View<Elem<Tag>> view) noexcept { return view.size(); }) == 0);
+                through(source).with_view([](View<Elem<Tag> const> view) noexcept { return view.size(); }) == 0);
             CRUCIBLE_FATAL_INVARIANT(through(source).with_element(
                 0, [](Elem<Tag>&) noexcept { return false; }, [] noexcept { return true; }));
             through(source).append(kAlloc, Elem<Tag>{}).expect("a moved-from list keeps its maximum");

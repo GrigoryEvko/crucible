@@ -114,7 +114,7 @@ void test_append_across_growths() {
         list.append(alloc, value * 3).expect("the list is below its maximum");
     }
     CRUCIBLE_TEST_ASSERT(kTest, list.size() == 5000 && count_of(list) == 5000);
-    std::uint32_t const in_order = list.with_view([](View<std::uint32_t> view) noexcept {
+    std::uint32_t const in_order = list.with_view([](View<std::uint32_t const> view) noexcept {
         std::uint32_t expected = 0;
         for (std::uint32_t const element : view) {
             if (element != expected * 3) break;
@@ -168,7 +168,7 @@ void test_full_gives_a_linear_value_back() {
     Token back = std::move(refused).err().expect("the list is full").take();
     CRUCIBLE_TEST_ASSERT(kTest, back.id == 99);
     ::foundation::linear::drop(std::move(back));
-    int const in_order = list.with_view([](View<Token> view) noexcept {
+    int const in_order = list.with_view([](View<Token const> view) noexcept {
         int expected = 0;
         for (Token const& token : view) {
             if (token.id != expected) break;
@@ -194,7 +194,7 @@ void test_each_element_ends_once() {
             list.append(alloc, Element{counter, label}).expect("the list is below its maximum");
         }
         CRUCIBLE_TEST_ASSERT(kTest, ends == 0 && list.size() == 300);
-        int const in_order = list.with_view([](View<Element> view) noexcept {
+        int const in_order = list.with_view([](View<Element const> view) noexcept {
             int expected = 0;
             for (Element const& element : view) {
                 if (!element.is_live || element.label != expected) break;
@@ -225,7 +225,7 @@ void test_nested_lists() {
         }
         pools.append(alloc, std::move(members)).expect("the pools are below their maximum");
     }
-    int const in_order = pools.with_view([](View<GrowList<int>> view) noexcept {
+    int const in_order = pools.with_view([](View<GrowList<int> const> view) noexcept {
         int pool = 0;
         for (GrowList<int> const& members : view) {
             bool const holds_pool = members.size() == static_cast<std::size_t>(pool) + 1
@@ -321,7 +321,7 @@ void test_frame_doors() {
     for (std::uint32_t value = 0; value < 300; ++value) {
         list.append(alloc, value).expect("the list is below its maximum");
     }
-    std::uint64_t const sum = list.with_view([](View<std::uint32_t> view) noexcept {
+    std::uint64_t const sum = list.with_view([](View<std::uint32_t const> view) noexcept {
         std::uint64_t total = 0;
         for (std::uint32_t const element : view) {
             total += element;
@@ -406,7 +406,7 @@ void test_agrees_with_a_model() {
                 ++model_count;
             }
         }
-        std::uint64_t const sum = list.with_view([](View<std::uint64_t> view) noexcept {
+        std::uint64_t const sum = list.with_view([](View<std::uint64_t const> view) noexcept {
             std::uint64_t total = 0;
             for (std::uint64_t const element : view) {
                 total += element;

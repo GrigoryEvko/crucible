@@ -41,8 +41,9 @@
 //
 // THE FRAME DOORS
 //   with_view(body)     of a GrowList and of a GrowText: calls body with the
-//                       View of the elements, or with the TextView of the
-//                       characters, and gives the result of body
+//                       View of the const elements, or with the TextView of
+//                       the characters, and gives the result of body.  A
+//                       body that writes the elements takes with_mut
 //   with_element(position, on_some, on_none)
 //                       of a GrowList: calls on_some with the element at
 //                       position, or on_none at or past size(), and gives the
@@ -438,16 +439,10 @@ public:
     }
 
     // The frame door of the elements (THE FRAME DOORS): body gets the View
-    // of the elements, and the list lends its storage until body returns.
-    // The result of body holds no borrow.  A const list gives a View of
-    // const elements.
-    template <class Body>
-        requires std::is_invocable_v<Body, View<T>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T>>>
-    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T>>
-        with_view(Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, View<T>>) {
-        [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
-        return static_cast<Body&&>(body)(View<T>{detail::ViewDoor::key(), first_(), this->state_.count});
-    }
+    // of the const elements, and the list lends its storage until body
+    // returns.  The result of body holds no borrow.  A body that writes the
+    // elements takes with_mut, so no two Views of one list write the same
+    // elements.
     template <class Body>
         requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T const>>
@@ -456,12 +451,20 @@ public:
         return static_cast<Body&&>(body)(View<T const>{detail::ViewDoor::key(), first_(), this->state_.count});
     }
 
-    // A body whose result holds a borrow binds to these overloads, so the
-    // refusal gives its reason.
+    // The lend of the elements to the frame door with_mut (THE LEND COUNT):
+    // body gets the View of the elements, and the list lends its storage
+    // until body returns.  The key of a frame keeps each caller outside the
+    // base out, so only with_mut gives a View that writes the elements.  The
+    // list lives in the frame of with_mut, and no body can name it.
     template <class Body>
-        requires std::is_invocable_v<Body, View<T>> && (!HoldsNoBorrow<std::invoke_result_t<Body, View<T>>>)
-    void with_view(Body&& body) & = delete("the result of a frame door holds no borrow: the next append can end the "
-                                           "storage of the list.  Give a value with no reference and no address");
+    friend constexpr decltype(auto) lend_elements_(detail::FrameKey const& /*key*/, GrowList& list,
+                                                   Body&& body) noexcept {
+        [[maybe_unused]] detail::OwnerLend const lend{list.state_.lend_count};
+        return static_cast<Body&&>(body)(View<T>{detail::ViewDoor::key(), list.first_(), list.state_.count});
+    }
+
+    // A body whose result holds a borrow binds to this overload, so the
+    // refusal gives its reason.
     template <class Body>
         requires std::is_invocable_v<Body, View<T const>> && (!HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>)
     void with_view(Body&& body) const& = delete("the result of a frame door holds no borrow: the next append can end "
@@ -543,14 +546,15 @@ with_mut(Owner&& owner, Body&& body) noexcept {
     using Given = std::invoke_result_t<Body&&, ViewMut<T, Fresh>>;
     Owner held{static_cast<Owner&&>(owner)};
     if constexpr (std::is_void_v<Given>) {
-        held.with_view([&body](View<T> run) noexcept {
+        lend_elements_(detail::FrameDoor::key(), held, [&body](View<T> run) noexcept {
             static_cast<Body&&>(body)(ViewMut<T, Fresh>{detail::FrameDoor::key(), run});
         });
         return held;
     } else {
-        std::remove_cv_t<Given> result = held.with_view([&body](View<T> run) noexcept -> std::remove_cv_t<Given> {
-            return static_cast<Body&&>(body)(ViewMut<T, Fresh>{detail::FrameDoor::key(), run});
-        });
+        std::remove_cv_t<Given> result =
+            lend_elements_(detail::FrameDoor::key(), held, [&body](View<T> run) noexcept -> std::remove_cv_t<Given> {
+                return static_cast<Body&&>(body)(ViewMut<T, Fresh>{detail::FrameDoor::key(), run});
+            });
         return detail::frame_return_t<Given, Owner>{static_cast<std::remove_cv_t<Given>&&>(result),
                                                     static_cast<Owner&&>(held)};
     }

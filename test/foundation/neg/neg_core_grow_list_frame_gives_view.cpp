@@ -10,6 +10,6 @@ int main() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     ::foundation::core::GrowList<int> list = ::foundation::core::mint_grow_list<int>(64);
     list.append(alloc, 1).expect("the list is below its maximum");
-    list.with_view([](::foundation::core::View<int> view) noexcept { return view; });
+    list.with_view([](::foundation::core::View<int const> view) noexcept { return view; });
     return 0;
 }
