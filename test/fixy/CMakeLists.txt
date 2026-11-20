@@ -5726,6 +5726,7 @@ fixy_neg_compile_test(neg_os_sched_apply_affinity_to_mask_test_ctx
 # Legs the kernel refuses are skipped rather than failed.  io_uring can
 # be off entirely, and copy_file_range refuses some filesystem pairs.
 fixy_test(test_os_mmap)
+fixy_test(test_os_stdio)
 fixy_test(test_os_io)
 
 # The ring mint: a context without Block, a submission count that is not

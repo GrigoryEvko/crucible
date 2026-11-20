@@ -1042,6 +1042,12 @@ inline constexpr StatedZero kZeros[] = {
      "signature"},
     {^^::foundation::core::HexBytes,
      "an argument of a report: a borrow of the bytes that it writes, and never a value in a kernel signature"},
+    {^^::fixy::os::LineReader,
+     "the reader of the lines of standard input: it owns a buffer of characters and makes no claim about what a "
+     "line holds, and it is never a value in a kernel signature"},
+    {^^::fixy::os::LineTooLong,
+     "the error of a line longer than the buffer of its reader: it holds nothing, and it is never a value in a "
+     "kernel signature"},
     {^^::fixy::mmap::SharedWords,
      "a borrow of the words of a shared mapping that another writer stores: it owns nothing and makes no claim "
      "about what the words hold"},
