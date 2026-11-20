@@ -55,8 +55,13 @@
 //     5. A class or a union that states a property holds it or not as it
 //        states (THE ANNOTATIONS).  A class that states thread_bound{} is not
 //        Sendable.
-//     6. A class that states by_arguments{} holds a property when each of its
-//        type arguments holds it, and the walk reads no member of it.
+//     6. A class that states by_arguments{} holds a property when its first
+//        type argument holds it, and the walk reads no member of it.  The
+//        class owns an object of that argument, so an argument that is only
+//        declared holds only what its statement gives (THE OPAQUE TYPES), as
+//        the payload of a cell does.  The class holds no value of its other
+//        type arguments, such as the authority of a BoxWord, so the walk asks
+//        nothing of them.
 //     7. A class that holds state that the walk cannot read holds no property.
 //        A lambda with captures has this shape on a compiler that shows no
 //        field of a capture.  On a compiler that shows the fields, the
@@ -64,10 +69,12 @@
 //     8. Each other class or union holds a property when each base and each
 //        non-static data member holds it, and, for a specialization, when each
 //        type argument holds it.  The arguments count because a class can
-//        keep a value of an argument in bytes, as an Option does.  A member
-//        declared mutable makes the class not Shareable, unless two threads
-//        can write the member at the same time, because a read through a
-//        reference to const can write it.
+//        keep a value of an argument in bytes, as an Option does.  Such a
+//        class cannot keep a value of a class that is only declared, so an
+//        argument that is only declared holds each property: a tag type is
+//        the usual case.  A member declared mutable makes the class not
+//        Shareable, unless two threads can write the member at the same time,
+//        because a read through a reference to const can write it.
 //
 // THE SHARED WRITE
 //     T is Synchronized when T is a class that states shareable{}, such as
@@ -99,9 +106,10 @@
 //     sendable{} and not_sendable{} state Sendable.  shareable{} and
 //     not_shareable{} state Shareable, and shareable{} also states that two
 //     threads can write an object of the class at the same time.
-//     by_arguments{} states that the class owns the objects of its type
-//     arguments behind its pointers.  refers{} states that the class refers to
-//     the object of its first type argument, as a reference does.
+//     by_arguments{} states that the class owns the object of its first type
+//     argument behind its pointers, as a Box does, and that its other type
+//     arguments name no object that it holds.  refers{} states that the class
+//     refers to the object of its first type argument, as a reference does.
 //     refers_unique{} states that the class refers to that object as its one
 //     writer, as a ViewMut does.  refers_deep{} states that the class refers
 //     to that object, and that a const object of the class gives only const
@@ -123,11 +131,13 @@
 //
 // THE OPAQUE TYPES
 //     A class that is only declared, such as a handle whose definition is out
-//     of view, holds no property, because the walk cannot read it.  The header
-//     that declares such a class states its facts beside the declaration, in
-//     a registry, as fixy/session/Registry.h does for the combinators of a
-//     protocol.  An annotation cannot do it, because a declaration that is
-//     not a definition keeps no annotation that the walk can read.
+//     of view, holds no property, because the walk cannot read it.  The same
+//     holds for such a class as the argument of an owner, such as the Box of
+//     a pimpl class.  The header that declares such a class states its facts
+//     beside the declaration, in a registry, as fixy/session/Registry.h does
+//     for the combinators of a protocol.  An annotation cannot do it, because
+//     a declaration that is not a definition keeps no annotation that the
+//     walk can read.
 //
 //         namespace my_layer {
 //         struct Handle;
@@ -215,13 +225,23 @@ enum class Property : unsigned char {
 
 namespace detail {
 
-// One question of the walk: one property of one type.  A type argument that
-// is an incomplete class holds each property, because no value of it can be
-// inside the class: a tag type is the usual case.
+// How the walk reaches the type of a goal.  A part is a base, a member, an
+// element, a target or the root.  A type argument that a class owns behind its
+// pointers (rule 6, and the payload of a cell) is a part too, because the
+// class holds an object of it.  An incomplete part holds only what its
+// statement gives (THE OPAQUE TYPES).  A tag is a type argument that rule 8
+// reads.  An incomplete tag holds each property, because no value of it can
+// be inside the class: a tag type is the usual case.
+enum class Reach : unsigned char {
+    Part = 0,
+    Tag = 1,
+};
+
+// One question of the walk: one property of one type.
 struct Goal {
     std::meta::info type{};
     Property property = Property::Send;
-    bool is_argument = false;
+    Reach reach = Reach::Part;
 };
 
 // The goals of one walk, in a growable array.  The list is a class and not
@@ -453,10 +473,11 @@ struct ReferenceAnswer {
     return ReferenceAnswer{.is_refused = !is_shared_writable(target.type)};
 }
 
-// Puts the goal of each type argument of a specialization on the list: a
-// reference argument through rule 1, and each other type argument as a goal
-// of the same property.  The type of a value argument names no state of an
-// object, so it asks nothing.  False when a reference argument refuses.
+// Puts the goal of each type argument of a specialization that rule 8 reads on
+// the list: a reference argument through rule 1, and each other type argument
+// as a tag goal of the same property.  The type of a value argument names no
+// state of an object, so it asks nothing.  False when a reference argument
+// refuses.
 [[nodiscard]] consteval bool push_arguments(std::meta::info specialization, Property property, GoalList& pending) {
     namespace refl = ::foundation::reflect;
     for (const refl::TypeNode& argument : refl::argument_components_of(refl::TypeNode{specialization, true})) {
@@ -467,7 +488,7 @@ struct ReferenceAnswer {
             if (answer.has_next) pending.push(answer.next);
             continue;
         }
-        pending.push(Goal{argument.type, property, true});
+        pending.push(Goal{argument.type, property, Reach::Tag});
     }
     return true;
 }
@@ -516,7 +537,7 @@ struct ReferenceAnswer {
         }
         if (!detail::is_class_or_union(bare)) return bare;
         if (!std::meta::is_complete_type(bare)) {
-            if (goal.is_argument || detail::is_stated(bare, goal.property)) continue;
+            if (goal.reach == detail::Reach::Tag || detail::is_stated(bare, goal.property)) continue;
             return bare;
         }
         // Rule 5.  A class of one owner thread moves to no other thread.
@@ -527,7 +548,7 @@ struct ReferenceAnswer {
             const std::meta::info payload = detail::payload_of_cell(bare);
             if (payload == std::meta::info{}) return bare;
             const Property moved = goal.property == Property::SendBeside ? Property::SendBeside : Property::Send;
-            pending.push(detail::Goal{payload, moved, true});
+            pending.push(detail::Goal{payload, moved, detail::Reach::Part});
             continue;
         }
         if (detail::states(bare, detail::stating_annotation(goal.property))) continue;
@@ -578,9 +599,20 @@ struct ReferenceAnswer {
             if (answer.has_next) pending.push(answer.next);
             continue;
         }
-        // Rule 6.
+        // Rule 6.  The class holds an object of its first argument, and no
+        // value of its other arguments.
         if (detail::states(bare, ^^by_arguments)) {
-            if (is_specialization && !detail::push_arguments(bare, goal.property, pending)) return bare;
+            if (!is_specialization) return bare;
+            const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
+            if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
+            const refl::TypeNode owned = *arguments.begin();
+            if (!owned.was_reference) {
+                pending.push(detail::Goal{owned.type, goal.property, detail::Reach::Part});
+                continue;
+            }
+            const detail::ReferenceAnswer answer = detail::answer_reference(owned, goal.property);
+            if (answer.is_refused) return bare;
+            if (answer.has_next) pending.push(answer.next);
             continue;
         }
         // Rule 7.

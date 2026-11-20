@@ -149,8 +149,8 @@ public:
 // The destructor gives the share back to the pool, so the end of the scope
 // of a guard is its named door.
 // A guard points at its pool, which each thread that holds a share writes
-// with atomic steps by design, so it moves between threads as its tag and
-// its brand do (foundation/Transfer.h).
+// with atomic steps by design, so it moves between threads as its tag does
+// (foundation/Transfer.h, rule 6).
 template <typename Tag, typename Brand>
 class [[nodiscard]][[= ::foundation::linear::scope_end_door{}]][[= ::foundation::transfer::by_arguments{}]]
     SharedPermissionGuard {

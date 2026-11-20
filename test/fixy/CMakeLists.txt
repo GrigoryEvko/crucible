@@ -6327,6 +6327,14 @@ fixy_neg_compile_test(neg_thread_run_joined_captures_a_cell_of_a_timing_sink
 fixy_neg_compile_test(neg_thread_run_joined_body_gives_an_owner_thread_value
   "no matching function for call to .run_joined"
   "the expression .\\(JoinedBody<Bodies, Ctx> && \\.\\.\\.\\) \\[with Bodies = \\{main::")
+# A Box owns the object of its argument, so a Box of a class that the unit
+# only declares holds no property, and no door moves it to another thread.
+fixy_neg_compile_test(neg_thread_run_beside_moves_a_box_of_a_declared_class
+  "static assertion failed: run_beside: the body captures .engine. \\(field [_a-z]+, type Engine\\)"
+  "its type is not SendableBeside.*The first part that refuses it: EngineImpl")
+fixy_neg_compile_test(neg_thread_run_joined_moves_a_box_of_a_declared_class
+  "static assertion failed: run_joined: the body captures .device. \\(field [_a-z]+, type Device\\)"
+  "its type is not Sendable.*The first part that refuses it: DeviceState")
 # The thread of an owner joins before each other member of the owner ends:
 # its member is the last member, the destructor of the owner is defaulted,
 # and the owner stays in place.

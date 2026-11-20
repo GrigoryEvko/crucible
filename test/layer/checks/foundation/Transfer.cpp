@@ -5,6 +5,7 @@
 #include <foundation/ChannelBinding.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Id.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/RunSet.h>
@@ -46,15 +47,25 @@ struct[[= not_sendable{}]] RefusedSend {
 };
 static_assert(Sendable<StatedSend> && !Shareable<StatedSend> && !Sendable<RefusedSend> && Shareable<RefusedSend>);
 
-// Rule 6: a class that states by_arguments holds a property when each type
-// argument holds it, and its member is not read: the member refers to a plain
-// int, which alone refuses each property.
+// Rule 6: a class that states by_arguments holds a property when its first
+// type argument holds it, and its member is not read: the member refers to a
+// plain int, which alone refuses each property.  The class holds no value of
+// its other type arguments, so the walk asks nothing of them, also of an
+// argument that is only declared.
 template <class T>
 struct[[= by_arguments{}]] Owner {
     int& unread;
 };
+template <class T, class Authority>
+struct[[= by_arguments{}]] OwnerOfAuthority {
+    int& unread;
+};
+struct DeclaredAuthority;
 static_assert(Sendable<Owner<int>> && !Sendable<Owner<int*>>);
+static_assert(Sendable<OwnerOfAuthority<int, int*>> && Sendable<OwnerOfAuthority<int, DeclaredAuthority>>);
+static_assert(!Sendable<OwnerOfAuthority<int*, int>>);
 static_assert(Sendable<::foundation::core::Box<int>>);
+static_assert(Sendable<::foundation::core::BoxWord<int, DeclaredAuthority>>);
 
 // Rule 1 for a class that states refers: a Ref of a target that two threads
 // can write is Sendable, and a Ref of a plain int is not.
@@ -225,13 +236,26 @@ static_assert(Sendable<ReadsOwnerThreadCount> && !Sendable<WritesOwnerThreadCoun
 // The Tally of the base holds a count cell, so two threads can add to it.
 static_assert(Synchronized<::foundation::core::Tally> && Sendable<::foundation::core::Tally const&>);
 
-// A tag type that is only declared holds each property as a type argument.
+// A tag type that is only declared holds each property as a type argument
+// that rule 8 reads, as for an Id over a tag that its spelling declares.
 struct DeclaredTag;
 template <class Tag>
 struct Tagged {
     int value = 0;
 };
 static_assert(Sendable<Tagged<DeclaredTag>>);
+using ElaboratedId = ::foundation::core::Id<struct ElaboratedTag, unsigned>;
+static_assert(Sendable<ElaboratedId> && Shareable<ElaboratedId>);
+
+// A type argument of an owner is a part, because the owner holds an object of
+// it (rule 6).  So a Box of a class that is only declared holds no property,
+// and a Box of a complete class holds what the class holds.
+struct DeclaredPayload;
+using DeclaredBox = ::foundation::core::Box<DeclaredPayload>;
+static_assert(!Sendable<DeclaredBox> && !Shareable<DeclaredBox> && !SendableBeside<DeclaredBox>);
+static_assert(first_refusal(^^DeclaredBox, Property::Send) == ^^DeclaredPayload);
+static_assert(Sendable<::foundation::core::Box<Plain>> && Shareable<::foundation::core::Box<Plain>>);
+static_assert(!Sendable<::foundation::core::Box<OwnerThreadCount>>);
 
 // A type that reaches itself through an owner ends the walk.
 struct Node {
@@ -292,6 +316,9 @@ struct ReadsUnstated {
 static_assert(Sendable<ReadsOpaque> && Shareable<ReadsOpaque> && !SendableBeside<ReadsOpaque>);
 static_assert(!Sendable<WritesOpaque>, "the statement does not state that two threads can write the handle");
 static_assert(!Sendable<ReadsUnstated> && first_refusal(^^ReadsUnstated, Property::Send) == ^^UnstatedHandle);
+// An owner of a class that is only declared holds what the statement gives.
+static_assert(Sendable<::foundation::core::Box<OpaqueHandle>> && Shareable<::foundation::core::Box<OpaqueHandle>>);
+static_assert(!Sendable<::foundation::core::Box<UnstatedHandle>>);
 static_assert(holds_its_statement(^^StatedPlain) && !holds_its_statement(^^StatedWithBorrow));
 static_assert(!holds_its_statement(^^Plain), "a class with no statement holds none");
 
