@@ -211,6 +211,30 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the front end gave the data pointer of the t
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+// The address of a storage that a test or a bench gives in place of the data
+// pointer of a front end, as a number.  The data pointer is a cookie: the
+// record path hashes it and compares it, and no code reads through it.  Zero
+// is no address, as the null pointer of a front end is no storage.
+enum class SyntheticAddress : std::uint64_t {
+};
+
+// A synthetic address, and no other type, so a raw number cannot reach the
+// mint.
+template <class Address>
+concept SyntheticAddressValue = std::is_same_v<Address, SyntheticAddress>;
+
+// The data pointer of a synthetic address, for a test or a bench.  The
+// address is not zero.  The pointer holds the bits of the address, and no
+// code reads through it.  No door of the base makes a pointer from an
+// integer, so the bits go through the bit cast of the compiler in a region.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a test or a bench gives a synthetic address as the data pointer of a tensor")
+template <SyntheticAddressValue Address>
+[[nodiscard]] constexpr ExternalDataPtr mint_synthetic_data_ptr(Address address) noexcept {
+    CRUCIBLE_PRE(address != SyntheticAddress{});
+    return ::fixy::mint_tagged<::fixy::tags::source::External>(__builtin_bit_cast(void*, address));
+}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 // The device that holds the bytes of the tensor.  The constructor of
 // TensorDevice gives the index of normalize_device_index (crucible/Types.h).
 // Each equality and each hash of a device reads it through this door, so

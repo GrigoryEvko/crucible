@@ -664,6 +664,7 @@ crucible_test(test_storage_nbytes_simd)
 # The strided view of a tensor over the run of its slot: a dense matrix, a
 # transpose, a broadcast row and a scalar, and each refusal of the door.
 crucible_test(test_tensor_meta_strided)
+crucible_test(test_tensor_meta_synthetic_address)
 crucible_test(test_trace_ring_pop_batch)
 # Each group of tests that drives a Vigil is a source file of its own, so
 # that no translation unit compiles all of them.
@@ -2417,6 +2418,19 @@ crucible_neg_compile_test(neg_tensor_meta_data_ptr_raw_pointer
 crucible_neg_compile_test(neg_tensor_meta_data_ptr_cross_tag
   "no match for .operator=. .operand types are .crucible::ExternalDataPtr."
   ".aka .fixy::Tagged<void\\*, fixy::tags::source::External>.. and .fixy::Tagged<void\\*, fixy::tags::source::Sanitized>..")
+
+# mint_synthetic_data_ptr gives the data pointer of a synthetic address of a
+# test or a bench.  Two fixtures cover its two gates:
+#   * neg_tensor_meta_synthetic_address_zero — the zero address breaks the
+#     precondition of the mint in a constant evaluation.
+#   * neg_tensor_meta_synthetic_address_raw_integer — a raw integer is no
+#     SyntheticAddress, so the constraint of the mint refuses it.
+crucible_neg_compile_test(neg_tensor_meta_synthetic_address_zero
+  "foundation/contracts/Pre\\.h:[0-9]+:[0-9]+: error: .__builtin_trap\\(\\). is not a constant expression"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+crucible_neg_compile_test(neg_tensor_meta_synthetic_address_raw_integer
+  "no matching function for call to .mint_synthetic_data_ptr\\(uint64_t\\)."
+  "is_same_v<Address, crucible::SyntheticAddress> .with Address = long unsigned int.. evaluated to .false.")
 
 # TensorMeta::grad_fn_hash stores
 # GradFnHash = Tagged<uint64_t, hash_family::FamilyB>.  Two HS14
