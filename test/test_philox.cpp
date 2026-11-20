@@ -1,12 +1,12 @@
 #include <crucible/Philox.h>
 #include <fixy/Core.h>
 
-#include <array>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
-#include <cmath>
-#include <cstring>
+#include <cstddef>
+#include <cstdint>
 #include <random>
 
 namespace {
@@ -81,7 +81,7 @@ static void test_uniform() {
 
     static constexpr int N = 100000;
     static constexpr int BINS = 100;
-    int counts[BINS]{};
+    ::fixy::FixedArray<int, BINS> counts{};
 
     for (int i = 0; i < N; i++) {
         auto r = Philox4x32::generate(static_cast<uint64_t>(i), 0x12345678ULL);
@@ -89,13 +89,13 @@ static void test_uniform() {
         CRUCIBLE_TEST_ASSERT(kTest, u >= 0.0f && u < 1.0f);
         int bin = static_cast<int>(u * BINS);
         if (bin >= BINS) bin = BINS - 1;
-        counts[bin]++;
+        ++*counts.get(static_cast<std::size_t>(bin)).expect("a bin is below the count of the bins");
     }
 
     double expected = static_cast<double>(N) / BINS;
     double chi2 = 0.0;
-    for (int b = 0; b < BINS; b++) {
-        double diff = counts[b] - expected;
+    for (int const count : counts) {
+        double diff = count - expected;
         chi2 += (diff * diff) / expected;
     }
 
@@ -134,7 +134,7 @@ static void test_normal() {
     int total = N * 2;
     double mean = sum / total;
     double var = sum_sq / total - mean * mean;
-    double stddev = std::sqrt(var);
+    double stddev = ::fixy::fp::sqrt(var);
 
     ::fixy::report(::fixy::Sink::Out, "    mean = {} (expect ~0)\n", mean);
     ::fixy::report(::fixy::Sink::Out, "    stddev = {} (expect ~1)\n", stddev);
@@ -142,13 +142,13 @@ static void test_normal() {
     // At this sample count the sample mean stays inside about 0.01 of
     // zero and the sample deviation inside about 0.01 of one, so the
     // bound is set at twice that.
-    CRUCIBLE_TEST_ASSERT(kTest, std::abs(mean) < 0.02 && "normal mean too far from 0");
-    CRUCIBLE_TEST_ASSERT(kTest, std::abs(stddev - 1.0) < 0.02 && "normal stddev too far from 1");
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fp::abs(mean) < 0.02 && "normal mean too far from 0");
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fp::abs(stddev - 1.0) < 0.02 && "normal stddev too far from 1");
 
     for (int i = 0; i < 1000; i++) {
         auto r = Philox4x32::generate(static_cast<uint64_t>(i), 0ULL);
         auto [n0, n1] = Philox::box_muller_polynomial_det(r.at(::fixy::index<0>()), r.at(::fixy::index<1>())).peek();
-        CRUCIBLE_TEST_ASSERT(kTest, std::isfinite(n0) && std::isfinite(n1));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fp::is_finite(n0) && ::fixy::fp::is_finite(n1));
     }
 
     // The transform shifts its first input by one before taking a
@@ -157,10 +157,11 @@ static void test_normal() {
     // catch the shift being dropped.  The four corners are therefore
     // driven by hand: a raw zero is the logarithm edge, and a raw
     // all-ones maps to one, whose logarithm is zero.
-    for (uint32_t u1 : {0u, UINT32_MAX}) {
-        for (uint32_t u2 : {0u, UINT32_MAX}) {
+    constexpr ::fixy::FixedArray<uint32_t, 2> kCorners{0u, UINT32_MAX};
+    for (uint32_t u1 : kCorners) {
+        for (uint32_t u2 : kCorners) {
             auto [c0, c1] = Philox::box_muller_polynomial_det(u1, u2).peek();
-            CRUCIBLE_TEST_ASSERT(kTest, std::isfinite(c0) && std::isfinite(c1)
+            CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fp::is_finite(c0) && ::fixy::fp::is_finite(c1)
                                             && "box_muller boundary corner must be finite (log(0) guard)");
         }
     }
@@ -193,12 +194,13 @@ static void test_op_keys() {
 static void test_pipeline() {
     ::fixy::report(::fixy::Sink::Out, "  pipeline simulation...\n");
 
-    crucible::ContentHash content_hashes[3] = {crucible::ContentHash{0xAABB}, crucible::ContentHash{0xCCDD},
-                                               crucible::ContentHash{0xEEFF}};
+    ::fixy::FixedArray<crucible::ContentHash, 3> const content_hashes{
+        crucible::ContentHash{0xAABB}, crucible::ContentHash{0xCCDD}, crucible::ContentHash{0xEEFF}};
 
     for (uint64_t iter = 0; iter < 2; iter++) {
         for (uint32_t op = 0; op < 3; op++) {
-            uint64_t key = philox_key(iter, op, content_hashes[op]);
+            uint64_t key =
+                philox_key(iter, op, *content_hashes.get(op).expect("an op is below the count of the hashes"));
 
             for (uint64_t elem = 0; elem < 1000; elem++) {
                 auto r = Philox4x32::generate(elem, key);
@@ -210,8 +212,8 @@ static void test_pipeline() {
 
     // Same op and same element, one iteration apart: the streams must
     // still separate, or a replay would reuse the previous draw.
-    uint64_t k0 = philox_key(0, 0, content_hashes[0]);
-    uint64_t k1 = philox_key(1, 0, content_hashes[0]);
+    uint64_t k0 = philox_key(0, 0, content_hashes.at(::fixy::index<0>()));
+    uint64_t k1 = philox_key(1, 0, content_hashes.at(::fixy::index<0>()));
     auto r0 = Philox4x32::generate(42ULL, k0);
     auto r1 = Philox4x32::generate(42ULL, k1);
     CRUCIBLE_TEST_ASSERT(kTest, r0 != r1);
@@ -238,21 +240,24 @@ static void test_pipeline() {
 // version must be checked against this scalar implementation, not
 // against the standard one.
 
+// The block of the standard engine for the counter and the first word k0 of
+// the key.  The words of the standard engine come out in the sequence of the
+// calls, and the braced list keeps that sequence.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: the block of std::philox4x32 is the reference of the block of the base")
+[[nodiscard]] static Counter run_std(uint32_t k0, Counter const& counter) {
+    std::philox4x32 stl;
+    stl.seed(k0);
+    // The setter reverses what it is given, so the counter goes in
+    // backwards to come out in the order used here.
+    stl.set_counter({counter.at(::fixy::index<3>()), counter.at(::fixy::index<2>()), counter.at(::fixy::index<1>()),
+                     counter.at(::fixy::index<0>())});
+    return Counter{static_cast<uint32_t>(stl()), static_cast<uint32_t>(stl()), static_cast<uint32_t>(stl()),
+                   static_cast<uint32_t>(stl())};
+}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 static void test_std_philox_equivalence() {
     ::fixy::report(::fixy::Sink::Out, "  std::philox4x32 bit-equivalence audit...\n");
-
-    // The words of the standard engine come out in the sequence of the
-    // calls, and the braced list keeps that sequence.
-    auto run_std = [](uint32_t k0, Counter const& counter) -> Counter {
-        std::philox4x32 stl;
-        stl.seed(k0);
-        // The setter reverses what it is given, so the counter goes in
-        // backwards to come out in the order used here.
-        stl.set_counter({counter.at(::fixy::index<3>()), counter.at(::fixy::index<2>()), counter.at(::fixy::index<1>()),
-                         counter.at(::fixy::index<0>())});
-        return Counter{static_cast<uint32_t>(stl()), static_cast<uint32_t>(stl()), static_cast<uint32_t>(stl()),
-                       static_cast<uint32_t>(stl())};
-    };
 
     {
         auto cru = Philox4x32::generate({0, 0, 0, 0}, {0, 0});
@@ -267,13 +272,15 @@ static void test_std_philox_equivalence() {
         CRUCIBLE_TEST_ASSERT(kTest, cru == stl && "k1=0 case must be bit-equivalent");
     }
 
-    // The seed is fixed, so a failing trial is reproducible.
+    // The seed is fixed, so a failing trial is reproducible.  Each trial
+    // draws its counter from one block and its key from the next block.
     {
-        std::mt19937_64 rng{0xCAFEBEEFD00DULL};
+        constexpr uint64_t kSeed = 0xCAFEBEEFD00DULL;
         for (int trial = 0; trial < 1000; ++trial) {
-            Counter ctr{static_cast<uint32_t>(rng()), static_cast<uint32_t>(rng()), static_cast<uint32_t>(rng()),
-                        static_cast<uint32_t>(rng())};
-            uint32_t k0 = static_cast<uint32_t>(rng());
+            uint64_t const first = static_cast<uint64_t>(trial) * 2;
+            Counter const ctr = Philox4x32::generate(first, kSeed);
+            Counter const key_block = Philox4x32::generate(first + 1, kSeed);
+            uint32_t k0 = key_block.at(::fixy::index<0>());
             auto cru = Philox4x32::generate(ctr, {k0, 0});
             auto stl = run_std(k0, ctr);
             CRUCIBLE_TEST_ASSERT(kTest, cru == stl && "random (counter, k0, 0) trial must be bit-equivalent");
