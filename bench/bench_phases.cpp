@@ -37,14 +37,9 @@
 #include <crucible/TraceLoader.h>
 #include <crucible/TraceRing.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/Args.h>
 #include <foundation/Lifetime.h>
 #include <foundation/reflect/Mix.h>
-
-#include <algorithm>
-#include <cstdio>
-#include <cstring>
-#include <memory>
-#include <vector>
 
 namespace crucible {
 
@@ -81,30 +76,55 @@ const auto BG_CTX = ::foundation::effects::testing::bg();
 constexpr auto A = BG_CTX.alloc;
 
 struct PhaseTiming {
-    const char* name;
-    double total_ns;  // sum across all iterations
-    uint64_t count;  // number of iterations
+    ::fixy::TextView name{};
+    double total_ns = 0.0;  // sum across all iterations
+    uint64_t count = 0;  // number of iterations
 };
 
-void print_phase_table(PhaseTiming* phases, uint32_t n, double total_ns, uint64_t iters) {
-    std::printf("\n  %-22s  %8s  %8s  %5s\n", "Phase", "ns/op", "total ms", "  %");
-    std::printf("  %-22s  %8s  %8s  %5s\n", "──────────────────────", "────────", "────────", "─────");
+// The time of a whole table, in nanoseconds, and the count of the iterations
+// of each phase.
+using TotalNs = ::fixy::Quantity<::fixy::unit::Nanosecond, double>;
+using IterationCount = ::fixy::Quantity<::fixy::unit::Element, uint64_t>;
 
-    for (uint32_t i = 0; i < n; i++) {
-        const double ns_per = phases[i].total_ns / static_cast<double>(iters);
-        const double pct = 100.0 * phases[i].total_ns / total_ns;
-        std::printf("  %-22s  %8.1f  %8.2f  %5.1f%%\n", phases[i].name, ns_per, phases[i].total_ns / 1e6, pct);
+// The columns of a row of the phase table: the name, the time of one
+// iteration, the time of all iterations in milliseconds, and the percent of
+// the total.
+using PhaseName = ::fixy::Padded<22, ::fixy::Align::Left>;
+using PhaseNs = ::fixy::Fixed<1, 8>;
+using PhaseMs = ::fixy::Fixed<2, 8>;
+using PhasePercent = ::fixy::Fixed<1, 5>;
+using PhaseHeading = ::fixy::Padded<8>;
+
+void print_phase_table(::fixy::View<const PhaseTiming> phases, TotalNs total, IterationCount iterations) {
+    using ::fixy::TextView;
+    const double total_ns = total.raw();
+    const auto iters = static_cast<double>(iterations.raw());
+    bench::print("\n  {}  {}  {}  {}\n", PhaseName{TextView{"Phase"}}, PhaseHeading{TextView{"ns/op"}},
+                 PhaseHeading{TextView{"total ms"}}, ::fixy::Padded<5>{TextView{"  %"}});
+    bench::print("  {}  {}  {}  {}\n", PhaseName{TextView{"──────────────────────"}},
+                 PhaseHeading{TextView{"────────"}}, PhaseHeading{TextView{"────────"}},
+                 ::fixy::Padded<5>{TextView{"─────"}});
+
+    for (const PhaseTiming& phase : phases) {
+        const double ns_per = phase.total_ns / iters;
+        const double pct = 100.0 * phase.total_ns / total_ns;
+        bench::print("  {}  {}  {}  {}%\n", PhaseName{phase.name}, PhaseNs{ns_per}, PhaseMs{phase.total_ns / 1e6},
+                     PhasePercent{pct});
     }
 
     double sum_ns = 0;
-    for (uint32_t i = 0; i < n; i++)
-        sum_ns += phases[i].total_ns;
-    const double ns_per = total_ns / static_cast<double>(iters);
-    const double sum_per = sum_ns / static_cast<double>(iters);
+    for (const PhaseTiming& phase : phases)
+        sum_ns += phase.total_ns;
+    const double ns_per = total_ns / iters;
+    const double sum_per = sum_ns / iters;
 
-    std::printf("  %-22s  %8s  %8s  %5s\n", "──────────────────────", "────────", "────────", "─────");
-    std::printf("  %-22s  %8.1f  %8.2f  %5.1f%%\n", "SUM(phases)", sum_per, sum_ns / 1e6, 100.0 * sum_ns / total_ns);
-    std::printf("  %-22s  %8.1f  %8.2f  100.0%%\n", "TOTAL (measured)", ns_per, total_ns / 1e6);
+    bench::print("  {}  {}  {}  {}\n", PhaseName{TextView{"──────────────────────"}},
+                 PhaseHeading{TextView{"────────"}}, PhaseHeading{TextView{"────────"}},
+                 ::fixy::Padded<5>{TextView{"─────"}});
+    bench::print("  {}  {}  {}  {}%\n", PhaseName{TextView{"SUM(phases)"}}, PhaseNs{sum_per}, PhaseMs{sum_ns / 1e6},
+                 PhasePercent{100.0 * sum_ns / total_ns});
+    bench::print("  {}  {}  {}  100.0%\n", PhaseName{TextView{"TOTAL (measured)"}}, PhaseNs{ns_per},
+                 PhaseMs{total_ns / 1e6});
 }
 
 // build_trace gives an op with no metadata no arrays and zero tensor counts.
@@ -137,7 +157,7 @@ BackgroundThread::TraceBuild build_recorded(BackgroundThread& bg, ::fixy::BumpAr
 // then runs the build, then ends the epoch. The build does not write the
 // arrays of the trace, so each sample measures the same work.
 bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace) {
-    const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
+    const size_t arena_bytes = ::fixy::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     ::fixy::BumpArena scratch{arena_bytes};
 
     bench::Run r{bench::format_name("build_trace (full pipeline, {} ops)", trace.num_ops)};
@@ -159,9 +179,9 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const Lo
 // (Intel "How to Benchmark..." 2010 §3.2.1, via bench::rdtsc_start/end).
 
 void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace, uint32_t iters) {
-    std::printf("\n=== Top-level phase breakdown (%u ops, %u iters) ===\n", trace.num_ops, iters);
+    bench::print("\n=== Top-level phase breakdown ({} ops, {} iters) ===\n", trace.num_ops, iters);
 
-    const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
+    const size_t arena_bytes = ::fixy::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const double nspc = bench::Timer::ns_per_cycle();
     ::fixy::BumpArena scratch{arena_bytes};
     // The planner writes the offsets into the slots, so each run plans a copy
@@ -179,7 +199,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
     // Measurement: run build_trace N times, accumulate.
     double total_ns = 0;
-    std::vector<double> samples(iters);
+    ::fixy::HeapArray<double> samples = ::fixy::mint_heap_array(A, iters, 0.0);
 
     for (uint32_t iter = 0; iter < iters; iter++) {
         const double ns = scratch.with_epoch([&]() noexcept {
@@ -193,12 +213,15 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             return static_cast<double>(t1 - t0) * nspc;
         });
         total_ns += ns;
-        samples[iter] = ns;
+        *samples.get(iter).expect("the samples hold one time for each iteration") = ns;
     }
 
-    std::sort(samples.begin(), samples.end());
-    std::printf("  full pipeline: min=%.1f  med=%.1f  max=%.1f ns/op\n", samples.front(), samples[samples.size() / 2],
-                samples.back());
+    if (iters == 0) ::fixy::fatal("bench_phases: the top-level breakdown takes at least one iteration");
+    const ::fixy::HeapArray<double> sorted = bench::sorted_samples(std::move(samples));
+    bench::print("  full pipeline: min={}  med={}  max={} ns/op\n",
+                 ::fixy::Fixed<1>{*sorted.get(0).expect("the first sample of a run of at least one")},
+                 ::fixy::Fixed<1>{*sorted.get(sorted.size() / 2).expect("the middle sample of the run")},
+                 ::fixy::Fixed<1>{*sorted.get(sorted.size() - 1).expect("the last sample of the run")});
 
     // Isolated build_csr + compute_memory_plan.
     double ns_csr = 0;
@@ -254,19 +277,19 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         const double ns_other = total_ns - ns_csr - ns_memplan;
 
-        PhaseTiming phases[] = {
-            {"Main loop (P0-P3)", ns_other, iters},
-            {"build_csr (P4)", ns_csr, iters},
-            {"memory_plan (P5)", ns_memplan, iters},
+        const ::fixy::FixedArray<PhaseTiming, 3> phases{
+            PhaseTiming{"Main loop (P0-P3)", ns_other, iters},
+            PhaseTiming{"build_csr (P4)", ns_csr, iters},
+            PhaseTiming{"memory_plan (P5)", ns_memplan, iters},
         };
-        print_phase_table(phases, 3, total_ns, iters);
+        print_phase_table(phases.view(), TotalNs{total_ns}, IterationCount{iters});
     }
 }
 
 void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace, uint32_t iters) {
-    std::printf("\n=== Phase 2 sub-part breakdown (%u ops, %u iters) ===\n", trace.num_ops, iters);
+    bench::print("\n=== Phase 2 sub-part breakdown ({} ops, {} iters) ===\n", trace.num_ops, iters);
 
-    const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
+    const size_t arena_bytes = ::fixy::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const uint32_t count = trace.num_ops;
     const double nspc = bench::Timer::ns_per_cycle();
     // The phases that copy the loop of build_trace take their buffers from
@@ -692,25 +715,27 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         }
     }
 
-    PhaseTiming phases[] = {
-        {"P0  pre-scan", ns_p0, iters},       {"P1  alloc+memset", ns_p1, iters},  {"P1b metadata copy", ns_p1b, iters},
-        {"P2a copy fields", ns_p2a, iters},   {"P2b content hash", ns_p2b, iters}, {"P2c PtrMap lookup", ns_p2c, iters},
-        {"P2d PtrMap insert", ns_p2d, iters}, {"P3  slot copy", ns_p3, iters},
+    const ::fixy::FixedArray<PhaseTiming, 8> phases{
+        PhaseTiming{"P0  pre-scan", ns_p0, iters},       PhaseTiming{"P1  alloc+memset", ns_p1, iters},
+        PhaseTiming{"P1b metadata copy", ns_p1b, iters}, PhaseTiming{"P2a copy fields", ns_p2a, iters},
+        PhaseTiming{"P2b content hash", ns_p2b, iters},  PhaseTiming{"P2c PtrMap lookup", ns_p2c, iters},
+        PhaseTiming{"P2d PtrMap insert", ns_p2d, iters}, PhaseTiming{"P3  slot copy", ns_p3, iters},
     };
 
     double sum = 0;
-    for (auto& p : phases)
+    for (const PhaseTiming& p : phases)
         sum += p.total_ns;
-    print_phase_table(phases, 8, sum, iters);
+    print_phase_table(phases.view(), TotalNs{sum}, IterationCount{iters});
 }
 
 // The default trace comes from the configure step (bench/CMakeLists.txt): the
 // recorded MiniGPT trace of the tree, 1091 ops.  A trace of more ops, such as
 // the 36499 ops of an SD1.5 U-Net, gives the phases a cleaner split.
+// An empty text means that the configure step baked in no trace.
 #ifdef CRUCIBLE_BENCH_DEFAULT_TRACE
-constexpr const char* kDefaultTrace = CRUCIBLE_BENCH_DEFAULT_TRACE;
+constexpr ::fixy::TextView kDefaultTrace{CRUCIBLE_BENCH_DEFAULT_TRACE};
 #else
-constexpr const char* kDefaultTrace = nullptr;
+constexpr ::fixy::TextView kDefaultTrace{};
 #endif
 
 // Default iteration count per phase. Tuned against SD1.5 on i7-14700HX
@@ -723,15 +748,24 @@ constexpr const char* kDefaultTrace = nullptr;
 // Override explicitly: `./bench_phases <trace> <iters>`.
 constexpr uint32_t kDefaultIters = 1200;
 
-}  // namespace
+// The text of an argument of main, or fallback when main has no such
+// argument.
+[[nodiscard]] ::fixy::TextView text_or(::fixy::Option<::fixy::CText> const& argument,
+                                       ::fixy::TextView fallback) noexcept {
+    return argument.match([](::fixy::CText const& text) noexcept { return text.view(); },
+                          [fallback]() noexcept { return fallback; });
+}
 
-int main(int argc, char* argv[]) {
-    const char* trace_path = (argc >= 2) ? argv[1] : kDefaultTrace;
-    if (!trace_path) {
-        std::fprintf(stderr,
-                     "usage: %s <file.crtrace> [iters]\n"
-                     "error: no default trace baked in at configure time\n",
-                     argv[0]);
+// The bench with the arguments of main: the path of the trace file, and the
+// count of the iterations of each phase.
+int run_bench(::fixy::os::Args const& arguments) {
+    const ::fixy::TextView program = text_or(arguments.get(0), ::fixy::TextView{"bench_phases"});
+    const ::fixy::TextView trace_path = text_or(arguments.get(1), kDefaultTrace);
+    if (trace_path.size() == 0) {
+        ::fixy::report(::fixy::Sink::Err,
+                       "usage: {} <file.crtrace> [iters]\n"
+                       "error: no default trace baked in at configure time\n",
+                       program);
         return 1;
     }
 
@@ -739,25 +773,31 @@ int main(int argc, char* argv[]) {
     bench::elevate_priority();
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("TSC ratio: %.4f ns/cycle\n", bench::Timer::ns_per_cycle());
+    bench::print("TSC ratio: {} ns/cycle\n", ::fixy::Fixed<4>{bench::Timer::ns_per_cycle()});
 
     // A path that fails the path check counts as a file that does not open.
-    const std::string_view trace_text{trace_path};
-    auto sanitized_path = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(
-        ::fixy::mint_foreign_text(trace_text.data(), trace_text.size())));
+    auto sanitized_path = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(trace_path));
     auto loaded = sanitized_path.is_ok()
                     ? load_trace(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
                                  std::move(sanitized_path).expect("the path passed the check"))
                     : ::fixy::Result<LoadedTrace, TraceLoadError>{::fixy::err(TraceLoadError::OpenFailed)};
     if (loaded.is_err()) {
-        std::fprintf(stderr, "error: could not load %s\n", trace_path);
-        std::fprintf(stderr, "usage: %s [file.crtrace] [iters]\n", argv[0]);
+        ::fixy::report(::fixy::Sink::Err, "error: could not load {}\n", trace_path);
+        ::fixy::report(::fixy::Sink::Err, "usage: {} [file.crtrace] [iters]\n", program);
         return 1;
     }
     const LoadedTrace trace = std::move(loaded).expect("the load holds a trace after the check of its error");
-    std::printf("Loaded %s: %u ops, %u metas\n", trace_path, trace.num_ops, trace.num_metas);
+    bench::print("Loaded {}: {} ops, {} metas\n", trace_path, trace.num_ops, trace.num_metas);
 
-    const uint32_t iters = (argc >= 3) ? static_cast<uint32_t>(std::atoi(argv[2])) : kDefaultIters;
+    // An iteration count that is no decimal number gives zero iterations, as
+    // atoi gives.
+    const uint32_t iters = arguments.get(2).match(
+        [](::fixy::CText text) noexcept {
+            return ::fixy::parse<uint32_t>(text.view())
+                .match([](uint32_t value) noexcept { return value; },
+                       [](::fixy::ParseError) noexcept { return uint32_t{0}; });
+        },
+        []() noexcept { return kDefaultIters; });
 
     MetaLog meta_log{::foundation::effects::testing::test().alloc};
     meta_log.reset();
@@ -765,16 +805,22 @@ int main(int argc, char* argv[]) {
     BackgroundThread bg{::foundation::effects::testing::test().alloc};
     bg.bind_meta_log(meta_log);
 
-    std::printf("\n=== full pipeline (bench::run with BPF sensing) ===\n");
+    bench::print("\n=== full pipeline (bench::run with BPF sensing) ===\n");
     ::fixy::FixedArray<bench::Report, 1> const reports{run_fullpipeline(bg, meta_log, trace)};
     bench::emit_reports_text(reports.view());
 
     bench_phases_toplevel(bg, meta_log, trace, iters);
     bench_phase2_subparts(bg, meta_log, trace, iters);
 
-    std::printf("\nDone.\n");
+    bench::print("\nDone.\n");
     // The JSON tail comes last, because the reader reads each line after its
     // marker.
     bench::emit_reports_json(reports.view(), json);
     return 0;
 }
+
+}  // namespace
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: main takes the arguments of the C runtime as a count and an array of texts")
+int main(int argc, char** argv) { return run_bench(::fixy::os::args(argc, argv)); }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
