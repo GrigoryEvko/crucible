@@ -11,9 +11,8 @@
 //
 // Target: probe operations ≤ 5 ns.
 
+#include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <vector>
 
 #include <crucible/SwissTable.h>
 #include <fixy/Core.h>
@@ -120,19 +119,19 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== swiss_table ===\n  backend: ");
+    bench::print("=== swiss_table ===\n  backend: ");
 #if defined(__AVX512BW__)
-    std::printf("AVX-512BW (64 B/group)\n");
+    bench::print("AVX-512BW (64 B/group)\n");
 #elif defined(__AVX2__)
-    std::printf("AVX2 (32 B/group)\n");
+    bench::print("AVX2 (32 B/group)\n");
 #elif defined(__SSE2__)
-    std::printf("SSE2 (16 B/group)\n");
+    bench::print("SSE2 (16 B/group)\n");
 #elif defined(__aarch64__)
-    std::printf("NEON (16 B/group)\n");
+    bench::print("NEON (16 B/group)\n");
 #else
-    std::printf("portable SWAR (16 B/group)\n");
+    bench::print("portable SWAR (16 B/group)\n");
 #endif
-    std::printf("  kGroupWidth: %zu\n\n", kGroupWidth);
+    bench::print("  kGroupWidth: {}\n\n", kGroupWidth);
 
     // h2_tag(1) + load(2) + match(3) + match_empty(3) + BitMask(4) +
     // probe-step(2) + the hit and miss rows of four load factors (8).
@@ -311,33 +310,53 @@ int main() {
         const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
         ::fixy::Box<MiniSwissTable> table = ::fixy::mint_box<MiniSwissTable>(alloc, alloc, TABLE_CAP);
 
-        std::vector<uint64_t> inserted_hashes;
+        // The first 1024 inserted hashes and 1024 absent hashes, on the
+        // heap as the vectors of the rows were.  Each load inserts more
+        // than 1024 hashes.
+        using Hashes = ::fixy::FixedArray<uint64_t, 1024>;
+        ::fixy::Box<Hashes> inserted_hashes = ::fixy::mint_box<Hashes>(alloc);
+        std::size_t inserted_count = 0;
         uint64_t seed = 0xDEADBEEF;
         for (size_t i = 0; i < target_count; ++i) {
             seed = fmix64(seed + i);
             table->insert(seed);
-            if (inserted_hashes.size() < 1024) inserted_hashes.push_back(seed);
+            if (inserted_count < 1024) {
+                *inserted_hashes->get(inserted_count).expect("the count is below 1024") = seed;
+                ++inserted_count;
+            }
         }
 
-        std::vector<uint64_t> absent_hashes;
+        ::fixy::Box<Hashes> absent_hashes = ::fixy::mint_box<Hashes>(alloc);
+        std::size_t absent_count = 0;
         seed = 0xCAFEBABE;
-        while (absent_hashes.size() < 1024) {
-            seed = fmix64(seed + absent_hashes.size() + 1);
-            if (!table->find(seed)) absent_hashes.push_back(seed);
+        while (absent_count < 1024) {
+            seed = fmix64(seed + absent_count + 1);
+            if (!table->find(seed)) {
+                *absent_hashes->get(absent_count).expect("the count is below 1024") = seed;
+                ++absent_count;
+            }
         }
 
         const bench::RunName name_hit = bench::format_name("probe HIT  — {}", label);
         const bench::RunName name_miss = bench::format_name("probe MISS — {}", label);
 
+        // The mask keeps each position below 1024, so the compiler folds
+        // the check of the index.  A row reads each hash through a View
+        // of the heap array, as it read a vector: the address of the View,
+        // then its first element.
+        ::fixy::View<uint64_t const, 1024> const inserted = inserted_hashes->view();
+        ::fixy::View<uint64_t const, 1024> const absent = absent_hashes->view();
         uint32_t hit_idx = 0;
         bench::add_report(reports, bench::run(name_hit, [&, t = table.view()] {
-                              bool found = t->find(inserted_hashes[hit_idx & 1023]);
+                              bool found = t->find(
+                                  inserted.at(::fixy::Index<1024>::check(hit_idx & 1023).expect("a mask of 10 bits")));
                               bench::do_not_optimize(found);
                               ++hit_idx;
                           }));
         uint32_t miss_idx = 0;
         bench::add_report(reports, bench::run(name_miss, [&, t = table.view()] {
-                              bool found = t->find(absent_hashes[miss_idx & 1023]);
+                              bool found = t->find(
+                                  absent.at(::fixy::Index<1024>::check(miss_idx & 1023).expect("a mask of 10 bits")));
                               bench::do_not_optimize(found);
                               ++miss_idx;
                           }));
@@ -352,7 +371,7 @@ int main() {
 
     // Probe scaling: 25% vs 87.5% load MISS should grow with probe
     // distance. Non-trivial delta is the expected signal.
-    std::printf("\n=== compare — load-factor scaling (MISS 25%% → 87.5%%) ===\n  ");
+    bench::print("\n=== compare — load-factor scaling (MISS 25% → 87.5%) ===\n  ");
     // Reports layout: h2_tag(1) + load(2) + match(3) + match_empty(3)
     //               + BitMask(4) + probe-step(2) = 15 before probe-at.
     // bench_probe_at appends 2 per call; 25/50/75/87.5 → indices
