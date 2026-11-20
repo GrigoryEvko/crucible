@@ -35,13 +35,20 @@ typedef std::uint32_t Blake3Row __attribute__((vector_size(16)));
 typedef std::uint16_t Blake3Halves __attribute__((vector_size(16)));
 typedef std::uint8_t Blake3Bytes __attribute__((vector_size(16)));
 
+// A rotation right of each word of a row.  With AVX-512 each rotation is one
+// instruction.  Else a rotation by 16 is one shuffle of the halves, which
+// SSE2 does in two steps, a rotation by 8 with SSSE3 or NEON is one shuffle
+// of the bytes, and the others are two shifts and an or.
 template <int Count>
 [[nodiscard]] inline Blake3Row blake3_rotr_row_(Blake3Row row) noexcept {
-#if defined(__SSSE3__) || defined(__ARM_NEON) || defined(__ARM_NEON__)
+#if !defined(__AVX512VL__) && (defined(__SSE2__) || defined(__ARM_NEON) || defined(__ARM_NEON__))
     if constexpr (Count == 16) {
         Blake3Halves const halves = __builtin_bit_cast(Blake3Halves, row);
         return __builtin_bit_cast(Blake3Row, __builtin_shufflevector(halves, halves, 1, 0, 3, 2, 5, 4, 7, 6));
-    } else if constexpr (Count == 8) {
+    }
+#endif
+#if !defined(__AVX512VL__) && (defined(__SSSE3__) || defined(__ARM_NEON) || defined(__ARM_NEON__))
+    if constexpr (Count == 8) {
         Blake3Bytes const bytes = __builtin_bit_cast(Blake3Bytes, row);
         return __builtin_bit_cast(
             Blake3Row, __builtin_shufflevector(bytes, bytes, 1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12));
@@ -50,16 +57,62 @@ template <int Count>
     return (row >> Count) | (row << (32 - Count));
 }
 
-inline void blake3_g_rows_(Blake3Row& first, Blake3Row& second, Blake3Row& third, Blake3Row& fourth, Blake3Row mix_x,
-                           Blake3Row mix_y) noexcept {
-    first = first + second + mix_x;
+// The g function on the four rows.  The word of the message joins first, so
+// the sum waits on the second row with one add.
+[[gnu::always_inline]] inline void blake3_g_rows_(Blake3Row& first, Blake3Row& second, Blake3Row& third,
+                                                  Blake3Row& fourth, Blake3Row mix_x, Blake3Row mix_y) noexcept {
+    first = first + mix_x + second;
     fourth = blake3_rotr_row_<16>(fourth ^ first);
     third = third + fourth;
     second = blake3_rotr_row_<12>(second ^ third);
-    first = first + second + mix_y;
+    first = first + mix_y + second;
     fourth = blake3_rotr_row_<8>(fourth ^ first);
     third = third + fourth;
     second = blake3_rotr_row_<7>(second ^ third);
+}
+
+// One round of the rows.  The column step mixes the columns of the state.
+// The diagonal step turns the rows first, third and fourth by three, one and
+// two lanes, so that its columns are the diagonals, and its words of the
+// message turn with them.  The second row stays in place: the column step
+// writes it last, so no turn waits on it.  After the diagonal step the three
+// rows turn back, and the words take the order of the next round.
+template <std::size_t Round>
+[[gnu::always_inline]] inline void blake3_round_rows_(Blake3Row& first, Blake3Row& second, Blake3Row& third,
+                                                      Blake3Row& fourth, Blake3Row& word0, Blake3Row& word1,
+                                                      Blake3Row& word2, Blake3Row& word3) noexcept {
+    blake3_g_rows_(first, second, third, fourth, __builtin_shufflevector(word0, word1, 0, 2, 4, 6),
+                   __builtin_shufflevector(word0, word1, 1, 3, 5, 7));
+    first = __builtin_shufflevector(first, first, 3, 0, 1, 2);
+    third = __builtin_shufflevector(third, third, 1, 2, 3, 0);
+    fourth = __builtin_shufflevector(fourth, fourth, 2, 3, 0, 1);
+    blake3_g_rows_(first, second, third, fourth, __builtin_shufflevector(word2, word3, 6, 0, 2, 4),
+                   __builtin_shufflevector(word2, word3, 7, 1, 3, 5));
+    first = __builtin_shufflevector(first, first, 1, 2, 3, 0);
+    third = __builtin_shufflevector(third, third, 3, 0, 1, 2);
+    fourth = __builtin_shufflevector(fourth, fourth, 2, 3, 0, 1);
+    if constexpr (Round + 1 < 7) {
+        Blake3Row const next0 =
+            __builtin_shufflevector(__builtin_shufflevector(word0, word1, 2, 6, 3, -1), word2, 0, 1, 2, 6);
+        Blake3Row const next1 =
+            __builtin_shufflevector(__builtin_shufflevector(word1, word0, 3, 4, 0, -1), word3, 0, 1, 2, 5);
+        Blake3Row const next2 = __builtin_shufflevector(
+            __builtin_shufflevector(__builtin_shufflevector(word0, word2, 1, 7, -1, -1), word3, 0, 1, 4, -1), word1, 0,
+            1, 2, 5);
+        Blake3Row const next3 = __builtin_shufflevector(word2, word3, 1, 6, 7, 0);
+        word0 = next0;
+        word1 = next1;
+        word2 = next2;
+        word3 = next3;
+    }
+}
+
+template <std::size_t... Rounds>
+[[gnu::always_inline]] inline void blake3_rounds_rows_(Blake3Row& first, Blake3Row& second, Blake3Row& third,
+                                                       Blake3Row& fourth, Blake3Row& word0, Blake3Row& word1,
+                                                       Blake3Row& word2, Blake3Row& word3,
+                                                       std::index_sequence<Rounds...>) noexcept {
+    (blake3_round_rows_<Rounds>(first, second, third, fourth, word0, word1, word2, word3), ...);
 }
 
 // ── The run-time arm ────────────────────────────────────────────────────
@@ -82,7 +135,8 @@ struct Blake3Node final {
 
 // One compression of the rows, which gives the chaining value that follows:
 // the first 8 words of the output.  The state and the message stay in
-// registers.
+// registers, and the 7 rounds unroll, so each value has its own name and no
+// round waits on a branch.
 [[nodiscard, gnu::always_inline]] inline Blake3Cv blake3_compress_cv_(Blake3Cv value, Blake3Row const (&words)[4],
                                                                       std::uint64_t counter, std::uint32_t bytes,
                                                                       std::uint32_t flags) noexcept {
@@ -94,31 +148,7 @@ struct Blake3Node final {
     Blake3Row word1 = words[1];
     Blake3Row word2 = words[2];
     Blake3Row word3 = words[3];
-    for (int round = 0; round < 7; ++round) {
-        blake3_g_rows_(row0, row1, row2, row3, __builtin_shufflevector(word0, word1, 0, 2, 4, 6),
-                       __builtin_shufflevector(word0, word1, 1, 3, 5, 7));
-        row1 = __builtin_shufflevector(row1, row1, 1, 2, 3, 0);
-        row2 = __builtin_shufflevector(row2, row2, 2, 3, 0, 1);
-        row3 = __builtin_shufflevector(row3, row3, 3, 0, 1, 2);
-        blake3_g_rows_(row0, row1, row2, row3, __builtin_shufflevector(word2, word3, 0, 2, 4, 6),
-                       __builtin_shufflevector(word2, word3, 1, 3, 5, 7));
-        row1 = __builtin_shufflevector(row1, row1, 3, 0, 1, 2);
-        row2 = __builtin_shufflevector(row2, row2, 2, 3, 0, 1);
-        row3 = __builtin_shufflevector(row3, row3, 1, 2, 3, 0);
-        if (round == 6) break;
-        Blake3Row const next0 =
-            __builtin_shufflevector(__builtin_shufflevector(word0, word1, 2, 6, 3, -1), word2, 0, 1, 2, 6);
-        Blake3Row const next1 =
-            __builtin_shufflevector(__builtin_shufflevector(word1, word0, 3, 4, 0, -1), word3, 0, 1, 2, 5);
-        Blake3Row const next2 = __builtin_shufflevector(
-            __builtin_shufflevector(__builtin_shufflevector(word0, word2, 1, 7, -1, -1), word3, 0, 1, 4, -1), word1, 0,
-            1, 2, 5);
-        Blake3Row const next3 = __builtin_shufflevector(word2, word3, 1, 6, 7, 0);
-        word0 = next0;
-        word1 = next1;
-        word2 = next2;
-        word3 = next3;
-    }
+    blake3_rounds_rows_(row0, row1, row2, row3, word0, word1, word2, word3, std::make_index_sequence<7>{});
     return Blake3Cv{row0 ^ row2, row1 ^ row3};
 }
 
