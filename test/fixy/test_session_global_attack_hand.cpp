@@ -5,6 +5,9 @@
 
 #include "session_global_attack.h"
 
+#include <fixy/Core.h>
+#include <fixy/session/ContextNet.h>
+
 #include <cstddef>
 #include <cstdio>
 #include <iterator>
@@ -176,7 +179,11 @@ using Ex12G2Coinductive =
 //
 // Liveness by construction holds for one session.  Two processes that
 // each play one role in two sessions, and wait on the sessions in
-// opposite orders, deadlock.  Each session alone is live.
+// opposite orders, deadlock.  Each session alone is live.  The marked
+// system of fixy/session/ContextNet.h reads the order of the waits of
+// each role, so its door refuses each crossed context and admits the
+// ordered one.  The explorer finds the deadlock of each crossed context at
+// the same capacity.
 
 using SessionOne = g::Msg<P, Q, X, int, g::End>;
 using SessionTwo = g::Msg<Q, P, Y, int, g::End>;
@@ -201,11 +208,39 @@ using RingQ = s::compose_t<typename s::project_t<SessionPQ, Q>::local, typename 
 using RingR = s::compose_t<typename s::project_t<SessionQR, R>::local, typename s::project_t<SessionRP, R>::local>;
 using CrossedRing = s::TypingContext<At<P, RingP>, At<Q, RingQ>, At<R, RingR>>;
 
-[[nodiscard]] bool crossed_sessions_deadlock() {
-    const System two = load_context<CrossedSessions>();
-    const System three = load_context<CrossedRing>();
-    return analyse(two, 1).deadlocks > 0 && analyse(three, 1).deadlocks > 0;
-}
+// The channel of the explorer at capacity 1: a queue of one message.
+struct OneMessageQueue {
+    static constexpr std::size_t channel_capacity = 1;
+};
+
+namespace net = ::foundation::algebra::net;
+
+// The marked system of each crossed context holds a cycle of waits with no
+// token, and the ordered context is live.
+static_assert(net::find_liveness_fault(s::marked_system_of_context<CrossedSessions, OneMessageQueue>()).code
+              == net::LivenessFaultCode::CycleWithoutToken);
+static_assert(net::find_liveness_fault(s::marked_system_of_context<CrossedRing, OneMessageQueue>()).code
+              == net::LivenessFaultCode::CycleWithoutToken);
+static_assert(s::check_context_deadlock_freedom<OrderedSessions, OneMessageQueue>().is_admitted());
+
+// The deadlocked control of Example 10: P waits on a message that Q never
+// sends.  The explorer finds the deadlock, and the door refuses the count.
+static_assert(net::find_liveness_fault(s::marked_system_of_context<Ex10Deadlocked, OneMessageQueue>()).code
+              == net::LivenessFaultCode::SendsWithoutReceives);
+
+// The same agreement on contexts that loop or choose.  The projected Ring
+// loops and chooses, the arms of each choice wait the same way, and the door
+// admits it, as the explorer does in run_accepted.  Two roles that loop and
+// wait on each other first deadlock, and the door refuses the cycle.  A role
+// that sends for ever to a role that receives one message leaves its second
+// send waiting, and the door refuses the channel between the two.
+using CrossedLoops = s::TypingContext<At<P, s::Loop<In<Q, Y, Out<Q, X, s::Continue>>>>,
+                                      At<Q, s::Loop<In<P, X, Out<P, Y, s::Continue>>>>>;
+using StreamToOne = s::TypingContext<At<P, s::Loop<Out<Q, X, s::Continue>>>, At<Q, In<P, X, s::End>>>;
+static_assert(s::check_context_deadlock_freedom<s::projected_context_t<Ring>, OneMessageQueue>().is_admitted());
+static_assert(net::find_liveness_fault(s::marked_system_of_context<CrossedLoops, OneMessageQueue>()).code
+              == net::LivenessFaultCode::CycleWithoutToken);
+static_assert(s::find_context_fault<StreamToOne>().code == s::ContextFaultCode::LoopMeetsRun);
 
 // ── 5. Two gaps that this campaign found, and their repairs ──────────
 
@@ -233,24 +268,13 @@ struct KnownLimitation {
     bool (*still_succeeds)();
 };
 
-constexpr KnownLimitation known_limitations[] = {
-    {"Two processes use two live sessions in opposite orders, and three processes use three sessions in a ring; "
-     "each deadlocks.",
-     "Liveness by construction covers one session (Pischke, Masters, Yoshida, Theorem 13; Pischke, Yoshida, "
-     "Top-down = Bottom-up, p. 25).  Freedom from deadlock across sessions needs an acyclic ownership of channels, "
-     "where a channel is made with the peer that holds its other end (LinearActris, POPL 2024), or a priority order "
-     "on sessions (Dardha and Gay, Prioritised GV).  The types here order no sessions, so the composed context of "
-     "this attack still deadlocks in the explorer.  fixy/session/Watch.h keeps the priority order at run time: a "
-     "thread that waits while it holds a session of a priority that is not lower is refused before it waits, and "
-     "test_session_handle_attacks refuses the crossed and the cyclic waits so.  That is prevention on the run that "
-     "waits, and not a type that refuses the program.  A transport that blocks inside its own call publishes no "
-     "wait, so the watch does not see a wait through it.",
-     &crossed_sessions_deadlock},
-};
+// The door of fixy/session/ContextNet.h refuses the crossed contexts of
+// section 4, so the ledger holds no attack.
+constexpr ::fixy::View<KnownLimitation const> known_limitations{};
 
 // The ledger only shrinks.  Raise this bound only with a new attack that
 // no gate can refuse, and name it above.
-static_assert(std::size(known_limitations) <= 1);
+static_assert(known_limitations.size() == 0);
 
 }  // namespace
 
@@ -304,13 +328,30 @@ void run_interleaving() {
     expect_live_global<SessionOne>("session one alone");
     expect_live_global<SessionTwo>("session two alone");
     const System crossed = load_context<CrossedSessions>();
-    print_verdict("both processes, opposite orders", analyse(crossed, 1));
+    const Verdict crossed_verdict = analyse(crossed, 1);
+    print_verdict("both processes, opposite orders", crossed_verdict);
+    expect(crossed_verdict.deadlocks > 0,
+           "the explorer did not find the deadlock of two sessions in opposite orders, which the marked system "
+           "refuses");
     const System ordered = load_context<OrderedSessions>();
     const Verdict ordered_verdict = analyse(ordered, 1);
     print_verdict("both processes, one priority order", ordered_verdict);
     expect(ordered_verdict.is_clean(), "two sessions used in one priority order must not deadlock");
     const System ring = load_context<CrossedRing>();
-    print_verdict("three processes, three sessions in a ring", analyse(ring, 1));
+    const Verdict ring_verdict = analyse(ring, 1);
+    print_verdict("three processes, three sessions in a ring", ring_verdict);
+    expect(ring_verdict.deadlocks > 0,
+           "the explorer did not find the deadlock of three sessions in a ring, which the marked system refuses");
+    const Verdict loops_verdict = analyse(load_context<CrossedLoops>(), 1);
+    print_verdict("two loops that wait on each other first", loops_verdict);
+    expect(loops_verdict.deadlocks > 0,
+           "the explorer did not find the deadlock of two loops that wait on each other first, which the marked "
+           "system refuses");
+    const Verdict stream_verdict = analyse(load_context<StreamToOne>(), 1);
+    print_verdict("a loop that sends to a role that receives one message", stream_verdict);
+    expect(stream_verdict.deadlocks > 0,
+           "the explorer did not find the deadlock of a loop that sends to a role that ends, which the marked "
+           "system refuses");
 }
 
 void run_ledger() {
