@@ -7,7 +7,6 @@
 // in a Saturated<T>, and the *_sat_into forms also write it back.
 
 #include <cstdint>
-#include <cstdio>
 
 #include <fixy/Core.h>
 #include <fixy/Saturate.h>
@@ -56,7 +55,7 @@ int main() {
     uint32_t counter_sub = 0x12340000u;
     uint32_t counter_mul = 0x00001000u;
 
-    std::printf("=== saturate ===\n\n");
+    ::fixy::report(::fixy::Sink::Out, "=== saturate ===\n\n");
 
     ::fixy::FixedArray<bench::Report, 18> reports{
         bench::run("add_sat<u32>   common",
@@ -160,7 +159,7 @@ int main() {
 
     // Overflow vs. common path for u64 add — should be distinguishable
     // (the rare branch fires in every sample), but typically within 10%.
-    std::printf("\n=== compare ===\n");
+    ::fixy::report(::fixy::Sink::Out, "\n=== compare ===\n");
     bench::compare(reports.at(::fixy::index<6>()), reports.at(::fixy::index<9>())).print_text();
 
     bench::emit_reports_json(reports.view(), json);

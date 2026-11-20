@@ -5,7 +5,6 @@
 // entries in the order of the hashes.
 
 #include <cstdint>
-#include <cstdio>
 
 #include <crucible/SchemaTable.h>
 
@@ -28,30 +27,35 @@ int main() {
     // takes the section with one compare-exchange.
     constexpr crucible::VigilFgCtx writer = ::foundation::effects::testing::foreground<crucible::Vigil>();
     const auto mutable_view = table.mint_mutable_view(writer).expect("a fresh table mints a mutable view");
-    SchemaHash hashes[N];
-    for (uint32_t i = 0; i < N; i++) {
-        const uint64_t h = 0x9E3779B97F4A7C15ULL * (i + 1);
-        hashes[i] = SchemaHash{h};
+    ::fixy::FixedArray<SchemaHash, N> hashes{};
+    for (::fixy::Index<N> const i : hashes.indices()) {
+        const uint64_t h = 0x9E3779B97F4A7C15ULL * (i.raw() + 1);
+        hashes.at(i) = SchemaHash{h};
         ::fixy::FixedText<16> name{};
         const ::fixy::TextView name_view =
-            ::fixy::format(name, "aten::op{}", i).expect("aten::op and a number below 250 fit in 16 characters");
+            ::fixy::format(name, "aten::op{}", i.raw()).expect("aten::op and a number below 250 fit in 16 characters");
         const bool was_registered =
             table
-                .register_name(writer, ::foundation::effects::testing::test().alloc, mutable_view, hashes[i],
+                .register_name(writer, ::foundation::effects::testing::test().alloc, mutable_view, hashes.at(i),
                                ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name_view))
                 .is_ok();
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }
 
-    std::printf("=== schema_table ===\n");
-    std::printf("  table entries: %u (log2 = ~8 probes)\n\n", N);
+    ::fixy::report(::fixy::Sink::Out, "=== schema_table ===\n");
+    ::fixy::report(::fixy::Sink::Out, "  table entries: {} (log2 = ~8 probes)\n\n", N);
 
     ::fixy::FixedArray<bench::Report, 3> reports{
         [&] {
-            uint32_t idx = 0;
+            // The rotation (idx + 1) % N stays below N, so the compiler folds
+            // the check of the index and the body holds no branch for it.
+            // The index is below N, so its 32-bit value is exact, and the
+            // remainder is the 32-bit remainder of a counter of 32 bits.
+            ::fixy::Index<N> idx = ::fixy::index<0>();
             return bench::run("lookup hit  (250-entry table)", [&] {
-                const auto h = hashes[idx];
-                idx = (idx + 1) % N;
+                const auto h = hashes.at(idx);
+                idx = ::fixy::Index<N>::check((::fixy::wrapping_narrow<uint32_t>(idx.raw()) + 1) % N)
+                          .expect("a rotation modulo N stays below N");
                 const bool is_found = table.lookup(h).is_some();
                 bench::do_not_optimize(is_found);
             });
@@ -65,7 +69,7 @@ int main() {
             });
         }(),
         [&] {
-            const auto hot = hashes[N / 2];
+            const auto hot = hashes.at(::fixy::index<N / 2>());
             return bench::run("short_name(strip aten::)", [&] {
                 const bool is_found = table.short_name(hot).is_some();
                 bench::do_not_optimize(is_found);

@@ -12,7 +12,6 @@
 // the arm measures the door's cost too.  mint_refined runs the predicate.
 
 #include <cstdint>
-#include <cstdio>
 #include <utility>
 
 #include <fixy/ConstantTime.h>
@@ -112,7 +111,7 @@ int main() {
     volatile uint32_t a = 0xFFFFFFFFu;
     volatile uint32_t b = 0x00000000u;
 
-    std::printf("=== safety ===\n\n");
+    ::fixy::report(::fixy::Sink::Out, "=== safety ===\n\n");
 
     // Layout: pairs of (bare, wrapped) at indices (0,1), (2,3), … for
     // trivial compare() at the end.
@@ -236,14 +235,14 @@ int main() {
 
     // One compare() per (bare, wrapped) pair. Zero-cost wrappers show
     // [indistinguishable]; any [REGRESS] flag is a real finding.
-    std::printf("\n=== compare — zero-cost proof ===\n");
-    const char* pair_labels[] = {
+    ::fixy::report(::fixy::Sink::Out, "\n=== compare — zero-cost proof ===\n");
+    constexpr ::fixy::FixedArray<::fixy::TextView, 5> pair_labels{
         "Linear<Resource>", "Refined<positive,int>", "Secret<uint64>", "Tagged<int,source>", "Machine<ConnState>",
     };
-    for (size_t p = 0; p < std::size(pair_labels); ++p) {
-        std::printf("  [%s]\n  ", pair_labels[p]);
-        bench::compare(*reports.get(2 * p).expect("the bare row of a pair"),
-                       *reports.get(2 * p + 1).expect("the wrapped row of a pair"))
+    for (auto const [p, label] : pair_labels.enumerate()) {
+        ::fixy::report(::fixy::Sink::Out, "  [{}]\n  ", *label);
+        bench::compare(*reports.get(2 * p.raw()).expect("the bare row of a pair"),
+                       *reports.get(2 * p.raw() + 1).expect("the wrapped row of a pair"))
             .print_text();
     }
 

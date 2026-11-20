@@ -7,8 +7,6 @@
 
 #include "bench_harness.h"
 
-#include <cstdio>
-#include <cstdlib>
 #include <utility>
 
 namespace observe = ::crucible::observe;
@@ -37,8 +35,8 @@ int main() {
     auto writer = observe::mint_metrics_writer(channel, metrics_writer_root());
     auto minted = observe::mint_keeper_metrics_reader(channel);
     if (minted.is_none()) {
-        std::fprintf(stderr, "failed to mint runtime metrics reader\n");
-        return EXIT_FAILURE;
+        ::fixy::report(::fixy::Sink::Err, "failed to mint runtime metrics reader\n");
+        return 1;
     }
     auto reader = std::move(minted).expect("the reader share is present");
 
@@ -55,11 +53,14 @@ int main() {
     const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};
     auto observed = reader.load(spin);
 
+    using ::fixy::Sink;
+    using ::fixy::TextView;
     bench::emit_reports_text(reports.view());
-    std::printf("\nbench_observe_metrics_swmr:\n");
-    std::printf("  target_p99_lt_100ns: %s\n", reports.at(::fixy::index<0>()).pct.p99 < 100.0 ? "yes" : "no");
-    std::printf("  final_lambda_max:    %.0f\n", observed.peek().meb_lambda_max);
+    ::fixy::report(Sink::Out, "\nbench_observe_metrics_swmr:\n");
+    ::fixy::report(Sink::Out, "  target_p99_lt_100ns: {}\n",
+                   reports.at(::fixy::index<0>()).pct.p99 < 100.0 ? TextView{"yes"} : TextView{"no"});
+    ::fixy::report(Sink::Out, "  final_lambda_max:    {}\n", ::fixy::Fixed<0>{observed.peek().meb_lambda_max});
     bench::emit_reports_json(reports.view(), bench::env_json());
 
-    return EXIT_SUCCESS;
+    return 0;
 }

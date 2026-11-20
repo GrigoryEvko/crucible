@@ -5,7 +5,6 @@
 // (1 vs 3) to tell where the cost concentrates.
 
 #include <cstdint>
-#include <cstdio>
 
 #include <crucible/MerkleDag.h>
 #include <foundation/effects/Effect.h>

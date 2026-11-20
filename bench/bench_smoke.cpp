@@ -2,7 +2,8 @@
 // end-to-end without depending on Crucible library internals.
 
 #include <atomic>
-#include <cstdio>
+
+#include <foundation/Quarantine.h>
 
 #include "bench_harness.h"
 
@@ -17,6 +18,22 @@ constexpr uint64_t kAtomicInitialValue = 0;  // seed for relaxed-load body
 
 }  // namespace
 
+// The third row measures the relaxed load of std::atomic itself, the shape
+// of an atomic read, so the atomic and its load stay raw.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the relaxed load of std::atomic is the row of the atomic read")
+namespace {
+
+[[nodiscard]] bench::Report atomic_load_row(int core) {
+    static std::atomic<uint64_t> counter{kAtomicInitialValue};
+    return bench::Run("atomic<u64>.load(relaxed)").core(core).measure([&] {
+        const uint64_t v = counter.load(std::memory_order_relaxed);
+        bench::do_not_optimize(v);
+    });
+}
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 int main() {
     bench::print_system_info();
     bench::elevate_priority();
@@ -28,7 +45,7 @@ int main() {
 
     auto run = [&](::fixy::TextView name, auto&& body) { return bench::Run(name).core(core).measure(body); };
 
-    std::printf("=== smoke ===\n");
+    ::fixy::report(::fixy::Sink::Out, "=== smoke ===\n");
 
     ::fixy::FixedArray<bench::Report, 3> reports{
         // (1) Integer increment + do_not_optimize. One ALU add + register
@@ -56,13 +73,7 @@ int main() {
         //     thread_local: an atomic op on a per-thread object has no
         //     synchronization meaning (one instance per thread → no peer to
         //     order against), so the storage is process-wide `static`.
-        [&] {
-            static std::atomic<uint64_t> counter{kAtomicInitialValue};
-            return run("atomic<u64>.load(relaxed)", [&] {
-                const uint64_t v = counter.load(std::memory_order_relaxed);
-                bench::do_not_optimize(v);
-            });
-        }(),
+        atomic_load_row(core),
     };
 
     bench::emit_reports_text(reports.view());
@@ -75,13 +86,14 @@ int main() {
     const bench::Report& r_add = reports.at(::fixy::index<0>());
     const bench::Report& r_xor = reports.at(::fixy::index<1>());
     const auto cmp = bench::compare(r_add, r_xor);
-    std::printf("\n=== compare ===\n");
+    ::fixy::report(::fixy::Sink::Out, "\n=== compare ===\n");
     cmp.print_text();
 
     // Bootstrap CI on a tail percentile — exercises the Efron path in
     // Report::ci() so a regression there doesn't sneak through silently.
     const auto ci99 = r_add.ci(0.99);
-    std::printf("  add.u64 p99 95%% CI: [%.2f, %.2f] ns\n", ci99.lo, ci99.hi);
+    ::fixy::report(::fixy::Sink::Out, "  add.u64 p99 95% CI: [{}, {}] ns\n", ::fixy::Fixed<2>{ci99.lo},
+                   ::fixy::Fixed<2>{ci99.hi});
 
     bench::emit_reports_json(reports.view(), json);
     return 0;

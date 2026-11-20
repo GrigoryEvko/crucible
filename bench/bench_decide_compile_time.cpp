@@ -40,9 +40,8 @@
 // CI compares medians against a recorded baseline; a regression
 // > 5% on any procedure flags a Decide-catalog change for review.
 
-#include <array>
+#include <cstddef>
 #include <cstdint>
-#include <cstdio>
 
 #include <foundation/contracts/Decide.h>
 #include <foundation/core/Array.h>
@@ -95,9 +94,9 @@ int main() {
     volatile bool v_bool_f = false;
 
     // The buffer of valid_span, built once outside the lambda.
-    std::array<std::int32_t, kSeqLen> inc_seq{};
-    for (std::size_t i = 0; i < kSeqLen; ++i)
-        inc_seq[i] = static_cast<std::int32_t>(i * 7);
+    ::fixy::FixedArray<std::int32_t, kSeqLen> inc_seq{};
+    for (::fixy::Index<kSeqLen> const i : inc_seq.indices())
+        inc_seq.at(i) = static_cast<std::int32_t>(i.raw() * 7);
 
     // The input of intervals_pairwise_disjoint: 8 disjoint intervals that
     // tile [0, 800).  The pass of well-formedness and the quadratic pass of
@@ -109,7 +108,7 @@ int main() {
         next_lo += 100;
     }
 
-    std::printf("=== decide ===\n\n");
+    ::fixy::report(::fixy::Sink::Out, "=== decide ===\n\n");
 
     // Each `bench::run(name, body)` is one Report.  Auto-batching
     // averages the lambda over 2^k calls until the timed region
@@ -142,7 +141,7 @@ int main() {
                    }),
         bench::run("decide::valid_span<u32>",
                    [&] {
-                       bool r = dc::valid_span<std::uint32_t>(v_u32_a, &inc_seq[0]);
+                       bool r = dc::valid_span<std::uint32_t>(v_u32_a, &inc_seq.at(::fixy::index<0>()));
                        bench::do_not_optimize(r);
                    }),
 

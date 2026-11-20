@@ -3,9 +3,6 @@
 
 #include "bench_harness.h"
 
-#include <cstdio>
-#include <cstdlib>
-
 // The cost of the JSON record of a violation.  Each run writes the record into
 // a FixedText on the stack through the format form of the emitter.  The run
 // then measures the writer and no system call.  The line of text of a violation has
@@ -31,5 +28,5 @@ int main() {
 
     json.print_text();
 
-    return EXIT_SUCCESS;
+    return 0;
 }

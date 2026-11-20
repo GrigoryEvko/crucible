@@ -5,7 +5,6 @@
 // ≈ 8 comparisons.  Target: ≤20 ns for hit, ≤20 ns for miss (OPAQUE).
 
 #include <cstdint>
-#include <cstdio>
 
 #include <crucible/CKernel.h>
 
@@ -31,27 +30,33 @@ int main() {
     // takes the section with one compare-exchange.
     constexpr crucible::VigilFgCtx writer = ::foundation::effects::testing::foreground<crucible::Vigil>();
     const auto mutable_view = table.mint_mutable_view(writer).expect("a fresh table mints a mutable view");
-    SchemaHash hit_hashes[N];
-    for (uint32_t i = 0; i < N; i++) {
-        const uint64_t h = 0x9E3779B97F4A7C15ULL * (i + 1);
-        hit_hashes[i] = SchemaHash{h};
-        const auto id = static_cast<CKernelId>(1 + (i % (static_cast<uint32_t>(CKernelId::NUM_KERNELS) - 1)));
-        const bool was_registered = table.register_op(writer, mutable_view, hit_hashes[i], id);
+    ::fixy::FixedArray<SchemaHash, N> hit_hashes{};
+    for (::fixy::Index<N> const i : hit_hashes.indices()) {
+        const uint64_t h = 0x9E3779B97F4A7C15ULL * (i.raw() + 1);
+        hit_hashes.at(i) = SchemaHash{h};
+        const auto id = static_cast<CKernelId>(
+            1 + (static_cast<uint32_t>(i.raw()) % (static_cast<uint32_t>(CKernelId::NUM_KERNELS) - 1)));
+        const bool was_registered = table.register_op(writer, mutable_view, hit_hashes.at(i), id);
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }
 
-    std::printf("=== ckernel ===\n");
-    std::printf("  table entries: %u (log2 = ~8 probes)\n\n", N);
+    ::fixy::report(::fixy::Sink::Out, "=== ckernel ===\n");
+    ::fixy::report(::fixy::Sink::Out, "  table entries: {} (log2 = ~8 probes)\n\n", N);
 
     ::fixy::FixedArray<bench::Report, 3> reports{
         // Rotating hit — indices march forward, pointer-chasing into the
         // table alternates between cache lines the same way build_trace
         // would as it walks op by op.
         [&] {
-            uint32_t idx = 0;
+            // The rotation (idx + 1) % N stays below N, so the compiler folds
+            // the check of the index and the body holds no branch for it.
+            // The index is below N, so its 32-bit value is exact, and the
+            // remainder is the 32-bit remainder of a counter of 32 bits.
+            ::fixy::Index<N> idx = ::fixy::index<0>();
             return bench::run("classify hit  (200-entry table)", [&] {
-                const auto h = hit_hashes[idx];
-                idx = (idx + 1) % N;
+                const auto h = hit_hashes.at(idx);
+                idx = ::fixy::Index<N>::check((::fixy::wrapping_narrow<uint32_t>(idx.raw()) + 1) % N)
+                          .expect("a rotation modulo N stays below N");
                 const auto id = table.classify(h);
                 bench::do_not_optimize(id);
             });
@@ -72,7 +77,7 @@ int main() {
         // Branch-predictor-friendly: same hash every time. Lower bound on
         // classify's cost when the call site is on a hot path.
         [&] {
-            const auto hot = hit_hashes[N / 2];
+            const auto hot = hit_hashes.at(::fixy::index<N / 2>());
             return bench::run("classify hot  (same hash repeated)", [&] {
                 const auto id = table.classify(hot);
                 bench::do_not_optimize(id);
@@ -85,7 +90,7 @@ int main() {
     // Hit vs. hot: same classify() path, same table; the only difference
     // is branch predictability of the recurrent-vs-rotating access. The
     // delta is a clean measurement of the branch-predictor win.
-    std::printf("\n=== compare ===\n");
+    ::fixy::report(::fixy::Sink::Out, "\n=== compare ===\n");
     bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())).print_text();
 
     bench::emit_reports_json(reports.view(), json);
