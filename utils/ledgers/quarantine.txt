@@ -86,23 +86,24 @@ reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_qua
 @build/ | opted-out | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
 @build/ | region | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
 @build/test/fixy/armed_roster/ | c-array-object | 1 | - | -
-bench/ | c-array-object | 22 | - | -
-bench/ | c-library-call | 165 | - | -
-bench/ | compiler-builtin | 7 | - | -
-bench/ | door-header | 1 | - | -
-bench/ | inline-asm | 2 | - | -
+bench/ | c-array-object | 19 | - | -
+bench/ | c-library-call | 90 | - | -
+bench/ | inline-asm | 1 | - | -
 bench/ | opted-out | 2 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 bench/ | opted-out | 2 | ABI: the BPF program of SchedSwitch writes the timeline that the harness reads | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
+bench/ | opted-out | 2 | ABI: the BPF programs of the perf facades write the timeline rings that the bench reads | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
 bench/ | opted-out | 9 | ABI: the pinned official BLAKE3 is a C library, the reference of the keyed hash | The bench measures the keyed hash of the base against the pinned official BLAKE3.  The reference is a C library with assembly, so its door takes raw pointers and a hasher of C, and the rows of the bench give the bytes of each row to that door
+bench/ | opted-out | 12 | MEASURE: a raw memcpy of TensorMeta is the floor reference of try_append | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
 bench/ | opted-out | 9 | MEASURE: a raw memcpy of plain arrays is the floor reference of the ring | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 bench/ | opted-out | 47 | MEASURE: a reference allocator gives a raw address, which no type of the base holds | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
+bench/ | opted-out | 22 | MEASURE: each cycle of the bare MPSC ring runs its threads on std::jthread | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
 bench/ | opted-out | 5 | MEASURE: each round of mstress and mleak starts and joins its workers on std::jthread | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
 bench/ | opted-out | 5 | MEASURE: libatomic is the reference of each atomic operation of 16 bytes | -
 bench/ | opted-out | 18 | MEASURE: std::atomic is the reference of the weak swap, the xor and the count | -
 bench/ | opted-out | 3 | MEASURE: the door of the pinned reference of the keyed hash of the base | The bench measures the keyed hash of the base against the pinned official BLAKE3.  The reference is a C library with assembly, so its door takes raw pointers and a hasher of C, and the rows of the bench give the bytes of each row to that door
 bench/ | opted-out | 2 | MEASURE: the doors of the pinned reference of the hash of the Protocol family | the reference rows of bench_reflect: the pinned rapidhash of Nicolas De Carli (utils/pins.txt), its door unit, and the bytes of a batch that go to the door, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 11 | MEASURE: the doors of the pinned references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
-bench/ | opted-out | 7 | MEASURE: the fenced reads of the TSC and the compiler barrier bracket each sample | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
+bench/ | opted-out | 8 | MEASURE: the fenced reads of the TSC and the compiler barrier bracket each sample | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 bench/ | opted-out | 6 | MEASURE: the forced arm is the naive baseline of one std::jthread for each worker | the forced arm of bench_no_regression is the naive baseline of the rule arm: one std::jthread for each worker, as a caller with no rule writes it
 bench/ | opted-out | 11 | MEASURE: the kernels index their runs as the memory hierarchy sees them, with no check | the kernels of bench_no_regression index their runs through raw pointers in the order of the memory hierarchy, so each row measures the hierarchy and not the checks of the base
 bench/ | opted-out | 3 | MEASURE: the pinned MPMCQueue of Erik Rigtorp is the reference of the MPSC ring | the reference rows of bench_thread_scaling: the pinned SPSCQueue and MPMCQueue of Erik Rigtorp (utils/pins.txt) in two regions, each with the wrapper that gives the rows of its ring the same calls, a raw measurement of a bench of the class MEASURE
@@ -116,19 +117,21 @@ bench/ | opted-out | 29 | MEASURE: the raw loop and the ranges form are the refe
 bench/ | opted-out | 3 | MEASURE: the raw loop of the add is the reference of the parallel walk | -
 bench/ | opted-out | 17 | MEASURE: the raw loops over runs and strides are the baselines of the strided walks | The raw loops of bench_core_strided and the raw tree of bench_core_reduce are the reference rows of the walks and of the tree of a combine.  A reference indexes its memory with no check, as the hardware sees it
 bench/ | opted-out | 16 | MEASURE: the raw tree is the reference of reduce_by_tree with a combine | The raw loops of bench_core_strided and the raw tree of bench_core_reduce are the reference rows of the walks and of the tree of a combine.  A reference indexes its memory with no check, as the hardware sees it
+bench/ | opted-out | 23 | MEASURE: the raw triple table of calloc is the reference of the typed kernel cache | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
 bench/ | opted-out | 2 | MEASURE: the relaxed load of std::atomic is the row of the atomic read | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 bench/ | opted-out | 11 | MEASURE: the rows of the allocators run their workers on std::jthread | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
 bench/ | opted-out | 11 | MEASURE: the rows of the bare rings run their workers on std::jthread | the rows of bench_thread_scaling measure the bare rings and their pinned references, whose two sides share plain positions that no type states, so their workers run on std::jthread and pin themselves
 bench/ | opted-out | 28 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
-bench/ | raw-function-pointer | 1 | - | -
-bench/ | raw-new-delete | 2 | - | -
-bench/ | raw-pointer-object | 31 | - | -
+bench/ | raw-pointer-object | 21 | - | -
 bench/ | region | 2 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 bench/ | region | 1 | ABI: the BPF program of SchedSwitch writes the timeline that the harness reads | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
+bench/ | region | 1 | ABI: the BPF programs of the perf facades write the timeline rings that the bench reads | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
 bench/ | region | 1 | ABI: the pinned official BLAKE3 is a C library, the reference of the keyed hash | The bench measures the keyed hash of the base against the pinned official BLAKE3.  The reference is a C library with assembly, so its door takes raw pointers and a hasher of C, and the rows of the bench give the bytes of each row to that door
 bench/ | region | 1 | MEASURE: a plain thread_local is the reference of one access of ThreadLocalRef | a plain thread_local of an inline function is the reference of one access of ThreadLocalRef in bench_thread_local_ref
+bench/ | region | 1 | MEASURE: a raw memcpy of TensorMeta is the floor reference of try_append | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
 bench/ | region | 1 | MEASURE: a raw memcpy of plain arrays is the floor reference of the ring | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 bench/ | region | 1 | MEASURE: a reference allocator gives a raw address, which no type of the base holds | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
+bench/ | region | 1 | MEASURE: each cycle of the bare MPSC ring runs its threads on std::jthread | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
 bench/ | region | 1 | MEASURE: each round of mstress and mleak starts and joins its workers on std::jthread | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
 bench/ | region | 1 | MEASURE: libatomic is the reference of each atomic operation of 16 bytes | -
 bench/ | region | 1 | MEASURE: std::atomic is the reference of the weak swap, the xor and the count | -
@@ -152,14 +155,15 @@ bench/ | region | 1 | MEASURE: the raw loop and the ranges form are the referenc
 bench/ | region | 1 | MEASURE: the raw loop of the add is the reference of the parallel walk | -
 bench/ | region | 1 | MEASURE: the raw loops over runs and strides are the baselines of the strided walks | The raw loops of bench_core_strided and the raw tree of bench_core_reduce are the reference rows of the walks and of the tree of a combine.  A reference indexes its memory with no check, as the hardware sees it
 bench/ | region | 1 | MEASURE: the raw tree is the reference of reduce_by_tree with a combine | The raw loops of bench_core_strided and the raw tree of bench_core_reduce are the reference rows of the walks and of the tree of a combine.  A reference indexes its memory with no check, as the hardware sees it
+bench/ | region | 1 | MEASURE: the raw triple table of calloc is the reference of the typed kernel cache | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
 bench/ | region | 1 | MEASURE: the relaxed load of std::atomic is the row of the atomic read | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 bench/ | region | 1 | MEASURE: the rows of the allocators run their workers on std::jthread | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
 bench/ | region | 1 | MEASURE: the rows of the bare rings run their workers on std::jthread | the rows of bench_thread_scaling measure the bare rings and their pinned references, whose two sides share plain positions that no type states, so their workers run on std::jthread and pin themselves
 bench/ | region | 1 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | replace-pending:<limits> | 1 | - | -
-bench/ | replace-pending:std::bit_cast | 7 | - | -
-bench/ | std-entity | 328 | - | -
-bench/ | std-object | 108 | - | -
+bench/ | replace-pending:std::bit_cast | 5 | - | -
+bench/ | std-entity | 189 | - | -
+bench/ | std-object | 56 | - | -
 include/crucible/ | opted-out | 1 | ABI: the front end gave the data pointer of the tensor at the record of the op | -
 include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the tensor at the record of the op | the data pointer of a TensorMeta came from the front end, and data_address gives it a RunAddress through the foreign mint, which stands only at the edge of a foreign ABI
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
@@ -327,8 +331,8 @@ src/perf/ | opted-out | 3 | ABI: libbpf attaches a program to the raw descriptor
 src/perf/ | opted-out | 2 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
 src/perf/ | region | 1 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
 src/perf/ | region | 1 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
-test/ | c-array-object | 125 | - | -
-test/ | c-library-call | 213 | - | -
+test/ | c-array-object | 114 | - | -
+test/ | c-library-call | 204 | - | -
 test/ | c-library-object | 9 | - | -
 test/ | door-header | 5 | - | -
 test/ | foreign-symbol | 12 | - | -
@@ -342,7 +346,7 @@ test/ | opted-out | 22 | PROBE: the test sets the current directory, the modes a
 test/ | opted-out | 28 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | raw-function-pointer | 13 | - | -
 test/ | raw-new-delete | 37 | - | -
-test/ | raw-pointer-object | 309 | - | -
+test/ | raw-pointer-object | 284 | - | -
 test/ | region | 1 | ABI: dlsym finds each entry point of a test library by its C name | the case fallbacks of test_process_wide_across_libraries finds the two entry points of each test library by their C names with dlsym, as Python finds the entry points of the vessel, so the two declarations have C linkage
 test/ | region | 1 | PROBE: probe of the run-time check of a thread-bound object | -
 test/ | region | 4 | PROBE: the address of a body tells which unit of the link holds it | PROBE: test_crucible_target_units reads the address of a kernel in each of two units of two targets, a probe of the raw behavior of the link.  The test test_target_units of foundation holds the same regions
@@ -350,10 +354,10 @@ test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the 
 test/ | region | 1 | PROBE: the private key of mTLS leaves no byte of the key in its buffer after its end | the test of the mTLS private key builds the key in a buffer of bytes, ends it, and reads the buffer with volatile reads, the probe of the secret carriers of the base, because no door of the base reads the storage of an object after its end
 test/ | region | 1 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
-test/ | replace-pending:<limits> | 9 | - | -
+test/ | replace-pending:<limits> | 8 | - | -
 test/ | replace-pending:std::bit_cast | 51 | - | -
-test/ | std-entity | 1261 | - | -
-test/ | std-object | 430 | - | -
+test/ | std-entity | 968 | - | -
+test/ | std-object | 334 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
 test/cipher_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
@@ -362,10 +366,8 @@ test/cntp_neg/ | opted-out | 1 | PROBE: the fixture gives the swap a resource th
 test/cntp_neg/ | region | 1 | PROBE: the fixture gives the swap a resource that holds a raw pointer | -
 test/cog_neg/ | opted-out | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
 test/cog_neg/ | region | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
-test/ct/ | c-library-call | 1 | - | -
 test/ct/ | opted-out | 8 | ABI: a client request of valgrind is inline asm over a C array of words | -
 test/ct/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
-test/ct/ | raw-pointer-object | 1 | - | -
 test/ct/ | region | 1 | ABI: a client request of valgrind is inline asm over a C array of words | -
 test/ct/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 test/dag_neg/ | opted-out | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
