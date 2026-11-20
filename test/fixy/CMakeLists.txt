@@ -6441,6 +6441,11 @@ fixy_neg_compile_test(neg_thread_run_joined_captures_a_timing_sink
 fixy_neg_compile_test(neg_thread_run_joined_captures_a_cell_of_a_timing_sink
   "static assertion failed: run_joined: the body captures .cell. \\(field [_a-z]+, type foundation::core::Atomic<fixy::WeakRef<fixy::observe::TimingSink<2> > >&\\)"
   "its type is not Sendable")
+# A statement of shareable{} gives the read of two threads, and no write.  Two
+# bodies that write a plain field of such a class race.
+fixy_neg_compile_test(neg_thread_run_joined_writes_a_field_of_a_shareable_class
+  "static assertion failed: run_joined: the body captures .shared. \\(field [_a-z]+, type ReadMostly&\\)"
+  "a write through this reference that is not const races")
 fixy_neg_compile_test(neg_thread_run_joined_body_gives_an_owner_thread_value
   "no matching function for call to .run_joined"
   "the expression .\\(JoinedBody<Bodies, Ctx> && \\.\\.\\.\\) \\[with Bodies = \\{main::")

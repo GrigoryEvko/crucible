@@ -90,4 +90,9 @@ static_assert(keeps_hash_after([](TensorMeta& meta) { meta.grad_fn_hash = grad_f
 static_assert(!keeps_hash_after([](TensorMeta& meta) { meta.sizes[7] = tensor_dim(1); }));
 static_assert(!keeps_hash_after([](TensorMeta& meta) { meta.storage_nbytes = 1; }));
 
+// Two threads read one descriptor at the same time, and its fields are plain,
+// so it states shareable{} and two threads cannot write it.
+static_assert(::foundation::transfer::Shareable<TensorMeta> && ::foundation::transfer::Sendable<TensorMeta>);
+static_assert(!::foundation::transfer::Synchronized<TensorMeta>);
+
 }  // namespace crucible

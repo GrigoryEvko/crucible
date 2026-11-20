@@ -162,12 +162,29 @@ struct[[= refers_deep{}]] CopiesFromConst {
 };
 static_assert(!Shareable<CopiesFromConst<int>> && !Sendable<CopiesFromConst<int>>);
 
-// A class that states shareable{} is a target that two threads can write.
-// EndpointClaim states it over its atomic cell.
+// A class that states synchronized{} is a target that two threads can write.
+// EndpointClaim states it over its private atomic cell.
 struct ClaimRef {
     ::foundation::EndpointClaim& claim;
 };
 static_assert(Sendable<ClaimRef>);
+
+// A class that states shareable{} states only the read of two threads
+// through a reference to const.  A plain member gives no shared write, so a
+// reference to it that is not const moves to no other thread, and a
+// reference to const does.
+struct[[= shareable{}]] ReadMostly {
+    int count = 0;
+};
+struct WritesReadMostly {
+    ReadMostly& written;
+};
+struct ReadsReadMostly {
+    ReadMostly const& read;
+};
+static_assert(Shareable<ReadMostly> && !Synchronized<ReadMostly>);
+static_assert(first_synchronized_refusal(^^ReadMostly) == ^^int);
+static_assert(!Sendable<WritesReadMostly> && Sendable<ReadsReadMostly>);
 
 // The shared write: a class is Synchronized when each part is Synchronized or
 // is const and Shareable.  A plain scalar, a reference member and a mutable

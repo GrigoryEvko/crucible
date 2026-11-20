@@ -81,15 +81,17 @@
 //        because a read through a reference to const can write it.
 //
 // THE SHARED WRITE
-//     T is Synchronized when T is a class that states synchronized{} or
-//     shareable{}, a cell of a payload that is Sendable, such as the Atomic
-//     of the base, an array of such a type, or a class whose each base and
-//     each member is Synchronized or is const and Shareable.  A class that
-//     states thread_bound{} is not Synchronized.  No write reaches a const
-//     member, so a read is all it must allow.  A member that is a reference
-//     makes the class not Synchronized.  A scalar is not Synchronized: two
-//     plain writes of one scalar race.  An atomic of the standard library is
-//     not either: the base quarantines it, and its Atomic takes its place.
+//     T is Synchronized when T is a class that states synchronized{}, a cell
+//     of a payload that is Sendable, such as the Atomic of the base, an array
+//     of such a type, or a class whose each base and each member is
+//     Synchronized or is const and Shareable.  A statement of shareable{}
+//     gives no shared write: the walk reads the parts of such a class as it
+//     reads the parts of each other class.  A class that states
+//     thread_bound{} is not Synchronized.  No write reaches a const member, so
+//     a read is all it must allow.  A member that is a reference makes the
+//     class not Synchronized.  A scalar is not Synchronized: two plain writes
+//     of one scalar race.  An atomic of the standard library is not either:
+//     the base quarantines it, and its Atomic takes its place.
 //
 // THE VALUE BESIDE ITS SENDER
 //     SendableBeside is Sendable with a stricter rule 1.  A reference, a class
@@ -119,16 +121,17 @@
 //         class [[= ::foundation::transfer::by_arguments{}]] Box { ... };
 //
 //     sendable{} and not_sendable{} state Sendable.  shareable{} and
-//     not_shareable{} state Shareable, and shareable{} also states that two
-//     threads can write an object of the class at the same time.
-//     synchronized{} states that two threads can write an object of the class
-//     at the same time, and thus that two threads can read it.  The walk
-//     checks the statement each time that it reads it: two threads can write
-//     each base, and each data member that is not private is no reference,
-//     and two threads can write it at the same time, or it is const and
-//     Shareable.  A part that fails stops the build, and the diagnostic names
-//     the class and the part.  A private member is state that the code of the
-//     class orders, as the comment beside the statement tells.
+//     not_shareable{} state Shareable: two threads read an object of the
+//     class through a reference to const at the same time.  shareable{} does
+//     not state a write.  synchronized{} states that two threads can write an
+//     object of the class at the same time, and thus that two threads can read
+//     it.  The walk checks the statement each time that it reads it: two
+//     threads can write each base, and each data member that is not private is
+//     no reference, and two threads can write it at the same time, or it is
+//     const and Shareable.  A part that fails stops the build, and the
+//     diagnostic names the class and the part.  A private member is state
+//     that the code of the class orders, as the comment beside the statement
+//     tells.
 //     by_arguments{} states that the class owns the object of its first type
 //     argument behind its pointers, as a Box does, and that its other type
 //     arguments name no object that it holds.  refers{} states that the class
@@ -471,7 +474,6 @@ consteval void check_synchronized_statement(std::meta::info type);
             check_synchronized_statement(type);
             continue;
         }
-        if (states(type, ^^shareable)) continue;
         bool has_part = false;
         for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{type, true})) {
             has_part = true;
