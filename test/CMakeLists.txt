@@ -274,6 +274,8 @@ crucible_test(test_vigil_detector_snapshot)
 crucible_test(test_background_thread_refused_ops)
 crucible_test(test_background_thread_start_stop)
 crucible_test(test_background_thread_flush)
+# A flush that waits with no end fails the test at the time limit.
+set_tests_properties(test_background_thread_flush PROPERTIES TIMEOUT 120)
 crucible_test(test_vigil_record_count)
 crucible_test(test_region_hash_wiring)
 crucible_test(test_build_address_reuse)

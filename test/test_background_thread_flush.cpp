@@ -51,10 +51,9 @@ constexpr uint64_t kIterations = 8;
     return ::fixy::InitLoadCtx{::foundation::effects::testing::init()};
 }
 
-// Each case has a ring of its own: the count of the processed ops belongs to
-// one BackgroundThread, and the head of a ring counts each op that the ring
-// ever took.  The ops take no record, so the cases share one metadata log,
-// and the test holds one log of the size of a Vigil, not three.
+// Each case has a ring of its own, so a case reads only its own ops.  The
+// ops take no record, so the cases share one metadata log, and the test holds
+// one log of the size of a Vigil, not one for each case.
 TraceRing& running_ring() {
     static TraceRing ring{};
     return ring;
@@ -66,6 +65,11 @@ TraceRing& stopped_ring() {
 }
 
 TraceRing& idle_ring() {
+    static TraceRing ring{};
+    return ring;
+}
+
+TraceRing& reused_ring() {
     static TraceRing ring{};
     return ring;
 }
@@ -140,6 +144,30 @@ void test_flush_before_start() {
     CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
 }
 
+// A second BackgroundThread on a ring that a first one used counts the ops
+// of the ring from the tail at its bind.  Its flush of one new op ends when
+// its pipeline processed that op, and does not wait for the ops of the first
+// one, which its own count never reaches.  The test has a time limit in the
+// harness, so a flush that waits with no end fails it.
+void test_flush_of_a_second_thread_on_a_used_ring() {
+    TraceRing& ring = reused_ring();
+    uint64_t first_end = 0;
+    {
+        BackgroundThread first{::foundation::effects::testing::test().alloc};
+        first.start(startup(), ring, shared_log());
+        first_end = record_ops(ring, 0, kIterations * kPeriod);
+        CRUCIBLE_TEST_ASSERT(kTest, first.flush(kTest).is_ok());
+        first.stop();
+    }
+    BackgroundThread second{::foundation::effects::testing::test().alloc};
+    second.start(startup(), ring, shared_log());
+    static_cast<void>(record_ops(ring, first_end, 1));
+    CRUCIBLE_TEST_ASSERT(kTest, second.flush(kTest).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, second.total_processed.load_acquire() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, second.count_processed_ring_ops() == ring.total_produced());
+    second.stop();
+}
+
 }  // namespace
 
 int main() {
@@ -147,6 +175,7 @@ int main() {
     test_flush_of_a_stopped_pipeline();
     test_flush_with_no_op_left_after_stop();
     test_flush_before_start();
+    test_flush_of_a_second_thread_on_a_used_ring();
     ::fixy::check::pass(kTest, "test_background_thread_flush: PASSED\n");
     return 0;
 }

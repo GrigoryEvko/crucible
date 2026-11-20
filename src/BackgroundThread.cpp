@@ -946,7 +946,11 @@ void BackgroundThread::bind_ring(TraceRing& trace_ring) noexcept {
     CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a bind while the pipeline thread runs: stop the pipeline first");
     CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(ring_, trace_ring),
                      "a start after stop names the trace ring of the first start");
-    if (!ring_.has_value()) ring_.set(&trace_ring);
+    if (!ring_.has_value()) {
+        ring_.set(&trace_ring);
+        // No consumer runs at the bind, so the tail holds still.
+        ring_base_ = trace_ring.tail.get();
+    }
 }
 
 void BackgroundThread::bind_meta_log(MetaLog& trace_meta_log) noexcept {

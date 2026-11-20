@@ -520,7 +520,7 @@ public:
         return bg_.flush(ctx);
     }
 
-    [[nodiscard]] bool flush_complete() const { return bg_.total_processed.load_acquire() >= ring_->total_produced(); }
+    [[nodiscard]] bool flush_complete() const { return bg_.count_processed_ring_ops() >= ring_->total_produced(); }
 
     // Makes the previously superseded transaction active again, restoring
     // the replay state to match.

@@ -144,6 +144,15 @@ private:
     int32_t world_size_ = 0;
     DeviceCapability device_capability_{};
 
+    // The tail of the ring at the first bind: the count of the ops that the
+    // ring gave to an earlier consumer, such as an earlier BackgroundThread.
+    // total_processed counts only the ops of this object, so a flush adds
+    // this base (count_processed_ring_ops).  The first bind writes it before
+    // the pipeline thread starts, and the thread that holds this object reads
+    // it.  It lies in the bytes before the line of active_region_, so it
+    // moves no other member.
+    uint64_t ring_base_ = 0;
+
     // The last published region.  The publish stage writes it, and a reader
     // on another thread loads it.  The store(release) publishes the region
     // data written before it, and the reader's load(acquire) must see that
@@ -911,6 +920,11 @@ public:
     // pipeline thread notifies it after the stop, so no wake is lost (THE
     // PROTOCOL of fixy/concurrent/EventCount.h).  A region callback or a job
     // of the publish stage must not flush: it would wait on its own stage.
+    //
+    // The head of the ring counts each op that the ring ever took, and the
+    // flush compares it with count_processed_ring_ops, so a BackgroundThread
+    // that runs on a ring that an earlier consumer used waits only for the
+    // ops that it took itself.
     template <class Ctx>
         requires ::fixy::concurrent::CtxFitsWaitPolicy<Ctx, FlushPolicy>
     [[nodiscard]] FlushResult flush(Ctx const& ctx) noexcept {
@@ -918,12 +932,21 @@ public:
         if (!ring_.has_value()) return ::fixy::Unit{};
         const uint64_t target_produced = ring_.get()->total_produced();
         const auto is_settled = [this, target_produced]() noexcept {
-            return total_processed.load_acquire() >= target_produced
+            return count_processed_ring_ops() >= target_produced
                 || pipeline_run_.load_acquire() == PipelineRun::stopped;
         };
         ::fixy::concurrent::wait_for<FlushPolicy>(ctx, processed_events_, is_settled);
-        if (total_processed.load_acquire() >= target_produced) return ::fixy::Unit{};
+        if (count_processed_ring_ops() >= target_produced) return ::fixy::Unit{};
         return ::fixy::err(FlushRefusal::pipeline_stopped);
+    }
+
+    // The count of the ops of the ring that no pipeline has to process any
+    // more: the ops that the ring gave to a consumer before the first bind of
+    // this object, and each op that the pipeline of this object processed
+    // since.  A reader compares it with the head of the ring.  The acquire
+    // load of total_processed orders each write of the pipeline before it.
+    [[nodiscard]] uint64_t count_processed_ring_ops() const noexcept {
+        return ring_base_ + total_processed.load_acquire();
     }
 
     // The reset.  When compiled replay diverges, the producer requests a
