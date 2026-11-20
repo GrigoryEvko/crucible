@@ -129,16 +129,16 @@ template <class Out>
     ::fixy::TextView const ratio_zero = hundredths % 100 < 10 ? ::fixy::TextView{"0"} : ::fixy::TextView{""};
     ::fixy::TextView const limit_zero = limit % 100 < 10 ? ::fixy::TextView{"0"} : ::fixy::TextView{""};
     if (measured.drift_pct > kMaxDrift) {
-        ::fixy::report(::fixy::Sink::Out, "SKIP  {}  ratio {}.{}{} of budget {}.{}{}: the run drifted {}.{} percent\n",
-                       budget.name, hundredths / 100, ratio_zero, hundredths % 100, limit / 100, limit_zero,
-                       limit % 100, drift / 10, drift % 10);
+        bench::print("SKIP  {}  ratio {}.{}{} of budget {}.{}{}: the run drifted {}.{} percent\n", budget.name,
+                     hundredths / 100, ratio_zero, hundredths % 100, limit / 100, limit_zero, limit % 100, drift / 10,
+                     drift % 10);
         return false;
     }
     bool const is_over = ratio > budget.ratio;
     ::fixy::TextView const verdict = is_over ? ::fixy::TextView{"FAIL"} : ::fixy::TextView{"PASS"};
-    ::fixy::report(::fixy::Sink::Out, "{}  {}  ratio {}.{}{} of budget {}.{}{}, median {} ns\n", verdict, budget.name,
-                   hundredths / 100, ratio_zero, hundredths % 100, limit / 100, limit_zero, limit % 100,
-                   static_cast<std::uint64_t>(measured.pct.p50 + 0.5));
+    bench::print("{}  {}  ratio {}.{}{} of budget {}.{}{}, median {} ns\n", verdict, budget.name, hundredths / 100,
+                 ratio_zero, hundredths % 100, limit / 100, limit_zero, limit % 100,
+                 static_cast<std::uint64_t>(measured.pct.p50 + 0.5));
     return is_over;
 }
 
@@ -168,13 +168,12 @@ int main() {
         });
     });
     double const roof_ns = roof.pct.p50;
-    ::fixy::report(::fixy::Sink::Out, "roof  median {} ns\n", static_cast<std::uint64_t>(roof_ns + 0.5));
+    bench::print("roof  median {} ns\n", static_cast<std::uint64_t>(roof_ns + 0.5));
     // Each ratio divides by the roof, so a roof that drifts makes each ratio
     // not valid.
     if (roof.drift_pct > kMaxDrift) {
         std::uint64_t const drift = static_cast<std::uint64_t>(roof.drift_pct * 10.0 + 0.5);
-        ::fixy::report(::fixy::Sink::Out, "SKIP  each case: the roof drifted {}.{} percent\nverdict: PASS\n",
-                       drift / 10, drift % 10);
+        bench::print("SKIP  each case: the roof drifted {}.{} percent\nverdict: PASS\n", drift / 10, drift % 10);
         return 0;
     }
 
@@ -259,7 +258,6 @@ int main() {
     has_failure =
         judge(budget(7), measure(bench::Run{"walk dense"}, [&] { walk_add(out_view, left_view, right_view); }), roof_ns)
         || has_failure;
-    ::fixy::report(::fixy::Sink::Out, "verdict: {}\n",
-                   has_failure ? ::fixy::TextView{"FAIL"} : ::fixy::TextView{"PASS"});
+    bench::print("verdict: {}\n", has_failure ? ::fixy::TextView{"FAIL"} : ::fixy::TextView{"PASS"});
     return has_failure ? 1 : 0;
 }

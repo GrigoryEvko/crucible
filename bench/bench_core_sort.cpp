@@ -118,8 +118,7 @@ template <std::size_t Elements>
 void print_row(Row const& row) noexcept {
     bench::Report const& measured = row.report;
     double const median = measured.pct.p50 > 0.0 ? measured.pct.p50 : 1.0;
-    fixy::report(fixy::Sink::Out,
-                 "{}  core=cpu{}  p50={} ns  p99={} ns  max={} ns  cv={} permille  rate={} elements/us\n", row.name,
+    bench::print("{}  core=cpu{}  p50={} ns  p99={} ns  max={} ns  cv={} permille  rate={} elements/us\n", row.name,
                  measured.pinned_cpu.raw(), nanoseconds(measured.pct.p50), nanoseconds(measured.pct.p99),
                  nanoseconds(measured.pct.max), static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5),
                  static_cast<std::uint64_t>(static_cast<double>(Elements) * 1000.0 / median + 0.5));
@@ -131,7 +130,7 @@ void print_ratio(Pair const& pair) noexcept {
     double const measured = pair.row.report.pct.p50;
     double const base = pair.reference.report.pct.p50;
     std::uint64_t const ratio = base > 0.0 ? static_cast<std::uint64_t>(measured / base * 1000.0 + 0.5) : 0;
-    fixy::report(fixy::Sink::Out, "{}  ratio to {}={} permille\n", pair.row.name, pair.reference.name, ratio);
+    bench::print("{}  ratio to {}={} permille\n", pair.row.name, pair.reference.name, ratio);
 }
 
 // The name of a row of Count elements, in the text that holds it.

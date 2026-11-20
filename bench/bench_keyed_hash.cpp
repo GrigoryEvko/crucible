@@ -85,16 +85,16 @@ void pick_official_arm() noexcept {
     using bench_keyed_hash_references::Blake3Arm;
     if constexpr (CRUCIBLE_BENCH_KEYED_LEVEL == 1) {
         bench_keyed_hash_references::blake3_pick_arm(Blake3Arm::sse2);
-        ::fixy::report(::fixy::Sink::Out, "the library is at x86-64-v1, and the official C runs its SSE2 arm\n\n");
+        bench::print("the library is at x86-64-v1, and the official C runs its SSE2 arm\n\n");
     } else if constexpr (CRUCIBLE_BENCH_KEYED_LEVEL == 2) {
         bench_keyed_hash_references::blake3_pick_arm(Blake3Arm::sse41);
-        ::fixy::report(::fixy::Sink::Out, "the library is at x86-64-v2, and the official C runs its SSE4.1 arm\n\n");
+        bench::print("the library is at x86-64-v2, and the official C runs its SSE4.1 arm\n\n");
     } else if constexpr (CRUCIBLE_BENCH_KEYED_LEVEL == 3) {
         bench_keyed_hash_references::blake3_pick_arm(Blake3Arm::avx2);
-        ::fixy::report(::fixy::Sink::Out, "the library is at x86-64-v3, and the official C runs its AVX2 arm\n\n");
+        bench::print("the library is at x86-64-v3, and the official C runs its AVX2 arm\n\n");
     } else {
         bench_keyed_hash_references::blake3_pick_arm(Blake3Arm::host);
-        ::fixy::report(::fixy::Sink::Out, "the official C runs the arm that its dispatch picks on the host\n\n");
+        bench::print("the official C runs the arm that its dispatch picks on the host\n\n");
     }
 }
 
@@ -112,7 +112,7 @@ int main() {
     fc::FixedArray<std::byte, 32> const key = key_bytes();
     fc::KeyedHashKeyBytes const base_key{key.view()};
 
-    ::fixy::report(::fixy::Sink::Out, "=== keyed hash ===\n\n");
+    bench::print("=== keyed hash ===\n\n");
 
     // The body of the row of the base at one size.
     auto const base_row = [&input, &base_key](std::size_t size) noexcept {
@@ -168,7 +168,7 @@ int main() {
         }
     }
 
-    ::fixy::report(::fixy::Sink::Out, "\n=== compare with the official BLAKE3 ===\n");
+    bench::print("\n=== compare with the official BLAKE3 ===\n");
     std::size_t at = 0;
     for (bench::Report const& report : base_reports) {
         bench::compare(report, official_reports.at(fc::Index<kRows>::check(at).expect("a row"))).print_text();

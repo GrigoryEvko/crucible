@@ -36,7 +36,7 @@ struct BenchHeadRole {};
 // Writes one line: the name of the operation and the percentiles of its
 // samples.
 void print_row(fixy::TextView name, bench::Report const& measured) noexcept {
-    fixy::report(fixy::Sink::Out, "{}  p50={} ps  p99={} ps  p99.9={} ps  max={} ps  cv={} permille\n", name,
+    bench::print("{}  p50={} ps  p99={} ps  p99.9={} ps  max={} ps  cv={} permille\n", name,
                  picoseconds(measured.pct.p50), picoseconds(measured.pct.p99), picoseconds(measured.pct.p99_9),
                  picoseconds(measured.pct.max), static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5));
 }
@@ -50,7 +50,7 @@ void print_pair(fixy::TextView name, bench::Report const& measured, fixy::TextVi
     print_row(reference_name, reference);
     std::uint64_t const ratio =
         reference.pct.p50 > 0.0 ? static_cast<std::uint64_t>(measured.pct.p50 * 1000.0 / reference.pct.p50 + 0.5) : 0;
-    fixy::report(fixy::Sink::Out, "{}  ratio to the reference: p50 {} permille\n", name, ratio);
+    bench::print("{}  ratio to the reference: p50 {} permille\n", name, ratio);
 }
 
 }  // namespace

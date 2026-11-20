@@ -27,7 +27,7 @@ constexpr std::size_t kElements = 4096;
 
 // Writes one line: the name of the pass and the percentiles of its samples.
 void print_row(fixy::TextView name, bench::Report const& measured) noexcept {
-    fixy::report(fixy::Sink::Out, "{}  p50={} ns  p99={} ns  p99.9={} ns  max={} ns  cv={} permille\n", name,
+    bench::print("{}  p50={} ns  p99={} ns  p99.9={} ns  max={} ns  cv={} permille\n", name,
                  nanoseconds(measured.pct.p50), nanoseconds(measured.pct.p99), nanoseconds(measured.pct.p99_9),
                  nanoseconds(measured.pct.max), static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5));
 }

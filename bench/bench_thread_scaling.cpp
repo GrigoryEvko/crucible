@@ -1120,16 +1120,14 @@ void print_row(RowResult const& row, EfficiencyBase const& base) noexcept {
     bool const is_paused = row.window_pause.is_over_bound() || row.paused_windows > 0;
     ::fixy::TextView const where =
         row.place == ConsumerPlace::OtherL3 ? ::fixy::TextView{", consumer in another L3"} : ::fixy::TextView{};
-    // The rows of the harness go through stdio, and report() does not.
-    bench::detail::flush_standard_output();
-    ::fixy::report(::fixy::Sink::Out, "  {} threads{}: {}.{}{} Mops/s, efficiency {}.{}{}", row.threads.raw(), where,
-                   row.centi_mops / 100, row.centi_mops % 100 / 10, row.centi_mops % 10, efficiency / 100,
-                   efficiency % 100 / 10, efficiency % 10);
-    ::fixy::report(::fixy::Sink::Out, ", {} windows: median {}.{}{} Mops/s, spread {}.{}%", row.windows.windows,
-                   median / 100, median % 100 / 10, median % 10, spread / 10, spread % 10);
-    ::fixy::report(::fixy::Sink::Out, ", window pause {} us, other thread delay {} us, {} paused windows{}\n",
-                   row.window_pause.own_ns() / 1000, row.window_pause.other.run_delay_ns / 1000, row.paused_windows,
-                   is_paused ? ::fixy::TextView{"  NOT VALID"} : ::fixy::TextView{});
+    bench::print("  {} threads{}: {}.{}{} Mops/s, efficiency {}.{}{}", row.threads.raw(), where, row.centi_mops / 100,
+                 row.centi_mops % 100 / 10, row.centi_mops % 10, efficiency / 100, efficiency % 100 / 10,
+                 efficiency % 10);
+    bench::print(", {} windows: median {}.{}{} Mops/s, spread {}.{}%", row.windows.windows, median / 100,
+                 median % 100 / 10, median % 10, spread / 10, spread % 10);
+    bench::print(", window pause {} us, other thread delay {} us, {} paused windows{}\n",
+                 row.window_pause.own_ns() / 1000, row.window_pause.other.run_delay_ns / 1000, row.paused_windows,
+                 is_paused ? ::fixy::TextView{"  NOT VALID"} : ::fixy::TextView{});
     row.latency.print_text();
 }
 
@@ -1140,8 +1138,7 @@ void print_row(RowResult const& row, EfficiencyBase const& base) noexcept {
 template <OpKind Kind>
 void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> counts, ::fixy::TextView title,
                  ::fixy::FixedList<bench::Report, kMaxReports>& reports) {
-    bench::detail::flush_standard_output();
-    ::fixy::report(::fixy::Sink::Out, "\n=== {} ===\n", title);
+    bench::print("\n=== {} ===\n", title);
     ::fixy::FixedList<RowResult, kMaxRows> rows{};
     if constexpr (kIsSpsc<Kind>) {
         if (spread.count() < 2) return;
@@ -1261,23 +1258,20 @@ int run_bench(::fixy::os::Args const& arguments) {
     bench::elevate_priority();
     bench::Spread const spread = bench::Spread::of_calling_thread();
     ::fixy::FixedList<ThreadCount, kMaxRows> const counts = counts_of(arguments, spread);
-    bench::detail::flush_standard_output();
     if (spread.source() == bench::SpreadSource::Claim) {
-        ::fixy::report(::fixy::Sink::Out, "  slots: the {} claimed cores, slot k on core k, from cpu{}\n",
-                       spread.count(), spread.of_slot(bench::kMeasuringSlot).value_or(bench::CpuId::none()).raw());
+        bench::print("  slots: the {} claimed cores, slot k on core k, from cpu{}\n", spread.count(),
+                     spread.of_slot(bench::kMeasuringSlot).value_or(bench::CpuId::none()).raw());
     } else {
-        ::fixy::report(::fixy::Sink::Out,
-                       "  NOTE: no claimed core.  The {} slots take one CPU of each core of the affinity, then the "
-                       "SMT siblings, and other work can use them, so each row is noisy\n",
-                       spread.count());
+        bench::print("  NOTE: no claimed core.  The {} slots take one CPU of each core of the affinity, then the "
+                     "SMT siblings, and other work can use them, so each row is noisy\n",
+                     spread.count());
     }
-    ::fixy::report(::fixy::Sink::Out, "  the consumer in another L3 group: cpu{}\n",
-                   other_l3_cpu_of(spread).value_or(bench::CpuId::none()).raw());
+    bench::print("  the consumer in another L3 group: cpu{}\n",
+                 other_l3_cpu_of(spread).value_or(bench::CpuId::none()).raw());
     for (ThreadCount const threads : counts) {
         if (threads.raw() > bench::kPauseThreads) {
-            ::fixy::report(::fixy::Sink::Out,
-                           "  NOTE: a row of {} threads has more threads than the {} that the pause check reads\n",
-                           threads.raw(), bench::kPauseThreads);
+            bench::print("  NOTE: a row of {} threads has more threads than the {} that the pause check reads\n",
+                         threads.raw(), bench::kPauseThreads);
         }
     }
     ::fixy::FixedArray<bool, 3> const groups = groups_of(arguments);

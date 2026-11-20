@@ -222,12 +222,11 @@ void print_line(LineBasis const& basis, Level const& level, bench::Report const&
     auto const tenths = static_cast<std::uint64_t>(bandwidth * 10.0 + 0.5);
     auto const speedup = static_cast<std::uint64_t>(basis.one_shard_p50_ns / measured.pct.p50 * 100.0 + 0.5);
     auto const ratio = static_cast<std::uint64_t>(basis.reference_p50_ns / measured.pct.p50 * 100.0 + 0.5);
-    ::fixy::report(::fixy::Sink::Out,
-                   "  {}x{}, {} shards: p50 {} ns, {}.{} GB/s, speedup {}.{}{} over one shard, {}.{}{} of the raw "
-                   "loop\n",
-                   level.side, level.side, basis.shards, static_cast<std::uint64_t>(measured.pct.p50 + 0.5),
-                   tenths / 10, tenths % 10, speedup / 100, speedup % 100 / 10, speedup % 10, ratio / 100,
-                   ratio % 100 / 10, ratio % 10);
+    bench::print("  {}x{}, {} shards: p50 {} ns, {}.{} GB/s, speedup {}.{}{} over one shard, {}.{}{} of the raw "
+                 "loop\n",
+                 level.side, level.side, basis.shards, static_cast<std::uint64_t>(measured.pct.p50 + 0.5), tenths / 10,
+                 tenths % 10, speedup / 100, speedup % 100 / 10, speedup % 10, ratio / 100, ratio % 100 / 10,
+                 ratio % 10);
 }
 
 // The tag of the region of the probe of the shards: no element, because a
@@ -259,29 +258,24 @@ void print_shard_cores(Placement const& placement) noexcept {
         },
         options_of<Shards>(placement));
     ::foundation::linear::drop(std::move(whole));
-    // The rows of the harness go through stdio, and report() does not.
-    bench::detail::flush_standard_output();
-    ::fixy::report(::fixy::Sink::Out, "  {} shards, probed with the options of the walk:", Shards);
+    bench::print("  {} shards, probed with the options of the walk:", Shards);
     for (auto const [index, cell] : cpus.enumerate()) {
         std::uint64_t const cpu = cell->load_acquire();
         if (cpu == kNoCpu) {
-            ::fixy::report(::fixy::Sink::Out, " shard {} no cpu,", index.raw());
+            bench::print(" shard {} no cpu,", index.raw());
             continue;
         }
         bench::CpuId const core{::fixy::narrow<int>(cpu).value_or(-1)};
-        ::fixy::report(::fixy::Sink::Out, " shard {} cpu{} L3 of cpu{},", index.raw(), cpu,
-                       bench::read_l3_group(core).first().value_or(-1));
+        bench::print(" shard {} cpu{} L3 of cpu{},", index.raw(), cpu, bench::read_l3_group(core).first().value_or(-1));
     }
-    ::fixy::report(::fixy::Sink::Out, "\n");
+    bench::print("\n");
 }
 
 // Prints the core of the walk of one shard: the measuring core, because the
 // walk of one shard runs on the measuring thread (THE CORE OF EACH SHARD).
 void print_one_shard_core(Placement const& placement) noexcept {
-    bench::detail::flush_standard_output();
-    ::fixy::report(::fixy::Sink::Out, "  1 shard, on the measuring thread: cpu{} L3 of cpu{}\n",
-                   placement.measuring_core,
-                   bench::read_l3_group(bench::CpuId{placement.measuring_core}).first().value_or(-1));
+    bench::print("  1 shard, on the measuring thread: cpu{} L3 of cpu{}\n", placement.measuring_core,
+                 bench::read_l3_group(bench::CpuId{placement.measuring_core}).first().value_or(-1));
 }
 
 // Measures the start and the join of Shards threads of mint_parallel_for with
@@ -311,14 +305,12 @@ void run_starts(Placement const& placement, ::fixy::FixedList<bench::Report, kRo
     two.print_text();
     four.print_text();
     eight.print_text();
-    bench::detail::flush_standard_output();
     double const each = (eight.pct.p50 - two.pct.p50) / 6.0;
-    ::fixy::report(::fixy::Sink::Out,
-                   "  start and join with an empty body: p50 {} ns for 2 threads, {} ns for 4, {} ns for 8, and {} ns "
-                   "for each thread from 2 to 8\n",
-                   static_cast<std::uint64_t>(two.pct.p50 + 0.5), static_cast<std::uint64_t>(four.pct.p50 + 0.5),
-                   static_cast<std::uint64_t>(eight.pct.p50 + 0.5),
-                   static_cast<std::uint64_t>(each > 0.0 ? each + 0.5 : 0.0));
+    bench::print("  start and join with an empty body: p50 {} ns for 2 threads, {} ns for 4, {} ns for 8, and {} ns "
+                 "for each thread from 2 to 8\n",
+                 static_cast<std::uint64_t>(two.pct.p50 + 0.5), static_cast<std::uint64_t>(four.pct.p50 + 0.5),
+                 static_cast<std::uint64_t>(eight.pct.p50 + 0.5),
+                 static_cast<std::uint64_t>(each > 0.0 ? each + 0.5 : 0.0));
     bench::add_report(all, std::move(two));
     bench::add_report(all, std::move(four));
     bench::add_report(all, std::move(eight));
@@ -373,21 +365,17 @@ void run_level(Level const& level, RowNames names, Placement const& placement,
         basis.shards *= 2;
     }
     basis.shards = 1;
-    // The rows of the harness go through stdio, and report() does not.
-    bench::detail::flush_standard_output();
     for (bench::Report const& measured : reports) {
         print_line(basis, level, measured);
         basis.shards *= 2;
     }
     rule.print_text();
-    bench::detail::flush_standard_output();
     auto const rule_ratio = static_cast<std::uint64_t>(basis.reference_p50_ns / rule.pct.p50 * 100.0 + 0.5);
-    ::fixy::report(::fixy::Sink::Out,
-                   "  {}x{}, {} independent shards: the rule gives {} threads for {} bytes, p50 {} ns, {}.{}{} of the "
-                   "raw loop\n",
-                   level.side, level.side, kShardThreads, rule_threads_of(level), level.pass_bytes(),
-                   static_cast<std::uint64_t>(rule.pct.p50 + 0.5), rule_ratio / 100, rule_ratio % 100 / 10,
-                   rule_ratio % 10);
+    bench::print("  {}x{}, {} independent shards: the rule gives {} threads for {} bytes, p50 {} ns, {}.{}{} of the "
+                 "raw loop\n",
+                 level.side, level.side, kShardThreads, rule_threads_of(level), level.pass_bytes(),
+                 static_cast<std::uint64_t>(rule.pct.p50 + 0.5), rule_ratio / 100, rule_ratio % 100 / 10,
+                 rule_ratio % 10);
     bench::add_report(all, std::move(reference));
     for (bench::Report& measured : reports) {
         bench::add_report(all, std::move(measured));
@@ -405,17 +393,14 @@ int main() {
     const bench::CpuId measuring = is_claimed ? cores.of_slot(bench::kMeasuringSlot).value_or(bench::CpuId::none())
                                               : bench::CpuId{bench::env_core()};
     Placement const placement{.cores = cores, .measuring_core = measuring.raw(), .is_claimed = is_claimed};
-    bench::detail::flush_standard_output();
     if (is_claimed) {
-        ::fixy::report(::fixy::Sink::Out,
-                       "  a row of S shards takes the first S cores of the order of the claim apart from cpu{}, which "
-                       "the measuring thread takes\n",
-                       placement.measuring_core);
+        bench::print("  a row of S shards takes the first S cores of the order of the claim apart from cpu{}, which "
+                     "the measuring thread takes\n",
+                     placement.measuring_core);
     } else {
-        ::fixy::report(::fixy::Sink::Out,
-                       "  NOTE: {} isolated cores, fewer than {}: the threads of the shards keep the affinity of the "
-                       "process, and the rows are noisy.  Run the bench through loop bench, which claims its cores.\n",
-                       cores.count(), kClaimedCores);
+        bench::print("  NOTE: {} isolated cores, fewer than {}: the threads of the shards keep the affinity of the "
+                     "process, and the rows are noisy.  Run the bench through loop bench, which claims its cores.\n",
+                     cores.count(), kClaimedCores);
     }
     print_one_shard_core(placement);
     print_shard_cores<2>(placement);

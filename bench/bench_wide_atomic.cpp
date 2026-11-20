@@ -67,8 +67,7 @@ struct RowName final {
 // Writes one line: the name of the row, the percentiles of its samples, and
 // the ratio to the reference.
 void print_row(RowName const& name, bench::Report const& measured, bench::Report const& reference) noexcept {
-    fixy::report(fixy::Sink::Out,
-                 "{} {}  p50={} ps  p99={} ps  max={} ps  cv={} permille  ratio to libatomic={} permille\n", name.form,
+    bench::print("{} {}  p50={} ps  p99={} ps  max={} ps  cv={} permille  ratio to libatomic={} permille\n", name.form,
                  name.operation, picoseconds(measured.pct.p50), picoseconds(measured.pct.p99),
                  picoseconds(measured.pct.max), static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5),
                  permille_of(measured, reference));
@@ -252,9 +251,8 @@ int main() {
     pin_to(row_cores.measured);
 
 #if defined(__x86_64__)
-    fixy::report(fixy::Sink::Out, "load form of the host: {}\n",
-                 os::has_atomic_vector_moves() ? fixy::TextView{"one vector move"}
-                                               : fixy::TextView{"a compare-and-swap"});
+    bench::print("load form of the host: {}\n", os::has_atomic_vector_moves() ? fixy::TextView{"one vector move"}
+                                                                              : fixy::TextView{"a compare-and-swap"});
 #endif
 
     FormRows const reference = measure_form_of<LibatomicCell>();

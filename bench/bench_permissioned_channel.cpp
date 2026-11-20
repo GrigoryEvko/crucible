@@ -376,11 +376,9 @@ template <std::uint32_t Threads, std::size_t... Producers>
 // and the report of its latency.
 void print_row(RowResult const& row) noexcept {
     bool const is_paused = row.window_pause.is_over_bound();
-    // The rows of the harness go through stdio, and report() does not.
-    bench::detail::flush_standard_output();
-    ::fixy::report(::fixy::Sink::Out, "  {} threads: {}.{}{} Mops/s of the main thread, window pause {} us{}\n",
-                   row.threads.raw(), row.centi_mops / 100, row.centi_mops % 100 / 10, row.centi_mops % 10,
-                   row.window_pause.own_ns() / 1000, is_paused ? ::fixy::TextView{"  NOT VALID"} : ::fixy::TextView{});
+    bench::print("  {} threads: {}.{}{} Mops/s of the main thread, window pause {} us{}\n", row.threads.raw(),
+                 row.centi_mops / 100, row.centi_mops % 100 / 10, row.centi_mops % 10, row.window_pause.own_ns() / 1000,
+                 is_paused ? ::fixy::TextView{"  NOT VALID"} : ::fixy::TextView{});
     row.latency.print_text();
 }
 
@@ -388,26 +386,24 @@ int run_bench() {
     bench::print_system_info();
     bench::elevate_priority();
     bench::Spread const spread = bench::Spread::of_calling_thread();
-    bench::detail::flush_standard_output();
     if (spread.source() != bench::SpreadSource::Claim) {
-        ::fixy::report(::fixy::Sink::Out,
-                       "  NOTE: no claimed core.  Other work can use the CPUs of the slots, so each row is noisy\n");
+        bench::print("  NOTE: no claimed core.  Other work can use the CPUs of the slots, so each row is noisy\n");
     }
     if (spread.count() < 2) {
-        ::fixy::report(::fixy::Sink::Out, "  the bench needs two slots at least, and the run has {}\n", spread.count());
+        bench::print("  the bench needs two slots at least, and the run has {}\n", spread.count());
         return 1;
     }
     bool const has_four = spread.count() >= 4;
-    ::fixy::report(::fixy::Sink::Out, "\n=== spsc push ===\n");
+    bench::print("\n=== spsc push ===\n");
     print_row(spsc_push_row(spread));
-    ::fixy::report(::fixy::Sink::Out, "\n=== spsc pop ===\n");
+    bench::print("\n=== spsc pop ===\n");
     print_row(spsc_pop_row(spread));
-    ::fixy::report(::fixy::Sink::Out, "\n=== mpsc push: the last thread is the one consumer ===\n");
+    bench::print("\n=== mpsc push: the last thread is the one consumer ===\n");
     print_row(mpsc_push_row<2>(spread, bench::Run{"mpsc push, 2 threads"}, std::make_index_sequence<0>{}));
     if (has_four) {
         print_row(mpsc_push_row<4>(spread, bench::Run{"mpsc push, 4 threads"}, std::make_index_sequence<2>{}));
     }
-    ::fixy::report(::fixy::Sink::Out, "\n=== mpsc pop: the main thread is the one consumer ===\n");
+    bench::print("\n=== mpsc pop: the main thread is the one consumer ===\n");
     print_row(mpsc_pop_row<2>(spread, bench::Run{"mpsc pop, 2 threads"}, std::make_index_sequence<1>{}));
     if (has_four) print_row(mpsc_pop_row<4>(spread, bench::Run{"mpsc pop, 4 threads"}, std::make_index_sequence<3>{}));
     return 0;

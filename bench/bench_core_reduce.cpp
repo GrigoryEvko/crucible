@@ -48,8 +48,7 @@ constexpr std::size_t kRowWallMs = 2000;
 // of one call, and the rate of elements at the median.
 void print_row(fixy::TextView name, std::size_t elements, bench::Report const& measured) noexcept {
     double const median = measured.pct.p50 > 0.0 ? measured.pct.p50 : 1.0;
-    fixy::report(fixy::Sink::Out,
-                 "{}  core=cpu{}  p50={} ns  p99={} ns  max={} ns  cv={} permille  rate={} elements/us\n", name,
+    bench::print("{}  core=cpu{}  p50={} ns  p99={} ns  max={} ns  cv={} permille  rate={} elements/us\n", name,
                  measured.pinned_cpu.raw(), nanoseconds(measured.pct.p50), nanoseconds(measured.pct.p99),
                  nanoseconds(measured.pct.max), static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5),
                  static_cast<std::uint64_t>(static_cast<double>(elements) * 1000.0 / median + 0.5));

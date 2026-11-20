@@ -407,12 +407,12 @@ template <class Form, class Notify>
         std::uint64_t const trimmed_mean = trimmed_mean_picoseconds(ascending);
         *row.medians.view().get(repeat).expect("the repeat is in the row") = median;
         *row.trimmed_means.view().get(repeat).expect("the repeat is in the row") = trimmed_mean;
-        fixy::report(fixy::Sink::Out, "{}  wake p50={} ns  p99={} ns  max={} ns  mean p1-p99={} ps\n", name,
+        bench::print("{}  wake p50={} ns  p99={} ns  max={} ns  mean p1-p99={} ps\n", name,
                      nanoseconds_of(spin::CounterTicks{median}),
                      nanoseconds_of(spin::CounterTicks{sample_at(ascending, Permille{990})}),
                      nanoseconds_of(spin::CounterTicks{sample_at(ascending, Permille{1000})}), trimmed_mean);
     }
-    fixy::report(fixy::Sink::Out, "{}  spread of the medians={} permille\n", name, row.spread_permille());
+    bench::print("{}  spread of the medians={} permille\n", name, row.spread_permille());
     return row;
 }
 
@@ -444,9 +444,8 @@ enum class RowMeasure : std::uint8_t {
 // Writes the median of the row over the median of its reference, and the
 // same ratio of the trimmed means, in thousandths.
 void print_ratio(RowPair const& pair) noexcept {
-    fixy::report(fixy::Sink::Out, "{}  ratio to {}: p50={} permille  mean p1-p99={} permille\n", pair.row.name,
-                 pair.reference.name, permille_of(pair, RowMeasure::median),
-                 permille_of(pair, RowMeasure::trimmed_mean));
+    bench::print("{}  ratio to {}: p50={} permille  mean p1-p99={} permille\n", pair.row.name, pair.reference.name,
+                 permille_of(pair, RowMeasure::median), permille_of(pair, RowMeasure::trimmed_mean));
 }
 
 // The name of an arm, as the door names it.
@@ -531,7 +530,7 @@ void print_writer_row(::fixy::TextView name, WriterPair const& pair) noexcept {
     double const base = pair.alone.pct.p50;
     std::uint64_t const ratio =
         base > 0.0 ? static_cast<std::uint64_t>(pair.measured.pct.p50 / base * 1000.0 + 0.5) : 0;
-    fixy::report(fixy::Sink::Out, "{}  add p50={} ps  p99={} ps  max={} ps  ratio to no reader={} permille\n", name,
+    bench::print("{}  add p50={} ps  p99={} ps  max={} ps  ratio to no reader={} permille\n", name,
                  static_cast<std::uint64_t>(pair.measured.pct.p50 * 1000.0 + 0.5),
                  static_cast<std::uint64_t>(pair.measured.pct.p99 * 1000.0 + 0.5),
                  static_cast<std::uint64_t>(pair.measured.pct.max * 1000.0 + 0.5), ratio);
@@ -550,7 +549,7 @@ void print_call_row(CallPair const& pair) noexcept {
     double const base = pair.reference.pct.p50;
     std::uint64_t const ratio =
         base > 0.0 ? static_cast<std::uint64_t>(pair.measured.pct.p50 / base * 1000.0 + 0.5) : 0;
-    fixy::report(fixy::Sink::Out, "{}  p50={} ps  p99={} ps  max={} ps  ratio to {}={} permille\n", pair.name,
+    bench::print("{}  p50={} ps  p99={} ps  max={} ps  ratio to {}={} permille\n", pair.name,
                  static_cast<std::uint64_t>(pair.measured.pct.p50 * 1000.0 + 0.5),
                  static_cast<std::uint64_t>(pair.measured.pct.p99 * 1000.0 + 0.5),
                  static_cast<std::uint64_t>(pair.measured.pct.max * 1000.0 + 0.5), pair.reference_name, ratio);
@@ -597,8 +596,7 @@ void report_rate(::fixy::BgLoadCtx const& ctx) noexcept {
     auto const of_harness = static_cast<std::uint64_t>(bench::Timer::tsc_freq_hz() + 0.5);
     std::uint64_t const difference = of_budget > of_harness ? of_budget - of_harness : of_harness - of_budget;
     std::uint64_t const parts = of_harness == 0 ? 0 : difference * 1000000U / of_harness;
-    fixy::report(fixy::Sink::Out, "rate  budget={} ticks/s  harness={} ticks/s  difference={} ppm\n", of_budget,
-                 of_harness, parts);
+    bench::print("rate  budget={} ticks/s  harness={} ticks/s  difference={} ppm\n", of_budget, of_harness, parts);
 }
 
 }  // namespace

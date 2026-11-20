@@ -56,16 +56,15 @@ constexpr std::size_t kRowWallMs = 2000;
 // Writes one line: the name of the row, the core of the row, and the
 // percentiles of one call.
 void print_row(fixy::TextView name, bench::Report const& measured) noexcept {
-    fixy::report(fixy::Sink::Out, "{}  core=cpu{}  p50={} ns  p99={} ns  max={} ns  cv={} permille\n", name,
-                 measured.pinned_cpu.raw(), nanoseconds(measured.pct.p50), nanoseconds(measured.pct.p99),
-                 nanoseconds(measured.pct.max), static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5));
+    bench::print("{}  core=cpu{}  p50={} ns  p99={} ns  max={} ns  cv={} permille\n", name, measured.pinned_cpu.raw(),
+                 nanoseconds(measured.pct.p50), nanoseconds(measured.pct.p99), nanoseconds(measured.pct.max),
+                 static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5));
 }
 
 // Writes the ratio of the median of a row to the median of its reference.
 void print_ratio(fixy::TextView name, bench::Report const& measured, bench::Report const& reference) noexcept {
     double const base = reference.pct.p50 > 0.0 ? reference.pct.p50 : 1.0;
-    fixy::report(fixy::Sink::Out, "{}  ratio={} permille\n", name,
-                 static_cast<std::uint64_t>(measured.pct.p50 * 1000.0 / base + 0.5));
+    bench::print("{}  ratio={} permille\n", name, static_cast<std::uint64_t>(measured.pct.p50 * 1000.0 / base + 0.5));
 }
 
 // Measures one row with the pin of CRUCIBLE_BENCH_CORE and the wall cap of

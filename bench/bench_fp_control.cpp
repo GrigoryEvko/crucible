@@ -42,7 +42,7 @@ namespace os = ::foundation::os;
 
 // Writes one line: the name of the row and the percentiles of its samples.
 void print_row(fixy::TextView name, bench::Report const& measured) noexcept {
-    fixy::report(fixy::Sink::Out, "{}  p50={} ps  p99={} ps  max={} ps  cycles={}  cv={} permille\n", name,
+    bench::print("{}  p50={} ps  p99={} ps  max={} ps  cycles={}  cv={} permille\n", name,
                  picoseconds(measured.pct.p50), picoseconds(measured.pct.p99), picoseconds(measured.pct.max),
                  static_cast<std::uint64_t>(measured.cycles_per_op + 0.5),
                  static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5));
@@ -123,7 +123,7 @@ bench::Report scope_other() {
 
 int main() {
     bench::elevate_priority();
-    fixy::report(fixy::Sink::Out, "=== fp_control: the cost of one read and one write of the FP control register\n");
+    bench::print("=== fp_control: the cost of one read and one write of the FP control register\n");
     print_row("read          ", read_register());
     print_row("write, same   ", write_same());
     print_row("write, toggle ", write_toggle());

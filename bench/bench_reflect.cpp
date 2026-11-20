@@ -454,7 +454,7 @@ int main() {
                    }),
     };
     bench::emit_reports_text(rapidhash_reports.view());
-    ::fixy::report(::fixy::Sink::Out, "\n=== compare with rapidhash ===\n");
+    bench::print("\n=== compare with rapidhash ===\n");
     bench::compare(reports.at(::fixy::index<4>()), rapidhash_reports.at(::fixy::index<0>())).print_text();
     bench::compare(reports.at(::fixy::index<6>()), rapidhash_reports.at(::fixy::index<1>())).print_text();
 #endif
@@ -558,8 +558,7 @@ int main() {
     // decode of the image of the heap record, each against its reference.  A
     // volatile word changes one part of each hashed record in each iteration.
     // Each decode allocates the words and gives them back.
-    ::fixy::report(::fixy::Sink::Out,
-                   "\n=== hash of the sums, the lists and the heap parts, decode of a heap record ===\n\n");
+    bench::print("\n=== hash of the sums, the lists and the heap parts, decode of a heap record ===\n\n");
     volatile std::uint64_t vword = 0x0123456789ABCDEFULL;
     SumRecord sum_record{};
     sum_record.outcome = ::fixy::Result<std::uint32_t, SumCode>{::fixy::Err<SumCode>{SumCode::stalled}};
@@ -636,7 +635,7 @@ int main() {
                    }),
     };
     bench::emit_reports_text(part_reports.view());
-    ::fixy::report(::fixy::Sink::Out, "\n=== compare of the parts with their references ===\n");
+    bench::print("\n=== compare of the parts with their references ===\n");
     bench::compare(part_reports.at(::fixy::index<0>()), part_reports.at(::fixy::index<1>())).print_text();
     bench::compare(part_reports.at(::fixy::index<2>()), part_reports.at(::fixy::index<3>())).print_text();
     bench::compare(part_reports.at(::fixy::index<4>()), part_reports.at(::fixy::index<5>())).print_text();

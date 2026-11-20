@@ -45,7 +45,7 @@ constexpr std::size_t kElements = 4096;
 // Writes one line: the name of the row, its percentiles, and its median as a
 // part of the median of reference, in thousandths.
 void print_row(fixy::TextView name, bench::Report const& measured, bench::Report const& reference) noexcept {
-    fixy::report(fixy::Sink::Out, "{}  p50={} ns  p99={} ns  max={} ns  cv={} permille  {} permille of raw\n", name,
+    bench::print("{}  p50={} ns  p99={} ns  max={} ns  cv={} permille  {} permille of raw\n", name,
                  nanoseconds(measured.pct.p50), nanoseconds(measured.pct.p99), nanoseconds(measured.pct.max),
                  static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5),
                  static_cast<std::uint64_t>(measured.pct.p50 / reference.pct.p50 * 1000.0 + 0.5));

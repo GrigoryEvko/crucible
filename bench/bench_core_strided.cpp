@@ -123,11 +123,10 @@ void print_row(Level const& level, ::fixy::TextView name, bench::Report const& m
     double const bandwidth = static_cast<double>(bytes) / measured.pct.p50;
     std::uint64_t const tenths = static_cast<std::uint64_t>(bandwidth * 10.0 + 0.5);
     std::uint64_t const percent = roof > 0.0 ? static_cast<std::uint64_t>(bandwidth / roof * 100.0 + 0.5) : 0;
-    ::fixy::report(::fixy::Sink::Out,
-                   "{} {}x{}  {}  p50={} ns  p99={} ns  max={} ns  cv={} permille  {}.{} GB/s  {} percent of roof\n",
-                   level.name, level.rows, level.columns, name, nanoseconds(measured.pct.p50),
-                   nanoseconds(measured.pct.p99), nanoseconds(measured.pct.max),
-                   static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5), tenths / 10, tenths % 10, percent);
+    bench::print("{} {}x{}  {}  p50={} ns  p99={} ns  max={} ns  cv={} permille  {}.{} GB/s  {} percent of roof\n",
+                 level.name, level.rows, level.columns, name, nanoseconds(measured.pct.p50),
+                 nanoseconds(measured.pct.p99), nanoseconds(measured.pct.max),
+                 static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5), tenths / 10, tenths % 10, percent);
 }
 
 // The bandwidth of a row in GB/s: bytes in one pass over its median.

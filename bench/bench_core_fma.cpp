@@ -51,8 +51,8 @@ constexpr std::size_t kRowWallMs = 2000;
 // of one call, and the rate of fmas at the median.
 void print_row(fixy::TextView name, bench::Report const& measured) noexcept {
     double const median = measured.pct.p50 > 0.0 ? measured.pct.p50 : 1.0;
-    fixy::report(fixy::Sink::Out, "{}  core=cpu{}  p50={} ns  p99={} ns  max={} ns  cv={} permille  rate={} fma/us\n",
-                 name, measured.pinned_cpu.raw(), nanoseconds(measured.pct.p50), nanoseconds(measured.pct.p99),
+    bench::print("{}  core=cpu{}  p50={} ns  p99={} ns  max={} ns  cv={} permille  rate={} fma/us\n", name,
+                 measured.pinned_cpu.raw(), nanoseconds(measured.pct.p50), nanoseconds(measured.pct.p99),
                  nanoseconds(measured.pct.max), static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5),
                  static_cast<std::uint64_t>(static_cast<double>(kTriples) * 1000.0 / median + 0.5));
 }
@@ -93,7 +93,7 @@ void check_the_units_agree(View<double const> triples) noexcept {
         bits_of(units::chain_of_fma_at_v1(triples)) == chain && bits_of(units::chain_of_fma_at_v2(triples)) == chain
         && bits_of(units::sum_of_fma_at_v1(triples)) == sum && bits_of(units::sum_of_fma_at_v2(triples)) == sum;
     if (!is_same) fixy::fatal("bench_core_fma: the units of x86-64, x86-64-v2 and the host give different bits");
-    fixy::report(fixy::Sink::Out, "the three units give the same bits: chain {} and sum {}\n", chain, sum);
+    bench::print("the three units give the same bits: chain {} and sum {}\n", chain, sum);
 }
 
 }  // namespace

@@ -70,8 +70,8 @@ struct Pair final {
 // Writes one line: the name of the pass and the percentiles of its samples.
 void print_row(Row const& row) noexcept {
     bench::Percentiles const& pct = row.report.pct;
-    fixy::report(fixy::Sink::Out, "{}  p50={} ns  p99={} ns  p99.9={} ns  max={} ns  cv={} permille\n", row.name,
-                 nanoseconds(pct.p50), nanoseconds(pct.p99), nanoseconds(pct.p99_9), nanoseconds(pct.max),
+    bench::print("{}  p50={} ns  p99={} ns  p99.9={} ns  max={} ns  cv={} permille\n", row.name, nanoseconds(pct.p50),
+                 nanoseconds(pct.p99), nanoseconds(pct.p99_9), nanoseconds(pct.max),
                  static_cast<std::uint64_t>(pct.cv * 1000.0 + 0.5));
 }
 
@@ -83,7 +83,7 @@ void print_pair(Pair const& pair) noexcept {
     double const container = pair.container.report.pct.p50;
     double const reference = pair.reference.report.pct.p50;
     std::uint64_t const ratio = reference > 0.0 ? static_cast<std::uint64_t>(container / reference * 1000.0 + 0.5) : 0;
-    fixy::report(fixy::Sink::Out, "{}  ratio to {}={} permille\n", pair.container.name, pair.reference.name, ratio);
+    bench::print("{}  ratio to {}={} permille\n", pair.container.name, pair.reference.name, ratio);
 }
 
 // The rows of the bit sets: set and test of a fixed set and of a heap set.

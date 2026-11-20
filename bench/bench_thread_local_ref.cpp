@@ -39,7 +39,7 @@ using ShardCell = ::foundation::ThreadLocalRef<bench_thread_local_ref::ShardTag,
 // Writes one line: the name of the operation and the percentiles of its
 // samples.
 void print_row(fixy::TextView name, bench::Report const& measured) noexcept {
-    fixy::report(fixy::Sink::Out, "{}  p50={} ps  p99={} ps  p99.9={} ps  max={} ps  cv={} permille\n", name,
+    bench::print("{}  p50={} ps  p99={} ps  p99.9={} ps  max={} ps  cv={} permille\n", name,
                  picoseconds(measured.pct.p50), picoseconds(measured.pct.p99), picoseconds(measured.pct.p99_9),
                  picoseconds(measured.pct.max), static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5));
 }
@@ -47,7 +47,7 @@ void print_row(fixy::TextView name, bench::Report const& measured) noexcept {
 // Writes the ratio of the median of an operation to the median of its
 // reference, in thousandths.
 void print_ratio(fixy::TextView name, bench::Report const& measured, bench::Report const& reference) noexcept {
-    fixy::report(fixy::Sink::Out, "{}  ratio to the plain thread_local: {} permille\n", name,
+    bench::print("{}  ratio to the plain thread_local: {} permille\n", name,
                  static_cast<std::uint64_t>(measured.pct.p50 * 1000.0 / reference.pct.p50 + 0.5));
 }
 
