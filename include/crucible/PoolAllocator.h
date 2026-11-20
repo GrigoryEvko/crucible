@@ -102,7 +102,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
             // build, so a read before the first write of a slot gives the
             // same bytes on each run.  A large pool comes from fresh pages of
             // the kernel, so the mint writes no page outside ThreadSanitizer.
-            pool_ = ::foundation::mint_aligned_bytes_zeroed(allocation, plan.pool_bytes, page_align);
+            ::fixy::Layout const layout = ::fixy::mint_layout(::fixy::ByteCount{plan.pool_bytes},
+                                                              ::fixy::mint_alignment(::fixy::ByteCount{page_align})
+                                                                  .expect("the alignment of a pool is a power of two"))
+                                              .expect("the pool of a plan of at most kMaxPoolBytes is a layout");
+            pool_ = ::foundation::mint_aligned_bytes_zeroed(allocation, layout);
             // The region holds the bytes of the pool, and not the bytes that
             // the round up to the alignment adds after them.
             crucible::warden::register_hot_region(::fixy::pages::storage_of(pool_.view()), is_huge);

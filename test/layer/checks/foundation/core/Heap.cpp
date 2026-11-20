@@ -3,6 +3,7 @@
 #include <foundation/core/Heap.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <type_traits>
 
 namespace foundation::core {
@@ -35,12 +36,20 @@ static_assert(!AllocationCapability<Alloc const>);
 static_assert(!AllocationCapability<Alloc&>);
 static_assert(!AllocationCapability<int>);
 
-// The door takes the bytes and the alignment, and it gives a pointer that
-// is never null.  The release takes the same two values.
-static_assert(std::is_same_v<decltype(heap_allocate_(std::size_t{1}, std::size_t{1})), void*>);
-static_assert(noexcept(heap_allocate_(std::size_t{1}, std::size_t{1})));
-static_assert(std::is_same_v<decltype(heap_release_(nullptr, std::size_t{1}, std::size_t{1})), void>);
-static_assert(noexcept(heap_release_(nullptr, std::size_t{1}, std::size_t{1})));
+// The door takes one Layout, and it gives a pointer that is never null.  The
+// release takes the same layout.  No door takes a count of bytes and an
+// alignment as two numbers, so the two cannot swap at a call.
+static_assert(std::is_same_v<decltype(heap_allocate_(::foundation::alloc::Layout::of<int>())), void*>);
+static_assert(noexcept(heap_allocate_(::foundation::alloc::Layout::of<int>())));
+static_assert(std::is_same_v<decltype(heap_allocate_zeroed_(::foundation::alloc::Layout::of<int>())), void*>);
+static_assert(std::is_same_v<decltype(heap_release_(nullptr, ::foundation::alloc::Layout::of<int>())), void>);
+static_assert(noexcept(heap_release_(nullptr, ::foundation::alloc::Layout::of<int>())));
+static_assert(!std::is_invocable_v<decltype(&heap_allocate_), std::size_t>);
+static_assert(!std::is_invocable_v<decltype(&heap_allocate_zeroed_), std::size_t>);
+
+// The layout of count slots holds their bytes at the alignment of a slot.
+static_assert(slots_layout_<std::uint64_t>(3).bytes().raw() == 24);
+static_assert(slots_layout_<std::uint64_t>(3).alignment() == ::foundation::alloc::Alignment{8});
 
 }  // namespace detail::heap_checks
 

@@ -65,9 +65,15 @@ struct SwissTableBufferState {
         return SwissTableBufferState{};
     }
 
+    // The layout of an allocation of bytes bytes, which are above zero.
+    [[nodiscard]] static constexpr ::foundation::alloc::Layout layout_of(std::size_t bytes) noexcept {
+        return ::foundation::alloc::mint_layout(ByteCount{bytes}, ::foundation::alloc::Alignment{alignment})
+            .expect("the allocation of a SwissTableBuffer of at least one group is a layout");
+    }
+
     static constexpr void release(SwissTableBufferState const& state) noexcept {
         if (state.backing != nullptr) {
-            heap_release_(state.backing, state.alloc_bytes, alignment);
+            heap_release_(state.backing, layout_of(state.alloc_bytes));
         }
     }
 };
@@ -101,7 +107,7 @@ public:
         if (capacity == 0) [[unlikely]]
             return SwissTableBuffer{};
         const size_type rounded = detail::aligned_allocation_bytes<kAlignment>(capacity, capacity, sizeof(SlotPtr));
-        void* const raw = core::detail::heap_allocate_(rounded, kAlignment);
+        void* const raw = core::detail::heap_allocate_(State::layout_of(rounded));
 
         // The allocator creates the control bytes implicitly: an array of a
         // byte type is an implicit-lifetime type.  The slots start their

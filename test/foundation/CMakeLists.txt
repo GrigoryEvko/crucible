@@ -2147,13 +2147,31 @@ foundation_neg_compile_test(neg_swiss_table_buffer_view_of_temporary
 # full expression gives back is deleted.
 foundation_test(test_aligned_bytes)
 foundation_neg_compile_test(neg_aligned_bytes_without_allocation_marker
-  "no matching function for call to .mint_aligned_bytes\\(foundation::effects::cap::IO, int, int\\)."
+  "no matching function for call to .mint_aligned_bytes\\(foundation::effects::cap::IO, foundation::alloc::Layout\\)."
   "required for the satisfaction of .CanMintAlignedBytes<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
 foundation_neg_compile_test(neg_aligned_bytes_view_of_temporary
   "use of deleted function .void foundation::AlignedBytes::view\\(\\) &&."
   "a view of a temporary AlignedBytes points into a block that the full expression gives back")
+# No number converts to a ByteCount or to an Alignment, so the doors of a
+# Layout refuse two bare numbers, a swapped pair, and a count of elements.  A
+# type that is only declared has no layout.
+foundation_neg_compile_test(neg_layout_from_two_integers
+  "could not convert .16. from .int. to .foundation::core::ByteCount."
+  "explicit conversion function was not considered")
+foundation_neg_compile_test(neg_layout_swapped_with_alignment
+  "could not convert ..foundation::alloc::Alignment.8."
+  "from .foundation::alloc::Alignment. to .foundation::core::ByteCount.")
+foundation_neg_compile_test(neg_alignment_from_integer_literal
+  "could not convert .16. from .int. to .foundation::core::ByteCount."
+  "explicit conversion function was not considered")
+foundation_neg_compile_test(neg_alignment_from_element_count
+  "could not convert .foundation::core::Quantity<foundation::core::unit::Element, long unsigned int>.16.."
+  "to .Quantity<foundation::core::unit::Byte,\\[...\\]>.")
+foundation_neg_compile_test(neg_layout_of_incomplete_type
+  "no matching function for call to .foundation::alloc::Layout::of<Opaque>\\(\\)."
+  "required for the satisfaction of .LayoutType<T>. \\[with T = Opaque\\]")
 foundation_neg_compile_test(neg_aligned_bytes_zeroed_without_allocation_marker
-  "no matching function for call to .mint_aligned_bytes_zeroed\\(foundation::effects::cap::IO, int, int\\)."
+  "no matching function for call to .mint_aligned_bytes_zeroed\\(foundation::effects::cap::IO, foundation::alloc::Layout\\)."
   "required for the satisfaction of .CanMintAlignedBytes<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
 # The bytes of a new block hold no value, so the block has no view until a
 # door writes each byte.

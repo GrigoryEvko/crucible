@@ -10,8 +10,8 @@
 #include <cstdint>
 
 int main() {
-    ::foundation::UnwrittenBytes block =
-        ::foundation::mint_aligned_bytes(::foundation::effects::testing::test().alloc, 64, 64);
+    ::foundation::UnwrittenBytes block = ::foundation::mint_aligned_bytes(
+        ::foundation::effects::testing::test().alloc, ::foundation::alloc::Layout::of<unsigned long>());
     unsigned sum = 0;
     for (std::uint8_t const byte : block.view()) {
         sum += byte;

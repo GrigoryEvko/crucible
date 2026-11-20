@@ -258,7 +258,7 @@
 layer F0_floor 0 include/foundation/Platform.h include/foundation/Pinned.h include/foundation/Quarantine.h include/foundation/OpenExtension.h
 layer F0_core 1 include/foundation/reflect/ include/foundation/contracts/ include/foundation/Brand.h include/foundation/Lifetime.h include/foundation/ByteSeal.h include/foundation/SoleWriterProof.h include/foundation/Linear.h include/foundation/Transfer.h include/foundation/diag/FailClosed.h include/foundation/NoObject.h
 layer F0_os 2 include/foundation/os/Syscall.h include/foundation/os/KernelFloor.h include/foundation/os/PipeSignal.h include/foundation/os/OpenFlags.h include/foundation/os/FutexWords.h include/foundation/os/MapWords.h include/foundation/os/SchedWords.h include/foundation/os/MemoryPolicyWords.h src/foundation/os/Syscall.cpp src/foundation/os/Intercepted.h src/foundation/os/Intercepted.cpp
-layer F0_primitives 3 include/foundation/core/ include/foundation/Simd.h include/foundation/AlignedBytes.h include/foundation/SwissTableBuffer.h include/foundation/ThreadLocalRef.h include/foundation/ChannelBinding.h src/foundation/core/
+layer F0_primitives 3 include/foundation/core/ include/foundation/alloc/Layout.h include/foundation/Simd.h include/foundation/AlignedBytes.h include/foundation/SwissTableBuffer.h include/foundation/ThreadLocalRef.h include/foundation/ChannelBinding.h src/foundation/core/
 layer F0_doors 4 include/foundation/os/ src/foundation/os/
 layer F1_algebra 5 include/foundation/algebra/
 layer F1_lattices 6 include/foundation/algebra/lattices/
@@ -465,7 +465,7 @@ enforce test/warden_neg/ error
 enforce utils/tools/ error
 enforce vessel/ report
 
-language F0_primitives include/foundation/core/ src/foundation/core/ include/fixy/Core.h
+language F0_primitives include/foundation/core/ include/foundation/alloc/Layout.h src/foundation/core/ include/fixy/Core.h
 
 home owner host | a class directly in a namespace named host is the owner of a context key, and only its own home row admits its definition
 home owner foundation::effects::host::BackgroundOwner include/foundation/effects/Effect.h | the owner of the background key, whose one member is the door to the background context
@@ -642,7 +642,12 @@ witness <foundation/effects/ImageRead.h> private | foundation::effects::host::Im
 # Each bare value atom keeps its default constructor private.  Its one
 # friend is the owner of the atoms, which only the three contexts and
 # extract_bare build.
-witness <foundation/core/Heap.h> private | foundation::core::Alloc | foundation::core::Alloc{}
+witness <foundation/core/AllocTag.h> private | foundation::core::Alloc | foundation::core::Alloc{}
+# A Layout keeps its constructor from its two words private.  Its one
+# friend is mint_layout, and its static members of and of_array check the
+# facts of a layout, so no request that the allocation door refuses has a
+# Layout.
+witness <foundation/alloc/Layout.h> private | foundation::alloc::Layout | foundation::alloc::Layout{foundation::core::ByteCount{16}, foundation::alloc::Alignment{16}}
 witness <foundation/effects/Effect.h> private | foundation::effects::cap::IO | foundation::effects::cap::IO{}
 witness <foundation/effects/Effect.h> private | foundation::effects::cap::Block | foundation::effects::cap::Block{}
 witness <foundation/effects/Effect.h> private | foundation::effects::cap::Nondet | foundation::effects::cap::Nondet{}

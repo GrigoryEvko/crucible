@@ -442,7 +442,7 @@ struct BaseAdapter {
     static constexpr AllocatorKind kind = AllocatorKind::base;
 
     template <BlockAlignment Align>
-    using Block = decltype(::foundation::mint_aligned_bytes(bench_alloc(), std::size_t{}, std::size_t{}));
+    using Block = decltype(::foundation::mint_aligned_bytes(bench_alloc(), ::fixy::Layout::of<std::uint8_t>()));
 
     template <BlockAlignment Align>
     using Written = ::fixy::HeapArray<std::uint8_t, alignment_bytes(Align)>;
@@ -452,7 +452,9 @@ struct BaseAdapter {
 
     template <BlockAlignment Align>
     [[nodiscard, gnu::always_inline]] static Block<Align> allocate(ByteCount bytes) noexcept {
-        return ::foundation::mint_aligned_bytes(bench_alloc(), bytes.raw(), alignment_bytes(Align));
+        ::fixy::Layout const layout = ::fixy::mint_layout(bytes, ::fixy::Alignment{alignment_bytes(Align)})
+                                          .expect("each request of a row is a layout");
+        return ::foundation::mint_aligned_bytes(bench_alloc(), layout);
     }
 
     template <class Owner>

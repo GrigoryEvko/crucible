@@ -164,7 +164,7 @@ struct SmallListState {
         refuse_lent_owner_change_(state.lend_count);
         if (state.heap != nullptr) {
             unpoison_slots_(state.heap, state.capacity);
-            heap_release_(static_cast<void*>(state.heap), state.capacity * sizeof(T), alignof(T));
+            heap_release_(static_cast<void*>(state.heap), slots_layout_<T>(state.capacity));
         }
     }
 };
@@ -209,13 +209,13 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] SmallList
         State& state = this->state_;
         std::size_t const count = state.count;
         std::size_t const next = detail::next_capacity_(state.capacity, count + 1, state.maximum, sizeof(T));
-        void* const target = detail::heap_allocate_(next * sizeof(T), alignof(T));
+        void* const target = detail::heap_allocate_(detail::slots_layout_<T>(next));
         if (count != 0) {
             __builtin_memcpy(target, static_cast<void const*>(first_()), count * sizeof(T));
         }
         if (state.heap != nullptr) {
             detail::unpoison_slots_(state.heap, state.capacity);
-            detail::heap_release_(static_cast<void*>(state.heap), state.capacity * sizeof(T), alignof(T));
+            detail::heap_release_(static_cast<void*>(state.heap), detail::slots_layout_<T>(state.capacity));
         }
         state.heap = static_cast<T*>(target);
         state.capacity = next;

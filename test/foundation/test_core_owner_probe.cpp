@@ -709,8 +709,16 @@ struct HeapTextProbe {
 struct AlignedBytesProbe {
     using Owner = AlignedBytes;
 
+    // A zeroed block of bytes bytes at the alignment, which the probe gives
+    // as a layout.
+    [[nodiscard]] static Owner zeroed(::foundation::core::ByteCount bytes,
+                                      ::foundation::alloc::Alignment alignment) noexcept {
+        return ::foundation::mint_aligned_bytes_zeroed(
+            kAlloc, ::foundation::alloc::mint_layout(bytes, alignment).expect("the probe gives a layout"));
+    }
+
     static void self_move() {
-        Owner held = ::foundation::mint_aligned_bytes_zeroed(kAlloc, 64, 64);
+        Owner held = zeroed(::foundation::core::ByteCount{64}, ::foundation::alloc::Alignment{64});
         Owner& alias = held;
         held = static_cast<Owner&&>(alias);
         CRUCIBLE_FATAL_INVARIANT(held.size() == 64);
@@ -722,13 +730,13 @@ struct AlignedBytesProbe {
     // MOVED-FROM: a new block in the source is a second allocation, and the
     // ASan run finds a second release if the source kept the first one.
     static void moved_from() {
-        Owner target = ::foundation::mint_aligned_bytes_zeroed(kAlloc, 32, 8);
-        Owner source = ::foundation::mint_aligned_bytes_zeroed(kAlloc, 64, 64);
+        Owner target = zeroed(::foundation::core::ByteCount{32}, ::foundation::alloc::Alignment{8});
+        Owner source = zeroed(::foundation::core::ByteCount{64}, ::foundation::alloc::Alignment{64});
         target = static_cast<Owner&&>(source);
-        source = ::foundation::mint_aligned_bytes_zeroed(kAlloc, 16, 8);
+        source = zeroed(::foundation::core::ByteCount{16}, ::foundation::alloc::Alignment{8});
         CRUCIBLE_FATAL_INVARIANT(target.size() == 64);
         Owner taken{static_cast<Owner&&>(target)};
-        target = ::foundation::mint_aligned_bytes_zeroed(kAlloc, 16, 8);
+        target = zeroed(::foundation::core::ByteCount{16}, ::foundation::alloc::Alignment{8});
         CRUCIBLE_FATAL_INVARIANT(taken.size() == 64);
         CRUCIBLE_FATAL_INVARIANT(taken.alignment() == 64);
     }
@@ -737,7 +745,7 @@ struct AlignedBytesProbe {
 
     // EMPTY: a moved-from AlignedBytes gives an empty View.
     static void empty() {
-        Owner source = ::foundation::mint_aligned_bytes_zeroed(kAlloc, 64, 64);
+        Owner source = zeroed(::foundation::core::ByteCount{64}, ::foundation::alloc::Alignment{64});
         Owner const target{static_cast<Owner&&>(through(source))};
         CRUCIBLE_FATAL_INVARIANT(target.size() == 64);
         CRUCIBLE_FATAL_INVARIANT(through(source).size() == 0);

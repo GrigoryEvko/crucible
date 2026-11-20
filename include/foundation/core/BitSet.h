@@ -301,8 +301,7 @@ struct HeapBitSetState {
 
     static constexpr void release(HeapBitSetState const& state) noexcept {
         if (state.words != nullptr) {
-            heap_release_(static_cast<void*>(state.words), word_count_of_(state.count) * sizeof(std::uint64_t),
-                          alignof(std::uint64_t));
+            heap_release_(static_cast<void*>(state.words), slots_layout_<std::uint64_t>(word_count_of_(state.count)));
         }
     }
 };
@@ -827,9 +826,9 @@ template <class Tag, class Marker>
     if (ids == 0) {
         return HeapBitSet<Tag>{};
     }
-    std::size_t const bytes = detail::word_count_of_(ids) * sizeof(std::uint64_t);
-    void* const storage = detail::heap_allocate_(bytes, alignof(std::uint64_t));
-    __builtin_memset(storage, 0, bytes);
+    ::foundation::alloc::Layout const layout = detail::slots_layout_<std::uint64_t>(detail::word_count_of_(ids));
+    void* const storage = detail::heap_allocate_(layout);
+    __builtin_memset(storage, 0, layout.bytes().raw());
     return HeapBitSet<Tag>{detail::owner::HeapBitSetState{static_cast<std::uint64_t*>(storage), ids, 0}};
 }
 

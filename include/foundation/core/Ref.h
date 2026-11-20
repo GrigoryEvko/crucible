@@ -523,6 +523,18 @@ concept CompleteBoxPayload =
 template <std::size_t Size, std::size_t Align>
 concept HoleShape = Size > 0 && Align > 0 && (Align & (Align - 1)) == 0;
 
+namespace detail {
+
+// The layout of the storage of a Hole, a constant.  HoleShape holds the two
+// facts that the door of the layout tests.
+template <std::size_t Size, std::size_t Align>
+    requires HoleShape<Size, Align>
+inline constexpr ::foundation::alloc::Layout hole_layout_ =
+    ::foundation::alloc::mint_layout(ByteCount{Size}, ::foundation::alloc::Alignment{Align})
+        .expect("a HoleShape is a layout");
+
+}  // namespace detail
+
 // Box takes a Hole in a constructor, and this header defines Hole after Box.
 template <std::size_t Size, std::size_t Align>
     requires HoleShape<Size, Align>
@@ -620,7 +632,7 @@ struct BoxState {
                           "is complete: name the Box first after the definition of the payload");
             if (state.object != nullptr) {
                 state.object->~T();
-                heap_release_(static_cast<void*>(state.object), sizeof(T), alignof(T));
+                heap_release_(static_cast<void*>(state.object), ::foundation::alloc::Layout::of<T>());
             }
         } else {
             static_assert(false, "a Box ends its object only where the type of the object is complete: define the "
@@ -640,7 +652,7 @@ struct HoleState {
 
     static void release(HoleState const& state) noexcept {
         if (state.storage != nullptr) {
-            heap_release_(state.storage, Size, Align);
+            heap_release_(state.storage, hole_layout_<Size, Align>);
         }
     }
 };
@@ -766,7 +778,8 @@ public:
     template <class... Args>
         requires CompleteBoxPayload<T> && std::constructible_from<T, Args&&...>
     explicit Box(detail::BoxKey const& /*key*/, Args&&... args) noexcept
-        : Core{State{::new(detail::heap_allocate_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...)}} {}
+        : Core{State{::new(detail::heap_allocate_(::foundation::alloc::Layout::of<T>()))
+                         T(static_cast<Args&&>(args)...)}} {}
 
     // Builds the object from the arguments in the storage of a Hole of the
     // size and the alignment of T, with no call of the allocation door.  The
@@ -911,7 +924,8 @@ class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::lifetim
 public:
     // Takes Size bytes at the alignment Align from the allocation door.
     // Only mint_hole holds the key.
-    explicit Hole(detail::HoleKey const& /*key*/) noexcept : Core{State{detail::heap_allocate_(Size, Align)}} {}
+    explicit Hole(detail::HoleKey const& /*key*/) noexcept
+        : Core{State{detail::heap_allocate_(detail::hole_layout_<Size, Align>)}} {}
 
     // Ends the object of a Box of the exact size and alignment, and takes
     // its storage.  The Box is then empty.  Only mint_hole holds the key.

@@ -63,7 +63,7 @@
 //     error types apart, and never through a row.  fixy/Collision.h
 //     reads each spelling.
 
-#include <foundation/core/Heap.h>
+#include <foundation/core/AllocTag.h>
 #include <foundation/core/Text.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/os/KernelFloor.h>
@@ -170,7 +170,7 @@ template <Effect E>
     return detail::is_observable_effect_atom_<E>();
 }
 
-// The owner of the bare value atoms, defined below.  foundation/core/Heap.h
+// The owner of the bare value atoms, defined below.  foundation/core/AllocTag.h
 // declares it too, because the allocation tag of that layer befriends it.
 namespace host {
 struct AtomOwner;
@@ -185,7 +185,7 @@ struct AtomOwner;
 // A marker is an authority, so no code makes one from nothing.  The
 // default constructor of each marker is private, and its one friend is the
 // owner of the bare value atoms below.  Each constructor is user-provided,
-// for the reason foundation/core/Heap.h gives for the allocation tag: a
+// for the reason foundation/core/AllocTag.h gives for the allocation tag: a
 // trivial constructor lets std::bit_cast or std::start_lifetime_as build a
 // marker with no access check.  The explicit noexcept on each special
 // member turns a future throwing body into a compile error rather than a

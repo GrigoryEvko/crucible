@@ -169,6 +169,15 @@ template <class T, class Generation>
     return SlotMapLayout{stack_offset, generation_offset, bytes};
 }
 
+// The layout of the one allocation of capacity slots, for the allocation
+// door.  capacity is above zero.  Complexity: O(1).
+template <class T, class Generation>
+[[nodiscard]] constexpr ::foundation::alloc::Layout slot_map_storage_layout_(std::uint32_t capacity) noexcept {
+    return ::foundation::alloc::mint_layout(ByteCount{slot_map_layout_<T, Generation>(capacity).bytes},
+                                            ::foundation::alloc::Alignment{slot_map_alignment_<T>})
+        .expect("the storage of at least one slot of a SlotMap is a layout");
+}
+
 namespace owner {
 
 // The fields of a SlotMap.  The values, the stack of the free indexes and the
@@ -211,8 +220,7 @@ struct SlotMapState {
             }
         }
         unpoison_slots_(state.values, state.capacity);
-        heap_release_(static_cast<void*>(state.values), slot_map_layout_<T, Generation>(state.capacity).bytes,
-                      slot_map_alignment_<T>);
+        heap_release_(static_cast<void*>(state.values), slot_map_storage_layout_<T, Generation>(state.capacity));
     }
 };
 
@@ -521,7 +529,7 @@ template <class T, class Tag, class Generation, class Marker>
     }
     detail::SlotMapLayout const layout = detail::slot_map_layout_<T, Generation>(slots);
     unsigned char* const storage =
-        static_cast<unsigned char*>(detail::heap_allocate_(layout.bytes, detail::slot_map_alignment_<T>));
+        static_cast<unsigned char*>(detail::heap_allocate_(detail::slot_map_storage_layout_<T, Generation>(slots)));
     State const state{
         .values = static_cast<T*>(static_cast<void*>(storage)),
         .free_stack = static_cast<std::uint32_t*>(static_cast<void*>(storage + layout.stack_offset)),

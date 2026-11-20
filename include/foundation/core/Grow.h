@@ -234,7 +234,7 @@ struct GrowListState {
         end_each_(state);
         if (state.storage != nullptr) {
             unpoison_slots_(static_cast<T const*>(state.storage), state.capacity);
-            heap_release_(state.storage, state.capacity * sizeof(T), alignof(T));
+            heap_release_(state.storage, slots_layout_<T>(state.capacity));
         }
     }
 };
@@ -261,7 +261,7 @@ struct GrowTextState {
         refuse_lent_owner_change_(state.lend_count);
         if (state.first != nullptr) {
             unpoison_slots_(state.first, state.capacity);
-            heap_release_(static_cast<void*>(state.first), state.capacity, 1);
+            heap_release_(static_cast<void*>(state.first), slots_layout_<char>(state.capacity));
         }
     }
 };
@@ -286,7 +286,7 @@ struct HeapTextState {
     static constexpr void release(HeapTextState const& state) noexcept {
         if (state.first != nullptr) {
             unpoison_slots_(state.first, state.capacity);
-            heap_release_(static_cast<void*>(state.first), state.capacity, 1);
+            heap_release_(static_cast<void*>(state.first), slots_layout_<char>(state.capacity));
         }
     }
 };
@@ -349,7 +349,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
         State& state = this->state_;
         std::size_t const count = state.count;
         std::size_t const next = detail::next_capacity_(state.capacity, count + 1, state.maximum, sizeof(T));
-        void* const target = detail::heap_allocate_(next * sizeof(T), alignof(T));
+        void* const target = detail::heap_allocate_(detail::slots_layout_<T>(next));
         if constexpr (detail::BytewiseListElement<T>) {
             if (count != 0) {
                 __builtin_memcpy(target, state.storage, count * sizeof(T));
@@ -363,7 +363,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
         }
         if (state.storage != nullptr) {
             detail::unpoison_slots_(first_(), state.capacity);
-            detail::heap_release_(state.storage, state.capacity * sizeof(T), alignof(T));
+            detail::heap_release_(state.storage, detail::slots_layout_<T>(state.capacity));
         }
         state.storage = target;
         state.count = count;

@@ -6,6 +6,8 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    auto bytes = ::foundation::mint_aligned_bytes_zeroed(::foundation::effects::testing::test().alloc, 64, 64).view();
+    auto bytes = ::foundation::mint_aligned_bytes_zeroed(::foundation::effects::testing::test().alloc,
+                                                         ::foundation::alloc::Layout::of<unsigned long>())
+                     .view();
     return static_cast<int>(bytes.size());
 }

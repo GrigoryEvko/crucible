@@ -466,6 +466,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
                          "interface that carry no grade"},
     {^^::foundation::os::side, "the role of the offset of a range of the page source: an empty tag that a Side "
                                "names at compile time, and no value"},
+    {^^::foundation::alloc, "the layout of an allocation: a count of bytes and an alignment that the allocation door "
+                            "takes, words of a request that carry no grade"},
     {^^::fixy::tags::source, kGradeVocabulary},
     {^^::fixy::tags::trust, kGradeVocabulary},
     {^^::fixy::tags::access, kGradeVocabulary},

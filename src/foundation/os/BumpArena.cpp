@@ -26,6 +26,15 @@ namespace {
     return value << shift;
 }
 
+// The layout of a block of bytes bytes, which are above zero, at the
+// alignment of each block.  A size that saturated passes the largest layout
+// and ends the process.
+[[nodiscard]] ::foundation::alloc::Layout block_layout_(std::size_t bytes) noexcept {
+    return ::foundation::alloc::mint_layout(ByteCount{bytes},
+                                            ::foundation::alloc::Alignment{BumpArena::block_alignment})
+        .expect("a block of a BumpArena is a layout: its bytes are above zero and fit the largest object");
+}
+
 }  // namespace
 
 namespace detail {
@@ -76,7 +85,7 @@ void BumpArena::enter_block_(std::uint32_t first_index, std::size_t needed) noex
         }
         std::size_t const standard = saturating_shift_(block_size_, index);
         std::size_t const wanted = needed > standard ? needed : standard;
-        blocks_[index] = static_cast<std::byte*>(detail::heap_allocate_(wanted, block_alignment));
+        blocks_[index] = static_cast<std::byte*>(detail::heap_allocate_(block_layout_(wanted)));
         block_bytes_[index] = wanted;
         block_count_ = index + 1;
         retained_bytes_ += wanted;
@@ -93,7 +102,7 @@ void BumpArena::enter_block_(std::uint32_t first_index, std::size_t needed) noex
 void BumpArena::free_blocks_from_(std::uint32_t first_index) noexcept {
     for (std::uint32_t index = first_index; index < block_count_; ++index) {
         ::foundation::os::unpoison_bytes(blocks_[index], block_bytes_[index]);
-        detail::heap_release_(blocks_[index], block_bytes_[index], block_alignment);
+        detail::heap_release_(blocks_[index], block_layout_(block_bytes_[index]));
         retained_bytes_ -= block_bytes_[index];
         blocks_[index] = nullptr;
         block_bytes_[index] = 0;

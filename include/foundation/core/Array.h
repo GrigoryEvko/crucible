@@ -338,17 +338,21 @@ namespace detail {
 template <class T, std::size_t Align>
 concept HeapArrayAlignment = Align != 0 && (Align & (Align - 1)) == 0 && Align >= alignof(T);
 
-// The bytes of the storage of count elements of T, rounded up to the
-// alignment.  A count past the largest count of a View, or with bytes that
-// do not fit in size_t, ends the process.  Complexity: O(1).
+// The layout of the storage of count elements of T: their bytes rounded up
+// to the alignment, at the alignment.  count is above zero.  A count past the
+// largest count of a View, or with bytes that do not fit in size_t, ends the
+// process.  Complexity: O(1).
 template <class T, std::size_t Align>
-[[nodiscard]] constexpr std::size_t heap_array_bytes_(std::size_t count) noexcept {
+[[nodiscard]] constexpr ::foundation::alloc::Layout heap_array_layout_(std::size_t count) noexcept {
     if (count > max_view_count(sizeof(T))) [[unlikely]] {
         fatal("a HeapArray of {} elements of {} bytes is longer than the largest View", count, sizeof(T));
     }
     std::size_t const element_bytes =
         checked_mul(count, sizeof(T)).expect("the bytes of the elements of a HeapArray fit in size_t");
-    return align_up(element_bytes, Align).expect("the bytes of a HeapArray at its alignment fit in size_t");
+    std::size_t const bytes =
+        align_up(element_bytes, Align).expect("the bytes of a HeapArray at its alignment fit in size_t");
+    return ::foundation::alloc::mint_layout(ByteCount{bytes}, ::foundation::alloc::Alignment{Align})
+        .expect("the storage of at least one element of a HeapArray is a layout");
 }
 
 // Ends each of the count elements at first, from the last, and gives their
@@ -364,7 +368,7 @@ constexpr void release_heap_elements_(T* first, std::size_t count) noexcept {
             first[position - 1].~T();
         }
     }
-    heap_release_(static_cast<void*>(first), heap_array_bytes_<T, Align>(count), Align);
+    heap_release_(static_cast<void*>(first), heap_array_layout_<T, Align>(count));
 }
 
 namespace owner {
@@ -444,7 +448,7 @@ struct WriteTag final {};
 // ends the process before the allocation.  The bytes hold no value.
 template <class T, std::size_t Align>
 [[nodiscard]] void* allocate_heap_elements_(std::size_t count) noexcept {
-    return heap_allocate_(heap_array_bytes_<T, Align>(count), Align);
+    return heap_allocate_(heap_array_layout_<T, Align>(count));
 }
 
 // The fatal exit of a writer of mint_heap_array_written that left elements
@@ -596,8 +600,11 @@ public:
 
     // count elements, each built in place from init(position), in the order
     // of the positions.  The result of init is a T, so the element takes it
-    // with no copy and no move.  Complexity: one allocation and O(count)
-    // calls of init.
+    // with no copy and no move.  The loop runs a cursor to the end of the
+    // storage, so GCC bounds each write by the storage of the allocation
+    // door.  With an index loop, -Wstringop-overflow at -O3 sees a write past
+    // the storage on a path that does not run.  Complexity: one allocation
+    // and O(count) calls of init.
     template <class Init>
         requires std::is_nothrow_invocable_v<Init&, std::size_t>
               && std::same_as<std::invoke_result_t<Init&, std::size_t>, T>
@@ -607,8 +614,11 @@ public:
             return;
         }
         T* const first = static_cast<T*>(detail::allocate_heap_elements_<T, Align>(count));
-        for (std::size_t position = 0; position != count; ++position) {
-            ::new(static_cast<void*>(first + position)) T(init(position));
+        T* const end = first + count;
+        std::size_t position = 0;
+        for (T* slot = first; slot != end; ++slot) {
+            ::new(static_cast<void*>(slot)) T(init(position));
+            ++position;
         }
         this->state_ = State{first, count};
     }
@@ -913,8 +923,7 @@ public:
         if (!detail::is_masked_array_count_(count)) [[unlikely]] {
             fatal("a MaskedArray of {} elements: the count must be a power of two from 1 to 2^31", count);
         }
-        std::size_t const bytes = detail::heap_array_bytes_<T, Align>(count);
-        T* const first = static_cast<T*>(detail::heap_allocate_(bytes, Align));
+        T* const first = static_cast<T*>(detail::heap_allocate_(detail::heap_array_layout_<T, Align>(count)));
         for (std::size_t position = 0; position != count; ++position) {
             ::new(static_cast<void*>(first + position)) T();
         }

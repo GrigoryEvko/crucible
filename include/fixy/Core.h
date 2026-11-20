@@ -16,6 +16,7 @@
 // template in namespace foundation::core.  A specialization through a
 // using-declaration is not valid C++.
 
+#include <foundation/alloc/Layout.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Array.h>
@@ -377,6 +378,18 @@ using ::foundation::core::Philox4x32;
 // a Float Rep.  The units, Product and Quotient keep their namespace unit.
 using ::foundation::core::ByteCount;
 using ::foundation::core::convert;
+
+// The layout of an allocation: a count of bytes above zero at an Alignment
+// that is a power of two (THE LAYOUT of foundation/alloc/Layout.h).
+using ::foundation::alloc::Alignment;
+using ::foundation::alloc::alignment_of;
+using ::foundation::alloc::bytes_of;
+using ::foundation::alloc::Layout;
+using ::foundation::alloc::LayoutError;
+using ::foundation::alloc::LayoutResult;
+using ::foundation::alloc::mint_alignment;
+using ::foundation::alloc::mint_layout;
+
 using ::foundation::core::ElementCount;
 using ::foundation::core::Quantity;
 using ::foundation::core::QuantityUnit;

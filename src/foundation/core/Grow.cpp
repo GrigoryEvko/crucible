@@ -37,14 +37,14 @@ std::size_t next_capacity_(std::size_t capacity, std::size_t needed, std::size_t
 void GrowText::grow_and_put_(char const* characters, std::size_t count) noexcept {
     std::size_t const needed = state_.size + count;
     std::size_t const next = detail::next_capacity_(state_.capacity, needed, state_.maximum, 1);
-    char* const target = static_cast<char*>(detail::heap_allocate_(next, 1));
+    char* const target = static_cast<char*>(detail::heap_allocate_(detail::slots_layout_<char>(next)));
     if (state_.size != 0) {
         __builtin_memcpy(target, state_.first, state_.size);
     }
     __builtin_memcpy(target + state_.size, characters, count);
     if (state_.first != nullptr) {
         detail::unpoison_slots_(state_.first, state_.capacity);
-        detail::heap_release_(static_cast<void*>(state_.first), state_.capacity, 1);
+        detail::heap_release_(static_cast<void*>(state_.first), detail::slots_layout_<char>(state_.capacity));
     }
     state_.first = target;
     state_.size = needed;

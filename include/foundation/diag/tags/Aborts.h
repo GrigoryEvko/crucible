@@ -273,7 +273,7 @@ struct AllocationSizeOverflow : tag_base {
     static constexpr tag_text_literal correct_example =
         "if (count > kMaxSlots) return std::unexpected(Error::TooLarge);  // bounded first";
     static constexpr tag_text_literal violating_example =
-        "auto block = mint_aligned_bytes(alloc, header.bytes, 4096);  // bytes read from the file";
+        "auto block = mint_heap_array<std::uint64_t>(alloc, header.count, 0);  // a count read from the file";
 };
 
 }  // namespace foundation::diag

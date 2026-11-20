@@ -30,10 +30,11 @@ constexpr std::size_t kMallocAlignment = 16;
 // alignment that gets no storage names the catalog entry of the remediation.
 constexpr std::size_t kHugePageBytes = std::size_t{2} << 20;
 
-[[noreturn, gnu::cold, gnu::noinline]] void refuse_request_(std::size_t bytes, std::size_t alignment) noexcept {
-    fatal("the allocation door got a request of {} bytes at the alignment {}: the bytes must be more than zero, and "
-          "the alignment must be a power of two",
-          bytes, alignment);
+[[noreturn, gnu::cold, gnu::noinline]] void refuse_zeroed_alignment_(std::size_t bytes,
+                                                                     std::size_t alignment) noexcept {
+    fatal("the zeroed allocation door got a request of {} bytes at the alignment {}: calloc gives at most the "
+          "alignment {}.  Take a layout of a smaller alignment, and align inside the block",
+          bytes, alignment, kMallocAlignment);
 }
 
 [[noreturn, gnu::cold, gnu::noinline]] void no_storage_(std::size_t bytes, std::size_t alignment) noexcept {
@@ -46,22 +47,18 @@ constexpr std::size_t kHugePageBytes = std::size_t{2} << 20;
           alignment);
 }
 
-void check_request_(std::size_t bytes, std::size_t alignment) noexcept {
-    bool const is_power_of_two = alignment != 0 && (alignment & (alignment - 1)) == 0;
-    if (bytes == 0 || !is_power_of_two) [[unlikely]] {
-        refuse_request_(bytes, alignment);
-    }
-}
-
 }  // namespace
 
 // Heap.h gives the declaration the attribute returns_nonnull.  GCC 16 at -O3
 // still suggests the attribute for a function that has it, also when the
-// definition spells it again, so the suggestion is off for this one body.
+// definition spells it again, so the suggestion is off for these bodies.
+//
+// The two words come from a Layout (THE WORDS OF A LAYOUT of Heap.h), so the
+// bytes are above zero and the alignment is a power of two, and no body tests
+// them again.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsuggest-attribute=returns_nonnull"
-void* heap_allocate_(std::size_t bytes, std::size_t alignment) noexcept {
-    check_request_(bytes, alignment);
+void* heap_take_words_(std::size_t bytes, std::size_t alignment) noexcept {
     void* const storage =
         alignment <= kMallocAlignment ? __builtin_malloc(bytes) : __builtin_aligned_alloc(alignment, bytes);
     if (storage == nullptr) [[unlikely]] {
@@ -74,19 +71,19 @@ void* heap_allocate_(std::size_t bytes, std::size_t alignment) noexcept {
 // list.  A block that it maps new comes from fresh pages of the kernel, which
 // hold zero, so a large block costs no write.  The calloc of
 // ThreadSanitizer writes zero into each block.
-void* heap_allocate_zeroed_(std::size_t bytes) noexcept {
-    check_request_(bytes, 1);
+void* heap_take_zeroed_words_(std::size_t bytes, std::size_t alignment) noexcept {
+    if (alignment > kMallocAlignment) [[unlikely]] {
+        refuse_zeroed_alignment_(bytes, alignment);
+    }
     void* const storage = __builtin_calloc(1, bytes);
     if (storage == nullptr) [[unlikely]] {
-        no_storage_(bytes, 1);
+        no_storage_(bytes, alignment);
     }
     return storage;
 }
 #pragma GCC diagnostic pop
 
-void heap_release_(void* storage, std::size_t /*bytes*/, std::size_t /*alignment*/) noexcept {
-    __builtin_free(storage);
-}
+void heap_release_(void* storage, ::foundation::alloc::Layout const& /*layout*/) noexcept { __builtin_free(storage); }
 
 #if defined(__SANITIZE_ADDRESS__)
 

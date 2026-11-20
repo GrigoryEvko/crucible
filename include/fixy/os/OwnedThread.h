@@ -205,7 +205,7 @@ public:
     // Ends the body and gives the storage back.  Runs after the join.
     static void end(void* frame) noexcept {
         static_cast<owned_frame_*>(frame)->~owned_frame_();
-        ::foundation::core::detail::heap_release_(frame, sizeof(owned_frame_), alignof(owned_frame_));
+        ::foundation::core::detail::heap_release_(frame, ::foundation::alloc::Layout::of<owned_frame_>());
     }
 
 private:
@@ -319,7 +319,7 @@ struct owned_thread_door {
     [[nodiscard]] static ::foundation::core::Result<OwnedThread, ::foundation::os::Errno>
     start(ThreadOptions const& options, Body&& body) noexcept {
         using Frame = owned_frame_<Body>;
-        void* const storage = ::foundation::core::detail::heap_allocate_(sizeof(Frame), alignof(Frame));
+        void* const storage = ::foundation::core::detail::heap_allocate_(::foundation::alloc::Layout::of<Frame>());
         Frame* const frame = ::new(storage) Frame{static_cast<Body&&>(body), options.name};
         // The owner holds the address of the frame, so the match reads a
         // named Result, and each arm builds the result of the mint.

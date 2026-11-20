@@ -5,6 +5,7 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    auto block = ::foundation::mint_aligned_bytes(::foundation::effects::testing::test().io, 64, 64);
+    auto block = ::foundation::mint_aligned_bytes(::foundation::effects::testing::test().io,
+                                                  ::foundation::alloc::Layout::of<unsigned long>());
     return static_cast<int>(block.size());
 }
