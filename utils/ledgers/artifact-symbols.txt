@@ -140,6 +140,7 @@ rule artifact-symbols
 @build/libfoundation.a | libc-allow | 1 | _exit | -
 @build/libfoundation.a | libc-allow | 1 | abort | -
 @build/libfoundation.a | libc-allow | 1 | aligned_alloc | -
+@build/libfoundation.a | libc-allow | 1 | calloc | -
 @build/libfoundation.a | libc-allow | 1 | fork | -
 @build/libfoundation.a | libc-allow | 1 | free | -
 @build/libfoundation.a | libc-allow | 1 | malloc | -

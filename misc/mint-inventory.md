@@ -190,6 +190,7 @@ that the axis does not apply to the row.
 | `mint_owned_region(foundation::effects::Alloc, T0_1&, std::size_t, foundation::permissions::Permission<T0_2, T0_3>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 21 |
 | `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 21 |
+| `mint_refined_constant` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_sealed_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_sealed_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
@@ -302,6 +303,7 @@ that the axis does not apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_aligned_bytes` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 2 |
+| `mint_aligned_bytes_zeroed` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 2 |
 
 ## include/foundation/core/
 
@@ -385,4 +387,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 80 | 46 | 25 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 156 | 61 | 91 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 158 | 61 | 93 | 4 | 0 | 3 |
