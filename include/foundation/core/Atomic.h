@@ -447,9 +447,16 @@ private:
 // The token is not trivially copyable, so std::bit_cast builds no token.  The
 // annotation no_start_over_bytes refuses the checked lifetime start of
 // foundation/Lifetime.h.
+//
+// A token moves to another thread, and its holder there is the one writer.
+// Two threads that read one token through a reference to const would both
+// pass the check of the id, and both write the cell.  So the token is not
+// Shareable (foundation/Transfer.h), and a door of concurrent threads refuses
+// a body that borrows it.
 template <class Role, class Brand>
 class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::authority{}]]
-                   [[= ::foundation::lifetime::no_start_over_bytes{}]] SoleWriter final {
+                   [[= ::foundation::lifetime::no_start_over_bytes{}]][[= ::foundation::transfer::not_shareable{}]]
+    SoleWriter final {
     static_assert(detail::SoleWriterRole<Role>, "SoleWriter<Role, Brand>: the role names a kind of cell, such as the "
                                                 "head of a ring.  It must be an empty class that is not cv-qualified.");
     static_assert(::foundation::brand::IsFreshBrand<Brand>,

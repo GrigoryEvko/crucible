@@ -15,13 +15,20 @@
 //   made it for.
 //
 // The proof is in foundation, so an owner of each layer can make one.
+//
+// Two threads that read one proof through a reference to const would both
+// publish the counter of one writer.  So a proof is not Shareable
+// (foundation/Transfer.h), and a door of concurrent threads refuses a body
+// that borrows it.  The proof does not copy or move, so it is Sendable only
+// in name: no value of it reaches another thread.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/Transfer.h>
 
 namespace foundation {
 
 template <class Owner, class Role>
-class [[nodiscard]] SoleWriterProof final {
+class [[nodiscard]][[= ::foundation::transfer::not_shareable{}]] SoleWriterProof final {
     constexpr SoleWriterProof() noexcept = default;
     friend Owner;
 

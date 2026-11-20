@@ -57,6 +57,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Report.h>
@@ -864,9 +865,17 @@ private:
 // that a token is the authority to touch a region.  The annotation
 // no_start_over_bytes refuses a token to the checked lifetime start of
 // foundation/Lifetime.h.
+//
+// A token moves to another thread, and its holder there owns the region
+// alone.  Two threads that read one token through a reference to const would
+// both show the proof of the region at the same time.  So a token is not
+// Shareable (foundation/Transfer.h), and a door of concurrent threads refuses
+// a body that borrows it.  The copyable share of a region is a
+// SharedPermission.
 template <typename Tag, typename Brand>
 class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::authority{}]]
-                   [[= ::foundation::lifetime::no_start_over_bytes{}]] Permission {
+                   [[= ::foundation::lifetime::no_start_over_bytes{}]][[= ::foundation::transfer::not_shareable{}]]
+    Permission {
     static_assert(PermissionTag<Tag>, "Permission<Tag>: Tag must be an empty non-union class type "
                                       "(see PermissionTag concept above).  Pointers, references, "
                                       "primitives, enums, unions, and stateful classes are rejected. "

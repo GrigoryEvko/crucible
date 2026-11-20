@@ -3,6 +3,7 @@
 #include <foundation/Transfer.h>
 
 #include <foundation/ChannelBinding.h>
+#include <foundation/SoleWriterProof.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Id.h>
@@ -235,6 +236,18 @@ static_assert(Sendable<ReadsOwnerThreadCount> && !Sendable<WritesOwnerThreadCoun
 
 // The Tally of the base holds a count cell, so two threads can add to it.
 static_assert(Synchronized<::foundation::core::Tally> && Sendable<::foundation::core::Tally const&>);
+
+// A proof of the one writer moves to no other thread for a share: two threads
+// do not read one proof, so it is not Shareable.  The check file of
+// Permission.h and test_core_atomic check the same facts of a Permission and a
+// SoleWriter.
+struct TokenRole {};
+using WriterProof = ::foundation::SoleWriterProof<Plain, TokenRole>;
+template <class Held>
+struct HoldsOne {
+    Held held;
+};
+static_assert(!Shareable<WriterProof> && !Synchronized<WriterProof>);
 
 // A tag type that is only declared holds each property as a type argument
 // that rule 8 reads, as for an Id over a tag that its spelling declares.

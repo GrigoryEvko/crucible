@@ -12,6 +12,7 @@
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -963,6 +964,12 @@ void test_sole_writer_single_thread() {
     auto writer = mint_sole_writer<HeadRole>();
     static_assert(!AddressTakesBrand<decltype(writer)::brand_type>,
                   "the address of the mint with a target type of the held brand gives no second writer of it");
+    using Writer = decltype(writer);
+    static_assert(::foundation::transfer::Sendable<Writer> && ::foundation::transfer::SendableBeside<Writer>,
+                  "a writer moves to another thread, and its holder there is the one writer");
+    static_assert(!::foundation::transfer::Shareable<Writer> && !::foundation::transfer::Synchronized<Writer>
+                      && !::foundation::transfer::Sendable<Writer const&>,
+                  "two threads do not share one writer, so a reference to it moves to no other thread");
     Atomic<std::uint64_t, decltype(writer)> head{writer, std::uint64_t{3}};
     CRUCIBLE_FATAL_INVARIANT(head.load_owned(writer) == 3 && head.load_acquire() == 3);
     head.store_release(writer, head.load_owned(writer) + 4);
@@ -1057,26 +1064,22 @@ void test_sole_writer_agrees_with_plain_model() {
 
 // One thread writes the cell, and the other three read it.  Each read of
 // the writer gives the value that the writer stored last, and each reader
-// sees values that never decrease.  The threads borrow the writer through a
-// Ref to a const writer, so no thread can end it, and the test ends it after
-// the join.
+// sees values that never decrease.  The thread of the writer owns the
+// writer, because two threads do not share one writer, and the door ends it
+// after the join.  The three readers run beside it.
 void test_sole_writer_under_contention() {
     auto writer = mint_sole_writer<HeadRole>();
-    decltype(writer) const& shared_writer = writer;
-    auto const lent_writer = to(shared_writer);
     CacheLine<Atomic<std::uint64_t, decltype(writer)>> head{writer, std::uint64_t{0}};
-    CacheLine<Atomic<std::uint64_t>> next_worker{std::uint64_t{0}};
     CacheLine<Tally> wrong_owned_reads{};
     CacheLine<Tally> backward_reads{};
-    run_on_four_threads([&, lent_writer] {
-        if (next_worker->fetch_add_acq_rel(1) == 0) {
-            for (std::uint64_t step = 0; step < steps_per_worker; ++step) {
-                std::uint64_t const own = head->load_owned(*lent_writer);
-                if (own != step) wrong_owned_reads->add(1);
-                head->store_release(*lent_writer, own + 1);
-            }
-            return;
+    auto write = [&head, &wrong_owned_reads, owned = std::move(writer)]() mutable noexcept {
+        for (std::uint64_t step = 0; step < steps_per_worker; ++step) {
+            std::uint64_t const own = head->load_owned(owned);
+            if (own != step) wrong_owned_reads->add(1);
+            head->store_release(owned, own + 1);
         }
+    };
+    auto read = [&head, &backward_reads]() noexcept {
         std::uint64_t last = 0;
         while (last < steps_per_worker) {
             std::uint64_t const seen = head->load_acquire();
@@ -1084,10 +1087,18 @@ void test_sole_writer_under_contention() {
             last = seen;
             CRUCIBLE_SPIN_PAUSE;
         }
-    });
+    };
+    auto read_second = read;
+    auto read_third = read;
+    WorkerCtx const ctx{eff::testing::bg()};
+    auto read_on_three_threads = [&ctx, &read, &read_second, &read_third]() noexcept {
+        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, read, read_second, read_third)
+            .expect("the door starts the three readers with the default options");
+    };
+    ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, std::move(write), read_on_three_threads)
+        .expect("the door starts the writer with the default options");
     CRUCIBLE_FATAL_INVARIANT(wrong_owned_reads->read() == 0 && backward_reads->read() == 0);
-    CRUCIBLE_FATAL_INVARIANT(head->load_owned(writer) == steps_per_worker);
-    ::foundation::linear::drop(std::move(writer));
+    CRUCIBLE_FATAL_INVARIANT(head->load_acquire() == steps_per_worker);
 }
 
 // The store of the writer publishes the plain writes before it, as the
@@ -1116,31 +1127,47 @@ void test_sole_writer_release_publishes_to_acquire() {
     ::foundation::linear::drop(std::move(writer));
 }
 
-// The writer changes thread through the start and the join of a fork.  A
-// thread of the first fork writes the cell, the caller reads it after the
-// join, and a thread of the second fork reads the value of the caller.
+// The writer changes thread through the start of a thread, and its stores
+// reach the caller through the join.  The caller writes the cell, and then a
+// body that owns the writer reads the value of the caller with load_owned and
+// writes the steps.  The caller reads the last step after the join.  The door
+// ends the writer after the join.
 void test_sole_writer_moves_through_a_join() {
     auto writer = mint_sole_writer<HeadRole>();
-    decltype(writer) const& shared_writer = writer;
-    auto const lent_writer = to(shared_writer);
     CacheLine<Atomic<std::uint64_t, decltype(writer)>> head{writer, std::uint64_t{0}};
-    CacheLine<Atomic<std::uint64_t>> next_worker{std::uint64_t{0}};
-    run_on_four_threads([&, lent_writer] {
-        if (next_worker->fetch_add_acq_rel(1) != 0) return;
-        for (std::uint64_t step = 0; step < steps_per_worker; ++step) {
-            head->store_release(*lent_writer, head->load_owned(*lent_writer) + 1);
-        }
-    });
-    CRUCIBLE_FATAL_INVARIANT(head->load_owned(writer) == steps_per_worker);
     head->store_release(writer, 5);
-    next_worker->store_release(0);
     CacheLine<Tally> wrong_owned_reads{};
-    run_on_four_threads([&, lent_writer] {
-        if (next_worker->fetch_add_acq_rel(1) != 0) return;
-        if (head->load_owned(*lent_writer) != 5) wrong_owned_reads->add(1);
-        head->store_release(*lent_writer, 9);
-    });
-    CRUCIBLE_FATAL_INVARIANT(wrong_owned_reads->read() == 0 && head->load_owned(writer) == 9);
+    WorkerCtx const ctx{eff::testing::bg()};
+    auto write_steps = [&head, &wrong_owned_reads, owned = std::move(writer)]() mutable noexcept {
+        if (head->load_owned(owned) != 5) wrong_owned_reads->add(1);
+        for (std::uint64_t step = 0; step < steps_per_worker; ++step) {
+            head->store_release(owned, head->load_owned(owned) + 1);
+        }
+    };
+    ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, std::move(write_steps), []() noexcept {
+    }).expect("the door starts the writer with the default options");
+    CRUCIBLE_FATAL_INVARIANT(wrong_owned_reads->read() == 0 && head->load_acquire() == 5 + steps_per_worker);
+}
+
+// The writer of the caller writes on another thread and comes back through the
+// join.  One body of run_joined borrows the writer while the caller waits, so
+// the body is its one user.  The caller then reads the last store of the body
+// with load_owned, and writes again.  A linear writer cannot be the value of a
+// body, so the body borrows it.
+void test_sole_writer_comes_back_through_a_join() {
+    auto writer = mint_sole_writer<HeadRole>();
+    CacheLine<Atomic<std::uint64_t, decltype(writer)>> head{writer, std::uint64_t{0}};
+    WorkerCtx const ctx{eff::testing::bg()};
+    auto write_steps = [&head, &writer]() noexcept {
+        for (std::uint64_t step = 0; step < steps_per_worker; ++step) {
+            head->store_release(writer, head->load_owned(writer) + 1);
+        }
+    };
+    ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, write_steps)
+        .expect("the door starts the writer with the default options");
+    CRUCIBLE_FATAL_INVARIANT(head->load_owned(writer) == steps_per_worker);
+    head->store_release(writer, 9);
+    CRUCIBLE_FATAL_INVARIANT(head->load_owned(writer) == 9 && head->load_acquire() == 9);
     ::foundation::linear::drop(std::move(writer));
 }
 
@@ -1179,5 +1206,6 @@ int main() {
     test_sole_writer_under_contention();
     test_sole_writer_release_publishes_to_acquire();
     test_sole_writer_moves_through_a_join();
+    test_sole_writer_comes_back_through_a_join();
     return 0;
 }

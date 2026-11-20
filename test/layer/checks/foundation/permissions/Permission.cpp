@@ -7,6 +7,7 @@
 
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
+#include <foundation/Transfer.h>
 #include <foundation/permissions/SharedPermission.h>
 
 #include <optional>
@@ -444,6 +445,28 @@ constexpr bool split_gives_a_record() noexcept {
 static_assert(split_gives_a_record());
 static_assert(seplog_roster::root_brands_are_fresh());
 static_assert(seplog_roster::singleton_root_is_erased());
+
+// A token moves to another thread, but two threads do not share it
+// (foundation/Transfer.h).  So it is Sendable and not Shareable, a reference
+// to it moves to no other thread, and a class that holds one is not
+// Shareable.  The copyable share of a region stays Shareable.  The statement
+// does not depend on the brand, so the check takes the brand as a parameter.
+template <class Held>
+struct holds_one_token {
+    Held held;
+};
+template <class Brand>
+consteval bool are_tokens_sendable_and_not_shareable() {
+    namespace transfer = ::foundation::transfer;
+    using Token = Permission<seplog_test_tag, Brand>;
+    using Share = SharedPermission<seplog_test_tag, Brand>;
+    return transfer::Sendable<Token> && transfer::SendableBeside<Token> && !transfer::Shareable<Token>
+        && !transfer::Synchronized<Token> && !transfer::Sendable<Token const&> && !transfer::Sendable<Token&>
+        && transfer::Sendable<holds_one_token<Token>> && !transfer::Shareable<holds_one_token<Token>>
+        && transfer::first_refusal(^^holds_one_token<Token>, transfer::Property::Share) == std::meta::dealias(^^Token)
+        && transfer::Shareable<Share>;
+}
+static_assert(are_tokens_sendable_and_not_shareable<::foundation::brand::DefaultBrand>());
 }  // namespace detail
 
 }  // namespace foundation::permissions

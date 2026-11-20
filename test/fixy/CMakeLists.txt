@@ -6335,6 +6335,14 @@ fixy_neg_compile_test(neg_thread_run_beside_moves_a_box_of_a_declared_class
 fixy_neg_compile_test(neg_thread_run_joined_moves_a_box_of_a_declared_class
   "static assertion failed: run_joined: the body captures .device. \\(field [_a-z]+, type Device\\)"
   "its type is not Sendable.*The first part that refuses it: DeviceState")
+# A token of exclusive authority moves to another thread, but two threads do
+# not share it, so two bodies of run_joined do not read one token.
+fixy_neg_compile_test(neg_thread_run_joined_shares_a_sole_writer
+  "static assertion failed: run_joined: the body captures .proof. \\(field [_a-z]+, type const foundation::core::SoleWriter<"
+  "its type is not Shareable.*The first part that refuses it: foundation::core::SoleWriter<")
+fixy_neg_compile_test(neg_thread_run_joined_shares_a_permission
+  "static assertion failed: run_joined: the body captures .proof. \\(field [_a-z]+, type const foundation::permissions::Permission<"
+  "its type is not Shareable.*The first part that refuses it: foundation::permissions::Permission<")
 # The thread of an owner joins before each other member of the owner ends:
 # its member is the last member, the destructor of the owner is defaulted,
 # and the owner stays in place.
