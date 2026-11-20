@@ -254,50 +254,66 @@ constexpr int kTreeLevelFlags = os::kOpenReadOnly | os::kOpenDirectory | os::kOp
     return open_beneath_(level, ".", kTreeLevelFlags, 0);
 }
 
+// The end of a step or of a pass of the walk.
+enum class WalkEnd : std::uint8_t {
+    // The entry went, or the pass read to the end of the listing.
+    removed,
+    // A directory that holds an entry opened beneath the directory of the walk.
+    opened,
+    // A removal, a listing or an open failed.
+    failed,
+};
+
+// A step or a pass of the walk: its end, the descriptor of the directory that
+// it opened, and the error of a failure.  The plain record keeps the walk free
+// of a sum in a sum, which the visitor of the listing inlines.
+struct WalkStep {
+    WalkEnd end = WalkEnd::removed;
+    int below = -1;
+    os::Errno error = os::Errno::eio;
+};
+
 // The step of the walk at the entry NAME of the directory LEVEL, which a
-// listing gave.  The step removes a file or a link, or an empty directory, and
-// gives no value.  For a directory that holds an entry, it gives the
-// descriptor of that directory, opened beneath LEVEL.  An entry that is gone at
-// its removal counts as removed.
-[[nodiscard]] core::Result<core::Option<int>, os::Errno> remove_or_open(int level, char const* name) noexcept {
-    using Step = core::Result<core::Option<int>, os::Errno>;
-    auto const removed_or = [](os::Errno error) noexcept -> Step {
-        if (error == os::Errno::enoent) return core::Option<int>{};
-        return core::err(error);
-    };
-    return unlink_entry(level, name)
-        .match([](core::Unit) noexcept -> Step { return core::Option<int>{}; },
-               [&](os::Errno unlinked) noexcept -> Step {
-                   if (unlinked != os::Errno::eisdir) return removed_or(unlinked);
-                   return remove_directory_entry(level, name)
-                       .match([](core::Unit) noexcept -> Step { return core::Option<int>{}; },
-                              [&](os::Errno held) noexcept -> Step {
-                                  if (held != os::Errno::enotempty && held != os::Errno::eexist) {
-                                      return removed_or(held);
-                                  }
-                                  return open_beneath_(level, name, kTreeLevelFlags, 0).map([](int below) noexcept {
-                                      return core::Option<int>::some(below);
-                                  });
-                              });
-               });
+// listing gave.  The step removes a file or a link, or an empty directory.
+// For a directory that holds an entry, it opens that directory beneath LEVEL.
+// An entry that is gone at its removal counts as removed.
+[[nodiscard]] WalkStep remove_or_open(int level, char const* name) noexcept {
+    // The error number zero is no error, so it stands for a call that took the
+    // entry.
+    constexpr os::Errno kTaken{};
+    os::Errno const unlinked = unlink_entry(level, name).err().value_or(kTaken);
+    if (unlinked == kTaken || unlinked == os::Errno::enoent) return WalkStep{};
+    if (unlinked != os::Errno::eisdir) return WalkStep{.end = WalkEnd::failed, .error = unlinked};
+    os::Errno const held = remove_directory_entry(level, name).err().value_or(kTaken);
+    if (held == kTaken || held == os::Errno::enoent) return WalkStep{};
+    if (held != os::Errno::enotempty && held != os::Errno::eexist) {
+        return WalkStep{.end = WalkEnd::failed, .error = held};
+    }
+    WalkStep step{.end = WalkEnd::failed};
+    open_beneath_(level, name, kTreeLevelFlags, 0)
+        .match(
+            [&step](int descriptor) noexcept {
+                step.end = WalkEnd::opened;
+                step.below = descriptor;
+            },
+            [&step](os::Errno error) noexcept { step.error = error; });
+    return step;
 }
 
 // One pass of the walk over the entries of LEVEL, from the offset of its
 // descriptor.  The pass takes the step of remove_or_open at each entry, and it
-// stops at the first step that gives a descriptor or an error.  It gives that
-// descriptor, no value when it reads to the end, or the first error.
-[[nodiscard]] core::Result<core::Option<int>, os::Errno> clear_pass(int level) noexcept {
-    core::Result<core::Option<int>, os::Errno> step = core::Option<int>{};
+// stops at the first step that opens a directory or fails.  It gives that step,
+// or a removed step when it reads to the end.
+[[nodiscard]] WalkStep clear_pass(int level) noexcept {
+    WalkStep step{};
     auto visit = [level, &step](core::CText name) noexcept -> os::Visit {
         step = remove_or_open(level, core::detail::c_text_first_(name));
-        bool const is_removed = step.match([](core::Option<int> const& below) noexcept { return below.is_none(); },
-                                           [](os::Errno) noexcept { return false; });
-        return is_removed ? os::Visit::proceed : os::Visit::stop;
+        return step.end == WalkEnd::removed ? os::Visit::proceed : os::Visit::stop;
     };
-    UnitResult const listed = os::detail::list_open_directory_(level, os::detail::erase_visitor_(visit));
-    return listed.match(
-        [&step](core::Unit) noexcept { return std::move(step); },
-        [](os::Errno error) noexcept -> core::Result<core::Option<int>, os::Errno> { return core::err(error); });
+    os::Errno const listed =
+        os::detail::list_open_directory_(level, os::detail::erase_visitor_(visit)).err().value_or(os::Errno{});
+    if (listed != os::Errno{}) return WalkStep{.end = WalkEnd::failed, .error = listed};
+    return step;
 }
 
 // Removes each entry below the directory LEVEL, whose descriptor lists from the
@@ -309,38 +325,41 @@ constexpr int kTreeLevelFlags = os::kOpenReadOnly | os::kOpenDirectory | os::kOp
     UnitResult outcome = core::Unit{};
     bool is_done = false;
     while (!is_done) {
-        clear_pass(current).match(
-            [&](core::Option<int> below) noexcept {
-                below.match(
-                    [&](int child) noexcept {
-                        if (depth + 1 == kRemoveTreeDepth) {
-                            close_descriptor_(child);
-                            outcome = core::err(os::Errno::enametoolong);
-                            is_done = true;
-                            return;
-                        }
-                        UnitResult inner = clear_and_close(child, depth + 1);
-                        if (inner.is_err()) {
-                            outcome = std::move(inner);
-                            is_done = true;
-                            return;
-                        }
-                        open_again(current).match(
-                            [&](int again) noexcept {
-                                close_descriptor_(current);
-                                current = again;
-                            },
-                            [&](os::Errno error) noexcept {
-                                outcome = core::err(error);
-                                is_done = true;
-                            });
-                    },
-                    [&] noexcept { is_done = true; });
-            },
-            [&](os::Errno error) noexcept {
-                outcome = core::err(error);
+        WalkStep const pass = clear_pass(current);
+        switch (pass.end) {
+            case WalkEnd::removed:
                 is_done = true;
-            });
+                break;
+            case WalkEnd::failed:
+                outcome = core::err(pass.error);
+                is_done = true;
+                break;
+            case WalkEnd::opened:
+            default: {
+                if (depth + 1 == kRemoveTreeDepth) {
+                    close_descriptor_(pass.below);
+                    outcome = core::err(os::Errno::enametoolong);
+                    is_done = true;
+                    break;
+                }
+                UnitResult inner = clear_and_close(pass.below, depth + 1);
+                if (inner.is_err()) {
+                    outcome = std::move(inner);
+                    is_done = true;
+                    break;
+                }
+                open_again(current).match(
+                    [&current](int again) noexcept {
+                        close_descriptor_(current);
+                        current = again;
+                    },
+                    [&](os::Errno error) noexcept {
+                        outcome = core::err(error);
+                        is_done = true;
+                    });
+                break;
+            }
+        }
     }
     close_descriptor_(current);
     return outcome;
