@@ -96,6 +96,44 @@ static_assert(!channels::IsBridgeableDirection<BridgeSpsc, static_cast<channels:
     return 0;
 }
 
+// The read of the pole table of a merge pole takes the bare tag of Nondet
+// from the context of the step, so the consumer session receives in a
+// context that holds Nondet.  The root of the channel stands in the test, so
+// its brand stays in the test.
+struct MergeTag {};
+
+[[nodiscard]] int merge_pole_receives_in_a_nondet_context() {
+    const SnapshotCtx ctx{::foundation::effects::testing::test()};
+    auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, MergeTag>>();
+    using BridgeMerge = c::channel_t<int, 8, decltype(root)>;
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<BridgeMerge::producer_tag, BridgeMerge::consumer_tag>(std::move(root));
+    BridgeMerge channel{std::move(producer_root)};
+    auto head = channels::mint_substrate_session<BridgeMerge, channels::Direction::Consumer>(
+        ctx, channel.consumer(std::move(consumer_perm)));
+
+    // A receive on an empty pole waits, so the test fills the pole first, and
+    // it ends the process when the pole refuses a value.
+    auto feeder = channel.producer().expect("the merge channel lends a producer share");
+    const bool is_filled = feeder.try_push(5) && feeder.try_push(6);
+    if (!is_filled) ::fixy::fatal("test_endpoint: the merge channel refused a value below capacity");
+
+    // The first receive goes through the handle of the pole.  The second goes
+    // through a recorder over the same handle, and the detach of the recorder
+    // ends the stream.
+    auto [first, after_first] = std::move(head).recv(ctx);
+    s::SessionEventLog log;
+    auto recorded = s::mint_recorded_session(std::move(after_first), s::mint_session_event_writer(log), s::RoleTagId{2},
+                                             s::RoleTagId{1});
+    auto [second, next] = std::move(recorded).recv(ctx);
+    const bool is_in_order = first == 5 && second == 6 && log.size() == 1;
+    std::move(next).detach(s::detach_reason::InfiniteLoopProtocol{});
+    const bool is_drained = channel.empty_approx(kSnapshot);
+    return is_in_order && is_drained ? 0
+                                     : fail(is_in_order ? "the merge pole session left values in the channel"
+                                                        : "the merge pole session read the wrong values");
+}
+
 // ── The endpoint ─────────────────────────────────────────────────────
 
 struct EndpointTag {};
@@ -382,17 +420,53 @@ using RecordSpsc = c::channel_t<int, 8, decltype(record_root())>;
     return 0;
 }
 
+// A recorded consumer endpoint receives through the read of the pole table,
+// in the context of the step, and records the receive of an int.  The root
+// of the channel stands in the test, so its brand stays in the test.
+struct RecordInTag {};
+
+[[nodiscard]] int recording_endpoint_records_each_receive() {
+    const FgCtx ctx = ::foundation::effects::testing::foreground();
+    auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, RecordInTag>>();
+    using RecordInSpsc = c::channel_t<int, 8, decltype(root)>;
+    RecordInSpsc channel{};
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<RecordInSpsc::producer_tag, RecordInSpsc::consumer_tag>(std::move(root));
+    s::SessionEventLog log;
+    auto recorded =
+        channels::mint_recording_endpoint(channels::mint_endpoint<RecordInSpsc, channels::Direction::Consumer>(
+                                              ctx, channel.consumer(std::move(consumer_perm))),
+                                          s::mint_session_event_writer(log), s::RoleTagId{2}, s::RoleTagId{1});
+
+    // A receive on an empty pole waits, so the test fills the pole first, and
+    // it ends the process when the pole refuses the value.
+    auto producer = channel.producer(std::move(producer_perm));
+    const bool is_filled = producer.try_push(12);
+    ::foundation::linear::drop(std::move(producer));
+    if (!is_filled) ::fixy::fatal("test_endpoint: the channel refused a value below capacity");
+
+    auto [value, next] = std::move(recorded).recv(ctx);
+    std::move(next).detach(s::detach_reason::InfiniteLoopProtocol{});
+
+    if (value != 12) return fail("the recorded endpoint read the wrong value");
+    if (log.size() == 0 || log[0].op() != s::SessionOp::Recv || log[0].payload_schema() != s::default_schema_hash<int>)
+        return fail("the recorded endpoint wrote no receive event of an int");
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     int failures = 0;
     failures += bridge_round_trip();
+    failures += merge_pole_receives_in_a_nondet_context();
     failures += endpoint_send_recv_and_hand_back();
     failures += stage_from_endpoints_runs_its_body();
     failures += stage_feeds_an_mpsc_channel();
     failures += mpmc_stage_from_endpoints_runs_its_body();
     failures += swmr_stage_runs_its_body();
     failures += recording_endpoint_records_each_step();
+    failures += recording_endpoint_records_each_receive();
     if (failures != 0) {
         std::fprintf(stderr, "test_endpoint: %d check(s) failed\n", failures);
         return 1;
