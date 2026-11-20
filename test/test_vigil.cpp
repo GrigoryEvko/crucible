@@ -131,6 +131,49 @@ static void test_refused_load_reports_its_reason(::fixy::TextView directory) {
     ::fixy::check::pass(kTest, "  refused_load_reports_its_reason: PASSED\n");
 }
 
+// The store of an earlier run holds the commits of the steps 1 to 10.  A new
+// Vigil on that store starts its step after the last commit, so its persist
+// commits at a later step.  The persist runs in a child, so a persist that
+// ends its process shows as a child that does not exit with 0.  The old Vigil
+// started at the step 0, and its first persist ended the process at the
+// order check of the store.
+static void test_store_of_an_earlier_run_takes_a_later_step(::fixy::TextView directory) {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    crucible::Vigil::Config cfg;
+    for (const char character : directory) {
+        cfg.cipher_path.append(ctx.cap().alloc, character).expect("the store path fits the bound of the path");
+    }
+    for (const char character : ::fixy::TextView{"/earlier_run"}) {
+        cfg.cipher_path.append(ctx.cap().alloc, character).expect("the store path fits the bound of the path");
+    }
+    cfg.cipher_path.with_view([&ctx](::fixy::TextView path) {
+        crucible::Cipher store =
+            crucible::Cipher::open(ctx, ctx.cap().alloc, ::fixy::mint_tagged<::fixy::tags::source::External>(path))
+                .expect("the test opens its store");
+        const auto open_view = store.mint_open_view(ctx);
+        for (std::uint64_t step = 1; step <= 10; ++step) {
+            store.record_event(ctx, open_view, crucible::ContentHash{0x5A00000000000000ULL + step}, step)
+                .expect("the earlier run commits its step");
+        }
+    });
+    crucible::Vigil vigil(std::move(cfg));
+    if (!vigil.has_store()) ::fixy::fatal("the store of the earlier run does not open");
+    divrig::feed_one_region(vigil, 0);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
+    const ::fixy::process::ChildReport report =
+        ::fixy::process::wait(::fixy::process::spawn_child(ctx,
+                                                           [&vigil, &ctx] noexcept {
+                                                               if (!vigil.persist(ctx)) {
+                                                                   ::fixy::fatal("the persist of the new run fails");
+                                                               }
+                                                           })
+                                  .expect("the test starts a child"))
+            .expect("the test waits for its child");
+    CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0) && "a persist to the store of an earlier run commits");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() > 10 && "the new run starts after the last committed step");
+    ::fixy::check::pass(kTest, "  store_of_an_earlier_run_takes_a_later_step: PASSED\n");
+}
+
 // A Vigil hashes each region that it publishes under the numerics policy and
 // the eager word of its Config.  Two Vigils that record the same ops under two
 // policies publish two content hashes.
@@ -333,6 +376,7 @@ int main() {
     }
     cfg.cipher_path.with_view([](::fixy::TextView path) {
         test_refused_load_reports_its_reason(path);
+        test_store_of_an_earlier_run_takes_a_later_step(path);
         test_region_of_other_numerics_does_not_replay(path);
         test_repeated_loads_keep_a_bounded_heap(path);
     });

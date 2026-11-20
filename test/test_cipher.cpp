@@ -239,6 +239,45 @@ static void write_object_file(::fixy::TextView root, crucible::ContentHash hash,
     CRUCIBLE_TEST_ASSERT(kTest, is_written && "the test writes the file of the object");
 }
 
+// The store at the directory name under root.  The open makes the directory
+// when it is missing, and the removal of root at the end of the test removes
+// it.
+[[nodiscard]] static crucible::Cipher open_cipher_under(::fixy::TextView root, ::fixy::TextView name) {
+    ::foundation::os::PathText<crucible::Cipher::MAX_ROOT_PATH_BYTES> path{};
+    path.append(root).expect("the root of the test fits its path");
+    path.append('/').expect("the root of the test fits its path");
+    path.append(name).expect("the root of the test fits its path");
+    return crucible::Cipher::open(store_ctx(), g_test.alloc,
+                                  ::fixy::mint_tagged<::fixy::tags::source::External>(path.c_text().view()))
+        .expect("the test opens its store");
+}
+
+// Writes text over the file name under the root of a store, as a writer of the
+// store can.
+static void write_store_file(::fixy::TextView root, ::fixy::CText name, ::fixy::TextView text) {
+    const ::fixy::TestRunnerCtx ctx = store_ctx();
+    const ::fixy::fs::DirectoryHandle root_dir =
+        ::fixy::fs::open_directory(ctx, ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(root))
+                                            .expect("the root of a store is a sanitized path"))
+            .expect("the root of the store opens");
+    using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+    const bool is_written = ::fixy::fs::mint_file_at<WriteTruncate>(ctx, root_dir.ref(), name)
+                                .match(
+                                    [&](::fixy::Linear<::fixy::fs::FileOf<WriteTruncate>> opened) {
+                                        const ::fixy::fs::FileOf<WriteTruncate> file = std::move(opened).consume();
+                                        return ::fixy::fs::write_full(ctx, file.ref(), text).is_ok();
+                                    },
+                                    [](::foundation::os::Errno) { return false; });
+    CRUCIBLE_TEST_ASSERT(kTest, is_written && "the test writes the file of the store");
+}
+
+// True when a commit gives the error error.
+[[nodiscard]] static bool is_commit_error(crucible::Cipher::CommitResult const& committed,
+                                          crucible::Cipher::CommitError error) {
+    return committed.err().is_some_and(
+        [error](crucible::Cipher::CommitError given) noexcept { return given == error; });
+}
+
 static_assert(
     ::fixy::session::ContentAddressedType<typename crucible::Cipher::ContentAddressedRegionPayload::payload_type>);
 static_assert(::fixy::session::ContentAddressedType<
@@ -763,6 +802,119 @@ int main() {
         CRUCIBLE_TEST_ASSERT(kTest, is_cache_hit(newest) && newest.is_ok());
 
         std::filesystem::remove_all(dir_cache);
+    }
+
+    // A store whose log holds the commits of the steps 1 to 10, and a second
+    // open of the store.  A commit at a step below the last commit is an
+    // error of the commit, and the process goes on.  A commit at the last
+    // step and after it passes.  Each commit runs in a child, so a commit
+    // that ends its process shows as a child that does not exit with 0.
+    {
+        const crucible::Cipher anchor = open_cipher(dir);
+        {
+            auto first_run = open_cipher_under(anchor.root(), ::fixy::TextView{"steps"});
+            auto first_ov = first_run.mint_open_view(store_ctx());
+            for (std::uint64_t step = 1; step <= 10; ++step) {
+                commit_head(first_run, first_ov, crucible::ContentHash{0x5700000000000000ULL + step}, step);
+            }
+        }
+        auto second_run = open_cipher_under(anchor.root(), ::fixy::TextView{"steps"});
+        auto second_ov = second_run.mint_open_view(store_ctx());
+        CRUCIBLE_TEST_ASSERT(kTest, second_run.last_committed_step().is_some_and([](::fixy::session::StepId step) {
+            return step.value == 10;
+        }) && "the open gives the step of the last commit of the log");
+        const ::fixy::TestRunnerCtx child_ctx = store_ctx();
+        const auto commit_in_child = [&](std::uint64_t step, bool is_refusal_expected) {
+            return ::fixy::process::wait(
+                       ::fixy::process::spawn_child(
+                           child_ctx,
+                           [&second_run, &second_ov, &child_ctx, step, is_refusal_expected] noexcept {
+                               const bool is_refused =
+                                   second_run
+                                       .record_event(child_ctx, second_ov, crucible::ContentHash{0x5800000000000000ULL},
+                                                     step)
+                                       .is_err();
+                               if (is_refused != is_refusal_expected) {
+                                   ::fixy::fatal("the commit gave another result than the test expects");
+                               }
+                           })
+                           .expect("the test starts a child"))
+                .expect("the test waits for its child");
+        };
+        CRUCIBLE_TEST_ASSERT(kTest, commit_in_child(1, true).is_exit_with(0)
+                                        && "a commit below the last step is an error, not the end of the process");
+        CRUCIBLE_TEST_ASSERT(kTest, commit_in_child(9, true).is_exit_with(0));
+        CRUCIBLE_TEST_ASSERT(kTest, commit_in_child(10, false).is_exit_with(0));
+        CRUCIBLE_TEST_ASSERT(kTest, commit_in_child(11, false).is_exit_with(0));
+
+        // The refusals in this process give their errors, and they take no
+        // place.  Each child above wrote its line with the place 11 of its own
+        // count, so the commit here also takes the place 11 when no refusal
+        // took a place.  A reopen skips each line whose place does not grow,
+        // so its head is the commit of the first child.
+        using crucible::Cipher;
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             is_commit_error(second_run.record_event(store_ctx(), second_ov,
+                                                                     crucible::ContentHash{0x5800000000000001ULL}, 1),
+                                             Cipher::CommitError::step_order));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             is_commit_error(second_run.record_event(store_ctx(), second_ov,
+                                                                     crucible::ContentHash{0x5800000000000002ULL},
+                                                                     Cipher::MAX_COMMIT_STEP + 1),
+                                             Cipher::CommitError::step_above_limit));
+        commit_head(second_run, second_ov, crucible::ContentHash{0x5800000000000003ULL}, 10);
+        CRUCIBLE_TEST_ASSERT(kTest, second_run.head() == crucible::ContentHash{0x5800000000000003ULL});
+        CRUCIBLE_TEST_ASSERT(kTest, second_run.last_committed_step().is_some_and(
+                                        [](::fixy::session::StepId step) { return step.value == 10; }));
+        const crucible::Cipher third_run = open_cipher_under(anchor.root(), ::fixy::TextView{"steps"});
+        CRUCIBLE_TEST_ASSERT(kTest, third_run.head() == crucible::ContentHash{0x5800000000000000ULL}
+                                        && "a refused commit takes no place of the count");
+    }
+
+    // A log whose last line holds the step 2^64 - 1.  The line is corrupt, so
+    // the open skips it, and a commit after the step of the line before it
+    // passes.  The old store took the line, and each later commit ended its
+    // process.  A line at MAX_COMMIT_STEP is a sound commit, and a commit
+    // below it gives step_order.
+    {
+        const crucible::Cipher anchor = open_cipher(dir);
+        const crucible::Cipher made = open_cipher_under(anchor.root(), ::fixy::TextView{"high_step"});
+        write_store_file(made.root(), "log",
+                         ::fixy::TextView{"5,5900000000000001,1\n18446744073709551615,5900000000000002,2\n"});
+        auto cipher = open_cipher_under(anchor.root(), ::fixy::TextView{"high_step"});
+        auto ov = cipher.mint_open_view(store_ctx());
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.last_committed_step().is_some_and(
+                                        [](::fixy::session::StepId step) { return step.value == 5; }));
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == crucible::ContentHash{0x5900000000000001ULL}
+                                        && "the line of the step 2^64 - 1 is no commit");
+        const ::fixy::TestRunnerCtx child_ctx = store_ctx();
+        const ::fixy::process::ChildReport report =
+            ::fixy::process::wait(
+                ::fixy::process::spawn_child(
+                    child_ctx,
+                    [&cipher, &ov, &child_ctx] noexcept {
+                        if (cipher.record_event(child_ctx, ov, crucible::ContentHash{0x5900000000000003ULL}, 6)
+                                .is_err()) {
+                            ::fixy::fatal("a commit after the last sound step fails");
+                        }
+                    })
+                    .expect("the test starts a child"))
+                .expect("the test waits for its child");
+        CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0) && "a corrupt step of the log ends no later commit");
+
+        const crucible::Cipher at_ceiling_made = open_cipher_under(anchor.root(), ::fixy::TextView{"ceiling_step"});
+        write_store_file(at_ceiling_made.root(), "log", ::fixy::TextView{"4611686018427387903,5900000000000004,1\n"});
+        auto at_ceiling = open_cipher_under(anchor.root(), ::fixy::TextView{"ceiling_step"});
+        auto at_ceiling_ov = at_ceiling.mint_open_view(store_ctx());
+        CRUCIBLE_TEST_ASSERT(kTest, at_ceiling.last_committed_step().is_some_and([](::fixy::session::StepId step) {
+            return step.value == crucible::Cipher::MAX_COMMIT_STEP;
+        }) && "a line at the ceiling is a commit");
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             is_commit_error(at_ceiling.record_event(store_ctx(), at_ceiling_ov,
+                                                                     crucible::ContentHash{0x5900000000000005ULL}, 1),
+                                             crucible::Cipher::CommitError::step_order));
+        commit_head(at_ceiling, at_ceiling_ov, crucible::ContentHash{0x5900000000000006ULL},
+                    crucible::Cipher::MAX_COMMIT_STEP);
     }
 
     std::filesystem::remove_all(dir);

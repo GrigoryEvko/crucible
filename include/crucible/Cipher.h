@@ -430,7 +430,13 @@ public:
                   "Session-event persistence uses the same IO+Block row fence "
                   "as Cipher::record_event.");
 
-    // The step of a commit that failed.
+    // The largest step of a commit.  A step counts the regions of a run one
+    // at a time, so a real run does not get near it.  The ceiling leaves room
+    // for the step after the last commit, where a new run starts.  A log line
+    // with a larger step is corrupt.
+    static constexpr std::uint64_t MAX_COMMIT_STEP = (std::uint64_t{1} << 62U) - 1U;
+
+    // The step of a commit that failed, or the reason that refused it.
     enum class CommitError : std::uint8_t {
         // The place of the last commit is the largest count, so the next
         // commit has no place.  Only a log line from the disk gives that
@@ -438,12 +444,22 @@ public:
         order_exhausted,
         log_append,
         head_write,
+        // The step is below the step of the last commit of the store.  The
+        // commit writes nothing and takes no place.
+        step_order,
+        // The step is above MAX_COMMIT_STEP.  The commit writes nothing and
+        // takes no place.
+        step_above_limit,
     };
 
     using CommitResult = ::fixy::Result<::fixy::Unit, CommitError>;
 
     // Appends the commit of content_hash at step_id to the log, with the
     // next place of the count of the commits, and then writes HEAD.  The
+    // steps of the log do not go down: a step below the last commit gives
+    // step_order, and a step above MAX_COMMIT_STEP gives step_above_limit.
+    // A second process can open a store of an earlier run, so these are
+    // errors of the commit and not contracts.  The
     // commit reads no clock, because a clock time in the log makes two runs
     // of one computation write two logs.  So the gate asks only for the row
     // of the store, and the context needs no Nondet.
@@ -507,6 +523,15 @@ public:
 
     [[nodiscard]] ContentHash head() const { return head_; }
     [[nodiscard]] bool empty() const { return !head_; }
+
+    // The step of the last commit of the log, or none when the log holds no
+    // commit.  A run that opens the store of an earlier run starts its steps
+    // after it, so its commits keep the order of the log.  The step is at
+    // most MAX_COMMIT_STEP.
+    [[nodiscard]] ::fixy::Option<::fixy::session::StepId> last_committed_step() const noexcept {
+        if (log_.empty()) return ::fixy::none;
+        return ::fixy::some(log_.back().step_id());
+    }
 
     // The text of the root is a member of the store.  The deleted `const&&`
     // twin refuses a read of the root of a temporary store, because the

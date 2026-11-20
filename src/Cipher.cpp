@@ -1001,9 +1001,16 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
                                           uint64_t step_id) {
     // Weakly increasing, not strictly: duplicate step ids are accepted
     // at this gate.  The strict consecutive-by-one check belongs to the
-    // session-event batch invariant, not to the head log.
-    if (!log_.empty()) {
-        CRUCIBLE_PRE(log_.back().step_id().value <= step_id);
+    // session-event batch invariant, not to the head log.  The log of an
+    // earlier run can hold a later step than the caller, so a step out of
+    // order is an error of the commit.  A refused step writes nothing and
+    // takes no place, and load_log refuses a step above the ceiling, so each
+    // commit that this function makes loads again.
+    if (step_id > MAX_COMMIT_STEP) {
+        return ::fixy::err(CommitError::step_above_limit);
+    }
+    for (const ::fixy::session::StepId last : last_committed_step()) {
+        if (step_id < last.value) return ::fixy::err(CommitError::step_order);
     }
     // The commit takes the next place before its append.  A write that
     // passed before a failed flush can leave the record in the file, and a
@@ -1221,7 +1228,10 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
         const LogLine line = std::move(parsed).expect("the log line parsed");
         // The log only grows in step order, and its append checks that
         // order with a contract that aborts.  A line out of order is a
-        // corrupt line, so it is skipped like the others.
+        // corrupt line, so it is skipped like the others.  A step above the
+        // ceiling is corrupt too: advance_head refuses such a step, and a run
+        // that opens the store starts after the last step.
+        if (line.step > MAX_COMMIT_STEP) continue;
         if (!log_.empty() && line.step < log_.back().step_id().value) continue;
         // Each commit takes a larger place than the commit before it, also
         // after a failed append, so a place that does not grow is a corrupt

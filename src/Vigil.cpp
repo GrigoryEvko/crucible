@@ -44,6 +44,14 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
             Cipher::open(startup, startup.cap().alloc, ::fixy::mint_tagged<::fixy::tags::source::External>(path))
                 .match(
                     [&](Cipher opened) {
+                        // A store of an earlier run holds its steps, and each
+                        // commit of this run must come at or after them.  So
+                        // the step starts after the last commit.  The
+                        // background thread is the one writer of the step,
+                        // and it starts below, so this write comes first.
+                        for (const ::fixy::session::StepId last : opened.last_committed_step()) {
+                            step_.advance(last.value + 1);
+                        }
                         cipher_ = ::fixy::some(::fixy::mint_box<Cipher>(startup.cap().alloc, std::move(opened)));
                     },
                     [&](Cipher::OpenError reason) {
