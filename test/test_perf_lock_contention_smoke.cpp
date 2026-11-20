@@ -1,7 +1,6 @@
 #include <crucible/perf/LockContention.h>
 
 #include <cstdint>
-#include <cstdio>
 #include <type_traits>
 #include <utility>
 #include "perf_capabilities.h"
@@ -94,17 +93,17 @@ int main() {
         // A populated hub with fewer than both tracepoints attached
         // contradicts what the load promises.
         if (attached < 2) {
-            std::fprintf(stderr,
-                         "perf::load_lock_contention() returned populated hub "
-                         "with attached=%zu (expected >= 2)\n",
-                         attached);
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::load_lock_contention() returned populated hub "
+                           "with attached={} (expected >= 2)\n",
+                           attached);
             return 1;
         }
         if (attached > 8 || failures > 8) {
-            std::fprintf(stderr,
-                         "perf::LockContention: counter exceeded inplace_vector "
-                         "cap (attached=%zu failures=%zu)\n",
-                         attached, failures);
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::LockContention: counter exceeded inplace_vector "
+                           "cap (attached={} failures={})\n",
+                           attached, failures);
             return 1;
         }
 
@@ -119,15 +118,15 @@ int main() {
         static_assert(std::is_same_v<decltype(timeline), const ::fixy::Borrowed<const crucible::perf::TimelineLockEvent,
                                                                                 crucible::perf::LockContention>>);
         if (timeline.size() != crucible::perf::TIMELINE_CAPACITY) {
-            std::fprintf(stderr,
-                         "perf::LockContention::timeline_view() — expected "
-                         "TIMELINE_CAPACITY (%u) events, got %zu\n",
-                         crucible::perf::TIMELINE_CAPACITY, timeline.size());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::LockContention::timeline_view() — expected "
+                           "TIMELINE_CAPACITY ({}) events, got {}\n",
+                           crucible::perf::TIMELINE_CAPACITY, timeline.size());
             return 1;
         }
         if (timeline.empty()) {
-            std::fprintf(stderr, "perf::LockContention::timeline_view() — view should "
-                                 "be non-empty when the load gave a hub\n");
+            ::fixy::report(::fixy::Sink::Err, "perf::LockContention::timeline_view() — view should "
+                                              "be non-empty when the load gave a hub\n");
             return 1;
         }
 
@@ -145,39 +144,39 @@ int main() {
         const auto failures_after = hub.attach_failures();
 
         if (waits_after != 0u) {
-            std::fprintf(stderr,
-                         "perf::LockContention::wait_count() on moved-from "
-                         "— expected 0, got %llu\n",
-                         static_cast<unsigned long long>(waits_after));
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::LockContention::wait_count() on moved-from "
+                           "— expected 0, got {}\n",
+                           waits_after);
             return 1;
         }
         if (write_idx_after != 0u) {
-            std::fprintf(stderr,
-                         "perf::LockContention::timeline_write_index() on "
-                         "moved-from — expected 0, got %llu\n",
-                         static_cast<unsigned long long>(write_idx_after));
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::LockContention::timeline_write_index() on "
+                           "moved-from — expected 0, got {}\n",
+                           write_idx_after);
             return 1;
         }
         if (!view_after.empty()) {
-            std::fprintf(stderr,
-                         "perf::LockContention::timeline_view() on moved-from "
-                         "— expected empty Borrowed, got size=%zu\n",
-                         view_after.size());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::LockContention::timeline_view() on moved-from "
+                           "— expected empty Borrowed, got size={}\n",
+                           view_after.size());
             return 1;
         }
         if (attached_after.value() != 0u || failures_after.value() != 0u) {
-            std::fprintf(stderr,
-                         "perf::LockContention::attached_programs/attach_failures "
-                         "on moved-from — expected 0, got attached=%zu "
-                         "failures=%zu\n",
-                         attached_after.value(), failures_after.value());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::LockContention::attached_programs/attach_failures "
+                           "on moved-from — expected 0, got attached={} "
+                           "failures={}\n",
+                           attached_after.value(), failures_after.value());
             return 1;
         }
         if (moved_into.attached_programs().value() != attached) {
-            std::fprintf(stderr,
-                         "perf::LockContention move semantics — recipient lost "
-                         "attached count (was %zu, now %zu)\n",
-                         attached, moved_into.attached_programs().value());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::LockContention move semantics — recipient lost "
+                           "attached count (was {}, now {})\n",
+                           attached, moved_into.attached_programs().value());
             return 1;
         }
     }

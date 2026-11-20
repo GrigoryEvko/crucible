@@ -12,7 +12,6 @@
 #include <crucible/perf/SenseHubV2.h>
 
 #include <cstdint>
-#include <cstdio>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
@@ -86,11 +85,11 @@ int main() {
 
     const v2::CounterDelta delta = after - before;
     if (delta.deltas.at(::fixy::index<0>()) != 9) {
-        std::fprintf(stderr, "SenseHubV2 delta failed at slot 0\n");
+        ::fixy::report(::fixy::Sink::Err, "SenseHubV2 delta failed at slot 0\n");
         return 1;
     }
     if (delta.deltas.at(::fixy::index<1>()) != 0) {
-        std::fprintf(stderr, "SenseHubV2 delta did not saturate at slot 1\n");
+        ::fixy::report(::fixy::Sink::Err, "SenseHubV2 delta did not saturate at slot 1\n");
         return 1;
     }
 

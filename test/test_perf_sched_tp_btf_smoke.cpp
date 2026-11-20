@@ -1,7 +1,6 @@
 #include <crucible/perf/SchedTpBtf.h>
 
 #include <cstdint>
-#include <cstdio>
 #include <type_traits>
 #include <utility>
 #include "perf_capabilities.h"
@@ -54,15 +53,15 @@ int main() {
         const auto attached = hub.attached_programs();
         const auto failures = hub.attach_failures();
         if (attached.value() == 0 && failures.value() == 0) {
-            std::fprintf(stderr, "perf::load_sched_tp_btf() returned populated hub with "
-                                 "zero programs — should have been none\n");
+            ::fixy::report(::fixy::Sink::Err, "perf::load_sched_tp_btf() returned populated hub with "
+                                              "zero programs — should have been none\n");
             return 1;
         }
         if (attached.value() > 8 || failures.value() > 8) {
-            std::fprintf(stderr,
-                         "perf::SchedTpBtf: counter exceeded inplace_vector "
-                         "cap (attached=%zu failures=%zu)\n",
-                         attached.value(), failures.value());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::SchedTpBtf: counter exceeded inplace_vector "
+                           "cap (attached={} failures={})\n",
+                           attached.value(), failures.value());
             return 1;
         }
 
@@ -72,8 +71,8 @@ int main() {
         (void)cs;
         (void)write_idx;
         if (timeline.size() != crucible::perf::TIMELINE_CAPACITY) {
-            std::fprintf(stderr, "perf::SchedTpBtf::timeline_view() — expected %u, got %zu\n",
-                         crucible::perf::TIMELINE_CAPACITY, timeline.size());
+            ::fixy::report(::fixy::Sink::Err, "perf::SchedTpBtf::timeline_view() — expected {}, got {}\n",
+                           crucible::perf::TIMELINE_CAPACITY, timeline.size());
             return 1;
         }
 
@@ -81,7 +80,7 @@ int main() {
         crucible::perf::SchedTpBtf moved_into = std::move(hub);
         if (hub.context_switches() != 0u || hub.timeline_write_index() != 0u || !hub.timeline_view().empty()
             || hub.attached_programs().value() != 0u || hub.attach_failures().value() != 0u) {
-            std::fprintf(stderr, "perf::SchedTpBtf moved-from accessors — expected zeros\n");
+            ::fixy::report(::fixy::Sink::Err, "perf::SchedTpBtf moved-from accessors — expected zeros\n");
             return 1;
         }
         (void)moved_into;

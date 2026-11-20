@@ -4,7 +4,6 @@
 #include <fixy/concurrent/ParallelismRule.h>
 #include <foundation/effects/Effect.h>
 
-#include <cstdio>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
@@ -83,14 +82,14 @@ int main() {
         for (int i = 0; i < 5; ++i) {
             const auto dec = profiler.recommend_bare(kRead, budget);
             if (dec.kind != bare.kind || dec.factor != bare.factor) {
-                std::fprintf(stderr,
-                             "nullptr-Senses pass-through diverged: kind=%d/%d "
-                             "factor=%zu/%zu on iteration %d\n",
-                             static_cast<int>(dec.kind), static_cast<int>(bare.kind), dec.factor, bare.factor, i);
+                ::fixy::report(::fixy::Sink::Err,
+                               "nullptr-Senses pass-through diverged: kind={}/{} "
+                               "factor={}/{} on iteration {}\n",
+                               static_cast<int>(dec.kind), static_cast<int>(bare.kind), dec.factor, bare.factor, i);
                 ++failures;
             }
             if (profiler.last_was_demoted()) {
-                std::fprintf(stderr, "nullptr-Senses must never report demotion (i=%d)\n", i);
+                ::fixy::report(::fixy::Sink::Err, "nullptr-Senses must never report demotion (i={})\n", i);
                 ++failures;
             }
         }
@@ -111,18 +110,18 @@ int main() {
         };
         const auto dec = profiler.recommend_bare(kRead, tiny_budget);
         if (dec.kind != ParallelismDecision::Kind::Sequential) {
-            std::fprintf(stderr, "L1-resident must be Sequential; got kind=%d factor=%zu\n", static_cast<int>(dec.kind),
-                         dec.factor);
+            ::fixy::report(::fixy::Sink::Err, "L1-resident must be Sequential; got kind={} factor={}\n",
+                           static_cast<int>(dec.kind), dec.factor);
             ++failures;
         }
         if (profiler.last_was_demoted()) {
-            std::fprintf(stderr, "L1-resident Sequential is structural, NOT a demotion\n");
+            ::fixy::report(::fixy::Sink::Err, "L1-resident Sequential is structural, NOT a demotion\n");
             ++failures;
         }
         // A sequential decision skips telemetry, so the deltas stay at
         // zero.
         if (profiler.last_futex_wait_delta() != 0 || profiler.last_ctx_vol_delta() != 0) {
-            std::fprintf(stderr, "Sequential decisions should not record telemetry deltas\n");
+            ::fixy::report(::fixy::Sink::Err, "Sequential decisions should not record telemetry deltas\n");
             ++failures;
         }
     }
@@ -146,7 +145,7 @@ int main() {
         // structural decision.
         const auto first = profiler.recommend_bare(kRead, l3_budget);
         if (profiler.last_was_demoted()) {
-            std::fprintf(stderr, "first call cannot demote (no baseline) but did\n");
+            ::fixy::report(::fixy::Sink::Err, "first call cannot demote (no baseline) but did\n");
             ++failures;
         }
 
@@ -167,20 +166,20 @@ int main() {
         // demote, and may never raise the factor it was given.
         if (first.kind == ParallelismDecision::Kind::Parallel && second.kind == ParallelismDecision::Kind::Parallel
             && second.factor > first.factor) {
-            std::fprintf(stderr,
-                         "WorkloadProfiler must never promote (or grow factor); "
-                         "first=%zu second=%zu\n",
-                         first.factor, second.factor);
+            ::fixy::report(::fixy::Sink::Err,
+                           "WorkloadProfiler must never promote (or grow factor); "
+                           "first={} second={}\n",
+                           first.factor, second.factor);
             ++failures;
         }
         // An unattached hub can produce neither a delta nor a demotion.
         if (!senses_attached) {
             if (profiler.last_futex_wait_delta() != 0 || profiler.last_ctx_vol_delta() != 0) {
-                std::fprintf(stderr, "un-attached SenseHub must not produce non-zero deltas\n");
+                ::fixy::report(::fixy::Sink::Err, "un-attached SenseHub must not produce non-zero deltas\n");
                 ++failures;
             }
             if (profiler.last_was_demoted()) {
-                std::fprintf(stderr, "un-attached SenseHub must not produce demotion\n");
+                ::fixy::report(::fixy::Sink::Err, "un-attached SenseHub must not produce demotion\n");
                 ++failures;
             }
         }
@@ -190,12 +189,12 @@ int main() {
         WorkloadProfiler profiler = make_profiler(::fixy::none);
         if (profiler.last_was_demoted() || profiler.last_futex_wait_delta() != 0
             || profiler.last_ctx_vol_delta() != 0) {
-            std::fprintf(stderr, "fresh profiler diagnostics not at zero\n");
+            ::fixy::report(::fixy::Sink::Err, "fresh profiler diagnostics not at zero\n");
             ++failures;
         }
         const auto cfg = profiler.config();
         if (cfg.futex_wait_demote_threshold == 0 || cfg.ctx_vol_demote_threshold == 0) {
-            std::fprintf(stderr, "default thresholds should be non-zero\n");
+            ::fixy::report(::fixy::Sink::Err, "default thresholds should be non-zero\n");
             ++failures;
         }
     }
@@ -212,7 +211,7 @@ int main() {
         profiler.reset();
         if (profiler.last_was_demoted() || profiler.last_futex_wait_delta() != 0
             || profiler.last_ctx_vol_delta() != 0) {
-            std::fprintf(stderr, "reset() must zero diagnostics\n");
+            ::fixy::report(::fixy::Sink::Err, "reset() must zero diagnostics\n");
             ++failures;
         }
     }
@@ -227,10 +226,10 @@ int main() {
         };
         const auto dec = profiler_sink.recommend_bare(kRead, budget);
         if (dec.kind != ParallelismDecision::Kind::Sequential) {
-            std::fprintf(stderr,
-                         "moved-into profiler should still recommend Sequential "
-                         "for L1-resident; got kind=%d\n",
-                         static_cast<int>(dec.kind));
+            ::fixy::report(::fixy::Sink::Err,
+                           "moved-into profiler should still recommend Sequential "
+                           "for L1-resident; got kind={}\n",
+                           static_cast<int>(dec.kind));
             ++failures;
         }
     }
@@ -249,10 +248,10 @@ int main() {
 
         const ProfiledDecision profiled = profiler.recommend(kRead, tiny_budget);
         if (profiled.value().kind != ParallelismDecision::Kind::Sequential) {
-            std::fprintf(stderr,
-                         "recommend() on an L1-resident budget must yield a profiled "
-                         "Sequential; got kind=%d via .value()\n",
-                         static_cast<int>(profiled.value().kind));
+            ::fixy::report(::fixy::Sink::Err,
+                           "recommend() on an L1-resident budget must yield a profiled "
+                           "Sequential; got kind={} via .value()\n",
+                           static_cast<int>(profiled.value().kind));
             ++failures;
         }
 
@@ -261,11 +260,11 @@ int main() {
         profiler.reset();
         const auto bare = profiler.recommend_bare(kRead, tiny_budget);
         if (bare.kind != profiled.value().kind || bare.factor != profiled.value().factor) {
-            std::fprintf(stderr,
-                         "recommend() and recommend_bare() must agree on "
-                         "structural decision; bare=(%d,%zu) profiled=(%d,%zu)\n",
-                         static_cast<int>(bare.kind), bare.factor, static_cast<int>(profiled.value().kind),
-                         profiled.value().factor);
+            ::fixy::report(::fixy::Sink::Err,
+                           "recommend() and recommend_bare() must agree on "
+                           "structural decision; bare=({},{}) profiled=({},{})\n",
+                           static_cast<int>(bare.kind), bare.factor, static_cast<int>(profiled.value().kind),
+                           profiled.value().factor);
             ++failures;
         }
 
@@ -291,22 +290,22 @@ int main() {
                 observed_kind = d.kind;
             });
         if (!seq_fired) {
-            std::fprintf(stderr,
-                         "dispatch_workload_decision must invoke seq_body "
-                         "for Sequential decision (seq_fired=%d, par_fired=%d)\n",
-                         seq_fired, par_fired);
+            ::fixy::report(::fixy::Sink::Err,
+                           "dispatch_workload_decision must invoke seq_body "
+                           "for Sequential decision (seq_fired={}, par_fired={})\n",
+                           seq_fired, par_fired);
             ++failures;
         }
         if (par_fired) {
-            std::fprintf(stderr, "dispatch_workload_decision must not invoke par_body "
-                                 "for Sequential decision\n");
+            ::fixy::report(::fixy::Sink::Err, "dispatch_workload_decision must not invoke par_body "
+                                              "for Sequential decision\n");
             ++failures;
         }
         if (observed_kind != ParallelismDecision::Kind::Sequential) {
-            std::fprintf(stderr,
-                         "dispatch_workload_decision body received the wrong kind: "
-                         "%d (expected Sequential=%d)\n",
-                         static_cast<int>(observed_kind), static_cast<int>(ParallelismDecision::Kind::Sequential));
+            ::fixy::report(::fixy::Sink::Err,
+                           "dispatch_workload_decision body received the wrong kind: "
+                           "{} (expected Sequential={})\n",
+                           static_cast<int>(observed_kind), static_cast<int>(ParallelismDecision::Kind::Sequential));
             ++failures;
         }
     }

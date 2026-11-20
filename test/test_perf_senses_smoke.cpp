@@ -6,7 +6,6 @@
 
 #include <crucible/perf/Senses.h>
 
-#include <cstdio>
 #include <type_traits>
 #include <utility>
 #include "perf_capabilities.h"
@@ -71,41 +70,41 @@ int main() {
     // agree about whether it came up.
     const auto cov = s.coverage();
     if ((cov.sense_hub_attached) != (s.sense_hub().is_some())) {
-        std::fprintf(stderr,
-                     "Senses: coverage.sense_hub_attached (%d) disagrees with "
-                     "sense_hub().is_some() (%d)\n",
-                     cov.sense_hub_attached, s.sense_hub().is_some());
+        ::fixy::report(::fixy::Sink::Err,
+                       "Senses: coverage.sense_hub_attached ({}) disagrees with "
+                       "sense_hub().is_some() ({})\n",
+                       cov.sense_hub_attached, s.sense_hub().is_some());
         return 1;
     }
     if ((cov.sched_switch_attached) != (s.sched_switch().is_some())) {
-        std::fprintf(stderr, "Senses: sched_switch coverage mismatch\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: sched_switch coverage mismatch\n");
         return 1;
     }
     if ((cov.pmu_sample_attached) != (s.pmu_sample().is_some())) {
-        std::fprintf(stderr, "Senses: pmu_sample coverage mismatch\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: pmu_sample coverage mismatch\n");
         return 1;
     }
     if ((cov.lock_contention_attached) != (s.lock_contention().is_some())) {
-        std::fprintf(stderr, "Senses: lock_contention coverage mismatch\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: lock_contention coverage mismatch\n");
         return 1;
     }
     if ((cov.syscall_latency_attached) != (s.syscall_latency().is_some())) {
-        std::fprintf(stderr, "Senses: syscall_latency coverage mismatch\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: syscall_latency coverage mismatch\n");
         return 1;
     }
     if ((cov.sched_tp_btf_attached) != (s.sched_tp_btf().is_some())) {
-        std::fprintf(stderr, "Senses: sched_tp_btf coverage mismatch\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: sched_tp_btf coverage mismatch\n");
         return 1;
     }
     if ((cov.syscall_tp_btf_attached) != (s.syscall_tp_btf().is_some())) {
-        std::fprintf(stderr, "Senses: syscall_tp_btf coverage mismatch\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: syscall_tp_btf coverage mismatch\n");
         return 1;
     }
     if (cov.attached_count() > 7) {
-        std::fprintf(stderr,
-                     "Senses: attached_count out of range "
-                     "(have 7 facades, got %zu)\n",
-                     cov.attached_count());
+        ::fixy::report(::fixy::Sink::Err,
+                       "Senses: attached_count out of range "
+                       "(have 7 facades, got {})\n",
+                       cov.attached_count());
         return 1;
     }
     // A process with the BPF capabilities loads each of the seven facades.
@@ -124,23 +123,23 @@ int main() {
                                                             });
     const auto sub_cov = sub.coverage();
     if (sub.sched_switch().is_some() || sub_cov.sched_switch_attached) {
-        std::fprintf(stderr, "Senses::load_subset masked off sched_switch but it's loaded\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses::load_subset masked off sched_switch but it's loaded\n");
         return 1;
     }
     if (sub.lock_contention().is_some() || sub_cov.lock_contention_attached) {
-        std::fprintf(stderr, "Senses::load_subset masked off lock_contention but it's loaded\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses::load_subset masked off lock_contention but it's loaded\n");
         return 1;
     }
     if (sub.syscall_latency().is_some() || sub_cov.syscall_latency_attached) {
-        std::fprintf(stderr, "Senses::load_subset masked off syscall_latency but it's loaded\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses::load_subset masked off syscall_latency but it's loaded\n");
         return 1;
     }
     if (sub.sched_tp_btf().is_some() || sub_cov.sched_tp_btf_attached) {
-        std::fprintf(stderr, "Senses::load_subset masked off sched_tp_btf but it's loaded\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses::load_subset masked off sched_tp_btf but it's loaded\n");
         return 1;
     }
     if (sub.syscall_tp_btf().is_some() || sub_cov.syscall_tp_btf_attached) {
-        std::fprintf(stderr, "Senses::load_subset masked off syscall_tp_btf but it's loaded\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses::load_subset masked off syscall_tp_btf but it's loaded\n");
         return 1;
     }
     // The two facades inside the mask may still have failed to load,
@@ -154,36 +153,36 @@ int main() {
     auto moved_into = std::move(s);
     const auto moved_from_cov = s.coverage();
     if (moved_from_cov.attached_count() != 0u) {
-        std::fprintf(stderr, "Senses moved-from must report zero attachments; got %zu\n",
-                     moved_from_cov.attached_count());
+        ::fixy::report(::fixy::Sink::Err, "Senses moved-from must report zero attachments; got {}\n",
+                       moved_from_cov.attached_count());
         return 1;
     }
     if (s.sense_hub().is_some()) {
-        std::fprintf(stderr, "Senses: moved-from sense_hub() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: moved-from sense_hub() not null\n");
         return 1;
     }
     if (s.sched_switch().is_some()) {
-        std::fprintf(stderr, "Senses: moved-from sched_switch() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: moved-from sched_switch() not null\n");
         return 1;
     }
     if (s.pmu_sample().is_some()) {
-        std::fprintf(stderr, "Senses: moved-from pmu_sample() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: moved-from pmu_sample() not null\n");
         return 1;
     }
     if (s.lock_contention().is_some()) {
-        std::fprintf(stderr, "Senses: moved-from lock_contention() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: moved-from lock_contention() not null\n");
         return 1;
     }
     if (s.syscall_latency().is_some()) {
-        std::fprintf(stderr, "Senses: moved-from syscall_latency() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: moved-from syscall_latency() not null\n");
         return 1;
     }
     if (s.sched_tp_btf().is_some()) {
-        std::fprintf(stderr, "Senses: moved-from sched_tp_btf() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: moved-from sched_tp_btf() not null\n");
         return 1;
     }
     if (s.syscall_tp_btf().is_some()) {
-        std::fprintf(stderr, "Senses: moved-from syscall_tp_btf() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: moved-from syscall_tp_btf() not null\n");
         return 1;
     }
 
@@ -195,36 +194,36 @@ int main() {
     assigned_into = std::move(reloaded);
     const auto reloaded_cov = reloaded.coverage();
     if (reloaded_cov.attached_count() != 0u) {
-        std::fprintf(stderr, "Senses move-assigned-from must report zero attachments; got %zu\n",
-                     reloaded_cov.attached_count());
+        ::fixy::report(::fixy::Sink::Err, "Senses move-assigned-from must report zero attachments; got {}\n",
+                       reloaded_cov.attached_count());
         return 1;
     }
     if (reloaded.sense_hub().is_some()) {
-        std::fprintf(stderr, "Senses: move-assigned-from sense_hub() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: move-assigned-from sense_hub() not null\n");
         return 1;
     }
     if (reloaded.sched_switch().is_some()) {
-        std::fprintf(stderr, "Senses: move-assigned-from sched_switch() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: move-assigned-from sched_switch() not null\n");
         return 1;
     }
     if (reloaded.pmu_sample().is_some()) {
-        std::fprintf(stderr, "Senses: move-assigned-from pmu_sample() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: move-assigned-from pmu_sample() not null\n");
         return 1;
     }
     if (reloaded.lock_contention().is_some()) {
-        std::fprintf(stderr, "Senses: move-assigned-from lock_contention() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: move-assigned-from lock_contention() not null\n");
         return 1;
     }
     if (reloaded.syscall_latency().is_some()) {
-        std::fprintf(stderr, "Senses: move-assigned-from syscall_latency() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: move-assigned-from syscall_latency() not null\n");
         return 1;
     }
     if (reloaded.sched_tp_btf().is_some()) {
-        std::fprintf(stderr, "Senses: move-assigned-from sched_tp_btf() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: move-assigned-from sched_tp_btf() not null\n");
         return 1;
     }
     if (reloaded.syscall_tp_btf().is_some()) {
-        std::fprintf(stderr, "Senses: move-assigned-from syscall_tp_btf() not null\n");
+        ::fixy::report(::fixy::Sink::Err, "Senses: move-assigned-from syscall_tp_btf() not null\n");
         return 1;
     }
 
@@ -240,10 +239,10 @@ int main() {
     self_ref = std::move(assigned_into);
     const auto post_self_move_count = assigned_into.coverage().attached_count();
     if (pre_self_move_count != post_self_move_count) {
-        std::fprintf(stderr,
-                     "self-assignment perturbed the state: %zu attached became "
-                     "%zu, which must not change\n",
-                     pre_self_move_count, post_self_move_count);
+        ::fixy::report(::fixy::Sink::Err,
+                       "self-assignment perturbed the state: {} attached became "
+                       "{}, which must not change\n",
+                       pre_self_move_count, post_self_move_count);
         return 1;
     }
 

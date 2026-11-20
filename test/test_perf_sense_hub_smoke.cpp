@@ -1,7 +1,6 @@
 #include <crucible/perf/SenseHub.h>
 
 #include <cstdint>
-#include <cstdio>
 #include <type_traits>
 #include <utility>
 #include "perf_capabilities.h"
@@ -66,10 +65,10 @@ int main() {
     auto identity_delta = after - before;
     for (::fixy::Index<crucible::perf::NUM_COUNTERS> const i : ::fixy::IndexRange<crucible::perf::NUM_COUNTERS>{}) {
         if (identity_delta.counters.at(i) != 0u) {
-            std::fprintf(stderr,
-                         "perf::Snapshot::operator- — empty-empty delta non-zero "
-                         "at slot %zu\n",
-                         i.raw());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::Snapshot::operator- — empty-empty delta non-zero "
+                           "at slot {}\n",
+                           i.raw());
             return 1;
         }
     }
@@ -83,10 +82,10 @@ int main() {
     newer.counters.at(::fixy::index<crucible::perf::FD_CURRENT>()) = 7;  // closed FDs
     auto gauge_delta = newer - older;
     if (gauge_delta[crucible::perf::FD_CURRENT] != 0u) {
-        std::fprintf(stderr,
-                     "perf::Snapshot::operator- — gauge underflow not "
-                     "saturated to zero: got %llu\n",
-                     static_cast<unsigned long long>(gauge_delta[crucible::perf::FD_CURRENT]));
+        ::fixy::report(::fixy::Sink::Err,
+                       "perf::Snapshot::operator- — gauge underflow not "
+                       "saturated to zero: got {}\n",
+                       gauge_delta[crucible::perf::FD_CURRENT]);
         return 1;
     }
 
@@ -102,12 +101,11 @@ int main() {
     run_post.counters.at(::fixy::index<crucible::perf::NET_TX_BYTES>()) = 8000064;
     auto run_delta = run_post - run_pre;
     if (run_delta[crucible::perf::SCHED_CTX_INVOL] != 42u || run_delta[crucible::perf::NET_TX_BYTES] != 64u) {
-        std::fprintf(stderr,
-                     "perf::Snapshot::operator- — monotonic forward delta wrong: "
-                     "SCHED_CTX_INVOL got %llu (want 42), NET_TX_BYTES got %llu "
-                     "(want 64)\n",
-                     static_cast<unsigned long long>(run_delta[crucible::perf::SCHED_CTX_INVOL]),
-                     static_cast<unsigned long long>(run_delta[crucible::perf::NET_TX_BYTES]));
+        ::fixy::report(::fixy::Sink::Err,
+                       "perf::Snapshot::operator- — monotonic forward delta wrong: "
+                       "SCHED_CTX_INVOL got {} (want 42), NET_TX_BYTES got {} "
+                       "(want 64)\n",
+                       run_delta[crucible::perf::SCHED_CTX_INVOL], run_delta[crucible::perf::NET_TX_BYTES]);
         return 1;
     }
 
@@ -147,18 +145,18 @@ int main() {
         // A hub with no programs at all is rejected by the loader, so a
         // populated one cannot report zero of both.
         if (attached == 0 && failures == 0) {
-            std::fprintf(stderr, "perf::load_sense_hub() returned populated hub with "
-                                 "zero programs — should have been none\n");
+            ::fixy::report(::fixy::Sink::Err, "perf::load_sense_hub() returned populated hub with "
+                                              "zero programs — should have been none\n");
             return 1;
         }
         // The refinement enforces this at construction under enforced
         // contracts.  Checking it again here catches a bound that is
         // relaxed without the consumer being updated.
         if (attached > 64 || failures > 64) {
-            std::fprintf(stderr,
-                         "perf::SenseHub: counter exceeded inplace_vector cap "
-                         "(attached=%zu failures=%zu)\n",
-                         attached, failures);
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::SenseHub: counter exceeded inplace_vector cap "
+                           "(attached={} failures={})\n",
+                           attached, failures);
             return 1;
         }
         // A successful load leaves the mapping live, so the view
@@ -170,15 +168,15 @@ int main() {
         // mismatch means the wrapper lost the count, since a wrongly
         // sized map would have been rejected by the verifier.
         if (view.size() != crucible::perf::NUM_COUNTERS) {
-            std::fprintf(stderr,
-                         "perf::SenseHub::counters_view() — expected NUM_COUNTERS "
-                         "(96) elements, got %zu\n",
-                         view.size());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::SenseHub::counters_view() — expected NUM_COUNTERS "
+                           "(96) elements, got {}\n",
+                           view.size());
             return 1;
         }
         if (view.empty()) {
-            std::fprintf(stderr, "perf::SenseHub::counters_view() — view should be "
-                                 "non-empty when the load gave a hub\n");
+            ::fixy::report(::fixy::Sink::Err, "perf::SenseHub::counters_view() — view should be "
+                                              "non-empty when the load gave a hub\n");
             return 1;
         }
 
@@ -197,35 +195,35 @@ int main() {
 
         for (::fixy::Index<crucible::perf::NUM_COUNTERS> const i : ::fixy::IndexRange<crucible::perf::NUM_COUNTERS>{}) {
             if (zeroed_snapshot.counters.at(i) != 0u) {
-                std::fprintf(stderr,
-                             "perf::SenseHub::read() on moved-from — slot %zu "
-                             "should be 0, got %llu\n",
-                             i.raw(), static_cast<unsigned long long>(zeroed_snapshot.counters.at(i)));
+                ::fixy::report(::fixy::Sink::Err,
+                               "perf::SenseHub::read() on moved-from — slot {} "
+                               "should be 0, got {}\n",
+                               i.raw(), zeroed_snapshot.counters.at(i));
                 return 1;
             }
         }
         if (!empty_view.empty()) {
-            std::fprintf(stderr,
-                         "perf::SenseHub::counters_view() on moved-from — "
-                         "expected empty Borrowed, got size=%zu\n",
-                         empty_view.size());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::SenseHub::counters_view() on moved-from — "
+                           "expected empty Borrowed, got size={}\n",
+                           empty_view.size());
             return 1;
         }
         if (attached_after.value() != 0u || failures_after.value() != 0u) {
-            std::fprintf(stderr,
-                         "perf::SenseHub::attached_programs/attach_failures "
-                         "on moved-from — expected 0, got attached=%zu "
-                         "failures=%zu\n",
-                         attached_after.value(), failures_after.value());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::SenseHub::attached_programs/attach_failures "
+                           "on moved-from — expected 0, got attached={} "
+                           "failures={}\n",
+                           attached_after.value(), failures_after.value());
             return 1;
         }
         // The symmetric witness: the recipient still holds the live
         // hub.
         if (moved_into.attached_programs().value() != attached) {
-            std::fprintf(stderr,
-                         "perf::SenseHub move semantics — recipient lost "
-                         "attached count (was %zu, now %zu)\n",
-                         attached, moved_into.attached_programs().value());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::SenseHub move semantics — recipient lost "
+                           "attached count (was {}, now {})\n",
+                           attached, moved_into.attached_programs().value());
             return 1;
         }
     }

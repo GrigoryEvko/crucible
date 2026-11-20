@@ -1,7 +1,6 @@
 #include <crucible/perf/SyscallTpBtf.h>
 
 #include <cstdint>
-#include <cstdio>
 #include <type_traits>
 #include <utility>
 #include "perf_capabilities.h"
@@ -57,17 +56,17 @@ int main() {
         // returns none when fewer than two attach, so a populated hub
         // holds at least two links.
         if (attached.value() < 2) {
-            std::fprintf(stderr,
-                         "perf::load_syscall_tp_btf() returned populated hub with "
-                         "%zu programs — should have been ≥ 2 (sys_enter + sys_exit)\n",
-                         attached.value());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::load_syscall_tp_btf() returned populated hub with "
+                           "{} programs — should have been ≥ 2 (sys_enter + sys_exit)\n",
+                           attached.value());
             return 1;
         }
         if (attached.value() > 8 || failures.value() > 8) {
-            std::fprintf(stderr,
-                         "perf::SyscallTpBtf: counter exceeded cap "
-                         "(attached=%zu failures=%zu)\n",
-                         attached.value(), failures.value());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::SyscallTpBtf: counter exceeded cap "
+                           "(attached={} failures={})\n",
+                           attached.value(), failures.value());
             return 1;
         }
 
@@ -77,8 +76,8 @@ int main() {
         (void)total;
         (void)write_idx;
         if (timeline.size() != crucible::perf::TIMELINE_CAPACITY) {
-            std::fprintf(stderr, "perf::SyscallTpBtf::timeline_view() — expected %u, got %zu\n",
-                         crucible::perf::TIMELINE_CAPACITY, timeline.size());
+            ::fixy::report(::fixy::Sink::Err, "perf::SyscallTpBtf::timeline_view() — expected {}, got {}\n",
+                           crucible::perf::TIMELINE_CAPACITY, timeline.size());
             return 1;
         }
 
@@ -86,7 +85,7 @@ int main() {
         crucible::perf::SyscallTpBtf moved_into = std::move(hub);
         if (hub.total_syscalls() != 0u || hub.timeline_write_index() != 0u || !hub.timeline_view().empty()
             || hub.attached_programs().value() != 0u || hub.attach_failures().value() != 0u) {
-            std::fprintf(stderr, "perf::SyscallTpBtf moved-from accessors — expected zeros\n");
+            ::fixy::report(::fixy::Sink::Err, "perf::SyscallTpBtf moved-from accessors — expected zeros\n");
             return 1;
         }
         (void)moved_into;

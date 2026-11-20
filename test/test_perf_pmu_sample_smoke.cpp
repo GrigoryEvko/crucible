@@ -1,7 +1,6 @@
 #include <crucible/perf/PmuSample.h>
 
 #include <cstdint>
-#include <cstdio>
 #include <type_traits>
 #include <utility>
 #include "perf_capabilities.h"
@@ -99,16 +98,16 @@ int main() {
 
         // One counter per event specification, and there are eight of them.
         if (attached + failures > 8) {
-            std::fprintf(stderr,
-                         "perf::PmuSample: attached(%zu) + failures(%zu) > 8 "
-                         "kEventSpecs entries\n",
-                         attached, failures);
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::PmuSample: attached({}) + failures({}) > 8 "
+                           "kEventSpecs entries\n",
+                           attached, failures);
             return 1;
         }
         // A populated hub means at least one attachment succeeded.
         if (attached == 0) {
-            std::fprintf(stderr, "perf::load_pmu_sample() returned populated hub with "
-                                 "zero programs — should have been none\n");
+            ::fixy::report(::fixy::Sink::Err, "perf::load_pmu_sample() returned populated hub with "
+                                              "zero programs — should have been none\n");
             return 1;
         }
 
@@ -118,15 +117,15 @@ int main() {
             std::is_same_v<decltype(view),
                            const ::fixy::Borrowed<const crucible::perf::PmuSampleEvent, crucible::perf::PmuSample>>);
         if (view.size() != crucible::perf::PMU_SAMPLE_CAPACITY) {
-            std::fprintf(stderr,
-                         "perf::PmuSample::timeline_view() — expected "
-                         "PMU_SAMPLE_CAPACITY (%u) events, got %zu\n",
-                         crucible::perf::PMU_SAMPLE_CAPACITY, view.size());
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::PmuSample::timeline_view() — expected "
+                           "PMU_SAMPLE_CAPACITY ({}) events, got {}\n",
+                           crucible::perf::PMU_SAMPLE_CAPACITY, view.size());
             return 1;
         }
         if (view.empty()) {
-            std::fprintf(stderr, "perf::PmuSample::timeline_view() — should be "
-                                 "non-empty when the load gave a hub\n");
+            ::fixy::report(::fixy::Sink::Err, "perf::PmuSample::timeline_view() — should be "
+                                              "non-empty when the load gave a hub\n");
             return 1;
         }
 
@@ -138,8 +137,8 @@ int main() {
         // page-aligned mapping. Its alignment cannot be checked from here
         // without reaching into the mapping, so only non-nullness is pinned.
         if (view.data() == nullptr) {
-            std::fprintf(stderr, "perf::PmuSample::timeline_view() — data() is null "
-                                 "when the load gave a hub\n");
+            ::fixy::report(::fixy::Sink::Err, "perf::PmuSample::timeline_view() — data() is null "
+                                              "when the load gave a hub\n");
             return 1;
         }
 
@@ -150,31 +149,31 @@ int main() {
         const auto failures_after = hub.attach_failures();
 
         if (write_idx_after != 0u) {
-            std::fprintf(stderr,
-                         "PmuSample::timeline_write_index() on moved-from — "
-                         "expected 0, got %llu\n",
-                         static_cast<unsigned long long>(write_idx_after));
+            ::fixy::report(::fixy::Sink::Err,
+                           "PmuSample::timeline_write_index() on moved-from — "
+                           "expected 0, got {}\n",
+                           write_idx_after);
             return 1;
         }
         if (!view_after.empty()) {
-            std::fprintf(stderr,
-                         "PmuSample::timeline_view() on moved-from — expected "
-                         "empty Borrowed, got size=%zu\n",
-                         view_after.size());
+            ::fixy::report(::fixy::Sink::Err,
+                           "PmuSample::timeline_view() on moved-from — expected "
+                           "empty Borrowed, got size={}\n",
+                           view_after.size());
             return 1;
         }
         if (attached_after.value() != 0u || failures_after.value() != 0u) {
-            std::fprintf(stderr,
-                         "PmuSample accessors on moved-from — expected 0, got "
-                         "attached=%zu failures=%zu\n",
-                         attached_after.value(), failures_after.value());
+            ::fixy::report(::fixy::Sink::Err,
+                           "PmuSample accessors on moved-from — expected 0, got "
+                           "attached={} failures={}\n",
+                           attached_after.value(), failures_after.value());
             return 1;
         }
         if (moved_into.attached_programs().value() != attached) {
-            std::fprintf(stderr,
-                         "PmuSample move semantics — recipient lost attached "
-                         "count (was %zu, now %zu)\n",
-                         attached, moved_into.attached_programs().value());
+            ::fixy::report(::fixy::Sink::Err,
+                           "PmuSample move semantics — recipient lost attached "
+                           "count (was {}, now {})\n",
+                           attached, moved_into.attached_programs().value());
             return 1;
         }
     }
