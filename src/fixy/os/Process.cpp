@@ -413,7 +413,7 @@ ProcessState probe_process_(ProcessId process) noexcept {
                 ::fixy::fs::detail::close_descriptor_(static_cast<int>(descriptor));
                 return ProcessState::alive;
             },
-            [](os::Errno error) noexcept { return judge_probe_error(error); });
+            [](os::Errno error) noexcept { return judge_probe_error_(error); });
 }
 
 }  // namespace fixy::process::detail

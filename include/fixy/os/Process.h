@@ -3,12 +3,12 @@
 // The process doors of fixy.
 //
 // THE IDENTITY DOOR
-//   The id of the calling process and the id of the calling thread, as the
-//   kernel gives them.  The door file src/fixy/os/Process.cpp issues getpid
-//   and gettid with the raw primitive of foundation/os/Syscall.h.  The two
-//   calls cannot fail.  Each read takes a context that admits the row of the
-//   family of the two calls in the syscall catalog, the family of the reads
-//   of the process state.
+//   The id of the calling process, the id of the calling thread and the
+//   effective user id of the process, as the kernel gives them.  The door file
+//   src/fixy/os/Process.cpp issues getpid, gettid and geteuid with the raw
+//   primitive of foundation/os/Syscall.h.  The three calls cannot fail.  Each
+//   read takes a context that admits the row of the family of the calls in the
+//   syscall catalog, the family of the reads of the process state.
 //
 // THE PROCESS PROBE
 //   probe_process(ctx, process) tells if a process of the id process lives.
@@ -20,11 +20,12 @@
 //     gone      the kernel holds no process of the id (esrch)
 //     unknown   each other error, such as emfile when the process holds its
 //               largest count of descriptors
-//   judge_probe_error gives the answer of each error.  An error eperm counts
-//   as alive, because the kernel refuses only a process that it holds.  The
-//   kernel reads the id as a signed word of 32 bits.  So the id zero, an id
-//   above 2^31 - 1, and the id of a thread that is not the first thread of
-//   its process give an error other than esrch, and the answer unknown.
+//   detail::judge_probe_error_ gives the answer of each error.  An error
+//   eperm counts as alive, because the kernel refuses only a process that it
+//   holds.  The kernel reads the id as a signed word of 32 bits.  So the id
+//   zero, an id above 2^31 - 1, and the id of a thread that is not the first
+//   thread of its process give an error other than esrch, and the answer
+//   unknown.
 //
 //   The answer is a fact of the time of the call.  The kernel can give a
 //   free id to a new process, so an id that is gone can be alive at the next
@@ -145,18 +146,17 @@ enum class ProcessState : std::uint8_t {
     unknown,
 };
 
+namespace detail {
+
 // The answer of the probe for an error of the open (THE PROCESS PROBE).
-[[nodiscard]] constexpr ProcessState judge_probe_error(::foundation::os::Errno error) noexcept {
+[[nodiscard]] constexpr ProcessState judge_probe_error_(::foundation::os::Errno error) noexcept {
     if (error == ::foundation::os::Errno::esrch) return ProcessState::gone;
     if (error == ::foundation::os::Errno::eperm) return ProcessState::alive;
     return ProcessState::unknown;
 }
 
-namespace detail {
-
 // The calls of the door file.  current_user_ gives the effective user id of
-// the process (geteuid), which cannot fail.  Only the sweep of fixy/os/Fs.h
-// reads it.
+// the process (geteuid), which cannot fail.
 [[nodiscard]] ProcessId current_process_() noexcept;
 [[nodiscard]] ThreadId current_thread_() noexcept;
 [[nodiscard]] ProcessState probe_process_(ProcessId process) noexcept;
@@ -186,6 +186,13 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsIdentityRead<Ctx>
 [[nodiscard]] inline ThreadId current_thread(Ctx const&) noexcept {
     return detail::current_thread_();
+}
+
+// The effective user id of the process.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsIdentityRead<Ctx>
+[[nodiscard]] inline UserId current_user(Ctx const&) noexcept {
+    return detail::current_user_();
 }
 
 // The state of the process of the id process (THE PROCESS PROBE).

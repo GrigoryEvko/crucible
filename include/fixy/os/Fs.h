@@ -1391,7 +1391,7 @@ sweep_temporary_directories(Ctx const& ctx) noexcept {
     CRUCIBLE_TRY(host_path, sanitize_path(mint_tagged<tags::source::External>(detail::host_temporary_text_(switches)))
                                 .map_err([](PathTraversalError) noexcept { return Errno::einval; }));
     CRUCIBLE_TRY(host, open_directory(ctx, host_path));
-    ::fixy::process::UserId const user = ::fixy::process::detail::current_user_();
+    ::fixy::process::UserId const user = ::fixy::process::current_user(ctx);
     int const listed = ::fixy::os::detail::HandleDoor::descriptor_of(host.ref());
     SweepReport report{};
     auto visit = [&ctx, &host, &report, listed, user](::foundation::core::CText name) noexcept {

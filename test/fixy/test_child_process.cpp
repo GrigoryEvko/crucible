@@ -15,10 +15,14 @@
 // The probe of a process: the process of the test, a child before and after
 // its wait, an id that no process can hold, two ids that the kernel refuses,
 // and the answer of each error.
+//
+// The identity door: the effective user id against the status of the process.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/Fs.h>
+#include <fixy/os/Path.h>
 #include <fixy/os/Process.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Abort.h>
@@ -52,6 +56,9 @@ constexpr fp::WaitLimit kLongLimit{60000};
 // each path of an open: the bound of the kernel, PATH_MAX.
 constexpr ::fixy::CText kStatusPath{"/proc/self/status"};
 constexpr std::size_t kPathCapacity = 4096;
+
+// The largest count of the bytes of /proc/self/status that the test reads.
+constexpr std::size_t kStatusBytes = 65536;
 
 // An id above PID_MAX_LIMIT of a 64-bit kernel, 4194304, so no process can
 // hold it.  And the smallest id that the kernel reads as a negative word.
@@ -382,11 +389,52 @@ void probe_tells_the_state_of_a_process(::fixy::TestRunnerCtx const& test) {
 // each error other than esrch and eperm is unknown.
 void probe_judges_each_error(::fixy::TestRunnerCtx const& test) {
     using ::foundation::os::Errno;
-    CRUCIBLE_TEST_ASSERT(test, fp::judge_probe_error(Errno::esrch) == fp::ProcessState::gone);
-    CRUCIBLE_TEST_ASSERT(test, fp::judge_probe_error(Errno::eperm) == fp::ProcessState::alive);
-    CRUCIBLE_TEST_ASSERT(test, fp::judge_probe_error(Errno::einval) == fp::ProcessState::unknown);
-    CRUCIBLE_TEST_ASSERT(test, fp::judge_probe_error(Errno::enoent) == fp::ProcessState::unknown);
-    CRUCIBLE_TEST_ASSERT(test, fp::judge_probe_error(Errno::emfile) == fp::ProcessState::unknown);
+    CRUCIBLE_TEST_ASSERT(test, fp::detail::judge_probe_error_(Errno::esrch) == fp::ProcessState::gone);
+    CRUCIBLE_TEST_ASSERT(test, fp::detail::judge_probe_error_(Errno::eperm) == fp::ProcessState::alive);
+    CRUCIBLE_TEST_ASSERT(test, fp::detail::judge_probe_error_(Errno::einval) == fp::ProcessState::unknown);
+    CRUCIBLE_TEST_ASSERT(test, fp::detail::judge_probe_error_(Errno::enoent) == fp::ProcessState::unknown);
+    CRUCIBLE_TEST_ASSERT(test, fp::detail::judge_probe_error_(Errno::emfile) == fp::ProcessState::unknown);
+}
+
+// The effective user id of the line Uid of /proc/PID/status, or no value.
+// The line holds the real, the effective, the saved and the file system user
+// ids, each after a tab.  The open of a directory follows no symbolic link, so
+// the path names the process by its id and not by the link /proc/self.
+[[nodiscard]] ::fixy::Option<std::uint32_t> status_effective_user(::fixy::TestRunnerCtx const& test) {
+    ::foundation::os::PathText<::fixy::kPathBytes> path{};
+    path.append(::fixy::TextView{"/proc/"}).expect("the path of the process fits a path");
+    path.append_decimal(std::to_underlying(fp::current_process(test))).expect("the path of the process fits a path");
+    ::fixy::fs::DirectoryHandle const self =
+        ::fixy::fs::open_directory(
+            test, ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(path.c_text().view()))
+                      .expect("the path of the process passes the sanitizer"))
+            .expect("the directory of the process opens");
+    ::fixy::GrowText status = ::fixy::mint_grow_text(kStatusBytes);
+    if (::fixy::fs::read_whole_at(test, ::foundation::effects::testing::test().alloc, self.ref(), "status", status)
+            .is_err()) {
+        return ::fixy::none;
+    }
+    return status.with_view([](::fixy::TextView text) -> ::fixy::Option<std::uint32_t> {
+        constexpr ::fixy::TextView kUidLine{"\nUid:\t"};
+        std::size_t const line = ::fixy::find(text, kUidLine).value_or(text.size());
+        if (line == text.size()) return ::fixy::none;
+        ::fixy::TextView const fields =
+            text.window(line + kUidLine.size(), text.size() - line - kUidLine.size()).value_or(::fixy::TextView{});
+        std::size_t const real_end = ::fixy::find(fields, '\t').value_or(fields.size());
+        if (real_end == fields.size()) return ::fixy::none;
+        ::fixy::TextView const rest =
+            fields.window(real_end + 1, fields.size() - real_end - 1).value_or(::fixy::TextView{});
+        std::size_t const effective_end = ::fixy::find(rest, '\t').value_or(rest.size());
+        return ::fixy::parse<std::uint32_t>(rest.window(0, effective_end).value_or(::fixy::TextView{})).ok();
+    });
+}
+
+// THE IDENTITY DOOR of fixy/os/Process.h: the effective user id of the door is
+// the effective user id of the status of the process in /proc.
+void current_user_is_the_effective_user(::fixy::TestRunnerCtx const& test) {
+    ::fixy::Option<std::uint32_t> oracle = status_effective_user(test);
+    CRUCIBLE_TEST_ASSERT(test, oracle.is_some());
+    CRUCIBLE_TEST_ASSERT(test, std::to_underlying(fp::current_user(test)) == std::move(oracle).value_or(0xFFFFFFFFU));
 }
 
 }  // namespace
@@ -411,6 +459,7 @@ int main() {
     empty_traced_child_names_no_process(test);
     probe_tells_the_state_of_a_process(test);
     probe_judges_each_error(test);
+    current_user_is_the_effective_user(test);
     ::fixy::check::pass(test, "test_child_process: PASSED\n");
     return 0;
 }
