@@ -254,6 +254,22 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: the block of std::philox4x32 is the refer
     return Counter{static_cast<uint32_t>(stl()), static_cast<uint32_t>(stl()), static_cast<uint32_t>(stl()),
                    static_cast<uint32_t>(stl())};
 }
+
+// The random trials compare the block of the base with the block of the
+// standard engine.  A Mersenne Twister of the standard library draws each
+// counter and each key word, so no input comes from the generator under test.
+// The seed is fixed, so a failing trial is reproducible.
+static void check_random_trials() {
+    std::mt19937_64 rng{0xCAFEBEEFD00DULL};
+    for (int trial = 0; trial < 1000; ++trial) {
+        Counter ctr{static_cast<uint32_t>(rng()), static_cast<uint32_t>(rng()), static_cast<uint32_t>(rng()),
+                    static_cast<uint32_t>(rng())};
+        uint32_t k0 = static_cast<uint32_t>(rng());
+        auto cru = Philox4x32::generate(ctr, {k0, 0});
+        auto stl = run_std(k0, ctr);
+        CRUCIBLE_TEST_ASSERT(kTest, cru == stl && "random (counter, k0, 0) trial must be bit-equivalent");
+    }
+}
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 static void test_std_philox_equivalence() {
@@ -272,20 +288,7 @@ static void test_std_philox_equivalence() {
         CRUCIBLE_TEST_ASSERT(kTest, cru == stl && "k1=0 case must be bit-equivalent");
     }
 
-    // The seed is fixed, so a failing trial is reproducible.  Each trial
-    // draws its counter from one block and its key from the next block.
-    {
-        constexpr uint64_t kSeed = 0xCAFEBEEFD00DULL;
-        for (int trial = 0; trial < 1000; ++trial) {
-            uint64_t const first = static_cast<uint64_t>(trial) * 2;
-            Counter const ctr = Philox4x32::generate(first, kSeed);
-            Counter const key_block = Philox4x32::generate(first + 1, kSeed);
-            uint32_t k0 = key_block.at(::fixy::index<0>());
-            auto cru = Philox4x32::generate(ctr, {k0, 0});
-            auto stl = run_std(k0, ctr);
-            CRUCIBLE_TEST_ASSERT(kTest, cru == stl && "random (counter, k0, 0) trial must be bit-equivalent");
-        }
-    }
+    check_random_trials();
 
     // This assertion is deliberately inverted.  It records the gap, so
     // that a standard library which grows a way to set the second key
