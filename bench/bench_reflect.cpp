@@ -33,7 +33,6 @@
 // and the reference rows call a door of their own unit for each batch.
 
 #include <cstdint>
-#include <cstdio>
 #include <utility>
 
 #include <crucible/MerkleDag.h>  // FeedbackEdge, LoopTermKind, NumericalRecipe, TensorSlot
@@ -302,7 +301,7 @@ uint64_t loopterm_hash_packed(crucible::LoopTermKind term_kind, uint32_t repeat_
     constexpr uint64_t kEpsSalt = 0x65707369006C6F6EULL;
     uint64_t packed = static_cast<uint64_t>(std::to_underlying(term_kind)) | (static_cast<uint64_t>(repeat_count) << 8);
     uint64_t h = ::foundation::reflect::fmix64(packed ^ kTermSalt);
-    h ^= ::foundation::reflect::fmix64(static_cast<uint64_t>(std::bit_cast<uint32_t>(epsilon)) ^ kEpsSalt);
+    h ^= ::foundation::reflect::fmix64(static_cast<uint64_t>(::fixy::bit_cast<uint32_t>(epsilon)) ^ kEpsSalt);
     return h;
 }
 
@@ -336,7 +335,7 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== protocol hash ===\n\n");
+    bench::print("=== protocol hash ===\n\n");
 
     // Each Run uses volatile-seeded inputs so the compiler can't hoist the
     // hash computation out of the body. The seeds live in the outer scope so
@@ -431,7 +430,7 @@ int main() {
     // the same blocks, so the pairs of one record and of a batch must be
     // indistinguishable on a clean machine.  Each line of a compare names its
     // two rows.
-    std::printf("\n=== compare ===\n");
+    bench::print("\n=== compare ===\n");
     bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())).print_text();
     bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<3>())).print_text();
     bench::compare(reports.at(::fixy::index<4>()), reports.at(::fixy::index<5>())).print_text();
@@ -467,7 +466,7 @@ int main() {
     // when no part needs a check: the slot has no padding byte that the
     // codec skips.
     // ═══════════════════════════════════════════════════════════════
-    std::printf("\n=== product folds and codec ===\n\n");
+    bench::print("\n=== product folds and codec ===\n\n");
 
     volatile uint64_t vbytes = 4096;
     ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::TensorSlot>> image{};
@@ -549,7 +548,7 @@ int main() {
 
     bench::emit_reports_text(refactor_reports.view());
 
-    std::printf("\n=== product fold and codec compares ===\n");
+    bench::print("\n=== product fold and codec compares ===\n");
     bench::compare(refactor_reports.at(::fixy::index<0>()), refactor_reports.at(::fixy::index<1>())).print_text();
     bench::compare(refactor_reports.at(::fixy::index<2>()), refactor_reports.at(::fixy::index<3>())).print_text();
     bench::compare(refactor_reports.at(::fixy::index<4>()), refactor_reports.at(::fixy::index<5>())).print_text();
