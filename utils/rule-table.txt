@@ -411,6 +411,7 @@ host utils/tools/quarantine/ | The GCC plugin of the rule quarantine.  It links 
 kernel include/crucible/canopy/bpf/ include/crucible/cntp/_wip/bpf/ include/crucible/cntp/bpf/ include/crucible/cntp/dataplane/bpf/ include/crucible/cog/bpf/ include/crucible/observe/bpf/ include/crucible/perf/bpf/ include/crucible/topology/bpf/ include/crucible/warden/bpf/ | The BPF programs and their headers: kernel C that Clang compiles for the BPF target.  No C++ unit includes these files, so the C++ base and the plugin do not reach them
 
 enforce @build/ report
+enforce @build/test/fuzz/generated/ error
 enforce bench/ report
 enforce cmake/ report
 enforce examples/ report
@@ -430,6 +431,9 @@ enforce test/dag_neg/ error
 enforce test/dataplane_neg/ error
 enforce test/effect_row_neg/ error
 enforce test/forge_neg/ error
+enforce test/fuzz/boundary/ error
+enforce test/fuzz/boundary/harnesses/ report
+enforce test/fuzz/property/ error
 enforce test/kernel_neg/ error
 enforce test/layer/ error
 enforce test/layer/checks/ report
