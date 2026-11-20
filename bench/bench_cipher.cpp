@@ -72,14 +72,19 @@ int main() {
 
     // Isolated tmp dir per run.  Its owner removes the tree at its end.
     using ::fixy::fs::TemporaryDirectory;
-    using Made = ::fixy::Result<::fixy::Linear<TemporaryDirectory>, ::foundation::os::Errno>;
-    Made made = ::fixy::fs::mint_temporary_directory(store_ctx());
-    if (made.is_err()) {
-        ::fixy::report(::fixy::Sink::Err, "bench_cipher: the temporary directory does not open (error {})\n",
-                       ::foundation::os::error_number(std::move(made).err().value_or(::foundation::os::Errno{})));
-        return 1;
-    }
-    TemporaryDirectory scratch = std::move(made).expect("the test above found the directory").consume();
+    TemporaryDirectory scratch = ::fixy::fs::mint_temporary_directory(store_ctx())
+                                     .match(
+                                         [](::fixy::Linear<TemporaryDirectory> made) noexcept -> TemporaryDirectory {
+                                             return std::move(made).consume();
+                                         },
+                                         [](::foundation::os::Errno error) noexcept -> TemporaryDirectory {
+                                             ::fixy::report(::fixy::Sink::Err,
+                                                            "bench_cipher: the temporary directory does not open "
+                                                            "(error {})\n",
+                                                            ::foundation::os::error_number(error));
+                                             return TemporaryDirectory{};
+                                         });
+    if (!scratch.is_open()) return 1;
     // A copy of the path, which the last line prints after the end of the
     // owner.
     ::foundation::core::GrowText dir_copy = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);

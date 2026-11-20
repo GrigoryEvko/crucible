@@ -86,8 +86,8 @@ reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_qua
 @build/ | opted-out | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
 @build/ | region | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
 @build/test/fixy/armed_roster/ | c-array-object | 1 | - | -
-bench/ | c-array-object | 19 | - | -
-bench/ | c-library-call | 90 | - | -
+bench/ | c-array-object | 18 | - | -
+bench/ | c-library-call | 79 | - | -
 bench/ | inline-asm | 1 | - | -
 bench/ | opted-out | 2 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 bench/ | opted-out | 2 | ABI: the BPF program of SchedSwitch writes the timeline that the harness reads | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
@@ -122,7 +122,7 @@ bench/ | opted-out | 2 | MEASURE: the relaxed load of std::atomic is the row of 
 bench/ | opted-out | 11 | MEASURE: the rows of the allocators run their workers on std::jthread | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
 bench/ | opted-out | 11 | MEASURE: the rows of the bare rings run their workers on std::jthread | the rows of bench_thread_scaling measure the bare rings and their pinned references, whose two sides share plain positions that no type states, so their workers run on std::jthread and pin themselves
 bench/ | opted-out | 28 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
-bench/ | raw-pointer-object | 21 | - | -
+bench/ | raw-pointer-object | 20 | - | -
 bench/ | region | 2 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 bench/ | region | 1 | ABI: the BPF program of SchedSwitch writes the timeline that the harness reads | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 bench/ | region | 1 | ABI: the BPF programs of the perf facades write the timeline rings that the bench reads | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
@@ -162,8 +162,8 @@ bench/ | region | 1 | MEASURE: the rows of the bare rings run their workers on s
 bench/ | region | 1 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 5 | - | -
-bench/ | std-entity | 189 | - | -
-bench/ | std-object | 56 | - | -
+bench/ | std-entity | 166 | - | -
+bench/ | std-object | 50 | - | -
 include/crucible/ | opted-out | 1 | ABI: the front end gave the data pointer of the tensor at the record of the op | -
 include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the tensor at the record of the op | the data pointer of a TensorMeta came from the front end, and data_address gives it a RunAddress through the foreign mint, which stands only at the edge of a foreign ABI
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
