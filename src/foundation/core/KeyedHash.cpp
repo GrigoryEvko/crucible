@@ -324,8 +324,8 @@ inline void blake3_rounds_lanes_(Blake3Lanes<Width> (&state)[16], Blake3Lanes<Wi
 // One input of a run of the lanes: blocks blocks from first, from the key,
 // with the counter counter.  Its first block adds start_flags and its last
 // block adds end_flags to the flags of the run.  A full chunk has 16 blocks
-// with CHUNK_START and CHUNK_END, the full blocks of the last chunk before
-// its output block have no CHUNK_END, and a parent has one block.
+// with CHUNK_START and CHUNK_END, the full blocks of a short last chunk
+// before its last block have no CHUNK_END, and a parent has one block.
 struct Blake3Input final {
     std::byte const* first = nullptr;
     std::size_t blocks = 0;
@@ -482,124 +482,131 @@ inline void blake3_run_inputs_(Blake3Cv key, Blake3Input const* inputs, std::siz
 // chaining values are on the stack.
 inline constexpr std::size_t blake3_batch_chunks = 64;
 
-// The tree of a message of more than one chunk, at run time.  The chunks
-// before the last go in batches of at most blake3_batch_chunks chunks, each
-// a run of full subtrees: the subtrees of the binary digits of the count of
-// chunks that remain, largest first, each at a multiple of its size.  The
-// chunks of a batch run in lanes, the full blocks of the last chunk before
-// its output block run with the last batch, and each level of the parents
-// of the subtrees of a batch runs in lanes.  The root of each subtree joins
-// the stack, and each value of the stack then joins from the left with the
-// output node of the last chunk.  Linear in the count of chunks.
-[[gnu::noinline]] inline void blake3_join_tree_rows_(Blake3Cv key, std::byte const* first, std::size_t chunks,
-                                                     Blake3Node& node, std::size_t prefix_blocks) noexcept {
+// One level of parents of the count chaining values of values, in place:
+// the values join in pairs from the left, and an odd last value goes up
+// alone.  The pair of two neighbor values is the 64 bytes of the block of
+// their parent.  The pairs run in lanes.  Each run reads its blocks before it
+// writes its values, and a run writes only the values below the pairs of the
+// runs after it, so the level needs no copy.  Returns the count of the values
+// of the next level.  Complexity: one compression for each pair.
+inline std::size_t blake3_join_level_(Blake3Cv key, Blake3Cv* values, std::size_t count) noexcept {
+    std::size_t const pairs = count / 2;
+    std::byte const* const pair_bytes = static_cast<std::byte const*>(static_cast<void const*>(values));
+    Blake3Input inputs[blake3_batch_chunks / 2] = {};
+    for (std::size_t index = 0; index < pairs; ++index) {
+        inputs[index] = Blake3Input{.first = pair_bytes + index * blake3_block_bytes, .blocks = 1};
+    }
+    blake3_run_inputs_(key, inputs, pairs, blake3_keyed_hash | blake3_parent, values);
+    if (count % 2 != 0) values[pairs] = values[count - 1];
+    return pairs + count % 2;
+}
+
+// Each level of the parents of the count chaining values of the chunks of
+// values, until stop values remain: one for the root of a subtree, two for
+// the pair of the root of the message.  The chunks form one subtree, whose
+// left subtrees are full, so the levels of pairs from the left give the
+// parents of the tree.  Returns the count of the values that remain.  Linear
+// in count.
+inline std::size_t blake3_join_levels_(Blake3Cv key, Blake3Cv* values, std::size_t count, std::size_t stop) noexcept {
+    while (count > stop) {
+        count = blake3_join_level_(key, values, count);
+    }
+    return count;
+}
+
+// The block of the root of a message of more than one chunk, at run time,
+// into node.  The chunks go in batches of blake3_batch_chunks, each a full
+// subtree at a multiple of its size, and a last batch with the chunks that
+// remain, the last chunk of the message with them.  That last batch starts
+// at the count of chunks before the last with its low bits cleared, so it is
+// the last right subtree of the tree.  The chunks of a batch run in lanes,
+// and each level of their parents runs in lanes.  The root of each full
+// batch joins a stack, as its chunks would.  The root of the last batch then
+// joins each value of the stack from the right.  Linear in the count of
+// chunks.
+[[gnu::noinline]] inline void blake3_tree_root_(Blake3Cv key, std::byte const* first, std::size_t count,
+                                                Blake3Node& node) noexcept {
+    std::size_t const chunks = (count - 1) / blake3_chunk_bytes + 1;
+    std::size_t const last_first = (chunks - 1) / blake3_batch_chunks * blake3_batch_chunks;
+    Blake3Input inputs[blake3_batch_chunks] = {};
+    Blake3Cv values[blake3_batch_chunks] = {};
     Blake3Cv stack[blake3_max_depth] = {};
     std::size_t depth = 0;
-    std::uint64_t chunk = 0;
-    bool has_prefix = prefix_blocks != 0;
-    while (chunk < chunks) {
-        // The subtrees of the batch: each the largest power of two that fits
-        // what remains, that is at a multiple of its size, and that keeps
-        // the batch within its bound.
-        std::size_t sizes[8] = {};
-        std::size_t subtrees = 0;
-        std::size_t batch = 0;
-        for (std::uint64_t at = chunk; at < chunks && subtrees < 8 && batch < blake3_batch_chunks;) {
-            // Size 1 meets each test, because at is below chunks and the
-            // batch is below its bound.
-            std::size_t size = blake3_batch_chunks;
-            while (size > chunks - at || (at & (size - 1)) != 0 || batch + size > blake3_batch_chunks) {
-                size /= 2;
-            }
-            sizes[subtrees] = size;
-            ++subtrees;
-            batch += size;
-            at += size;
+    auto const chunk_input = [first](std::size_t chunk) noexcept {
+        return Blake3Input{.first = first + chunk * blake3_chunk_bytes,
+                           .blocks = blake3_chunk_bytes / blake3_block_bytes,
+                           .counter = chunk,
+                           .start_flags = blake3_chunk_start,
+                           .end_flags = blake3_chunk_end};
+    };
+    for (std::size_t batch_first = 0; batch_first < last_first; batch_first += blake3_batch_chunks) {
+        for (std::size_t index = 0; index < blake3_batch_chunks; ++index) {
+            inputs[index] = chunk_input(batch_first + index);
         }
-        bool const is_last_batch = chunk + batch == chunks;
-        Blake3Input inputs[blake3_batch_chunks + 1];
-        for (std::size_t index = 0; index < batch; ++index) {
-            inputs[index] = Blake3Input{.first = first + (chunk + index) * blake3_chunk_bytes,
-                                        .blocks = blake3_chunk_bytes / blake3_block_bytes,
-                                        .counter = chunk + index,
-                                        .start_flags = blake3_chunk_start,
-                                        .end_flags = blake3_chunk_end};
+        blake3_run_inputs_(key, inputs, blake3_batch_chunks, blake3_keyed_hash, values);
+        blake3_join_levels_(key, values, blake3_batch_chunks, 1);
+        Blake3Cv value = values[0];
+        for (std::size_t total = batch_first / blake3_batch_chunks + 1; (total & 1U) == 0; total >>= 1) {
+            value = blake3_parent_cv_(key, stack[depth - 1], value);
+            --depth;
         }
-        std::size_t runs = batch;
-        if (is_last_batch && has_prefix) {
-            inputs[batch] = Blake3Input{.first = first + chunks * blake3_chunk_bytes,
-                                        .blocks = prefix_blocks,
-                                        .counter = chunks,
-                                        .start_flags = blake3_chunk_start,
-                                        .end_flags = 0};
-            ++runs;
-        }
-        Blake3Cv values[blake3_batch_chunks + 1];
-        blake3_run_inputs_(key, inputs, runs, blake3_keyed_hash, values);
-        if (runs > batch) {
-            node.cv = values[batch];
-            has_prefix = false;
-        }
-        // Each level halves each subtree of two or more values.  The
-        // subtrees come largest first, each at an even index, so the pairs
-        // of a level are the leading values, and the pair of two neighbor
-        // values is the 64 bytes of the block of their parent.
-        std::size_t left = batch;
-        for (std::size_t level_size = 1; left > subtrees; level_size *= 2) {
-            std::size_t pairs = 0;
-            for (std::size_t index = 0; index < subtrees; ++index) {
-                if (sizes[index] > level_size) pairs += sizes[index] / level_size / 2;
-            }
-            Blake3Input parent_inputs[blake3_batch_chunks / 2];
-            std::byte const* const pair_bytes = static_cast<std::byte const*>(static_cast<void const*>(&values[0]));
-            for (std::size_t index = 0; index < pairs; ++index) {
-                parent_inputs[index] = Blake3Input{.first = pair_bytes + index * blake3_block_bytes,
-                                                   .blocks = 1,
-                                                   .counter = 0,
-                                                   .start_flags = 0,
-                                                   .end_flags = 0};
-            }
-            Blake3Cv joined[blake3_batch_chunks / 2];
-            blake3_run_inputs_(key, parent_inputs, pairs, blake3_keyed_hash | blake3_parent, joined);
-            for (std::size_t index = 0; index < pairs; ++index) {
-                values[index] = joined[index];
-            }
-            for (std::size_t index = 2 * pairs; index < left; ++index) {
-                values[index - pairs] = values[index];
-            }
-            left -= pairs;
-        }
-        // The root of each subtree joins the stack, as its chunks would.
-        for (std::size_t index = 0; index < subtrees; ++index) {
-            Blake3Cv value = values[index];
-            chunk += sizes[index];
-            for (std::uint64_t total = chunk / sizes[index]; (total & 1U) == 0; total >>= 1) {
-                value = blake3_parent_cv_(key, stack[depth - 1], value);
-                --depth;
-            }
-            stack[depth] = value;
-            ++depth;
-        }
+        stack[depth] = value;
+        ++depth;
     }
-    while (depth != 0) {
-        Blake3Cv const right = blake3_compress_cv_(node.cv, node.words, node.counter, node.bytes, node.flags);
-        node.cv = key;
-        node.words[0] = stack[depth - 1].low;
-        node.words[1] = stack[depth - 1].high;
-        node.words[2] = right.low;
-        node.words[3] = right.high;
-        node.counter = 0;
-        node.bytes = blake3_block_bytes;
-        node.flags = blake3_keyed_hash | blake3_parent;
-        --depth;
+    // The last batch.  A short last chunk runs its full blocks before its
+    // last block in a lane beside the full chunks, and its last block runs
+    // after them in the rows, from a copy with zero bytes after its end.
+    std::size_t const batch = chunks - last_first;
+    for (std::size_t index = 0; index < batch; ++index) {
+        inputs[index] = chunk_input(last_first + index);
     }
+    std::size_t const last_bytes = count - (chunks - 1) * blake3_chunk_bytes;
+    bool const is_short = last_bytes < blake3_chunk_bytes;
+    std::size_t runs = batch;
+    Blake3Node tail{};
+    if (is_short) {
+        Blake3Input& last = inputs[batch - 1];
+        last.blocks = (last_bytes - 1) / blake3_block_bytes;
+        last.end_flags = 0;
+        if (last.blocks == 0) --runs;
+        std::size_t const tail_bytes = last_bytes - last.blocks * blake3_block_bytes;
+        blake3_load_partial_rows_(last.first + last.blocks * blake3_block_bytes, tail_bytes, tail.words);
+        tail.counter = chunks - 1;
+        tail.bytes = static_cast<std::uint32_t>(tail_bytes);
+        tail.flags = blake3_keyed_hash | (last.blocks == 0 ? blake3_chunk_start : 0) | blake3_chunk_end;
+    }
+    blake3_run_inputs_(key, inputs, runs, blake3_keyed_hash, values);
+    if (is_short) {
+        Blake3Cv const prefix = runs == batch ? values[batch - 1] : key;
+        values[batch - 1] = blake3_compress_cv_(prefix, tail.words, tail.counter, tail.bytes, tail.flags);
+    }
+    // With no stack, the last batch is the whole tree, and its last pair is
+    // the root.  Else the root of the last batch joins the stack.
+    std::size_t const left = blake3_join_levels_(key, values, batch, depth == 0 ? 2 : 1);
+    Blake3Cv left_value = values[0];
+    Blake3Cv right_value = values[left - 1];
+    if (depth != 0) {
+        for (; depth > 1; --depth) {
+            right_value = blake3_parent_cv_(key, stack[depth - 1], right_value);
+        }
+        left_value = stack[0];
+    }
+    node.cv = key;
+    node.words[0] = left_value.low;
+    node.words[1] = left_value.high;
+    node.words[2] = right_value.low;
+    node.words[3] = right_value.high;
+    node.counter = 0;
+    node.bytes = blake3_block_bytes;
+    node.flags = blake3_keyed_hash | blake3_parent;
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
 
 // The keyed hash of the bytes of message, at run time.  A message of one
-// chunk runs in the rows.  A longer message runs its chunks in the lanes, and
-// the full blocks of its last chunk run in a lane beside them.
+// chunk runs in the rows, and its last block is the root.  A longer message
+// runs its chunks in the lanes, the last chunk with them, and its root is the
+// parent of the top of the tree.
 [[nodiscard]] Hash256 compute_keyed_hash_(KeyedHashKeyBytes const& key, View<std::byte const> message) noexcept {
     std::byte const* const first = first_of_(ViewDoor::key(), message);
     std::size_t const count = message.size();
@@ -629,7 +636,7 @@ inline constexpr std::size_t blake3_batch_chunks = 64;
     node.counter = full_chunks;
     node.bytes = static_cast<std::uint32_t>(last);
     node.flags = blake3_keyed_hash | (blocks == 1 ? blake3_chunk_start : 0) | blake3_chunk_end;
-    if (full_chunks != 0) blake3_join_tree_rows_(key_cv, first, full_chunks, node, blocks - 1);
+    if (full_chunks != 0) blake3_tree_root_(key_cv, first, count, node);
     Blake3Cv const root = blake3_compress_cv_(node.cv, node.words, 0, node.bytes, node.flags | blake3_root);
     std::uint64_t out[4] = {};
     __builtin_memcpy(&out[0], &root.low, sizeof(root.low));
