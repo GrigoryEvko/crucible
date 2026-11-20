@@ -26,6 +26,7 @@
 #include <fixy/Core.h>
 #include <fixy/Protocol.h>
 #include <fixy/Qtt.h>
+#include <foundation/AlignedBytes.h>
 #include <foundation/Quarantine.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/effects/Row.h>
@@ -709,6 +710,21 @@ public:
     std::uint64_t const second = taken.second();
     ThreeWordOwner const ended{std::move(taken)};
     return second;
+}
+
+// Two mints of a block whose bytes hold no value, and their ends.  The mint,
+// the constructor of the block and the take of its storage are always
+// inline, so the fields stay in registers.  A function that is not always
+// inline and has two calls in a unit stays out of line at -O1, as it does in
+// a caller at its inline budget at -O3.  Its result then goes through memory
+// one word at a time, and a caller that reads two fields with one 16-byte
+// load waits for a store forward that cannot occur.  The two layouts can
+// swap with no change of the result.
+[[gnu::used]] std::size_t aligned_bytes_mint_two(foundation::core::Alloc alloc, fixy::Layout first,
+                                                 fixy::Layout second) noexcept {
+    foundation::UnwrittenBytes const one = foundation::mint_aligned_bytes(alloc, first);
+    foundation::UnwrittenBytes const two = foundation::mint_aligned_bytes(alloc, second);
+    return one.size() + two.size();
 }
 
 // ── Ref, Choice and Report ──────────────────────────────────────────────────
@@ -1912,6 +1928,19 @@ struct RawOwnerWords final {
     source.third = 0;
     if (first != 0) static_cast<void>(released_words.fetch_add_acq_rel(second + third));
     return second;
+}
+
+// The storage of a block holds its bytes rounded up to the alignment, and
+// alignment - 1 bytes more (THE STORAGE of foundation/AlignedBytes.h).
+[[gnu::used]] std::size_t aligned_bytes_mint_two_raw(std::size_t first_bytes, std::size_t first_alignment,
+                                                     std::size_t second_bytes, std::size_t second_alignment) noexcept {
+    std::size_t const first_rounded = (first_bytes + (first_alignment - 1)) & ~(first_alignment - 1);
+    std::size_t const second_rounded = (second_bytes + (second_alignment - 1)) & ~(second_alignment - 1);
+    void* const one = __builtin_malloc(first_rounded + (first_alignment - 1));
+    void* const two = __builtin_malloc(second_rounded + (second_alignment - 1));
+    __builtin_free(two);
+    __builtin_free(one);
+    return first_bytes + second_bytes;
 }
 
 [[gnu::used]] std::uint32_t box_read_raw(std::unique_ptr<Payload>& box) noexcept { return box->value; }

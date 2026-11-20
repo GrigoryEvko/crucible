@@ -44,7 +44,9 @@
 // state away calls take_state_, which copies in the same way.  The shape
 // probe owner_take_and_end of test/shape/core_shapes.cpp holds this code.
 //
-// The moves, the end, take_state_ and reset_ are always inline.  GCC stops
+// The build from a state, the moves, the end, take_state_ and reset_ are
+// always inline, and so is each constructor of an owner that takes its
+// storage, such as the constructor of an UnwrittenBytes.  GCC stops
 // the inlining of a unit when the unit grows past --param inline-unit-growth,
 // and a call that stays out of line takes the address of a state, which
 // then goes through the stack.  So the hot path of an owner does not depend
@@ -115,7 +117,9 @@ protected:
     State state_{};
 
     constexpr OwnerCore() noexcept = default;
-    constexpr explicit OwnerCore(State const& state) noexcept : state_{state} {}
+    // The build from a state is always inline, as the moves are.  A build out
+    // of line takes the state by its address, so the fields go through memory.
+    CRUCIBLE_INLINE constexpr explicit OwnerCore(State const& state) noexcept : state_{state} {}
 
     // The state moves through a local (THE COPY OF A STATE).
     CRUCIBLE_INLINE constexpr OwnerCore(OwnerCore&& other) noexcept {

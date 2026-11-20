@@ -245,8 +245,10 @@ public:
     // The block of the fields, with the key that only AlignedBytesDoor
     // builds.  The caller gives fields whose bytes each hold a value: fields
     // of the zeroed door, or fields whose bytes a door of an UnwrittenBytes
-    // wrote.
-    AlignedBytes(detail::AlignedBytesKey const& /*key*/, State const& state) noexcept : core::OwnerCore<State>{state} {}
+    // wrote.  The constructor is always inline, as the constructor of an
+    // UnwrittenBytes is.
+    CRUCIBLE_INLINE AlignedBytes(detail::AlignedBytesKey const& /*key*/, State const& state) noexcept
+        : core::OwnerCore<State>{state} {}
 
     AlignedBytes(AlignedBytes const&) =
         delete("an AlignedBytes owns its block alone: a copy would give it back two times");
@@ -311,9 +313,13 @@ public:
     constexpr UnwrittenBytes() noexcept = default;
 
     // A block of the layout, with the key that only AlignedBytesDoor builds.
-    // The bytes start their lifetime with no value and with no write.
+    // The bytes start their lifetime with no value and with no write.  The
+    // constructor is always inline, as the moves are.  A constructor out of
+    // line writes the three fields to memory one word at a time, and a caller
+    // that reads two of them with one 16-byte load waits for a store forward
+    // that cannot occur (THE COPY OF A STATE of foundation/core/Owner.h).
     // Complexity: one allocation.
-    UnwrittenBytes(detail::AlignedBytesKey const& /*key*/, ::foundation::alloc::Layout layout) noexcept
+    CRUCIBLE_INLINE UnwrittenBytes(detail::AlignedBytesKey const& /*key*/, ::foundation::alloc::Layout layout) noexcept
         : core::OwnerCore<State>{State::allocated(layout, detail::BlockStorage::unwritten)} {}
 
     UnwrittenBytes(UnwrittenBytes const&) =
@@ -375,10 +381,13 @@ concept CanMintAlignedBytes = core::AllocationCapability<Marker>;
 
 // A block of the layout, in new storage of the allocation door, whose bytes
 // hold no value.  The allocation capability comes first, so each allocation
-// shows at its call.  Complexity: one allocation, and no write of a byte.
+// shows at its call.  The two mints are always inline, as the constructors
+// are, so the fields of the block reach the caller in registers.
+// Complexity: one allocation, and no write of a byte.
 template <class Marker>
     requires CanMintAlignedBytes<Marker>
-[[nodiscard]] UnwrittenBytes mint_aligned_bytes(Marker /*allocation*/, ::foundation::alloc::Layout layout) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE UnwrittenBytes mint_aligned_bytes(Marker /*allocation*/,
+                                                                ::foundation::alloc::Layout layout) noexcept {
     return UnwrittenBytes{detail::AlignedBytesDoor::key(), layout};
 }
 
@@ -388,8 +397,8 @@ template <class Marker>
 // under ThreadSanitizer (THE MINTS).
 template <class Marker>
     requires CanMintAlignedBytes<Marker>
-[[nodiscard]] AlignedBytes mint_aligned_bytes_zeroed(Marker /*allocation*/,
-                                                     ::foundation::alloc::Layout layout) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE AlignedBytes mint_aligned_bytes_zeroed(Marker /*allocation*/,
+                                                                     ::foundation::alloc::Layout layout) noexcept {
     return AlignedBytes{detail::AlignedBytesDoor::key(),
                         core::detail::owner::AlignedBytesState::allocated(layout, detail::BlockStorage::zeroed)};
 }

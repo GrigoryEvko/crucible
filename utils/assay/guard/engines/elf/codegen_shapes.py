@@ -732,6 +732,21 @@ PROBES: tuple[Probe, ...] = (
         "The core moves a state through a local that is not const, so no copy of the state goes to the stack",
     ),
     Probe(
+        "aligned_bytes_mint_two",
+        "two mints of a block and their ends are the round ups of the raw form, a call of the allocation door in "
+        "place of each malloc, and the test of the storage, the check of the layout and a call of the release door "
+        "in place of each free.  The mint, the constructor of the block and the take of its storage are always "
+        "inline, so a caller that keeps a function of two calls out of line, as the -O1 build does, makes no other "
+        "call",
+        checks=("fatal",),
+        branches=True,
+        calls=(
+            "foundation::core::detail::heap_take_words_",
+            "foundation::detail::stored_block_layout",
+            "foundation::core::detail::heap_release_",
+        ),
+    ),
+    Probe(
         "box_read",
         "A read through the dereference of a Box adds one test and one branch to a call of the fatal exit",
         checks=("fatal",),
