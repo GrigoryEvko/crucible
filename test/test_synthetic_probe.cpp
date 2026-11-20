@@ -5,8 +5,7 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
-#include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
@@ -213,17 +212,22 @@ static void test_probe_stats_layout_invariants() {
     static_assert(alignof(Stats) >= 64, "AtomicProbeStats must be cache-line-aligned");
     static_assert(sizeof(Stats) >= 64, "AtomicProbeStats occupies a full cache line");
 
-    std::array<std::array<Stats, 4>, 4> grid{};
-    constexpr std::uintptr_t LINE = 64;
-    for (std::size_t p = 0; p < grid.size(); ++p) {
-        for (std::size_t k = 0; k < grid[p].size(); ++k) {
-            auto const addr = std::bit_cast<std::uintptr_t>(&grid[p][k]);
-            CRUCIBLE_TEST_ASSERT(kTest, (addr % LINE) == 0);
-            if (p > 0 || k > 0) {
-                std::size_t const prev_p = (k == 0) ? p - 1 : p;
-                std::size_t const prev_k = (k == 0) ? grid[p].size() - 1 : k - 1;
-                auto const prev_addr = std::bit_cast<std::uintptr_t>(&grid[prev_p][prev_k]);
-                CRUCIBLE_TEST_ASSERT(kTest, addr - prev_addr >= LINE);
+    // Each cell starts a line, and two cells that start lines at different
+    // addresses are at least one line apart.
+    ::fixy::FixedArray<::fixy::FixedArray<Stats, 4>, 4> grid{};
+    constexpr std::size_t LINE = 64;
+    for (::fixy::Index<4> const p : grid.indices()) {
+        for (::fixy::Index<4> const k : grid.at(p).indices()) {
+            ::fixy::Address const addr = ::fixy::address_of(::fixy::to(grid.at(p).at(k)));
+            CRUCIBLE_TEST_ASSERT(kTest, addr.is_aligned<LINE>());
+            if (p.raw() > 0 || k.raw() > 0) {
+                std::size_t const prev_p = (k.raw() == 0) ? p.raw() - 1 : p.raw();
+                std::size_t const prev_k = (k.raw() == 0) ? grid.at(p).size() - 1 : k.raw() - 1;
+                ::fixy::FixedArray<Stats, 4>& prev_row =
+                    grid.at(::fixy::Index<4>::check(prev_p).expect("the row of the cell before a later cell"));
+                ::fixy::Address const prev_addr = ::fixy::address_of(
+                    ::fixy::to(prev_row.at(::fixy::Index<4>::check(prev_k).expect("the cell before a later cell"))));
+                CRUCIBLE_TEST_ASSERT(kTest, !(addr == prev_addr));
             }
         }
     }

@@ -6,8 +6,7 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
-#include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
@@ -164,14 +163,17 @@ static void test_pair_counter_layout_invariants() {
     static_assert(alignof(PairCounters) >= 64, "AtomicPingmeshPairCounters must be cache-line-aligned");
     static_assert(sizeof(PairCounters) >= 64, "AtomicPingmeshPairCounters occupies a full cache line");
 
-    std::array<PairCounters, 16> grid{};
-    constexpr std::uintptr_t LINE = 64;
-    for (std::size_t i = 0; i < grid.size(); ++i) {
-        auto const addr = std::bit_cast<std::uintptr_t>(&grid[i]);
-        CRUCIBLE_TEST_ASSERT(kTest, (addr % LINE) == 0);
-        if (i > 0) {
-            auto const prev_addr = std::bit_cast<std::uintptr_t>(&grid[i - 1]);
-            CRUCIBLE_TEST_ASSERT(kTest, addr - prev_addr >= LINE);
+    // Each cell starts a line, and two cells that start lines at different
+    // addresses are at least one line apart.
+    ::fixy::FixedArray<PairCounters, 16> grid{};
+    constexpr std::size_t LINE = 64;
+    for (::fixy::Index<16> const i : grid.indices()) {
+        ::fixy::Address const addr = ::fixy::address_of(::fixy::to(grid.at(i)));
+        CRUCIBLE_TEST_ASSERT(kTest, addr.is_aligned<LINE>());
+        if (i.raw() > 0) {
+            ::fixy::Address const prev_addr = ::fixy::address_of(
+                ::fixy::to(grid.at(::fixy::Index<16>::check(i.raw() - 1).expect("the cell before a later cell"))));
+            CRUCIBLE_TEST_ASSERT(kTest, !(addr == prev_addr));
         }
     }
     ::fixy::check::pass(kTest, "  test_pair_counter_layout_invariants: PASSED\n");
