@@ -660,13 +660,29 @@ consteval void require_seal_holds(std::meta::info registry, std::meta::info kind
 
 // The registrations of one kind in one family, read one time for each
 // unit.  A family with a registration and no seal of the kind stops the
-// build.  A namespace that holds no registration and no seal of the kind is
-// no family of that kind.
+// build, and so do two seals of the kind and a count that differs from the
+// count of its seal.  A namespace that holds no registration and no seal of
+// the kind is no family of that kind.  One walk of the members reads the
+// seals and the registrations together.  Complexity: linear in the members.
 [[nodiscard]] consteval family_reading read_family(std::meta::info family, std::meta::info kind) {
-    const seal_reading reading = read_seal(family, kind);
-    if (reading.found == 0 && !reading.is_sealed) return {};
-    if (reading.found != 0 && !reading.is_sealed) a_family_holds_a_registration_with_no_seal();
-    return {true, read_own_registrations(family, kind)};
+    stack<std::meta::info> found{};
+    std::size_t seals = 0;
+    std::size_t sealed = 0;
+    for (const std::meta::info member : std::meta::members_of(family, std::meta::access_context::current())) {
+        if (is_registration_of(member, kind)) {
+            push(found, member);
+        } else if (is_registration_of(member, ^^seal)) {
+            const seal entry = std::meta::extract<seal>(member);
+            if (entry.kind != kind) continue;
+            ++seals;
+            sealed = entry.count;
+        }
+    }
+    if (found.top == 0 && seals == 0) return {};
+    if (seals == 0) a_family_holds_a_registration_with_no_seal();
+    if (seals > 1) a_kind_of_registration_has_two_seals();
+    if (found.top != sealed) a_registration_stands_outside_its_seal();
+    return {true, to_static_run(found)};
 }
 
 }  // namespace detail
