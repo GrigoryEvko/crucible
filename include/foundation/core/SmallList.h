@@ -157,11 +157,13 @@ struct SmallListState {
         return empty;
     }
 
-    // Gives the heap storage back.  Each element is trivially destructible,
-    // so no element needs an end.
+    // Gives the heap storage back, unpoisoned (THE SPARE STORAGE of
+    // Heap.h).  Each element is trivially destructible, so no element needs
+    // an end.
     static constexpr void release(SmallListState const& state) noexcept {
         refuse_lent_owner_change_(state.lend_count);
         if (state.heap != nullptr) {
+            unpoison_slots_(state.heap, state.capacity);
             heap_release_(static_cast<void*>(state.heap), state.capacity * sizeof(T), alignof(T));
         }
     }
@@ -197,9 +199,12 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] SmallList
     }
 
     // Moves each element into heap storage of the next capacity, and gives
-    // the old heap storage back.  The count is the capacity, and it is below
-    // the maximum.  The elements are trivially copyable, so one copy of bytes
-    // moves them.  Complexity: one allocation and O(size()) bytes.
+    // the old heap storage back.  The slots of the heap storage past the
+    // count are poisoned (THE SPARE STORAGE of Heap.h), and the inline slots
+    // are not, because a move of the list copies their bytes.  The count is
+    // the capacity, and it is below the maximum.  The elements are trivially
+    // copyable, so one copy of bytes moves them.  Complexity: one allocation
+    // and O(size()) bytes.
     [[gnu::cold, gnu::noinline]] void grow_() noexcept {
         State& state = this->state_;
         std::size_t const count = state.count;
@@ -209,10 +214,12 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] SmallList
             __builtin_memcpy(target, static_cast<void const*>(first_()), count * sizeof(T));
         }
         if (state.heap != nullptr) {
+            detail::unpoison_slots_(state.heap, state.capacity);
             detail::heap_release_(static_cast<void*>(state.heap), state.capacity * sizeof(T), alignof(T));
         }
         state.heap = static_cast<T*>(target);
         state.capacity = next;
+        detail::poison_slots_(state.heap + count, next - count);
     }
 
     // The empty list of at most maximum elements.  Only mint_small_list
@@ -259,6 +266,9 @@ public:
             }
             grow_();
         }
+        if (state.heap != nullptr) {
+            detail::unpoison_slots_(state.heap + state.count, 1);
+        }
         ::new(static_cast<void*>(first_() + state.count)) T(value);
         ++state.count;
         return Unit{};
@@ -273,14 +283,22 @@ public:
             return Option<T>{none};
         }
         --state.count;
-        return Option<T>::some(T{first_()[state.count]});
+        Option<T> taken = Option<T>::some(T{first_()[state.count]});
+        if (state.heap != nullptr) {
+            detail::poison_slots_(state.heap + state.count, 1);
+        }
+        return taken;
     }
 
-    // The list then holds no element, and it keeps its storage.  A lent list
+    // The list then holds no element, and it keeps its storage.  The heap
+    // storage is then poisoned (THE SPARE STORAGE of Heap.h).  A lent list
     // ends the process (THE LEND COUNT).
     constexpr void clear() & noexcept {
         detail::refuse_lent_owner_change_(this->state_.lend_count);
         this->state_.count = 0;
+        if (this->state_.heap != nullptr) {
+            detail::poison_slots_(this->state_.heap, this->state_.capacity);
+        }
     }
 
     // The frame door of the elements (THE FRAME DOORS): body gets the View

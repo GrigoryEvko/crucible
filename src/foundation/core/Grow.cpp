@@ -43,11 +43,13 @@ void GrowText::grow_and_put_(char const* characters, std::size_t count) noexcept
     }
     __builtin_memcpy(target + state_.size, characters, count);
     if (state_.first != nullptr) {
+        detail::unpoison_slots_(state_.first, state_.capacity);
         detail::heap_release_(static_cast<void*>(state_.first), state_.capacity, 1);
     }
     state_.first = target;
     state_.size = needed;
     state_.capacity = next;
+    detail::poison_slots_(target + needed, next - needed);
 }
 
 }  // namespace foundation::core

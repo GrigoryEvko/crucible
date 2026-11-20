@@ -227,11 +227,13 @@ struct GrowListState {
     }
 
     // Ends each element, and gives the storage back to the allocation door
-    // with the bytes and the alignment of its allocation.
+    // with the bytes and the alignment of its allocation, unpoisoned (THE
+    // SPARE STORAGE of Heap.h).
     static constexpr void release(GrowListState const& state) noexcept {
         refuse_lent_owner_change_(state.lend_count);
         end_each_(state);
         if (state.storage != nullptr) {
+            unpoison_slots_(static_cast<T const*>(state.storage), state.capacity);
             heap_release_(state.storage, state.capacity * sizeof(T), alignof(T));
         }
     }
@@ -258,6 +260,7 @@ struct GrowTextState {
     static constexpr void release(GrowTextState const& state) noexcept {
         refuse_lent_owner_change_(state.lend_count);
         if (state.first != nullptr) {
+            unpoison_slots_(state.first, state.capacity);
             heap_release_(static_cast<void*>(state.first), state.capacity, 1);
         }
     }
@@ -278,8 +281,11 @@ struct HeapTextState {
         return HeapTextState{};
     }
 
+    // The characters past the size stay poisoned from the GrowText (THE
+    // SPARE STORAGE of Heap.h), so the release unpoisons each one first.
     static constexpr void release(HeapTextState const& state) noexcept {
         if (state.first != nullptr) {
+            unpoison_slots_(state.first, state.capacity);
             heap_release_(static_cast<void*>(state.first), state.capacity, 1);
         }
     }
@@ -325,17 +331,20 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
 
     [[nodiscard]] constexpr T* first_() const noexcept { return static_cast<T*>(this->state_.storage); }
 
-    // Ends each element from the last.  Complexity: O(size()).
+    // Ends each element from the last, and poisons each slot of the storage
+    // (THE SPARE STORAGE of Heap.h).  Complexity: O(size()).
     constexpr void end_each_() noexcept {
         State::end_each_(this->state_);
         this->state_.count = 0;
+        detail::poison_slots_(first_(), this->state_.capacity);
     }
 
     // Moves each element into new storage of the next capacity, ends each
-    // moved-out element, and gives the old storage back.  The count is below
-    // the maximum.  The capacity is at most the largest count of a View, so
-    // the bytes fit in size_t.  Complexity: one allocation and O(size())
-    // moves.
+    // moved-out element, and gives the old storage back.  The slots of the
+    // new storage past the count are poisoned (THE SPARE STORAGE of Heap.h).
+    // The count is below the maximum.  The capacity is at most the largest
+    // count of a View, so the bytes fit in size_t.  Complexity: one
+    // allocation and O(size()) moves.
     [[gnu::cold, gnu::noinline]] void grow_() noexcept {
         State& state = this->state_;
         std::size_t const count = state.count;
@@ -353,11 +362,13 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
             end_each_();
         }
         if (state.storage != nullptr) {
+            detail::unpoison_slots_(first_(), state.capacity);
             detail::heap_release_(state.storage, state.capacity * sizeof(T), alignof(T));
         }
         state.storage = target;
         state.count = count;
         state.capacity = next;
+        detail::poison_slots_(first_() + count, next - count);
     }
 
     // The empty list of at most maximum elements.  Only mint_grow_list calls
@@ -409,6 +420,7 @@ public:
         if (this->state_.count == this->state_.capacity) [[unlikely]] {
             grow_();
         }
+        detail::unpoison_slots_(first_() + this->state_.count, 1);
         ::new(static_cast<void*>(first_() + this->state_.count)) T(static_cast<T&&>(value));
         ++this->state_.count;
         return Unit{};
@@ -628,9 +640,11 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] GrowText 
 
     // Puts the count characters at characters after the last one, or gives
     // Full<char> when they do not fit below the maximum.  Three compares and
-    // one copy.  The characters can lie in the storage of this text, below
-    // its count or past it after a clear(), so the copy is a move of bytes.
-    // A lent text ends the process (THE LEND COUNT).
+    // one copy.  The characters can lie in the storage of this text below its
+    // count, as append_self gives them, so the copy is a move of bytes.  The
+    // storage past the count is poisoned (THE SPARE STORAGE of Heap.h), so a
+    // build with AddressSanitizer reports characters from there.  A lent text
+    // ends the process (THE LEND COUNT).
     [[nodiscard]] Result<Unit, Full<char>> put_(char const* characters, std::size_t count) noexcept {
         detail::refuse_lent_owner_change_(state_.lend_count);
         if (count > state_.maximum - state_.size) [[unlikely]] {
@@ -641,6 +655,7 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] GrowText 
             return Unit{};
         }
         if (count != 0) {
+            detail::unpoison_slots_(state_.first + state_.size, count);
             __builtin_memmove(state_.first + state_.size, characters, count);
         }
         state_.size += count;
@@ -702,11 +717,13 @@ public:
         return put_(state_.first + offset, count);
     }
 
-    // The text then holds no character, and it keeps its storage.  A lent
-    // text ends the process (THE LEND COUNT).
+    // The text then holds no character, and it keeps its storage, poisoned
+    // (THE SPARE STORAGE of Heap.h).  A lent text ends the process (THE LEND
+    // COUNT).
     constexpr void clear() & noexcept {
         detail::refuse_lent_owner_change_(state_.lend_count);
         state_.size = 0;
+        detail::poison_slots_(state_.first, state_.capacity);
     }
 
     // The frame door of the characters (THE FRAME DOORS): body gets the

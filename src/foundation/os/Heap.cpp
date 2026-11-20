@@ -13,6 +13,7 @@
 #include <foundation/core/Heap.h>
 
 #include <foundation/core/Report.h>
+#include <foundation/os/Poison.h>
 
 #include <cstddef>
 
@@ -86,5 +87,15 @@ void* heap_allocate_zeroed_(std::size_t bytes) noexcept {
 void heap_release_(void* storage, std::size_t /*bytes*/, std::size_t /*alignment*/) noexcept {
     __builtin_free(storage);
 }
+
+#if defined(__SANITIZE_ADDRESS__)
+
+// The bodies of the door of THE SPARE STORAGE of Heap.h, in a build with
+// AddressSanitizer.
+void heap_poison_(void const* first, std::size_t bytes) noexcept { ::foundation::os::poison_bytes(first, bytes); }
+
+void heap_unpoison_(void const* first, std::size_t bytes) noexcept { ::foundation::os::unpoison_bytes(first, bytes); }
+
+#endif
 
 }  // namespace foundation::core::detail

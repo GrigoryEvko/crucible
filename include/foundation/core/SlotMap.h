@@ -197,7 +197,8 @@ struct SlotMapState {
     [[= ::foundation::linear::drop_door{}]] static constexpr void end_slot_(T& value) noexcept { value.~T(); }
 
     // Ends each value in the order of the slots, and gives the allocation
-    // back.  Complexity: O(used).
+    // back, with each slot unpoisoned (THE SPARE STORAGE of Heap.h).
+    // Complexity: O(used).
     static constexpr void release(SlotMapState const& state) noexcept {
         if (state.values == nullptr) {
             return;
@@ -209,6 +210,7 @@ struct SlotMapState {
                 }
             }
         }
+        unpoison_slots_(state.values, state.capacity);
         heap_release_(static_cast<void*>(state.values), slot_map_layout_<T, Generation>(state.capacity).bytes,
                       slot_map_alignment_<T>);
     }
@@ -418,6 +420,7 @@ public:
         }
         Generation const generation = wrapping_add(state.generations[index], Generation{1});
         state.generations[index] = generation;
+        detail::unpoison_slots_(state.values + index, 1);
         ::new(static_cast<void*>(state.values + index)) T(static_cast<T&&>(value));
         ++state.live;
         return SlotKey<Tag>{std::uint64_t{index} | (std::uint64_t{generation} << detail::slot_index_bits_)};
@@ -452,8 +455,9 @@ public:
 
     // Moves the value of key out, and frees its slot: the generation of the
     // slot takes one more, and its index goes onto the stack of the free
-    // slots.  At the largest generation the slot retires (THE WRAP OF A
-    // GENERATION).  No value for a key that the slot does not hold.
+    // slots.  The slot is then poisoned (THE SPARE STORAGE of Heap.h).  At
+    // the largest generation the slot retires (THE WRAP OF A GENERATION).  No
+    // value for a key that the slot does not hold.
     [[nodiscard]] constexpr Option<T> remove(SlotKey<Tag> key) & noexcept {
         if (!holds_(key.raw())) {
             return Option<T>{none};
@@ -462,6 +466,7 @@ public:
         std::uint32_t const index = detail::slot_index_of_(key.raw());
         Option<T> result = Option<T>::some(static_cast<T&&>(*slot_of_(key.raw())));
         State::end_slot_(*slot_of_(key.raw()));
+        detail::poison_slots_(state.values + index, 1);
         Generation const generation = state.generations[index];
         if (generation == max_of<Generation>) [[unlikely]] {
             state.generations[index] = 0;
@@ -502,7 +507,8 @@ public:
 
 // The empty map of capacity slots: one allocation of the values, the stack of
 // the free indexes and the generations.  No slot holds a value, and no byte
-// of a slot is read before an insert writes it.  A capacity of zero allocates
+// of a slot is read before an insert writes it, so each slot of the values is
+// poisoned (THE SPARE STORAGE of Heap.h).  A capacity of zero allocates
 // nothing.  Complexity: one allocation.
 template <class T, class Tag, class Generation, class Marker>
     requires CanMintSlotMap<T, Tag, Generation, Marker>
@@ -522,6 +528,7 @@ template <class T, class Tag, class Generation, class Marker>
         .generations = static_cast<Generation*>(static_cast<void*>(storage + layout.generation_offset)),
         .capacity = slots,
     };
+    detail::poison_slots_(state.values, slots);
     return SlotMap<T, Tag, Generation>{state};
 }
 

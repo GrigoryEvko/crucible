@@ -90,6 +90,44 @@ heap_allocate_(std::size_t bytes, std::size_t alignment) noexcept;
 [[nodiscard, gnu::malloc, gnu::malloc(heap_release_, 1), gnu::returns_nonnull, gnu::alloc_size(1)]] void*
 heap_allocate_zeroed_(std::size_t bytes) noexcept;
 
+// THE SPARE STORAGE.  An owner that holds storage past its elements, such as
+// a GrowList between its count and its capacity, tells AddressSanitizer which
+// slots hold no element.  heap_poison_ marks a run of bytes as not
+// addressable, and heap_unpoison_ marks it as addressable again before the
+// owner writes it.  A load or a store of a poisoned byte then ends the
+// process with a report of AddressSanitizer, as the vectors of the C++
+// library report a read past their size.  Only a build with AddressSanitizer
+// has a body of the two functions, in src/foundation/os/Heap.cpp, through
+// the door of foundation/os/Poison.h.  In each other build they are empty
+// inline functions, so a call costs nothing.  The owner gives each run back
+// to the allocation door unpoisoned.
+#if defined(__SANITIZE_ADDRESS__)
+void heap_poison_(void const* first, std::size_t bytes) noexcept;
+void heap_unpoison_(void const* first, std::size_t bytes) noexcept;
+#else
+inline void heap_poison_(void const* /*first*/, std::size_t /*bytes*/) noexcept {}
+inline void heap_unpoison_(void const* /*first*/, std::size_t /*bytes*/) noexcept {}
+#endif
+
+// Poisons the count slots from first (THE SPARE STORAGE).  A constant
+// evaluation has no sanitizer, and a count of zero names no slot, so neither
+// calls the door.
+template <class T>
+constexpr void poison_slots_(T const* first, std::size_t count) noexcept {
+    if !consteval {
+        if (count != 0) heap_poison_(static_cast<void const*>(first), count * sizeof(T));
+    }
+}
+
+// Unpoisons the count slots from first, before the owner writes them or
+// gives them back (THE SPARE STORAGE).
+template <class T>
+constexpr void unpoison_slots_(T const* first, std::size_t count) noexcept {
+    if !consteval {
+        if (count != 0) heap_unpoison_(static_cast<void const*>(first), count * sizeof(T));
+    }
+}
+
 }  // namespace detail
 
 }  // namespace foundation::core

@@ -2797,6 +2797,20 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
   set_tests_properties(test_core_bump_arena_poison_new_block PROPERTIES
     PASS_REGULAR_EXPRESSION "AddressSanitizer: use-after-poison")
 endif()
+
+# The spare storage of the growable owners (THE SPARE STORAGE of
+# foundation/core/Heap.h).  Each program reads a slot of its owner that holds
+# no element: a GrowList and a GrowText after a clear, a SmallList on the heap
+# after take_last, and a SlotMap after remove.  Each passes only on the text
+# of the report of AddressSanitizer, and only a build with AddressSanitizer
+# registers them.
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
+  foreach(_poison_test test_core_grow_list_poison test_core_grow_text_poison test_core_small_list_poison
+                       test_core_slot_map_poison)
+    foundation_test(${_poison_test})
+    set_tests_properties(${_poison_test} PROPERTIES PASS_REGULAR_EXPRESSION "AddressSanitizer: use-after-poison")
+  endforeach()
+endif()
 foundation_neg_compile_test(neg_core_bump_arena_make_on_temporary
   "use of deleted function .void foundation::core::BumpArena::make\\(Rest&& ...\\) && \\[with T = int; Rest = \\{foundation::core::Alloc, int\\}\\]."
   "a temporary arena gives back its blocks at the end of the statement")
