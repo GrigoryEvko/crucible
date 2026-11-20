@@ -20,7 +20,6 @@
 #include <fixy/check/Check.h>
 #include "tensor_data.h"
 #include <cmath>
-#include <cstdio>
 #include <cstring>
 #include <random>
 
@@ -70,7 +69,7 @@ static constexpr uint32_t N_OPS = 4;
 
 int main() {
     auto test = ::foundation::effects::testing::test();
-    std::printf("test_compute:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_compute:\n");
 
     // A fixed seed, so the same numbers flow through on every run and
     // the reference comparison below is reproducible.
@@ -186,8 +185,8 @@ int main() {
     crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view())
                                       .expect("the slots of the test fit in 64 bits");
 
-    std::printf("  plan: pool=%lu bytes, %u slots (%u external)\n", static_cast<unsigned long>(plan.pool_bytes),
-                plan.num_slots(), plan.num_external);
+    ::fixy::report(::fixy::Sink::Out, "  plan: pool={} bytes, {} slots ({} external)\n",
+                   static_cast<unsigned long>(plan.pool_bytes), plan.num_slots(), plan.num_external);
 
     ::foundation::core::FixedArray<SlotId, 2> op0_in{SlotId{SL_X}, SlotId{SL_W1}};
     ::foundation::core::FixedArray<SlotId, 1> op0_out{SlotId{SL_MM1}};
@@ -304,7 +303,7 @@ int main() {
         max_err = std::max(max_err, err);
     }
 
-    std::printf("  max_error vs reference: %.2e\n", static_cast<double>(max_err));
+    ::fixy::report(::fixy::Sink::Out, "  max_error vs reference: {}\n", static_cast<double>(max_err));
     CRUCIBLE_TEST_ASSERT(kTest, max_err < 1e-5f && "softmax output diverged from reference");
 
     for (int b = 0; b < BATCH; b++) {
@@ -317,12 +316,13 @@ int main() {
         CRUCIBLE_TEST_ASSERT(kTest, std::abs(row_sum - 1.0f) < 1e-5f && "softmax row doesn't sum to 1");
     }
 
-    std::printf("  softmax[0] = [%.4f, %.4f, %.4f]\n", static_cast<double>(pool_sm[0]), static_cast<double>(pool_sm[1]),
-                static_cast<double>(pool_sm[2]));
-    std::printf("  softmax[1] = [%.4f, %.4f, %.4f]\n", static_cast<double>(pool_sm[3]), static_cast<double>(pool_sm[4]),
-                static_cast<double>(pool_sm[5]));
-    std::printf("  100 iterations, %u ops/iter, compiled_iters=%u\n", N_OPS, ctx.compiled_iterations());
+    ::fixy::report(::fixy::Sink::Out, "  softmax[0] = [{}, {}, {}]\n", static_cast<double>(pool_sm[0]),
+                   static_cast<double>(pool_sm[1]), static_cast<double>(pool_sm[2]));
+    ::fixy::report(::fixy::Sink::Out, "  softmax[1] = [{}, {}, {}]\n", static_cast<double>(pool_sm[3]),
+                   static_cast<double>(pool_sm[4]), static_cast<double>(pool_sm[5]));
+    ::fixy::report(::fixy::Sink::Out, "  100 iterations, {} ops/iter, compiled_iters={}\n", N_OPS,
+                   ctx.compiled_iterations());
 
-    std::printf("test_compute: PASSED\n");
+    ::fixy::check::pass(kTest, "test_compute: PASSED\n");
     return 0;
 }

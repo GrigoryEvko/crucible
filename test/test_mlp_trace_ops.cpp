@@ -83,7 +83,7 @@ enum Act : uint32_t {
 
 OpPacket build_op(uint32_t iter, uint32_t op_idx) {
     OpPacket p;
-    const auto& op = MLP_OPS[op_idx];
+    const MlpOp& op = *MLP_OPS.get(op_idx).expect("the op index is below NUM_OPS");
 
     p.entry.schema_hash = op.schema_hash;
     p.entry.shape_hash = op.shape_hash;

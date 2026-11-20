@@ -25,7 +25,6 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 #include <cstdint>
-#include <cstdio>
 
 namespace {
 
@@ -40,48 +39,52 @@ using namespace test_mlp_trace;
 using test::flush_and_wait_region_published;
 
 int main() {
-    std::printf("═══ Crucible MLP Training Simulation ═══\n\n");
-    std::printf("Model: input[%lld,%lld] -> mm -> relu -> mm -> output[%lld,%lld]\n", static_cast<long long>(BATCH),
-                static_cast<long long>(IN_DIM), static_cast<long long>(BATCH), static_cast<long long>(OUT_DIM));
-    std::printf("Ops per iteration: %u (5 forward + 5 backward)\n\n", NUM_OPS);
+    ::fixy::report(::fixy::Sink::Out, "═══ Crucible MLP Training Simulation ═══\n\n");
+    ::fixy::report(::fixy::Sink::Out, "Model: input[{},{}] -> mm -> relu -> mm -> output[{},{}]\n",
+                   static_cast<long long>(BATCH), static_cast<long long>(IN_DIM), static_cast<long long>(BATCH),
+                   static_cast<long long>(OUT_DIM));
+    ::fixy::report(::fixy::Sink::Out, "Ops per iteration: {} (5 forward + 5 backward)\n\n", NUM_OPS);
 
     Vigil vigil;
 
-    std::printf("── Iteration 0: RECORDING (building signature) ──\n");
+    ::fixy::report(::fixy::Sink::Out, "── Iteration 0: RECORDING (building signature) ──\n");
     feed_iteration(vigil, 0);
-    std::printf("   Recorded %u ops. Mode: RECORDING\n", NUM_OPS);
+    ::fixy::report(::fixy::Sink::Out, "   Recorded {} ops. Mode: RECORDING\n", NUM_OPS);
 
-    std::printf("── Iteration 1: RECORDING (candidate match) ──\n");
+    ::fixy::report(::fixy::Sink::Out, "── Iteration 1: RECORDING (candidate match) ──\n");
     feed_iteration(vigil, 1);
-    std::printf("   Recorded %u ops. Mode: RECORDING\n", NUM_OPS);
+    ::fixy::report(::fixy::Sink::Out, "   Recorded {} ops. Mode: RECORDING\n", NUM_OPS);
 
     // Three iterations are the minimum: the first builds a signature,
     // the second proposes it as a boundary, and the third confirms it.
-    std::printf("── Trigger: feeding first %u ops of iter 2 ──\n", IterationDetector::K);
+    ::fixy::report(::fixy::Sink::Out, "── Trigger: feeding first {} ops of iter 2 ──\n", IterationDetector::K);
     feed_trigger(vigil, 2);
 
     flush_and_wait_region_published(kTest, vigil);
 
-    std::printf("\n   >>> Iteration boundary detected! <<<\n");
+    ::fixy::report(::fixy::Sink::Out, "\n   >>> Iteration boundary detected! <<<\n");
     const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
-    std::printf("   BackgroundThread built RegionNode with %u ops\n", region->num_ops());
+    ::fixy::report(::fixy::Sink::Out, "   BackgroundThread built RegionNode with {} ops\n", region->num_ops());
 
     CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_some());
     const ::fixy::Ref<MemoryPlan const> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
 
-    std::printf("\n── Memory Plan ──\n");
-    std::printf("   Pool size: %llu bytes\n", static_cast<unsigned long long>(plan->pool_bytes));
-    std::printf("   Total slots: %u\n", plan->num_slots());
-    std::printf("   External slots: %u (parameters)\n", plan->num_external);
-    std::printf("   Internal slots: %u (activations — pre-allocated)\n", plan->num_slots() - plan->num_external);
+    ::fixy::report(::fixy::Sink::Out, "\n── Memory Plan ──\n");
+    ::fixy::report(::fixy::Sink::Out, "   Pool size: {} bytes\n", static_cast<unsigned long long>(plan->pool_bytes));
+    ::fixy::report(::fixy::Sink::Out, "   Total slots: {}\n", plan->num_slots());
+    ::fixy::report(::fixy::Sink::Out, "   External slots: {} (parameters)\n", plan->num_external);
+    ::fixy::report(::fixy::Sink::Out, "   Internal slots: {} (activations — pre-allocated)\n",
+                   plan->num_slots() - plan->num_external);
 
-    std::printf("\n   Slot details:\n");
+    ::fixy::report(::fixy::Sink::Out, "\n   Slot details:\n");
     uint32_t s = 0;
     for (const TensorSlot& slot : plan->slots) {
-        std::printf("     [%2u] %s  %6llu bytes  birth=op%u  death=op%u", s, slot.is_external ? "EXTERN" : "INTERN",
-                    static_cast<unsigned long long>(slot.nbytes), slot.birth_op.raw(), slot.death_op.raw());
-        if (!slot.is_external) std::printf("  offset=%llu", static_cast<unsigned long long>(slot.offset_bytes));
-        std::printf("\n");
+        ::fixy::report(::fixy::Sink::Out, "     [{}] {}  {} bytes  birth=op{}  death=op{}", s,
+                       slot.is_external ? ::fixy::TextView{"EXTERN"} : ::fixy::TextView{"INTERN"},
+                       static_cast<unsigned long long>(slot.nbytes), slot.birth_op.raw(), slot.death_op.raw());
+        if (!slot.is_external)
+            ::fixy::report(::fixy::Sink::Out, "  offset={}", static_cast<unsigned long long>(slot.offset_bytes));
+        ::fixy::report(::fixy::Sink::Out, "\n");
         s++;
     }
 
@@ -89,12 +92,14 @@ int main() {
     run_compiled_iterations(vigil);
     verify_data_flow(vigil);
 
-    std::printf("\n═══ Summary ═══\n");
-    std::printf("Total compiled iterations: %u\n", vigil.compiled_iterations());
-    std::printf("Divergences: %u\n", vigil.diverged_count());
-    std::printf("Pool bytes: %llu (vs eager: ~%llu per iteration)\n", static_cast<unsigned long long>(plan->pool_bytes),
-                static_cast<unsigned long long>(plan->num_slots() - plan->num_external) * BATCH * HIDDEN * 4);
-    std::printf("Mode: %s\n", vigil.context().is_compiled() ? "COMPILED" : "RECORDING");
-    std::printf("\ntest_mlp_trace: PASSED\n");
+    ::fixy::report(::fixy::Sink::Out, "\n═══ Summary ═══\n");
+    ::fixy::report(::fixy::Sink::Out, "Total compiled iterations: {}\n", vigil.compiled_iterations());
+    ::fixy::report(::fixy::Sink::Out, "Divergences: {}\n", vigil.diverged_count());
+    ::fixy::report(::fixy::Sink::Out, "Pool bytes: {} (vs eager: ~{} per iteration)\n",
+                   static_cast<unsigned long long>(plan->pool_bytes),
+                   static_cast<unsigned long long>(plan->num_slots() - plan->num_external) * BATCH * HIDDEN * 4);
+    ::fixy::report(::fixy::Sink::Out, "Mode: {}\n",
+                   vigil.context().is_compiled() ? ::fixy::TextView{"COMPILED"} : ::fixy::TextView{"RECORDING"});
+    ::fixy::check::pass(kTest, "\ntest_mlp_trace: PASSED\n");
     return 0;
 }

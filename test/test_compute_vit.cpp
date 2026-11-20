@@ -35,7 +35,6 @@
 #include "tensor_data.h"
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 
 namespace {
 
@@ -54,7 +53,7 @@ static constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::f
 
 int main() {
     auto test = ::foundation::effects::testing::test();
-    std::printf("test_compute_vit:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_compute_vit:\n");
 
     Weights weights;
     fill_weights(weights);
@@ -128,8 +127,8 @@ int main() {
     crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view())
                                       .expect("the slots of the test fit in 64 bits");
 
-    std::printf("  plan: pool=%lu bytes, %u slots (%u external)\n", static_cast<unsigned long>(plan.pool_bytes),
-                plan.num_slots(), plan.num_external);
+    ::fixy::report(::fixy::Sink::Out, "  plan: pool={} bytes, {} slots ({} external)\n",
+                   static_cast<unsigned long>(plan.pool_bytes), plan.num_slots(), plan.num_external);
 
     // The slot ids of each op are arrays of this arena.
     ::fixy::BumpArena runs{size_t{1} << 16};
@@ -216,7 +215,7 @@ int main() {
         max_err = std::max(max_err, err);
     }
 
-    std::printf("  max_error vs reference: %.2e\n", static_cast<double>(max_err));
+    ::fixy::report(::fixy::Sink::Out, "  max_error vs reference: {}\n", static_cast<double>(max_err));
     CRUCIBLE_TEST_ASSERT(kTest, max_err < 1e-5f && "ViT output diverged from reference");
 
     for (int b = 0; b < B; b++) {
@@ -235,15 +234,16 @@ int main() {
         float err = std::abs(pool_res2[i] - reference.res2[i]);
         max_res2_err = std::max(max_res2_err, err);
     }
-    std::printf("  resid2 max_error: %.2e\n", static_cast<double>(max_res2_err));
+    ::fixy::report(::fixy::Sink::Out, "  resid2 max_error: {}\n", static_cast<double>(max_res2_err));
     CRUCIBLE_TEST_ASSERT(kTest, max_res2_err < 1e-5f && "residual output diverged from reference");
 
-    std::printf("  probs[0] = [%.4f, %.4f, %.4f]\n", static_cast<double>(pool_probs[0]),
-                static_cast<double>(pool_probs[1]), static_cast<double>(pool_probs[2]));
-    std::printf("  probs[1] = [%.4f, %.4f, %.4f]\n", static_cast<double>(pool_probs[3]),
-                static_cast<double>(pool_probs[4]), static_cast<double>(pool_probs[5]));
-    std::printf("  50 iterations, %u ops/iter, compiled_iters=%u\n", N_OPS, ctx.compiled_iterations());
+    ::fixy::report(::fixy::Sink::Out, "  probs[0] = [{}, {}, {}]\n", static_cast<double>(pool_probs[0]),
+                   static_cast<double>(pool_probs[1]), static_cast<double>(pool_probs[2]));
+    ::fixy::report(::fixy::Sink::Out, "  probs[1] = [{}, {}, {}]\n", static_cast<double>(pool_probs[3]),
+                   static_cast<double>(pool_probs[4]), static_cast<double>(pool_probs[5]));
+    ::fixy::report(::fixy::Sink::Out, "  50 iterations, {} ops/iter, compiled_iters={}\n", N_OPS,
+                   ctx.compiled_iterations());
 
-    std::printf("test_compute_vit: PASSED\n");
+    ::fixy::check::pass(kTest, "test_compute_vit: PASSED\n");
     return 0;
 }

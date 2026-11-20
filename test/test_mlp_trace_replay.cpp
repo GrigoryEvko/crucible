@@ -11,7 +11,6 @@
 #include <foundation/effects/Effect.h>
 #include "tensor_data.h"
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -29,7 +28,7 @@ void activate_compiled_mode(Vigil& vigil) {
     // Alignment costs the first few ops of an iteration: each one
     // extends a match against the head of the region and still returns
     // as recorded.  Only the rest of that iteration runs compiled.
-    std::printf("\n── Activating COMPILED mode (K=%u alignment) ──\n", Vigil::ALIGNMENT_K);
+    ::fixy::report(::fixy::Sink::Out, "\n── Activating COMPILED mode (K={} alignment) ──\n", Vigil::ALIGNMENT_K);
 
     static constexpr uint32_t AK = Vigil::ALIGNMENT_K;
 
@@ -39,21 +38,21 @@ void activate_compiled_mode(Vigil& vigil) {
         CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::RECORD);
     }
     CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled());
-    std::printf("   Aligned after %u ops. CrucibleContext: COMPILED\n", AK);
-    std::printf("   Pool: %llu bytes allocated\n",
-                static_cast<unsigned long long>(vigil.context().pool().pool_bytes()));
+    ::fixy::report(::fixy::Sink::Out, "   Aligned after {} ops. CrucibleContext: COMPILED\n", AK);
+    ::fixy::report(::fixy::Sink::Out, "   Pool: {} bytes allocated\n",
+                   static_cast<unsigned long long>(vigil.context().pool().pool_bytes()));
 
     for (uint32_t i = AK; i < NUM_OPS; i++) {
         auto pkt = build_op(3, i);
         auto r = crucible::test::dispatch_synthetic(vigil, pkt.entry, pkt.metas, pkt.n_metas);
         CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
     }
-    std::printf("   Partial iteration completed (ops %u-%u COMPILED)\n", AK, NUM_OPS - 1);
+    ::fixy::report(::fixy::Sink::Out, "   Partial iteration completed (ops {}-{} COMPILED)\n", AK, NUM_OPS - 1);
 }
 
 void run_compiled_iterations(Vigil& vigil) {
     for (uint32_t iter = 4; iter <= 6; iter++) {
-        std::printf("\n── Iteration %u: COMPILED ──\n", iter);
+        ::fixy::report(::fixy::Sink::Out, "\n── Iteration {}: COMPILED ──\n", iter);
 
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             auto pkt = build_op(iter, i);
@@ -61,9 +60,10 @@ void run_compiled_iterations(Vigil& vigil) {
 
             CRUCIBLE_TEST_ASSERT(kTest, result.action == DispatchResult::Action::COMPILED);
 
-            const char* status_str = (result.status == ReplayStatus::MATCH)    ? "MATCH"
-                                   : (result.status == ReplayStatus::COMPLETE) ? "COMPLETE"
-                                                                               : "DIVERGED";
+            ::fixy::TextView const status_str = (result.status == ReplayStatus::MATCH) ? ::fixy::TextView{"MATCH"}
+                                              : (result.status == ReplayStatus::COMPLETE)
+                                                  ? ::fixy::TextView{"COMPLETE"}
+                                                  : ::fixy::TextView{"DIVERGED"};
 
             // The buffer already exists.  A real kernel would write its
             // result here rather than producing a new tensor.
@@ -71,7 +71,7 @@ void run_compiled_iterations(Vigil& vigil) {
             CRUCIBLE_TEST_ASSERT(kTest, out != nullptr);
 
             uint64_t tensor_bytes = 0;
-            const auto& op = MLP_OPS[i];
+            const MlpOp& op = *MLP_OPS.get(i).expect("the op index is below NUM_OPS");
             // The size is recomputed from the op index because this
             // stand-in has no kernel to ask.  A real replay reads it
             // from the recorded metadata.
@@ -98,13 +98,14 @@ void run_compiled_iterations(Vigil& vigil) {
             std::memset(out, static_cast<int>(0x10 + i), tensor_bytes);
 
             if (i < 3 || i == NUM_OPS - 1) {
-                std::printf("   op%2u %-25s → %s  out=%p\n", i, op.name, status_str, out);
+                ::fixy::report(::fixy::Sink::Out, "   op{} {} → {}\n", i, op.name, status_str);
             } else if (i == 3) {
-                std::printf("   ...  (ops 3-%u match)\n", NUM_OPS - 2);
+                ::fixy::report(::fixy::Sink::Out, "   ...  (ops 3-{} match)\n", NUM_OPS - 2);
             }
         }
 
-        std::printf("   compiled_iterations=%u  diverged=%u\n", vigil.compiled_iterations(), vigil.diverged_count());
+        ::fixy::report(::fixy::Sink::Out, "   compiled_iterations={}  diverged={}\n", vigil.compiled_iterations(),
+                       vigil.diverged_count());
     }
 }
 
@@ -113,7 +114,7 @@ void verify_data_flow(Vigil& vigil) {
     // slot, so writing a pattern through one and reading it through the
     // other is what shows the recorded edges, the pool offsets and the
     // replay all agree.
-    std::printf("\n── Data flow verification (iteration 7) ──\n");
+    ::fixy::report(::fixy::Sink::Out, "\n── Data flow verification (iteration 7) ──\n");
 
     auto p0 = build_op(7, 0);
     auto r0 = crucible::test::dispatch_synthetic(vigil, p0.entry, p0.metas, p0.n_metas);
@@ -139,7 +140,8 @@ void verify_data_flow(Vigil& vigil) {
         (void)crucible::test::dispatch_synthetic(vigil, pkt.entry, pkt.metas, pkt.n_metas);
     }
 
-    std::printf("   op0 output → op1 input data flow: %s\n", flow_ok ? "VERIFIED" : "FAILED");
+    ::fixy::report(::fixy::Sink::Out, "   op0 output → op1 input data flow: {}\n",
+                   flow_ok ? ::fixy::TextView{"VERIFIED"} : ::fixy::TextView{"FAILED"});
     CRUCIBLE_TEST_ASSERT(kTest, flow_ok);
 }
 

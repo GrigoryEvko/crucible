@@ -13,7 +13,6 @@
 #include "tensor_data.h"
 #include <chrono>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -43,11 +42,11 @@ void align_and_complete_iteration(Vigil& vigil) {
         auto ar = crucible::test::dispatch_synthetic(vigil, ap.entry, ap.metas, ap.n_metas);
         CRUCIBLE_TEST_ASSERT(kTest, ar.action == DispatchResult::Action::COMPILED);
     }
-    std::printf("\n   CrucibleContext: COMPILED (aligned after %u ops)\n\n", AK);
+    ::fixy::report(::fixy::Sink::Out, "\n   CrucibleContext: COMPILED (aligned after {} ops)\n\n", AK);
 }
 
 double run_compiled_iterations(Vigil& vigil) {
-    std::printf("── 1000 compiled iterations ──\n");
+    ::fixy::report(::fixy::Sink::Out, "── 1000 compiled iterations ──\n");
 
     auto t0 = std::chrono::steady_clock::now();
 
@@ -66,14 +65,15 @@ double run_compiled_iterations(Vigil& vigil) {
     uint64_t total_ops = 1000ULL * NUM_OPS;
     double ns_op = double(us) * 1000.0 / double(total_ops);
 
-    std::printf("   %llu dispatches in %lld μs (%.1f ns/op)\n", static_cast<unsigned long long>(total_ops),
-                static_cast<long long>(us), ns_op);
-    std::printf("   compiled_iterations=%u  diverged=%u\n", vigil.compiled_iterations(), vigil.diverged_count());
+    ::fixy::report(::fixy::Sink::Out, "   {} dispatches in {} μs ({} ns/op)\n",
+                   static_cast<unsigned long long>(total_ops), static_cast<long long>(us), ns_op);
+    ::fixy::report(::fixy::Sink::Out, "   compiled_iterations={}  diverged={}\n", vigil.compiled_iterations(),
+                   vigil.diverged_count());
     return ns_op;
 }
 
 void verify_attention_data_flow(Vigil& vigil) {
-    std::printf("\n── Data flow: sdpa(op7) → out_proj(op8) ──\n");
+    ::fixy::report(::fixy::Sink::Out, "\n── Data flow: sdpa(op7) → out_proj(op8) ──\n");
 
     for (uint32_t i = 0; i < 7; i++) {
         auto p = build_op(i, 9999);
@@ -105,7 +105,7 @@ void verify_attention_data_flow(Vigil& vigil) {
         (void)crucible::test::dispatch_synthetic(vigil, p.entry, p.metas, p.n_metas);
     }
 
-    std::printf("   %s\n", ok ? "VERIFIED" : "FAILED");
+    ::fixy::report(::fixy::Sink::Out, "   {}\n", ok ? ::fixy::TextView{"VERIFIED"} : ::fixy::TextView{"FAILED"});
     CRUCIBLE_TEST_ASSERT(kTest, ok);
 }
 

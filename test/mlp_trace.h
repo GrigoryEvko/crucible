@@ -6,6 +6,7 @@
 // test_mlp_trace.cpp.
 
 #include <crucible/Vigil.h>
+#include <fixy/Core.h>
 
 #include <cstdint>
 
@@ -26,7 +27,7 @@ inline constexpr crucible::SchemaHash OP_ACCUM_GRAD{0xA007};  // aten::add_ (gra
 // trailing comments on each row give the shapes the hash stands for,
 // since the hash itself is opaque.
 struct MlpOp {
-    const char* name;
+    ::fixy::TextView name;
     crucible::SchemaHash schema_hash;
     crucible::ShapeHash shape_hash;
     uint16_t num_inputs;
@@ -35,7 +36,7 @@ struct MlpOp {
 
 inline constexpr uint32_t NUM_OPS = 10;
 
-inline constexpr MlpOp MLP_OPS[NUM_OPS] = {
+inline constexpr ::fixy::FixedArray<MlpOp, NUM_OPS> MLP_OPS = {
     // Forward.
     {.name = "mm(input, W1)",
      .schema_hash = OP_MM,

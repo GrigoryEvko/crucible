@@ -19,7 +19,6 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 #include <cstdint>
-#include <cstdio>
 
 namespace {
 
@@ -34,12 +33,12 @@ using namespace test_vit;
 using test::flush_and_wait_region_published;
 
 int main() {
-    std::printf("═══ ViT Training Simulation ═══\n\n");
-    std::printf("Mini-ViT: patch_embed → 1 transformer layer → cls_head\n");
-    std::printf("  batch=%lld  seq=%lld  hidden=%lld  mlp=%lld  classes=%lld\n", static_cast<long long>(B),
-                static_cast<long long>(SEQ), static_cast<long long>(D), static_cast<long long>(MLP),
-                static_cast<long long>(CL));
-    std::printf("Ops/iteration: %u (19 fwd + 11 bwd)\n\n", NUM_OPS);
+    ::fixy::report(::fixy::Sink::Out, "═══ ViT Training Simulation ═══\n\n");
+    ::fixy::report(::fixy::Sink::Out, "Mini-ViT: patch_embed → 1 transformer layer → cls_head\n");
+    ::fixy::report(::fixy::Sink::Out, "  batch={}  seq={}  hidden={}  mlp={}  classes={}\n", static_cast<long long>(B),
+                   static_cast<long long>(SEQ), static_cast<long long>(D), static_cast<long long>(MLP),
+                   static_cast<long long>(CL));
+    ::fixy::report(::fixy::Sink::Out, "Ops/iteration: {} (19 fwd + 11 bwd)\n\n", NUM_OPS);
 
     Vigil vigil;
 
@@ -52,19 +51,20 @@ int main() {
     CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_some());
     const ::fixy::Ref<MemoryPlan const> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
 
-    std::printf("── Region ──\n");
-    std::printf("   %u ops | pool %llu bytes\n", region->num_ops(), static_cast<unsigned long long>(plan->pool_bytes));
-    std::printf("   %u slots: %u external + %u internal\n", plan->num_slots(), plan->num_external,
-                plan->num_slots() - plan->num_external);
+    ::fixy::report(::fixy::Sink::Out, "── Region ──\n");
+    ::fixy::report(::fixy::Sink::Out, "   {} ops | pool {} bytes\n", region->num_ops(),
+                   static_cast<unsigned long long>(plan->pool_bytes));
+    ::fixy::report(::fixy::Sink::Out, "   {} slots: {} external + {} internal\n", plan->num_slots(), plan->num_external,
+                   plan->num_slots() - plan->num_external);
 
-    std::printf("\n   Key lifetimes (saved for backward):\n");
+    ::fixy::report(::fixy::Sink::Out, "\n   Key lifetimes (saved for backward):\n");
     uint32_t s = 0;
     for (const TensorSlot& sl : plan->slots) {
         // A span of more than ten ops separates an activation held for
         // the backward pass from an ordinary short-lived intermediate.
         if (!sl.is_external && sl.death_op.raw() - sl.birth_op.raw() > 10)
-            std::printf("     slot %u: birth=op%u death=op%u (%llu bytes)\n", s, sl.birth_op.raw(), sl.death_op.raw(),
-                        static_cast<unsigned long long>(sl.nbytes));
+            ::fixy::report(::fixy::Sink::Out, "     slot {}: birth=op{} death=op{} ({} bytes)\n", s, sl.birth_op.raw(),
+                           sl.death_op.raw(), static_cast<unsigned long long>(sl.nbytes));
         s++;
     }
 
@@ -72,9 +72,9 @@ int main() {
     const double ns_op = run_compiled_iterations(vigil);
     verify_attention_data_flow(vigil);
 
-    std::printf("\n═══ Summary ═══\n");
-    std::printf("Pool: %llu bytes | Compiled: %u iters | %.1f ns/op\n",
-                static_cast<unsigned long long>(plan->pool_bytes), vigil.compiled_iterations(), ns_op);
-    std::printf("\ntest_vit: PASSED\n");
+    ::fixy::report(::fixy::Sink::Out, "\n═══ Summary ═══\n");
+    ::fixy::report(::fixy::Sink::Out, "Pool: {} bytes | Compiled: {} iters | {} ns/op\n",
+                   static_cast<unsigned long long>(plan->pool_bytes), vigil.compiled_iterations(), ns_op);
+    ::fixy::check::pass(kTest, "\ntest_vit: PASSED\n");
     return 0;
 }

@@ -6,7 +6,6 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 #include <cmath>
-#include <cstdio>
 #include <cstring>
 #include <random>
 
@@ -32,7 +31,7 @@ using Counter = Philox4x32::Counter;
 // from this implementation, so they fail if the round function drifts.
 
 static void test_reference_vectors() {
-    std::printf("  reference vectors...\n");
+    ::fixy::report(::fixy::Sink::Out, "  reference vectors...\n");
 
     {
         auto r = Philox4x32::generate({0, 0, 0, 0}, {0, 0});
@@ -58,7 +57,7 @@ static void test_reference_vectors() {
 }
 
 static void test_determinism() {
-    std::printf("  determinism...\n");
+    ::fixy::report(::fixy::Sink::Out, "  determinism...\n");
 
     for (uint64_t offset = 0; offset < 1000; offset++) {
         auto a = Philox4x32::generate(offset, 0xDEADBEEF);
@@ -78,7 +77,7 @@ static void test_determinism() {
 }
 
 static void test_uniform() {
-    std::printf("  uniform distribution...\n");
+    ::fixy::report(::fixy::Sink::Out, "  uniform distribution...\n");
 
     static constexpr int N = 100000;
     static constexpr int BINS = 100;
@@ -104,7 +103,7 @@ static void test_uniform() {
     // freedom at p = 0.001.  A sound generator lands far below it, so a
     // failure here means a real distribution defect rather than an
     // unlucky run.
-    std::printf("    chi2 = %.1f (99 dof, critical@0.001 = 148.2)\n", chi2);
+    ::fixy::report(::fixy::Sink::Out, "    chi2 = {} (99 dof, critical@0.001 = 148.2)\n", chi2);
     CRUCIBLE_TEST_ASSERT(kTest, chi2 < 148.2 && "uniform distribution failed chi-squared test");
 
     // The histogram above only ever reads the first word, so the other
@@ -119,7 +118,7 @@ static void test_uniform() {
 }
 
 static void test_normal() {
-    std::printf("  normal distribution (Box-Muller)...\n");
+    ::fixy::report(::fixy::Sink::Out, "  normal distribution (Box-Muller)...\n");
 
     static constexpr int N = 50000;
     double sum = 0.0, sum_sq = 0.0;
@@ -137,8 +136,8 @@ static void test_normal() {
     double var = sum_sq / total - mean * mean;
     double stddev = std::sqrt(var);
 
-    std::printf("    mean = %.4f (expect ~0)\n", mean);
-    std::printf("    stddev = %.4f (expect ~1)\n", stddev);
+    ::fixy::report(::fixy::Sink::Out, "    mean = {} (expect ~0)\n", mean);
+    ::fixy::report(::fixy::Sink::Out, "    stddev = {} (expect ~1)\n", stddev);
 
     // At this sample count the sample mean stays inside about 0.01 of
     // zero and the sample deviation inside about 0.01 of one, so the
@@ -170,7 +169,7 @@ static void test_normal() {
 // Each of the three inputs to the key derivation is varied on its own,
 // so a derivation that ignored one of them would show up as a collision.
 static void test_op_keys() {
-    std::printf("  per-op key derivation...\n");
+    ::fixy::report(::fixy::Sink::Out, "  per-op key derivation...\n");
 
     uint64_t master = 42;
     crucible::ContentHash hash_a{0x1234};
@@ -192,7 +191,7 @@ static void test_op_keys() {
 }
 
 static void test_pipeline() {
-    std::printf("  pipeline simulation...\n");
+    ::fixy::report(::fixy::Sink::Out, "  pipeline simulation...\n");
 
     crucible::ContentHash content_hashes[3] = {crucible::ContentHash{0xAABB}, crucible::ContentHash{0xCCDD},
                                                crucible::ContentHash{0xEEFF}};
@@ -217,7 +216,7 @@ static void test_pipeline() {
     auto r1 = Philox4x32::generate(42ULL, k1);
     CRUCIBLE_TEST_ASSERT(kTest, r0 != r1);
 
-    std::printf("    2 iters × 3 ops × 1000 elems: all deterministic\n");
+    ::fixy::report(::fixy::Sink::Out, "    2 iters × 3 ops × 1000 elems: all deterministic\n");
 }
 
 // The standard library ships the same generator with the same
@@ -240,7 +239,7 @@ static void test_pipeline() {
 // against the standard one.
 
 static void test_std_philox_equivalence() {
-    std::printf("  std::philox4x32 bit-equivalence audit...\n");
+    ::fixy::report(::fixy::Sink::Out, "  std::philox4x32 bit-equivalence audit...\n");
 
     // The words of the standard engine come out in the sequence of the
     // calls, and the braced list keeps that sequence.
@@ -296,15 +295,15 @@ static void test_std_philox_equivalence() {
                                            "the substitution question is worth revisiting.");
     }
 
-    std::printf("    block cipher matches; k1=0 fully equivalent; "
-                "k1!=0 not reproducible (documented gap)\n");
+    ::fixy::report(::fixy::Sink::Out, "    block cipher matches; k1=0 fully equivalent; "
+                                      "k1!=0 not reproducible (documented gap)\n");
 }
 
 // The same reference vector as above, reached through constant
 // evaluation: the generator must fold to identical words at compile
 // time and at run time.
 static void test_constexpr() {
-    std::printf("  constexpr evaluation...\n");
+    ::fixy::report(::fixy::Sink::Out, "  constexpr evaluation...\n");
 
     static constexpr auto r = Philox4x32::generate({0, 0, 0, 0}, {0, 0});
     static_assert(r.at(::fixy::index<0>()) == 0x6627E8D5);
@@ -323,7 +322,7 @@ static void test_constexpr() {
 }
 
 int main() {
-    std::printf("test_philox:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_philox:\n");
 
     test_reference_vectors();
     test_determinism();
@@ -334,6 +333,6 @@ int main() {
     test_std_philox_equivalence();
     test_constexpr();
 
-    std::printf("test_philox: PASSED\n");
+    ::fixy::check::pass(kTest, "test_philox: PASSED\n");
     return 0;
 }
