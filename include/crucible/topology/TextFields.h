@@ -154,4 +154,29 @@ struct Field {
     return head(trimmed, length);
 }
 
+// The bytes per second of a line rate such as "100G" or "25000M", or the
+// plain count of a value with no unit.  The text comes from an LLDP neighbor
+// or a tool, so the product of the count and its unit is checked.  Zero
+// means no rate: the text starts with no number, the number is zero, or the
+// count of bits per second does not fit 64 bits.  Complexity: linear in the
+// characters.
+[[nodiscard]] constexpr std::uint64_t parse_line_rate(::fixy::TextView value) noexcept {
+    std::uint64_t const number = leading_u64(value).value_or(0);
+    if (number == 0) {
+        return 0;
+    }
+    ::fixy::TextView const suffix = tail(value, leading_digits(value));
+    std::uint64_t bits_per_unit = 1;
+    if (contains_ignoring_case(suffix, "g")) {
+        bits_per_unit = std::uint64_t{1000} * 1000 * 1000;
+    } else if (contains_ignoring_case(suffix, "m")) {
+        bits_per_unit = std::uint64_t{1000} * 1000;
+    } else {
+        return number;
+    }
+    return ::fixy::checked_mul(number, bits_per_unit)
+        .map([](std::uint64_t bits_per_second) noexcept { return bits_per_second / 8; })
+        .value_or(0);
+}
+
 }  // namespace crucible::topology::text

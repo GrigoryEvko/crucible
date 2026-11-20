@@ -1,4 +1,5 @@
 #include <crucible/topology/Discovery.h>
+#include <crucible/topology/TextFields.h>
 #include <foundation/reflect/EnumName.h>
 
 #include "padding_bytes.h"
@@ -80,6 +81,16 @@ static void test_lspci_and_graph_materialization() {
     CRUCIBLE_TEST_ASSERT(kTest, edge.peer == topology::NodeId{1});
     ::fixy::check::pass(kTest, "  test_lspci_and_graph_materialization: PASSED\n");
 }
+
+// The line rate of outside text checks the product of its count and its
+// unit, so a count past 64 bits gives no rate in a constant evaluation too.
+static_assert(topology::text::parse_line_rate(::fixy::TextView{"100G"}) == 12500000000ull);
+static_assert(topology::text::parse_line_rate(::fixy::TextView{"25000M"}) == 3125000000ull);
+static_assert(topology::text::parse_line_rate(::fixy::TextView{"100000000000G"}) == 0);
+static_assert(topology::text::parse_line_rate(::fixy::TextView{"99999999999999M"}) == 0);
+static_assert(topology::text::parse_line_rate(::fixy::TextView{"18446744073G"}) == 2305843009125000000ull);
+static_assert(topology::text::parse_line_rate(::fixy::TextView{"999999999999999999999G"}) == 0);
+static_assert(topology::text::parse_line_rate(::fixy::TextView{"G"}) == 0);
 
 static void test_ethtool_features_and_lldp() {
     eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
@@ -166,6 +177,48 @@ static void test_lldp_record_state_reset() {
     ::fixy::check::pass(kTest, "  test_lldp_record_state_reset:         PASSED\n");
 }
 
+// A line rate whose count of bits per second does not fit 64 bits gives no
+// rate.  The old parse multiplied with no check, so 100000000000G wrapped to a
+// small rate that the snapshot stored as a bandwidth.  The largest rate that
+// fits still gives its bytes per second.
+static void test_lldp_line_rate_past_64_bits() {
+    eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
+    auto snapshot = topology::mint_discovery_snapshot(ctx);
+    auto local_idx = snapshot.add_node(topology::DiscoveryNodeFact{
+        .kind = cog::CogKind::NicPort,
+        .vendor = topology::tag_vendor_discovery_string("Mellanox"),
+        .model = topology::tag_vendor_discovery_string("ConnectX-6"),
+        .bus_info = topology::tag_vendor_discovery_string("0000:65:00.0"),
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, local_idx.is_ok());
+
+    constexpr ::fixy::TextView lldp = "Interface: eth0\n"
+                                      "LineRate: 100000000000G\n"
+                                      "SysName: tor-a\n"
+                                      "PortID: swp17\n"
+                                      "\n"
+                                      "Interface: eth0\n"
+                                      "LineRate: 99999999999999M\n"
+                                      "SysName: tor-b\n"
+                                      "PortID: swp18\n"
+                                      "\n"
+                                      "Interface: eth0\n"
+                                      "LineRate: 18446744073G\n"
+                                      "SysName: tor-c\n"
+                                      "PortID: swp19\n";
+    auto const status = topology::parse_lldp_neighbors(topology::tag_external_discovery_text(lldp), snapshot)
+                            .expect("the neighbour list parses");
+    CRUCIBLE_TEST_ASSERT(kTest, status.records_admitted == 3);
+    auto graph = snapshot.graph(ctx);
+    CRUCIBLE_TEST_ASSERT(kTest, element_at(graph.edges(), 0).bandwidth_bytes_per_sec.value() == 0
+                                    && "a rate of gigabits past 64 bits gives no rate");
+    CRUCIBLE_TEST_ASSERT(kTest, element_at(graph.edges(), 1).bandwidth_bytes_per_sec.value() == 0
+                                    && "a rate of megabits past 64 bits gives no rate");
+    CRUCIBLE_TEST_ASSERT(kTest, element_at(graph.edges(), 2).bandwidth_bytes_per_sec.value() == 2305843009125000000ull
+                                    && "the largest rate of gigabits that fits gives its bytes per second");
+    ::fixy::check::pass(kTest, "  test_lldp_line_rate_past_64_bits:     PASSED\n");
+}
+
 static void test_graceful_empty_live_discovery() {
     eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
     auto snapshot = topology::mint_discovery_snapshot<4, 4>(ctx);
@@ -214,6 +267,7 @@ int main() {
     test_lspci_and_graph_materialization();
     test_ethtool_features_and_lldp();
     test_lldp_record_state_reset();
+    test_lldp_line_rate_past_64_bits();
     test_graceful_empty_live_discovery();
     test_static_gates();
     test_snapshot_elements_have_no_padding_byte();

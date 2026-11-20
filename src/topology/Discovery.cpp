@@ -29,24 +29,6 @@ using ::fixy::TextView;
     return DiscoveryNodeKind::PcieLaneGroup;
 }
 
-// The bytes per second of a line rate such as "100G", "25000M" or a plain
-// count of bits per second.  Zero when the text starts with no number or the
-// number is zero.
-[[nodiscard]] constexpr std::uint64_t parse_line_rate(TextView value) noexcept {
-    std::uint64_t const number = text::leading_u64(value).value_or(0);
-    if (number == 0) {
-        return 0;
-    }
-    TextView const suffix = text::tail(value, text::leading_digits(value));
-    if (text::contains_ignoring_case(suffix, "g")) {
-        return number * 1000ull * 1000ull * 1000ull / 8ull;
-    }
-    if (text::contains_ignoring_case(suffix, "m")) {
-        return number * 1000ull * 1000ull / 8ull;
-    }
-    return number;
-}
-
 template <std::size_t MaxNodes, std::size_t MaxEdges>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, DiscoveryError>
 flush_lspci_record(DiscoverySnapshot<MaxNodes, MaxEdges>& snapshot, TextView slot, TextView cls, TextView vendor,
@@ -227,7 +209,7 @@ parse_lldp_neighbors(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snaps
                             .from_node = 0,
                             .to_node = idx,
                             .kind = LinkKind::Ethernet,
-                            .bandwidth_bytes_per_sec = parse_line_rate(line_rate),
+                            .bandwidth_bytes_per_sec = text::parse_line_rate(line_rate),
                         }));
         ++admitted;
         return ::fixy::Unit{};

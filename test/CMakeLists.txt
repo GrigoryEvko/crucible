@@ -630,6 +630,7 @@ file(CONFIGURE OUTPUT "${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}/devices/system/node/no
 file(CONFIGURE OUTPUT "${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}/devices/system/node/node1/cpulist" CONTENT "2-3\n")
 file(CONFIGURE OUTPUT "${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}/devices/system/node/node3/cpulist" CONTENT "4-5\n")
 crucible_test(test_topology_discovery)
+crucible_test(test_proc_text)
 crucible_test(test_topology_graph)
 crucible_test(test_topology_health)
 crucible_test(test_topology_pingmesh)
