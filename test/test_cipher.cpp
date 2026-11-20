@@ -1006,7 +1006,7 @@ int main() {
         ::fixy::fill(garbage.view(), std::byte{0x5A});
         overwrite_batch_file(cipher, session, latest_hash, garbage.view());
         ::fixy::FixedText<16> latest_digits{};
-        ::foundation::core::append_hex<16>(latest_digits, latest_hash.raw()).expect("sixteen digits fit the text");
+        ::fixy::append_hex<16>(latest_digits, latest_hash.raw()).expect("sixteen digits fit the text");
         ::fixy::FixedText<96> counted_line{};
         append_index_line(cipher, session,
                           ::fixy::format(counted_line, "60,64,3,{}\n", latest_digits.view())

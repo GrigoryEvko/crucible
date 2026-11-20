@@ -78,7 +78,7 @@ using EntryPath = ::foundation::os::PathText<64>;
 // The sixteen hexadecimal digits of value, in lower case.
 [[nodiscard]] ::fixy::FixedText<16> hex_digits_(std::uint64_t value) noexcept {
     ::fixy::FixedText<16> digits{};
-    ::foundation::core::append_hex<16>(digits, value).expect("sixteen digits fit sixteen characters");
+    ::fixy::append_hex<16>(digits, value).expect("sixteen digits fit sixteen characters");
     return digits;
 }
 

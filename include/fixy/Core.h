@@ -61,6 +61,7 @@
 
 namespace fixy {
 
+using ::foundation::core::append_hex;
 using ::foundation::core::fatal;
 using ::foundation::core::Fmt;
 using ::foundation::core::format;
