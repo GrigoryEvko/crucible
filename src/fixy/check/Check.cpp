@@ -9,11 +9,30 @@
 #include <foundation/os/ChildProcess.h>
 #include <foundation/os/Errno.h>
 
+#include <cstddef>
+
 namespace fixy::check::detail {
 
 namespace {
 
 namespace core = ::foundation::core;
+
+// The most characters of a name of a Site that a report writes.  The bound
+// keeps the walk below finite in its own text, and a bounded walk is no call
+// of strlen of the C library at -O3.
+constexpr std::size_t kSiteNameBound = 4096;
+
+// The view of a name of a Site, without its terminating zero, and of at most
+// kSiteNameBound characters.  The consteval constructor of Site walked to
+// that zero, so the walk ends there or at the bound.  Complexity: O(n) in the
+// characters of the name.
+[[nodiscard]] core::TextView view_of_site_name(char const* name) noexcept {
+    std::size_t size = 0;
+    while (size < kSiteNameBound && name[size] != '\0') {
+        ++size;
+    }
+    return core::detail::text_over_(name, size);
+}
 
 [[noreturn]] void end_at(core::Site site) noexcept {
     core::detail::report_fatal_("expect_dies: the body did not end as the test expects", core::detail::site_file_(site),
@@ -39,6 +58,22 @@ void report_child_error_(::foundation::os::Errno error, core::Site site) noexcep
     core::report(core::Sink::Err, "expect_dies: the child door failed with the error number {}.\n",
                  ::foundation::os::error_number(error));
     end_at(site);
+}
+
+void report_failed_check_(core::TextView test_name, core::TextView condition, core::Site site) noexcept {
+    core::report(core::Sink::Err, "{}: check failed: {} at {}:{} in {}\n", test_name, condition,
+                 view_of_site_name(core::detail::site_file_(site)), core::detail::site_line_(site),
+                 view_of_site_name(core::detail::site_function_(site)));
+}
+
+void report_failed_tally_(Tally const& tally) noexcept {
+    core::report(core::Sink::Err, "{}: {} of {} checks failed\n", tally.name_, tally.failures_, tally.checks_);
+    core::fatal("a check of the Tally failed, so the test fails at its close");
+}
+
+void report_unclosed_tally_(core::TextView test_name) noexcept {
+    core::report(core::Sink::Err, "{}: the Tally of the test ended with no close\n", test_name);
+    core::fatal("the Tally of the test {} ended with no close, so its failures would be lost", test_name);
 }
 
 }  // namespace fixy::check::detail

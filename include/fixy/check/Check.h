@@ -11,6 +11,12 @@
 //                                      ends the test when the child does
 //                                      not end by SIGABRT with text on its
 //                                      standard error
+//   Tally checks{test, name}           counts the failed checks of a test
+//   CRUCIBLE_TEST_EXPECT(checks, cond) writes the text of cond and the site,
+//                                      and counts a failure, when cond is
+//                                      false.  The test continues
+//   std::move(checks).close()          ends the test through fatal when a
+//                                      check of the Tally failed
 //
 // fixy/check/Property.h gives the property tests and the oracle of the
 // family.
@@ -33,11 +39,26 @@
 //   On each other end, the test writes the end and the output of the child,
 //   and ends with the site of the call.
 //
+// THE COUNTING CHECK
+//   A test that reads many facts in one run can count its failures in place
+//   of an end at the first one.  Then one run of the test gives each failed
+//   check.  A Tally counts the checks of one test.  CRUCIBLE_TEST_EXPECT
+//   writes "check failed: CONDITION" with the name of the test and the site
+//   of the check to standard error, and the test continues.  The close of
+//   the Tally ends the test through fatal when one check failed, so the test
+//   fails at its end.  A Tally is linear, and close is its drop door, so the
+//   rule must-consume refuses a path that does not close it.  The destructor
+//   of a Tally that was not closed ends the process with the name of its
+//   test, also in a build with no plugin.  A Tally cannot be copied, so no
+//   failure is counted two times or lost.
+//
 // The header is in the layer X7_check of utils/rule-table.txt, above the
 // process door of the layer X3_os.  src/fixy/check/Check.cpp holds the cold
 // reports.
 
 #include <fixy/os/Process.h>
+#include <foundation/Linear.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Fatal.h>
@@ -146,6 +167,104 @@ void expect_dies(Ctx const& test, Body&& body, ::foundation::core::TextView expe
         [](os::Errno const&) noexcept {});
 }
 
+// The outcome of one check of a Tally.
+enum class CheckOutcome : std::uint8_t {
+    held,
+    failed
+};
+
+class Tally;
+
+namespace detail {
+
+// Writes "check failed: CONDITION", the name of the test and the site of the
+// check to standard error.
+[[gnu::cold]] void report_failed_check_(::foundation::core::TextView test_name, ::foundation::core::TextView condition,
+                                        ::foundation::core::Site site) noexcept;
+
+// Writes the count of the failed checks and the count of all checks of the
+// Tally, and ends the process through fatal.
+[[noreturn, gnu::cold]] void report_failed_tally_(Tally const& tally) noexcept;
+
+// Ends the process through fatal for a Tally that ended with no close, with
+// the name of its test.
+[[noreturn, gnu::cold]] void report_unclosed_tally_(::foundation::core::TextView test_name) noexcept;
+
+}  // namespace detail
+
+// A count of the failed checks of one test, which continues after a failure
+// (THE COUNTING CHECK).  The test owns the Tally, and it passes the Tally by
+// reference to each part of the test.  A check costs one increment and one
+// branch, and a failure is a cold call.
+class [[nodiscard]][[= ::foundation::linear::linear{}]] Tally final {
+    // The state is as wide as a count, so the class has no padding byte.
+    enum class State : std::uint64_t {
+        open,
+        closed
+    };
+
+    ::foundation::core::TextView name_{};
+    std::uint64_t checks_ = 0;
+    std::uint64_t failures_ = 0;
+    State state_ = State::open;
+
+    friend void detail::report_failed_tally_(Tally const& tally) noexcept;
+
+public:
+    // A Tally of the test with the name.  Only a context that owns the Test
+    // capability builds one, so a unit that ships builds none.  The
+    // constructor is nodiscard, so an expression that builds a Tally and
+    // drops it with no close is a warning.
+    template <TestContext Ctx>
+    [[nodiscard]] Tally(Ctx const& /*test*/, ::foundation::core::TextView name) noexcept : name_{name} {}
+
+    // A move gives the counts to the new Tally.  The old Tally is then closed
+    // with no check, so its destructor ends nothing.
+    Tally(Tally&& other) noexcept
+        : name_{other.name_}, checks_{other.checks_}, failures_{other.failures_}, state_{other.state_} {
+        other.checks_ = 0;
+        other.failures_ = 0;
+        other.state_ = State::closed;
+    }
+
+    Tally(Tally const&) =
+        delete("a Tally counts the checks of one test: a copy would count a failure two times or lose it");
+    Tally& operator=(Tally const&) =
+        delete("a Tally counts the checks of one test: a copy would count a failure two times or lose it");
+    Tally& operator=(Tally&&) =
+        delete("a Tally counts the checks of one test: an assignment would drop the counts of the target");
+
+    // A Tally that was not closed ends the process with the name of its test,
+    // because its failures would be lost.
+    ~Tally() {
+        if (state_ == State::open) [[unlikely]] {
+            detail::report_unclosed_tally_(name_);
+        }
+    }
+
+    // Counts one check.  A failed check writes its condition and its site.
+    // CRUCIBLE_TEST_EXPECT calls it with the text of the condition.
+    void count(CheckOutcome outcome, ::foundation::core::TextView condition,
+               ::foundation::core::Site site = ::foundation::core::Site{}) noexcept {
+        CRUCIBLE_PRE(state_ == State::open);
+        ++checks_;
+        if (outcome == CheckOutcome::failed) [[unlikely]] {
+            ++failures_;
+            detail::report_failed_check_(name_, condition, site);
+        }
+    }
+
+    // Closes the Tally.  When a check failed, writes the counts and ends the
+    // process through fatal, so the test fails at its end.
+    [[= ::foundation::linear::drop_door{}]] void close() && noexcept {
+        CRUCIBLE_PRE(state_ == State::open);
+        state_ = State::closed;
+        if (failures_ != 0) [[unlikely]] {
+            detail::report_failed_tally_(*this);
+        }
+    }
+};
+
 }  // namespace fixy::check
 
 // Ends the test when the condition is false (THE TEST CONTEXT).  The report
@@ -169,3 +288,11 @@ void expect_dies(Ctx const& test, Body&& body, ::foundation::core::TextView expe
             ::fixy::check::fail_assertion(test, #__VA_ARGS__); \
         }                                                      \
     } while (0)
+
+// Counts one check of the Tally (THE COUNTING CHECK).  A false condition
+// writes its text, the name of the test and the site of the check, and the
+// test continues.  The condition can hold the commas of a template argument
+// list, as in CRUCIBLE_TEST_ASSERT.  The text of the condition is a string
+// literal, so its view is a constant and the call builds no text.
+#define CRUCIBLE_TEST_EXPECT(tally, ...) \
+    (tally).count((__VA_ARGS__) ? ::fixy::check::CheckOutcome::held : ::fixy::check::CheckOutcome::failed, #__VA_ARGS__)

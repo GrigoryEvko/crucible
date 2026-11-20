@@ -1,5 +1,6 @@
-// The Check family of fixy/check/Check.h: pass, CRUCIBLE_TEST_ASSERT and
-// expect_dies, and run_of of fixy/check/Fixture.h.  A death test passes for a body that ends by SIGABRT with the
+// The Check family of fixy/check/Check.h: pass, CRUCIBLE_TEST_ASSERT,
+// expect_dies and the counting check of a Tally, and run_of of
+// fixy/check/Fixture.h.  A death test passes for a body that ends by SIGABRT with the
 // expected text, and it ends the test for each other end: an exit, a
 // different text, and an end by a different signal.  Each such refusal runs
 // inside an outer expect_dies, which requires the report of the inner one.
@@ -9,9 +10,11 @@
 #include <fixy/check/Check.h>
 #include <fixy/check/Fixture.h>
 #include <fixy/os/Process.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -96,6 +99,84 @@ void exit_with_text_is_refused(::fixy::TestRunnerCtx const& test) {
     pass(test, "  exit_with_text_is_refused: PASSED\n");
 }
 
+// A Tally whose checks hold closes with no end of the test.
+void tally_of_held_checks_closes(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::Tally checks{test, "tally_of_held_checks"};
+    int const answer = 42;
+    CRUCIBLE_TEST_EXPECT(checks, answer == 42);
+    CRUCIBLE_TEST_EXPECT(checks, sum_of<40, 2>() == 42);
+    std::move(checks).close();
+    pass(test, "  tally_of_held_checks_closes: PASSED\n");
+}
+
+// The checks of a Tally in a child: the first fails, the second holds, and
+// the third fails with the commas of a template argument list.  The close
+// then ends the child.
+void run_two_failed_checks(::fixy::TestRunnerCtx const& test) noexcept {
+    ::fixy::check::Tally checks{test, "tally_of_failed_checks"};
+    int const answer = 41;
+    CRUCIBLE_TEST_EXPECT(checks, answer == 42);
+    CRUCIBLE_TEST_EXPECT(checks, answer == 41);
+    CRUCIBLE_TEST_EXPECT(checks, sum_of<40, 1>() == 42);
+    std::move(checks).close();
+}
+
+// A failed check writes its condition and its site, the test continues to
+// the next check, and the close ends the test with the counts.
+void tally_of_failed_checks_ends_at_close(::fixy::TestRunnerCtx const& test) {
+    expect_dies(
+        test, [&test] noexcept { run_two_failed_checks(test); },
+        ::fixy::TextView{"tally_of_failed_checks: 2 of 3 checks failed"});
+    expect_dies(
+        test, [&test] noexcept { run_two_failed_checks(test); },
+        ::fixy::TextView{"tally_of_failed_checks: check failed: answer == 42 at "});
+    expect_dies(
+        test, [&test] noexcept { run_two_failed_checks(test); },
+        ::fixy::TextView{"tally_of_failed_checks: check failed: sum_of<40, 1>() == 42 at "});
+    expect_dies(test, [&test] noexcept { run_two_failed_checks(test); }, ::fixy::TextView{"test_check_family.cpp:"});
+    expect_dies(
+        test, [&test] noexcept { run_two_failed_checks(test); },
+        ::fixy::TextView{"a check of the Tally failed, so the test fails at its close"});
+    pass(test, "  tally_of_failed_checks_ends_at_close: PASSED\n");
+}
+
+// A Tally that ends with no close ends the process with the name of its
+// test, also when each of its checks held.  The drop door of
+// foundation/Linear.h ends a linear value that the rule must-consume sees
+// as consumed, and the destructor of the Tally still refuses it.
+void tally_with_no_close_ends_the_test(::fixy::TestRunnerCtx const& test) {
+    auto const drop_with_no_close = [&test] noexcept {
+        ::fixy::check::Tally checks{test, "tally_with_no_close"};
+        CRUCIBLE_TEST_EXPECT(checks, sum_of<40, 2>() == 42);
+        ::foundation::linear::drop(std::move(checks));
+    };
+    expect_dies(test, drop_with_no_close,
+                ::fixy::TextView{"tally_with_no_close: the Tally of the test ended with no close"});
+    expect_dies(test, drop_with_no_close,
+                ::fixy::TextView{
+                    "the Tally of the test tally_with_no_close ended with no close, so its failures would be lost"});
+    pass(test, "  tally_with_no_close_ends_the_test: PASSED\n");
+}
+
+// A move gives the counts to the new Tally, and the old one ends nothing.
+void tally_move_carries_the_counts(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::Tally first{test, "tally_move"};
+    CRUCIBLE_TEST_EXPECT(first, sum_of<40, 2>() == 42);
+    ::fixy::check::Tally second{std::move(first)};
+    CRUCIBLE_TEST_EXPECT(second, sum_of<41, 1>() == 42);
+    std::move(second).close();
+    expect_dies(
+        test,
+        [&test] noexcept {
+            ::fixy::check::Tally failing{test, "tally_move_of_a_failure"};
+            CRUCIBLE_TEST_EXPECT(failing, sum_of<40, 1>() == 42);
+            ::fixy::check::Tally moved{std::move(failing)};
+            std::move(moved).close();
+        },
+        ::fixy::TextView{"tally_move_of_a_failure: 1 of 1 checks failed"});
+    pass(test, "  tally_move_carries_the_counts: PASSED\n");
+}
+
 // run_of gives a new array of the arena that holds the values in order.  Each
 // value after the first converts to the type of the first.
 void run_of_holds_the_values(::fixy::TestRunnerCtx const& test) {
@@ -123,6 +204,10 @@ int main() {
     exit_is_refused(test);
     other_text_is_refused(test);
     exit_with_text_is_refused(test);
+    tally_of_held_checks_closes(test);
+    tally_of_failed_checks_ends_at_close(test);
+    tally_with_no_close_ends_the_test(test);
+    tally_move_carries_the_counts(test);
     run_of_holds_the_values(test);
     pass(test, "test_check_family: PASSED\n");
     return 0;

@@ -5178,6 +5178,17 @@ fixy_neg_compile_test(neg_check_assert_without_test_context
 fixy_neg_compile_test(neg_check_pass_without_test_context
   "no matching function for call to .pass"
   "TestContext")
+# THE COUNTING CHECK: a Tally from a context with no Test capability, a Tally
+# that an expression builds and drops with no close, and a copy of a Tally.
+fixy_neg_compile_test(neg_check_tally_without_test_context
+  "no matching function for call to .fixy::check::Tally::Tally"
+  "TestContext")
+fixy_neg_compile_test(neg_check_tally_dropped_with_no_close
+  "ignoring return value of .fixy::check::Tally::Tally"
+  "declared with attribute .nodiscard.")
+fixy_neg_compile_test(neg_check_tally_copy
+  "use of deleted function .fixy::check::Tally::Tally\\(const fixy::check::Tally&\\)"
+  "a copy would count a failure two times or lose it")
 
 # The strided views of foundation/core/Strided.h: the door, the operations on
 # the shape, the walk and the scope, each against a naive model of the offsets
