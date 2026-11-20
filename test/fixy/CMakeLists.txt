@@ -2339,7 +2339,7 @@ fixy_neg_compile_test(neg_path_forge_sanitized_tag
 fixy_neg_compile_test(neg_os_tag_namespace_holds_a_non_tag
   "static assertion failed: fixy/atoms/Os\\.h: a class declared in one of the ten tag namespaces has state"
   "static assertion failed: fixy/atoms/Os\\.h: the ten tag namespaces hold a different number of tags"
-  "the comparison reduces to .\\(46 == 45\\).")
+  "the comparison reduces to .\\(47 == 46\\).")
 
 # ── The binary session core ───────────────────────────────────────────
 #
