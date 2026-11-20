@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/StalenessSemiring.h>
 
+#include <foundation/core/Number.h>
+
 namespace foundation::algebra::lattices {
 
 namespace detail::staleness_semiring_self_test {
@@ -21,12 +23,12 @@ static_assert(StalenessSemiring::element_type{} == StalenessSemiring::bottom());
 static_assert(StalenessSemiring::top().is_infinite());
 static_assert(!StalenessSemiring::bottom().is_infinite());
 static_assert(StalenessSemiring::element_type{42}.is_infinite() == false);
-static_assert(StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max()}.is_infinite());
+static_assert(StalenessSemiring::element_type{::foundation::core::max_of<std::uint64_t>}.is_infinite());
 
 static_assert(StalenessSemiring::bottom().is_finite());
 static_assert(!StalenessSemiring::top().is_finite());
 static_assert(StalenessSemiring::element_type{42}.is_finite());
-static_assert(!StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max()}.is_finite());
+static_assert(!StalenessSemiring::element_type{::foundation::core::max_of<std::uint64_t>}.is_finite());
 
 constexpr auto fresh = StalenessSemiring::bottom();
 constexpr auto stale1 = StalenessSemiring::element_type{1};
@@ -60,7 +62,7 @@ static_assert(StalenessSemiring::mul(StalenessSemiring::one(), inf) == inf);
 static_assert(StalenessSemiring::mul(inf, stale1) == inf);
 static_assert(StalenessSemiring::mul(stale1, inf) == inf);
 
-constexpr auto near_max = StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max() - 5};
+constexpr auto near_max = StalenessSemiring::element_type{::foundation::core::max_of<std::uint64_t> - 5};
 static_assert(StalenessSemiring::mul(near_max, StalenessSemiring::element_type{10}) == inf);
 
 // The carrier is infinite, so the axioms are checked over a
@@ -100,11 +102,11 @@ static_assert(staleness::at(42) == StalenessSemiring::element_type{42});
         StalenessSemiring::element_type{5},
         StalenessSemiring::element_type{100},
         StalenessSemiring::element_type{1000},
-        StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max() - 100},
-        StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max() - 10},
-        StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max() - 5},
-        StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max() - 2},
-        StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max() - 1},
+        StalenessSemiring::element_type{::foundation::core::max_of<std::uint64_t> - 100},
+        StalenessSemiring::element_type{::foundation::core::max_of<std::uint64_t> - 10},
+        StalenessSemiring::element_type{::foundation::core::max_of<std::uint64_t> - 5},
+        StalenessSemiring::element_type{::foundation::core::max_of<std::uint64_t> - 2},
+        StalenessSemiring::element_type{::foundation::core::max_of<std::uint64_t> - 1},
         StalenessSemiring::top(),
     };
     for (auto a : witnesses) {

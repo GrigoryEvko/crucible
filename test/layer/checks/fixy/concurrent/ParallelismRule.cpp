@@ -2,13 +2,15 @@
 
 #include <fixy/concurrent/ParallelismRule.h>
 
+#include <foundation/core/Number.h>
+
 namespace fixy::concurrent {
 
 namespace detail::parallelism_rule_self_test {
 
 namespace ladder = parallelism_rule_detail;
 
-inline constexpr std::size_t kMaxSize = std::numeric_limits<std::size_t>::max();
+inline constexpr std::size_t kMaxSize = ::foundation::core::max_of<std::size_t>;
 
 // The ladder rounds down and tops out at the ceiling.
 static_assert(ladder::round_to_factor_ladder(0) == 1);

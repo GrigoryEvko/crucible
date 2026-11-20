@@ -38,11 +38,11 @@ static_assert(!BoundedLattice<MonI32Custom>);
 static_assert(UnboundedLattice<MonI32Custom>);
 
 static_assert(MonU64Less::bottom() == 0u);
-static_assert(MonU64Less::top() == std::numeric_limits<std::uint64_t>::max());
-static_assert(MonI32Less::bottom() == std::numeric_limits<std::int32_t>::min());
-static_assert(MonI32Less::top() == std::numeric_limits<std::int32_t>::max());
+static_assert(MonU64Less::top() == ::foundation::core::max_of<std::uint64_t>);
+static_assert(MonI32Less::bottom() == ::foundation::core::min_of<std::int32_t>);
+static_assert(MonI32Less::top() == ::foundation::core::max_of<std::int32_t>);
 
-static_assert(MonU64Greater::bottom() == std::numeric_limits<std::uint64_t>::max());
+static_assert(MonU64Greater::bottom() == ::foundation::core::max_of<std::uint64_t>);
 static_assert(MonU64Greater::top() == 0u);
 
 static_assert(MonU64Less::leq(0u, 1u));
@@ -63,7 +63,7 @@ static_assert(MonU64Greater::meet(3u, 7u) == 7u);
 constexpr std::uint64_t u_bot = MonU64Less::bottom();
 constexpr std::uint64_t u_lo = 1u;
 constexpr std::uint64_t u_mid = std::uint64_t{1} << 32;
-constexpr std::uint64_t u_hi = std::numeric_limits<std::uint64_t>::max() - 1u;
+constexpr std::uint64_t u_hi = ::foundation::core::max_of<std::uint64_t> - 1u;
 constexpr std::uint64_t u_top = MonU64Less::top();
 
 static_assert(verify_bounded_lattice_axioms_at<MonU64Less>(u_bot, u_bot, u_bot));
@@ -94,16 +94,16 @@ static_assert(MonU64Less::join(100u, 1000u) == 1000u);
 static_assert(MonU64Less::join(0u, MonU64Less::top()) == MonU64Less::top());
 
 static_assert(MonU64Less::is_nan_safe(0u));
-static_assert(MonU64Less::is_nan_safe(std::numeric_limits<std::uint64_t>::max()));
+static_assert(MonU64Less::is_nan_safe(::foundation::core::max_of<std::uint64_t>));
 static_assert(MonF64Less::is_nan_safe(0.0));
 static_assert(MonF64Less::is_nan_safe(1.0));
 static_assert(MonF64Less::is_nan_safe(-1.0));
-static_assert(MonF64Less::is_nan_safe(std::numeric_limits<double>::lowest()));
-static_assert(MonF64Less::is_nan_safe(std::numeric_limits<double>::max()));
-static_assert(MonF64Less::is_nan_safe(std::numeric_limits<double>::infinity()));
-static_assert(MonF64Less::is_nan_safe(-std::numeric_limits<double>::infinity()));
-static_assert(!MonF64Less::is_nan_safe(std::numeric_limits<double>::quiet_NaN()));
-static_assert(!MonF64Less::is_nan_safe(std::numeric_limits<double>::signaling_NaN()));
+static_assert(MonF64Less::is_nan_safe(::foundation::core::min_of<double>));
+static_assert(MonF64Less::is_nan_safe(::foundation::core::max_of<double>));
+static_assert(MonF64Less::is_nan_safe(::foundation::core::infinity_of<double>));
+static_assert(MonF64Less::is_nan_safe(-::foundation::core::infinity_of<double>));
+static_assert(!MonF64Less::is_nan_safe(::foundation::core::quiet_nan_of<double>));
+static_assert(!MonF64Less::is_nan_safe(::foundation::core::signaling_nan_of<double>));
 
 // The bounds of a floating-point order are the two infinities, so each
 // value other than NaN is inside the order.  -0 is below +0 under

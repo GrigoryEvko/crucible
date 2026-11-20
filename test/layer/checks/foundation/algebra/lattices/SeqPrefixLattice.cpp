@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/SeqPrefixLattice.h>
 
+#include <foundation/core/Number.h>
+
 namespace foundation::algebra::lattices {
 
 namespace detail::seq_prefix_lattice_self_test {
@@ -28,7 +30,7 @@ static_assert(alignof(LatA::element_type) == alignof(std::size_t));
 
 static_assert(LatA::element_type{} == LatA::bottom());
 static_assert(LatA::bottom().length == 0);
-static_assert(LatA::top().length == std::numeric_limits<std::size_t>::max());
+static_assert(LatA::top().length == ::foundation::core::max_of<std::size_t>);
 
 static_assert(Length<EventA>{0} < Length<EventA>{1});
 static_assert(Length<EventA>{100} == Length<EventA>{100});

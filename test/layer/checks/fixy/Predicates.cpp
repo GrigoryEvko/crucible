@@ -2,6 +2,8 @@
 
 #include <fixy/Predicates.h>
 
+#include <foundation/core/Number.h>
+
 namespace fixy {
 
 // The checks of the implication relation between the predicates are in the
@@ -86,7 +88,7 @@ static_assert(PredicateInvocableOn<bounded_above<8>, double> && PredicateInvocab
               && !in_range<0.0f, 1.0f>(-0.5f) && !bounded_above<1.0e30>(2.0e30) && bounded_below<-3>(-2.5));
 static_assert(!PredicateInvocableOn<bounded_above<1.0e30>, float> && !PredicateInvocableOn<bounded_above<8.5>, int>
               && !PredicateInvocableOn<divisible_by<4>, double>
-              && !PredicateInvocableOn<bounded_above<std::numeric_limits<double>::infinity()>, double>
+              && !PredicateInvocableOn<bounded_above<::foundation::core::infinity_of<double>>, double>
               && !PredicateInvocableOn<bounded_above<(std::int64_t{1} << 60)>, double>);
 static_assert(!PredicateInvocableOn<all_of<positive, bounded_below<256>>, std::uint8_t>
               && !PredicateInvocableOn<negate<bounded_above<-1>>, unsigned>

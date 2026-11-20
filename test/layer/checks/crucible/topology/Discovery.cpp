@@ -2,9 +2,11 @@
 
 #include <crucible/topology/Discovery.h>
 
+#include <fixy/Core.h>
+
 namespace crucible::topology {
 
-static_assert(DiscoveryReport::max_statuses <= std::numeric_limits<std::uint8_t>::max(),
+static_assert(DiscoveryReport::max_statuses <= ::fixy::max_of<std::uint8_t>,
               "DiscoveryReport::size_ must be able to name every slot");
 
 static_assert(sizeof(ExternalDiscoveryText) == sizeof(::fixy::TextView));

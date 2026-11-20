@@ -2,6 +2,9 @@
 
 #include <fixy/fp/Canonicalize.h>
 
+#include <foundation/core/Number.h>
+#include <foundation/core/Scalar.h>
+
 namespace fixy::fp::detail::canonicalize_self_test {
 
 using ::foundation::core::RoundingMode;
@@ -40,34 +43,37 @@ static_assert(is_bitexact(ReductionDeterminism::BITEXACT_STRICT));
 
 // ── The projection ──────────────────────────────────────────────────
 
-static_assert(canonicalize(std::numeric_limits<double>::quiet_NaN()) == kCanonicalQNaN64,
+static_assert(canonicalize(::foundation::core::quiet_nan_of<double>) == kCanonicalQNaN64,
               "cell (a): quiet NaN must project to canonical qNaN");
-static_assert(canonicalize(std::numeric_limits<float>::quiet_NaN()) == kCanonicalQNaN32,
+static_assert(canonicalize(::foundation::core::quiet_nan_of<float>) == kCanonicalQNaN32,
               "cell (a): quiet NaN (float) must project to canonical qNaN");
-static_assert(canonicalize(std::bit_cast<double>(std::uint64_t{0x7FFABCDEF0123456ULL})) == kCanonicalQNaN64,
+static_assert(canonicalize(::foundation::core::bit_cast<double>(std::uint64_t{0x7FFABCDEF0123456ULL}))
+                  == kCanonicalQNaN64,
               "cell (a): custom-payload NaN must project to canonical qNaN");
-static_assert(canonicalize(std::bit_cast<float>(std::uint32_t{0xFFC12345U})) == kCanonicalQNaN32,
+static_assert(canonicalize(::foundation::core::bit_cast<float>(std::uint32_t{0xFFC12345U})) == kCanonicalQNaN32,
               "cell (a): negative-sign NaN (float) must project to canonical qNaN");
 
 static_assert(canonicalize(0.0) == 0, "cell (b): +0.0 must canonicalize to bit pattern 0");
 static_assert(canonicalize(-0.0) == 0, "cell (b): -0.0 must canonicalize to bit pattern 0");
 static_assert(canonicalize(0.0f) == 0, "cell (b): +0.0f must canonicalize to bit pattern 0");
 static_assert(canonicalize(-0.0f) == 0, "cell (b): -0.0f must canonicalize to bit pattern 0");
-static_assert(std::bit_cast<std::uint64_t>(-0.0) != 0, "cell (b) sanity: -0.0 raw bit pattern is non-zero");
+static_assert(::foundation::core::bit_cast<std::uint64_t>(-0.0) != 0,
+              "cell (b) sanity: -0.0 raw bit pattern is non-zero");
 
-static_assert(canonicalize(1.0) == std::bit_cast<std::uint64_t>(1.0), "cell (c): finite values pass through");
-static_assert(canonicalize(-3.14) == std::bit_cast<std::uint64_t>(-3.14),
+static_assert(canonicalize(1.0) == ::foundation::core::bit_cast<std::uint64_t>(1.0),
+              "cell (c): finite values pass through");
+static_assert(canonicalize(-3.14) == ::foundation::core::bit_cast<std::uint64_t>(-3.14),
               "cell (c): negative finite values pass through");
-static_assert(canonicalize(std::numeric_limits<double>::infinity())
-                  == std::bit_cast<std::uint64_t>(std::numeric_limits<double>::infinity()),
+static_assert(canonicalize(::foundation::core::infinity_of<double>)
+                  == ::foundation::core::bit_cast<std::uint64_t>(::foundation::core::infinity_of<double>),
               "cell (c): +Inf passes through");
-static_assert(canonicalize(-std::numeric_limits<double>::infinity())
-                  == std::bit_cast<std::uint64_t>(-std::numeric_limits<double>::infinity()),
+static_assert(canonicalize(-::foundation::core::infinity_of<double>)
+                  == ::foundation::core::bit_cast<std::uint64_t>(-::foundation::core::infinity_of<double>),
               "cell (c): -Inf passes through (sign preserved)");
 
 // A subnormal has one well-defined pattern, so it passes through.
-static_assert(canonicalize(std::numeric_limits<double>::denorm_min())
-                  == std::bit_cast<std::uint64_t>(std::numeric_limits<double>::denorm_min()),
+static_assert(canonicalize(::foundation::core::min_subnormal_of<double>)
+                  == ::foundation::core::bit_cast<std::uint64_t>(::foundation::core::min_subnormal_of<double>),
               "cell (c): a subnormal passes through");
 
 // ── The gated projection ────────────────────────────────────────────
@@ -76,10 +82,10 @@ inline constexpr CanonicalizeRecipeSpec kCanonicalSpec{
     RoundingMode::RN,
     ReductionDeterminism::BITEXACT_STRICT,
 };
-static_assert(canonicalize_for<kCanonicalSpec>(1.5) == std::bit_cast<std::uint64_t>(1.5),
+static_assert(canonicalize_for<kCanonicalSpec>(1.5) == ::foundation::core::bit_cast<std::uint64_t>(1.5),
               "cell (d): canonical spec accepts finite double");
 static_assert(canonicalize_for<kCanonicalSpec>(-0.0) == 0, "cell (d): canonical spec still canonicalizes ±0");
-static_assert(canonicalize_for<kCanonicalSpec>(2.5f) == std::bit_cast<std::uint32_t>(2.5f),
+static_assert(canonicalize_for<kCanonicalSpec>(2.5f) == ::foundation::core::bit_cast<std::uint32_t>(2.5f),
               "cell (d): canonical spec accepts finite float");
 
 // The tensor-core tier fails the gate.  The fixture

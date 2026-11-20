@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/FractionalLattice.h>
 
+#include <foundation/core/Number.h>
+
 namespace foundation::algebra::lattices {
 
 namespace detail::fractional_lattice_self_test {
@@ -47,7 +49,7 @@ static_assert(!Rational{Rational::MAX_SAFE_MAGNITUDE + 1, 1}.is_well_formed());
 static_assert(!Rational{1, Rational::MAX_SAFE_MAGNITUDE + 1}.is_well_formed());
 static_assert(!Rational{std::int64_t{1} << 40, 1}.is_well_formed());
 static_assert(!Rational{1, std::int64_t{1} << 40}.is_well_formed());
-static_assert(!Rational{std::numeric_limits<std::int64_t>::max(), 1}.is_well_formed());
+static_assert(!Rational{::foundation::core::max_of<std::int64_t>, 1}.is_well_formed());
 
 // Both operands here are outside the bound, so no operation would accept them,
 // but the comparison itself must still answer correctly.  A narrow

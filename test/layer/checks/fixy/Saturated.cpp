@@ -2,6 +2,8 @@
 
 #include <fixy/Saturated.h>
 
+#include <foundation/core/Number.h>
+
 namespace fixy {
 
 static_assert(sizeof(Saturated<uint8_t>) == 2);
@@ -77,19 +79,19 @@ static_assert(add_sat_no_overflow());
 
 [[nodiscard]] consteval bool add_sat_unsigned_overflow() noexcept {
     auto s = add_sat_checked<uint8_t>(200, 100);
-    return s.value() == std::numeric_limits<uint8_t>::max() && s.was_clamped();
+    return s.value() == ::foundation::core::max_of<uint8_t> && s.was_clamped();
 }
 static_assert(add_sat_unsigned_overflow());
 
 [[nodiscard]] consteval bool add_sat_signed_pos_overflow() noexcept {
     auto s = add_sat_checked<int8_t>(int8_t{100}, int8_t{50});
-    return s.value() == std::numeric_limits<int8_t>::max() && s.was_clamped();
+    return s.value() == ::foundation::core::max_of<int8_t> && s.was_clamped();
 }
 static_assert(add_sat_signed_pos_overflow());
 
 [[nodiscard]] consteval bool add_sat_signed_neg_overflow() noexcept {
     auto s = add_sat_checked<int8_t>(int8_t{-100}, int8_t{-50});
-    return s.value() == std::numeric_limits<int8_t>::min() && s.was_clamped();
+    return s.value() == ::foundation::core::min_of<int8_t> && s.was_clamped();
 }
 static_assert(add_sat_signed_neg_overflow());
 
@@ -101,25 +103,25 @@ static_assert(sub_sat_unsigned_underflow());
 
 [[nodiscard]] consteval bool sub_sat_signed_overflow() noexcept {
     auto s = sub_sat_checked<int8_t>(int8_t{100}, int8_t{-50});
-    return s.value() == std::numeric_limits<int8_t>::max() && s.was_clamped();
+    return s.value() == ::foundation::core::max_of<int8_t> && s.was_clamped();
 }
 static_assert(sub_sat_signed_overflow());
 
 [[nodiscard]] consteval bool mul_sat_unsigned_overflow() noexcept {
     auto s = mul_sat_checked<uint8_t>(20, 20);
-    return s.value() == std::numeric_limits<uint8_t>::max() && s.was_clamped();
+    return s.value() == ::foundation::core::max_of<uint8_t> && s.was_clamped();
 }
 static_assert(mul_sat_unsigned_overflow());
 
 [[nodiscard]] consteval bool mul_sat_signed_pos_pos_overflow() noexcept {
     auto s = mul_sat_checked<int8_t>(int8_t{50}, int8_t{50});
-    return s.value() == std::numeric_limits<int8_t>::max() && s.was_clamped();
+    return s.value() == ::foundation::core::max_of<int8_t> && s.was_clamped();
 }
 static_assert(mul_sat_signed_pos_pos_overflow());
 
 [[nodiscard]] consteval bool mul_sat_signed_neg_pos_overflow() noexcept {
     auto s = mul_sat_checked<int8_t>(int8_t{-50}, int8_t{50});
-    return s.value() == std::numeric_limits<int8_t>::min() && s.was_clamped();
+    return s.value() == ::foundation::core::min_of<int8_t> && s.was_clamped();
 }
 static_assert(mul_sat_signed_neg_pos_overflow());
 

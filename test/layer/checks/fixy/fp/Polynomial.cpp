@@ -2,11 +2,17 @@
 
 #include <fixy/fp/Polynomial.h>
 
+#include <foundation/core/Float.h>
+#include <foundation/core/Number.h>
+#include <foundation/core/Scalar.h>
+
 namespace fixy::fp::detail::polynomial_self_test {
 
 // Bit patterns, never a float compare: a float equality compare is a
 // build error here, and the pattern is what a content hash folds anyway.
-[[nodiscard]] consteval std::uint32_t bits_of(float value) noexcept { return std::bit_cast<std::uint32_t>(value); }
+[[nodiscard]] consteval std::uint32_t bits_of(float value) noexcept {
+    return ::foundation::core::bit_cast<std::uint32_t>(value);
+}
 
 // ── The identities ──────────────────────────────────────────────────
 //
@@ -77,8 +83,8 @@ static_assert(bits_of(kOneTurn) == bits_of(4.0f * 0x1.921FB6p+0f), "one turn mus
 static_assert(is_within_one_turn(kOneTurn) && is_within_one_turn(-kOneTurn));
 static_assert(!is_within_one_turn(0x1.921FB8p+2f) && !is_within_one_turn(-0x1.921FB8p+2f),
               "the first float past one turn must be refused.");
-static_assert(!is_within_one_turn(std::numeric_limits<float>::infinity()));
-static_assert(!is_within_one_turn(std::numeric_limits<float>::quiet_NaN()));
+static_assert(!is_within_one_turn(::foundation::core::infinity_of<float>));
+static_assert(!is_within_one_turn(::foundation::core::quiet_nan_of<float>));
 
 // The extreme raw words keep box_muller_polynomial inside both domains:
 // each call below would stop at a precondition otherwise.  The largest
@@ -87,17 +93,18 @@ static_assert(!is_within_one_turn(std::numeric_limits<float>::quiet_NaN()));
 inline constexpr ::fixy::Record<float, float> kLowestPair = box_muller_polynomial(0u, 0u);
 inline constexpr ::fixy::Record<float, float> kHighestPair = box_muller_polynomial(0xFFFFFFFFu, 0xFFFFFFFFu);
 
-static_assert(std::isfinite(kLowestPair.at(::fixy::index<0>())) && std::isfinite(kLowestPair.at(::fixy::index<1>())));
+static_assert(::foundation::core::fp::is_finite(kLowestPair.at(::fixy::index<0>()))
+              && ::foundation::core::fp::is_finite(kLowestPair.at(::fixy::index<1>())));
 static_assert(bits_of(kHighestPair.at(::fixy::index<0>())) == bits_of(-0.0f));
 static_assert(bits_of(kHighestPair.at(::fixy::index<1>())) == bits_of(-0.0f));
 
-static_assert(is_positive_normal(std::numeric_limits<float>::min()));
-static_assert(is_positive_normal(std::numeric_limits<float>::max()));
+static_assert(is_positive_normal(::foundation::core::min_normal_of<float>));
+static_assert(is_positive_normal(::foundation::core::max_of<float>));
 static_assert(!is_positive_normal(0.0f) && !is_positive_normal(-0.0f));
 static_assert(!is_positive_normal(-1.0f));
-static_assert(!is_positive_normal(std::numeric_limits<float>::denorm_min()),
+static_assert(!is_positive_normal(::foundation::core::min_subnormal_of<float>),
               "a subnormal is refused: the reduction reads its exponent field as a normal exponent.");
-static_assert(!is_positive_normal(std::numeric_limits<float>::infinity()));
-static_assert(!is_positive_normal(std::numeric_limits<float>::quiet_NaN()));
+static_assert(!is_positive_normal(::foundation::core::infinity_of<float>));
+static_assert(!is_positive_normal(::foundation::core::quiet_nan_of<float>));
 
 }  // namespace fixy::fp::detail::polynomial_self_test

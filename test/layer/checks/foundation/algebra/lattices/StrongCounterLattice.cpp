@@ -3,6 +3,7 @@
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 
 #include <foundation/Lifetime.h>
+#include <foundation/core/Number.h>
 
 namespace foundation::algebra::lattices {
 
@@ -66,7 +67,7 @@ template <typename L>
 template <typename L>
 [[nodiscard]] consteval bool top_pins_hold_for() noexcept {
     if constexpr (BoundedAboveLattice<L>) {
-        constexpr std::uint64_t max = std::numeric_limits<std::uint64_t>::max();
+        constexpr std::uint64_t max = ::foundation::core::max_of<std::uint64_t>;
         auto const c41 = after_steps<L>(41);
         return L::top().raw() == max && L::meet(c41, L::top()) == c41 && L::join(L::top(), c41) == L::top()
             && L::is_at_most(L::top(), typename L::bound_type{max});

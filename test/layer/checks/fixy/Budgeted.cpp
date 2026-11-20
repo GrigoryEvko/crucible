@@ -3,6 +3,7 @@
 #include <fixy/Budgeted.h>
 
 #include <foundation/Lifetime.h>
+#include <foundation/core/Number.h>
 
 namespace fixy {
 
@@ -55,8 +56,8 @@ inline constexpr B b_default{};
 static_assert(b_default.is_unbounded());
 static_assert(b_default.bits() == BitsBudgetLattice::top());
 static_assert(b_default.peak_bytes() == PeakBytesLattice::top());
-static_assert(!b_default.satisfies(BitsBudgetBound{std::numeric_limits<std::uint64_t>::max() - 1},
-                                   PeakBytesBound{std::numeric_limits<std::uint64_t>::max() - 1}),
+static_assert(!b_default.satisfies(BitsBudgetBound{::foundation::core::max_of<std::uint64_t> - 1},
+                                   PeakBytesBound{::foundation::core::max_of<std::uint64_t> - 1}),
               "a value that nothing measured must not pass a finite gate");
 static_assert(B::unbounded(11).is_unbounded() && B::unbounded(11).peek() == 11);
 

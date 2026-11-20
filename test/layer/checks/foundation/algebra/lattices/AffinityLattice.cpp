@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/AffinityLattice.h>
 
+#include <foundation/core/Number.h>
+
 namespace foundation::algebra::lattices {
 
 namespace detail::affinity_lattice_self_test {
@@ -76,7 +78,7 @@ static_assert(AffinityLattice::bottom() == AffinityMask{});
 [[nodiscard]] consteval bool top_has_all_bits() noexcept {
     auto t = AffinityLattice::top();
     for (auto w : t.words) {
-        if (w != std::numeric_limits<std::uint64_t>::max()) return false;
+        if (w != ::foundation::core::max_of<std::uint64_t>) return false;
     }
     return true;
 }
