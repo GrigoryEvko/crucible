@@ -860,6 +860,31 @@ void test_spread_of_a_run() {
     CHECK(cpu_at(claimed, Slot{0}) == 240 && cpu_at(claimed, Slot{3}) == 246 && cpu_at(claimed, Slot{4}) == -1);
 }
 
+// The measuring thread of a fan-out takes the core of slot 0 when each allowed
+// CPU is isolated, a claim of loop bench, because no load balancer spreads the
+// threads there.  An affinity with a CPU that is not isolated gives no core,
+// and the threads spread over those CPUs.  The masks are planted.  The old
+// fan-out gave no pin on a claim, so each thread of the body stayed on one
+// core.
+void test_fan_out_core_of_a_claim() {
+    const auto fan_out_core_of = [](crucible::warden::CpuSet const& allowed, ::fixy::TextView order) noexcept {
+        return bench::detail::fan_out_core(::fixy::side_as<bench::side::AllowedCpus>(allowed),
+                                           ::fixy::side_as<bench::side::IsolatedCpus>(planted_isolated()),
+                                           planted_order(order))
+            .raw();
+    };
+    crucible::warden::CpuSet claim{};
+    claim.insert(240);
+    claim.insert(242);
+    claim.insert(244);
+    CHECK(fan_out_core_of(claim, "244,240,242") == 244);
+    CHECK(fan_out_core_of(claim, "") == 240);
+    crucible::warden::CpuSet mixed = claim;
+    mixed.insert(2);
+    CHECK(fan_out_core_of(mixed, "244,240,242") == -1);
+    CHECK(fan_out_core_of(crucible::warden::CpuSet{}, "") == -1);
+}
+
 // A claim of nine cores of the bench VM spans its two L3 groups, the even CPUs
 // 224 to 238 and 240 to 254.  In a claim of eight cores of one group and one
 // core of the other, loop bench puts the lone core last in the order of the
@@ -1250,6 +1275,7 @@ int main() {
     test_slots_follow_the_order_of_the_claim();
     test_spread_of_a_run();
     test_measuring_core_of_a_claim();
+    test_fan_out_core_of_a_claim();
     test_pins_of_the_threads_of_a_run();
     test_pause_between_planted_readings();
     test_planted_pause_is_caught();

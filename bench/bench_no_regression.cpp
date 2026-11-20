@@ -269,14 +269,20 @@ void run_sequential(Workload& w, Sink& sink) noexcept {
 
 // The options of the threads of the rule arm (THE CORES OF A RUN of
 // bench_harness.h).  On a claim of loop bench of at least two cores, the
-// measuring thread of a fan-out takes the core of slot 0, and the thread of
-// the task k takes the core k of the cores of the slots from 1, through the
-// placement OneCpuEach.  No load balancer reaches an isolated core, so with
-// no placement each thread stays on the core of the measuring thread.  With
-// no claim, as under ctest, the threads keep the affinity of the process.
-[[nodiscard]] ::fixy::thread::ThreadOptions rule_thread_options(bench::Cores const& cores) noexcept {
+// measuring thread of a fan-out takes the core of slot 0, and the threads of
+// the decision take the first cores of the order of the claim apart from it,
+// the quietest first, one core for each thread through the placement
+// OneCpuEach.  No load balancer reaches an isolated core, so with no placement
+// each thread stays on the core of the measuring thread.  With no claim, as
+// under ctest, the threads keep the affinity of the process.
+[[nodiscard]] ::fixy::thread::ThreadOptions rule_thread_options(bench::Cores const& cores,
+                                                                fc::WorkBudget budget) noexcept {
     if (cores.count() < 2) return ::fixy::thread::ThreadOptions{};
-    return ::fixy::thread::ThreadOptions{.affinity = bench::detail::mask_of(cores.from_slot(bench::ThreadSlot{1})),
+    using CoreCount = ::fixy::Quantity<::fixy::unit::Element, std::size_t>;
+    const bench::CpuId measuring = cores.of_slot(bench::kMeasuringSlot).value_or(bench::CpuId::none());
+    const crucible::warden::CpuSet threads =
+        cores.first_slots_apart(measuring, CoreCount{fc::ParallelismRule::recommend(budget).factor});
+    return ::fixy::thread::ThreadOptions{.affinity = bench::detail::mask_of(threads),
                                          .placement = ::fixy::thread::ThreadPlacement::OneCpuEach};
 }
 
@@ -291,7 +297,7 @@ void run_sequential(Workload& w, Sink& sink) noexcept {
 void run_rule(Workload& w, Sink& sink, PieceTable& pieces, bench::CpuTally& tally, bench::Cores const& cores) noexcept {
     const BgCtx ctx{eff::testing::bg()};
     const ::fixy::TestRunnerCtx test{eff::testing::test()};
-    const ::fixy::thread::ThreadOptions options = rule_thread_options(cores);
+    const ::fixy::thread::ThreadOptions options = rule_thread_options(cores, w.budget);
     if (w.inputs.kind == WorkloadKind::L2MatrixMultiply) {
         ProductRow const* const first_row = ::foundation::core::foreign_first(w.product.view());
         auto region = ::fixy::mint_owned_region(::foundation::core::foreign_first(w.product.view()), w.product.size(),

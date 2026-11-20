@@ -754,6 +754,20 @@ namespace detail {
         ::fixy::side_as<crucible::warden::side::ExcludedCpus>(crucible::warden::CpuSet{}))};
 }
 
+// The core of the measuring thread of a fan-out (Run::fan_out): the core of
+// slot 0 of the claim when each allowed CPU is isolated, a claim of loop
+// bench, and none when an allowed CPU is not isolated, where the load
+// balancer spreads the threads of the body.  None for an empty affinity.
+// Complexity: linear in the CPUs of allowed, times the CPUs of order.
+[[nodiscard]] inline CpuId fan_out_core(::fixy::Side<side::AllowedCpus, crucible::warden::CpuSet> const& allowed,
+                                        ::fixy::Side<side::IsolatedCpus, crucible::warden::CpuSet> const& isolated,
+                                        CoreOrder const& order) noexcept {
+    for (int const cpu : allowed.value()) {
+        if (!isolated.value().contains(cpu)) return CpuId::none();
+    }
+    return Cores::of(allowed, isolated, order).of_slot(kMeasuringSlot).value_or(CpuId::none());
+}
+
 // Read /sys/.../cpu<N>/cpufreq/scaling_cur_freq (kHz) → Hz, 0 on failure.
 [[nodiscard]] inline uint64_t read_cpu_freq_hz(int cpu) noexcept {
 #ifdef __linux__
@@ -3134,9 +3148,11 @@ private:
     [[nodiscard]] static PinResult pin_to_measuring_core_(const ::fixy::InitLoadCtx& startup,
                                                           crucible::warden::CpuSet const& allowed,
                                                           crucible::warden::CpuSet const& isolated) noexcept {
+        const CoreOrder order = read_core_order();
         const Cores cores = Cores::of(::fixy::side_as<side::AllowedCpus>(allowed),
-                                      ::fixy::side_as<side::IsolatedCpus>(isolated), read_core_order());
-        const CpuId measuring = cores.of_slot(kMeasuringSlot).value_or(CpuId::none());
+                                      ::fixy::side_as<side::IsolatedCpus>(isolated), order);
+        const CpuId measuring = detail::fan_out_core(::fixy::side_as<side::AllowedCpus>(allowed),
+                                                     ::fixy::side_as<side::IsolatedCpus>(isolated), order);
         if (!measuring.is_valid()) return PinResult{};
         ::fixy::Result<::fixy::sched::PriorAffinity, ::foundation::os::Errno> prior =
             ::fixy::sched::apply_affinity_to_cpu(startup, measuring.raw());
