@@ -158,8 +158,8 @@ include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 1 | ABI: libbpf opened the descriptor of the BPF map, and the map door maps it | libbpf gives the descriptor of a BPF map as a raw int, and map_foreign_region is the door that maps a descriptor that a C library opened
-include/fixy/ | base-std-entity | 280 | - | -
-include/fixy/ | base-std-object | 162 | - | -
+include/fixy/ | base-std-entity | 279 | - | -
+include/fixy/ | base-std-object | 158 | - | -
 include/fixy/ | replace-pending:<array> | 4 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/ | replace-pending:<bit> | 2 | - | -
@@ -317,11 +317,11 @@ src/foundation/ | base-std-object | 14 | - | -
 src/foundation/ | replace-pending:<atomic> | 1 | - | -
 src/foundation/ | replace-pending:<csignal> | 1 | - | -
 src/foundation/os/ | base-std-entity | 28 | - | -
-src/perf/ | c-library-object | 1 | - | -
 src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | opted-out | 3 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
-src/perf/ | raw-pointer-object | 1 | - | -
+src/perf/ | opted-out | 2 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
 src/perf/ | region | 1 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
+src/perf/ | region | 1 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
 test/ | c-array-object | 148 | - | -
 test/ | c-library-call | 714 | - | -
 test/ | c-library-object | 9 | - | -
@@ -346,24 +346,26 @@ test/ | region | 1 | PROBE: the test sets the current directory, the modes and t
 test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | replace-pending:<limits> | 11 | - | -
 test/ | replace-pending:std::bit_cast | 77 | - | -
-test/ | std-entity | 1430 | - | -
-test/ | std-object | 512 | - | -
-test/cipher_neg/ | raw-function-pointer | 2 | - | -
-test/cipher_neg/ | raw-pointer-object | 2 | - | -
-test/cipher_neg/ | std-entity | 3 | - | -
-test/cipher_neg/ | std-object | 1 | - | -
-test/cntp_neg/ | raw-pointer-object | 1 | - | -
-test/cntp_neg/ | std-entity | 3 | - | -
-test/cntp_neg/ | std-object | 5 | - | -
-test/cog_neg/ | std-entity | 1 | - | -
-test/cog_neg/ | std-object | 1 | - | -
+test/ | std-entity | 1427 | - | -
+test/ | std-object | 511 | - | -
+test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
+test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
+test/cipher_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
+test/cipher_neg/ | region | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
+test/cntp_neg/ | opted-out | 1 | PROBE: the fixture gives the swap a resource that holds a raw pointer | -
+test/cntp_neg/ | region | 1 | PROBE: the fixture gives the swap a resource that holds a raw pointer | -
+test/cog_neg/ | opted-out | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
+test/cog_neg/ | region | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
 test/ct/ | c-array-object | 5 | - | -
 test/ct/ | c-library-call | 14 | - | -
 test/ct/ | inline-asm | 5 | - | -
 test/ct/ | raw-pointer-object | 4 | - | -
 test/ct/ | std-entity | 18 | - | -
 test/ct/ | std-object | 12 | - | -
-test/dag_neg/ | raw-pointer-object | 5 | - | -
+test/dag_neg/ | opted-out | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
+test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
+test/dag_neg/ | region | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
+test/dag_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/fixy/ | c-array-object | 85 | - | -
 test/fixy/ | c-library-call | 991 | - | -
 test/fixy/ | c-library-object | 6 | - | -
@@ -434,8 +436,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2370 | - | -
-test/fixy/ | std-object | 851 | - | -
+test/fixy/ | std-entity | 2340 | - | -
+test/fixy/ | std-object | 839 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 323 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
@@ -657,8 +659,8 @@ test/fuzz/property/ | raw-pointer-object | 42 | - | -
 test/fuzz/property/ | replace-pending:<limits> | 27 | - | -
 test/fuzz/property/ | std-entity | 138 | - | -
 test/fuzz/property/ | std-object | 29 | - | -
-test/kernel_neg/ | raw-pointer-object | 1 | - | -
-test/kernel_neg/ | replace-pending:<limits> | 1 | - | -
+test/kernel_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
+test/kernel_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/layer/ | opted-out | 81 | ORACLE: the flag matrix checks each audited name of the standard library | -
 test/layer/ | region | 1 | ORACLE: the flag matrix checks each audited name of the standard library | -
 test/layer/checks/crucible/ | replace-pending:std::source_location | 1 | - | -
@@ -720,8 +722,8 @@ test/layer/checks/foundation/reflect/ | raw-pointer-object | 5 | - | -
 test/layer/checks/foundation/reflect/ | region | 1 | PROBE: the layout digest reads a raw pointer, a C array and an entry with C linkage | the layout note of the vessel declares the C entries of the dispatch library, its host tool reads the layout of the C structs that ctypes mirrors, and the check of the layout digest reads a raw pointer, a C array and an entry with C linkage
 test/layer/checks/foundation/reflect/ | std-entity | 44 | - | -
 test/layer/checks/foundation/reflect/ | std-object | 17 | - | -
-test/memory_neg/ | raw-pointer-object | 2 | - | -
-test/perf_neg/ | std-entity | 1 | - | -
+test/perf_neg/ | opted-out | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
+test/perf_neg/ | region | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
 test/session_oracle/ | c-array-object | 37 | - | -
 test/session_oracle/ | c-library-call | 5 | - | -
 test/session_oracle/ | raw-function-pointer | 3 | - | -
@@ -730,16 +732,17 @@ test/session_oracle/ | std-entity | 25 | - | -
 test/session_oracle/ | std-object | 1383 | - | -
 test/shape/ | opted-out | 266 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
-test/swiss_table_neg/ | replace-pending:<limits> | 1 | - | -
-test/tensor_neg/ | raw-pointer-object | 1 | - | -
-test/trace_neg/ | replace-pending:<limits> | 1 | - | -
+test/tensor_neg/ | opted-out | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
+test/tensor_neg/ | region | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/tsan/ | c-library-call | 1 | - | -
 test/tsan/ | std-entity | 32 | - | -
 test/tsan/ | std-object | 13 | - | -
-test/vessel_neg/ | c-array-object | 1 | - | -
-test/vigil_neg/ | c-array-object | 1 | - | -
-test/vigil_neg/ | raw-pointer-object | 2 | - | -
-test/vigil_neg/ | std-entity | 1 | - | -
+test/vigil_neg/ | opted-out | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
+test/vigil_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
+test/vigil_neg/ | opted-out | 1 | PROBE: the fixture starts the lifetime of an object in raw bytes | -
+test/vigil_neg/ | region | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
+test/vigil_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
+test/vigil_neg/ | region | 1 | PROBE: the fixture starts the lifetime of an object in raw bytes | -
 utils/tools/ | c-array-object | 1 | - | -
 utils/tools/ | c-library-call | 9 | - | -
 utils/tools/ | raw-pointer-object | 1 | - | -
