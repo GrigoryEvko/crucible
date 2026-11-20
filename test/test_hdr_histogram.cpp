@@ -1,13 +1,11 @@
 #include <crucible/observe/HdrHistogram.h>
 
-#include <atomic>
-#include <array>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/effects/Effect.h>
 #include <cstdint>
-#include <thread>
 #include <utility>
 
 namespace {
@@ -37,6 +35,17 @@ enum class ReaderStart : std::uint8_t {
     AfterProducers,
 };
 
+// Runs the bodies, each on a thread of its own, and joins each thread.  The
+// bodies share a histogram on purpose, so they go through the raw probe of
+// the thread door.
+template <typename... Bodies>
+void run_threads(Bodies&... bodies) noexcept {
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    ::fixy::thread::run_joined_raw_probe(ctx, kTest, "the threads of the test share a histogram on purpose",
+                                         ::fixy::thread::ThreadOptions{}, bodies...)
+        .expect("the thread door starts each thread of the test");
+}
+
 // The producers' update of the total both publishes their own
 // bucket writes and acquires the previous producer's, which is what
 // chains the publications together.  A release without the acquire
@@ -50,17 +59,19 @@ enum class ReaderStart : std::uint8_t {
 // because it fails on a target where the distinction is real.
 void check_published_buckets(ReaderStart reader_start) {
     crucible::observe::HdrHistogram<2, 1000000> shared;
-    std::atomic<bool> ready_flag{false};
-    std::atomic<bool> stop_flag{false};
-    std::atomic<std::uint64_t> torn_observations{0};
+    ::fixy::Atomic<bool> ready_flag{false};
+    ::fixy::Atomic<bool> stop_flag{false};
+    ::fixy::Atomic<std::uint64_t, ::fixy::Counter> torn_observations{0};
+    ::fixy::Atomic<std::uint32_t> finished_producers{0};
     std::uint64_t last_total_seen = 0;
 
     constexpr std::size_t kProducerCount = 4;
     constexpr std::size_t kSamplesPerProducer = 8192;
     using HRegress = decltype(shared);
+    using ProducerIndex = ::fixy::Index<kProducerCount>;
 
-    auto read_until_stopped = [&shared, &ready_flag, &stop_flag, &torn_observations, &last_total_seen] {
-        while (!ready_flag.load(std::memory_order_acquire)) {
+    auto read_until_stopped = [&shared, &ready_flag, &stop_flag, &torn_observations, &last_total_seen] noexcept {
+        while (!ready_flag.load_acquire()) {
             CRUCIBLE_SPIN_PAUSE;
         }
         // The reader reads the stop flag before each iteration.  The first
@@ -70,7 +81,7 @@ void check_published_buckets(ReaderStart reader_start) {
         // is the only one.
         bool was_stopped = false;
         while (!was_stopped) {
-            was_stopped = stop_flag.load(std::memory_order_acquire);
+            was_stopped = stop_flag.load_acquire();
             const std::uint64_t total = shared.total_count();
             if (total == 0) {
                 continue;
@@ -83,45 +94,55 @@ void check_published_buckets(ReaderStart reader_start) {
             // writes its bucket before it raises the total.  The
             // other direction is the defect.
             if (bucket_sum < total) {
-                torn_observations.fetch_add(1, std::memory_order_relaxed);
+                static_cast<void>(torn_observations.fetch_add_relaxed(1));
             }
             last_total_seen = total;
         }
     };
 
-    std::array<std::jthread, kProducerCount> producers{};
-    for (std::size_t p = 0; p < kProducerCount; ++p) {
-        producers[p] = std::jthread{[&shared, &ready_flag, p] {
-            while (!ready_flag.load(std::memory_order_acquire)) {
+    auto producer_of = [&shared, &ready_flag, &finished_producers](ProducerIndex producer) noexcept {
+        return [&shared, &ready_flag, &finished_producers, producer] noexcept {
+            while (!ready_flag.load_acquire()) {
                 CRUCIBLE_SPIN_PAUSE;
             }
             for (std::size_t i = 0; i < kSamplesPerProducer; ++i) {
-                const std::uint64_t sample_value = (static_cast<std::uint64_t>(p) * 1000) + ((i % 90) + 10);
+                const std::uint64_t sample_value = (producer.raw() * 1000) + ((i % 90) + 10);
                 shared.record(HRegress::checked_value(sample_value));
             }
-        }};
-    }
+            static_cast<void>(finished_producers.fetch_add_acq_rel(1));
+        };
+    };
+    auto producer_0 = producer_of(::fixy::index<0>());
+    auto producer_1 = producer_of(::fixy::index<1>());
+    auto producer_2 = producer_of(::fixy::index<2>());
+    auto producer_3 = producer_of(::fixy::index<3>());
 
-    std::jthread reader;
+    // The conductor opens the start of the producers, waits until each
+    // producer ends, and then sets the stop flag of the reader.  Each
+    // producer counts its end with a release, and the conductor reads the
+    // count with an acquire load.  So the stop flag orders each sample
+    // before the last iteration of the reader, as the join of each
+    // producer did.
+    auto conductor = [&ready_flag, &stop_flag, &finished_producers] noexcept {
+        ready_flag.store_release(true);
+        while (finished_producers.load_acquire() < kProducerCount) {
+            CRUCIBLE_SPIN_PAUSE;
+        }
+        stop_flag.store_release(true);
+    };
     if (reader_start == ReaderStart::WithProducers) {
-        reader = std::jthread{read_until_stopped};
+        run_threads(producer_0, producer_1, producer_2, producer_3, read_until_stopped, conductor);
+    } else {
+        run_threads(producer_0, producer_1, producer_2, producer_3, conductor);
+        run_threads(read_until_stopped);
     }
-    ready_flag.store(true, std::memory_order_release);
-    for (auto& producer : producers) {
-        producer.join();
-    }
-    stop_flag.store(true, std::memory_order_release);
-    if (reader_start == ReaderStart::AfterProducers) {
-        reader = std::jthread{read_until_stopped};
-    }
-    reader.join();
 
     CRUCIBLE_TEST_ASSERT(kTest, shared.total_count() == kProducerCount * kSamplesPerProducer);
     // The last iteration of the reader read the buckets of the full
     // histogram.  A reader that stops at the empty-histogram check reads
     // no bucket, and it finds no torn state for that reason.
     CRUCIBLE_TEST_ASSERT(kTest, last_total_seen == kProducerCount * kSamplesPerProducer);
-    CRUCIBLE_TEST_ASSERT(kTest, torn_observations.load(std::memory_order_relaxed) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, torn_observations.load_acquire() == 0);
 }
 }  // namespace
 
@@ -261,25 +282,27 @@ int main() {
     static_assert(crucible::observe::HdrCompatible<Concurrent>);
 
     Concurrent c;
-    std::atomic<std::uint64_t> ready{0};
-    std::jthread t0([&] {
-        ready.fetch_add(1, std::memory_order_release);
+    ::fixy::Atomic<std::uint64_t> ready{0};
+    auto t0 = [&c, &ready] noexcept {
+        static_cast<void>(ready.fetch_add_acq_rel(1));
         for (int i = 0; i < 128; ++i) {
             c.record(Concurrent::histogram_type::checked_value(100));
         }
-    });
-    std::jthread t1([&] {
-        ready.fetch_add(1, std::memory_order_release);
+    };
+    auto t1 = [&c, &ready] noexcept {
+        static_cast<void>(ready.fetch_add_acq_rel(1));
         for (int i = 0; i < 128; ++i) {
             c.record(Concurrent::histogram_type::checked_value(200));
         }
-    });
-
-    while (ready.load(std::memory_order_acquire) != 2) {
-        CRUCIBLE_SPIN_PAUSE;
-    }
-    t0.join();
-    t1.join();
+    };
+    // The waiter waits until the two recorders run, as the main thread did
+    // before it joined them.
+    auto waiter = [&ready] noexcept {
+        while (ready.load_acquire() != 2) {
+            CRUCIBLE_SPIN_PAUSE;
+        }
+    };
+    run_threads(t0, t1, waiter);
     CRUCIBLE_TEST_ASSERT(kTest, c.total_count() == 256);
 
     Hist snapshot;
