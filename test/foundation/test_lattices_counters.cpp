@@ -20,7 +20,6 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/ImageRead.h>
 
-#include <array>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -58,14 +57,14 @@ using GradedWay = std::conditional_t<fa::GradableLattice<L>, L, fl::DualLattice<
 template <typename L>
 using OnAxisGradedWay = OnAxis<GradedWay<L>>;
 
-constexpr std::array<std::uint64_t, 4> kAxisIdentities = {
+constexpr ::fixy::FixedArray<std::uint64_t, 4> kAxisIdentities{
     fd::lattice_canonical_id(^^fl::EpochLattice),
     fd::lattice_canonical_id(^^fl::GenerationLattice),
     fd::lattice_canonical_id(^^fl::PeakBytesLattice),
     fd::lattice_canonical_id(^^fl::BitsBudgetLattice),
 };
 
-constexpr std::array<std::uint64_t, 4> kCarrierHashes = {
+constexpr ::fixy::FixedArray<std::uint64_t, 4> kCarrierHashes{
     fd::row_hash_contribution_v<OnAxisGradedWay<fl::EpochLattice>>,
     fd::row_hash_contribution_v<OnAxisGradedWay<fl::GenerationLattice>>,
     fd::row_hash_contribution_v<OnAxisGradedWay<fl::PeakBytesLattice>>,
@@ -77,12 +76,14 @@ constexpr std::array<std::uint64_t, 4> kCarrierHashes = {
 static_assert(std::is_same_v<GradedWay<fl::EpochLattice>, fl::DualLattice<fl::EpochLattice>>);
 static_assert(std::is_same_v<GradedWay<fl::PeakBytesLattice>, fl::PeakBytesLattice>);
 
+// True when no value is zero and no two values are equal.  Complexity:
+// O(n^2) compares.
 template <std::size_t N>
-[[nodiscard]] consteval bool pairwise_distinct(std::array<std::uint64_t, N> const& values) noexcept {
-    for (std::size_t i = 0; i < N; ++i) {
-        if (values[i] == 0) return false;
-        for (std::size_t j = i + 1; j < N; ++j) {
-            if (values[i] == values[j]) return false;
+[[nodiscard]] consteval bool pairwise_distinct(::fixy::FixedArray<std::uint64_t, N> const& values) noexcept {
+    for (auto const first : values.indices()) {
+        if (values.at(first) == 0) return false;
+        for (auto const second : values.indices()) {
+            if (second.raw() > first.raw() && values.at(first) == values.at(second)) return false;
         }
     }
     return true;
@@ -134,11 +135,11 @@ typename L::element_type count_at(std::uint64_t count) {
 
 // A clock reached from the empty history by local events.
 template <typename HB>
-typename HB::element_type clock_after(std::array<std::uint64_t, HB::process_count> const& steps) {
+typename HB::element_type clock_after(::fixy::FixedArray<std::uint64_t, HB::process_count> const& steps) {
     typename HB::element_type clock = HB::bottom();
-    for (std::size_t p = 0; p < HB::process_count; ++p) {
-        for (std::uint64_t i = 0; i < steps[p]; ++i)
-            clock = HB::successor_at(clock, p);
+    for (auto const process : steps.indices()) {
+        for (std::uint64_t i = 0; i < steps.at(process); ++i)
+            clock = HB::successor_at(clock, process.raw());
     }
     return clock;
 }
@@ -187,7 +188,7 @@ void exercise_happens_before() {
     if (merged[0] != s + 1) fail("causal_merge counts the receive");
 
     using HB1 = fl::HappensBeforeLattice<1>;
-    HB1::element_type const one = clock_after<HB1>({s});
+    HB1::element_type const one = clock_after<HB1>(::fixy::FixedArray<std::uint64_t, 1>{s});
     if (HB1::is_concurrent(one, HB1::successor_at(one, 0))) fail("a scalar clock is total");
 }
 
@@ -202,8 +203,8 @@ int main() {
 
     // The identities are compile-time constants.  Reading them here proves
     // they reach a running program with the values the assertions saw.
-    for (std::size_t i = 0; i < kCarrierHashes.size(); ++i) {
-        if (kCarrierHashes[i] == 0) fail("a counter carrier folded to the zero slot");
+    for (std::uint64_t const hash : kCarrierHashes) {
+        if (hash == 0) fail("a counter carrier folded to the zero slot");
     }
     ::fixy::check::pass(kTest, "test_lattices_counters: ok\n");
     return 0;

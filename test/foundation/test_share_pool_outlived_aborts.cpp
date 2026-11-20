@@ -9,12 +9,13 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
 #include <foundation/core/Text.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
 
-#include <memory>
+#include <utility>
 
 namespace {
 struct Region {
@@ -25,11 +26,13 @@ void end_pool_while_shared() {
     namespace fp = ::foundation::permissions;
     auto root = fp::mint_permission_root<Region>();
     using Brand = decltype(root)::brand_type;
-    auto pool = std::make_unique<fp::SharedPermissionPool<Region, Brand>>(std::move(root));
+    using Pool = fp::SharedPermissionPool<Region, Brand>;
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    ::foundation::core::Box<Pool> pool = ::foundation::core::mint_box<Pool>(test.cap().alloc, std::move(root));
     ::foundation::core::Option<fp::SharedPermissionGuard<Region, Brand>> const share = pool->lend(test);
-    // The pool ends here, while the share is out.
-    pool.reset();
+    // The pool ends here, while the share is out: the Box that owns it ends
+    // at the end of this block.
+    { ::foundation::core::Box<Pool> const ending{std::move(pool)}; }
 }
 
 }  // namespace

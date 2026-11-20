@@ -9,6 +9,8 @@
 #include <foundation/effects/Resources.h>
 #include <foundation/reflect/EnumName.h>
 
+#include <fixy/Core.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -80,8 +82,9 @@ namespace {
 namespace fe = ::foundation::effects;
 
 // Every axis in the catalog, listed by hand so that the reflected count
-// has a second witness.
-constexpr fe::ResourceKind every_kind[] = {
+// has a second witness.  The constructor takes exactly the stated count of
+// kinds, so the hand count and the list agree.
+constexpr ::fixy::FixedArray<fe::ResourceKind, 23> every_kind{
     fe::ResourceKind::Sm,
     fe::ResourceKind::WarpScheduler,
     fe::ResourceKind::RegistersPerWarp,
@@ -106,7 +109,7 @@ constexpr fe::ResourceKind every_kind[] = {
     fe::ResourceKind::RackPowerKw,
     fe::ResourceKind::CarbonGramsPerKwh,
 };
-static_assert(sizeof(every_kind) / sizeof(every_kind[0]) == fe::resource_kind_count,
+static_assert(every_kind.size() == fe::resource_kind_count,
               "The table of axes disagrees with the reflected count.  Add the new axis to the table.");
 
 // Each name is read through a volatile load, so the call happens at run

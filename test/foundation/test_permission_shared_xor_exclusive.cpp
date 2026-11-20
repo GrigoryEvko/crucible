@@ -10,11 +10,11 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/core/Choice.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
 
-#include <optional>
 #include <utility>
 
 using namespace foundation::permissions;
@@ -40,13 +40,14 @@ void test_stashed_token_does_not_unblock_upgrade(::fixy::TestRunnerCtx const& te
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
     CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
 
-    std::optional<SharedPermission<Region, decltype(pool)::brand_type>> stashed_token;
+    using StashedToken = SharedPermission<Region, decltype(pool)::brand_type>;
+    ::foundation::core::Option<StashedToken> stashed_token{};
     {
         auto guard = pool.lend(test).expect("an idle pool lends a share");
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 
         // The attack step: copy the token out, past the guard's scope.
-        stashed_token = guard.token();
+        stashed_token = ::foundation::core::Option<StashedToken>::some(guard.token());
 
         auto blocked = pool.try_upgrade(test);
         CRUCIBLE_TEST_ASSERT(test, blocked.is_none());
@@ -55,7 +56,7 @@ void test_stashed_token_does_not_unblock_upgrade(::fixy::TestRunnerCtx const& te
     // The guard is gone and the count is back to zero. The stashed token is
     // still alive, but it carries no access, so no shared reader survives
     // and the upgrade below is sound.
-    CRUCIBLE_TEST_ASSERT(test, stashed_token.has_value());
+    CRUCIBLE_TEST_ASSERT(test, stashed_token.is_some());
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 
     auto upgraded = pool.try_upgrade(test);

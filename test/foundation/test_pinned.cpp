@@ -4,7 +4,8 @@
 
 #include <foundation/Pinned.h>
 
-#include <atomic>
+#include <fixy/Core.h>
+
 #include <cstdint>
 #include <type_traits>
 
@@ -13,7 +14,7 @@ namespace {
 // The address is the identity: another thread reads the head through
 // a pointer it took at construction.
 struct PinnedRing : ::foundation::Pinned<PinnedRing> {
-    alignas(64) std::atomic<std::uint64_t> head{0};
+    alignas(64)::fixy::Atomic<std::uint64_t> head{0};
 };
 
 // The handle is the identity: a moved-from shell would read as a live
@@ -51,8 +52,8 @@ static_assert(!std::is_same_v<::foundation::Pinned<PinnedRing>, ::foundation::Pi
 
 int main() {
     PinnedRing ring{};
-    ring.head.store(7, std::memory_order_release);
-    if (ring.head.load(std::memory_order_acquire) != 7) return 1;
+    ring.head.store_release(7);
+    if (ring.head.load_acquire() != 7) return 1;
 
     OwnedHandle handle{};
     handle.handle_id = 42;

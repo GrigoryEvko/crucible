@@ -13,7 +13,6 @@
 
 #include "philox_stream.h"
 
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
@@ -199,7 +198,7 @@ void test_box_at_alignment() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     for (std::uint64_t trial = 0; trial < 8; ++trial) {
         Box<AlignedValue<Alignment>> held = mint_box<AlignedValue<Alignment>>(alloc, AlignedValue<Alignment>{trial});
-        CRUCIBLE_FATAL_INVARIANT(std::bit_cast<std::uintptr_t>(&*held) % Alignment == 0);
+        CRUCIBLE_FATAL_INVARIANT(::foundation::core::address_of(held.view()).template is_aligned<Alignment>());
         CRUCIBLE_FATAL_INVARIANT(held->value == trial);
     }
 }
