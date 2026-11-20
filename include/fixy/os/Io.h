@@ -485,7 +485,9 @@ mint_io_uring_ring(Ctx const&) noexcept {
 // sendfile writes at the file position of the destination and moves it,
 // so this form takes no destination offset.  It reads the source from
 // source_offset and does not move the file position of the source.  The
-// destination is a file or a socket.
+// destination is a file or a socket.  A sendfile to a socket or a pipe with no
+// reader gives epipe, and the thread gets no SIGPIPE (THE PIPE SIGNAL of
+// foundation/os/PipeSignal.h).
 template <typename... Atoms, ::fixy::os::RightSet SourceRights, class DestinationKind,
           ::fixy::os::RightSet DestinationRights, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSendfileTransfer<Ctx, Atoms...> && ::fixy::os::HoldsRights<SourceRights, ::fixy::os::RightSet::read>

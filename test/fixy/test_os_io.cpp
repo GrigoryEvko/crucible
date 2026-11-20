@@ -19,8 +19,12 @@
 
 #include <fixy/Core.h>
 #include <fixy/os/Path.h>
+#include <fixy/Ctx.h>
 #include <fixy/os/Fs.h>
 #include <fixy/os/Io.h>
+#include <fixy/os/Process.h>
+#include <fixy/os/Socket.h>
+#include <foundation/Quarantine.h>
 
 #include "../scratch_dir.h"
 
@@ -338,9 +342,77 @@ descriptor_of(fixy::Result<fixy::Linear<File>, foundation::os::Errno> minted) {
 
 }  // namespace
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a sendfile to a socket with no peer raises no SIGPIPE in its thread")
+#include <pthread.h>
+#include <signal.h>
+
+namespace {
+
+// Gives SIGPIPE its default action, and a mask of the thread that does not
+// block it.  A runner of the test can start it with SIGPIPE ignored, so the
+// child sets the default first, and a SIGPIPE then ends the child.
+[[nodiscard]] bool use_default_pipe_action() noexcept {
+    struct ::sigaction default_action{};
+    default_action.sa_handler = SIG_DFL;
+    static_cast<void>(::sigemptyset(&default_action.sa_mask));
+    ::sigset_t pipe{};
+    static_cast<void>(::sigemptyset(&pipe));
+    static_cast<void>(::sigaddset(&pipe, SIGPIPE));
+    return ::sigaction(SIGPIPE, &default_action, nullptr) == 0 && ::pthread_sigmask(SIG_UNBLOCK, &pipe, nullptr) == 0;
+}
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// A sendfile to a TCP stream socket that is not connected gives epipe, and the
+// thread gets no SIGPIPE, as each write door of the base does.  The transfer
+// runs in a child, so a SIGPIPE that ends the process shows as a child that
+// does not exit with 0.  The source is a file with no name in /tmp.
+[[nodiscard]] static int sendfile_to_a_socket_with_no_peer_gives_epipe() {
+    using SocketCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO,
+                                                       eff::Effect::Block, eff::Effect::Nondet>>;
+    using TcpStream = fixy::net::socket_kind::TcpStream;
+    const fixy::TestRunnerCtx test_ctx{eff::testing::test()};
+    const fixy::process::ChildReport report =
+        fixy::process::wait(
+            fixy::process::spawn_child(
+                test_ctx,
+                [] noexcept {
+                    if (!use_default_pipe_action()) fixy::fatal("the child does not set the default SIGPIPE action");
+                    SocketCtx const ctx{eff::testing::test()};
+                    fs::DirectoryHandle const tmp =
+                        fs::open_directory(ctx,
+                                           fixy::sanitize_path(fixy::mint_tagged<src::External>(fixy::TextView{"/tmp"}))
+                                               .expect("/tmp passes the sanitizer"))
+                            .expect("/tmp opens");
+                    fs::TemporaryFile const source =
+                        fs::mint_temporary_file_at(ctx, tmp.ref()).expect("the file of the source opens").consume();
+                    fixy::FixedArray<std::byte, 64> bytes{};
+                    fixy::fill(bytes.view(), std::byte{0x5A});
+                    if (fs::write_full(ctx, source.ref(), bytes.view()).is_err()) {
+                        fixy::fatal("the test does not write the source of the sendfile");
+                    }
+                    fixy::net::SocketHandle<TcpStream> const socket =
+                        fixy::net::mint_socket<TcpStream>(ctx).expect("the test makes a socket").consume();
+                    auto const moved = fixy::io::zerocopy_transfer<Sendfile>(ctx, source.ref(), socket.ref(), 64);
+                    if (moved.err().value_or(foundation::os::Errno{}) != foundation::os::Errno::epipe) {
+                        fixy::fatal("a sendfile to a socket with no peer did not give epipe");
+                    }
+                })
+                .expect("the test starts a child"))
+            .expect("the test waits for its child");
+    if (!report.is_exit_with(0)) {
+        fixy::report(fixy::Sink::Err,
+                     "a sendfile to a socket with no peer ended its process, and not with epipe and exit 0\n");
+        return 1;
+    }
+    return 0;
+}
+
 int main() {
     if (const int rc = ring_setup_hands_back_a_mapped_ring(); rc != 0) return rc;
     if (const int rc = sendfile_moves_the_source_bytes(); rc != 0) return rc;
+    if (const int rc = sendfile_to_a_socket_with_no_peer_gives_epipe(); rc != 0) return rc;
     if (const int rc = copy_file_range_moves_the_source_bytes(); rc != 0) return rc;
     return 0;
 }

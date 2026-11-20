@@ -9,6 +9,7 @@
 #include <foundation/core/Choice.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/MapWords.h>
+#include <foundation/os/PipeSignal.h>
 #include <foundation/os/Syscall.h>
 
 #include <linux/io_uring.h>
@@ -179,10 +180,18 @@ namespace detail {
 core::Result<std::size_t, os::Errno> send_file_(int destination, int source, std::int64_t source_offset,
                                                 std::size_t length) noexcept {
     std::int64_t offset = source_offset;
-    return transfer(length, [&](std::size_t rest) -> Step {
+    // The destination can be a socket or a pipe with no reader, and sendfile
+    // has no MSG_NOSIGNAL.  The block of the signal holds for the whole loop
+    // (THE PIPE SIGNAL of foundation/os/PipeSignal.h), as in write_full_.
+    os::PipeSignalBlock block = os::PipeSignalBlock::block_calling_thread();
+    core::Result<std::size_t, os::Errno> moved = transfer(length, [&](std::size_t rest) -> Step {
         return os::result_of(
             os::raw_syscall(os::Syscall::sendfile, destination, source, static_cast<void const*>(&offset), rest));
     });
+    if (moved.err().value_or(os::Errno{}) == os::Errno::epipe) {
+        block.mark_broken_pipe();
+    }
+    return moved;
 }
 
 core::Result<std::size_t, os::Errno> copy_file_range_(int source, std::int64_t source_offset, int destination,
