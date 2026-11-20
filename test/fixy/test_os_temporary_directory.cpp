@@ -2,9 +2,10 @@
 // mint_temporary_directory makes a new directory under the temporary
 // directory of the host, and the end of its owner removes the tree.
 //
-// The cases read the name of a new directory, fill the directory and end its
-// owner, mint two directories, take the next name when an entry holds a name,
-// and move an owner.  CMake runs the test two times: with no TMPDIR, so the
+// The cases read the name of a new directory, with the ids of the pid
+// namespace and of the process, fill the directory and end its owner, mint two
+// directories, take the next name when an entry holds a name, and move an
+// owner.  CMake runs the test two times: with no TMPDIR, so the
 // host directory is /tmp, and with TMPDIR set to the directory of the test.
 
 #include <fixy/Core.h>
@@ -52,13 +53,26 @@ constexpr ::fixy::TestRunnerCtx kCtx{eff::testing::test()};
     return host;
 }
 
+// The name of a new directory without its count: crucible-, the id of the pid
+// namespace of the process, a dash, the id of the process and a dash.
+[[nodiscard]] Path name_without_count() {
+    Path name{};
+    name.append(fixy::TextView{"crucible-"}).expect("the name fits a path");
+    name.append_decimal(std::to_underlying(fs::read_pid_namespace(kCtx).expect("the test reads its pid namespace")))
+        .expect("the id fits a path");
+    name.append('-').expect("the name fits a path");
+    name.append_decimal(std::to_underlying(fixy::process::current_process(kCtx))).expect("the id fits a path");
+    name.append('-').expect("the name fits a path");
+    return name;
+}
+
 // The path of a new directory without its count: the host directory, a
-// slash, crucible-, the id of the process and a dash.
+// slash, and the name without its count.
 [[nodiscard]] Path name_prefix() {
+    Path const name = name_without_count();
     Path prefix = host_directory();
-    prefix.append(fixy::TextView{"/crucible-"}).expect("the prefix fits a path");
-    prefix.append_decimal(std::to_underlying(fixy::process::current_process(kCtx))).expect("the id fits a path");
-    prefix.append('-').expect("the prefix fits a path");
+    prefix.append('/').expect("the prefix fits a path");
+    prefix.append(name.c_text()).expect("the prefix fits a path");
     return prefix;
 }
 
@@ -121,10 +135,7 @@ constexpr ::fixy::TestRunnerCtx kCtx{eff::testing::test()};
     Path const host_path = host_directory();
     fs::DirectoryHandle const host =
         fs::open_directory(kCtx, sanitized(host_path.c_text().view())).expect("the host directory opens");
-    Path name{};
-    name.append(fixy::TextView{"crucible-"}).expect("the name fits");
-    name.append_decimal(std::to_underlying(fixy::process::current_process(kCtx))).expect("the name fits");
-    name.append('-').expect("the name fits");
+    Path name = name_without_count();
     name.append_decimal(count + 1).expect("the name fits");
     if (fs::make_directory_at(kCtx, host.ref(), name.c_text()).is_err()) return 21;
     int failed = 0;

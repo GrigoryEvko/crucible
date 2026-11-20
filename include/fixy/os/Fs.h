@@ -1067,9 +1067,13 @@ remove_entries_below(Ctx const&, DirectoryRef<Rights> dir) noexcept {
 //   directory of the host, and gives its owner in a Linear.  The temporary
 //   directory of the host is the checked path of TMPDIR in the start-up record
 //   of fixy/os/Environment.h, or /tmp when the record holds no value.  The name
-//   of the new directory is crucible-PROCESS-COUNT, with the id of the process
-//   and a count that each mint of the process takes one time.  So two mints of
-//   one process, and two processes that live at one time, get two names.
+//   of the new directory is crucible-NAMESPACE-PROCESS-COUNT: the id of the pid
+//   namespace of the process (read_pid_namespace), the id of the process in
+//   that namespace, and a count that each mint of the process takes one time.
+//   So two mints of one process, and two processes that live at one time, get
+//   two names, also when the two processes are in two pid namespaces.  An error
+//   of the read of the namespace is the error of the mint, so each name of the
+//   mint holds a namespace.
 //
 //   An entry can hold the name already, such as a directory that an ended
 //   process of the same id left.  The mint then takes the next count, and
@@ -1084,15 +1088,16 @@ remove_entries_below(Ctx const&, DirectoryRef<Rights> dir) noexcept {
 //   error, as the end of a handle does.  A process that ends with no end of the
 //   owner, such as a process that aborts, leaves the directory.
 //
-//   The mint reads the id of the process, which changes from run to run, so its
-//   context admits the row of an identity read of fixy/os/Process.h as well as
-//   the file calls.
+//   The mint reads the ids of the namespace and of the process, which change
+//   from run to run, so its context admits the row of an identity read of
+//   fixy/os/Process.h as well as the file calls.
 
 // The count of the names that a mint tries.
 inline constexpr std::size_t kTemporaryDirectoryTries = 64;
 
 // The bytes of the name of a temporary directory: "crucible-", the decimal
-// digits of a process id and of a count, and the dash between them.
+// digits of a namespace id, of a process id and of a count, and the two dashes
+// between them.
 inline constexpr std::size_t kTemporaryNameBytes = 64;
 
 // The name of a temporary directory under the temporary directory of the host.
@@ -1109,43 +1114,77 @@ namespace detail {
 // do not try one name.  Only mint_temporary_directory changes it.
 CRUCIBLE_PROCESS_WIDE inline constinit ::foundation::core::Atomic<std::uint64_t> temporary_directory_count{0};
 
-// The name crucible-PROCESS-COUNT of the two numbers, each in decimal digits
-// with no zero before a digit.  The name of the largest id and the largest
-// count has 40 characters, so each part fits in kTemporaryNameBytes.
-[[nodiscard]] constexpr TemporaryName make_temporary_name_(::fixy::process::ProcessId process,
+// The name crucible-NAMESPACE-PROCESS-COUNT of the three numbers, each in
+// decimal digits with no zero before a digit.  The name of the largest three
+// numbers has 61 characters, so each name fits in kTemporaryNameBytes.
+[[nodiscard]] constexpr TemporaryName make_temporary_name_(::fixy::process::PidNamespaceId space,
+                                                           ::fixy::process::ProcessId process,
                                                            TemporaryCount count) noexcept {
     TemporaryName name{};
-    name.append(::foundation::core::TextView{"crucible-"}).expect("the name of two numbers fits its text");
-    name.append_decimal(std::to_underlying(process)).expect("the name of two numbers fits its text");
-    name.append('-').expect("the name of two numbers fits its text");
-    name.append_decimal(std::to_underlying(count)).expect("the name of two numbers fits its text");
+    name.append(::foundation::core::TextView{"crucible-"}).expect("the name of three numbers fits its text");
+    name.append_decimal(std::to_underlying(space)).expect("the name of three numbers fits its text");
+    name.append('-').expect("the name of three numbers fits its text");
+    name.append_decimal(std::to_underlying(process)).expect("the name of three numbers fits its text");
+    name.append('-').expect("the name of three numbers fits its text");
+    name.append_decimal(std::to_underlying(count)).expect("the name of three numbers fits its text");
     return name;
 }
 
-// The id of the process of the name, when the name has the form
-// crucible-PROCESS-COUNT of the mint, or no value.  The name has the form when
-// make_temporary_name_ gives the same text for the two numbers of the name.
-// So a sign, a prefix 0x, a zero before a digit, a third part and a number
-// out of the range of its type give no value.  Complexity: linear in the size
-// of the name.
-[[nodiscard]] constexpr ::foundation::core::Option<::fixy::process::ProcessId>
+// The pid namespace and the process of a name of the mint.
+struct TemporaryOrigin {
+    ::fixy::process::PidNamespaceId space{};
+    ::fixy::process::ProcessId process{};
+};
+
+// The parts of a text before and after its first dash.
+struct DashSplit {
+    ::foundation::core::TextView head{};
+    ::foundation::core::TextView tail{};
+};
+
+// The parts of TEXT at its first dash, or no value when TEXT holds no dash.
+[[nodiscard]] constexpr ::foundation::core::Option<DashSplit>
+split_at_dash_(::foundation::core::TextView text) noexcept {
+    namespace core = ::foundation::core;
+    std::size_t const dash = core::find(text, '-').value_or(text.size());
+    if (dash == text.size()) return core::none;
+    return core::Option<DashSplit>::some(DashSplit{
+        .head = text.window(0, dash).value_or(core::TextView{}),
+        .tail = text.window(dash + 1, text.size() - dash - 1).value_or(core::TextView{}),
+    });
+}
+
+// The namespace and the process of the name, when the name has the form
+// crucible-NAMESPACE-PROCESS-COUNT of the mint, or no value.  The name has the
+// form when make_temporary_name_ gives the same text for the three numbers of
+// the name.  So a sign, a prefix 0x, a zero before a digit, a part too few or
+// too many, and a number out of the range of its type give no value.  A name
+// crucible-PROCESS-COUNT of two numbers has a part too few.  Complexity:
+// linear in the size of the name.
+[[nodiscard]] constexpr ::foundation::core::Option<TemporaryOrigin>
 parse_temporary_name_(::foundation::core::TextView name) noexcept {
     namespace core = ::foundation::core;
-    using Process = core::Option<::fixy::process::ProcessId>;
     constexpr core::TextView prefix{"crucible-"};
     if (!core::starts_with(name, prefix)) return core::none;
     core::TextView const rest = name.window(prefix.size(), name.size() - prefix.size()).value_or(core::TextView{});
-    std::size_t const dash = core::find(rest, '-').value_or(rest.size());
-    if (dash == rest.size()) return core::none;
-    core::Option<std::uint32_t> process =
-        core::parse<std::uint32_t>(rest.window(0, dash).value_or(core::TextView{})).ok();
-    core::Option<std::uint64_t> count =
-        core::parse<std::uint64_t>(rest.window(dash + 1, rest.size() - dash - 1).value_or(core::TextView{})).ok();
-    if (process.is_none() || count.is_none()) return core::none;
-    ::fixy::process::ProcessId const id{std::move(process).value_or(0)};
-    TemporaryName const rebuilt = make_temporary_name_(id, TemporaryCount{std::move(count).value_or(0)});
+    core::Option<DashSplit> outer = split_at_dash_(rest);
+    if (outer.is_none()) return core::none;
+    DashSplit const first = std::move(outer).value_or(DashSplit{});
+    core::Option<DashSplit> inner = split_at_dash_(first.tail);
+    if (inner.is_none()) return core::none;
+    DashSplit const second = std::move(inner).value_or(DashSplit{});
+    core::Option<std::uint64_t> space = core::parse<std::uint64_t>(first.head).ok();
+    core::Option<std::uint32_t> process = core::parse<std::uint32_t>(second.head).ok();
+    core::Option<std::uint64_t> count = core::parse<std::uint64_t>(second.tail).ok();
+    if (space.is_none() || process.is_none() || count.is_none()) return core::none;
+    TemporaryOrigin const origin{
+        .space = ::fixy::process::PidNamespaceId{std::move(space).value_or(0)},
+        .process = ::fixy::process::ProcessId{std::move(process).value_or(0)},
+    };
+    TemporaryName const rebuilt =
+        make_temporary_name_(origin.space, origin.process, TemporaryCount{std::move(count).value_or(0)});
     if (rebuilt.c_text().view() != name) return core::none;
-    return Process::some(id);
+    return core::Option<TemporaryOrigin>::some(origin);
 }
 
 // The temporary directory of the host in the switches: the checked path of
@@ -1166,11 +1205,27 @@ parse_temporary_name_(::foundation::core::TextView name) noexcept {
 [[nodiscard]] ::foundation::core::Result<::fixy::process::UserId, ::foundation::os::Errno>
 directory_owner_beneath_(int directory, ::foundation::core::CText name) noexcept;
 
+// The inode number of /proc/self/ns/pid (newfstatat), which follows the link
+// of the namespace file to the namespace.
+[[nodiscard]] ::foundation::core::Result<::fixy::process::PidNamespaceId, ::foundation::os::Errno>
+read_pid_namespace_() noexcept;
+
 }  // namespace detail
 
 // A context that can make a temporary directory.
 template <typename Ctx>
 concept CtxFitsTemporaryDirectoryMint = CtxAdmitsFs<Ctx> && ::fixy::process::CtxFitsIdentityRead<Ctx>;
+
+// The id of the pid namespace of the process (THE IDENTITY DOOR of
+// fixy/os/Process.h).  The door reads the status of the namespace file
+// /proc/self/ns/pid, so its context admits the file calls as well as an
+// identity read.  A host with no /proc gives enoent.
+template <eff::IsExecCtx Ctx>
+    requires CtxAdmitsFs<Ctx> && ::fixy::process::CtxFitsIdentityRead<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<::fixy::process::PidNamespaceId, ::foundation::os::Errno>
+read_pid_namespace(Ctx const&) noexcept {
+    return detail::read_pid_namespace_();
+}
 
 class TemporaryDirectoryDoor;
 
@@ -1275,6 +1330,7 @@ TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
                  sanitize_path(mint_tagged<tags::source::External>(host)).map_err([](PathTraversalError) noexcept {
                      return Errno::einval;
                  }));
+    CRUCIBLE_TRY(space, read_pid_namespace(ctx));
     CRUCIBLE_TRY(parent, open_directory(ctx, host_path));
     ::fixy::process::ProcessId const process = ::fixy::process::current_process(ctx);
     TemporaryDirectory owner{};
@@ -1284,7 +1340,7 @@ TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
     ::foundation::core::Option<Errno> failure{};
     for (std::size_t tried = 0; tried < kTemporaryDirectoryTries && !is_made && failure.is_none(); ++tried) {
         std::uint64_t const count = detail::temporary_directory_count.fetch_add_acq_rel(std::uint64_t{1});
-        owner.name_ = detail::make_temporary_name_(process, TemporaryCount{count});
+        owner.name_ = detail::make_temporary_name_(space, process, TemporaryCount{count});
         owner.path_ = ::foundation::os::PathText<kPathBytes>{};
         // The path comes before the make, so a path that does not fit makes no
         // directory.
@@ -1321,9 +1377,13 @@ TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
 //   as a process that aborted.  The door lists the temporary directory of the
 //   host one time.  It removes the tree of an entry with remove_tree_at only
 //   when each of these conditions holds:
-//     - The name of the entry has the form crucible-PROCESS-COUNT of the mint:
-//       the builder of the mint gives the same text for the two numbers of
-//       the name.
+//     - The name of the entry has the form crucible-NAMESPACE-PROCESS-COUNT of
+//       the mint: the builder of the mint gives the same text for the three
+//       numbers of the name.  A name of another form stays, such as a name
+//       crucible-PROCESS-COUNT of two numbers.
+//     - The namespace of the name is the pid namespace of the caller.  The
+//       probe reads an id in the namespace of the caller, so a tree of another
+//       namespace stays, whatever the probe answers for its id.
 //     - The entry is a directory, and the effective user id of the process
 //       owns it.  An open with O_DIRECTORY and O_NOFOLLOW refuses a file and a
 //       symbolic link, and the owner is the owner of the open directory.
@@ -1335,19 +1395,17 @@ TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
 //   processes whose removal failed.  Other processes can make, remove and
 //   sweep their trees at the time of the sweep.  So an entry that is gone at a
 //   step counts in no count, and the error of one entry stops no sweep.  Only
-//   an error of the open or of the listing of the temporary directory of the
-//   host is the error of the sweep.
+//   an error of the read of the namespace of the caller, and of the open or of
+//   the listing of the temporary directory of the host, is the error of the
+//   sweep.
 //
 //   The checks and the removal are two steps.  Between them, only the owner of
 //   an entry can replace it in a temporary directory with the sticky bit, such
-//   as /tmp, and the removal has only the rights of the caller.  The probe
-//   reads the id in the pid namespace of the caller.  So a tree of a live
-//   process of another namespace, with the same temporary directory and the
-//   same user, looks like a tree of an ended process.
+//   as /tmp, and the removal has only the rights of the caller.
 //
 //   Complexity: one listing of the temporary directory of the host, an open,
-//   a status read and a probe for each entry of the form, and the tree removal
-//   of each tree of an ended process.
+//   a status read and a probe for each entry of the form and of the namespace
+//   of the caller, and the tree removal of each tree of an ended process.
 
 // What a sweep did (THE SWEEP).
 struct SweepReport {
@@ -1359,21 +1417,29 @@ struct SweepReport {
 
 namespace detail {
 
+// The caller of a sweep: its pid namespace and its effective user id.
+struct SweepCaller {
+    ::fixy::process::PidNamespaceId space{};
+    ::fixy::process::UserId user{};
+};
+
 // True when the entry name of the directory of the descriptor directory is a
-// tree of an ended process that the user user owns (THE SWEEP).  An error of
-// the owner read, such as enotdir for a file or a symbolic link, keeps the
-// entry.
+// tree of an ended process of the namespace of the caller, and the user of the
+// caller owns it (THE SWEEP).  An error of the owner read, such as enotdir for
+// a file or a symbolic link, keeps the entry.
 template <class Ctx>
 [[nodiscard]] bool is_stale_tree_(Ctx const& ctx, int directory, ::foundation::core::CText name,
-                                  ::fixy::process::UserId user) noexcept {
+                                  SweepCaller caller) noexcept {
     using ::fixy::process::UserId;
     return parse_temporary_name_(name.view())
         .match(
-            [&ctx, directory, name, user](::fixy::process::ProcessId process) noexcept {
+            [&ctx, directory, name, caller](TemporaryOrigin origin) noexcept {
+                if (origin.space != caller.space) return false;
                 bool const is_owned = directory_owner_beneath_(directory, name)
-                                          .match([user](UserId owner) noexcept { return owner == user; },
+                                          .match([caller](UserId owner) noexcept { return owner == caller.user; },
                                                  [](::foundation::os::Errno) noexcept { return false; });
-                return is_owned && ::fixy::process::probe_process(ctx, process) == ::fixy::process::ProcessState::gone;
+                return is_owned
+                    && ::fixy::process::probe_process(ctx, origin.process) == ::fixy::process::ProcessState::gone;
             },
             [] noexcept { return false; });
 }
@@ -1390,12 +1456,13 @@ sweep_temporary_directories(Ctx const& ctx) noexcept {
     ::fixy::env::Switches const& switches = ::fixy::env::switches();
     CRUCIBLE_TRY(host_path, sanitize_path(mint_tagged<tags::source::External>(detail::host_temporary_text_(switches)))
                                 .map_err([](PathTraversalError) noexcept { return Errno::einval; }));
+    CRUCIBLE_TRY(space, read_pid_namespace(ctx));
     CRUCIBLE_TRY(host, open_directory(ctx, host_path));
-    ::fixy::process::UserId const user = ::fixy::process::current_user(ctx);
+    detail::SweepCaller const caller{.space = space, .user = ::fixy::process::current_user(ctx)};
     int const listed = ::fixy::os::detail::HandleDoor::descriptor_of(host.ref());
     SweepReport report{};
-    auto visit = [&ctx, &host, &report, listed, user](::foundation::core::CText name) noexcept {
-        if (!detail::is_stale_tree_(ctx, listed, name, user)) return ::foundation::os::Visit::proceed;
+    auto visit = [&ctx, &host, &report, listed, caller](::foundation::core::CText name) noexcept {
+        if (!detail::is_stale_tree_(ctx, listed, name, caller)) return ::foundation::os::Visit::proceed;
         remove_tree_at(ctx, host.ref(), name)
             .match([&report](::foundation::core::Unit) noexcept { report.removed += 1; },
                    [&report](Errno error) noexcept {

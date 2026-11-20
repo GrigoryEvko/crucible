@@ -10,6 +10,14 @@
 //   read takes a context that admits the row of the family of the calls in the
 //   syscall catalog, the family of the reads of the process state.
 //
+//   The id of the pid namespace of the process is the inode number of the
+//   namespace file /proc/self/ns/pid.  The file door of fixy/os/Fs.h reads it
+//   (read_pid_namespace), because the read is a status read of a file.  The
+//   number identifies a namespace only on one kernel: the first pid namespace
+//   of each kernel has the same number.  The kernel can give the number of a
+//   namespace that ended to a new namespace, and each process of the old one
+//   ended before that.
+//
 // THE PROCESS PROBE
 //   probe_process(ctx, process) tells if a process of the id process lives.
 //   The door file opens a descriptor of the process with the raw pidfd_open,
@@ -137,6 +145,11 @@ enum class ThreadId : std::uint32_t {
 // The id of a user.  The effective user id of a process owns each file that
 // the process makes, with no change of its file system id.
 enum class UserId : std::uint32_t {
+};
+
+// The id of a pid namespace: the inode number of its namespace file (THE
+// IDENTITY DOOR).
+enum class PidNamespaceId : std::uint64_t {
 };
 
 // The answer of the probe of a process (THE PROCESS PROBE).

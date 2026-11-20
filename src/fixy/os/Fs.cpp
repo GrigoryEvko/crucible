@@ -1,8 +1,8 @@
 // The file door of fixy (fixy/os/Fs.h): the syncs, the renames, the reads
 // and the writes of a whole buffer, the read at an offset, the read and the
 // change of the size of a file, the opens, the removes, the new
-// directories and the status reads under a directory, and the removal of a
-// tree under a directory.  A
+// directories and the status reads under a directory, the removal of a tree
+// under a directory, and the status read of the pid namespace of the process.  A
 // call that a signal interrupts runs again.  It issues the
 // raw primitive of foundation/os/Syscall.h.  It is the one includer of
 // <asm/stat.h>, for the struct of fstat, and of <linux/fs.h>, for the flag of
@@ -410,6 +410,19 @@ core::Result<::fixy::process::UserId, os::Errno> directory_owner_beneath_(int di
             return os::result_of(word).map(
                 [&status](std::uint64_t) noexcept { return static_cast<::fixy::process::UserId>(status.st_uid); });
         });
+}
+
+// The flags word zero follows the link of the namespace file, so the status is
+// the status of the namespace, and its inode number is the id of the namespace.
+core::Result<::fixy::process::PidNamespaceId, os::Errno> read_pid_namespace_() noexcept {
+    ::stat status{};
+    long word = 0;
+    do {
+        word = os::raw_syscall(os::Syscall::newfstatat, os::kAtCurrentDirectory, "/proc/self/ns/pid",
+                               static_cast<void const*>(&status), 0);
+    } while (word == kInterrupted);
+    return os::result_of(word).map(
+        [&status](std::uint64_t) noexcept { return static_cast<::fixy::process::PidNamespaceId>(status.st_ino); });
 }
 
 core::Result<bool, os::Errno> has_entry_at_(int directory, char const* path) noexcept {
