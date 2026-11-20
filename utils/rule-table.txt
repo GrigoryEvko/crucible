@@ -654,7 +654,7 @@ witness <foundation/alloc/Layout.h> private | foundation::alloc::Layout | founda
 # reserved window.  Only the window door of src/foundation/alloc/Window.cpp
 # builds them, after the reserve of the window and of its region.
 witness <foundation/alloc/ChunkMap.h> private | foundation::alloc::BiasedChunkMap | foundation::alloc::BiasedChunkMap{forge::rvalue<std::uint64_t>()}
-witness <foundation/alloc/ChunkMap.h> private | foundation::alloc::WindowRecord | foundation::alloc::WindowRecord{forge::rvalue<std::uint64_t>(), forge::rvalue<std::uint64_t>(), forge::rvalue<foundation::alloc::BiasedChunkMap>(), forge::rvalue<std::uint64_t>(), forge::rvalue<std::uint64_t>()}
+witness <foundation/alloc/ChunkMap.h> private | foundation::alloc::WindowRecord | foundation::alloc::WindowRecord{forge::rvalue<foundation::alloc::WindowBase>(), forge::rvalue<foundation::alloc::WindowLength>(), forge::rvalue<foundation::alloc::BiasedChunkMap>(), forge::rvalue<foundation::alloc::RegionBase>(), forge::rvalue<foundation::alloc::RegionLength>()}
 # A metadata layout claims the offsets of the sections of a region for its
 # count of chunks.  Only MetadataLayout::of builds one.
 witness <foundation/alloc/Metadata.h> private | foundation::alloc::MetadataLayout | foundation::alloc::MetadataLayout{}

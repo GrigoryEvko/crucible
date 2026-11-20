@@ -18,6 +18,11 @@
 //   BiasedChunkMap                 the word that reads the owner of the
 //                                  chunk of an address with a shift and a
 //                                  load (THE MAP READ)
+//   WindowBase, RegionBase         the first byte of a window and of its
+//                                  metadata region, two roles of an
+//                                  AddressWord
+//   WindowLength, RegionLength     the bytes of a window and of its region,
+//                                  two roles of a ByteCount
 //   WindowRecord                   the base, the length, the biased map and
 //                                  the metadata region of one window
 //   WindowTable                    the record of each window: slot 0 is the
@@ -74,6 +79,7 @@
 #include <foundation/core/Id.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Quantity.h>
+#include <foundation/core/Side.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -93,6 +99,25 @@ inline constexpr std::uint32_t kChunksPerExtent = std::uint32_t{1} << (kExtentSh
 // a word or does pointer arithmetic on it.
 enum class AddressWord : std::uint64_t {
 };
+
+namespace side {
+
+// The roles of the words of a window record: the first byte and the bytes of
+// the window, and the first byte and the bytes of its metadata region.
+struct WindowBase final {};
+struct RegionBase final {};
+struct WindowLength final {};
+struct RegionLength final {};
+
+}  // namespace side
+
+// The first byte of a window and of its region, and the bytes of each.  Each
+// role is its own type, so the door that builds a record cannot swap two of
+// them.
+using WindowBase = ::foundation::core::Side<side::WindowBase, AddressWord>;
+using RegionBase = ::foundation::core::Side<side::RegionBase, AddressWord>;
+using WindowLength = ::foundation::core::Side<side::WindowLength, ::foundation::core::ByteCount>;
+using RegionLength = ::foundation::core::Side<side::RegionLength, ::foundation::core::ByteCount>;
 
 // The id of a heap: 1 to kLastHeapId (THE OWNER ENTRY).
 struct HeapIdTag final {};
@@ -244,13 +269,13 @@ public:
 private:
     friend struct detail::WindowRecordDoor;
 
-    constexpr WindowRecord(std::uint64_t base, std::uint64_t length, BiasedChunkMap chunk_map,
-                           std::uint64_t region_base, std::uint64_t region_length) noexcept
-        : base_{base},
-          length_{length},
+    constexpr WindowRecord(WindowBase base, WindowLength length, BiasedChunkMap chunk_map, RegionBase region_base,
+                           RegionLength region_length) noexcept
+        : base_{static_cast<std::uint64_t>(base.value())},
+          length_{length.value().raw()},
           chunk_map_{chunk_map},
-          region_base_{region_base},
-          region_length_{region_length} {}
+          region_base_{static_cast<std::uint64_t>(region_base.value())},
+          region_length_{region_length.value().raw()} {}
 
     std::uint64_t base_ = 0;
     std::uint64_t length_ = 0;

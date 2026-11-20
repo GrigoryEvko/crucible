@@ -26,10 +26,18 @@ namespace foundation::alloc {
 namespace detail {
 
 struct WindowRecordDoor {
-    [[nodiscard]] static BiasedChunkMap map_of(std::uint64_t word) noexcept { return BiasedChunkMap{word}; }
+    // The biased map of a window whose map starts MAP_OFFSET bytes after the
+    // first byte of the region.  The sum wraps for a window above the map,
+    // and the read of an entry of the window wraps back (THE MAP READ).
+    [[nodiscard]] static BiasedChunkMap map_of(RegionBase region, core::ByteCount map_offset,
+                                               WindowBase window) noexcept {
+        std::uint64_t const map = static_cast<std::uint64_t>(region.value()) + map_offset.raw();
+        std::uint64_t const window_chunks = static_cast<std::uint64_t>(window.value()) >> kChunkShift;
+        return BiasedChunkMap{map - (window_chunks << 1)};
+    }
 
-    [[nodiscard]] static WindowRecord record_of(std::uint64_t base, std::uint64_t length, BiasedChunkMap chunk_map,
-                                                std::uint64_t region_base, std::uint64_t region_length) noexcept {
+    [[nodiscard]] static WindowRecord record_of(WindowBase base, WindowLength length, BiasedChunkMap chunk_map,
+                                                RegionBase region_base, RegionLength region_length) noexcept {
         return WindowRecord{base, length, chunk_map, region_base, region_length};
     }
 
@@ -56,47 +64,50 @@ constexpr std::size_t kFirstRung = 2;
 constexpr std::size_t kFirstRung = 0;
 #endif
 
-[[nodiscard]] constexpr std::size_t rung_bytes(std::size_t rung) noexcept {
-    return (std::size_t{1} << 40) >> (2 * rung);
+// A rung of THE LADDER.
+using Rung = core::Index<kRungCount>;
+
+[[nodiscard]] constexpr core::ByteCount rung_bytes(Rung rung) noexcept {
+    return core::ByteCount{(std::size_t{1} << 40) >> (2 * rung.raw())};
 }
 
-[[nodiscard]] os::RangeStart start_at(std::size_t offset) noexcept {
-    return core::side_as<os::side::RangeStart>(core::ByteCount{offset});
+[[nodiscard]] os::RangeStart start_at(core::ByteCount offset) noexcept {
+    return core::side_as<os::side::RangeStart>(offset);
 }
 
-// Commits the part of RESERVATION of BYTES bytes at OFFSET.  Each part that
+// Commits the part of RESERVATION of BYTES bytes at START.  Each part that
 // this file asks for is inside the reservation and a whole count of pages.
-[[nodiscard]] core::Result<core::Unit, os::Errno> commit_part(os::Reservation& reservation, std::size_t offset,
+[[nodiscard]] core::Result<core::Unit, os::Errno> commit_part(os::Reservation& reservation, os::RangeStart start,
                                                               core::ByteCount bytes) noexcept {
-    os::ReservedRange const range = reservation.range(start_at(offset), bytes)
-                                        .expect("the window door asks for a whole part inside its reservation");
+    os::ReservedRange const range =
+        reservation.range(start, bytes).expect("the window door asks for a whole part inside its reservation");
     CRUCIBLE_TRY(committed, reservation.commit(range));
     static_cast<void>(committed);
     return core::Unit{};
 }
 
 // The window and the region of one rung, or the refusal of the kernel.
-[[nodiscard]] core::Result<Window, os::Errno> reserve_rung(std::size_t window_bytes, os::ReserveCap cap) noexcept {
-    MetadataLayout const layout = MetadataLayout::of(core::ElementCount{window_bytes >> kChunkShift});
-    CRUCIBLE_TRY(window, os::reserve(core::ByteCount{window_bytes}, os::ReserveAlignment::huge_page, cap));
+[[nodiscard]] core::Result<Window, os::Errno> reserve_rung(core::ByteCount window_bytes, os::ReserveCap cap) noexcept {
+    MetadataLayout const layout = MetadataLayout::of(core::ElementCount{window_bytes.raw() >> kChunkShift});
+    CRUCIBLE_TRY(window, os::reserve(window_bytes, os::ReserveAlignment::huge_page, cap));
     CRUCIBLE_TRY(region, os::reserve(layout.region_bytes(), os::ReserveAlignment::huge_page, cap));
     // The chunk map commits whole, so each read of an entry reads a page.
-    CRUCIBLE_TRY(map_committed, commit_part(region, layout.map_offset().raw(), layout.map_bytes()));
+    CRUCIBLE_TRY(map_committed, commit_part(region, start_at(layout.map_offset()), layout.map_bytes()));
     static_cast<void>(map_committed);
-    std::uint64_t const window_base = window.address_of(window.whole());
-    std::uint64_t const region_base = region.address_of(region.whole());
-    // The sum wraps for a window above the map, and the read of an entry of
-    // the window wraps back (THE MAP READ).
-    std::uint64_t const biased = region_base + layout.map_offset().raw() - ((window_base >> kChunkShift) << 1);
+    WindowBase const window_base = core::side_as<side::WindowBase>(AddressWord{window.address_of(window.whole())});
+    RegionBase const region_base = core::side_as<side::RegionBase>(AddressWord{region.address_of(region.whole())});
     WindowRecord const record = detail::WindowRecordDoor::record_of(
-        window_base, window_bytes, detail::WindowRecordDoor::map_of(biased), region_base, layout.region_bytes().raw());
+        window_base, core::side_as<side::WindowLength>(window_bytes),
+        detail::WindowRecordDoor::map_of(region_base, layout.map_offset(), window_base), region_base,
+        core::side_as<side::RegionLength>(layout.region_bytes()));
     return detail::WindowRecordDoor::window_of(std::move(window), std::move(region), layout, record);
 }
 
 // The window of the first rung that the kernel gives (THE LADDER).
 [[nodiscard]] core::Result<Window, os::Errno> climb_ladder(os::ReserveCap cap) noexcept {
     os::Errno refusal = os::Errno::enomem;
-    for (std::size_t rung = kFirstRung; rung < kRungCount; ++rung) {
+    for (std::size_t raw = kFirstRung; raw < kRungCount; ++raw) {
+        Rung const rung = Rung::check(raw).expect("each rung of the loop is below kRungCount");
         core::Result<Window, os::Errno> taken = reserve_rung(rung_bytes(rung), cap);
         if (taken.is_ok()) return taken;
         refusal = taken.err().value_or(os::Errno::enomem);
@@ -121,7 +132,8 @@ core::Result<core::Unit, os::Errno> Window::commit_extent_of(ChunkIndex chunk) n
     CRUCIBLE_FATAL_INVARIANT(!is_guard_chunk(chunk));
     if (is_extent_committed(chunk)) return core::Unit{};
     std::size_t const extent = chunk.raw() >> (kExtentShift - kChunkShift);
-    CRUCIBLE_TRY(committed, commit_part(window_, extent << kExtentShift, core::ByteCount{kExtentBytes - kChunkBytes}));
+    CRUCIBLE_TRY(committed, commit_part(window_, start_at(core::ByteCount{extent << kExtentShift}),
+                                        core::ByteCount{kExtentBytes - kChunkBytes}));
     static_cast<void>(committed);
     std::uint64_t& word = *committed_extents_.get(extent / 64).expect("a window holds at most 1 TiB of extents");
     word |= std::uint64_t{1} << (extent % 64);
@@ -142,7 +154,8 @@ core::Result<core::Unit, os::Errno> Window::grow_section_(RecordSection section,
     std::size_t const section_offset =
         is_chunk_section ? layout_.chunk_records_offset().raw() : layout_.slab_records_offset().raw();
     std::size_t const step_end = (end.raw() + (kMetadataStepBytes - 1)) & ~(kMetadataStepBytes - 1);
-    CRUCIBLE_TRY(committed, commit_part(region_, section_offset + front, core::ByteCount{step_end - front}));
+    CRUCIBLE_TRY(committed, commit_part(region_, start_at(core::ByteCount{section_offset + front}),
+                                        core::ByteCount{step_end - front}));
     static_cast<void>(committed);
     front = step_end;
     return core::Unit{};

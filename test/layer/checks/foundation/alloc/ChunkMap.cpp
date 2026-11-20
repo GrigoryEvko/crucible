@@ -37,6 +37,14 @@ static_assert(is_guard_chunk(ChunkIndex{511}));
 static_assert(!is_guard_chunk(ChunkIndex{512}));
 static_assert(is_guard_chunk(ChunkIndex{1023}));
 
+// The two bases and the two lengths of a record are four types, so the door
+// that builds a record cannot swap two of them.  Each has the size of its
+// word.
+static_assert(!std::is_same_v<WindowBase, RegionBase> && !std::is_same_v<WindowLength, RegionLength>);
+static_assert(sizeof(WindowBase) == 8 && sizeof(RegionBase) == 8);
+static_assert(sizeof(WindowLength) == 8 && sizeof(RegionLength) == 8);
+static_assert(!std::is_convertible_v<AddressWord, WindowBase> && !std::is_convertible_v<WindowBase, RegionBase>);
+
 // The map is one word, and a record is five words.  Each copies as words
 // with a trivial copy constructor, and its seal keeps it from a byte image.
 static_assert(sizeof(BiasedChunkMap) == 8);

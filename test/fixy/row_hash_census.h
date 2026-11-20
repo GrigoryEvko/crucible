@@ -468,6 +468,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
                                "names at compile time, and no value"},
     {^^::foundation::alloc, "the layout of an allocation: a count of bytes and an alignment that the allocation door "
                             "takes, words of a request that carry no grade"},
+    {^^::foundation::alloc::side, "the roles of the bases and the lengths of a window record: empty tags that a Side "
+                                  "names at compile time, and no value"},
     {^^::fixy::tags::source, kGradeVocabulary},
     {^^::fixy::tags::trust, kGradeVocabulary},
     {^^::fixy::tags::access, kGradeVocabulary},
