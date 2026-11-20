@@ -145,13 +145,36 @@
 //      bench/bench_thread_scaling.cpp.  The row gives the items of all
 //      threads in one second, the median and the spread of the windows, and
 //      the efficiency over the first row of the workload.
-//   3. The latency: the workers go on, and the main thread runs one op under
-//      Run::measure.  Its report gives p50, p99 and the maximum of one op.
+//   3. The latency: the workers go on, and the main thread runs the op under
+//      Run::measure three times (THE RESOLUTION).  The first report gives
+//      p50, p99 and the maximum of one op.  The second and the third report
+//      time 16 and 64 ops in each sample, and give the quantiles of the
+//      mean of one op in a sample.
 //   4. The stop: each thread stops its ops and waits for each other thread.
 //      Then no thread gives a block to another one, and each thread
 //      releases each block that it holds or that its Mailbox holds.
 //   THE ROUNDS and the rows of one thread have no window: Run::measure times
 //   one round or one op.
+//
+// THE RESOLUTION
+//   The harness reads the TSC before and after each sample.  The TSC of the
+//   bench VM counts in steps of 22 or 23 ticks at 2.2467 GHz: a step of
+//   10 ns.  So each time of one op is a whole count of 10 ns, and a p50 of
+//   30 ns against 40 ns can be one step.  A step falls at a random place in
+//   an op, so the mean of many samples has no such step.  The reports of 16
+//   and of 64 ops in a sample have a step of 0.6 and 0.16 ns.  The p99 of
+//   such a report is the p99 of a mean of 16 or 64 ops, not the p99 of one
+//   op: a slow op adds only its part of the mean.  So read the tail of one
+//   op in the first report, and a change of the p50 below 10 ns in the
+//   second and the third.
+//
+// THE STEAL OF A ROW
+//   The steal column of /proc/stat counts, for each CPU, the time in which
+//   the hypervisor ran other work while the CPU had work, in ticks of 10 ms.
+//   A row with threads reads the column of the CPU of each slot at its start
+//   and after its stop.  A row with steal prints the steal and NOT VALID:
+//   other work of the host took a part of its time.  A pause below 10 ms
+//   reads as no steal, and the pause check of the harness measures it.
 //
 // THE CHECKS
 //   Each thread counts its allocations, its releases and its live bytes.  At
@@ -191,6 +214,8 @@
 //   a window, and the p50 of one op in a row with no window.  A ratio above
 //   1.00 is a row where the base is slower.
 
+#include <crucible/perf/ProcText.h>
+#include <crucible/topology/TextFields.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <foundation/AlignedBytes.h>
@@ -218,14 +243,19 @@ using ::fixy::ByteCount;
 constexpr std::size_t kMaxThreads = 512;
 constexpr std::size_t kMaxRows = 16;
 // The reports and the summaries of one run, at most: each row of each
-// allocator.
-constexpr std::size_t kMaxReports = 1024;
+// allocator at kMaxRows counts of threads, with kLatencyReports reports of
+// each row with a window.
+constexpr std::size_t kMaxReports = 4096;
 constexpr std::uint64_t kWindowNs = 500000000;
 // The samples of one latency report.  The harness keeps them for the JSON
 // tail of the run, so the count bounds the memory of the reports.
 constexpr std::size_t kLatencySamples = 200000;
 constexpr std::size_t kLatencyWarmup = 1000;
 constexpr std::size_t kLatencyMs = 500;
+// The ops of one sample of each latency report of a row with a window (THE
+// RESOLUTION).
+constexpr std::size_t kLatencyReports = 3;
+inline constexpr ::fixy::FixedArray<std::size_t, kLatencyReports> kLatencyBatches{1, 16, 64};
 constexpr std::size_t kRoundSamples = 10000;
 constexpr std::size_t kRoundMs = 1000;
 // The items of a worker between two reads of the phase, and of the main
@@ -381,9 +411,24 @@ enum class Role : std::uint8_t {
 // that one thread takes and another one releases makes the live bytes of
 // each thread wrap, and the sum of all threads is the live bytes of the row
 // modulo 2^64.
-struct Tally {
+//
+// No two counters are adjacent: a word that no door writes lies between
+// them.  With adjacent counters GCC joined the update of two counters into
+// one 16-byte load and one 16-byte store.  Each door updates the live bytes,
+// beside the allocations in a take and beside the releases in a give.  So the
+// 8-byte store of the live bytes of a take could not forward to the 16-byte
+// load of the give after it, and each op of each allocator waited for the
+// store to reach the cache.  GCC joins no two stores with a gap between
+// them, so each load and each store of a counter is one word, and the
+// layout costs no instruction.  A volatile counter also holds one word, but
+// GCC then keeps the dead stores of an op around it, and the workers of a
+// row lost up to 22% of their items.  Each Tally holds its own cache line,
+// so the tallies of two threads in one array share no line.
+struct alignas(64) Tally {
     std::uint64_t allocations = 0;
+    std::uint64_t gap_after_allocations = 0;
     std::uint64_t releases = 0;
+    std::uint64_t gap_after_releases = 0;
     std::uint64_t live_bytes = 0;
 };
 
@@ -766,32 +811,38 @@ namespace bench_alloc {
 
 // Each call of an adapter in a row goes through these doors, which keep the
 // Tally of the thread (THE CHECKS).
-template <AllocatorAdapter A, BlockAlignment Align = BlockAlignment::natural>
-[[nodiscard, gnu::always_inline]] inline BlockOf<A, Align> take_block(Tally& tally, ByteCount bytes) noexcept {
+[[gnu::always_inline]] inline void count_take(Tally& tally, ByteCount bytes) noexcept {
     ++tally.allocations;
     tally.live_bytes += bytes.raw();
+}
+
+[[gnu::always_inline]] inline void count_give(Tally& tally, ByteCount bytes) noexcept {
+    ++tally.releases;
+    tally.live_bytes -= bytes.raw();
+}
+
+template <AllocatorAdapter A, BlockAlignment Align = BlockAlignment::natural>
+[[nodiscard, gnu::always_inline]] inline BlockOf<A, Align> take_block(Tally& tally, ByteCount bytes) noexcept {
+    count_take(tally, bytes);
     return A::template allocate<Align>(bytes);
 }
 
 template <AllocatorAdapter A, BlockAlignment Align = BlockAlignment::natural>
 [[gnu::always_inline]] inline void give_block(Tally& tally, BlockOf<A, Align>&& block) noexcept {
-    ++tally.releases;
-    tally.live_bytes -= A::bytes_of(block).raw();
+    count_give(tally, A::bytes_of(block));
     A::template release<Align>(std::move(block));
 }
 
 template <AllocatorAdapter A, BlockAlignment Align = BlockAlignment::natural>
 [[nodiscard, gnu::always_inline]] inline WrittenOf<A, Align> take_written(Tally& tally, ByteCount bytes,
                                                                           Stamp stamp) noexcept {
-    ++tally.allocations;
-    tally.live_bytes += bytes.raw();
+    count_take(tally, bytes);
     return A::template allocate_written<Align>(bytes, stamp);
 }
 
 template <AllocatorAdapter A, BlockAlignment Align = BlockAlignment::natural>
 [[gnu::always_inline]] inline void give_written(Tally& tally, WrittenOf<A, Align>&& block, Stamp stamp) noexcept {
-    ++tally.releases;
-    tally.live_bytes -= A::bytes_of(block).raw();
+    count_give(tally, A::bytes_of(block));
     A::template release_written<Align>(std::move(block), stamp);
 }
 
@@ -1428,8 +1479,12 @@ struct RowResult {
     bench::WindowSpread windows{};
     std::size_t paused_windows = 0;
     bench::Pause window_pause{};
+    // The steal of the CPUs of the row from its start to its stop (THE STEAL
+    // OF A ROW).
+    std::uint64_t steal_ms = 0;
     MemoryReading memory{};
-    bench::Report latency{};
+    // One report for each batch of kLatencyBatches (THE RESOLUTION).
+    ::fixy::FixedArray<bench::Report, kLatencyReports> latency{};
 };
 
 // The fatal exit of a row whose tallies do not agree (THE CHECKS).
@@ -1528,6 +1583,85 @@ struct RowPlaces {
         return spread.of_slot(slot).expect("a row has at most the slots of the spread");
     }
 };
+
+// ── The steal of a row ─────────────────────────────────────────────────
+
+// The bytes of /proc/stat that a reading of the steal takes.  The line of
+// each CPU comes before the lines of the interrupts, and the lines of 512
+// CPUs take less than 64 KiB.
+constexpr std::size_t kStatBytes = 65536;
+// The steal column counts in ticks of USER_HZ, which is 100 for each second.
+constexpr std::uint64_t kMsPerStealTick = 10;
+// The columns of the line of a CPU before its steal column: user, nice,
+// system, idle, iowait, irq and softirq.
+constexpr std::size_t kColumnsBeforeSteal = 7;
+
+// The steal ticks of the CPU of each slot of a row, or none for a slot whose
+// CPU has no line (THE STEAL OF A ROW).
+using StealTicks = ::fixy::FixedArray<::fixy::Option<std::uint64_t>, kMaxThreads>;
+
+// The CPU and the steal ticks of one line of /proc/stat.
+struct CpuSteal {
+    std::uint64_t cpu = 0;
+    std::uint64_t ticks = 0;
+};
+
+// The CPU and the steal ticks of a line "cpuN user nice ...", or none for
+// each other line, such as the line "cpu" of the sum of all CPUs.
+[[nodiscard]] inline ::fixy::Option<CpuSteal> cpu_steal_of(::fixy::TextView line) noexcept {
+    namespace text = ::crucible::topology::text;
+    namespace proc = ::crucible::perf::proc_text;
+    ::fixy::TextView const word = text::first_word(line);
+    if (word.size() <= 3 || text::head(word, 3) != ::fixy::TextView{"cpu"}) return ::fixy::none;
+    ::fixy::Option<std::uint64_t> const cpu = text::leading_u64(text::tail(word, 3));
+    if (cpu.is_none()) return ::fixy::none;
+    ::fixy::TextView rest = text::tail(line, ::fixy::find(line, ' ').value_or(line.size()));
+    for (std::size_t column = 0; column < kColumnsBeforeSteal; ++column)
+        static_cast<void>(proc::take_decimal(rest));
+    ::fixy::Option<std::uint64_t> const ticks = proc::take_decimal(rest);
+    if (ticks.is_none()) return ::fixy::none;
+    return ::fixy::some(CpuSteal{.cpu = ::fixy::Option<std::uint64_t>{cpu}.value_or(0),
+                                 .ticks = ::fixy::Option<std::uint64_t>{ticks}.value_or(0)});
+}
+
+// The steal ticks of the CPU of each slot of the first threads slots of a
+// row, or none for each slot when /proc/stat does not read.  Complexity:
+// O(the CPUs of the host * threads).
+[[nodiscard]] inline StealTicks read_steal(RowPlaces const& places, ThreadCount threads) noexcept {
+    namespace text = ::crucible::topology::text;
+    StealTicks steal{};
+    ::fixy::Box<::fixy::FixedText<kStatBytes>> stat = ::fixy::mint_box<::fixy::FixedText<kStatBytes>>(bench_alloc());
+    if (::foundation::os::read_file(::fixy::CText{"/proc/stat"}, *stat).is_err()) return steal;
+    ::fixy::TextView rest = stat->view();
+    while (rest.size() > 0) {
+        ::fixy::Option<CpuSteal> const line = cpu_steal_of(text::take_line(rest));
+        if (line.is_none()) continue;
+        CpuSteal const found = ::fixy::Option<CpuSteal>{line}.value_or(CpuSteal{});
+        for (std::uint32_t slot = 0; slot < threads.raw(); ++slot) {
+            bench::CpuId const cpu = places.cpu_of(bench::ThreadSlot{slot});
+            if (cpu.is_valid() && static_cast<std::uint64_t>(cpu.raw()) == found.cpu)
+                *steal.get(slot).expect("a slot of a row is below kMaxThreads") = ::fixy::some(found.ticks);
+        }
+    }
+    return steal;
+}
+
+// The steal of all CPUs of a row in milliseconds, from its two readings.  A
+// slot with no line in one reading adds no steal.
+[[nodiscard]] inline std::uint64_t
+steal_ms_between(::fixy::Side<bench::side::ReadingBefore, StealTicks> before,
+                 ::fixy::Side<bench::side::ReadingAfter, StealTicks> after) noexcept {
+    std::uint64_t ticks = 0;
+    for (::fixy::Index<kMaxThreads> const slot : before.value().indices()) {
+        ::fixy::Option<std::uint64_t> const first = before.value().at(slot);
+        ::fixy::Option<std::uint64_t> const last = after.value().at(slot);
+        if (first.is_none() || last.is_none()) continue;
+        std::uint64_t const start = ::fixy::Option<std::uint64_t>{first}.value_or(0);
+        std::uint64_t const end = ::fixy::Option<std::uint64_t>{last}.value_or(0);
+        ticks += end > start ? end - start : 0;
+    }
+    return ticks * kMsPerStealTick;
+}
 
 // ── The engine of a row with a window ──────────────────────────────────
 
@@ -1683,6 +1817,7 @@ template <AllocatorAdapter A, class W>
 [[nodiscard]] RowResult run_window_row(RowPlaces const& places, ThreadCount threads, Placement placement) {
     ::fixy::Box<RowControl> boxed = ::fixy::mint_box<RowControl>(bench_alloc());
     RowControl& control = *boxed;
+    StealTicks const steal_before = read_steal(places, threads);
     MemoryReading memory{.start = read_resident()};
     typename W::Shared shared = W::mint_shared(threads);
     RawWorkers workers{};
@@ -1722,30 +1857,43 @@ template <AllocatorAdapter A, class W>
         window_mops.at(index) =
             wall_ns == 0 ? 0.0 : static_cast<double>(items.at(index)) * 1000.0 / static_cast<double>(wall_ns);
     }
-    ::fixy::FixedText<64> detail{};
-    static_cast<void>(::fixy::format(detail, "latency of one op, {} threads{}{}", threads.raw(),
-                                     W::kRow == RowKind::pair ? ::fixy::TextView{", "} : ::fixy::TextView{},
-                                     W::kRow == RowKind::pair ? name_of(placement) : ::fixy::TextView{})
-                          .expect("the detail of a report fits in 64 characters"));
     RowResult result{.threads = threads,
                      .placement = placement,
                      .centi_mops = all_wall_ns == 0 ? 0 : all_items * 100000 / all_wall_ns,
                      .windows = bench::spread_of_windows(window_mops.view()),
                      .paused_windows = bench::detail::paused_windows_of(window.lost_ns.view(), window.pause.basis),
                      .window_pause = window.pause};
-    result.latency = run_of(A::kind, W::kRow, detail.view())
-                         .core(main_cpu.raw())
-                         .batch(1)
-                         .samples(kLatencySamples)
-                         .warmup(kLatencyWarmup)
-                         .max_wall_ms(kLatencyMs)
-                         .measure([&op] { op(); });
+    for (::fixy::Index<kLatencyReports> const report : kLatencyBatches.indices()) {
+        std::size_t const batch = kLatencyBatches.at(report);
+        ::fixy::FixedText<24> ops{};
+        if (batch == 1) {
+            static_cast<void>(
+                ::fixy::format(ops, "latency of one op").expect("the ops of a report fit in 24 characters"));
+        } else {
+            static_cast<void>(
+                ::fixy::format(ops, "mean of {} ops", batch).expect("the ops of a report fit in 24 characters"));
+        }
+        ::fixy::FixedText<64> detail{};
+        static_cast<void>(::fixy::format(detail, "{}, {} threads{}{}", ops.view(), threads.raw(),
+                                         W::kRow == RowKind::pair ? ::fixy::TextView{", "} : ::fixy::TextView{},
+                                         W::kRow == RowKind::pair ? name_of(placement) : ::fixy::TextView{})
+                              .expect("the detail of a report fits in 64 characters"));
+        result.latency.at(report) = run_of(A::kind, W::kRow, detail.view())
+                                        .core(main_cpu.raw())
+                                        .batch(batch)
+                                        .samples(kLatencySamples)
+                                        .warmup(kLatencyWarmup)
+                                        .max_wall_ms(kLatencyMs)
+                                        .measure([&op] { op(); });
+    }
     control.phase.phase.store_release(Phase::Stop);
     {
         bench::CoreHold const hold{main_cpu};
         stop_thread<W>(control, shared, local, threads, line_of(control, bench::kMeasuringSlot));
     }
     workers.join();
+    result.steal_ms = steal_ms_between(::fixy::side_as<bench::side::ReadingBefore>(steal_before),
+                                       ::fixy::side_as<bench::side::ReadingAfter>(read_steal(places, threads)));
 
     Tally total{};
     for (std::uint32_t slot = 0; slot < threads.raw(); ++slot) {
@@ -1759,7 +1907,10 @@ template <AllocatorAdapter A, class W>
     // The Mailboxes of the row end before the last reading of the memory.
     { [[maybe_unused]] typename W::Shared const ended{std::move(shared)}; }
     memory.end = read_resident();
-    memory.harness = sample_bytes_of(result.latency);
+    std::size_t harness = 0;
+    for (bench::Report const& report : result.latency)
+        harness += sample_bytes_of(report).raw();
+    memory.harness = ByteCount{harness};
     result.memory = memory;
     return result;
 }
@@ -1788,7 +1939,7 @@ void print_row(RowResult const& row, EfficiencyBase const& base) noexcept {
     std::uint64_t const efficiency = ideal == 0 ? 0 : row.centi_mops * 100 / ideal;
     auto const median = static_cast<std::uint64_t>(row.windows.median * 100.0 + 0.5);
     auto const spread = static_cast<std::uint64_t>(row.windows.spread * 1000.0 + 0.5);
-    bool const is_paused = row.window_pause.is_over_bound() || row.paused_windows > 0;
+    bool const is_paused = row.window_pause.is_over_bound() || row.paused_windows > 0 || row.steal_ms > 0;
     bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out, "  {} threads{}{}: {}.{}{} Mitems/s, efficiency {}.{}{}", row.threads.raw(),
                    W::kRow == RowKind::pair ? ::fixy::TextView{", consumer in the "} : ::fixy::TextView{},
@@ -1797,10 +1948,12 @@ void print_row(RowResult const& row, EfficiencyBase const& base) noexcept {
                    efficiency % 10);
     ::fixy::report(::fixy::Sink::Out, ", {} windows: median {}.{}{} Mitems/s, spread {}.{}%", row.windows.windows,
                    median / 100, median % 100 / 10, median % 10, spread / 10, spread % 10);
-    ::fixy::report(::fixy::Sink::Out, ", window pause {} us, {} paused windows{}\n", row.window_pause.own_ns() / 1000,
-                   row.paused_windows, is_paused ? ::fixy::TextView{"  NOT VALID"} : ::fixy::TextView{});
+    ::fixy::report(::fixy::Sink::Out, ", window pause {} us, {} paused windows, steal {} ms{}\n",
+                   row.window_pause.own_ns() / 1000, row.paused_windows, row.steal_ms,
+                   is_paused ? ::fixy::TextView{"  NOT VALID"} : ::fixy::TextView{});
     print_memory(row.memory);
-    row.latency.print_text();
+    for (bench::Report const& report : row.latency)
+        report.print_text();
 }
 
 // The counts of threads of a workload: an xmalloc row has pairs, so it takes
@@ -1856,7 +2009,8 @@ void run_workload_rows(bench::Spread const& spread, ::fixy::View<ThreadCount con
                                     .threads = row.threads,
                                     .placement = row.placement,
                                     .item_ns = item_ns});
-        bench::add_report(record.reports, std::move(row.latency));
+        for (bench::Report& report : row.latency)
+            bench::add_report(record.reports, std::move(report));
     }
 }
 
@@ -1972,7 +2126,9 @@ void run_round_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const>
     bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out, "\n=== {} {} ===\n", name_of(A::kind), name_of(Kind));
     bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a run has the slot of the main thread");
+    RowPlaces const places{.spread = spread};
     for (ThreadCount const threads : counts) {
+        StealTicks const steal_before = read_steal(places, threads);
         MemoryReading memory{.start = read_resident()};
         ::fixy::Box<typename Round::Shared> shared = Round::mint_shared(threads);
         ::fixy::FixedText<64> detail{};
@@ -2001,9 +2157,14 @@ void run_round_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const>
         std::uint64_t const items = std::uint64_t{threads.raw()} * Round::kReplaces;
         double const item_ns = report.pct.p50 / static_cast<double>(items);
         auto const centi_ns = static_cast<std::uint64_t>(item_ns * 100.0 + 0.5);
+        std::uint64_t const steal_ms =
+            steal_ms_between(::fixy::side_as<bench::side::ReadingBefore>(steal_before),
+                             ::fixy::side_as<bench::side::ReadingAfter>(read_steal(places, threads)));
         bench::detail::flush_standard_output();
-        ::fixy::report(::fixy::Sink::Out, "  {} threads: {}.{}{} ns for each replace at the p50 of a round\n",
-                       threads.raw(), centi_ns / 100, centi_ns % 100 / 10, centi_ns % 10);
+        ::fixy::report(::fixy::Sink::Out,
+                       "  {} threads: {}.{}{} ns for each replace at the p50 of a round, steal {} ms{}\n",
+                       threads.raw(), centi_ns / 100, centi_ns % 100 / 10, centi_ns % 10, steal_ms,
+                       steal_ms > 0 ? ::fixy::TextView{"  NOT VALID"} : ::fixy::TextView{});
         print_memory(memory);
         report.print_text();
         add_summary(record, Summary{.allocator = A::kind, .row = Kind, .threads = threads, .item_ns = item_ns});

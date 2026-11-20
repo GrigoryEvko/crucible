@@ -54,6 +54,8 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
     Channel channel{};
     ::fixy::Box<RowControl> boxed = ::fixy::mint_box<RowControl>(bench_alloc());
     RowControl& control = *boxed;
+    RowPlaces const places{.spread = spread, .consumer = ::fixy::some(consumer_cpu)};
+    StealTicks const steal_before = read_steal(places, ThreadCount{2});
     MemoryReading memory{.start = read_resident()};
     typename Channel::ProducerHandle producer = channel.producer(std::move(producer_perm));
     // Each Box that the producer minted ends in the consumer, or in the
@@ -90,22 +92,30 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
                 wall_ns == 0 ? 0.0
                              : static_cast<double>(window.items.at(index)) * 1000.0 / static_cast<double>(wall_ns);
         }
-        ::fixy::FixedText<64> detail{};
-        static_cast<void>(::fixy::format(detail, "latency of one push, 2 threads, {}", name_of(placement))
-                              .expect("the detail of a report fits in 64 characters"));
         RowResult result{.threads = ThreadCount{2},
                          .placement = placement,
                          .centi_mops = all_wall_ns == 0 ? 0 : all_items * 100000 / all_wall_ns,
                          .windows = bench::spread_of_windows(window_mops.view()),
                          .paused_windows = bench::detail::paused_windows_of(window.lost_ns.view(), window.pause.basis),
                          .window_pause = window.pause};
-        result.latency = run_of(AllocatorKind::base, RowKind::box_channel, detail.view())
-                             .core(main_cpu.raw())
-                             .batch(1)
-                             .samples(kLatencySamples)
-                             .warmup(kLatencyWarmup)
-                             .max_wall_ms(kLatencyMs)
-                             .measure([&push] { push(); });
+        for (::fixy::Index<kLatencyReports> const report : kLatencyBatches.indices()) {
+            std::size_t const batch = kLatencyBatches.at(report);
+            ::fixy::FixedText<64> detail{};
+            if (batch == 1) {
+                static_cast<void>(::fixy::format(detail, "latency of one push, 2 threads, {}", name_of(placement))
+                                      .expect("the detail of a report fits in 64 characters"));
+            } else {
+                static_cast<void>(::fixy::format(detail, "mean of {} pushes, 2 threads, {}", batch, name_of(placement))
+                                      .expect("the detail of a report fits in 64 characters"));
+            }
+            result.latency.at(report) = run_of(AllocatorKind::base, RowKind::box_channel, detail.view())
+                                            .core(main_cpu.raw())
+                                            .batch(batch)
+                                            .samples(kLatencySamples)
+                                            .warmup(kLatencyWarmup)
+                                            .max_wall_ms(kLatencyMs)
+                                            .measure([&push] { push(); });
+        }
         control.phase.phase.store_release(Phase::Stop);
         return result;
     };
@@ -148,8 +158,13 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
         ::fixy::fatal("the box channel row minted {} Box values, the consumer dropped {} and the producer kept {}",
                       minted, dropped, kept);
     memory.end = read_resident();
-    memory.harness = sample_bytes_of(result.latency);
+    std::size_t harness = 0;
+    for (bench::Report const& report : result.latency)
+        harness += sample_bytes_of(report).raw();
+    memory.harness = ByteCount{harness};
     result.memory = memory;
+    result.steal_ms = steal_ms_between(::fixy::side_as<bench::side::ReadingBefore>(steal_before),
+                                       ::fixy::side_as<bench::side::ReadingAfter>(read_steal(places, ThreadCount{2})));
     return result;
 }
 
@@ -180,7 +195,8 @@ void run_box_channel_rows(bench::Spread const& spread, RunRecord& record) {
                                     .threads = row.threads,
                                     .placement = row.placement,
                                     .item_ns = item_ns});
-        bench::add_report(record.reports, std::move(row.latency));
+        for (bench::Report& report : row.latency)
+            bench::add_report(record.reports, std::move(report));
     }
 }
 
