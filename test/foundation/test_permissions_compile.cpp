@@ -243,7 +243,7 @@ void test_perm_set_compile() {
     static_assert(three_size == 3);
 
     constexpr auto name = perm_set_name<PermSet<A_tag, B_tag>>();
-    static_assert(!name.empty());
+    static_assert(name.size() != 0);
 
     static_assert(perm_set_equal(^^perm_set_canonicalize_t<PermSet<A_tag, B_tag>>,
                                  ^^perm_set_canonicalize_t<PermSet<B_tag, A_tag>>));

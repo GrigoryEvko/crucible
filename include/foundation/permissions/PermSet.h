@@ -6,6 +6,8 @@
 // difference.
 
 #include <foundation/Platform.h>
+#include <foundation/core/Text.h>
+#include <foundation/core/Verbs.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/permissions/Permission.h>
 
@@ -13,7 +15,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -183,11 +184,12 @@ using perm_set_canonicalize_t = PS;
 
 // The string a reflected display name produces depends on the including
 // translation unit's context, so an assertion over it matches a suffix
-// rather than the whole name.
+// rather than the whole name.  The text has static storage and a zero
+// after its last character.
 
 template <typename PS>
-[[nodiscard]] consteval std::string_view perm_set_name() noexcept {
-    return std::meta::display_string_of(^^PS);
+[[nodiscard]] consteval ::foundation::core::TextView perm_set_name() noexcept {
+    return ::foundation::core::detail::static_text_<^^PS>(std::meta::display_string_of(^^PS));
 }
 
 }  // namespace foundation::permissions
