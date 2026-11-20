@@ -622,7 +622,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     const RegionLink published = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
     last_published_ = ConstRegionLink::some(::fixy::erase_brand(::fixy::to(region)));
 
-    memory.published = PublishedRegion{.region = published, .reset_point = reset_point};
+    memory.published = PublishedRegion{.region = last_published_, .reset_point = reset_point};
 
     uncompiled_regions_.push(region);
     active_region_.store_release(published);

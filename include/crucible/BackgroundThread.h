@@ -205,9 +205,11 @@ public:
     // A region that the publish stage gives to its owner, and the point of
     // the last reset that the detect stage applied before the first op of
     // the region.  The region store holds the record with its region, so
-    // the address of the record lives as long as the region.
+    // the address of the record lives as long as the region.  No code writes
+    // a published region, so the record names a const region, and a reader
+    // of the record on another thread reads it only.
     struct PublishedRegion {
-        RegionLink region{};
+        ConstRegionLink region{};
         StreamPoint reset_point{};
     };
 

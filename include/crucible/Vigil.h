@@ -833,7 +833,7 @@ private:
             // The foreground reads a region of the pipeline only as const.
             if (published->reset_point == bg_.requested_reset())
                 return ConstRegionLink::some(
-                    RegionLink{published->region}.expect("the publish stage gives a record of a region"));
+                    ConstRegionLink{published->region}.expect("the publish stage gives a record of a region"));
         }
         return taken_region_.load_acquire();
     }
@@ -1204,7 +1204,8 @@ private:
     [[gnu::cold]] void cache_pending_region_() {
         const PendingRegion stale = pending_region_.exchange_acq_rel(::fixy::none);
         for (const auto& published : stale)
-            region_cache_.insert(*RegionLink{published->region}.expect("the publish stage gives a record of a region"));
+            region_cache_.insert(
+                *ConstRegionLink{published->region}.expect("the publish stage gives a record of a region"));
     }
 
     // Moves the published region into foreground-only alignment state.  It
@@ -1224,7 +1225,8 @@ private:
     }
 
     [[gnu::cold]] void take_published_region_(BackgroundThread::PublishedRegion const& published) {
-        const RegionNode& region = *RegionLink{published.region}.expect("the publish stage gives a record of a region");
+        const RegionNode& region =
+            *ConstRegionLink{published.region}.expect("the publish stage gives a record of a region");
         if (published.reset_point != bg_.requested_reset()) {
             region_cache_.insert(region);
             return;

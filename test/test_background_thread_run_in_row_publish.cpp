@@ -73,8 +73,8 @@ struct Gate {
 
 void Gate::on_region_ready(eff::Bg const&, BackgroundThread::PublishStage const&,
                            BackgroundThread::PublishedRegion const& ready) noexcept {
-    const ::fixy::Ref<crucible::RegionNode> region =
-        crucible::RegionLink{ready.region}.expect("the publish stage gives a record of a region");
+    const ::fixy::Ref<crucible::RegionNode const> region =
+        crucible::ConstRegionLink{ready.region}.expect("the publish stage gives a record of a region");
 
     // The hash the background thread folded while streaming the ops must
     // equal the hash the canonical span fold produces over the same ops,

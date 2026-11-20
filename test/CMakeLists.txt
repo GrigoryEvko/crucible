@@ -2144,6 +2144,11 @@ crucible_neg_compile_test(neg_published_region_writes_through_an_arm
 crucible_neg_compile_test(neg_published_region_writes_through_a_loop_body
   "invalid initialization of reference of type .const foundation::core::Ref<crucible::TraceNode>&. from expression of type .foundation::core::Ref<const crucible::TraceNode"
   "neg_published_region_writes_through_a_loop_body.cpp:[0-9]+:[0-9]+: error")
+# The record of a published region names a const region, so a reader of the
+# record on another thread cannot write the region.
+crucible_neg_compile_test(neg_published_region_write_through_the_record
+  "passing .const crucible::ContentHash. as .this. argument discards qualifiers"
+  "neg_published_region_write_through_the_record.cpp:[0-9]+:[0-9]+: error")
 
 # CDAG_VERSION is a fixy::Tagged<uint32_t, source::FormatVersion>.
 # Disk-read header versions enter as source::External and are compared

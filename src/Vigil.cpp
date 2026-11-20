@@ -145,7 +145,8 @@ void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode const& region) {
 
 void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
                             BackgroundThread::PublishedRegion const& published) noexcept {
-    RegionNode& region = *RegionLink{published.region}.expect("the publish stage gives a record of a region");
+    RegionNode const& region =
+        *ConstRegionLink{published.region}.expect("the publish stage gives a record of a region");
     // bump returns the previous value, which is the index this call
     // reserved.  The background thread is the sole writer.
     const uint64_t step = step_.bump();
@@ -180,8 +181,7 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     tx_log_.for_each_region(stage, [&marks](ConstRegionLink held) noexcept { marks.hold(held); });
     const PendingRegion handed = pending_region_.load_acquire();
     for (const auto& record : handed)
-        marks.handed =
-            ConstRegionLink::some(RegionLink{record->region}.expect("the publish stage gives a record of a region"));
+        marks.handed = record->region;
     mark_held_regions_(marks);
     bg_.set_region_marks(stage, marks);
 
