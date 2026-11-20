@@ -357,12 +357,12 @@ test/cntp_neg/ | opted-out | 1 | PROBE: the fixture gives the swap a resource th
 test/cntp_neg/ | region | 1 | PROBE: the fixture gives the swap a resource that holds a raw pointer | -
 test/cog_neg/ | opted-out | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
 test/cog_neg/ | region | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
-test/ct/ | c-array-object | 5 | - | -
-test/ct/ | c-library-call | 14 | - | -
-test/ct/ | inline-asm | 5 | - | -
-test/ct/ | raw-pointer-object | 4 | - | -
-test/ct/ | std-entity | 14 | - | -
-test/ct/ | std-object | 8 | - | -
+test/ct/ | c-library-call | 1 | - | -
+test/ct/ | opted-out | 8 | ABI: a client request of valgrind is inline asm over a C array of words | -
+test/ct/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
+test/ct/ | raw-pointer-object | 1 | - | -
+test/ct/ | region | 1 | ABI: a client request of valgrind is inline asm over a C array of words | -
+test/ct/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 test/dag_neg/ | opted-out | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/dag_neg/ | region | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
