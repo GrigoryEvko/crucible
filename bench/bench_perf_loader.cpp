@@ -125,16 +125,21 @@ namespace {
 // The kernel writes the stamp of a slot last, so an acquire load of the stamp
 // orders the read of the rest of the slot.  Capacity is a power of two.  The
 // body is inline in each drain row, so the row times the loads and no call.
-// Each read of a slot checks the slot against the count of the view.
+// The window of the fixed extent Capacity checks the count of the view one
+// time, and its type holds the count.  The mask keeps each slot below
+// Capacity, so a read of a slot takes no check.  A view of fewer than
+// Capacity slots gives no window and the count zero.
 template <std::uint64_t Capacity, class Events>
 [[nodiscard, gnu::always_inline]] inline std::uint64_t
 count_live_newest(Events const& view, ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end) noexcept {
     constexpr std::uint64_t mask = Capacity - 1;
     std::uint64_t live = 0;
-    for (std::uint64_t i = 0; i < 64; ++i) {
-        const std::uint64_t slot = (end.value() - 1 - i) & mask;
-        for (auto const event : view.get(slot)) {
-            if (__atomic_load_n(&event->ts_ns, __ATOMIC_ACQUIRE) != 0) ++live;
+    for (auto const ring : view.template window<Capacity>(0)) {
+        for (std::uint64_t i = 0; i < 64; ++i) {
+            const std::uint64_t slot = (end.value() - 1 - i) & mask;
+            for (auto const event : ring.get(slot)) {
+                if (__atomic_load_n(&event->ts_ns, __ATOMIC_ACQUIRE) != 0) ++live;
+            }
         }
     }
     return live;
@@ -143,21 +148,24 @@ count_live_newest(Events const& view, ::fixy::Side<bench::side::ReadingAfter, st
 // The count of the events with a stamp that is not zero from the slot of pre
 // up to post in a timeline ring of Capacity slots, at most Capacity of them,
 // oldest first.  When the window holds more than Capacity new events, the
-// ring wrote over the older ones, and the count stops at Capacity.
-// Complexity: linear in the window.
+// ring wrote over the older ones, and the count stops at Capacity.  The
+// window of the fixed extent Capacity holds the count in its type, as in
+// count_live_newest, so a read of a slot takes no check.  Complexity: linear
+// in the window.
 template <std::uint64_t Capacity, class Events>
 [[nodiscard]] std::size_t count_live_window(Events const& events,
                                             ::fixy::Side<bench::side::ReadingBefore, std::uint64_t> pre,
                                             ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> post) noexcept {
-    if (events.size() == 0) return 0;
     constexpr std::uint64_t mask = Capacity - 1;
     const std::uint64_t delta = (post.value() >= pre.value()) ? (post.value() - pre.value()) : 0;
     const std::size_t to_walk = (delta > Capacity) ? Capacity : static_cast<std::size_t>(delta);
     std::size_t live = 0;
-    for (std::size_t i = 0; i < to_walk; ++i) {
-        const std::uint64_t slot = (pre.value() + i) & mask;
-        for (auto const event : events.get(slot)) {
-            if (__atomic_load_n(&event->ts_ns, __ATOMIC_ACQUIRE) != 0) ++live;
+    for (auto const ring : events.template window<Capacity>(0)) {
+        for (std::size_t i = 0; i < to_walk; ++i) {
+            const std::uint64_t slot = (pre.value() + i) & mask;
+            for (auto const event : ring.get(slot)) {
+                if (__atomic_load_n(&event->ts_ns, __ATOMIC_ACQUIRE) != 0) ++live;
+            }
         }
     }
     return live;

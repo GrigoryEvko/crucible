@@ -1662,22 +1662,27 @@ namespace detail {
 // of SchedSwitch, at most its capacity, newest first, so a window that the
 // ring wrapped reads the newest events.  An event whose stamp reads zero is
 // not written yet, and it does not count.  The acquire load of the stamp
-// pairs with the compiler barrier of the BPF program before its store.
-// Complexity: linear in the events of the window.
+// pairs with the compiler barrier of the BPF program before its store.  The
+// window of the fixed extent of the ring checks the count of the view one
+// time, and the mask keeps each slot below it, so a read of a slot takes no
+// check.  A view of fewer slots than the ring gives no spike.  Complexity:
+// linear in the events of the window.
 [[nodiscard]] inline OffCpuTop top_offcpu_of(::fixy::View<const ::crucible::perf::TimelineSchedEvent> view,
                                              ::fixy::Side<side::ReadingBefore, std::uint64_t> pre,
                                              ::fixy::Side<side::ReadingAfter, std::uint64_t> post) noexcept {
     OffCpuTop top{};
-    if (view.size() == 0 || post.value() <= pre.value()) return top;
+    if (post.value() <= pre.value()) return top;
     const uint64_t window_size =
         ::fixy::min(post.value() - pre.value(), static_cast<uint64_t>(::crucible::perf::TIMELINE_CAPACITY));
-    for (uint64_t i = 0; i < window_size; ++i) {
-        const uint64_t global_idx = post.value() - 1 - i;
-        const uint32_t slot = static_cast<uint32_t>(global_idx & ::crucible::perf::TIMELINE_MASK);
-        for (auto const event : view.get(slot)) {
-            const uint64_t ts = __atomic_load_n(&event->ts_ns, __ATOMIC_ACQUIRE);
-            if (ts == 0) continue;
-            top.keep(OffCpuSpike{.off_ns = event->off_cpu_ns, .cpu = event->on_cpu});
+    for (auto const ring : view.window<::crucible::perf::TIMELINE_CAPACITY>(0)) {
+        for (uint64_t i = 0; i < window_size; ++i) {
+            const uint64_t global_idx = post.value() - 1 - i;
+            const uint32_t slot = static_cast<uint32_t>(global_idx & ::crucible::perf::TIMELINE_MASK);
+            for (auto const event : ring.get(slot)) {
+                const uint64_t ts = __atomic_load_n(&event->ts_ns, __ATOMIC_ACQUIRE);
+                if (ts == 0) continue;
+                top.keep(OffCpuSpike{.off_ns = event->off_cpu_ns, .cpu = event->on_cpu});
+            }
         }
     }
     return top;
