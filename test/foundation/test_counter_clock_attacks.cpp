@@ -19,6 +19,7 @@
 #include <foundation/algebra/lattices/HappensBefore.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
+#include <foundation/core/Text.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -29,7 +30,6 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 
 namespace {
@@ -438,7 +438,7 @@ void attack_clock_against_the_causal_order() {
 // the two apart.
 namespace test_counter_clock_types {
 struct forged_epoch_name {
-    static constexpr std::string_view lattice_name = "EpochLattice";
+    static constexpr ::foundation::core::TextView lattice_name = "EpochLattice";
     static constexpr ::foundation::algebra::ClaimOrientation claim_orientation =
         ::foundation::algebra::ClaimOrientation::stronger_is_higher;
 };
@@ -457,7 +457,7 @@ static_assert(ForgedEpochLattice::image_axis() != fl::EpochLattice::image_axis()
 // A tag in an unnamed namespace has no source path: every translation unit
 // has its own such tag under one name.  Its counter has no image door.
 struct hidden_axis {
-    static constexpr std::string_view lattice_name = "HiddenAxis";
+    static constexpr ::foundation::core::TextView lattice_name = "HiddenAxis";
     static constexpr fa::ClaimOrientation claim_orientation = fa::ClaimOrientation::weaker_is_higher;
 };
 template <typename L>

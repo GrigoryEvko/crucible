@@ -4,6 +4,7 @@
 
 #include <foundation/Lifetime.h>
 #include <foundation/core/Number.h>
+#include <foundation/core/Text.h>
 
 namespace foundation::algebra::lattices {
 
@@ -162,7 +163,7 @@ static_assert(BitsBudgetLattice::image_axis() == 0xcc6bdfaca385eca3ULL);
 // holds no unnamed namespace.
 template <int Width>
 struct templated_axis {
-    static constexpr std::string_view lattice_name = "TemplatedAxis";
+    static constexpr ::foundation::core::TextView lattice_name = "TemplatedAxis";
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
 };
 template <typename L>
@@ -228,10 +229,10 @@ static_assert(!GradableLattice<EpochLattice> && !GradableLattice<GenerationLatti
 
 // A tag that states no orientation is not a counter tag.
 struct silent_tag {
-    static constexpr std::string_view lattice_name = "Silent";
+    static constexpr ::foundation::core::TextView lattice_name = "Silent";
 };
 struct unstated_tag {
-    static constexpr std::string_view lattice_name = "Unstated";
+    static constexpr ::foundation::core::TextView lattice_name = "Unstated";
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::unstated;
 };
 static_assert(!CounterTag<silent_tag> && !CounterTag<unstated_tag>);

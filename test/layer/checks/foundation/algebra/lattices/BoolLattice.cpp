@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/BoolLattice.h>
 
+#include <foundation/core/Algorithms.h>
+
 namespace foundation::algebra::lattices {
 
 namespace detail::bool_lattice_self_test {
@@ -27,9 +29,9 @@ static_assert(verify_bounded_lattice_axioms_at<BoolLattice<non_zero>>({}, {}, {}
 // depending on the scope chain of the translation unit doing the
 // including.  Match with ends_with, never with ==, or these assertions
 // hold in one translation unit and fail in the next.
-static_assert(BoolLattice<positive>::name().ends_with("positive"));
-static_assert(BoolLattice<non_negative>::name().ends_with("non_negative"));
-static_assert(BoolLattice<non_zero>::name().ends_with("non_zero"));
+static_assert(::foundation::core::ends_with(BoolLattice<positive>::name(), "positive"));
+static_assert(::foundation::core::ends_with(BoolLattice<non_negative>::name(), "non_negative"));
+static_assert(::foundation::core::ends_with(BoolLattice<non_zero>::name(), "non_zero"));
 
 static_assert(std::is_same_v<BoolLattice<positive>::predicate_type, positive>);
 static_assert(std::is_same_v<BoolLattice<positive>::element_type::predicate_type, positive>);

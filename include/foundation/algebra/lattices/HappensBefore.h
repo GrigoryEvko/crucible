@@ -43,6 +43,7 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
@@ -245,7 +246,7 @@ struct HappensBeforeLattice {
         return element_type{slots};
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "HappensBeforeLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "HappensBeforeLattice"; }
 
 private:
     [[nodiscard]] static consteval std::string_view protocol_path_() noexcept

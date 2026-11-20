@@ -88,7 +88,7 @@ enum class ReversedTier : std::uint8_t {
 struct ReversedChainLattice : ChainLatticeOps<ReversedTier> {
     [[nodiscard]] static constexpr ReversedTier bottom() noexcept { return ReversedTier::Lo; }
     [[nodiscard]] static constexpr ReversedTier top() noexcept { return ReversedTier::Hi; }
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "ReversedChainLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "ReversedChainLattice"; }
 
     template <ReversedTier T>
     struct At : PinnedAt<ReversedChainLattice, T> {

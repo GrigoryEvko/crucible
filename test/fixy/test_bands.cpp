@@ -10,6 +10,7 @@
 // tier is covered the moment it is declared.
 
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/GradedTrait.h>
@@ -20,7 +21,6 @@
 #include <cstdio>
 #include <memory>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -68,7 +68,7 @@ template <typename L, template <auto, class> class Band>
         if (BInt::modality != fa::ModalityKind::Absolute) return false;
         if (BInt::modality_name() != "Absolute") return false;
         if (BInt::lattice_name() != L::template At<tier>::name()) return false;
-        if (!BInt::value_type_name().ends_with("int")) return false;
+        if (!::fixy::ends_with(BInt::value_type_name(), "int")) return false;
         if (!std::is_same_v<typename BInt::value_type, int>) return false;
         if (!std::is_same_v<typename BInt::lattice_type, typename L::template At<tier>>) return false;
         if (!fixy::IsBand<BInt>) return false;

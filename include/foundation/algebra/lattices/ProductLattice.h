@@ -14,9 +14,9 @@
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/BoolLattice.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
+#include <foundation/core/Text.h>
 
 #include <cstddef>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -98,7 +98,7 @@ struct ProductLattice<L1, L2> {
     // pays compile time for a diagnostic the carrier's reflected display
     // already gives.  A formatter that wants the components reads the
     // first_lattice and second_lattice typedefs instead.
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "Product<L1xL2>"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "Product<L1xL2>"; }
 };
 
 template <>
@@ -113,7 +113,7 @@ struct ProductLattice<> {
     [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
     [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "Product<>"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "Product<>"; }
 };
 
 // The N-ary product stores one base class per component rather than a
@@ -223,7 +223,7 @@ struct ProductLattice<Ls...> {
         return result;
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "Product<L1x...xLn>"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "Product<L1x...xLn>"; }
 };
 
 namespace detail {
@@ -243,7 +243,7 @@ struct U8MinMax {
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return a <= b; }
     [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept { return a >= b ? a : b; }
     [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept { return a <= b ? a : b; }
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "U8MinMax"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "U8MinMax"; }
 };
 
 using P_u8u8 = ProductLattice<U8MinMax, U8MinMax>;

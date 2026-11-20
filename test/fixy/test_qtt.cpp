@@ -9,6 +9,7 @@
 // here they are absent by construction, which is what the size and
 // triviality claims below are worth.
 
+#include <fixy/Core.h>
 #include <fixy/Qtt.h>
 
 #include <foundation/algebra/GradedTrait.h>
@@ -102,8 +103,8 @@ static_assert(Linear<int>::lattice_name() == "QttSemiring::At<1>");
 static_assert(Affine<int>::lattice_name()
               == "QttSemiring::At<\xE2\x89\xA4"
                  "1>");
-static_assert(Linear<int>::value_type_name().ends_with("int"));
-static_assert(Affine<int>::value_type_name().ends_with("int"));
+static_assert(::fixy::ends_with(Linear<int>::value_type_name(), "int"));
+static_assert(::fixy::ends_with(Affine<int>::value_type_name(), "int"));
 static_assert(std::is_same_v<Linear<int>::lattice_type, fa::lattices::qtt::LinearGrade>);
 static_assert(std::is_same_v<Affine<int>::lattice_type, fa::lattices::qtt::AffineGrade>);
 static_assert(Linear<int>::modality == fa::ModalityKind::Absolute);

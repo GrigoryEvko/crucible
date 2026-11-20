@@ -37,7 +37,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -220,18 +219,18 @@ static_assert(!std::is_same_v<cipher_tier::Hot<det_safe::Pure<int>>, det_safe::P
 // type depends on the surrounding context, so these match a suffix and
 // not the whole string.
 
-static_assert(Linear<int>::value_type_name().ends_with("int"));
-static_assert(Affine<int>::value_type_name().ends_with("int"));
-static_assert(Refined<positive_local, int>::value_type_name().ends_with("int"));
-static_assert(SealedRefined<positive_local, int>::value_type_name().ends_with("int"));
-static_assert(Tagged<int, FromUser>::value_type_name().ends_with("int"));
-static_assert(Secret<int>::value_type_name().ends_with("int"));
-static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
-              || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
-static_assert(Stale<int>::value_type_name().ends_with("int"));
-static_assert(det_safe::Pure<int>::value_type_name().ends_with("int"));
-static_assert(numerical_tier::Bitexact<double>::value_type_name().ends_with("double"));
-static_assert(RecipeSpec<double>::value_type_name().ends_with("double"));
+static_assert(ends_with(Linear<int>::value_type_name(), "int"));
+static_assert(ends_with(Affine<int>::value_type_name(), "int"));
+static_assert(ends_with(Refined<positive_local, int>::value_type_name(), "int"));
+static_assert(ends_with(SealedRefined<positive_local, int>::value_type_name(), "int"));
+static_assert(ends_with(Tagged<int, FromUser>::value_type_name(), "int"));
+static_assert(ends_with(Secret<int>::value_type_name(), "int"));
+static_assert(ends_with(Monotonic<std::uint64_t>::value_type_name(), "uint64_t")
+              || ends_with(Monotonic<std::uint64_t>::value_type_name(), "long unsigned int"));
+static_assert(ends_with(Stale<int>::value_type_name(), "int"));
+static_assert(ends_with(det_safe::Pure<int>::value_type_name(), "int"));
+static_assert(ends_with(numerical_tier::Bitexact<double>::value_type_name(), "double"));
+static_assert(ends_with(RecipeSpec<double>::value_type_name(), "double"));
 
 // graded_type is public on every wrapper.  A refactor that moves it
 // back into a private section makes the name ill-formed here.
@@ -282,7 +281,7 @@ static_assert(fa::is_graded_wrapper_v<Linear<int>>);
 static_assert(fa::is_graded_wrapper_v<Stale<int>>);
 static_assert(!fa::is_graded_wrapper_v<int>);
 static_assert(!fa::is_graded_wrapper_v<void*>);
-static_assert(!fa::is_graded_wrapper_v<std::string_view>);
+static_assert(!fa::is_graded_wrapper_v<TextView>);
 
 // A class that forwards the whole surface of a real substrate and names
 // no lattice_type is not a wrapper.  The same class with lattice_type is
@@ -291,8 +290,8 @@ struct NamesNoLattice {
     using value_type = int;
     using graded_type = Linear<int>::graded_type;
     static constexpr fa::ModalityKind modality = graded_type::modality;
-    static consteval std::string_view value_type_name() noexcept { return graded_type::value_type_name(); }
-    static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+    static consteval TextView value_type_name() noexcept { return graded_type::value_type_name(); }
+    static consteval TextView lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 struct NamesTheLattice : NamesNoLattice {
     using lattice_type = graded_type::lattice_type;

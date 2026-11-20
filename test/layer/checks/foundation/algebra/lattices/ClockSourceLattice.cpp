@@ -135,7 +135,7 @@ static_assert(equivalent<ClockSourceLattice>(clock_source_project(ClockSource::M
               "differ only in whether a time daemon slews them, which no axis here "
               "models; their identities stay distinct one layer up.");
 
-static_assert(ClockSourceLattice::name() == std::string_view{"ClockSourceLattice"},
+static_assert(ClockSourceLattice::name() == ::foundation::core::TextView{"ClockSourceLattice"},
               "name() must return this composite's own name, not the generic one "
               "inherited from the product.");
 
@@ -171,7 +171,7 @@ static_assert(verify_pinned_at<ClockSourceLattice, ClockSource>(),
 static_assert(ClockSourceLattice::At<ClockSource::Boot>::source == ClockSource::Boot);
 static_assert(ClockSourceLattice::At<ClockSource::Realtime>::source == ClockSource::Realtime);
 static_assert(ClockSourceLattice::At<ClockSource::TscRaw>::name()
-              == std::string_view{"ClockSourceLattice::At<TscRaw>"});
+              == ::foundation::core::TextView{"ClockSourceLattice::At<TscRaw>"});
 static_assert(ClockSourceLattice::At<static_cast<ClockSource>(200)>::name() == "ClockSourceLattice::At<?>");
 
 static_assert(sizeof(foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute,

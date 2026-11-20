@@ -40,6 +40,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
 
@@ -82,14 +83,15 @@ inline constexpr std::string_view unknown_qtt_grade_name = "<unknown QttGrade>";
 namespace detail {
 
 // "QttSemiring::At<symbol>", or "QttSemiring::At<?>" for a value outside
-// the enum.  The text lives in static storage.
+// the enum.  The text lives in static storage with a zero after its last
+// character.
 template <QttGrade Grade>
-[[nodiscard]] consteval std::string_view make_qtt_at_name() {
+[[nodiscard]] consteval ::foundation::core::TextView make_qtt_at_name() {
     const std::string_view symbol = qtt_grade_name(Grade);
     ::foundation::reflect::anchored_t<std::meta::reflect_constant(Grade), std::string> text{"QttSemiring::At<"};
     text += symbol == unknown_qtt_grade_name ? std::string_view{"?"} : symbol;
     text += '>';
-    return std::define_static_string(text);
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }
 
 }  // namespace detail
@@ -146,7 +148,9 @@ struct QttSemiring {
     struct At : PinnedAt<QttSemiring, Grade> {
         static constexpr QttGrade grade = Grade;
 
-        [[nodiscard]] static consteval std::string_view name() noexcept { return detail::make_qtt_at_name<Grade>(); }
+        [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept {
+            return detail::make_qtt_at_name<Grade>();
+        }
     };
 };
 

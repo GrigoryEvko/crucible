@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/TrustLattice.h>
 
+#include <foundation/core/Algorithms.h>
+
 namespace foundation::algebra::lattices {
 
 namespace detail::trust_lattice_self_test {
@@ -73,13 +75,13 @@ static_assert(!std::is_same_v<TrustLattice<version::V<1>>, TrustLattice<version:
 // depending on the scope chain of the translation unit doing the
 // including.  Match with ends_with, never with ==, or these assertions
 // hold in one translation unit and fail in the next.
-static_assert(TrustLattice<source::FromUser>::name().ends_with("FromUser"));
-static_assert(TrustLattice<source::Sanitized>::name().ends_with("Sanitized"));
-static_assert(TrustLattice<trust::Verified>::name().ends_with("Verified"));
-static_assert(TrustLattice<access::RW>::name().ends_with("RW"));
-static_assert(TrustLattice<version::V1>::name().ends_with("V1"));
+static_assert(::foundation::core::ends_with(TrustLattice<source::FromUser>::name(), "FromUser"));
+static_assert(::foundation::core::ends_with(TrustLattice<source::Sanitized>::name(), "Sanitized"));
+static_assert(::foundation::core::ends_with(TrustLattice<trust::Verified>::name(), "Verified"));
+static_assert(::foundation::core::ends_with(TrustLattice<access::RW>::name(), "RW"));
+static_assert(::foundation::core::ends_with(TrustLattice<version::V1>::name(), "V1"));
 // A templated source keeps its argument in the display string.
-static_assert(TrustLattice<version::V<7>>::name().ends_with("V<7>"));
+static_assert(::foundation::core::ends_with(TrustLattice<version::V<7>>::name(), "V<7>"));
 
 struct OneByteValue {
     char c{0};

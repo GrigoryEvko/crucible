@@ -22,11 +22,11 @@
 
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/FlatLattice.h>
+#include <foundation/core/Text.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -49,7 +49,7 @@ inline constexpr std::size_t numa_node_id_sentinel_count = 2;
 
 // A claim that covers more requested nodes is the stronger claim.
 struct NumaNodeLattice : FlatLattice<NumaNodeId, NumaNodeId::None, NumaNodeId::Any> {
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "NumaNodeLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "NumaNodeLattice"; }
 };
 
 }  // namespace foundation::algebra::lattices

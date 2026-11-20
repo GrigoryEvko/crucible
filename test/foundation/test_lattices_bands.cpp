@@ -119,21 +119,25 @@ static_assert(every_tier_collapses<fl::MemoryScopeLattice>());
 static_assert(every_tier_collapses<fl::ClockSourceLattice, fl::ClockSource>());
 
 // The reflected At name is the lattice name, "::At<", the enumerator
-// identifier and ">", at every tier.
+// identifier and ">", at every tier.  The identifier comes from the
+// reflection of the enumerator, which has a zero after its last character.
 template <typename L, typename E = typename L::element_type>
 [[nodiscard]] consteval bool every_at_name_is_reflected() noexcept {
+    using ::fixy::TextView;
     static constexpr ::foundation::reflect::ReflectionList enumerators =
         ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^E));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         using At = typename L::template At<([:en:])>;
-        const std::string_view name = At::name();
-        if (!name.starts_with(L::name())) return false;
-        if (!name.ends_with(">")) return false;
-        const std::string_view middle = name.substr(L::name().size());
-        if (!middle.starts_with("::At<")) return false;
-        if (middle.substr(5, middle.size() - 6) != std::meta::identifier_of(en)) return false;
+        TextView const name = At::name();
+        if (!::fixy::starts_with(name, L::name())) return false;
+        if (!::fixy::ends_with(name, ">")) return false;
+        std::size_t const lattice_size = L::name().size();
+        TextView const middle = name.window(lattice_size, name.size() - lattice_size).value_or(TextView{});
+        if (!::fixy::starts_with(middle, "::At<")) return false;
+        TextView const identifier = ::fixy::mint_static_text(std::meta::identifier_of(en).data());
+        if (middle.window(5, middle.size() - 6).value_or(TextView{}) != identifier) return false;
     }
 #pragma GCC diagnostic pop
     return true;

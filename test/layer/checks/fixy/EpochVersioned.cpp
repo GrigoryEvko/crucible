@@ -3,6 +3,7 @@
 #include <fixy/EpochVersioned.h>
 
 #include <foundation/Lifetime.h>
+#include <foundation/core/Algorithms.h>
 
 namespace fixy {
 
@@ -108,7 +109,7 @@ static_assert(IsEpochVersioned<EV const&>);
 static_assert(!IsEpochVersioned<int>);
 static_assert(!IsEpochVersioned<Lookalike>);
 
-static_assert(EV::value_type_name().ends_with("int"));
+static_assert(::foundation::core::ends_with(EV::value_type_name(), "int"));
 static_assert(EV::lattice_name() == "Product<L1xL2>");
 
 // The cases that need a source, and so an Init context, run in

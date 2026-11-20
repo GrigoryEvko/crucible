@@ -19,11 +19,11 @@
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/algebra/lattices/FlatLattice.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 
 namespace foundation::algebra::lattices {
@@ -41,7 +41,7 @@ enum class RecipeFamily : std::uint8_t {
 // A family that covers more requested families is the stronger claim.  Any
 // covers all of them and is the strongest.
 struct RecipeFamilyLattice : FlatLattice<RecipeFamily, RecipeFamily::None, RecipeFamily::Any> {
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "RecipeFamilyLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "RecipeFamilyLattice"; }
 };
 
 }  // namespace foundation::algebra::lattices

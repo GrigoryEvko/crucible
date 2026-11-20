@@ -43,12 +43,12 @@
 #include <foundation/algebra/Modality.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Text.h>
+#include <foundation/core/Verbs.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -220,7 +220,7 @@ public:
     [[nodiscard]] static consteval ::foundation::core::TextView modality_name() noexcept {
         return ::foundation::algebra::modality_name(M);
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
+    [[nodiscard]] static consteval ::foundation::core::TextView lattice_name() noexcept {
         return ::foundation::algebra::lattice_name<L>();
     }
     // The qualification depth of the returned name depends on the
@@ -230,9 +230,10 @@ public:
     // string must therefore compare with ends_with, never with ==, or
     // the assertion passes or fails according to which translation
     // unit it sits in.  The simple name is always a suffix of the
-    // qualified form.
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
-        return std::meta::display_string_of(^^T);
+    // qualified form.  The text has static storage and a zero after its
+    // last character.
+    [[nodiscard]] static consteval ::foundation::core::TextView value_type_name() noexcept {
+        return ::foundation::core::detail::static_text_<^^T>(std::meta::display_string_of(^^T));
     }
 
     // A default value is paired with a stored grade that nothing
@@ -478,14 +479,14 @@ struct TrivialEmptyLattice {
     [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
     [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
     [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "TrivialEmpty"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "TrivialEmpty"; }
 };
 
 // The same two-point order, read as a claim about the slot.  It is the
 // lattice under which Graded opens its keyless doors.
 struct TrivialSlotLattice : TrivialBoolLattice {
     static constexpr ClaimSubject claim_subject = ClaimSubject::slot;
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "TrivialSlot"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "TrivialSlot"; }
 };
 
 // A chain whose carrier can hold values outside the order.  The bounds
@@ -499,7 +500,7 @@ struct TrivialChainLattice {
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return a <= b; }
     [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept { return a < b ? b : a; }
     [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept { return a < b ? a : b; }
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "TrivialChain"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "TrivialChain"; }
 };
 
 struct EmptyValue {};
@@ -549,7 +550,7 @@ struct MiniDerivedLattice {
     static constexpr element_type join(element_type a, element_type b) noexcept { return a < b ? b : a; }
     static constexpr element_type meet(element_type a, element_type b) noexcept { return a < b ? a : b; }
     static constexpr element_type grade_of(MiniContainer const& c) noexcept { return c.size(); }
-    static constexpr std::string_view name() noexcept { return "MiniDerivedLattice"; }
+    static constexpr ::foundation::core::TextView name() noexcept { return "MiniDerivedLattice"; }
 };
 
 using GDerivedSeq = Graded<ModalityKind::Absolute, MiniDerivedLattice, MiniContainer>;

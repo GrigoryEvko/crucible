@@ -86,6 +86,7 @@
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
@@ -112,7 +113,7 @@ namespace foundation::algebra::lattices {
 // orientation of its count, which must be stated.
 template <typename Tag>
 concept CounterTag = std::is_empty_v<Tag> && requires {
-    { Tag::lattice_name } -> std::convertible_to<std::string_view>;
+    { Tag::lattice_name } -> std::convertible_to<::foundation::core::TextView>;
     { Tag::claim_orientation } -> std::convertible_to<ClaimOrientation>;
 } && (Tag::claim_orientation != ClaimOrientation::unstated);
 
@@ -346,7 +347,7 @@ struct StrongCounterLattice {
         return element_type{detail::count_image::read_word(image, 8)};
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return Tag::lattice_name; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return Tag::lattice_name; }
 };
 
 // ── The four axes ───────────────────────────────────────────────────
@@ -358,7 +359,7 @@ namespace counter_tags {
 // peer is evicted, and when the fleet reshards.  A newer view is higher,
 // and the join of two views is the more recent.
 struct epoch {
-    static constexpr std::string_view lattice_name = "EpochLattice";
+    static constexpr ::foundation::core::TextView lattice_name = "EpochLattice";
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
 };
 
@@ -367,7 +368,7 @@ struct epoch {
 // node, unlike the epoch it usually travels beside, and the two say
 // different things about the same value.
 struct generation {
-    static constexpr std::string_view lattice_name = "GenerationLattice";
+    static constexpr ::foundation::core::TextView lattice_name = "GenerationLattice";
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
 };
 
@@ -379,7 +380,7 @@ struct generation {
 // The peaks of concurrent producers add, and that calculation belongs to
 // the memory planner, not to this order.
 struct peak_bytes {
-    static constexpr std::string_view lattice_name = "PeakBytesLattice";
+    static constexpr ::foundation::core::TextView lattice_name = "PeakBytesLattice";
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
 };
 
@@ -389,7 +390,7 @@ struct peak_bytes {
 // Folding the two readings into one would break each consumer silently,
 // because the numbers stay the same.
 struct bits_budget {
-    static constexpr std::string_view lattice_name = "BitsBudgetLattice";
+    static constexpr ::foundation::core::TextView lattice_name = "BitsBudgetLattice";
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
 };
 

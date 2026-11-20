@@ -32,11 +32,11 @@
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Text.h>
 
 #include <compare>
 #include <cstdint>
 #include <numeric>
-#include <string_view>
 #include <type_traits>
 
 namespace foundation::algebra::lattices {
@@ -180,7 +180,7 @@ struct FractionalLattice {
         return product;
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "FractionalLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "FractionalLattice"; }
 };
 
 namespace detail {

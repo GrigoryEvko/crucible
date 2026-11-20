@@ -23,11 +23,11 @@
 #include <foundation/algebra/Lattice.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Arithmetic.h>
+#include <foundation/core/Text.h>
 
 #include <compare>
 #include <cstdint>
 #include <limits>
-#include <string_view>
 #include <type_traits>
 
 namespace foundation::algebra::lattices {
@@ -75,7 +75,7 @@ struct StalenessSemiring {
         return element_type{::foundation::core::saturating_add(a.value, b.value)};
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "StalenessSemiring"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "StalenessSemiring"; }
 };
 
 namespace staleness {

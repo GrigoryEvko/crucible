@@ -71,8 +71,8 @@ static_assert(fa::GradedWrapper<Tagged<int, VerificationTag>>);
 static_assert(fa::is_graded_wrapper_v<Tagged<int, VerificationTag>>);
 static_assert(fa::GradedWrapper<TaggedLinear>);
 static_assert(!std::is_void_v<typename Tagged<int, VerificationTag>::graded_type>);
-static_assert(Tagged<int, VerificationTag>::value_type_name().ends_with("int"));
-static_assert(Tagged<int, VerificationTag>::lattice_name().ends_with("VerificationTag"));
+static_assert(::fixy::ends_with(Tagged<int, VerificationTag>::value_type_name(), "int"));
+static_assert(::fixy::ends_with(Tagged<int, VerificationTag>::lattice_name(), "VerificationTag"));
 static_assert(Tagged<int, VerificationTag>::value_type_name()
               == Tagged<int, VerificationTag>::graded_type::value_type_name());
 static_assert(Tagged<int, VerificationTag>::lattice_name()

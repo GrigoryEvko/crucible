@@ -64,6 +64,7 @@
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/algebra/lattices/BoolLattice.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/Instance.h>
 
 #include <string_view>
@@ -72,6 +73,8 @@
 namespace fa = ::foundation::algebra;
 namespace fl = ::foundation::algebra::lattices;
 namespace fr = ::foundation::reflect;
+
+using ::foundation::core::TextView;
 
 using One = fl::QttSemiring::At<fl::QttGrade::One>;
 using SubstrateInt = fa::Graded<fa::ModalityKind::Absolute, One, int>;
@@ -90,8 +93,8 @@ struct Cheat1_ValueTypeMismatch {
     using lattice_type = One;
     using graded_type = fa::Graded<fa::ModalityKind::Absolute, One, double>;  // different from value_type
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept { return graded_type::value_type_name(); }
-    static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+    static consteval TextView value_type_name() noexcept { return graded_type::value_type_name(); }
+    static consteval TextView lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 static_assert(!fa::GradedWrapper<Cheat1_ValueTypeMismatch>,
               "[CHEAT 1 ADMITTED] value_type vs graded_type::value_type mismatch passed");
@@ -101,8 +104,8 @@ struct Cheat2_LatticeMismatch {
     using lattice_type = One;  // claimed
     using graded_type = fa::Graded<fa::ModalityKind::Absolute, fl::BoolLattice<decltype(positive_p)>, int>;  // actual
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept { return graded_type::value_type_name(); }
-    static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+    static consteval TextView value_type_name() noexcept { return graded_type::value_type_name(); }
+    static consteval TextView lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 static_assert(!fa::GradedWrapper<Cheat2_LatticeMismatch>,
               "[CHEAT 2 ADMITTED] lattice_type vs graded_type::lattice_type mismatch passed");
@@ -112,8 +115,8 @@ struct Cheat3_LyingForwarders {
     using lattice_type = One;
     using graded_type = SubstrateInt;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept { return "TOTALLY-LYING"; }
-    static consteval std::string_view lattice_name() noexcept { return "ALSO-LYING"; }
+    static consteval TextView value_type_name() noexcept { return "TOTALLY-LYING"; }
+    static consteval TextView lattice_name() noexcept { return "ALSO-LYING"; }
 };
 static_assert(!fa::GradedWrapper<Cheat3_LyingForwarders>, "[CHEAT 3 ADMITTED] lying forwarders passed");
 
@@ -125,8 +128,8 @@ struct Cheat4_NoSubstrateUsage {
     using lattice_type = One;
     using graded_type = SubstrateInt;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept { return graded_type::value_type_name(); }
-    static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+    static consteval TextView value_type_name() noexcept { return graded_type::value_type_name(); }
+    static consteval TextView lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 static_assert(fa::GradedWrapper<Cheat4_NoSubstrateUsage>,
               "[CHEAT 4 STATUS CHANGED] raw storage beside a correct surface is now REJECTED: the concept "
@@ -138,8 +141,8 @@ struct Cheat5_ModalityMismatch {
     // A linear-shaped wrapper models Absolute, not Comonad.
     using graded_type = fa::Graded<fa::ModalityKind::Comonad, One, int>;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept { return graded_type::value_type_name(); }
-    static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+    static consteval TextView value_type_name() noexcept { return graded_type::value_type_name(); }
+    static consteval TextView lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 static_assert(!fa::GradedWrapper<Cheat5_ModalityMismatch>, "[CHEAT 5 ADMITTED] modality mismatch passed");
 
@@ -148,8 +151,8 @@ struct Cheat6_ReferenceReturn {
     using lattice_type = One;
     using graded_type = SubstrateInt;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static const std::string_view& value_type_name() noexcept;
-    static const std::string_view& lattice_name() noexcept;
+    static const TextView& value_type_name() noexcept;
+    static const TextView& lattice_name() noexcept;
 };
 static_assert(!fa::GradedWrapper<Cheat6_ReferenceReturn>, "[CHEAT 6 ADMITTED] reference-return forwarder passed");
 
@@ -158,13 +161,13 @@ struct Cheat7_ThrowingForwarder {
     using lattice_type = One;
     using graded_type = SubstrateInt;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static std::string_view value_type_name() { return graded_type::value_type_name(); }  // not noexcept
-    static std::string_view lattice_name() { return graded_type::lattice_name(); }  // not noexcept
+    static TextView value_type_name() { return graded_type::value_type_name(); }  // not noexcept
+    static TextView lattice_name() { return graded_type::lattice_name(); }  // not noexcept
 };
 static_assert(!fa::GradedWrapper<Cheat7_ThrowingForwarder>, "[CHEAT 7 ADMITTED] throwing forwarder passed");
 
-struct AlmostStringView {
-    operator std::string_view() const noexcept;
+struct AlmostTextView {
+    operator TextView() const noexcept;
 };
 
 struct Cheat8_ImplicitConversion {
@@ -172,8 +175,8 @@ struct Cheat8_ImplicitConversion {
     using lattice_type = One;
     using graded_type = SubstrateInt;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval AlmostStringView value_type_name() noexcept { return {}; }
-    static consteval AlmostStringView lattice_name() noexcept { return {}; }
+    static consteval AlmostTextView value_type_name() noexcept { return {}; }
+    static consteval AlmostTextView lattice_name() noexcept { return {}; }
 };
 static_assert(!fa::GradedWrapper<Cheat8_ImplicitConversion>, "[CHEAT 8 ADMITTED] implicit-conversion forwarder passed");
 
@@ -184,8 +187,8 @@ struct Cheat9_DerivedGraded {
     using lattice_type = One;
     using graded_type = DerivedGraded;  // derived, not Graded itself
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept { return graded_type::value_type_name(); }
-    static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+    static consteval TextView value_type_name() noexcept { return graded_type::value_type_name(); }
+    static consteval TextView lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 static_assert(!fa::GradedWrapper<Cheat9_DerivedGraded>, "[CHEAT 9 ADMITTED] derived-Graded passed");
 
@@ -195,8 +198,8 @@ struct CyclicRef {
     using lattice_type = One;
     using graded_type = fa::Graded<fa::ModalityKind::Absolute, One, CyclicRef<T>>;  // self-reference
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept { return "x"; }
-    static consteval std::string_view lattice_name() noexcept { return "y"; }
+    static consteval TextView value_type_name() noexcept { return "x"; }
+    static consteval TextView lattice_name() noexcept { return "y"; }
 };
 static_assert(!fa::GradedWrapper<CyclicRef<int>>, "[CHEAT 10 ADMITTED] cyclic self-reference passed");
 
@@ -209,8 +212,8 @@ struct Cheat11_FakeSubstrate {
     using value_type = int;
     using lattice_type = One;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept { return "int"; }
-    static consteval std::string_view lattice_name() noexcept { return "QttSemiring::At<1>"; }
+    static consteval TextView value_type_name() noexcept { return "int"; }
+    static consteval TextView lattice_name() noexcept { return "QttSemiring::At<1>"; }
 };
 namespace foundation::algebra {
 template <>
@@ -221,8 +224,8 @@ struct Cheat11_TraitInjection {
     using lattice_type = One;
     using graded_type = ::Cheat11_FakeSubstrate;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept { return "int"; }
-    static consteval std::string_view lattice_name() noexcept { return "QttSemiring::At<1>"; }
+    static consteval TextView value_type_name() noexcept { return "int"; }
+    static consteval TextView lattice_name() noexcept { return "QttSemiring::At<1>"; }
 };
 static_assert(fa::is_graded_specialization<::Cheat11_FakeSubstrate>::value, "the injection did not take");
 static_assert(!fa::IsGraded<::Cheat11_FakeSubstrate>);
@@ -239,8 +242,8 @@ struct Cheat12_DecoupledOptOut {
     using lattice_type = One;
     using graded_type = SubstrateInt;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept { return graded_type::value_type_name(); }
-    static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+    static consteval TextView value_type_name() noexcept { return graded_type::value_type_name(); }
+    static consteval TextView lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 [[nodiscard]] consteval bool algebra_declares_a_decoupling_template() {
     for (const std::meta::info member :
@@ -268,8 +271,8 @@ struct Cheat13_DecoupledDeclaredFalse {
     using graded_type = SubstrateInt;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
     static constexpr bool value_type_decoupled = false;
-    static consteval std::string_view value_type_name() noexcept { return graded_type::value_type_name(); }
-    static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+    static consteval TextView value_type_name() noexcept { return graded_type::value_type_name(); }
+    static consteval TextView lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 static_assert(!fa::GradedWrapper<Cheat13_DecoupledDeclaredFalse>,
               "[CHEAT 13 ADMITTED] value_type_decoupled = false was read as an opt-in");
@@ -279,8 +282,8 @@ struct Cheat14_ConstReturn {
     using lattice_type = One;
     using graded_type = SubstrateInt;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval const std::string_view value_type_name() noexcept { return graded_type::value_type_name(); }
-    static consteval const std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+    static consteval const TextView value_type_name() noexcept { return graded_type::value_type_name(); }
+    static consteval const TextView lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 static_assert(!fa::GradedWrapper<Cheat14_ConstReturn>, "[CHEAT 14 ADMITTED] const-qualified return passed");
 
@@ -289,8 +292,8 @@ struct Cheat15_DeletedForwarder {
     using lattice_type = One;
     using graded_type = SubstrateInt;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept = delete("nope");
-    static consteval std::string_view lattice_name() noexcept = delete("nope");
+    static consteval TextView value_type_name() noexcept = delete("nope");
+    static consteval TextView lattice_name() noexcept = delete("nope");
 };
 static_assert(!fa::GradedWrapper<Cheat15_DeletedForwarder>, "[CHEAT 15 ADMITTED] deleted forwarder passed");
 
@@ -299,8 +302,8 @@ struct Cheat16_VariableNotFunction {
     using lattice_type = One;
     using graded_type = SubstrateInt;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static constexpr std::string_view value_type_name = "int";
-    static constexpr std::string_view lattice_name = "QttSemiring::At<1>";
+    static constexpr TextView value_type_name = "int";
+    static constexpr TextView lattice_name = "QttSemiring::At<1>";
 };
 static_assert(!fa::GradedWrapper<Cheat16_VariableNotFunction>, "[CHEAT 16 ADMITTED] variable not function passed");
 
@@ -309,8 +312,8 @@ struct Cheat17_NonStaticMember {
     using lattice_type = One;
     using graded_type = SubstrateInt;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    consteval std::string_view value_type_name() const noexcept { return graded_type::value_type_name(); }
-    consteval std::string_view lattice_name() const noexcept { return graded_type::lattice_name(); }
+    consteval TextView value_type_name() const noexcept { return graded_type::value_type_name(); }
+    consteval TextView lattice_name() const noexcept { return graded_type::lattice_name(); }
 };
 static_assert(!fa::GradedWrapper<Cheat17_NonStaticMember>, "[CHEAT 17 ADMITTED] non-static member passed");
 
@@ -321,11 +324,11 @@ struct Cheat18_FunctionTemplateForwarder {
     using graded_type = SubstrateInt;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
     template <int = 0>
-    static consteval std::string_view value_type_name() noexcept {
+    static consteval TextView value_type_name() noexcept {
         return graded_type::value_type_name();
     }
     template <int = 0>
-    static consteval std::string_view lattice_name() noexcept {
+    static consteval TextView lattice_name() noexcept {
         return graded_type::lattice_name();
     }
 };
@@ -612,8 +615,8 @@ struct Cheat56_LookalikeBand {
     using lattice_type = fl::DetSafeLattice::At<fl::DetSafeTier::Pure>;
     using graded_type = fixy::det_safe::Pure<int>;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept { return graded_type::value_type_name(); }
-    static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+    static consteval TextView value_type_name() noexcept { return graded_type::value_type_name(); }
+    static consteval TextView lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 static_assert(!fixy::IsBand<Cheat56_LookalikeBand>, "[CHEAT 56 ADMITTED] a structural lookalike passed IsBand");
 static_assert(fa::GradedWrapper<Cheat56_LookalikeBand>,

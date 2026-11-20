@@ -16,11 +16,11 @@
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/algebra/lattices/FlatLattice.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -43,7 +43,7 @@ enum class VendorBackend : std::uint8_t {
 // named vendors have nothing between them, so their least upper bound can
 // only be the top and their greatest lower bound only the bottom.
 struct VendorLattice : FlatLattice<VendorBackend, VendorBackend::None, VendorBackend::Portable> {
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "VendorLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "VendorLattice"; }
 
     template <VendorBackend B>
     struct At : PinnedAt<VendorLattice, B> {

@@ -78,7 +78,7 @@ static_assert(!::foundation::algebra::Semiring<BarrierStrengthLattice>);
 static_assert(BarrierStrengthLattice::bottom() == BarrierStrength::None);
 static_assert(BarrierStrengthLattice::top() == BarrierStrength::FullFence);
 
-static_assert(BarrierStrengthLattice::name() == std::string_view{"BarrierStrengthLattice"});
+static_assert(BarrierStrengthLattice::name() == ::foundation::core::TextView{"BarrierStrengthLattice"});
 
 static_assert(BarrierStrengthLattice::leq(BarrierStrength::AcqRel, BarrierStrength::SeqCst),
               "A SeqCst fence satisfies an AcqRel requirement.  leq(required, "

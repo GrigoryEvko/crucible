@@ -10,11 +10,10 @@
 
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
-
-#include <string_view>
+#include <foundation/core/Text.h>
 
 struct stateful_step {
-    static constexpr std::string_view lattice_name = "StatefulStepLattice";
+    static constexpr ::foundation::core::TextView lattice_name = "StatefulStepLattice";
     static constexpr ::foundation::algebra::ClaimOrientation claim_orientation =
         ::foundation::algebra::ClaimOrientation::weaker_is_higher;
     int stray = 0;

@@ -32,12 +32,12 @@
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/core/Text.h>
 
 #include <concepts>
 #include <cstdint>
 #include <functional>
 #include <limits>
-#include <string_view>
 #include <type_traits>
 
 namespace foundation::algebra::lattices {
@@ -169,7 +169,7 @@ struct MonotoneLattice {
         return monotone_bounds<T, Cmp>::lattice_top();
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "MonotoneLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "MonotoneLattice"; }
 };
 
 namespace detail {

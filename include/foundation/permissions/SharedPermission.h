@@ -29,6 +29,7 @@
 #include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Text.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Fwd.h>
@@ -140,10 +141,12 @@ public:
     constexpr SharedPermission& operator=(SharedPermission&&) noexcept { return *this; }
     ~SharedPermission() = default;
 
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+    [[nodiscard]] static consteval ::foundation::core::TextView value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+    [[nodiscard]] static consteval ::foundation::core::TextView lattice_name() noexcept {
+        return graded_type::lattice_name();
+    }
 };
 
 // The destructor gives the share back to the pool, so the end of the scope

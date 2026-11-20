@@ -21,7 +21,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -49,7 +48,7 @@ struct UnnamedLattice {
     [[nodiscard]] static constexpr element_type meet(element_type lhs, element_type rhs) noexcept { return lhs && rhs; }
 };
 struct NamedLattice : UnnamedLattice {
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "NamedLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "NamedLattice"; }
 };
 static_assert(fa::Lattice<UnnamedLattice>);
 static_assert(!fa::HasLatticeName<UnnamedLattice>);

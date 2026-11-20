@@ -22,6 +22,7 @@
 
 #include <foundation/Platform.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/core/Text.h>
 #include <foundation/effects/Effect.h>
 
 #include <array>
@@ -30,7 +31,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -193,7 +193,7 @@ struct EffectRowLattice {
         return (row & single(atom)) != 0;
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "EffectRow"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "EffectRow"; }
 
     // A singleton sub-lattice whose one element is the pinned atom set.
     // Every operation returns that element, so the lattice axioms are
@@ -218,7 +218,7 @@ struct EffectRowLattice {
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
-        [[nodiscard]] static consteval std::string_view name() noexcept { return "EffectRow::At"; }
+        [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "EffectRow::At"; }
 
         [[nodiscard]] static constexpr std::uint64_t bits() noexcept { return value; }
     };

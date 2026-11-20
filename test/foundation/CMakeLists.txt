@@ -209,6 +209,11 @@ foundation_neg_compile_test(neg_lattice_order_against_join
 foundation_neg_compile_test(neg_lattice_bottom_above_top
   "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +LatticeGradesValue<L, T> class foundation::algebra::Graded."
   "the expression .\\(laws_hold<L>\\)\\(\\) \\[with L = foundation::algebra::detail::ExchangedBounds\\]. evaluated to .false.")
+# A lattice whose name() gives a type other than a TextView.  lattice_name
+# refuses it, so the name never falls back to the sentinel with no error.
+foundation_neg_compile_test(neg_lattice_name_of_another_type
+  "static assertion failed: foundation::algebra::lattice_name: the name\\(\\) of a lattice gives a foundation::core::TextView"
+  "\\[with L = ForeignNamedLattice\\]")
 # Two operation pairs with the signature of a semiring and not its laws:
 # subtraction for add, and the maximum for both add and mul.  The laws at
 # zero() and one() refuse both at the verify helper.

@@ -31,8 +31,7 @@
 
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
-
-#include <string_view>
+#include <foundation/core/Text.h>
 
 namespace foundation::algebra::lattices {
 
@@ -60,7 +59,7 @@ struct DualLattice {
         return L::bottom();
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "DualLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "DualLattice"; }
 };
 
 }  // namespace foundation::algebra::lattices

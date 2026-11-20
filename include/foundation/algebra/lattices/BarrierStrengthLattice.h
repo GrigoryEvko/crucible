@@ -32,12 +32,12 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -71,7 +71,7 @@ struct BarrierStrengthLattice {
 
     [[nodiscard]] static constexpr BarrierStrength bottom() noexcept { return BarrierStrength::None; }
     [[nodiscard]] static constexpr BarrierStrength top() noexcept { return BarrierStrength::FullFence; }
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "BarrierStrengthLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "BarrierStrengthLattice"; }
 
     // Two distinct strengths at one height are incomparable.  Every other
     // pair is ordered by height.

@@ -16,10 +16,10 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -131,7 +131,7 @@ struct MemoryScopeLattice {
         return MemoryScope::Thread;
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "MemoryScopeLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "MemoryScopeLattice"; }
 
     template <MemoryScope S>
     struct At : PinnedAt<MemoryScopeLattice, S> {

@@ -16,9 +16,10 @@
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/core/Text.h>
+#include <foundation/core/Verbs.h>
 
 #include <meta>
-#include <string_view>
 #include <type_traits>
 
 namespace foundation::algebra::lattices {
@@ -38,7 +39,9 @@ struct TrustLattice {
     [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
     [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return std::meta::display_string_of(^^Source); }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept {
+        return ::foundation::core::detail::static_text_<^^Source>(std::meta::display_string_of(^^Source));
+    }
 };
 
 namespace detail {

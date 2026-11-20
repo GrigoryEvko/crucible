@@ -3,6 +3,7 @@
 #include <fixy/Budgeted.h>
 
 #include <foundation/Lifetime.h>
+#include <foundation/core/Algorithms.h>
 #include <foundation/core/Number.h>
 
 namespace fixy {
@@ -71,7 +72,7 @@ static_assert(IsBudgeted<B const&>);
 static_assert(!IsBudgeted<int>);
 static_assert(!IsBudgeted<Lookalike>);
 
-static_assert(B::value_type_name().ends_with("int"));
+static_assert(::foundation::core::ends_with(B::value_type_name(), "int"));
 
 // The cases that need an authority, and so an Init context, run in
 // test/fixy/test_versioned_budgeted.cpp and its attack file.

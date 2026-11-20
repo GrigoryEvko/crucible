@@ -2,6 +2,8 @@
 
 #include <fixy/os/SchedClass.h>
 
+#include <foundation/core/Algorithms.h>
+
 namespace fixy {
 
 namespace detail::sched_class_layout {
@@ -86,7 +88,7 @@ static_assert(!std::is_same_v<DeadlineInt, SchedClass<SchedulerPolicy_v::Deadlin
 
 static_assert(FifoInt::lattice_name() == "SchedulerPolicyLattice::At<Fifo>");
 static_assert(OtherInt::lattice_name() == "SchedulerPolicyLattice::At<Other>");
-static_assert(FifoInt::value_type_name().ends_with("int"));
+static_assert(::foundation::core::ends_with(FifoInt::value_type_name(), "int"));
 
 template <typename Task, SchedulerPolicy_v PoolPolicy>
 concept hostable_on = Task::template runnable_on<PoolPolicy>;

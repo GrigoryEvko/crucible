@@ -34,6 +34,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/Modality.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Enumerate.h>
@@ -42,7 +43,6 @@
 #include <cstdint>
 #include <meta>
 #include <string>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -79,11 +79,15 @@ struct PinnedElement {
 namespace detail {
 
 // "Outer::At<Name>", or "Outer::At<?>" when Value names no enumerator.
-// The text lives in static storage, so the view stays valid for the
-// whole program.
+// The text lives in static storage with a zero after its last character,
+// so the view stays valid for the whole program.  Complexity: linear in
+// the length of the name.
 template <typename Outer, auto Value>
-[[nodiscard]] consteval std::string_view make_pinned_at_name() {
-    ::foundation::reflect::anchored_t<^^Outer, std::string> text{Outer::name()};
+[[nodiscard]] consteval ::foundation::core::TextView make_pinned_at_name() {
+    ::foundation::reflect::anchored_t<^^Outer, std::string> text;
+    for (char const letter : Outer::name()) {
+        text += letter;
+    }
     text += "::At<";
     const ::foundation::reflect::detail::FoundName found = ::foundation::reflect::detail::enumerator_chars(Value);
     if (!found.is_found) {
@@ -92,24 +96,27 @@ template <typename Outer, auto Value>
         text.append(found.name.first, found.name.size);
     }
     text += '>';
-    return std::define_static_string(text);
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }
 
 template <typename Outer>
-[[nodiscard]] consteval std::string_view make_pinned_at_sentinel() {
-    ::foundation::reflect::anchored_t<^^Outer, std::string> text{Outer::name()};
+[[nodiscard]] consteval ::foundation::core::TextView make_pinned_at_sentinel() {
+    ::foundation::reflect::anchored_t<^^Outer, std::string> text;
+    for (char const letter : Outer::name()) {
+        text += letter;
+    }
     text += "::At<?>";
-    return std::define_static_string(text);
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }
 
 }  // namespace detail
 
 template <typename Outer, auto Value>
-inline constexpr std::string_view pinned_at_name_v = detail::make_pinned_at_name<Outer, Value>();
+inline constexpr ::foundation::core::TextView pinned_at_name_v = detail::make_pinned_at_name<Outer, Value>();
 
 // The name that Outer::At<v>::name() gives for a v outside the enum.
 template <typename Outer>
-inline constexpr std::string_view pinned_at_sentinel_v = detail::make_pinned_at_sentinel<Outer>();
+inline constexpr ::foundation::core::TextView pinned_at_sentinel_v = detail::make_pinned_at_sentinel<Outer>();
 
 // The one-element lattice that pins Value inside Outer.
 //
@@ -131,7 +138,9 @@ struct PinnedAt {
     [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
     [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return pinned_at_name_v<Outer, Value>; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept {
+        return pinned_at_name_v<Outer, Value>;
+    }
 };
 
 // A chain lattice over the enumerators of EnumT, in declaration order.
@@ -160,7 +169,13 @@ struct EnumChainLattice : ChainLatticeOps<EnumT> {
 
     [[nodiscard]] static constexpr EnumT bottom() noexcept { return first_enumerator_; }
     [[nodiscard]] static constexpr EnumT top() noexcept { return last_enumerator_; }
-    [[nodiscard]] static consteval std::string_view name() noexcept { return std::meta::identifier_of(^^Derived); }
+    // The identifier of a reflection has a zero after its last character,
+    // so the view borrows the characters that reflection gives.
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept {
+        ::foundation::reflect::detail::NameChars const chars =
+            ::foundation::reflect::detail::read_identifier_chars(^^Derived);
+        return ::foundation::core::detail::c_text_over_(chars.first, chars.size).view();
+    }
 
 private:
     static_assert(!std::meta::enumerators_of(^^EnumT).empty(),
@@ -267,7 +282,7 @@ template <typename L, typename E = typename L::element_type>
         if (!std::is_empty_v<typename AtA::element_type>) return false;
         if (static_cast<E>(typename AtA::element_type{}) != [:ea:]) return false;
         if (AtA::pinned != [:ea:]) return false;
-        if (AtA::name().empty()) return false;
+        if (AtA::name().size() == 0) return false;
         if (AtA::name() == pinned_at_sentinel_v<L>) return false;
         template for (constexpr auto eb : enumerators) {
             using AtB = typename L::template At<([:eb:])>;
@@ -303,7 +318,7 @@ template <typename L>
         return false;
     } else {
         if (!BoundedLattice<L>) return false;
-        if (L::name().empty()) return false;
+        if (L::name().size() == 0) return false;
         if (L::bottom() != [:enumerators.front():]) return false;
         if (L::top() != [:enumerators.back():]) return false;
         if (!verify_chain_lattice_exhaustive<L>()) return false;

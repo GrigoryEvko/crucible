@@ -54,7 +54,7 @@ static_assert(alignof(Stale<std::uint64_t>) == alignof(std::uint64_t));
 static_assert(fa::GradedWrapper<Stale<int>>);
 static_assert(fa::is_graded_wrapper_v<Stale<int>>);
 static_assert(Stale<int>::lattice_name() == "StalenessSemiring");
-static_assert(Stale<int>::value_type_name().ends_with("int"));
+static_assert(::fixy::ends_with(Stale<int>::value_type_name(), "int"));
 static_assert(std::is_same_v<Stale<int>::lattice_type, SS>);
 static_assert(std::is_same_v<Stale<int>::semiring_type, SS>);
 static_assert(Stale<int>::modality == fa::ModalityKind::Absolute);

@@ -2,6 +2,8 @@
 
 #include <fixy/os/ClockSource.h>
 
+#include <foundation/core/Algorithms.h>
+
 namespace fixy {
 
 namespace detail::clock_source_layout {
@@ -132,8 +134,8 @@ static_assert(TscU64::lattice_name() == "ClockSourceLattice::At<TscRaw>");
 // Reflection renders `unsigned long long` as `long long unsigned int`, so
 // this matches on containment.  The int witness below pins an exact
 // suffix.
-static_assert(BootU64::value_type_name().find("long") != std::string_view::npos);
-static_assert(BootClockBytes<int>::value_type_name().ends_with("int"));
+static_assert(::foundation::core::find(BootU64::value_type_name(), "long").is_some());
+static_assert(::foundation::core::ends_with(BootClockBytes<int>::value_type_name(), "int"));
 
 template <typename Clock>
 concept keeps_ticking_through_suspend = Clock::template satisfies<ClockSource_v::Boot>;

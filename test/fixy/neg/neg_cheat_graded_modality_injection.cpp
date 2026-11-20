@@ -9,8 +9,8 @@
 
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
+#include <foundation/core/Text.h>
 
-#include <string_view>
 #include <type_traits>
 
 struct FakeSubstrate {
@@ -18,8 +18,8 @@ struct FakeSubstrate {
     using lattice_type =
         ::foundation::algebra::lattices::QttSemiring::At<::foundation::algebra::lattices::QttGrade::One>;
     static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
-    static consteval std::string_view value_type_name() noexcept { return "int"; }
-    static consteval std::string_view lattice_name() noexcept { return "QttSemiring::At<1>"; }
+    static consteval ::foundation::core::TextView value_type_name() noexcept { return "int"; }
+    static consteval ::foundation::core::TextView lattice_name() noexcept { return "QttSemiring::At<1>"; }
 };
 
 namespace foundation::algebra {

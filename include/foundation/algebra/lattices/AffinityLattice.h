@@ -20,13 +20,13 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Text.h>
 
 #include <array>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <string_view>
 #include <type_traits>
 
 namespace foundation::algebra::lattices {
@@ -118,7 +118,7 @@ struct AffinityLattice {
     // migrate, so a pin proof tests the mask for exactly one core.
     [[nodiscard]] static constexpr bool is_singleton(element_type m) noexcept { return m.popcount() == 1; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "AffinityLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "AffinityLattice"; }
 };
 
 }  // namespace foundation::algebra::lattices

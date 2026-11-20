@@ -38,10 +38,10 @@
 // refinement, with verify_cancellative_over.
 
 #include <foundation/algebra/Modality.h>
+#include <foundation/core/Text.h>
 
 #include <concepts>
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 
 namespace foundation::algebra {
@@ -379,17 +379,24 @@ concept Row = BoundedLattice<R> && requires { typename R::atom_type; }
                   { R::contains(element, atom) } -> std::convertible_to<bool>;
               };
 
+// A lattice names itself with a static name() that gives a TextView.
 template <typename L>
-concept HasLatticeName = requires {
-    { L::name() } -> std::convertible_to<std::string_view>;
-};
+concept HasLatticeName = requires { L::name(); };
 
+// The name of L, or "<unnamed lattice>" when L declares no name().  A
+// name() that gives no TextView stops the build, so a name of another
+// type never falls back to the sentinel with no error.
 template <typename L>
-[[nodiscard]] consteval std::string_view lattice_name() noexcept {
-    if constexpr (HasLatticeName<L>)
+[[nodiscard]] consteval ::foundation::core::TextView lattice_name() noexcept {
+    if constexpr (!HasLatticeName<L>) {
+        return ::foundation::core::TextView{"<unnamed lattice>"};
+    } else if constexpr (std::same_as<decltype(L::name()), ::foundation::core::TextView>) {
         return L::name();
-    else
-        return std::string_view{"<unnamed lattice>"};
+    } else {
+        static_assert(false, "foundation::algebra::lattice_name: the name() of a lattice gives a "
+                             "foundation::core::TextView");
+        return ::foundation::core::TextView{"<unnamed lattice>"};
+    }
 }
 
 template <Lattice L>
@@ -607,7 +614,7 @@ struct TrivialBoolLattice {
     [[nodiscard]] static constexpr bool leq(bool a, bool b) noexcept { return !a || b; }
     [[nodiscard]] static constexpr bool join(bool a, bool b) noexcept { return a || b; }
     [[nodiscard]] static constexpr bool meet(bool a, bool b) noexcept { return a && b; }
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "TrivialBool"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "TrivialBool"; }
 };
 
 struct TrivialBoolSemiring {
@@ -642,7 +649,7 @@ struct TrivialRow {
     [[nodiscard]] static constexpr bool contains(element_type element, TrivialAtom atom) noexcept {
         return (element & single(atom)) != 0;
     }
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "TrivialRow"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "TrivialRow"; }
 };
 
 // The refused shapes.  Each one satisfies every law that compares

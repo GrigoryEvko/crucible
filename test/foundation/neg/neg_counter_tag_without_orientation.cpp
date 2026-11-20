@@ -3,11 +3,10 @@
 // cannot skip the question that decides whether Graded may read it.
 
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
-
-#include <string_view>
+#include <foundation/core/Text.h>
 
 struct replay_step {
-    static constexpr std::string_view lattice_name = "ReplayStepLattice";
+    static constexpr ::foundation::core::TextView lattice_name = "ReplayStepLattice";
 };
 
 int main() {

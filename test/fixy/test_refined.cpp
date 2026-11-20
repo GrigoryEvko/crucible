@@ -66,7 +66,7 @@ static_assert(fa::GradedWrapper<SealedRefined<fixy::positive, int>>);
 static_assert(fa::is_graded_wrapper_v<Refined<fixy::positive, int>>);
 static_assert(Refined<fixy::positive, int>::modality == fa::ModalityKind::Absolute);
 static_assert(SealedRefined<fixy::positive, int>::modality == fa::ModalityKind::Absolute);
-static_assert(Refined<fixy::positive, int>::value_type_name().ends_with("int"));
+static_assert(::fixy::ends_with(Refined<fixy::positive, int>::value_type_name(), "int"));
 static_assert(Refined<fixy::positive, int>::lattice_name()
               == Refined<fixy::positive, int>::graded_type::lattice_name());
 static_assert(SealedRefined<fixy::positive, int>::lattice_name() == Refined<fixy::positive, int>::lattice_name(),

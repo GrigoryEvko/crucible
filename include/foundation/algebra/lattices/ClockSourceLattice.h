@@ -14,11 +14,11 @@
 #include <foundation/algebra/lattices/PinningRequirementLattice.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/SuspendBehaviorLattice.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -46,7 +46,7 @@ struct ClockSourceLattice : ProductLattice<DetSafeLattice, SuspendBehaviorLattic
     using suspend_axis = SuspendBehaviorLattice;
     using pinning_axis = PinningRequirementLattice;
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "ClockSourceLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "ClockSourceLattice"; }
 
     [[nodiscard]] static constexpr element_type make_point(DetSafeTier det, SuspendBehavior suspend,
                                                            PinningRequirement pin) noexcept {

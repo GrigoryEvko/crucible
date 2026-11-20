@@ -19,12 +19,12 @@
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/core/Text.h>
 
 #include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <string_view>
 #include <type_traits>
 
 namespace foundation::algebra::lattices {
@@ -65,7 +65,7 @@ struct SeqPrefixLattice {
         return element_type{b.length < a.length ? b.length : a.length};
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "SeqPrefixLattice"; }
+    [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept { return "SeqPrefixLattice"; }
 
     // A graded container already stores its own length.  Supplying
     // grade_of opts into the substrate's derived-grade form, which reads

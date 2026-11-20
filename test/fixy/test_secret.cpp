@@ -5,6 +5,7 @@
 // of a container leaves only through the LengthOnly policy, and that
 // policy releases the length and never the payload.
 
+#include <fixy/Core.h>
 #include <fixy/Qtt.h>
 #include <fixy/Secret.h>
 
@@ -47,7 +48,7 @@ static_assert(alignof(Secret<CardNumber>) == alignof(CardNumber));
 static_assert(fa::GradedWrapper<Secret<int>>);
 static_assert(fa::is_graded_wrapper_v<Secret<int>>);
 static_assert(!std::is_void_v<typename Secret<int>::graded_type>);
-static_assert(Secret<int>::value_type_name().ends_with("int"));
+static_assert(::fixy::ends_with(Secret<int>::value_type_name(), "int"));
 static_assert(Secret<int>::lattice_name() == "ConfLattice::At<Secret>");
 static_assert(Secret<int>::value_type_name() == Secret<int>::graded_type::value_type_name());
 static_assert(Secret<int>::lattice_name() == Secret<int>::graded_type::lattice_name());

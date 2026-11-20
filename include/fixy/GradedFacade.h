@@ -30,8 +30,8 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Modality.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
+#include <foundation/core/Text.h>
 
-#include <string_view>
 #include <type_traits>
 
 namespace fixy {
@@ -43,10 +43,12 @@ struct graded_facade {
     static constexpr ::foundation::algebra::ModalityKind modality = M;
     using graded_type = ::foundation::algebra::Graded<M, Lattice, T>;
 
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+    [[nodiscard]] static consteval ::foundation::core::TextView value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+    [[nodiscard]] static consteval ::foundation::core::TextView lattice_name() noexcept {
+        return graded_type::lattice_name();
+    }
 };
 
 }  // namespace fixy

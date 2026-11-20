@@ -28,9 +28,9 @@
 // and no reader needs a trait beside it.
 
 #include <foundation/algebra/Graded.h>
+#include <foundation/core/Text.h>
 
 #include <concepts>
-#include <string_view>
 #include <type_traits>
 
 namespace foundation::algebra {
@@ -87,8 +87,8 @@ concept GradedWrapper = requires {
 
     requires(W::modality == W::graded_type::modality);
 
-    { W::value_type_name() } noexcept -> std::same_as<std::string_view>;
-    { W::lattice_name() } noexcept -> std::same_as<std::string_view>;
+    { W::value_type_name() } noexcept -> std::same_as<::foundation::core::TextView>;
+    { W::lattice_name() } noexcept -> std::same_as<::foundation::core::TextView>;
 
     // Existing forwarders are not enough.  A wrapper can define both
     // names with a body that returns something else, and the

@@ -3,6 +3,7 @@
 #include <fixy/Stale.h>
 
 #include <fixy/Ctx.h>
+#include <foundation/core/Algorithms.h>
 #include <foundation/effects/Ctx.h>
 
 #include <cstdint>
@@ -204,7 +205,7 @@ static_assert(SS::top() == s_inf.staleness());
 
 // The reflected display string is sensitive to the translation-unit
 // context it is formed in, so match on a suffix rather than equality.
-static_assert(S_i::value_type_name().ends_with("int"));
+static_assert(::foundation::core::ends_with(S_i::value_type_name(), "int"));
 
 static_assert(S_i::lattice_name() == "StalenessSemiring");
 
