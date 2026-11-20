@@ -6974,6 +6974,18 @@ fixy_neg_compile_test(neg_scoped_view_of_a_named_brand_erases_implicitly
   "to non-scalar type .ScopedView<\\[\\.\\.\\.\\],\\[\\.\\.\\.\\],foundation::brand::DefaultBrand>. requested"
   "neg_scoped_view_of_a_named_brand_erases_implicitly\\.cpp:27:[0-9]+: error")
 
+# The erase door of a view refuses a scope brand, and a brand that names one
+# as a type argument, as the door of a Ref does.  No view of a scope leaves
+# it on the erased identity.
+fixy_neg_compile_test(neg_scoped_view_erase_scope_brand
+  "no matching function for call to .erase_brand\\(const fixy::ScopedView<.*ScopeCarrier<foundation::core::<lambda\\(\\)> >, .*Ready, foundation::core::<lambda\\(\\)> >&\\)."
+  "required for the satisfaction of .ErasableBrand<Brand>."
+  "neg_scoped_view_erase_scope_brand\\.cpp:42:[0-9]+: error")
+fixy_neg_compile_test(neg_scoped_view_erase_wrapped_scope_brand
+  "no matching function for call to .erase_brand\\(const fixy::ScopedView<.*ScopeCarrier<.*WrapsBrand<foundation::core::<lambda\\(\\)> > >, .*Ready, .*WrapsBrand<foundation::core::<lambda\\(\\)> > >&\\)."
+  "required for the satisfaction of .ErasableBrand<Brand>."
+  "neg_scoped_view_erase_wrapped_scope_brand\\.cpp:45:[0-9]+: error")
+
 # A view of a temporary carrier: the refusal by value category, which
 # is the deleted rvalue twin.
 fixy_neg_compile_test(neg_brand_scoped_view_from_temporary_carrier
