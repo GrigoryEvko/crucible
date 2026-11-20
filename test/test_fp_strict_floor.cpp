@@ -3,13 +3,10 @@
 // floor is not engaged for downstream consumers, and the cross-vendor
 // bit-exactness invariants lose their guarantee without any build failure.
 
+#include <fixy/Core.h>
 #include <fixy/fp/Canonicalize.h>
 
-#include <bit>
-#include <cmath>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 
 namespace {
 
@@ -42,34 +39,31 @@ void witness_canonicalize_under_floor() {
     // optimizer would replace the isnan test inside canonicalize with
     // false and return the raw bits instead of the canonical quiet NaN.
     volatile std::uint64_t nan_payload = 0x7FF1234567890ABCULL;
-    const double nan_value = std::bit_cast<double>(nan_payload);
+    const std::uint64_t payload = nan_payload;
+    const double nan_value = ::fixy::bit_cast<double>(payload);
 
     const auto canonical = ::fixy::fp::canonicalize(nan_value);
     if (canonical != ::fixy::fp::kCanonicalQNaN64) {
-        std::fprintf(stderr,
-                     "fp-strict floor: canonicalize(NaN) returned "
-                     "0x%016lx, expected 0x%016lx. The floor is not engaged "
-                     "on this translation unit despite the compile "
-                     "definition being set.\n",
-                     canonical, ::fixy::fp::kCanonicalQNaN64);
-        std::abort();
+        ::fixy::fatal("fp-strict floor: canonicalize(NaN) returned "
+                      "0x{}, expected 0x{}. The floor is not engaged "
+                      "on this translation unit despite the compile "
+                      "definition being set.",
+                      ::fixy::Hex<16>{canonical}, ::fixy::Hex<16>{::fixy::fp::kCanonicalQNaN64});
     }
 
     // The negative-zero collapse below only means anything while signed
     // zeros are preserved, that is, while -fno-signed-zeros is off.
     volatile double neg_zero_v = -0.0;
     const double neg_zero = neg_zero_v;
-    const auto raw_neg_zero = std::bit_cast<std::uint64_t>(neg_zero);
+    const auto raw_neg_zero = ::fixy::bit_cast<std::uint64_t>(neg_zero);
     if (raw_neg_zero == 0) {
-        std::fprintf(stderr, "fp-strict floor: the -0.0 bit pattern is zero on "
-                             "this translation unit. -fno-signed-zeros is active "
-                             "and the signed-zero canonicalization is broken.\n");
-        std::abort();
+        ::fixy::fatal("fp-strict floor: the -0.0 bit pattern is zero on "
+                      "this translation unit. -fno-signed-zeros is active "
+                      "and the signed-zero canonicalization is broken.");
     }
     if (::fixy::fp::canonicalize(neg_zero) != 0) {
-        std::fprintf(stderr, "fp-strict floor: canonicalize(-0.0) returned "
-                             "non-zero. The signed-zero projection failed.\n");
-        std::abort();
+        ::fixy::fatal("fp-strict floor: canonicalize(-0.0) returned "
+                      "non-zero. The signed-zero projection failed.");
     }
 }
 

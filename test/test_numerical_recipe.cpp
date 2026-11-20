@@ -8,10 +8,7 @@
 #include <foundation/effects/Effect.h>
 
 #include <fixy/Core.h>
-#include <cinttypes>
-#include <cstdio>
 #include <type_traits>
-#include <unordered_set>
 
 namespace {
 
@@ -168,16 +165,17 @@ int main() {
 
         if (r_f32_strict.hash.raw() != EXPECTED_F32_STRICT || r_f16_tc.hash.raw() != EXPECTED_F16_TC
             || r_fp8_mx.hash.raw() != EXPECTED_FP8_MX) {
-            std::fprintf(stderr,
-                         "RECIPE-HASH DRIFT DETECTED\n"
-                         "  got  f32_strict=0x%016" PRIx64 "  expected 0x%016" PRIx64 "\n"
-                         "  got  f16_tc    =0x%016" PRIx64 "  expected 0x%016" PRIx64 "\n"
-                         "  got  fp8_mx    =0x%016" PRIx64 "  expected 0x%016" PRIx64 "\n"
-                         "  update the EXPECTED_* constants in test_numerical_recipe.cpp\n"
-                         "  and audit every persisted consumer of RecipeHash before\n"
-                         "  committing.\n",
-                         r_f32_strict.hash.raw(), EXPECTED_F32_STRICT, r_f16_tc.hash.raw(), EXPECTED_F16_TC,
-                         r_fp8_mx.hash.raw(), EXPECTED_FP8_MX);
+            ::fixy::report(::fixy::Sink::Err,
+                           "RECIPE-HASH DRIFT DETECTED\n"
+                           "  got  f32_strict=0x{}  expected 0x{}\n"
+                           "  got  f16_tc    =0x{}  expected 0x{}\n"
+                           "  got  fp8_mx    =0x{}  expected 0x{}\n"
+                           "  update the EXPECTED_* constants in test_numerical_recipe.cpp\n"
+                           "  and audit every persisted consumer of RecipeHash before\n"
+                           "  committing.\n",
+                           ::fixy::Hex<16>{r_f32_strict.hash.raw()}, ::fixy::Hex<16>{EXPECTED_F32_STRICT},
+                           ::fixy::Hex<16>{r_f16_tc.hash.raw()}, ::fixy::Hex<16>{EXPECTED_F16_TC},
+                           ::fixy::Hex<16>{r_fp8_mx.hash.raw()}, ::fixy::Hex<16>{EXPECTED_FP8_MX});
             CRUCIBLE_TEST_ASSERT(kTest, false && "recipe-hash golden mismatch");
         }
     }
@@ -210,20 +208,20 @@ int main() {
     // chance collision within a set this small is so unlikely that one
     // here means the hash is wrong, not that the draw was unlucky.
     {
-        std::unordered_set<uint64_t> seen;
+        ::fixy::FixedList<uint64_t, 400> seen{};
         unsigned checked = 0;
 
-        const ScalarType dtypes[] = {
+        const ::fixy::FixedArray<ScalarType, 5> dtypes{
             ScalarType::Float,         ScalarType::Half,        ScalarType::BFloat16,
             ScalarType::Float8_e4m3fn, ScalarType::Float8_e5m2,
         };
-        const ReductionDeterminism dets[] = {
+        const ::fixy::FixedArray<ReductionDeterminism, 4> dets{
             ReductionDeterminism::UNORDERED,
             ReductionDeterminism::ORDERED,
             ReductionDeterminism::BITEXACT_TC,
             ReductionDeterminism::BITEXACT_STRICT,
         };
-        const ScalePolicy scales[] = {
+        const ::fixy::FixedArray<ScalePolicy, 4> scales{
             ScalePolicy::NONE,
             ScalePolicy::PER_TENSOR_POST,
             ScalePolicy::PER_BLOCK_MX,
@@ -240,8 +238,9 @@ int main() {
                         r.determinism = det;
                         r.scale_policy = sp;
                         const uint64_t h = crucible::compute_recipe_hash(r).raw();
-                        auto [it, inserted] = seen.insert(h);
+                        const bool inserted = ::fixy::find(seen.view(), h).is_none();
                         CRUCIBLE_TEST_ASSERT(kTest, inserted && "recipe-hash collision in the grid");
+                        static_cast<void>(seen.append(h).expect("the grid holds 400 recipes"));
                         ++checked;
                     }
                 }

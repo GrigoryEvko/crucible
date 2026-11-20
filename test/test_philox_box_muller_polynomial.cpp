@@ -6,12 +6,7 @@
 #include <fixy/Bands.h>
 #include <fixy/Core.h>
 
-#include <bit>
-#include <cmath>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <utility>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
@@ -35,16 +30,22 @@ static_assert(::fixy::band_tier_v<decltype(Philox::box_muller_polynomial_det(0u,
               "polynomial path");
 
 constexpr std::uint64_t pair_bits(Philox::NormalPair const& pair) noexcept {
-    const auto a = static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(pair.at(::fixy::index<0>())));
-    const auto b = static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(pair.at(::fixy::index<1>())));
+    const auto a = static_cast<std::uint64_t>(::fixy::bit_cast<std::uint32_t>(pair.at(::fixy::index<0>())));
+    const auto b = static_cast<std::uint64_t>(::fixy::bit_cast<std::uint32_t>(pair.at(::fixy::index<1>())));
     return (a << 32) | b;
 }
+
+// The two uniform words of one input of the transform.
+struct InputPair {
+    std::uint32_t u1 = 0;
+    std::uint32_t u2 = 0;
+};
 
 void test_bit_determinism() {
     // Small values, alternating bit patterns, the two halves of the
     // range, and a repeated input: a spread across the input domain
     // rather than a random sample.
-    static constexpr std::pair<std::uint32_t, std::uint32_t> pairs[] = {
+    static constexpr ::fixy::FixedArray<InputPair, 16> pairs{
         {1u, 2u},
         {3u, 5u},
         {7u, 11u},
@@ -67,11 +68,10 @@ void test_bit_determinism() {
         const auto a = Philox::box_muller_polynomial_det(u1, u2).peek();
         const auto b = Philox::box_muller_polynomial_det(u1, u2).peek();
         if (pair_bits(a) != pair_bits(b)) {
-            std::fprintf(stderr,
-                         "bit-determinism FAIL: input (0x%08X, 0x%08X) gave "
-                         "different bits on repeat: 0x%016lX vs 0x%016lX\n",
-                         u1, u2, pair_bits(a), pair_bits(b));
-            std::abort();
+            ::fixy::fatal("bit-determinism FAIL: input (0x{}, 0x{}) gave "
+                          "different bits on repeat: 0x{} vs 0x{}",
+                          ::fixy::Hex<8>{u1}, ::fixy::Hex<8>{u2}, ::fixy::Hex<16>{pair_bits(a)},
+                          ::fixy::Hex<16>{pair_bits(b)});
         }
     }
 }
@@ -85,12 +85,10 @@ void test_finite_output() {
         const std::uint32_t u1 = i * 0xA341316Cu + 0xCBE40D5Bu;
         const std::uint32_t u2 = i * 0xC8013EA4u + 0xD4B49EE5u;
         const auto [z1, z2] = Philox::box_muller_polynomial_det(u1, u2).peek();
-        if (!std::isfinite(z1) || !std::isfinite(z2)) {
-            std::fprintf(stderr,
-                         "finite-output FAIL: input (0x%08X, 0x%08X) → "
-                         "(%g, %g) is not finite.\n",
-                         u1, u2, static_cast<double>(z1), static_cast<double>(z2));
-            std::abort();
+        if (!::fixy::fp::is_finite(z1) || !::fixy::fp::is_finite(z2)) {
+            ::fixy::fatal("finite-output FAIL: input (0x{}, 0x{}) → "
+                          "({}, {}) is not finite.",
+                          ::fixy::Hex<8>{u1}, ::fixy::Hex<8>{u2}, static_cast<double>(z1), static_cast<double>(z2));
         }
     }
 }
@@ -116,7 +114,8 @@ void test_statistical_sanity() {
                                          ::fixy::Philox4x32::Key{0x9E3779B9u, 0xBB67AE85u});
         const auto [z1, z2] =
             Philox::box_muller_polynomial_det(c.at(::fixy::index<0>()), c.at(::fixy::index<1>())).peek();
-        for (float z : {z1, z2}) {
+        ::fixy::FixedArray<float, 2> const draws{z1, z2};
+        for (float z : draws) {
             ++count;
             const double delta = static_cast<double>(z) - mean;
             mean += delta / count;
@@ -126,20 +125,16 @@ void test_statistical_sanity() {
     }
     const double variance = m2 / (kSamples - 1);
 
-    if (std::abs(mean) > kMeanTol) {
-        std::fprintf(stderr,
-                     "statistical FAIL: sample mean %.6f exceeds tolerance %.3f "
-                     "(N=%d).  Polynomial sin/cos/log may have a sign bug.\n",
-                     mean, kMeanTol, kSamples);
-        std::abort();
+    if (::fixy::fp::abs(mean) > kMeanTol) {
+        ::fixy::fatal("statistical FAIL: sample mean {} exceeds tolerance {} "
+                      "(N={}).  Polynomial sin/cos/log may have a sign bug.",
+                      mean, kMeanTol, kSamples);
     }
-    if (std::abs(variance - 1.0) > kVarTol) {
-        std::fprintf(stderr,
-                     "statistical FAIL: sample variance %.6f deviates from 1.0 "
-                     "by more than %.3f (N=%d).  Polynomial log() may have a scale "
-                     "bug.\n",
-                     variance, kVarTol, kSamples);
-        std::abort();
+    if (::fixy::fp::abs(variance - 1.0) > kVarTol) {
+        ::fixy::fatal("statistical FAIL: sample variance {} deviates from 1.0 "
+                      "by more than {} (N={}).  Polynomial log() may have a scale "
+                      "bug.",
+                      variance, kVarTol, kSamples);
     }
 }
 
