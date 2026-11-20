@@ -86,6 +86,7 @@
 #include <fixy/os/Process.h>
 #include <fixy/os/Sched.h>
 #include <fixy/os/Time.h>
+#include <foundation/Quarantine.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Philox.h>
 #include <foundation/core/Sort.h>
@@ -133,6 +134,13 @@ static_assert(sizeof(CpuId) == sizeof(int));
 // is out-of-order-able with both adjacent instructions and is incorrect
 // for short-region timing. Overhead ~15-30 cycles; Timer measures the
 // exact value and we subtract it.
+//
+// The two reads and clobber() below are the raw instructions that bracket
+// each sample, so they stay in a region of the class MEASURE.  The fence
+// before the start read is not in the TSC reader of fixy/os/Time.h, and the
+// timed loop must keep each instruction that it had.
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the fenced reads of the TSC and the compiler barrier bracket each sample")
 
 [[nodiscard, gnu::always_inline]] inline uint64_t rdtsc_start() noexcept {
 #if defined(__x86_64__) || defined(__i386__)
@@ -153,6 +161,12 @@ static_assert(sizeof(CpuId) == sizeof(int));
     return static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
 #endif
 }
+
+// A compiler barrier: no load or store moves across it, and it emits no
+// instruction.
+[[gnu::always_inline]] inline void clobber() noexcept { asm volatile("" : : : "memory"); }
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // ── RdtscPinned witness + pinned-overload rdtsc primitives ───────────
 //
@@ -258,8 +272,6 @@ template <typename T>
 [[gnu::noipa]] void do_not_optimize(T& v) noexcept {
     (void)v;
 }
-
-[[gnu::always_inline]] inline void clobber() noexcept { asm volatile("" : : : "memory"); }
 
 // ── clobber_array<T>(std::span<T>) — array-side DCE kill ──────────
 //
