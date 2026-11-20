@@ -10,6 +10,28 @@
 //   family of the two calls in the syscall catalog, the family of the reads
 //   of the process state.
 //
+// THE PROCESS PROBE
+//   probe_process(ctx, process) tells if a process of the id process lives.
+//   The door file opens a descriptor of the process with the raw pidfd_open,
+//   and it closes the descriptor at once.  The answer is one of three:
+//     alive     the open gave a descriptor.  A child that ended and that its
+//               parent did not wait for, a zombie, holds its id, so it is
+//               alive
+//     gone      the kernel holds no process of the id (esrch)
+//     unknown   each other error, such as emfile when the process holds its
+//               largest count of descriptors
+//   judge_probe_error gives the answer of each error.  An error eperm counts
+//   as alive, because the kernel refuses only a process that it holds.  The
+//   kernel reads the id as a signed word of 32 bits.  So the id zero, an id
+//   above 2^31 - 1, and the id of a thread that is not the first thread of
+//   its process give an error other than esrch, and the answer unknown.
+//
+//   The answer is a fact of the time of the call.  The kernel can give a
+//   free id to a new process, so an id that is gone can be alive at the next
+//   call.  The kernel reads the id in the pid namespace of the caller, so a
+//   process of another namespace is gone or a different process.  The probe
+//   reads the process state, so it takes the context of an identity read.
+//
 // THE CHILD DOOR
 //   spawn_child(test, body) starts a child process that runs body and then
 //   ends with the exit code 0.  The standard error of the child goes to a
@@ -78,8 +100,8 @@
 //   one thread.
 //
 // This header includes no system header.  The door file src/fixy/os/Process.cpp
-// issues each ptrace call, and src/fixy/os/Signal.cpp raises SIGSTOP and
-// sends SIGKILL.
+// issues each ptrace call and the open of the probe, and src/fixy/os/Signal.cpp
+// raises SIGSTOP and sends SIGKILL.
 
 #include <fixy/atoms/Syscall.h>
 #include <foundation/contracts/Pre.h>
@@ -111,11 +133,26 @@ enum class ProcessId : std::uint32_t {
 enum class ThreadId : std::uint32_t {
 };
 
+// The answer of the probe of a process (THE PROCESS PROBE).
+enum class ProcessState : std::uint8_t {
+    alive,
+    gone,
+    unknown,
+};
+
+// The answer of the probe for an error of the open (THE PROCESS PROBE).
+[[nodiscard]] constexpr ProcessState judge_probe_error(::foundation::os::Errno error) noexcept {
+    if (error == ::foundation::os::Errno::esrch) return ProcessState::gone;
+    if (error == ::foundation::os::Errno::eperm) return ProcessState::alive;
+    return ProcessState::unknown;
+}
+
 namespace detail {
 
-// The two calls of the door file.
+// The three calls of the door file.
 [[nodiscard]] ProcessId current_process_() noexcept;
 [[nodiscard]] ThreadId current_thread_() noexcept;
+[[nodiscard]] ProcessState probe_process_(ProcessId process) noexcept;
 
 }  // namespace detail
 
@@ -141,6 +178,13 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsIdentityRead<Ctx>
 [[nodiscard]] inline ThreadId current_thread(Ctx const&) noexcept {
     return detail::current_thread_();
+}
+
+// The state of the process of the id process (THE PROCESS PROBE).
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsIdentityRead<Ctx>
+[[nodiscard]] inline ProcessState probe_process(Ctx const&, ProcessId process) noexcept {
+    return detail::probe_process_(process);
 }
 
 // A context that can start, wait for and end a child process: one that owns

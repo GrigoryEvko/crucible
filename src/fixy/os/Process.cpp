@@ -5,10 +5,14 @@
 // foundation/os/ChildProcess.h.  The trace door issues each ptrace call raw,
 // and this file is the one includer of <linux/ptrace.h>, which gives the
 // requests, the options and struct ptrace_syscall_info.  The signal door of
-// src/fixy/os/Signal.cpp raises SIGSTOP and sends SIGKILL.
+// src/fixy/os/Signal.cpp raises SIGSTOP and sends SIGKILL.  The probe opens a
+// descriptor of a process with the raw pidfd_open.  The rule table denies a
+// raw kill, and a kill of the C library gives its error in errno, which only
+// src/foundation/os/Intercepted.cpp reads.
 
 #include <fixy/os/Process.h>
 
+#include <fixy/os/Fd.h>
 #include <fixy/os/MonotonicClock.h>
 #include <fixy/os/Signal.h>
 #include <foundation/core/Array.h>
@@ -393,6 +397,18 @@ ProcessId current_process_() noexcept {
 
 ThreadId current_thread_() noexcept {
     return static_cast<ThreadId>(static_cast<std::uint32_t>(os::raw_syscall(os::Syscall::gettid)));
+}
+
+// The flags word of pidfd_open is zero: a descriptor of the process, with the
+// close on exec that each pidfd has.
+ProcessState probe_process_(ProcessId process) noexcept {
+    return os::result_of(os::raw_syscall(os::Syscall::pidfd_open, std::to_underlying(process), 0))
+        .match(
+            [](std::uint64_t descriptor) noexcept {
+                ::fixy::fs::detail::close_descriptor_(static_cast<int>(descriptor));
+                return ProcessState::alive;
+            },
+            [](os::Errno error) noexcept { return judge_probe_error(error); });
 }
 
 }  // namespace fixy::process::detail

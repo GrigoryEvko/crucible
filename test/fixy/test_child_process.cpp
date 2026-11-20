@@ -11,6 +11,10 @@
 // The traced child: the stops of its system calls, a text in its memory, a
 // signal that ends it, its limit, a TracedChild that no wait takes, and the
 // empty TracedChild.
+//
+// The probe of a process: the process of the test, a child before and after
+// its wait, an id that no process can hold, two ids that the kernel refuses,
+// and the answer of each error.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -48,6 +52,11 @@ constexpr fp::WaitLimit kLongLimit{60000};
 // each path of an open: the bound of the kernel, PATH_MAX.
 constexpr ::fixy::CText kStatusPath{"/proc/self/status"};
 constexpr std::size_t kPathCapacity = 4096;
+
+// An id above PID_MAX_LIMIT of a 64-bit kernel, 4194304, so no process can
+// hold it.  And the smallest id that the kernel reads as a negative word.
+constexpr fp::ProcessId kIdAboveTheLimit{4194305};
+constexpr fp::ProcessId kNegativeId{0x80000000U};
 
 }  // namespace
 
@@ -351,6 +360,35 @@ void empty_traced_child_names_no_process(::fixy::TestRunnerCtx const& test) {
                   == ::foundation::os::Errno::echild);
 }
 
+// THE PROCESS PROBE of fixy/os/Process.h.  A child that ended holds its id
+// until its wait, so it is alive.  After the wait the kernel frees the id, and
+// it gives the ids in a sequence up to 4194304, so no other process takes the
+// id before the next probe.
+void probe_tells_the_state_of_a_process(::fixy::TestRunnerCtx const& test) {
+    CRUCIBLE_TEST_ASSERT(test, fp::probe_process(test, fp::current_process(test)) == fp::ProcessState::alive);
+    fp::Child child = fp::spawn_child(test, [] noexcept {}).expect("the test starts a child");
+    fp::ProcessId const child_id = child.id();
+    CRUCIBLE_TEST_ASSERT(test, fp::probe_process(test, child_id) == fp::ProcessState::alive);
+    fp::ChildReport const report = fp::wait(std::move(child)).expect("the test waits for its child");
+    CRUCIBLE_TEST_ASSERT(test, report.is_exit_with(0));
+    CRUCIBLE_TEST_ASSERT(test, fp::probe_process(test, child_id) == fp::ProcessState::gone);
+    CRUCIBLE_TEST_ASSERT(test, fp::probe_process(test, kIdAboveTheLimit) == fp::ProcessState::gone);
+    // The kernel gives einval for the id zero and for a negative word.
+    CRUCIBLE_TEST_ASSERT(test, fp::probe_process(test, fp::ProcessId{}) == fp::ProcessState::unknown);
+    CRUCIBLE_TEST_ASSERT(test, fp::probe_process(test, kNegativeId) == fp::ProcessState::unknown);
+}
+
+// An open that the kernel refuses for a process that it holds is alive, and
+// each error other than esrch and eperm is unknown.
+void probe_judges_each_error(::fixy::TestRunnerCtx const& test) {
+    using ::foundation::os::Errno;
+    CRUCIBLE_TEST_ASSERT(test, fp::judge_probe_error(Errno::esrch) == fp::ProcessState::gone);
+    CRUCIBLE_TEST_ASSERT(test, fp::judge_probe_error(Errno::eperm) == fp::ProcessState::alive);
+    CRUCIBLE_TEST_ASSERT(test, fp::judge_probe_error(Errno::einval) == fp::ProcessState::unknown);
+    CRUCIBLE_TEST_ASSERT(test, fp::judge_probe_error(Errno::enoent) == fp::ProcessState::unknown);
+    CRUCIBLE_TEST_ASSERT(test, fp::judge_probe_error(Errno::emfile) == fp::ProcessState::unknown);
+}
+
 }  // namespace
 
 int main() {
@@ -371,6 +409,8 @@ int main() {
     traced_child_ends_at_the_limit(test);
     traced_child_with_no_wait(test);
     empty_traced_child_names_no_process(test);
+    probe_tells_the_state_of_a_process(test);
+    probe_judges_each_error(test);
     ::fixy::check::pass(test, "test_child_process: PASSED\n");
     return 0;
 }

@@ -147,6 +147,9 @@ enum class Syscall : std::uint8_t {
     mremap,
     // The node of the CPU of the calling thread, for the page source door.
     getcpu,
+    // The probe of a process of the process door (fixy/os/Process.h): a
+    // descriptor of the process, which the door closes at once.
+    pidfd_open,
 };
 
 // True when the call can wait for a long time: for another thread or process
