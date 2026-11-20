@@ -1309,6 +1309,14 @@ inline void print_thread_cpus(::fixy::TextView label) noexcept {
     ::fixy::report(Sink::Out, "\n");
 }
 
+namespace detail {
+
+// The CPU on which the calling thread runs, or none when the kernel gives no
+// CPU: the one read of the current CPU in the harness.
+[[nodiscard]] inline CpuId calling_cpu() noexcept { return CpuId{sched_getcpu()}; }
+
+}  // namespace detail
+
 // The CPUs on which the threads of a body ran.  Each thread that the body
 // starts notes the CPU on which it runs, and the main thread prints the set
 // after the measurement, with the count of the notes of each CPU.  A body
@@ -1324,9 +1332,10 @@ public:
 
     // Notes the CPU of the calling thread.
     void note_calling_thread() noexcept {
-        const int cpu = sched_getcpu();
-        const std::size_t position =
-            cpu < 0 || static_cast<std::size_t>(cpu) >= kSpreadCpus ? kSpreadCpus - 1 : static_cast<std::size_t>(cpu);
+        const CpuId cpu = detail::calling_cpu();
+        const std::size_t position = !cpu.is_valid() || static_cast<std::size_t>(cpu.raw()) >= kSpreadCpus
+                                       ? kSpreadCpus - 1
+                                       : static_cast<std::size_t>(cpu.raw());
         static_cast<void>(
             counts_.at(::fixy::Index<kSpreadCpus>::check(position).expect("the test above bounds the CPU"))
                 .fetch_add_relaxed(1));
@@ -3038,7 +3047,7 @@ private:
     // successfully pinned.
     [[nodiscard]] PinResult pin_() const noexcept {
 #ifdef __linux__
-        if (pin_mode_ == Pin::None) return PinResult{.cpu = CpuId{sched_getcpu()}, .cpu_count = 0};
+        if (pin_mode_ == Pin::None) return PinResult{.cpu = detail::calling_cpu(), .cpu_count = 0};
         const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
         if (pin_mode_ == Pin::FanOut) return fan_out_(startup);
 
@@ -3058,7 +3067,7 @@ private:
                          "WARN bench: cpu%d is outside the affinity of the process, so the run measures on cpu%d\n",
                          asked.raw(), target);
         }
-        if (target < 0) target = sched_getcpu();
+        if (target < 0) target = detail::calling_cpu().raw();
         if (target < 0) return PinResult{};
 
         ::fixy::Result<::fixy::sched::PriorAffinity, ::foundation::os::Errno> prior =
@@ -3074,7 +3083,7 @@ private:
         // and getcpu) we might still report the previous CPU — accept
         // that inaccuracy rather than giving the kernel scheduler a vote and
         // burning a context switch inside every .measure().
-        const int actual = sched_getcpu();
+        const int actual = detail::calling_cpu().raw();
         PinResult pinned = PinResult::one((actual >= 0) ? CpuId{actual} : CpuId{target});
         pinned.prior = std::move(prior).ok();
         return pinned;
@@ -3098,7 +3107,7 @@ private:
     // OF A RUN).  No load balancer spreads the threads of the body there, so
     // each thread of the body pins itself to a core of its slot: a worker
     // through pin_calling_thread_to(), and the threads of a door through the
-    // placement OneCpuEach over Cores::from_slot(ThreadSlot{1}).  The
+    // placement OneCpuEach over Cores::first_slots_apart of slot 0.  The
     // measuring thread then takes the core of slot 0 for the measurement, and
     // the result counts each core of the claim.  An affinity with no CPU gets
     // no pin and a count of zero.  Complexity: linear in the number of
@@ -3114,7 +3123,7 @@ private:
         }
         if (free_count == 0) return pin_to_measuring_core_(startup, allowed, isolated);
 
-        int start_cpu = sched_getcpu();
+        int start_cpu = detail::calling_cpu().raw();
         const bool is_current_allowed = allowed.contains(start_cpu);
         if (!is_current_allowed || !is_free(start_cpu)) {
             crucible::warden::CoreSelector selector{};
