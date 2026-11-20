@@ -193,7 +193,13 @@ PROBE_FILES: dict[str, str] = {
         "resource of another owner"
     ),
     "test/fixy/test_os_numa_placement.cpp": "a NUMA placement that a move emptied claims no node and admits no request",
+    "test/fixy/test_os_remove_tree.cpp": (
+        "a Dirfd that a move emptied gives ebadf to the two doors of the tree removal, which make no system call for it"
+    ),
     "test/fixy/test_os_sched.cpp": "an affinity pin that a move emptied is not in force on its thread",
+    "test/fixy/test_os_temporary_directory.cpp": (
+        "a temporary directory that a move emptied holds no directory, and its end removes no tree"
+    ),
     "test/fixy/test_os_temporary_file.cpp": (
         "a Dirfd that a move emptied gives ebadf to the temporary file door, which makes no system call for it"
     ),
