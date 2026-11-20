@@ -11,13 +11,8 @@
 //
 // Simulates ResNet-18 (481 ops) and GPT-style (1110 ops) iteration sizes.
 
-#include <algorithm>
 #include <bit>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <memory>
 
 #include <crucible/BackgroundThread.h>
 #include <foundation/effects/Effect.h>
@@ -26,6 +21,7 @@
 #include <crucible/TraceLoader.h>
 #include <crucible/TraceRing.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/Args.h>
 
 #include "bench_harness.h"
 #include "bench_trace.h"
@@ -45,8 +41,7 @@ uint64_t bench_rand() noexcept {
 }
 
 [[noreturn]] CRUCIBLE_COLD void abort_full_ring(uint32_t appended, uint32_t total) noexcept {
-    std::fprintf(stderr, "bench_merkle_dag: the TraceRing is full after %u of %u ops\n", appended, total);
-    std::abort();
+    ::fixy::fatal("bench_merkle_dag: the TraceRing is full after {} of {} ops", appended, total);
 }
 
 // The content hash loads the full lane width of sizes and strides, and it
@@ -99,19 +94,21 @@ TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, ::fixy::BumpAren
     return te;
 }
 
-}  // namespace
-
-int main(int argc, char* argv[]) {
+// The bench with the arguments of main: the paths of the trace files after
+// the name of the program.
+int run_bench(::fixy::os::Args const& arguments) {
     bench::print_system_info();
     bench::elevate_priority();
 
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== merkle_dag ===\n\n");
+    bench::print("=== merkle_dag ===\n\n");
 
     // The eight fixed rows, then one row for each trace file of argv.
-    constexpr int kMaxTraceFiles = 56;
-    if (argc - 1 > kMaxTraceFiles) ::fixy::fatal("bench_merkle_dag takes at most {} trace files", kMaxTraceFiles);
+    constexpr std::size_t kMaxTraceFiles = 56;
+    if (arguments.size() > kMaxTraceFiles + 1) {
+        ::fixy::fatal("bench_merkle_dag takes at most {} trace files", kMaxTraceFiles);
+    }
     ::fixy::FixedList<bench::Report, 8 + kMaxTraceFiles> reports{};
 
     // ── compute_content_hash at three region sizes ───────────────────
@@ -273,8 +270,9 @@ int main(int argc, char* argv[]) {
 
         // A TraceRing is 6 MiB and the stack is 8 MiB, so the ring lives
         // on the heap, as it does in Vigil.
-        auto ring = std::make_unique<TraceRing>();
-        ring->reset();
+        ::fixy::Box<TraceRing> ring_box = ::fixy::mint_box<TraceRing>(test.alloc);
+        TraceRing& ring = *ring_box;
+        ring.reset();
         MetaLog meta_log{::foundation::effects::testing::test().alloc};
         meta_log.reset();
 
@@ -307,12 +305,12 @@ int main(int argc, char* argv[]) {
             }
             MetaIndex meta_start = meta_log.try_append(
                 ::fixy::View<const TensorMeta>{metas.view()}.window(0, total_metas).expect("the run fits the array"));
-            if (!ring->try_append(e, meta_start, ScopeHash{bench_rand()}, CallsiteHash{bench_rand()})) [[unlikely]]
+            if (!ring.try_append(e, meta_start, ScopeHash{bench_rand()}, CallsiteHash{bench_rand()})) [[unlikely]]
                 abort_full_ring(i, N);
         }
 
         BackgroundThread bg{::foundation::effects::testing::test().alloc};
-        bg.bind_ring(*ring);
+        bg.bind_ring(ring);
         bg.bind_meta_log(meta_log);
 
         // The drain buffers have static storage; 4× 4096-element arrays on
@@ -325,7 +323,7 @@ int main(int argc, char* argv[]) {
         // The first n entries of the five batches are the drained trace.  No
         // later code writes the batches.
         const uint32_t n =
-            ring->drain(batch.view(), meta_batch.view(), scope_batch.view(), callsite_batch.view(), depth_batch.view());
+            ring.drain(batch.view(), meta_batch.view(), scope_batch.view(), callsite_batch.view(), depth_batch.view());
 
         auto repopulate_meta_log = [&] {
             meta_log.reset();
@@ -378,12 +376,11 @@ int main(int argc, char* argv[]) {
     }());
 
     // ── Optional: build_trace from real .crtrace argv paths ──────────
-    for (int i = 1; i < argc; i++) {
-        bench::add_report(reports, [path = argv[i]] {
+    for (std::size_t position = 1; position < arguments.size(); ++position) {
+        const ::fixy::CText path = arguments.get(position).expect("a position below the count holds an argument");
+        bench::add_report(reports, [path_view = path.view()] {
             auto test = ::foundation::effects::testing::test();
             // A path that fails the path check counts as a file that does not open.
-            const std::string_view path_text{path};
-            const ::fixy::TextView path_view = ::fixy::mint_foreign_text(path_text.data(), path_text.size());
             auto sanitized_path = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(path_view));
             auto loaded_trace =
                 sanitized_path.is_ok()
@@ -391,19 +388,20 @@ int main(int argc, char* argv[]) {
                                  std::move(sanitized_path).expect("the path passed the check"))
                     : ::fixy::Result<LoadedTrace, TraceLoadError>{::fixy::err(TraceLoadError::OpenFailed)};
             if (loaded_trace.is_err()) {
-                std::fprintf(stderr, "[skip] could not load %s\n", path);
-                return bench::run("build_trace (skipped — load fail)", [] { asm volatile("" ::: "memory"); });
+                ::fixy::report(::fixy::Sink::Err, "[skip] could not load {}\n", path_view);
+                return bench::run("build_trace (skipped — load fail)", [] { bench::clobber(); });
             }
             const LoadedTrace trace =
                 std::move(loaded_trace).expect("the load holds a trace after the check of its error");
-            std::fprintf(stderr, "[trace] %s: %u ops, %u metas\n", path, trace.num_ops, trace.num_metas);
+            ::fixy::report(::fixy::Sink::Err, "[trace] {}: {} ops, {} metas\n", path_view, trace.num_ops,
+                           trace.num_metas);
 
             MetaLog meta_log{::foundation::effects::testing::test().alloc};
             meta_log.reset();
 
             BackgroundThread bg{::foundation::effects::testing::test().alloc};
             bg.bind_meta_log(meta_log);
-            const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
+            const size_t arena_bytes = ::fixy::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
             ::fixy::BumpArena scratch{arena_bytes};
             ::fixy::thread::QuiescenceProof<BackgroundThread> const quiescent = bg.prove_quiescence();
 
@@ -426,12 +424,18 @@ int main(int argc, char* argv[]) {
     // Expected roughly linear since every op does the same work.
     const bench::Report& hash_8 = *reports.get(0).expect("the content_hash row of 8 ops");
     const bench::Report& hash_481 = *reports.get(1).expect("the content_hash row of 481 ops");
-    std::printf("\n=== compare — content_hash scaling ===\n");
-    std::printf("  481 / 8   (expect ~60×):\n  ");
+    bench::print("\n=== compare — content_hash scaling ===\n");
+    bench::print("  481 / 8   (expect ~60×):\n  ");
     bench::compare(hash_8, hash_481).print_text();
-    std::printf("  1110 / 481 (expect ~2.3×):\n  ");
+    bench::print("  1110 / 481 (expect ~2.3×):\n  ");
     bench::compare(hash_481, *reports.get(2).expect("the content_hash row of 1110 ops")).print_text();
 
     bench::emit_reports_json(reports.view(), json);
     return 0;
 }
+
+}  // namespace
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: main takes the arguments of the C runtime as a count and an array of texts")
+int main(int argc, char** argv) { return run_bench(::fixy::os::args(argc, argv)); }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
