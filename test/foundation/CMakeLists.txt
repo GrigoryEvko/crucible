@@ -2846,6 +2846,12 @@ foundation_test(test_alloc_size_class)
 # the guard chunk runs through the Check family of fixy.
 foundation_test(test_alloc_chunk_map)
 target_link_libraries(test_alloc_chunk_map PRIVATE fixy)
+# The root of foundation/alloc/Root.h in one process: the sentinel before the
+# init, the map that the init writes into it, the sentinel of a new thread,
+# and the claims of the heap table.  The threads come from the thread door of
+# fixy.
+foundation_test(test_alloc_root)
+target_link_libraries(test_alloc_root PRIVATE fixy)
 foundation_test(test_core_ref)
 # The holder of foundation/core/Immortal.h: a fill and a read through a Ref,
 # no destructor of the payload at the end of the holder, and the two

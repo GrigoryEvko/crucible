@@ -233,6 +233,46 @@ void test_each_thread_object_is_one_for_the_thread(fo::Library const& writer, fo
     ::fixy::check::pass(kTest, "  test_each_thread_object_is_one_for_the_thread: PASSED ({} objects)\n", count);
 }
 
+// The cell of the heap of a thread and the root of the allocator of the base
+// (foundation/alloc/Root.h).  The cell is one object for each thread, whatever
+// library reads it, and its start value is the sentinel in each library: on
+// the main thread, which exists before the load of the two libraries, and on
+// a new thread.  After the init of the root in the writer, the reader sees the
+// map of the host window in the sentinel.  After a claim in the writer, the
+// reader sees the same heap id on that thread.
+void test_one_heap_cell_for_the_thread(fo::Library const& writer, fo::Library const& reader) {
+    auto const writer_cell = find<decltype(process_wide_heap_cell_key)>(writer, "process_wide_heap_cell_key");
+    auto const reader_cell = find<decltype(process_wide_heap_cell_key)>(reader, "process_wide_heap_cell_key");
+    auto const writer_sentinel = find<decltype(process_wide_heap_is_sentinel)>(writer, "process_wide_heap_is_sentinel");
+    auto const reader_sentinel = find<decltype(process_wide_heap_is_sentinel)>(reader, "process_wide_heap_is_sentinel");
+    if (!(writer_cell() == reader_cell())) fail_claim("the two libraries see one heap cell on the main thread");
+    if (!(writer_sentinel() == 1 && reader_sentinel() == 1)) {
+        fail_claim("the heap cell of the main thread names the sentinel in each library before the claim");
+    }
+    ::fixy::AddressKey const main_cell = writer_cell();
+    bool const is_other_thread_right =
+        on_other_thread([writer_cell, reader_cell, writer_sentinel, reader_sentinel, main_cell] noexcept {
+            bool const is_one_cell = writer_cell() == reader_cell() && !(writer_cell() == main_cell);
+            return is_one_cell && writer_sentinel() == 1 && reader_sentinel() == 1;
+        });
+    if (!is_other_thread_right) {
+        fail_claim("a new thread has a heap cell of its own, one in the two libraries, that names the sentinel");
+    }
+
+    find<decltype(process_wide_start_alloc_root)>(writer, "process_wide_start_alloc_root")();
+    auto const reader_map =
+        find<decltype(process_wide_sentinel_holds_host_map)>(reader, "process_wide_sentinel_holds_host_map");
+    if (reader_map() != 1) fail_claim("the reader sees the map of the host window in the sentinel after the init");
+
+    find<decltype(process_wide_claim_heap)>(writer, "process_wide_claim_heap")();
+    auto const writer_id = find<decltype(process_wide_heap_id)>(writer, "process_wide_heap_id");
+    auto const reader_id = find<decltype(process_wide_heap_id)>(reader, "process_wide_heap_id");
+    if (!(writer_id() != 0 && writer_id() == reader_id() && reader_sentinel() == 0)) {
+        fail_claim("after a claim in the writer, the reader sees the same heap id on the thread");
+    }
+    ::fixy::check::pass(kTest, "  test_one_heap_cell_for_the_thread: PASSED (heap id {})\n", reader_id());
+}
+
 void test_the_reader_sees_each_write(fo::Library const& writer, fo::Library const& reader) {
     find<decltype(process_wide_write)>(writer, "process_wide_write")();
     auto const classify = find<decltype(process_wide_classify)>(reader, "process_wide_classify");
@@ -318,6 +358,7 @@ int main(int argc, char** argv) {
     fo::Library const reader = load(PROCESS_WIDE_READER_PATH);
     if (is_selected(::fixy::TextView{"addresses"})) test_each_object_has_one_address(writer, reader);
     if (is_selected(::fixy::TextView{"threads"})) test_each_thread_object_is_one_for_the_thread(writer, reader);
+    if (is_selected(::fixy::TextView{"heaps"})) test_one_heap_cell_for_the_thread(writer, reader);
     if (is_selected(::fixy::TextView{"writes"})) test_the_reader_sees_each_write(writer, reader);
     if (is_selected(::fixy::TextView{"claim"})) test_the_reader_sees_the_claim(test, writer, reader);
     if (is_selected(::fixy::TextView{"static_tls"})) test_static_tls_holds_the_rule_threshold();

@@ -88,6 +88,7 @@ extern "C" {
 // Defined in the two libraries: the address of each control, null past the last.
 [[gnu::visibility("default")]] const void* process_wide_control_address(unsigned index) noexcept;
 
+
 // Defined in the two libraries.  The first writes the report of the fallback
 // rows that the release of the kernel floor lacks, through the one cell of the
 // process (report_kernel_fallbacks_once of foundation/os/KernelFloor.h).  The
@@ -96,6 +97,19 @@ extern "C" {
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: dlsym finds each entry point of a test library by its C name")
 [[gnu::visibility("default")]] void process_wide_report_floor_fallbacks() noexcept;
 [[gnu::visibility("default")]] void process_wide_open_init_door() noexcept;
+
+// Defined in the two libraries, for the allocator of the base
+// (foundation/alloc/Root.h): the key of the address of the cell of the heap of
+// the calling thread, 1 when the cell names the sentinel heap, the init of
+// the root, 1 when the sentinel holds the chunk map of the host window and no
+// own entry, the claim of a heap for the calling thread, and the entry of the
+// heap of the calling thread (0 for the sentinel).
+[[gnu::visibility("default")]] ::fixy::AddressKey process_wide_heap_cell_key() noexcept;
+[[gnu::visibility("default")]] int process_wide_heap_is_sentinel() noexcept;
+[[gnu::visibility("default")]] void process_wide_start_alloc_root() noexcept;
+[[gnu::visibility("default")]] int process_wide_sentinel_holds_host_map() noexcept;
+[[gnu::visibility("default")]] void process_wide_claim_heap() noexcept;
+[[gnu::visibility("default")]] std::uint16_t process_wide_heap_id() noexcept;
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 }  // extern "C"
