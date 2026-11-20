@@ -525,6 +525,13 @@ PROBES: tuple[Probe, ...] = (
     Probe("index_check", "the check of an Index is one compare, and the empty Option is the count of the Index"),
     Probe("text_window", "window of a TextView gives its Option with no test of the niche of the Option"),
     Probe(
+        "text_is_window_of",
+        "is_window_of of two TextViews is the two compares of the address ranges of the raw form, with no branch "
+        "and no test of the Option of offset_of.  In a Release build the family side is not longer than the raw "
+        "side.  In a Debug build the family side has one more register move",
+        longer=1,
+    ),
+    Probe(
         "text_window_digits",
         "a loop over the window of a TextView is the bounds compare of the window and the loop of a raw pointer, with "
         "no call.  The family side tests an empty window with a compare of two pointers, and the raw side tests the "

@@ -1,6 +1,7 @@
 // Tests of foundation/core/Algorithms.h: equal, find, the scans with a
 // predicate, the lower bound of a key and the bytes of an object, over the
-// View of a FixedArray, and the text forms over a TextView.
+// View of a FixedArray, and the text forms over a TextView, with the query of
+// a window of a text.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -114,6 +115,51 @@ void test_text_search() {
                          ::foundation::core::equal(path.window(1, 3).expect("the window fits"), TextView{"sys"}));
 }
 
+// is_window_of reads the addresses of two texts: a part lies inside a whole
+// when it starts at or after the whole and ends at or before its end.
+void test_is_window_of() {
+    using ::foundation::core::FixedText;
+    using ::foundation::core::is_window_of;
+    using ::foundation::core::WindowPartText;
+    using ::foundation::core::WindowWholeText;
+    FixedText<8> const letters{"abcdefgh"};
+    FixedText<8> const same_letters{"abcdefgh"};
+    TextView const text = letters.view();
+    auto const window_at = [text](std::size_t offset, std::size_t count) noexcept {
+        return text.window(offset, count).expect("the window fits the letters");
+    };
+    TextView const whole = window_at(2, 4);
+    auto const is_inside = [whole](TextView part) noexcept {
+        return is_window_of(WindowPartText{part}, WindowWholeText{whole});
+    };
+
+    // A part inside, a part equal to the whole, and a part at each edge.
+    CRUCIBLE_TEST_ASSERT(kTest, is_inside(window_at(3, 2)));
+    CRUCIBLE_TEST_ASSERT(kTest, is_inside(whole));
+    CRUCIBLE_TEST_ASSERT(kTest, is_inside(window_at(2, 1)));
+    CRUCIBLE_TEST_ASSERT(kTest, is_inside(window_at(5, 1)));
+
+    // A part that starts one character before the whole, a part that ends one
+    // character after it, the larger text, and a part of a second buffer with
+    // the same characters.
+    CRUCIBLE_TEST_ASSERT(kTest, !is_inside(window_at(1, 3)));
+    CRUCIBLE_TEST_ASSERT(kTest, !is_inside(window_at(3, 4)));
+    CRUCIBLE_TEST_ASSERT(kTest, !is_inside(text));
+    CRUCIBLE_TEST_ASSERT(kTest, !is_inside(same_letters.view().window(2, 4).expect("the part fits the letters")));
+
+    // An empty part at the start of the whole, inside it and at its end is a
+    // window.  An empty part outside the whole, of the second buffer, or with
+    // no address is no window.
+    CRUCIBLE_TEST_ASSERT(kTest, is_inside(window_at(2, 0)));
+    CRUCIBLE_TEST_ASSERT(kTest, is_inside(window_at(4, 0)));
+    CRUCIBLE_TEST_ASSERT(kTest, is_inside(window_at(6, 0)));
+    CRUCIBLE_TEST_ASSERT(kTest, !is_inside(window_at(1, 0)));
+    CRUCIBLE_TEST_ASSERT(kTest, !is_inside(window_at(7, 0)));
+    CRUCIBLE_TEST_ASSERT(kTest, !is_inside(same_letters.view().window(4, 0).expect("the part fits the letters")));
+    CRUCIBLE_TEST_ASSERT(kTest, !is_inside(TextView{}));
+    CRUCIBLE_TEST_ASSERT(kTest, is_window_of(WindowPartText{TextView{}}, WindowWholeText{TextView{}}));
+}
+
 // The letters of the property.  The ORACLE region holds the same text as a
 // std::string_view.
 constexpr TextView letters{"abcabbacbbcabacccababcbbaacbcabcbacabbbcaacbabcabbcaaabcbcbacbbacaabccbabacbcaabbcab"
@@ -161,6 +207,24 @@ void test_text_operations_agree_with_std() {
         CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::starts_with(text, needle) == model_starts);
         CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::ends_with(text, needle) == model_ends);
         CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::equal(text, needle) == model_equal);
+    }
+}
+
+// The property: is_window_of of two random windows of the letters agrees
+// with the compare of their offsets and their ends.
+void test_is_window_of_agrees_with_offsets() {
+    ::crucible::test::PhiloxStream stream{0x317D0F0F0000E005u};
+    for (int trial = 0; trial < 4096; ++trial) {
+        std::size_t const part_offset = stream.below(letters.size() + 1);
+        std::size_t const part_size = stream.below(letters.size() - part_offset + 1);
+        std::size_t const whole_offset = stream.below(letters.size() + 1);
+        std::size_t const whole_size = stream.below(letters.size() - whole_offset + 1);
+        TextView const part = letters.window(part_offset, part_size).expect("the part fits the letters");
+        TextView const whole = letters.window(whole_offset, whole_size).expect("the whole fits the letters");
+        bool const is_inside = part_offset >= whole_offset && part_offset + part_size <= whole_offset + whole_size;
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::is_window_of(::foundation::core::WindowPartText{part},
+                                                                     ::foundation::core::WindowWholeText{whole})
+                                        == is_inside);
     }
 }
 
@@ -216,7 +280,9 @@ int main() {
     test_find_lower_bound_by_key();
     test_bytes_of_a_record();
     test_text_search();
+    test_is_window_of();
     test_text_operations_agree_with_std();
+    test_is_window_of_agrees_with_offsets();
     test_view_scans_agree_with_std();
     ::fixy::check::pass(kTest, "test_core_algorithms: all tests passed\n");
     return 0;

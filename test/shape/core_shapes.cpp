@@ -311,6 +311,11 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
     return text.window(offset, count);
 }
 
+// The query of a window: the two address ranges compared as integers.
+[[gnu::used]] bool text_is_window_of(fixy::TextView part, fixy::TextView whole) noexcept {
+    return fixy::is_window_of(fixy::WindowPartText{part}, fixy::WindowWholeText{whole});
+}
+
 // The value of the digits of a run of a text: a loop over the Option of the
 // window of the run, and a loop over the characters of the window.
 [[gnu::used]] std::uint32_t text_window_digits(fixy::TextView text, std::size_t offset, std::size_t count) noexcept {
@@ -1581,6 +1586,14 @@ struct RawColumn final {
         return RawText{nullptr, ~std::size_t{0}};
     }
     return RawText{first + offset, count};
+}
+
+// The raw form compares the two pointers, as the code that the query replaces
+// did.  A bitwise or of the two compares has no branch, as the family side has
+// none.  The hardening of a compare then tests the same compares on the two
+// sides.
+[[gnu::used]] bool text_is_window_of_raw(RawText part, RawText whole) noexcept {
+    return !((part.first < whole.first) | (part.first + part.count > whole.first + whole.count));
 }
 
 [[gnu::used]] std::uint32_t text_window_digits_raw(char const* first, std::size_t size, std::size_t offset,

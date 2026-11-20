@@ -217,6 +217,7 @@ using ::foundation::core::Index;
 using ::foundation::core::index;
 using ::foundation::core::IndexCount;
 using ::foundation::core::IndexRange;
+using ::foundation::core::is_window_of;
 using ::foundation::core::LengthMismatch;
 using ::foundation::core::MaskedArray;
 using ::foundation::core::mint_branded_scope;
@@ -247,6 +248,8 @@ using ::foundation::core::ViewMutChunks;
 using ::foundation::core::Walk;
 using ::foundation::core::with_mut;
 using ::foundation::core::write_each;
+using ::foundation::core::WindowPartText;
+using ::foundation::core::WindowWholeText;
 using ::foundation::core::WriteLease;
 
 using ::foundation::core::BrandedStridedView;

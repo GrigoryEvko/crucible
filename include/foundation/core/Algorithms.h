@@ -21,6 +21,10 @@
 //                              probe, in a View that its key sorts
 //   bytes(object)              the bytes of a plain object, as a View of its
 //                              size
+//   is_window_of(part, whole)  a text whose characters lie inside the
+//                              characters of a second text.  The two texts
+//                              come in their roles (WindowPartText and
+//                              WindowWholeText), so a call cannot swap them
 //
 // Each operation reads only the elements of its Views, so no operation
 // reads past a View.  A position is an index below the count of its View.
@@ -37,6 +41,7 @@
 #include <foundation/core/Equatable.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Scalar.h>
+#include <foundation/core/Side.h>
 #include <foundation/core/Text.h>
 
 #include <compare>
@@ -216,6 +221,47 @@ template <class T, std::size_t Extent, class Predicate>
         if (first[index] != suffix_first[index]) return false;
     }
     return true;
+}
+
+// The roles of the two texts of is_window_of (foundation/core/Side.h).
+namespace side {
+
+// The text that can lie inside the other text.
+struct WindowPart final {};
+
+// The text that can hold the other text.
+struct WindowWhole final {};
+
+}  // namespace side
+
+// The two texts of is_window_of in their roles.
+using WindowPartText = Side<side::WindowPart, TextView>;
+using WindowWholeText = Side<side::WindowWhole, TextView>;
+
+// True when each character of part lies inside whole: the first address of
+// part is at or after the first address of whole, and the end of part is at
+// or before the end of whole.  The query reads the addresses and no
+// character, so a text of a different object with the same characters is no
+// window.  An empty part is a window when its address lies from the first
+// address of whole to the end of whole, so an empty part at the end of whole
+// is a window.  The empty text with no address, such as a default TextView,
+// is a window only of a text with no address.
+//
+// The query is offset_of of foundation/core/Region.h over the characters of
+// the two texts.  At run time, offset_of compares the two address ranges as
+// integers.  A relational compare of two pointers into different objects
+// has no specified result in C++, but a compare of two integers has one.
+// Thus a text of a different object gives false, and the compare has no
+// undefined behavior.  In a constant evaluation, an empty part of a different
+// object can meet a compare with the address one past the end of whole, and
+// such a call does not compile.  Complexity: O(1), two compares, at run
+// time, and O(whole.size()) in a constant evaluation.
+[[nodiscard]] constexpr bool is_window_of(WindowPartText const& part, WindowWholeText const& whole) noexcept {
+    TextView const part_text = part.value();
+    TextView const whole_text = whole.value();
+    View<char const> const part_view{detail::ViewDoor::key(), detail::text_first_(part_text), part_text.size()};
+    View<char const> const whole_view{detail::ViewDoor::key(), detail::text_first_(whole_text), whole_text.size()};
+    return offset_of(whole_view, part_view).is_some();
 }
 
 // The first position whose key is not below probe.  The View must be in

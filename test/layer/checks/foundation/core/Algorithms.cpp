@@ -125,6 +125,50 @@ static_assert(ends_with(TextView{"node3/cpulist"}, TextView{"cpulist"})
               && !ends_with(TextView{"list"}, TextView{"cpulist"}));
 static_assert(!ends_with(TextView{"cpulisx"}, TextView{"list"}));
 
+// is_window_of takes the two texts in their roles, so the swapped call and a
+// call with two plain texts do not compile.
+template <class First, class Second>
+constexpr bool window_accepts = requires(First first, Second second) { is_window_of(first, second); };
+static_assert(window_accepts<WindowPartText, WindowWholeText>);
+static_assert(!window_accepts<WindowWholeText, WindowPartText>);
+static_assert(!window_accepts<TextView, TextView>);
+static_assert(!window_accepts<WindowPartText, TextView>);
+static_assert(std::is_same_v<decltype(is_window_of(WindowPartText{TextView{}}, WindowWholeText{TextView{}})), bool>);
+
+// The texts of the window checks are two buffers of internal linkage with the
+// same characters, so each buffer is an object of its own.
+constexpr FixedText<8> window_letters{"abcdefgh"};
+constexpr FixedText<8> other_letters{"abcdefgh"};
+
+// A part of the letters against the whole of the characters from 2 to 6.
+[[nodiscard]] consteval bool is_letters_window(std::size_t offset, std::size_t count) noexcept {
+    TextView const part = window_letters.view().window(offset, count).expect("the part fits the letters");
+    TextView const whole = window_letters.view().window(2, 4).expect("the whole fits the letters");
+    return is_window_of(WindowPartText{part}, WindowWholeText{whole});
+}
+
+// A part lies inside when it starts at or after the whole and ends at or
+// before its end, at each edge.  A part that starts before the whole or ends
+// after it is no window.
+static_assert(is_letters_window(2, 4) && is_letters_window(3, 2));
+static_assert(is_letters_window(2, 1) && is_letters_window(5, 1));
+static_assert(!is_letters_window(1, 3) && !is_letters_window(3, 4) && !is_letters_window(0, 8));
+
+// An empty part is a window from the start of the whole to its end.
+static_assert(is_letters_window(2, 0) && is_letters_window(4, 0) && is_letters_window(6, 0));
+static_assert(!is_letters_window(1, 0) && !is_letters_window(7, 0));
+
+// The query reads the addresses: a part of the second buffer with the same
+// characters is no window, and the empty text with no address is a window
+// only of a text with no address.
+[[nodiscard]] consteval bool is_window_of_letters(TextView part) noexcept {
+    return is_window_of(WindowPartText{part},
+                        WindowWholeText{window_letters.view().window(2, 4).expect("the whole fits the letters")});
+}
+static_assert(!is_window_of_letters(other_letters.view().window(2, 4).expect("the part fits the letters")));
+static_assert(!is_window_of_letters(TextView{}));
+static_assert(is_window_of(WindowPartText{TextView{}}, WindowWholeText{TextView{}}));
+
 // The lower bound of a key in a sorted run.
 constexpr auto identity_key = [](int value) noexcept { return value; };
 static_assert(find_lower_bound_by_key(view_of(numbers), identity_key, 15) == 2);
