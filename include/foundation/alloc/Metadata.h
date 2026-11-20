@@ -49,6 +49,7 @@
 // headers of foundation/alloc.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/Platform.h>
 #include <foundation/alloc/ChunkMap.h>
 #include <foundation/alloc/Layout.h>
 #include <foundation/contracts/Pre.h>
@@ -235,13 +236,23 @@ inline constexpr std::size_t kMetadataStepBytes = std::size_t{2} << 20;
 
 // The offsets of the sections of the region of one window, and of each
 // record (THE REGION).  Each offset counts from the first byte of the
-// reservation of the region, the first byte of its first guard.
+// reservation of the region, the first byte of its first guard.  A wrong
+// offset would write outside the region, so each check is a fatal invariant
+// that holds in each build and under each contract semantic, and the window
+// door of the static library foundation holds no contract machinery.
 class MetadataLayout final {
 public:
+    constexpr MetadataLayout(MetadataLayout const&) noexcept = default;
+    constexpr MetadataLayout(MetadataLayout&&) noexcept = default;
+    constexpr MetadataLayout& operator=(MetadataLayout const&) noexcept = default;
+    constexpr MetadataLayout& operator=(MetadataLayout&&) noexcept = default;
+    ~MetadataLayout() = default;
+
     // The layout of the region of a window of CHUNKS chunks, which is at most
     // the chunks of a window of 1 TiB.  Complexity: O(1).
     [[nodiscard]] static constexpr MetadataLayout of(::foundation::core::ElementCount chunks) noexcept {
-        CRUCIBLE_PRE(chunks.raw() != 0 && chunks.raw() <= kMostChunks);
+        CRUCIBLE_FATAL_INVARIANT(chunks.raw() != 0);
+        CRUCIBLE_FATAL_INVARIANT(chunks.raw() <= kMostChunks);
         std::size_t const count = chunks.raw();
         MetadataLayout layout{};
         layout.chunks_ = count;
@@ -282,14 +293,14 @@ public:
 
     // The offset of the ChunkMeta of a chunk of the window.
     [[nodiscard]] constexpr ::foundation::core::ByteCount chunk_meta_offset(ChunkIndex chunk) const noexcept {
-        CRUCIBLE_PRE(chunk.raw() < chunks_);
+        CRUCIBLE_FATAL_INVARIANT(chunk.raw() < chunks_);
         return ::foundation::core::ByteCount{chunk_records_offset_ + std::size_t{chunk.raw()} * kChunkMetaBytes};
     }
 
     // The offset of the SlabMeta of a unit of a chunk of the window.
     [[nodiscard]] constexpr ::foundation::core::ByteCount slab_meta_offset(ChunkIndex chunk,
                                                                            UnitIndex unit) const noexcept {
-        CRUCIBLE_PRE(chunk.raw() < chunks_);
+        CRUCIBLE_FATAL_INVARIANT(chunk.raw() < chunks_);
         std::size_t const slab = std::size_t{chunk.raw()} * kUnitsPerChunk + unit.raw();
         return ::foundation::core::ByteCount{slab_records_offset_ + slab * kSlabMetaBytes};
     }

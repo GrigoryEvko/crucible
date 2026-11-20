@@ -159,6 +159,11 @@ struct WindowRecordDoor;
 class BiasedChunkMap final {
 public:
     constexpr BiasedChunkMap() noexcept = default;
+    constexpr BiasedChunkMap(BiasedChunkMap const&) noexcept = default;
+    constexpr BiasedChunkMap(BiasedChunkMap&&) noexcept = default;
+    constexpr BiasedChunkMap& operator=(BiasedChunkMap const&) noexcept = default;
+    constexpr BiasedChunkMap& operator=(BiasedChunkMap&&) noexcept = default;
+    ~BiasedChunkMap() = default;
 
     // The entry of the chunk of an address of the window of the map.  The
     // caller proves that the address is inside the window.  Complexity:
@@ -190,6 +195,11 @@ private:
 class WindowRecord final {
 public:
     constexpr WindowRecord() noexcept = default;
+    constexpr WindowRecord(WindowRecord const&) noexcept = default;
+    constexpr WindowRecord(WindowRecord&&) noexcept = default;
+    constexpr WindowRecord& operator=(WindowRecord const&) noexcept = default;
+    constexpr WindowRecord& operator=(WindowRecord&&) noexcept = default;
+    ~WindowRecord() = default;
 
     [[nodiscard]] constexpr AddressWord base() const noexcept { return AddressWord{base_}; }
     [[nodiscard]] constexpr ::foundation::core::ByteCount length() const noexcept {

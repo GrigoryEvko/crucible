@@ -5,9 +5,9 @@
 
 #include <foundation/alloc/Window.h>
 
+#include <foundation/Platform.h>
 #include <foundation/alloc/ChunkMap.h>
 #include <foundation/alloc/Metadata.h>
-#include <foundation/contracts/Pre.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Quantity.h>
@@ -110,15 +110,15 @@ Window::Window(os::Reservation&& window, os::Reservation&& region, MetadataLayou
     : window_{std::move(window)}, region_{std::move(region)}, layout_{layout}, record_{record} {}
 
 bool Window::is_extent_committed(ChunkIndex chunk) const noexcept {
-    CRUCIBLE_PRE(chunk.raw() < record_.chunk_count());
+    CRUCIBLE_FATAL_INVARIANT(chunk.raw() < record_.chunk_count());
     std::size_t const extent = chunk.raw() >> (kExtentShift - kChunkShift);
     std::uint64_t const word = *committed_extents_.get(extent / 64).expect("a window holds at most 1 TiB of extents");
     return ((word >> (extent % 64)) & 1U) != 0;
 }
 
 core::Result<core::Unit, os::Errno> Window::commit_extent_of(ChunkIndex chunk) noexcept {
-    CRUCIBLE_PRE(chunk.raw() < record_.chunk_count());
-    CRUCIBLE_PRE(!is_guard_chunk(chunk));
+    CRUCIBLE_FATAL_INVARIANT(chunk.raw() < record_.chunk_count());
+    CRUCIBLE_FATAL_INVARIANT(!is_guard_chunk(chunk));
     if (is_extent_committed(chunk)) return core::Unit{};
     std::size_t const extent = chunk.raw() >> (kExtentShift - kChunkShift);
     CRUCIBLE_TRY(committed, commit_part(window_, extent << kExtentShift, core::ByteCount{kExtentBytes - kChunkBytes}));
@@ -129,7 +129,7 @@ core::Result<core::Unit, os::Errno> Window::commit_extent_of(ChunkIndex chunk) n
 }
 
 void Window::set_owner(ChunkIndex chunk, ChunkOwner owner) noexcept {
-    CRUCIBLE_PRE(chunk.raw() < record_.chunk_count());
+    CRUCIBLE_FATAL_INVARIANT(chunk.raw() < record_.chunk_count());
     std::uint64_t const map = static_cast<std::uint64_t>(record_.region_base()) + layout_.map_offset().raw();
     std::uint64_t const entry = map + std::uint64_t{chunk.raw()} * sizeof(ChunkOwner);
     *__builtin_bit_cast(ChunkOwner*, entry) = owner;
@@ -171,7 +171,7 @@ core::Result<Window, os::Errno> reserve_window() noexcept { return climb_ladder(
 core::Result<Window, os::Errno> reserve_window(os::ReserveCap cap) noexcept { return climb_ladder(cap); }
 
 void publish_host_window(Window const& window, WindowTable& table) noexcept {
-    CRUCIBLE_PRE(table.host().is_empty());
+    CRUCIBLE_FATAL_INVARIANT(table.host().is_empty());
     detail::WindowRecordDoor::place(table, kHostWindow, window.record());
 }
 
