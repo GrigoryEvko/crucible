@@ -1384,6 +1384,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::is_projection_failure, kMetafunction},
     {^^::fixy::session::RoleState, kProjectionModel},
     {^^::fixy::session::TypingContext, kProjectionModel},
+    {^^::fixy::session::ContextFault,
+     "the fault of the marked system of a typing context: it holds a reflection, so it is a value of a constant "
+     "evaluation only, and it is never a value in a signature"},
     {^^::fixy::session::CrashLiveness, kQuery},
     {^^::fixy::session::is_crash_live_by_construction, kMetafunction},
     {^^::fixy::session::is_live_by_construction, kMetafunction},
