@@ -168,6 +168,45 @@ static_assert(check_context_deadlock_freedom<TypingContext<>, OneSlot>().is_admi
 using SelfQueue = TypingContext<At<P, Out<P, X, In<P, X, End>>>>;
 static_assert(check_context_deadlock_freedom<SelfQueue, OneSlot>().is_admitted());
 
+// ── Roles that loop ─────────────────────────────────────────────────────
+//
+// The body of a Loop around the whole local type is one period of its role.
+
+// A stream: P sends in each period, and Q receives in each period.
+using Stream = TypingContext<At<P, Loop<Out<Q, X, Continue>>>, At<Q, Loop<In<P, X, Continue>>>>;
+inline constexpr net::ProcessSystem<2, 1, 2> stream_system{
+    .process_names = {"P", "Q"},
+    .channels = {{.name = "P to Q", .capacity = 1}},
+    .actions = {send_on(process_p, first_channel), receive_on(process_q, first_channel)}};
+static_assert(is_same_system(marked_system_of_context<Stream, OneSlot>(), stream_system));
+static_assert(check_context_deadlock_freedom<Stream, OneSlot>().is_admitted());
+
+// A request and its answer in each period.
+using PingPong = TypingContext<At<P, Loop<Out<Q, X, In<Q, Y, Continue>>>>, At<Q, Loop<In<P, X, Out<P, Y, Continue>>>>>;
+static_assert(check_context_deadlock_freedom<PingPong, OneSlot>().is_admitted());
+
+// Each role waits on the other first in each period.
+using CrossedLoops =
+    TypingContext<At<P, Loop<In<Q, Y, Out<Q, X, Continue>>>>, At<Q, Loop<In<P, X, Out<P, Y, Continue>>>>>;
+static_assert(check_context_deadlock_freedom<CrossedLoops, TwoSlots>().says(
+    "liveness: a cycle of waits holds no token: P receives 'Q to P' step 0 <- Q sends 'Q to P' step 0 <- Q "
+    "receives 'P to Q' step 0 <- P sends 'P to Q' step 0.  No action of the cycle can start."));
+
+// The ring of Priority.cpp in a loop: each role sends to its right and then
+// receives from its left.
+using LoopRing = TypingContext<At<P, Loop<Out<Q, X, In<R, X, Continue>>>>, At<Q, Loop<In<P, X, Out<R, X, Continue>>>>,
+                               At<R, Loop<In<Q, X, Out<P, X, Continue>>>>>;
+static_assert(check_context_deadlock_freedom<LoopRing, OneSlot>().is_admitted());
+
+// One period sends one message, and the other period receives two.
+using UnevenPeriods = TypingContext<At<P, Loop<Out<Q, X, Continue>>>, At<Q, Loop<In<P, X, In<P, X, Continue>>>>>;
+static_assert(check_context_deadlock_freedom<UnevenPeriods, OneSlot>().says(
+    "liveness: channel 'P to Q' has 1 sends and 2 receives.  Each send has its receive."));
+
+// A Loop whose body reaches End and no Continue runs one time.
+using LoopOnce = TypingContext<At<P, Loop<Out<Q, X, End>>>, At<Q, In<P, X, End>>>;
+static_assert(check_context_deadlock_freedom<LoopOnce, OneSlot>().is_admitted());
+
 // ── The faults ──────────────────────────────────────────────────────────
 
 static_assert(find_context_fault<int>().code == ContextFaultCode::NotAContext);
@@ -189,14 +228,33 @@ using BinaryStep = TypingContext<At<P, Send<int, End>>, At<Q, End>>;
 static_assert(find_context_fault<BinaryStep>().code == ContextFaultCode::NodeOutsideModel);
 static_assert(check_context_deadlock_freedom<BinaryStep, OneSlot>().says(
     "context: the local type of the role 'P' holds a node that the check does not read: "
-    "fixy::session::Send<int, fixy::session::End>.  The check reads End and the Send and Recv steps of a PeerMsg."));
-
-using Stream = TypingContext<At<P, Loop<Out<Q, X, Continue>>>, At<Q, Loop<In<P, X, Continue>>>>;
-static_assert(find_context_fault<Stream>().code == ContextFaultCode::NodeOutsideModel);
+    "fixy::session::Send<int, fixy::session::End>.  The check reads End, one Loop around the whole type with its "
+    "Continue, and the Send and Recv steps of a PeerMsg."));
 
 using Stranger = TypingContext<At<P, Out<R, X, End>>, At<Q, End>>;
 static_assert(find_context_fault<Stranger>().code == ContextFaultCode::PeerOutsideContext);
 static_assert(check_context_deadlock_freedom<Stranger, OneSlot>().says(
     "context: the local type of the role 'P' names the peer 'R', which is no role of the context."));
+
+// A step before the loop: the loop is not the whole local type.
+using StepBeforeLoop = TypingContext<At<P, Out<Q, X, Loop<Out<Q, X, Continue>>>>, At<Q, Loop<In<P, X, Continue>>>>;
+static_assert(find_context_fault<StepBeforeLoop>().code == ContextFaultCode::LoopNotWhole);
+static_assert(find_context_fault<StepBeforeLoop>().type == ^^Loop<Out<Q, X, Continue>>);
+static_assert(check_context_deadlock_freedom<StepBeforeLoop, OneSlot>().starts_with(
+    "context: the local type of the role 'P' holds a loop that is not one Loop around the whole type with an "
+    "action in its period: fixy::session::Loop<"));
+
+// A loop inside the loop.
+using LoopInLoop = TypingContext<At<P, Loop<Out<Q, X, Loop<Out<Q, Y, Continue>>>>>, At<Q, Loop<In<P, X, Continue>>>>;
+static_assert(find_context_fault<LoopInLoop>().code == ContextFaultCode::LoopNotWhole);
+static_assert(find_context_fault<LoopInLoop>().type == ^^Loop<Out<Q, Y, Continue>>);
+
+// P sends for ever, and Q receives one message and ends.  The counts of one
+// period agree, and the second send of P waits for ever.
+using StreamToRun = TypingContext<At<P, Loop<Out<Q, X, Continue>>>, At<Q, In<P, X, End>>>;
+static_assert(find_context_fault<StreamToRun>().code == ContextFaultCode::LoopMeetsRun);
+static_assert(check_context_deadlock_freedom<StreamToRun, OneSlot>().says(
+    "context: the role 'P' loops, the role 'Q' runs one time, and a channel joins them.  Along each channel the two "
+    "roles loop, or the two run one time."));
 
 }  // namespace fixy::session::detail::context_net_self_test

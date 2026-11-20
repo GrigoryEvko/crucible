@@ -42,11 +42,24 @@
 //   a named state reads as its protocol, and a keyed step reads as its step.
 //
 // THE MODEL OF THE CHECK
-//   The check reads a local type that runs one time to End, as a sequence of
-//   Send and Recv steps of PeerMsg messages.  The queue of each role is
-//   empty.  Each other node is outside the model, and the context then has
-//   no marked system: a Loop, a choice of two or more branches, a step whose
-//   payload names no peer, a wrapper, a marker and a terminal other than End.
+//   The check reads a local type as a sequence of Send and Recv steps of
+//   PeerMsg messages, and the queue of each role is empty.  The sequence
+//   runs one time to End, or it is the body of one Loop around the whole
+//   local type, which reaches its Continue.  The body of such a loop is one
+//   period of the role (THE MODEL of foundation/algebra/net/Priority.h).  A
+//   Loop whose body reaches End and no Continue runs one time.
+//
+//   A role that loops for ever and a role that runs one time do not fit one
+//   system: the counts of one period can agree, and the role that loops
+//   then waits for ever on the role that ended.  So along each channel the
+//   two roles loop, or the two run one time.  A context of roles that loop
+//   is live when each period of the marked graph can start, and a context of
+//   roles that run one time is live when each action can start.
+//
+//   Each other node is outside the model, and the context then has no marked
+//   system: a Loop below the top of a local type, a loop with no action in
+//   its period, a choice of two or more branches, a step whose payload names
+//   no peer, a wrapper, a marker and a terminal other than End.
 //   find_context_fault names the first such node.
 //
 // THE LIMITS
@@ -89,6 +102,10 @@ enum class ContextFaultCode : std::uint8_t {
     NodeOutsideModel = 4,
     // The fault names the role, and the peer.
     PeerOutsideContext = 5,
+    // The fault names the role, and the type of its loop.
+    LoopNotWhole = 6,
+    // The fault names the role that loops, and the role that runs one time.
+    LoopMeetsRun = 7,
 };
 
 // The fault that find_context_fault finds.  The code tells which fields it
@@ -123,6 +140,13 @@ struct read_action {
 struct read_channel {
     net::ProcessId sender{};
     net::ProcessId receiver{};
+};
+
+// How the local type of a role runs (THE MODEL OF THE CHECK).
+enum class RunShape : std::uint8_t {
+    NoAction = 0,
+    RunsOnce = 1,
+    Loops = 2,
 };
 
 // The reading of a context: the fault, the type of each role, the actions
@@ -172,12 +196,14 @@ template <std::meta::info Family>
 }
 
 // Pushes the actions of the local type of one role, after the actions of
-// the roles before it, or gives the fault of the first node that the walk
-// cannot read (THE MODEL OF THE CHECK).  Complexity: linear in the distinct
-// nodes of the local type.
+// the roles before it, and sets the shape of the role, or gives the fault of
+// the first node that the walk cannot read (THE MODEL OF THE CHECK).  The
+// root of a graph is its node 0, so a Loop around the whole local type is
+// the binder of node 0, and its Continue is a back node to node 0.
+// Complexity: linear in the distinct nodes of the local type.
 [[nodiscard]] consteval ContextFault read_local_(std::meta::info local, net::ProcessId self,
                                                  tr::stack<std::meta::info> const& roles,
-                                                 tr::stack<read_action>& actions) {
+                                                 tr::stack<read_action>& actions, RunShape& shape) {
     ::fixy::session::detail::subtype::require_registered_spine(local);
     if (!::fixy::session::detail::subtype::holds_for(^^::fixy::session::is_well_formed_v, local)) {
         return local_fault_(ContextFaultCode::NodeOutsideModel, self, local);
@@ -186,14 +212,29 @@ template <std::meta::info Family>
     if (graph.unregistered != std::meta::info{}) {
         return local_fault_(ContextFaultCode::NodeOutsideModel, self, graph.unregistered);
     }
-    // A local type with no back node is a tree of its distinct nodes, so a
-    // walk of it visits each node at most one time.
-    std::size_t index = 0;
+    std::size_t const first_action = actions.top;
+    bool const is_loop_at_top = graph.nodes[0].entry.kind == tr::shape_kind::binder;
+    // The walk passes each binder only at the root, and it stops at each back
+    // node, so it visits each node at most one time.
+    std::size_t index = is_loop_at_top ? graph.nodes[0].next : 0;
     for (std::size_t visits = 0; visits <= graph.nodes.size(); ++visits) {
         tr::graph_node const& node = graph.nodes[index];
         if (node.entry.kind == tr::shape_kind::terminal) {
-            if (node.entry.shape == ^^::fixy::session::End) return ContextFault{};
-            return local_fault_(ContextFaultCode::NodeOutsideModel, self, node.type);
+            if (node.entry.shape != ^^::fixy::session::End) {
+                return local_fault_(ContextFaultCode::NodeOutsideModel, self, node.type);
+            }
+            shape = actions.top == first_action ? RunShape::NoAction : RunShape::RunsOnce;
+            return ContextFault{};
+        }
+        if (node.entry.kind == tr::shape_kind::back) {
+            if (!is_loop_at_top || node.next != 0 || actions.top == first_action) {
+                return local_fault_(ContextFaultCode::LoopNotWhole, self, graph.nodes[0].type);
+            }
+            shape = RunShape::Loops;
+            return ContextFault{};
+        }
+        if (node.entry.kind == tr::shape_kind::binder) {
+            return local_fault_(ContextFaultCode::LoopNotWhole, self, node.type);
         }
         if (node.entry.kind == tr::shape_kind::choice && node.child_count == 1) {
             index = graph.children[node.first_child];
@@ -215,6 +256,25 @@ template <std::meta::info Family>
         index = node.next;
     }
     return local_fault_(ContextFaultCode::NodeOutsideModel, self, local);
+}
+
+// The first action whose channel joins a role that loops and a role that
+// runs one time, as the fault LoopMeetsRun, or NoFault (THE MODEL OF THE
+// CHECK).  A role with no action holds no channel.  Complexity: O(A).
+[[nodiscard]] consteval ContextFault find_loop_meets_run_(tr::stack<std::meta::info> const& roles,
+                                                          tr::stack<read_action> const& actions,
+                                                          tr::stack<RunShape> const& shapes) {
+    for (read_action const& act : actions) {
+        RunShape const sender = shapes.items[static_cast<std::uint32_t>(act.sender)];
+        RunShape const receiver = shapes.items[static_cast<std::uint32_t>(act.receiver)];
+        if (sender == receiver || sender == RunShape::NoAction || receiver == RunShape::NoAction) continue;
+        net::ProcessId const looper = sender == RunShape::Loops ? act.sender : act.receiver;
+        net::ProcessId const runner = sender == RunShape::Loops ? act.receiver : act.sender;
+        return ContextFault{.code = ContextFaultCode::LoopMeetsRun,
+                            .role = looper,
+                            .type = roles.items[static_cast<std::uint32_t>(runner)]};
+    }
+    return ContextFault{};
 }
 
 // Pushes the channels of the actions, in the order of the sender and then
@@ -265,6 +325,7 @@ consteval void push_channels_(tr::stack<std::meta::info> const& roles, tr::stack
     }
     reading.roles = tr::to_static_run(roles);
     tr::stack<read_action> actions{};
+    tr::stack<RunShape> shapes{};
     for (std::uint32_t place = 0; place < entries.size(); ++place) {
         tr::static_run<std::meta::info> const parts = parts_of_(entries[place]);
         if (std::meta::dealias(parts[1]) != ^^::fixy::session::OutQueue<>) {
@@ -272,12 +333,17 @@ consteval void push_channels_(tr::stack<std::meta::info> const& roles, tr::stack
                 ContextFault{.code = ContextFaultCode::QueuedMessage, .role = net::ProcessId{place}, .type = parts[1]};
             return reading;
         }
-        ContextFault const fault = read_local_(std::meta::dealias(parts[2]), net::ProcessId{place}, roles, actions);
+        RunShape shape = RunShape::NoAction;
+        ContextFault const fault =
+            read_local_(std::meta::dealias(parts[2]), net::ProcessId{place}, roles, actions, shape);
         if (fault.is_fault()) {
             reading.fault = fault;
             return reading;
         }
+        tr::push(shapes, shape);
     }
+    reading.fault = find_loop_meets_run_(roles, actions, shapes);
+    if (reading.fault.is_fault()) return reading;
     tr::stack<read_channel> channels{};
     push_channels_(roles, actions, channels);
     reading.actions = tr::to_static_run(actions);
@@ -351,13 +417,27 @@ consteval void push_name_(tr::stack<char>& text, net::NetName name) {
                 .put_name(role_name())
                 .put("' holds a node that the check does not read: ")
                 .put_name(name_of_type_(fault.type))
-                .put(".  The check reads End and the Send and Recv steps of a PeerMsg.");
+                .put(".  The check reads End, one Loop around the whole type with its Continue, and the Send and "
+                     "Recv steps of a PeerMsg.");
         case ContextFaultCode::PeerOutsideContext:
             return net::NetVerdict::refuse("context: the local type of the role '")
                 .put_name(role_name())
                 .put("' names the peer '")
                 .put_name(name_of_role_(fault.type))
                 .put("', which is no role of the context.");
+        case ContextFaultCode::LoopNotWhole:
+            return net::NetVerdict::refuse("context: the local type of the role '")
+                .put_name(role_name())
+                .put("' holds a loop that is not one Loop around the whole type with an action in its period: ")
+                .put_name(name_of_type_(fault.type))
+                .put(".");
+        case ContextFaultCode::LoopMeetsRun:
+            return net::NetVerdict::refuse("context: the role '")
+                .put_name(role_name())
+                .put("' loops, the role '")
+                .put_name(name_of_role_(fault.type))
+                .put("' runs one time, and a channel joins them.  Along each channel the two roles loop, or the "
+                     "two run one time.");
         default:
             break;
     }
