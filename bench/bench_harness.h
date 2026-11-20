@@ -2392,7 +2392,10 @@ public:
     // on that CPU, and the scheduler spreads them over the CPUs that are
     // not isolated.  The measuring thread can move too.  The two readings
     // of a sample still agree on a host with an invariant TSC, and a body
-    // that starts threads runs far longer than a move costs.
+    // that starts threads runs far longer than a move costs.  On a claim of
+    // loop bench, whose cores are all isolated, the measuring thread takes
+    // the core of slot 0, and each thread of the body pins itself to a core
+    // of the slots from 1 (THE CORES OF A RUN).
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
     Run& fan_out() noexcept {
         pin_mode_ = Pin::FanOut;
@@ -3035,9 +3038,17 @@ private:
     // current CPU is the choice when it is not isolated.  Else the choice is
     // the CPU that warden::select_hot_cpu gives with the isolated CPUs left
     // out, and that selector keeps away from cpu0 and its interrupts.
-    // Returns the number of CPUs that are not isolated.  A thread whose CPUs
-    // are all isolated gets no pin and a count of zero.  Complexity: linear
-    // in the number of allowed CPUs, times the cost of one sysfs read.
+    // Returns the number of CPUs that are not isolated.
+    //
+    // An affinity of isolated CPUs only is a claim of loop bench (THE CORES
+    // OF A RUN).  No load balancer spreads the threads of the body there, so
+    // each thread of the body pins itself to a core of its slot: a worker
+    // through pin_calling_thread_to(), and the threads of a door through the
+    // placement OneCpuEach over Cores::from_slot(ThreadSlot{1}).  The
+    // measuring thread then takes the core of slot 0 for the measurement, and
+    // the result counts each core of the claim.  An affinity with no CPU gets
+    // no pin and a count of zero.  Complexity: linear in the number of
+    // allowed CPUs, times the cost of one sysfs read.
     [[nodiscard]] static PinResult fan_out_(const ::fixy::InitLoadCtx& startup) noexcept {
 #ifdef __linux__
         const crucible::warden::CpuSet allowed = crucible::warden::allowed_cpus(startup);
@@ -3047,7 +3058,7 @@ private:
         for (const int cpu : allowed) {
             if (is_free(cpu)) ++free_count;
         }
-        if (free_count == 0) return PinResult{};
+        if (free_count == 0) return pin_to_measuring_core_(startup, allowed, isolated);
 
         int start_cpu = sched_getcpu();
         const bool is_current_allowed = allowed.contains(start_cpu);
@@ -3072,6 +3083,29 @@ private:
         return PinResult{};
 #endif
     }
+
+#ifdef __linux__
+    // The pin of the measuring thread of a fan-out to the core of slot 0 of a
+    // claim, whose CPUs are all isolated.  The count of the result is the
+    // count of the cores of the claim, and the result holds the replaced
+    // affinity, which measure() gives back.  An empty claim or a failed pin
+    // gives no pin and a count of zero.  Complexity: linear in the CPUs of the
+    // claim, times the CPUs of the order of loop bench.
+    [[nodiscard]] static PinResult pin_to_measuring_core_(const ::fixy::InitLoadCtx& startup,
+                                                          crucible::warden::CpuSet const& allowed,
+                                                          crucible::warden::CpuSet const& isolated) noexcept {
+        const Cores cores = Cores::of(::fixy::side_as<side::AllowedCpus>(allowed),
+                                      ::fixy::side_as<side::IsolatedCpus>(isolated), read_core_order());
+        const CpuId measuring = cores.of_slot(kMeasuringSlot).value_or(CpuId::none());
+        if (!measuring.is_valid()) return PinResult{};
+        ::fixy::Result<::fixy::sched::PriorAffinity, ::foundation::os::Errno> prior =
+            ::fixy::sched::apply_affinity_to_cpu(startup, measuring.raw());
+        if (prior.is_err()) return PinResult{};
+        PinResult pinned{.cpu = measuring, .cpu_count = cores.count()};
+        pinned.prior = std::move(prior).ok();
+        return pinned;
+    }
+#endif
 
     // Ramp batch size by 2× until the **body itself** (raw region minus
     // rdtsc overhead) exceeds 1000 cycles — keeps rdtsc overhead below

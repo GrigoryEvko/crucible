@@ -588,10 +588,17 @@ void test_fan_out_keeps_the_worker_affinity() {
     std::size_t fanned_worker_count = 0;
     const bench::Report fanned = bench::Run("fan out").fan_out().samples(8).warmup(1).measure(
         [&fanned_worker_count]() noexcept { fanned_worker_count = worker_affinity_cpu_count(); });
-    CHECK(fanned.pinned_cpu_count == free_cpus);
     if (free_cpus > 0) {
+        CHECK(fanned.pinned_cpu_count == free_cpus);
         CHECK(!fanned.pinned_cpu.is_valid());
         CHECK(fanned_worker_count == unpinned_count);
+    } else {
+        // A claim of loop bench: each allowed CPU is isolated, so the measuring
+        // thread takes the core of slot 0, and the count is the count of the
+        // cores of the claim.
+        const bench::Cores claim = bench::Cores::of_calling_thread();
+        CHECK(fanned.pinned_cpu_count == claim.count());
+        CHECK(fanned.pinned_cpu == claim.of_slot(bench::kMeasuringSlot).value_or(bench::CpuId::none()));
     }
     CHECK(affinity_cpu_count() == unpinned_count);
 

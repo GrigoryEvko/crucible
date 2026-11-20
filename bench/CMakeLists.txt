@@ -228,7 +228,9 @@ crucible_bench(bench_trace_ring)
 crucible_bench(bench_concurrent_queues)
 crucible_bench(bench_concurrent_saturation)
 crucible_bench(bench_pipeline_dispatch)
-crucible_bench(bench_no_regression)
+# The measuring thread and the eight threads of the largest parallel arm, each
+# on a core of its own.
+crucible_bench(bench_no_regression CORES 9)
 crucible_bench(bench_mpsc_contention)
 crucible_bench(bench_permissioned_zero_cost)
 # Rows of 2 and 4 threads, one on each core of one L3 group.

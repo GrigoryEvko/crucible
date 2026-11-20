@@ -267,38 +267,59 @@ void run_sequential(Workload& w, Sink& sink) noexcept {
     run_range(w.inputs, Range{0, w.inputs.units}, sink, ::foundation::core::foreign_first(w.product.view()));
 }
 
+// The options of the threads of the rule arm (THE CORES OF A RUN of
+// bench_harness.h).  On a claim of loop bench of at least two cores, the
+// measuring thread of a fan-out takes the core of slot 0, and the thread of
+// the task k takes the core k of the cores of the slots from 1, through the
+// placement OneCpuEach.  No load balancer reaches an isolated core, so with
+// no placement each thread stays on the core of the measuring thread.  With
+// no claim, as under ctest, the threads keep the affinity of the process.
+[[nodiscard]] ::fixy::thread::ThreadOptions rule_thread_options(bench::Cores const& cores) noexcept {
+    if (cores.count() < 2) return ::fixy::thread::ThreadOptions{};
+    return ::fixy::thread::ThreadOptions{.affinity = bench::detail::mask_of(cores.from_slot(bench::ThreadSlot{1})),
+                                         .placement = ::fixy::thread::ThreadPlacement::OneCpuEach};
+}
+
 // Runs the work through mint_parallel_for.  The mint asks the rule for a
 // decision on each call and starts no more threads than the factor of that
 // decision.  A sequential decision runs every shard on the calling thread.
 // The matrix multiply splits the rows of its product, so each shard writes
 // only its own whole rows.  Each other workload splits the piece table, one
 // shard for each piece.  Each shard reads the inputs through a const
-// reference, and notes its CPU in the tally.
-void run_rule(Workload& w, Sink& sink, PieceTable& pieces, bench::CpuTally& tally) noexcept {
+// reference, and notes its CPU in the tally.  The threads take the cores of
+// rule_thread_options.
+void run_rule(Workload& w, Sink& sink, PieceTable& pieces, bench::CpuTally& tally, bench::Cores const& cores) noexcept {
     const BgCtx ctx{eff::testing::bg()};
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
+    const ::fixy::thread::ThreadOptions options = rule_thread_options(cores);
     if (w.inputs.kind == WorkloadKind::L2MatrixMultiply) {
         ProductRow const* const first_row = ::foundation::core::foreign_first(w.product.view());
         auto region = ::fixy::mint_owned_region(::foundation::core::foreign_first(w.product.view()), w.product.size(),
                                                 perm::mint_permission_root<ProductWhole>());
-        auto whole = ::fixy::spawn::mint_parallel_for<::fixy::spawn::BodyCoupling::Independent, kPieces>(
-            ctx, w.budget, std::move(region),
-            [&inputs = ::fixy::as_const(w.inputs), &sink, &tally, first_row](auto& shard) noexcept {
-                tally.note_calling_thread();
-                if (shard.size() == 0) return;
-                auto const begin = static_cast<std::size_t>(shard.data() - first_row);
-                run_l2_rows(inputs, Range{begin, begin + shard.size()}, sink, shard.data());
-            });
+        auto whole =
+            ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent, kPieces>(
+                ctx, test, w.budget, std::move(region),
+                [&inputs = ::fixy::as_const(w.inputs), &sink, &tally, first_row](auto& shard) noexcept {
+                    tally.note_calling_thread();
+                    if (shard.size() == 0) return;
+                    auto const begin = static_cast<std::size_t>(shard.data() - first_row);
+                    run_l2_rows(inputs, Range{begin, begin + shard.size()}, sink, shard.data());
+                },
+                options);
         ::foundation::linear::drop(std::move(whole));
         return;
     }
     auto region = ::fixy::mint_owned_region(pieces.data(), kPieces, perm::mint_permission_root<PieceTableWhole>());
-    auto whole = ::fixy::spawn::mint_parallel_for<::fixy::spawn::BodyCoupling::Independent, kPieces>(
-        ctx, w.budget, std::move(region), [&inputs = ::fixy::as_const(w.inputs), &sink, &tally](auto& shard) noexcept {
-            tally.note_calling_thread();
-            for (const std::uint32_t piece : shard) {
-                run_range(inputs, split_range(inputs.units, piece, kPieces), sink, nullptr);
-            }
-        });
+    auto whole =
+        ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent, kPieces>(
+            ctx, test, w.budget, std::move(region),
+            [&inputs = ::fixy::as_const(w.inputs), &sink, &tally](auto& shard) noexcept {
+                tally.note_calling_thread();
+                for (const std::uint32_t piece : shard) {
+                    run_range(inputs, split_range(inputs.units, piece, kPieces), sink, nullptr);
+                }
+            },
+            options);
     ::foundation::linear::drop(std::move(whole));
 }
 
@@ -308,11 +329,22 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the forced arm is the naive baseline of one std::jthread for each worker")
 namespace {
 
-void run_forced_parallel(Workload& w, Sink& sink, bench::CpuTally& tally) {
+// On a claim of loop bench of at least two cores, the worker k pins itself to
+// the core of the slot 1 + k modulo the count of the cores of the slots from
+// 1, as the threads of the rule arm take them.  With no claim each worker
+// keeps the affinity of the process.
+void run_forced_parallel(Workload& w, Sink& sink, bench::CpuTally& tally, bench::Cores const& cores) {
     ProductRow* const product = ::foundation::core::foreign_first(w.product.view());
+    const std::size_t worker_cores = cores.count() >= 2 ? cores.count() - 1 : 0;
     std::vector<std::jthread> threads(w.forced_workers);
     for (std::size_t worker = 0; worker < w.forced_workers; ++worker) {
-        threads[worker] = std::jthread{[&w, &sink, &tally, product, worker](std::stop_token) noexcept {
+        const bench::CpuId core =
+            worker_cores == 0 ? bench::CpuId::none()
+                              : cores.of_slot(bench::ThreadSlot{static_cast<std::uint32_t>(1 + worker % worker_cores)})
+                                    .value_or(bench::CpuId::none());
+        threads[worker] = std::jthread{[&w, &sink, &tally, product, worker, core](std::stop_token) noexcept {
+            if (core.is_valid())
+                bench::pin_calling_thread_to(core).expect("the pin of a worker to a core of the claim of its run");
             tally.note_calling_thread();
             const Range r = split_range(w.inputs.units, worker, w.forced_workers);
             run_range(w.inputs, r, sink, product);
@@ -441,11 +473,14 @@ namespace {
 
 // An arm that starts threads runs under Run::fan_out, so its threads can
 // spread over the CPUs that isolcpus did not isolate.  Under the pin to
-// one CPU they would all run on that CPU.  An arm that runs on the calling
-// thread pins to one CPU, the CPU on which main built the data, so a
-// parallel arm is compared against the best sequential time.
+// one CPU they would all run on that CPU.  On a claim of loop bench, whose
+// cores are all isolated, the measuring thread takes the core of slot 0, and
+// each thread of the arm takes a core of the slots from 1 (rule_thread_options
+// and run_forced_parallel).  An arm that runs on the calling thread pins to
+// one CPU, the CPU on which main built the data, so a parallel arm is
+// compared against the best sequential time.
 [[nodiscard]] bench::Report measure_once(std::string name, Strategy strategy, Workload& w, PieceTable& pieces,
-                                         std::size_t samples) {
+                                         std::size_t samples, bench::Cores const& cores) {
     bench::Run run{name};
     const bool is_threaded = starts_threads(strategy, w);
     if (is_threaded) {
@@ -463,10 +498,10 @@ namespace {
                     run_sequential(w, sink);
                     break;
                 case Strategy::Rule:
-                    run_rule(w, sink, pieces, tally);
+                    run_rule(w, sink, pieces, tally, cores);
                     break;
                 case Strategy::ForcedParallel:
-                    run_forced_parallel(w, sink, tally);
+                    run_forced_parallel(w, sink, tally, cores);
                     break;
                 default:
                     break;
@@ -478,11 +513,11 @@ namespace {
 }
 
 [[nodiscard]] bench::Report measure_stable(std::string name, Strategy strategy, Workload& w, PieceTable& pieces,
-                                           std::size_t samples) {
+                                           std::size_t samples, bench::Cores const& cores) {
     bench::Report best;
     double best_cv = std::numeric_limits<double>::infinity();
     for (int attempt = 0; attempt < 3; ++attempt) {
-        bench::Report current = measure_once(name, strategy, w, pieces, samples);
+        bench::Report current = measure_once(name, strategy, w, pieces, samples, cores);
         if (!current.noisy(0.05)) return current;
         if (current.pct.cv < best_cv) {
             best_cv = current.pct.cv;
@@ -498,7 +533,7 @@ struct Trio {
     bench::Report forced;
 };
 
-[[nodiscard]] Trio run_workload(Workload& w, PieceTable& pieces, std::size_t samples) {
+[[nodiscard]] Trio run_workload(Workload& w, PieceTable& pieces, std::size_t samples, bench::Cores const& cores) {
     auto make_name = [&](Strategy s) {
         std::string name{"no_regression."};
         name += w.name;
@@ -507,9 +542,10 @@ struct Trio {
         return name;
     };
     return Trio{
-        .sequential = measure_stable(make_name(Strategy::Sequential), Strategy::Sequential, w, pieces, samples),
-        .rule = measure_stable(make_name(Strategy::Rule), Strategy::Rule, w, pieces, samples),
-        .forced = measure_stable(make_name(Strategy::ForcedParallel), Strategy::ForcedParallel, w, pieces, samples),
+        .sequential = measure_stable(make_name(Strategy::Sequential), Strategy::Sequential, w, pieces, samples, cores),
+        .rule = measure_stable(make_name(Strategy::Rule), Strategy::Rule, w, pieces, samples, cores),
+        .forced =
+            measure_stable(make_name(Strategy::ForcedParallel), Strategy::ForcedParallel, w, pieces, samples, cores),
     };
 }
 
@@ -518,6 +554,9 @@ struct Trio {
 }  // namespace
 
 int main() {
+    // The cores of the claim of loop bench, read before a Run pins the thread
+    // (THE CORES OF A RUN of bench_harness.h).
+    const bench::Cores cores = bench::Cores::of_calling_thread();
     bench::print_system_info();
     bench::elevate_priority();
 
@@ -572,7 +611,7 @@ int main() {
     std::printf("=== measuring ===\n");
     for (std::size_t i = 0; i < workloads.size(); ++i) {
         Workload& w = workloads[i];
-        Trio trio = run_workload(w, pieces, samples);
+        Trio trio = run_workload(w, pieces, samples, cores);
         *reports.get(i * 3 + 0).expect("the sequential row of a workload") = std::move(trio.sequential);
         *reports.get(i * 3 + 1).expect("the rule row of a workload") = std::move(trio.rule);
         *reports.get(i * 3 + 2).expect("the forced row of a workload") = std::move(trio.forced);
