@@ -226,6 +226,7 @@ static void test_natural_tensor_meta_alignment() {
     // must therefore load the metadata fields element-aligned.
     MisalignedMeta holder{};
     holder.meta = make_meta({16, 32, 64}, {2048, 64, 1});
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::address_of(::fixy::to(holder.meta)).is_aligned<alignof(TensorMeta)>());
     CRUCIBLE_TEST_ASSERT(
         kTest, !::fixy::address_of(::fixy::to(holder.meta.sizes.lanes().at(::fixy::index<0>()))).is_aligned<64>());
     check_equiv(holder.meta, "natural-align-not-vector-align");
