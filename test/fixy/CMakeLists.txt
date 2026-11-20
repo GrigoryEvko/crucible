@@ -3288,6 +3288,28 @@ fixy_neg_compile_test(neg_sess_mint_session_payload_unclassified
   "static assertion failed: payload_row<T>: T is, or holds, a type this extractor cannot classify"
   "The refused type: unclassified_fixture::Envelope<int>"
   "In instantiation of .struct fixy::concurrent::payload_row_under<fixy::session::Send<unclassified_fixture::Envelope<int>, fixy::session::End>, fixy::session::session_payload_families<fixy::session::Send<unclassified_fixture::Envelope<int>, fixy::session::End> > >.")
+# A transport can give a payload to a thread that runs after the sender
+# ends.  So each payload of a protocol moves to another thread and holds no
+# borrow, as a value of a channel does.  The transfer gate stands before the
+# row walk, so its refusal is the one that the build gives.
+fixy_neg_compile_test(neg_sess_send_weak_ref
+  "no matching function for call to .mint_session<neg_sess_send_weak_ref_types::Proto>"
+  "Payload_Not_Owned.: a payload of the protocol cannot move to another thread, or it holds a borrow"
+  "satisfaction of .ProtocolPayloadsTransfer<Proto>. \\[with Proto = fixy::session::Send<fixy::WeakRef<const int>, fixy::session::End>\\]")
+fixy_neg_compile_test(neg_sess_send_view
+  "no matching function for call to .mint_session<neg_sess_send_view_types::Proto>"
+  "Payload_Not_Owned.: a payload of the protocol cannot move to another thread, or it holds a borrow"
+  "satisfaction of .ProtocolPayloadsTransfer<Proto>. \\[with Proto = fixy::session::Send<foundation::core::View<const int[^>]*>, fixy::session::End>\\]")
+fixy_neg_compile_test(neg_sess_send_raw_pointer
+  "no matching function for call to .mint_session<neg_sess_send_raw_pointer_types::Proto>"
+  "Payload_Not_Owned.: a payload of the protocol cannot move to another thread, or it holds a borrow"
+  "satisfaction of .ProtocolPayloadsTransfer<Proto>. \\[with Proto = fixy::session::Recv<int, fixy::session::Send<int\\*, fixy::session::End> >\\]")
+# A rewind names a protocol of its own and takes no context, so its gate
+# asks the transfer itself.
+fixy_neg_compile_test(neg_sess_rewind_to_a_view_payload
+  "no matching function for call to .fixy::session::HandleFactory::rewind<neg_sess_rewind_to_a_view_payload_types::SendsAView, void>"
+  "Payload_Not_Owned.: a payload of the protocol cannot move to another thread, or it holds a borrow"
+  "satisfaction of .ProtocolPayloadsTransfer<R>. \\[with R = fixy::session::Send<foundation::core::View<const int[^>]*>, fixy::session::End>\\]")
 # A receive can deliver a permission, in a message or in the set of a
 # delegated endpoint.  The context must admit the row of each delivered
 # region, and a delivered tag that declares no row stops the build.

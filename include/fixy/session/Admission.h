@@ -17,6 +17,7 @@
 #include <fixy/session/Wire.h>
 
 #include <foundation/Pinned.h>
+#include <foundation/Transfer.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/PermSet.h>
@@ -298,6 +299,125 @@ struct FlowAnswer {
 template <typename Proto, typename PS>
 concept PermissionFlowCloses = detail::permission_flow_closes(^^Proto, ^^PS, ^^void);
 
+// ── The transfer of each payload ─────────────────────────────────────
+//
+// A transport can give a payload to a thread that runs after the sender
+// ends, as a channel can give its value.  So each payload of a protocol
+// moves to another thread and holds no borrow at any depth (Sendable and
+// SendableOwned of foundation/Transfer.h), as each value of a channel does.
+// The walk reads each Send and each Recv, on each branch and in each loop
+// body, and the value of each keyed message.  The row gate of the mints asks
+// this gate first, and each rewind asks it too.  So a payload that holds a
+// borrow stops the build here, and the rosters of
+// fixy/concurrent/PayloadRow.h do not decide it.  Each send door and the
+// receive door of fixy/session/Handle.h ask the same of their value.
+
+namespace detail {
+
+// True when a value of the type moves to another thread and holds no
+// borrow.  Complexity: two walks of foundation/Transfer.h, each linear in
+// the distinct parts of the type.
+[[nodiscard]] consteval bool payload_transfers(std::meta::info payload) {
+    namespace transfer = ::foundation::transfer;
+    return transfer::holds(payload, transfer::Property::Send)
+        && transfer::holds(payload, transfer::Property::SendOwned);
+}
+
+}  // namespace detail
+
+// A value of P can travel on a session: it moves to another thread, and it
+// holds no borrow.
+template <class P>
+concept PayloadTransfers = detail::payload_transfers(^^P);
+
+namespace detail::walks {
+
+// The first payload of a protocol that does not transfer, or a null
+// reflection.  A keyed step writes the value of its message, so the walk
+// reads that value.  A step whose payload is a protocol has no handle step,
+// and the walk does not read it.  The walk does not enter the protocol of a
+// delegated endpoint, because the mint of that endpoint reads it.
+struct transfer_algebra {
+    using result = std::meta::info;
+    using context = int;
+
+    template <class Child>
+    consteval result terminal(const tr::node&, context, const Child&) const {
+        return {};
+    }
+    template <class Child>
+    consteval result back(const tr::node&, context, const Child&) const {
+        return {};
+    }
+    template <class Child>
+    consteval result step(const tr::node& view, context ctx, const Child& child) const {
+        if (!view.entry.payload_is_protocol) {
+            const std::meta::info value = written_value_of(view.payload);
+            if (!std::meta::is_void_type(value) && !payload_transfers(value)) return value;
+        }
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result choice(const tr::node& view, context ctx, const Child& child) const {
+        for (const std::meta::info branch : view.branches) {
+            const result refused = child(branch, ctx);
+            if (refused != std::meta::info{}) return refused;
+        }
+        return {};
+    }
+    template <class Child>
+    consteval result binder(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result wrapper(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result marker(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result named(const tr::node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    consteval result unregistered(const tr::node&, context) const { return {}; }
+
+private:
+    // The value that a step writes: the value of a keyed message, or the
+    // payload itself.
+    static consteval std::meta::info written_value_of(std::meta::info payload) {
+        const payload_lookup keyed = message_rule_of(payload);
+        if (!keyed.is_found) return std::meta::dealias(payload);
+        return rule_argument_of(payload, keyed.entry.value_argument);
+    }
+};
+
+}  // namespace detail::walks
+
+namespace detail {
+
+// True when each payload of the protocol transfers.  The first payload that
+// does not stops the build with its refusal.  Complexity: one fold, linear
+// in the distinct nodes, with the two transfer walks of each payload.
+[[nodiscard]] consteval bool protocol_payloads_transfer(std::meta::info protocol) {
+    require_acyclic_names(protocol);
+    const std::meta::info refused = walks::tr::fold(protocol_registry, protocol, walks::transfer_algebra{}, 0);
+    if (refused == std::meta::info{}) return true;
+    throw std::meta::exception(
+        u8"fixy::session::diagnostic [Payload_Not_Owned]: a payload of the protocol cannot move to another thread, or it "
+        u8"holds a borrow (Sendable and SendableOwned of foundation/Transfer.h).  A transport can give the payload to a "
+        u8"thread that runs after the sender ends.  Send a value that owns each part that it holds.  The protocol of "
+        u8"the refusal names the payload.",
+        refused);
+}
+
+}  // namespace detail
+
+// Each payload of Proto travels on a session (PayloadTransfers).
+template <class Proto>
+concept ProtocolPayloadsTransfer = detail::protocol_payloads_transfer(^^Proto);
+
 // ── Rewinding a session ──────────────────────────────────────────────
 //
 // A rewind opens a new session at a position inside a protocol, for
@@ -314,6 +434,8 @@ concept PermissionFlowCloses = detail::permission_flow_closes(^^Proto, ^^PS, ^^v
 //   - R and the loop context together name one peer at most, as the
 //     local type of a binary session does.
 //   - Every path moves no permission, because the set is empty.
+//   - Each payload of R and of the loop context travels on a session
+//     (ProtocolPayloadsTransfer above).
 //   - The handle at End belongs to no session that a callback entry owns,
 //     because that entry takes its handle back.
 
@@ -332,9 +454,12 @@ concept ResumablePosition = (std::is_void_v<LoopCtx> && !std::is_same_v<R, Conti
                                      && PermissionFlowCloses<Loop<R>, ::foundation::permissions::EmptyPermSet>
                                      && detail::distinct_peer_count(^^R, ^^LoopCtx) <= 1)));
 
-// The gate of HandleFactory::rewind.
+// The gate of HandleFactory::rewind.  A rewind names a protocol of its own,
+// and no context, so the gate asks the transfer of each payload of R and of
+// the loop that R continues, as each mint asks it (ProtocolPayloadsTransfer).
 template <typename R, typename LoopCtx, typename EndLoopCtx>
-concept RewindableTo = ResumablePosition<R, LoopCtx> && detail::carries_brand<EndLoopCtx, void>;
+concept RewindableTo = ResumablePosition<R, LoopCtx> && detail::carries_brand<EndLoopCtx, void>
+                    && ProtocolPayloadsTransfer<R> && (std::is_void_v<LoopCtx> || ProtocolPayloadsTransfer<LoopCtx>);
 
 namespace detail {
 
@@ -769,10 +894,11 @@ using protocol_delivered_permission_row_t = [:detail::permission_rows_of_set(^^p
 
 // The context admits the effect row of Proto: the row of each payload,
 // and the permission row of each region that Proto delivers to the
-// endpoint.  A payload that the walk cannot classify stops the build.
+// endpoint.  Each payload passes the transfer gate first.  A payload that
+// the row walk cannot classify stops the build.
 template <typename Ctx, typename Proto>
 concept CtxAdmitsProtocolRow =
-    ::foundation::effects::IsExecCtx<Ctx>
+    ::foundation::effects::IsExecCtx<Ctx> && ProtocolPayloadsTransfer<Proto>
     && ::foundation::effects::is_subrow(^^protocol_payload_row_t<Proto>, ^^typename Ctx::row_type)
     && ::foundation::effects::is_subrow(^^protocol_delivered_permission_row_t<Proto>, ^^typename Ctx::row_type);
 

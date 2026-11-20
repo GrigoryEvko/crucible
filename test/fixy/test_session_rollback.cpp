@@ -18,6 +18,8 @@
 #include <fixy/session/Checkpoint.h>
 #include <fixy/session/Watch.h>
 
+#include <foundation/core/StaticText.h>
+#include <foundation/core/Text.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
 
@@ -47,11 +49,11 @@ using BgCtx = eff::detail::ctx_witnesses::BgWitness;
 using BgIoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO>>;
 [[nodiscard]] BgCtx bg_ctx() noexcept { return BgCtx{eff::testing::bg()}; }
 
-// The payload row walk of fixy/concurrent/PayloadRow.h reads no
-// std::string_view, so the text travels as a pointer to its characters.
+// The text has static storage, so the payload holds no borrow and moves to
+// another thread (foundation/Transfer.h), as each session payload does.
 struct Text {
-    const char* value = "";
-    [[nodiscard]] std::string_view view() const noexcept { return value; }
+    ::foundation::core::StaticText value = "";
+    [[nodiscard]] ::foundation::core::TextView view() const noexcept { return value.view(); }
 };
 struct Region {};
 
@@ -306,7 +308,7 @@ constexpr auto push_label = [](Port& port, std::size_t label) noexcept {
 // A Text travels as its first character, which is enough to tell the
 // three texts of the example apart.
 constexpr auto push_text = [](Port& port, Text& text) noexcept {
-    port.out->slots.push_back(static_cast<std::uint64_t>(static_cast<unsigned char>(text.view().front())));
+    port.out->slots.push_back(static_cast<std::uint64_t>(static_cast<unsigned char>(*text.view().begin())));
     return true;
 };
 constexpr auto push_int = [](Port& port, int& value) noexcept {

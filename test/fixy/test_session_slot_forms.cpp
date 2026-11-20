@@ -15,6 +15,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/session/Delegate.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
 #include <foundation/Brand.h>
@@ -187,6 +188,25 @@ static_assert(sizeof(SendsPing<fp::PermSet<s::LentOut<Region, LayoutBrand>>, s::
               == sizeof(SendsPing<NoTags, s::check::Enforced>));
 static_assert(sizeof(SendsPing<fp::PermSet<s::BorrowedIn<Region, LayoutBrand>>, s::check::Off>)
               == sizeof(SendsPing<NoTags, s::check::Off>));
+
+// ── Each slot form travels on a session ──────────────────────────────
+//
+// A marker, a token and the hand-off of an endpoint move to another thread
+// and hold no borrow.  So a protocol of them passes the transfer gate of
+// each mint (fixy/session/Admission.h).  A View refers to the elements of
+// its sender, and the gate refuses it.
+using MovesRegion = s::Transferable<int, Region, LayoutBrand>;
+using LendsRegion = s::Borrowed<int, Region, LayoutBrand>;
+using ReleasesRegion = s::Released<int, Region, LayoutBrand>;
+using RegionToken = fp::Permission<Region, LayoutBrand>;
+using HandedPing = s::DelegatedSession<s::Send<int, s::End>, Mailbox<int>, s::DefaultAbandonmentPolicy, NoTags>;
+
+static_assert(s::PayloadTransfers<MovesRegion> && s::PayloadTransfers<LendsRegion>
+              && s::PayloadTransfers<ReleasesRegion> && s::PayloadTransfers<RegionToken>
+              && s::PayloadTransfers<HandedPing>);
+static_assert(s::ProtocolPayloadsTransfer<
+              s::Offer<s::Recv<MovesRegion, s::End>, s::Send<RegionToken, s::Loop<s::Send<HandedPing, s::Continue>>>>>);
+static_assert(!s::PayloadTransfers<::fixy::View<int const>>);
 
 }  // namespace
 

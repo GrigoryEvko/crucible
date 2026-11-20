@@ -17,6 +17,8 @@
 #include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 
+#include <foundation/core/StaticText.h>
+#include <foundation/core/Text.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
 
@@ -48,11 +50,11 @@ using BgIoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::All
 struct P {};  // role p of Example 3.2
 struct Q {};  // role q of Example 3.2
 struct R {};  // a third role
-// The payload row walk of fixy/concurrent/PayloadRow.h reads no
-// std::string_view, so the text travels as a pointer to its characters.
+// The text has static storage, so the payload holds no borrow and moves to
+// another thread (foundation/Transfer.h), as each session payload does.
 struct Text {
-    const char* value = "";
-    [[nodiscard]] std::string_view view() const noexcept { return value; }
+    ::foundation::core::StaticText value = "";
+    [[nodiscard]] ::foundation::core::TextView view() const noexcept { return value.view(); }
 };
 
 // ── Each verdict is a concept ────────────────────────────────────────

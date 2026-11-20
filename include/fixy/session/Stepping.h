@@ -54,6 +54,7 @@
 #include <fixy/session/Protocol.h>
 #include <fixy/session/Watch.h>
 
+#include <foundation/Transfer.h>
 #include <foundation/algebra/Modality.h>
 #include <foundation/core/Text.h>
 
@@ -82,8 +83,13 @@ namespace detail {
 // Records the handle's construction site and whether it was consumed.
 // The destructor reads both, and so does the liveness check of every
 // operation.  Enforced and Cancel differ only in the action.
+//
+// A source_location names strings of static storage that no thread writes,
+// and each other member is a value.  So the policy moves to another thread
+// with its handle (foundation/Transfer.h), as a delegated endpoint does, and
+// as the site of a channel mint of fixy/session/Handle.h does.
 template <AbandonAction Action>
-class tracked_policy {
+class[[= ::foundation::transfer::sendable{}]] tracked_policy {
     static_assert(Action != AbandonAction::Ignore,
                   "fixy/session/Stepping.h: a tracked policy acts on a dropped protocol.  check::Off is the policy "
                   "that ignores one.");

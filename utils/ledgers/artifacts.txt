@@ -48,7 +48,6 @@ rule artifacts
 @build/tests | static-member | 1 | libgcc.a(cpuinfo.o) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | needed | 1 | libasan.so.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | needed | 1 | libc.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tools | needed | 1 | libgcc_s.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | needed | 1 | libm.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | needed | 1 | libstdc++.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | needed | 1 | libtsan.so.2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts

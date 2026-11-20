@@ -1,6 +1,7 @@
 // The compile-time checks of fixy/session/Delegate.h.
 
 #include <fixy/session/Delegate.h>
+#include <foundation/Transfer.h>
 
 namespace fixy::session {
 
@@ -30,6 +31,18 @@ static_assert(::fixy::session::payload_conveys_delegation_v<::fixy::session::Del
 static_assert(!::fixy::session::DelegatableHandle<int>
               && !::fixy::session::DelegatableHandle<::fixy::session::detail::delegatable_armed_witness::Branded>
               && !::fixy::session::DelegatableHandle<::fixy::session::detail::delegatable_armed_witness::InLoop>);
+
+// A hand-off moves its endpoint to the thread of its recipient, so the
+// endpoint under the tracked policy is Sendable and holds no borrow
+// (foundation/Transfer.h).  The policy keeps a source_location, which names
+// strings of static storage.
+namespace fixy::session::detail::delegatable_armed_witness {
+using Handed = DelegatedSession<End, Wire, DefaultAbandonmentPolicy, ::foundation::permissions::EmptyPermSet>;
+}  // namespace fixy::session::detail::delegatable_armed_witness
+static_assert(::foundation::transfer::Sendable<::fixy::session::detail::delegatable_armed_witness::Handed>
+              && ::foundation::transfer::SendableOwned<::fixy::session::detail::delegatable_armed_witness::Handed>);
+static_assert(::foundation::transfer::Sendable<::fixy::session::check::Enforced>
+              && ::foundation::transfer::SendableOwned<::fixy::session::check::Cancel>);
 
 // The two traits are aliases, and the roster walk of
 // foundation/contracts/ArmedRoster.h finds class templates only.  These two

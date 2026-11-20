@@ -24,6 +24,7 @@
 
 #include "session_recording.h"
 
+#include <fixy/Core.h>
 #include <fixy/session/Entry.h>
 #include <foundation/core/Array.h>
 #include <foundation/permissions/PermSet.h>
@@ -296,7 +297,18 @@ int check_plain_recording() {
 
 using Carried = s::Send<int, s::End>;
 using NoPermissions = ::foundation::permissions::EmptyPermSet;
-using Parcel = s::DelegatedSession<Carried, Port, s::DefaultAbandonmentPolicy, NoPermissions>;
+
+// The carried endpoint can move to a thread that runs after its sender
+// ends, so its Resource owns what it writes and refers to no frame
+// (foundation/Transfer.h).  The port keeps the one value that the accepted
+// endpoint sends.
+struct HandedPort {
+    ::fixy::FixedList<int, 1> sent{};
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+inline constexpr auto keep_int = [](HandedPort& port, int& value) noexcept { return port.sent.append(value).is_ok(); };
+
+using Parcel = s::DelegatedSession<Carried, HandedPort, s::DefaultAbandonmentPolicy, NoPermissions>;
 
 // The outer channel holds one parcel.
 struct ParcelPort {
@@ -307,8 +319,6 @@ struct ParcelPort {
 namespace {
 
 int check_handoff_recording() {
-    Mailbox to_self;
-    Mailbox to_peer;
     std::optional<Parcel> held;
     // Each endpoint records into a log of its own.
     s::SessionEventLog sender_log;
@@ -318,7 +328,7 @@ int check_handoff_recording() {
     auto receiver = s::mint_recorded_session(s::mint_session<s::Recv<Parcel, s::End>>(bg_ctx(), ParcelPort{&held}),
                                              s::mint_session_event_writer(receiver_log), kPeer, kSelf);
 
-    auto parcel = s::mint_delegated_session(s::mint_session<Carried>(bg_ctx(), Port{&to_self, &to_peer}));
+    auto parcel = s::mint_delegated_session(s::mint_session<Carried>(bg_ctx(), HandedPort{}));
     (void)std::move(sender)
         .send(std::move(parcel),
               [](ParcelPort& port, Parcel& value) noexcept {
@@ -333,8 +343,8 @@ int check_handoff_recording() {
         return taken;
     });
     (void)std::move(at_end).close();
-    (void)std::move(received).accept().send(3, push_int).close();
-    if (to_peer.slots.size() != 1) return fail("the accepted endpoint did not step its own session");
+    const HandedPort port_at_end = std::move(received).accept().send(3, keep_int).close();
+    if (port_at_end.sent.size() != 1) return fail("the accepted endpoint did not step its own session");
 
     constexpr s::StateHash carried_hash = s::default_proto_hash<Carried>;
     constexpr s::InnerPermSetHash no_permissions_hash{::foundation::reflect::stable_type_id(^^NoPermissions)};

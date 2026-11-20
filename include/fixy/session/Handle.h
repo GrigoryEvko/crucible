@@ -965,6 +965,10 @@ public:
                                                        && std::is_nothrow_invocable_v<Stop&>
                                                        && std::is_nothrow_move_constructible_v<Resource>
                                                        && std::is_nothrow_move_constructible_v<T>) {
+        static_assert(PayloadTransfers<T>,
+                      "fixy::session::diagnostic [Payload_Not_Owned]: the payload cannot move to another thread, or it "
+                      "holds a borrow (Sendable and SendableOwned of foundation/Transfer.h).  Send a value that owns "
+                      "each part that it holds.");
         static_assert(detail::handle_admits_send_v<PS, T>,
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
                       "message takes, or the payload walk of fixy/session/Classification.h refuses the message.  "
@@ -1011,6 +1015,10 @@ public:
     send(SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>&& handle,
          Transport transport) noexcept(detail::write_is_nothrow<Transport, Resource, T>()
                                        && std::is_nothrow_move_constructible_v<Resource>) {
+        static_assert(PayloadTransfers<T>,
+                      "fixy::session::diagnostic [Payload_Not_Owned]: the payload cannot move to another thread, or it "
+                      "holds a borrow (Sendable and SendableOwned of foundation/Transfer.h).  Send a value that owns "
+                      "each part that it holds.");
         static_assert(detail::handle_admits_send_v<PS, T>,
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold the token "
                       "that the message moves.");
@@ -1063,6 +1071,11 @@ public:
          Transport transport) noexcept(detail::read_is_nothrow<Transport, Resource, T>()
                                        && std::is_nothrow_move_constructible_v<Resource>
                                        && std::is_nothrow_move_constructible_v<T>) {
+        static_assert(
+            PayloadTransfers<T>,
+            "fixy::session::diagnostic [Payload_Not_Owned]: the payload cannot move to another thread, or it "
+            "holds a borrow (Sendable and SendableOwned of foundation/Transfer.h).  Receive a value that owns "
+            "each part that it holds.");
         static_assert(detail::handle_admits_recv_v<PS, T>,
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
                       "message closes, the message gives a region that the set already holds, or the payload walk "

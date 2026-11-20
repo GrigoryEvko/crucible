@@ -73,7 +73,6 @@ rule quarantine
 reason @build/ | The unit perf of section 14.1 of the plan misc/01_10_2026_quarantine.md moves the embed of each BPF object onto the types of the base
 reason @build/test/ | The unit tests of section 14.1 of the plan misc/01_10_2026_quarantine.md moves each generated test header onto the types of the base
 reason bench/ | The unit bench of section 14.1 of the plan misc/01_10_2026_quarantine.md moves bench/ onto the types of the base, and bench/bench_harness.h goes first
-reason examples/ | The unit small of section 14.1 of the plan misc/01_10_2026_quarantine.md moves examples/ onto the types of the base
 reason include/crucible/ | The units core-ir, vigil, cipher, cntp, observe, cog-mimic, perf and rest of section 14.1 of the plan misc/01_10_2026_quarantine.md move include/crucible/ onto the types of the base
 reason include/fixy/ | The slices of section 13.1 of the plan misc/01_10_2026_quarantine.md move fixy onto the families of the base, and the slice 4.9 removes each other std use, one unit for each directory
 reason include/fixy/os/ | The slices 4.1 and 4.6 of section 13.1 of the plan misc/01_10_2026_quarantine.md move the doors of fixy onto the Os family, with no system type in a signature
@@ -161,12 +160,6 @@ bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 7 | - | -
 bench/ | std-entity | 328 | - | -
 bench/ | std-object | 108 | - | -
-examples/fn/ | c-array-object | 9 | - | -
-examples/fn/ | c-library-call | 12 | - | -
-examples/fn/ | raw-pointer-object | 7 | - | -
-examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
-examples/fn/ | std-entity | 10 | - | -
-examples/fn/ | std-object | 3 | - | -
 include/crucible/ | opted-out | 1 | ABI: the front end gave the data pointer of the tensor at the record of the op | -
 include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the tensor at the record of the op | the data pointer of a TensorMeta came from the front end, and data_address gives it a RunAddress through the foreign mint, which stands only at the edge of a foreign ABI
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
@@ -334,10 +327,9 @@ src/perf/ | opted-out | 3 | ABI: libbpf attaches a program to the raw descriptor
 src/perf/ | opted-out | 2 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
 src/perf/ | region | 1 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
 src/perf/ | region | 1 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
-test/ | c-array-object | 126 | - | -
-test/ | c-library-call | 243 | - | -
+test/ | c-array-object | 125 | - | -
+test/ | c-library-call | 213 | - | -
 test/ | c-library-object | 9 | - | -
-test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 5 | - | -
 test/ | foreign-symbol | 12 | - | -
 test/ | inline-asm | 1 | - | -
@@ -350,7 +342,7 @@ test/ | opted-out | 22 | PROBE: the test sets the current directory, the modes a
 test/ | opted-out | 28 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | raw-function-pointer | 13 | - | -
 test/ | raw-new-delete | 37 | - | -
-test/ | raw-pointer-object | 312 | - | -
+test/ | raw-pointer-object | 309 | - | -
 test/ | region | 1 | ABI: dlsym finds each entry point of a test library by its C name | the case fallbacks of test_process_wide_across_libraries finds the two entry points of each test library by their C names with dlsym, as Python finds the entry points of the vessel, so the two declarations have C linkage
 test/ | region | 1 | PROBE: probe of the run-time check of a thread-bound object | -
 test/ | region | 4 | PROBE: the address of a body tells which unit of the link holds it | PROBE: test_crucible_target_units reads the address of a kernel in each of two units of two targets, a probe of the raw behavior of the link.  The test test_target_units of foundation holds the same regions
@@ -358,10 +350,10 @@ test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the 
 test/ | region | 1 | PROBE: the private key of mTLS leaves no byte of the key in its buffer after its end | the test of the mTLS private key builds the key in a buffer of bytes, ends it, and reads the buffer with volatile reads, the probe of the secret carriers of the base, because no door of the base reads the storage of an object after its end
 test/ | region | 1 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
-test/ | replace-pending:<limits> | 11 | - | -
-test/ | replace-pending:std::bit_cast | 55 | - | -
-test/ | std-entity | 1285 | - | -
-test/ | std-object | 435 | - | -
+test/ | replace-pending:<limits> | 9 | - | -
+test/ | replace-pending:std::bit_cast | 51 | - | -
+test/ | std-entity | 1261 | - | -
+test/ | std-object | 430 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
 test/cipher_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
@@ -419,7 +411,7 @@ test/fixy/ | opted-out | 2 | PROBE: the test states a payload rule of the role d
 test/fixy/ | opted-out | 5 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
-test/fixy/ | raw-pointer-object | 132 | - | -
+test/fixy/ | raw-pointer-object | 130 | - | -
 test/fixy/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | region | 1 | ORACLE: sched_getcpu of the C library is the oracle of the current CPU | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -456,8 +448,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2330 | - | -
-test/fixy/ | std-object | 836 | - | -
+test/fixy/ | std-entity | 2325 | - | -
+test/fixy/ | std-object | 834 | - | -
 test/fixy/neg/ | c-array-object | 54 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 322 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
@@ -750,9 +742,6 @@ test/shape/ | opted-out | 266 | ORACLE: the raw form that the shape of each fami
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/tensor_neg/ | opted-out | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/tensor_neg/ | region | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
-test/tsan/ | c-library-call | 1 | - | -
-test/tsan/ | std-entity | 32 | - | -
-test/tsan/ | std-object | 13 | - | -
 test/vigil_neg/ | opted-out | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
 test/vigil_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/vigil_neg/ | opted-out | 1 | PROBE: the fixture starts the lifetime of an object in raw bytes | -
