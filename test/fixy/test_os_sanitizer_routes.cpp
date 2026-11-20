@@ -23,12 +23,17 @@
 //   of the old map.  A write of a different thread to the new map then
 //   reports a race with a write to the old map, which no thread shares.
 //
-//   The first thread maps a guarded region through the door, writes its
-//   first byte, and unmaps it.  The second thread then maps guarded regions
-//   of the same size until one starts at the same address, and writes its
-//   first byte.  The kernel gives each new map the highest free range that
-//   fits, so the regions that the second thread keeps take each range above
-//   the old one first.
+//   The case runs in a child process of the child door, so only the two
+//   threads of the case map memory while it runs.  The second thread starts
+//   and tells the first one, so the stack and the alternate signal stack of
+//   each thread exist before the unmap.  The first thread then maps a
+//   guarded region through the door, writes its first byte, and unmaps it.
+//   The second thread maps the same range with the fixed map of the door,
+//   and writes its first byte.  So the kernel gives the same range each time,
+//   and the case does not hope for the place of a map.  The runtime of a
+//   sanitizer can map memory of its own into the free range between the
+//   unmap and the fixed map.  The fixed map then gives eexist, and the case
+//   runs a new round with two new threads.
 //
 // In each case a relaxed atomic word orders the two threads.  The sanitizer
 // takes no happens-before edge from it, as it takes none from the kernel when
@@ -37,8 +42,10 @@
 // runs the same steps with no sanitizer.
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/os/Fs.h>
 #include <fixy/os/Path.h>
+#include <fixy/os/Process.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
@@ -54,11 +61,6 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two threads with no happens-before edge, a
 #include <unistd.h>
 
 namespace {
-
-// The address of the first usable byte of a region.
-[[nodiscard]] std::uint64_t address_of(::foundation::os::GuardedRegion& region) noexcept {
-    return __builtin_bit_cast(std::uint64_t, region.data_mut());
-}
 
 // Writes VALUE to the first usable byte of a region.
 void write_first_byte(::foundation::os::GuardedRegion& region, char value) noexcept { region.data_mut()[0] = value; }
@@ -168,69 +170,101 @@ constexpr std::size_t kOpenTries = 64;
     return 0;
 }
 
-// The usable bytes of each region of the map case: more than an alternate
-// signal stack of a thread.
+// The usable bytes of each region of the map case.
 constexpr std::size_t kRegionBytes = std::size_t{1} << 20U;
 
-// The count of the regions that the second thread of a round of the map case
-// keeps before it gives up.
-constexpr std::size_t kMapTries = 16;
-
-// Maps regions of kRegionBytes until one starts at FIRST_ADDRESS, and keeps
-// each other region mapped while it tries, so the kernel gives the next try
-// a lower range.  It writes the first byte of the region at FIRST_ADDRESS, and
-// gives true when it found it.
-[[nodiscard]] bool map_again_and_write(std::uint64_t first_address, std::size_t tries_left) noexcept {
-    if (tries_left == 0) return false;
-    os::GuardedRegion region = os::map_guarded_region(kRegionBytes).expect("a guarded region maps");
-    if (address_of(region) == first_address) {
-        write_first_byte(region, 2);
-        return true;
-    }
-    return map_again_and_write(first_address, tries_left - 1);
-}
-
 // The count of the rounds of the map case.  The runtime of a sanitizer can map
-// memory of its own into the free range between the unmap and the map of a
-// round.  The second thread then finds no region at the old address, and
-// the case runs a new round with two new threads.
+// memory of its own into the free range between the unmap and the fixed map
+// of a round.  The fixed map then gives eexist, and the case runs a new round
+// with two new threads.
 constexpr int kMapRounds = 16;
 
-// One round of the map case.  It gives true when the second thread wrote to
-// a new map at the old address.
-[[nodiscard]] bool reuse_range_once(BgCtx const& ctx) {
+// The end of one round of the map case.
+enum class RoundEnd : std::uint8_t {
+    // The second thread mapped the range again and wrote to it.
+    reused,
+    // A map of the runtime held a part of the range, so the fixed map gave
+    // eexist.
+    range_taken,
+};
+
+// One round of the map case.  An error of the fixed map other than eexist
+// ends the process.
+[[nodiscard]] RoundEnd reuse_range_once(BgCtx const& ctx) {
+    RelaxedWord second_started{};
     RelaxedWord unmapped{};
-    RelaxedWord second_done{};
-    foundation::core::Atomic<bool> has_found_range{false};
-    // The first thread waits for the second one before it ends, so the
-    // unmap of its alternate signal stack cannot come before the maps of the
-    // second thread.
+    // Only the second thread writes the result, and the caller reads it after
+    // the join, so the result gives the two bodies no edge.
+    foundation::core::Atomic<bool> has_reused{false};
     auto first = [&]() noexcept {
+        wait_for(second_started);
         std::uint64_t first_address = 0;
         {
             os::GuardedRegion region = os::map_guarded_region(kRegionBytes).expect("a guarded region maps");
-            first_address = address_of(region);
+            first_address = static_cast<std::uint64_t>(region.address());
             write_first_byte(region, 1);
         }
         unmapped.publish_relaxed(first_address);
-        wait_for(second_done);
     };
     auto second = [&]() noexcept {
+        second_started.publish_relaxed(1);
         wait_for(unmapped);
-        has_found_range.store_release(map_again_and_write(unmapped.read_relaxed(), kMapTries));
-        second_done.publish_relaxed(1);
+        foundation::core::Result<os::GuardedRegion, os::Errno> again =
+            os::map_guarded_region_at(os::RegionAddress{unmapped.read_relaxed()}, kRegionBytes);
+        if (again.is_err()) {
+            os::Errno const error = std::move(again).err().expect("a refused map holds its error");
+            if (error != os::Errno::eexist) {
+                fixy::fatal("test_os_sanitizer_routes: the fixed map of the map case failed with the error {}, and "
+                            "only eexist tells that a map of the runtime took the range",
+                            static_cast<std::uint16_t>(error));
+            }
+            return;
+        }
+        os::GuardedRegion region = std::move(again).expect("a fixed map with no error holds a region");
+        write_first_byte(region, 2);
+        has_reused.store_release(true);
     };
-    if (::fixy::thread::run_joined(ctx, ThreadOptions{}, first, second).is_err()) return false;
-    return has_found_range.load_acquire();
+    if (::fixy::thread::run_joined(ctx, ThreadOptions{}, first, second).is_err()) {
+        fixy::fatal("test_os_sanitizer_routes: the thread door did not start the two threads of the map case");
+    }
+    return has_reused.load_acquire() ? RoundEnd::reused : RoundEnd::range_taken;
 }
 
+// The exit code of the child of the map case when a map of the runtime took
+// the range in each round.
+constexpr std::uint8_t kRangeTakenInEachRound = 12;
+
+// The limit of the wait for the child of the map case.  A round that does not
+// end, such as one whose second thread does not start, ends at the limit.
+constexpr ::fixy::process::WaitLimit kMapCaseLimit{120000};
+
 // THE MAP: a write to a new map of a range that a raw unmap gave back reports
-// no race with a write to the old map.
+// no race with a write to the old map.  The rounds run in a child process,
+// and a report of the sanitizer ends the child with a code other than zero.
+// The fork comes after each thread of the close case joined, so the child
+// starts its threads from a process of one thread, as ThreadSanitizer
+// requires.  The child writes the round that reused the range to its
+// standard error, and the parent writes that output.
 [[nodiscard]] int check_reused_range_keeps_no_shadow() {
-    BgCtx const ctx{eff::testing::bg()};
-    for (int round = 0; round < kMapRounds; ++round) {
-        if (reuse_range_once(ctx)) return 0;
-    }
+    ::fixy::TestRunnerCtx const test{eff::testing::test()};
+    auto run_rounds = [&test]() noexcept {
+        BgCtx const ctx{eff::testing::bg()};
+        for (int round = 0; round < kMapRounds; ++round) {
+            if (reuse_range_once(ctx) == RoundEnd::reused) {
+                fixy::report(fixy::Sink::Err, "the round {} of the map case reused the range\n", round);
+                return;
+            }
+        }
+        ::fixy::process::exit_now(test, kRangeTakenInEachRound);
+    };
+    ::fixy::process::Child child =
+        ::fixy::process::spawn_child(test, run_rounds).expect("the child door starts the child of the map case");
+    ::fixy::process::ChildReport const report = ::fixy::process::wait_within(std::move(child), kMapCaseLimit)
+                                                    .expect("the child door collects the child of the map case");
+    bool const is_reused = report.is_exit_with(0);
+    fixy::report(is_reused ? fixy::Sink::Out : fixy::Sink::Err, "{}", report.output());
+    if (is_reused) return 0;
+    if (report.is_exit_with(kRangeTakenInEachRound)) return 12;
     return 11;
 }
 
