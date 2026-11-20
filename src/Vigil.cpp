@@ -95,9 +95,10 @@ bool Vigil::rollback() {
     // No op reaches the ring while this thread rolls back, so this is the
     // point of the rollback.
     const uint64_t ops_before = ring_total_produced();
-    const ::fixy::Option<::fixy::handle::Published<RegionNode>> restored = bg_.run_on_publish_stage(
-        [&tx_log = tx_log_, ops_before](BackgroundThread& bg, BackgroundThread::PublishStage const& stage) noexcept
-            -> ::fixy::Option<::fixy::handle::Published<RegionNode>> {
+    const ::fixy::Option<::fixy::handle::Published<RegionNode>> restored =
+        bg_.run_on_publish_stage([&tx_log = tx_log_, ops_before](BackgroundThread::PublishStageView& bg,
+                                                                 BackgroundThread::PublishStage const& stage) noexcept
+                                     -> ::fixy::Option<::fixy::handle::Published<RegionNode>> {
             if (!tx_log.rollback(stage)) return ::fixy::none;
             // The job runs between two publications, so each publication after
             // it reads the mark, and none gives the foreground a region cut

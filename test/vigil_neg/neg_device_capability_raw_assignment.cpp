@@ -1,10 +1,10 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Mismatch class 1 of 2 for BackgroundThread::device_capability: the
+// Mismatch class 1 of 2 for BackgroundThread::DeviceCapability: the
 // compiler rejects an assignment of a raw uint64_t (provenance bypass).
 //
-// The field is a DeviceCapability, fixy::Tagged<uint64_t,
-// tags::source::Meridian>.  The tag says that the startup calibration
+// The type is fixy::Tagged<uint64_t, tags::source::Meridian>, and the
+// private field of BackgroundThread holds it.  The tag says that the startup calibration
 // pass measured the value on real silicon.  The constructor from the value
 // is explicit and private, so mint_tagged<Meridian> is the one door.  If
 // this fixture compiles, any integer can take the place of a measured
@@ -18,9 +18,9 @@
 
 #include <cstdint>
 
-static void assign_raw_capability(crucible::BackgroundThread& background, std::uint64_t raw_cap) {
+static void assign_raw_capability(crucible::BackgroundThread::DeviceCapability& capability, std::uint64_t raw_cap) {
     // The compiler must reject this line: no assignment takes a raw uint64_t.
-    background.device_capability = raw_cap;
+    capability = raw_cap;
 }
 
 int main() {

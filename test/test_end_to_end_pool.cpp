@@ -42,7 +42,7 @@ void test_pipeline_data_flow() {
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     wait_processed(bt, *ring);
-    auto* region = bt.active_region.load_acquire().try_get();
+    auto* region = bt.active_region().try_get();
     CRUCIBLE_TEST_ASSERT(kTest, region != nullptr);
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
@@ -94,7 +94,7 @@ void test_pipeline_pool_bounds() {
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     wait_processed(bt, *ring);
-    auto* region = bt.active_region.load_acquire().try_get();
+    auto* region = bt.active_region().try_get();
     CRUCIBLE_TEST_ASSERT(kTest, region != nullptr);
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};

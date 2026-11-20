@@ -3240,10 +3240,10 @@ crucible_neg_compile_test(neg_active_region_ptr_cross_source_assignment
 #     tags::source::Calibrated does not convert, because no retag edge
 #     joins the two tags (laundering).
 crucible_neg_compile_test(neg_device_capability_raw_assignment
-  "neg_device_capability_raw_assignment.cpp:23:36: error: no match for .operator=. \\(operand types are .crucible::BackgroundThread::DeviceCapability. \\{aka .fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>.\\} and .uint64_t."
+  "neg_device_capability_raw_assignment.cpp:23:18: error: no match for .operator=. \\(operand types are .crucible::BackgroundThread::DeviceCapability. \\{aka .fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>.\\} and .uint64_t."
   "no known conversion for argument 1 from .uint64_t. \\{aka .long unsigned int.\\} to .const fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>&.")
 crucible_neg_compile_test(neg_device_capability_cross_source_assignment
-  "neg_device_capability_cross_source_assignment.cpp:25:36: error: no match for .operator=. \\(operand types are .crucible::BackgroundThread::DeviceCapability. \\{aka .fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>.\\} and .fixy::Tagged<long unsigned int, fixy::tags::source::Calibrated>.\\)"
+  "neg_device_capability_cross_source_assignment.cpp:25:18: error: no match for .operator=. \\(operand types are .crucible::BackgroundThread::DeviceCapability. \\{aka .fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>.\\} and .fixy::Tagged<long unsigned int, fixy::tags::source::Calibrated>.\\)"
   "no known conversion for argument 1 from .fixy::Tagged<long unsigned int, fixy::tags::source::Calibrated>. to .const fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>&.")
 
 # RegionCache::ops_ holds fixy::Tagged<const TraceEntry*, source::RegionOps>.

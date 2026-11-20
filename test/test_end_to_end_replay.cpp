@@ -43,7 +43,7 @@ void test_pipeline_basic() {
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     wait_processed(bt, *ring);
-    auto* region = bt.active_region.load_acquire().try_get();
+    auto* region = bt.active_region().try_get();
     CRUCIBLE_TEST_ASSERT(kTest, region != nullptr && "BackgroundThread did not produce a region");
 
     CRUCIBLE_TEST_ASSERT(kTest, region->kind == TraceNodeKind::REGION);
@@ -129,7 +129,7 @@ void test_pipeline_divergence() {
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     wait_processed(bt, *ring);
-    auto* region = bt.active_region.load_acquire().try_get();
+    auto* region = bt.active_region().try_get();
     CRUCIBLE_TEST_ASSERT(kTest, region != nullptr);
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};

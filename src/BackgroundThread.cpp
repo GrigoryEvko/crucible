@@ -414,7 +414,7 @@ BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, Pipe
     : region_ready_{::fixy::to(ignore_regions_)},
       region_store_{::fixy::mint_heap_array_with<RegionMemory>(allocation, limits.region_store.raw(),
                                                                [](size_t) noexcept { return RegionMemory{}; })},
-      uncompiled_regions{allocation, limits.uncompiled_queue},
+      uncompiled_regions_{allocation, limits.uncompiled_queue},
       pipeline_{::fixy::mint_box<Pipeline>(allocation)} {
     build_scratch_.set_retained_limit(limits.scratch_retained);
     publish_scratch_.set_retained_limit(limits.scratch_retained);
@@ -425,7 +425,7 @@ BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, Regi
     : region_ready_{::fixy::to(on_region_ready)},
       region_store_{::fixy::mint_heap_array_with<RegionMemory>(allocation, limits.region_store.raw(),
                                                                [](size_t) noexcept { return RegionMemory{}; })},
-      uncompiled_regions{allocation, limits.uncompiled_queue},
+      uncompiled_regions_{allocation, limits.uncompiled_queue},
       pipeline_{::fixy::mint_box<Pipeline>(allocation)} {
     build_scratch_.set_retained_limit(limits.scratch_retained);
     publish_scratch_.set_retained_limit(limits.scratch_retained);
@@ -498,15 +498,15 @@ void BackgroundThread::PendingOps::push(::foundation::effects::Alloc alloc, Trac
 }
 
 void BackgroundThread::drop_unclaimable_ops_() noexcept {
-    const uint64_t first_held = detector.pos_ - pending_ops_.size();
-    const uint64_t oldest_claimable = detector.oldest_claimable();
+    const uint64_t first_held = detector_.pos_ - pending_ops_.size();
+    const uint64_t oldest_claimable = detector_.oldest_claimable();
     if (oldest_claimable > first_held) pending_ops_.drop_oldest(oldest_claimable - first_held);
 }
 
 ::fixy::Option<::fixy::Box<BackgroundThread::BgBuildWork>>
 BackgroundThread::prepare_iteration_build_work(::foundation::effects::Alloc alloc) {
     uint32_t total = static_cast<uint32_t>(pending_ops_.size());
-    const uint32_t iter_len = detector.last_completed_len;
+    const uint32_t iter_len = detector_.last_completed_len;
 
     const uint32_t warmup = ::fixy::saturating_sub(::fixy::saturating_sub(total, IterationDetector::K), iter_len);
     pending_ops_.drop_oldest(warmup);
@@ -516,7 +516,7 @@ BackgroundThread::prepare_iteration_build_work(::foundation::effects::Alloc allo
     (void)iterations_completed.bump();
 
     ::fixy::Option<::fixy::Box<BgBuildWork>> built{::fixy::none};
-    if (meta_log && completed_len > 0) {
+    if (meta_log_ && completed_len > 0) {
         ::fixy::Box<BgBuildWork> work = ::fixy::mint_box<BgBuildWork>(alloc);
         work->reset_point = applied_reset_.peek_relaxed();
         work->numerics = stream_numerics_;
@@ -555,7 +555,7 @@ void BackgroundThread::apply_due_reset_() noexcept {
     CRUCIBLE_FATAL_INVARIANT(requested.ops_before() >= stream_ops_);
     if (requested.ops_before() != stream_ops_) return;
     if (requested.restarts_detector()) {
-        detector.restart_after_divergence();
+        detector_.restart_after_divergence();
         pending_ops_.clear();
     }
     stream_numerics_ = requested_numerics_.load_acquire();
@@ -568,7 +568,7 @@ void BackgroundThread::apply_due_reset_() noexcept {
 // with the log, and a tail past the head would give the producer slots that
 // it did not write.
 void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_floor) {
-    MetaLog& log = *meta_log.get();
+    MetaLog& log = *meta_log_.get();
     if (meta_floor <= log.tail.get()) return;
     CRUCIBLE_FATAL_INVARIANT(meta_floor <= log.head.get());
     log.advance_tail(meta_floor);
@@ -622,8 +622,8 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
 
     memory.published = PublishedRegion{.region = published, .reset_point = reset_point};
 
-    uncompiled_regions.push(published.get());
-    active_region.store_release(published);
+    uncompiled_regions_.push(published.get());
+    active_region_.store_release(published);
     owner_marks_ = RegionMarks{};
     // The callback gets a proof of its own, which dies with the call.
     (*region_ready_)(bg, PublishStage{}, memory.published);
@@ -661,9 +661,9 @@ bool BackgroundThread::is_held_(::fixy::WeakRef<const RegionNode> region) const 
          owner_marks_.held.view().window(0, owner_marks_.count).expect("the marks hold at most CAP regions")) {
         if (held == region) return true;
     }
-    const uint32_t queued = uncompiled_regions.size();
+    const uint32_t queued = uncompiled_regions_.size();
     for (uint32_t age = 0; age < queued; ++age) {
-        if (::fixy::WeakRef<const RegionNode>{uncompiled_regions.at(age).get()} == region) return true;
+        if (::fixy::WeakRef<const RegionNode>{uncompiled_regions_.at(age).get()} == region) return true;
     }
     return false;
 }
@@ -702,9 +702,9 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
     while (true) {
         if (owner.stop_requested.peek()) break;
 
-        batch->count = owner.ring.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(),
-                                                       batch->scope_hashes.view(), batch->callsite_hashes.view(),
-                                                       batch->depths.view());
+        batch->count = owner.ring_.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(),
+                                                        batch->scope_hashes.view(), batch->callsite_hashes.view(),
+                                                        batch->depths.view());
 
         if (batch->count == 0) {
             idle.pause_or_sleep(in.ctx());
@@ -717,8 +717,8 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
     }
 
     batch->count =
-        owner.ring.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(), batch->scope_hashes.view(),
-                                        batch->callsite_hashes.view(), batch->depths.view());
+        owner.ring_.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(), batch->scope_hashes.view(),
+                                         batch->callsite_hashes.view(), batch->depths.view());
     if (batch->count > 0) {
         push_pipeline(in.ctx(), next, out, std::move(batch));
     }
@@ -760,7 +760,7 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
                                     owner.take_record_start_(entry, ops.meta_starts.at(slot)),
                                     ops.scope_hashes.at(slot), ops.callsite_hashes.at(slot), ops.depths.at(slot));
 
-            if (owner.detector.check(alloc, entry.schema_hash, entry.shape_hash)) {
+            if (owner.detector_.check(alloc, entry.schema_hash, entry.shape_hash)) {
                 ::fixy::Option<::fixy::Box<BgBuildWork>> work = owner.prepare_iteration_build_work(alloc);
                 if (work.is_some()) {
                     push_pipeline(in.ctx(), parks.build_work, out, std::move(work).expect("the test above found work"));
@@ -775,8 +775,8 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
         // The snapshot goes out before the commit marker, so a flush that
         // reads the marker reads this snapshot or a later one.
         owner.detector_snapshot.store_release(DetectorSnapshot{
-            .boundaries = owner.detector.boundaries_detected.get(),
-            .period = owner.detector.confirmed ? DetectorPeriod::Confirmed : DetectorPeriod::Searching});
+            .boundaries = owner.detector_.boundaries_detected.get(),
+            .period = owner.detector_.confirmed ? DetectorPeriod::Confirmed : DetectorPeriod::Searching});
 
         push_pipeline(in.ctx(), parks.build_work, out, owner.make_commit_work(alloc, ops.count));
     }
@@ -939,27 +939,37 @@ void BackgroundThread::set_numerics(NumericsHash numerics) noexcept {
 // comes before start(), so the door of the thread reads it as defaulted.
 BackgroundThread::~BackgroundThread() = default;
 
-void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log,
-                             int32_t rank_, int32_t world_size_, uint64_t device_cap) {
-    CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a start while the pipeline thread runs: stop the pipeline first");
-    CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(ring, trace_ring),
+void BackgroundThread::bind_ring(TraceRing& trace_ring) noexcept {
+    CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a bind while the pipeline thread runs: stop the pipeline first");
+    CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(ring_, trace_ring),
                      "a start after stop names the trace ring of the first start");
-    CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(meta_log, trace_meta_log),
+    if (!ring_.has_value()) ring_.set(&trace_ring);
+}
+
+void BackgroundThread::bind_meta_log(MetaLog& trace_meta_log) noexcept {
+    CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a bind while the pipeline thread runs: stop the pipeline first");
+    CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(meta_log_, trace_meta_log),
                      "a start after stop names the metadata log of the first start");
+    if (!meta_log_.has_value()) meta_log_.set(&trace_meta_log);
+}
+
+void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log,
+                             int32_t rank, int32_t world_size, uint64_t device_cap) {
+    CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a start while the pipeline thread runs: stop the pipeline first");
+    bind_ring(trace_ring);
+    bind_meta_log(trace_meta_log);
     global_schema_table().seal(startup);
     global_ckernel_table().value()->seal(startup);
-    if (!ring.has_value()) ring.set(&trace_ring);
-    if (!meta_log.has_value()) meta_log.set(&trace_meta_log);
-    rank = rank_;
-    world_size = world_size_;
-    device_capability = ::fixy::mint_tagged<::fixy::tags::source::Meridian>(device_cap);
+    rank_ = rank;
+    world_size_ = world_size;
+    device_capability_ = ::fixy::mint_tagged<::fixy::tags::source::Meridian>(device_cap);
     rearm_stop();
     if (!pipeline_->has_started) {
         pipeline_->has_started = true;
         // The first op of the ring owns the first record that the log has
         // not released.  A later start keeps the cursor, because the ring
         // keeps the ops that the last pipeline did not read.
-        meta_cursor_ = meta_log.get()->tail.get();
+        meta_cursor_ = meta_log_.get()->tail.get();
     }
     // The lambda is the entry of the pipeline thread, so it takes the
     // background context of that thread from the door.  It borrows this

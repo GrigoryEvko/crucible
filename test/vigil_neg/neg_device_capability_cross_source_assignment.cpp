@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Mismatch class 2 of 2 for BackgroundThread::device_capability: the
+// Mismatch class 2 of 2 for BackgroundThread::DeviceCapability: the
 // compiler rejects an assignment of a value under tags::source::Calibrated,
-// because the field holds tags::source::Meridian (provenance laundering).
+// because the type holds tags::source::Meridian (provenance laundering).
 //
 // Calibrated marks the result of a runtime calibration probe.  Meridian
 // marks a value that the startup calibration pass measured on real
@@ -18,11 +18,11 @@
 
 #include <cstdint>
 
-static void assign_calibrated_capability(crucible::BackgroundThread& background) {
+static void assign_calibrated_capability(crucible::BackgroundThread::DeviceCapability& capability) {
     auto calibrated = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(std::uint64_t{90});
 
     // The compiler must reject this line: the two sources are different types.
-    background.device_capability = calibrated;
+    capability = calibrated;
 }
 
 int main() {

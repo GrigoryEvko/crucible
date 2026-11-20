@@ -36,8 +36,8 @@ void test_t04_runtime_smoke() {
     auto ring = std::make_unique<TraceRing>();
     auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
 
-    bt.ring.set(ring.get());
-    bt.meta_log.set(metalog.get());
+    bt.bind_ring(*ring);
+    bt.bind_meta_log(*metalog);
     bt.stop_requested.signal();
 
     bool done = false;
@@ -63,8 +63,8 @@ void test_concurrent_spsc_drain() {
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
     auto ring = std::make_unique<TraceRing>();
     auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
-    bt.ring.set(ring.get());
-    bt.meta_log.set(metalog.get());
+    bt.bind_ring(*ring);
+    bt.bind_meta_log(*metalog);
     bt.rearm_stop();
 
     std::jthread bg_thread([&]() { bt.run_in_row(bg_load_ctx()); });
@@ -108,8 +108,8 @@ void test_large_batch_drain() {
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
     auto ring = std::make_unique<TraceRing>();
     auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
-    bt.ring.set(ring.get());
-    bt.meta_log.set(metalog.get());
+    bt.bind_ring(*ring);
+    bt.bind_meta_log(*metalog);
     bt.rearm_stop();
 
     std::jthread bg_thread([&]() { bt.run_in_row(bg_load_ctx()); });
@@ -151,8 +151,8 @@ void test_rearm_cycle() {
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
     auto ring = std::make_unique<TraceRing>();
     auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
-    bt.ring.set(ring.get());
-    bt.meta_log.set(metalog.get());
+    bt.bind_ring(*ring);
+    bt.bind_meta_log(*metalog);
 
     constexpr uint32_t PER_CYCLE = 4;
 

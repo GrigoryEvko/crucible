@@ -182,19 +182,18 @@ void rollback_on_a_fresh_vigil() {
 void job_runs_on_the_caller_without_a_stage() {
     crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
     int runs = 0;
-    background.run_on_publish_stage(
-        [&runs](crucible::BackgroundThread&, crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
-    background.run_on_publish_stage(
-        [&runs](crucible::BackgroundThread&, crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
+    background.run_on_publish_stage([&runs](crucible::BackgroundThread::PublishStageView&,
+                                            crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
+    background.run_on_publish_stage([&runs](crucible::BackgroundThread::PublishStageView&,
+                                            crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
     if (runs != 2) fail("a job posted with no publish stage did not run on its caller");
 }
 
 std::thread::id thread_of_one_job(crucible::BackgroundThread& background) {
     std::thread::id ran_on{};
     background.run_on_publish_stage(
-        [&ran_on](crucible::BackgroundThread&, crucible::BackgroundThread::PublishStage const&) noexcept {
-            ran_on = std::this_thread::get_id();
-        });
+        [&ran_on](crucible::BackgroundThread::PublishStageView&,
+                  crucible::BackgroundThread::PublishStage const&) noexcept { ran_on = std::this_thread::get_id(); });
     return ran_on;
 }
 
@@ -222,16 +221,18 @@ void job_runs_on_the_stage_while_it_runs() {
 }
 
 // A job that posts a second job to the same background thread would wait
-// on itself, because the thread that runs it holds the stage.  The contract
-// ends the process instead of letting it hang.  The refused call runs in a
-// child through expect_dies of the Check family, before the test starts a
-// thread.
+// on itself, because the thread that runs it holds the stage.  The view of a
+// job has no door that posts a job, so the job reaches the background thread
+// through a Ref that it captures.  The contract ends the process instead of
+// letting it hang.  The refused call runs in a child through expect_dies of
+// the Check family, before the test starts a thread.
 void nested_job_ends_the_process() {
     crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
     background.run_on_publish_stage(
-        [](crucible::BackgroundThread& owner, crucible::BackgroundThread::PublishStage const&) noexcept {
-            owner.run_on_publish_stage(
-                [](crucible::BackgroundThread&, crucible::BackgroundThread::PublishStage const&) noexcept {});
+        [owner = ::fixy::to(background)](crucible::BackgroundThread::PublishStageView&,
+                                         crucible::BackgroundThread::PublishStage const&) noexcept {
+            owner->run_on_publish_stage([](crucible::BackgroundThread::PublishStageView&,
+                                           crucible::BackgroundThread::PublishStage const&) noexcept {});
         });
 }
 

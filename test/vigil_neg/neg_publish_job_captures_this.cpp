@@ -1,10 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// run_on_publish_stage gives a job its BackgroundThread and the proof of the
-// publish stage as parameters, and it checks the closure of the job with the
-// closure model.  A job runs on the thread of the publish stage, so a capture
-// of `this` of its owner, a plain address of an object that the caller owns,
-// is refused.
+// run_on_publish_stage gives a job the view of the publish stage and its proof
+// as parameters, and it checks the closure of the job with the closure model.
+// A job runs on the thread of the publish stage, so a capture of `this` of its
+// owner, a plain address of an object that the caller owns, is refused.
 
 #include <crucible/BackgroundThread.h>
 
@@ -17,10 +16,10 @@ struct Owner {
     unsigned count = 0;
 
     void count_regions() {
-        background.run_on_publish_stage(
-            [this](crucible::BackgroundThread& owner, crucible::BackgroundThread::PublishStage const& stage) noexcept {
-                count += owner.region_count(stage);
-            });
+        background.run_on_publish_stage([this](crucible::BackgroundThread::PublishStageView& owner,
+                                               crucible::BackgroundThread::PublishStage const& stage) noexcept {
+            count += owner.region_count(stage);
+        });
     }
 };
 

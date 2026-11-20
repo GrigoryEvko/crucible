@@ -157,7 +157,7 @@ struct Rig {
                                                          ::foundation::effects::testing::test().alloc);
     Work work;
 
-    Rig() { bt.meta_log.set(&*log); }
+    Rig() { bt.bind_meta_log(*log); }
     Rig(const Rig&) = delete("the thread holds the address of the log");
     Rig& operator=(const Rig&) = delete("the thread holds the address of the log");
 

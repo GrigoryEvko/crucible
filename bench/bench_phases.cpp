@@ -46,6 +46,24 @@
 #include <memory>
 #include <vector>
 
+namespace crucible {
+
+// The door of this bench to the scratch of the build stage, which
+// BackgroundThread names as a friend.  The bench times each phase of a build
+// against that scratch, on a BackgroundThread that runs no pipeline.
+struct BuildScratchOfBench {
+    [[nodiscard]] static ::fixy::MaskedArray<BackgroundThread::PtrSlot>& map(BackgroundThread& bg) noexcept {
+        return bg.scratch_map_;
+    }
+    [[nodiscard]] static ::fixy::HeapArray<BackgroundThread::SlotInfo>& slots(BackgroundThread& bg) noexcept {
+        return bg.scratch_slots_;
+    }
+    [[nodiscard]] static uint8_t& map_generation(BackgroundThread& bg) noexcept { return bg.map_gen_; }
+    [[nodiscard]] static uint32_t slot_capacity(BackgroundThread const& bg) noexcept { return bg.slot_cap_max_.get(); }
+};
+
+}  // namespace crucible
+
 using namespace crucible;
 
 namespace {
@@ -321,10 +339,12 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         ::fixy::HeapArray<OpIndex> producer_buffer = ::fixy::mint_heap_array(A, total_inputs, OpIndex{});
         ::fixy::HeapArray<SlotId> slot_buffer = ::fixy::mint_heap_array(A, total_inputs + total_outputs, SlotId{});
         bg.ensure_scratch_buffers(A, total_inputs, total_outputs);
-        const uint32_t slot_cap =
-            ::fixy::min(bg.slot_cap_max_.get(), ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
-        for (BackgroundThread::SlotInfo& slot_info :
-             bg.scratch_slots_.view().window(0, slot_cap).expect("the slot scratch holds slot_cap slots")) {
+        const uint32_t slot_cap = ::fixy::min(BuildScratchOfBench::slot_capacity(bg),
+                                              ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
+        for (BackgroundThread::SlotInfo& slot_info : BuildScratchOfBench::slots(bg)
+                                                         .view()
+                                                         .window(0, slot_cap)
+                                                         .expect("the slot scratch holds slot_cap slots")) {
             slot_info = BackgroundThread::SlotInfo{};
         }
 
@@ -534,22 +554,22 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         const ::fixy::View<TraceEntry const> ref_ops = ref.ops.view();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
-            bg.map_gen_++;
-            if (bg.map_gen_ == 0) {
-                for (BackgroundThread::PtrSlot& slot : bg.scratch_map_.view()) {
+            BuildScratchOfBench::map_generation(bg)++;
+            if (BuildScratchOfBench::map_generation(bg) == 0) {
+                for (BackgroundThread::PtrSlot& slot : BuildScratchOfBench::map(bg).view()) {
                     slot = BackgroundThread::PtrSlot{};
                 }
-                bg.map_gen_ = 1;
+                BuildScratchOfBench::map_generation(bg) = 1;
             }
-            const uint8_t local_gen = bg.map_gen_;
+            const uint8_t local_gen = BuildScratchOfBench::map_generation(bg);
 
             uint32_t i = 0;
             for (const TraceEntry& te : ref_ops) {
                 uint8_t port = 0;
                 for (const TensorMeta& m : te.output_metas()) {
                     if (m.data_ptr.value() != nullptr)
-                        (void)BackgroundThread::ptr_map_insert(bg.scratch_map_, local_gen, crucible::storage_key(m),
-                                                               OpIndex{i}, port, SlotId{0});
+                        (void)BackgroundThread::ptr_map_insert(BuildScratchOfBench::map(bg), local_gen,
+                                                               crucible::storage_key(m), OpIndex{i}, port, SlotId{0});
                     ++port;
                 }
                 ++i;
@@ -560,8 +580,8 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             uint32_t dummy_edges = 0;
             for (const TraceEntry& te : ref_ops) {
                 for (const TensorMeta& m : te.input_metas()) {
-                    auto lookup =
-                        BackgroundThread::ptr_map_lookup(bg.scratch_map_, local_gen, crucible::storage_key(m));
+                    auto lookup = BackgroundThread::ptr_map_lookup(BuildScratchOfBench::map(bg), local_gen,
+                                                                   crucible::storage_key(m));
                     if (lookup.op_index.is_valid()) dummy_edges++;
                 }
             }
@@ -585,14 +605,14 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         const ::fixy::View<TraceEntry const> ref_ops = ref.ops.view();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
-            bg.map_gen_++;
-            if (bg.map_gen_ == 0) {
-                for (BackgroundThread::PtrSlot& slot : bg.scratch_map_.view()) {
+            BuildScratchOfBench::map_generation(bg)++;
+            if (BuildScratchOfBench::map_generation(bg) == 0) {
+                for (BackgroundThread::PtrSlot& slot : BuildScratchOfBench::map(bg).view()) {
                     slot = BackgroundThread::PtrSlot{};
                 }
-                bg.map_gen_ = 1;
+                BuildScratchOfBench::map_generation(bg) = 1;
             }
-            const uint8_t local_gen = bg.map_gen_;
+            const uint8_t local_gen = BuildScratchOfBench::map_generation(bg);
 
             const uint64_t t0 = bench::rdtsc_start();
 
@@ -603,8 +623,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 for (const TensorMeta& m : te.output_metas()) {
                     const uint8_t this_port = port++;
                     if (m.data_ptr.value() == nullptr) continue;
-                    auto result = BackgroundThread::ptr_map_insert(bg.scratch_map_, local_gen, crucible::storage_key(m),
-                                                                   OpIndex{i}, this_port, SlotId{0});
+                    auto result =
+                        BackgroundThread::ptr_map_insert(BuildScratchOfBench::map(bg), local_gen,
+                                                         crucible::storage_key(m), OpIndex{i}, this_port, SlotId{0});
                     if (result.was_alias) aliases++;
                 }
                 ++i;
@@ -627,7 +648,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         // The slots of the build, and a copy that each turn writes back.
         const ::fixy::View<BackgroundThread::SlotInfo> built_slots =
-            bg.scratch_slots_.view().window(0, num_slots).expect("the slot scratch holds the slots of the build");
+            BuildScratchOfBench::slots(bg)
+                .view()
+                .window(0, num_slots)
+                .expect("the slot scratch holds the slots of the build");
         const ::fixy::HeapArray<BackgroundThread::SlotInfo> saved_slots =
             ::fixy::mint_heap_array_copy<BackgroundThread::SlotInfo>(A, built_slots);
 
@@ -731,7 +755,7 @@ int main(int argc, char* argv[]) {
     meta_log.reset();
 
     BackgroundThread bg{::foundation::effects::testing::test().alloc};
-    bg.meta_log.set(&meta_log);
+    bg.bind_meta_log(meta_log);
 
     std::printf("\n=== full pipeline (bench::run with BPF sensing) ===\n");
     ::fixy::FixedArray<bench::Report, 1> const reports{run_fullpipeline(bg, meta_log, trace)};

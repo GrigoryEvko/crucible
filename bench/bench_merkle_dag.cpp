@@ -312,8 +312,8 @@ int main(int argc, char* argv[]) {
         }
 
         BackgroundThread bg{::foundation::effects::testing::test().alloc};
-        bg.ring.set(ring.get());
-        bg.meta_log.set(&meta_log);
+        bg.bind_ring(*ring);
+        bg.bind_meta_log(meta_log);
 
         // The drain buffers have static storage; 4× 4096-element arrays on
         // the stack blow past our 512 kB stack-usage budget.
@@ -399,7 +399,7 @@ int main(int argc, char* argv[]) {
             meta_log.reset();
 
             BackgroundThread bg{::foundation::effects::testing::test().alloc};
-            bg.meta_log.set(&meta_log);
+            bg.bind_meta_log(meta_log);
             const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
             ::fixy::BumpArena scratch{arena_bytes};
 

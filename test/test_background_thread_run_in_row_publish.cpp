@@ -415,22 +415,23 @@ void test_published_regions_keep_their_hashes() {
 
     bt.stop();
 
-    CRUCIBLE_TEST_ASSERT(kTest, bt.uncompiled_regions.total() > 0 && "no region published");
+    CRUCIBLE_TEST_ASSERT(kTest, bt.uncompiled_regions().total() > 0 && "no region published");
     CRUCIBLE_TEST_ASSERT(kTest, gate.hash_mismatches.load_acquire() == 0);
 
     // The queue is bounded.  This run is shorter than the bound, so the
     // assertion is on the relationship rather than on a constant.
     // test_uncompiled_queue_is_bounded drives the wrap itself.
     const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
-    CRUCIBLE_TEST_ASSERT(test, bt.uncompiled_regions.size() <= bt.uncompiled_regions.capacity());
-    CRUCIBLE_TEST_ASSERT(test,
-                         bt.uncompiled_regions.size()
-                             == ::fixy::min(bt.uncompiled_regions.total(), uint64_t{bt.uncompiled_regions.capacity()}));
+    CRUCIBLE_TEST_ASSERT(test, bt.uncompiled_regions().size() <= bt.uncompiled_regions().capacity());
+    CRUCIBLE_TEST_ASSERT(
+        test, bt.uncompiled_regions().size()
+                  == ::fixy::min(bt.uncompiled_regions().total(), uint64_t{bt.uncompiled_regions().capacity()}));
 
     ::fixy::check::pass(kTest,
                         "  published_regions_keep_their_hashes:       "
                         "PASSED (retained={} of {})\n",
-                        bt.uncompiled_regions.size(), static_cast<unsigned long long>(bt.uncompiled_regions.total()));
+                        bt.uncompiled_regions().size(),
+                        static_cast<unsigned long long>(bt.uncompiled_regions().total()));
 }
 
 // Pushes iters iterations of family A through bt, waits until the pipeline
@@ -447,7 +448,7 @@ static uint64_t run_family_a(BackgroundThread& bt, TraceRing& ring, MetaLog& met
         CRUCIBLE_SPIN_PAUSE;
     }
     bt.stop();
-    return bt.uncompiled_regions.total();
+    return bt.uncompiled_regions().total();
 }
 
 // A long run keeps the bytes of its scratch arenas.  The build stage ends an
@@ -480,14 +481,14 @@ void test_long_run_keeps_its_scratch() {
 
     uint32_t stored = 0;
     uint64_t dropped = 0;
-    bt.run_on_publish_stage(
-        [&stored, &dropped](BackgroundThread& owner, BackgroundThread::PublishStage const& stage) noexcept {
-            stored = owner.region_count(stage);
-            dropped = owner.regions_dropped_full(stage);
-        });
+    bt.run_on_publish_stage([&stored, &dropped](BackgroundThread::PublishStageView& owner,
+                                                BackgroundThread::PublishStage const& stage) noexcept {
+        stored = owner.region_count(stage);
+        dropped = owner.regions_dropped_full(stage);
+    });
     CRUCIBLE_TEST_ASSERT(kTest, dropped == 0 && "a full region store discarded a published region");
     CRUCIBLE_TEST_ASSERT(::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
-                         stored <= bt.uncompiled_regions.capacity() + 1);
+                         stored <= bt.uncompiled_regions().capacity() + 1);
 
     ::fixy::check::pass(kTest,
                         "  long_run_keeps_its_scratch:                "
@@ -510,7 +511,8 @@ void test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx const& test) {
     limits.scratch_retained = ::fixy::Quantity<::fixy::unit::Byte, size_t>{4096};
     BackgroundThread bt{witness.alloc, limits};
     CRUCIBLE_TEST_ASSERT(test, bt.scratch_retained_limit() == limits.scratch_retained);
-    CRUCIBLE_TEST_ASSERT(test, bt.uncompiled_regions.capacity() == crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE);
+    CRUCIBLE_TEST_ASSERT(test,
+                         bt.uncompiled_regions().capacity() == crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE);
 
     ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(witness.alloc);
     ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(witness.alloc, witness.alloc);
@@ -518,11 +520,11 @@ void test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx const& test) {
 
     uint32_t stored = 0;
     uint64_t dropped = 0;
-    bt.run_on_publish_stage(
-        [&stored, &dropped](BackgroundThread& owner, BackgroundThread::PublishStage const& stage) noexcept {
-            stored = owner.region_count(stage);
-            dropped = owner.regions_dropped_full(stage);
-        });
+    bt.run_on_publish_stage([&stored, &dropped](BackgroundThread::PublishStageView& owner,
+                                                BackgroundThread::PublishStage const& stage) noexcept {
+        stored = owner.region_count(stage);
+        dropped = owner.regions_dropped_full(stage);
+    });
     CRUCIBLE_TEST_ASSERT(test, stored == 2);
     CRUCIBLE_TEST_ASSERT(test, queued == 2);
     CRUCIBLE_TEST_ASSERT(test, dropped > 0);

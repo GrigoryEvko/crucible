@@ -77,6 +77,23 @@ void wait_for_pipeline(BackgroundThread& bt, TraceRing& ring) {
         (void)pause.sleep_for(kPollNanos);
 }
 
+// The content hashes of the regions of the uncompiled queue, the newest
+// first.  A slot of the queue is state of the publish stage, so the read
+// runs in a job.
+using QueuedHashes = ::fixy::FixedArray<crucible::ContentHash, crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE>;
+
+QueuedHashes queued_hashes(BackgroundThread& bt) {
+    QueuedHashes hashes{};
+    bt.run_on_publish_stage([&hashes](BackgroundThread::PublishStageView& view,
+                                      BackgroundThread::PublishStage const&) noexcept {
+        BackgroundThread::UncompiledRegionQueue const& queue = view.uncompiled_regions();
+        for (uint32_t age = 0; age < queue.size(); ++age) {
+            *hashes.get(age).expect("the queue holds at most its default capacity") = queue.at(age).get().content_hash;
+        }
+    });
+    return hashes;
+}
+
 void test_start_and_stop() {
     TraceRing& ring = test_ring();
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
@@ -216,13 +233,14 @@ void test_start_again_continues_the_stream() {
     CRUCIBLE_TEST_ASSERT(kTest, control.total_processed.load_acquire() == kStreamOps);
     CRUCIBLE_TEST_ASSERT(kTest, bt.iterations_completed.get() == control.iterations_completed.get());
     CRUCIBLE_TEST_ASSERT(kTest, bt.works_built() == control.works_built());
-    CRUCIBLE_TEST_ASSERT(kTest, control.uncompiled_regions.total() > 0 && "the stream gave no region");
-    CRUCIBLE_TEST_ASSERT(kTest, bt.uncompiled_regions.total() == control.uncompiled_regions.total());
-    // Each pipeline is stopped, so the queues can be read.
-    for (uint32_t age = 0; age < control.uncompiled_regions.size(); ++age) {
+    CRUCIBLE_TEST_ASSERT(kTest, control.uncompiled_regions().total() > 0 && "the stream gave no region");
+    CRUCIBLE_TEST_ASSERT(kTest, bt.uncompiled_regions().total() == control.uncompiled_regions().total());
+    const QueuedHashes hashes = queued_hashes(bt);
+    const QueuedHashes control_hashes = queued_hashes(control);
+    for (uint32_t age = 0; age < control.uncompiled_regions().size(); ++age) {
         CRUCIBLE_TEST_ASSERT(kTest,
-                             bt.uncompiled_regions.at(age).get().content_hash
-                                     == control.uncompiled_regions.at(age).get().content_hash
+                             *hashes.get(age).expect("the queue holds at most its default capacity")
+                                     == *control_hashes.get(age).expect("the queue holds at most its default capacity")
                                  && "the second pipeline gave a region that a pipeline with no stop does not give");
     }
     CRUCIBLE_TEST_ASSERT(kTest, one_log.tail.get() == one_log.head.get());

@@ -154,7 +154,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
 
     ::fixy::HeapArray<TensorMeta> meta_buffer = ::fixy::mint_heap_array(a, total_metas, TensorMeta{});
     if (first_meta.is_valid()) {
-        meta_log.get()->copy_run(first_meta.raw(), meta_buffer.view());
+        meta_log_.get()->copy_run(first_meta.raw(), meta_buffer.view());
     }
 
     // The other arrays of the ops: the scalars, the producer of each input,

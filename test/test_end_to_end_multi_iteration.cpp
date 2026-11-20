@@ -41,7 +41,7 @@ void test_pipeline_multi_iteration() {
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     wait_processed(bt, *ring);
-    auto* region1 = bt.active_region.load_acquire().try_get();
+    auto* region1 = bt.active_region().try_get();
     CRUCIBLE_TEST_ASSERT(kTest, region1 != nullptr);
     CRUCIBLE_TEST_ASSERT(kTest, region1->num_ops() == NUM_OPS);
 
@@ -65,7 +65,7 @@ void test_pipeline_multi_iteration() {
     feed_trigger(ring, meta_log, 4);
 
     wait_processed(bt, *ring);
-    auto* region2 = bt.active_region.load_acquire().try_get();
+    auto* region2 = bt.active_region().try_get();
     CRUCIBLE_TEST_ASSERT(kTest, region2 != nullptr && region2 != region1 && "Second boundary did not fire");
     CRUCIBLE_TEST_ASSERT(kTest, region2->num_ops() == NUM_OPS);
     CRUCIBLE_TEST_ASSERT(kTest, region2->plan.is_some());

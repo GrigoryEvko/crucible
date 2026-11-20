@@ -101,18 +101,35 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 // one consumer, or a field of one stage alone, as the comment of the field
 // tells, so the class states that two threads use it at the same time.
 struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
-    // The first start() sets each pointer, and never to null.  Each later
-    // start() names the same ring and the same log, so no start sets a
-    // pointer again.
-    ::fixy::WriteOnceNonNull<TraceRing*> ring = ::fixy::mint_write_once_non_null<TraceRing*>();
-    ::fixy::WriteOnceNonNull<MetaLog*> meta_log = ::fixy::mint_write_once_non_null<MetaLog*>();
-
-    int32_t rank = -1;
-    int32_t world_size = 0;
     // A vendor-encoded hardware identity measured by the startup calibration
     // pass, not synthesized or defaulted.  Zero marks the pre-init state.
     using DeviceCapability = ::fixy::Tagged<uint64_t, ::fixy::tags::source::Meridian>;
-    DeviceCapability device_capability{};
+
+    // Binds the trace ring and the metadata log of a pipeline that the caller
+    // runs with run_in_row, before it starts the thread of that run.  start()
+    // binds the two itself.  A later bind names the same object, and a bind
+    // while the pipeline thread runs breaks the contract.
+    void bind_ring(TraceRing& trace_ring) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+    void bind_meta_log(MetaLog& trace_meta_log) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+
+    // The last published region, or an empty reference before the first
+    // publication.  The acquire load sees each write of the region before
+    // its publication, and no code writes a published region.
+    [[nodiscard]] ::fixy::WeakRef<const RegionNode> active_region() const noexcept {
+        return ::fixy::WeakRef<const RegionNode>::from_raw(active_region_.load_acquire().try_get());
+    }
+
+private:
+    // The first start() or bind sets each pointer, and never to null.  Each
+    // later start() names the same ring and the same log, so no start sets a
+    // pointer again.  The stages read the two through the pipeline.
+    ::fixy::WriteOnceNonNull<TraceRing*> ring_ = ::fixy::mint_write_once_non_null<TraceRing*>();
+    ::fixy::WriteOnceNonNull<MetaLog*> meta_log_ = ::fixy::mint_write_once_non_null<MetaLog*>();
+
+    // start() writes the three before it starts the pipeline thread.
+    int32_t rank_ = -1;
+    int32_t world_size_ = 0;
+    DeviceCapability device_capability_{};
 
     // The last published region.  The publish stage writes it, and a reader
     // on another thread loads it.  The store(release) publishes the region
@@ -124,8 +141,9 @@ struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
     // Own cache line, because a reader reads it while the background writes
     // the fields that follow.  The reference is empty until the first
     // publication.
-    alignas(64)::fixy::Atomic<::fixy::WeakRef<RegionNode>> active_region{};
+    alignas(64)::fixy::Atomic<::fixy::WeakRef<RegionNode>> active_region_{};
 
+public:
     // A point of the recorded op stream, and the kind of the reset at it.
     // The point is the count of ops that the producer put into the trace ring
     // before it.  A reset applies at its point, so each op belongs to one
@@ -241,6 +259,7 @@ struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
     static void ignore_region_(::foundation::effects::Bg const&, PublishStage const&, PublishedRegion const&) noexcept {
     }
 
+private:
     // The call of ignore_region_.  It has no object, so it cannot dangle.
     // region_ready_ refers to it when the holder gives no callback.
     RegionReadyCall const ignore_regions_ = RegionReadyCall::of<&ignore_region_>();
@@ -261,6 +280,7 @@ struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
     // every acquire load.
     alignas(64)::fixy::Ref<RegionReadyCall const> region_ready_;
 
+public:
     // The call of a job: the job takes the publish-stage proof of the call.
     using OwnerJobCall = ::fixy::CallRef<void(PublishStage const&) noexcept>;
 
@@ -286,10 +306,12 @@ struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
     // writer, and the caller runs the job itself.  Either way, the job and
     // the region callback never overlap.
     //
-    // The job takes this BackgroundThread and the PublishStage token as its
-    // parameters.  The token is the proof of the fields of the publish stage,
-    // and the door hands the borrow of this object on the thread that owns
-    // those fields.  So a job captures no `this` and no BackgroundThread.
+    // The job takes a PublishStageView of this BackgroundThread and the
+    // PublishStage token as its parameters.  The token is the proof of the
+    // fields of the publish stage.  The view gives only the doors of the
+    // publish stage, and the door builds it on the thread that owns those
+    // fields.  So a job captures no `this` and no BackgroundThread, and
+    // through the view it reaches no state of another stage.
     //
     // THE CLOSURE OF A JOB.  The door checks the closure of the job under
     // publish_job_policy (foundation/Closure.h).  The caller waits while the
@@ -323,13 +345,14 @@ struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
     //
     // A job that gives a value gives one that the door can build empty and
     // then assign, such as an Option.
+    class PublishStageView;
     template <typename Job>
-        requires std::is_nothrow_invocable_v<Job&, BackgroundThread&, PublishStage const&>
-              && (std::is_void_v<std::invoke_result_t<Job&, BackgroundThread&, PublishStage const&>>
+        requires std::is_nothrow_invocable_v<Job&, PublishStageView&, PublishStage const&>
+              && (std::is_void_v<std::invoke_result_t<Job&, PublishStageView&, PublishStage const&>>
                   || std::is_nothrow_default_constructible_v<
-                      std::invoke_result_t<Job&, BackgroundThread&, PublishStage const&>>)
-    std::invoke_result_t<Job&, BackgroundThread&, PublishStage const&> run_on_publish_stage(Job&& job) noexcept {
-        using Value = std::invoke_result_t<Job&, BackgroundThread&, PublishStage const&>;
+                      std::invoke_result_t<Job&, PublishStageView&, PublishStage const&>>)
+    std::invoke_result_t<Job&, PublishStageView&, PublishStage const&> run_on_publish_stage(Job&& job) noexcept {
+        using Value = std::invoke_result_t<Job&, PublishStageView&, PublishStage const&>;
         constexpr ::foundation::closure::ClosureVerdict verdict = ::foundation::closure::check_closure(
             ^^std::remove_cvref_t<Job>, publish_job_policy, "run_on_publish_stage");
         static_assert(verdict.is_admitted(), verdict);
@@ -337,11 +360,17 @@ struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
                       "run_on_publish_stage: the value of the job crosses from the thread of the publish stage to the "
                       "caller, so it is Sendable");
         if constexpr (std::is_void_v<Value>) {
-            auto with_owner = [&job, this](PublishStage const& stage) noexcept { job(*this, stage); };
+            auto with_owner = [&job, this](PublishStage const& stage) noexcept {
+                PublishStageView view{*this};
+                job(view, stage);
+            };
             post_owner_job_(with_owner);
         } else {
             Value value{};
-            auto with_owner = [&job, &value, this](PublishStage const& stage) noexcept { value = job(*this, stage); };
+            auto with_owner = [&job, &value, this](PublishStage const& stage) noexcept {
+                PublishStageView view{*this};
+                value = job(view, stage);
+            };
             post_owner_job_(with_owner);
             return value;
         }
@@ -382,8 +411,14 @@ private:
         }
     }
 
+    // The iteration detector.  The detect stage is its one writer, and it
+    // writes the detector with no order.
+    IterationDetector detector_;
+
 public:
-    IterationDetector detector;
+    // The count of ops in the history of the detector.  Read it only after a
+    // flush, when the detect stage waits for ops, as pending_op_count.
+    [[nodiscard]] uint64_t detector_history_count() const noexcept { return detector_.pos_ - detector_.base_; }
 
     // The ops that the detect stage holds, from the oldest op that a future
     // iteration can hold to the newest op.  It is a ring of six parallel
@@ -659,10 +694,12 @@ public:
     // further behind than that is not catching up, and the regions it missed
     // describe shapes the model has already moved past.
     //
-    // The publish stage is the sole writer.  total() is safe to read from
-    // any thread; at() is not, and needs the pipeline quiescent.  The region
-    // store keeps each region that the queue holds, so the queue keeps at
-    // most capacity() regions alive.
+    // The publish stage is the sole writer, and only it reaches push through
+    // a BackgroundThread.  Each thread can read total(), size() and
+    // capacity().  at() reads a slot that the publish stage writes, so read
+    // it in a job of run_on_publish_stage or while no pipeline runs.  The
+    // region store keeps each region that the queue holds, so the queue keeps
+    // at most capacity() regions alive.
     class UncompiledRegionQueue {
     public:
         // A queue that keeps the capacity newest regions, in slots that the
@@ -714,8 +751,13 @@ public:
             ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
     };
 
-    UncompiledRegionQueue uncompiled_regions;
+    // The queue, for a read.  Only the publish stage pushes.
+    [[nodiscard]] UncompiledRegionQueue const& uncompiled_regions() const noexcept { return uncompiled_regions_; }
 
+private:
+    UncompiledRegionQueue uncompiled_regions_;
+
+public:
     // A one-way signal for a single run() invocation.  start() re-arms it
     // under quiescence before launching the next pipeline.
     alignas(64)::fixy::handle::OneShotFlag stop_requested;
@@ -777,8 +819,8 @@ public:
         requires ::fixy::concurrent::CtxFitsWaitPolicy<Ctx, FlushPolicy>
     [[nodiscard]] FlushResult flush(Ctx const& ctx) noexcept {
         CRUCIBLE_PRE(stage_held_by_this_thread_ != ::fixy::WeakRef<const BackgroundThread>{*this});
-        if (!ring.has_value()) return ::fixy::Unit{};
-        const uint64_t target_produced = ring.get()->total_produced();
+        if (!ring_.has_value()) return ::fixy::Unit{};
+        const uint64_t target_produced = ring_.get()->total_produced();
         const auto is_settled = [this, target_produced]() noexcept {
             return total_processed.load_acquire() >= target_produced
                 || pipeline_run_.load_acquire() == PipelineRun::stopped;
@@ -872,7 +914,6 @@ private:
     // after each batch.
     void apply_due_reset_() noexcept;
 
-public:
     // The mailbox of the publish-stage state.  It holds one of four values:
     //   mailbox_closed_   no publish stage runs, so a caller may own the state
     //   mailbox_inline_   a caller runs a job while no publish stage runs
@@ -884,10 +925,13 @@ public:
     // job inline.  No job is claimed twice, because each side claims it by
     // one compare-and-swap on this word.
     // Defined after the class: a job's member initializers are not usable
-    // until the enclosing class is complete.
+    // until the enclosing class is complete.  A static member is no part of
+    // an object, so the two stay public, and only their addresses matter.
+public:
     static OwnerJob mailbox_closed_;
     static OwnerJob mailbox_inline_;
 
+private:
     // The references of the two sentinels.
     [[nodiscard]] static ::fixy::WeakRef<OwnerJob> closed_mark_() noexcept {
         return ::fixy::WeakRef<OwnerJob>{mailbox_closed_};
@@ -938,10 +982,13 @@ public:
     // The background thread whose stage this thread holds, or an empty
     // reference.  Read only by the contracts of run_on_publish_stage and of
     // flush, on the cold path.  It is one object for the process, so every shared library
-    // reads the same copy on a thread.
+    // reads the same copy on a thread.  A static member is no part of an
+    // object, so it stays public.
+public:
     CRUCIBLE_PROCESS_WIDE static inline thread_local ::fixy::WeakRef<const BackgroundThread>
         stage_held_by_this_thread_{};
 
+private:
     // The publish stage holds the mailbox open for as long as this scope
     // lives, so every way out of the stage closes it.  A mailbox left open
     // would make each later job wait for a stage that no longer runs.  The
@@ -966,6 +1013,7 @@ public:
         ::fixy::WeakRef<const BackgroundThread> held_before_;
     };
 
+public:
     static constexpr uint32_t BATCH_SIZE = 4096;
     using BatchSlot = ::fixy::Index<BATCH_SIZE>;
 
@@ -1052,6 +1100,7 @@ public:
         StreamPoint reset_point{};
     };
 
+private:
     // Makes a commit marker: a work item that carries only the count of
     // entries that one batch consumed and the release floor after them.  The
     // Box takes the allocation capability of the detect stage.
@@ -1071,6 +1120,7 @@ public:
     // can hold them.
     void drop_unclaimable_ops_() noexcept;
 
+public:
     // The one release of the metadata log.  The publish stage calls it at
     // each commit marker with the floor of the marker.  It moves the tail to
     // the floor when the floor is past the tail, which gives the records
@@ -1118,8 +1168,8 @@ public:
     // stage keeps its held ops, its detector and its cursor of the log.  So
     // a later start names the ring and the log of the first start, and a
     // start that names a different ring or log breaks the contract.
-    void start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log, int32_t rank_ = -1,
-               int32_t world_size_ = 0, uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY;
+    void start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log, int32_t rank = -1,
+               int32_t world_size = 0, uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY;
 
     // Sets the numerics hash of the start of the run, which the build folds
     // into each region until a request_numerics.  The owner calls it before
@@ -1186,11 +1236,57 @@ public:
     [[nodiscard]] uint32_t region_count(PublishStage const& stage) const noexcept;
     [[nodiscard]] uint64_t regions_dropped_full(PublishStage const&) const noexcept { return regions_dropped_full_; }
 
-#ifdef CRUCIBLE_BENCH
-public:  // The bench harness times sub-phases against the scratch buffers.
-#else
-private:
-#endif
+    // The doors of the publish stage, which a job of run_on_publish_stage
+    // gets in place of the BackgroundThread.  Only that door builds a view,
+    // on the thread that owns the state of the publish stage, and the view
+    // lives for the call of the job.  A job then reaches no state of another
+    // stage.
+    class PublishStageView {
+    public:
+        PublishStageView(const PublishStageView&) = delete("a view lives for the call of one job");
+        PublishStageView& operator=(const PublishStageView&) = delete("a view lives for the call of one job");
+        PublishStageView(PublishStageView&&) = delete("a view lives for the call of one job");
+        PublishStageView& operator=(PublishStageView&&) = delete("a view lives for the call of one job");
+        ~PublishStageView() = default;
+
+        void request_mark(uint64_t ops_before) noexcept { owner_.request_mark(ops_before); }
+
+        void keep_region(PublishStage const& stage, ::fixy::WeakRef<const RegionNode> region) noexcept {
+            owner_.keep_region(stage, region);
+        }
+
+        [[nodiscard]] uint32_t region_count(PublishStage const& stage) const noexcept {
+            return owner_.region_count(stage);
+        }
+        [[nodiscard]] uint64_t regions_dropped_full(PublishStage const& stage) const noexcept {
+            return owner_.regions_dropped_full(stage);
+        }
+
+        void publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
+                            StreamPoint reset_point) CRUCIBLE_NO_THREAD_SAFETY {
+            owner_.publish_region(bg, stage, std::move(parts), reset_point);
+        }
+
+        void release_meta_log(PublishStage const& stage, uint64_t meta_floor) CRUCIBLE_NO_THREAD_SAFETY {
+            owner_.release_meta_log(stage, meta_floor);
+        }
+
+        [[nodiscard]] UncompiledRegionQueue const& uncompiled_regions() const noexcept {
+            return owner_.uncompiled_regions();
+        }
+
+    private:
+        friend struct BackgroundThread;
+        explicit PublishStageView(BackgroundThread& owner) noexcept : owner_{owner} {}
+
+        BackgroundThread& owner_;
+    };
+
+    // The bench of the phases of a build (bench/bench_phases.cpp) times each
+    // phase against the scratch of the build stage, so it reads the scratch
+    // through this class, which it defines.
+    friend struct BuildScratchOfBench;
+
     static constexpr uint32_t MIN_PTR_MAP_CAP = 4096;
     static constexpr uint32_t MIN_SCRATCH_SLOT_CAP = 8192;
     static constexpr uint32_t MIN_SCRATCH_EDGE_CAP = 16384;
@@ -1252,7 +1348,9 @@ private:
         SlotId old_slot;
     };
 
-    // The map has a power-of-two capacity, so its mask wraps each probe.
+private:
+    // The scratch of the build stage, which is its one user.  The map has a
+    // power-of-two capacity, so its mask wraps each probe.
     ::fixy::MaskedArray<PtrSlot> scratch_map_;
     ::fixy::HeapArray<SlotInfo> scratch_slots_;
     ::fixy::HeapArray<Edge> scratch_edges_;
@@ -1263,9 +1361,11 @@ private:
     ::fixy::Monotonic<uint32_t> slot_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
     ::fixy::Monotonic<uint32_t> edge_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
 
+public:
     // build_trace_from calls this after its scan of the trace, which
     // supplies exact counts.  Buffers grow and never shrink, so the cost
-    // amortizes across iterations.
+    // amortizes across iterations.  It writes the scratch of the build
+    // stage, as build_trace_from does.
     void ensure_scratch_buffers(::foundation::effects::Alloc a, uint32_t total_inputs, uint32_t total_outputs);
 
     // The bytes of the storage of a slot that the tensor reaches: from the

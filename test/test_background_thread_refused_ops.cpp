@@ -106,7 +106,7 @@ void test_refused_ops_give_no_wrong_region() {
     // The pipeline publishes the regions of the iterations in the full ring.
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring, test_log());
     wait_for_pipeline(bt, ring);
-    const uint64_t regions_before_gap = bt.uncompiled_regions.total();
+    const uint64_t regions_before_gap = bt.uncompiled_regions().total();
 
     // The loop goes on after the gap, and the pipeline reads the stream with
     // the gap.
@@ -116,13 +116,19 @@ void test_refused_ops_give_no_wrong_region() {
     bt.stop();
 
     CRUCIBLE_TEST_ASSERT(kTest, regions_before_gap > 0 && "the loop before the gap published no region");
-    CRUCIBLE_TEST_ASSERT(kTest, bt.uncompiled_regions.total() > regions_before_gap
+    CRUCIBLE_TEST_ASSERT(kTest, bt.uncompiled_regions().total() > regions_before_gap
                                     && "the loop after the gap published no region");
-    // The pipeline is stopped, so the queue can be read.
-    for (uint32_t age = 0; age < bt.uncompiled_regions.size(); ++age) {
-        CRUCIBLE_TEST_ASSERT(kTest, is_one_iteration(bt.uncompiled_regions.at(age).get().ops)
-                                        && "a region holds ops that are not one iteration of the loop");
-    }
+    // A slot of the queue is state of the publish stage, so the read runs in
+    // a job.
+    uint32_t foreign_regions = 0;
+    bt.run_on_publish_stage(
+        [&foreign_regions](BackgroundThread::PublishStageView& view, BackgroundThread::PublishStage const&) noexcept {
+            BackgroundThread::UncompiledRegionQueue const& queue = view.uncompiled_regions();
+            for (uint32_t age = 0; age < queue.size(); ++age) {
+                if (!is_one_iteration(queue.at(age).get().ops)) ++foreign_regions;
+            }
+        });
+    CRUCIBLE_TEST_ASSERT(kTest, foreign_regions == 0 && "a region holds ops that are not one iteration of the loop");
 }
 
 }  // namespace

@@ -28,9 +28,9 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan
     plan.num_external = 0;
     plan.pool_bytes = 0;
 
-    plan.rank = rank;
-    plan.world_size = world_size;
-    plan.device_capability = device_capability.value();
+    plan.rank = rank_;
+    plan.world_size = world_size_;
+    plan.device_capability = device_capability_.value();
     plan.device_type = DeviceType::CPU;
     plan.device_idx = -1;
     ::fixy::fill(plan.pad0.view(), uint8_t{0});

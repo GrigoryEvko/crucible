@@ -199,7 +199,7 @@ void test_detect_stage_holds_a_bounded_trace() {
         (void)pause.sleep_for(kPollNanos);
     CRUCIBLE_TEST_ASSERT(kTest,
                          bt.pending_op_count() <= IterationDetector::HISTORY_MAX_CAPACITY / 2 + IterationDetector::K);
-    CRUCIBLE_TEST_ASSERT(kTest, bt.detector.pos_ - bt.detector.base_ <= IterationDetector::HISTORY_MAX_CAPACITY);
+    CRUCIBLE_TEST_ASSERT(kTest, bt.detector_history_count() <= IterationDetector::HISTORY_MAX_CAPACITY);
     bt.stop();
 }
 
