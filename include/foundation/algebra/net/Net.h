@@ -186,13 +186,15 @@
 //   A program calls a find function on a net that it holds as a parameter or
 //   as a variable, never on a constant.
 //
-//   A run-time call keeps the arrays of its body on the stack: check_proof_net
-//   takes about 190 bytes for each agent and 20 for each wire, and each other
-//   check less.  The flag -Wstack-usage of the build refuses a frame of more
-//   than 512 KB, so the compiler refuses a run-time call on a net of more
-//   than some thousand agents.  The text of explain_fault costs about 0.8 s of
-//   compile time in a Debug unit, so a program reads the fault and makes the
-//   text in one source file.
+//   A run-time call keeps the arrays of its body on the stack.  The
+//   contraction of check_proof_net takes about 65 bytes for each agent and 44
+//   for each wire in a frame of its own, and each other check less.  The tree
+//   check of a net with no par kind takes 8 bytes for each agent.  The flag
+//   -Wstack-usage of the build refuses a frame of more than 512 KB, so the
+//   compiler refuses a run-time call on a net of more than some thousand
+//   agents.  The text of explain_fault costs about 0.8 s of compile time in a
+//   Debug unit, so a program reads the fault and makes the text in one source
+//   file.
 //
 // THE SEALED NET
 //   Each find function on a Net runs find_wiring_fault first, because each
@@ -218,7 +220,9 @@
 //     seal_net          O(K + A + W), a copy of the net and check_wiring
 //     check_forest      O(W a(A)), one union-find over the agents
 //     check_proof_net   O(P log P), the contraction of Danos with a union-find
-//                       and a ready queue of the pars, as probe E4 measured
+//                       and a ready queue of the pars, as probe E4 measured.
+//                       A net whose signature has no par kind first takes the
+//                       tree check of its agents, O(A + W a(A))
 //     check_vicious     O(A + W)
 //     check_dataflow    O(A + W), the topological sort of Kahn
 //     determinism_of    O(A)
@@ -650,6 +654,30 @@ inline constexpr std::uint32_t no_index = 0xFFFFFFFFu;
 // The port is in the par group of the kind.
 [[nodiscard]] constexpr bool is_par_port(AgentKind const& kind, std::uint32_t port) noexcept {
     return ((static_cast<std::uint32_t>(kind.par_ports) >> port) & 1u) != 0u;
+}
+
+// The count of the ports of each kind of a signature.
+template <std::size_t Kinds>
+struct PortCounts {
+    std::uint32_t of[Kinds]{};
+};
+
+// The count of the ports of each kind.  Complexity: O(K).
+template <std::size_t Types, std::size_t Kinds>
+[[nodiscard]] constexpr PortCounts<Kinds> port_counts_of_(NetSignature<Types, Kinds> const& signature) noexcept {
+    PortCounts<Kinds> counts{};
+    for (std::uint32_t kind = 0; kind < Kinds; ++kind)
+        counts.of[kind] = port_count_of(signature.kinds[kind]);
+    return counts;
+}
+
+// A kind of the signature has a par group.  Complexity: O(K).
+template <std::size_t Types, std::size_t Kinds>
+[[nodiscard]] constexpr bool has_par_kind_(NetSignature<Types, Kinds> const& signature) noexcept {
+    for (AgentKind const& kind : signature.kinds) {
+        if (kind.par_ports != 0u) return true;
+    }
+    return false;
 }
 
 // The count of the set bits of a mask of a par group.
@@ -1291,10 +1319,7 @@ namespace detail {
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
 [[nodiscard]] constexpr NetFault find_par_agent_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
                                                  AgentCount agents) noexcept {
-    bool has_par_kind = false;
-    for (AgentKind const& kind : graph.signature.kinds)
-        has_par_kind = has_par_kind || kind.par_ports != 0u;
-    if (!has_par_kind) return NetFault{};
+    if (!has_par_kind_(graph.signature)) return NetFault{};
     for (std::uint32_t agent = 0; agent < count_of(agents); ++agent) {
         if (kind_of_(graph, AgentId{agent}).par_ports != 0u) {
             return NetFault{.code = NetFaultCode::ForestHasParGroup, .agent = AgentId{agent}};
@@ -1380,19 +1405,55 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 // queue.  Each class keeps a list of the pars that wait on it, and a merge
 // reads the shorter list, so each entry is read O(log P) times.
 // Complexity: O(P log P).
+//
+// A net whose signature has no par kind has no paired edge.  Each wire vertex
+// then has the two edges of its two ends, so the paired graph is the graph of
+// the agents with each wire cut in two, and it is a tree exactly when the
+// agents and the wires form one tree: W = A - 1, and no wire closes a cycle.
+// One union-find over the agents in the order of the wires decides that in
+// O(A + W a(A)), with no array of the ports.  It finds a cycle in the order of
+// the wires, and the contraction finds it in the order of the ports.  So the
+// union-find gives only the answer NoFault, and each other net runs the
+// contraction, which gives its fault.
 namespace detail {
 
-// The body of find_proof_net_fault, on the arrays of a capacity class of a
-// net with no fault of its wiring.  Vertex v is agent v below the count of
-// the agents, and wire v - agent_count above.
+// The agents and the wires of a net with no fault of its wiring form one
+// tree.  Complexity: O(A + W a(A)).
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
-[[nodiscard]] constexpr NetFault find_proof_net_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
-                                                          AgentCount agents, WireCount wires) noexcept {
+[[nodiscard]] constexpr bool is_one_tree_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                          AgentCount agents, WireCount wires) noexcept {
+    std::uint32_t const wire_count = count_of(wires);
+    if (wire_count + 1u != count_of(agents)) return false;
+    UnionFind<AgentCapacity> classes{};
+    for (std::uint32_t index = 0; index < wire_count; ++index) {
+        Wire const& wire = graph.wires[index];
+        std::uint32_t const left = classes.find(index_of(wire.left.agent));
+        std::uint32_t const right = classes.find(index_of(wire.right.agent));
+        if (left == right) return false;
+        static_cast<void>(classes.join_roots(left, right));
+    }
+    return true;
+}
+
+// The contraction of Danos, on the arrays of a capacity class of a net with
+// no fault of its wiring.  Vertex v is agent v below the count of the agents,
+// and wire v - agent_count above.  A par owns the entries from par_first[par]
+// to par_first[par + 1], one for each premise wire, in the order of its
+// ports.  Each class keeps the list of the entries of its premises.  A
+// premise is one port, so the entries are at most the two ends of each wire.
+// noinline keeps these arrays out of the frame of the caller, so the tree
+// check of a net with no par kind runs in a frame of its own size.
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard, gnu::noinline]] constexpr NetFault
+find_contraction_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph, AgentCount agents,
+                           WireCount wires) noexcept {
     constexpr std::size_t vertex_capacity = AgentCapacity + WireCapacity;
+    constexpr std::size_t entry_capacity = 2 * WireCapacity;
     constexpr std::uint32_t none = no_index;
     std::uint32_t const agent_count = count_of(agents);
     std::uint32_t const wire_count = count_of(wires);
     std::uint32_t const vertices = agent_count + wire_count;
+    PortCounts<Kinds> const counts = port_counts_of_(graph.signature);
     std::uint32_t wire_at[AgentCapacity * max_agent_ports]{};
     for (std::uint32_t index = 0; index < wire_count; ++index) {
         Wire const& wire = graph.wires[index];
@@ -1402,13 +1463,24 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
     UnionFind<vertex_capacity> classes{};
     std::uint32_t class_count = vertices;
 
-    // The unpaired edges.
+    // The unpaired edges, and the premise wires of each par.
+    std::uint32_t par_agent[AgentCapacity]{};
+    std::uint32_t par_first[AgentCapacity + 1]{};
+    std::uint32_t entry_premise[entry_capacity]{};
+    std::uint32_t entry_par[entry_capacity]{};
+    std::uint32_t par_count = 0;
+    std::uint32_t entry_count = 0;
     for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
-        AgentKind const& kind = kind_of_(graph, AgentId{agent});
-        std::uint32_t const count = port_count_of(kind);
-        for (std::uint32_t port = 0; port < count; ++port) {
-            if (is_par_port(kind, port)) continue;
+        std::uint32_t const kind = index_of(graph.agents[agent]);
+        std::uint32_t const pars = graph.signature.kinds[kind].par_ports;
+        for (std::uint32_t port = 0; port < counts.of[kind]; ++port) {
             std::uint32_t const wire_vertex = agent_count + wire_at[agent * max_agent_ports + port];
+            if (((pars >> port) & 1u) != 0u) {
+                entry_premise[entry_count] = wire_vertex;
+                entry_par[entry_count] = par_count;
+                ++entry_count;
+                continue;
+            }
             std::uint32_t const left = classes.find(agent);
             std::uint32_t const right = classes.find(wire_vertex);
             if (left == right)
@@ -1416,36 +1488,21 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
             static_cast<void>(classes.join_roots(left, right));
             --class_count;
         }
-    }
-
-    // The pars.  Each par has one entry in the list of the class of each of
-    // its premise wires.  A par is ready when all its premises are in one
-    // class.
-    std::uint32_t par_agent[AgentCapacity]{};
-    std::uint32_t par_premise[AgentCapacity][max_agent_ports]{};
-    std::uint32_t par_width[AgentCapacity]{};
-    bool is_par_done[AgentCapacity]{};
-    std::uint32_t par_count = 0;
-    for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
-        AgentKind const& kind = kind_of_(graph, AgentId{agent});
-        if (kind.par_ports == 0u) continue;
+        if (pars == 0u) continue;
         par_agent[par_count] = agent;
-        std::uint32_t const count = port_count_of(kind);
-        for (std::uint32_t port = 0; port < count; ++port) {
-            if (!is_par_port(kind, port)) continue;
-            par_premise[par_count][par_width[par_count]] = agent_count + wire_at[agent * max_agent_ports + port];
-            ++par_width[par_count];
-        }
         ++par_count;
+        par_first[par_count] = entry_count;
     }
     auto const do_premises_meet = [&](std::uint32_t par) constexpr noexcept {
-        std::uint32_t const first = classes.find(par_premise[par][0]);
-        for (std::uint32_t side = 1; side < par_width[par]; ++side) {
-            if (classes.find(par_premise[par][side]) != first) return false;
+        std::uint32_t const first = classes.find(entry_premise[par_first[par]]);
+        for (std::uint32_t entry = par_first[par] + 1; entry < par_first[par + 1]; ++entry) {
+            if (classes.find(entry_premise[entry]) != first) return false;
         }
         return true;
     };
 
+    // Each entry joins the list of the class of its premise.  A par is ready
+    // when all its premises are in one class.
     std::uint32_t list_head[vertex_capacity]{};
     std::uint32_t list_tail[vertex_capacity]{};
     std::uint32_t list_length[vertex_capacity]{};
@@ -1453,26 +1510,21 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
         list_head[vertex] = none;
         list_tail[vertex] = none;
     }
-    std::uint32_t entry_par[max_agent_ports * AgentCapacity]{};
-    std::uint32_t entry_next[max_agent_ports * AgentCapacity]{};
-    std::uint32_t entry_count = 0;
+    std::uint32_t entry_next[entry_capacity]{};
     std::uint32_t ready[AgentCapacity]{};
     std::uint32_t ready_count = 0;
     bool is_queued[AgentCapacity]{};
-
     for (std::uint32_t par = 0; par < par_count; ++par) {
-        for (std::uint32_t side = 0; side < par_width[par]; ++side) {
-            std::uint32_t const owner = classes.find(par_premise[par][side]);
-            entry_par[entry_count] = par;
-            entry_next[entry_count] = none;
+        for (std::uint32_t entry = par_first[par]; entry < par_first[par + 1]; ++entry) {
+            std::uint32_t const owner = classes.find(entry_premise[entry]);
+            entry_next[entry] = none;
             if (list_tail[owner] == none) {
-                list_head[owner] = entry_count;
+                list_head[owner] = entry;
             } else {
-                entry_next[list_tail[owner]] = entry_count;
+                entry_next[list_tail[owner]] = entry;
             }
-            list_tail[owner] = entry_count;
+            list_tail[owner] = entry;
             ++list_length[owner];
-            ++entry_count;
         }
         if (do_premises_meet(par)) {
             ready[ready_count] = par;
@@ -1481,15 +1533,16 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
         }
     }
 
+    // Each par of the queue joins its class with the class of its premises,
+    // so each queued par is done when the queue is empty.
     std::uint32_t ready_read = 0;
     while (ready_read < ready_count) {
         std::uint32_t const par = ready[ready_read];
         ++ready_read;
         std::uint32_t const agent = par_agent[par];
         std::uint32_t const own = classes.find(agent);
-        std::uint32_t const premises = classes.find(par_premise[par][0]);
+        std::uint32_t const premises = classes.find(entry_premise[par_first[par]]);
         if (own == premises) return NetFault{.code = NetFaultCode::ParReachesItself, .agent = AgentId{agent}};
-        is_par_done[par] = true;
         std::uint32_t long_list = own;
         std::uint32_t short_list = premises;
         if (list_length[long_list] < list_length[short_list]) {
@@ -1531,8 +1584,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
     }
 
     for (std::uint32_t par = 0; par < par_count; ++par) {
-        if (!is_par_done[par])
-            return NetFault{.code = NetFaultCode::ParPortsNeverMeet, .agent = AgentId{par_agent[par]}};
+        if (!is_queued[par]) return NetFault{.code = NetFaultCode::ParPortsNeverMeet, .agent = AgentId{par_agent[par]}};
     }
     if (class_count != 1u) {
         std::uint32_t const root = classes.find(0);
@@ -1546,6 +1598,16 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
         return NetFault{.code = NetFaultCode::NetNotConnected, .agent = AgentId{apart}};
     }
     return NetFault{};
+}
+
+// The body of find_proof_net_fault, on the arrays of a capacity class of a
+// net with no fault of its wiring: the tree check for a signature with no par
+// kind, and the contraction for each other net and for each fault.
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard]] constexpr NetFault find_proof_net_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                          AgentCount agents, WireCount wires) noexcept {
+    if (!has_par_kind_(graph.signature) && is_one_tree_(graph, agents, wires)) return NetFault{};
+    return find_contraction_fault_in_(graph, agents, wires);
 }
 
 // The body of find_proof_net_fault on a net with no fault of its wiring, on
@@ -1857,21 +1919,6 @@ struct CanonicalNet {
 };
 
 namespace detail {
-
-// The count of the ports of each kind of a signature.
-template <std::size_t Kinds>
-struct PortCounts {
-    std::uint32_t of[Kinds]{};
-};
-
-// The count of the ports of each kind.  Complexity: O(K).
-template <std::size_t Types, std::size_t Kinds>
-[[nodiscard]] constexpr PortCounts<Kinds> port_counts_of_(NetSignature<Types, Kinds> const& signature) noexcept {
-    PortCounts<Kinds> counts{};
-    for (std::uint32_t kind = 0; kind < Kinds; ++kind)
-        counts.of[kind] = port_count_of(signature.kinds[kind]);
-    return counts;
-}
 
 // The canonical numbers of the agents of a net with no fault of its wiring
 // (THE CANONICAL FORM).  number_of holds the number of each agent, or
