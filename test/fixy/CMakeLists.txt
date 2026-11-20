@@ -5908,6 +5908,19 @@ fixy_neg_compile_test(neg_owned_mmap_forged_address
 # mutable borrow of it, and no View of a temporary mapping exists.
 fixy_test(test_core_region)
 
+# ── The static text ──────────────────────────────────────────────────
+#
+# A StaticText names a text of static storage in one word.  Only a literal
+# and the site door of the base make one, so no pointer of the run time and
+# no literal with a zero before its end reaches it.
+fixy_test(test_static_text)
+fixy_neg_compile_test(neg_static_text_from_a_pointer
+  "use of deleted function .foundation::core::StaticText::StaticText\\(Pointer&&\\) \\[with Pointer = const char\\*\\]."
+  "a pointer of the run time can name a text that ends before the program")
+fixy_neg_compile_test(neg_static_text_with_a_zero_before_its_end
+  "in .constexpr. expansion of .*foundation::core::StaticText::StaticText<5>"
+  "call to non-.constexpr. function .void foundation::core::detail::static_text_holds_a_zero_before_its_end\\(\\).")
+
 # ── The imports of fixy::copy ────────────────────────────────────────
 #
 # A fixed copy of at most 64 bytes compiles to loads and stores in each

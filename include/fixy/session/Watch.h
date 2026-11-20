@@ -139,6 +139,7 @@
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Text.h>
+#include <foundation/core/StaticText.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/Mix.h>
@@ -230,8 +231,9 @@ struct alignas(64) endpoint_record {
     // The text of the protocol at the mint, an object of static storage.  The
     // cell holds one pointer, and an empty cell names no text.
     ::foundation::core::Atomic<::foundation::core::Option<protocol_text_ref>> protocol_text{};
-    // The file of the site of the mint, a text with a zero at its end.
-    ::foundation::core::Atomic<char const*> site_file{};
+    // The file of the site of the mint, a static text.  The cell holds one
+    // pointer, and an empty cell names no site.
+    ::foundation::core::Atomic<::foundation::core::Option<::foundation::core::StaticText>> site_file{};
 };
 
 // One thread that has touched the watch.
@@ -666,7 +668,8 @@ namespace detail {
     record.generation.store_release(record.generation.load_acquire() + 1);
     record.peer.store_release(0);
     record.protocol_text.store_release(::foundation::core::Option<protocol_text_ref>::some(protocol));
-    record.site_file.store_release(site.file_name());
+    record.site_file.store_release(::foundation::core::Option<::foundation::core::StaticText>::some(
+        ::foundation::core::detail::StaticTextDoor::of_site_file(site.file_name())));
     record.site_line.store_release(site.line());
     record.priority.store_release(std::to_underlying(order));
     if (holder == holder_on_claim::calling_thread) {

@@ -1035,6 +1035,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::CText,
      "a borrow of a run of characters with a terminating zero: it owns nothing and makes no claim about what the "
      "characters hold"},
+    {^^::foundation::core::StaticText,
+     "the name of a run of characters with static storage and a terminating zero: it owns nothing and makes no "
+     "claim about what the characters hold"},
     {^^::foundation::core::FixedText,
      "an owned buffer of characters: it holds storage and makes no claim about what the characters hold"},
     {^^::foundation::core::ParseError,

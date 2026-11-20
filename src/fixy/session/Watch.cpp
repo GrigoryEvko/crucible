@@ -18,6 +18,7 @@
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Text.h>
+#include <foundation/core/StaticText.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -28,28 +29,13 @@ namespace {
 
 namespace core = ::foundation::core;
 
-// The longest path that the report prints: PATH_MAX of Linux, with its
-// terminating zero.  The site of a mint is a path that the compiler wrote.
-constexpr std::size_t kLongestPath = 4096;
-
-// The count of the characters of the file name TEXT before its terminating
-// zero, and at most kLongestPath.  The bound keeps each read inside the
-// text, and GCC does not change the loop into a call of strlen of the C
-// library.  Complexity: linear in the length of the text.
-[[nodiscard]] std::size_t length_of(char const* text) noexcept {
-    std::size_t length = 0;
-    while (length < kLongestPath && text[length] != '\0')
-        ++length;
-    return length;
-}
-
 // Prints one endpoint: its protocol at the start and the site of its mint.
 // The protocol text and the file name come from the records, so their bytes
 // go to the sink write as they are.
 void print_endpoint(core::TextView label, std::uint32_t index) noexcept {
     endpoint_record const& record = record_at_(index);
     core::Option<protocol_text_ref> const text = record.protocol_text.load_acquire();
-    char const* const file = record.site_file.load_acquire();
+    core::Option<core::StaticText> const file = record.site_file.load_acquire();
     core::report(core::Sink::Err, "  {} endpoint {}: ", label, index);
     text.match(
         [](protocol_text_ref const& protocol) noexcept {
@@ -57,8 +43,10 @@ void print_endpoint(core::TextView label, std::uint32_t index) noexcept {
         },
         [] noexcept {});
     core::report(core::Sink::Err, "\n    minted at ");
-    if (file != nullptr && file[0] != '\0') {
-        core::detail::write_sink_(core::Sink::Err, file, length_of(file));
+    core::TextView const site = file.match([](core::StaticText const& name) noexcept { return name.view(); },
+                                           [] noexcept { return core::TextView{}; });
+    if (site.size() != 0) {
+        core::detail::write_sink_(core::Sink::Err, core::detail::text_first_(site), site.size());
         core::report(core::Sink::Err, ":{}\n", record.site_line.load_acquire());
     } else {
         core::report(core::Sink::Err, "<unknown site>\n");
