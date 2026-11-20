@@ -6057,6 +6057,14 @@ fixy_neg_compile_test(neg_os_handle_ref_leaves_frame
 fixy_neg_compile_test(neg_os_fs_write_through_read_only_file
   "no matching function for call to .write_full\\(\\{anonymous\\}::IoBlockCtx&, fixy::os::HandleRef<fixy::os::kind::File"
   "the expression .\\(.*\\) == .* \\[with Held = .*Needed = fixy::os::RightSet::write\\]. evaluated to .false.")
+# A change of the size asks for the write right, and a read at an offset asks
+# for the read and the seek rights, which a file of an append open lacks.
+fixy_neg_compile_test(neg_os_fs_set_size_of_a_read_only_file
+  "no matching function for call to .set_file_size\\(\\{anonymous\\}::IoBlockCtx&, fixy::os::HandleRef<fixy::os::kind::File"
+  "the expression .\\(.*\\) == .* \\[with Held = .*Needed = fixy::os::RightSet::write\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_fs_read_at_through_an_append_file
+  "no matching function for call to .read_full_at\\(\\{anonymous\\}::IoBlockCtx&, fixy::os::HandleRef<fixy::os::kind::File"
+  "the expression .\\(.*\\) == .* \\[with Held = .*Needed = \\(fixy::os::RightSet\\)5\\]. evaluated to .false.")
 
 fixy_neg_compile_test(neg_os_fs_commit_atomic_external_target
   "no matching function for call"

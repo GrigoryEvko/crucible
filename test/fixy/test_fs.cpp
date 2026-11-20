@@ -236,6 +236,109 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     return 0;
 }
 
+// read_full_at reads a part of a file at its offset and leaves the offset of
+// the descriptor where it was.  A read past the end gives the bytes before
+// the end.  set_file_size cuts a file through the handle of an append open,
+// the next append writes at the new end, and a larger size adds zero bytes.
+// A negative offset or size gives EINVAL, and an empty handle gives EBADF.
+[[nodiscard]] int reads_at_an_offset_and_sets_the_size(const ScratchDir& scratch) {
+    namespace core = foundation::core;
+    using WriteAppend = fixy::atom::fs::mode<fs::open_mode::WriteAppend>;
+    IoBlockCtx ctx{eff::testing::test()};
+    const std::string path = scratch.file("positioned");
+    {
+        Opened<fs::FileOf<WriteTruncate>> writer = opened_of(fs::mint_file<WriteTruncate>(ctx, sanitized(path)));
+        if (writer.error_number != 0 || fs::write_full(ctx, writer.file.ref(), core::TextView{"0123456789"}).is_err()) {
+            fixy::report(fixy::Sink::Err, "the test does not write the file of the positioned reads\n");
+            return 1;
+        }
+    }
+    Opened<ReadOnlyFile> const reader = opened_of(fs::mint_file<fs::read_only>(ctx, sanitized(path)));
+    if (reader.error_number != 0) {
+        fixy::report(fixy::Sink::Err, "mint_file ReadOnly of the positioned file failed (errno {})\n",
+                     reader.error_number);
+        return 1;
+    }
+    // True when the first bytes of read are the characters of expected.
+    const auto holds_text = [](core::View<std::byte const> read, core::TextView expected) {
+        bool is_same = expected.size() <= read.size();
+        std::size_t index = 0;
+        for (const char character : expected) {
+            is_same = is_same && read.get(index).is_some_and([character](auto const& byte) noexcept {
+                return *byte == static_cast<std::byte>(character);
+            });
+            ++index;
+        }
+        return is_same;
+    };
+    core::FixedArray<std::byte, 4> part{};
+    const auto part_holds = [&part, &holds_text](core::TextView expected, std::size_t count) {
+        return count == expected.size() && holds_text(part.view(), expected);
+    };
+    const auto middle = fs::read_full_at(ctx, reader.file.ref(), part.view(), fs::FileOffset{3});
+    if (middle.err().is_some() || !part_holds(core::TextView{"3456"}, 4)
+        || fs::read_full_at(ctx, reader.file.ref(), part.view(), fs::FileOffset{3}).value_or(0) != 4) {
+        fixy::report(fixy::Sink::Err, "read_full_at at offset 3 did not give the bytes 3456\n");
+        return 1;
+    }
+    core::fill(part.view(), std::byte{0});
+    if (fs::read_full_at(ctx, reader.file.ref(), part.view(), fs::FileOffset{8}).value_or(0) != 2
+        || !part_holds(core::TextView{"89"}, 2)) {
+        fixy::report(fixy::Sink::Err, "read_full_at at offset 8 did not stop at the end of the file\n");
+        return 1;
+    }
+    if (fs::read_full_at(ctx, reader.file.ref(), part.view(), fs::FileOffset{20}).value_or(1) != 0) {
+        fixy::report(fixy::Sink::Err, "read_full_at past the end of the file gave bytes\n");
+        return 1;
+    }
+    if (errno_of(fs::read_full_at(ctx, reader.file.ref(), part.view(), fs::FileOffset{-1})) != EINVAL) {
+        fixy::report(fixy::Sink::Err, "read_full_at at a negative offset did not give EINVAL\n");
+        return 1;
+    }
+    // The reads at an offset left the offset of the descriptor at zero.
+    if (fs::read_full(ctx, reader.file.ref(), part.view()).value_or(0) != 4 || !part_holds(core::TextView{"0123"}, 4)) {
+        fixy::report(fixy::Sink::Err, "read_full_at moved the offset of the descriptor\n");
+        return 1;
+    }
+
+    Opened<fs::FileOf<WriteAppend>> appender = opened_of(fs::mint_file<WriteAppend>(ctx, sanitized(path)));
+    if (appender.error_number != 0) {
+        fixy::report(fixy::Sink::Err, "mint_file WriteAppend failed (errno {})\n", appender.error_number);
+        return 1;
+    }
+    if (fs::set_file_size(ctx, appender.file.ref(), fs::FileOffset{5}).is_err()
+        || fs::file_size(ctx, appender.file.ref()).value_or(-1) != 5
+        || fs::write_full(ctx, appender.file.ref(), core::TextView{"ab"}).is_err()) {
+        fixy::report(fixy::Sink::Err, "set_file_size did not cut the file of the append open to 5 bytes\n");
+        return 1;
+    }
+    core::FixedArray<std::byte, 16> whole{};
+    if (fs::read_full_at(ctx, reader.file.ref(), whole.view(), fs::FileOffset{0}).value_or(0) != 7
+        || !holds_text(whole.view(), core::TextView{"01234ab"})) {
+        fixy::report(fixy::Sink::Err, "the append after the cut did not write at the new end\n");
+        return 1;
+    }
+    if (fs::set_file_size(ctx, appender.file.ref(), fs::FileOffset{9}).is_err()
+        || fs::read_full_at(ctx, reader.file.ref(), whole.view(), fs::FileOffset{0}).value_or(0) != 9
+        || *whole.get(7).expect("the buffer holds nine bytes") != std::byte{0}
+        || *whole.get(8).expect("the buffer holds nine bytes") != std::byte{0}) {
+        fixy::report(fixy::Sink::Err, "set_file_size to a larger size did not add zero bytes\n");
+        return 1;
+    }
+    if (errno_of(fs::set_file_size(ctx, appender.file.ref(), fs::FileOffset{-1})) != EINVAL) {
+        fixy::report(fixy::Sink::Err, "set_file_size to a negative size did not give EINVAL\n");
+        return 1;
+    }
+
+    const fs::TemporaryFile empty{};
+    if (errno_of(fs::read_full_at(ctx, empty.ref(), part.view(), fs::FileOffset{0})) != EBADF
+        || errno_of(fs::set_file_size(ctx, empty.ref(), fs::FileOffset{0})) != EBADF) {
+        fixy::report(fixy::Sink::Err, "a door at an offset on an empty handle was not refused with EBADF\n");
+        return 1;
+    }
+    return 0;
+}
+
 // The loops of the full transfers end when a step moves zero bytes.  Each
 // step below moves the count of its plan for its call, and gives enospc after
 // kStepLimit calls.  So a loop that does not stop on a zero ends with enospc
@@ -518,6 +621,7 @@ int main() {
     if (const int rc = mint_file_writes_syncs_and_commits(scratch); rc != 0) return rc;
     if (const int rc = dirfd_opens_and_flushes_the_entry(scratch); rc != 0) return rc;
     if (const int rc = full_reads_and_writes_round_trip(scratch); rc != 0) return rc;
+    if (const int rc = reads_at_an_offset_and_sets_the_size(scratch); rc != 0) return rc;
     if (const int rc = full_transfers_end_on_a_zero_step(); rc != 0) return rc;
     if (const int rc = open_beneath_ends_at_the_bound_of_its_tries(); rc != 0) return rc;
     if (const int rc = calls_under_a_directory(scratch); rc != 0) return rc;

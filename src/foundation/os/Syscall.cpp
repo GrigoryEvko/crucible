@@ -282,6 +282,10 @@ constexpr long kNoCall = -1;
             return __NR_clock_nanosleep;
         case Syscall::ptrace:
             return __NR_ptrace;
+        case Syscall::pread:
+            return __NR_pread64;
+        case Syscall::ftruncate:
+            return __NR_ftruncate;
         default:
             return kNoCall;
     }
@@ -564,6 +568,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::gettid:
         case Syscall::clock_gettime:
         case Syscall::clock_nanosleep:
+        case Syscall::pread:
+        case Syscall::ftruncate:
         default:
             break;
     }

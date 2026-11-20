@@ -427,6 +427,19 @@ write_full_steps_(std::size_t count, Step step) noexcept {
 // The size in bytes of the file of DESCRIPTOR (fstat).
 [[nodiscard]] ::foundation::core::Result<std::int64_t, ::foundation::os::Errno> file_size_(int descriptor) noexcept;
 
+// Reads into the COUNT bytes at FIRST from the byte OFFSET of the file of
+// DESCRIPTOR, until they are full or the file ends, and gives the count of the
+// bytes that it read (pread64 in the loop of read_full_steps_).  The read does
+// not move the offset of the descriptor.  A negative offset gives einval.
+[[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+read_full_at_(int descriptor, void* first, std::size_t count, std::int64_t offset) noexcept;
+
+// Sets the size of the file of DESCRIPTOR to LENGTH bytes (ftruncate).  The
+// file loses each byte at LENGTH or after it, and a file shorter than LENGTH
+// gets zero bytes up to it.  A negative length gives einval.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+set_size_(int descriptor, std::int64_t length) noexcept;
+
 }  // namespace detail
 
 class FileDoor;
@@ -972,6 +985,32 @@ template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<std::int64_t, ::foundation::os::Errno>
 file_size(Ctx const&, FileRef<Rights> file) noexcept {
     return detail::file_size_(::fixy::os::detail::HandleDoor::descriptor_of(file));
+}
+
+// Reads into buffer from the byte offset of the file, until the buffer is
+// full or the file ends, and gives the count of the bytes.  The read does not
+// move the offset of the file, so a reader of one part of a file needs no
+// state of its position.  A read at an offset is a positioned access, so it
+// asks for the read and the seek rights.  A file of an append open holds no
+// seek right, and a reader of such a file opens it again for reading.
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::read | ::fixy::os::RightSet::seek>
+[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+read_full_at(Ctx const&, FileRef<Rights> file, ::foundation::core::View<std::byte> buffer, FileOffset offset) noexcept {
+    return detail::read_full_at_(::fixy::os::detail::HandleDoor::descriptor_of(file),
+                                 first_of_(::foundation::core::detail::ViewDoor::key(), buffer), buffer.size(),
+                                 offset.raw());
+}
+
+// Sets the size of the file to length bytes: the file loses each byte at
+// length or after it, and a shorter file gets zero bytes up to length.  The
+// call changes the bytes of the file, so it asks for the write right.  A file
+// of an append open holds it, and the next append writes at the new end.
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::write>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+set_file_size(Ctx const&, FileRef<Rights> file, FileOffset length) noexcept {
+    return detail::set_size_(::fixy::os::detail::HandleDoor::descriptor_of(file), length.raw());
 }
 
 // A read and a write take the borrow of a handle of each kind that holds the

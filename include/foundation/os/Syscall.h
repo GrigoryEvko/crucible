@@ -138,6 +138,10 @@ enum class Syscall : std::uint8_t {
     clock_gettime,
     clock_nanosleep,
     ptrace,
+    // pread64: a read at an offset of a file, which does not move the offset
+    // of the descriptor.
+    pread,
+    ftruncate,
 };
 
 // True when the call can wait for a long time: for another thread or process

@@ -1,6 +1,7 @@
 // The file door of fixy (fixy/os/Fs.h): the syncs, the renames, the reads
-// and the writes of a whole buffer, the size of a file, and the opens, the
-// removes, the new directories and the status reads under a directory.  A
+// and the writes of a whole buffer, the read at an offset, the read and the
+// change of the size of a file, and the opens, the removes, the new
+// directories and the status reads under a directory.  A
 // call that a signal interrupts runs again.  It issues the
 // raw primitive of foundation/os/Syscall.h.  It is the one includer of
 // <asm/stat.h>, for the struct of fstat, and of <linux/fs.h>, for the flag of
@@ -310,6 +311,40 @@ core::Result<std::int64_t, os::Errno> file_size_(int descriptor) noexcept {
     ::stat status{};
     return os::result_of(os::raw_syscall(os::Syscall::fstat, descriptor, static_cast<void const*>(&status)))
         .map([&status](std::uint64_t) noexcept { return static_cast<std::int64_t>(status.st_size); });
+}
+
+// Each step reads at the offset of the call plus the bytes that the steps
+// before it read.  A sum past the largest signed offset of 64 bits gives
+// einval, as the kernel gives for such an offset.
+core::Result<std::size_t, os::Errno> read_full_at_(int descriptor, void* first, std::size_t count,
+                                                   std::int64_t offset) noexcept {
+    if (is_closed(descriptor)) {
+        return core::err(os::Errno::ebadf);
+    }
+    if (offset < 0) {
+        return core::err(os::Errno::einval);
+    }
+    char* const bytes = static_cast<char*>(first);
+    return read_full_steps_(
+        count,
+        [descriptor, bytes, offset](std::size_t done, std::size_t remaining) -> core::Result<std::uint64_t, os::Errno> {
+            std::int64_t at = 0;
+            if (__builtin_add_overflow(offset, done, &at)) {
+                return core::err(os::Errno::einval);
+            }
+            return os::result_of(os::raw_syscall(os::Syscall::pread, descriptor, bytes + done, remaining, at));
+        });
+}
+
+UnitResult set_size_(int descriptor, std::int64_t length) noexcept {
+    if (is_closed(descriptor)) {
+        return core::err(os::Errno::ebadf);
+    }
+    long word = 0;
+    do {
+        word = os::raw_syscall(os::Syscall::ftruncate, descriptor, length);
+    } while (word == kInterrupted);
+    return unit_of(word);
 }
 
 }  // namespace fixy::fs::detail
