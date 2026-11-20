@@ -157,7 +157,9 @@ using ::foundation::core::PrefetchAccess;
 using ::foundation::core::Link;
 using ::foundation::core::Ref;
 using ::foundation::core::RefMut;
+using ::foundation::core::erase_brand;
 using ::foundation::core::same_object;
+using ::foundation::core::same_target;
 using ::foundation::core::to;
 
 // The door foreign_pointer of a RunAddress stays in foundation::core, as

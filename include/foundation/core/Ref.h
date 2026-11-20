@@ -12,9 +12,11 @@
 //
 // *ref and ref->member reach the object with no test, because a Ref has no
 // empty state.  A Ref<T, Brand> converts to a Ref<T const, Brand> and to the
-// erased brand DefaultBrand, and nothing converts it back.  same_object(a, b)
-// tells if two Refs reach one object.  A Ref has no ==, no default value and
-// no conversion from a pointer.  Option<Ref<T, Brand>> has the size of one
+// erased brand DefaultBrand, and nothing converts it back.  erase_brand(ref)
+// is the named door to the erased brand, and it refuses a scope brand.
+// same_object(a, b) tells if two Refs reach one object, and same_target(a, b)
+// tells if two Options of a Ref are both empty or reach one object.  A Ref
+// has no ==, no default value and no conversion from a pointer.  Option<Ref<T, Brand>> has the size of one
 // pointer: the null pointer is its empty value, and no Ref holds it.  The
 // word of a Ref in an atomic cell is that pointer, so an
 // Atomic<Option<Ref<T, Brand>>> holds one pointer.  A Ref owns nothing, so a
@@ -267,6 +269,70 @@ template <class First, class FirstBrand, class Second, class SecondBrand>
     requires std::same_as<std::remove_const_t<First>, std::remove_const_t<Second>>
 [[nodiscard]] constexpr bool same_object(Ref<First, FirstBrand> first, Ref<Second, SecondBrand> second) noexcept {
     return __builtin_addressof(*first) == __builtin_addressof(*second);
+}
+
+// True when the two Options hold no Ref, or hold two Refs of one object.  The
+// two targets are one type, with or without a const, and the two brands can
+// differ.  An empty slot of a table or a mark of a mailbox compares in this
+// way.  The cost is the compare of two pointers, because the empty Option is
+// the null pointer.
+template <class First, class FirstBrand, class Second, class SecondBrand>
+    requires std::same_as<std::remove_const_t<First>, std::remove_const_t<Second>>
+[[nodiscard]] constexpr bool same_target(Option<Ref<First, FirstBrand>> const& first,
+                                         Option<Ref<Second, SecondBrand>> const& second) noexcept {
+    for (Ref<First, FirstBrand> const& first_ref : first) {
+        for (Ref<Second, SecondBrand> const& second_ref : second) {
+            return same_object(first_ref, second_ref);
+        }
+        return false;
+    }
+    return second.is_none();
+}
+
+namespace detail {
+
+// True when Brand is a scope brand: the closure type of CRUCIBLE_SCOPE_BRAND,
+// whose call operator holds the mark foundation::brand::scope_brand.  A value
+// of a scope brand does not outlive the call of its mint (foundation/Brand.h).
+// The call operator of a closure is public, so the current access context
+// reads it.  Complexity: linear in the members of Brand, which a closure with
+// no capture has few of.
+template <::foundation::brand::IsBrand Brand>
+[[nodiscard]] consteval bool is_scope_brand() {
+    for (std::meta::info member : std::meta::members_of(^^Brand, std::meta::access_context::current())) {
+        if (std::meta::is_function(member) && std::meta::is_operator_function(member)
+            && std::meta::operator_of(member) == std::meta::operators::op_parentheses
+            && !std::meta::annotations_of_with_type(member, ^^::foundation::brand::scope_brand).empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace detail
+
+// A brand that erase_brand drops: a brand of one instance that is not a scope
+// brand.  The rule brand-escape refuses each value of a scope brand that
+// outlives its scope, and an erased Ref names no brand that the rule could
+// read.  So a scope brand has no erasure.
+template <class Brand>
+concept ErasableBrand = ::foundation::brand::IsFreshBrand<Brand> && !detail::is_scope_brand<Brand>();
+
+// The door that drops the brand of a Ref.  It gives a Ref of the same object
+// on the erased identity DefaultBrand, which each erased Ref of the target
+// type shares, and nothing gives the brand back.  Call it only where the
+// holder cannot name the brand, such as a slot of a table that holds Refs of
+// many sites.  A search for this name lists each site that drops one.  The
+// result is a Ref<T, DefaultBrand>, and the body names its brand, so the
+// erased brand has one spelling in this door.  No Ref holds the null pointer,
+// and the build keeps each test of an address for null
+// (-fno-delete-null-pointer-checks), so an assumption states the fact, and an
+// Option of the result takes no test of the null pointer.
+template <RefTarget T, ErasableBrand Brand>
+[[nodiscard]] constexpr auto erase_brand(Ref<T, Brand> ref) noexcept {
+    T& object = *ref;
+    [[assume(__builtin_addressof(object) != nullptr)]];
+    return detail::RefDoor::lend<::foundation::brand::DefaultBrand>(object);
 }
 
 namespace detail {

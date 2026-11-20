@@ -2929,6 +2929,11 @@ foundation_neg_compile_test(neg_core_ref_drops_const
 foundation_neg_compile_test(neg_core_ref_changes_brand
   "no matching function for call to .foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >::Ref\\(<brace-enclosed initializer list>\\)."
   "required for the satisfaction of .RefWidens<U, UBrand, T, Brand>. \\[with U = int; UBrand = [^;]+; T = int; ")
+# The erase door refuses a scope brand, so no Ref of a scope leaves it on the
+# erased brand.
+foundation_neg_compile_test(neg_core_ref_erase_scope_brand
+  "no matching function for call to .erase_brand\\(.*foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >"
+  "required for the satisfaction of .ErasableBrand<Brand>.")
 foundation_neg_compile_test(neg_core_ref_names_brand
   "no matching function for call to .to<int, ArenaBrand>\\(int&\\)."
   "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int, ArenaBrand\\}\\]. evaluated to .false.")

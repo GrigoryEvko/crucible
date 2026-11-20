@@ -173,6 +173,45 @@ consteval bool two_gets_reach_one_element() {
 }
 static_assert(two_gets_reach_one_element());
 
+// erase_brand drops a brand of one instance, and no scope brand: the rule
+// brand-escape reads a scope brand, and an erased Ref names none.  An erased
+// Ref has no brand to drop.  The fixture neg_core_ref_erase_scope_brand shows
+// the refusal of a scope brand at a call.  The Ref of the door reaches the
+// same object, on the erased brand.
+template <class... Refused, class Scope = CRUCIBLE_SCOPE_BRAND>
+consteval bool scope_brand_erases() {
+    return ErasableBrand<Scope>;
+}
+static_assert(ErasableBrand<CheckBrand> && !ErasableBrand<::foundation::brand::DefaultBrand>);
+static_assert(!scope_brand_erases());
+consteval bool erases_to_the_same_object() {
+    int number = 4;
+    int const& read = number;
+    auto const branded = to(number);
+    auto const erased = erase_brand(branded);
+    auto const erased_read = erase_brand(to(read));
+    *erased = 5;
+    return std::same_as<decltype(erased), ErasedRef const> && std::same_as<decltype(erased_read), ErasedConstRef const>
+        && number == 5 && same_object(branded, erased) && same_object(erased, erased_read);
+}
+static_assert(erases_to_the_same_object());
+
+// same_target compares two Options of a Ref: two empty Options, or two Refs
+// of one object, with or without a const and with any two brands.
+consteval bool compares_the_targets_of_two_options() {
+    int first = 1;
+    int second = 2;
+    int const& first_read = first;
+    Option<Ref<int, CheckBrand>> const empty{};
+    Option<ErasedConstRef> const other_empty{};
+    auto const full = some(to(first));
+    auto const same = some(erase_brand(to(first_read)));
+    auto const different = some(to(second));
+    return same_target(empty, other_empty) && same_target(full, same) && !same_target(full, different)
+        && !same_target(full, empty) && !same_target(other_empty, same);
+}
+static_assert(compares_the_targets_of_two_options());
+
 // A brand is an empty class.
 template <class T, class Brand>
 concept Spells = requires { sizeof(Ref<T, Brand>); };
