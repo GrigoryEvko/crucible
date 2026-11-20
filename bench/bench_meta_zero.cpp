@@ -80,6 +80,28 @@ template <std::size_t Count>
     return static_cast<double>(stop - start) / kBatch;
 }
 
+}  // namespace
+
+// The raw floor of scenario A: the same descriptors in a C array.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: a C array of descriptors is the raw floor of the zeroing of scenario A")
+namespace {
+
+template <std::size_t Count>
+[[nodiscard]] double construct_c_array_batch_ns() {
+    const std::uint64_t start = bench::detail::read_monotonic_ns();
+    for (int i = 0; i < kBatch; i++) {
+        crucible::TensorMeta metas[Count]{};
+        bench::keep_in_memory(metas);
+    }
+    const std::uint64_t stop = bench::detail::read_monotonic_ns();
+    return static_cast<double>(stop - start) / kBatch;
+}
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+namespace {
+
 // Scenario B: the redundant second zero on one already-live descriptor.
 [[nodiscard]] double reassign_batch_ns() {
     crucible::TensorMeta meta{};
@@ -125,6 +147,10 @@ int main() {
     report<3>("A: default-construct 3 descriptors", construct_batch_ns<3>);
     report<8>("A: default-construct 8 descriptors", construct_batch_ns<8>);
     report<32>("A: default-construct 32 descriptors", construct_batch_ns<32>);
+    report<1>("A raw: C array of 1 descriptor", construct_c_array_batch_ns<1>);
+    report<3>("A raw: C array of 3 descriptors", construct_c_array_batch_ns<3>);
+    report<8>("A raw: C array of 8 descriptors", construct_c_array_batch_ns<8>);
+    report<32>("A raw: C array of 32 descriptors", construct_c_array_batch_ns<32>);
     report<1>("B: redundant second zero, 1 descriptor", reassign_batch_ns);
     return 0;
 }
