@@ -10,8 +10,7 @@
 // a full 8-entry cache should be ~4× faster).
 
 #include <cstdint>
-#include <cstdio>
-#include <memory>
+#include <utility>
 
 #include <crucible/RegionCache.h>
 #include <foundation/effects/Effect.h>
@@ -31,30 +30,50 @@ namespace {
 constexpr uint32_t NUM_OPS = 128;
 constexpr uint32_t NUM_REGIONS = 10;
 
+using Regions = ::fixy::FixedArray<::fixy::Ref<RegionNode>, NUM_REGIONS>;
+using RegionIndex = ::fixy::Index<NUM_REGIONS>;
+
+// Region r of the fixture: 128 ops with hashes of r, and an empty plan.
+// The arena builds each op and each plan with its member initializers.
+[[nodiscard]] ::fixy::Ref<RegionNode> make_fixture_region(::foundation::effects::Test const& test,
+                                                          ::fixy::BumpArena& arena, RegionIndex r) {
+    const ::fixy::View<TraceEntry> ops = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
+    for (uint32_t i = 0; i < NUM_OPS; i++) {
+        TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
+        op.schema_hash = SchemaHash{0x1000 + r.raw() * 0x100 + i};
+        op.shape_hash = ShapeHash{0x2000 + r.raw() * 0x100 + i};
+    }
+
+    auto const plan = arena.make<MemoryPlan>(test.alloc);
+
+    ::fixy::Ref<RegionNode> const region = make_region(test.alloc, arena, ops);
+    region->plan = make_plan_link(*plan);
+    return region;
+}
+
+// The regions of the fixture, from region 0.  A braced list runs its
+// elements in order, so the arena gives each region the addresses of a
+// loop over r.
+template <std::size_t... Region>
+[[nodiscard]] Regions make_fixture_regions(::foundation::effects::Test const& test, ::fixy::BumpArena& arena,
+                                           std::index_sequence<Region...> /*order*/) {
+    return Regions{make_fixture_region(test, arena, ::fixy::index<Region>())...};
+}
+
 struct TestFixture {
     ::foundation::effects::Test test = ::foundation::effects::testing::test();
     ::fixy::BumpArena arena{1 << 20};
-    RegionNode* regions[NUM_REGIONS]{};
-    MemoryPlan* plans[NUM_REGIONS]{};
+    Regions regions = make_fixture_regions(test, arena, std::make_index_sequence<NUM_REGIONS>{});
 
-    TestFixture() {
-        for (uint32_t r = 0; r < NUM_REGIONS; r++) {
-            // The arena builds each op and each plan with its member
-            // initializers.
-            const ::fixy::View<TraceEntry> ops = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
-            for (uint32_t i = 0; i < NUM_OPS; i++) {
-                TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
-                op.schema_hash = SchemaHash{0x1000 + r * 0x100 + i};
-                op.shape_hash = ShapeHash{0x2000 + r * 0x100 + i};
-            }
-
-            plans[r] = &*arena.make<MemoryPlan>(test.alloc);
-
-            regions[r] = &*make_region(test.alloc, arena, ops);
-            regions[r]->plan = make_plan_link(*plans[r]);
-        }
-    }
+    [[nodiscard]] RegionNode& region(RegionIndex r) noexcept { return *regions.at(r); }
 };
+
+// Inserts the first Count regions of the fixture, from region 0.
+template <std::size_t Count>
+void insert_first(RegionCache& cache, TestFixture& fix) noexcept {
+    for (::fixy::Index<Count> const r : ::fixy::IndexRange<Count>{})
+        cache.insert(fix.region(r));
+}
 
 }  // namespace
 
@@ -65,7 +84,7 @@ int main() {
     const bench::JsonTail json = bench::env_json();
 
     TestFixture fix{};
-    std::printf("=== region_cache ===\n  %u regions × %u ops, CAP=%u\n\n", NUM_REGIONS, NUM_OPS, RegionCache::CAP);
+    bench::print("=== region_cache ===\n  {} regions × {} ops, CAP={}\n\n", NUM_REGIONS, NUM_OPS, RegionCache::CAP);
 
     ::fixy::FixedArray<bench::Report, 10> reports{
         // ── insert ────────────────────────────────────────────────────
@@ -75,7 +94,7 @@ int main() {
         bench::run("insert: cold (empty cache)",
                    [&] {
                        RegionCache cache;
-                       cache.insert(*fix.regions[0]);
+                       cache.insert(fix.region(::fixy::index<0>()));
                        bench::do_not_optimize(cache);
                    }),
 
@@ -83,9 +102,9 @@ int main() {
         // short-circuits the scan.
         [&] {
             RegionCache cache;
-            cache.insert(*fix.regions[0]);
+            cache.insert(fix.region(::fixy::index<0>()));
             return bench::run("insert: dedup (same region)", [&] {
-                cache.insert(*fix.regions[0]);
+                cache.insert(fix.region(::fixy::index<0>()));
                 bench::do_not_optimize(cache);
             });
         }(),
@@ -95,12 +114,11 @@ int main() {
         // iteration to keep size stable across auto-batch.
         [&] {
             RegionCache cache;
-            for (uint32_t i = 0; i < RegionCache::CAP; i++)
-                cache.insert(*fix.regions[i]);
+            insert_first<RegionCache::CAP>(cache, fix);
             return bench::run("insert: steady (8 entries, new)", [&] {
-                cache.insert(*fix.regions[8]);
+                cache.insert(fix.region(::fixy::index<8>()));
                 bench::do_not_optimize(cache);
-                cache.insert(*fix.regions[0]);
+                cache.insert(fix.region(::fixy::index<0>()));
             });
         }(),
 
@@ -108,13 +126,12 @@ int main() {
         // MRU hit (scan stops at i=0).
         [&] {
             RegionCache cache;
-            for (uint32_t i = 0; i < RegionCache::CAP; i++)
-                cache.insert(*fix.regions[i]);
+            insert_first<RegionCache::CAP>(cache, fix);
             const uint32_t pos = 5;
-            const auto schema = fix.regions[7]->op_at(pos).schema_hash;
-            const auto shape = fix.regions[7]->op_at(pos).shape_hash;
+            const auto schema = fix.region(::fixy::index<7>()).op_at(pos).schema_hash;
+            const auto shape = fix.region(::fixy::index<7>()).op_at(pos).shape_hash;
             const crucible::ConstRegionLink excl =
-                crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(*fix.regions[6])));
+                crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(fix.region(::fixy::index<6>()))));
             return bench::run("find_alternate: hit MRU (i=0)", [&] {
                 auto r = cache.find_alternate(pos, schema, shape, excl);
                 bench::do_not_optimize(r);
@@ -124,13 +141,12 @@ int main() {
         // LRU hit (scan walks all 8 before matching).
         [&] {
             RegionCache cache;
-            for (uint32_t i = 0; i < RegionCache::CAP; i++)
-                cache.insert(*fix.regions[i]);
+            insert_first<RegionCache::CAP>(cache, fix);
             const uint32_t pos = 5;
-            const auto schema = fix.regions[0]->op_at(pos).schema_hash;
-            const auto shape = fix.regions[0]->op_at(pos).shape_hash;
+            const auto schema = fix.region(::fixy::index<0>()).op_at(pos).schema_hash;
+            const auto shape = fix.region(::fixy::index<0>()).op_at(pos).shape_hash;
             const crucible::ConstRegionLink excl =
-                crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(*fix.regions[7])));
+                crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(fix.region(::fixy::index<7>()))));
             return bench::run("find_alternate: hit LRU (i=7)", [&] {
                 auto r = cache.find_alternate(pos, schema, shape, excl);
                 bench::do_not_optimize(r);
@@ -140,8 +156,7 @@ int main() {
         // Full miss — all 8 entries scanned, no match.
         [&] {
             RegionCache cache;
-            for (uint32_t i = 0; i < RegionCache::CAP; i++)
-                cache.insert(*fix.regions[i]);
+            insert_first<RegionCache::CAP>(cache, fix);
             return bench::run("find_alternate: miss (all 8 checked)", [&] {
                 auto r = cache.find_alternate(5, SchemaHash{0xDEADBEEF}, ShapeHash{0xCAFEBABE});
                 bench::do_not_optimize(r);
@@ -152,8 +167,8 @@ int main() {
         // only a few regions are warm.
         [&] {
             RegionCache cache;
-            cache.insert(*fix.regions[0]);
-            cache.insert(*fix.regions[1]);
+            cache.insert(fix.region(::fixy::index<0>()));
+            cache.insert(fix.region(::fixy::index<1>()));
             return bench::run("find_alternate: miss (2 entries)", [&] {
                 auto r = cache.find_alternate(5, SchemaHash{0xDEADBEEF}, ShapeHash{0xCAFEBABE});
                 bench::do_not_optimize(r);
@@ -163,13 +178,13 @@ int main() {
         // 2-entry hit with exclude (skip MRU → match LRU).
         [&] {
             RegionCache cache;
-            cache.insert(*fix.regions[0]);
-            cache.insert(*fix.regions[1]);
+            cache.insert(fix.region(::fixy::index<0>()));
+            cache.insert(fix.region(::fixy::index<1>()));
             const uint32_t pos = 5;
-            const auto schema = fix.regions[0]->op_at(pos).schema_hash;
-            const auto shape = fix.regions[0]->op_at(pos).shape_hash;
+            const auto schema = fix.region(::fixy::index<0>()).op_at(pos).schema_hash;
+            const auto shape = fix.region(::fixy::index<0>()).op_at(pos).shape_hash;
             const crucible::ConstRegionLink excl =
-                crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(*fix.regions[1])));
+                crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(fix.region(::fixy::index<1>()))));
             return bench::run("find_alternate: hit (2 entries, excl MRU)", [&] {
                 auto r = cache.find_alternate(pos, schema, shape, excl);
                 bench::do_not_optimize(r);
@@ -179,9 +194,8 @@ int main() {
         // ── find (exact content_hash) ─────────────────────────────────
         [&] {
             RegionCache cache;
-            for (uint32_t i = 0; i < RegionCache::CAP; i++)
-                cache.insert(*fix.regions[i]);
-            const auto hash = fix.regions[7]->content_hash;
+            insert_first<RegionCache::CAP>(cache, fix);
+            const auto hash = fix.region(::fixy::index<7>()).content_hash;
             return bench::run("find: hit MRU", [&] {
                 auto r = cache.find(hash);
                 bench::do_not_optimize(r);
@@ -190,8 +204,7 @@ int main() {
 
         [&] {
             RegionCache cache;
-            for (uint32_t i = 0; i < RegionCache::CAP; i++)
-                cache.insert(*fix.regions[i]);
+            insert_first<RegionCache::CAP>(cache, fix);
             return bench::run("find: miss (all 8 checked)", [&] {
                 auto r = cache.find(ContentHash{0xDEADDEAD});
                 bench::do_not_optimize(r);
@@ -203,7 +216,7 @@ int main() {
 
     // Scan-depth compare: 2-entry vs 8-entry miss. 2-entry should be
     // ~4× faster if the scan is linear.
-    std::printf("\n=== compare — scan depth ===\n  ");
+    bench::print("\n=== compare — scan depth ===\n  ");
     bench::compare(reports.at(::fixy::index<6>()), reports.at(::fixy::index<5>())).print_text();
 
     bench::emit_reports_json(reports.view(), json);
