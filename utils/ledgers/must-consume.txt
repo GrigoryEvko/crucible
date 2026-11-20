@@ -12,7 +12,6 @@ reason test/ | the tests drop tokens and handles at the end of a test, consume a
 bench/ | discarded-temporary | 2 | - | -
 bench/ | unconsumed | 6 | - | -
 include/crucible/cntp/ | unconsumed | 25 | - | -
-include/crucible/perf/detail/ | unconsumed | 1 | - | -
 include/fixy/ | unconsumed | 2 | - | -
 include/fixy/concurrent/ | unconsumed | 1 | - | -
 include/fixy/session/ | unconsumed | 13 | - | -
@@ -28,4 +27,4 @@ test/foundation/ | unconsumed-on-path | 1 | - | -
 test/layer/checks/fixy/ | unconsumed | 1 | - | -
 test/layer/checks/fixy/channels/ | unconsumed | 9 | - | -
 test/layer/checks/foundation/core/ | unconsumed | 1 | - | -
-test/layer/checks/foundation/permissions/ | unconsumed | 5 | - | -
+test/layer/checks/foundation/permissions/ | unconsumed | 4 | - | -

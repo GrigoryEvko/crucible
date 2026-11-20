@@ -232,7 +232,7 @@ include/fixy/os/ | replace-pending:<string> | 1 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 401 | - | -
+include/fixy/session/ | base-std-entity | 400 | - | -
 include/fixy/session/ | base-std-object | 175 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
@@ -407,7 +407,7 @@ test/fixy/ | opted-out | 2 | PROBE: the test states a payload rule of the role d
 test/fixy/ | opted-out | 5 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
-test/fixy/ | raw-pointer-object | 133 | - | -
+test/fixy/ | raw-pointer-object | 132 | - | -
 test/fixy/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | region | 1 | ORACLE: the PyTorch tables, and the F16C instructions under each MXCSR state | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
@@ -444,7 +444,7 @@ test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
 test/fixy/ | std-entity | 2331 | - | -
-test/fixy/ | std-object | 837 | - | -
+test/fixy/ | std-object | 836 | - | -
 test/fixy/neg/ | c-array-object | 54 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 323 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
