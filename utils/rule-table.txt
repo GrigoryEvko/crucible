@@ -430,6 +430,8 @@ enforce test/dataplane_neg/ error
 enforce test/effect_row_neg/ error
 enforce test/forge_neg/ error
 enforce test/kernel_neg/ error
+enforce test/layer/ error
+enforce test/layer/checks/ report
 enforce test/memory_neg/ error
 enforce test/mimic_neg/ error
 enforce test/observe_neg/ error
