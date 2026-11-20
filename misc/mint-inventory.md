@@ -55,6 +55,7 @@ that the axis does not apply to the row.
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | HS14: 8 |
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
+| `mint_synthetic_data_ptr` | `include/crucible/TensorMeta.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_validated_op` | `include/crucible/ValidatedOp.h` | Y | Y | Y | · | token | · | HS14: 7 |
 
 ## include/crucible/cipher/
@@ -395,5 +396,5 @@ that the axis does not apply to the row.
 
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
-| crucible (`include/crucible/`) | 80 | 46 | 25 | 9 | 0 | 10 |
+| crucible (`include/crucible/`) | 81 | 46 | 26 | 9 | 0 | 10 |
 | substrate (`include/foundation/`, `include/fixy/`) | 162 | 63 | 95 | 4 | 0 | 3 |
