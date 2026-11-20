@@ -1409,11 +1409,13 @@ private:
 //   senses_instance()->sched_switch() — per-tenant off-CPU timeline
 // Either may return none if that facade failed to attach (missing
 // CAP_BPF, kernel.unprivileged_bpf_disabled=2, kernel too old);
-// senses_instance() itself is never nullptr (Senses is a value).
+// senses_instance() gives a Ref, which is never null (Senses is a value).
+// A build with no BPF has no senses, and no code of its arm reads them.
 
-namespace detail {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-[[nodiscard]] inline const ::crucible::perf::Senses* senses_instance() noexcept {
+namespace detail {
+
+[[nodiscard]] inline ::fixy::Ref<::crucible::perf::Senses const> senses_instance() noexcept {
     // Senses::load_subset(startup load context, mask) loads only the
     // masked facades, which are sense_hub and sched_switch.  The bench
     // takes the startup load context from the test door.  Hot-path code
@@ -1421,17 +1423,86 @@ namespace detail {
     // call chain of Senses::load_subset() never reaches a hot frame.
     // Senses is move-only, and the static is built from the returned
     // value.
-    static ::crucible::perf::Senses slot = ::crucible::perf::Senses::load_subset(
+    static ::crucible::perf::Senses const slot = ::crucible::perf::Senses::load_subset(
         ::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ::crucible::perf::SensesMask{
                                                                          .sense_hub = true,
                                                                          .sched_switch = true,
                                                                      });
-    return &slot;
+    return ::fixy::to(slot);
 }
-#else
-[[nodiscard]] inline const void* senses_instance() noexcept { return nullptr; }
-#endif
+
+// The longest off-CPU spikes of the window of a run (Report::sched_offcpu).
+inline constexpr std::size_t kOffCpuTopK = 5;
+
+// One off-CPU spike of the timeline of SchedSwitch: the time off the CPU in
+// nanoseconds, and the CPU on which the thread came back.
+struct OffCpuSpike {
+    std::uint64_t off_ns = 0;
+    std::uint32_t cpu = 0;
+    std::uint32_t pad_after_cpu = 0;
+};
+
+// The kOffCpuTopK longest spikes of a window, longest first, and the count of
+// the events of the window.  The spikes from 0 to kept are in use.
+struct OffCpuTop {
+    ::fixy::FixedArray<OffCpuSpike, kOffCpuTopK> longest{};
+    std::uint32_t kept = 0;
+    std::uint32_t count = 0;
+
+    // Counts the event, and keeps its spike when it is among the
+    // kOffCpuTopK longest of the window so far.  Complexity: at most
+    // kOffCpuTopK moves.
+    void keep(OffCpuSpike spike) noexcept {
+        ++count;
+        if (kept == kOffCpuTopK && spike.off_ns <= at_(kOffCpuTopK - 1).off_ns) return;
+        std::size_t place = kept < kOffCpuTopK ? kept : kOffCpuTopK - 1;
+        if (kept < kOffCpuTopK) ++kept;
+        while (place > 0 && at_(place - 1).off_ns < spike.off_ns) {
+            at_(place) = at_(place - 1);
+            --place;
+        }
+        at_(place) = spike;
+    }
+
+    // The spike at a place below kOffCpuTopK.
+    [[nodiscard]] OffCpuSpike& at_(std::size_t place) noexcept {
+        return longest.at(::fixy::Index<kOffCpuTopK>::check(place).expect("a place of the top set is below its size"));
+    }
+};
+
 }  // namespace detail
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the BPF program of SchedSwitch writes the timeline that the harness reads")
+namespace detail {
+
+// The longest off-CPU spikes of the events from pre to post of the timeline
+// of SchedSwitch, at most its capacity, newest first, so a window that the
+// ring wrapped reads the newest events.  An event whose stamp reads zero is
+// not written yet, and it does not count.  The acquire load of the stamp
+// pairs with the compiler barrier of the BPF program before its store.
+// Complexity: linear in the events of the window.
+[[nodiscard]] inline OffCpuTop
+top_offcpu_of(::fixy::Borrowed<const ::crucible::perf::TimelineSchedEvent, ::crucible::perf::SchedSwitch> view,
+              ::fixy::Side<side::ReadingBefore, std::uint64_t> pre,
+              ::fixy::Side<side::ReadingAfter, std::uint64_t> post) noexcept {
+    OffCpuTop top{};
+    const ::crucible::perf::TimelineSchedEvent* const events = view.data();
+    if (events == nullptr || post.value() <= pre.value()) return top;
+    const uint64_t window_size =
+        ::fixy::min(post.value() - pre.value(), static_cast<uint64_t>(::crucible::perf::TIMELINE_CAPACITY));
+    for (uint64_t i = 0; i < window_size; ++i) {
+        const uint64_t global_idx = post.value() - 1 - i;
+        const uint32_t slot = static_cast<uint32_t>(global_idx & ::crucible::perf::TIMELINE_MASK);
+        const uint64_t ts = __atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE);
+        if (ts == 0) continue;
+        top.keep(OffCpuSpike{.off_ns = events[slot].off_cpu_ns, .cpu = events[slot].on_cpu});
+    }
+    return top;
+}
+
+}  // namespace detail
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+#endif
 
 // ── Percentile with linear interpolation (R type 7) ───────────────
 //
@@ -1787,13 +1858,9 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     // big spikes + many tiny ones); the `(×N)` suffix on print
     // discloses the total event count when N > K.  All zero on
     // systems without SchedSwitch loaded.
-    static constexpr uint32_t kSchedOffCpuTopK = 5;
     uint64_t sched_pre_idx = 0;
     uint64_t sched_post_idx = 0;
-    uint64_t sched_offcpu_top_ns[kSchedOffCpuTopK] = {};  // sorted desc
-    uint32_t sched_offcpu_top_cpu[kSchedOffCpuTopK] = {};  // parallel
-    uint32_t sched_offcpu_top_n = 0;  // # used
-    uint32_t sched_offcpu_count = 0;  // total events
+    detail::OffCpuTop sched_offcpu{};
 #endif
 
     ::fixy::HeapArray<double> samples{};  // kept for bootstrap_ci, compare
@@ -2229,17 +2296,20 @@ private:
         // appears only when the timeline saw more events than K, so
         // the reader knows the top-K is a truncation rather than the
         // exhaustive list.
-        if (sched_offcpu_top_n > 0) {
+        if (sched_offcpu.kept > 0) {
             if (!first) std::fprintf(out, " · ");
             first = false;
             std::fprintf(out, "offcpu=");
-            for (uint32_t i = 0; i < sched_offcpu_top_n; ++i) {
-                if (i > 0) std::fputc('/', out);
-                print_scaled_(out, sched_offcpu_top_ns[i], Unit::Ns);
-                std::fprintf(out, "@%u", sched_offcpu_top_cpu[i]);
+            std::uint32_t written = 0;
+            for (detail::OffCpuSpike const& spike : sched_offcpu.longest) {
+                if (written == sched_offcpu.kept) break;
+                if (written > 0) std::fputc('/', out);
+                print_scaled_(out, spike.off_ns, Unit::Ns);
+                std::fprintf(out, "@%u", spike.cpu);
+                ++written;
             }
-            if (sched_offcpu_count > sched_offcpu_top_n) {
-                std::fprintf(out, " (×%u)", sched_offcpu_count);
+            if (sched_offcpu.count > sched_offcpu.kept) {
+                std::fprintf(out, " (×%u)", sched_offcpu.count);
             }
         }
         if (first) std::fprintf(out, "clean");
@@ -2763,7 +2833,7 @@ private:
         SampleWindow window{};
         window.freq_start = detail::read_cpu_freq_hz(pinned_cpu);
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        const ::crucible::perf::Senses* senses = detail::senses_instance();
+        const ::fixy::Ref<::crucible::perf::Senses const> senses = detail::senses_instance();
         window.hub = senses->sense_hub();
         window.sw = senses->sched_switch();
         for (auto const hub : window.hub)
@@ -2939,47 +3009,8 @@ private:
         ::fixy::Borrowed<const ::crucible::perf::TimelineSchedEvent, ::crucible::perf::SchedSwitch> view{};
         for (auto const sw : window.sw)
             view = sw->timeline_view();
-        if (sched_post_idx > sched_pre_idx) {
-            const uint64_t window_size =
-                std::min(sched_post_idx - sched_pre_idx, static_cast<uint64_t>(::crucible::perf::TIMELINE_CAPACITY));
-            const auto* events = view.data();
-            if (events != nullptr) {
-                constexpr uint32_t K = Report::kSchedOffCpuTopK;
-                for (uint64_t i = 0; i < window_size; ++i) {
-                    // Walk newest-to-oldest so that on a wrap-overflow
-                    // (window_size hit cap), we read the most-recent
-                    // events rather than the wrapped-over stale ones.
-                    const uint64_t global_idx = sched_post_idx - 1 - i;
-                    const uint32_t slot = static_cast<uint32_t>(global_idx & ::crucible::perf::TIMELINE_MASK);
-                    // Acquire load on ts_ns pairs with the BPF program's
-                    // compiler barrier before the ts_ns store.  ts_ns == 0
-                    // → the producer has not committed this slot; skip.
-                    const uint64_t ts = __atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE);
-                    if (ts == 0) continue;
-                    ++r.sched_offcpu_count;
-                    const uint64_t off = events[slot].off_cpu_ns;
-                    const uint32_t cpu = events[slot].on_cpu;
-                    // Insertion-sort into top-K (descending by `off`).
-                    // Skip cheap if (a) top is full AND (b) new
-                    // event is smaller than the smallest kept.
-                    if (r.sched_offcpu_top_n == K && off <= r.sched_offcpu_top_ns[K - 1]) {
-                        continue;
-                    }
-                    // Slot to start shifting from: either past-end
-                    // (when top isn't full) or the last kept slot
-                    // (which we'll displace).
-                    uint32_t pos = (r.sched_offcpu_top_n < K) ? r.sched_offcpu_top_n : K - 1;
-                    if (r.sched_offcpu_top_n < K) ++r.sched_offcpu_top_n;
-                    while (pos > 0 && r.sched_offcpu_top_ns[pos - 1] < off) {
-                        r.sched_offcpu_top_ns[pos] = r.sched_offcpu_top_ns[pos - 1];
-                        r.sched_offcpu_top_cpu[pos] = r.sched_offcpu_top_cpu[pos - 1];
-                        --pos;
-                    }
-                    r.sched_offcpu_top_ns[pos] = off;
-                    r.sched_offcpu_top_cpu[pos] = cpu;
-                }
-            }
-        }
+        r.sched_offcpu = detail::top_offcpu_of(view, ::fixy::side_as<side::ReadingBefore>(sched_pre_idx),
+                                               ::fixy::side_as<side::ReadingAfter>(sched_post_idx));
 #endif
 
         return r;
@@ -3314,7 +3345,7 @@ inline void print_system_info() {
     }
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    const ::crucible::perf::Senses* senses = detail::senses_instance();
+    const ::fixy::Ref<::crucible::perf::Senses const> senses = detail::senses_instance();
     auto hub = senses->sense_hub();
     const auto cov = senses->coverage();
     if (hub.is_some()) {

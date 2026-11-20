@@ -926,6 +926,30 @@ void test_processor_of_stat() {
     CHECK(bench::detail::processor_of_stat("no parenthesis 1 2 3").is_none());
 }
 
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
+// The top set of the off-CPU spikes of a run counts each event and keeps the
+// five longest spikes, longest first, each with its CPU.  A spike that is
+// not longer than the shortest kept one of a full set goes, and equal spikes
+// keep the order of their arrival.
+void test_offcpu_top_keeps_the_longest() {
+    bench::detail::OffCpuTop top{};
+    CHECK(top.kept == 0u && top.count == 0u);
+    constexpr ::fixy::FixedArray<std::uint64_t, 8> kOffNs{40, 10, 90, 10, 70, 5, 90, 20};
+    std::uint32_t cpu = 1;
+    for (std::uint64_t const off_ns : kOffNs) {
+        top.keep(bench::detail::OffCpuSpike{.off_ns = off_ns, .cpu = cpu});
+        ++cpu;
+    }
+    CHECK(top.count == 8u && top.kept == 5u);
+    constexpr ::fixy::FixedArray<std::uint64_t, 5> kLongest{90, 90, 70, 40, 20};
+    constexpr ::fixy::FixedArray<std::uint32_t, 5> kCpus{3, 7, 5, 1, 8};
+    for (auto const place : kLongest.indices()) {
+        CHECK(top.longest.at(place).off_ns == kLongest.at(place));
+        CHECK(top.longest.at(place).cpu == kCpus.at(place));
+    }
+}
+#endif
+
 // A scaling_cur_freq file holds the frequency in kHz and a newline.  The
 // frequency in Hz is that number times 1000, and a text with no number, a
 // sign or an empty text gives 0, as for a CPU with no cpufreq directory.
@@ -1286,6 +1310,9 @@ int main() {
     test_planted_pause_is_caught();
     test_processor_of_stat();
     test_freq_of_text();
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
+    test_offcpu_top_keeps_the_longest();
+#endif
     test_spread_of_planted_windows();
     test_median_of_a_part();
     test_run_measures_in_windows();
