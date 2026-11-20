@@ -183,7 +183,7 @@ void test_insufficient_replicas_and_observation_publication() {
 
     observe::ObservationSnapshot sink{};
     CRUCIBLE_REQUIRE(detector.publish_latest(sink));
-    auto const observation = observe::latest_observation(sink);
+    auto const observation = observe::latest_observation(kTest, sink);
     CRUCIBLE_REQUIRE(observation.metric_id == detector.config().metric_id_base);
     CRUCIBLE_REQUIRE(observation.value == static_cast<std::uint64_t>(observe::SdcEventKind::InsufficientReplicas));
 }

@@ -111,10 +111,12 @@ struct ForeignBytes {
 
 // A load reads the tracepoint files of tracefs, the id of the process and
 // the id of the calling thread, so its context admits the file calls and
-// the identity reads.
+// the identity reads.  The install of the print callback of libbpf goes
+// through a Once, whose loser spins with no exit, so the context owns Div.
 template <class Ctx>
 concept CtxFitsBpfLoad =
-    ::foundation::effects::IsExecCtx<Ctx> && ::fixy::fs::CtxAdmitsFs<Ctx> && ::fixy::process::CtxFitsIdentityRead<Ctx>;
+    ::foundation::effects::IsExecCtx<Ctx> && ::fixy::fs::CtxAdmitsFs<Ctx> && ::fixy::process::CtxFitsIdentityRead<Ctx>
+    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>;
 
 [[nodiscard]] inline Fd map_fd(bpf_map* m) noexcept { return ::fixy::mint_tagged<source::BpfMap>(bpf_map__fd(m)); }
 
@@ -158,10 +160,19 @@ concept CtxFitsBpfLoad =
 }
 
 // libbpf holds one print callback for the process, so the install is one per
-// process too, whatever shared library asks for it.
-CRUCIBLE_PROCESS_WIDE inline void install_libbpf_log_cb_once() noexcept {
+// process too, whatever shared library asks for it.  The gate is one object
+// for the process, and the install below names it for each context type.
+CRUCIBLE_PROCESS_WIDE inline ::fixy::handle::Once& libbpf_log_cb_gate_() noexcept {
     static ::fixy::handle::Once once;
-    once.call([] { libbpf_set_print(libbpf_log_cb); });
+    return once;
+}
+
+// A loser of the gate spins until the winner ends, so the context of the
+// load owns Div.
+template <class Ctx>
+    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
+inline void install_libbpf_log_cb_once(Ctx const& ctx) noexcept {
+    libbpf_log_cb_gate_().call(ctx, [] { libbpf_set_print(libbpf_log_cb); });
 }
 
 // libbpf names the map "<object name>.rodata", so the match is on the

@@ -115,8 +115,8 @@ void test_writer_publish_keeper_and_canopy_readers() {
     CRUCIBLE_REQUIRE(sample.staleness().value == 7);
     writer.publish(sample);
 
-    auto keeper_sample = keeper.load();
-    auto canopy_sample = canopy.load();
+    auto keeper_sample = keeper.load(kTest);
+    auto canopy_sample = canopy.load(kTest);
     CRUCIBLE_REQUIRE(keeper.try_load().is_some());
 
     CRUCIBLE_REQUIRE(near(keeper_sample.peek().meb_lambda_max, 101.0));
@@ -158,7 +158,7 @@ void test_runtime_observation_snapshot() {
 
     observe::record_observation(sink, observe::bits_transferred(12, 4096, 2, observe::ObservationSource::Runtime));
 
-    const observe::Observation latest = observe::latest_observation(sink);
+    const observe::Observation latest = observe::latest_observation(kTest, sink);
     CRUCIBLE_REQUIRE(latest.kind == observe::ObservationKind::BitsTransferred);
     CRUCIBLE_REQUIRE(latest.source == observe::ObservationSource::Runtime);
     CRUCIBLE_REQUIRE(latest.metric_id == 12);

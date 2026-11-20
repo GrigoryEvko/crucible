@@ -21,6 +21,7 @@
 
 #include <crucible/TraceRing.h>
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
 #include <fixy/concurrent/ParallelismRule.h>
@@ -153,10 +154,16 @@ int main() {
         fixy::TextView{"Tally::read"},
         [&tally] [[gnu::always_inline, gnu::no_instrument_function]] () noexcept { return tally.read(); }, 0u);
 
+    // The load spins with no exit while a write is in flight, so it takes a
+    // context that owns Div.
     const fixy::concurrent::AtomicSnapshot<std::uint64_t> snapshot{};
+    const ::fixy::TestRunnerCtx reader{::foundation::effects::testing::test()};
     failures += failures_of(
         fixy::TextView{"AtomicSnapshot::load"},
-        [&snapshot] [[gnu::always_inline, gnu::no_instrument_function]] () noexcept { return snapshot.load(); }, 0u);
+        [&snapshot, &reader] [[gnu::always_inline, gnu::no_instrument_function]] () noexcept {
+            return snapshot.load(reader);
+        },
+        0u);
 
     // The rule reads the topology, which the first call probes one time.
     using fixy::concurrent::ParallelismRule;

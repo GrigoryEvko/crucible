@@ -137,7 +137,7 @@ struct PublishOnceDoublePublish : tag_base {
         "federation cache entry, the entry fires on a key collision or "
         "on two compiles of one entry.";
     static constexpr tag_text_literal correct_example =
-        "once.call([&]() noexcept { slot.publish(p); });  // one publisher";
+        "once.call(ctx, [&]() noexcept { slot.publish(p); });  // one publisher";
     static constexpr tag_text_literal violating_example =
         "if (need_publish) slot.publish(p);  // a second thread can publish too";
 };

@@ -25,16 +25,18 @@ int main() {
     // Shared across all three Runs; holds stable for their lifetime.
     constexpr uint32_t N = 200;
     CKernelTable table{};
-    // The view asks for the context of a Vigil's producer claim.  The bench
-    // uses no Vigil, so it takes that context from the test door.
-    const auto mutable_view = table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>())
-                                  .expect("a fresh table mints a mutable view");
+    // The view and each registration ask for the context of a Vigil's
+    // producer claim.  The bench uses no Vigil, so it takes that context from
+    // the test door.  The bench has one writer, so the writer of the claim
+    // takes the section with one compare-exchange.
+    constexpr crucible::VigilFgCtx writer = ::foundation::effects::testing::foreground<crucible::Vigil>();
+    const auto mutable_view = table.mint_mutable_view(writer).expect("a fresh table mints a mutable view");
     SchemaHash hit_hashes[N];
     for (uint32_t i = 0; i < N; i++) {
         const uint64_t h = 0x9E3779B97F4A7C15ULL * (i + 1);
         hit_hashes[i] = SchemaHash{h};
         const auto id = static_cast<CKernelId>(1 + (i % (static_cast<uint32_t>(CKernelId::NUM_KERNELS) - 1)));
-        const bool was_registered = table.register_op(mutable_view, hit_hashes[i], id);
+        const bool was_registered = table.register_op(writer, mutable_view, hit_hashes[i], id);
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }
 

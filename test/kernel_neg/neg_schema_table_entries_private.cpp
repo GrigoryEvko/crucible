@@ -6,10 +6,12 @@
 // private, so no such write compiles.
 
 #include <crucible/SchemaTable.h>
+#include <fixy/Ctx.h>
 
 int main() {
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     crucible::SchemaTable table;
-    table.seal();
+    table.seal(test);
     table.entries_.clear();
     return 0;
 }

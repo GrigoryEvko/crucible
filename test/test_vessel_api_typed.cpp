@@ -495,13 +495,13 @@ void test_schema_name_typed() {
     for (const crucible::SchemaTable::MutableView& view : crucible::global_schema_table().mint_mutable_view(fg)) {
         const bool was_a_registered =
             crucible::register_schema_name(
-                ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{hash_a},
+                fg, ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{hash_a},
                 ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::test_op_a"}))
                 .is_ok();
         EXPECT(was_a_registered, "an open schema table must take the first registration");
         const bool was_b_registered =
             crucible::register_schema_name(
-                ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{hash_b},
+                fg, ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{hash_b},
                 ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::test_op_b"}))
                 .is_ok();
         EXPECT(was_b_registered, "an open schema table must take the second registration");

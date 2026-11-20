@@ -155,14 +155,14 @@ int main() {
         CRUCIBLE_TEST_ASSERT(test, !t.is_sealed());
         const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
 
-        const bool was_registered = t.register_op(mv, SchemaHash{0x1}, CKernelId::GEMM_MM);
+        const bool was_registered = t.register_op(kTest, mv, SchemaHash{0x1}, CKernelId::GEMM_MM);
         CRUCIBLE_TEST_ASSERT(test, was_registered);
         CRUCIBLE_TEST_ASSERT(test, t.count() == 1);
 
-        t.seal();
+        t.seal(kTest);
         CRUCIBLE_TEST_ASSERT(test, t.is_sealed());
         // Sealing twice leaves the table sealed rather than unsealing it.
-        t.seal();
+        t.seal(kTest);
         CRUCIBLE_TEST_ASSERT(test, t.is_sealed());
 
         // A sealed table mints no mutable view, in every build mode.
@@ -170,9 +170,9 @@ int main() {
 
         // A view minted before the seal proves only that the table was open
         // then.  Its write after the seal is refused and changes nothing.
-        const bool was_added_after_seal = t.register_op(mv, SchemaHash{0x3}, CKernelId::SDPA);
+        const bool was_added_after_seal = t.register_op(kTest, mv, SchemaHash{0x3}, CKernelId::SDPA);
         CRUCIBLE_TEST_ASSERT(test, !was_added_after_seal);
-        const bool was_replaced_after_seal = t.register_op(mv, SchemaHash{0x1}, CKernelId::SDPA);
+        const bool was_replaced_after_seal = t.register_op(kTest, mv, SchemaHash{0x1}, CKernelId::SDPA);
         CRUCIBLE_TEST_ASSERT(test, !was_replaced_after_seal);
         CRUCIBLE_TEST_ASSERT(test, t.count() == 1);
         CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x1}) == CKernelId::GEMM_MM);
@@ -184,7 +184,7 @@ int main() {
         CRUCIBLE_TEST_ASSERT(test, t.count() == 0);
 
         const auto mv_after_clear = t.mint_mutable_view(kVigilForeground).expect("a cleared table is open");
-        const bool was_registered_after_clear = t.register_op(mv_after_clear, SchemaHash{0x2}, CKernelId::SDPA);
+        const bool was_registered_after_clear = t.register_op(kTest, mv_after_clear, SchemaHash{0x2}, CKernelId::SDPA);
         CRUCIBLE_TEST_ASSERT(test, was_registered_after_clear);
         CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x2}) == CKernelId::SDPA);
     }
@@ -192,7 +192,7 @@ int main() {
     {
         CKernelTable t;
         const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-        const bool was_registered = t.register_op(mv, SchemaHash{0x42}, CKernelId::CONV2D);
+        const bool was_registered = t.register_op(kTest, mv, SchemaHash{0x42}, CKernelId::CONV2D);
         CRUCIBLE_TEST_ASSERT(test, was_registered);
         CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x42}) == CKernelId::CONV2D);
     }
@@ -202,11 +202,11 @@ int main() {
     {
         CKernelTable t;
         const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-        const bool was_mm_registered = t.register_op(mv, SchemaHash{0x111}, CKernelId::GEMM_MM);
+        const bool was_mm_registered = t.register_op(kTest, mv, SchemaHash{0x111}, CKernelId::GEMM_MM);
         CRUCIBLE_TEST_ASSERT(test, was_mm_registered);
-        const bool was_norm_registered = t.register_op(mv, SchemaHash{0x222}, CKernelId::LAYER_NORM);
+        const bool was_norm_registered = t.register_op(kTest, mv, SchemaHash{0x222}, CKernelId::LAYER_NORM);
         CRUCIBLE_TEST_ASSERT(test, was_norm_registered);
-        t.seal();
+        t.seal(kTest);
         CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x111}) == CKernelId::GEMM_MM);
         CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x222}) == CKernelId::LAYER_NORM);
         CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0xBAD}) == CKernelId::OPAQUE);
@@ -219,7 +219,7 @@ int main() {
     static_assert(std::is_same_v<decltype(global_ckernel_table()), CKernelTableSingleton>);
 
     // A registration after the seal is refused and changes nothing.
-    global_ckernel_table().value()->seal();
+    global_ckernel_table().value()->seal(kTest);
     const bool was_registered_after_seal =
         register_schema_hash(kVigilForeground, external_hash(HASH_UNKNOWN), CKernelId::SDPA);
     CRUCIBLE_TEST_ASSERT(test, !was_registered_after_seal);

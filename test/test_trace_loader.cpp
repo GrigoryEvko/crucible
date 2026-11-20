@@ -552,7 +552,7 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
     constexpr SchemaHash kHeldHash{0xBBBB444455556666ULL};
     constexpr SchemaHash kLaterHash{0xCCCC777788889999ULL};
     for (const SchemaTable::MutableView& view : global_schema_table().mint_mutable_view(kVigilForeground)) {
-        const bool was_registered = register_schema_name(kTestIo.cap().alloc, view, kHeldHash,
+        const bool was_registered = register_schema_name(kTestIo, kTestIo.cap().alloc, view, kHeldHash,
                                                          ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(
                                                              ::fixy::TextView{"aten::held"}))
                                         .is_ok();
@@ -602,7 +602,7 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
     constexpr SchemaHash kLaterHash{0xCCCC777788889999ULL};
     for (const SchemaTable::MutableView& view : global_schema_table().mint_mutable_view(kVigilForeground)) {
         for (uint64_t filler = 1; filler < SCHEMA_TABLE_CAP; ++filler) {
-            const bool was_registered = register_schema_name(kTestIo.cap().alloc, view, SchemaHash{filler},
+            const bool was_registered = register_schema_name(kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
                                                              ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(
                                                                  ::fixy::TextView{"aten::filler"}))
                                             .is_ok();
@@ -905,7 +905,7 @@ static void test_meta_bytes_break_no_claim_of_the_type() {
 static void test_names_on_a_sealed_table_are_skipped() {
     // The trace loads, and its names stay out of the sealed table.
     global_schema_table().clear(::foundation::effects::testing::test());
-    global_schema_table().seal();
+    global_schema_table().seal(kTest);
 
     auto buf = make_zero_op_header();
     append_le<uint32_t>(buf, 1);  // num_names

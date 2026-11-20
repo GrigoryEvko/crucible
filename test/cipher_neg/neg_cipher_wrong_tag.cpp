@@ -11,13 +11,13 @@
 #include <fixy/Ctx.h>
 
 int main() {
+    const ::fixy::TestRunnerCtx store_ctx{::foundation::effects::testing::test()};
     crucible::SchemaTable st;
-    st.seal();
+    st.seal(store_ctx);
     auto st_view = st.mint_sealed_view();
 
     // The store is never opened.  Overload resolution refuses the call
     // before the body of store could run.
-    const ::fixy::TestRunnerCtx store_ctx{::foundation::effects::testing::test()};
     crucible::Cipher c{::foundation::effects::testing::test().alloc};
     (void)c.store(store_ctx, st_view,
                   ::crucible::cipher::content_addressed_payload<::crucible::RegionNode>(::fixy::none));

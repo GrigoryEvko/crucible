@@ -32,6 +32,16 @@ namespace h = fixy::handle;
 
 namespace {
 
+// The context of each Once::call and Lazy::get_or_init.  A loser spins until
+// the winner ends, with no exit, so the context owns Div.
+constexpr ::fixy::TestRunnerCtx kSpin{::foundation::effects::testing::test()};
+
+template <typename Ctx>
+concept CallsOnceIn = requires(h::Once& once, Ctx const& ctx) { once.call(ctx, []() noexcept {}); };
+static_assert(CallsOnceIn<::fixy::TestRunnerCtx> && CallsOnceIn<::fixy::InitLoadCtx>);
+static_assert(!CallsOnceIn<::fixy::HotFgCtx>, "the hot path does not spin with no exit");
+static_assert(!CallsOnceIn<::fixy::ColdInitCtx>, "a context with no Div does not spin with no exit");
+
 struct Payload {
     int a = 0;
     double b = 0.0;
@@ -149,7 +159,7 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
                 // -Werror=noexcept then flags against a body that
                 // provably does not throw.  Lazy::get_or_init carries
                 // the same note in the header.
-                gate.call([&bodies]() noexcept { bodies.fetch_add(1, std::memory_order_acq_rel); });
+                gate.call(kSpin, [&bodies]() noexcept { bodies.fetch_add(1, std::memory_order_acq_rel); });
                 // Every loser leaves call() only after the winner's
                 // release store, so done() is true for all of them.
                 if (gate.done()) observed_done.fetch_add(1, std::memory_order_acq_rel);
@@ -188,7 +198,7 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
         return 1;
     }
 
-    int& first = lazy.get_or_init([&]() noexcept {
+    int& first = lazy.get_or_init(kSpin, [&]() noexcept {
         ++invocations;
         return seed + 1;
     });
@@ -199,7 +209,7 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
 
     // The second initializer must never run, and the reference must be
     // the same object rather than a second one holding the same value.
-    int& second = lazy.get_or_init([&]() noexcept {
+    int& second = lazy.get_or_init(kSpin, [&]() noexcept {
         ++invocations;
         return seed + 99999;
     });
@@ -233,7 +243,7 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
         std::vector<std::jthread> racers;
         for (int i = 0; i < kThreads; ++i) {
             racers.emplace_back([&lazy, &initializers, &wrong_value] {
-                const int& value = lazy.get_or_init([&initializers]() noexcept {
+                const int& value = lazy.get_or_init(kSpin, [&initializers]() noexcept {
                     initializers.fetch_add(1, std::memory_order_acq_rel);
                     return 4242;
                 });

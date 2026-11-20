@@ -4047,10 +4047,10 @@ crucible_neg_compile_test(neg_cipher_durable_handle_direct_construction
 # diagnostic before any runtime path can exist.
 crucible_neg_compile_test(neg_schema_register_with_sealed_view
   "cannot convert .sv. \\(type .fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Sealed>.\\) to type .const crucible::SchemaTable::MutableView&."
-  "neg_schema_register_with_sealed_view.cpp:14")
+  "neg_schema_register_with_sealed_view.cpp:16")
 crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
-  "cannot convert .fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Sealed>. to .const crucible::CKernelTable::MutableView&."
-  "initializing argument 1 of .bool crucible::CKernelTable::register_op\\(const MutableView&, crucible::SchemaHash, crucible::CKernelId\\).")
+  "cannot convert .sv. \\(type .fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Sealed>.\\) to type .const crucible::CKernelTable::MutableView&."
+  "neg_ckernel_register_with_sealed_view.cpp:20")
 # A field keeps the proof of a sealed view after the table is gone, so the
 # field audit refuses it.
 crucible_neg_compile_test(neg_ckernel_mint_sealed_view_in_field
@@ -4094,7 +4094,7 @@ crucible_neg_compile_test(neg_schema_mutable_view_unchecked
   "\\(type .foundation::core::Option<fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Mutable> >.\\) to type .const crucible::SchemaTable::MutableView&."
   "neg_schema_mutable_view_unchecked.cpp:12")
 crucible_neg_compile_test(neg_ckernel_mutable_view_unchecked
-  "cannot convert .foundation::core::Option<fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable> >."
+  "\\(type .foundation::core::Option<fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable> >.\\) to type .const crucible::CKernelTable::MutableView&."
   "neg_ckernel_mutable_view_unchecked.cpp:12")
 
 # Lock-free readers read a sealed table, so every write goes through the
@@ -4112,6 +4112,25 @@ crucible_neg_compile_test(neg_schema_table_clear_needs_test_context
 crucible_neg_compile_test(neg_ckernel_table_clear_needs_test_context
   "no matching function for call to"
   "crucible::CKernelTable::clear..")
+
+# The seal and each write section wait with no exit, so they take the context
+# of the caller (crucible/RegistrationSeal.h).  The seal takes a context that
+# owns Div.  A registration takes the context of a Vigil's producer claim or a
+# context that owns Div.  The first fixture of each pair names no context,
+# which the old forms took.  The second gives the cold init context, which
+# owns no Div.
+crucible_neg_compile_test(neg_schema_table_seal_no_context
+  "no matching function for call to .crucible::SchemaTable::seal\\(\\)."
+  "neg_schema_table_seal_no_context.cpp:15")
+crucible_neg_compile_test(neg_schema_table_seal_no_div
+  "no matching function for call to .crucible::SchemaTable::seal\\(const fixy::ColdInitCtx&\\)."
+  "satisfaction of .CtxMaySpinForSeal<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, ")
+crucible_neg_compile_test(neg_schema_register_no_context
+  "no matching function for call to .crucible::SchemaTable::register_name\\(foundation::core::Alloc, "
+  "neg_schema_register_no_context.cpp:19")
+crucible_neg_compile_test(neg_schema_register_no_div
+  "no matching function for call to .crucible::SchemaTable::register_name\\(const fixy::ColdInitCtx&, "
+  "satisfaction of .CtxMayEnterWriteSection<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, ")
 
 # The names and schemas in the two tables come from the ops that a Vigil
 # records, so a mutable view, and a trace load that registers names, ask

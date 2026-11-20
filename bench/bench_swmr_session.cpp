@@ -11,6 +11,7 @@
 // bare load.  A handle cannot be reassigned, so each session arm keeps its
 // session in a std::optional and re-seats it with emplace.
 
+#include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
 
@@ -102,8 +103,9 @@ template <typename Body>
 
 [[nodiscard]] bench::Report raw_load() {
     const cc::AtomicSnapshot<Payload> snapshot{payload_at(123)};
+    const ::fixy::TestRunnerCtx reader{::foundation::effects::testing::test()};
     return measure("raw AtomicSnapshot.load", [&] {
-        const Payload observed = snapshot.load();
+        const Payload observed = snapshot.load(reader);
         bench::do_not_optimize(observed);
     });
 }
@@ -111,8 +113,9 @@ template <typename Body>
 [[nodiscard]] bench::Report handle_load() {
     Swmr swmr{reader_root(), payload_at(123)};
     const auto reader = take_reader(swmr);
+    const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};
     return measure("SwmrSession.ReaderHandle.load", [&] {
-        const Payload observed = reader.load();
+        const Payload observed = reader.load(spin);
         bench::do_not_optimize(observed);
     });
 }

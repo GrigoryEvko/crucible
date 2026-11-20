@@ -104,6 +104,12 @@ inline void record_observation(ObservationSnapshot& sink, Observation observatio
     sink.publish(observation);
 }
 
-[[nodiscard]] inline Observation latest_observation(ObservationSnapshot const& sink) noexcept { return sink.load(); }
+// The read spins with no exit while a write is in flight, so the context owns
+// Div (AtomicSnapshot::load).
+template <class Ctx>
+    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
+[[nodiscard]] inline Observation latest_observation(Ctx const& ctx, ObservationSnapshot const& sink) noexcept {
+    return sink.load(ctx);
+}
 
 }  // namespace crucible::observe

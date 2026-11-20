@@ -5293,8 +5293,24 @@ fixy_neg_compile_test(neg_handle_publish_slot_pointer_pointee
 # Once::call and Lazy::get_or_init each refuse, at the door, an argument
 # their body cannot use as it must.
 fixy_neg_compile_test(neg_handle_once_call_not_invocable
-  "no matching function for call to .fixy::handle::Once::call\\(int\\)."
+  "no matching function for call to .fixy::handle::Once::call\\(const fixy::TestRunnerCtx&, int\\)."
   "the expression .is_invocable_v<F> \\[with F = int\\]. evaluated to .false.")
+# A loser of Once::call and a load of AtomicSnapshot spin with no exit, so
+# each takes a context that owns Div.  The first fixture of each pair names
+# no context, which the old forms took.  The second gives the foreground
+# context of the hot path, which owns no atom.
+fixy_neg_compile_test(neg_handle_once_call_no_context
+  "no matching function for call to .fixy::handle::Once::call\\(main\\(\\)::<lambda\\(\\)>\\)."
+  "neg_handle_once_call_no_context.cpp:17")
+fixy_neg_compile_test(neg_handle_once_call_no_div
+  "no matching function for call to .fixy::handle::Once::call\\(const fixy::HotFgCtx&, "
+  "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Div>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+fixy_neg_compile_test(neg_atomic_snapshot_load_no_context
+  "no matching function for call to .fixy::concurrent::AtomicSnapshot<long unsigned int>::load\\(\\) const."
+  "neg_atomic_snapshot_load_no_context.cpp:18")
+fixy_neg_compile_test(neg_atomic_snapshot_load_no_div
+  "no matching function for call to .fixy::concurrent::AtomicSnapshot<long unsigned int>::load\\(const fixy::HotFgCtx&\\) const."
+  "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Div>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 fixy_neg_compile_test(neg_handle_lazy_init_explicit_conversion
   "no matching function for call to .fixy::handle::Lazy<int>::get_or_init"
   "the expression .is_invocable_r_v<T, F> \\[with T = int; F = .*\\]. evaluated to .false.")

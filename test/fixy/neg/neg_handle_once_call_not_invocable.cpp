@@ -9,12 +9,14 @@
 // Expected diagnostic: Once::call has no viable candidate, and the note
 // names the is_invocable_v<F> check.
 
+#include <fixy/Ctx.h>
 #include <fixy/handle/Once.h>
 
 namespace h = fixy::handle;
 
 int main() {
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     h::Once once{};
-    once.call(42);
+    once.call(test, 42);
     return 0;
 }

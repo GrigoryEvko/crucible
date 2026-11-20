@@ -30,6 +30,16 @@ namespace {
 using ::fixy::concurrent::AtomicSnapshot;
 using ::fixy::concurrent::SnapshotValue;
 
+// The context of each load.  A load spins with no exit while a write is in
+// flight, so its context owns Div, and the test context owns Div.
+constexpr ::fixy::TestRunnerCtx kReader{::foundation::effects::testing::test()};
+
+template <typename Ctx>
+concept LoadsIn = requires(AtomicSnapshot<std::uint64_t> const& snapshot, Ctx const& ctx) { snapshot.load(ctx); };
+static_assert(LoadsIn<::fixy::TestRunnerCtx> && LoadsIn<::fixy::BgLoadCtx>);
+static_assert(!LoadsIn<::fixy::HotFgCtx>, "the hot path does not spin with no exit");
+static_assert(!LoadsIn<::fixy::BgDrainCtx>, "a context with no Div does not spin with no exit");
+
 int total_passed = 0;
 int total_failed = 0;
 
@@ -104,7 +114,7 @@ static_assert(SnapshotValue<std::uint8_t>);
 void test_default_construction() {
     AtomicSnapshot<TestPayload> snap;
 
-    const auto v = snap.load();
+    const auto v = snap.load(kReader);
     CRUCIBLE_REQUIRE(v.value == 0);
     CRUCIBLE_REQUIRE(v.value_xor_magic == 0);
     CRUCIBLE_REQUIRE(v.value_again == 0);
@@ -119,7 +129,7 @@ void test_initial_value_ctor() {
     const auto initial = TestPayload::from(42);
     AtomicSnapshot<TestPayload> snap{initial};
 
-    const auto v = snap.load();
+    const auto v = snap.load(kReader);
     CRUCIBLE_REQUIRE(v.value == 42);
     CRUCIBLE_REQUIRE(v.is_consistent());
     CRUCIBLE_REQUIRE(snap.version() == 1);  // the constructor counts as one publish
@@ -131,7 +141,7 @@ void test_roundtrip_single_thread() {
     for (std::uint64_t i = 1; i <= 100; ++i) {
         snap.publish(TestPayload::from(i));
 
-        const auto v = snap.load();
+        const auto v = snap.load(kReader);
         CRUCIBLE_REQUIRE(v.is_consistent());
         CRUCIBLE_REQUIRE(v.value == i);
         CRUCIBLE_REQUIRE(snap.version() == i);
@@ -186,7 +196,7 @@ void test_stress_multithread() {
                 // The parity of the counter alternates the two read
                 // paths, so both are exercised.
                 if ((total_loads.fetch_add(1, std::memory_order_acq_rel) & 1u) != 0u) {
-                    const auto v = snap.load();
+                    const auto v = snap.load(kReader);
                     if (!v.is_consistent()) torn_reads.fetch_add(1, std::memory_order_acq_rel);
                     if (v.value < last_value) {
                         stale_reads.fetch_add(1, std::memory_order_acq_rel);

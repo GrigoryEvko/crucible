@@ -5,13 +5,15 @@
 // table is sealed, no call reaches register_name.
 
 #include <crucible/SchemaTable.h>
+#include <fixy/Ctx.h>
 
 int main() {
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     crucible::SchemaTable t;
-    t.seal();
+    t.seal(test);
     auto sv = t.mint_sealed_view();
 
-    t.register_name(::foundation::effects::testing::test().alloc, sv, crucible::SchemaHash{0x42},
+    t.register_name(test, ::foundation::effects::testing::test().alloc, sv, crucible::SchemaHash{0x42},
                     ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::mm"}));
     return 0;
 }

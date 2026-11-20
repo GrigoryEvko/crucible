@@ -5,6 +5,8 @@
 
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <atomic>
@@ -26,6 +28,12 @@ namespace fixy::handle {
 // pthread_once, which parks a losing thread in the kernel.  The losers
 // below spin instead, because the winner runs a startup registration
 // and the wait is short.
+//
+// A loser spins until the winner ends, with no exit: a winner that never
+// ends its body leaves each loser in the spin.  A spin with no exit carries
+// Div (foundation/effects/Effect.h), so call and get_or_init take the context
+// of the caller, and the context owns Div.  The context of the hot path owns
+// no atom.
 
 class Once : ::foundation::Pinned<Once> {
     alignas(64) std::atomic<std::uint8_t> state_{0};
@@ -33,10 +41,10 @@ class Once : ::foundation::Pinned<Once> {
 public:
     constexpr Once() noexcept = default;
 
-    template <typename F>
-    void call(F&& f) noexcept(noexcept(std::forward<F>(f)()))
-        requires std::is_invocable_v<F>
-    {
+    template <typename Ctx, typename F>
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
+              && std::is_invocable_v<F>
+    void call(Ctx const& /*ctx*/, F&& f) noexcept(noexcept(std::forward<F>(f)())) {
         std::uint8_t expected = 0;
         if (state_.compare_exchange_strong(expected, 1, std::memory_order_acq_rel, std::memory_order_acquire)) {
             std::forward<F>(f)();
@@ -93,16 +101,16 @@ public:
         }
     }
 
-    template <typename F>
-    [[nodiscard]] T& get_or_init(F&& f) noexcept
-        requires std::is_invocable_r_v<T, F>
-    {
+    template <typename Ctx, typename F>
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
+              && std::is_invocable_r_v<T, F>
+    [[nodiscard]] T& get_or_init(Ctx const& ctx, F&& f) noexcept {
         // Exceptions are off for the build, so no path here throws.
         // Both specifiers are unconditional rather than derived from F.
         // A derived one reads false for a lambda whose call operator is
         // not itself declared noexcept, and the warning that infers
         // from the body then flags the mismatch.
-        once_.call([&]() noexcept { ::new(static_cast<void*>(storage_.data())) T(std::forward<F>(f)()); });
+        once_.call(ctx, [&]() noexcept { ::new(static_cast<void*>(storage_.data())) T(std::forward<F>(f)()); });
         return *storage_ptr_();
     }
 

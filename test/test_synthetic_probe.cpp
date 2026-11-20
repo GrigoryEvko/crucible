@@ -77,8 +77,8 @@ static void test_register_and_record_success() {
     CRUCIBLE_TEST_ASSERT(kTest, stats.bytes_transferred == 256);
     CRUCIBLE_TEST_ASSERT(kTest, stats.last_latency_ns == 11000);
     CRUCIBLE_TEST_ASSERT(kTest, stats.last_sequence == 9);
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         observe::latest_observation(observations).kind == observe::ObservationKind::BitsTransferred);
+    CRUCIBLE_TEST_ASSERT(kTest, observe::latest_observation(kTest, observations).kind
+                                    == observe::ObservationKind::BitsTransferred);
     ::fixy::check::pass(kTest, "  test_register_and_record_success: PASSED\n");
 }
 

@@ -57,8 +57,13 @@ struct synth_writer {
     void publish(int const&) noexcept {}
 };
 
+// A reader whose load spins with no exit takes a context that owns Div, so
+// its load is a template over the context.
 struct synth_reader {
-    [[nodiscard]] int load() const noexcept { return 0; }
+    template <class Ctx>
+    [[nodiscard]] int load(Ctx const&) const noexcept {
+        return 0;
+    }
 };
 
 struct synth_hybrid {
@@ -68,7 +73,10 @@ struct synth_hybrid {
 
 struct synth_swmr_hybrid {
     void publish(int const&) noexcept {}
-    [[nodiscard]] int load() const noexcept { return 0; }
+    template <class Ctx>
+    [[nodiscard]] int load(Ctx const&) const noexcept {
+        return 0;
+    }
 };
 
 // ── the real channel ────────────────────────────────────────────────

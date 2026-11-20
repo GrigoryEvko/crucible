@@ -106,7 +106,7 @@ public:
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsBpfLoad<Ctx>
     [[nodiscard]] bool open_and_load(Ctx const& ctx, const LoadSpec& spec) noexcept {
-        install_libbpf_log_cb_once();
+        install_libbpf_log_cb_once(ctx);
 
         bpf_object_open_opts opts{};
         opts.sz = sizeof(opts);

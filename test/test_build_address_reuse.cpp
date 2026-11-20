@@ -472,8 +472,8 @@ void test_unknown_storage_of_another_period_is_a_new_input() {
 int main() {
     // The kernel classification of a build reads the global tables, which
     // start() seals.  These tests build without start(), so they seal here.
-    crucible::global_schema_table().seal();
-    crucible::global_ckernel_table().value()->seal();
+    crucible::global_schema_table().seal(kTest);
+    crucible::global_ckernel_table().value()->seal(kTest);
     test_reused_address_keeps_the_hash();
     test_reused_address_gets_a_new_slot();
     test_view_at_an_offset_reads_its_base();

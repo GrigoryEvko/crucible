@@ -946,8 +946,8 @@ void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trac
                      "a start after stop names the trace ring of the first start");
     CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(meta_log, trace_meta_log),
                      "a start after stop names the metadata log of the first start");
-    global_schema_table().seal();
-    global_ckernel_table().value()->seal();
+    global_schema_table().seal(startup);
+    global_ckernel_table().value()->seal(startup);
     if (!ring.has_value()) ring.set(&trace_ring);
     if (!meta_log.has_value()) meta_log.set(&trace_meta_log);
     rank = rank_;

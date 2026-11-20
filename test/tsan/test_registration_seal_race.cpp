@@ -133,7 +133,7 @@ struct SchemaRace {
 
     [[nodiscard]] static bool register_one(Table& table, Table::MutableView const& view, crucible::SchemaHash hash) {
         return table
-            .register_name(::foundation::effects::testing::test().alloc, view, hash,
+            .register_name(kTest, ::foundation::effects::testing::test().alloc, view, hash,
                            ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::race"}))
             .is_ok();
     }
@@ -156,7 +156,7 @@ struct KernelRace {
     using Table = crucible::CKernelTable;
 
     [[nodiscard]] static bool register_one(Table& table, Table::MutableView const& view, crucible::SchemaHash hash) {
-        return table.register_op(view, hash, crucible::CKernelId::GEMM_MM);
+        return table.register_op(kTest, view, hash, crucible::CKernelId::GEMM_MM);
     }
 
     [[nodiscard]] static uint32_t read_sealed(Table const& table, uint32_t round) {
@@ -217,7 +217,7 @@ template <typename Race>
             auto& state = rounds[round];
             arrive_and_wait(state.start);
             pause_for(seal_delay_of(round));
-            state.table.seal();
+            state.table.seal(kTest);
             state.count_at_seal = state.table.count();
         }
     }};

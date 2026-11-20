@@ -11,6 +11,7 @@
 // Expected diagnostic: get_or_init has no viable candidate, and the note
 // names the is_invocable_r_v<T, F> check.
 
+#include <fixy/Ctx.h>
 #include <fixy/handle/Once.h>
 
 namespace h = fixy::handle;
@@ -22,6 +23,7 @@ struct ExplicitCode {
 }  // namespace
 
 int main() {
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     h::Lazy<int> lazy{};
-    return lazy.get_or_init([]() noexcept { return ExplicitCode{}; });
+    return lazy.get_or_init(test, []() noexcept { return ExplicitCode{}; });
 }

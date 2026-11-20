@@ -61,7 +61,7 @@ int main() {
     // The controls: a read after the build, and a product and a sum at the
     // bound.
     ::fixy::handle::Lazy<int> lazy{};
-    CRUCIBLE_TEST_ASSERT(test, lazy.get_or_init([] noexcept { return 7; }) == 7 && lazy.get() == 7);
+    CRUCIBLE_TEST_ASSERT(test, lazy.get_or_init(test, [] noexcept { return 7; }) == 7 && lazy.get() == 7);
     const fl::Rational least{1, opaque(fl::Rational::MAX_SAFE_MAGNITUDE)};
     CRUCIBLE_TEST_ASSERT(test, fl::FractionalLattice::mul(least, fl::FractionalLattice::top()) == least);
     const fl::Rational half = opaque(fl::Rational{1, 2});

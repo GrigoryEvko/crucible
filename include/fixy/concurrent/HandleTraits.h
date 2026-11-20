@@ -7,7 +7,9 @@
 // its reader reads with load.  Each predicate also recovers the payload
 // type, which is why detection goes through the address of the member
 // rather than through a call expression: a call needs the payload type up
-// front, and recovering it is the point.
+// front, and recovering it is the point.  A load that waits takes only a
+// context, so a call with a witness context names no payload, and the reader
+// pole also reads that shape from such a call.
 //
 // The predicates sit here, beside the channels whose handles they
 // examine, under the plain names.
@@ -18,6 +20,7 @@
 // which is the whole content.  A fold would parameterize over exactly
 // the part that carries the meaning.
 
+#include <fixy/Ctx.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/core/Choice.h>
 #include <foundation/effects/Effect.h>
@@ -25,6 +28,7 @@
 #include <concepts>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace fixy::concurrent {
 
@@ -157,6 +161,16 @@ struct publish_shape<T, std::void_t<decltype(&T::publish)>> {
     using payload = typename decomp::payload;
 };
 
+// ── the reader pole: P load() const, or P load(ctx) const ───────────
+//
+// A reader whose load waits for nothing has the plain shape.  The load of a
+// seqlock spins with no exit while a write is in flight
+// (fixy/concurrent/AtomicSnapshot.h), so that reader takes a context that
+// owns Div, and its load is a template over that context.  The address of a
+// template names no one function, so the second shape is read from a call on
+// a const reader with a witness context that owns Div.  The payload is the
+// type of the result.
+
 template <typename M>
 struct load_signature_decomp {
     static constexpr bool matches = false;
@@ -176,17 +190,38 @@ struct load_signature_decomp<P (C::*)() const noexcept> {
 };
 
 template <typename T, typename = void>
-struct load_shape {
+struct plain_load_shape {
     static constexpr bool matches = false;
     using payload = void;
 };
 
 template <typename T>
-struct load_shape<T, std::void_t<decltype(&T::load)>> {
-    using mptr_t = decltype(&T::load);
-    using decomp = load_signature_decomp<mptr_t>;
+struct plain_load_shape<T, std::void_t<decltype(&T::load)>> {
+    using decomp = load_signature_decomp<decltype(&T::load)>;
     static constexpr bool matches = decomp::matches && !std::is_void_v<typename decomp::payload>;
     using payload = typename decomp::payload;
+};
+
+using load_witness_ctx = ::fixy::BgLoadCtx;
+
+template <typename T, typename = void>
+struct ctx_load_shape {
+    static constexpr bool matches = false;
+    using payload = void;
+};
+
+template <typename T>
+struct ctx_load_shape<T,
+                      std::void_t<decltype(std::declval<T const&>().load(std::declval<load_witness_ctx const&>()))>> {
+    using payload = decltype(std::declval<T const&>().load(std::declval<load_witness_ctx const&>()));
+    static constexpr bool matches = !std::is_void_v<payload>;
+};
+
+template <typename T>
+struct load_shape {
+    static constexpr bool matches = plain_load_shape<T>::matches || ctx_load_shape<T>::matches;
+    using payload = std::conditional_t<plain_load_shape<T>::matches, typename plain_load_shape<T>::payload,
+                                       typename ctx_load_shape<T>::payload>;
 };
 
 // ── the exclusions ──────────────────────────────────────────────────
@@ -212,11 +247,21 @@ struct has_publish : std::false_type {};
 template <typename T>
 struct has_publish<T, std::void_t<decltype(&T::publish)>> : std::true_type {};
 
+// A member named load of any shape: a plain member, or a load of the reader
+// pole that is a template over its context.  The probe is part of has_load,
+// and the armed cell of has_load covers it.
 template <typename T, typename = void>
-struct has_load : std::false_type {};
+struct load_member_probe {
+    static constexpr bool found = false;
+};
 
 template <typename T>
-struct has_load<T, std::void_t<decltype(&T::load)>> : std::true_type {};
+struct load_member_probe<T, std::void_t<decltype(&T::load)>> {
+    static constexpr bool found = true;
+};
+
+template <typename T>
+struct has_load : std::bool_constant<load_member_probe<T>::found || ctx_load_shape<T>::matches> {};
 
 }  // namespace detail
 

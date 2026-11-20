@@ -9,7 +9,8 @@
 
 int main() {
     crucible::SchemaTable table;
-    table.register_name(::foundation::effects::testing::test().alloc,
+    table.register_name(::foundation::effects::testing::foreground<crucible::Vigil>(),
+                        ::foundation::effects::testing::test().alloc,
                         table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>()),
                         crucible::SchemaHash{0x42},
                         ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::mm"}));

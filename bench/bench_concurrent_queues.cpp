@@ -34,6 +34,7 @@
 
 #include <crucible/TraceRing.h>
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
 #include <fixy/concurrent/SpscRing.h>
 
@@ -165,8 +166,11 @@ int main() {
         // ── AtomicSnapshot: load (reader-only, no writer) ─────────────
         [&] {
             auto snap = std::make_unique<Snap>(42ULL);
+            // The load spins with no exit while a write is in flight, so it
+            // takes a context that owns Div.
+            const ::fixy::TestRunnerCtx reader{::foundation::effects::testing::test()};
             return bench::run("atomic_snapshot.load (uncontended)", [&] {
-                const auto v = snap->load();
+                const auto v = snap->load(reader);
                 bench::do_not_optimize(v);
             });
         }(),

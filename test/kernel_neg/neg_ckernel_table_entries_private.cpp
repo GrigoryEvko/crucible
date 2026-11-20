@@ -6,10 +6,12 @@
 // array is private, so no such write compiles.
 
 #include <crucible/CKernel.h>
+#include <fixy/Ctx.h>
 
 int main() {
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     crucible::CKernelTable table;
-    table.seal();
+    table.seal(test);
     table.entries_.clear();
     return 0;
 }

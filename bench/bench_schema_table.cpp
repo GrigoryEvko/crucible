@@ -22,10 +22,12 @@ int main() {
 
     constexpr uint32_t N = 250;
     SchemaTable table{};
-    // The view asks for the context of a Vigil's producer claim.  The bench
-    // uses no Vigil, so it takes that context from the test door.
-    const auto mutable_view = table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>())
-                                  .expect("a fresh table mints a mutable view");
+    // The view and each registration ask for the context of a Vigil's
+    // producer claim.  The bench uses no Vigil, so it takes that context from
+    // the test door.  The bench has one writer, so the writer of the claim
+    // takes the section with one compare-exchange.
+    constexpr crucible::VigilFgCtx writer = ::foundation::effects::testing::foreground<crucible::Vigil>();
+    const auto mutable_view = table.mint_mutable_view(writer).expect("a fresh table mints a mutable view");
     SchemaHash hashes[N];
     for (uint32_t i = 0; i < N; i++) {
         const uint64_t h = 0x9E3779B97F4A7C15ULL * (i + 1);
@@ -35,7 +37,7 @@ int main() {
             ::fixy::format(name, "aten::op{}", i).expect("aten::op and a number below 250 fit in 16 characters");
         const bool was_registered =
             table
-                .register_name(::foundation::effects::testing::test().alloc, mutable_view, hashes[i],
+                .register_name(writer, ::foundation::effects::testing::test().alloc, mutable_view, hashes[i],
                                ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name_view))
                 .is_ok();
         CRUCIBLE_FATAL_INVARIANT(was_registered);

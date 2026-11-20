@@ -204,7 +204,13 @@ public:
         ReaderHandle&
         operator=(ReaderHandle&&) = delete("SwmrSession::ReaderHandle share lifetime is fixed at construction");
 
-        [[nodiscard]] T load() const noexcept { return session_->snapshot_.load(); }
+        // The load spins with no exit while a write is in flight, so the
+        // context owns Div (AtomicSnapshot::load).  try_load does not wait.
+        template <class Ctx>
+            requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
+        [[nodiscard]] T load(Ctx const& ctx) const noexcept {
+            return session_->snapshot_.load(ctx);
+        }
 
         [[nodiscard]] ::fixy::Option<T> try_load() const noexcept { return session_->snapshot_.try_load(); }
 

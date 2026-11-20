@@ -186,10 +186,12 @@ inline constexpr ::fixy::FixedArray<std::byte, 4> TRACE_MAGIC{std::byte{'C'}, st
 // The gate of a load.  The load opens a file and reads it, and each of the
 // two can wait on the file system, so the context owns IO and Block.  The
 // load puts the arrays of the trace on the heap, so the context owns Alloc.
+// A name registration spins in the write section of the table, so it owns Div.
 template <class Ctx>
 concept CtxFitsTraceLoad = ::foundation::effects::IsExecCtx<Ctx>
                         && ::fixy::fs::CtxFitsFileMint<Ctx, ::fixy::fs::read_only> && ::fixy::fs::CtxAdmitsFs<Ctx>
-                        && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Alloc>;
+                        && ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::Alloc,
+                                                               ::foundation::effects::Effect::Div>;
 
 namespace detail {
 
@@ -762,7 +764,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
             // names the name of each of the two.
             const SchemaRegistration registration = schema_table_view.match(
                 [&](SchemaTable::MutableView const& view) {
-                    return register_schema_name(io.cap().alloc, view, SchemaHash{schema_hash_raw}, name);
+                    return register_schema_name(io, io.cap().alloc, view, SchemaHash{schema_hash_raw}, name);
                 },
                 [] noexcept { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
             if (registration.is_err()) {

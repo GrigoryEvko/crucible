@@ -13,11 +13,13 @@
 // SealedContainer.
 
 #include <crucible/CKernel.h>
+#include <fixy/Ctx.h>
 #include <fixy/ScopedView.h>
 
 [[maybe_unused]] static auto anchor_sealed_view_mint() {
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     crucible::CKernelTable table;
-    table.seal();
+    table.seal(test);
     return table.mint_sealed_view();
 }
 

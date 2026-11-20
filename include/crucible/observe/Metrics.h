@@ -80,7 +80,13 @@ public:
     RuntimeMetricsRoleReader&
     operator=(RuntimeMetricsRoleReader&&) = delete("the share lifetime is fixed at construction");
 
-    [[nodiscard]] RuntimeMetricsSample load() const noexcept { return handle_.load(); }
+    // The load spins with no exit while the writer publishes, so the context
+    // owns Div (AtomicSnapshot::load).
+    template <class Ctx>
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
+    [[nodiscard]] RuntimeMetricsSample load(Ctx const& ctx) const noexcept {
+        return handle_.load(ctx);
+    }
     // The sample, or no value while the writer publishes.
     [[nodiscard]] ::fixy::Option<RuntimeMetricsSample> try_load() const noexcept { return handle_.try_load(); }
     [[nodiscard]] std::uint64_t version() const noexcept { return handle_.version(); }

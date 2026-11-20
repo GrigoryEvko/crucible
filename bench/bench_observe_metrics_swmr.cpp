@@ -52,7 +52,8 @@ int main() {
             bench::do_not_optimize(seq);
         })};
 
-    auto observed = reader.load();
+    const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};
+    auto observed = reader.load(spin);
 
     bench::emit_reports_text(reports.view());
     std::printf("\nbench_observe_metrics_swmr:\n");

@@ -76,9 +76,13 @@ public:
 
     // Waits for a registration that is in progress, then seals.  A reader
     // that observes the seal observes every registered entry
-    // (crucible/RegistrationSeal.h gives the ordering argument).
-    void seal() noexcept {
-        seal_.seal();
+    // (crucible/RegistrationSeal.h gives the ordering argument).  The wait
+    // has no exit while the writer stays in the section, so the context owns
+    // Div.
+    template <typename Ctx>
+        requires CtxMaySpinForSeal<Ctx>
+    void seal(Ctx const& ctx) noexcept {
+        seal_.seal(ctx);
         CRUCIBLE_POST(0, seal_.is_sealed());
     }
 
@@ -132,9 +136,14 @@ public:
     //
     // The view names the table it proves, and a view of another table
     // proves nothing about this one, so that is checked in every build mode.
-    [[nodiscard]] bool register_op(MutableView const& view, SchemaHash schema_hash, CKernelId id) {
+    // The context of the writer picks the entry of the write section
+    // (RegistrationSeal::with_write_section): the context of a Vigil's
+    // producer claim, or a context that owns Div.
+    template <typename Ctx>
+        requires CtxMayEnterWriteSection<Ctx>
+    [[nodiscard]] bool register_op(Ctx const& writer, MutableView const& view, SchemaHash schema_hash, CKernelId id) {
         CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
-        return seal_.with_write_section([&] { write_op_(schema_hash, id); });
+        return seal_.with_write_section(writer, [&] { write_op_(schema_hash, id); });
     }
 
     // gnu::pure lets the optimiser cache a result across calls. That is sound
@@ -206,7 +215,7 @@ CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline CKernelTableSingleton global_ckernel_
                                                CKernelId id) {
     CKernelTable& table = *global_ckernel_table().value();
     for (const CKernelTable::MutableView& view : table.mint_mutable_view(fg)) {
-        return table.register_op(view, schema_hash.value(), id);
+        return table.register_op(fg, view, schema_hash.value(), id);
     }
     return false;
 }

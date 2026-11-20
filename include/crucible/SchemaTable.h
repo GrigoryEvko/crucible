@@ -82,9 +82,13 @@ public:
 
     // Waits for a registration that is in progress, then seals.  A reader
     // that observes the seal observes every registered entry
-    // (crucible/RegistrationSeal.h gives the ordering argument).
-    void seal() noexcept {
-        seal_.seal();
+    // (crucible/RegistrationSeal.h gives the ordering argument).  The wait
+    // has no exit while the writer stays in the section, so the context owns
+    // Div.
+    template <typename Ctx>
+        requires CtxMaySpinForSeal<Ctx>
+    void seal(Ctx const& ctx) noexcept {
+        seal_.seal(ctx);
         CRUCIBLE_POST(0, seal_.is_sealed());
     }
 
@@ -153,16 +157,22 @@ public:
     // it gives the refusal collision or full.  An internal name comes from
     // the program itself, so each of the two is a defect, and it ends the
     // process with the reason.
-    template <SchemaNameSource Tag>
-    [[nodiscard]] SchemaRegistration register_name(::foundation::effects::Alloc allocation, MutableView const& view,
-                                                   SchemaHash hash, Name<Tag> const& name_tag) {
+    //
+    // The context of the writer picks the entry of the write section
+    // (RegistrationSeal::with_write_section): the context of a Vigil's
+    // producer claim, or a context that owns Div.
+    template <typename Ctx, SchemaNameSource Tag>
+        requires CtxMayEnterWriteSection<Ctx>
+    [[nodiscard]] SchemaRegistration register_name(Ctx const& writer, ::foundation::effects::Alloc allocation,
+                                                   MutableView const& view, SchemaHash hash,
+                                                   Name<Tag> const& name_tag) {
         CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
         const ::fixy::TextView name = name_tag.value();
         if (name.size() == 0) return ::fixy::Unit{};
         constexpr bool is_internal_name = std::same_as<Tag, ::fixy::tags::source::FromInternal>;
         ::fixy::Option<SchemaRefusal> refusal = ::fixy::none;
         const bool was_open =
-            seal_.with_write_section([&] { refusal = write_name_(allocation, hash, name, is_internal_name); });
+            seal_.with_write_section(writer, [&] { refusal = write_name_(allocation, hash, name, is_internal_name); });
         if (!was_open) return ::fixy::err(SchemaRefusal::sealed);
         return refusal.match([](SchemaRefusal why) noexcept { return SchemaRegistration{::fixy::err(why)}; },
                              [] noexcept { return SchemaRegistration{::fixy::Unit{}}; });
@@ -354,12 +364,14 @@ CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline SchemaTable& late_schema_table() {
 // The registration in the global table (SchemaTable::register_name).  It
 // gives the refusal sealed when the global table was sealed after the view
 // was minted, and then nothing is registered.  The copy of the name
-// allocates through the allocation capability of the caller.
-template <SchemaNameSource Tag>
-[[nodiscard]] inline SchemaRegistration register_schema_name(::foundation::effects::Alloc allocation,
+// allocates through the allocation capability of the caller.  The context of
+// the writer picks the entry of the write section (CtxMayEnterWriteSection).
+template <typename Ctx, SchemaNameSource Tag>
+    requires CtxMayEnterWriteSection<Ctx>
+[[nodiscard]] inline SchemaRegistration register_schema_name(Ctx const& writer, ::foundation::effects::Alloc allocation,
                                                              SchemaTable::MutableView const& view, SchemaHash hash,
                                                              SchemaTable::Name<Tag> const& name) {
-    return global_schema_table().register_name(allocation, view, hash, name);
+    return global_schema_table().register_name(writer, allocation, view, hash, name);
 }
 
 // True when a registration gave the refusal of a collision.
@@ -392,7 +404,7 @@ template <SchemaNameSource Tag>
                                                              SchemaTable::Name<Tag> const& name) {
     SchemaTable& global_table = global_schema_table();
     for (const SchemaTable::MutableView& global_view : global_table.mint_mutable_view(fg)) {
-        SchemaRegistration in_global = global_table.register_name(allocation, global_view, hash, name);
+        SchemaRegistration in_global = global_table.register_name(fg, allocation, global_view, hash, name);
         if (!is_sealed_refusal(in_global)) return in_global;
     }
     // Nothing seals the late table, so its view exists and no seal refuses
@@ -400,7 +412,7 @@ template <SchemaNameSource Tag>
     SchemaTable& late_table = late_schema_table();
     const SchemaTable::MutableView late_view =
         late_table.mint_mutable_view(fg).expect("nothing seals the late schema table, so it mints a mutable view");
-    SchemaRegistration in_late = late_table.register_name(allocation, late_view, hash, name);
+    SchemaRegistration in_late = late_table.register_name(fg, allocation, late_view, hash, name);
     CRUCIBLE_FATAL_INVARIANT(!is_sealed_refusal(in_late));
     return in_late;
 }

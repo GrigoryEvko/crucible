@@ -228,7 +228,8 @@ void attacks_end_the_process(::fixy::TestRunnerCtx const& test) {
     later_writer.publish(5);
     // True when the reader exists and loads the expected value.
     const auto loads = [](auto const& reader, int expected) noexcept {
-        return reader.match([expected](auto const& handle) noexcept { return handle.load() == expected; },
+        const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};
+        return reader.match([expected, &spin](auto const& handle) noexcept { return handle.load(spin) == expected; },
                             []() noexcept { return false; });
     };
     const auto reader = ses::mint_swmr_reader<Swmr>(session);

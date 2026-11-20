@@ -139,8 +139,8 @@ struct Work {
 // The kernel classification of a build reads the global tables, which
 // start() seals.  These tests build without start(), so they seal here.
 void seal_global_tables() {
-    crucible::global_schema_table().seal();
-    crucible::global_ckernel_table().value()->seal();
+    crucible::global_schema_table().seal(kTest);
+    crucible::global_ckernel_table().value()->seal(kTest);
 }
 
 }  // namespace

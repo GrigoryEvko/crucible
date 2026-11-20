@@ -69,6 +69,13 @@ struct Publisher {
 struct Loader {
     int load() const noexcept { return 0; }
 };
+// A load that waits with no exit takes a context that owns Div.
+struct ContextLoader {
+    template <class Ctx>
+    int load(Ctx const&) const noexcept {
+        return 0;
+    }
+};
 using BgCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg>>;
 using BgIoCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::IO>>;
 using NvEnd = sess::VendorPinned<::foundation::algebra::lattices::VendorBackend::NV, sess::End>;
@@ -310,7 +317,7 @@ struct foundation::contracts::armed_cell<::fixy::concurrent::detail::has_publish
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::concurrent::detail::has_load> {
-    using accepts = witnesses<w::Loader>;
+    using accepts = witnesses<w::Loader, w::ContextLoader>;
     using refuses = witnesses<int, w::Publisher, w::Plain>;
 };
 

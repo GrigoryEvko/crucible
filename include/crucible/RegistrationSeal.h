@@ -33,7 +33,20 @@
 //
 // The seal waits while a writer holds the section, and a writer waits while
 // another writer holds it.  One registration is a bounded, short piece of
-// work, so both waits spin with the pause instruction.  After each failed
+// work, so both waits spin with the pause instruction.  Each wait has no
+// exit while the holder of the section does not leave it, and a spin with
+// no exit carries Div (foundation/effects/Effect.h).  So the seal takes a
+// context that owns Div, and a writer takes one of two contexts:
+//
+//   - a context that owns Div, which spins while another writer holds the
+//     section
+//   - the context of a Vigil's producer claim (VigilFgCtx), which owns no
+//     atom.  Each production registration comes from that thread, and the
+//     claim lets one thread hold it at a time, so that writer meets no other
+//     writer.  It takes the section with one compare-exchange and no spin.
+//     A second writer in the section ends the process.
+//
+// After each failed
 // compare-exchange, a wait spins a number of pauses that doubles up to a
 // limit.  A compare-exchange that fails still takes the cache line, so
 // waiters that retry at once delay the release store of the writer in the
@@ -43,14 +56,27 @@
 // the writer in the section never gets the write lock, and the section
 // never closes.
 
+#include <crucible/ForegroundCtx.h>
 #include <fixy/Core.h>
 #include <foundation/Platform.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
+#include <concepts>
 #include <cstdint>
 #include <type_traits>
 
 namespace crucible {
+
+// A context that may wait with no exit: it owns Div.
+template <class Ctx>
+concept CtxMaySpinForSeal = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>;
+
+// A context that may enter the write section of a table: the context of a
+// Vigil's producer claim, the one writer of the process, or a context that
+// owns Div, which spins while another writer holds the section.
+template <class Ctx>
+concept CtxMayEnterWriteSection = std::same_as<std::remove_cvref_t<Ctx>, VigilFgCtx> || CtxMaySpinForSeal<Ctx>;
 
 class RegistrationSeal {
 public:
@@ -63,11 +89,21 @@ public:
 
     // Runs `write` while the table is open, with no other writer and no seal
     // in between.  Returns false, and does not run `write`, when the table
-    // is sealed.  The section closes even if `write` exits early.
-    template <typename Write>
-        requires std::is_invocable_r_v<void, Write&>
-    [[nodiscard]] bool with_write_section(Write&& write) noexcept(std::is_nothrow_invocable_v<Write&>) {
-        if (!enter_writer_()) return false;
+    // is sealed.  The section closes even if `write` exits early.  The
+    // context of the writer picks the entry: one compare-exchange for the
+    // writer of a Vigil's producer claim, and a spin for a context that owns
+    // Div.
+    template <typename Ctx, typename Write>
+        requires CtxMayEnterWriteSection<Ctx> && std::is_invocable_r_v<void, Write&>
+    [[nodiscard]] bool with_write_section(Ctx const& /*ctx*/,
+                                          Write&& write) noexcept(std::is_nothrow_invocable_v<Write&>) {
+        bool is_open = false;
+        if constexpr (std::same_as<Ctx, VigilFgCtx>) {
+            is_open = enter_sole_writer_();
+        } else {
+            is_open = enter_writer_();
+        }
+        if (!is_open) return false;
         struct Leave {
             RegistrationSeal& seal;
             ~Leave() { seal.phase_.store_release(Phase::Open); }
@@ -77,8 +113,11 @@ public:
     }
 
     // Seals the table.  Waits for a writer that holds the section, and seals
-    // one time: a second call finds Sealed and returns.
-    void seal() noexcept {
+    // one time: a second call finds Sealed and returns.  The wait has no
+    // exit while the writer stays in the section, so the context owns Div.
+    template <typename Ctx>
+        requires CtxMaySpinForSeal<Ctx>
+    void seal(Ctx const& /*ctx*/) noexcept {
         for (std::uint32_t pause_count = 1;; back_off_(pause_count)) {
             Phase const observed = swap_from_open_(Phase::Sealed);
             if (observed == Phase::Open || observed == Phase::Sealed) return;
@@ -122,7 +161,23 @@ private:
                    [](::fixy::CasRefusal<Phase> refusal) noexcept { return refusal.observed; });
     }
 
-    // Takes the section.  Returns false when the table is sealed.
+    // Takes the section for the one writer of the process, with one
+    // compare-exchange.  Returns false when the table is sealed.  A seal can
+    // land between the mint of the view and this call, and the exchange then
+    // reads Sealed.  Another writer in the section breaks the claim of one
+    // writer, so it ends the process.
+    [[nodiscard]] bool enter_sole_writer_() noexcept {
+        Phase const observed = swap_from_open_(Phase::Writing);
+        if (observed == Phase::Writing) [[unlikely]] {
+            ::fixy::fatal("two writers entered the write section of a table, but the writer of a Vigil's producer "
+                          "claim is the one writer of the process.  A writer on another thread takes a context that "
+                          "owns Div.");
+        }
+        return observed == Phase::Open;
+    }
+
+    // Takes the section, and spins while another writer holds it.  Returns
+    // false when the table is sealed.
     [[nodiscard]] bool enter_writer_() noexcept {
         for (std::uint32_t pause_count = 1;; back_off_(pause_count)) {
             Phase const observed = swap_from_open_(Phase::Writing);

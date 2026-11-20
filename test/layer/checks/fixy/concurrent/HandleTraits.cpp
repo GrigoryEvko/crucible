@@ -112,11 +112,30 @@ struct synthetic_writer {
     void publish(int const&) noexcept {}
 };
 
+// A reader whose load spins with no exit takes a context that owns Div, so
+// its load is a template over the context.
 struct synthetic_reader {
-    [[nodiscard]] int load() const noexcept { return 0; }
+    template <class Ctx>
+    [[nodiscard]] int load(Ctx const&) const noexcept {
+        return 0;
+    }
 };
 
 struct synthetic_swmr_hybrid {
+    void publish(int const&) noexcept {}
+    template <class Ctx>
+    [[nodiscard]] int load(Ctx const&) const noexcept {
+        return 0;
+    }
+};
+
+// A reader whose load waits for nothing has the plain shape.  A plain load
+// also keeps a publisher from the writer pole.
+struct synthetic_plain_load {
+    [[nodiscard]] int load() const noexcept { return 0; }
+};
+
+struct synthetic_plain_load_hybrid {
     void publish(int const&) noexcept {}
     [[nodiscard]] int load() const noexcept { return 0; }
 };
@@ -130,11 +149,15 @@ struct synthetic_by_value_publish {
 };
 
 struct synthetic_non_const_load {
-    [[nodiscard]] int load() noexcept { return 0; }
+    template <class Ctx>
+    [[nodiscard]] int load(Ctx const&) noexcept {
+        return 0;
+    }
 };
 
 struct synthetic_void_load {
-    void load() const noexcept {}
+    template <class Ctx>
+    void load(Ctx const&) const noexcept {}
 };
 
 struct synthetic_double_writer {
@@ -142,7 +165,10 @@ struct synthetic_double_writer {
 };
 
 struct synthetic_double_reader {
-    [[nodiscard]] double load() const noexcept { return 0.0; }
+    template <class Ctx>
+    [[nodiscard]] double load(Ctx const&) const noexcept {
+        return 0.0;
+    }
 };
 
 static_assert(is_swmr_writer_v<synthetic_writer>);
@@ -178,6 +204,9 @@ static_assert(!is_swmr_reader_v<synthetic_void_load>);
 static_assert(!is_swmr_reader_v<synthetic_producer>);
 static_assert(!is_swmr_reader_v<synthetic_value_pop>);
 static_assert(!is_swmr_reader_v<synthetic_reader*>);
+static_assert(is_swmr_reader_v<synthetic_plain_load>);
+static_assert(std::is_same_v<swmr_reader_value_t<synthetic_plain_load>, int>);
+static_assert(!is_swmr_writer_v<synthetic_plain_load_hybrid> && !is_swmr_reader_v<synthetic_plain_load_hybrid>);
 
 static_assert(std::is_same_v<swmr_writer_value_t<synthetic_writer>, int>);
 static_assert(std::is_same_v<swmr_writer_value_t<synthetic_double_writer>, double>);

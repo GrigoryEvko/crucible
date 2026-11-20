@@ -49,6 +49,8 @@
 #include <foundation/Platform.h>
 #include <foundation/diag/Tag.h>
 #include <foundation/diag/Runtime.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <concepts>
@@ -130,13 +132,22 @@ public:
 
     // Spins until it observes a coherent snapshot.
     //
+    // The spin has no exit while a write is in flight: a writer that stops
+    // inside publish leaves the counter odd, and the reader spins with no
+    // end.  A spin with no exit carries Div (foundation/effects/Effect.h), so
+    // the load takes the context of the caller, and the context owns Div.
+    // The context of the hot path owns no atom.  try_load is the read with no
+    // wait.
+    //
     // Acquire loads on the counter alone would not be enough.  Acquire
     // is one-way downward, so a plain copy could sink below the second
     // counter load.  The reader would then compare a stale pair while
     // reading fresh and possibly torn words.  Each word load is an
     // acquire load, so the second counter load cannot move before it, and
     // the copy is bracketed on both sides.
-    [[nodiscard]] T load() const noexcept {
+    template <class Ctx>
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
+    [[nodiscard]] T load(Ctx const& /*ctx*/) const noexcept {
         alignas(T) std::array<std::byte, sizeof(T)> buf{};
 
         for (;;) {

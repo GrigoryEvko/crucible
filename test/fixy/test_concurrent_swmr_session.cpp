@@ -119,7 +119,7 @@ void test_writer_publish_reader_loads_latest() {
     auto minted = ses::mint_swmr_reader<Swmr>(swmr);
     CRUCIBLE_REQUIRE(minted.is_some());
     const Swmr::ReaderHandle reader = std::move(minted).expect("the pool lends a share");
-    CRUCIBLE_REQUIRE(reader.load() == 42);
+    CRUCIBLE_REQUIRE(reader.load(kTest) == 42);
     CRUCIBLE_REQUIRE(reader.version() == writer.version());
     CRUCIBLE_REQUIRE(swmr.version() == writer.version());
 }
@@ -172,13 +172,13 @@ void test_late_reader_observes_latest_publish() {
     // gives its share back there.
     auto early = ses::mint_swmr_reader<Swmr>(swmr);
     CRUCIBLE_REQUIRE(early.is_some());
-    CRUCIBLE_REQUIRE(std::move(early).expect("the pool lends a share").load() == 3);
+    CRUCIBLE_REQUIRE(std::move(early).expect("the pool lends a share").load(kTest) == 3);
 
     writer.publish(99);
 
     auto late = ses::mint_swmr_reader<Swmr>(swmr);
     CRUCIBLE_REQUIRE(late.is_some());
-    CRUCIBLE_REQUIRE(std::move(late).expect("the pool lends a share").load() == 99);
+    CRUCIBLE_REQUIRE(std::move(late).expect("the pool lends a share").load(kTest) == 99);
 }
 
 // A moved-from handle keeps no binding, so the handle it moved to is the
@@ -192,14 +192,14 @@ void test_moved_handles_keep_their_channel() {
     auto reader = ses::mint_swmr_reader<Swmr>(swmr);
     CRUCIBLE_REQUIRE(reader.is_some());
     Swmr::ReaderHandle moved_reader = std::move(reader).expect("the pool lends a share");
-    CRUCIBLE_REQUIRE(moved_reader.load() == 6);
+    CRUCIBLE_REQUIRE(moved_reader.load(kTest) == 6);
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 1);
 
     // The release door gives the writer role and its token back, and the
     // token opens a new writer handle with no second claim.
     auto second_writer = ses::mint_swmr_writer<Swmr>(swmr, std::move(moved_writer).release());
     second_writer.publish(8);
-    CRUCIBLE_REQUIRE(moved_reader.load() == 8);
+    CRUCIBLE_REQUIRE(moved_reader.load(kTest) == 8);
     ::foundation::linear::drop(std::move(second_writer).release());
 }
 
@@ -241,7 +241,7 @@ void test_writer_publishes_1000_values_four_readers_observe_sequence() {
     for (std::uint64_t seq = 1; seq <= kPublishes; ++seq) {
         writer.publish(payload_at(seq));
         for (auto const& reader : readers) {
-            const SnapshotPayload observed = reader->load();
+            const SnapshotPayload observed = reader->load(kTest);
             CRUCIBLE_REQUIRE(observed.is_consistent());
             CRUCIBLE_REQUIRE(observed.seq == seq);
         }
@@ -274,7 +274,7 @@ void test_async_interleaving_never_observes_torn_or_reversed_state() {
             }
             std::uint64_t last = 0;
             while (!done.load(std::memory_order_acquire)) {
-                const SnapshotPayload observed = reader.load();
+                const SnapshotPayload observed = reader.load(kTest);
                 if (!observed.is_consistent() || observed.seq < last) {
                     failed.store(true, std::memory_order_release);
                     return;
@@ -282,7 +282,7 @@ void test_async_interleaving_never_observes_torn_or_reversed_state() {
                 last = observed.seq;
                 if ((idx & 1U) != 0U) CRUCIBLE_SPIN_PAUSE;
             }
-            const SnapshotPayload tail = reader.load();
+            const SnapshotPayload tail = reader.load(kTest);
             if (!tail.is_consistent() || tail.seq < last) {
                 failed.store(true, std::memory_order_release);
                 return;
@@ -320,7 +320,7 @@ void test_reader_exit_and_rejoin_updates_pool_and_observes_current() {
 
         for (std::uint64_t seq = 1; seq <= 100; ++seq) {
             writer.publish(payload_at(seq));
-            const SnapshotPayload observed = reader.load();
+            const SnapshotPayload observed = reader.load(kTest);
             CRUCIBLE_REQUIRE(observed.is_consistent());
             CRUCIBLE_REQUIRE(observed.seq == seq);
         }
@@ -335,7 +335,7 @@ void test_reader_exit_and_rejoin_updates_pool_and_observes_current() {
     CRUCIBLE_REQUIRE(rejoined.is_some());
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 1);
 
-    const SnapshotPayload observed = std::move(rejoined).expect("the pool lends a share").load();
+    const SnapshotPayload observed = std::move(rejoined).expect("the pool lends a share").load(kTest);
     CRUCIBLE_REQUIRE(observed.is_consistent());
     CRUCIBLE_REQUIRE(observed.seq == 150);
 }
@@ -365,7 +365,7 @@ void test_sixteen_readers_stress_latest_snapshot() {
             }
             std::uint64_t last = 0;
             for (std::uint64_t iter = 0; iter < kPublishes; ++iter) {
-                const SnapshotPayload observed = reader.load();
+                const SnapshotPayload observed = reader.load(kTest);
                 if (!observed.is_consistent() || observed.seq < last) {
                     failed.store(true, std::memory_order_release);
                     return;
