@@ -56,6 +56,7 @@
 #include <fixy/session/Handle.h>
 
 #include <foundation/NoObject.h>
+#include <foundation/core/Record.h>
 #include <foundation/reflect/Hash.h>
 
 #include <concepts>
@@ -280,13 +281,13 @@ class RecordingDoor final : ::foundation::NoObject<RecordingDoor> {
     }
 
     // Records the receive of a value, and gives the value and the recorder
-    // of the successor.  The transport form and the pole form of a receive
-    // both end here.
+    // of the successor in one Record.  The transport form and the pole form
+    // of a receive both end here.  A structured binding gives the two out.
     template <typename Inner, typename Value, typename Next>
     [[nodiscard]] static constexpr auto received_(Recorded<Inner>& recorder, Value value, Next next) {
         record_(recorder, detail::recording::event_for_recv<typename Inner::protocol::message_type>(recorder.self_,
                                                                                                     recorder.peer_));
-        return std::pair{std::move(value), wrap_(recorder, std::move(next))};
+        return ::foundation::core::Record{std::move(value), wrap_(recorder, std::move(next))};
     }
 
     template <typename Branches, typename Inner, std::size_t... Is>
