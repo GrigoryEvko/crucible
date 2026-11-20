@@ -5195,6 +5195,25 @@ fixy_neg_compile_test(neg_pipeline_dag_mint_stage_pack_mismatch
   "required for the satisfaction of .graph_stage_pack_is<Graph, Stages \\.\\.\\.>."
   "Graph = fixy::concurrent::StageGraph<fixy::concurrent::StagePack<fixy::concurrent::Stage<&pass_through")
 
+# The door of a loop (THE LOOP of fixy/concurrent/StageNet.h), each on a loop
+# of test/fixy/stage_loop_fakes.h with one wrong end: an end wired to the
+# wrong mailbox, a lock with a lost end, and a foreground that waits before
+# it records.  test_pipeline_dag.cpp admits each loop with the right end.
+fixy_neg_compile_test(neg_stage_loop_wrong_mailbox
+  "static assertion failed"
+  "liveness: channel 'channel 1' has 1 sends and 0 receives\\.  Each send has its receive\\."
+  "neg_stage_loop_wrong_mailbox\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_stage_loop_lost_lock_end
+  "static assertion failed"
+  "loop: the processes that write the lock 'lock 0': 1, the processes that read it and do not write it: 0\\."
+  "neg_stage_loop_lost_lock_end\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_stage_loop_waits_first
+  "static assertion failed"
+  "liveness: a cycle of waits holds no token: foreground receives 'channel 0' step 0 <- publish sends 'channel 0' step 0 <- publish receives 'channel 4' step 0"
+  "neg_stage_loop_waits_first\\.cpp:[0-9]+:[0-9]+: +required from here")
+
 # The child door of fixy/os/Process.h: the exit code, the abort and the
 # output of a child, an output larger than the report, a Child that no wait
 # takes, and the empty Child.  Only a context that owns the Test capability
