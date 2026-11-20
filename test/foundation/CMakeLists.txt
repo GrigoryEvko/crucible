@@ -1581,7 +1581,7 @@ foundation_neg_compile_test(neg_brand_root_mint_address
 # Erasure runs one way.
 foundation_neg_compile_test(neg_brand_erased_token_does_not_rebrand
   "no matching function for call to .foundation::permissions::Permission<neg_brand_erased_token_does_not_rebrand_types::Region, neg_brand_erased_token_does_not_rebrand_types::HeldBrand>::Permission\\("
-  "requires \\(is_same_v<Brand, foundation::brand::DefaultBrand>\\) && \\(IsFreshBrand<Other>\\)")
+  "no known conversion for argument 1 from .std::remove_reference<foundation::permissions::Permission<neg_brand_erased_token_does_not_rebrand_types::Region>&>::type.")
 
 # ── The row relation is closed ───────────────────────────────────────
 

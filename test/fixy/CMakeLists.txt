@@ -3207,10 +3207,10 @@ fixy_neg_compile_test(neg_sess_end_with_open_loan
   "the expression .!.perm_set_has_open_loan_v<PS>. .with PS = foundation::permissions::PermSet<fixy::session::LentOut<.unnamed.::Region, .unnamed.::RegionBrand> >")
 fixy_neg_compile_test(neg_sess_send_unheld_permission
   "no matching function for call to .mint_session<.anonymous.::Proto>"
-  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags \\.\\.\\.> >. \\[with Proto = fixy::session::Send<foundation::permissions::Permission<.*. Tags = \\{\\}\\]")
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tokens \\.\\.\\.> >. \\[with Proto = fixy::session::Send<foundation::permissions::Permission<.*. Tokens = \\{\\}\\]")
 fixy_neg_compile_test(neg_sess_mint_unselected_arm_sends_unheld_permission
   "no matching function for call to .mint_session<.anonymous.::Proto>"
-  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags \\.\\.\\.> >. \\[with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<.*. Tags = \\{\\}\\]")
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tokens \\.\\.\\.> >. \\[with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<.*. Tokens = \\{\\}\\]")
 # HS14 for mint_permissioned_session.  Its gate is one concept, and each
 # fixture fails one clause of it: the permission flow on three shapes of
 # protocol, the row of a tag, and the empty set.  A token passed as an
