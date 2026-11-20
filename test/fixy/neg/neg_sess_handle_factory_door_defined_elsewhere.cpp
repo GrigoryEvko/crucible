@@ -23,7 +23,7 @@ class CheckpointDoor {
 public:
     static auto forge(neg_sess_handle_factory_door_defined_elsewhere_types::Wire wire) {
         return HandleFactory::make_<Recv<int, Continue>, neg_sess_handle_factory_door_defined_elsewhere_types::Wire,
-                                    void, check::Enforced>(wire, {}, {}, {});
+                                    void, check::Enforced>(wire, {}, {});
     }
 };
 }  // namespace fixy::session

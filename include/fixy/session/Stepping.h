@@ -102,8 +102,10 @@ class[[= ::foundation::transfer::sendable{}]] tracked_policy {
     // The session's record in fixy/session/Watch.h.  A consumed policy
     // holds none: its record belongs to the next handle now.
     watch::endpoint_id endpoint_ = watch::endpoint_id::none;
-    // The handle's construction site.  It is an unknown source for a
-    // handle minted without an explicit location.
+    // The site of the mint, for the first handle of a session.  A handle
+    // that a step built names no site, and the report of a dropped protocol
+    // then reads the site of the mint from the record of the session
+    // (fixy/session/Handle.h).  A move keeps the site.
     std::source_location loc_{};
     // The count of the steps that led to this handle.  A step builds the
     // next handle with a count one higher, so the count tells two handles

@@ -1034,7 +1034,20 @@ void abandon_a_handle() {
     }
 }
 
+// Drops the handle that a step built.  A step gives no site, so the report of
+// the drop reads the site of the mint from the record of the session in the
+// watch, and it names no line of fixy/session/Handle.h.
+void abandon_a_stepped_handle() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::mint_session<Once>(ctx, ValueWire{});
+    {
+        auto stepped = std::move(head).send(Ping{1}, [](ValueWire&, Ping&) noexcept { return true; });
+        static_cast<void>(stepped);
+    }
+}
+
 constexpr ::fixy::TextView kAbandoned{"fixy::session: ABANDONMENT DETECTED (non-terminal handle)"};
+constexpr ::fixy::TextView kSiteOfTheMint{"Construction at:  test/fixy/test_session_handle.cpp:"};
 
 // Runs `body` in a child, and gives the report of its end.
 template <typename Body>
@@ -1047,6 +1060,10 @@ void policy_runs(::fixy::TestRunnerCtx const& test) {
     // check::Enforced aborts on an abandoned handle, so the policy is not
     // only a name.
     ::fixy::check::expect_dies(test, abandon_a_handle<s::check::Enforced>, kAbandoned);
+    // The report of the first handle and the report of a handle that a step
+    // built name the site of the mint of the session.
+    ::fixy::check::expect_dies(test, abandon_a_handle<s::check::Enforced>, kSiteOfTheMint);
+    ::fixy::check::expect_dies(test, abandon_a_stepped_handle, kSiteOfTheMint);
     // check::Off does not check.
     CRUCIBLE_TEST_ASSERT(test, run_in_child(test, abandon_a_handle<s::check::Off>).is_exit_with(0));
 

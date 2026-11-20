@@ -32,7 +32,7 @@ public:
             ::foundation::permissions::mint_permission_root<neg_sess_handle_factory_friend_specialized_types::Region>();
         return HandleFactory::make_<Recv<int, End>, neg_sess_handle_factory_friend_specialized_types::Wire, void,
                                     check::Enforced, ::foundation::permissions::PermSet<decltype(root)>>(
-            wire, HoldFactory::slots_of(std::move(root)), {}, {});
+            wire, HoldFactory::slots_of(std::move(root)), {});
     }
 };
 }  // namespace fixy::session

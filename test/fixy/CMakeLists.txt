@@ -2369,13 +2369,13 @@ fixy_neg_compile_test(neg_sess_handle_factory_derived_look_alike
   "HandleFactory")
 fixy_neg_compile_test(neg_sess_handle_factory_friend_specialized
   "is private within this context"
-  "fixy::session::HandleFactory::make_.Resource, fixy::session::HoldSlots<PS>, fixy::session::watch::session_ref, std::source_location. .with Proto = fixy::session::Recv<int, fixy::session::End>. Resource = neg_sess_handle_factory_friend_specialized_types::Wire")
+  "fixy::session::HandleFactory::make_.Resource, fixy::session::HoldSlots<PS>, fixy::session::detail::step_origin. .with Proto = fixy::session::Recv<int, fixy::session::End>. Resource = neg_sess_handle_factory_friend_specialized_types::Wire")
 fixy_neg_compile_test(neg_sess_handle_base_sibling_specialized
   "is protected within this context"
   "fixy::session::SessionHandleBase<Proto, Derived, Policy>::mark_consumed_.. .with Proto = fixy::session::Send<int, fixy::session::End>")
 fixy_neg_compile_test(neg_sess_handle_factory_door_defined_elsewhere
   "is private within this context"
-  "fixy::session::HandleFactory::make_.Resource, fixy::session::HoldSlots<PS>, fixy::session::watch::session_ref, std::source_location. .with Proto = fixy::session::Recv<int, fixy::session::Continue>. Resource = neg_sess_handle_factory_door_defined_elsewhere_types::Wire")
+  "fixy::session::HandleFactory::make_.Resource, fixy::session::HoldSlots<PS>, fixy::session::detail::step_origin. .with Proto = fixy::session::Recv<int, fixy::session::Continue>. Resource = neg_sess_handle_factory_door_defined_elsewhere_types::Wire")
 fixy_neg_compile_test(neg_sess_session_open_key_door_defined_elsewhere
   "is private within this context"
   "constexpr fixy::session::SessionOpenKey::SessionOpenKey..")

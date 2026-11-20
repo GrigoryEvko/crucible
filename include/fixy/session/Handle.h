@@ -175,6 +175,16 @@ public:
     [[nodiscard]] constexpr ::foundation::core::Site watch_site() const noexcept { return site_; }
 };
 
+// What the factory gives to the handle that it builds: the record of the
+// session in the watch, and a site.  start_ and rewind give the site of the
+// mint to the first handle of a session.  A step gives no site
+// (SessionHandleBase::step_origin_), so it stores the same empty site on each
+// step.
+struct step_origin {
+    watch::session_ref session{};
+    std::source_location site{};
+};
+
 // Names the wrapper class alone, without its template arguments.
 // Several distinct wrappers share one SessionHandleBase specialization
 // for a given Proto, so a diagnostic that prints only Proto cannot say
@@ -217,14 +227,36 @@ consteval std::string_view next_method_hint() noexcept {
     }
 }
 
+// Writes the site of the mint of the session of `endpoint`, as the record of
+// the watch keeps it, in the place of the site of a handle that names none.
+// A handle that a step built names no site (SessionHandleBase::step_origin_),
+// and a handle of a session that the watch does not track has no record.
+//
+// One write gives the two forms: a precision of zero prints no digit of the
+// line when no site is known.
+[[gnu::cold, gnu::noinline]] inline void report_site_of_the_mint(watch::endpoint_id endpoint) noexcept {
+    const watch::record_site minted = watch::site_of(endpoint);
+    const ::foundation::core::TextView file =
+        minted.file.match([](::foundation::core::StaticText text) noexcept { return text.view(); },
+                          []() noexcept { return ::foundation::core::TextView{}; });
+    const bool is_known = file.size() != 0;
+    std::fprintf(stderr, "  Construction at:  %.*s%s%.*u%s\n", static_cast<int>(file.size()),
+                 is_known ? ::foundation::core::detail::text_first_(file) : "",
+                 is_known ? ":"
+                          : "no site is known: the handle names none, and the watch keeps no record of its session",
+                 is_known ? 1 : 0, is_known ? static_cast<unsigned>(minted.line) : 0U,
+                 is_known ? ", the mint of the session" : "");
+}
+
 // The destructor's diagnostic for a dropped protocol.  It is outlined
 // and cold, so the destructor of a handle holds one branch and one call.
 [[noreturn, gnu::cold, gnu::noinline]] inline void
 report_dropped_protocol(std::string_view wrapper, std::string_view full_type, std::string_view protocol,
-                        std::string_view hint, std::source_location loc, AbandonAction action) noexcept {
+                        std::string_view hint, std::source_location loc, watch::endpoint_id endpoint,
+                        AbandonAction action) noexcept {
     const char* loc_file = loc.file_name();
     // file_name() returns "" for a default-constructed location, which
-    // is what a handle minted without an explicit location carries.
+    // is what a handle that a step built carries.
     const bool have_loc = loc_file != nullptr && loc_file[0] != '\0';
 
     std::fprintf(stderr,
@@ -244,8 +276,7 @@ report_dropped_protocol(std::string_view wrapper, std::string_view full_type, st
                      "  In function:      %s\n",
                      loc_file, loc.line(), loc.column(), loc.function_name());
     } else {
-        std::fprintf(stderr, "  Construction at:  <unknown — handle minted without "
-                             "source_location capture>\n");
+        report_site_of_the_mint(endpoint);
     }
     if (action == AbandonAction::Cancel) {
         std::fprintf(stderr, "  Policy:           check::Cancel, but no class sent the cancellation.  A decorator\n"
@@ -285,16 +316,22 @@ report_dropped_protocol(std::string_view wrapper, std::string_view full_type, st
 report_use_after_consume(std::string_view wrapper, std::string_view protocol, std::source_location loc) noexcept {
     const char* loc_file = loc.file_name();
     const bool have_loc = loc_file != nullptr && loc_file[0] != '\0';
+    // A consumed handle holds no record, so the site of the mint of its
+    // session is not known when the handle names no site, as a handle that
+    // a step built does.  A precision of zero prints no digit of the line.
     std::fprintf(stderr,
                  "\n"
                  "fixy::session: USE OF A CONSUMED HANDLE\n"
                  "  Wrapper class:    %.*s\n"
                  "  Protocol head:    %.*s\n"
-                 "  Construction at:  %s:%u\n"
+                 "  Construction at:  %s%s%.*u\n"
                  "The handle was moved from, stepped, closed or detached.  It holds no protocol\n"
                  "position.  Use the handle that the move or the step returned.\n",
                  static_cast<int>(wrapper.size()), wrapper.data(), static_cast<int>(protocol.size()), protocol.data(),
-                 have_loc ? loc_file : "<unknown>", have_loc ? loc.line() : std::uint_least32_t{0});
+                 have_loc ? loc_file
+                          : "no site is known: the handle names none, and a consumed handle holds no record of its "
+                            "session",
+                 have_loc ? ":" : "", have_loc ? 1 : 0, have_loc ? loc.line() : std::uint_least32_t{0});
     std::abort();
 }
 
@@ -431,6 +468,13 @@ protected:
     // The session's record in fixy/session/Watch.h, or none.
     [[nodiscard]] constexpr watch::session_ref session_() const noexcept { return tracker_.session(); }
 
+    // What a step gives to the handle that it builds: the record of the
+    // session, and no site.  A copy of the site would cost a load and a store
+    // on each step, so a stepped handle names no site, and the report of a
+    // dropped protocol reads the site of the mint from the record of the
+    // session in the watch (detail::report_dropped_protocol).
+    [[nodiscard]] constexpr detail::step_origin step_origin_() const noexcept { return {tracker_.session(), {}}; }
+
     // Ends the session in the watch: it detached or cancelled.  Call
     // before mark_consumed_, which lets go of the record.
     constexpr void release_endpoint_() noexcept {
@@ -473,7 +517,7 @@ protected:
             if (owes_protocol_()) [[unlikely]] {
                 detail::report_dropped_protocol(wrapper_name(), full_handle_type_name(), type_display_name_v<Proto>,
                                                 detail::next_method_hint<Proto>(), tracker_.construction_loc(),
-                                                Policy::action);
+                                                tracker_.session().endpoint, Policy::action);
             }
         }
     }
@@ -793,23 +837,24 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
     // gives the record and the site.
     template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
               typename PS = ::foundation::permissions::EmptyPermSet>
-    [[nodiscard]] static constexpr auto
-    make_(Resource r, HoldSlots<PS> slots, watch::session_ref session,
-          std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        -> SessionHandle<Proto, Resource, LoopCtx, Policy, PS>;
+    [[nodiscard]] static constexpr auto make_(Resource r, HoldSlots<PS> slots, detail::step_origin origin) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>) -> SessionHandle<Proto, Resource, LoopCtx, Policy, PS>;
 
     // Builds the handle at the head that R reaches after Continue, Loop, a
     // named state and a vendor pin resolve.  The slots go to the handle.
+    //
+    // The origin holds the site of the mint of the session.  start_ gives
+    // it to the first handle, and each step gives the origin of the handle
+    // that it consumes (detail::step_origin).
     template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
-    [[nodiscard]] static constexpr auto step_(Resource r, HoldSlots<PS> slots, watch::session_ref session = {},
-                                              std::source_location loc = std::source_location::current()) noexcept;
+    [[nodiscard]] static constexpr auto step_(Resource r, HoldSlots<PS> slots, detail::step_origin origin) noexcept;
 
     // Builds the handle that a choice enters for branch I.
     template <typename Choice, std::size_t I, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
               typename PS>
     [[nodiscard]] static constexpr auto
     enter_(Resource r, HoldSlots<PS> slots,
-           watch::session_ref session) noexcept(std::is_nothrow_move_constructible_v<Resource>);
+           detail::step_origin origin) noexcept(std::is_nothrow_move_constructible_v<Resource>);
 
     // Builds the first handle of a protocol on a session record.
     template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
@@ -836,7 +881,7 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
     // type, or all of them void.
     template <bool PassesIndex, typename Choice, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
               typename PS, typename Handler, std::size_t... Is>
-    static constexpr auto dispatch_(std::size_t word, Resource res, HoldSlots<PS> slots, watch::session_ref session,
+    static constexpr auto dispatch_(std::size_t word, Resource res, HoldSlots<PS> slots, detail::step_origin origin,
                                     Handler handler, std::index_sequence<Is...>);
 
     // Calls the handler for branch I, with the index first when PassesIndex
@@ -880,27 +925,27 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
             auto [message, next_slots] = HoldFactory::message_from_slots<T>(core.take_slots_(), std::move(value));
             if constexpr (std::is_same_v<Stop, detail::no_write_stop>) {
                 detail::write_through<T>(transport, resource, message, core.session_().endpoint);
-                const watch::session_ref session = core.session_();
-                return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), session);
+                const detail::step_origin origin = core.step_origin_();
+                return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), origin);
             } else {
                 ::fixy::Option<T> kept =
                     detail::write_unless<T>(transport, stop, resource, message, core.session_().endpoint);
-                const watch::session_ref session = core.session_();
+                const detail::step_origin origin = core.step_origin_();
                 auto next =
-                    step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), session);
+                    step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), origin);
                 return StoppedSend<decltype(next), T>{std::move(next), std::move(kept)};
             }
         } else if constexpr (std::is_same_v<Stop, detail::no_write_stop>) {
             detail::write_through<T>(transport, core.live_resource_(), value, core.session_().endpoint);
-            const watch::session_ref session = core.session_();
+            const detail::step_origin origin = core.step_origin_();
             HoldSlots<Next> slots = HoldFactory::as_set<Next>(core.take_slots_());
-            return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), session);
+            return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), origin);
         } else {
             ::fixy::Option<T> kept =
                 detail::write_unless<T>(transport, stop, core.live_resource_(), value, core.session_().endpoint);
-            const watch::session_ref session = core.session_();
+            const detail::step_origin origin = core.step_origin_();
             HoldSlots<Next> slots = HoldFactory::as_set<Next>(core.take_slots_());
-            auto next = step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), session);
+            auto next = step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), origin);
             return StoppedSend<decltype(next), T>{std::move(next), std::move(kept)};
         }
     }
@@ -950,8 +995,8 @@ public:
     // builds nothing.
     template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
               typename PS = ::foundation::permissions::EmptyPermSet>
-    using handle_at =
-        decltype(step_<R, Resource, LoopCtx, Policy, PS>(std::declval<Resource>(), std::declval<HoldSlots<PS>>()));
+    using handle_at = decltype(step_<R, Resource, LoopCtx, Policy, PS>(
+        std::declval<Resource>(), std::declval<HoldSlots<PS>>(), detail::step_origin{}));
 
     // Rewinds a session.  It takes a handle at End and opens a new session
     // on its Resource at position R in the loop context LoopCtx, with a new
@@ -1021,10 +1066,10 @@ public:
         std::is_nothrow_move_constructible_v<Resource>) {
         auto& core = core_(handle);
         core.require_live_();
-        const watch::session_ref session = core.session_();
+        const detail::step_origin origin = core.step_origin_();
         HoldSlots<PS> slots = core.take_slots_();
         return enter_<Offer<Branches...>, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots),
-                                                                            session);
+                                                                            origin);
     }
 
     // ── The steps ─────────────────────────────────────────────────────
@@ -1119,9 +1164,9 @@ public:
         Resource& resource = core.live_resource_();
         auto [token, rest] = HoldFactory::take_slot<detail::token_tag_t<T>>(core.take_slots_());
         detail::write_through<T>(transport, resource, token, core.session_().endpoint);
-        const watch::session_ref session = core.session_();
+        const detail::step_origin origin = core.step_origin_();
         return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(),
-                                                         HoldFactory::as_set<Next>(std::move(rest)), session);
+                                                         HoldFactory::as_set<Next>(std::move(rest)), origin);
     }
 
     // Sends the label word of a keyed message.  The returned handle stands
@@ -1144,10 +1189,10 @@ public:
         constexpr std::uint64_t step_word = detail::step_wire_word_of(^^Send<T, R>);
         std::size_t word = step_word;
         detail::write_through<std::size_t>(transport, core.live_resource_(), word, core.session_().endpoint);
-        const watch::session_ref session = core.session_();
+        const detail::step_origin origin = core.step_origin_();
         HoldSlots<PS> slots = core.take_slots_();
         return step_<keyed_landing_t<Send<T, R>>, Resource, LoopCtx, Policy, PS>(core.take_resource_(),
-                                                                                 std::move(slots), session);
+                                                                                 std::move(slots), origin);
     }
 
     // Receives a value.  The pair is the value and the handle at the
@@ -1187,19 +1232,18 @@ public:
         auto& core = core_(handle);
         T value =
             read_value_<T, Resource>(core.live_resource_(), std::forward<Source>(source), core.session_().endpoint);
-        const watch::session_ref session = core.session_();
+        const detail::step_origin origin = core.step_origin_();
         if constexpr (slot_form_v<T> == SlotForm::Token) {
             HoldSlots<Next> slots =
                 HoldFactory::as_set<Next>(HoldFactory::put_slot(core.take_slots_(), std::move(value)));
-            return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), session);
+            return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), origin);
         } else if constexpr (slot_form_v<T> != SlotForm::Plain) {
             auto [payload, next_slots] = HoldFactory::value_into_slots(core.take_slots_(), std::move(value));
-            auto next =
-                step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), session);
+            auto next = step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), origin);
             return std::pair{std::move(payload), std::move(next)};
         } else {
             HoldSlots<Next> slots = HoldFactory::as_set<Next>(core.take_slots_());
-            auto next = step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), session);
+            auto next = step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), origin);
             return std::pair{std::move(value), std::move(next)};
         }
     }
@@ -1234,10 +1278,10 @@ public:
         if (word != step_word) [[unlikely]] {
             detail::report_foreign_label_word(word, step_word, type_display_text_v<Recv<T, R>>);
         }
-        const watch::session_ref session = core.session_();
+        const detail::step_origin origin = core.step_origin_();
         HoldSlots<PS> slots = core.take_slots_();
         return step_<keyed_landing_t<Recv<T, R>>, Resource, LoopCtx, Policy, PS>(core.take_resource_(),
-                                                                                 std::move(slots), session);
+                                                                                 std::move(slots), origin);
     }
 
     // Picks branch I and signals the choice to the peer through Transport,
@@ -1270,9 +1314,9 @@ public:
         // so a specialization of the public spelling never reaches the wire.
         std::size_t word = detail::branch_wire_word_of<Choice, I>();
         detail::write_through<std::size_t>(transport, core.live_resource_(), word, core.session_().endpoint);
-        const watch::session_ref session = core.session_();
+        const detail::step_origin origin = core.step_origin_();
         HoldSlots<PS> slots = core.take_slots_();
-        return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots), session);
+        return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots), origin);
     }
 
     // Enters branch I of a Select WITHOUT telling the peer which branch was
@@ -1291,9 +1335,9 @@ public:
                                                 "branch_count at the call site.");
         auto& core = core_(handle);
         core.require_live_();
-        const watch::session_ref session = core.session_();
+        const detail::step_origin origin = core.step_origin_();
         HoldSlots<PS> slots = core.take_slots_();
-        return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots), session);
+        return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots), origin);
     }
 
     // Receives the peer's wire word through Transport, a read of a
@@ -1313,10 +1357,10 @@ public:
         auto& core = core_(handle);
         const std::size_t word =
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
-        const watch::session_ref session = core.session_();
+        const detail::step_origin origin = core.step_origin_();
         HoldSlots<PS> slots = core.take_slots_();
         return dispatch_<false, Choice, Resource, LoopCtx, Policy, PS>(
-            word, core.take_resource_(), std::move(slots), session, std::move(handler),
+            word, core.take_resource_(), std::move(slots), origin, std::move(handler),
             std::make_index_sequence<Choice::branch_count>{});
     }
 
@@ -1331,10 +1375,10 @@ public:
         auto& core = core_(handle);
         const std::size_t word =
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
-        const watch::session_ref session = core.session_();
+        const detail::step_origin origin = core.step_origin_();
         HoldSlots<PS> slots = core.take_slots_();
         return dispatch_<true, Choice, Resource, LoopCtx, Policy, PS>(word, core.take_resource_(), std::move(slots),
-                                                                      session, std::move(handler),
+                                                                      origin, std::move(handler),
                                                                       std::make_index_sequence<Choice::branch_count>{});
     }
 
@@ -1356,9 +1400,9 @@ public:
                                                 "branch, so B0 is index 0.");
         auto& core = core_(handle);
         core.require_live_();
-        const watch::session_ref session = core.session_();
+        const detail::step_origin origin = core.step_origin_();
         HoldSlots<PS> slots = core.take_slots_();
-        return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots), session);
+        return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots), origin);
     }
 
     // Runs the body with a read view of a region that the handle borrows,
@@ -1989,8 +2033,7 @@ public:
 // record.  A caller that builds a handle without a record passes none,
 // and that session is not tracked.
 template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
-constexpr auto HandleFactory::step_(Resource r, HoldSlots<PS> slots, watch::session_ref session,
-                                    std::source_location loc) noexcept {
+constexpr auto HandleFactory::step_(Resource r, HoldSlots<PS> slots, detail::step_origin origin) noexcept {
     if constexpr (std::is_same_v<R, Continue>) {
         using ActiveLoopCtx = session_loop_ctx_inner_t<LoopCtx>;
         static_assert(!std::is_void_v<ActiveLoopCtx>, "fixy::session::diagnostic [Continue_Without_Loop]: "
@@ -2003,29 +2046,26 @@ constexpr auto HandleFactory::step_(Resource r, HoldSlots<PS> slots, watch::sess
                       "permission that the body sends, it must receive back.");
         using NextBody = detail::loop_body_t<ActiveLoopCtx>;
         // The body may itself begin with a Loop or a Continue, so this
-        // recurses.  Forwarding `loc` keeps the outermost caller's site
-        // rather than replacing it with this frame's.
-        return step_<NextBody, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots), session,
-                                                              loc);
+        // recurses with the same origin.
+        return step_<NextBody, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots), origin);
     } else if constexpr (is_vendor_pinned_v<R>) {
         // The vendor is a declaration for the layer above.  The handle
         // steps the protocol that it pins.  This arm comes before the Loop
         // arm, because is_loop_v reads under a pin, and the body of a Loop
         // is read from the Loop itself.
         return step_<typename R::protocol, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots),
-                                                                          session, loc);
+                                                                          origin);
     } else if constexpr (is_named_state_v<R>) {
         // A name stands for its protocol, so the handle steps that protocol.
         // A name of a Loop resolves here, before the test for a Loop below.
         return step_<named_state_protocol_t<R>, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r),
-                                                                               std::move(slots), session, loc);
+                                                                               std::move(slots), origin);
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = detail::loop_body_t<R>;
         using InnerCtx = session_loop_ctx_rebind_inner_t<LoopCtx, detail::loop_frame_t<R, PS>>;
         // Entering an inner Loop shadows the enclosing loop context.
         // That shadowing is what binds Continue to the nearest Loop.
-        return step_<InnerBody, Resource, InnerCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots), session,
-                                                                loc);
+        return step_<InnerBody, Resource, InnerCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots), origin);
     } else {
         static_assert(is_head_v<R>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
                                     "unexpected protocol shape after resolution.  "
@@ -2035,20 +2075,20 @@ constexpr auto HandleFactory::step_(Resource r, HoldSlots<PS> slots, watch::sess
             // record.  The release clears the peer of the record, so the mark
             // is read first.
             auto at_end = make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots),
-                                                                  watch::session_ref{}, loc);
+                                                                  detail::step_origin{{}, origin.site});
             if !consteval {
-                at_end.mark_ = detail::end_mark<true>{watch::mark_of(session.endpoint)};
-                watch::release(session.endpoint);
+                at_end.mark_ = detail::end_mark<true>{watch::mark_of(origin.session.endpoint)};
+                watch::release(origin.session.endpoint);
             }
             return at_end;
         } else if constexpr (Policy::checks_abandonment && is_terminal_state_v<R>) {
             if !consteval {
-                watch::release(session.endpoint);
+                watch::release(origin.session.endpoint);
             }
             return make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots),
-                                                           watch::session_ref{}, loc);
+                                                           detail::step_origin{{}, origin.site});
         } else {
-            return make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots), session, loc);
+            return make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots), origin);
         }
     }
 }
@@ -2062,7 +2102,7 @@ constexpr auto HandleFactory::step_(Resource r, HoldSlots<PS> slots, watch::sess
 template <typename Choice, std::size_t I, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
 constexpr auto
 HandleFactory::enter_(Resource r, HoldSlots<PS> slots,
-                      watch::session_ref session) noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+                      detail::step_origin origin) noexcept(std::is_nothrow_move_constructible_v<Resource>) {
     using Branch = std::tuple_element_t<I, typename Choice::branches_tuple>;
     if constexpr (is_keyed_choice_v<Choice> && detail::wire_words_v<Choice>[I].is_wired) {
         using Message = typename Branch::message_type;
@@ -2078,9 +2118,9 @@ HandleFactory::enter_(Resource r, HoldSlots<PS> slots,
                           "refuses the message.");
         }
         return step_<keyed_landing_t<Branch>, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r),
-                                                                             std::move(slots), session);
+                                                                             std::move(slots), origin);
     } else {
-        return step_<Branch, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots), session);
+        return step_<Branch, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots), origin);
     }
 }
 
@@ -2090,14 +2130,14 @@ HandleFactory::enter_(Resource r, HoldSlots<PS> slots,
 // which is what enforces the same-return-type rule.
 template <bool PassesIndex, typename Choice, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
           typename Handler, std::size_t... Is>
-constexpr auto HandleFactory::dispatch_(std::size_t word, Resource res, HoldSlots<PS> slots, watch::session_ref session,
+constexpr auto HandleFactory::dispatch_(std::size_t word, Resource res, HoldSlots<PS> slots, detail::step_origin origin,
                                         Handler handler, std::index_sequence<Is...>) {
     const std::size_t idx = branch_of_wire_word<Choice>(word);
     if (idx >= Choice::branch_count) [[unlikely]] {
         detail::report_word_names_no_branch(word, Choice::branch_count, type_display_text_v<Choice>);
     }
     using FirstHandle = decltype(enter_<Choice, 0, Resource, LoopCtx, Policy, PS>(
-        std::declval<Resource>(), std::declval<HoldSlots<PS>>(), session));
+        std::declval<Resource>(), std::declval<HoldSlots<PS>>(), origin));
     using Result = decltype(call_branch_<PassesIndex, 0>(std::declval<Handler&&>(), std::declval<FirstHandle>()));
 
     if constexpr (std::is_void_v<Result>) {
@@ -2107,7 +2147,7 @@ constexpr auto HandleFactory::dispatch_(std::size_t word, Resource res, HoldSlot
                 if (!dispatched && idx == Is) {
                     call_branch_<PassesIndex, Is>(std::move(handler),
                                                   enter_<Choice, Is, Resource, LoopCtx, Policy, PS>(
-                                                      std::forward<Resource>(res), std::move(slots), session));
+                                                      std::forward<Resource>(res), std::move(slots), origin));
                     dispatched = true;
                 }
             }(),
@@ -2120,7 +2160,7 @@ constexpr auto HandleFactory::dispatch_(std::size_t word, Resource res, HoldSlot
                 if (!dispatched && idx == Is) {
                     result.emplace(call_branch_<PassesIndex, Is>(
                         std::move(handler), enter_<Choice, Is, Resource, LoopCtx, Policy, PS>(
-                                                std::forward<Resource>(res), std::move(slots), session)));
+                                                std::forward<Resource>(res), std::move(slots), origin)));
                     dispatched = true;
                 }
             }(),
@@ -2178,13 +2218,13 @@ template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy
 // stand here, after those concepts.
 
 template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
-constexpr auto HandleFactory::make_(Resource r, HoldSlots<PS> slots, watch::session_ref session,
-                                    std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+constexpr auto HandleFactory::make_(Resource r, HoldSlots<PS> slots,
+                                    detail::step_origin origin) noexcept(std::is_nothrow_move_constructible_v<Resource>)
     -> SessionHandle<Proto, Resource, LoopCtx, Policy, PS> {
     static_assert(SessionResource<Resource>, "fixy::session::diagnostic [SessionResource_Refused]: the handle "
                                              "factory builds a handle only over a Resource that a mint admits.");
     return SessionHandle<Proto, Resource, LoopCtx, Policy, PS>{HandleKey{}, std::forward<Resource>(r), std::move(slots),
-                                                               session, loc};
+                                                               origin.session, origin.site};
 }
 
 // HandleFactory::start_ builds the first handle of an admitted protocol
@@ -2222,7 +2262,8 @@ constexpr auto HandleFactory::start_(Resource r, HoldSlots<PS> slots, std::sourc
                   "permission set does not hold, receives a second owner of a region, changes the set in one loop "
                   "iteration, or reaches End with an open loan.  The walk visits every branch, so an arm that no "
                   "run selects counts too.");
-    return step_<Proto, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots), session, loc);
+    return step_<Proto, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots),
+                                                       detail::step_origin{session, loc});
 }
 
 template <typename Proto, typename Resource, AbandonmentPolicy Policy>
@@ -2284,7 +2325,7 @@ constexpr auto HandleFactory::rewind(
     Resource resource = std::move(at_end).close();
     return step_<R, Resource, LoopCtx, Policy, ::foundation::permissions::EmptyPermSet>(
         std::forward<Resource>(resource), HoldSlots<::foundation::permissions::EmptyPermSet>{},
-        claim_<R, Resource, Policy>(site), site.location());
+        detail::step_origin{claim_<R, Resource, Policy>(site), site.location()});
 }
 
 // The precondition reads the marks of the two handles at End.  The two ends
@@ -2323,9 +2364,9 @@ constexpr auto HandleFactory::rewind_channel(
     }
     using NoSlots = HoldSlots<::foundation::permissions::EmptyPermSet>;
     auto rewound = step_<R, Resource, LoopCtx, Policy, ::foundation::permissions::EmptyPermSet>(
-        std::forward<Resource>(resource), NoSlots{}, session, site.location());
+        std::forward<Resource>(resource), NoSlots{}, detail::step_origin{session, site.location()});
     auto peer_rewound = step_<PeerR, PeerResource, PeerLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>(
-        std::forward<PeerResource>(peer_resource), NoSlots{}, peer_session, site.location());
+        std::forward<PeerResource>(peer_resource), NoSlots{}, detail::step_origin{peer_session, site.location()});
     return RewoundChannel<decltype(rewound), decltype(peer_rewound)>{std::move(rewound), std::move(peer_rewound)};
 }
 

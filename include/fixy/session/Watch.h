@@ -811,6 +811,22 @@ struct session_ref {
     return detail::record_at_(static_cast<std::uint32_t>(endpoint)).generation.load_acquire();
 }
 
+// The site of the mint of a session, as its record keeps it: the file, or
+// none, and the line.
+struct record_site {
+    ::foundation::core::Option<::foundation::core::StaticText> file{};
+    std::uint32_t line = 0;
+};
+
+/// The site of the mint of the session of `endpoint`, for the report of a
+/// dropped protocol of a handle that names no site.  An endpoint that names no
+/// record gives no file.
+[[nodiscard]] inline record_site site_of(endpoint_id endpoint) noexcept {
+    if (endpoint == endpoint_id::none) return {};
+    const detail::endpoint_record& record = detail::record_at_(static_cast<std::uint32_t>(endpoint));
+    return {record.site_file.load_acquire(), record.site_line.load_acquire()};
+}
+
 /// The number of records live now, for tests.  Complexity: linear in the
 /// records ever claimed.
 [[nodiscard]] inline std::uint32_t live_count() noexcept { return detail::count_live(); }
