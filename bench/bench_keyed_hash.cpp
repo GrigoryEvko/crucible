@@ -7,10 +7,12 @@
 //   4 KiB to 128 KiB     the lanes of many chunks
 //
 // Each row hashes the bytes i % 251 at i under the key of the official test
-// vectors.  The official C dispatches to its arm of the host, AVX-512 on a
-// host of x86-64-v4, so the ratio of two rows of one size is the ratio of the
-// base to the state of the art on the host.  A tools directory with no BLAKE3
-// at its pin gives no reference row.
+// vectors.  The official C runs the arm of the x86-64 level of the library of
+// the base: SSE2 at v1, SSE4.1 at v2, AVX2 at v3, and the arm that its
+// dispatch picks on the host at v4 or in a build with no level, AVX-512 on a
+// host of x86-64-v4.  So the ratio of two rows of one size is the ratio of
+// the base to the state of the art at one level.  A tools directory with no
+// BLAKE3 at its pin gives no reference row.
 
 #include <foundation/core/KeyedHash.h>
 
@@ -77,6 +79,25 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the bytes of a row go to the door of the
     return out;
 }
 
+// Makes the official C run the arm of the x86-64 level of the library of the
+// base (CRUCIBLE_BENCH_KEYED_LEVEL of bench/CMakeLists.txt), and prints it.
+void pick_official_arm() noexcept {
+    using bench_keyed_hash_references::Blake3Arm;
+    if constexpr (CRUCIBLE_BENCH_KEYED_LEVEL == 1) {
+        bench_keyed_hash_references::blake3_pick_arm(Blake3Arm::sse2);
+        ::fixy::report(::fixy::Sink::Out, "the library is at x86-64-v1, and the official C runs its SSE2 arm\n\n");
+    } else if constexpr (CRUCIBLE_BENCH_KEYED_LEVEL == 2) {
+        bench_keyed_hash_references::blake3_pick_arm(Blake3Arm::sse41);
+        ::fixy::report(::fixy::Sink::Out, "the library is at x86-64-v2, and the official C runs its SSE4.1 arm\n\n");
+    } else if constexpr (CRUCIBLE_BENCH_KEYED_LEVEL == 3) {
+        bench_keyed_hash_references::blake3_pick_arm(Blake3Arm::avx2);
+        ::fixy::report(::fixy::Sink::Out, "the library is at x86-64-v3, and the official C runs its AVX2 arm\n\n");
+    } else {
+        bench_keyed_hash_references::blake3_pick_arm(Blake3Arm::host);
+        ::fixy::report(::fixy::Sink::Out, "the official C runs the arm that its dispatch picks on the host\n\n");
+    }
+}
+
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 #endif
 
@@ -116,6 +137,7 @@ int main() {
     bench::emit_reports_text(base_reports.view());
 
 #if defined(CRUCIBLE_BENCH_BLAKE3)
+    pick_official_arm();
     // The body of the row of the official C at one size.
     auto const official_row = [&input, &key](std::size_t size) noexcept {
         return [&input, &key, size] {

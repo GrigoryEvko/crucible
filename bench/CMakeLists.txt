@@ -172,9 +172,21 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
       "${_blake3_directory}/blake3_avx2_x86-64_unix.S"
       "${_blake3_directory}/blake3_avx512_x86-64_unix.S")
     target_compile_options(blake3_reference PRIVATE $<$<COMPILE_LANGUAGE:C>:-O3> -fcf-protection=full)
+    # The switch of the official tests makes the CPU features of the dispatch
+    # a plain variable, so the door can pick the arm of each x86-64 level.
+    set_source_files_properties("${_blake3_directory}/blake3_dispatch.c" PROPERTIES
+      COMPILE_DEFINITIONS "BLAKE3_TESTING;BLAKE3_ATOMICS=0")
     target_link_libraries(bench_keyed_hash PRIVATE blake3_reference)
   endif()
   crucible_bench_reference(bench_keyed_hash blake3 CRUCIBLE_BENCH_BLAKE3 bench_keyed_hash_blake3.cpp)
+  # The x86-64 level of the library of the base, 0 for a build with no level.
+  # The official rows run the arm of that level, so each ratio compares two
+  # arms of one level.
+  set(_keyed_level 0)
+  if(CRUCIBLE_X86_LEVEL MATCHES "^v([1234])$")
+    set(_keyed_level "${CMAKE_MATCH_1}")
+  endif()
+  target_compile_definitions(bench_keyed_hash PRIVATE CRUCIBLE_BENCH_KEYED_LEVEL=${_keyed_level})
 endif()
 crucible_bench(bench_merkle_dag)
 crucible_bench(bench_meta_log)
