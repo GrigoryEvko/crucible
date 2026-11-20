@@ -6,7 +6,6 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
-#include <cstdio>
 #include <cstdlib>
 #include <optional>
 #include <type_traits>
@@ -45,25 +44,26 @@ using Channel = observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<d
 int total_passed = 0;
 int total_failed = 0;
 
-#define CRUCIBLE_REQUIRE(cond)                                                                 \
-    do {                                                                                       \
-        if (!(cond)) {                                                                         \
-            std::fprintf(stderr, "  REQUIRE FAILED: %s @ %s:%d\n", #cond, __FILE__, __LINE__); \
-            ++total_failed;                                                                    \
-            return;                                                                            \
-        }                                                                                      \
+#define CRUCIBLE_REQUIRE(cond)                                                                           \
+    do {                                                                                                 \
+        if (!(cond)) {                                                                                   \
+            ::fixy::report(::fixy::Sink::Err, "  REQUIRE FAILED: {} @ {}:{}\n", ::fixy::TextView{#cond}, \
+                           ::fixy::TextView{__FILE__}, __LINE__);                                        \
+            ++total_failed;                                                                              \
+            return;                                                                                      \
+        }                                                                                                \
     } while (0)
 
 template <typename Body>
-void run_test(char const* name, Body body) {
-    std::fprintf(stderr, "  %s ... ", name);
+void run_test(::fixy::TextView name, Body body) {
+    ::fixy::report(::fixy::Sink::Err, "  {} ... ", name);
     int const before = total_failed;
     body();
     if (total_failed == before) {
         ++total_passed;
-        std::fprintf(stderr, "OK\n");
+        ::fixy::report(::fixy::Sink::Err, "OK\n");
     } else {
-        std::fprintf(stderr, "FAILED\n");
+        ::fixy::report(::fixy::Sink::Err, "FAILED\n");
     }
 }
 
@@ -169,7 +169,7 @@ void test_runtime_observation_snapshot() {
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "[test_metrics_swmr]\n");
+    ::fixy::report(::fixy::Sink::Err, "[test_metrics_swmr]\n");
     run_test("metric_payload_is_snapshot_safe", test_metric_payload_is_snapshot_safe);
     run_test("writer_publish_keeper_and_canopy_readers", test_writer_publish_keeper_and_canopy_readers);
     run_test("exclusive_drain_waits_for_readers", test_exclusive_drain_waits_for_readers);

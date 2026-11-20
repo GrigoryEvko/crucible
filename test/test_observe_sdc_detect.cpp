@@ -1,9 +1,7 @@
 #include <crucible/observe/SdcDetect.h>
 
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
-#include <limits>
 #include <type_traits>
 #include <utility>
 #include <fixy/Core.h>
@@ -27,25 +25,26 @@ namespace observe = ::crucible::observe;
 int total_passed = 0;
 int total_failed = 0;
 
-#define CRUCIBLE_REQUIRE(cond)                                                                 \
-    do {                                                                                       \
-        if (!(cond)) {                                                                         \
-            std::fprintf(stderr, "  REQUIRE FAILED: %s @ %s:%d\n", #cond, __FILE__, __LINE__); \
-            ++total_failed;                                                                    \
-            return;                                                                            \
-        }                                                                                      \
+#define CRUCIBLE_REQUIRE(cond)                                                                           \
+    do {                                                                                                 \
+        if (!(cond)) {                                                                                   \
+            ::fixy::report(::fixy::Sink::Err, "  REQUIRE FAILED: {} @ {}:{}\n", ::fixy::TextView{#cond}, \
+                           ::fixy::TextView{__FILE__}, __LINE__);                                        \
+            ++total_failed;                                                                              \
+            return;                                                                                      \
+        }                                                                                                \
     } while (0)
 
 template <typename Body>
-void run_test(char const* name, Body body) {
-    std::fprintf(stderr, "  %s ... ", name);
+void run_test(::fixy::TextView name, Body body) {
+    ::fixy::report(::fixy::Sink::Err, "  {} ... ", name);
     int const before = total_failed;
     body();
     if (total_failed == before) {
         ++total_passed;
-        std::fprintf(stderr, "OK\n");
+        ::fixy::report(::fixy::Sink::Err, "OK\n");
     } else {
-        std::fprintf(stderr, "FAILED\n");
+        ::fixy::report(::fixy::Sink::Err, "FAILED\n");
     }
 }
 
@@ -117,14 +116,13 @@ void test_mismatch_count_saturates() {
     CRUCIBLE_REQUIRE(detector.register_cog(primary));
     CRUCIBLE_REQUIRE(detector.register_cog(bad));
 
-    constexpr std::uint32_t runs = std::uint32_t{std::numeric_limits<std::uint16_t>::max()} + 10u;
+    constexpr std::uint32_t runs = std::uint32_t{::fixy::max_of<std::uint16_t>} + 10u;
     for (std::uint32_t run = 0; run < runs; ++run) {
         auto result = detector.run_with_redundancy(eff::BgDrainCtx{::foundation::effects::testing::bg()},
                                                    [](cog::CogIdentity const& id) noexcept { return id.uuid.lo; });
         CRUCIBLE_REQUIRE(result.is_err());
     }
-    CRUCIBLE_REQUIRE(detector.cogs().at(::fixy::index<1>()).mismatch_count
-                     == std::numeric_limits<std::uint16_t>::max());
+    CRUCIBLE_REQUIRE(detector.cogs().at(::fixy::index<1>()).mismatch_count == ::fixy::max_of<std::uint16_t>);
     CRUCIBLE_REQUIRE(detector.should_quarantine(bad));
 }
 
@@ -213,7 +211,7 @@ int main() {
     static_assert(!observe::CtxFitsSdcRun<eff::HotFgCtx>);
     static_assert(std::is_trivially_copyable_v<observe::SdcEvent>);
 
-    std::fprintf(stderr, "[test_observe_sdc_detect]\n");
+    ::fixy::report(::fixy::Sink::Err, "[test_observe_sdc_detect]\n");
     run_test("redundant_equal_results_mint_verified_tag", test_redundant_equal_results_mint_verified_tag);
     run_test("mismatch_records_implicated_cog_and_threshold", test_mismatch_records_implicated_cog_and_threshold);
     run_test("mismatch_count_saturates", test_mismatch_count_saturates);

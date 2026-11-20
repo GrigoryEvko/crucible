@@ -1,6 +1,5 @@
 #include <crucible/observe/Health.h>
 
-#include <cstdio>
 #include <cstdlib>
 #include <type_traits>
 #include <fixy/Core.h>
@@ -23,25 +22,26 @@ namespace topology = ::crucible::topology;
 int total_passed = 0;
 int total_failed = 0;
 
-#define CRUCIBLE_REQUIRE(cond)                                                                 \
-    do {                                                                                       \
-        if (!(cond)) {                                                                         \
-            std::fprintf(stderr, "  REQUIRE FAILED: %s @ %s:%d\n", #cond, __FILE__, __LINE__); \
-            ++total_failed;                                                                    \
-            return;                                                                            \
-        }                                                                                      \
+#define CRUCIBLE_REQUIRE(cond)                                                                           \
+    do {                                                                                                 \
+        if (!(cond)) {                                                                                   \
+            ::fixy::report(::fixy::Sink::Err, "  REQUIRE FAILED: {} @ {}:{}\n", ::fixy::TextView{#cond}, \
+                           ::fixy::TextView{__FILE__}, __LINE__);                                        \
+            ++total_failed;                                                                              \
+            return;                                                                                      \
+        }                                                                                                \
     } while (0)
 
 template <typename Body>
-void run_test(char const* name, Body body) {
-    std::fprintf(stderr, "  %s ... ", name);
+void run_test(::fixy::TextView name, Body body) {
+    ::fixy::report(::fixy::Sink::Err, "  {} ... ", name);
     int const before = total_failed;
     body();
     if (total_failed == before) {
         ++total_passed;
-        std::fprintf(stderr, "OK\n");
+        ::fixy::report(::fixy::Sink::Err, "OK\n");
     } else {
-        std::fprintf(stderr, "FAILED\n");
+        ::fixy::report(::fixy::Sink::Err, "FAILED\n");
     }
 }
 
@@ -156,7 +156,7 @@ void test_publish_updates_dedicated_latest_value_sinks() {
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "[test_observe_health]\n");
+    ::fixy::report(::fixy::Sink::Err, "[test_observe_health]\n");
     run_test("metric_ids_are_partitioned_by_peer_slot", test_metric_ids_are_partitioned_by_peer_slot);
     run_test("metric_id_gives_back_its_fields", test_metric_id_gives_back_its_fields);
     run_test("metric_id_keeps_each_bit_of_the_peer", test_metric_id_keeps_each_bit_of_the_peer);
