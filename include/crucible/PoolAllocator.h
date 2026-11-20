@@ -5,9 +5,9 @@
 // elsewhere are registered by the owner and point outside the pool. The
 // rest point into it.
 //
-// The block is a foundation::AlignedBytes, and detach() gives it to the
-// caller, so the caller can keep the old bytes alive while it builds the
-// replacement. The table has two columns of one length: the addresses and
+// The block is a foundation::AlignedBytes from the zeroed mint, so each byte
+// reads zero before its first write.  detach() gives it to the caller, so the
+// caller can keep the old bytes alive while it builds the replacement. The table has two columns of one length: the addresses and
 // the devices. The replay reads only the address of a slot, so the column of
 // addresses holds one word for each slot and a cache line holds eight of
 // them. The device is read at the start of a plan or at a check, and one
@@ -98,11 +98,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
             // backed by huge pages. Anything smaller takes the base alignment.
             const bool is_huge = plan.pool_bytes >= crucible::warden::kHugePageBytes;
             const uint64_t page_align = is_huge ? crucible::warden::kHugePageBytes : ALIGNMENT;
-            pool_ = ::foundation::mint_aligned_bytes(allocation, plan.pool_bytes, page_align);
-#ifndef NDEBUG
-            // A read of unwritten pool memory stands out.
-            ::fixy::fill(pool_.view(), uint8_t{0xCD});
-#endif
+            // Each byte of the pool reads zero until a slot writes it, in each
+            // build, so a read before the first write of a slot gives the
+            // same bytes on each run.  A large pool comes from fresh pages of
+            // the kernel, so the mint writes no page outside ThreadSanitizer.
+            pool_ = ::foundation::mint_aligned_bytes_zeroed(allocation, plan.pool_bytes, page_align);
             // The region holds the bytes of the pool, and not the bytes that
             // the round up to the alignment adds after them.
             crucible::warden::register_hot_region(::fixy::pages::storage_of(pool_.view()), is_huge);

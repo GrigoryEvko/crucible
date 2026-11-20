@@ -24,10 +24,11 @@
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/PermissionFork.h>
 #include <fixy/concurrent/PermissionedChannel.h>
+#include <fixy/os/Mmap.h>
 #include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Pages.h>
 #include <fixy/os/Sched.h>
-#include <foundation/AlignedBytes.h>
+#include <foundation/Linear.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Region.h>
 #include <foundation/os/Auxiliary.h>
@@ -59,23 +60,42 @@ constexpr ::fixy::InitLoadCtx kStartup{::foundation::effects::testing::init()};
         .expect("the auxiliary vector gives the size of a page");
 }
 
-// A block of bytes that no code wrote.  The block is larger than the largest
-// threshold of the allocator of the C library for a map of its own (32 MiB),
-// so the allocator of each build maps it new, and no page of it has a frame.
-// AddressSanitizer writes the first 4 KiB of a block, so a case uses the
-// pages after the first page only.
-constexpr std::size_t kFreshBlockBytes = std::size_t{33} << 20;
+// THE FRESH PAGES.  A case that counts the pages with no frame takes an
+// anonymous mapping of the kernel.  Each page holds zero, and no page has a
+// frame before a write or a populate.  No allocator touches the mapping, so
+// this holds in each build: the allocator of ThreadSanitizer writes each
+// byte of a zeroed block, and AddressSanitizer writes the first page of a
+// block.
+using IoBlockCtx = ::foundation::effects::ExecCtx<
+    ::foundation::effects::Test,
+    ::foundation::effects::Row<::foundation::effects::Effect::Test, ::foundation::effects::Effect::Alloc,
+                               ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>>;
 
-[[nodiscard]] ::foundation::AlignedBytes allocate_fresh_block() noexcept {
-    return ::foundation::mint_aligned_bytes(::foundation::effects::testing::test().alloc, kFreshBlockBytes,
-                                            page_size());
+// The owner of the fresh pages of a case.
+struct FreshPages final {
+    using permission_row = ::foundation::effects::Row<>;
+};
+
+using WriteAnon = ::fixy::atom::mmap::with_prot<::fixy::mmap::prot::WriteCopy>;
+using Anonymous = ::fixy::atom::mmap::with_share<::fixy::mmap::share::Anonymous>;
+
+// The count of the fresh pages of one mapping.
+constexpr std::size_t kFreshPageCount = 8;
+
+// The fresh pages of a case (THE FRESH PAGES), for the permission of the
+// case.
+template <class Owner>
+[[nodiscard]] auto map_fresh_pages(Owner const& owner) {
+    IoBlockCtx const ctx{::foundation::effects::testing::test()};
+    return ::fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, kFreshPageCount * page_size())
+        .expect("an anonymous mapping of the fresh pages works")
+        .consume();
 }
 
-// The count bytes from the byte at offset of a block.
-[[nodiscard]] ::fixy::View<std::byte const> window_of(::foundation::AlignedBytes const& block, std::size_t offset,
+// The count bytes from the byte at offset of the bytes of a mapping.
+[[nodiscard]] ::fixy::View<std::byte const> window_of(::fixy::View<std::byte const> bytes, std::size_t offset,
                                                       std::size_t count) noexcept {
-    ::fixy::View<std::byte const> const bytes = ::foundation::core::byte_view(block.view());
-    return bytes.window(offset, count).expect("the window fits in the block");
+    return bytes.window(offset, count).expect("the window fits in the mapping");
 }
 
 // The count of the pages of bytes that have no frame.  A page that nothing
@@ -92,10 +112,17 @@ constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
 
 // True when the kernel takes the populate advice, which needs Linux 5.14, and
 // faults in the page, which qemu user mode does not do.  The probe is the
-// second page of a block that no code wrote.
+// second page of a mapping that no code wrote.
 [[nodiscard]] bool kernel_populates_pages() noexcept {
-    ::foundation::AlignedBytes const block = allocate_fresh_block();
-    return ::fixy::pages::populate_pages(kStartup, window_of(block, page_size(), page_size())).is_ok();
+    auto owner = ::foundation::permissions::mint_permission_root<FreshPages>();
+    bool is_populated = false;
+    {
+        auto mapping = map_fresh_pages(owner);
+        ::fixy::View<std::byte const> const fresh = mapping.view<std::byte const>().expect("a mapping holds bytes");
+        is_populated = ::fixy::pages::populate_pages(kStartup, window_of(fresh, page_size(), page_size())).is_ok();
+    }
+    ::foundation::linear::drop(std::move(owner));
+    return is_populated;
 }
 
 // Words that the program only reads.  The linker puts a constant with no
@@ -681,13 +708,19 @@ void test_prefault_faults_in_each_page_of_the_range() {
         ::fixy::pages::exchange_thp_setting(kStartup, ::fixy::pages::ThpSetting::refused)
             .expect("the process refuses THP");
     std::size_t const page = page_size();
-    ::foundation::AlignedBytes const block = allocate_fresh_block();
-    CHECK(pages_with_no_frame(window_of(block, page, 3 * page)) == 3, "no page of a new block has a frame");
+    auto owner = ::foundation::permissions::mint_permission_root<FreshPages>();
+    {
+        auto mapping = map_fresh_pages(owner);
+        ::fixy::View<std::byte const> const fresh = mapping.view<std::byte const>().expect("a mapping holds bytes");
+        CHECK(pages_with_no_frame(window_of(fresh, page, 3 * page)) == 3, "no page of a new mapping has a frame");
 
-    CHECK(Hardening::prefault(kStartup, window_of(block, (2 * page) - 1, 2)), "the prefault of a writable range works");
-    CHECK(pages_with_no_frame(window_of(block, page, 2 * page)) == 0,
-          "each page that holds a byte of the range has a frame");
-    CHECK(pages_with_no_frame(window_of(block, 3 * page, page)) == 1, "the page after the range has no frame");
+        CHECK(Hardening::prefault(kStartup, window_of(fresh, (2 * page) - 1, 2)),
+              "the prefault of a writable range works");
+        CHECK(pages_with_no_frame(window_of(fresh, page, 2 * page)) == 0,
+              "each page that holds a byte of the range has a frame");
+        CHECK(pages_with_no_frame(window_of(fresh, 3 * page, page)) == 1, "the page after the range has no frame");
+    }
+    ::foundation::linear::drop(std::move(owner));
 
     CHECK(!Hardening::prefault(kStartup, ::foundation::core::bytes(kReadOnlyWords)),
           "the prefault of a read-only range gives false");
@@ -711,32 +744,37 @@ void test_apply_prefaults_each_registered_region(crucible::warden::TopologyRef t
         ::fixy::pages::exchange_thp_setting(kStartup, ::fixy::pages::ThpSetting::refused)
             .expect("the process refuses THP");
     std::size_t const page = page_size();
-    ::foundation::AlignedBytes block = allocate_fresh_block();
-    ::fixy::View<std::byte> const bytes = ::foundation::core::byte_view(block.view());
-    ::fixy::View<std::byte const> const region = bytes.window((2 * page) - 1, 2).expect("the region fits in the block");
-    register_hot_region(region, /*huge_hint=*/false);
-
-    Policy policy = Policy::dev_quiet();
-    policy.mlock_hot_regions = false;
-    policy.thp_hint_pools = false;
-    policy.thp_collapse_now = false;
-    policy.prefault_hot_regions = false;
+    auto owner = ::foundation::permissions::mint_permission_root<FreshPages>();
     {
-        AppliedPolicy const applied = mint_hardening(kStartup, topology, policy);
-        CHECK(applied.regions_locked() == 0, "the policy locks no region");
-    }
-    CHECK(pages_with_no_frame(window_of(block, page, 3 * page)) == 3,
-          "a policy with the knob off gives no frame to a page of the region");
+        auto mapping = map_fresh_pages(owner);
+        ::fixy::View<std::byte> const bytes = mapping.view<std::byte>().expect("a mapping holds bytes");
+        ::fixy::View<std::byte const> const region =
+            bytes.window((2 * page) - 1, 2).expect("the region fits in the mapping");
+        register_hot_region(region, /*huge_hint=*/false);
 
-    policy.prefault_hot_regions = true;
-    {
-        AppliedPolicy const applied = mint_hardening(kStartup, topology, policy);
-        CHECK(applied.regions_locked() == 0, "the policy locks no region");
-    }
-    CHECK(pages_with_no_frame(window_of(block, page, 2 * page)) == 0, "each page of the region has a frame");
-    CHECK(pages_with_no_frame(window_of(block, 3 * page, page)) == 1, "the page after the region has no frame");
+        Policy policy = Policy::dev_quiet();
+        policy.mlock_hot_regions = false;
+        policy.thp_hint_pools = false;
+        policy.thp_collapse_now = false;
+        policy.prefault_hot_regions = false;
+        {
+            AppliedPolicy const applied = mint_hardening(kStartup, topology, policy);
+            CHECK(applied.regions_locked() == 0, "the policy locks no region");
+        }
+        CHECK(pages_with_no_frame(window_of(bytes, page, 3 * page)) == 3,
+              "a policy with the knob off gives no frame to a page of the region");
 
-    unregister_hot_region(region);
+        policy.prefault_hot_regions = true;
+        {
+            AppliedPolicy const applied = mint_hardening(kStartup, topology, policy);
+            CHECK(applied.regions_locked() == 0, "the policy locks no region");
+        }
+        CHECK(pages_with_no_frame(window_of(bytes, page, 2 * page)) == 0, "each page of the region has a frame");
+        CHECK(pages_with_no_frame(window_of(bytes, 3 * page, page)) == 1, "the page after the region has no frame");
+
+        unregister_hot_region(region);
+    }
+    ::foundation::linear::drop(std::move(owner));
     static_cast<void>(::fixy::pages::exchange_thp_setting(kStartup, first_thp).expect("the process puts back THP"));
 }
 

@@ -80,6 +80,16 @@ void heap_release_(void* storage, std::size_t bytes, std::size_t alignment) noex
   gnu::alloc_align(2)]] void*
 heap_allocate_(std::size_t bytes, std::size_t alignment) noexcept;
 
+// Gives the storage of bytes bytes, and each byte reads zero.  bytes is more
+// than zero.  The storage has the alignment of the allocator of the C
+// library, and heap_release_ takes it back with the same bytes and an
+// alignment of one.  The allocator of the C library, and that of
+// AddressSanitizer, take a large block from fresh pages of the kernel, which
+// hold zero, so they write no byte of such a block.  The allocator of
+// ThreadSanitizer writes each byte.  The result is never null.
+[[nodiscard, gnu::malloc, gnu::malloc(heap_release_, 1), gnu::returns_nonnull, gnu::alloc_size(1)]] void*
+heap_allocate_zeroed_(std::size_t bytes) noexcept;
+
 }  // namespace detail
 
 }  // namespace foundation::core

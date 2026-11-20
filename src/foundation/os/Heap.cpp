@@ -5,7 +5,8 @@
 // GCC, so the file includes no system header.  Each builtin compiles to a
 // call of the function of the C library with the same name, and this member
 // of the archive of foundation is the one member that imports malloc,
-// aligned_alloc and free (rule R5, THE DOORS of the rule artifact-symbols).
+// calloc, aligned_alloc and free (rule R5, THE DOORS of the rule
+// artifact-symbols).
 // The allocator of the C library owns the state of the
 // heap, so the door issues no raw system call.
 
@@ -64,6 +65,19 @@ void* heap_allocate_(std::size_t bytes, std::size_t alignment) noexcept {
         alignment <= kMallocAlignment ? __builtin_malloc(bytes) : __builtin_aligned_alloc(alignment, bytes);
     if (storage == nullptr) [[unlikely]] {
         no_storage_(bytes, alignment);
+    }
+    return storage;
+}
+
+// calloc of the C library writes zero only into a block of its own free
+// list.  A block that it maps new comes from fresh pages of the kernel, which
+// hold zero, so a large block costs no write.  The calloc of
+// ThreadSanitizer writes zero into each block.
+void* heap_allocate_zeroed_(std::size_t bytes) noexcept {
+    check_request_(bytes, 1);
+    void* const storage = __builtin_calloc(1, bytes);
+    if (storage == nullptr) [[unlikely]] {
+        no_storage_(bytes, 1);
     }
     return storage;
 }

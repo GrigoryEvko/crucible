@@ -7,10 +7,11 @@
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/Mmap.h>
 #include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Pages.h>
 
-#include <foundation/AlignedBytes.h>
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Array.h>
@@ -22,6 +23,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -36,16 +38,36 @@ constexpr ::fixy::InitLoadCtx kStartup{::foundation::effects::testing::init()};
     return os::read_auxiliary(os::AuxiliaryEntry::page_size).expect("the auxiliary vector gives the size of a page");
 }
 
-// A block of bytes that no code wrote.  The block is larger than the largest
-// threshold of the allocator of the C library for a map of its own (32 MiB),
-// so the allocator of each build maps it new, and no page of it has a frame.
-// AddressSanitizer writes the first 4 KiB of a block, so a case uses the
-// pages after the first page only.
-constexpr std::size_t kFreshBlockBytes = std::size_t{33} << 20;
+// THE FRESH PAGES.  A case that counts the pages with no frame takes an
+// anonymous mapping of the kernel.  Each page holds zero, and no page has a
+// frame before a write or a populate.  No allocator touches the mapping, so
+// this holds in each build: the allocator of ThreadSanitizer writes each
+// byte of a zeroed block, and AddressSanitizer writes the first page of a
+// block.
+using IoBlockCtx = ::foundation::effects::ExecCtx<
+    ::foundation::effects::Test,
+    ::foundation::effects::Row<::foundation::effects::Effect::Test, ::foundation::effects::Effect::Alloc,
+                               ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>>;
 
-[[nodiscard]] ::foundation::AlignedBytes allocate_fresh_block() noexcept {
-    return ::foundation::mint_aligned_bytes(::foundation::effects::testing::test().alloc, kFreshBlockBytes,
-                                            page_size());
+// The owner of the fresh pages of a case.
+struct FreshPages final {
+    using permission_row = ::foundation::effects::Row<>;
+};
+
+using WriteAnon = ::fixy::atom::mmap::with_prot<::fixy::mmap::prot::WriteCopy>;
+using Anonymous = ::fixy::atom::mmap::with_share<::fixy::mmap::share::Anonymous>;
+
+// The count of the fresh pages of one mapping.
+constexpr std::size_t kFreshPageCount = 8;
+
+// The fresh pages of a case (THE FRESH PAGES), for the permission of the
+// case.
+template <class Owner>
+[[nodiscard]] auto map_fresh_pages(Owner const& owner) {
+    IoBlockCtx const ctx{::foundation::effects::testing::test()};
+    return ::fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, kFreshPageCount * page_size())
+        .expect("an anonymous mapping of the fresh pages works")
+        .consume();
 }
 
 // Words that the program only reads.  The linker puts a constant with no
@@ -173,11 +195,10 @@ void huge_page_advice_covers_the_whole_huge_pages() {
 // the error of the door and not of an older kernel.  qemu user mode takes the
 // advice and faults in no page, and the door then gives eopnotsupp.  The
 // emulator also refuses the THP knob, so the probe comes before the knob.
-void populate_faults_in_each_page_of_the_range() {
+// fresh holds the fresh pages of the case (THE FRESH PAGES).
+void populate_faults_in_each_page_of(core::View<std::byte> const fresh) {
     std::size_t const page = page_size();
-    ::foundation::AlignedBytes const probe_block = allocate_fresh_block();
-    core::View<std::byte const> const probe_page =
-        core::byte_view(probe_block.view()).window(page, page).expect("the page fits in the block");
+    core::View<std::byte const> const probe_page = fresh.window(page, page).expect("the page fits in the mapping");
     os::Errno const refusal =
         pages::populate_pages(kStartup, probe_page)
             .match([](core::Unit) noexcept { return os::Errno{}; }, [](os::Errno error) noexcept { return error; });
@@ -197,9 +218,9 @@ void populate_faults_in_each_page_of_the_range() {
     // process refuses huge pages in this case.
     pages::ThpSetting const first_thp =
         pages::exchange_thp_setting(kStartup, pages::ThpSetting::refused).expect("the process refuses THP");
-    ::foundation::AlignedBytes block = allocate_fresh_block();
-    core::View<std::byte> const bytes = core::byte_view(block.view());
-    core::View<std::byte const> const four_pages = bytes.window(page, 4 * page).expect("the pages fit in the block");
+    core::View<std::byte> const bytes =
+        fresh.window(3 * page, 5 * page).expect("the five pages after the probe fit in the mapping");
+    core::View<std::byte const> const four_pages = bytes.window(page, 4 * page).expect("the pages fit in the mapping");
     auto const window = [&four_pages](std::size_t offset, std::size_t count) {
         return four_pages.window(offset, count).expect("the window fits in the four pages");
     };
@@ -217,7 +238,7 @@ void populate_faults_in_each_page_of_the_range() {
     CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(window(2 * page, page)) == 1);
 
     std::size_t const mark_offset = (3 * page) + 7;
-    *bytes.get(mark_offset).expect("the mark is inside the block") = std::byte{0x5a};
+    *bytes.get(mark_offset).expect("the mark is inside the mapping") = std::byte{0x5a};
     pages::populate_pages(kStartup, four_pages).expect("the kernel faults in each page of the four pages");
     CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(four_pages) == 0);
     std::size_t position = page;
@@ -226,6 +247,17 @@ void populate_faults_in_each_page_of_the_range() {
         ++position;
     }
     static_cast<void>(pages::exchange_thp_setting(kStartup, first_thp).expect("the process puts back THP"));
+}
+
+// The case of the populate door on the fresh pages of its own permission,
+// which the case ends after the mapping on each path.
+void populate_faults_in_each_page_of_the_range() {
+    auto owner = ::foundation::permissions::mint_permission_root<FreshPages>();
+    {
+        auto mapping = map_fresh_pages(owner);
+        populate_faults_in_each_page_of(mapping.view<std::byte>().expect("a mapping holds bytes"));
+    }
+    ::foundation::linear::drop(std::move(owner));
 }
 
 // A page that the process cannot write takes no write fault, so the door

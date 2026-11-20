@@ -98,6 +98,15 @@ static void test_basic_init() {
     CRUCIBLE_TEST_ASSERT(kTest, pool.num_slots() == 3);
     CRUCIBLE_TEST_ASSERT(kTest, pool.num_external() == 1);
 
+    // Each byte of the pool reads zero before the first write of a slot, in
+    // each build, so a read of an unwritten slot gives the same bytes on each
+    // run.
+    std::uint64_t pool_sum = 0;
+    for (std::uint8_t const byte : pool.bytes()) {
+        pool_sum += byte;
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, pool_sum == 0);
+
     auto* base = host_ptr<char>(pool.pool_base());
     CRUCIBLE_TEST_ASSERT(kTest, host_ptr(pool.slot_ptr(SlotId{0}, pv)) == base + 0);
     CRUCIBLE_TEST_ASSERT(kTest, host_ptr(pool.slot_ptr(SlotId{1}, pv)) == base + 1024);

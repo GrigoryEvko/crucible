@@ -2121,6 +2121,14 @@ foundation_neg_compile_test(neg_aligned_bytes_without_allocation_marker
 foundation_neg_compile_test(neg_aligned_bytes_view_of_temporary
   "use of deleted function .void foundation::AlignedBytes::view\\(\\) &&."
   "a view of a temporary AlignedBytes points into a block that the full expression gives back")
+foundation_neg_compile_test(neg_aligned_bytes_zeroed_without_allocation_marker
+  "no matching function for call to .mint_aligned_bytes_zeroed\\(foundation::effects::cap::IO, int, int\\)."
+  "required for the satisfaction of .CanMintAlignedBytes<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+# The bytes of a new block hold no value, so the block has no view until a
+# door writes each byte.
+foundation_neg_compile_test(neg_aligned_bytes_unwritten_view
+  "use of deleted function .void foundation::UnwrittenBytes::view\\(\\) const."
+  "the bytes of an UnwrittenBytes hold no value: fill or write them first")
 
 # ── The thread-local cell ─────────────────────────────────────────────
 #

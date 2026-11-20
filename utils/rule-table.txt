@@ -773,11 +773,14 @@ witness <foundation/core/Ref.h> private | foundation::core::AddressKey | foundat
 witness <foundation/core/DataAddress.h> no-match | foundation::core::RunAddress | foundation::core::RunAddress{forge::rvalue<void*>()}
 witness <foundation/core/DataAddress.h> private | foundation::core::detail::RunAddressKey | foundation::core::detail::RunAddressKey{}
 witness <foundation/core/DataAddress.h> no-match | foundation::core::DataAddress<std::byte> | foundation::core::DataAddress<std::byte>{forge::rvalue<void*>(), forge::rvalue<std::byte>()}
-# An AlignedBytes has no constructor from a count and an alignment, so the
-# destructor gives back only a block that an AlignedBytes allocated.  Its
-# constructor takes the key that only AlignedBytesDoor builds, so each block
-# comes through mint_aligned_bytes.
+# An AlignedBytes and an UnwrittenBytes have no constructor from a count and
+# an alignment, so the destructor gives back only a block that a mint
+# allocated.  Each constructor takes the key that only AlignedBytesDoor
+# builds, so each block comes through mint_aligned_bytes or
+# mint_aligned_bytes_zeroed, and each AlignedBytes of written bytes through a
+# door of an UnwrittenBytes.
 witness <foundation/AlignedBytes.h> no-match | foundation::AlignedBytes | foundation::AlignedBytes{forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
+witness <foundation/AlignedBytes.h> no-match | foundation::UnwrittenBytes | foundation::UnwrittenBytes{forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
 witness <foundation/AlignedBytes.h> private | foundation::detail::AlignedBytesKey | foundation::detail::AlignedBytesKey{}
 witness <foundation/core/Identity.h> private | foundation::core::Identity | foundation::core::Identity{forge::rvalue<unsigned long>()}
 # A View comes only from an owner of the base layer, so no pointer and no
