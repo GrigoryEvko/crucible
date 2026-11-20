@@ -7,19 +7,20 @@
 //   mint_strided_rows(out, body, inputs...)
 //                       calls body(row, out_view, input_view...) one time for
 //                       each row of the plan of write_pointwise over out and the
-//                       inputs.  out is a StridedViewMut, which the walk borrows
-//                       for the call.  Each input is a StridedView or a
+//                       inputs, or for each part of a row in THE TILES.  out
+//                       is a StridedViewMut, which the walk borrows for the
+//                       call.  Each input is a StridedView or a
 //                       StridedViewMut of the same rank parameter.  The views
 //                       must have equal sizes, else the walk gives ShapeMismatch
 //                       and calls body for no row
 //
 // THE ROW
-// A row is the inner axis of the plan at one position of the outer axes.
-// The row gives its index (RowIndex), the count of its positions (RowCount),
-// its positions as a counted loop (steps(), each one a RowStep), and the
-// offset of each view at its zero position (offset(view), a RowOffset).  A
-// view of the body reads its element with at(offset, step).  So the body is
-// the counted loop
+// A row is the inner axis of the plan at one position of the outer axes, or
+// a part of it in THE TILES.  The row gives the number of its row in the plan
+// (RowIndex), the count of its positions (RowCount), its positions as a
+// counted loop (steps(), each one a RowStep), and the offset of each view at
+// its zero position (offset(view), a RowOffset).  A view of the body reads its
+// element with at(offset, step).  So the body is the counted loop
 //   for (auto step : row.steps()) out_view.at(row.offset(out_view), step) = ...
 // and the optimizer can make it a vector loop.
 //
@@ -39,15 +40,31 @@
 // that each view reads as one.  The rows come from the row loop of the lanes of
 // write_pointwise (for_each_row_).  A view with a stride of one on the inner
 // axis reads its row densely, with no product of the stride: RowRead::Unit, as
-// a template argument of the view.  So a body has 2^(1 + inputs) instances.
+// a template argument of the view.  So a body has 2^(1 + inputs) instances,
+// and THE TILES add 2^inputs - 1: one for each list of reads with out Unit
+// and an input Strided.
+//
+// THE TILES
+// A transposed input has a stride of one on an outer axis b and a larger
+// stride on the inner axis a, so a full row reads one line of the input for
+// each position, and the next row reads the same lines again.  When no input
+// shares an element with out, and out reads a with a stride of one, the walk
+// takes the axis b of the tile path of Pointwise.h (tile_axis_of_), with the
+// constant row_tile_lanes in place of the lanes of the target.  When the
+// plane of a and b holds at least row_tile_plane positions, it then gives the
+// body the parts of row_tile_extent positions of a, in blocks of
+// row_tile_extent rows: for each block of b, for each part of a, each row of
+// the block.  The lines and the pages of the views that a block reads stay in
+// L1 and in its TLB while the block runs.  A smaller plane stays in L1 in the
+// order of the rows, so it takes no tile.  The parts of one row come in the
+// order of a, and each part has the number of its row.  The extents are
+// constants, so the sequence of the calls of the body does not depend on the
+// target.  The loop of the body still reads the transposed input with one
+// load for each step.
 //
 // THE NAN RULE of Pointwise.h does not hold here, because the body computes
 // each value.  A body of float arithmetic that must give one NaN on each host
 // applies fp::canonicalize_nan of foundation/core/Float.h to its values.
-//
-// A transposed input, with a stride of one on an outer axis, reads one
-// element for each step, and the loop of the body is then a strided loop.
-// write_pointwise reads such an input with its tiles.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
@@ -60,6 +77,20 @@
 #include <utility>
 
 namespace foundation::core {
+
+// The count of the positions of a part of a row of THE TILES, and the count
+// of the rows of a block: a block of three views of floats reads 48 lines in
+// 48 pages.  A constant, so the sequence of the calls of the body is the same
+// on each target.
+inline constexpr std::size_t row_tile_extent = 16;
+
+// The least count of the positions of the plane of the two tile axes that
+// takes THE TILES: 16384 floats are 64 KB, more than the L1 of a core.
+inline constexpr std::size_t row_tile_plane = 16384;
+
+// The lanes that the choice of the tile axis of THE TILES reads: an axis of
+// fewer than half of them gives no tile.  A constant for the same reason.
+inline constexpr int row_tile_lanes = 16;
 
 // The brand of the view at Position of one walk of rows of the brand Walk.
 template <class Walk, std::size_t Position>
@@ -125,7 +156,8 @@ struct RowDoor {
 
 }  // namespace detail
 
-// The number of a row of the walk of rows of Walk, from zero.
+// The number of a row of the walk of rows of Walk, from zero.  The parts of
+// one row in THE TILES have the number of the row.
 template <class Walk>
 class RowIndex final {
     std::size_t value_ = 0;
@@ -315,6 +347,60 @@ constexpr void run_rows_(RowReads<OutRead, InReads...> /*reads*/, std::index_seq
     });
 }
 
+// The rows of a plan in THE TILES, for the tile axis b: the axes of the plan
+// other than a and b in their order, then the blocks of row_tile_extent
+// positions of b, then the parts of row_tile_extent positions of a, then the
+// rows of the block.  The number of a part is the number of its row in the
+// plan: the axes of the plan before the inner axis in row-major order, so the
+// axes after b give the weight of b.  The function is not inlined, so the
+// loop of a row of the caller keeps its registers.  O(rows * parts) calls of
+// body.
+template <class Walk, RowRead OutRead, RowRead... InReads, std::size_t... Is, class Body, std::size_t Capacity, class T,
+          class... Es>
+[[gnu::noinline]] constexpr void run_row_tiles_(RowReads<OutRead, InReads...> /*reads*/,
+                                                std::index_sequence<Is...> /*inputs*/, Body& body,
+                                                WalkPlan<1 + sizeof...(Es), Capacity> const& plan,
+                                                std::size_t tile_axis, T* out, Es const*... inputs) noexcept {
+    constexpr std::size_t views = 1 + sizeof...(Es);
+    std::size_t const inner = plan.rank - 1;
+    std::size_t const size_a = plan.sizes[inner];
+    std::size_t const size_b = plan.sizes[tile_axis];
+    std::size_t weight = 1;
+    for (std::size_t axis = tile_axis + 1; axis < inner; ++axis) {
+        weight *= plan.sizes[axis];
+    }
+    WalkPlan<views, Capacity> const outer = outer_plan_(plan, inner, tile_axis);
+    std::size_t const outer_rows = rows_of_(outer, 1);
+    auto const out_view = RowDoor::view<T, Walk, 0, OutRead>(out, plan.strides[0][inner]);
+    std::size_t counters[Capacity]{};
+    std::size_t outer_offsets[views]{};
+    std::size_t offsets[views]{};
+    for (std::size_t outer_row = 0; outer_row < outer_rows; ++outer_row) {
+        std::size_t const first_index = (outer_row / weight) * size_b * weight + outer_row % weight;
+        for (std::size_t b_block = 0; b_block < size_b; b_block += row_tile_extent) {
+            std::size_t const b_end = size_b - b_block < row_tile_extent ? size_b : b_block + row_tile_extent;
+            for (std::size_t a_start = 0; a_start < size_a; a_start += row_tile_extent) {
+                std::size_t const length = size_a - a_start < row_tile_extent ? size_a - a_start : row_tile_extent;
+                RowCount<Walk> const count = RowDoor::count<Walk>(length);
+                for (std::size_t view = 0; view < views; ++view) {
+                    offsets[view] = outer_offsets[view] + b_block * plan.strides[view][tile_axis]
+                                  + a_start * plan.strides[view][inner];
+                }
+                for (std::size_t b = b_block; b < b_end; ++b) {
+                    StridedRow<Walk, views> const row =
+                        RowDoor::row<Walk, views>(RowDoor::index<Walk>(first_index + b * weight), count, offsets);
+                    body(row, out_view,
+                         RowDoor::view<Es const, Walk, Is + 1, InReads>(inputs, plan.strides[Is + 1][inner])...);
+                    for (std::size_t view = 0; view < views; ++view) {
+                        offsets[view] += plan.strides[view][tile_axis];
+                    }
+                }
+            }
+        }
+        step_rows_(outer, counters, outer_offsets);
+    }
+}
+
 }  // namespace detail
 
 // The arguments of mint_strided_rows: inputs of the rank parameter of the
@@ -344,6 +430,21 @@ walk_rows_(Body& body, std::index_sequence<Is...> sequence, bool const (&apart)[
     if (!(same_sizes_(shape, strided_lanes_of_(StridedDoor::key(), sources)) && ...)) return err(ShapeMismatch{});
     if (target.count() == 0) return Unit{};
     PointwisePlan<views, Lanes::capacity> planned = plan_pointwise_(sequence, apart, target, sources...);
+    // THE TILES: a plan with no shared input whose out and an input read
+    // different axes with a stride of one, on a plane of at least
+    // row_tile_plane positions.  Its out reads the inner axis with a stride of
+    // one and an input steps on it, so only such reads take the tiles.  A
+    // plan of fewer than two axes has no second axis to tile, and a walk of
+    // fewer than row_tile_plane positions has no such plane.
+    bool is_tiled = false;
+    std::size_t tile_axis = 0;
+    if constexpr (Lanes::capacity >= 2) {
+        if (!planned.is_shared && planned.plan.rank >= 2 && target.count() >= row_tile_plane) {
+            std::size_t const last = planned.plan.rank - 1;
+            tile_axis = tile_axis_of_<row_tile_lanes>(planned.plan);
+            is_tiled = tile_axis != last && planned.plan.sizes[tile_axis] * planned.plan.sizes[last] >= row_tile_plane;
+        }
+    }
     // A plan of no axis holds one element: one row of one position.
     if (planned.plan.rank == 0) planned.plan = dense_plan_<views, Lanes::capacity>(1);
     WalkPlan<views, Lanes::capacity> const& plan = planned.plan;
@@ -353,9 +454,17 @@ walk_rows_(Body& body, std::index_sequence<Is...> sequence, bool const (&apart)[
         reads[view] = row_read_of_(plan.strides[view][inner]);
     }
     T* const out = strided_first_of_(StridedDoor::key(), target);
-    choose_row_reads_<0, views>(reads, [&]<RowRead... Reads>(RowReads<Reads...> chosen) noexcept {
-        run_rows_<Walk>(chosen, sequence, body, plan, out, strided_first_of_(StridedDoor::key(), sources)...);
-    });
+    choose_row_reads_<0, views>(
+        reads, [&]<RowRead OutRead, RowRead... InReads>(RowReads<OutRead, InReads...> chosen) noexcept {
+            if constexpr (Lanes::capacity >= 2 && OutRead == RowRead::Unit && ((InReads == RowRead::Strided) || ...)) {
+                if (is_tiled) {
+                    run_row_tiles_<Walk>(chosen, sequence, body, plan, tile_axis, out,
+                                         strided_first_of_(StridedDoor::key(), sources)...);
+                    return;
+                }
+            }
+            run_rows_<Walk>(chosen, sequence, body, plan, out, strided_first_of_(StridedDoor::key(), sources)...);
+        });
     return Unit{};
 }
 
