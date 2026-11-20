@@ -54,6 +54,23 @@ using LoopHandle =
     handle = std::move(local);
 }
 
+// The form of a pin: the handle of the caller goes into a pin, and the body
+// of the pin sends each item through the pinned handle.  A step under the
+// pinned policy has no holder check, so the steady loop reads no memory, not
+// even the slot of the thread, and calls nothing.  The count of the loop is a
+// parameter, so the function keeps its loop.
+[[gnu::used]] void send_through_a_pin(LoopHandle& handle, Item& item, std::uint32_t count) noexcept {
+    handle = s::HandleFactory::pin(::foundation::effects::testing::foreground(), std::move(handle),
+                                   [&item, count](auto pinned) noexcept {
+                                       Item value = item;
+                                       for (std::uint32_t sent = 0; sent < count; ++sent) {
+                                           pinned = std::move(pinned).send(++value, write_item);
+                                       }
+                                       item = value;
+                                       return pinned;
+                                   });
+}
+
 // The control of the check: the loop steps the handle and the item of the
 // caller in place.  The cold note can write each value that the caller can
 // reach through a pointer, so this loop keeps the handle in memory, and the

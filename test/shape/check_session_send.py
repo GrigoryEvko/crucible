@@ -3,13 +3,17 @@
 usage: check_session_send.py BUILD_DIR SOURCE_ROOT
 
 THE PROBE
-    test/shape/session_send.cpp holds two functions.  send_on_a_local_handle
+    test/shape/session_send.cpp holds three functions.  send_on_a_local_handle
     moves a handle into a local, sends each item through it, and moves it
-    back.  send_in_caller_memory steps the handle of the caller in place.  A
-    step can call the cold note of a holder change (fixy/session/Stepping.h),
-    and that call can write each value that the caller can reach through a
-    pointer.  So the second loop keeps the handle in memory, and the first
-    loop must not.
+    back.  send_through_a_pin pins the handle of the caller and sends each
+    item through the pinned handle (HandleFactory::pin of
+    fixy/session/Handle.h).  send_in_caller_memory steps the handle of the
+    caller in place.  A step can call the cold note of a holder change
+    (fixy/session/Stepping.h), and that call can write each value that the
+    caller can reach through a pointer.  So the last loop keeps the handle in
+    memory, and the first two loops must not.  A step under the pinned
+    policy has no holder check, so the loop of the pin reads no slot of the
+    thread either.
 
 THE COMPILE
     The compile is the compile of REFERENCE_UNIT in the compile database of
@@ -44,11 +48,14 @@ THE STEADY PATH
 
 THE VERDICT
     send_on_a_local_handle must have at least one steady loop, and no refusal
-    in it.  send_in_caller_memory must have at least one refusal: the control
-    shows that the check sees a handle in memory.  Exit 0 when the two hold,
-    1 when one does not hold or the probe does not compile, 2 on a usage
-    error, 77 for a skip.  Complexity: one compile, one disassembly, and a
-    walk linear in the edges of each loop.
+    in it.  send_through_a_pin must have at least one steady loop, and no
+    refusal and no read of the slot of the thread in it, so the check cannot
+    pass on a function that it does not read.  send_in_caller_memory must
+    have at least one refusal:
+    the control shows that the check sees a handle in memory.  Exit 0 when the
+    three hold, 1 when one does not hold or the probe does not compile, 2 on a
+    usage error, 77 for a skip.  Complexity: one compile, one disassembly, and
+    a walk linear in the edges of each loop.
 """
 
 from __future__ import annotations
@@ -61,6 +68,7 @@ from pathlib import Path
 REFERENCE_UNIT = "test/shape/core_shapes.cpp"
 PROBE_UNIT = "test/shape/session_send.cpp"
 LOCAL_FORM = "send_on_a_local_handle"
+PIN_FORM = "send_through_a_pin"
 CALLER_MEMORY_FORM = "send_in_caller_memory"
 DROPPED_PREFIXES = ("-fplugin", "-fsanitize", "-fno-sanitize", "-DCRUCIBLE_QUARANTINE_ACTIVE")
 # The words of a unit of a library, and the word of a unit of a program that takes their place.
@@ -144,13 +152,19 @@ def reads_holder_slot(instruction) -> bool:
     return is_thread_local and (instruction.name or "").endswith(HOLDER_SLOT)
 
 
-def refusals_of(instruction, callee: str | None) -> list[str]:
-    """Return each refusal of one instruction of a steady loop (THE STEADY PATH)."""
+def refusals_of(instruction, callee: str | None, admits_holder_slot: bool) -> list[str]:
+    """Return each refusal of one instruction of a steady loop (THE STEADY PATH).
+
+    A read of the slot of the thread is a refusal too when `admits_holder_slot` is False.
+    """
     found: list[str] = []
     if callee is not None or instruction.mnemonic == "call":
         found.append(f"a call of {callee or 'an unknown callee'}")
-    if reads_memory(instruction) and not reads_holder_slot(instruction):
-        found.append("a read of memory")
+    if reads_memory(instruction):
+        if not reads_holder_slot(instruction):
+            found.append("a read of memory")
+        elif not admits_holder_slot:
+            found.append("a read of the slot of the thread")
     return found
 
 
@@ -173,7 +187,7 @@ def steady_loops(code) -> list[list[tuple[int, int]]]:
     return loops
 
 
-def findings_of(code) -> tuple[int, list[str]]:
+def findings_of(code, admits_holder_slot: bool = True) -> tuple[int, list[str]]:
     """Return the count of the steady loops of a function, and each refusal in them, with the instruction."""
     from assay.guard.engines.elf import codegen_shapes as shapes
 
@@ -183,15 +197,15 @@ def findings_of(code) -> tuple[int, list[str]]:
     for body in loops:
         for place in body:
             instruction = flow.parts[0][place[1]]
-            for refusal in refusals_of(instruction, flow.callees.get(place)):
+            for refusal in refusals_of(instruction, flow.callees.get(place), admits_holder_slot):
                 found.append(f"{refusal}: {instruction.shown}")
     return len(loops), sorted(set(found))
 
 
 def verdict(codes: Mapping[str, object]) -> list[str]:
-    """Return the problems of the two functions of the probe (THE VERDICT)."""
+    """Return the problems of the three functions of the probe (THE VERDICT)."""
     problems: list[str] = []
-    for name in (LOCAL_FORM, CALLER_MEMORY_FORM):
+    for name in (LOCAL_FORM, PIN_FORM, CALLER_MEMORY_FORM):
         if name not in codes:
             problems.append(f"the object of {PROBE_UNIT} holds no function {name}")
     if problems:
@@ -200,6 +214,10 @@ def verdict(codes: Mapping[str, object]) -> list[str]:
     if loops == 0:
         problems.append(f"{LOCAL_FORM} has no steady loop, so the check reads nothing")
     problems += [f"{LOCAL_FORM}: the steady loop holds {item}" for item in local]
+    pinned_loops, pinned = findings_of(codes[PIN_FORM], admits_holder_slot=False)
+    if pinned_loops == 0:
+        problems.append(f"{PIN_FORM} has no steady loop, so the check reads nothing")
+    problems += [f"{PIN_FORM}: the steady loop holds {item}" for item in pinned]
     _, control = findings_of(codes[CALLER_MEMORY_FORM])
     if not control:
         problems.append(f"{CALLER_MEMORY_FORM} holds no refusal, so the check does not see a handle in memory")
@@ -232,9 +250,11 @@ def main(arguments: Sequence[str]) -> int:
     if problems:
         return 1
     loops, _ = findings_of(codes[LOCAL_FORM])
+    pinned_loops, _ = findings_of(codes[PIN_FORM], admits_holder_slot=False)
     _, control = findings_of(codes[CALLER_MEMORY_FORM])
     print(f"check_session_send: {LOCAL_FORM} has {loops} steady loop(s) with no call and no read of memory other "
-          f"than the slot of the thread.  The control {CALLER_MEMORY_FORM} holds {len(control)} refusal(s).")
+          f"than the slot of the thread.  {PIN_FORM} has {pinned_loops} steady loop(s) with no call and no read "
+          f"of memory.  The control {CALLER_MEMORY_FORM} holds {len(control)} refusal(s).")
     return 0
 
 

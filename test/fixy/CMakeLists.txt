@@ -2291,6 +2291,12 @@ fixy_neg_compile_test(neg_os_tag_namespace_holds_a_non_tag
 # reserved ModalityKind::Stepping for and never wrote down.
 fixy_test(test_session_protocol)
 
+# The pin of a handle: the body steps the handle under the pinned policy,
+# which has no holder check, and the pin turns it back.  The test reads the
+# count of the steps across a pin, and a child shows that a dropped pinned
+# handle still reports the drop.
+fixy_test(test_session_pin)
+
 # Handle.h is the runtime half.  The test forks a child to prove the
 # abandonment policy's destructor really runs, so a passing run prints
 # one abandonment banner on stderr from that child.
@@ -3228,6 +3234,12 @@ fixy_neg_compile_test(neg_sess_send_weak_ref
   "no matching function for call to .mint_session<neg_sess_send_weak_ref_types::Proto>"
   "Payload_Not_Owned.: a payload of the protocol cannot move to another thread, or it holds a borrow"
   "satisfaction of .ProtocolPayloadsTransfer<Proto>. \\[with Proto = fixy::session::Send<foundation::core::Option<foundation::core::Ref<const int, neg_sess_send_weak_ref_types::CounterBrand> >, fixy::session::End>\\]")
+fixy_neg_compile_test(neg_sess_send_a_pinned_handle
+  "run_joined: the body captures .moved."
+  "its type is not Sendable")
+fixy_neg_compile_test(neg_sess_pin_body_captures_the_handle
+  "use of deleted function"
+  "Pin_Body_Holds_A_Handle. the body of a pin captures a session handle")
 fixy_neg_compile_test(neg_sess_send_view
   "no matching function for call to .mint_session<neg_sess_send_view_types::Proto>"
   "Payload_Not_Owned.: a payload of the protocol cannot move to another thread, or it holds a borrow"

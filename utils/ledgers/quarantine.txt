@@ -120,6 +120,7 @@ bench/ | opted-out | 2 | MEASURE: the relaxed load of std::atomic is the row of 
 bench/ | opted-out | 11 | MEASURE: the rows of the allocators run their workers on std::jthread | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
 bench/ | opted-out | 11 | MEASURE: the rows of the bare rings run their workers on std::jthread | the rows of bench_thread_scaling measure the bare rings and their pinned references, whose two sides share plain positions that no type states, so their workers run on std::jthread and pin themselves
 bench/ | opted-out | 28 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
+bench/ | opted-out | 2 | MEASURE: the two sinks keep each send of a body, so the optimizer cannot fold them | the session bench gives each send an input sink on the item and an output sink on the written item, so the optimizer cannot fold the sends of a body
 bench/ | raw-pointer-object | 4 | - | -
 bench/ | region | 4 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 bench/ | region | 1 | ABI: the BPF program of SchedSwitch writes the timeline that the harness reads | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
@@ -158,6 +159,7 @@ bench/ | region | 1 | MEASURE: the relaxed load of std::atomic is the row of the
 bench/ | region | 1 | MEASURE: the rows of the allocators run their workers on std::jthread | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
 bench/ | region | 1 | MEASURE: the rows of the bare rings run their workers on std::jthread | the rows of bench_thread_scaling measure the bare rings and their pinned references, whose two sides share plain positions that no type states, so their workers run on std::jthread and pin themselves
 bench/ | region | 1 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
+bench/ | region | 1 | MEASURE: the two sinks keep each send of a body, so the optimizer cannot fold them | the session bench gives each send an input sink on the item and an output sink on the written item, so the optimizer cannot fold the sends of a body
 bench/ | replace-pending:std::bit_cast | 5 | - | -
 bench/ | std-entity | 66 | - | -
 bench/ | std-object | 20 | - | -
@@ -239,7 +241,7 @@ include/fixy/os/ | replace-pending:<string> | 1 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 390 | - | -
+include/fixy/session/ | base-std-entity | 389 | - | -
 include/fixy/session/ | base-std-object | 150 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -

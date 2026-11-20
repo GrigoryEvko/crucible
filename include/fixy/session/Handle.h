@@ -121,6 +121,7 @@
 #include <fixy/session/Watch.h>
 #include <fixy/session/Wire.h>
 
+#include <foundation/Closure.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Fatal.h>
@@ -475,6 +476,17 @@ protected:
     // session in the watch (detail::report_dropped_protocol).
     [[nodiscard]] constexpr detail::step_origin step_origin_() const noexcept { return {tracker_.session(), {}}; }
 
+    // What a turn of a pin gives to the handle that it builds: the record and
+    // the site of this handle (HandleFactory::pin).  A turn is no step, so
+    // the count and the site stay.
+    [[nodiscard]] constexpr detail::step_origin turn_origin_() const noexcept {
+        return {tracker_.session(), tracker_.construction_loc()};
+    }
+
+    // The one holder check of a pin (HandleFactory::pin), under a tracked
+    // policy.
+    constexpr void hold_on_this_thread_() noexcept { tracker_.hold_on_this_thread(); }
+
     // Ends the session in the watch: it detached or cancelled.  Call
     // before mark_consumed_, which lets go of the record.
     constexpr void release_endpoint_() noexcept {
@@ -793,6 +805,58 @@ template <typename Ctx>
 concept CtxPicksLocally = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Test>;
 
 namespace detail {
+
+// True when a type names a session handle in one hop: a SessionHandle, or a
+// Ref of one.  The facts of a capture give the target with the reference or
+// the pointer removed (foundation/Closure.h), so a reference and a pointer to
+// a handle name it too.
+[[nodiscard]] consteval bool names_a_session_handle(std::meta::info type) {
+    std::meta::info bare = std::meta::dealias(std::meta::remove_cv(type));
+    if (std::meta::has_template_arguments(bare) && std::meta::template_of(bare) == ^^::foundation::core::Ref) {
+        bare = std::meta::dealias(std::meta::remove_cv(transition::template_arguments_run(bare)[0]));
+    }
+    return std::meta::has_template_arguments(bare) && std::meta::template_of(bare) == ^^SessionHandle;
+}
+
+// True when a body of a pin reaches a session handle through a direct
+// capture (HandleFactory::pin).  The check reads only the direct captures,
+// and it does not follow this or another pointer to a class.  A body whose
+// captures the walk cannot read reaches a handle as far as the pin knows.
+// Complexity: linear in the captures.
+[[nodiscard]] consteval bool pin_body_reaches_a_handle(std::meta::info body) {
+    const ::foundation::closure::ClosureFacts facts = ::foundation::closure::closure_facts(body);
+    if (!facts.is_readable()) return true;
+    for (const ::foundation::closure::CaptureFact& fact : facts) {
+        if (names_a_session_handle(fact.target)) return true;
+    }
+    return false;
+}
+
+// True when the result of a body of a pin is a handle over the Resource of the
+// pin, under the pinned policy of the pin.
+[[nodiscard]] consteval bool is_a_handle_of_the_pin(std::meta::info result, std::meta::info pinned) {
+    const std::meta::info given = std::meta::dealias(result);
+    if (!std::meta::has_template_arguments(given) || std::meta::template_of(given) != ^^SessionHandle) return false;
+    const transition::static_run<std::meta::info> got = transition::template_arguments_run(given);
+    const transition::static_run<std::meta::info> want = transition::template_arguments_run(std::meta::dealias(pinned));
+    return std::meta::dealias(got[1]) == std::meta::dealias(want[1])
+        && std::meta::dealias(got[3]) == std::meta::dealias(want[3]);
+}
+
+// The body of a pin takes the pinned handle, and it gives back a pinned handle
+// over the same Resource, at the position where the body stops.
+template <typename Body, typename Pinned>
+concept PinBodyGivesAPinnedHandle =
+    std::is_invocable_v<Body, Pinned> && is_a_handle_of_the_pin(^^std::invoke_result_t<Body, Pinned>, ^^Pinned);
+
+}  // namespace detail
+
+// A body of a pin: a callable whose direct captures name no session handle
+// (HandleFactory::pin).
+template <typename Body>
+concept PinBody = !detail::pin_body_reaches_a_handle(^^std::remove_cvref_t<Body>);
+
+namespace detail {
 template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
 class handle_core;
 }  // namespace detail
@@ -839,6 +903,27 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
               typename PS = ::foundation::permissions::EmptyPermSet>
     [[nodiscard]] static constexpr auto make_(Resource r, HoldSlots<PS> slots, detail::step_origin origin) noexcept(
         std::is_nothrow_move_constructible_v<Resource>) -> SessionHandle<Proto, Resource, LoopCtx, Policy, PS>;
+
+    // Turns the pinned handle that the body of a pin gives back to the
+    // tracked policy of the same action (pin).  A handle at End keeps the mark
+    // of its record.
+    template <typename Proto, typename Resource, typename LoopCtx, AbandonAction Action, typename PS>
+    [[nodiscard]] static constexpr auto
+    turn_back_(SessionHandle<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>&& pinned) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>) {
+        using Tracked = check::detail::tracked_policy<Action>;
+        auto& core = core_(pinned);
+        core.require_live_();
+        const detail::step_origin origin = core.turn_origin_();
+        HoldSlots<PS> slots = core.take_slots_();
+        if constexpr (std::is_same_v<Proto, End>) {
+            auto back = make_<Proto, Resource, LoopCtx, Tracked, PS>(core.take_resource_(), std::move(slots), origin);
+            back.mark_ = pinned.mark_;
+            return back;
+        } else {
+            return make_<Proto, Resource, LoopCtx, Tracked, PS>(core.take_resource_(), std::move(slots), origin);
+        }
+    }
 
     // Builds the handle at the head that R reaches after Continue, Loop, a
     // named state and a vendor pin resolve.  The slots go to the handle.
@@ -1071,6 +1156,64 @@ public:
         return enter_<Offer<Branches...>, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots),
                                                                             origin);
     }
+
+    // ── The pin ───────────────────────────────────────────────────────
+    //
+    // Pins a handle to the calling thread for the run of a body.  The pin
+    // makes the one holder check of the handle, and the one note of the
+    // holder when the handle comes from another thread.  It builds the
+    // handle at the same position under the pinned policy of the same action
+    // (check::detail::pinned_policy of fixy/session/Stepping.h), calls the
+    // body with it, and turns the pinned handle that the body returns back to
+    // the tracked policy.  The pinned policy is thread_bound, so the handle
+    // stays on the thread of the pin, and a step through it reads no slot of
+    // the thread and calls no note.  The turn back builds the tracked handle
+    // through its constructor, whose holder check finds the thread of the pin
+    // and notes nothing.  That is one compare for each pin, outside the loop
+    // of the body.  A turn with no check needs a turn tag through the five
+    // constructors of SessionHandle and through its bases, and the compare
+    // costs less.  A turn is no step, so the count of the steps and the site
+    // stay.
+    //
+    // The pin takes the handle by rvalue, from a local or from an Option
+    // member that it empties.  The body must not reach the handle while the
+    // pin holds it.  PinBody refuses a body with a direct capture whose type,
+    // with cv removed, is a SessionHandle, a reference or a pointer to one,
+    // or a Ref of one.  The check does not follow this, or another pointer to
+    // a class: a deep walk would refuse each stage whose class holds a handle,
+    // and such a stage is the primary user of the pin.  So a use of the handle
+    // through this during the pin is a use of a consumed handle when the
+    // program runs, which the liveness check ends, or a none of the emptied
+    // Option.
+    template <typename Ctx, typename Proto, typename Resource, typename LoopCtx, AbandonAction Action, typename PS,
+              typename Body>
+        requires ::foundation::effects::IsExecCtx<Ctx> && (!is_terminal_state_v<Proto>) && PinBody<Body>
+              && detail::PinBodyGivesAPinnedHandle<
+                     Body, SessionHandle<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>>
+    [[nodiscard]] static constexpr auto
+    pin(Ctx const&, SessionHandle<Proto, Resource, LoopCtx, check::detail::tracked_policy<Action>, PS>&& handle,
+        Body&& body) noexcept(std::is_nothrow_move_constructible_v<Resource>
+                              && std::is_nothrow_invocable_v<
+                                  Body,
+                                  SessionHandle<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>>) {
+        auto& core = core_(handle);
+        core.require_live_();
+        core.hold_on_this_thread_();
+        const detail::step_origin origin = core.turn_origin_();
+        HoldSlots<PS> slots = core.take_slots_();
+        return turn_back_(
+            std::forward<Body>(body)(make_<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>(
+                core.take_resource_(), std::move(slots), origin)));
+    }
+
+    template <typename Ctx, typename Proto, typename Resource, typename LoopCtx, AbandonAction Action, typename PS,
+              typename Body>
+        requires(!PinBody<Body>)
+    static void pin(Ctx const&, SessionHandle<Proto, Resource, LoopCtx, check::detail::tracked_policy<Action>, PS>&&,
+                    Body&&) = delete("[Pin_Body_Holds_A_Handle] the body of a pin captures a session handle, a "
+                                     "reference or a pointer to one, or a Ref of one.  The pin holds the handle for "
+                                     "the run of the body, so the body must reach it only through the pinned handle "
+                                     "that it gets.");
 
     // ── The steps ─────────────────────────────────────────────────────
     //
@@ -2070,12 +2213,16 @@ constexpr auto HandleFactory::step_(Resource r, HoldSlots<PS> slots, detail::ste
         static_assert(is_head_v<R>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
                                     "unexpected protocol shape after resolution.  "
                                     "Only Send/Recv/Select/Offer/End/Continue are valid heads.");
+        // A step counts one: the policy keeps the count of the reference that
+        // it gets, so the turn of a pin, which is no step, keeps the count.  A
+        // terminal handle holds no record, and it keeps the count of one.
+        constexpr watch::session_ref terminal{.steps = 1};
         if constexpr (Policy::checks_abandonment && std::is_same_v<R, End>) {
             // The handle at End holds no record, and it keeps the mark of the
             // record.  The release clears the peer of the record, so the mark
             // is read first.
             auto at_end = make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots),
-                                                                  detail::step_origin{{}, origin.site});
+                                                                  detail::step_origin{terminal, origin.site});
             if !consteval {
                 at_end.mark_ = detail::end_mark<true>{watch::mark_of(origin.session.endpoint)};
                 watch::release(origin.session.endpoint);
@@ -2086,9 +2233,11 @@ constexpr auto HandleFactory::step_(Resource r, HoldSlots<PS> slots, detail::ste
                 watch::release(origin.session.endpoint);
             }
             return make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots),
-                                                           detail::step_origin{{}, origin.site});
+                                                           detail::step_origin{terminal, origin.site});
         } else {
-            return make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots), origin);
+            const watch::session_ref next{origin.session.endpoint, origin.session.holder, origin.session.steps + 1};
+            return make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots),
+                                                           detail::step_origin{next, origin.site});
         }
     }
 }

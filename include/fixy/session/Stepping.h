@@ -30,6 +30,9 @@
 //     design of Lagaillardie, Neykova and Yoshida (ECOOP 2022).
 //   - check::Off does nothing.  It is an explicit hatch, and a handle
 //     under it does not keep the guarantee above.
+//   - check::Pinned and check::PinnedCancel act as Enforced and Cancel,
+//     with no holder check at a step or a move.  Only a pin builds a handle
+//     under them, and the type keeps that handle on the thread of the pin.
 //
 // The default is check::Enforced in every build mode, and NDEBUG does not
 // change it.  check::Cancel is not the default, because it needs a
@@ -80,18 +83,25 @@ namespace check {
 
 namespace detail {
 
-// Records the handle's construction site and whether it was consumed.
-// The destructor reads both, and so does the liveness check of every
-// operation.  Enforced and Cancel differ only in the action.
-//
-// A source_location names strings of static storage that no thread writes,
-// and each other member is a value.  So the policy moves to another thread
-// with its handle (foundation/Transfer.h), as a delegated endpoint does, and
-// as the site of a channel mint of fixy/session/Handle.h does.
-template <AbandonAction Action>
-class[[= ::foundation::transfer::sendable{}]] tracked_policy {
+// Where a checking policy compares the thread that holds the handle with the
+// calling thread.
+enum class HolderCheck : std::uint8_t {
+    // At each step and each move: the tracked policy.
+    EachStep,
+    // Only at the pin that opens the handle: the pinned policy.  The type
+    // keeps the handle on the thread of the pin.
+    AtThePin,
+};
+
+// The record of a checking policy: the handle's construction site and
+// whether it was consumed.  The destructor reads both, and so does the
+// liveness check of every operation.  Enforced and Cancel differ only in the
+// action, and the tracked and the pinned policies differ only in the holder
+// check.
+template <AbandonAction Action, HolderCheck Check>
+class policy_record {
     static_assert(Action != AbandonAction::Ignore,
-                  "fixy/session/Stepping.h: a tracked policy acts on a dropped protocol.  check::Off is the policy "
+                  "fixy/session/Stepping.h: a checking policy acts on a dropped protocol.  check::Off is the policy "
                   "that ignores one.");
 
     bool flag_ = false;
@@ -118,13 +128,15 @@ class[[= ::foundation::transfer::sendable{}]] tracked_policy {
     // thread-local value and writes nothing.  A handle that no thread
     // holds yet, from a channel mint, names none, and so does a thread
     // that has not touched the watch: the first move or step on a thread
-    // then makes that thread the holder.
+    // then makes that thread the holder.  A pinned record has no check here.
     constexpr void track_holder_() noexcept {
-        if !consteval {
-            if (endpoint_ == watch::endpoint_id::none) return;
-            const watch::thread_slot current = watch::current_thread_slot();
-            if (current != holder_ || current == watch::thread_slot::none) [[unlikely]] {
-                holder_ = watch::note_holder(endpoint_);
+        if constexpr (Check == HolderCheck::EachStep) {
+            if !consteval {
+                if (endpoint_ == watch::endpoint_id::none) return;
+                const watch::thread_slot current = watch::current_thread_slot();
+                if (current != holder_ || current == watch::thread_slot::none) [[unlikely]] {
+                    holder_ = watch::note_holder(endpoint_);
+                }
             }
         }
     }
@@ -138,17 +150,29 @@ public:
     static constexpr bool checks_abandonment = true;
 
     static constexpr std::string_view name() noexcept {
-        return Action == AbandonAction::Cancel ? std::string_view{"Cancel"} : std::string_view{"Enforced"};
+        constexpr bool is_pinned = Check == HolderCheck::AtThePin;
+        return std::string_view{Action == AbandonAction::Cancel ? (is_pinned ? "PinnedCancel" : "Cancel")
+                                                                : (is_pinned ? "Pinned" : "Enforced")};
     }
 
-    constexpr tracked_policy() noexcept = default;
-    constexpr explicit tracked_policy(std::source_location loc) noexcept : loc_{loc} {}
+    constexpr policy_record() noexcept = default;
+    constexpr explicit policy_record(std::source_location loc) noexcept : loc_{loc} {}
     // A step builds the next handle on the thread that runs the step.
     // That thread is the holder from now on, although it can differ from
     // the holder that the reference names when it reached the handle
-    // through a pointer.
-    constexpr tracked_policy(std::source_location loc, watch::session_ref session) noexcept
-        : holder_{session.holder}, endpoint_{session.endpoint}, loc_{loc}, steps_{session.steps + 1} {
+    // through a pointer.  The count is the count of the reference: a step of
+    // HandleFactory gives it one higher, and the turn of a pin keeps it.
+    constexpr policy_record(std::source_location loc, watch::session_ref session) noexcept
+        : holder_{session.holder}, endpoint_{session.endpoint}, loc_{loc}, steps_{session.steps} {
+        track_holder_();
+    }
+
+    // The one holder check of a pin (HandleFactory::pin of
+    // fixy/session/Handle.h): it tells the watch that the calling thread
+    // holds the handle when the handle comes from another thread.
+    constexpr void hold_on_this_thread() noexcept
+        requires(Check == HolderCheck::EachStep)
+    {
         track_holder_();
     }
 
@@ -166,9 +190,10 @@ public:
     // `h = std::move(h)` copies flag_ onto itself and then sets it, and
     // the live handle then reads as consumed.
     //
-    // A move of a live handle tells the watch that the calling thread
-    // holds it now, which is what the deadlock detector reads.
-    constexpr void move_from(tracked_policy& other) noexcept {
+    // A move of a live handle under the tracked policy tells the watch that
+    // the calling thread holds it now, which is what the deadlock detector
+    // reads.  A move under the pinned policy stays on the thread of the pin.
+    constexpr void move_from(policy_record& other) noexcept {
         if (this == &other) [[unlikely]]
             return;
         flag_ = other.flag_;
@@ -182,10 +207,63 @@ public:
     }
 };
 
+// The policy of a handle that can go to another thread: Enforced and Cancel.
+// Each step and each move compares the holder with the calling thread.
+//
+// A source_location names strings of static storage that no thread writes,
+// and each other member of the record is a value.  So the policy moves to
+// another thread with its handle (foundation/Transfer.h), as a delegated
+// endpoint does, and as the site of a channel mint of fixy/session/Handle.h
+// does.
+template <AbandonAction Action>
+class[[= ::foundation::transfer::sendable{}]] tracked_policy : public policy_record<Action, HolderCheck::EachStep> {
+public:
+    using policy_record<Action, HolderCheck::EachStep>::policy_record;
+};
+
+// The policy of a handle that a pin holds on its thread (HandleFactory::pin
+// of fixy/session/Handle.h): Pinned and PinnedCancel.  It keeps each check of
+// the tracked policy of the same action: the flag, the record, the count of
+// the steps, the site and the report of a dropped protocol.  It has no holder
+// check.  The pin made the one holder check, and the one note when the handle
+// came from another thread, when it opened, and the type keeps the handle on
+// that thread.  The policy is thread_bound and not Shareable
+// (foundation/Transfer.h), so a handle that holds it is neither: no door
+// moves it to another thread, and no other thread reads it.  So a step and a
+// move under it read no slot of the thread and call no note.  The holder of
+// the record is the thread of the pin, and the turn back gives it to the
+// tracked handle.
+template <AbandonAction Action>
+class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] pinned_policy
+    : public policy_record<Action, HolderCheck::AtThePin> {
+public:
+    using policy_record<Action, HolderCheck::AtThePin>::policy_record;
+};
+
+// The pinned policy of a tracked policy, and the tracked policy of a pinned
+// policy, for the two turns of a pin.
+template <typename Policy>
+struct policy_turn;
+
+template <AbandonAction Action>
+struct policy_turn<tracked_policy<Action>> {
+    using type = pinned_policy<Action>;
+};
+
+template <AbandonAction Action>
+struct policy_turn<pinned_policy<Action>> {
+    using type = tracked_policy<Action>;
+};
+
 }  // namespace detail
 
 using Enforced = detail::tracked_policy<AbandonAction::Abort>;
 using Cancel = detail::tracked_policy<AbandonAction::Cancel>;
+
+// The policies of a handle that a pin holds (detail::pinned_policy).  Only a
+// pin builds a handle under them.
+using Pinned = detail::pinned_policy<AbandonAction::Abort>;
+using PinnedCancel = detail::pinned_policy<AbandonAction::Cancel>;
 
 // Carries nothing and answers "consumed" to every question, so the
 // destructor's check folds away and [[no_unique_address]] leaves the

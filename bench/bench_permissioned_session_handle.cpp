@@ -10,17 +10,21 @@
 //   permission has the size of the handle with the empty set, so the set
 //   takes no storage.  The set moves at compile time only.
 //
-//   Timed (informational): two pairs on one protocol and one Resource.  At
+//   Timed (informational): four pairs on one protocol and one Resource.  At
 //   the sub-nanosecond scale the layout of the two measured bodies can move
 //   the numbers by a cycle, so the program exits 0 and the numbers are for
 //   inspection.
 //
-// The two pairs are two forms of a caller.  In the local form, the body steps
-// a handle that is local to its loop, as a real caller does.  In the form of
-// the caller memory, the timed loop reaches the handle through the closure,
-// as a loop reaches a handle that is a member of an object.  A step can call
-// the cold note of a holder change, and the second form pays for that call
-// (send_loop_in_caller_memory tells why).
+// The four pairs are four forms of a caller (CallerForm tells each one).  In
+// the local form, the body steps a handle that is local to its loop, as a
+// real caller does.  In the form of the caller memory, the timed loop reaches
+// the handle through the closure, as a loop reaches a handle that is a member
+// of an object.  A step can call the cold note of a holder change, and the
+// second form pays for that call.  The pinned form pins the handle of the
+// caller memory for each body, and the fourth form measures only the pin and
+// its turn back.  Each send takes its item through an input sink and writes
+// it through an output sink, so the optimizer cannot fold the sends of a body
+// into one.
 //
 // Single-threaded.  Loop<Send<Item, Continue>> lands each send on the loop
 // head again, so the measured body can assign the next handle back to the
@@ -60,12 +64,6 @@ struct BenchRegion {
 
 constexpr auto kForeground = ::foundation::effects::testing::foreground();
 
-// The trying write: it always has room.
-constexpr auto send_item = [](FakeChannel& channel, Item& value) noexcept {
-    channel.last = value;
-    return true;
-};
-
 using SendLoop = s::Loop<s::Send<Item, s::Continue>>;
 
 using EmptySetLoopHandle = decltype(s::mint_session<SendLoop>(kForeground, std::declval<FakeChannel>()));
@@ -75,17 +73,45 @@ using PermittedLoopHandle = decltype(s::mint_permissioned_session<SendLoop>(kFor
 static_assert(sizeof(PermittedLoopHandle) == sizeof(EmptySetLoopHandle),
               "a permission set must take no storage in the handle");
 
-// The sends of one body of the local form.  The two moves of the body then
-// cost a small part of each send.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the two sinks keep each send of a body, so the optimizer cannot fold them")
+
+// An input sink: the empty asm statement reads and writes the register of the
+// item.  So the optimizer cannot know the item of a send.  The statement emits
+// no instruction and has no memory clobber, so the other values of the loop
+// stay in registers.
+[[gnu::always_inline]] inline void make_item_opaque(Item& item) noexcept { asm volatile("" : "+r"(item)); }
+
+// An output sink: the empty asm statement reads and writes a copy of the
+// item in memory.  So each send stores its item, as a send into a channel
+// that another thread reads does, and the optimizer cannot move the stores
+// out of the loop.  The statement has no memory clobber.  But with it in the
+// loop, GCC 16 keeps the handle of the local and the pinned forms in memory
+// (the disassembly of this bench shows it), so the count of the steps makes a
+// chain of a load and a store in each send.  Each form pays that chain, so the
+// forms still compare.
+[[gnu::always_inline]] inline void keep_item_written(Item copy) noexcept { asm volatile("" : "+m"(copy)); }
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// The trying write: it always has room, and the output sink keeps each write.
+constexpr auto send_item = [](FakeChannel& channel, Item& value) noexcept {
+    channel.last = value;
+    keep_item_written(channel.last);
+    return true;
+};
+
+// The sends of one body of the local and the pinned forms.  The moves of the
+// body and the pin then cost a small part of each send.
 constexpr std::uint32_t kSendsPerBody = 64;
 
-// The two forms of a caller of the timed loop.
+// The four forms of a caller of the timed loop.
 enum class CallerForm : std::uint8_t {
     // A handle that is local to the loop, as a real caller keeps its handle
     // on its own stack.  Each body moves the handle into a local, sends
     // kSendsPerBody items, and gives it back.  No call can reach the local,
     // so the cold note of a holder change (the check of
     // fixy/session/Stepping.h) does not make the handle go through memory.
+    // The output sink does, as keep_item_written tells.
     LocalHandle,
     // A handle in the memory of the caller: the timed loop reaches the handle
     // and the item through the closure, and each body sends one item.  The
@@ -94,25 +120,69 @@ enum class CallerForm : std::uint8_t {
     // value that the caller can reach through a pointer, so the loop reloads
     // the closure and keeps the handle in memory.
     CallerMemory,
+    // A handle in the memory of the caller that each body pins
+    // (HandleFactory::pin of fixy/session/Handle.h): the pin makes one
+    // holder check, the body sends kSendsPerBody items through the pinned
+    // handle, and the pin gives it back.  A step under the pinned policy
+    // reads no slot of the thread and calls no note.
+    PinnedHandle,
+    // The pin of the pinned form with a body that sends nothing: the row
+    // gives the cost of one pin and its turn back, which each body of the
+    // pinned form pays one time.
+    PinAlone,
 };
+
+// The sends of one body of a form.
+[[nodiscard]] constexpr std::uint32_t sends_of(CallerForm form) noexcept {
+    switch (form) {
+        case CallerForm::LocalHandle:
+        case CallerForm::PinnedHandle:
+            return kSendsPerBody;
+        case CallerForm::CallerMemory:
+            return 1;
+        case CallerForm::PinAlone:
+            return 0;
+        default:
+            ::fixy::unreachable();
+    }
+}
 
 // One body of the timed loop: it takes the handle of the caller, and it
 // gives the handle that the caller keeps.  The local form builds the result
 // from the local at the end.  A return of the local itself would make the
 // local the object of the result, which the caller reaches through a pointer,
-// and the cold note would then keep it in memory.
+// and the cold note would then keep it in memory.  In the loop of sends, the
+// output sink keeps the handle in memory in each form (keep_item_written).
 template <CallerForm Form, typename Handle>
 [[nodiscard]] Handle send_body(Handle&& handle, Item& item) noexcept {
     if constexpr (Form == CallerForm::LocalHandle) {
         Handle local = std::move(handle);
         Item value = item;
         for (std::uint32_t sent = 0; sent < kSendsPerBody; ++sent) {
-            local = std::move(local).send(++value, send_item);
+            ++value;
+            make_item_opaque(value);
+            local = std::move(local).send(value, send_item);
         }
         item = value;
         return Handle{std::move(local)};
+    } else if constexpr (Form == CallerForm::PinnedHandle) {
+        return s::HandleFactory::pin(kForeground, std::move(handle), [&item](auto pinned) noexcept {
+            Item value = item;
+            for (std::uint32_t sent = 0; sent < kSendsPerBody; ++sent) {
+                ++value;
+                make_item_opaque(value);
+                pinned = std::move(pinned).send(value, send_item);
+            }
+            item = value;
+            return pinned;
+        });
+    } else if constexpr (Form == CallerForm::PinAlone) {
+        return s::HandleFactory::pin(kForeground, std::move(handle), [](auto pinned) noexcept { return pinned; });
     } else {
-        return std::move(handle).send(++item, send_item);
+        Item value = item + 1;
+        make_item_opaque(value);
+        item = value;
+        return std::move(handle).send(value, send_item);
     }
 }
 
@@ -147,10 +217,33 @@ template <CallerForm Form, typename Handle>
         s::mint_permissioned_session<SendLoop>(kForeground, FakeChannel{}, perm::mint_permission_root<BenchRegion>()));
 }
 
-// Prints the time of one send of a row of the local form: the time of a body
-// over kSendsPerBody.
-void print_one_send(bench::Report const& report) {
-    constexpr double sends = kSendsPerBody;
+[[nodiscard]] bench::Report empty_set_send_pinned() {
+    return send_loop<CallerForm::PinnedHandle>("send, empty permission set, pinned handle (64 sends a body)",
+                                               s::mint_session<SendLoop>(kForeground, FakeChannel{}));
+}
+
+[[nodiscard]] bench::Report permitted_send_pinned() {
+    return send_loop<CallerForm::PinnedHandle>(
+        "send, one permission in the set, pinned handle (64 sends a body)",
+        s::mint_permissioned_session<SendLoop>(kForeground, FakeChannel{}, perm::mint_permission_root<BenchRegion>()));
+}
+
+[[nodiscard]] bench::Report empty_set_pin_alone() {
+    return send_loop<CallerForm::PinAlone>("pin and turn back, empty permission set, no send",
+                                           s::mint_session<SendLoop>(kForeground, FakeChannel{}));
+}
+
+[[nodiscard]] bench::Report permitted_pin_alone() {
+    return send_loop<CallerForm::PinAlone>(
+        "pin and turn back, one permission in the set, no send",
+        s::mint_permissioned_session<SendLoop>(kForeground, FakeChannel{}, perm::mint_permission_root<BenchRegion>()));
+}
+
+// Prints the time of one send of a row: the time of a body over the sends of
+// one body of its form.
+void print_one_send(bench::Report const& report, CallerForm form) {
+    CRUCIBLE_PRE(sends_of(form) > 0);
+    const double sends = sends_of(form);
     bench::print("  {}  one send: p50 {} ns  p99 {} ns  max {} ns\n", report.name.view(),
                  ::fixy::Fixed<3>{report.pct.p50 / sends}, ::fixy::Fixed<3>{report.pct.p99 / sends},
                  ::fixy::Fixed<3>{report.pct.max / sends});
@@ -159,18 +252,30 @@ void print_one_send(bench::Report const& report) {
 }  // namespace
 
 int main() {
-    ::fixy::FixedArray<bench::Report, 4> reports{empty_set_send_local(), permitted_send_local(),
-                                                 empty_set_send_in_caller_memory(), permitted_send_in_caller_memory()};
+    ::fixy::FixedArray<bench::Report, 8> reports{empty_set_send_local(),
+                                                 permitted_send_local(),
+                                                 empty_set_send_in_caller_memory(),
+                                                 permitted_send_in_caller_memory(),
+                                                 empty_set_send_pinned(),
+                                                 permitted_send_pinned(),
+                                                 empty_set_pin_alone(),
+                                                 permitted_pin_alone()};
     bench::emit_reports_text(reports.view());
 
-    bench::print("\n=== local form: the time of one send ===\n");
-    print_one_send(reports.at(::fixy::index<0>()));
-    print_one_send(reports.at(::fixy::index<1>()));
+    bench::print("\n=== the time of one send ===\n");
+    print_one_send(reports.at(::fixy::index<0>()), CallerForm::LocalHandle);
+    print_one_send(reports.at(::fixy::index<1>()), CallerForm::LocalHandle);
+    print_one_send(reports.at(::fixy::index<2>()), CallerForm::CallerMemory);
+    print_one_send(reports.at(::fixy::index<3>()), CallerForm::CallerMemory);
+    print_one_send(reports.at(::fixy::index<4>()), CallerForm::PinnedHandle);
+    print_one_send(reports.at(::fixy::index<5>()), CallerForm::PinnedHandle);
 
     bench::print("\n=== permission set: pair delta ===\n");
-    ::fixy::FixedArray<bench::Compare, 2> const compares{
+    ::fixy::FixedArray<bench::Compare, 4> const compares{
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),
-        bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<3>()))};
+        bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<3>())),
+        bench::compare(reports.at(::fixy::index<4>()), reports.at(::fixy::index<5>())),
+        bench::compare(reports.at(::fixy::index<6>()), reports.at(::fixy::index<7>()))};
     bench::emit_compares(compares.view());
 
     bench::print("\n  The static_assert carries the claim.  The timed pairs are for inspection only.\n");

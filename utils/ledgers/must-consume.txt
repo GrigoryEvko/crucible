@@ -15,7 +15,7 @@ include/crucible/cntp/ | unconsumed | 25 | - | -
 include/fixy/ | unconsumed | 2 | - | -
 include/fixy/concurrent/ | unconsumed | 1 | - | -
 include/fixy/session/ | double-consume | 2 | - | -
-include/fixy/session/ | unconsumed | 15 | - | -
+include/fixy/session/ | unconsumed | 17 | - | -
 src/ | unconsumed | 5 | - | -
 test/ | unconsumed | 38 | - | -
 test/fixy/ | assign-over-live | 1 | - | -
