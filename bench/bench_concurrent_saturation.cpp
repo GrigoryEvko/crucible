@@ -49,7 +49,10 @@ struct SaturationCase {
     using Ring = SpscRing<Item, (1U << 20)>;  // 1M slots — never fills
 
     static bench::Report run() {
-        ::fixy::Box<Ring> ring = ::fixy::mint_box<Ring>(kAlloc);
+        ::fixy::Box<Ring> ring_box = ::fixy::mint_box<Ring>(kAlloc);
+        // The body reads the ring through a Ref, which holds a pointer that
+        // is never null, so the timed loop tests no empty Box.
+        auto const ring = ::fixy::to(*ring_box);
         alignas(64) static ::fixy::FixedArray<Item, N> tx{};
         alignas(64) static ::fixy::FixedArray<Item, N> rx{};
         for (::fixy::Index<N> const index : tx.indices())
@@ -145,7 +148,8 @@ int main() {
     ::fixy::FixedArray<bench::Report, 15> reports{
         // Single-call SPSC — N=1 baseline.
         [&] {
-            ::fixy::Box<SpscRing<Item, (1U << 20)>> ring = ::fixy::mint_box<SpscRing<Item, (1U << 20)>>(kAlloc);
+            ::fixy::Box<SpscRing<Item, (1U << 20)>> ring_box = ::fixy::mint_box<SpscRing<Item, (1U << 20)>>(kAlloc);
+            auto const ring = ::fixy::to(*ring_box);
             std::uint64_t i = 0;
             return bench::run("spsc_ring.try_push (N=1, single-call)", [&] {
                 const bool ok = ring->try_push(++i);

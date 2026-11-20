@@ -173,7 +173,8 @@ int main() {
     // would blow the stack.
     ::fixy::FixedArray<bench::Report, 10> reports{
         [&] {
-            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            auto const log = ::fixy::to(*log_box);
             return bench::run("try_append(1 meta  = 168B)", [&] {
                 auto idx = log->try_append(meta1.view());
                 bench::do_not_optimize(idx);
@@ -181,7 +182,8 @@ int main() {
             });
         }(),
         [&] {
-            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            auto const log = ::fixy::to(*log_box);
             return bench::run("try_append(2 metas = 336B)", [&] {
                 auto idx = log->try_append(meta2.view());
                 bench::do_not_optimize(idx);
@@ -189,7 +191,8 @@ int main() {
             });
         }(),
         [&] {
-            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            auto const log = ::fixy::to(*log_box);
             return bench::run("try_append(3 metas = 504B)", [&] {
                 auto idx = log->try_append(meta3.view());
                 bench::do_not_optimize(idx);
@@ -197,7 +200,8 @@ int main() {
             });
         }(),
         [&] {
-            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            auto const log = ::fixy::to(*log_box);
             return bench::run("try_append(8 metas = 1344B)", [&] {
                 auto idx = log->try_append(meta8.view());
                 bench::do_not_optimize(idx);
@@ -212,7 +216,8 @@ int main() {
         // Inner counter stays a local to avoid atomic-store pollution
         // of the measurement.
         [&] {
-            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            auto const log = ::fixy::to(*log_box);
             uint32_t since_drain = 0;
             constexpr uint32_t kD = 50000;
             return bench::run("throughput (3 metas/call, drain/50k)", [&] {
@@ -227,14 +232,16 @@ int main() {
 
         // ── Raw atomics (floor for ordering cost) ─────────────────────
         [&] {
-            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            auto const log = ::fixy::to(*log_box);
             return bench::run("head.peek_relaxed", [&] {
                 auto h = log->head.peek_relaxed();
                 bench::do_not_optimize(h);
             });
         }(),
         [&] {
-            ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            auto const log = ::fixy::to(*log_box);
             uint32_t v = 0;
             return bench::run("head.advance_sole_writer_from (release)", [&] {
                 log->head.advance_sole_writer_from(v, v + 1);

@@ -78,8 +78,9 @@ auto bench_halves() noexcept {
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
 bench::Report bare_mpsc_push() {
-    ::fixy::Box<::fixy::concurrent::MpscRing<Item, kCap>> ring =
+    ::fixy::Box<::fixy::concurrent::MpscRing<Item, kCap>> ring_box =
         ::fixy::mint_box<::fixy::concurrent::MpscRing<Item, kCap>>(kAlloc);
+    auto const ring = ::fixy::to(*ring_box);
     Item i = 0;
     return bench::run("bare MpscRing.try_push", [&] {
         const bool ok = ring->try_push(++i);
@@ -102,8 +103,9 @@ bench::Report wrapped_mpsc_push() {
 }
 
 bench::Report bare_mpsc_pop() {
-    ::fixy::Box<::fixy::concurrent::MpscRing<Item, kCap>> ring =
+    ::fixy::Box<::fixy::concurrent::MpscRing<Item, kCap>> ring_box =
         ::fixy::mint_box<::fixy::concurrent::MpscRing<Item, kCap>>(kAlloc);
+    auto const ring = ::fixy::to(*ring_box);
     for (Item i = 0; i < kCap / 2; ++i)
         (void)ring->try_push(i);
     // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.

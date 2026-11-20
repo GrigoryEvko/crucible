@@ -97,7 +97,8 @@ int main() {
 
         // ── SpscRing: pure push (huge cap, never fills) ───────────────
         [&] {
-            ::fixy::Box<HugeSpsc> ring = ::fixy::mint_box<HugeSpsc>(kAlloc);
+            ::fixy::Box<HugeSpsc> ring_box = ::fixy::mint_box<HugeSpsc>(kAlloc);
+            auto const ring = ::fixy::to(*ring_box);
             std::uint64_t i = 0;
             return bench::run("spsc_ring.try_push (huge cap, no drain)", [&] {
                 const bool ok = ring->try_push(++i);
@@ -121,7 +122,8 @@ int main() {
         // (~5ns) ≈ 13-15ns measured.  Per-item ≈ 0.117ns.
         // (Zen 4+ would emit AVX-512 ZMM stores; this CPU does not.)
         [&] {
-            ::fixy::Box<HugeSpsc> ring = ::fixy::mint_box<HugeSpsc>(kAlloc);
+            ::fixy::Box<HugeSpsc> ring_box = ::fixy::mint_box<HugeSpsc>(kAlloc);
+            auto const ring = ::fixy::to(*ring_box);
             alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> tx{};
             alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> rx{};
             for (::fixy::Index<64> const index : tx.indices())
@@ -136,7 +138,8 @@ int main() {
 
         // ── SpscRing: pure pop (pre-filled, never empties) ────────────
         [&] {
-            ::fixy::Box<HugeSpsc> ring = ::fixy::mint_box<HugeSpsc>(kAlloc);
+            ::fixy::Box<HugeSpsc> ring_box = ::fixy::mint_box<HugeSpsc>(kAlloc);
+            auto const ring = ::fixy::to(*ring_box);
             // Pre-fill enough so 100k pops don't drain — push 200k.
             for (std::uint64_t i = 0; i < 200000; ++i) {
                 (void)ring->try_push(i);
@@ -149,7 +152,8 @@ int main() {
 
         // ── SpscRing: round-trip push+pop (depth stays 0/1) ───────────
         [&] {
-            ::fixy::Box<SmallSpsc> ring = ::fixy::mint_box<SmallSpsc>(kAlloc);
+            ::fixy::Box<SmallSpsc> ring_box = ::fixy::mint_box<SmallSpsc>(kAlloc);
+            auto const ring = ::fixy::to(*ring_box);
             std::uint64_t i = 0;
             return bench::run("spsc_ring round-trip (push+pop)", [&] {
                 (void)ring->try_push(++i);
@@ -160,14 +164,16 @@ int main() {
 
         // ── AtomicSnapshot: publish (writer-only) ─────────────────────
         [&] {
-            ::fixy::Box<Snap> snap = ::fixy::mint_box<Snap>(kAlloc);
+            ::fixy::Box<Snap> snap_box = ::fixy::mint_box<Snap>(kAlloc);
+            auto const snap = ::fixy::to(*snap_box);
             std::uint64_t i = 0;
             return bench::run("atomic_snapshot.publish", [&] { snap->publish(++i); });
         }(),
 
         // ── AtomicSnapshot: load (reader-only, no writer) ─────────────
         [&] {
-            ::fixy::Box<Snap> snap = ::fixy::mint_box<Snap>(kAlloc, std::uint64_t{42});
+            ::fixy::Box<Snap> snap_box = ::fixy::mint_box<Snap>(kAlloc, std::uint64_t{42});
+            auto const snap = ::fixy::to(*snap_box);
             // The load spins with no exit while a write is in flight, so it
             // takes a context that owns Div.
             const ::fixy::TestRunnerCtx reader{::foundation::effects::testing::test()};
@@ -179,7 +185,8 @@ int main() {
 
         // ── AtomicSnapshot: try_load fast path ────────────────────────
         [&] {
-            ::fixy::Box<Snap> snap = ::fixy::mint_box<Snap>(kAlloc, std::uint64_t{42});
+            ::fixy::Box<Snap> snap_box = ::fixy::mint_box<Snap>(kAlloc, std::uint64_t{42});
+            auto const snap = ::fixy::to(*snap_box);
             return bench::run("atomic_snapshot.try_load (uncontended)", [&] {
                 auto v = snap->try_load();
                 bench::do_not_optimize(v);
@@ -191,7 +198,8 @@ int main() {
         // (+reset-on-full, const entry)" — periodic reset on full keeps
         // the bench from saturating; tail samples include reset cost.
         [&] {
-            ::fixy::Box<crucible::TraceRing> ring = ::fixy::mint_box<crucible::TraceRing>(kAlloc);
+            ::fixy::Box<crucible::TraceRing> ring_box = ::fixy::mint_box<crucible::TraceRing>(kAlloc);
+            auto const ring = ::fixy::to(*ring_box);
             crucible::TraceRing::Entry e{};
             e.schema_hash = crucible::SchemaHash{0xABCDEF};
             return bench::run("trace_ring.try_append (reference, +reset-on-full)", [&] {
