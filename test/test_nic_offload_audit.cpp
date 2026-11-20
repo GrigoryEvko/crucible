@@ -2,7 +2,7 @@
 // It issues no syscalls, changes no setting, and needs no privilege.
 
 #include <crucible/cog/NicOffloadAudit.h>
-#include <foundation/reflect/EnumName.h>
+#include <foundation/core/Text.h>
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -10,7 +10,6 @@
 #include <foundation/effects/Effect.h>
 
 #include <cstdio>
-#include <string_view>
 
 namespace {
 
@@ -85,12 +84,12 @@ static cog::NicOffloadAuditPolicy strict_policy() {
 }
 
 static void test_enumerator_names() {
-    using ::foundation::reflect::enum_name;
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(cog::NicRssHash::Toeplitz) == std::string_view{"Toeplitz"});
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(cog::NicTxQdisc::Fq) == std::string_view{"Fq"});
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(cog::NicAuditIssue::RssDisabled) == std::string_view{"RssDisabled"});
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(static_cast<cog::NicAuditIssue>(1u << 31))
-                                    == std::string_view{"<unknown NicAuditIssue>"});
+    using ::foundation::core::enum_name_text;
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(cog::NicRssHash::Toeplitz) == ::fixy::TextView{"Toeplitz"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(cog::NicTxQdisc::Fq) == ::fixy::TextView{"Fq"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(cog::NicAuditIssue::RssDisabled) == ::fixy::TextView{"RssDisabled"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(static_cast<cog::NicAuditIssue>(1u << 31))
+                                    == ::fixy::TextView{"<unknown NicAuditIssue>"});
     ::fixy::check::pass(kTest, "  test_enumerator_names:                PASSED\n");
 }
 

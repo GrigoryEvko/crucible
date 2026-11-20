@@ -7,6 +7,7 @@
 // compiler folds the call.
 
 #include <crucible/cog/TargetCaps.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/EnumName.h>
 
 #include "padding_bytes.h"
@@ -57,9 +58,11 @@ static void check_every_name_at_run_time() {
 
 // A deleted feature leaves its bit empty, because a stored schema can still
 // hold that bit.  No enumerator names the bits below.
-static_assert(fr::enum_name(static_cast<cog::NicFeature>(1u << 7)) == fr::unknown_enum_sentinel<cog::NicFeature>);
-static_assert(fr::enum_name(static_cast<cog::SwitchFeature>(1u << 1)) == fr::unknown_enum_sentinel<cog::SwitchFeature>);
-static_assert(fr::enum_name(static_cast<cog::SwitchFeature>(1u << 7)) == fr::unknown_enum_sentinel<cog::SwitchFeature>);
+static_assert(::foundation::core::enum_name_text(static_cast<cog::NicFeature>(1u << 7)) == "<unknown NicFeature>");
+static_assert(::foundation::core::enum_name_text(static_cast<cog::SwitchFeature>(1u << 1))
+              == "<unknown SwitchFeature>");
+static_assert(::foundation::core::enum_name_text(static_cast<cog::SwitchFeature>(1u << 7))
+              == "<unknown SwitchFeature>");
 
 static void test_names_at_run_time() {
     check_every_name_at_run_time<cog::LinkLayer>();

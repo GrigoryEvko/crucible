@@ -2,6 +2,8 @@
 
 #include <crucible/cipher/CipherTierPromotion.h>
 
+#include <foundation/core/Text.h>
+
 namespace crucible::cipher {
 
 namespace detail::cipher_tier_promotion_self_test {
@@ -30,7 +32,7 @@ static_assert(
     mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Hot>(::fixy::mint_band<ColdHash>(ContentHash{3})).peek()
     == ContentHash{3});
 
-static_assert(::foundation::reflect::enum_name(RestoreError::ContentHashMismatch) == "ContentHashMismatch");
+static_assert(::foundation::core::enum_name_text(RestoreError::ContentHashMismatch) == "ContentHashMismatch");
 
 using HotPromoteHash = HotPromote<ContentHash>;
 using HotPromoteCarrier = HotPromoteDelegate<ContentHash>;

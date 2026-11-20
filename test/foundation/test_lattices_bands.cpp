@@ -34,6 +34,7 @@
 #include <foundation/algebra/lattices/WaitLattice.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <array>
 #include <cstddef>
@@ -86,7 +87,8 @@ using PinnedGraded = fa::Graded<fa::ModalityKind::Absolute, PinnedGrade, T>;
 // only at the one a hand-written cell happened to name.
 template <typename L, typename E = typename L::element_type>
 [[nodiscard]] consteval bool every_tier_collapses() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^E));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -120,7 +122,8 @@ static_assert(every_tier_collapses<fl::ClockSourceLattice, fl::ClockSource>());
 // identifier and ">", at every tier.
 template <typename L, typename E = typename L::element_type>
 [[nodiscard]] consteval bool every_at_name_is_reflected() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^E));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -164,7 +167,8 @@ inline constexpr ::fixy::FixedArray<ScopeRow, 8> kScopeChains{
 
 // Complexity: O(n^2) in the number of enumerators.
 [[nodiscard]] consteval bool every_scope_is_in_its_chain() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^fl::MemoryScope));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^fl::MemoryScope));
     if (kScopeChains.view().size() != enumerators.size()) return false;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -211,7 +215,8 @@ using element_of_t = typename L::element_type;
 // element type.
 template <typename L, typename E = typename L::element_type>
 consteval void append_pins(std::vector<std::meta::info>& pins) {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^E));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -898,12 +903,13 @@ int main() {
     // at static storage, so a diagnostic can print them.
     volatile int raw_tier = 6;
     const auto tier = static_cast<fl::DetSafeTier>(raw_tier);
-    if (fr::enum_name(tier) != "Pure") {
+    if (::foundation::core::enum_name_text(tier) != ::foundation::core::TextView{"Pure"}) {
         ::fixy::report(::fixy::Sink::Err, "test_lattices_bands: enum_name(DetSafeTier{{6}}) is not Pure\n");
         return 1;
     }
     volatile int raw_bad = 200;
-    if (fr::enum_name(static_cast<fl::DetSafeTier>(raw_bad)) != "<unknown DetSafeTier>") {
+    if (::foundation::core::enum_name_text(static_cast<fl::DetSafeTier>(raw_bad))
+        != ::foundation::core::TextView{"<unknown DetSafeTier>"}) {
         ::fixy::report(::fixy::Sink::Err, "test_lattices_bands: enum_name(DetSafeTier{{200}}) is not the sentinel\n");
         return 1;
     }

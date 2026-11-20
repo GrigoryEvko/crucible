@@ -1,5 +1,5 @@
 #include <crucible/topology/Pingmesh.h>
-#include <foundation/reflect/EnumName.h>
+#include <foundation/core/Text.h>
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -9,7 +9,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <string_view>
 #include <type_traits>
 
 namespace {
@@ -49,12 +48,12 @@ measurement(cog::CogIdentity const& src, cog::CogIdentity const& dst, std::uint6
 
 // The log spelling of both enums comes from reflection.
 static void test_names() {
-    using ::foundation::reflect::enum_name;
-    static_assert(enum_name(topology::PingmeshProbeStatus::Delivered) == "Delivered");
-    static_assert(enum_name(topology::PingmeshError::Full) == "Full");
+    using ::foundation::core::enum_name_text;
+    static_assert(enum_name_text(topology::PingmeshProbeStatus::Delivered) == "Delivered");
+    static_assert(enum_name_text(topology::PingmeshError::Full) == "Full");
     volatile auto error = topology::PingmeshError::LatencyOutOfRange;
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(static_cast<topology::PingmeshError>(error))
-                                    == std::string_view{"LatencyOutOfRange"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(static_cast<topology::PingmeshError>(error))
+                                    == ::fixy::TextView{"LatencyOutOfRange"});
     ::fixy::check::pass(kTest, "  test_names:                         PASSED\n");
 }
 

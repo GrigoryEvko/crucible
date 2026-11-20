@@ -11,8 +11,9 @@
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/Modality.h>
+#include <foundation/core/Text.h>
 #include <foundation/effects/Effect.h>
-#include <foundation/reflect/EnumName.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
@@ -118,20 +119,23 @@ void lattice_runs_at_run_time(Tally& checks) {
     CRUCIBLE_TEST_EXPECT(checks, subsumes<TrivialRow>(TrivialRow::bottom(), write_row));
 }
 
-// modality_name is consteval.  The run-time name read is enum_name, which
-// modality_name calls, so a kind that arrives at run time names itself
-// and a byte outside the enum reaches the sentinel.
+// modality_name is consteval.  The run-time name read is enum_name_text,
+// which gives the text of enum_name, which modality_name calls.  So a kind
+// that arrives at run time names itself, and a byte outside the enum
+// reaches the sentinel.
 void modality_runs_at_run_time(Tally& checks) {
     using namespace fa;
-    using ::foundation::reflect::enum_name;
+    using ::foundation::core::enum_name_text;
+    using ::foundation::core::TextView;
     const ModalityKind comonad = opaque(modality::Comonad_t::kind);
     const ModalityKind stepping = opaque(modality::Stepping_t::kind);
     CRUCIBLE_TEST_EXPECT(checks, comonad == ModalityKind::Comonad);
     CRUCIBLE_TEST_EXPECT(checks, stepping == ModalityKind::Stepping);
     CRUCIBLE_TEST_EXPECT(checks, comonad != stepping);
-    CRUCIBLE_TEST_EXPECT(checks, enum_name(comonad) == "Comonad");
-    CRUCIBLE_TEST_EXPECT(checks, enum_name(stepping) == "Stepping");
-    CRUCIBLE_TEST_EXPECT(checks, enum_name(opaque(static_cast<ModalityKind>(200))) == "<unknown ModalityKind>");
+    CRUCIBLE_TEST_EXPECT(checks, enum_name_text(comonad) == TextView{"Comonad"});
+    CRUCIBLE_TEST_EXPECT(checks, enum_name_text(stepping) == TextView{"Stepping"});
+    CRUCIBLE_TEST_EXPECT(checks,
+                         enum_name_text(opaque(static_cast<ModalityKind>(200))) == TextView{"<unknown ModalityKind>"});
 
     static_assert(has_unit_v<ModalityKind::RelativeMonad> && !has_unit_v<ModalityKind::Comonad>);
     static_assert(has_counit_v<ModalityKind::Comonad> && !has_counit_v<ModalityKind::Absolute>);
@@ -214,7 +218,8 @@ void graded_runs_at_run_time(Tally& checks) {
     // Each door of the carrier opens under one modality.  A stored grade
     // that is not empty names the value under every modality but Absolute,
     // so only Absolute opens the keyed write in place.
-    static constexpr auto kinds = std::define_static_array(std::meta::enumerators_of(^^ModalityKind));
+    static constexpr ::foundation::reflect::ReflectionList kinds =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^ModalityKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto kind_info : kinds) {
