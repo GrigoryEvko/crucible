@@ -488,6 +488,7 @@ add_library(fixy STATIC
   src/fixy/os/Fs.cpp
   src/fixy/os/Futex.cpp
   src/fixy/os/Io.cpp
+  src/fixy/os/Loader.cpp
   src/fixy/os/Mmap.cpp
   src/fixy/os/MonotonicClock.cpp
   src/fixy/os/NumaCounters.cpp

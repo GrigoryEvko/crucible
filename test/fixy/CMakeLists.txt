@@ -6109,6 +6109,17 @@ fixy_neg_compile_test(neg_temporary_directory_without_nondet
   "no matching function for call to .mint_temporary_directory\\(const .anonymous.::IoBlockCtx&\\)"
   "required for the satisfaction of .CtxFitsIdentityRead<Ctx>.")
 
+# The loader door.  mint_library opens and maps files, which is IO, and it
+# waits for the disk, which is Block.  One fixture for each missing effect.
+fixy_test(test_os_loader)
+fixy_neg_compile_test(neg_library_without_io
+  "no matching function for call to .mint_library\\(const .anonymous.::ForegroundCtx&, const char \\[10\\], "
+  "required for the satisfaction of .CtxFitsLibraryLoad<Ctx>.")
+
+fixy_neg_compile_test(neg_library_without_block
+  "no matching function for call to .mint_library\\(const .anonymous.::IoCtx&, const char \\[10\\], "
+  "required for the satisfaction of .CtxFitsLibraryLoad<Ctx>.")
+
 fixy_neg_compile_test(neg_os_fs_mint_file_duplicate_mode
   "no matching function for call"
   "mode<fixy::fs::open_mode::WriteTruncate> >\\(\\{anonymous\\}::IoBlockCtx&")

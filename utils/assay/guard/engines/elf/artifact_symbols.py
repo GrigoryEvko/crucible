@@ -506,6 +506,9 @@ TSAN_WORD = "tsan"
 #     environment one time at the start of the process.  The C library owns environ.  A host process such as Python
 #     changes it before the dlopen of the vessel, so the initial block of the process does not give it.
 #   * The monotonic clock door of fixy/os/MonotonicClock.h reads the clock through the vDSO of the C library.
+#   * The loader door of fixy/os/Loader.h loads a library, finds its functions, closes it and reads the text of a
+#     failed call.  The C library owns the list of the loaded libraries, their constructors and destructors, and the
+#     lookup of their names.
 DOOR_CALLS = (
     DoorCall("abort", FOUNDATION, "Abort.cpp.o"),
     *(DoorCall(symbol, FOUNDATION, "Heap.cpp.o") for symbol in ("malloc", "calloc", "aligned_alloc", "free")),
@@ -544,6 +547,7 @@ DOOR_CALLS = (
     DoorCall("at_quick_exit", FIXY, "ExitHooks.cpp.o"),
     DoorCall("getenv", FIXY, "ExitHooks.cpp.o"),
     DoorCall("clock_gettime", FIXY, "MonotonicClock.cpp.o"),
+    *(DoorCall(symbol, FIXY, "Loader.cpp.o") for symbol in ("dlopen", "dlsym", "dlclose", "dlerror")),
 )
 # The door of each door call.  A call has one door.
 DOORS = {call.symbol: call for call in DOOR_CALLS}

@@ -76,6 +76,7 @@
 #include <fixy/os/Fs.h>
 #include <fixy/os/Futex.h>
 #include <fixy/os/Io.h>
+#include <fixy/os/Loader.h>
 #include <fixy/os/Mmap.h>
 #include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Sched.h>
@@ -1530,6 +1531,11 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::os::HandleRef, kDescriptor},
     {^^::fixy::os::Args, "the arguments of main: a view of argv, which carries no claim to fold"},
     {^^::fixy::os::ArgsCursor, "the cursor of the arguments of main, which carries no claim to fold"},
+    {^^::fixy::os::Library, kDescriptor},
+    {^^::fixy::os::LibraryFunction,
+     "a function of a loaded library: the address of a function of a foreign library, which carries no claim to "
+     "fold, and it is never a template argument of a kernel signature"},
+    {^^::fixy::os::LoaderDiagnostic, kPayload},
     {^^::fixy::net::ForeignSocketRef, kDescriptor},
     {^^::fixy::net::SocketIdentityTag,
      "the tag of the identity of a socket: an incomplete class that an Id names, and never a value"},
