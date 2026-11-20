@@ -96,8 +96,9 @@ void on_fatal_signal(int signal_number, ::siginfo_t* info, void* /*context*/) no
         ::foundation::core::fatal("the signal door: sigaltstack did not read the alternate stack of the thread");
     }
     if ((current.ss_flags & SS_DISABLE) == 0 && current.ss_size >= needed) return ::foundation::core::none;
-    ::foundation::os::GuardedRegion region = ::foundation::os::map_guarded_region(needed).expect(
-        "the signal door: the map of an alternate stack failed, and a failed allocation ends the process");
+    ::foundation::os::GuardedRegion region =
+        ::foundation::os::map_guarded_region(::foundation::core::ByteCount{needed})
+            .expect("the signal door: the map of an alternate stack failed, and a failed allocation ends the process");
     ::stack_t next{};
     next.ss_sp = region.data_mut();
     next.ss_size = region.usable_bytes();

@@ -171,7 +171,7 @@ constexpr std::size_t kOpenTries = 64;
 }
 
 // The usable bytes of each region of the map case.
-constexpr std::size_t kRegionBytes = std::size_t{1} << 20U;
+constexpr ::fixy::ByteCount kRegionBytes{std::size_t{1} << 20U};
 
 // The count of the rounds of the map case.  The runtime of a sanitizer can map
 // memory of its own into the free range between the unmap and the fixed map

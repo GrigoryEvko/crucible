@@ -28,7 +28,7 @@ namespace os = ::foundation::os;
 using MapResult = ::foundation::core::Result<os::GuardedRegion, os::Errno>;
 
 // The usable bytes of each region of the test, a multiple of kGuardBytes.
-constexpr std::size_t kUsableBytes = std::size_t{1} << 20U;
+constexpr ::fixy::ByteCount kUsableBytes{std::size_t{1} << 20U};
 
 // The bytes of the smallest page of x86_64 and of aarch64.  Each page size of
 // the two is a multiple of it.
@@ -61,7 +61,7 @@ void test_an_ended_range_maps_again(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, again.is_ok());
     os::GuardedRegion region = std::move(again).expect("the fixed map of an ended range maps");
     CRUCIBLE_TEST_ASSERT(test, region.address() == address);
-    CRUCIBLE_TEST_ASSERT(test, region.usable_bytes() == kUsableBytes);
+    CRUCIBLE_TEST_ASSERT(test, region.usable_bytes() == kUsableBytes.raw());
     CRUCIBLE_TEST_ASSERT(test, region.data_mut()[0] == 0);
     region.data_mut()[0] = 7;
     CRUCIBLE_TEST_ASSERT(test, region.data_mut()[0] == 7);
@@ -90,7 +90,8 @@ void test_a_refused_request_gives_its_error(::fixy::TestRunnerCtx const& test) {
     os::RegionAddress const ended = address_of_an_ended_region();
     os::RegionAddress const inside_a_page{static_cast<std::uint64_t>(ended) + 1};
     CRUCIBLE_TEST_ASSERT(test, error_of(os::map_guarded_region_at(inside_a_page, kUsableBytes)) == os::Errno::einval);
-    CRUCIBLE_TEST_ASSERT(test, error_of(os::map_guarded_region_at(ended, ~std::size_t{0})) == os::Errno::enomem);
+    CRUCIBLE_TEST_ASSERT(test, error_of(os::map_guarded_region_at(ended, ::fixy::ByteCount{~std::size_t{0}}))
+                                   == os::Errno::enomem);
 }
 
 }  // namespace

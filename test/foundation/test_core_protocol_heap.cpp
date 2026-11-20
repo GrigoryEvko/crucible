@@ -635,7 +635,8 @@ void test_heap_decode_refuses_a_hostile_count() {
 void test_heap_decode_refuses_more_than_the_cap() {
     constexpr std::size_t cap = 0xFFFFFFFFU;
     ::foundation::os::GuardedRegion region =
-        ::foundation::os::map_guarded_region(cap + 1).expect("a map of 4 GiB that no page backs");
+        ::foundation::os::map_guarded_region(::foundation::core::ByteCount{cap + 1})
+            .expect("a map of 4 GiB that no page backs");
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the kernel gives the pages of a map as a pointer to raw bytes and a count")
     View<std::byte const> const mapped = ::foundation::core::mint_foreign_view(
         static_cast<std::byte const*>(static_cast<void const*>(region.data_mut())), cap + 1);

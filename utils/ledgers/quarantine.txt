@@ -406,7 +406,7 @@ test/fixy/ | opted-out | 1 | PROBE: the test plants an atom in a shipped family,
 test/fixy/ | opted-out | 1 | PROBE: the test reads the dumpable flag and the system call numbers of the child | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/fixy/ | opted-out | 2 | PROBE: the test reads the state that the doors gave a socket from the kernel | test_os_socket reads the domain, the type, the protocol, the stamp flags and the close-on-exec flag of a socket from the kernel, to check what the doors did
 test/fixy/ | opted-out | 2 | PROBE: the test states a payload rule of the role data for a class of its own file | The split of the session registry: a test states a payload rule of the role data for a class of its own file in a PROBE region, and the new fixtures plant a family, a forward declaration and a lying specialization of Named in PROBE regions
-test/fixy/ | opted-out | 5 | PROBE: two threads with no happens-before edge, and a close of the C library | -
+test/fixy/ | opted-out | 4 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
 test/fixy/ | raw-pointer-object | 128 | - | -

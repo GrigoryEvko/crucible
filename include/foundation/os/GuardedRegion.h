@@ -43,6 +43,7 @@
 // is src/foundation/os/GuardedRegion.cpp, which issues raw_syscall.
 
 #include <foundation/core/Choice.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/os/Errno.h>
 
 #include <cstddef>
@@ -117,7 +118,7 @@ private:
 // Maps USABLE_BYTES, rounded up to a multiple of kGuardBytes, above a guard
 // of kGuardBytes.  A count that the rounding cannot hold gives Errno::enomem,
 // as a map that the kernel refuses does.
-[[nodiscard]] core::Result<GuardedRegion, Errno> map_guarded_region(std::size_t usable_bytes) noexcept;
+[[nodiscard]] core::Result<GuardedRegion, Errno> map_guarded_region(core::ByteCount usable_bytes) noexcept;
 
 // Maps a region of USABLE_BYTES, rounded as map_guarded_region rounds them,
 // whose first usable byte is at FIRST_USABLE (THE FIXED MAP).  A map that
@@ -127,6 +128,6 @@ private:
 // gives einval with no call.  A count that the rounding cannot hold gives
 // enomem.
 [[nodiscard]] core::Result<GuardedRegion, Errno> map_guarded_region_at(RegionAddress first_usable,
-                                                                       std::size_t usable_bytes) noexcept;
+                                                                       core::ByteCount usable_bytes) noexcept;
 
 }  // namespace foundation::os
