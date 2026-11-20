@@ -83,12 +83,15 @@
 //   foreign_c_str(text)   the address of the first character of a CText,
 //                       for a foreign reader that reads up to the zero
 //   foreign_first(view)   the address of the first element of a View, for a
-//                       raw loop: a foreign reader, or the measured loop of a
-//                       bench
+//                       raw loop: a foreign reader, the measured loop of a
+//                       bench, or a probe of raw behavior
 // The two mints check the count, the null pointer and the alignment, and
 // they cannot prove that the run lives.  A call of each door stands only at
 // the edge of a foreign ABI, in an opt-out region of the class ABI, or in the
-// measured loop of a bench, in an opt-out region of the class MEASURE.
+// measured loop of a bench, in an opt-out region of the class MEASURE.  A
+// call of foreign_first can also stand in a probe of raw behavior, in an
+// opt-out region of the class PROBE, such as a test of a lifetime start over
+// raw bytes or an allocator that gives the raw pointer of a door.
 //
 // get(position) gives an Option of a Ref, so this header includes the Ref
 // family and defines the body of get itself.  A unit that includes only
@@ -995,12 +998,12 @@ template <class T>
 [[nodiscard]] inline char const* foreign_c_str(CText text) noexcept { return detail::c_text_first_(text); }
 
 // The address of the first element of a view, for a raw loop at the edge of
-// the base: a reader of a foreign ABI, or the measured loop of a bench, which
-// indexes the run as the hardware sees it.  The address borrows the owner of
-// the run, and it carries no bound.  So the caller keeps the owner alive while
-// it reads, reads only the count of the view, and stands in an opt-out region
-// of the class ABI or MEASURE.  An empty view gives its address, which no
-// reader reads.
+// the base: a reader of a foreign ABI, the measured loop of a bench, which
+// indexes the run as the hardware sees it, or a probe of raw behavior.  The
+// address borrows the owner of the run, and it carries no bound.  So the
+// caller keeps the owner alive while it reads, reads only the count of the
+// view, and stands in an opt-out region of the class ABI, MEASURE or PROBE.
+// An empty view gives its address, which no reader reads.
 template <class T, std::size_t Extent>
 [[nodiscard]] constexpr T* foreign_first(View<T, Extent> view) noexcept {
     return first_of_(detail::ViewDoor::key(), view);
