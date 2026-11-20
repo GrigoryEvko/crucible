@@ -34,6 +34,10 @@
 //   scope dense         the loop of the indexes of a scope with at() on three
 //                       dense parallel views
 //   scope transposed    the same loop with a transposed left view
+//   scope walk dense, scope walk transposed
+//                       the walk over the branded views of the scope, with
+//                       the plan and the loops of walk dense and walk
+//                       transposed
 //   pointwise dense, broadcast, step 2, step 3, transposed, three inputs
 //                       write_pointwise of foundation/core/Pointwise.h over
 //                       the same views, in one frame of the output.  Step 3
@@ -292,6 +296,19 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     });
 }
 
+// The walk over the branded views of a scope, with the output first as in
+// walk_add.  The result is the count of the elements, so the bench reads a
+// result of the scope.
+[[gnu::noinline, gnu::hot]] std::size_t scope_walk_add(Plane out, PlaneRead left, PlaneRead right) noexcept {
+    return ::fixy::mint_strided_scope(left, [out, right](auto first) noexcept {
+        auto const second = first.parallel(right).expect("the views of the bench have one shape");
+        auto const target = first.parallel(out).expect("the views of the bench have one shape");
+        ::fixy::walk([](float& sum, float const& augend, float const& addend) noexcept { sum = augend + addend; },
+                     target, first, second);
+        return first.view().count();
+    });
+}
+
 // The op of three inputs of the pointwise rows.  AddOp and this op are generic
 // calls, so they are lane ops.
 struct MultiplyAddOp final {
@@ -523,6 +540,22 @@ template <class Out>
               measure(bench::Run{"scope transposed"}, wall,
                       [&] {
                           std::size_t const adds = scope_add(out_view, transposed, right_view);
+                          bench::do_not_optimize(adds);
+                          bench::do_not_optimize(out);
+                      }),
+              three_views, roof);
+    print_row(level, "scope walk dense",
+              measure(bench::Run{"scope walk dense"}, wall,
+                      [&] {
+                          std::size_t const adds = scope_walk_add(out_view, left_view, right_view);
+                          bench::do_not_optimize(adds);
+                          bench::do_not_optimize(out);
+                      }),
+              three_views, roof);
+    print_row(level, "scope walk transposed",
+              measure(bench::Run{"scope walk transposed"}, wall,
+                      [&] {
+                          std::size_t const adds = scope_walk_add(out_view, transposed, right_view);
                           bench::do_not_optimize(adds);
                           bench::do_not_optimize(out);
                       }),

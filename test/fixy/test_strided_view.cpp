@@ -162,6 +162,17 @@ struct Layout {
     });
 }
 
+// The sequence of the walk over the branded view of the scope of the view.
+// The walk takes the plan of walk(), so it merges the axes as the walk of the
+// plain view does.
+[[nodiscard]] Sequence scope_walk_sequence(SharedView view) noexcept {
+    return ::fixy::mint_strided_scope(view, [](auto branded) noexcept {
+        Sequence sequence{};
+        ::fixy::walk([&sequence](std::uint32_t const& element) noexcept { push(sequence, element); }, branded);
+        return sequence;
+    });
+}
+
 // A layout of at most kMaxCount elements and of rank at most kLanes.  One
 // third of the layouts have the strides of the row-major order, so the dense
 // loop of the walk and the merge of axes get runs too.
@@ -193,12 +204,12 @@ struct Layout {
     return layout;
 }
 
-// True when the view gives the sequence of the model on each path: the walk
-// and the scope.
+// True when the view gives the sequence of the model on each path: the walk,
+// the indices of the scope, and the walk over the branded view of the scope.
 [[nodiscard]] bool agrees_with_model(SharedView view, Layout const& layout) noexcept {
     Sequence const model = model_sequence(layout);
     return view.count() == count_of(layout) && view.rank() == layout.rank && same_sequence(walk_sequence(view), model)
-        && same_sequence(scope_sequence(view), model);
+        && same_sequence(scope_sequence(view), model) && same_sequence(scope_walk_sequence(view), model);
 }
 
 // ── Unit tests ──────────────────────────────────────────────────────────
@@ -443,6 +454,30 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
     // The right view reads the run in column-major order, so its element at
     // (i, j) is the element at the position i + 2 * j.
     CRUCIBLE_TEST_ASSERT(test, is_summed && output == (::fixy::FixedArray<int, 6>{11, 32, 53, 24, 45, 66}));
+
+    // The walk over the branded views of the scope visits the indices in
+    // row-major order and writes the same sums, with no compare of the sizes.
+    ::fixy::FixedArray<int, 6> walked{};
+    ::fixy::StridedView<int, 2> const walked_view =
+        ::fixy::mint_strided_view(walked.view(), sizes.view(), column_major.view(), 0).expect("fits");
+    ::fixy::FixedArray<int, 6> order{};
+    std::size_t const visits = ::fixy::mint_strided_scope(left_view, [&](auto branded) noexcept {
+        auto const others = branded.parallel(right_view).expect("the sizes are the same");
+        auto const target = branded.parallel(walked_view).expect("the sizes are the same");
+        std::size_t visited = 0;
+        ::fixy::walk(
+            [&order, &visited](int& sum, int const& first, int const& second) noexcept {
+                sum = first + second;
+                *order.get(visited).expect("six elements") = first;
+                ++visited;
+            },
+            target, branded, others);
+        return visited;
+    });
+    // The output is column-major, so its element at (i, j) is at the
+    // position i + 2 * j.
+    CRUCIBLE_TEST_ASSERT(test, visits == 6 && order == (::fixy::FixedArray<int, 6>{1, 2, 3, 4, 5, 6}));
+    CRUCIBLE_TEST_ASSERT(test, walked == (::fixy::FixedArray<int, 6>{11, 24, 32, 45, 53, 66}));
     pass(test, "  scope_and_parallel: PASSED\n");
 }
 

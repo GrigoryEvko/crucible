@@ -141,6 +141,16 @@
 //                       other with the brand of the scope when its sizes are
 //                       the same.  Each index of the scope then reads each
 //                       parallel view with no check
+// The walk over the views of a scope:
+//   walk(body, first, rest...)
+//                       THE WALK over branded views of one brand, with the
+//                       plan and the loops of the walk.  The brand proves the
+//                       sizes equal, so the walk has no compare and gives no
+//                       error
+// An index is for a read at a position that the body picks.  A loop over
+// indices() reads each element with at(), and the cost of each read is rank()
+// products for each view, with no vector lane.  A pass over each element of
+// the views takes walk, which reads each row with one step for each view.
 // The result of the body must not hold the brand, as for mint_branded_scope
 // of foundation/core/Branded.h.  The brand is a scope brand, so the rule
 // brand-escape of the quarantine plugin refuses an object of static or
@@ -1148,6 +1158,23 @@ constexpr void run_walk_(Body& body, std::index_sequence<Is...> rest_views,
 template <class Body, class... Ts>
 concept CanWalk = std::is_nothrow_invocable_v<Body&, Ts&...>;
 
+namespace detail {
+
+// THE WALK over views whose sizes the caller proved equal: the plan, then
+// the loops.  O(count) calls of body, and O(rank * views) for the plan.
+template <class Body, class First, class... Rest, std::size_t Rank>
+constexpr void walk_equal_views_(Body& body, StridedView<First, Rank> const& first,
+                                 StridedView<Rest, Rank> const&... rest) noexcept {
+    std::size_t const count = first.count();
+    if (count == 0) return;
+    auto const& shape = strided_lanes_of_(StridedDoor::key(), first);
+    auto const plan = plan_walk_(shape, shape, strided_lanes_of_(StridedDoor::key(), rest)...);
+    run_walk_(body, std::index_sequence_for<Rest...>{}, plan, count, strided_first_of_(StridedDoor::key(), first),
+              strided_first_of_(StridedDoor::key(), rest)...);
+}
+
+}  // namespace detail
+
 // Calls body one time for each index of the sizes of the views, in row-major
 // order, with the element at that index of each view: THE WALK.  The views
 // have one rank parameter.  The walk gives ShapeMismatch, and calls body for
@@ -1161,12 +1188,7 @@ template <class Body, class First, class... Rest, std::size_t Rank>
     if (!(detail::same_sizes_(shape, strided_lanes_of_(detail::StridedDoor::key(), rest)) && ...)) {
         return err(ShapeMismatch{});
     }
-    std::size_t const count = first.count();
-    if (count == 0) return Unit{};
-    auto const plan = detail::plan_walk_(shape, shape, strided_lanes_of_(detail::StridedDoor::key(), rest)...);
-    detail::run_walk_(body, std::index_sequence_for<Rest...>{}, plan, count,
-                      strided_first_of_(detail::StridedDoor::key(), first),
-                      strided_first_of_(detail::StridedDoor::key(), rest)...);
+    detail::walk_equal_views_(body, first, rest...);
     return Unit{};
 }
 
@@ -1403,6 +1425,19 @@ template <class... Refused, class T, std::size_t Rank, class Body,
     requires(sizeof...(Refused) == 0 && CanMintStridedScope<T, Rank, Body, Fresh>)
 [[nodiscard]] constexpr auto mint_strided_scope(StridedView<T, Rank> view, Body&& body) noexcept {
     return static_cast<Body&&>(body)(detail::StridedScopeDoor::open<Fresh>(view));
+}
+
+// Calls body one time for each index of the branded views of one scope, in
+// row-major order, with the element at that index of each view: THE WALK,
+// with its plan and its loops.  Each branded view of a brand has the sizes of
+// the view of the scope, because parallel() compared them, so the walk has no
+// compare and gives no error.  O(count) calls of body, and O(rank * views)
+// for the plan.
+template <class Body, class First, class... Rest, std::size_t Rank, ::foundation::brand::IsBrand Brand>
+    requires CanWalk<Body, First, Rest...>
+constexpr void walk(Body&& body, BrandedStridedView<First, Rank, Brand> const& first,
+                    BrandedStridedView<Rest, Rank, Brand> const&... rest) noexcept {
+    detail::walk_equal_views_(body, first.view(), rest.view()...);
 }
 
 }  // namespace foundation::core

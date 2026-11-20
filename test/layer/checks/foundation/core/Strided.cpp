@@ -100,6 +100,21 @@ static_assert(!has_no_overlap(3, 2, 2, 3));
 }
 static_assert(matrix_sum() == 66);
 
+// The walk over the branded view of a scope of the same matrix.
+[[nodiscard]] consteval int scope_sum() noexcept {
+    FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    FixedArray<std::size_t, 2> const sizes{3, 4};
+    FixedArray<std::size_t, 2> const strides{4, 1};
+    StridedView<int, 2> const matrix =
+        mint_strided_view(values.view(), sizes.view(), strides.view(), 0).expect("the matrix fits");
+    return mint_strided_scope(matrix, [](auto branded) noexcept {
+        int total = 0;
+        walk([&total](int& element) noexcept { total += element; }, branded);
+        return total;
+    });
+}
+static_assert(scope_sum() == 66);
+
 // A strided view refers to its elements (THE TRANSFER).  The walk above
 // writes each element through a const view of int, so a const view of
 // elements that are not const is no shared read.  A view of const elements

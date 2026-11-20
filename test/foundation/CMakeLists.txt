@@ -3823,9 +3823,10 @@ foundation_neg_compile_test(neg_core_strided_view_rank_mismatch
   "satisfaction of .CanMintStridedView<S, SizesExtent, D, StridesExtent>.")
 
 # The scope mint refuses an explicit template argument and a body whose
-# result holds the brand, and an index of one scope is no index of another.
-# The rule brand-escape refuses a static local that keeps an index for the
-# next call, and a closure that holds an index in a capture.
+# result holds the brand, an index of one scope is no index of another, and
+# a walk over branded views takes the views of one scope.  The rule
+# brand-escape refuses a static local that keeps an index for the next call,
+# and a closure that holds an index in a capture.
 foundation_neg_compile_test(neg_core_strided_scope_names_brand
   "no matching function for call to .mint_strided_scope<int>\\(const foundation::core::StridedView<int, 1>&"
   "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int\\}\\]. evaluated to .false.")
@@ -3835,6 +3836,9 @@ foundation_neg_compile_test(neg_core_strided_scope_gives_index
 foundation_neg_compile_test(neg_core_strided_index_of_other_scope
   "cannot convert .const foundation::core::StridedIndex<1, foundation::core::<lambda\\(\\)> >. to .const foundation::core::StridedIndex<1, foundation::core::<lambda\\(\\)> >&."
   "initializing argument 1 of .constexpr T& foundation::core::BrandedStridedView<T, Rank, Brand>::at\\(const foundation::core::StridedIndex<Rank, Brand>&\\) const")
+foundation_neg_compile_test(neg_core_strided_walk_other_scope
+  "no matching function for call to .walk\\(main\\(\\)::<lambda\\(auto:7\\)>::<lambda\\(auto:8\\)>::<lambda\\(const int&, const int&\\)>, foundation::core::BrandedStridedView<int, 1, foundation::core::<lambda\\(\\)> >&, foundation::core::BrandedStridedView<int, 1, foundation::core::<lambda\\(\\)> >&\\)."
+  "deduced conflicting types for parameter .Brand.")
 foundation_neg_compile_test(neg_strided_scope_static_local
   "an object of static or thread storage duration holds a value of a scope brand, so the value outlives the call of its mint"
   "KeepsLastIndex::operator\\(\\): kept")
