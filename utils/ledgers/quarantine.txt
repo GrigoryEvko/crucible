@@ -330,7 +330,7 @@ src/perf/ | opted-out | 3 | ABI: libbpf attaches a program to the raw descriptor
 src/perf/ | opted-out | 2 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
 src/perf/ | region | 1 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
 src/perf/ | region | 1 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
-test/ | c-array-object | 114 | - | -
+test/ | c-array-object | 110 | - | -
 test/ | c-library-call | 204 | - | -
 test/ | c-library-object | 9 | - | -
 test/ | door-header | 5 | - | -
@@ -341,8 +341,8 @@ test/ | opted-out | 2 | PROBE: probe of the run-time check of a thread-bound obj
 test/ | opted-out | 2 | PROBE: the address of a body tells which unit of the link holds it | PROBE: test_crucible_target_units reads the address of a kernel in each of two units of two targets, a probe of the raw behavior of the link.  The test test_target_units of foundation holds the same regions
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | opted-out | 8 | PROBE: the private key of mTLS leaves no byte of the key in its buffer after its end | the test of the mTLS private key builds the key in a buffer of bytes, ends it, and reads the buffer with volatile reads, the probe of the secret carriers of the base, because no door of the base reads the storage of an object after its end
-test/ | opted-out | 22 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
-test/ | opted-out | 28 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
+test/ | opted-out | 6 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
+test/ | opted-out | 26 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | raw-function-pointer | 13 | - | -
 test/ | raw-new-delete | 37 | - | -
 test/ | raw-pointer-object | 284 | - | -
@@ -355,8 +355,8 @@ test/ | region | 1 | PROBE: the test sets the current directory, the modes and t
 test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | replace-pending:<limits> | 8 | - | -
 test/ | replace-pending:std::bit_cast | 51 | - | -
-test/ | std-entity | 949 | - | -
-test/ | std-object | 334 | - | -
+test/ | std-entity | 858 | - | -
+test/ | std-object | 298 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
 test/cipher_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
@@ -374,9 +374,9 @@ test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a r
 test/dag_neg/ | region | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/fixy/ | c-array-object | 79 | - | -
-test/fixy/ | c-library-call | 989 | - | -
+test/fixy/ | c-library-call | 979 | - | -
 test/fixy/ | c-library-object | 6 | - | -
-test/fixy/ | door-header | 9 | - | -
+test/fixy/ | door-header | 8 | - | -
 test/fixy/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | opted-out | 1 | ORACLE: sched_getcpu of the C library is the oracle of the current CPU | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -450,8 +450,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2324 | - | -
-test/fixy/ | std-object | 834 | - | -
+test/fixy/ | std-entity | 2300 | - | -
+test/fixy/ | std-object | 817 | - | -
 test/fixy/neg/ | c-array-object | 54 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 322 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
