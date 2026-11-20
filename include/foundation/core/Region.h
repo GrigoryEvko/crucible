@@ -90,8 +90,8 @@
 // the edge of a foreign ABI, in an opt-out region of the class ABI, or in the
 // measured loop of a bench, in an opt-out region of the class MEASURE.  A
 // call of foreign_first can also stand in a probe of raw behavior, in an
-// opt-out region of the class PROBE, such as a test of a lifetime start over
-// raw bytes or an allocator that gives the raw pointer of a door.
+// opt-out region of the class PROBE, such as a test that reads the address of
+// the first element of a run as an integer.
 //
 // get(position) gives an Option of a Ref, so this header includes the Ref
 // family and defines the body of get itself.  A unit that includes only

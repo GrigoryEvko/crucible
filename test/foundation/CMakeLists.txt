@@ -1542,8 +1542,10 @@ foundation_neg_compile_test(neg_lifetime_start_as_capturing_closure
 # A new object over bytes holds the bytes of the last store to them, also
 # when that store has a different type.  The read runs in a function that
 # GCC does not inline, so a Release build of a start with no barrier reads
-# the first store.
+# the first store.  The two refusals of the start run in a child process
+# through expect_dies of the Check family, so the test links fixy.
 foundation_test(test_lifetime_start)
+target_link_libraries(test_lifetime_start PRIVATE fixy)
 
 # A pool that ends while a share is out aborts.  The attack runs in a
 # child process through expect_dies of the Check family, so the test links
