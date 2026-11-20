@@ -273,8 +273,8 @@ void run_sequential(Workload& w, Sink& sink) noexcept {
 // The matrix multiply splits the rows of its product, so each shard writes
 // only its own whole rows.  Each other workload splits the piece table, one
 // shard for each piece.  Each shard reads the inputs through a const
-// reference.
-void run_rule(Workload& w, Sink& sink, PieceTable& pieces) noexcept {
+// reference, and notes its CPU in the tally.
+void run_rule(Workload& w, Sink& sink, PieceTable& pieces, bench::CpuTally& tally) noexcept {
     const BgCtx ctx{eff::testing::bg()};
     if (w.inputs.kind == WorkloadKind::L2MatrixMultiply) {
         ProductRow const* const first_row = ::foundation::core::foreign_first(w.product.view());
@@ -282,7 +282,8 @@ void run_rule(Workload& w, Sink& sink, PieceTable& pieces) noexcept {
                                                 perm::mint_permission_root<ProductWhole>());
         auto whole = ::fixy::spawn::mint_parallel_for<::fixy::spawn::BodyCoupling::Independent, kPieces>(
             ctx, w.budget, std::move(region),
-            [&inputs = ::fixy::as_const(w.inputs), &sink, first_row](auto& shard) noexcept {
+            [&inputs = ::fixy::as_const(w.inputs), &sink, &tally, first_row](auto& shard) noexcept {
+                tally.note_calling_thread();
                 if (shard.size() == 0) return;
                 auto const begin = static_cast<std::size_t>(shard.data() - first_row);
                 run_l2_rows(inputs, Range{begin, begin + shard.size()}, sink, shard.data());
@@ -292,7 +293,8 @@ void run_rule(Workload& w, Sink& sink, PieceTable& pieces) noexcept {
     }
     auto region = ::fixy::mint_owned_region(pieces.data(), kPieces, perm::mint_permission_root<PieceTableWhole>());
     auto whole = ::fixy::spawn::mint_parallel_for<::fixy::spawn::BodyCoupling::Independent, kPieces>(
-        ctx, w.budget, std::move(region), [&inputs = ::fixy::as_const(w.inputs), &sink](auto& shard) noexcept {
+        ctx, w.budget, std::move(region), [&inputs = ::fixy::as_const(w.inputs), &sink, &tally](auto& shard) noexcept {
+            tally.note_calling_thread();
             for (const std::uint32_t piece : shard) {
                 run_range(inputs, split_range(inputs.units, piece, kPieces), sink, nullptr);
             }
@@ -306,11 +308,12 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the forced arm is the naive baseline of one std::jthread for each worker")
 namespace {
 
-void run_forced_parallel(Workload& w, Sink& sink) {
+void run_forced_parallel(Workload& w, Sink& sink, bench::CpuTally& tally) {
     ProductRow* const product = ::foundation::core::foreign_first(w.product.view());
     std::vector<std::jthread> threads(w.forced_workers);
     for (std::size_t worker = 0; worker < w.forced_workers; ++worker) {
-        threads[worker] = std::jthread{[&w, &sink, product, worker](std::stop_token) noexcept {
+        threads[worker] = std::jthread{[&w, &sink, &tally, product, worker](std::stop_token) noexcept {
+            tally.note_calling_thread();
             const Range r = split_range(w.inputs.units, worker, w.forced_workers);
             run_range(w.inputs, r, sink, product);
         }};
@@ -443,30 +446,35 @@ namespace {
 // parallel arm is compared against the best sequential time.
 [[nodiscard]] bench::Report measure_once(std::string name, Strategy strategy, Workload& w, PieceTable& pieces,
                                          std::size_t samples) {
-    bench::Run run{std::move(name)};
-    if (starts_threads(strategy, w)) {
+    bench::Run run{name};
+    const bool is_threaded = starts_threads(strategy, w);
+    if (is_threaded) {
         (void)run.fan_out();
     } else if (const int core = bench::env_core(); core >= 0) {
         (void)run.core(core);
     }
-    return run.samples(samples).warmup(std::max<std::size_t>(2, samples / 6)).batch(1).max_wall_ms(8000).measure([&] {
-        // A new sink for each sample, so the fold of one sample starts at 0.
-        Sink sink{};
-        switch (strategy) {
-            case Strategy::Sequential:
-                run_sequential(w, sink);
-                break;
-            case Strategy::Rule:
-                run_rule(w, sink, pieces);
-                break;
-            case Strategy::ForcedParallel:
-                run_forced_parallel(w, sink);
-                break;
-            default:
-                break;
-        }
-        bench::do_not_optimize(sink.load_acquire());
-    });
+    bench::CpuTally tally{};
+    bench::Report report =
+        run.samples(samples).warmup(std::max<std::size_t>(2, samples / 6)).batch(1).max_wall_ms(8000).measure([&] {
+            // A new sink for each sample, so the fold of one sample starts at 0.
+            Sink sink{};
+            switch (strategy) {
+                case Strategy::Sequential:
+                    run_sequential(w, sink);
+                    break;
+                case Strategy::Rule:
+                    run_rule(w, sink, pieces, tally);
+                    break;
+                case Strategy::ForcedParallel:
+                    run_forced_parallel(w, sink, tally);
+                    break;
+                default:
+                    break;
+            }
+            bench::do_not_optimize(sink.load_acquire());
+        });
+    if (is_threaded) tally.print(::fixy::mint_foreign_text(name.data(), name.size()));
+    return report;
 }
 
 [[nodiscard]] bench::Report measure_stable(std::string name, Strategy strategy, Workload& w, PieceTable& pieces,

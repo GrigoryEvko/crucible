@@ -1322,6 +1322,49 @@ inline void print_thread_cpus(::fixy::TextView label) noexcept {
     ::fixy::report(Sink::Out, "\n");
 }
 
+// The CPUs on which the threads of a body ran.  Each thread that the body
+// starts notes the CPU on which it runs, and the main thread prints the set
+// after the measurement, with the count of the notes of each CPU.  A body
+// whose threads share one CPU shows one CPU.  The tally holds one counter for
+// each CPU that an affinity mask can name, and a note of a CPU past them
+// counts in the last counter.  Complexity: one atomic add for each note, and
+// one pass of the counters for each print.
+class CpuTally {
+public:
+    CpuTally() = default;
+    CpuTally(CpuTally const&) = delete("the threads of a body note into one tally");
+    CpuTally& operator=(CpuTally const&) = delete("the threads of a body note into one tally");
+
+    // Notes the CPU of the calling thread.
+    void note_calling_thread() noexcept {
+        const int cpu = sched_getcpu();
+        const std::size_t position =
+            cpu < 0 || static_cast<std::size_t>(cpu) >= kSpreadCpus ? kSpreadCpus - 1 : static_cast<std::size_t>(cpu);
+        static_cast<void>(
+            counts_.at(::fixy::Index<kSpreadCpus>::check(position).expect("the test above bounds the CPU"))
+                .fetch_add_relaxed(1));
+    }
+
+    // Prints each CPU with a note, and its count of notes, on one line after
+    // the label.  Call it after the threads that noted joined.
+    void print(::fixy::TextView label) const noexcept {
+        using ::fixy::Sink;
+        detail::flush_standard_output();
+        ::fixy::report(Sink::Out, "     └─ cpus of the threads of {} (cpu: notes):", label);
+        std::size_t cpu = 0;
+        for (Counter const& count : counts_) {
+            const std::uint64_t notes = count.load_acquire();
+            if (notes != 0) ::fixy::report(Sink::Out, " cpu{}: {}", cpu, notes);
+            ++cpu;
+        }
+        ::fixy::report(Sink::Out, "\n");
+    }
+
+private:
+    using Counter = ::fixy::Atomic<std::uint64_t, ::fixy::Counter>;
+    ::fixy::FixedArray<Counter, kSpreadCpus> counts_{};
+};
+
 // ── BPF perf::Senses accessor (shared aggregator singleton) ───────
 //
 // Single entry point for every BPF program the harness consumes.
