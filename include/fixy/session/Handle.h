@@ -829,6 +829,82 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
         }
     }
 
+    // The body of each send of a value (the public send below).  The
+    // transport form of the send gives the transport of its caller, and the
+    // pole form gives the write of the pole table.  One body holds the form
+    // with a stop test and the form without one, so the value moves to the
+    // transport through one reference in each form.
+    template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
+              typename Transport, typename Stop>
+    [[nodiscard]] static constexpr auto
+    send_value_(SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>&& handle, detail::sent_value_t<T> value,
+                Transport transport,
+                [[maybe_unused]] Stop stop) noexcept(detail::write_is_nothrow<Transport, Resource, T>()
+                                                     && std::is_nothrow_invocable_v<Stop&>
+                                                     && std::is_nothrow_move_constructible_v<Resource>
+                                                     && std::is_nothrow_move_constructible_v<T>) {
+        static_assert(PayloadTransfers<T>,
+                      "fixy::session::diagnostic [Payload_Not_Owned]: the payload cannot move to another thread, or it "
+                      "holds a borrow (Sendable and SendableOwned of foundation/Transfer.h).  Send a value that owns "
+                      "each part that it holds.");
+        static_assert(detail::handle_admits_send_v<PS, T>,
+                      "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
+                      "message takes, or the payload walk of fixy/session/Classification.h refuses the message.  "
+                      "Hold each permission that the payload moves or lends before the send.");
+        using Next = detail::perm_set_after_send_t<PS, T>;
+        auto& core = core_(handle);
+        if constexpr (slot_form_v<T> != SlotForm::Plain) {
+            Resource& resource = core.live_resource_();
+            auto [message, next_slots] = HoldFactory::message_from_slots<T>(core.take_slots_(), std::move(value));
+            if constexpr (std::is_same_v<Stop, detail::no_write_stop>) {
+                detail::write_through<T>(transport, resource, message, core.session_().endpoint);
+                const watch::session_ref session = core.session_();
+                return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), session);
+            } else {
+                ::fixy::Option<T> kept =
+                    detail::write_unless<T>(transport, stop, resource, message, core.session_().endpoint);
+                const watch::session_ref session = core.session_();
+                auto next =
+                    step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), session);
+                return StoppedSend<decltype(next), T>{std::move(next), std::move(kept)};
+            }
+        } else if constexpr (std::is_same_v<Stop, detail::no_write_stop>) {
+            detail::write_through<T>(transport, core.live_resource_(), value, core.session_().endpoint);
+            const watch::session_ref session = core.session_();
+            HoldSlots<Next> slots = HoldFactory::as_set<Next>(core.take_slots_());
+            return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), session);
+        } else {
+            ::fixy::Option<T> kept =
+                detail::write_unless<T>(transport, stop, core.live_resource_(), value, core.session_().endpoint);
+            const watch::session_ref session = core.session_();
+            HoldSlots<Next> slots = HoldFactory::as_set<Next>(core.take_slots_());
+            auto next = step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), session);
+            return StoppedSend<decltype(next), T>{std::move(next), std::move(kept)};
+        }
+    }
+
+    // The read of the value of a receive.  For a pole of a channel, `source`
+    // is the context of the step, and the read of the pole table reads in it.
+    // For each other Resource, `source` is the transport of the caller, and
+    // the read moves it in, as a parameter by value does, so a function
+    // decays to a pointer to it.
+    template <typename T, typename Resource, typename Source>
+    [[nodiscard]] static constexpr T read_value_(
+        Resource& resource, Source&& source,
+        watch::endpoint_id endpoint) noexcept(ChannelPole<Resource>
+                                              || (detail::read_is_nothrow<std::decay_t<Source>, Resource, T>()
+                                                  && std::is_nothrow_constructible_v<std::decay_t<Source>, Source>)) {
+        if constexpr (ChannelPole<Resource>) {
+            auto table_read = [&source](Resource& pole) noexcept -> ::fixy::Option<T> {
+                return pole_table_t<Resource>::read(source, pole);
+            };
+            return detail::read_through<T>(table_read, resource, endpoint);
+        } else {
+            std::decay_t<Source> transport{std::forward<Source>(source)};
+            return detail::read_through<T>(transport, resource, endpoint);
+        }
+    }
+
 public:
     // Opens a session with a new record, or on a record that a channel
     // mint claimed.  The slots hold the tokens of PS that the mint consumed.
@@ -947,66 +1023,57 @@ public:
     // StoppedSend: the successor, and the value when `stop` reported before
     // the transport took it.  The crash transport of
     // fixy/session/CrashTransport.h gives a payload to a crashed peer back
-    // with it.  One body holds the two forms, so the value moves to the
-    // transport through one reference in each form.
+    // with it.
     //
     // A send of a marker builds the marker from the slots.  The form with a
     // stop test gives the message back when the stop test reported first: a
     // marker that it gives back holds the token or the loan that the slots
     // gave up, so the token leaves the session to the caller, as it leaves
     // through close() at End.  No form takes a token into the slots.
+    //
+    // A pole of a channel takes no transport of the caller.  Its send takes
+    // the context of the step, and the step writes through the write of the
+    // pole table of its channel (fixy/session/Admission.h).
     template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
               typename Transport, typename Stop = detail::no_write_stop>
-        requires(!is_keyed_step_v<Send<T, R>>) && (slot_form_v<T> != SlotForm::Token)
+        requires(!is_keyed_step_v<Send<T, R>>) && (slot_form_v<T> != SlotForm::Token) && (!ChannelPole<Resource>)
              && WriteTransport<Transport, Resource, T>
              && (std::is_same_v<Stop, detail::no_write_stop>
                  || (CallableTryWrite<Transport, Resource, T> && WriteStop<Stop>))
     [[nodiscard]] static constexpr auto
     send(SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>&& handle, detail::sent_value_t<T> value,
-         Transport transport,
-         [[maybe_unused]] Stop stop = Stop{}) noexcept(detail::write_is_nothrow<Transport, Resource, T>()
-                                                       && std::is_nothrow_invocable_v<Stop&>
-                                                       && std::is_nothrow_move_constructible_v<Resource>
-                                                       && std::is_nothrow_move_constructible_v<T>) {
-        static_assert(PayloadTransfers<T>,
-                      "fixy::session::diagnostic [Payload_Not_Owned]: the payload cannot move to another thread, or it "
-                      "holds a borrow (Sendable and SendableOwned of foundation/Transfer.h).  Send a value that owns "
-                      "each part that it holds.");
-        static_assert(detail::handle_admits_send_v<PS, T>,
-                      "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
-                      "message takes, or the payload walk of fixy/session/Classification.h refuses the message.  "
-                      "Hold each permission that the payload moves or lends before the send.");
-        using Next = detail::perm_set_after_send_t<PS, T>;
-        auto& core = core_(handle);
-        if constexpr (slot_form_v<T> != SlotForm::Plain) {
-            Resource& resource = core.live_resource_();
-            auto [message, next_slots] = HoldFactory::message_from_slots<T>(core.take_slots_(), std::move(value));
-            if constexpr (std::is_same_v<Stop, detail::no_write_stop>) {
-                detail::write_through<T>(transport, resource, message, core.session_().endpoint);
-                const watch::session_ref session = core.session_();
-                return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), session);
-            } else {
-                ::fixy::Option<T> kept =
-                    detail::write_unless<T>(transport, stop, resource, message, core.session_().endpoint);
-                const watch::session_ref session = core.session_();
-                auto next =
-                    step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), session);
-                return StoppedSend<decltype(next), T>{std::move(next), std::move(kept)};
-            }
-        } else if constexpr (std::is_same_v<Stop, detail::no_write_stop>) {
-            detail::write_through<T>(transport, core.live_resource_(), value, core.session_().endpoint);
-            const watch::session_ref session = core.session_();
-            HoldSlots<Next> slots = HoldFactory::as_set<Next>(core.take_slots_());
-            return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), session);
-        } else {
-            ::fixy::Option<T> kept =
-                detail::write_unless<T>(transport, stop, core.live_resource_(), value, core.session_().endpoint);
-            const watch::session_ref session = core.session_();
-            HoldSlots<Next> slots = HoldFactory::as_set<Next>(core.take_slots_());
-            auto next = step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), session);
-            return StoppedSend<decltype(next), T>{std::move(next), std::move(kept)};
-        }
+         Transport transport, Stop stop = Stop{}) noexcept(detail::write_is_nothrow<Transport, Resource, T>()
+                                                           && std::is_nothrow_invocable_v<Stop&>
+                                                           && std::is_nothrow_move_constructible_v<Resource>
+                                                           && std::is_nothrow_move_constructible_v<T>) {
+        return send_value_<T, R, Resource, LoopCtx, Policy, PS>(std::move(handle), std::move(value),
+                                                                std::move(transport), std::move(stop));
     }
+
+    // Sends a value over a pole of a channel, through the write of its pole
+    // table, in the context of the step.  The write takes a reference to the
+    // context for the step only.
+    template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
+              typename Ctx>
+        requires(!is_keyed_step_v<Send<T, R>>) && (slot_form_v<T> == SlotForm::Plain) && PoleWritesIn<Resource, Ctx, T>
+    [[nodiscard]] static constexpr auto
+    send(SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>&& handle, Ctx const& ctx,
+         detail::sent_value_t<T> value) noexcept(std::is_nothrow_move_constructible_v<Resource>
+                                                 && std::is_nothrow_move_constructible_v<T>) {
+        return send_value_<T, R, Resource, LoopCtx, Policy, PS>(
+            std::move(handle), std::move(value),
+            [&ctx](Resource& pole, T& sent) noexcept -> bool { return pole_table_t<Resource>::write(ctx, pole, sent); },
+            detail::no_write_stop{});
+    }
+
+    template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
+              typename First, typename Second, typename... Rest>
+        requires(!is_keyed_step_v<Send<T, R>>) && ChannelPole<Resource>
+                 && (sizeof...(Rest) != 0 || !PoleWritesIn<Resource, std::remove_cvref_t<First>, T>)
+    static void send(SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>&&, First&&, Second&&, Rest&&...) = delete(
+        "[Pole_Owns_Its_Transport] a session over a pole of a channel sends through the write that the pole table of "
+        "its channel names (fixy/session/Admission.h).  Call send(handle, ctx, value) with a context that the write of "
+        "the table admits.  A transport of the caller would move the values of one channel in two ways.");
 
     // Sends a bare Permission.  The token comes from the slots of the
     // handle, so the caller gives no value.
@@ -1066,14 +1133,25 @@ public:
     // The token or the loan of a marker goes into the slots, and the pair
     // holds the value of the marker.  A bare Permission goes into the slots,
     // and the result is the handle alone.
+    //
+    // The source of the read is the transport of the caller, with one of the
+    // two read shapes of fixy/session/Transport.h.  A pole of a channel takes
+    // no transport of the caller: its source is the context of the step, and
+    // the step reads through the read of the pole table of its channel
+    // (fixy/session/Admission.h).  One step holds the two forms, so the pair
+    // of each receive of a value has one source.
     template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
-              typename Transport>
-        requires(!is_keyed_step_v<Recv<T, R>>) && ReadTransport<Transport, Resource, T>
+              typename Source>
+        requires(!is_keyed_step_v<Recv<T, R>>)
+             && ((!ChannelPole<Resource> && ReadTransport<std::remove_cvref_t<Source>, Resource, T>)
+                 || PoleReadsIn<Resource, std::remove_cvref_t<Source>, T>)
     [[nodiscard]] static constexpr auto
     recv(SessionHandle<Recv<T, R>, Resource, LoopCtx, Policy, PS>&& handle,
-         Transport transport) noexcept(detail::read_is_nothrow<Transport, Resource, T>()
-                                       && std::is_nothrow_move_constructible_v<Resource>
-                                       && std::is_nothrow_move_constructible_v<T>) {
+         Source&& source) noexcept(std::is_nothrow_move_constructible_v<Resource>
+                                   && std::is_nothrow_move_constructible_v<T>
+                                   && (ChannelPole<Resource>
+                                       || (detail::read_is_nothrow<std::decay_t<Source>, Resource, T>()
+                                           && std::is_nothrow_constructible_v<std::decay_t<Source>, Source>))) {
         static_assert(
             PayloadTransfers<T>,
             "fixy::session::diagnostic [Payload_Not_Owned]: the payload cannot move to another thread, or it "
@@ -1085,7 +1163,8 @@ public:
                       "of fixy/session/Classification.h refuses the message.");
         using Next = detail::perm_set_after_recv_t<PS, T>;
         auto& core = core_(handle);
-        T value = detail::read_through<T>(transport, core.live_resource_(), core.session_().endpoint);
+        T value =
+            read_value_<T, Resource>(core.live_resource_(), std::forward<Source>(source), core.session_().endpoint);
         const watch::session_ref session = core.session_();
         if constexpr (slot_form_v<T> == SlotForm::Token) {
             HoldSlots<Next> slots =
@@ -1102,6 +1181,15 @@ public:
             return std::pair{std::move(value), std::move(next)};
         }
     }
+
+    template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
+              typename Arg>
+        requires(!is_keyed_step_v<Recv<T, R>>)
+                 && ChannelPole<Resource> && (!PoleReadsIn<Resource, std::remove_cvref_t<Arg>, T>)
+    static void recv(SessionHandle<Recv<T, R>, Resource, LoopCtx, Policy, PS>&&, Arg&&) = delete(
+        "[Pole_Owns_Its_Transport] a session over a pole of a channel receives through the read that the pole table "
+        "of its channel names (fixy/session/Admission.h).  Call recv(handle, ctx) with a context that the read of the "
+        "table admits.  A transport of the caller would move the values of one channel in two ways.");
 
     // Reads the label word of a keyed message.  It returns the handle at
     // the value step, or past the message when its payload is void.  A
@@ -1552,10 +1640,7 @@ public:
     [[nodiscard]] constexpr auto send(Ctx const& ctx,
                                       T value) && noexcept(std::is_nothrow_move_constructible_v<Resource>
                                                            && std::is_nothrow_move_constructible_v<T>) {
-        return HandleFactory::send(std::move(*this), std::move(value),
-                                   [&ctx](Resource& pole, T& sent) noexcept -> bool {
-                                       return pole_table_t<Resource>::write(ctx, pole, sent);
-                                   });
+        return HandleFactory::send(std::move(*this), ctx, std::move(value));
     }
 
     template <typename First, typename Second>
@@ -1653,13 +1738,7 @@ public:
         && (ChannelPole<Resource>
             || (detail::read_is_nothrow<std::remove_cvref_t<Source>, Resource, T>()
                 && std::is_nothrow_constructible_v<std::remove_cvref_t<Source>, Source>))) {
-        if constexpr (ChannelPole<Resource>) {
-            return HandleFactory::recv(std::move(*this), [&source](Resource& pole) noexcept -> ::fixy::Option<T> {
-                return pole_table_t<Resource>::read(source, pole);
-            });
-        } else {
-            return HandleFactory::recv(std::move(*this), std::forward<Source>(source));
-        }
+        return HandleFactory::recv(std::move(*this), std::forward<Source>(source));
     }
 
     template <typename Transport>
