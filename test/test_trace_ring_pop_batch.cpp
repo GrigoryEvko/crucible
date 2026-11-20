@@ -6,22 +6,21 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
-#include <algorithm>
-#include <atomic>
-#include <chrono>
 #include <cstdint>
-#include <cstdio>
-#include <random>
-#include <thread>
-#include <vector>
 
 namespace {
 
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+// A ring on the heap: its slots are too large for the stack.
+[[nodiscard]] ::fixy::Box<crucible::TraceRing> make_ring() noexcept {
+    return ::fixy::mint_box<crucible::TraceRing>(::foundation::effects::testing::test().alloc);
+}
 
 }  // namespace
 
@@ -63,7 +62,7 @@ static OpDepth make_depth(uint64_t i) noexcept { return OpDepth{static_cast<uint
 }
 
 static void test_empty_returns_zero() {
-    auto ring = std::make_unique<TraceRing>();
+    ::fixy::Box<TraceRing> ring = make_ring();
 
     ::fixy::FixedArray<TraceRing::Entry, 8> out_entries{};
     ::fixy::FixedArray<MetaIndex, 8> out_metas{};
@@ -81,7 +80,7 @@ static void test_empty_returns_zero() {
 
 // Five empty outputs return zero and drain nothing.
 static void test_max_count_zero() {
-    auto ring = std::make_unique<TraceRing>();
+    ::fixy::Box<TraceRing> ring = make_ring();
 
     // The ring is deliberately non-empty: a zero count must win over
     // available entries.
@@ -97,7 +96,7 @@ static void test_max_count_zero() {
 }
 
 static void test_single_thread_fifo() {
-    auto ring = std::make_unique<TraceRing>();
+    ::fixy::Box<TraceRing> ring = make_ring();
 
     constexpr uint32_t N = 100;
     for (uint64_t i = 0; i < N; ++i) {
@@ -145,7 +144,7 @@ static void test_single_thread_fifo() {
 }
 
 static void test_multi_batch_drain() {
-    auto ring = std::make_unique<TraceRing>();
+    ::fixy::Box<TraceRing> ring = make_ring();
 
     constexpr uint32_t N = 1000;
     for (uint64_t i = 0; i < N; ++i) {
@@ -162,7 +161,7 @@ static void test_multi_batch_drain() {
     // The sizes are irregular on purpose, so no drain starts or ends on
     // a round boundary and none of them is a multiple of another.  The
     // last batch stops at the end of the outputs.
-    constexpr uint32_t batch_sizes[] = {7, 13, 31, 64, 100, 200, 500, 100, 50};
+    constexpr ::fixy::FixedArray<uint32_t, 9> batch_sizes{7, 13, 31, 64, 100, 200, 500, 100, 50};
     uint32_t total = 0;
     for (uint32_t batch_size : batch_sizes) {
         const uint32_t batch = ::fixy::min(batch_size, N - total);
@@ -197,7 +196,7 @@ static void test_multi_batch_drain() {
 // which is the only way to reach that boundary from an empty ring.
 
 static void test_wrap_around() {
-    auto ring = std::make_unique<TraceRing>();
+    ::fixy::Box<TraceRing> ring = make_ring();
 
     // The staging buffers have static storage: an array of half the ring's
     // entries would not fit on the stack.
@@ -248,8 +247,8 @@ static void test_wrap_around() {
 // rest of the file only approaches from one side at a time.
 
 static void test_equivalence_with_single_pop() {
-    auto ring_a = std::make_unique<TraceRing>();
-    auto ring_b = std::make_unique<TraceRing>();
+    ::fixy::Box<TraceRing> ring_a = make_ring();
+    ::fixy::Box<TraceRing> ring_b = make_ring();
 
     constexpr uint32_t N = 5000;
     for (uint64_t i = 0; i < N; ++i) {
@@ -272,12 +271,16 @@ static void test_equivalence_with_single_pop() {
     static ::fixy::FixedArray<OpDepth, N> a_depths{};
     static ::fixy::FixedArray<OpDepth, N> b_depths{};
 
-    // The seed is fixed, so a failing schedule is reproducible.
-    std::mt19937_64 rng{0xCAFEBABEDEADBEEFULL};
-    std::uniform_int_distribution<uint32_t> batch_dist(1, 64);
+    // The seed is fixed, so a failing schedule is reproducible.  Each batch
+    // size from 1 to 64 comes from the next block of Philox under the seed.
+    constexpr uint64_t kSeed = 0xCAFEBABEDEADBEEFULL;
+    uint64_t draw = 0;
     uint32_t a_total = 0;
     while (a_total < N) {
-        uint32_t batch = std::min(batch_dist(rng), N - a_total);
+        const ::fixy::Philox4x32::Counter block = ::fixy::Philox4x32::generate(draw, kSeed);
+        ++draw;
+        const uint32_t drawn = 1u + block.at(::fixy::index<0>()) % 64u;
+        uint32_t batch = ::fixy::min(drawn, N - a_total);
         uint32_t n = pop_batch(*ring_a, a_entries.view().window(a_total, batch).expect("the batch fits"),
                                a_metas.view().window(a_total, batch).expect("the batch fits"),
                                a_scopes.view().window(a_total, batch).expect("the batch fits"),
@@ -336,23 +339,24 @@ static void test_equivalence_with_single_pop() {
 // exposes an index that one path advances differently from the other.
 
 static void test_spsc_stress() {
-    auto ring = std::make_unique<TraceRing>();
+    ::fixy::Box<TraceRing> ring = make_ring();
     constexpr uint64_t N = 100000;
 
     ::fixy::report(::fixy::Sink::Out, "  test_spsc_stress: 1 producer + 1 consumer, N={}...\n",
                    static_cast<unsigned long long>(N));
 
-    std::atomic<bool> producer_done{false};
-    std::atomic<uint64_t> received{0};
+    ::fixy::Atomic<bool> producer_done{false};
 
-    // The consumer thread owns this vector for the whole run and main
-    // reads it only after both threads have joined.  Each delivered
-    // schema hash is its own push index, so the vector must come out as
-    // 0, 1, 2 and so on with nothing missing or repeated.
-    std::vector<uint64_t> mirror;
-    mirror.reserve(N);
+    // The consumer thread owns this array and its count for the whole run
+    // and main reads them only after both threads have joined.  Each
+    // delivered schema hash is its own push index, so the array must come
+    // out as 0, 1, 2 and so on with nothing missing or repeated.  A delivery
+    // past N ends the process at the write of its element.
+    ::fixy::HeapArray<uint64_t> mirror =
+        ::fixy::mint_heap_array_zeroed<uint64_t>(::foundation::effects::testing::test().alloc, N);
+    uint64_t received = 0;
 
-    std::jthread producer([&](std::stop_token /*st*/) {
+    auto producer = [&] noexcept {
         for (uint64_t i = 0; i < N; ++i) {
             while (!ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i))) {
                 // The ring is full, so back off and retry the same
@@ -360,10 +364,10 @@ static void test_spsc_stress() {
                 CRUCIBLE_SPIN_PAUSE;
             }
         }
-        producer_done.store(true, std::memory_order_release);
-    });
+        producer_done.store_release(true);
+    };
 
-    std::jthread consumer([&](std::stop_token /*st*/) {
+    auto consumer = [&] noexcept {
         ::fixy::FixedArray<TraceRing::Entry, 64> out_entries{};
         ::fixy::FixedArray<MetaIndex, 64> out_metas{};
         ::fixy::FixedArray<ScopeHash, 64> out_scopes{};
@@ -382,7 +386,7 @@ static void test_spsc_stress() {
         };
 
         uint64_t mode = 0;
-        while (received.load(std::memory_order_relaxed) < N) {
+        while (received < N) {
             uint32_t got = 0;
             const uint64_t m = mode++ & 0x3;
             if (m == 0) {
@@ -397,31 +401,32 @@ static void test_spsc_stress() {
 
             if (got > 0) {
                 for (uint32_t i = 0; i < got; ++i) {
-                    mirror.push_back(out_entries.get(i)
-                                         .expect("a test reads an element at or past the count of its array")
-                                         ->schema_hash.raw());
+                    *mirror.view().get(received + i).expect("the ring delivers at most N entries") =
+                        out_entries.get(i)
+                            .expect("a test reads an element at or past the count of its array")
+                            ->schema_hash.raw();
                 }
-                received.fetch_add(got, std::memory_order_release);
-            } else if (producer_done.load(std::memory_order_acquire) && ring->size().peek() == 0) {
+                received += got;
+            } else if (producer_done.load_acquire() && ring->size().peek() == 0) {
                 break;
             } else {
                 CRUCIBLE_SPIN_PAUSE;
             }
         }
-    });
+    };
 
-    // Assigning a default-constructed thread destroys the running one,
-    // which joins it.  Main must not read the mirror before this.
-    producer = std::jthread{};
-    consumer = std::jthread{};
+    // The door joins the two threads before it returns.  Main must not read
+    // the mirror before this.
+    ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
+    ::fixy::thread::run_joined_raw_probe(bg, kTest, "the producer and the consumer share the ring on purpose",
+                                         ::fixy::thread::ThreadOptions{}, producer, consumer)
+        .expect("the thread door starts the producer and the consumer");
 
-    CRUCIBLE_TEST_ASSERT(kTest, mirror.size() == N);
+    CRUCIBLE_TEST_ASSERT(kTest, received == N);
     for (uint64_t i = 0; i < N; ++i) {
-        if (mirror[i] != i) {
-            std::fprintf(stderr, "FIFO violation at i=%llu: expected %llu, got %llu\n",
-                         static_cast<unsigned long long>(i), static_cast<unsigned long long>(i),
-                         static_cast<unsigned long long>(mirror[i]));
-            std::abort();
+        const uint64_t got = *mirror.view().get(i).expect("the mirror holds N entries");
+        if (got != i) {
+            ::fixy::fatal("FIFO violation at i={}: expected {}, got {}", i, i, got);
         }
     }
 
