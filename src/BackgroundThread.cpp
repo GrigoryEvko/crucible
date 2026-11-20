@@ -228,15 +228,25 @@ template <class T>
 // the four stages make the regions of the ops, and the publish stage counts
 // the ops that it processed.  A flush of the foreground waits on that count.
 // A job of the foreground waits for a free owner mailbox, and then for its
-// done mark.  run_pipeline_ states this loop over the four stages that it
-// mints, and the door ensure_loop_live of fixy/concurrent/StageNet.h checks
-// the loop at compile time (THE LOOP).
+// done mark.  run_pipeline_ states this loop over the graph of the pipeline
+// that it mints, and the door ensure_loop_live of fixy/concurrent/StageNet.h
+// checks the loop at compile time (THE LOOP).  The loop takes the ends of the
+// four stages from that graph (pipeline_graph_t and StageEdges), so the
+// channels between the stages are the channels that the gate of the pipeline
+// reads.
 //
-// The publish stage serves the mailbox before each receive, and it goes on
-// when the mailbox is empty.  So a job is a branch of the stage, and the door
-// checks one loop for each arm.  In the flush arm, the stage serves no job.
-// In the job arm, the foreground records, posts a job, waits on its done mark
-// and then flushes, and the stage serves the job before its receive.
+// The publish stage serves the mailbox before each receive and after each
+// park, and it goes on when the mailbox is empty.  So a job is a branch of the
+// stage, and the door checks one loop for each arm.  In the flush arm, the
+// stage serves no job.  In the job arm, the foreground records, posts a job,
+// waits on its done mark and then flushes, and the stage serves the job
+// before its receive.  A job that comes after the receive of the stage waits
+// for the next serve, after the count of that period: the late job arm.  With
+// that third arm, the foreground and the stage take one arm together in each
+// period.  The three arms agree on each channel and on the lock: a process
+// holds the same sides in each arm, and each channel takes its capacity from
+// the same type.  So a run that takes the arms in any sequence is live (THE
+// ARMS).
 //
 // Each channel of the loop states its capacity.  The ring holds
 // TraceRing::CAPACITY ops, and a full ring refuses an op with no wait, so the
@@ -246,11 +256,11 @@ template <class T>
 // stages state the capacities of those channels.
 //
 // The regions that the foreground holds are a sequence lock (HeldRegions of
-// crucible/Vigil.h).  The foreground writes them in a bracket, and the region
-// callback of the publish stage reads them, with a wait while a bracket is
-// open.  The loop states the two ends of the lock.  The door checks that one
-// process writes the lock and one other process reads it, and it reads no
-// wait inside a bracket.
+// crucible/Vigil.h).  The foreground writes them in a bracket that holds only
+// stores, and the region callback of the publish stage reads them, with a
+// wait while a bracket is open.  The loop states the two ends of the lock.
+// The door checks that one process writes the lock and one other process
+// reads it, and that no process waits inside a bracket (THE LOCKS).
 //
 // A proof of the base holds some ends at each call: RecordProof the publish
 // of the head of the ring, PublishStageAuth the bump of the count, and
@@ -1138,32 +1148,48 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
         ctx, std::move(publish_cons),
         Pipeline::BgSinkProducerHandle{::fixy::some(::fixy::erase_brand(::fixy::to(*this)))});
 
-    // The loop of the Vigil over the four stages, in its two arms (THE LOOP
-    // OF THE VIGIL).  The doors run at compile time.
+    auto pipeline = ::fixy::concurrent::mint_pipeline(ctx, std::move(drain_stage), std::move(detect_stage),
+                                                      std::move(build_stage), std::move(publish_stage));
+
+    // The loop of the Vigil over the graph of the pipeline, in its three arms
+    // (THE LOOP OF THE VIGIL).  The doors run at compile time.
     namespace cc = ::fixy::concurrent;
     namespace loop = detail::bg_pipeline;
-    using drain_process =
-        cc::LoopProcess<loop::DrainName, cc::ReceivesOn<loop::RingChannel>, cc::OutputsOf<decltype(drain_stage)>>;
-    using detect_process =
-        cc::LoopProcess<loop::DetectName, cc::InputsOf<decltype(detect_stage)>, cc::OutputsOf<decltype(detect_stage)>>;
-    using build_process =
-        cc::LoopProcess<loop::BuildName, cc::InputsOf<decltype(build_stage)>, cc::OutputsOf<decltype(build_stage)>>;
+    using graph = cc::pipeline_graph_t<decltype(pipeline)>;
+    // The marked system of the graph is live.  Its input end is the start
+    // signal, and its output end is the sink, which holds no message.
+    static_assert([] consteval noexcept {
+        constexpr auto marked = cc::marked_system_of_stage_graph<graph>();
+        return ::foundation::algebra::net::check_liveness(marked).is_admitted()
+            && marked.channels[3].capacity == Pipeline::StartChannel::channel_capacity
+            && marked.channels[4].capacity == 0;
+    }());
+    using drain_process = cc::LoopProcess<loop::DrainName, cc::ReceivesOn<loop::RingChannel>, cc::StageEdges<graph, 0>>;
+    using detect_process = cc::LoopProcess<loop::DetectName, cc::StageEdges<graph, 1>>;
+    using build_process = cc::LoopProcess<loop::BuildName, cc::StageEdges<graph, 2>>;
+    using job_foreground =
+        cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::RingChannel>, cc::SendsOn<loop::OwnerMailboxChannel>,
+                        cc::ReceivesOn<loop::JobDoneChannel>, cc::WritesLock<loop::HeldRegionsLock>,
+                        cc::ReceivesOn<loop::ProcessedCountChannel>>;
     using flush_arm = cc::StageLoop<
         cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::RingChannel>, cc::WritesLock<loop::HeldRegionsLock>,
                         cc::ReceivesOn<loop::ProcessedCountChannel>>,
         drain_process, detect_process, build_process,
-        cc::LoopProcess<loop::PublishName, cc::InputsOf<decltype(publish_stage)>, cc::ReadsLock<loop::HeldRegionsLock>,
+        cc::LoopProcess<loop::PublishName, cc::StageEdges<graph, 3>, cc::ReadsLock<loop::HeldRegionsLock>,
                         cc::SendsOn<loop::ProcessedCountChannel>>>;
-    using job_arm = cc::StageLoop<
-        cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::RingChannel>, cc::SendsOn<loop::OwnerMailboxChannel>,
-                        cc::ReceivesOn<loop::JobDoneChannel>, cc::WritesLock<loop::HeldRegionsLock>,
-                        cc::ReceivesOn<loop::ProcessedCountChannel>>,
-        drain_process, detect_process, build_process,
-        cc::LoopProcess<loop::PublishName, cc::ReceivesOn<loop::OwnerMailboxChannel>, cc::SendsOn<loop::JobDoneChannel>,
-                        cc::InputsOf<decltype(publish_stage)>, cc::ReadsLock<loop::HeldRegionsLock>,
-                        cc::SendsOn<loop::ProcessedCountChannel>>>;
+    using job_arm =
+        cc::StageLoop<job_foreground, drain_process, detect_process, build_process,
+                      cc::LoopProcess<loop::PublishName, cc::ReceivesOn<loop::OwnerMailboxChannel>,
+                                      cc::SendsOn<loop::JobDoneChannel>, cc::StageEdges<graph, 3>,
+                                      cc::ReadsLock<loop::HeldRegionsLock>, cc::SendsOn<loop::ProcessedCountChannel>>>;
+    using late_job_arm =
+        cc::StageLoop<job_foreground, drain_process, detect_process, build_process,
+                      cc::LoopProcess<loop::PublishName, cc::StageEdges<graph, 3>, cc::ReadsLock<loop::HeldRegionsLock>,
+                                      cc::SendsOn<loop::ProcessedCountChannel>,
+                                      cc::ReceivesOn<loop::OwnerMailboxChannel>, cc::SendsOn<loop::JobDoneChannel>>>;
     cc::ensure_loop_live<flush_arm>();
     cc::ensure_loop_live<job_arm>();
+    cc::ensure_loop_live<late_job_arm>();
     // The channels of the flush arm are the ring, the count and the three
     // channels between the stages, and each takes the capacity of its type.
     static_assert([] consteval noexcept {
@@ -1175,8 +1201,6 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
             && marked.channels[4].capacity == Pipeline::GraphPublishChannel::channel_capacity;
     }());
 
-    auto pipeline = ::fixy::concurrent::mint_pipeline(ctx, std::move(drain_stage), std::move(detect_stage),
-                                                      std::move(build_stage), std::move(publish_stage));
     std::move(pipeline).run(ctx);
 }
 
