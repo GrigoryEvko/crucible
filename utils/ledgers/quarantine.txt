@@ -252,19 +252,18 @@ include/fixy/session/ | replace-pending:<tuple> | 7 | - | -
 include/fixy/session/ | replace-pending:<vector> | 9 | - | -
 include/foundation/ | base-c-library-call | 4 | - | -
 include/foundation/ | base-std-entity | 21 | - | -
-include/foundation/ | base-std-object | 9 | - | -
+include/foundation/ | base-std-object | 5 | - | -
 include/foundation/ | replace-pending:<atomic> | 1 | - | -
 include/foundation/ | replace-pending:<bit> | 3 | - | -
 include/foundation/ | replace-pending:<cstring> | 1 | - | -
-include/foundation/ | replace-pending:<span> | 2 | - | -
+include/foundation/ | replace-pending:<span> | 1 | - | -
 include/foundation/ | replace-pending:<string_view> | 1 | - | -
 include/foundation/algebra/ | base-std-entity | 16 | - | -
 include/foundation/algebra/ | base-std-object | 11 | - | -
 include/foundation/algebra/ | replace-pending:<string_view> | 4 | - | -
-include/foundation/algebra/lattices/ | base-std-entity | 62 | - | -
-include/foundation/algebra/lattices/ | base-std-object | 75 | - | -
+include/foundation/algebra/lattices/ | base-std-entity | 60 | - | -
+include/foundation/algebra/lattices/ | base-std-object | 73 | - | -
 include/foundation/algebra/lattices/ | replace-pending:<array> | 4 | - | -
-include/foundation/algebra/lattices/ | replace-pending:<expected> | 2 | - | -
 include/foundation/algebra/lattices/ | replace-pending:<functional> | 1 | - | -
 include/foundation/algebra/lattices/ | replace-pending:<limits> | 6 | - | -
 include/foundation/algebra/lattices/ | replace-pending:<numeric> | 1 | - | -
@@ -371,7 +370,7 @@ test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a r
 test/dag_neg/ | region | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/fixy/ | c-array-object | 81 | - | -
-test/fixy/ | c-library-call | 991 | - | -
+test/fixy/ | c-library-call | 989 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 9 | - | -
 test/fixy/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
@@ -445,7 +444,7 @@ test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
 test/fixy/ | std-entity | 2331 | - | -
-test/fixy/ | std-object | 839 | - | -
+test/fixy/ | std-object | 837 | - | -
 test/fixy/neg/ | c-array-object | 54 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 323 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
@@ -530,7 +529,7 @@ test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
 test/fixy/neg/ | std-entity | 83 | - | -
 test/fixy/neg/ | std-object | 34 | - | -
-test/foundation/ | c-array-object | 10 | - | -
+test/foundation/ | c-array-object | 9 | - | -
 test/foundation/ | c-library-call | 17 | - | -
 test/foundation/ | opted-out | 12 | ABI: the linker gives the bounds of a section as the C symbols __start_ and __stop_ | -
 test/foundation/ | opted-out | 32 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
@@ -556,8 +555,9 @@ test/foundation/ | opted-out | 16 | PROBE: a violation report blocks on a full p
 test/foundation/ | opted-out | 7 | PROBE: an attack carries a view out of its door in a std type or a raw address | -
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | opted-out | 10 | PROBE: the address of a body or an object tells which unit of the link holds it | -
-test/foundation/ | opted-out | 23 | PROBE: the checked lifetime start reads raw bytes through pointers of two types | -
+test/foundation/ | opted-out | 16 | PROBE: the checked lifetime start reads raw bytes through pointers of two types | -
 test/foundation/ | opted-out | 3 | PROBE: the identity walk reads a pointer, a member pointer and a bfloat16 value | -
+test/foundation/ | opted-out | 1 | PROBE: the layout test reads the address of the first element of each array of a buffer | the layout test of the SwissTableBuffer reads the address of the first element of each array as an integer, and no type of the base gives the address of a View as an integer
 test/foundation/ | opted-out | 1 | PROBE: the signature reflection reads a raw pointer parameter | -
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | opted-out | 2 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -
@@ -565,7 +565,7 @@ test/foundation/ | opted-out | 2 | PROBE: the walk of the extract gate reads the
 test/foundation/ | opted-out | 3 | PROBE: valid_span judges a raw pointer with a count, the form of a drain | -
 test/foundation/ | raw-function-pointer | 9 | - | -
 test/foundation/ | raw-new-delete | 2 | - | -
-test/foundation/ | raw-pointer-object | 7 | - | -
+test/foundation/ | raw-pointer-object | 6 | - | -
 test/foundation/ | region | 1 | ABI: the kernel gives the pages of a map as a pointer to raw bytes and a count | the entry view_entry.cpp of a fuzz harness of base types takes the input and the seeds of the runner as a std::span and a std::vector in one ABI region, and the test of the cap of a heap image takes a View of a map of 4 GiB of the guarded region door in one ABI region
 test/foundation/ | region | 1 | ABI: the linker gives the bounds of a section as the C symbols __start_ and __stop_ | -
 test/foundation/ | region | 2 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
@@ -593,14 +593,15 @@ test/foundation/ | region | 1 | PROBE: decode walks a C array of enumerations, t
 test/foundation/ | region | 5 | PROBE: the address of a body or an object tells which unit of the link holds it | -
 test/foundation/ | region | 1 | PROBE: the checked lifetime start reads raw bytes through pointers of two types | -
 test/foundation/ | region | 3 | PROBE: the identity walk reads a pointer, a member pointer and a bfloat16 value | -
+test/foundation/ | region | 1 | PROBE: the layout test reads the address of the first element of each array of a buffer | the layout test of the SwissTableBuffer reads the address of the first element of each array as an integer, and no type of the base gives the address of a View as an integer
 test/foundation/ | region | 1 | PROBE: the signature reflection reads a raw pointer parameter | -
 test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | region | 1 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -
 test/foundation/ | region | 2 | PROBE: the walk of the extract gate reads the target of a raw pointer member | -
 test/foundation/ | region | 2 | PROBE: valid_span judges a raw pointer with a count, the form of a drain | -
-test/foundation/ | replace-pending:std::bit_cast | 3 | - | -
-test/foundation/ | std-entity | 327 | - | -
-test/foundation/ | std-object | 110 | - | -
+test/foundation/ | replace-pending:std::bit_cast | 1 | - | -
+test/foundation/ | std-entity | 301 | - | -
+test/foundation/ | std-object | 101 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
 test/foundation/neg/ | detail-use | 122 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type or a range or a cursor that the fixture forges
@@ -649,7 +650,7 @@ test/foundation/neg/ | region | 1 | PROBE: the fixture plants a tag template of 
 test/foundation/neg/ | region | 6 | PROBE: the fixture specializes a trait of the base, and the compiler refuses it | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the probe forges a niche of a Ref to show that Ref gives a niche no friend | -
 test/foundation/neg/ | region | 1 | PROBE: the probe specializes the Ref door to show that it cannot write the pointer | -
-test/foundation/neg/ | std-entity | 48 | - | -
+test/foundation/neg/ | std-entity | 46 | - | -
 test/foundation/neg/ | std-object | 14 | - | -
 test/fuzz/boundary/ | c-array-object | 1 | - | -
 test/fuzz/boundary/ | c-library-call | 25 | - | -
