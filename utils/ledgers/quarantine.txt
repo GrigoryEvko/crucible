@@ -395,6 +395,7 @@ test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of th
 test/fixy/ | opted-out | 4 | ORACLE: the PyTorch tables, and the F16C instructions under each MXCSR state | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | opted-out | 7 | ORACLE: the half casts of GCC and the conversion instructions of the host | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | opted-out | 3 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
+test/fixy/ | opted-out | 1 | PROBE: a read of a page with no access ends the process by a fault | -
 test/fixy/ | opted-out | 4 | PROBE: a secret carrier leaves no byte of its secret in its buffer after its end | the test of the secret carriers builds each carrier in a buffer of bytes with a placement new, ends it, and reads the buffer through a volatile pointer, because no door of the base reads the storage of an object after its end
 test/fixy/ | opted-out | 16 | PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door and of the full write of the file door installs a handler of SIGPIPE and unblocks SIGPIPE in its thread through the C library, because the base has no door that sets the action or the mask of a signal outside an Init context, and the runner of the tests can give the process SIG_IGN and a mask that hide the signal
 test/fixy/ | opted-out | 9 | PROBE: a sendfile to a socket with no peer raises no SIGPIPE in its thread | the test of the open doors raises a timer signal with no SA_RESTART during an open of a FIFO with no writer, and the test of the sendfile door gives SIGPIPE its default action in a child, through the C library, because the base has no door that sets a signal handler, a timer or a FIFO
@@ -429,6 +430,7 @@ test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the ca
 test/fixy/ | region | 1 | ORACLE: the PyTorch tables, and the F16C instructions under each MXCSR state | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | region | 1 | ORACLE: the half casts of GCC and the conversion instructions of the host | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | region | 1 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
+test/fixy/ | region | 1 | PROBE: a read of a page with no access ends the process by a fault | -
 test/fixy/ | region | 1 | PROBE: a secret carrier leaves no byte of its secret in its buffer after its end | the test of the secret carriers builds each carrier in a buffer of bytes with a placement new, ends it, and reads the buffer through a volatile pointer, because no door of the base reads the storage of an object after its end
 test/fixy/ | region | 1 | PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door and of the full write of the file door installs a handler of SIGPIPE and unblocks SIGPIPE in its thread through the C library, because the base has no door that sets the action or the mask of a signal outside an Init context, and the runner of the tests can give the process SIG_IGN and a mask that hide the signal
 test/fixy/ | region | 1 | PROBE: a sendfile to a socket with no peer raises no SIGPIPE in its thread | the test of the open doors raises a timer signal with no SA_RESTART during an open of a FIFO with no writer, and the test of the sendfile door gives SIGPIPE its default action in a child, through the C library, because the base has no door that sets a signal handler, a timer or a FIFO
@@ -561,6 +563,7 @@ test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that name
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | opted-out | 1 | PROBE: a precondition reads a struct through a raw pointer and tests it for null | -
+test/foundation/ | opted-out | 1 | PROBE: a read of a byte of the window shows the access of its page | -
 test/foundation/ | opted-out | 1 | PROBE: a read of the bytes after an allocation, which the arena did not give out | the test of the poison of a new block reads the bytes after the first allocation of a BumpArena, which the arena does not give out, through a raw pointer in a PROBE region
 test/foundation/ | opted-out | 45 | PROBE: a report to a stream with no reader raises no SIGPIPE in its thread | -
 test/foundation/ | opted-out | 1 | PROBE: a union member reads the bytes of a different member as an Option | the test of the forged tag reads an Option through a member of a local union in a PROBE region
@@ -597,6 +600,7 @@ test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names n
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | region | 1 | PROBE: a precondition reads a struct through a raw pointer and tests it for null | -
+test/foundation/ | region | 1 | PROBE: a read of a byte of the window shows the access of its page | -
 test/foundation/ | region | 1 | PROBE: a read of the bytes after an allocation, which the arena did not give out | the test of the poison of a new block reads the bytes after the first allocation of a BumpArena, which the arena does not give out, through a raw pointer in a PROBE region
 test/foundation/ | region | 1 | PROBE: a report to a stream with no reader raises no SIGPIPE in its thread | -
 test/foundation/ | region | 1 | PROBE: a union member reads the bytes of a different member as an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
@@ -737,7 +741,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 7 | - | -
 test/session_oracle/ | std-entity | 25 | - | -
 test/session_oracle/ | std-object | 1383 | - | -
-test/shape/ | opted-out | 272 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/shape/ | opted-out | 273 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/tensor_neg/ | opted-out | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/tensor_neg/ | region | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -

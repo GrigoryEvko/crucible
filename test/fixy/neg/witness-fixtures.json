@@ -37,9 +37,29 @@
       "constructor": "\\bAlignedBytes\\("
     },
     {
+      "name": "neg_witness_alloc_biasedchunkmap_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBiasedChunkMap\\("
+    },
+    {
       "name": "neg_witness_alloc_layout_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bLayout\\("
+    },
+    {
+      "name": "neg_witness_alloc_metadatalayout_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bMetadataLayout\\("
+    },
+    {
+      "name": "neg_witness_alloc_window_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bWindow\\("
+    },
+    {
+      "name": "neg_witness_alloc_windowrecord_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bWindowRecord\\("
     },
     {
       "name": "neg_witness_appendonly_direct_construction",
@@ -897,6 +917,11 @@
       "constructor": "\\bChildReport\\("
     },
     {
+      "name": "neg_witness_process_forkedchild_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bForkedChild\\("
+    },
+    {
       "name": "neg_witness_process_syscallstop_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bSyscallStop\\("
@@ -1356,6 +1381,22 @@
     {
       "type": "foundation::alloc::Layout",
       "header": "foundation/alloc/Layout.h"
+    },
+    {
+      "type": "foundation::alloc::BiasedChunkMap",
+      "header": "foundation/alloc/ChunkMap.h"
+    },
+    {
+      "type": "foundation::alloc::WindowRecord",
+      "header": "foundation/alloc/ChunkMap.h"
+    },
+    {
+      "type": "foundation::alloc::MetadataLayout",
+      "header": "foundation/alloc/Metadata.h"
+    },
+    {
+      "type": "foundation::alloc::Window",
+      "header": "foundation/alloc/Window.h"
     },
     {
       "type": "foundation::effects::cap::IO",
@@ -2027,6 +2068,10 @@
     },
     {
       "type": "fixy::process::SyscallStop",
+      "header": "fixy/os/Process.h"
+    },
+    {
+      "type": "fixy::process::ForkedChild",
       "header": "fixy/os/Process.h"
     },
     {
