@@ -22,6 +22,8 @@
 //   round_to_float<F>(quantity)  the quantity with the Float Rep F
 //   ElementCount                 a count of elements:
 //                                Quantity<unit::Element, std::size_t>
+//   ByteCount                    a count of bytes of memory:
+//                                Quantity<unit::Byte, std::size_t>
 //
 // The float set, for a Float Rep:
 //
@@ -365,6 +367,10 @@ public:
 // A count of elements of a run, such as the count of limit and skip of a
 // walk (foundation/core/Walk.h).
 using ElementCount = Quantity<unit::Element, std::size_t>;
+
+// A count of bytes of memory, such as the bytes of a reservation of the page
+// source (foundation/os/PageSource.h) or of a request of an allocator.
+using ByteCount = Quantity<unit::Byte, std::size_t>;
 
 namespace detail {
 

@@ -375,6 +375,7 @@ using ::foundation::core::Philox4x32;
 // which argument-dependent lookup finds: checked_*, wrapping_* and
 // saturating_* for an Integer Rep, and add, subtract, multiply and divide for
 // a Float Rep.  The units, Product and Quotient keep their namespace unit.
+using ::foundation::core::ByteCount;
 using ::foundation::core::convert;
 using ::foundation::core::ElementCount;
 using ::foundation::core::Quantity;

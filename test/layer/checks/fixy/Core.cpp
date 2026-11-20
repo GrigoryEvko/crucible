@@ -74,6 +74,11 @@ static_assert(std::is_same_v<::fixy::ElementCount, ::foundation::core::ElementCo
     return left.view().walk().zip(right.view().walk()).limit(::fixy::ElementCount{2}).size();
 }
 static_assert(fixy_zip_pairs() == 2);
+// fixy::ByteCount is the count of bytes of the base: a Quantity of bytes in
+// std::size_t, with no conversion from a number.
+static_assert(std::is_same_v<::fixy::ByteCount, ::foundation::core::ByteCount>);
+static_assert(std::is_same_v<::fixy::ByteCount, ::fixy::Quantity<::fixy::unit::Byte, std::size_t>>);
+static_assert(!std::is_convertible_v<std::size_t, ::fixy::ByteCount>);
 static_assert(std::is_same_v<::fixy::Tally, ::foundation::core::Tally>);
 static_assert(::fixy::AtomicValue<int> && ::fixy::AtomicCount<int> && ::fixy::AtomicBits<unsigned>);
 static_assert(!::fixy::AtomicValue<float> && !::fixy::AtomicCount<bool> && !::fixy::AtomicBits<int>);
