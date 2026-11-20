@@ -87,7 +87,6 @@ reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_qua
 @build/ | opted-out | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
 @build/ | region | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
 @build/test/fixy/armed_roster/ | c-array-object | 1 | - | -
-@build/test/fuzz/generated/ | std-object | 14 | - | -
 bench/ | c-array-object | 22 | - | -
 bench/ | c-library-call | 165 | - | -
 bench/ | compiler-builtin | 7 | - | -
@@ -670,33 +669,18 @@ test/foundation/neg/ | region | 1 | PROBE: the probe forges a niche of a Ref to 
 test/foundation/neg/ | region | 1 | PROBE: the probe specializes the Ref door to show that it cannot write the pointer | -
 test/foundation/neg/ | std-entity | 46 | - | -
 test/foundation/neg/ | std-object | 14 | - | -
-test/fuzz/boundary/ | c-array-object | 1 | - | -
-test/fuzz/boundary/ | c-library-call | 25 | - | -
-test/fuzz/boundary/ | door-header | 2 | - | -
-test/fuzz/boundary/ | opted-out | 8 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the entry view_entry.cpp of a fuzz harness of base types takes the input and the seeds of the runner as a std::span and a std::vector in one ABI region, and the test of the cap of a heap image takes a View of a map of 4 GiB of the guarded region door in one ABI region
-test/fuzz/boundary/ | raw-pointer-object | 8 | - | -
+test/fuzz/boundary/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
+test/fuzz/boundary/ | opted-out | 15 | ABI: the death path runs in a signal handler and in the death callback of the sanitizer | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
+test/fuzz/boundary/ | opted-out | 1 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the entry view_entry.cpp of a fuzz harness of base types takes the input and the seeds of the runner as a std::span and a std::vector in one ABI region, and the test of the cap of a heap image takes a View of a map of 4 GiB of the guarded region door in one ABI region
+test/fuzz/boundary/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
+test/fuzz/boundary/ | region | 1 | ABI: the death path runs in a signal handler and in the death callback of the sanitizer | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
 test/fuzz/boundary/ | region | 1 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the entry view_entry.cpp of a fuzz harness of base types takes the input and the seeds of the runner as a std::span and a std::vector in one ABI region, and the test of the cap of a heap image takes a View of a map of 4 GiB of the guarded region door in one ABI region
-test/fuzz/boundary/ | std-entity | 146 | - | -
-test/fuzz/boundary/ | std-object | 49 | - | -
-test/fuzz/boundary/harnesses/ | c-array-object | 6 | - | -
-test/fuzz/boundary/harnesses/ | c-library-call | 3 | - | -
-test/fuzz/boundary/harnesses/ | compiler-builtin | 1 | - | -
-test/fuzz/boundary/harnesses/ | opted-out | 16 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
-test/fuzz/boundary/harnesses/ | opted-out | 6 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
-test/fuzz/boundary/harnesses/ | raw-pointer-object | 6 | - | -
-test/fuzz/boundary/harnesses/ | region | 6 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
-test/fuzz/boundary/harnesses/ | region | 2 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
-test/fuzz/boundary/harnesses/ | std-entity | 146 | - | -
-test/fuzz/boundary/harnesses/ | std-object | 80 | - | -
-test/fuzz/property/ | c-array-object | 2 | - | -
+test/fuzz/boundary/harnesses/ | std-entity | 10 | - | -
+test/fuzz/boundary/harnesses/ | std-object | 3 | - | -
 test/fuzz/property/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
 test/fuzz/property/ | opted-out | 3 | ORACLE: the overflow builtins of GCC are the model of the saturating operations | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
-test/fuzz/property/ | raw-function-pointer | 2 | - | -
-test/fuzz/property/ | raw-pointer-object | 1 | - | -
 test/fuzz/property/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
 test/fuzz/property/ | region | 1 | ORACLE: the overflow builtins of GCC are the model of the saturating operations | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
-test/fuzz/property/ | std-entity | 25 | - | -
-test/fuzz/property/ | std-object | 3 | - | -
 test/kernel_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/kernel_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/layer/ | opted-out | 81 | ORACLE: the flag matrix checks each audited name of the standard library | -
