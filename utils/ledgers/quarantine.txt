@@ -260,12 +260,11 @@ include/fixy/session/ | replace-pending:<string_view> | 10 | - | -
 include/fixy/session/ | replace-pending:<tuple> | 7 | - | -
 include/fixy/session/ | replace-pending:<vector> | 9 | - | -
 include/foundation/ | base-c-library-call | 4 | - | -
-include/foundation/ | base-std-entity | 21 | - | -
-include/foundation/ | base-std-object | 5 | - | -
+include/foundation/ | base-std-entity | 20 | - | -
+include/foundation/ | base-std-object | 4 | - | -
 include/foundation/ | replace-pending:<atomic> | 1 | - | -
-include/foundation/ | replace-pending:<bit> | 3 | - | -
+include/foundation/ | replace-pending:<bit> | 2 | - | -
 include/foundation/ | replace-pending:<cstring> | 1 | - | -
-include/foundation/ | replace-pending:<span> | 1 | - | -
 include/foundation/ | replace-pending:<string_view> | 1 | - | -
 include/foundation/algebra/ | base-std-entity | 16 | - | -
 include/foundation/algebra/ | base-std-object | 11 | - | -
@@ -374,7 +373,7 @@ test/dag_neg/ | opted-out | 3 | PROBE: the fixture gives a raw pointer to a type
 test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/dag_neg/ | region | 3 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
-test/fixy/ | c-array-object | 80 | - | -
+test/fixy/ | c-array-object | 79 | - | -
 test/fixy/ | c-library-call | 989 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 9 | - | -
@@ -420,6 +419,7 @@ test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the ca
 test/fixy/ | region | 1 | ORACLE: the PyTorch tables, and the F16C instructions under each MXCSR state | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | region | 1 | ORACLE: the half casts of GCC and the conversion instructions of the host | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | region | 1 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
+test/fixy/ | region | 1 | PROBE: a bump arena of a test gives the raw pointer of the arena door | the bump arenas of the tests of OwnedRegion give the raw pointer of the arena door through foreign_first, and the door asks for that shape
 test/fixy/ | region | 1 | PROBE: a secret carrier leaves no byte of its secret in its buffer after its end | the test of the secret carriers builds each carrier in a buffer of bytes with a placement new, ends it, and reads the buffer through a volatile pointer, because no door of the base reads the storage of an object after its end
 test/fixy/ | region | 1 | PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door and of the full write of the file door installs a handler of SIGPIPE and unblocks SIGPIPE in its thread through the C library, because the base has no door that sets the action or the mask of a signal outside an Init context, and the runner of the tests can give the process SIG_IGN and a mask that hide the signal
 test/fixy/ | region | 1 | PROBE: a sendfile to a socket with no peer raises no SIGPIPE in its thread | the test of the open doors raises a timer signal with no SA_RESTART during an open of a FIFO with no writer, and the test of the sendfile door gives SIGPIPE its default action in a child, through the C library, because the base has no door that sets a signal handler, a timer or a FIFO
@@ -450,7 +450,7 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2325 | - | -
+test/fixy/ | std-entity | 2324 | - | -
 test/fixy/ | std-object | 834 | - | -
 test/fixy/neg/ | c-array-object | 54 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
@@ -563,7 +563,7 @@ test/foundation/ | opted-out | 16 | PROBE: a violation report blocks on a full p
 test/foundation/ | opted-out | 7 | PROBE: an attack carries a view out of its door in a std type or a raw address | -
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | opted-out | 10 | PROBE: the address of a body or an object tells which unit of the link holds it | -
-test/foundation/ | opted-out | 16 | PROBE: the checked lifetime start reads raw bytes through pointers of two types | -
+test/foundation/ | opted-out | 2 | PROBE: the checked lifetime start reads raw bytes through pointers of two types | -
 test/foundation/ | opted-out | 1 | PROBE: the child reads a reserved page that no commit opened, which faults | the test of the page source reads a reserved page that no commit opened, in a child of the child door, to show that the read faults.  A View of the base covers only bytes that a commit opened, so only a raw address gives that read
 test/foundation/ | opted-out | 3 | PROBE: the identity walk reads a pointer, a member pointer and a bfloat16 value | -
 test/foundation/ | opted-out | 1 | PROBE: the layout test reads the address of the first element of each array of a buffer | the layout test of the SwissTableBuffer reads the address of the first element of each array as an integer, and no type of the base gives the address of a View as an integer
@@ -690,8 +690,9 @@ test/layer/checks/crucible/topology/ | std-object | 1 | - | -
 test/layer/checks/fixy/ | c-array-object | 9 | - | -
 test/layer/checks/fixy/ | c-library-call | 1 | - | -
 test/layer/checks/fixy/ | raw-pointer-object | 10 | - | -
-test/layer/checks/fixy/ | std-entity | 102 | - | -
-test/layer/checks/fixy/ | std-object | 11 | - | -
+test/layer/checks/fixy/ | region | 1 | PROBE: a bump arena of a test gives the raw pointer of the arena door | the bump arenas of the tests of OwnedRegion give the raw pointer of the arena door through foreign_first, and the door asks for that shape
+test/layer/checks/fixy/ | std-entity | 100 | - | -
+test/layer/checks/fixy/ | std-object | 10 | - | -
 test/layer/checks/fixy/atoms/ | std-entity | 24 | - | -
 test/layer/checks/fixy/atoms/ | std-object | 11 | - | -
 test/layer/checks/fixy/collision/ | std-entity | 16 | - | -
@@ -709,7 +710,7 @@ test/layer/checks/foundation/ | c-array-object | 2 | - | -
 test/layer/checks/foundation/ | opted-out | 3 | PROBE: the walk of a value of a cell reads raw pointers and pointers to members | a PROBE region of each new fixture and of the check file of foundation/ThreadLocalRef.h holds the pointers to members and the raw pointer that the walk of a value of a cell refuses and admits
 test/layer/checks/foundation/ | raw-pointer-object | 1 | - | -
 test/layer/checks/foundation/ | region | 1 | PROBE: the walk of a value of a cell reads raw pointers and pointers to members | a PROBE region of each new fixture and of the check file of foundation/ThreadLocalRef.h holds the pointers to members and the raw pointer that the walk of a value of a cell refuses and admits
-test/layer/checks/foundation/ | std-entity | 2 | - | -
+test/layer/checks/foundation/ | std-entity | 1 | - | -
 test/layer/checks/foundation/algebra/ | std-entity | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | c-array-object | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-entity | 41 | - | -
