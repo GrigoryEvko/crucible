@@ -12,5 +12,5 @@ int main() {
     using HB = fl::HappensBeforeLattice<2>;
     fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test>> const scope{fe::testing::test()};
     auto const read = fe::mint_from_image<HB>(scope, HB::image_of(HB::bottom()));
-    return read.has_value() ? 0 : 1;
+    return read.is_ok() ? 0 : 1;
 }

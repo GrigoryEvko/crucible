@@ -167,7 +167,7 @@ private:
         typename L::image_type image{};
         ::foundation::algebra::lattices::detail::count_image::write_word(image, 0, L::image_axis());
         ::foundation::algebra::lattices::detail::count_image::write_word(image, 8, count);
-        return *::foundation::effects::mint_from_image<L>(ctx, image);
+        return ::foundation::effects::mint_from_image<L>(ctx, image).expect("the image names the axis of its read");
     }
 
     AuthorityCtx ctx_;

@@ -23,11 +23,12 @@ constexpr std::byte full{0xFF};
 
 [[nodiscard]] constexpr HB::element_type saturated_clock() noexcept {
     fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO>> const scope{fe::testing::test()};
-    return *fe::mint_from_image<HB>(
-        scope, HB::image_type{axis_byte(0), axis_byte(1), axis_byte(2), axis_byte(3), axis_byte(4), axis_byte(5),
-                              axis_byte(6), axis_byte(7), full,         full,         full,         full,
-                              full,         full,         full,         full,         full,         full,
-                              full,         full,         full,         full,         full,         full});
+    return fe::mint_from_image<HB>(
+               scope, HB::image_type{axis_byte(0), axis_byte(1), axis_byte(2), axis_byte(3), axis_byte(4), axis_byte(5),
+                                     axis_byte(6), axis_byte(7), full,         full,         full,         full,
+                                     full,         full,         full,         full,         full,         full,
+                                     full,         full,         full,         full,         full,         full})
+        .expect("the image names the axis of its read");
 }
 
 constexpr HB::element_type local = HB::bottom();

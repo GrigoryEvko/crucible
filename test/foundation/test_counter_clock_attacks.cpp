@@ -95,20 +95,24 @@ typename L::image_type image_with(std::uint64_t axis, ::fixy::FixedArray<std::ui
     return image;
 }
 
+// The result of a checked read of an image of L.
+template <typename L>
+using ReadOf = ::fixy::Result<typename L::element_type, fl::CountImageError>;
+
 template <typename L>
 typename L::element_type count_at(std::uint64_t count) {
     IoCtx const ctx{fe::testing::test()};
-    auto const read = fe::mint_from_image<L>(ctx, image_with<L, 1>(L::image_axis(), SlotWords<1>{count}));
-    CRUCIBLE_TEST_ASSERT(kTest, read.has_value());
-    return *read;
+    auto read = fe::mint_from_image<L>(ctx, image_with<L, 1>(L::image_axis(), SlotWords<1>{count}));
+    CRUCIBLE_TEST_ASSERT(kTest, read.is_ok());
+    return std::move(read).expect("the image names the axis of its read");
 }
 
 template <typename HB>
 typename HB::element_type clock_at(SlotWords<HB::process_count> const& slots) {
     IoCtx const ctx{fe::testing::test()};
-    auto const read = fe::mint_from_image<HB>(ctx, image_with<HB, HB::process_count>(HB::image_axis(), slots));
-    CRUCIBLE_TEST_ASSERT(kTest, read.has_value());
-    return *read;
+    auto read = fe::mint_from_image<HB>(ctx, image_with<HB, HB::process_count>(HB::image_axis(), slots));
+    CRUCIBLE_TEST_ASSERT(kTest, read.is_ok());
+    return std::move(read).expect("the image names the axis of its read");
 }
 
 // ── Counters at the top ─────────────────────────────────────────────
@@ -144,9 +148,9 @@ void attack_counter_top(::fixy::TextView axis) {
 
     // An image carries its count through a round trip, at both ends.
     IoCtx const ctx{fe::testing::test()};
-    expect(fe::mint_from_image<L>(ctx, L::image_of(top)) == top, axis);
-    expect(fe::mint_from_image<L>(ctx, L::image_of(L::bottom())) == L::bottom(), axis);
-    expect(fe::mint_from_image<L>(ctx, L::image_of(near_top)) == near_top, axis);
+    expect(fe::mint_from_image<L>(ctx, L::image_of(top)) == ReadOf<L>{top}, axis);
+    expect(fe::mint_from_image<L>(ctx, L::image_of(L::bottom())) == ReadOf<L>{L::bottom()}, axis);
+    expect(fe::mint_from_image<L>(ctx, L::image_of(near_top)) == ReadOf<L>{near_top}, axis);
 
     // The dual turns the extremes over and keeps every element.  The dual of
     // a version axis has no bottom, because the axis has no top.
@@ -271,10 +275,11 @@ void attack_clock_images() {
     std::uint64_t const s = g_seed;
     IoCtx const ctx{fe::testing::test()};
     Replay::element_type const clock = clock_at<Replay>({s, s + 1, kMax});
-    expect(fe::mint_from_image<Replay>(ctx, Replay::image_of(clock)) == clock, "a clock survives its image");
+    expect(fe::mint_from_image<Replay>(ctx, Replay::image_of(clock)) == ReadOf<Replay>{clock},
+           "a clock survives its image");
     auto const as_kernel =
         fe::mint_from_image<Kernel>(ctx, image_with<Kernel, 3>(Replay::image_axis(), {s, s + 1, kMax}));
-    expect(!as_kernel && as_kernel.error() == fl::CountImageError::OtherAxis,
+    expect(as_kernel == ReadOf<Kernel>{::fixy::err(fl::CountImageError::OtherAxis)},
            "an image of one protocol does not read back as another");
 }
 
@@ -555,7 +560,7 @@ void reproduce_the_ledger() {
     IoCtx const ctx{fe::testing::test()};
     auto const authored = fe::mint_from_image<fl::GenerationLattice>(
         ctx, image_with<fl::GenerationLattice, 1>(fl::GenerationLattice::image_axis(), SlotWords<1>{epoch.raw()}));
-    expect(authored.has_value() && authored->raw() == epoch.raw(),
+    expect(authored.is_ok_and([&epoch](fl::Generation const& count) { return count.raw() == epoch.raw(); }),
            "ledger: an image written by hand under IO still loads as a count of any axis");
 }
 
@@ -573,13 +578,14 @@ void attack_the_closed_routes() {
 
     // An image of an epoch does not read back as a generation.
     auto const relabelled = fe::mint_from_image<fl::GenerationLattice>(ctx, fl::EpochLattice::image_of(epoch));
-    expect(!relabelled && relabelled.error() == fl::CountImageError::OtherAxis,
+    expect(relabelled == ReadOf<fl::GenerationLattice>{::fixy::err(fl::CountImageError::OtherAxis)},
            "an image of an epoch is refused as a generation");
     auto const as_bits = fe::mint_from_image<fl::BitsBudgetLattice>(
         ctx, fl::PeakBytesLattice::image_of(count_at<fl::PeakBytesLattice>(s)));
-    expect(!as_bits && as_bits.error() == fl::CountImageError::OtherAxis, "an image of bytes is refused as bits");
+    expect(as_bits == ReadOf<fl::BitsBudgetLattice>{::fixy::err(fl::CountImageError::OtherAxis)},
+           "an image of bytes is refused as bits");
     auto const as_forged = fe::mint_from_image<ForgedEpochLattice>(ctx, fl::EpochLattice::image_of(epoch));
-    expect(!as_forged && as_forged.error() == fl::CountImageError::OtherAxis,
+    expect(as_forged == ReadOf<ForgedEpochLattice>{::fixy::err(fl::CountImageError::OtherAxis)},
            "an image of the epoch is refused by a tag that copies its name");
 
     // The raw count is an integer, and an integer builds a bound, which

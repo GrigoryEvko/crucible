@@ -42,6 +42,7 @@
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Choice.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
@@ -49,7 +50,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <limits>
 #include <string_view>
 #include <type_traits>
@@ -233,12 +233,12 @@ struct HappensBeforeLattice {
     // mint_from_image of foundation/effects/ImageRead.h, whose context must
     // own IO.  The tag must have a source path, and the image must name this
     // lattice.
-    [[nodiscard]] static constexpr std::expected<element_type, CountImageError>
+    [[nodiscard]] static constexpr ::foundation::core::Result<element_type, CountImageError>
     read_image(CountImageKey, image_type const& image) noexcept
         requires ClockWireProtocol<Tag>
     {
         if (detail::count_image::read_word(image, 0) != image_axis())
-            return std::unexpected(CountImageError::OtherAxis);
+            return ::foundation::core::err(CountImageError::OtherAxis);
         std::array<std::uint64_t, N> slots{};
         for (std::size_t p = 0; p < N; ++p)
             slots[p] = detail::count_image::read_word(image, 8 * (p + 1));

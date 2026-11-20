@@ -85,6 +85,7 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Arithmetic.h>
+#include <foundation/core/Choice.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
@@ -92,7 +93,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <limits>
 #include <meta>
 #include <string>
@@ -337,12 +337,12 @@ struct StrongCounterLattice {
     // mint_from_image of foundation/effects/ImageRead.h, whose context must
     // own IO, because the read occurs where storage or a socket is read.
     // The tag must have a source path, and the image must name this axis.
-    [[nodiscard]] static constexpr std::expected<element_type, CountImageError>
+    [[nodiscard]] static constexpr ::foundation::core::Result<element_type, CountImageError>
     read_image(CountImageKey, image_type const& image) noexcept
         requires WireTag<Tag>
     {
         if (detail::count_image::read_word(image, 0) != image_axis())
-            return std::unexpected(CountImageError::OtherAxis);
+            return ::foundation::core::err(CountImageError::OtherAxis);
         return element_type{detail::count_image::read_word(image, 8)};
     }
 

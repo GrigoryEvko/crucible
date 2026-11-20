@@ -18,5 +18,5 @@ int main() {
     fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO>> const scope{fe::testing::test()};
     HB::image_type const image{};
     auto const read = fe::mint_from_image<HB>(scope, image);
-    return read.has_value() ? 0 : 1;
+    return read.is_ok() ? 0 : 1;
 }

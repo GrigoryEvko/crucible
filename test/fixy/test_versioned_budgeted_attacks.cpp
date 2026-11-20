@@ -88,9 +88,7 @@ typename L::element_type count_at(std::uint64_t count) {
         image[i] = static_cast<std::byte>((L::image_axis() >> (8 * i)) & 0xFFu);
         image[8 + i] = static_cast<std::byte>((count >> (8 * i)) & 0xFFu);
     }
-    auto const read = fe::mint_from_image<L>(ctx, image);
-    if (!read) std::abort();
-    return *read;
+    return fe::mint_from_image<L>(ctx, image).expect("the image names the axis of its read");
 }
 
 // The one version source and the one budget authority of this program.

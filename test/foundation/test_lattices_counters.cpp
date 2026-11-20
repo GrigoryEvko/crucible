@@ -128,9 +128,9 @@ typename L::element_type count_at(std::uint64_t count) {
         image[i] = static_cast<std::byte>((L::image_axis() >> (8 * i)) & 0xFFu);
         image[8 + i] = static_cast<std::byte>((count >> (8 * i)) & 0xFFu);
     }
-    auto const read = fe::mint_from_image<L>(ctx, image);
-    CRUCIBLE_TEST_ASSERT(kTest, read.has_value());
-    return *read;
+    auto read = fe::mint_from_image<L>(ctx, image);
+    CRUCIBLE_TEST_ASSERT(kTest, read.is_ok());
+    return std::move(read).expect("the image names the axis of its read");
 }
 
 // A clock reached from the empty history by local events.
