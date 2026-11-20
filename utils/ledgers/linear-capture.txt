@@ -5,7 +5,7 @@ rule linear-capture
 reason bench/ | the benches capture the endpoints of a channel by reference in the lambda of a measured loop
 reason include/fixy/session/ | the session doors capture a payload, a handle or a token by reference in a lambda that the door calls one time
 reason test/ | the tests capture tokens, parts and handles by reference in a lambda that the test calls, and one attack test shows the capture
-bench/ | reference-capture | 20 | - | -
+bench/ | reference-capture | 21 | - | -
 include/fixy/session/ | reference-capture | 1 | - | -
 test/ | reference-capture | 2 | - | -
 test/fixy/ | reference-capture | 8 | - | -

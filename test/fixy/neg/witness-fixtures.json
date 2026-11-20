@@ -757,6 +757,11 @@
       "constructor": "\\bOrderedAppendOnly\\("
     },
     {
+      "name": "neg_witness_os_committedrange_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCommittedRange\\("
+    },
+    {
       "name": "neg_witness_os_fpcontrolword_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bFpControlWord\\("
@@ -780,6 +785,16 @@
       "name": "neg_witness_os_handleref_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bHandleRef\\("
+    },
+    {
+      "name": "neg_witness_os_reservation_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bReservation\\("
+    },
+    {
+      "name": "neg_witness_os_reservedrange_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bReservedRange\\("
     },
     {
       "name": "neg_witness_ownedmmap_direct_construction",
@@ -1229,6 +1244,18 @@
     {
       "type": "foundation::os::GuardedRegion",
       "header": "foundation/os/GuardedRegion.h"
+    },
+    {
+      "type": "foundation::os::Reservation",
+      "header": "foundation/os/PageSource.h"
+    },
+    {
+      "type": "foundation::os::ReservedRange",
+      "header": "foundation/os/PageSource.h"
+    },
+    {
+      "type": "foundation::os::CommittedRange",
+      "header": "foundation/os/PageSource.h"
     },
     {
       "type": "foundation::effects::ctx_cap::Fg",
