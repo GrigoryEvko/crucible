@@ -7,8 +7,6 @@
 #include <foundation/effects/Effect.h>
 #include <fixy/Core.h>
 
-#include <cstdio>
-#include <cstring>
 #include <limits>
 #include <type_traits>
 
@@ -526,16 +524,16 @@ template <class Fake>
         // The failure path prints what it got, so a deliberate move does not
         // need a separate harness to recover the new values.
         uint32_t moved_vectors = 0;
-        auto golden = [&moved_vectors](const char* what, crucible::ContentHash got, uint64_t want) {
+        auto golden = [&moved_vectors](::fixy::TextView what, crucible::ContentHash got, uint64_t want) {
             if (got.raw() == want) return;
             ++moved_vectors;
             // Every vector is reported before the abort, so one run recovers
             // the whole replacement set.  stderr, because the abort below
             // discards a block-buffered stdout.
-            std::fprintf(stderr,
-                         "  content-hash vector '%s' moved: got 0x%016llXULL, "
-                         "frozen at 0x%016llXULL\n",
-                         what, static_cast<unsigned long long>(got.raw()), static_cast<unsigned long long>(want));
+            ::fixy::report(::fixy::Sink::Err,
+                           "  content-hash vector '{}' moved: got 0x{}ULL, "
+                           "frozen at 0x{}ULL\n",
+                           what, ::fixy::Hex<16>{got.raw()}, ::fixy::Hex<16>{want});
         };
 
         // The tensor op above carries a default TensorMeta, whose dtype is

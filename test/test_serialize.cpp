@@ -5,10 +5,8 @@
 #include <fixy/check/Check.h>
 #include <fixy/check/Fixture.h>
 #include <bit>
-#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <memory>
 
 namespace {
@@ -326,14 +324,14 @@ static void check_descriptor_images_agree() {
         constexpr uint64_t EXPECTED_WIRE_HASH = 0xe29f72ffea662ef1ULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
-            std::fprintf(stderr,
-                         "WIRE-FORMAT DRIFT DETECTED\n"
-                         "  got    n=%zu  hash=0x%016" PRIx64 "\n"
-                         "  expect n=%zu  hash=0x%016" PRIx64 "\n"
-                         "  if intentional: update EXPECTED_WIRE_BYTES and\n"
-                         "  EXPECTED_WIRE_HASH in test_serialize.cpp, and\n"
-                         "  verify CDAG_VERSION was bumped in Serialize.h.\n",
-                         n, wire_hash, EXPECTED_WIRE_BYTES, EXPECTED_WIRE_HASH);
+            ::fixy::report(::fixy::Sink::Err,
+                           "WIRE-FORMAT DRIFT DETECTED\n"
+                           "  got    n={}  hash=0x{}\n"
+                           "  expect n={}  hash=0x{}\n"
+                           "  if intentional: update EXPECTED_WIRE_BYTES and\n"
+                           "  EXPECTED_WIRE_HASH in test_serialize.cpp, and\n"
+                           "  verify CDAG_VERSION was bumped in Serialize.h.\n",
+                           n, ::fixy::Hex<16>{wire_hash}, EXPECTED_WIRE_BYTES, ::fixy::Hex<16>{EXPECTED_WIRE_HASH});
             CRUCIBLE_TEST_ASSERT(kTest, false && "wire-byte golden mismatch");
         }
     }
