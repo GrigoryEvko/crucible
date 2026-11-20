@@ -10,10 +10,8 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
-#include <cinttypes>
-#include <cstdio>
-#include <cstring>
-#include <unordered_set>
+#include <cstddef>
+#include <cstdint>
 
 namespace {
 
@@ -226,15 +224,15 @@ int main() {
         int max_flips = 0;
         for (int bit = 0; bit < 64 * 4; ++bit) {
             AvalancheSpec perturbed = base;
-            uint64_t* fields[4] = {&perturbed.a, &perturbed.b, &perturbed.c, &perturbed.d};
+            const ::fixy::FixedArray<::fixy::Ref<uint64_t>, 4> fields{::fixy::to(perturbed.a), ::fixy::to(perturbed.b),
+                                                                      ::fixy::to(perturbed.c), ::fixy::to(perturbed.d)};
             const auto bit_idx = static_cast<unsigned>(bit % 64);
-            *fields[bit / 64] ^= (uint64_t{1} << bit_idx);
+            *fields.at(
+                ::fixy::Index<4>::check(static_cast<std::size_t>(bit / 64)).expect("a bit of one of the fields")) ^=
+                (uint64_t{1} << bit_idx);
             const uint64_t perturbed_h = hash_of(perturbed);
             const uint64_t diff = base_h ^ perturbed_h;
-            // The cast is explicit only to keep the implicit
-            // promotion from tripping the sign-conversion warning.
-            // The two types have the same width here.
-            const int popcount = __builtin_popcountll(static_cast<unsigned long long>(diff));
+            const int popcount = ::fixy::popcount(diff);
             total_flips += popcount;
             if (popcount < min_flips) min_flips = popcount;
             if (popcount > max_flips) max_flips = popcount;
@@ -254,8 +252,8 @@ int main() {
     // unlikely, so one here means the fold is structurally wrong
     // rather than unlucky.
     {
-        std::unordered_set<uint64_t> seen;
         constexpr int N = 1024;
+        ::fixy::FixedList<uint64_t, N> seen{};
         for (int i = 0; i < N; ++i) {
             const uint64_t iu = static_cast<uint64_t>(i);
             AvalancheSpec s{
@@ -264,8 +262,10 @@ int main() {
                 iu ^ uint64_t{0xDEADBEEFCAFEBABEULL},
                 ~iu,
             };
-            const auto [it, inserted] = seen.insert(hash_of(s));
+            const uint64_t hash = hash_of(s);
+            const bool inserted = ::fixy::find(seen.view(), hash).is_none();
             CRUCIBLE_TEST_ASSERT(kTest, inserted && "hash collision in 1024-input grid");
+            static_cast<void>(seen.append(hash).expect("the grid holds 1024 inputs"));
         }
         CRUCIBLE_TEST_ASSERT(kTest, seen.size() == N);
     }
