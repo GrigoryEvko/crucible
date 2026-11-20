@@ -21,6 +21,8 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
+#include "stage_loop_fakes.h"
+
 namespace {
 
 // The context of the test, which each check of the Check family takes.
@@ -218,6 +220,124 @@ static_assert(net::check_liveness(cc::marked_system_of_stage_graph<CrossedFanIn<
 static_assert(net::check_liveness(
                   cc::marked_system_of_stage_graph<CrossedFanIn<SlottedFanOutStage, SlottedStage, SlottedFanInStage>>())
                   .is_admitted());
+
+// A loop of fake stages in the shape of the loop of the Vigil
+// (stage_loop_fakes.h, THE LOOP of fixy/concurrent/StageNet.h).  The channels
+// of the flush arm stand in the order of their first ends: the ring, the
+// count, and the three edges between the stages.  Each channel takes the
+// capacity of the type of its first send end.  The lock adds no action, so
+// the system is the system of the pipeline with the loop of the Vigil in
+// foundation/algebra/net/Priority.cpp, with the same order of the actions.
+namespace loop = ::stage_loop_fakes;
+
+// True when the action is a move of the process on the channel.
+[[nodiscard]] consteval bool is_action_(net::Action const& action, net::ProcessId process, net::ChannelId channel,
+                                        net::Move move) noexcept {
+    return action.process == process && action.channel == channel && action.move == move;
+}
+
+inline constexpr net::ProcessSystem<5, 5, 10> flush_system = cc::marked_system_of_loop<loop::FlushArm>();
+static_assert(flush_system.process_names[0] == net::NetName{"foreground"});
+static_assert(flush_system.process_names[1] == net::NetName{"drain"});
+static_assert(flush_system.process_names[4] == net::NetName{"publish"});
+static_assert(flush_system.channels[0].name == net::NetName{"channel 0"});
+static_assert(flush_system.channels[4].name == net::NetName{"channel 4"});
+static_assert(flush_system.channels[0].capacity == 1024 && flush_system.channels[1].capacity == 0xFFFFFFFFu);
+static_assert(flush_system.channels[2].capacity == 8 && flush_system.channels[3].capacity == 8
+              && flush_system.channels[4].capacity == 8);
+static_assert(is_action_(flush_system.actions[0], net::ProcessId{0}, net::ChannelId{0}, net::Move::Send));
+static_assert(is_action_(flush_system.actions[1], net::ProcessId{0}, net::ChannelId{1}, net::Move::Receive));
+static_assert(is_action_(flush_system.actions[2], net::ProcessId{1}, net::ChannelId{0}, net::Move::Receive));
+static_assert(is_action_(flush_system.actions[3], net::ProcessId{1}, net::ChannelId{2}, net::Move::Send));
+static_assert(is_action_(flush_system.actions[4], net::ProcessId{2}, net::ChannelId{2}, net::Move::Receive));
+static_assert(is_action_(flush_system.actions[5], net::ProcessId{2}, net::ChannelId{3}, net::Move::Send));
+static_assert(is_action_(flush_system.actions[6], net::ProcessId{3}, net::ChannelId{3}, net::Move::Receive));
+static_assert(is_action_(flush_system.actions[7], net::ProcessId{3}, net::ChannelId{4}, net::Move::Send));
+static_assert(is_action_(flush_system.actions[8], net::ProcessId{4}, net::ChannelId{4}, net::Move::Receive));
+static_assert(is_action_(flush_system.actions[9], net::ProcessId{4}, net::ChannelId{1}, net::Move::Send));
+
+// The door admits the two arms, and each verdict is the admitted verdict.
+[[nodiscard]] consteval bool admits_the_two_arms_() noexcept {
+    cc::ensure_loop_live<loop::FlushArm>();
+    cc::ensure_loop_live<loop::JobArm>();
+    return true;
+}
+static_assert(admits_the_two_arms_());
+static_assert(cc::check_loop<loop::FlushArm>().is_admitted() && cc::check_loop<loop::JobArm>().is_admitted());
+
+// The arm in which the last stage serves the job after its receive.  The
+// foreground posts the job after its record, so each wait goes forward.
+using PublishServesLate =
+    cc::LoopProcess<loop::PublishName, cc::InputsOf<loop::PublishStage>, cc::ReceivesOn<loop::Mailbox>,
+                    cc::SendsOn<loop::JobDone>, cc::ReadsLock<loop::Holders>, cc::SendsOn<loop::Count>>;
+using JobAfterReceive =
+    cc::StageLoop<loop::ForegroundJob, loop::DrainProcess, loop::DetectProcess, loop::BuildProcess, PublishServesLate>;
+static_assert(cc::check_loop<JobAfterReceive>().is_admitted());
+
+// A foreground that posts the job before its record, with that arm of the
+// last stage: the done mark waits on the receive of the stage, and the
+// receive waits on the record.  A stage that polls its mailbox serves the job
+// first, so a loop of that foreground takes the job arm.
+using JobBeforeRecord =
+    cc::StageLoop<cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::Mailbox>, cc::ReceivesOn<loop::JobDone>,
+                                  cc::SendsOn<loop::Ring>, cc::WritesLock<loop::Holders>, cc::ReceivesOn<loop::Count>>,
+                  loop::DrainProcess, loop::DetectProcess, loop::BuildProcess, PublishServesLate>;
+static_assert(!cc::check_loop<JobBeforeRecord>().is_admitted());
+static_assert(cc::check_loop<cc::StageLoop<
+                  cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::Mailbox>, cc::ReceivesOn<loop::JobDone>,
+                                  cc::SendsOn<loop::Ring>, cc::WritesLock<loop::Holders>, cc::ReceivesOn<loop::Count>>,
+                  loop::DrainProcess, loop::DetectProcess, loop::BuildProcess, loop::PublishJob>>()
+                  .is_admitted());
+
+// The last stage serves another mailbox than the mailbox of the foreground.
+// The mailbox of the foreground then has a send and no receive
+// (neg_stage_loop_wrong_mailbox).
+using WrongMailbox = cc::StageLoop<
+    loop::ForegroundJob, loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
+    cc::LoopProcess<loop::PublishName, cc::ReceivesOn<loop::OtherMailbox>, cc::SendsOn<loop::JobDone>,
+                    cc::InputsOf<loop::PublishStage>, cc::ReadsLock<loop::Holders>, cc::SendsOn<loop::Count>>>;
+static_assert(cc::check_loop<WrongMailbox>().says(
+    "liveness: channel 'channel 1' has 1 sends and 0 receives.  Each send has its receive."));
+
+// The last stage reads no holders, so the lock has a writer and no reader
+// (neg_stage_loop_lost_lock_end).
+using LostLockEnd =
+    cc::StageLoop<loop::ForegroundFlush, loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
+                  cc::LoopProcess<loop::PublishName, cc::InputsOf<loop::PublishStage>, cc::SendsOn<loop::Count>>>;
+static_assert(cc::check_loop<LostLockEnd>().says(
+    "loop: the processes that write the lock 'lock 0': 1, the processes that read it and do not write it: 0.  One "
+    "process writes each lock, and one other process reads it."));
+
+// The foreground reads its own lock, and the last stage does not.
+using SelfReadLock =
+    cc::StageLoop<cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::Ring>, cc::WritesLock<loop::Holders>,
+                                  cc::ReadsLock<loop::Holders>, cc::ReceivesOn<loop::Count>>,
+                  loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
+                  cc::LoopProcess<loop::PublishName, cc::InputsOf<loop::PublishStage>, cc::SendsOn<loop::Count>>>;
+static_assert(cc::check_loop<SelfReadLock>().says(
+    "loop: the processes that write the lock 'lock 0': 1, the processes that read it and do not write it: 0.  One "
+    "process writes each lock, and one other process reads it."));
+
+// The foreground waits on the count before it records: the cycle through the
+// five processes holds no token (neg_stage_loop_waits_first).
+using WaitsFirst = cc::StageLoop<cc::LoopProcess<loop::ForegroundName, cc::ReceivesOn<loop::Count>,
+                                                 cc::SendsOn<loop::Ring>, cc::WritesLock<loop::Holders>>,
+                                 loop::DrainProcess, loop::DetectProcess, loop::BuildProcess, loop::PublishFlush>;
+static_assert(cc::check_loop<WaitsFirst>().says(
+    "liveness: a cycle of waits holds no token: foreground receives 'channel 0' step 0 <- publish sends 'channel 0' "
+    "step 0 <- publish receives 'channel 4' step 0 <- build sends 'channel 4' step 0 <- ....  No action of the cycle "
+    "can start."));
+
+// A job of the last stage that waits on the count: the count then has two
+// receivers.
+using JobFlushes =
+    cc::StageLoop<loop::ForegroundJob, loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
+                  cc::LoopProcess<loop::PublishName, cc::ReceivesOn<loop::Mailbox>, cc::ReceivesOn<loop::Count>,
+                                  cc::SendsOn<loop::JobDone>, cc::InputsOf<loop::PublishStage>,
+                                  cc::ReadsLock<loop::Holders>, cc::SendsOn<loop::Count>>>;
+static_assert(cc::check_loop<JobFlushes>().says("liveness: the receive side of channel 'channel 3' is held by "
+                                                "'foreground' and by 'publish'.  One process holds each side of a "
+                                                "channel."));
 
 // The coordinating context must admit the row of every stage, so the row
 // of a pipeline is the union of the stage rows, and no effect more.
