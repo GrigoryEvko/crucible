@@ -23,8 +23,6 @@
 
 #include <bit>
 #include <cstdint>
-#include <cstdio>
-#include <memory>
 
 using namespace crucible;
 
@@ -75,16 +73,26 @@ constexpr size_t RECORD_BODIES = RECORD_WARMUP + RECORD_SAMPLES * RECORD_BATCH;
 static_assert(RECORD_BODIES < TraceRing::CAPACITY,
               "a record case must end before the ring fills, or it times the refusal of a full ring");
 
-constexpr SchemaHash SCHEMA[NUM_OPS] = {
+constexpr ::fixy::FixedArray<SchemaHash, NUM_OPS> SCHEMA{
     SchemaHash{0x100}, SchemaHash{0x101}, SchemaHash{0x102}, SchemaHash{0x103},
     SchemaHash{0x104}, SchemaHash{0x105}, SchemaHash{0x106}, SchemaHash{0x107},
 };
-constexpr ShapeHash SHAPE[NUM_OPS] = {
+constexpr ::fixy::FixedArray<ShapeHash, NUM_OPS> SHAPE{
     ShapeHash{0x200}, ShapeHash{0x201}, ShapeHash{0x202}, ShapeHash{0x203},
     ShapeHash{0x204}, ShapeHash{0x205}, ShapeHash{0x206}, ShapeHash{0x207},
 };
 
+// The position of an op in the cycle of the NUM_OPS ops.
+using OpSlot = ::fixy::Index<NUM_OPS>;
+
 // ── Helpers ────────────────────────────────────────────────────────
+
+// The position after slot in its cycle of Count positions.  A remainder is
+// below its divisor, so the optimizer removes the check of the index.
+template <std::size_t Count>
+[[nodiscard]] ::fixy::Index<Count> next_in_cycle(::fixy::Index<Count> slot) noexcept {
+    return ::fixy::Index<Count>::check((slot.raw() + 1) % Count).expect("a remainder is below its divisor");
+}
 
 void* fake_ptr(uint32_t iter, uint32_t op) noexcept {
     return std::bit_cast<void*>(static_cast<std::uintptr_t>((iter + 1) * 0x100000 + (op + 1) * 0x1000));
@@ -120,8 +128,9 @@ records_of(const OpData&&) = delete("the result points into the op, and a tempor
 
 OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
     OpData d;
-    d.entry.schema_hash = SCHEMA[op_idx];
-    d.entry.shape_hash = SHAPE[op_idx];
+    const OpSlot slot = OpSlot::check(op_idx).expect("the position of an op is below NUM_OPS");
+    d.entry.schema_hash = SCHEMA.at(slot);
+    d.entry.shape_hash = SHAPE.at(slot);
     d.entry.num_inputs = (op_idx == 0) ? 0 : 1;
     d.entry.num_outputs = 1;
 
@@ -133,6 +142,18 @@ OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
         make_meta(fake_ptr(iter, op_idx));
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
+}
+
+// The ops of one iteration, in the order of the cycle.
+using Ops = ::fixy::FixedArray<OpData, NUM_OPS>;
+
+// The ops of the iteration 10, which the COMPILED rows dispatch after the
+// setup of setup_compiled_vigil.
+[[nodiscard]] Ops make_compiled_ops() noexcept {
+    Ops ops{};
+    for (OpSlot const slot : ::fixy::IndexRange<NUM_OPS>{})
+        ops.at(slot) = make_op(10, static_cast<uint32_t>(slot.raw()));
+    return ops;
 }
 
 void feed_record(Vigil& vigil, uint32_t iter) {
@@ -211,34 +232,18 @@ void check_cpu_slot(const TensorSlot& slot) {
 // fake_ptr don't point at real storage.
 //
 // The ops, their arrays, the region and the slots are in dag_arena.  The
-// plan is in arena.
+// plan is in arena.  The region has one op for each schema hash, and the
+// shape hashes have the same count.
 struct BenchRegion {
     ::foundation::effects::Test test = ::foundation::effects::testing::test();
     ::fixy::BumpArena arena{1 << 16};
     ::fixy::BumpArena dag_arena{1 << 16};
-    RegionNode* region = nullptr;
-    MemoryPlan* plan = nullptr;
+    ::fixy::Ref<RegionNode> region;
+    ::fixy::Ref<MemoryPlan> plan;
 
-    void build(uint32_t n_ops, const SchemaHash* schemas, const ShapeHash* shapes) {
-        const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(test.alloc, n_ops, TraceEntry{});
-        for (uint32_t i = 0; i < n_ops; i++) {
-            TraceEntry& op = *ops.get(i).expect("i is below n_ops");
-            op.schema_hash = schemas[i];
-            op.shape_hash = shapes[i];
-            TensorMeta meta{};
-            meta.ndim = 1;
-            meta.sizes[0] = tensor_dim(1024);
-            meta.strides[0] = tensor_dim(1);
-            meta.dtype = ScalarType::Float;
-            if (i > 0) {
-                op.set_inputs(dag_arena.array(test.alloc, 1, meta), dag_arena.array(test.alloc, 1, OpIndex{}),
-                              dag_arena.array(test.alloc, 1, SlotId{i - 1}));
-            }
-            op.set_outputs(dag_arena.array(test.alloc, 1, meta), dag_arena.array(test.alloc, 1, SlotId{i}));
-        }
-
-        region = &*make_region(test.alloc, dag_arena, ops);
-
+    BenchRegion(::fixy::View<const SchemaHash> schemas, ::fixy::View<const ShapeHash> shapes)
+        : region{make_ops_region_(schemas, shapes)}, plan{arena.make<MemoryPlan>(test.alloc)} {
+        const auto n_ops = static_cast<uint32_t>(schemas.size());
         const ::fixy::View<TensorSlot> slots = dag_arena.array<TensorSlot>(test.alloc, n_ops, TensorSlot{});
         uint32_t i = 0;
         for (TensorSlot& slot : slots) {
@@ -253,12 +258,37 @@ struct BenchRegion {
             i++;
         }
 
-        plan = &*arena.make<MemoryPlan>(test.alloc);
         plan->slots = slots;
         plan->num_external = 0;
         plan->pool_bytes = n_ops * 4096;
         check_single_cpu_plan(*plan);
         region->plan = make_plan_link(*plan);
+    }
+
+private:
+    // The region of one op for each pair of hashes.  Op i reads the output
+    // of op i - 1.
+    [[nodiscard]] ::fixy::Ref<RegionNode> make_ops_region_(::fixy::View<const SchemaHash> schemas,
+                                                           ::fixy::View<const ShapeHash> shapes) {
+        CRUCIBLE_BENCH_CHECK(schemas.size() == shapes.size());
+        const auto n_ops = static_cast<uint32_t>(schemas.size());
+        const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(test.alloc, n_ops, TraceEntry{});
+        for (uint32_t i = 0; i < n_ops; i++) {
+            TraceEntry& op = *ops.get(i).expect("i is below n_ops");
+            op.schema_hash = *schemas.get(i).expect("i is below the count of the schema hashes");
+            op.shape_hash = *shapes.get(i).expect("i is below the count of the shape hashes");
+            TensorMeta meta{};
+            meta.ndim = 1;
+            meta.sizes[0] = tensor_dim(1024);
+            meta.strides[0] = tensor_dim(1);
+            meta.dtype = ScalarType::Float;
+            if (i > 0) {
+                op.set_inputs(dag_arena.array(test.alloc, 1, meta), dag_arena.array(test.alloc, 1, OpIndex{}),
+                              dag_arena.array(test.alloc, 1, SlotId{i - 1}));
+            }
+            op.set_outputs(dag_arena.array(test.alloc, 1, meta), dag_arena.array(test.alloc, 1, SlotId{i}));
+        }
+        return make_region(test.alloc, dag_arena, ops);
     }
 };
 
@@ -269,29 +299,28 @@ int main() {
     bench::elevate_priority();
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== dispatch ===\n");
-    std::printf("  sizeof(Vigil)            : %zu B\n", sizeof(Vigil));
-    std::printf("  sizeof(CrucibleContext)  : %zu B\n", sizeof(CrucibleContext));
-    std::printf("  sizeof(ReplayEngine)     : %zu B\n", sizeof(ReplayEngine));
-    std::printf("  sizeof(TraceRing::Entry) : %zu B\n", sizeof(TraceRing::Entry));
-    std::printf("  sizeof(TensorMeta)       : %zu B\n\n", sizeof(TensorMeta));
+    bench::print("=== dispatch ===\n");
+    bench::print("  sizeof(Vigil)            : {} B\n", sizeof(Vigil));
+    bench::print("  sizeof(CrucibleContext)  : {} B\n", sizeof(CrucibleContext));
+    bench::print("  sizeof(ReplayEngine)     : {} B\n", sizeof(ReplayEngine));
+    bench::print("  sizeof(TraceRing::Entry) : {} B\n", sizeof(TraceRing::Entry));
+    bench::print("  sizeof(TensorMeta)       : {} B\n\n", sizeof(TensorMeta));
 
     // The 16 rows below.
     ::fixy::FixedList<bench::Report, 17> reports{};
 
     // ── Sub-component baselines ────────────────────────────────────
-    std::printf("--- sub-component baselines ---\n");
+    bench::print("--- sub-component baselines ---\n");
 
     bench::add_report(reports, [&] {
-        // Heap-allocate: sizeof(TraceRing) ≈ 5.3 MB (inline Entry[65536] +
-        // three parallel arrays). On an 8 MB default stack, a second large
-        // local in a sibling IIFE — or GCC's worst-case frame-sum at -O3
-        // inlining all the IIFEs into main() — blows the stack guard page
-        // before main() executes a single instruction. Vigil avoids this
-        // via std::make_unique<TraceRing>(); raw TraceRing on the stack
-        // must follow the same rule.
-        auto ring_up = std::make_unique<TraceRing>();
-        auto& ring = *ring_up;
+        // A TraceRing is about 5.3 MB, and the stack is 8 MB.  A second
+        // large local in a sibling IIFE, or the frame of main when GCC inlines
+        // each IIFE into it at -O3, goes past the guard page of the stack.
+        // So the ring lives on the heap, as it does in Vigil.  The timed body
+        // reads the ring through a reference that the Box gives one time, so
+        // no test of the Box is in the timed loop.
+        ::fixy::Box<TraceRing> ring_box = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
+        TraceRing& ring = *ring_box;
         ring.reset();
         TraceRing::Entry entry{};
         entry.schema_hash = SchemaHash{0x100};
@@ -337,7 +366,7 @@ int main() {
             check_cpu_slot(slot);
             i++;
         }
-        auto* plan = &*arena.make<MemoryPlan>(test.alloc);
+        const ::fixy::Ref<MemoryPlan> plan = arena.make<MemoryPlan>(test.alloc);
         plan->slots = slots;
         plan->num_external = 0;
         plan->pool_bytes = NSLOTS * 256;
@@ -366,45 +395,42 @@ int main() {
     }());
 
     // ── Isolated engine / context ──────────────────────────────────
-    std::printf("\n--- isolated engine/context ---\n");
+    bench::print("\n--- isolated engine/context ---\n");
 
     bench::add_report(reports, [&] {
-        BenchRegion br;
-        br.build(NUM_OPS, SCHEMA, SHAPE);
+        BenchRegion br{SCHEMA.view(), SHAPE.view()};
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, *br.plan);
         ReplayEngine engine;
         engine.init(*br.region, ::fixy::to(pool));
         auto av = engine.mint_active_view(kVigilForeground);
 
-        uint32_t op_idx = 0;
+        // At the end of the cycle the engine starts the region again.
+        OpSlot slot = ::fixy::index<0>();
         auto r = bench::run("ReplayEngine::advance (cyclic, 8 ops)", [&] {
             bench::do_not_optimize(&engine);
-            auto s = engine.advance(SCHEMA[op_idx], SHAPE[op_idx], av);
+            auto s = engine.advance(SCHEMA.at(slot), SHAPE.at(slot), av);
             bench::do_not_optimize(s);
-            op_idx++;
-            if (op_idx >= NUM_OPS) {
-                op_idx = 0;
-                engine.reset(av);
-            }
+            ::fixy::Option<OpSlot> next = OpSlot::check(slot.raw() + 1);
+            if (next.is_none()) engine.reset(av);
+            slot = std::move(next).value_or(OpSlot{::fixy::index<0>()});
         });
         pool.destroy();
         return r;
     }());
 
     bench::add_report(reports, [&] {
-        BenchRegion br;
-        br.build(NUM_OPS, SCHEMA, SHAPE);
+        BenchRegion br{SCHEMA.view(), SHAPE.view()};
         CrucibleContext ctx{::foundation::effects::testing::test().alloc};
         (void)ctx.activate(*br.region);
 
-        uint32_t op_idx = 0;
+        OpSlot slot = ::fixy::index<0>();
         auto cv = ctx.mint_compiled_view(kVigilForeground);
         auto r = bench::run("CrucibleContext::advance (cyclic, 8 ops)", [&] {
             bench::do_not_optimize(&ctx);
-            auto s = ctx.advance(SCHEMA[op_idx], SHAPE[op_idx], cv);
+            auto s = ctx.advance(SCHEMA.at(slot), SHAPE.at(slot), cv);
             bench::do_not_optimize(s);
-            op_idx = (op_idx + 1) % NUM_OPS;
+            slot = next_in_cycle(slot);
         });
         ctx.deactivate();
         return r;
@@ -412,31 +438,31 @@ int main() {
 
     bench::add_report(reports, [&] {
         constexpr uint32_t BIG = 32;
-        SchemaHash big_sch[BIG];
-        ShapeHash big_shp[BIG];
-        for (uint32_t i = 0; i < BIG; i++) {
-            big_sch[i] = SchemaHash{0x1000 + i};
-            big_shp[i] = ShapeHash{0x2000 + i};
+        using BigSlot = ::fixy::Index<BIG>;
+        ::fixy::FixedArray<SchemaHash, BIG> big_sch{};
+        ::fixy::FixedArray<ShapeHash, BIG> big_shp{};
+        for (BigSlot const i : ::fixy::IndexRange<BIG>{}) {
+            big_sch.at(i) = SchemaHash{0x1000 + i.raw()};
+            big_shp.at(i) = ShapeHash{0x2000 + i.raw()};
         }
-        BenchRegion br;
-        br.build(BIG, big_sch, big_shp);
+        BenchRegion br{big_sch.view(), big_shp.view()};
         CrucibleContext ctx{::foundation::effects::testing::test().alloc};
         (void)ctx.activate(*br.region);
 
-        uint32_t op_idx = 0;
+        BigSlot slot = ::fixy::index<0>();
         auto cv = ctx.mint_compiled_view(kVigilForeground);
         auto r = bench::run("CrucibleContext::advance (cyclic, 32 ops)", [&] {
             bench::do_not_optimize(&ctx);
-            auto s = ctx.advance(big_sch[op_idx], big_shp[op_idx], cv);
+            auto s = ctx.advance(big_sch.at(slot), big_shp.at(slot), cv);
             bench::do_not_optimize(s);
-            op_idx = (op_idx + 1) % BIG;
+            slot = next_in_cycle(slot);
         });
         ctx.deactivate();
         return r;
     }());
 
     // ── record_op path ─────────────────────────────────────────────
-    std::printf("\n--- record_op path ---\n");
+    bench::print("\n--- record_op path ---\n");
 
     // Each record case runs RECORD_BODIES bodies.  The two record_op cases
     // count the refusals of record_op, and a refusal ends the bench, because
@@ -490,7 +516,7 @@ int main() {
     }());
 
     // ── dispatch_op RECORDING ──────────────────────────────────────
-    std::printf("\n--- dispatch_op RECORDING ---\n");
+    bench::print("\n--- dispatch_op RECORDING ---\n");
 
     // The answer of dispatch_op does not tell a refusal of the ring.  The run
     // stays below the room of the ring, so no body meets a full ring.  The
@@ -517,76 +543,70 @@ int main() {
     }());
 
     // ── dispatch_op COMPILED ───────────────────────────────────────
-    std::printf("\n--- dispatch_op COMPILED ---\n");
+    bench::print("\n--- dispatch_op COMPILED ---\n");
 
     bench::add_report(reports, [&] {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
-        OpData ops[NUM_OPS];
-        for (uint32_t i = 0; i < NUM_OPS; i++)
-            ops[i] = make_op(10, i);
+        Ops ops = make_compiled_ops();
 
-        uint32_t op_idx = 0;
+        OpSlot slot = ::fixy::index<0>();
         return bench::run("dispatch_op [COMPILED, cyclic]", [&] {
-            auto& d = ops[op_idx];
+            const OpData& d = ops.at(slot);
             auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
             bench::do_not_optimize(r);
-            op_idx = (op_idx + 1) % NUM_OPS;
+            slot = next_in_cycle(slot);
         });
     }());
 
     bench::add_report(reports, [&] {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
-        OpData ops[NUM_OPS];
-        for (uint32_t i = 0; i < NUM_OPS; i++)
-            ops[i] = make_op(10, i);
+        Ops ops = make_compiled_ops();
 
         // The claim is checked once here, as the adapter holds it for a whole
         // window, so the loop measures the pointer read and not the claim.
         const VigilFgCtx fg = vigil.mint_producer_context();
-        uint32_t op_idx = 0;
+        OpSlot slot = ::fixy::index<0>();
         return bench::run("dispatch_op [COMPILED + output_ptr]", [&] {
-            auto& d = ops[op_idx];
+            const OpData& d = ops.at(slot);
             auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
             if (r.action == DispatchResult::Action::COMPILED) bench::do_not_optimize(vigil.output_ptr(fg, 0));
             bench::do_not_optimize(r);
-            op_idx = (op_idx + 1) % NUM_OPS;
+            slot = next_in_cycle(slot);
         });
     }());
 
     bench::add_report(reports, [&] {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
-        OpData ops[NUM_OPS];
-        for (uint32_t i = 0; i < NUM_OPS; i++)
-            ops[i] = make_op(10, i);
+        Ops ops = make_compiled_ops();
 
-        uint32_t op_idx = 0;
+        // The position of the body runs over the ops before the last op.  At
+        // the end of that run the body dispatches the last op too.
+        using LeadSlot = ::fixy::Index<NUM_OPS - 1>;
+        LeadSlot slot = ::fixy::index<0>();
         return bench::run("dispatch_op [COMPILED, MATCH only]", [&] {
-            auto& d = ops[op_idx];
+            const OpData& d = ops.at(slot);
             auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
             bench::do_not_optimize(r);
-            op_idx++;
-            if (op_idx >= NUM_OPS - 1) {
-                auto& last = ops[NUM_OPS - 1];
+            ::fixy::Option<LeadSlot> next = LeadSlot::check(slot.raw() + 1);
+            if (next.is_none()) {
+                const OpData& last = ops.at(::fixy::index<NUM_OPS - 1>());
                 auto rl = vigil.dispatch_op(certify_synthetic_op(last.entry, records_of(last)));
                 bench::do_not_optimize(rl);
-                op_idx = 0;
             }
+            slot = std::move(next).value_or(LeadSlot{::fixy::index<0>()});
         });
     }());
 
     bench::add_report(reports, [&] {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
-        OpData ops[NUM_OPS];
-        for (uint32_t i = 0; i < NUM_OPS; i++)
-            ops[i] = make_op(10, i);
+        Ops ops = make_compiled_ops();
 
         return bench::run("dispatch_op [full 8-op iteration]", [&] {
-            for (uint32_t i = 0; i < NUM_OPS; i++) {
-                auto& d = ops[i];
+            for (const OpData& d : ops) {
                 auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
                 bench::do_not_optimize(r);
             }
@@ -597,12 +617,9 @@ int main() {
     // result, so each body waits for that position.  The row times the path
     // of the position from the guard to the result.
     bench::add_report(reports, [&] {
-        using OpSlot = ::fixy::Index<NUM_OPS>;
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
-        ::fixy::FixedArray<OpData, NUM_OPS> ops{};
-        for (uint32_t i = 0; i < NUM_OPS; i++)
-            ops.at(OpSlot::check(i).expect("the loop stays below NUM_OPS")) = make_op(10, i);
+        Ops ops = make_compiled_ops();
 
         OpSlot next = ::fixy::index<0>();
         return bench::run("dispatch_op [COMPILED, chained position]", [&] {
@@ -613,7 +630,7 @@ int main() {
     }());
 
     // ── Cold path ──────────────────────────────────────────────────
-    std::printf("\n--- cold paths ---\n");
+    bench::print("\n--- cold paths ---\n");
 
     // Divergence is single-shot per sample: each call destroys compiled
     // state. The harness auto-batch won't help; a fresh compiled Vigil
@@ -638,7 +655,7 @@ int main() {
             }
             TraceRing::Entry bad{};
             bad.schema_hash = SchemaHash{0xBAD};
-            bad.shape_hash = SHAPE[3];
+            bad.shape_hash = SHAPE.at(::fixy::index<3>());
             bad.num_inputs = 1;
             bad.num_outputs = 1;
             ::fixy::FixedArray<TensorMeta, 2> bad_metas{
@@ -658,13 +675,13 @@ int main() {
         auto test = ::foundation::effects::testing::test();
         ::fixy::BumpArena arena{1 << 16};
         constexpr uint32_t NR = 4;
-        const RegionNode* regions[NR];
+        ::fixy::FixedList<::fixy::Ref<RegionNode>, NR> regions{};
         for (uint32_t r = 0; r < NR; r++) {
             const ::fixy::View<TraceEntry> ops = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
-            for (uint32_t i = 0; i < NUM_OPS; i++) {
-                TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
-                op.schema_hash = SCHEMA[i];
-                op.shape_hash = ShapeHash{SHAPE[i].raw() + r * 0x100};
+            for (OpSlot const i : ::fixy::IndexRange<NUM_OPS>{}) {
+                TraceEntry& op = *ops.get(i.raw()).expect("i is below NUM_OPS");
+                op.schema_hash = SCHEMA.at(i);
+                op.shape_hash = ShapeHash{SHAPE.at(i).raw() + r * 0x100};
             }
             const ::fixy::Ref<RegionNode> region = make_region(test.alloc, arena, ops);
             const ::fixy::Ref<MemoryPlan> plan = arena.make<MemoryPlan>(test.alloc);
@@ -672,16 +689,17 @@ int main() {
             plan->pool_bytes = 0;
             check_single_cpu_plan(*plan);
             region->plan = make_plan_link(*plan);
-            regions[r] = &*region;
+            static_cast<void>(regions.append(region).expect("the list holds NR regions"));
         }
         RegionCache cache;
-        for (uint32_t r = 0; r < NR; r++)
-            cache.insert(*regions[r]);
+        for (::fixy::Ref<RegionNode> const region : regions)
+            cache.insert(*region);
 
-        SchemaHash tgt_schema = SCHEMA[3];
-        ShapeHash tgt_shape{SHAPE[3].raw() + 2 * 0x100};
+        SchemaHash tgt_schema = SCHEMA.at(::fixy::index<3>());
+        ShapeHash tgt_shape{SHAPE.at(::fixy::index<3>()).raw() + 2 * 0x100};
+        RegionNode const& first_region = **regions.get(0).expect("the list holds the first region");
         const crucible::ConstRegionLink excluded =
-            crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(*regions[0])));
+            crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(first_region)));
         return bench::run("RegionCache::find_alternate (4 entries)", [&] {
             auto found = cache.find_alternate(3, tgt_schema, tgt_shape, excluded);
             bench::do_not_optimize(found);
@@ -699,14 +717,14 @@ int main() {
     // The Δ is the dispatch wrapper's overhead on the RECORDING path.
     const size_t ri_rec = 8;  // Vigil::record_op (2 metas)
     const size_t ri_dis = 9;  // dispatch_op [RECORDING, no pending]
-    std::printf("\n=== compare — dispatch_op vs record_op (RECORDING) ===\n  ");
+    bench::print("\n=== compare — dispatch_op vs record_op (RECORDING) ===\n  ");
     bench::compare(*reports.get(ri_rec).expect("the row of Vigil::record_op"),
                    *reports.get(ri_dis).expect("the row of dispatch_op in RECORDING mode"))
         .print_text();
 
     // COMPILED cyclic vs full-iteration (per-op amortized):
     // the full-iteration Report divides its total by 8 (roughly).
-    std::printf("\n=== compare — COMPILED cyclic vs full-iteration ===\n  ");
+    bench::print("\n=== compare — COMPILED cyclic vs full-iteration ===\n  ");
     bench::compare(*reports.get(10).expect("the row of the COMPILED cyclic dispatch"),
                    *reports.get(13).expect("the row of the full iteration"))
         .print_text();
