@@ -391,6 +391,30 @@ def failed_names(report: Path) -> list[str]:
     return sorted(name for name, status in results.items() if status is ctest_reader.TestStatus.FAIL)
 
 
+def findings_outcome(job: Job, findings: fuzz.Findings, binary: Path, log: Path) -> Outcome | None:
+    """Return the failed outcome of a campaign that saved a crash or a hang, or None when it saved no input.
+
+    afl-fuzz ends with the status 0 also when it saved a crash, so the job reads the output of the campaign and not
+    only the status of `loop fuzz` (THE FINDINGS of assay.loop.fuzz).  The outcome names the counts and the log, and
+    its rerun is the command that replays the first saved input.
+
+    Args:
+        job: The job of the campaign
+        findings: The inputs that the campaign saved (fuzz.campaign_findings())
+        binary: The harness binary of the campaign
+        log: The log of `loop fuzz`
+    """
+    first = findings.first()
+    if first is None:
+        return None
+    return Outcome(
+        job,
+        State.FAILED,
+        f"the campaign saved {len(findings.crashes)} crash input(s) and {len(findings.hangs)} hang input(s), see {log}",
+        reruns=(fuzz.replay_command(binary, first),),
+    )
+
+
 def campaign_cpus(available: Sequence[int], reserved: Sequence[int]) -> tuple[int, ...]:
     """Return at most CAMPAIGN_CORES CPUs of a campaign: the available CPUs that are not reserved (THE CAMPAIGN)."""
     excluded = set(reserved)
@@ -652,11 +676,15 @@ class Runner:
             return Outcome(job, State.NOT_RUN, "no free CPU, or no time for a campaign")
         build = self.root / CAMPAIGN_BUILD
         log = Path(f"{prefix}.log")
+        out = build / "campaigns" / job.item
         with heavy.heavy_step(self.root, len(cpus)) as step_jobs:
             used = cpus[:step_jobs]
-            words = [*self.master("loop"), "fuzz", str(build), str(build / "campaigns" / job.item), job.item]
+            words = [*self.master("loop"), "fuzz", str(build), str(out), job.item]
             words += [",".join(str(cpu) for cpu in used), str(seconds)]
             status = self.logged(words, log, deadline)
+        found = findings_outcome(job, fuzz.campaign_findings(out), fuzz.harness_binary(build, job.item), log)
+        if found is not None:
+            return found
         if status != 0:
             return self.ended(job, status, words, log)
         return Outcome(job, State.PASSED, f"a campaign of {seconds} s on {len(used)} CPUs")

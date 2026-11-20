@@ -13,7 +13,10 @@ THE ARGUMENTS
                OUT_DIR/tmp.  A harness that afl-fuzz stops leaves its scratch
                directory there, so the command removes OUT_DIR/tmp when it
                exits, also when a step fails.
-    HARNESS    A name from test/fuzz/boundary/harnesses, such as region.
+    HARNESS    A harness of test/fuzz/CMakeLists.txt, such as region: the
+               first argument of a line crucible_boundary_fuzzer(NAME ...)
+               (harness_names()).  A header of the harness directory that no
+               such line names, such as tensor_meta_claims.h, is no harness.
     CPU_LIST   The cores, such as 100-131 or 100-115,200-215.  One instance
                runs on each core.  The first one is the main instance.  The
                command refuses a list that names a reserved CPU of the host.
@@ -37,20 +40,31 @@ THE ENVIRONMENT
     The core dumps of this host go to the system handler, so afl-fuzz does
     not wait for them.
 
+THE FINDINGS
+    afl-fuzz ends with the status 0 also when it saved a crash or a hang, so
+    the status of the instances is not the verdict of a campaign.  After the
+    instances end, the command counts the files of OUT_DIR/afl/*/crashes and
+    OUT_DIR/afl/*/hangs (campaign_findings()).  The README.txt that afl-fuzz
+    writes in a crashes directory is no input.  A count above zero fails the
+    campaign, and the report names the first input and the command that
+    replays it: the harness binary with the input as its argument.
+
 Usage
     loop fuzz BUILD_DIR OUT_DIR HARNESS CPU_LIST SECONDS
     guard selftest loop.fuzz
 
-Exit 0 when each instance ended with status 0, 1 when an instance or a step failed, 2 on a usage error or a failed
-self-test.
+Exit 0 when each instance ended with status 0 and the campaign saved no crash and no hang, 1 when an instance or a
+step failed or the campaign saved a crash or a hang, 2 on a usage error or a failed self-test.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,6 +76,12 @@ from assay.setup import gcc as patched_gcc
 from assay.setup import pins as cmake_pin
 
 HARNESSES = Path("test/fuzz/boundary/harnesses")
+# The list of the boundary harnesses: each line crucible_boundary_fuzzer(NAME MUTATIONS [VIEW]) of this file names
+# one, and its target fuzz_NAME.
+HARNESS_LIST = Path("test/fuzz/CMakeLists.txt")
+_HARNESS_LINE = re.compile(r"^crucible_boundary_fuzzer\(\s*([A-Za-z0-9_]+)\b")
+# The file that afl-fuzz writes in each crashes directory, which is no saved input.
+AFL_README = "README.txt"
 # The time after SECONDS that an instance gets before SIGINT stops it, and the time after a SIGINT of
 # assay.core.proc before SIGKILL.
 STOP_GRACE_S = 60
@@ -91,6 +111,87 @@ class Campaign:
     harness: str
     cpus: tuple[int, ...]
     seconds: int
+
+
+@dataclass(frozen=True, slots=True)
+class Findings:
+    """The inputs that the instances of a campaign saved: each crash and each hang, in the order of their paths."""
+
+    crashes: tuple[Path, ...]
+    hangs: tuple[Path, ...]
+
+    def first(self) -> Path | None:
+        """Return the first saved input: the first crash, else the first hang, else None."""
+        saved = (*self.crashes, *self.hangs)
+        return saved[0] if saved else None
+
+
+def harness_names(root: Path) -> tuple[str, ...]:
+    """Return the name of each boundary harness of a tree, in the order of HARNESS_LIST.
+
+    Each line crucible_boundary_fuzzer(NAME ...) of HARNESS_LIST names one harness, also a harness of the VIEW kind.
+    A header of HARNESSES that no line names, such as the helper tensor_meta_claims.h, is no harness.  A tree with no
+    list has no harness.  Complexity: linear in the lines of the list.
+
+    Args:
+        root: The source tree
+    """
+    path = root / HARNESS_LIST
+    if not path.is_file():
+        return ()
+    names = (_HARNESS_LINE.match(line) for line in path.read_text(encoding="utf-8").splitlines())
+    return tuple(match.group(1) for match in names if match is not None)
+
+
+def harness_binary(build_dir: Path, harness: str) -> Path:
+    """Return the fuzz binary of a harness in a build: BUILD_DIR/test/fuzz/fuzz_HARNESS."""
+    return build_dir / "test" / "fuzz" / f"fuzz_{harness}"
+
+
+def campaign_findings(out_dir: Path) -> Findings:
+    """Return the inputs that the instances of a campaign saved (THE FINDINGS).
+
+    Each file of OUT_DIR/afl/*/crashes and OUT_DIR/afl/*/hangs is a saved input, except the README.txt of afl-fuzz.
+    A campaign with no output directory saved no input.  Complexity: linear in the files of those directories.
+
+    Args:
+        out_dir: The output directory of the campaign
+    """
+
+    def saved(kind: str) -> tuple[Path, ...]:
+        return tuple(
+            sorted(path for path in (out_dir / "afl").glob(f"*/{kind}/*") if path.is_file() and path.name != AFL_README)
+        )
+
+    return Findings(saved("crashes"), saved("hangs"))
+
+
+def replay_command(binary: Path, saved_input: Path) -> str:
+    """Return the command that replays one saved input: the harness binary with the input as its argument."""
+    return f"{binary} {saved_input}"
+
+
+def campaign_verdict(statuses: Sequence[int], findings: Findings, binary: Path) -> tuple[int, tuple[str, ...]]:
+    """Return the exit status of a campaign and the lines of its report (THE FINDINGS).
+
+    The status is 0 only when each instance ended with status 0 and the campaign saved no crash and no hang.  A
+    saved input fails the campaign, and the report names the counts, the first input and its replay command.
+
+    Args:
+        statuses: The exit status of each instance
+        findings: The inputs that the instances saved (campaign_findings())
+        binary: The harness binary of the campaign
+    """
+    first = findings.first()
+    if first is not None:
+        counts = f"{len(findings.crashes)} crash input(s) and {len(findings.hangs)} hang input(s)"
+        return 1, (
+            f"the campaign of {binary.name} saved {counts}",
+            f"replay the first input with: {replay_command(binary, first)}",
+        )
+    if not all(status == 0 for status in statuses):
+        return 1, (f"an instance of {binary.name} ended with a status other than 0",)
+    return 0, ()
 
 
 def afl_directory() -> Path:
@@ -146,8 +247,8 @@ def campaign_of(argv: list[str], root: Path, reserved: tuple[int, ...]) -> Campa
     # The exit removes OUT_DIR/tmp, so an empty OUT_DIR would name /tmp.
     if not out_text:
         raise FuzzError("OUT_DIR must not be empty")
-    if not (root / HARNESSES / f"{harness}.h").is_file():
-        raise FuzzError(f"no harness named {harness} in {HARNESSES}")
+    if harness not in harness_names(root):
+        raise FuzzError(f"no harness named {harness} in {HARNESS_LIST}")
     if not seconds_text.isdigit():
         raise FuzzError("SECONDS must be a whole number")
     cpus = expand_cpus(cpu_text)
@@ -258,15 +359,16 @@ def run_campaign(root: Path, campaign: Campaign) -> int:
         campaign: The campaign
 
     Returns:
-        0 when each instance ended with status 0, else 1
+        The status of campaign_verdict(): 0 when each instance ended with status 0 and the campaign saved no crash
+        and no hang, else 1
     """
     afl_bin = afl_directory()
     environment = _afl_environment()
     cmplog_dir = Path(f"{campaign.build_dir}-cmplog")
     configure_and_build(root, campaign.build_dir, campaign.harness, afl_bin, environment)
     configure_and_build(root, cmplog_dir, campaign.harness, afl_bin, dict(environment, AFL_GCC_CMPLOG="1"))
-    binary = campaign.build_dir / "test" / "fuzz" / f"fuzz_{campaign.harness}"
-    cmplog_binary = cmplog_dir / "test" / "fuzz" / f"fuzz_{campaign.harness}"
+    binary = harness_binary(campaign.build_dir, campaign.harness)
+    cmplog_binary = harness_binary(cmplog_dir, campaign.harness)
     scratch = campaign.out_dir / "tmp"
     scratch.mkdir(parents=True, exist_ok=True)
     try:
@@ -284,7 +386,10 @@ def run_campaign(root: Path, campaign: Campaign) -> int:
             # An instance that the loop did not wait for, after an error or an interrupt, stops with its group.
             for instance in instances:
                 instance.stop()
-        return 0 if all(status == 0 for status in statuses) else 1
+        status, lines = campaign_verdict(statuses, campaign_findings(campaign.out_dir), binary)
+        for line in lines:
+            print(f"loop fuzz: {line}", flush=True)
+        return status
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -313,10 +418,25 @@ def self_test() -> int:
             expect(f"the list {text!r} is refused", False)
         except FuzzError:
             expect(f"the list {text!r} is refused", True)
+    real_names = harness_names(REPO_ROOT)
+    expect("the harness list of the tree names the helper tensor_meta_claims as no harness",
+           "tensor_meta_claims" not in real_names)
+    expect("each harness of the list of the tree has its header, also each harness of the VIEW kind",
+           bool(real_names) and "protocol_image" in real_names
+           and all((REPO_ROOT / HARNESSES / f"{name}.h").is_file() for name in real_names))
     with tempfile.TemporaryDirectory(prefix="loop-fuzz-") as work:
         root = Path(work)
         (root / HARNESSES).mkdir(parents=True)
         (root / HARNESSES / "region.h").write_text("", encoding="utf-8")
+        (root / HARNESSES / "protocol_image.h").write_text("", encoding="utf-8")
+        (root / HARNESSES / "tensor_meta_claims.h").write_text("", encoding="utf-8")
+        (root / HARNESS_LIST).write_text(
+            "function(crucible_boundary_fuzzer name mutations)\nendfunction()\n"
+            "crucible_boundary_fuzzer(region 2000)\n# crucible_boundary_fuzzer(commented 1)\n"
+            "crucible_boundary_fuzzer(protocol_image 20000 VIEW)\n", encoding="utf-8")
+        expect("the harnesses are the names of the crucible_boundary_fuzzer lines, in the order of the list",
+               harness_names(root) == ("region", "protocol_image"))
+        expect("a tree with no list has no harness", harness_names(root / "absent") == ())
         cpu_root, cgroup_root = root / "cpu", root / "cgroup"
         cpu_root.mkdir()
         expect("a host with no reservation reserves no core", reserved_cpus(cpu_root, cgroup_root) == ())
@@ -331,6 +451,7 @@ def self_test() -> int:
                campaign == Campaign(Path("build"), Path("out"), "region", (100, 101), 60))
         refusals = {"an empty OUT_DIR": ["build", "", "region", "100", "60"],
                     "an unknown harness": ["build", "out", "absent", "100", "60"],
+                    "a helper header that the list does not name": ["build", "out", "tensor_meta_claims", "100", "60"],
                     "a time that is not a whole number": ["build", "out", "region", "100", "1.5"],
                     "a core of the reserved partition": ["build", "out", "region", "220-224", "60"],
                     "a wrong count of arguments": ["build", "out", "region", "100"]}
@@ -340,6 +461,30 @@ def self_test() -> int:
                 expect(f"{name} is refused", False)
             except FuzzError:
                 expect(f"{name} is refused", True)
+        # A fake campaign whose main instance saved one crash and whose secondary instance saved one hang, each
+        # instance with the status 0, as afl-fuzz ends after it saves a crash.
+        out = root / "out"
+        (out / "afl" / "main" / "crashes").mkdir(parents=True)
+        (out / "afl" / "main" / "crashes" / AFL_README).write_text("readme\n", encoding="utf-8")
+        crash = out / "afl" / "main" / "crashes" / "id:000000,sig:06"
+        crash.write_bytes(b"\x00crash")
+        (out / "afl" / "secondary1" / "hangs").mkdir(parents=True)
+        hang = out / "afl" / "secondary1" / "hangs" / "id:000000"
+        hang.write_bytes(b"hang")
+        findings = campaign_findings(out)
+        expect("the findings are each file of crashes and hangs, and the README.txt of afl-fuzz is no input",
+               findings == Findings((crash,), (hang,)))
+        binary = harness_binary(Path("build"), "region")
+        status, lines = campaign_verdict([0, 0], findings, binary)
+        expect("a campaign whose instances end with 0 after a saved crash fails",
+               status == 1 and len(lines) == 2 and "1 crash input(s) and 1 hang input(s)" in lines[0])
+        expect("the report names the first input and the command that replays it",
+               lines[1] == f"replay the first input with: build/test/fuzz/fuzz_region {crash}")
+        expect("a campaign with no output saved no input", campaign_findings(root / "none") == Findings((), ()))
+        expect("a campaign with no saved input and each instance at 0 passes",
+               campaign_verdict([0, 0], Findings((), ()), binary) == (0, ()))
+        expect("a campaign with an instance that failed fails",
+               campaign_verdict([0, 1], Findings((), ()), binary)[0] == 1)
         afl = Path("/afl")
         main_command = instance_command(campaign, 0, afl, Path("b"), Path("c"))
         secondary = instance_command(campaign, 1, afl, Path("b"), Path("c"))

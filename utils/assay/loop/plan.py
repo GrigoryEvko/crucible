@@ -617,8 +617,12 @@ def each_items(kind: Kind, names: Iterable[str], path_of: Callable[[str], str]) 
 
 
 def harness_names(root: Path) -> tuple[str, ...]:
-    """Return the name of each boundary harness of a tree: each header of fuzz.HARNESSES."""
-    return tuple(path.stem for path in paths.listing(root / fuzz.HARNESSES, "*.h"))
+    """Return the name of each boundary harness of a tree: each crucible_boundary_fuzzer line of fuzz.HARNESS_LIST.
+
+    A helper header of fuzz.HARNESSES, such as tensor_meta_claims.h, is no harness, so no job builds a target
+    that no CMake line makes (fuzz.harness_names()).
+    """
+    return fuzz.harness_names(root)
 
 
 def harness_file(name: str) -> str:

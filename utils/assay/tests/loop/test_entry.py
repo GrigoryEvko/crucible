@@ -20,7 +20,7 @@ from unittest import mock
 
 from assay.core import git, jobserver, paths, testing
 from assay.core.exit import ExitCode
-from assay.loop import entry, heavy, plan, tiers
+from assay.loop import entry, fuzz, heavy, plan, tiers
 from assay.loop.evidence import status as evidence_status
 from assay.loop.evidence import store as evidence_store
 from assay.loop.evidence import targets as evidence_targets
@@ -273,6 +273,31 @@ def run_cases(expect: testing.Expect) -> None:
         expect(
             f"a campaign with no afl-fuzz is blocked with the reason: {campaign.summary}",
             campaign.state is entry.State.BLOCKED and campaign.summary.startswith(f"the host has no {directory}"),
+        )
+        # afl-fuzz ends with 0 after it saves a crash.  The campaign of a fake afl-fuzz that saved one crash and
+        # exited 0 fails, and its rerun replays the input.
+        crash = Path(directory) / "out" / "afl" / "main" / "crashes" / "id:000000,sig:06"
+        crash.parent.mkdir(parents=True)
+        crash.write_bytes(b"crash")
+        binary = Path(directory) / "test" / "fuzz" / "fuzz_region"
+        crashed = entry.findings_outcome(
+            job, fuzz.campaign_findings(Path(directory) / "out"), binary, Path(directory) / "fuzz.log"
+        )
+        expect(
+            "a campaign that saved a crash fails, and its rerun is the command that replays the input",
+            crashed is not None and crashed.state is entry.State.FAILED and crashed.reruns == (f"{binary} {crash}",),
+        )
+        expect(
+            "a campaign that saved no input gives no outcome of its findings",
+            entry.findings_outcome(
+                job, fuzz.campaign_findings(Path(directory) / "none"), binary, Path(directory) / "fuzz.log"
+            )
+            is None,
+        )
+        expect(
+            "the harnesses of the nightly campaigns hold no helper header such as tensor_meta_claims",
+            "tensor_meta_claims" not in plan.harness_names(paths.REPO_ROOT)
+            and "region" in plan.harness_names(paths.REPO_ROOT),
         )
         bpf_step = next(item for item in plan.STEPS if item.command[0] == entry.CTEST_WORD)
         runner.launcher = Path(directory) / "crucible-caps"
