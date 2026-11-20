@@ -1,6 +1,6 @@
-// The proof of quiescence has an explicit constructor, so an empty brace
-// does not make one.  Each reset site must spell the name of the proof,
-// and a search for that name finds every reset.
+// The proof of quiescence names its owner, and only the OwnerThread of the
+// owner gives one.  An empty brace names no owner and makes no proof, so a
+// reset with it is refused.
 
 #include <fixy/handle/OneShotFlag.h>
 

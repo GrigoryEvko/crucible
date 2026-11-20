@@ -1132,6 +1132,11 @@
       "constructor": "\\bOwnedThread\\("
     },
     {
+      "name": "neg_witness_thread_quiescenceproof_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bQuiescenceProof\\("
+    },
+    {
       "name": "neg_witness_threadnamed_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bThreadNamed\\("
@@ -1927,6 +1932,10 @@
     },
     {
       "type": "fixy::thread::OwnedThread",
+      "header": "fixy/os/OwnedThread.h"
+    },
+    {
+      "type": "fixy::thread::QuiescenceProof<int>",
       "header": "fixy/os/OwnedThread.h"
     },
     {

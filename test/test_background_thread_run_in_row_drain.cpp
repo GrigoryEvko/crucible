@@ -65,7 +65,7 @@ void test_concurrent_spsc_drain() {
     auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     bt.ring.set(ring.get());
     bt.meta_log.set(metalog.get());
-    bt.stop_requested.reset_in_quiescent_context(::fixy::handle::OneShotFlag::QuiescenceProof{});
+    bt.rearm_stop();
 
     std::jthread bg_thread([&]() { bt.run_in_row(bg_load_ctx()); });
 
@@ -110,7 +110,7 @@ void test_large_batch_drain() {
     auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     bt.ring.set(ring.get());
     bt.meta_log.set(metalog.get());
-    bt.stop_requested.reset_in_quiescent_context(::fixy::handle::OneShotFlag::QuiescenceProof{});
+    bt.rearm_stop();
 
     std::jthread bg_thread([&]() { bt.run_in_row(bg_load_ctx()); });
 
@@ -159,7 +159,7 @@ void test_rearm_cycle() {
     uint64_t prev_processed = 0;
 
     for (uint32_t cycle = 0; cycle < 2; ++cycle) {
-        bt.stop_requested.reset_in_quiescent_context(::fixy::handle::OneShotFlag::QuiescenceProof{});
+        bt.rearm_stop();
 
         std::jthread bg([&]() { bt.run_in_row(bg_load_ctx()); });
 

@@ -953,7 +953,7 @@ void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trac
     rank = rank_;
     world_size = world_size_;
     device_capability = ::fixy::mint_tagged<::fixy::tags::source::Meridian>(device_cap);
-    stop_requested.reset_in_quiescent_context(::fixy::handle::OneShotFlag::QuiescenceProof{});
+    rearm_stop();
     if (!pipeline_->has_started) {
         pipeline_->has_started = true;
         // The first op of the ring owns the first record that the log has

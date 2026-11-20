@@ -73,9 +73,12 @@
 //     gives nothing.  The owner is its only borrow: the door checks its own
 //     captures under the policy of a thread that escapes (foundation/
 //     Closure.h).  A mint while the OwnerThread holds a thread ends the
-//     process.
+//     process.  quiescence(owner) gives the proof that no thread of the owner
+//     runs, while the OwnerThread holds no thread (THE QUIESCENCE OF AN
+//     OWNER, at QuiescenceProof).
 
 #include <fixy/os/ThreadTasks.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/Closure.h>
 #include <foundation/Transfer.h>
 #include <foundation/contracts/Pre.h>
@@ -102,6 +105,62 @@ struct owned_thread_door;
 struct owner_thread_door;
 
 }  // namespace detail
+
+template <typename Owner>
+class OwnerThread;
+
+// The proof that no thread of the owner runs (THE QUIESCENCE OF AN OWNER).
+// It proves that its holder is the one thread that reaches the parts of the
+// owner.  Only the OwnerThread of the owner gives one: its door
+// quiescence(owner) gives it while the OwnerThread holds no thread, such as
+// after stop_and_join.  The proof names its owner object, and a reset ends
+// the process when the object that it resets does not lie inside that owner,
+// as the reset of fixy/handle/OneShotFlag.h does.  So the proof of one
+// pipeline resets no part of another.  The proof does not copy or move, but a
+// named proof stays alive after a later mint of the thread.  So the proof
+// keeps its OwnerThread, and a use of the proof while that OwnerThread holds a
+// thread ends the process (is_quiescent).
+template <class Owner>
+class [[nodiscard]] QuiescenceProof final {
+    friend struct detail::owner_thread_door;
+
+    QuiescenceProof(Owner const& owner, OwnerThread<Owner> const& slot) noexcept
+        : owner_{__builtin_addressof(owner)}, slot_{__builtin_addressof(slot)} {}
+
+    Owner const* owner_ = nullptr;
+    OwnerThread<Owner> const* slot_ = nullptr;
+    // The seal refuses each byte route, such as std::bit_cast, so no bytes
+    // become a proof.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+public:
+    QuiescenceProof(QuiescenceProof const&) = delete("a proof of quiescence names one owner, and a copy names it too");
+    QuiescenceProof&
+    operator=(QuiescenceProof const&) = delete("a proof of quiescence names one owner, and a copy names it too");
+    ~QuiescenceProof() = default;
+
+    // True while the OwnerThread of the proof holds no thread.  A reset reads
+    // it, so a proof that outlives a later mint of the thread refuses.  The
+    // definition follows OwnerThread.
+    [[nodiscard]] bool is_quiescent() const noexcept;
+
+    // True when each byte of the part lies inside the owner of the proof.
+    // The compare reads the two addresses as words, as offset_of of
+    // foundation/core/Region.h does, so a part of a different object gives
+    // false with no compare of pointers of two objects.  It reads no byte of
+    // the owner.
+    template <class Part>
+    [[nodiscard]] bool holds_part(Part const& part) const noexcept {
+        if constexpr (sizeof(Part) > sizeof(Owner)) {
+            return false;
+        } else {
+            auto const first = __builtin_bit_cast(__UINTPTR_TYPE__, static_cast<void const*>(owner_));
+            auto const address =
+                __builtin_bit_cast(__UINTPTR_TYPE__, static_cast<void const*>(__builtin_addressof(part)));
+            return address >= first && address - first <= sizeof(Owner) - sizeof(Part);
+        }
+    }
+};
 
 // The fit of the mint: a context that starts threads and allocates, and a
 // body that moves and runs with no throw and takes no argument.  The tests
@@ -294,9 +353,6 @@ mint_owned_thread(Ctx const& /*ctx*/, ThreadOptions const& options, Body body) n
     return detail::owned_thread_door::start(options, static_cast<Body&&>(body));
 }
 
-template <typename Owner>
-class OwnerThread;
-
 namespace detail {
 
 // The last data member of the class, or a null reflection for a class with
@@ -412,6 +468,14 @@ public:
     // True when the OwnerThread holds a thread that it has not joined.
     [[nodiscard]] bool holds_thread() const noexcept { return thread_.holds_thread(); }
 
+    // The proof that no thread of the owner runs (THE QUIESCENCE OF AN
+    // OWNER), for a reset of a part of the owner that the
+    // thread reads.  Take it before the first mint or after stop_and_join.  A
+    // call while the OwnerThread holds a thread ends the process, and so does
+    // an owner that does not hold this OwnerThread.  The definition follows
+    // the door.
+    [[nodiscard]] QuiescenceProof<Owner> quiescence(Owner const& owner) const noexcept;
+
 private:
     friend struct detail::owner_thread_door;
 
@@ -426,7 +490,8 @@ private:
 
 namespace detail {
 
-// The door of mint_owner_thread to the private members of an OwnerThread.
+// The door of mint_owner_thread to the private members of an OwnerThread, and
+// the one door to a proof of quiescence (THE QUIESCENCE OF AN OWNER).
 struct owner_thread_door {
     template <typename Owner>
     static void keep(OwnerThread<Owner>& slot, Owner& owner, void (Owner::*stop)() noexcept,
@@ -435,9 +500,37 @@ struct owner_thread_door {
         slot.stop_ = stop;
         slot.thread_.adopt_(std::move(thread));
     }
+
+    // The proof of the owner of the slot.  The OwnerThread calls it while it
+    // holds no thread, and the slot lies inside the owner.
+    template <typename Owner>
+    [[nodiscard]] static QuiescenceProof<Owner> prove_quiescence(Owner const& owner,
+                                                                 OwnerThread<Owner> const& slot) noexcept {
+        // The proof does not move, so the check reads a proof of its own,
+        // and the return builds the proof in the place of the caller.
+        if (!QuiescenceProof<Owner>{owner, slot}.holds_part(slot)) [[unlikely]] {
+            ::foundation::core::fatal("OwnerThread: a proof of quiescence of an owner that does not hold the "
+                                      "OwnerThread.  Give the owner whose member the OwnerThread is");
+        }
+        return QuiescenceProof<Owner>{owner, slot};
+    }
 };
 
 }  // namespace detail
+
+template <class Owner>
+bool QuiescenceProof<Owner>::is_quiescent() const noexcept {
+    return !slot_->holds_thread();
+}
+
+template <typename Owner>
+QuiescenceProof<Owner> OwnerThread<Owner>::quiescence(Owner const& owner) const noexcept {
+    if (thread_.holds_thread()) [[unlikely]] {
+        ::foundation::core::fatal("OwnerThread: a proof of quiescence while the thread of the owner runs.  Call "
+                                  "stop_and_join first");
+    }
+    return detail::owner_thread_door::prove_quiescence(owner, *this);
+}
 
 // Starts one thread with the options, which runs body(owner), and keeps its
 // owner in the member of the owner (THE THREAD OF AN OWNER).  A start that

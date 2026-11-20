@@ -12,8 +12,13 @@
 //  2. The exchange gives each raise to one consumer.  Two consumers
 //     cannot both run the body for one signal, so several consumers need
 //     no rule that the type cannot state.
+//
+//  3. A reset takes the proof that no thread of the owner of the flag runs
+//     (THE QUIESCENCE OF AN OWNER of fixy/os/OwnedThread.h).
 
+#include <fixy/os/OwnedThread.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Fatal.h>
 
 #include <atomic>
 #include <concepts>
@@ -60,18 +65,35 @@ public:
         return true;
     }
 
-    // Resetting is correct only where neither side can reach the flag,
-    // which the compiler cannot check.  The parameter has no runtime
-    // role.  It exists so every reset site writes that assertion out,
-    // and its constructor is explicit so an empty brace does not
-    // satisfy it.
-    struct QuiescenceProof {
-        explicit QuiescenceProof() = default;
-    };
+    // A reset is correct only where neither side can reach the flag.  The
+    // proof shows that no thread of the owner of the flag runs (THE
+    // QUIESCENCE OF AN OWNER), so the caller is the one thread that reaches
+    // the flag, and its relaxed store races with no read.  A flag that does
+    // not lie inside the owner of the proof ends the process, and so does a
+    // proof whose OwnerThread holds a thread again.
+    template <class Owner>
+    void reset_in_quiescent_context(::fixy::thread::QuiescenceProof<Owner> const& proof) noexcept {
+        if (!proof.holds_part(*this)) [[unlikely]] {
+            refuse_foreign_reset_();
+        }
+        if (!proof.is_quiescent()) [[unlikely]] {
+            refuse_reset_while_the_thread_runs_();
+        }
+        flag_.store(false, std::memory_order_relaxed);
+    }
 
-    // The caller of the reset is the one thread that reaches the flag at
-    // the time of the reset, so its relaxed store races with no read.
-    void reset_in_quiescent_context(QuiescenceProof) noexcept { flag_.store(false, std::memory_order_relaxed); }
+private:
+    [[noreturn]] CRUCIBLE_COLD static void refuse_foreign_reset_() noexcept {
+        ::foundation::core::fatal(
+            "OneShotFlag: a reset took the proof of quiescence of an owner that does not hold the "
+            "flag.  Take the proof from the OwnerThread of the owner of the flag");
+    }
+
+    [[noreturn]] CRUCIBLE_COLD static void refuse_reset_while_the_thread_runs_() noexcept {
+        ::foundation::core::fatal(
+            "OneShotFlag: a reset took a proof of quiescence while the thread of the owner runs again.  Take a "
+            "new proof after stop_and_join");
+    }
 };
 
 }  // namespace fixy::handle

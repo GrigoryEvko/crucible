@@ -720,6 +720,13 @@ public:
     // under quiescence before launching the next pipeline.
     alignas(64)::fixy::handle::OneShotFlag stop_requested;
 
+    // Takes the stop signal down for the next run.  The proof of quiescence
+    // comes from the thread of the pipeline, so a call while that thread runs
+    // ends the process (THE QUIESCENCE OF AN OWNER of
+    // fixy/os/OwnedThread.h).  A test that runs run_in_row on its own
+    // thread calls it between two runs.
+    void rearm_stop() noexcept { stop_requested.reset_in_quiescent_context(thread_.quiescence(*this)); }
+
 private:
     // The pipeline: its thread, the types of its four channels, the input
     // end of each stage and the four stage functions.  src/BackgroundThread.cpp

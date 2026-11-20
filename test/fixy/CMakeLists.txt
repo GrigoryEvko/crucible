@@ -5284,16 +5284,20 @@ fixy_neg_compile_test(neg_handle_publish_commit_peek_outside_auth
   "fixy::handle::PublishCommitCell<Tag, WriteAuth>::peek_relaxed\\(\\)")
 
 # The one-shot signal: a raise that arrives while the body runs is kept,
-# and several consumers never run two bodies for one raise.  A reset
-# names its proof of quiescence, and the two fixtures refuse a reset with
-# no proof and one with an empty brace.
+# and several consumers never run two bodies for one raise.  A reset takes
+# a proof of quiescence that only the OwnerThread of the owner gives.  The
+# fixtures refuse a reset with no proof, one with an empty brace, and a
+# proof that a caller builds.
 fixy_test(test_handle_one_shot_flag)
 fixy_neg_compile_test(neg_handle_one_shot_flag_reset_without_proof
   "no matching function for call to .fixy::handle::OneShotFlag::reset_in_quiescent_context\\(\\)."
   "candidate expects 1 argument, 0 provided")
 fixy_neg_compile_test(neg_handle_one_shot_flag_reset_braced_proof
-  "converting to .fixy::handle::OneShotFlag::QuiescenceProof. from initializer list would use explicit constructor"
-  "fixy::handle::OneShotFlag::QuiescenceProof::QuiescenceProof\\(\\)")
+  "no matching function for call to .fixy::handle::OneShotFlag::reset_in_quiescent_context\\(<brace-enclosed initializer list>\\)."
+  "couldn.t deduce template parameter .Owner.")
+fixy_neg_compile_test(neg_handle_one_shot_flag_proof_outside_its_door
+  "use of deleted function .fixy::thread::QuiescenceProof<Owner>::QuiescenceProof\\(const fixy::thread::QuiescenceProof<Owner>&\\) \\[with Owner = .anonymous.::Owner\\]."
+  "a proof of quiescence names one owner, and a copy names it too")
 
 # The lazily established channel gives one session over its resource, to
 # the first observer after the publish.  The mint reads the gate of

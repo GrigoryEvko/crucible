@@ -985,6 +985,10 @@ witness <fixy/os/ThreadName.h> private | fixy::ThreadNamed<"forged"> | fixy::Thr
 # its frame is the frame that the thread reads.  Its value constructor is
 # private, and the door of mint_owned_thread is the sole friend.
 witness <fixy/os/OwnedThread.h> private | fixy::thread::OwnedThread | fixy::thread::OwnedThread{forge::rvalue<std::uint64_t>(), forge::rvalue<void*>(), forge::rvalue<void (*)(void*) noexcept>()}
+# A proof of quiescence claims that no thread of its owner runs.  Its value
+# constructor is private, and the door of the OwnerThread of the owner, which
+# gives it only while the OwnerThread holds no thread, is the sole friend.
+witness <fixy/os/OwnedThread.h> private | fixy::thread::QuiescenceProof<int> | fixy::thread::QuiescenceProof<int>{forge::lvalue<int const>(), forge::lvalue<fixy::thread::OwnerThread<int> const>()}
 # A placement proof claims that mbind bound its region to one node.  Its
 # value constructor is private, and mint_numa_placement, which makes the
 # call first, is the sole friend.
