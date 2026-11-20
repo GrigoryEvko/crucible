@@ -40,7 +40,7 @@ struct CallSiteTable {
         CallsiteHash hash;
         InternedName filename;
         InternedName funcname;
-        Lineno lineno = ::fixy::mint_refined<::fixy::non_negative>(int32_t{0});
+        Lineno lineno = ::fixy::mint_refined_constant<::fixy::non_negative, int32_t{0}>();
     };
 
     ::fixy::AppendOnly<Entry> entries = ::fixy::mint_append_only<Entry>();

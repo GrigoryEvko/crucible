@@ -119,7 +119,7 @@ admit_network_participant_count(std::uint16_t count) noexcept {
         recipe.determinism == ReductionDeterminism::UNORDERED || recipe.determinism == ReductionDeterminism::ORDERED;
     constraints.quantization_allowed = constraints.lossy_compression_allowed;
     if (recipe.determinism == ReductionDeterminism::BITEXACT_STRICT) {
-        constraints.max_chunk_count = ::fixy::mint_refined<kNetworkChunkRange>(std::uint8_t{1});
+        constraints.max_chunk_count = ::fixy::mint_refined_constant<kNetworkChunkRange, std::uint8_t{1}>();
     }
     return ::fixy::mint_tagged<::fixy::tags::source::NetworkRecipeRegistry>(constraints);
 }

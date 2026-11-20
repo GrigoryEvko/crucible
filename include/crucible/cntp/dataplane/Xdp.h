@@ -99,7 +99,7 @@ using PositiveMapElementBytes = ::fixy::Positive<std::uint16_t>;
 
 struct XdpProgramSpec {
     cntp::NicInterfaceName interface{};
-    XdpIfIndex ifindex = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
+    XdpIfIndex ifindex = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{1}>();
     XdpMode mode = XdpMode::Native;
     XdpProgramKind kind = XdpProgramKind::FlowFilter;
     ::fixy::Bits<cog::NicFeature> required_features{};
@@ -107,9 +107,9 @@ struct XdpProgramSpec {
 
 struct BpfMapSpec {
     BpfMapKind kind = BpfMapKind::Hash;
-    PositiveMapElementBytes key_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
-    PositiveMapElementBytes value_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
-    PositiveMapEntries max_entries = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
+    PositiveMapElementBytes key_bytes = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{1}>();
+    PositiveMapElementBytes value_bytes = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{1}>();
+    PositiveMapEntries max_entries = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{1}>();
 };
 
 using DeclaredXdpProgram = ::fixy::Tagged<XdpProgramSpec, ::fixy::tags::source::Xdp>;

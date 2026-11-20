@@ -22,8 +22,8 @@ using PositiveByteCount = ::fixy::Positive<std::uint64_t>;
 
 // The floor of every count. A fact or a policy field starts here until
 // the caller supplies a measured or chosen value.
-inline constexpr PositiveQueueCount single_queue = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
-inline constexpr PositiveByteCount single_byte = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
+inline constexpr PositiveQueueCount single_queue = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{1}>();
+inline constexpr PositiveByteCount single_byte = ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1}>();
 
 enum class NicRssHash : std::uint8_t {
     Unknown = 0,
@@ -102,7 +102,7 @@ struct NicOffloadAuditPolicy {
     PositiveQueueCount min_rss_queues = single_queue;
     PositiveQueueCount min_irq_local_cores = single_queue;
     PositiveByteCount expected_bdp_bytes = single_byte;
-    PositiveQueueCount min_netdev_budget_packets = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{64});
+    PositiveQueueCount min_netdev_budget_packets = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{64}>();
     std::uint32_t min_busy_poll_us = 0;
     bool require_rss = true;
     bool require_toeplitz = true;

@@ -24,7 +24,7 @@ concept CtxFitsIncastCredit = ::foundation::effects::CtxOwnsCapability<Ctx, ::fo
 
 struct IncastCreditGrant {
     cntp::SocketIdentity socket{std::uint32_t{0}};
-    cntp::PositiveCreditBytes bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
+    cntp::PositiveCreditBytes bytes = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{1}>();
     std::uint64_t sequence = 0;
 };
 

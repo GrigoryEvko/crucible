@@ -230,7 +230,7 @@ struct OpcodeLatencyEntry {
     MessageSizeBucket message_size_bucket = MessageSizeBucket::None;
 
     std::uint32_t latency_cycles = 0;
-    OrderedLatencyQuantiles latency = ::fixy::mint_refined<quantile_ordered>(LatencyQuantiles{});
+    OrderedLatencyQuantiles latency = ::fixy::mint_refined_constant<quantile_ordered, LatencyQuantiles{}>();
     double throughput_per_sec = 0.0;
 
     CalibratedValue<std::uint16_t> sample_count{};

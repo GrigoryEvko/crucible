@@ -22,7 +22,8 @@ using PositiveAffinityCount = ::fixy::Positive<std::uint16_t>;
 
 // The floor of every count. A fact or a policy field starts here until
 // the caller supplies a measured or chosen value.
-inline constexpr PositiveAffinityCount single_affinity = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
+inline constexpr PositiveAffinityCount single_affinity =
+    ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{1}>();
 
 class [[nodiscard]] NumaNodeId {
     std::uint16_t value_ = UINT16_MAX;

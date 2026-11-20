@@ -150,8 +150,9 @@ enum class GossipReplication : std::uint8_t {
 };
 
 struct GossipMulticastConfig {
-    GossipDedupWindowNs dedup_window_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{30000000000ULL});
-    GossipPayloadBytes max_payload_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{65507U});
+    GossipDedupWindowNs dedup_window_ns =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{30000000000ULL}>();
+    GossipPayloadBytes max_payload_bytes = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{65507U}>();
     GossipReplication replication = GossipReplication::Hardware;
 };
 

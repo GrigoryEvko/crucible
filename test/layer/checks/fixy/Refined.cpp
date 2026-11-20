@@ -17,6 +17,24 @@ static_assert(admit_refined<positive>(-1, Refusal::NotPositive).err()
 
 }  // namespace detail::admit_refined_self_test
 
+namespace detail::refined_constant_self_test {
+
+// The constant mint runs the predicate on its template argument at compile
+// time.  The value keeps the type of the argument, and a refused constant
+// fails the gate of the mint.
+inline constexpr auto valid_warp_size = in_range<std::uint16_t{1}, std::uint16_t{1024}>;
+static_assert(mint_refined_constant<valid_warp_size, std::uint16_t{32}>().value() == 32);
+static_assert(
+    std::is_same_v<decltype(mint_refined_constant<positive, std::uint64_t{7}>()), Refined<positive, std::uint64_t>>);
+static_assert(AdmittedConstant<positive, 1> && !AdmittedConstant<positive, 0> && !AdmittedConstant<positive, -3>);
+static_assert(AdmittedConstant<valid_warp_size, std::uint16_t{1024}>);
+static_assert(!AdmittedConstant<valid_warp_size, std::uint16_t{1025}>);
+template <auto Value>
+constexpr bool mints_positive_constant = requires { mint_refined_constant<positive, Value>(); };
+static_assert(mints_positive_constant<2.5> && !mints_positive_constant<0.0>);
+
+}  // namespace detail::refined_constant_self_test
+
 // No byte route builds a refined value, and the constructors stay trivial
 // so that a refined value still passes in a register.
 static_assert(!std::is_trivially_copyable_v<Refined<positive, int>>

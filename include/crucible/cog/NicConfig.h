@@ -128,12 +128,13 @@ using SysctlPackets = ::fixy::Positive<std::uint32_t>;
 using BusyPollUs = ::fixy::Refined<busy_poll_us_bound, std::uint32_t>;
 using TcpRtoMinUs = ::fixy::Refined<tcp_rto_min_us_bound, std::uint32_t>;
 
-inline constexpr NicRingSize default_ring_size = ::fixy::mint_refined<ring_size_bound>(std::uint16_t{4096});
-inline constexpr NicQueueCount single_queue_count = ::fixy::mint_refined<queue_count_bound>(std::uint16_t{1});
+inline constexpr NicRingSize default_ring_size = ::fixy::mint_refined_constant<ring_size_bound, std::uint16_t{4096}>();
+inline constexpr NicQueueCount single_queue_count =
+    ::fixy::mint_refined_constant<queue_count_bound, std::uint16_t{1}>();
 
 struct RssConfig {
     RssHashFunction hash = RssHashFunction::Toeplitz;
-    RssTableSize indirection_entries = ::fixy::mint_refined<queue_count_bound>(std::uint16_t{128});
+    RssTableSize indirection_entries = ::fixy::mint_refined_constant<queue_count_bound, std::uint16_t{128}>();
     bool four_tuple_hash = true;
 };
 
@@ -144,7 +145,7 @@ struct PauseConfig {
 };
 
 struct LinkConfig {
-    LinkSpeedMbps speed_mbps = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{100000});
+    LinkSpeedMbps speed_mbps = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{100000}>();
     DuplexMode duplex = DuplexMode::Full;
     bool autoneg = true;
 };
@@ -166,29 +167,29 @@ struct EthtoolConfig {
 struct QdiscConfig {
     cntp::NicInterfaceName interface{};
     QdiscKind kind = QdiscKind::Fq;
-    PositiveQdiscParam max_quantum = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{8192});
-    PositiveQdiscParam flow_limit = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{100});
-    PositiveQdiscParam ce_threshold_us = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
-    NicQueueCount bands = ::fixy::mint_refined<queue_count_bound>(std::uint16_t{3});
+    PositiveQdiscParam max_quantum = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{8192}>();
+    PositiveQdiscParam flow_limit = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{100}>();
+    PositiveQdiscParam ce_threshold_us = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{1}>();
+    NicQueueCount bands = ::fixy::mint_refined_constant<queue_count_bound, std::uint16_t{3}>();
 };
 
 struct TcpMemoryTriple {
-    SysctlBytes min = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{4096});
-    SysctlBytes pressure = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{87380});
-    SysctlBytes max = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{6291456});
+    SysctlBytes min = ::fixy::mint_refined_constant<sysctl_bytes_bound, std::uint64_t{4096}>();
+    SysctlBytes pressure = ::fixy::mint_refined_constant<sysctl_bytes_bound, std::uint64_t{87380}>();
+    SysctlBytes max = ::fixy::mint_refined_constant<sysctl_bytes_bound, std::uint64_t{6291456}>();
 };
 
 struct SysctlConfig {
-    SysctlBytes rmem_max = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{134217728});
-    SysctlBytes wmem_max = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{134217728});
-    SysctlBytes rmem_default = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{262144});
-    SysctlBytes wmem_default = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{262144});
-    SysctlPackets netdev_max_backlog = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{250000});
-    SysctlPackets netdev_budget = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{600});
-    BusyPollUs busy_poll_us = ::fixy::mint_refined<busy_poll_us_bound>(std::uint32_t{0});
-    BusyPollUs busy_read_us = ::fixy::mint_refined<busy_poll_us_bound>(std::uint32_t{0});
+    SysctlBytes rmem_max = ::fixy::mint_refined_constant<sysctl_bytes_bound, std::uint64_t{134217728}>();
+    SysctlBytes wmem_max = ::fixy::mint_refined_constant<sysctl_bytes_bound, std::uint64_t{134217728}>();
+    SysctlBytes rmem_default = ::fixy::mint_refined_constant<sysctl_bytes_bound, std::uint64_t{262144}>();
+    SysctlBytes wmem_default = ::fixy::mint_refined_constant<sysctl_bytes_bound, std::uint64_t{262144}>();
+    SysctlPackets netdev_max_backlog = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{250000}>();
+    SysctlPackets netdev_budget = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{600}>();
+    BusyPollUs busy_poll_us = ::fixy::mint_refined_constant<busy_poll_us_bound, std::uint32_t{0}>();
+    BusyPollUs busy_read_us = ::fixy::mint_refined_constant<busy_poll_us_bound, std::uint32_t{0}>();
     cntp::KernelCcName tcp_congestion{cntp::KernelCcName::from("bbr").expect("bbr is a valid kernel name")};
-    TcpRtoMinUs tcp_rto_min_us = ::fixy::mint_refined<tcp_rto_min_us_bound>(std::uint32_t{10000});
+    TcpRtoMinUs tcp_rto_min_us = ::fixy::mint_refined_constant<tcp_rto_min_us_bound, std::uint32_t{10000}>();
     TcpMemoryTriple tcp_rmem{};
     TcpMemoryTriple tcp_wmem{};
     bool tcp_sack = true;

@@ -180,8 +180,10 @@ class AdmissionController : public ::foundation::Pinned<AdmissionController<MaxC
     // The pressure and the limit that a decision reports when no resource
     // limited it.  A backoff for the connection count reports the lowest
     // limit, and an acceptance reports the full scale.
-    static constexpr ResourcePressurePpm kNoPressure = ::fixy::mint_refined<resource_pressure_ppm>(std::uint32_t{0});
-    static constexpr ResourceLimitPpm kLowestLimit = ::fixy::mint_refined<resource_limit_ppm>(std::uint32_t{1});
+    static constexpr ResourcePressurePpm kNoPressure =
+        ::fixy::mint_refined_constant<resource_pressure_ppm, std::uint32_t{0}>();
+    static constexpr ResourceLimitPpm kLowestLimit =
+        ::fixy::mint_refined_constant<resource_limit_ppm, std::uint32_t{1}>();
     static constexpr ResourceLimitPpm kFullScaleLimit = ::fixy::mint_refined<resource_limit_ppm>(kPpmFull);
 
     struct LimitSlot {

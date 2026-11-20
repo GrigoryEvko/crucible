@@ -105,18 +105,19 @@ inline constexpr auto finite_positive_throughput = ::fixy::all_of<::fixy::positi
 using CalibratedThroughput = ::fixy::Refined<finite_positive_throughput, double>;
 
 struct CalibrationPlan {
-    CalibrationIterations iterations = ::fixy::mint_refined<calibration_iterations_bound>(std::uint32_t{1000});
-    WarmupIterations warmup_iterations = ::fixy::mint_refined<warmup_iterations_bound>(std::uint32_t{100});
-    TrimBasisPoints trim_basis_points = ::fixy::mint_refined<trim_basis_points_bound>(std::uint16_t{100});
-    RuntimeBudgetMs runtime_budget_ms = ::fixy::mint_refined<runtime_budget_ms_bound>(std::uint32_t{60000});
+    CalibrationIterations iterations =
+        ::fixy::mint_refined_constant<calibration_iterations_bound, std::uint32_t{1000}>();
+    WarmupIterations warmup_iterations = ::fixy::mint_refined_constant<warmup_iterations_bound, std::uint32_t{100}>();
+    TrimBasisPoints trim_basis_points = ::fixy::mint_refined_constant<trim_basis_points_bound, std::uint16_t{100}>();
+    RuntimeBudgetMs runtime_budget_ms = ::fixy::mint_refined_constant<runtime_budget_ms_bound, std::uint32_t{60000}>();
     CalibrationTrigger trigger = CalibrationTrigger::Startup;
     CalibrationBackend backend = CalibrationBackend::VendorMimic;
     bool require_thermal_stability = true;
 };
 
 struct DriftSignal {
-    DriftBasisPoints observed_drift_bps = ::fixy::mint_refined<drift_basis_points_bound>(std::uint16_t{1});
-    DriftBasisPoints threshold_bps = ::fixy::mint_refined<drift_basis_points_bound>(std::uint16_t{1000});
+    DriftBasisPoints observed_drift_bps = ::fixy::mint_refined_constant<drift_basis_points_bound, std::uint16_t{1}>();
+    DriftBasisPoints threshold_bps = ::fixy::mint_refined_constant<drift_basis_points_bound, std::uint16_t{1000}>();
 };
 
 template <CogKind K>
@@ -139,9 +140,9 @@ struct CalibrationSample {
     MessageSizeBucket message_size_bucket = MessageSizeBucket::None;
     std::uint32_t latency_cycles = 0;
     CalibrationLatencyQuantiles latency =
-        ::fixy::mint_refined<calibration_quantiles_valid>(LatencyQuantiles{1u, 1u, 1u});
-    CalibratedThroughput throughput_per_sec = ::fixy::mint_refined<finite_positive_throughput>(1.0);
-    CalibrationSampleCount sample_count = ::fixy::mint_refined<measured_sample_count>(std::uint16_t{1});
+        ::fixy::mint_refined_constant<calibration_quantiles_valid, LatencyQuantiles{1u, 1u, 1u}>();
+    CalibratedThroughput throughput_per_sec = ::fixy::mint_refined_constant<finite_positive_throughput, 1.0>();
+    CalibrationSampleCount sample_count = ::fixy::mint_refined_constant<measured_sample_count, std::uint16_t{1}>();
 };
 
 template <CogKind K>

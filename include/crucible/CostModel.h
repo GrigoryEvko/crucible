@@ -76,7 +76,7 @@ concept CtxFitsCostModel =
 
 struct HardwareProfile {
     uint32_t num_sms = 0;  // streaming multiprocessors, or compute units on AMD
-    ValidWarpSize warp_size = ::fixy::mint_refined<valid_warp_size>(uint16_t{32});
+    ValidWarpSize warp_size = ::fixy::mint_refined_constant<valid_warp_size, uint16_t{32}>();
     uint16_t max_warps_per_sm = 64;
 
     uint32_t regs_per_sm = 65536;  // 32-bit registers
@@ -84,7 +84,7 @@ struct HardwareProfile {
     // The receiving end of the register check below. Typing it too means a
     // preset or a deserialised snapshot cannot raise the ceiling past what any
     // hardware supports and let an over-wide kernel config through.
-    ValidRegsPerThread max_regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(uint16_t{255});
+    ValidRegsPerThread max_regs_per_thread = ::fixy::mint_refined_constant<valid_regs_per_thread, uint16_t{255}>();
     uint16_t pad0 = 0;
 
     uint32_t smem_per_sm = 233472;  // shared memory, or LDS on AMD
@@ -188,10 +188,10 @@ struct HardwareProfile {
 [[nodiscard]] constexpr HardwareProfile blackwell_b200() {
     HardwareProfile hw{};
     hw.num_sms = 128;
-    hw.warp_size = ::fixy::mint_refined<valid_warp_size>(uint16_t{32});
+    hw.warp_size = ::fixy::mint_refined_constant<valid_warp_size, uint16_t{32}>();
     hw.max_warps_per_sm = 64;
     hw.regs_per_sm = 65536;
-    hw.max_regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(uint16_t{255});
+    hw.max_regs_per_thread = ::fixy::mint_refined_constant<valid_regs_per_thread, uint16_t{255}>();
     hw.smem_per_sm = 233472;
     hw.tmem_per_sm = 65536;
     hw.l1_per_sm = 262144;
@@ -219,10 +219,10 @@ struct HardwareProfile {
 [[nodiscard]] constexpr HardwareProfile hopper_h100() {
     HardwareProfile hw{};
     hw.num_sms = 132;
-    hw.warp_size = ::fixy::mint_refined<valid_warp_size>(uint16_t{32});
+    hw.warp_size = ::fixy::mint_refined_constant<valid_warp_size, uint16_t{32}>();
     hw.max_warps_per_sm = 64;
     hw.regs_per_sm = 65536;
-    hw.max_regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(uint16_t{255});
+    hw.max_regs_per_thread = ::fixy::mint_refined_constant<valid_regs_per_thread, uint16_t{255}>();
     hw.smem_per_sm = 233472;
     hw.tmem_per_sm = 0;
     hw.l1_per_sm = 262144;
@@ -250,10 +250,10 @@ struct HardwareProfile {
 [[nodiscard]] constexpr HardwareProfile mi300x() {
     HardwareProfile hw{};
     hw.num_sms = 304;
-    hw.warp_size = ::fixy::mint_refined<valid_warp_size>(uint16_t{64});
+    hw.warp_size = ::fixy::mint_refined_constant<valid_warp_size, uint16_t{64}>();
     hw.max_warps_per_sm = 32;
     hw.regs_per_sm = 65536;
-    hw.max_regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(uint16_t{255});
+    hw.max_regs_per_thread = ::fixy::mint_refined_constant<valid_regs_per_thread, uint16_t{255}>();
     hw.smem_per_sm = 65536;
     hw.tmem_per_sm = 0;
     hw.l1_per_sm = 131072;
@@ -281,10 +281,10 @@ struct HardwareProfile {
 [[nodiscard]] constexpr HardwareProfile ampere_a100() {
     HardwareProfile hw{};
     hw.num_sms = 108;
-    hw.warp_size = ::fixy::mint_refined<valid_warp_size>(uint16_t{32});
+    hw.warp_size = ::fixy::mint_refined_constant<valid_warp_size, uint16_t{32}>();
     hw.max_warps_per_sm = 64;
     hw.regs_per_sm = 65536;
-    hw.max_regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(uint16_t{255});
+    hw.max_regs_per_thread = ::fixy::mint_refined_constant<valid_regs_per_thread, uint16_t{255}>();
     hw.smem_per_sm = 167936;
     hw.tmem_per_sm = 0;
     hw.l1_per_sm = 196608;
@@ -316,7 +316,7 @@ struct KernelConfig {
     uint8_t pipeline_stages = 3;
     uint8_t warps_per_block = 8;
     uint32_t smem_bytes = 0;
-    ValidRegsPerThread regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(uint16_t{64});
+    ValidRegsPerThread regs_per_thread = ::fixy::mint_refined_constant<valid_regs_per_thread, uint16_t{64}>();
     uint8_t vec_width = 4;  // elements per vectorised load or store
     uint8_t pad0 = 0;
 };
@@ -342,8 +342,8 @@ struct CostBreakdown {
     ByteCount bytes{0};  // traffic at the bottleneck level of the hierarchy
 
     FlopsPerByte arithmetic_intensity{0.0};
-    ValidUtilization wave_efficiency = ::fixy::mint_refined<valid_utilization>(0.0f);
-    ValidUtilization occupancy = ::fixy::mint_refined<valid_utilization>(0.0f);
+    ValidUtilization wave_efficiency = ::fixy::mint_refined_constant<valid_utilization, 0.0f>();
+    ValidUtilization occupancy = ::fixy::mint_refined_constant<valid_utilization, 0.0f>();
 
     enum class Bottleneck : uint8_t {
         COMPUTE,
@@ -361,7 +361,7 @@ template <class Ctx>
     requires CtxFitsCostModel<Ctx>
 [[nodiscard]] constexpr ValidUtilization wave_efficiency(Ctx const&, uint64_t elements, const HardwareProfile& hw) {
     uint64_t tpw = static_cast<uint64_t>(hw.num_sms) * hw.warp_size.value();
-    if (tpw == 0 || elements == 0) return ::fixy::mint_refined<valid_utilization>(0.0f);
+    if (tpw == 0 || elements == 0) return ::fixy::mint_refined_constant<valid_utilization, 0.0f>();
     uint64_t waves = ::fixy::div_ceil(elements, tpw);
     // The ceiling division makes the denominator an upper bound on the
     // numerator, and round-to-nearest is monotonic on non-negative operands,
@@ -381,7 +381,7 @@ template <class Ctx>
                                                       const HardwareProfile& hw) {
     const uint16_t warp_v = hw.warp_size.value();
     uint32_t max_threads = static_cast<uint32_t>(warp_v) * hw.max_warps_per_sm;
-    if (max_threads == 0) return ::fixy::mint_refined<valid_utilization>(0.0f);
+    if (max_threads == 0) return ::fixy::mint_refined_constant<valid_utilization, 0.0f>();
 
     // How many threads the register file holds. Zero registers is the only
     // case the type does not already exclude, so it is guarded here.

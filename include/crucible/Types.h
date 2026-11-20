@@ -28,7 +28,7 @@ namespace crucible {
 struct ElementBytes {
     using Bytes = ::fixy::Refined<::fixy::bounded_above<uint8_t{16}>, uint8_t>;
 
-    Bytes value_ = ::fixy::mint_refined<::fixy::bounded_above<uint8_t{16}>>(uint8_t{0});
+    Bytes value_ = ::fixy::mint_refined_constant<::fixy::bounded_above<uint8_t{16}>, uint8_t{0}>();
 
     constexpr ElementBytes() noexcept = default;
     explicit constexpr ElementBytes(uint8_t v) noexcept : value_{checked_(v)} {}

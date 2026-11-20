@@ -1342,6 +1342,16 @@ fixy_neg_compile_test(neg_refined_predicate_fails_at_consteval_mint
   "in .constexpr. expansion of .fixy::mint_refined<.*, int>\\(-1\\)."
   "fixy/Refined\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
+# The constant mint runs the predicate on its template argument in its gate,
+# so a refused constant does not compile, also in a default member
+# initializer, and a predicate that does not take the type fails first.
+fixy_neg_compile_test(neg_refined_constant_refused
+  "no matching function for call to .mint_refined_constant<"
+  "required for the satisfaction of .AdmittedConstant<Pred, Value>.")
+fixy_neg_compile_test(neg_refined_constant_predicate_not_invocable
+  "no matching function for call to .mint_refined_constant<fixy::non_empty, 4>\\(\\)."
+  "required for the satisfaction of .PredicateInvocableOn<Pred, decltype \\(Value\\)>.")
+
 # non_negative ⇒ positive is not a member of admitted_implications, and
 # the edge the fixture declares elsewhere is inert, so the constrained
 # weakening fails its constraint and the note shows PredicateImplies false.

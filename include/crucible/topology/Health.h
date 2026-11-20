@@ -101,7 +101,8 @@ struct HealthPolicy {
     HealthScore suspect_below{750};
     HealthScore quarantine_below{400};
     HealthScore recovered_at_or_above{900};
-    PositiveNanoseconds expected_heartbeat_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1000000000});
+    PositiveNanoseconds expected_heartbeat_ns =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1000000000}>();
     std::int32_t thermal_warn_millicelsius = 80000;
     std::int32_t thermal_critical_millicelsius = 90000;
     std::uint8_t clock_degraded_pct = 10;

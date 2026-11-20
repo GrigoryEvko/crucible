@@ -44,17 +44,19 @@ enum class PingmeshError : std::uint8_t {
 };
 
 struct PingmeshConfig {
-    PositivePingmeshPeerCount max_peer_count = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{256});
-    PositivePingmeshPeriodNs period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{5000000000ull});
-    PositivePingmeshProbeBytes probe_size_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{64});
-    PositivePingmeshZScoreMilli anomaly_zscore_milli = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{3000});
+    PositivePingmeshPeerCount max_peer_count = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{256}>();
+    PositivePingmeshPeriodNs period_ns =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{5000000000ull}>();
+    PositivePingmeshProbeBytes probe_size_bytes = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{64}>();
+    PositivePingmeshZScoreMilli anomaly_zscore_milli =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{3000}>();
     bool prefer_hardware_timestamp = true;
 };
 
 struct PingmeshMeasurement {
     cog::Uuid src{};
     cog::Uuid dst{};
-    PositivePingmeshLatencyNs latency_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
+    PositivePingmeshLatencyNs latency_ns = ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1}>();
     std::uint64_t sequence = 0;
     PingmeshProbeStatus status = PingmeshProbeStatus::Delivered;
 

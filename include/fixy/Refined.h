@@ -324,6 +324,24 @@ mint_sealed_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible
     return SealedRefined<Pred, T>{typename SealedRefined<Pred, T>::trusted_door_{}, std::move(value)};
 }
 
+// A constant that the predicate admits.  The predicate runs on the template
+// argument in the constraint, at compile time.  The two clauses are one
+// conjunction, so the predicate runs only on a type that it takes.
+template <auto Pred, auto Value>
+concept AdmittedConstant = PredicateInvocableOn<Pred, decltype(Value)> && static_cast<bool>(Pred(Value));
+
+// The mint of a constant refinement.  A call of mint_refined in a default
+// member initializer or in the body of a function is no constant evaluation,
+// so its precondition refuses a wrong constant only at run time.  This mint
+// is consteval and runs the predicate in its constraint, so a constant that
+// the predicate refuses does not compile at the call.  The result is that of
+// mint_refined, so the value has the type of the template argument.
+template <auto Pred, auto Value>
+    requires AdmittedConstant<Pred, Value>
+[[nodiscard]] consteval Refined<Pred, decltype(Value)> mint_refined_constant() noexcept {
+    return mint_refined<Pred>(Value);
+}
+
 // The trust-boundary door.  The predicate runs as a real branch, outside
 // the contract system, and a value it refuses comes back as the caller's
 // error.  Only a value the branch admitted reaches mint_refined, so the

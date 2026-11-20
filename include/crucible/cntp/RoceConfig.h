@@ -61,20 +61,21 @@ using DcqcnTargetPackets = ::fixy::Positive<std::uint16_t>;
 using DcqcnCeThresholdBytes = ::fixy::Positive<std::uint32_t>;
 
 struct DcqcnParams {
-    DcqcnAlphaPpm alpha_ppm = ::fixy::mint_refined<dcqcn_alpha_ppm>(std::uint32_t{500000});
-    DcqcnTargetPackets target_packets = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{5});
-    DcqcnCeThresholdBytes ce_threshold_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{64 * 1024});
+    DcqcnAlphaPpm alpha_ppm = ::fixy::mint_refined_constant<dcqcn_alpha_ppm, std::uint32_t{500000}>();
+    DcqcnTargetPackets target_packets = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{5}>();
+    DcqcnCeThresholdBytes ce_threshold_bytes =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{64 * 1024}>();
 };
 
 struct RoceConfig {
     NicInterfaceName interface{};
     bool enable_pfc = true;
-    PfcPriorityMask pfc_priorities = ::fixy::mint_refined<pfc_priority_mask>(std::uint8_t{0b00001000});
+    PfcPriorityMask pfc_priorities = ::fixy::mint_refined_constant<pfc_priority_mask, std::uint8_t{0b00001000}>();
     bool trust_dscp = true;
     bool enable_ecn = true;
     bool enable_dcqcn = true;
     DcqcnParams dcqcn{};
-    RoceDscp roce_dscp = ::fixy::mint_refined<roce_dscp_bits>(std::uint8_t{26});
+    RoceDscp roce_dscp = ::fixy::mint_refined_constant<roce_dscp_bits, std::uint8_t{26}>();
     bool allow_privileged_apply = false;
 };
 

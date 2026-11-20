@@ -84,7 +84,7 @@ struct FountainPacket {
     std::uint32_t encoding_id = 0;
     std::uint16_t symbol_count = static_cast<std::uint16_t>(SourceSymbols);
     std::uint16_t bytes_per_symbol = static_cast<std::uint16_t>(SymbolBytes);
-    source_byte_count source_bytes = ::fixy::mint_refined<source_bytes_range>(std::size_t{1});
+    source_byte_count source_bytes = ::fixy::mint_refined_constant<source_bytes_range, std::size_t{1}>();
     std::uint64_t mask = 0;
     FountainSymbol<SymbolBytes> payload{};
 };
@@ -332,7 +332,7 @@ private:
 
     ::fixy::View<std::byte const> input_{};
     FountainSeed seed_ = ::fixy::mint_band<FountainSeed>(0);
-    source_byte_count source_bytes_ = ::fixy::mint_refined<packet_type::source_bytes_range>(std::size_t{1});
+    source_byte_count source_bytes_ = ::fixy::mint_refined_constant<packet_type::source_bytes_range, std::size_t{1}>();
     std::uint32_t next_id_ = 0;
     bool active_ = false;
 };
@@ -548,7 +548,7 @@ private:
 
     ::fixy::FixedArray<Equation, MaxEquations> equations_{};
     ::fixy::FixedArray<std::byte, SourceSymbols * SymbolBytes> decoded_{};
-    source_byte_count source_bytes_ = ::fixy::mint_refined<packet_type::source_bytes_range>(std::size_t{1});
+    source_byte_count source_bytes_ = ::fixy::mint_refined_constant<packet_type::source_bytes_range, std::size_t{1}>();
     std::uint64_t decoded_mask_ = 0;
     bool have_source_bytes_ = false;
 };

@@ -64,7 +64,7 @@ using ResourceLimitPpm = ::fixy::Refined<resource_limit_ppm, std::uint32_t>;
 // is a valid request.
 struct ConnectionRequest {
     SocketIdentity socket;
-    PositiveBackpressureBytes initial_credit = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
+    PositiveBackpressureBytes initial_credit = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{1}>();
 };
 
 // A pressure sample names a resource from the catalog.  The mint is the
@@ -83,7 +83,7 @@ private:
     friend class ResourceDoor;
 
     ::foundation::effects::ResourceKind kind_ = ::foundation::effects::ResourceKind::NicQ;
-    ResourcePressurePpm used_ppm_ = ::fixy::mint_refined<resource_pressure_ppm>(std::uint32_t{0});
+    ResourcePressurePpm used_ppm_ = ::fixy::mint_refined_constant<resource_pressure_ppm, std::uint32_t{0}>();
 };
 
 // A limit names a resource from the catalog, for the same reason.
@@ -101,7 +101,8 @@ private:
     friend class ResourceDoor;
 
     ::foundation::effects::ResourceKind kind_ = ::foundation::effects::ResourceKind::NicQ;
-    ResourceLimitPpm reject_at_or_above_ppm_ = ::fixy::mint_refined<resource_limit_ppm>(std::uint32_t{950000});
+    ResourceLimitPpm reject_at_or_above_ppm_ =
+        ::fixy::mint_refined_constant<resource_limit_ppm, std::uint32_t{950000}>();
 };
 
 template <::foundation::effects::ResourceKind Kind>
@@ -142,7 +143,7 @@ struct AdmissionDecision {
     AdmissionDecisionKind kind = AdmissionDecisionKind::Accepted;
     SocketIdentity socket;
     ::foundation::effects::ResourceKind limiting_resource = ::foundation::effects::ResourceKind::NicQ;
-    ResourcePressurePpm observed_ppm = ::fixy::mint_refined<resource_pressure_ppm>(std::uint32_t{0});
+    ResourcePressurePpm observed_ppm = ::fixy::mint_refined_constant<resource_pressure_ppm, std::uint32_t{0}>();
     ResourceLimitPpm threshold_ppm = ::fixy::mint_refined<resource_limit_ppm>(kPpmFull);
     std::uint32_t retry_after_ms = 0;
     std::uint64_t sequence = 0;

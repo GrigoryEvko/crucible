@@ -37,7 +37,7 @@ using IntegritySampleRate = ::fixy::Refined<::fixy::positive, std::uint16_t>;
 
 struct IntegrityPolicy {
     IntegrityMode mode = IntegrityMode::AlwaysOn;
-    IntegritySampleRate sample_rate = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
+    IntegritySampleRate sample_rate = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{1}>();
     bool flow_opt_in = true;
 
     [[nodiscard]] constexpr bool enabled(std::uint64_t sequence) const noexcept {

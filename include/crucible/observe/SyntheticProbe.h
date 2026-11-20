@@ -113,8 +113,9 @@ struct SyntheticProbeFailure : ::foundation::diag::tag_base {
 };
 
 struct ProbeConfig {
-    PositiveProbePeriodNs period_per_kind_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{60000000000ull});
-    PositiveProbeCount max_peer_count = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
+    PositiveProbePeriodNs period_per_kind_ns =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{60000000000ull}>();
+    PositiveProbeCount max_peer_count = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{1}>();
     std::uint32_t metric_id_base = 0;
 };
 

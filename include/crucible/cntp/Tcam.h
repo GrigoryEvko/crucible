@@ -106,16 +106,16 @@ struct FiveTuple {
 struct TcamFlowAction {
     FlowAction kind = FlowAction::Drop;
     std::uint32_t redirect_ifindex = 0;
-    TcamDscp dscp = ::fixy::mint_refined<tcam_dscp_range>(std::uint8_t{0});
+    TcamDscp dscp = ::fixy::mint_refined_constant<tcam_dscp_range, std::uint8_t{0}>();
 };
 
 // A rule as the caller writes it.  declare_tcam_rule checks the fields that
 // no refinement holds, and add_rule checks them again.
 struct TcamFlowRule {
-    TcamRuleId rule_id = ::fixy::mint_refined<::fixy::non_zero>(std::uint64_t{1});
+    TcamRuleId rule_id = ::fixy::mint_refined_constant<::fixy::non_zero, std::uint64_t{1}>();
     FiveTuple match{};
     TcamFlowAction action{};
-    TcamPriority priority = ::fixy::mint_refined<tcam_priority_range>(std::uint16_t{0});
+    TcamPriority priority = ::fixy::mint_refined_constant<tcam_priority_range, std::uint16_t{0}>();
     bool audit_to_cipher = true;
 };
 
@@ -144,7 +144,7 @@ class TcamTableDoor;
 class TcamTablePlan {
     cog::CogIdentity target_{};
     TcamTargetKind target_kind_ = TcamTargetKind::NicPort;
-    TcamEntryCount capacity_ = ::fixy::mint_refined<tcam_entry_range>(std::uint32_t{1});
+    TcamEntryCount capacity_ = ::fixy::mint_refined_constant<tcam_entry_range, std::uint32_t{1}>();
     bool backend_ready_ = false;
 
     constexpr TcamTablePlan(cog::CogIdentity target, TcamTargetKind target_kind, TcamEntryCount capacity,
@@ -199,7 +199,7 @@ class TcamRules;
 class TcamRuleHandle {
     ::foundation::core::Identity table_;
     cog::Uuid target_uuid_{};
-    TcamRuleId rule_id_ = ::fixy::mint_refined<::fixy::non_zero>(std::uint64_t{1});
+    TcamRuleId rule_id_ = ::fixy::mint_refined_constant<::fixy::non_zero, std::uint64_t{1}>();
     std::uint64_t slot_ = 0;
     std::uint64_t generation_ = 0;
 

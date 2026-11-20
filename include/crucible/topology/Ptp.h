@@ -81,9 +81,9 @@ enum class PtpDegradationReason : std::uint8_t {
 struct PtpStatus {
     PtpServoState servo = PtpServoState::Unknown;
     std::int64_t offset_from_master_ns = 0;
-    PositivePtpPathDelayNs mean_path_delay_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
+    PositivePtpPathDelayNs mean_path_delay_ns = ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1}>();
     std::int64_t frequency_adjustment_ppb = 0;
-    PositivePtpSkewBoundNs skew_bound_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1000});
+    PositivePtpSkewBoundNs skew_bound_ns = ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1000}>();
     std::uint64_t sequence = 0;
 
     [[nodiscard]] constexpr bool synchronized() const noexcept {
@@ -99,11 +99,13 @@ struct PtpDaemonReport {
     bool grandmaster_present = false;
     PtpServoState servo = PtpServoState::Unknown;
     std::int64_t offset_from_master_ns = 0;
-    PositivePtpPathDelayNs mean_path_delay_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
+    PositivePtpPathDelayNs mean_path_delay_ns = ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1}>();
     std::int64_t frequency_adjustment_ppb = 0;
-    PositivePtpSkewBoundNs skew_bound_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1000});
-    PositivePtpSkewBoundNs max_accepted_skew_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1000});
-    PositivePtpOffsetBoundNs max_accepted_offset_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1000});
+    PositivePtpSkewBoundNs skew_bound_ns = ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1000}>();
+    PositivePtpSkewBoundNs max_accepted_skew_ns =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1000}>();
+    PositivePtpOffsetBoundNs max_accepted_offset_ns =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1000}>();
     std::uint64_t sequence = 0;
 };
 

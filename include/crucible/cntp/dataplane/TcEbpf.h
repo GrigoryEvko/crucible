@@ -87,7 +87,7 @@ using TcFlowPriority = ::fixy::Refined<tc_flow_priority_range, std::uint8_t>;
 
 struct TcProgramSpec {
     cntp::NicInterfaceName interface{};
-    TcIfIndex ifindex = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
+    TcIfIndex ifindex = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{1}>();
     TcAttachPoint attach_point = TcAttachPoint::Egress;
     TcProgramKind kind = TcProgramKind::EgressMark;
     TcAction default_action = TcAction::Ok;
@@ -98,9 +98,9 @@ struct TcProgramSpec {
 // A flow class as the admission functions checked it.  Each bounded field
 // is refined, so a class holds only values that the kernel program accepts.
 struct TcFlowClass {
-    TcDscp dscp = ::fixy::mint_refined<tc_dscp_range>(std::uint8_t{0});
-    TcClassId classid = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
-    TcFlowPriority priority = ::fixy::mint_refined<tc_flow_priority_range>(std::uint8_t{0});
+    TcDscp dscp = ::fixy::mint_refined_constant<tc_dscp_range, std::uint8_t{0}>();
+    TcClassId classid = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{1}>();
+    TcFlowPriority priority = ::fixy::mint_refined_constant<tc_flow_priority_range, std::uint8_t{0}>();
     TcAction action = TcAction::Ok;
 };
 

@@ -71,8 +71,9 @@ using PositiveIdleTimeoutNs = ::fixy::Positive<std::uint64_t>;
 using PositiveConnectionId = ::fixy::Positive<std::uint64_t>;
 
 struct PoolConfig {
-    PositivePoolSize max_per_remote = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{65535});
-    PositiveIdleTimeoutNs max_idle_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{30000000000ull});
+    PositivePoolSize max_per_remote = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{65535}>();
+    PositiveIdleTimeoutNs max_idle_ns =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{30000000000ull}>();
 };
 
 template <TransportClass T>

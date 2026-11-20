@@ -135,9 +135,9 @@ using InterfacePath =
 }  // namespace detail
 
 struct FqConfig {
-    PositiveFqParam max_quantum = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{8192});
-    PositiveFqParam flow_limit = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{100});
-    PositiveFqParam low_rate_threshold_kbps = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{50});
+    PositiveFqParam max_quantum = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{8192}>();
+    PositiveFqParam flow_limit = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{100}>();
+    PositiveFqParam low_rate_threshold_kbps = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{50}>();
 };
 
 struct QdiscConfig {

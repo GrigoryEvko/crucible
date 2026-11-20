@@ -43,10 +43,11 @@ using PositiveSenderCount = ::fixy::Positive<std::uint16_t>;
 struct IncastConfig {
     bool enable_dctcp = true;
     bool enable_ecn = true;
-    PositiveRtoMinUsec rto_min_usec = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{10000});
+    PositiveRtoMinUsec rto_min_usec = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{10000}>();
     bool enable_credit_pacing = false;
-    PositiveCreditBytes initial_credit_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{64 * 1024});
-    PositiveSenderCount expected_senders = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
+    PositiveCreditBytes initial_credit_bytes =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{64 * 1024}>();
+    PositiveSenderCount expected_senders = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{1}>();
 };
 
 using DeclaredIncastConfig = ::fixy::Tagged<IncastConfig, ::fixy::tags::source::IncastConfig>;
@@ -83,9 +84,9 @@ mint_incast_config(IncastConfig config) noexcept {
 template <LinkClass Link>
     requires(Link == LinkClass::LosslessDatacenterFabric)
 [[nodiscard]] constexpr DeclaredIncastConfig mint_dctcp_incast_config(
-    PositiveCreditBytes initial_credit = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{64 * 1024}),
-    PositiveRtoMinUsec rto_min = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{10000}),
-    PositiveSenderCount senders = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1})) noexcept {
+    PositiveCreditBytes initial_credit = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{64 * 1024}>(),
+    PositiveRtoMinUsec rto_min = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{10000}>(),
+    PositiveSenderCount senders = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{1}>()) noexcept {
     return ::fixy::mint_tagged<::fixy::tags::source::IncastConfig>(IncastConfig{
         .enable_dctcp = true,
         .enable_ecn = true,

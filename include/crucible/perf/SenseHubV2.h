@@ -413,9 +413,9 @@ struct FullSnapshot {
 
 struct LoadReport {
     ::fixy::Refined<::fixy::bounded_above<200>, std::size_t> attached_programs =
-        ::fixy::mint_refined<::fixy::bounded_above<200>>(std::size_t{0});
+        ::fixy::mint_refined_constant<::fixy::bounded_above<200>, std::size_t{0}>();
     ::fixy::Refined<::fixy::bounded_above<200>, std::size_t> attach_failures =
-        ::fixy::mint_refined<::fixy::bounded_above<200>>(std::size_t{0});
+        ::fixy::mint_refined_constant<::fixy::bounded_above<200>, std::size_t{0}>();
     bool meta_verified = false;
     bool counters_mmap_succeeded = false;
     bool gauges_mmap_succeeded = false;

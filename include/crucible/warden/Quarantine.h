@@ -82,8 +82,10 @@ using PositiveNanoseconds = ::fixy::Positive<std::uint64_t>;
 struct QuarantineConfig {
     topology::HealthScore suspect_at_or_below{900};
     topology::HealthScore quarantine_at_or_below{500};
-    PositiveRecoveryProbeCount recovery_probe_count = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{100});
-    PositiveNanoseconds permanent_after_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{3600000000000ull});
+    PositiveRecoveryProbeCount recovery_probe_count =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{100}>();
+    PositiveNanoseconds permanent_after_ns =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{3600000000000ull}>();
     std::uint32_t canary_load_ppm = 10000;
 };
 

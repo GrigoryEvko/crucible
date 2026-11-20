@@ -52,8 +52,8 @@ struct AsymmetricFailureDetected : ::foundation::diag::tag_base {
 using PositiveProbeSamples = ::fixy::Positive<std::uint16_t>;
 
 struct AsymmetricFailurePolicy {
-    PositiveProbeSamples min_local_samples = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{2});
-    PositiveProbeSamples min_witnesses = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
+    PositiveProbeSamples min_local_samples = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{2}>();
+    PositiveProbeSamples min_witnesses = ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{1}>();
 };
 
 struct DirectionWindow {

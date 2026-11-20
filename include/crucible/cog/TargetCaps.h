@@ -145,10 +145,10 @@ enum class DramFeature : std::uint8_t {
 // post-condition of discovery, checked where the schema is filled in.
 struct GpuTargetCaps {
     VendorClaim<std::uint16_t> sm_count{};
-    PowerOfTwoLane warp_size = ::fixy::mint_refined<power_of_two_lane>(std::uint16_t{32});
+    PowerOfTwoLane warp_size = ::fixy::mint_refined_constant<power_of_two_lane, std::uint16_t{32}>();
     VendorClaim<std::uint16_t> warp_schedulers_per_sm{};
     VendorClaim<std::uint16_t> max_warps_per_sm{};
-    ValidRegsPerThread max_regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(std::uint16_t{255});
+    ValidRegsPerThread max_regs_per_thread = ::fixy::mint_refined_constant<valid_regs_per_thread, std::uint16_t{255}>();
 
     VendorClaim<std::uint32_t> registers_per_sm_bytes{};
     VendorClaim<std::uint32_t> smem_per_sm_bytes{};
@@ -194,7 +194,7 @@ struct NicPortTargetCaps {
     VendorClaim<LinkLayer> link_layer{};
     ::fixy::FixedArray<std::uint8_t, 7> pad_after_link_layer{};
     VendorClaim<std::uint64_t> line_rate_bytes_per_sec{};
-    ValidMtu mtu_bytes = ::fixy::mint_refined<valid_mtu>(std::uint16_t{1500});
+    ValidMtu mtu_bytes = ::fixy::mint_refined_constant<valid_mtu, std::uint16_t{1500}>();
 
     VendorClaim<std::uint16_t> max_tx_queues{};
     VendorClaim<std::uint16_t> max_rx_queues{};
@@ -245,7 +245,7 @@ struct NvSwitchTargetCaps {
 struct CpuCoreTargetCaps {
     VendorClaim<std::uint32_t> base_clock_mhz{};
     VendorClaim<std::uint32_t> max_clock_mhz{};
-    PowerOfTwoLane simd_vector_lanes = ::fixy::mint_refined<power_of_two_lane>(std::uint16_t{8});
+    PowerOfTwoLane simd_vector_lanes = ::fixy::mint_refined_constant<power_of_two_lane, std::uint16_t{8}>();
 
     VendorClaim<std::uint32_t> l1d_bytes{};
     VendorClaim<std::uint32_t> l1i_bytes{};

@@ -47,8 +47,8 @@ using PositiveWindowBytes = ::fixy::Positive<std::uint32_t>;
 using PositiveSamplePeriodNs = ::fixy::Positive<std::uint64_t>;
 
 struct BbrFields {
-    PositiveBandwidthBps btl_bw_bps = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
-    PositiveMicroseconds rt_prop_us = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
+    PositiveBandwidthBps btl_bw_bps = ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1}>();
+    PositiveMicroseconds rt_prop_us = ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1}>();
     std::uint32_t pacing_gain_q8 = 256;
     std::uint32_t cwnd_gain_q8 = 256;
 };
@@ -64,10 +64,10 @@ struct DctcpFields {
 // thing: topology::CongestionState in TopologyGraph.h.
 struct CongestionSample {
     cntp::CcAlgorithm algorithm = cntp::CcAlgorithm::Custom;
-    PositiveBandwidthBps btl_bw_bps = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
-    PositiveMicroseconds rt_prop_us = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
-    PositiveWindowBytes cwnd_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
-    PositiveWindowBytes ssthresh_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
+    PositiveBandwidthBps btl_bw_bps = ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1}>();
+    PositiveMicroseconds rt_prop_us = ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1}>();
+    PositiveWindowBytes cwnd_bytes = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{1}>();
+    PositiveWindowBytes ssthresh_bytes = ::fixy::mint_refined_constant<::fixy::positive, std::uint32_t{1}>();
     std::uint32_t retrans_count = 0;
     std::uint32_t lost_count = 0;
     std::uint32_t in_flight_bytes = 0;
@@ -113,8 +113,10 @@ struct CongestionDrift {
 };
 
 struct TelemetrySchedule {
-    PositiveSamplePeriodNs active_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1000000000});
-    PositiveSamplePeriodNs idle_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{10000000000});
+    PositiveSamplePeriodNs active_period_ns =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1000000000}>();
+    PositiveSamplePeriodNs idle_period_ns =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{10000000000}>();
 };
 
 [[nodiscard]] constexpr ::fixy::Result<PositiveSamplePeriodNs, TelemetryError>

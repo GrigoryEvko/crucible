@@ -48,9 +48,11 @@ struct SdcMismatch : ::foundation::diag::tag_base {
 };
 
 struct SdcConfig {
-    PositiveSdcReplicaCount redundancy_factor = ::fixy::mint_refined<::fixy::positive>(std::uint8_t{2});
-    SdcSamplingRatePpm sampling_rate_ppm = ::fixy::mint_refined<::fixy::in_range<1u, 1000000u>>(std::uint32_t{10000});
-    PositiveSdcMismatchThreshold suspect_after_mismatches = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{3});
+    PositiveSdcReplicaCount redundancy_factor = ::fixy::mint_refined_constant<::fixy::positive, std::uint8_t{2}>();
+    SdcSamplingRatePpm sampling_rate_ppm =
+        ::fixy::mint_refined_constant<::fixy::in_range<1u, 1000000u>, std::uint32_t{10000}>();
+    PositiveSdcMismatchThreshold suspect_after_mismatches =
+        ::fixy::mint_refined_constant<::fixy::positive, std::uint16_t{3}>();
     SdcComparisonStrategy strategy = SdcComparisonStrategy::BitwiseEqual;
     std::uint64_t tolerance_units = 0;
     std::uint32_t metric_id_base = 0x53440000u;

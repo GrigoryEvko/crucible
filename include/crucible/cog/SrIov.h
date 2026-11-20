@@ -65,8 +65,9 @@ using VfVlanId = ::fixy::Refined<vf_vlan_bound, std::uint16_t>;
 using VfRateLimitMbps = ::fixy::Refined<vf_rate_limit_bound, std::uint64_t>;
 using VfResourceLimit = ::fixy::Refined<vf_resource_limit_bound, std::uint32_t>;
 
-inline constexpr VfIndex first_vf_index = ::fixy::mint_refined<vf_index_bound>(std::uint16_t{0});
-inline constexpr VfResourceLimit no_resource_limit = ::fixy::mint_refined<vf_resource_limit_bound>(std::uint32_t{0});
+inline constexpr VfIndex first_vf_index = ::fixy::mint_refined_constant<vf_index_bound, std::uint16_t{0}>();
+inline constexpr VfResourceLimit no_resource_limit =
+    ::fixy::mint_refined_constant<vf_resource_limit_bound, std::uint32_t{0}>();
 
 struct MacAddress {
     ::fixy::FixedArray<std::uint8_t, 6> bytes{};
@@ -102,8 +103,8 @@ using VfMacAddress = ::fixy::Refined<vf_mac_valid, MacAddress>;
 
 struct VfConfig {
     VfMacAddress mac = ::fixy::mint_refined<vf_mac_valid>(MacAddress::locally_administered(1));
-    VfVlanId vlan = ::fixy::mint_refined<vf_vlan_bound>(std::uint16_t{0});
-    VfRateLimitMbps rate_limit_mbps = ::fixy::mint_refined<vf_rate_limit_bound>(std::uint64_t{0});
+    VfVlanId vlan = ::fixy::mint_refined_constant<vf_vlan_bound, std::uint16_t{0}>();
+    VfRateLimitMbps rate_limit_mbps = ::fixy::mint_refined_constant<vf_rate_limit_bound, std::uint64_t{0}>();
     VfResourceLimit max_qps = no_resource_limit;
     VfResourceLimit max_mrs = no_resource_limit;
     bool spoofchk = true;
@@ -112,7 +113,7 @@ struct VfConfig {
 struct SrIovPlan {
     CogIdentity physical{};
     cntp::NicInterfaceName interface{};
-    VfCount num_vfs = ::fixy::mint_refined<vf_count_bound>(std::uint16_t{1});
+    VfCount num_vfs = ::fixy::mint_refined_constant<vf_count_bound, std::uint16_t{1}>();
     VfConfig default_vf{};
     bool allow_privileged_apply = false;
 };
