@@ -11,34 +11,36 @@
 #include <crucible/warden/CpuTopology.h>
 #include <foundation/os/PathText.h>
 
+#include <cstddef>
+
 namespace crucible::fuzz::boundary {
 
-[[nodiscard]] inline Seeds seeds_cpu_list() {
-    return {
-        text_bytes("0-3,8,10-11\n"),
-        text_bytes("Cpus_allowed_list:\t0-5,7\n"),
-        text_bytes("0-8191\n"),
-        // Regressions.  A range that expanded to millions of ids, one that
-        // wrapped the loop counter, a number past the range of int, and a
-        // list that ends in a digit, which the parser read past its end.
-        text_bytes("0-8191911\n"),
-        text_bytes("0-2147483647"),
-        text_bytes("99999999999999999999"),
-        text_bytes("12"),
-    };
+[[nodiscard]] inline SeedList seeds_cpu_list() noexcept {
+    SeedList seeds = empty_seed_list();
+    add_seed(seeds, text_seed("0-3,8,10-11\n"));
+    add_seed(seeds, text_seed("Cpus_allowed_list:\t0-5,7\n"));
+    add_seed(seeds, text_seed("0-8191\n"));
+    // Regressions.  A range that expanded to millions of ids, one that
+    // wrapped the loop counter, a number past the range of int, and a
+    // list that ends in a digit, which the parser read past its end.
+    add_seed(seeds, text_seed("0-8191911\n"));
+    add_seed(seeds, text_seed("0-2147483647"));
+    add_seed(seeds, text_seed("99999999999999999999"));
+    add_seed(seeds, text_seed("12"));
+    return seeds;
 }
 
-inline void run_cpu_list(std::span<const std::uint8_t> bytes) {
+inline void run_cpu_list(::fixy::View<std::byte const> bytes) noexcept {
     constexpr std::size_t kMaxCpuCount = warden::detail::kMaxCpuCount;
     // A TextView comes only from an owner of the base, so the bytes go into
     // a path text.  A path text refuses a zero byte, so the harness drops
     // each one, and a byte past the capacity ends the text.
     ::foundation::os::PathText<4096> text{};
-    for (const std::uint8_t byte : bytes) {
-        if (byte == 0) continue;
+    for (const std::byte byte : bytes) {
+        if (byte == std::byte{0}) continue;
         if (text.append(static_cast<char>(byte)).is_err()) break;
     }
-    const auto claim_set = [](const warden::CpuSet& cpus) {
+    const auto claim_set = [](const warden::CpuSet& cpus) noexcept {
         CRUCIBLE_FUZZ_CLAIM("cpu_list", cpus.size() <= kMaxCpuCount);
         int previous = -1;
         for (const int cpu : cpus) {

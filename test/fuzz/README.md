@@ -29,9 +29,11 @@ Reed-Solomon and fountain decoders, and the text that the runtime reads
 from sysfs, procfs and host tools.  Each boundary has one harness in
 `boundary/harnesses/<name>.h`, with two functions:
 
-- `run_<name>(bytes)` drives the boundary with one input.
+- `run_<name>(input)` drives the boundary with one input, a
+  `View<std::byte const>`.
 - `seeds_<name>()` builds the seed inputs with the real writers, and adds
-  each crash that a campaign found as a regression input.
+  each crash that a campaign found as a regression input.  It gives a list
+  of seeds of the base, each with a `view()` of its bytes.
 
 A harness reports two types of finding.  A sanitizer report is the first
 type.  The second type is an accepted value that breaks the claim of its
@@ -63,13 +65,10 @@ To add a boundary, write `boundary/harnesses/<name>.h` and add one
 `crucible_boundary_fuzzer(<name> <mutations>)` line to
 `test/fuzz/CMakeLists.txt`.
 
-A harness can also hold only types of the base: `run_<name>` takes a
-`View<std::byte const>`, and `seeds_<name>()` gives a list of seeds of the
-base, each with a `view()` of its bytes.  Add `VIEW` as the third argument of
-its line.  Then `boundary/view_entry.cpp` is its entry, and it holds the one
-ABI region of the input.  `protocol_image` and `protocol_heap`, the two
-decoders of the Protocol family, have this form.  `prop_boundary_harnesses`
-does not run such a harness.  Its smoke test does.
+A harness holds only types of the base.  `boundary/harness.h` gives the
+cursor of an input and the writer of a seed.  `boundary/fuzz_main.cpp` holds
+the edges of the foreign ABI, each in an ABI region: the entry of libFuzzer,
+the persistent loop of AFL++, main, and the crash path.
 
 ## Coverage-guided campaigns: AFL++ with its GCC plugin
 
@@ -81,7 +80,7 @@ reasons:
   needs GCC 16 for contracts and reflection.
 - The GCC plugin instruments at compile time, so a campaign runs at native
   speed.  QEMU mode is ten to twenty times slower.
-- AFL++ persistent mode feeds 10,000 inputs to one process.  `runner_main.h`
+- AFL++ persistent mode feeds 10,000 inputs to one process.  `fuzz_main.cpp`
   enters that mode when the binary was built with `afl-g++-fast` and is
   started with no arguments.
 - honggfuzz with `-fsanitize-coverage=trace-pc` also works with GCC, but it

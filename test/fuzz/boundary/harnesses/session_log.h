@@ -9,36 +9,36 @@
 
 #include <fixy/Core.h>
 #include <fixy/session/EventLog.h>
-#include <foundation/Quarantine.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <utility>
 
 namespace crucible::fuzz::boundary {
 
-[[nodiscard]] inline Seeds seeds_session_log() {
+[[nodiscard]] inline SeedList seeds_session_log() noexcept {
     using ::fixy::session::RoleTagId;
     using ::fixy::session::SessionEvent;
-    std::vector<std::uint8_t> log;
+    SeedWriter log{};
     for (std::uint64_t role = 1; role <= 3; ++role) {
         const auto record = SessionEvent::close(RoleTagId{role}, RoleTagId{role + 1}).encode();
-        for (const std::byte b : record)
-            log.push_back(static_cast<std::uint8_t>(b));
+        log.append_bytes(::fixy::bytes(record));
     }
-    return {log};
+    SeedList seeds = empty_seed_list();
+    add_seed(seeds, log.finish());
+    return seeds;
 }
 
-inline void run_session_log(std::span<const std::uint8_t> bytes) {
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fuzzer gives its input as a pointer to raw bytes and a count")
-    const std::span<const std::byte> raw = as_bytes_view(bytes);
-    const ::fixy::View<std::byte const> block = ::fixy::mint_foreign_view(raw.data(), raw.size());
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+inline void run_session_log(::fixy::View<std::byte const> block) noexcept {
     auto decoded = ::fixy::session::decode_session_log(test_alloc(), block);
     if (decoded.is_err()) {
         CRUCIBLE_FUZZ_CLAIM("session_log",
                             decoded.err().expect("the decode failed").index * ::fixy::session::session_event_size
-                                <= bytes.size());
+                                <= block.size());
         return;
     }
     const ::fixy::HeapArray<::fixy::session::SessionEvent> events = std::move(decoded).expect("the block decoded");
-    CRUCIBLE_FUZZ_CLAIM("session_log", events.size() * ::fixy::session::session_event_size == bytes.size());
+    CRUCIBLE_FUZZ_CLAIM("session_log", events.size() * ::fixy::session::session_event_size == block.size());
     std::size_t position = 0;
     for (const ::fixy::session::SessionEvent& event : events.view()) {
         const auto encoded = event.encode();

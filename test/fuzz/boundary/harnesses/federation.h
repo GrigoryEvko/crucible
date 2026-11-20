@@ -9,10 +9,11 @@
 #include "../harness.h"
 
 #include <crucible/cipher/FederationProtocol.h>
-#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 
-#include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
 
 namespace crucible::fuzz::boundary {
 
@@ -20,10 +21,11 @@ namespace crucible::fuzz::boundary {
 // states when it reads a federation entry.
 inline constexpr auto kReceiverAtomCount = static_cast<std::uint16_t>(::foundation::effects::effect_count);
 
-[[nodiscard]] inline Seeds seeds_federation() {
+[[nodiscard]] inline SeedList seeds_federation() noexcept {
     namespace fed = ::crucible::cipher::federation;
-    Seeds seeds;
-    for (const ::fixy::TextView payload : {::fixy::TextView{}, ::fixy::TextView{"payload bytes"}}) {
+    SeedList seeds = empty_seed_list();
+    const ::fixy::FixedArray<::fixy::TextView, 2> payloads{::fixy::TextView{}, ::fixy::TextView{"payload bytes"}};
+    for (const ::fixy::TextView payload : payloads) {
         ::foundation::core::FixedArray<std::byte, 16> body{};
         std::size_t count = 0;
         for (const char character : payload) {
@@ -35,26 +37,21 @@ inline constexpr auto kReceiverAtomCount = static_cast<std::uint16_t>(::foundati
             entry.view(), fed::FederationKey{::foundation::core::Hash256{0x1234, 0x5678, 0x9abc, 0xdef0}},
             ::fixy::View<std::byte const>{body.view()}.window(0, count).expect("the payload is inside its buffer"));
         const std::size_t written_bytes = std::move(written).expect("the seed entry fits its buffer");
-        std::vector<std::uint8_t> seed;
-        append_raw(seed, kReceiverAtomCount);
-        for (const std::byte byte : ::fixy::View<std::byte const>{entry.view()}
-                                        .window(0, written_bytes)
-                                        .expect("the entry is inside its buffer")) {
-            seed.push_back(static_cast<std::uint8_t>(byte));
-        }
-        seeds.push_back(std::move(seed));
+        SeedWriter seed{};
+        seed.append_raw(kReceiverAtomCount);
+        seed.append_bytes(::fixy::View<std::byte const>{entry.view()}
+                              .window(0, written_bytes)
+                              .expect("the entry is inside its buffer"));
+        add_seed(seeds, seed.finish());
     }
     return seeds;
 }
 
-inline void run_federation(std::span<const std::uint8_t> bytes) {
+inline void run_federation(::fixy::View<std::byte const> bytes) noexcept {
     namespace fed = ::crucible::cipher::federation;
-    ByteCursor cursor{bytes};
+    InputCursor cursor{bytes};
     const auto receiver_cardinality = cursor.take<std::uint16_t>();
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fuzzer gives its input as a pointer to raw bytes and a count")
-    const std::span<const std::byte> raw = as_bytes_view(cursor.rest());
-    const ::fixy::View<std::byte const> entry_bytes = ::fixy::mint_foreign_view(raw.data(), raw.size());
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    const ::fixy::View<std::byte const> entry_bytes = cursor.rest();
 
     auto decoded = fed::deserialize_untrusted_federation_entry(entry_bytes, receiver_cardinality);
     if (decoded.is_err()) return;

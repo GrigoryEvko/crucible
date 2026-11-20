@@ -13,15 +13,14 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/PoolAllocator.h>
 #include <crucible/Serialize.h>
-#include <foundation/Quarantine.h>
-#include <foundation/core/Region.h>
 
-#include <memory>
-#include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
 
 namespace crucible::fuzz::boundary {
 
-inline void claim_region_trusted(const char* harness, const RegionNode& region) {
+inline void claim_region_trusted(HarnessName harness, const RegionNode& region) noexcept {
     for (const ::fixy::Ref<MemoryPlan const>& plan_ref : region.plan) {
         const MemoryPlan& plan = *plan_ref;
         CRUCIBLE_FUZZ_CLAIM(harness, plan.pool_bytes <= PoolAllocator::kMaxPoolBytes);
@@ -31,9 +30,11 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
             CRUCIBLE_FUZZ_CLAIM(harness, valid_device_type(static_cast<std::int8_t>(slot.device_type)));
             CRUCIBLE_FUZZ_CLAIM(harness, valid_layout(static_cast<std::int8_t>(slot.layout)));
             if (!slot.is_external) {
-                std::uint64_t end = 0;
-                CRUCIBLE_FUZZ_CLAIM(harness, !__builtin_add_overflow(slot.offset_bytes, slot.nbytes, &end));
-                CRUCIBLE_FUZZ_CLAIM(harness, end <= plan.pool_bytes);
+                const ::fixy::Option<std::uint64_t> end = ::fixy::checked_add(slot.offset_bytes, slot.nbytes);
+                CRUCIBLE_FUZZ_CLAIM(harness, end.is_some());
+                CRUCIBLE_FUZZ_CLAIM(harness,
+                                    end.match([&plan](std::uint64_t last) noexcept { return last <= plan.pool_bytes; },
+                                              [] noexcept { return false; }));
                 CRUCIBLE_FUZZ_CLAIM(harness, slot.offset_bytes % PoolAllocator::ALIGNMENT == 0);
             }
         }
@@ -50,8 +51,14 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
     CRUCIBLE_FUZZ_CLAIM(harness, region.content_hash == compute_content_hash(region.ops));
 }
 
+// The plan of a seed region: no plan, or a plan of two slots.
+enum class SeedPlan : std::uint8_t {
+    none,
+    two_slots,
+};
+
 // A region the way the recorder builds one: two operations with one input
-// and one output each, and with a plan of two slots when with_plan is set.
+// and one output each, and with a plan of two slots for SeedPlan::two_slots.
 // The fault of the second slot of a seed plan, which the region holds as
 // const once it links the plan.
 enum class SeedSlotFault : std::uint8_t {
@@ -62,10 +69,12 @@ enum class SeedSlotFault : std::uint8_t {
 
 // The ops, their arrays, the region and the slots of the plan are in
 // dag_arena.
-[[nodiscard]] inline RegionNode* build_seed_region(::fixy::BumpArena& arena, ::fixy::BumpArena& dag_arena,
-                                                   bool with_plan, SeedSlotFault fault = SeedSlotFault::none) {
+[[nodiscard]] inline ::fixy::Ref<RegionNode> build_seed_region(::fixy::BumpArena& arena, ::fixy::BumpArena& dag_arena,
+                                                               SeedPlan seed_plan,
+                                                               SeedSlotFault fault = SeedSlotFault::none) noexcept {
     const auto alloc = test_alloc();
     constexpr std::uint32_t kOps = 2;
+    const bool has_plan = seed_plan == SeedPlan::two_slots;
     const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(alloc, kOps, TraceEntry{});
     for (std::uint32_t i = 0; i < kOps; ++i) {
         TraceEntry& op = *ops.get(i).expect("i is below kOps");
@@ -76,11 +85,11 @@ enum class SeedSlotFault : std::uint8_t {
         meta.strides[0] = tensor_dim(1);
         meta.dtype = ScalarType::Float;
         op.set_inputs(dag_arena.array(alloc, 1, meta), dag_arena.array(alloc, 1, OpIndex{}),
-                      dag_arena.array(alloc, 1, with_plan ? SlotId{0} : SlotId{}));
+                      dag_arena.array(alloc, 1, has_plan ? SlotId{0} : SlotId{}));
         op.set_outputs(dag_arena.array(alloc, 1, meta), dag_arena.array(alloc, 1, SlotId{i}));
     }
     const ::fixy::Ref<RegionNode> region = make_region(alloc, dag_arena, ops);
-    if (with_plan) {
+    if (has_plan) {
         const ::fixy::Ref<MemoryPlan> plan = arena.make<MemoryPlan>(alloc);
         plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
         plan->num_external = 0;
@@ -100,17 +109,15 @@ enum class SeedSlotFault : std::uint8_t {
         plan->slots = slots;
         region->plan = make_plan_link(*plan);
     }
-    return &*region;
+    return region;
 }
 
-[[nodiscard]] inline std::vector<std::uint8_t> region_image(const RegionNode* region) {
-    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(test_alloc(), size_t{1} << 16, std::byte{0});
-    const size_t written = serialize_region(SerializedRegion{*region}, image.view());
-    std::vector<std::uint8_t> seed(written);
-    for (size_t index = 0; index < written; ++index) {
-        seed[index] = static_cast<std::uint8_t>(*image.get(index).expect("the writer writes inside its image"));
-    }
-    return seed;
+// The image of a region, as the writer writes it.
+[[nodiscard]] inline SeedBytes region_image(const RegionNode& region) noexcept {
+    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(test_alloc(), std::size_t{1} << 16, std::byte{0});
+    const std::size_t written = serialize_region(SerializedRegion{region}, image.view());
+    return copy_seed(
+        ::fixy::View<std::byte const>{image.view()}.window(0, written).expect("the writer writes inside its image"));
 }
 
 // Offsets of fields in a region image: the 32-byte header, then the op
@@ -120,62 +127,56 @@ inline constexpr std::size_t kImageContentHashOffset = 24;
 inline constexpr std::size_t kImageHasPlanOffset = 52;
 
 // Images that an earlier loader accepted although they break a claim of the
-// region type.  The loader must refuse each one.
-[[nodiscard]] inline Seeds region_regressions() {
+// region type.  The loader must refuse each one.  They go after the seeds of
+// seeds.
+inline void add_region_regressions(SeedList& seeds) noexcept {
     ::fixy::BumpArena arena{};
     ::fixy::BumpArena dag_arena{};
-    Seeds seeds;
 
     // The header states a content hash that is not the hash of the ops.
-    auto wrong_hash = region_image(build_seed_region(arena, dag_arena, false));
-    wrong_hash[kImageContentHashOffset] ^= 0x01;
-    seeds.push_back(std::move(wrong_hash));
+    SeedBytes wrong_hash = region_image(*build_seed_region(arena, dag_arena, SeedPlan::none));
+    *wrong_hash.view().get(kImageContentHashOffset).expect("the image holds its header") ^= std::byte{0x01};
+    add_seed(seeds, std::move(wrong_hash));
 
     // The plan flag holds a byte that is no value of a bool.
-    auto bad_bool = region_image(build_seed_region(arena, dag_arena, false));
-    bad_bool[kImageHasPlanOffset] = 0x02;
-    seeds.push_back(std::move(bad_bool));
+    SeedBytes bad_bool = region_image(*build_seed_region(arena, dag_arena, SeedPlan::none));
+    *bad_bool.view().get(kImageHasPlanOffset).expect("the image holds its plan flag") = std::byte{0x02};
+    add_seed(seeds, std::move(bad_bool));
 
     // A slot reaches past the pool, and a slot starts off the alignment.
     // The pool allocator aborts on either one.
-    seeds.push_back(region_image(build_seed_region(arena, dag_arena, true, SeedSlotFault::past_pool)));
-    seeds.push_back(region_image(build_seed_region(arena, dag_arena, true, SeedSlotFault::misaligned)));
-    return seeds;
+    add_seed(seeds, region_image(*build_seed_region(arena, dag_arena, SeedPlan::two_slots, SeedSlotFault::past_pool)));
+    add_seed(seeds, region_image(*build_seed_region(arena, dag_arena, SeedPlan::two_slots, SeedSlotFault::misaligned)));
 }
 
-[[nodiscard]] inline Seeds seeds_region() {
+[[nodiscard]] inline SeedList seeds_region() noexcept {
     ::fixy::BumpArena arena{};
     ::fixy::BumpArena dag_arena{};
-    Seeds seeds{region_image(build_seed_region(arena, dag_arena, false)),
-                region_image(build_seed_region(arena, dag_arena, true))};
-    for (auto& regression : region_regressions())
-        seeds.push_back(std::move(regression));
+    SeedList seeds = empty_seed_list();
+    add_seed(seeds, region_image(*build_seed_region(arena, dag_arena, SeedPlan::none)));
+    add_seed(seeds, region_image(*build_seed_region(arena, dag_arena, SeedPlan::two_slots)));
+    add_region_regressions(seeds);
     return seeds;
 }
 
-inline void run_region(std::span<const std::uint8_t> bytes) {
+inline void run_region(::fixy::View<std::byte const> bytes) noexcept {
     // Fuzz inputs stay small.  The cap keeps one input from spending the
     // whole run in one arena, and the loader's own ceiling is far above it.
     constexpr std::size_t kMaxInputBytes = std::size_t{1} << 20;
-    if (bytes.size() > kMaxInputBytes) bytes = bytes.first(kMaxInputBytes);
+    const ::fixy::View<std::byte const> input =
+        bytes.size() > kMaxInputBytes ? bytes.window(0, kMaxInputBytes).expect("the cap is inside the input") : bytes;
 
     ::fixy::BumpArena arena{};
     const auto alloc = test_alloc();
-    // The input lives for the call of the harness, so its View is valid
-    // here.
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fuzzer gives its input as a pointer to raw bytes and a count")
-    const ::fixy::View<const std::byte> input =
-        ::foundation::core::byte_view(::fixy::mint_foreign_view(bytes.data(), bytes.size()));
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     const ::fixy::Option<LoadedRegionNode> loaded = deserialize_region(alloc, input, arena).ok();
     for (const LoadedRegionNode& loaded_region : loaded) {
         const RegionNode& region = *loaded_region.value();
-        claim_region_trusted("region", region);
+        claim_region_trusted(as_harness("region"), region);
 
         // The loaded region writes back to an image that loads to the same
         // region: the loader keeps every field the writer reads.
         ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, input.size() + 4096, std::byte{0});
-        const size_t written = serialize_region(SerializedRegion{region}, image.view());
+        const std::size_t written = serialize_region(SerializedRegion{region}, image.view());
         CRUCIBLE_FUZZ_CLAIM("region", written > 0);
         const ::fixy::Option<LoadedRegionNode> reloaded =
             deserialize_region(alloc, image.view().window(0, written).expect("the writer writes inside its image"),

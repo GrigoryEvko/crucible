@@ -12,9 +12,8 @@
 #include <crucible/TensorMeta.h>
 #include <fixy/Core.h>
 
-#include <array>
+#include <cstddef>
 #include <cstdint>
-#include <utility>
 
 namespace crucible::fuzz::boundary {
 
@@ -36,24 +35,31 @@ struct RecipeWords {
 // flags and the hash take each byte.
 [[nodiscard]] constexpr bool names_each_enumerator(RecipeWords words) noexcept {
     return valid_scalar_type(byte_of(words.low, 0)) && valid_scalar_type(byte_of(words.low, 1))
-        && byte_of(words.low, 2) <= std::to_underlying(ReductionAlgo::BLOCK_STABLE)
-        && byte_of(words.low, 3) <= std::to_underlying(::foundation::core::RoundingMode::RP)
-        && byte_of(words.low, 4) <= std::to_underlying(ScalePolicy::PER_CHANNEL)
-        && byte_of(words.low, 5) <= std::to_underlying(SoftmaxRecurrence::FLASH3)
-        && byte_of(words.low, 6) <= std::to_underlying(ReductionDeterminism::BITEXACT_STRICT);
+        && byte_of(words.low, 2) <= static_cast<std::uint8_t>(ReductionAlgo::BLOCK_STABLE)
+        && byte_of(words.low, 3) <= static_cast<std::uint8_t>(::foundation::core::RoundingMode::RP)
+        && byte_of(words.low, 4) <= static_cast<std::uint8_t>(ScalePolicy::PER_CHANNEL)
+        && byte_of(words.low, 5) <= static_cast<std::uint8_t>(SoftmaxRecurrence::FLASH3)
+        && byte_of(words.low, 6) <= static_cast<std::uint8_t>(ReductionDeterminism::BITEXACT_STRICT);
 }
 
-[[nodiscard]] inline Seeds seeds_recipe() {
-    std::vector<std::uint8_t> image;
-    append_raw(image, NumericalRecipe{});
-    return {image, std::vector<std::uint8_t>(sizeof(NumericalRecipe), 0xFF)};
+[[nodiscard]] inline SeedList seeds_recipe() noexcept {
+    SeedWriter image{};
+    image.append_raw(NumericalRecipe{});
+    SeedBytes all_ones = ::fixy::mint_heap_array(test_alloc(), sizeof(NumericalRecipe), std::byte{0xFF});
+    SeedList seeds = empty_seed_list();
+    add_seed(seeds, image.finish());
+    add_seed(seeds, std::move(all_ones));
+    return seeds;
 }
 
-inline void run_recipe(std::span<const std::uint8_t> bytes) {
-    std::array<std::uint8_t, sizeof(NumericalRecipe)> image{};
-    const auto head = bytes.first(std::min(bytes.size(), image.size()));
-    std::ranges::copy(head, image.begin());
-    const RecipeWords words = ::fixy::decode<RecipeWords>(image).expect("each image of sixteen bytes is two words");
+inline void run_recipe(::fixy::View<std::byte const> bytes) noexcept {
+    ::fixy::FixedArray<std::byte, sizeof(NumericalRecipe)> image{};
+    const std::size_t taken = bytes.size() < image.size() ? bytes.size() : image.size();
+    ::fixy::copy(::fixy::View<std::byte>{image.view()}.window(0, taken).expect("the image holds the bytes it takes"),
+                 bytes.window(0, taken).expect("the input holds the bytes that the image takes"))
+        .expect("the two windows hold the same count");
+    const ::fixy::FixedArray<std::byte, sizeof(NumericalRecipe)>& read = image;
+    const RecipeWords words = ::fixy::decode<RecipeWords>(read).expect("each image of sixteen bytes is two words");
     const auto decoded = ::fixy::decode<NumericalRecipe>(words);
     CRUCIBLE_FUZZ_CLAIM("recipe", decoded.is_some() == names_each_enumerator(words));
     for (const NumericalRecipe& recipe : decoded) {

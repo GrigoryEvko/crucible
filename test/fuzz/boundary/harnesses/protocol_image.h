@@ -8,7 +8,7 @@
 // its image, so encode writes the same bytes back, and its format fits a
 // text of 2048 characters.  A refusal names an offset inside the image.
 //
-// The interface holds only types of the base (view_entry.cpp).
+// The interface holds only types of the base (entry.h).
 
 #include <fixy/Core.h>
 #include <fixy/Protocol.h>

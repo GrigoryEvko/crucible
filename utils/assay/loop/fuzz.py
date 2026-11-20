@@ -76,8 +76,8 @@ from assay.setup import gcc as patched_gcc
 from assay.setup import pins as cmake_pin
 
 HARNESSES = Path("test/fuzz/boundary/harnesses")
-# The list of the boundary harnesses: each line crucible_boundary_fuzzer(NAME MUTATIONS [VIEW]) of this file names
-# one, and its target fuzz_NAME.
+# The list of the boundary harnesses: each line crucible_boundary_fuzzer(NAME MUTATIONS) of this file names one, and
+# its target fuzz_NAME.
 HARNESS_LIST = Path("test/fuzz/CMakeLists.txt")
 _HARNESS_LINE = re.compile(r"^crucible_boundary_fuzzer\(\s*([A-Za-z0-9_]+)\b")
 # The file that afl-fuzz writes in each crashes directory, which is no saved input.
@@ -129,7 +129,7 @@ class Findings:
 def harness_names(root: Path) -> tuple[str, ...]:
     """Return the name of each boundary harness of a tree, in the order of HARNESS_LIST.
 
-    Each line crucible_boundary_fuzzer(NAME ...) of HARNESS_LIST names one harness, also a harness of the VIEW kind.
+    Each line crucible_boundary_fuzzer(NAME ...) of HARNESS_LIST names one harness, whatever arguments follow NAME.
     A header of HARNESSES that no line names, such as the helper tensor_meta_claims.h, is no harness.  A tree with no
     list has no harness.  Complexity: linear in the lines of the list.
 
@@ -421,7 +421,7 @@ def self_test() -> int:
     real_names = harness_names(REPO_ROOT)
     expect("the harness list of the tree names the helper tensor_meta_claims as no harness",
            "tensor_meta_claims" not in real_names)
-    expect("each harness of the list of the tree has its header, also each harness of the VIEW kind",
+    expect("each harness of the list of the tree has its header, and the list holds protocol_image",
            bool(real_names) and "protocol_image" in real_names
            and all((REPO_ROOT / HARNESSES / f"{name}.h").is_file() for name in real_names))
     with tempfile.TemporaryDirectory(prefix="loop-fuzz-") as work:

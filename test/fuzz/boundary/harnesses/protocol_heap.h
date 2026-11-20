@@ -13,7 +13,7 @@
 // bytes back, and the storage of its heap parts fits the budget.  A refusal
 // names an offset inside the image or at its end.
 //
-// The interface holds only types of the base (view_entry.cpp).
+// The interface holds only types of the base (entry.h).
 
 #include <fixy/Core.h>
 #include <fixy/Protocol.h>

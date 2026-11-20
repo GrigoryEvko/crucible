@@ -8,33 +8,39 @@
 #include "../harness.h"
 
 #include <crucible/topology/Discovery.h>
-#include <foundation/Quarantine.h>
+
+#include <cstddef>
+#include <cstdint>
 
 namespace crucible::fuzz::boundary {
 
-[[nodiscard]] inline Seeds seeds_discovery_text() {
-    static constexpr std::string_view kTexts[] = {
-        "-[0000:00]-+-00.0\n           +-01.0-[01]----00.0\n           \\-02.0\n",
-        "driver: mlx5_core\nversion: 6.1\nfirmware-version: 22.39.1002\nbus-info: 0000:65:00.0\n",
-        "tcp-segmentation-offload: on\ngeneric-receive-offload: on\nlarge-receive-offload: off [fixed]\n",
-        "Interface: eth0, via: LLDP\n  SysName: tor-a\n  PortID: ifname swp17\n  LineRate: 100G\n",
+[[nodiscard]] inline SeedList seeds_discovery_text() noexcept {
+    constexpr ::fixy::FixedArray<::fixy::TextView, 4> kTexts{
+        ::fixy::TextView{"-[0000:00]-+-00.0\n           +-01.0-[01]----00.0\n           \\-02.0\n"},
+        ::fixy::TextView{"driver: mlx5_core\nversion: 6.1\nfirmware-version: 22.39.1002\nbus-info: 0000:65:00.0\n"},
+        ::fixy::TextView{
+            "tcp-segmentation-offload: on\ngeneric-receive-offload: on\nlarge-receive-offload: off [fixed]\n"},
+        ::fixy::TextView{"Interface: eth0, via: LLDP\n  SysName: tor-a\n  PortID: ifname swp17\n  LineRate: 100G\n"},
     };
-    Seeds seeds;
-    for (std::uint8_t which = 0; which < std::size(kTexts); ++which) {
-        std::vector<std::uint8_t> seed{which};
-        append_bytes(seed, text_bytes(kTexts[which]));
-        seeds.push_back(std::move(seed));
+    SeedList seeds = empty_seed_list();
+    std::uint8_t which = 0;
+    for (const ::fixy::TextView text : kTexts) {
+        SeedWriter seed{};
+        seed.append_raw(which);
+        seed.append_text(text);
+        add_seed(seeds, seed.finish());
+        ++which;
     }
     return seeds;
 }
 
-inline void run_discovery_text(std::span<const std::uint8_t> bytes) {
-    ByteCursor cursor{bytes};
+inline void run_discovery_text(::fixy::View<std::byte const> bytes) noexcept {
+    InputCursor cursor{bytes};
     const auto which = cursor.take<std::uint8_t>();
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fuzzer gives the host text as a pointer to raw bytes and a count")
-    const std::string_view raw = as_text(cursor.rest());
-    const auto text = topology::tag_external_discovery_text(::fixy::mint_foreign_text(raw.data(), raw.size()));
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    // The text owns a copy of the rest of the input, so the parsers read
+    // characters of the base.
+    const ::fixy::HeapText owned = text_of(cursor.rest());
+    const auto text = topology::tag_external_discovery_text(owned.view());
 
     const ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
     auto snapshot = topology::mint_discovery_snapshot(init);

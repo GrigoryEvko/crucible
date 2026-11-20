@@ -12,25 +12,31 @@
 #include <crucible/cntp/Pacing.h>
 #include <crucible/cntp/RoceConfig.h>
 
+#include <cstddef>
+#include <cstdint>
+
 namespace crucible::fuzz::boundary {
 
-[[nodiscard]] inline Seeds seeds_cntp_text() {
-    static constexpr std::string_view kTexts[] = {
-        "qdisc fq 8001: root refcnt 2 limit 10000p flow_limit 100p buckets 1024\n",
-        "rx_prio3_pause: 5\n\x1ftx_prio3_pause: 7\n",
-        "reno cubic bbr",
+[[nodiscard]] inline SeedList seeds_cntp_text() noexcept {
+    constexpr ::fixy::FixedArray<::fixy::TextView, 3> kTexts{
+        ::fixy::TextView{"qdisc fq 8001: root refcnt 2 limit 10000p flow_limit 100p buckets 1024\n"},
+        ::fixy::TextView{"rx_prio3_pause: 5\n\x1ftx_prio3_pause: 7\n"},
+        ::fixy::TextView{"reno cubic bbr"},
     };
-    Seeds seeds;
-    for (std::uint8_t which = 0; which < std::size(kTexts); ++which) {
-        std::vector<std::uint8_t> seed{which};
-        append_bytes(seed, text_bytes(kTexts[which]));
-        seeds.push_back(std::move(seed));
+    SeedList seeds = empty_seed_list();
+    std::uint8_t which = 0;
+    for (const ::fixy::TextView text : kTexts) {
+        SeedWriter seed{};
+        seed.append_raw(which);
+        seed.append_text(text);
+        add_seed(seeds, seed.finish());
+        ++which;
     }
     return seeds;
 }
 
-inline void run_cntp_text(std::span<const std::uint8_t> bytes) {
-    ByteCursor cursor{bytes};
+inline void run_cntp_text(::fixy::View<std::byte const> bytes) noexcept {
+    InputCursor cursor{bytes};
     const auto which = cursor.take<std::uint8_t>();
     switch (which % 3) {
         case 0: {

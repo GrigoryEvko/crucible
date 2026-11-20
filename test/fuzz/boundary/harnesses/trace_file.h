@@ -9,6 +9,11 @@
 
 #include <crucible/TraceLoader.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/Path.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <utility>
 
 namespace crucible::fuzz::boundary {
 
@@ -16,65 +21,55 @@ namespace crucible::fuzz::boundary {
 // name table that gives one hash the name aten::x and then aten::y.  The
 // first name registers, and the second name reaches the refusal of a
 // collision in the schema table.  The seed has the version that the loader
-// reads, so the fuzzer starts from a trace that loads.
-[[nodiscard]] inline Seeds seeds_trace_file() {
-    std::vector<std::uint8_t> seed = text_bytes("CRTR");
-    append_raw(seed, TRACE_FORMAT_VERSION);
-    append_raw(seed, std::uint32_t{1});
-    append_raw(seed, std::uint32_t{2});
+// reads, so the fuzzer starts from a trace that loads.  The header, the
+// record and the metadata come from the encoders of the writer.
+[[nodiscard]] inline SeedList seeds_trace_file() noexcept {
+    SeedWriter seed{};
+    const auto header = encode_trace_header(1, 2);
+    seed.append_bytes(header.view());
     TraceOpRecord record{};
     record.schema_hash = SchemaHash{0xABCD};
     record.num_inputs = 1;
     record.num_outputs = 1;
     record.depth = OpDepth{1};
-    append_raw(seed, record);
+    const auto op = encode_trace_op(record);
+    seed.append_bytes(op.view());
     TensorMeta meta{};
     meta.ndim = 1;
     meta.sizes[0] = tensor_dim(4);
     meta.strides[0] = tensor_dim(1);
     meta.dtype = ScalarType::Float;
-    append_raw(seed, meta);
-    append_raw(seed, meta);
-    append_raw(seed, std::uint32_t{2});
-    append_raw(seed, std::uint64_t{0xABCD});
-    append_raw(seed, std::uint16_t{7});
-    append_bytes(seed, text_bytes("aten::x"));
-    append_raw(seed, std::uint64_t{0xABCD});
-    append_raw(seed, std::uint16_t{7});
-    append_bytes(seed, text_bytes("aten::y"));
-    return {seed};
+    const auto meta_bytes = encode_trace_meta(meta);
+    seed.append_bytes(meta_bytes.view());
+    seed.append_bytes(meta_bytes.view());
+    seed.append_raw(std::uint32_t{2});
+    seed.append_raw(std::uint64_t{0xABCD});
+    seed.append_raw(std::uint16_t{7});
+    seed.append_text("aten::x");
+    seed.append_raw(std::uint64_t{0xABCD});
+    seed.append_raw(std::uint16_t{7});
+    seed.append_text("aten::y");
+    SeedList seeds = empty_seed_list();
+    add_seed(seeds, seed.finish());
+    return seeds;
 }
 
-inline void run_trace_file(std::span<const std::uint8_t> bytes) {
+inline void run_trace_file(::fixy::View<std::byte const> bytes) noexcept {
     constexpr std::size_t kMaxInputBytes = std::size_t{1} << 20;
-    if (bytes.size() > kMaxInputBytes) bytes = bytes.first(kMaxInputBytes);
-    // The input lives for the call of the harness, so its View is valid
-    // here.
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fuzzer gives its input as a pointer to raw bytes and a count")
-    const std::span<const std::byte> raw = as_bytes_view(bytes);
-    const ::fixy::View<std::byte const> image = ::fixy::mint_foreign_view(raw.data(), raw.size());
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    const ::fixy::View<std::byte const> image =
+        bytes.size() > kMaxInputBytes ? bytes.window(0, kMaxInputBytes).expect("the cap is inside the input") : bytes;
 
-    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     // The scratch path is absolute and holds no ".." component.
     ::foundation::os::PathText<::fixy::kPathBytes> input{};
-    if (input.append(::fixy::mint_foreign_text(scratch_dir().c_str(), scratch_dir().native().size())).is_err()
-        || input.append(::fixy::TextView{"/input.crtrace"}).is_err())
+    if (input.append(scratch_dir().path()).is_err() || input.append(::fixy::TextView{"/input.crtrace"}).is_err())
         return;
     auto sanitized_path =
         ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(input.c_text().view()));
     if (sanitized_path.is_err()) return;
     const ::fixy::Path<::fixy::tags::source::Sanitized> path =
         std::move(sanitized_path).expect("the scratch path passes the check");
-    {
-        // The descriptor closes at the end of this block, before the load.
-        using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
-        using TraceFile = ::fixy::fs::FileOf<WriteTruncate>;
-        const TraceFile file = ::fixy::fs::mint_file<WriteTruncate>(ctx, path).match(
-            [](::fixy::Linear<TraceFile> opened) -> TraceFile { return std::move(opened).consume(); },
-            [](::foundation::os::Errno) -> TraceFile { return TraceFile{}; });
-        if (!file.is_open() || ::fixy::fs::write_full(ctx, file.ref(), image).is_err()) return;
-    }
+    // The descriptor closes in the write, before the load.
+    if (!write_scratch_file("input.crtrace", image)) return;
     // The load registers the names of the trace into the global table, so a
     // second name of one hash reaches the refusal of a collision.  The table
     // starts empty at each run, so no name of an earlier input collides,
@@ -82,7 +77,7 @@ inline void run_trace_file(std::span<const std::uint8_t> bytes) {
     // at the capacity of the table.
     constexpr VigilFgCtx kForeground = ::foundation::effects::testing::foreground<Vigil>();
     global_schema_table().clear(::foundation::effects::testing::test());
-    auto loaded = load_trace(ctx, kForeground, path);
+    auto loaded = load_trace(kHarnessCtx, kForeground, path);
     if (loaded.is_err()) return;
     const LoadedTrace trace = std::move(loaded).expect("the load holds a trace after the check of its error");
 
@@ -91,7 +86,7 @@ inline void run_trace_file(std::span<const std::uint8_t> bytes) {
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace.entries.size() == trace.num_ops);
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace.depths.size() == trace.num_ops);
     for (const TensorMeta& meta : trace.metas)
-        claim_meta_in_range("trace_file", meta);
+        claim_meta_in_range(as_harness("trace_file"), meta);
     for (const auto [entry, meta_start] : trace.entries.view()
                                               .walk()
                                               .try_zip(trace.meta_starts.view().walk())
