@@ -830,17 +830,12 @@ private:
     [[nodiscard]] ::fixy::Option<::fixy::Ref<const RegionNode>> newest_region_() const noexcept {
         const PendingRegion pending = pending_region_.load_acquire();
         for (const auto& published : pending) {
-            if (published->reset_point == bg_.requested_reset()) return region_of_(published->region);
+            // The foreground reads a region of the pipeline only as const.
+            if (published->reset_point == bg_.requested_reset())
+                return ConstRegionLink::some(
+                    RegionLink{published->region}.expect("the publish stage gives a record of a region"));
         }
         return taken_region_.load_acquire();
-    }
-
-    // The region of a slot that can be empty, or no region for an empty
-    // slot.  The foreground reads a region of the pipeline only as const.
-    [[nodiscard]] static ConstRegionLink region_of_(RegionLink slot) noexcept {
-        for (const ::fixy::Ref<RegionNode>& region : slot)
-            return ConstRegionLink::some(region);
-        return ::fixy::none;
     }
 
     // The store parts of persist and load.  The store is a template
@@ -1105,9 +1100,9 @@ private:
         // excluding the current one.
         const ConstRegionLink alt = region_cache_.find_alternate(div_pos, schema_hash, shape_hash, diverged);
 
-        const bool is_switched = alt.is_some_and([this, &fg, div_pos](::fixy::Ref<const RegionNode> const& region) {
-            return try_switch_region_(fg, *region, div_pos);
-        });
+        bool is_switched = false;
+        for (const ::fixy::Ref<const RegionNode>& region : alt)
+            is_switched = try_switch_region_(fg, *region, div_pos);
         if (is_switched) {
             // The switch leaves the context compiled, so advance past the
             // divergent op.
@@ -1208,10 +1203,8 @@ private:
     // each region the slot can hold is stale.
     [[gnu::cold]] void cache_pending_region_() {
         const PendingRegion stale = pending_region_.exchange_acq_rel(::fixy::none);
-        for (const auto& published : stale) {
-            for (const ::fixy::Ref<RegionNode>& region : published->region)
-                region_cache_.insert(*region);
-        }
+        for (const auto& published : stale)
+            region_cache_.insert(*RegionLink{published->region}.expect("the publish stage gives a record of a region"));
     }
 
     // Moves the published region into foreground-only alignment state.  It

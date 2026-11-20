@@ -179,10 +179,9 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     BackgroundThread::RegionMarks marks{};
     tx_log_.for_each_region(stage, [&marks](ConstRegionLink held) noexcept { marks.hold(held); });
     const PendingRegion handed = pending_region_.load_acquire();
-    for (const auto& record : handed) {
-        for (const ::fixy::Ref<RegionNode>& handed_region : record->region)
-            marks.handed = ConstRegionLink::some(handed_region);
-    }
+    for (const auto& record : handed)
+        marks.handed =
+            ConstRegionLink::some(RegionLink{record->region}.expect("the publish stage gives a record of a region"));
     mark_held_regions_(marks);
     bg_.set_region_marks(stage, marks);
 
