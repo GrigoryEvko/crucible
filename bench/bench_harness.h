@@ -2885,8 +2885,14 @@ public:
     // path, and no sample meets a new block or the first touch of a page.  A
     // body with no such member gives the instructions of a measure with no
     // hook, because the discarded branch makes no code.
+    //
+    // Each instantiation is a function of its own, and the body is inline in
+    // its loops.  The code of the caller then cannot change the code of the
+    // timed loop.  A measure that GCC inlines into a small main gets the
+    // registers and the alignment of main, and a call of a cold function
+    // before it moves the loops into main.cold.
     template <typename Body>
-    [[nodiscard]] Report measure(Body&& body) const {
+    [[nodiscard, gnu::noinline]] Report measure(Body&& body) const {
         MeasureOpening opening = open_();
         const CpuId pinned_cpu = opening.pin.cpu;
 
