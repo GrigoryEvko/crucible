@@ -30,17 +30,11 @@
 
 #include <linux/io_uring.h>
 
-#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
-#include <span>
-#include <string>
-#include <string_view>
-#include <system_error>
 #include <utility>
 
 namespace eff = foundation::effects;
@@ -62,15 +56,10 @@ inline constexpr std::size_t kPayloadBytes = 4096;
 
 // Every path the file surface takes is Path<Sanitized>, and the only way
 // to one is through the sanitizer.
-[[nodiscard]] fixy::Path<src::Sanitized> sanitized(const std::string& raw) {
-    return fixy::sanitize_path(fixy::mint_tagged<src::External>(fixy::mint_foreign_text(raw.data(), raw.size())))
+[[nodiscard]] fixy::Path<src::Sanitized> sanitized(crucible::test::ScratchPath const& path) {
+    return fixy::sanitize_path(fixy::mint_tagged<src::External>(path.c_text().view()))
         .expect("each test path passes the sanitizer");
 }
-
-using crucible::test::ScratchDir;
-
-// The prefix of the scratch directories of this test under /tmp.
-inline constexpr std::string_view kScratchPrefix = "fixy-io-test";
 
 using ReadWriteFile = fs::FileOf<fixy::atom::fs::mode<fs::open_mode::ReadWrite>>;
 using ReadOnlyFile = fs::FileOf<fs::read_only>;
@@ -103,21 +92,23 @@ descriptor_of(fixy::Result<fixy::Linear<File>, foundation::os::Errno> minted) {
 
 // The two files of a transfer, or the Errno of the first open or write of
 // the doors that failed.
-[[nodiscard]] MadeFiles make_transfer_files(IoBlockCtx const& ctx, ScratchDir const& scratch,
+[[nodiscard]] MadeFiles make_transfer_files(IoBlockCtx const& ctx, fs::TemporaryDirectory const& scratch,
                                             const std::uint8_t (&pattern)[kPayloadBytes]) {
     using ReadWrite = fixy::atom::fs::mode<fs::open_mode::ReadWrite>;
-    CRUCIBLE_TRY(source, descriptor_of(fs::mint_file<ReadWrite>(ctx, sanitized(scratch.file("src")))));
-    CRUCIBLE_TRY(destination, descriptor_of(fs::mint_file<ReadWrite>(ctx, sanitized(scratch.file("dst")))));
+    CRUCIBLE_TRY(source, descriptor_of(fs::mint_file<ReadWrite>(
+                             ctx, sanitized(crucible::test::make_scratch_path(scratch, "src")))));
+    CRUCIBLE_TRY(destination, descriptor_of(fs::mint_file<ReadWrite>(
+                                  ctx, sanitized(crucible::test::make_scratch_path(scratch, "dst")))));
     CRUCIBLE_TRY(_, fs::write_full(ctx, source.ref(), fixy::bytes(pattern)));
     return TransferFiles{std::move(source), std::move(destination)};
 }
 
 // The bytes that the destination file of the scratch directory holds at
 // offset, read through a second descriptor of the file door, equal expected.
-[[nodiscard]] bool destination_holds_at(IoBlockCtx const& ctx, ScratchDir const& scratch, std::size_t offset,
-                                        fixy::View<std::byte const> expected) {
+[[nodiscard]] bool destination_holds_at(IoBlockCtx const& ctx, fs::TemporaryDirectory const& scratch,
+                                        std::size_t offset, fixy::View<std::byte const> expected) {
     fixy::Result<ReadOnlyFile, foundation::os::Errno> opened =
-        descriptor_of(fs::mint_file<fs::read_only>(ctx, sanitized(scratch.file("dst"))));
+        descriptor_of(fs::mint_file<fs::read_only>(ctx, sanitized(crucible::test::make_scratch_path(scratch, "dst"))));
     if (opened.is_err()) return false;
     ReadOnlyFile const reader = std::move(opened).expect("the destination opened for a read");
     fixy::FixedArray<std::byte, 5 * kPayloadBytes> whole{};
@@ -222,11 +213,15 @@ descriptor_of(fixy::Result<fixy::Linear<File>, foundation::os::Errno> minted) {
         pattern[index] = static_cast<std::uint8_t>((index * 13u + 5u) & 0xFFu);
     }
 
-    const ScratchDir scratch{kScratchPrefix};
-    if (!scratch.is_ready()) {
-        std::fprintf(stderr, "[skipped] no scratch directory under /tmp (errno %d)\n", errno);
+    fixy::TestRunnerCtx const test{eff::testing::test()};
+    fixy::Result<fs::TemporaryDirectory, foundation::os::Errno> scratch_made =
+        crucible::test::make_scratch_directory(test);
+    if (scratch_made.is_err()) {
+        fixy::report(fixy::Sink::Err, "[skipped] no scratch directory under /tmp (errno {})\n",
+                     foundation::os::error_number_of(scratch_made));
         return 0;
     }
+    fs::TemporaryDirectory const scratch = std::move(scratch_made).expect("the scratch directory is made");
     MadeFiles made = make_transfer_files(ctx, scratch, pattern);
     if (made.is_err()) {
         fixy::report(fixy::Sink::Err, "making the two transfer files failed (errno {})\n",
@@ -286,11 +281,15 @@ descriptor_of(fixy::Result<fixy::Linear<File>, foundation::os::Errno> minted) {
         pattern[index] = static_cast<std::uint8_t>((index * 31u + 17u) & 0xFFu);
     }
 
-    const ScratchDir scratch{kScratchPrefix};
-    if (!scratch.is_ready()) {
-        std::fprintf(stderr, "[skipped] no scratch directory under /tmp (errno %d)\n", errno);
+    fixy::TestRunnerCtx const test{eff::testing::test()};
+    fixy::Result<fs::TemporaryDirectory, foundation::os::Errno> scratch_made =
+        crucible::test::make_scratch_directory(test);
+    if (scratch_made.is_err()) {
+        fixy::report(fixy::Sink::Err, "[skipped] no scratch directory under /tmp (errno {})\n",
+                     foundation::os::error_number_of(scratch_made));
         return 0;
     }
+    fs::TemporaryDirectory const scratch = std::move(scratch_made).expect("the scratch directory is made");
     MadeFiles made = make_transfer_files(ctx, scratch, pattern);
     if (made.is_err()) {
         fixy::report(fixy::Sink::Err, "making the two transfer files failed (errno {})\n",

@@ -4,6 +4,7 @@
 // may come from, and never pins the number itself.
 
 #include <fixy/Core.h>
+#include <fixy/os/Fs.h>
 #include <fixy/os/Sched.h>
 #include <fixy/os/ThreadTasks.h>
 #include <fixy/os/Topology.h>
@@ -17,13 +18,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
 #include <initializer_list>
 #include <set>
-#include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 
 #include <fixy/Ctx.h>
@@ -317,49 +314,98 @@ void test_cores_on_node_out_of_range(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, t.cores_on_node(99999).empty());
 }
 
-// A sysfs tree in a scratch directory (scratch_dir.h), removed when the
-// object goes out of scope.  It holds only the files the NUMA probe reads.
+// The count of the CPUs and the number of a node of a fake sysfs tree.
+enum class CpuCount : std::uint32_t {
+};
+enum class NodeNumber : std::uint32_t {
+};
+
+// The texts of a fake sysfs tree, each in its role: the CPU list and the
+// distance row of a node, and the name and the contents of a file beside the
+// node directories.
+struct CpuListRole final {};
+struct DistanceRowRole final {};
+struct NodeFileNameRole final {};
+struct NodeFileTextRole final {};
+using CpuList = ::fixy::Side<CpuListRole, ::fixy::TextView>;
+using DistanceRow = ::fixy::Side<DistanceRowRole, ::fixy::TextView>;
+using NodeFileName = ::fixy::Side<NodeFileNameRole, ::fixy::TextView>;
+using NodeFileText = ::fixy::Side<NodeFileTextRole, ::fixy::TextView>;
+
+// A sysfs tree in a scratch directory of the base (scratch_dir.h), removed
+// when the object goes out of scope.  It holds only the files the NUMA probe
+// reads.  Each make and each write of the tree is a check of the test.
 class FakeSysfsTree {
 public:
-    explicit FakeSysfsTree(std::string_view name) : scratch_{name}, root_{scratch_.path()} {
-        ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
-        CRUCIBLE_TEST_ASSERT(test, scratch_.is_ready());
-        std::filesystem::create_directories(root_ / "devices/system/cpu");
-        std::filesystem::create_directories(root_ / "devices/system/node");
+    FakeSysfsTree()
+        : scratch_{crucible::test::make_scratch_directory(kTest).expect("the test makes a scratch directory")} {
+        make_directory("devices");
+        make_directory("devices/system");
+        make_directory("devices/system/cpu");
+        make_directory("devices/system/node");
     }
 
     FakeSysfsTree(const FakeSysfsTree&) = delete("the tree owns one directory on disk");
     FakeSysfsTree& operator=(const FakeSysfsTree&) = delete("the tree owns one directory on disk");
 
-    void add_cpus(int count) const {
-        for (int cpu = 0; cpu < count; ++cpu) {
-            std::filesystem::create_directories(root_ / ("devices/system/cpu/cpu" + std::to_string(cpu)));
+    void add_cpus(CpuCount count) const {
+        for (std::uint32_t cpu = 0; cpu < std::to_underlying(count); ++cpu) {
+            crucible::test::ScratchPath path{};
+            path.append(::fixy::TextView{"devices/system/cpu/cpu"}).expect("the path of a CPU fits a path");
+            path.append_decimal(cpu).expect("the path of a CPU fits a path");
+            make_directory(path.c_text());
         }
     }
 
-    void add_node(int node, std::string_view cpulist, std::string_view distance) const {
-        const auto dir = root_ / ("devices/system/node/node" + std::to_string(node));
-        std::filesystem::create_directories(dir);
-        write(dir / "cpulist", cpulist);
-        write(dir / "distance", distance);
+    void add_node(NodeNumber node, CpuList const& cpulist, DistanceRow const& distance) const {
+        crucible::test::ScratchPath directory{};
+        directory.append(::fixy::TextView{"devices/system/node/node"}).expect("the path of a node fits a path");
+        directory.append_decimal(std::to_underlying(node)).expect("the path of a node fits a path");
+        make_directory(directory.c_text());
+        crucible::test::ScratchPath cpulist_path = directory;
+        cpulist_path.append(::fixy::TextView{"/cpulist"}).expect("the path of a node file fits a path");
+        write(cpulist_path.c_text(), cpulist.value());
+        crucible::test::ScratchPath distance_path = directory;
+        distance_path.append(::fixy::TextView{"/distance"}).expect("the path of a node file fits a path");
+        write(distance_path.c_text(), distance.value());
     }
 
     // A file beside the node directories, as the kernel writes "online"
     // and "possible" there.  The probe must not read it as a node.
-    void add_node_dir_file(std::string_view name, std::string_view contents) const {
-        write(root_ / "devices/system/node" / std::string{name}, contents);
+    void add_node_dir_file(NodeFileName const& name, NodeFileText const& contents) const {
+        crucible::test::ScratchPath path{};
+        path.append(::fixy::TextView{"devices/system/node/"}).expect("the path of a node file fits a path");
+        path.append(name.value()).expect("the path of a node file fits a path");
+        write(path.c_text(), contents.value());
     }
 
-    [[nodiscard]] std::string root() const { return root_.string(); }
+    // The root of the tree, for the probe.  The text borrows the tree.
+    [[nodiscard]] std::string_view root() const {
+        return std::string_view{::foundation::core::foreign_c_str(scratch_.path()), scratch_.path().size()};
+    }
 
 private:
-    static void write(const std::filesystem::path& path, std::string_view contents) {
-        std::ofstream out{path};
-        out << contents << '\n';
+    void make_directory(::fixy::CText path) const {
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fs::make_directory_at(kTest, scratch_.ref(), path).is_ok());
     }
 
-    crucible::test::ScratchDir scratch_;
-    std::filesystem::path root_;
+    // Writes the contents and a line end to the file at path, as a sysfs
+    // file holds them.
+    void write(::fixy::CText path, ::fixy::TextView contents) const {
+        using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+        bool const is_written =
+            ::fixy::fs::mint_file_at<WriteTruncate>(kTest, scratch_.ref(), path)
+                .match(
+                    [contents](::fixy::Linear<::fixy::fs::FileOf<WriteTruncate>> opened) {
+                        ::fixy::fs::FileOf<WriteTruncate> const file = std::move(opened).consume();
+                        return ::fixy::fs::write_full(kTest, file.ref(), contents).is_ok()
+                            && ::fixy::fs::write_full(kTest, file.ref(), ::fixy::TextView{"\n"}).is_ok();
+                    },
+                    [](::foundation::os::Errno) { return false; });
+        CRUCIBLE_TEST_ASSERT(kTest, is_written);
+    }
+
+    ::fixy::fs::TemporaryDirectory scratch_;
 };
 
 [[nodiscard]] bool span_equals(std::span<const int> got, std::initializer_list<int> want) {
@@ -371,12 +417,12 @@ private:
 // names nothing.  The sysfs distance row lists the distance to each online
 // node in ascending order of node id, so the row of node2 is "21 10".
 void test_sparse_numa_node_ids(::fixy::TestRunnerCtx const& test) {
-    const FakeSysfsTree tree{"crucible_topology_sparse_nodes"};
-    tree.add_cpus(4);
-    tree.add_node(0, "0-1", "10 21");
-    tree.add_node(2, "2-3", "21 10");
-    tree.add_node_dir_file("online", "0,2");
-    tree.add_node_dir_file("possible", "0-3");
+    const FakeSysfsTree tree{};
+    tree.add_cpus(CpuCount{4});
+    tree.add_node(NodeNumber{0}, CpuList{"0-1"}, DistanceRow{"10 21"});
+    tree.add_node(NodeNumber{2}, CpuList{"2-3"}, DistanceRow{"21 10"});
+    tree.add_node_dir_file(NodeFileName{"online"}, NodeFileText{"0,2"});
+    tree.add_node_dir_file(NodeFileName{"possible"}, NodeFileText{"0-3"});
 
     const auto ctx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>{eff::testing::test()};
     const auto topo = Topology::probe_tree(ctx, tree.root());
@@ -413,10 +459,10 @@ void test_sparse_numa_node_ids(::fixy::TestRunnerCtx const& test) {
 // placed by position.  The node here has id 2, which is past the end of a
 // two-entry row, so a row indexed by id would lose the self-distance.
 void test_malformed_distance_row_reads_conventional(::fixy::TestRunnerCtx const& test) {
-    const FakeSysfsTree tree{"crucible_topology_malformed_row"};
-    tree.add_cpus(2);
-    tree.add_node(0, "0", "10 20");
-    tree.add_node(2, "1", "10");
+    const FakeSysfsTree tree{};
+    tree.add_cpus(CpuCount{2});
+    tree.add_node(NodeNumber{0}, CpuList{"0"}, DistanceRow{"10 20"});
+    tree.add_node(NodeNumber{2}, CpuList{"1"}, DistanceRow{"10"});
 
     const auto ctx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>{eff::testing::test()};
     const auto topo = Topology::probe_tree(ctx, tree.root());
@@ -431,9 +477,9 @@ void test_malformed_distance_row_reads_conventional(::fixy::TestRunnerCtx const&
 // reads as one group of its two CPUs.  The tree gives no core id, so the
 // core count is not a count of the tree, and the group does not read it.
 void test_missing_cache_directory_still_reads_nodes(::fixy::TestRunnerCtx const& test) {
-    const FakeSysfsTree tree{"crucible_topology_no_cache"};
-    tree.add_cpus(2);
-    tree.add_node(0, "0-1", "10");
+    const FakeSysfsTree tree{};
+    tree.add_cpus(CpuCount{2});
+    tree.add_node(NodeNumber{0}, CpuList{"0-1"}, DistanceRow{"10"});
 
     const auto ctx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>{eff::testing::test()};
     const auto topo = Topology::probe_tree(ctx, tree.root());

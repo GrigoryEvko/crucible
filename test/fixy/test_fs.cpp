@@ -3,8 +3,8 @@
 // The negative-compile fixtures of fixy/os/Fs.h say what the gates refuse
 // and nothing about what the mints do.  This file runs the mints.
 //
-// Everything runs in a scratch directory under /tmp (scratch_dir.h), which
-// the test removes on the way out.  What the kernel can refuse — an
+// Everything runs in a scratch directory of the base (scratch_dir.h), whose
+// owner removes it on the way out.  What the kernel can refuse — an
 // unwritable /tmp — is skipped rather than failed.
 
 #include <fixy/Core.h>
@@ -14,19 +14,12 @@
 
 #include "../scratch_dir.h"
 
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
-#include <span>
-#include <string>
 #include <utility>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
@@ -43,12 +36,14 @@ using IoBlockCtx =
 
 // Every path the surface takes is Path<Sanitized>, and the only way to
 // one is through the sanitizer: tag the text External, then launder it.
-[[nodiscard]] fixy::Path<src::Sanitized> sanitized(const std::string& raw) {
-    return fixy::sanitize_path(fixy::mint_tagged<src::External>(fixy::mint_foreign_text(raw.data(), raw.size())))
-        .expect("each test path passes the sanitizer");
+[[nodiscard]] fixy::Path<src::Sanitized> sanitized(fixy::TextView text) {
+    return fixy::sanitize_path(fixy::mint_tagged<src::External>(text)).expect("each test path passes the sanitizer");
 }
 
-using crucible::test::ScratchDir;
+using crucible::test::make_scratch_path;
+using crucible::test::ScratchPath;
+
+[[nodiscard]] fixy::Path<src::Sanitized> sanitized(ScratchPath const& path) { return sanitized(path.c_text().view()); }
 
 // The file of a mint, or an empty handle and the error number of the open.
 // The match gives the linear handle to its consumer on each path.
@@ -85,7 +80,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 
 // Reads a file back through a second descriptor of the file door, opened
 // for a read, so the write and the read meet at the byte level.
-[[nodiscard]] bool file_holds(const std::string& path, const std::uint8_t (&expected)[kPayloadBytes]) {
+[[nodiscard]] bool file_holds(ScratchPath const& path, const std::uint8_t (&expected)[kPayloadBytes]) {
     IoBlockCtx const ctx{eff::testing::test()};
     Opened<ReadOnlyFile> in = opened_of(fs::mint_file<fs::read_only>(ctx, sanitized(path)));
     if (in.error_number != 0) return false;
@@ -96,13 +91,13 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     return fixy::equal(readback.view(), foundation::core::bytes(expected));
 }
 
-[[nodiscard]] int mint_file_writes_syncs_and_commits(const ScratchDir& scratch) {
+[[nodiscard]] int mint_file_writes_syncs_and_commits(fs::TemporaryDirectory const& scratch) {
     IoBlockCtx ctx{eff::testing::test()};
     std::uint8_t pattern[kPayloadBytes];
     fill_pattern(pattern, 1);
 
-    const std::string tmp = scratch.file("plain.tmp");
-    const std::string target = scratch.file("plain");
+    const ScratchPath tmp = make_scratch_path(scratch, "plain.tmp");
+    const ScratchPath target = make_scratch_path(scratch, "plain");
 
     Opened<fs::FileOf<WriteCreate>> opened = opened_of(fs::mint_file<WriteCreate>(ctx, sanitized(tmp)));
     if (opened.error_number != 0) {
@@ -134,7 +129,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         std::fprintf(stderr, "the committed file does not hold the bytes that were written\n");
         return 1;
     }
-    if (::access(tmp.c_str(), F_OK) == 0) {
+    if (fs::has_entry(ctx, tmp.c_text()).value_or(true)) {
         std::fprintf(stderr, "the temporary name still exists after the commit\n");
         return 1;
     }
@@ -143,10 +138,10 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 
 // The directory descriptor is its own type, opened through the one
 // door, and fsync on it is the call that flushes an entry.
-[[nodiscard]] int dirfd_opens_and_flushes_the_entry(const ScratchDir& scratch) {
+[[nodiscard]] int dirfd_opens_and_flushes_the_entry(fs::TemporaryDirectory const& scratch) {
     IoBlockCtx ctx{eff::testing::test()};
 
-    auto opened_dir = fs::open_directory(ctx, sanitized(scratch.path()));
+    auto opened_dir = fs::open_directory(ctx, sanitized(scratch.path().view()));
     if (opened_dir.is_err()) {
         fixy::report(fixy::Sink::Err, "open_directory on the scratch directory failed (errno {})\n",
                      errno_of(opened_dir));
@@ -164,7 +159,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 
     // A regular file is refused by O_DIRECTORY, so the door only opens
     // onto what the type claims.
-    auto not_a_dir = fs::open_directory(ctx, sanitized(scratch.file("plain")));
+    auto not_a_dir = fs::open_directory(ctx, sanitized(make_scratch_path(scratch, "plain")));
     if (not_a_dir.is_ok()) {
         fixy::report(fixy::Sink::Err, "open_directory opened a regular file as a directory\n");
         return 1;
@@ -180,11 +175,11 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 // write_full puts every byte of the span, file_size reports them, and
 // read_full returns them.  A span longer than the file stops at the end
 // of the file, and an empty handle is refused with EBADF.
-[[nodiscard]] int full_reads_and_writes_round_trip(const ScratchDir& scratch) {
+[[nodiscard]] int full_reads_and_writes_round_trip(fs::TemporaryDirectory const& scratch) {
     IoBlockCtx ctx{eff::testing::test()};
     std::uint8_t pattern[kPayloadBytes];
     fill_pattern(pattern, 4);
-    const std::string path = scratch.file("full");
+    const ScratchPath path = make_scratch_path(scratch, "full");
 
     Opened<fs::FileOf<WriteTruncate>> writer = opened_of(fs::mint_file<WriteTruncate>(ctx, sanitized(path)));
     if (writer.error_number != 0) {
@@ -241,11 +236,11 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 // the end.  set_file_size cuts a file through the handle of an append open,
 // the next append writes at the new end, and a larger size adds zero bytes.
 // A negative offset or size gives EINVAL, and an empty handle gives EBADF.
-[[nodiscard]] int reads_at_an_offset_and_sets_the_size(const ScratchDir& scratch) {
+[[nodiscard]] int reads_at_an_offset_and_sets_the_size(fs::TemporaryDirectory const& scratch) {
     namespace core = foundation::core;
     using WriteAppend = fixy::atom::fs::mode<fs::open_mode::WriteAppend>;
     IoBlockCtx ctx{eff::testing::test()};
-    auto opened_root = fs::open_directory(ctx, sanitized(scratch.path()));
+    auto opened_root = fs::open_directory(ctx, sanitized(scratch.path().view()));
     if (opened_root.is_err()) {
         fixy::report(fixy::Sink::Err, "open_directory on the scratch directory failed (errno {})\n",
                      errno_of(opened_root));
@@ -350,11 +345,11 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 // name gives EEXIST and leaves the bytes of the first file, so two writers
 // never share one file.  After the remove of the name, an exclusive open
 // makes a new file again.
-[[nodiscard]] int exclusive_open_makes_a_new_file(const ScratchDir& scratch) {
+[[nodiscard]] int exclusive_open_makes_a_new_file(fs::TemporaryDirectory const& scratch) {
     namespace core = foundation::core;
     using WriteExclusive = fixy::atom::fs::mode<fs::open_mode::WriteExclusive>;
     IoBlockCtx ctx{eff::testing::test()};
-    auto opened_root = fs::open_directory(ctx, sanitized(scratch.path()));
+    auto opened_root = fs::open_directory(ctx, sanitized(scratch.path().view()));
     if (opened_root.is_err()) {
         fixy::report(fixy::Sink::Err, "open_directory on the scratch directory failed (errno {})\n",
                      errno_of(opened_root));
@@ -541,12 +536,12 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 // that a View and a TextView fill, a commit by a rename in the same
 // directory, a whole read, a check of an entry and a remove.  The report of
 // a failure goes through the Report family.
-[[nodiscard]] int calls_under_a_directory(const ScratchDir& scratch) {
+[[nodiscard]] int calls_under_a_directory(fs::TemporaryDirectory const& scratch) {
     namespace core = foundation::core;
     IoBlockCtx ctx{eff::testing::test()};
     eff::Alloc const alloc = eff::testing::test().alloc;
 
-    auto opened_root = fs::open_directory(ctx, sanitized(scratch.path()));
+    auto opened_root = fs::open_directory(ctx, sanitized(scratch.path().view()));
     if (opened_root.is_err()) {
         fixy::report(fixy::Sink::Err, "open_directory on the scratch directory failed (errno {})\n",
                      errno_of(opened_root));
@@ -690,11 +685,14 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 }  // namespace
 
 int main() {
-    const ScratchDir scratch{"fixy-fs-test"};
-    if (!scratch.is_ready()) {
-        std::fprintf(stderr, "[skipped] cannot make a scratch directory under /tmp (errno %d)\n", errno);
+    fixy::TestRunnerCtx const test{eff::testing::test()};
+    fixy::Result<fs::TemporaryDirectory, foundation::os::Errno> made = crucible::test::make_scratch_directory(test);
+    if (made.is_err()) {
+        fixy::report(fixy::Sink::Err, "[skipped] cannot make a scratch directory under /tmp (errno {})\n",
+                     errno_of(made));
         return 0;
     }
+    fs::TemporaryDirectory const scratch = std::move(made).expect("the scratch directory is made");
     if (const int rc = mint_file_writes_syncs_and_commits(scratch); rc != 0) return rc;
     if (const int rc = dirfd_opens_and_flushes_the_entry(scratch); rc != 0) return rc;
     if (const int rc = full_reads_and_writes_round_trip(scratch); rc != 0) return rc;
