@@ -7,10 +7,11 @@
 //   each other (WaitOnEachOther), so mint_parallel_for gives each shard a
 //   thread of its own and runs no shard on the measuring thread.  A claim of
 //   nine cores spans the two L3 groups of bench.slice.  The measuring thread
-//   takes the core apart, the quietest core of the L3 group that holds the
-//   fewest cores of the claim (bench::apart_core).  A row of S shards takes
-//   the first S other cores in the order of the claim, the quietest first
-//   (Cores::first_slots_apart).  The threads start with the placement
+//   takes the core of slot 0, the quietest core of the claim (THE CORES OF A
+//   RUN of bench_harness.h).  A claim of eight cores of one group and one core
+//   of the other has the lone core last in that order, and the measuring
+//   thread does not take it.  A row of S shards takes the first S other cores
+//   in the order of the claim, the quietest first (Cores::first_slots_apart).  The threads start with the placement
 //   OneCpuEach of fixy/os/ThreadTasks.h over those S cores, so the thread of
 //   shard k runs on the core k of the mask.  A thread
 //   with a mask of several isolated cores stays on the core of the thread that
@@ -401,10 +402,8 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
     const bool is_claimed = cores.count() >= kClaimedCores;
-    const bench::CpuId measuring =
-        is_claimed ? bench::apart_core(cores, [](bench::CpuId cpu) noexcept { return bench::read_l3_group(cpu); })
-                         .value_or(bench::CpuId::none())
-                   : bench::CpuId{bench::env_core()};
+    const bench::CpuId measuring = is_claimed ? cores.of_slot(bench::kMeasuringSlot).value_or(bench::CpuId::none())
+                                              : bench::CpuId{bench::env_core()};
     Placement const placement{.cores = cores, .measuring_core = measuring.raw(), .is_claimed = is_claimed};
     bench::detail::flush_standard_output();
     if (is_claimed) {

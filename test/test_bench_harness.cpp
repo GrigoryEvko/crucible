@@ -833,51 +833,35 @@ void test_spread_of_a_run() {
 }
 
 // A claim of nine cores of the bench VM spans its two L3 groups, the even CPUs
-// 224 to 238 and 240 to 254.  The core apart is the one core of the claim in
-// its group, in either order of the groups.  Of the cores of the smallest
-// group, the core apart is the first in the order of the slots: the first core
-// of the order of loop bench, or the lowest core with no such order.  An empty
-// claim gives none.  The shards of a row take the first cores of the order
-// apart from that core.
-void test_apart_core_of_a_claim() {
-    const auto groups = [](bench::CpuId cpu) noexcept {
-        crucible::warden::CpuSet group{};
-        const std::size_t first = cpu.raw() < 240 ? 224 : 240;
-        for (std::size_t member = first; member < first + 16; member += 2)
-            group.insert(member);
-        return group;
-    };
-    const auto apart_of = [&groups](crucible::warden::CpuSet const& claim) noexcept {
-        return bench::apart_core(planted_cores(claim, planted_isolated()), groups).value_or(bench::CpuId::none()).raw();
-    };
-    crucible::warden::CpuSet low_apart{};
-    low_apart.insert(224);
-    for (std::size_t cpu = 240; cpu <= 254; cpu += 2)
-        low_apart.insert(cpu);
-    CHECK(apart_of(low_apart) == 224);
-    crucible::warden::CpuSet high_apart{};
-    for (std::size_t cpu = 224; cpu <= 238; cpu += 2)
-        high_apart.insert(cpu);
-    high_apart.insert(240);
-    CHECK(apart_of(high_apart) == 240);
-    crucible::warden::CpuSet one_group{};
-    for (std::size_t cpu = 240; cpu <= 246; cpu += 2)
-        one_group.insert(cpu);
-    CHECK(apart_of(one_group) == 240);
-    const auto apart_in = [&groups](crucible::warden::CpuSet const& claim, ::fixy::TextView order) noexcept {
-        return bench::apart_core(planted_cores_in(claim, planted_isolated(), planted_order(order)), groups)
+// 224 to 238 and 240 to 254.  In a claim of eight cores of one group and one
+// core of the other, loop bench puts the lone core last in the order of the
+// claim, the noisiest core.  The measuring thread of a row takes the core of
+// slot 0, the quietest core, and not the lone core.  With no order of loop
+// bench, slot 0 is the lowest core.  An empty claim gives none.  The shards of
+// a row take the first cores of the order apart from the measuring core.
+void test_measuring_core_of_a_claim() {
+    const auto measuring_in = [](crucible::warden::CpuSet const& claim, ::fixy::TextView order) noexcept {
+        return planted_cores_in(claim, planted_isolated(), planted_order(order))
+            .of_slot(bench::kMeasuringSlot)
             .value_or(bench::CpuId::none())
             .raw();
     };
-    CHECK(apart_in(one_group, "244,240,246,242") == 244);
+    crucible::warden::CpuSet eight_and_one{};
+    eight_and_one.insert(224);
+    for (std::size_t cpu = 240; cpu <= 254; cpu += 2)
+        eight_and_one.insert(cpu);
+    CHECK(measuring_in(eight_and_one, "242,240,244,246,248,250,252,254,224") == 242);
+    CHECK(measuring_in(eight_and_one, "") == 224);
+    crucible::warden::CpuSet one_group{};
+    for (std::size_t cpu = 240; cpu <= 246; cpu += 2)
+        one_group.insert(cpu);
+    CHECK(measuring_in(one_group, "244,240,246,242") == 244);
+    CHECK(measuring_in(crucible::warden::CpuSet{}, "") == -1);
     crucible::warden::CpuSet two_apart{};
     two_apart.insert(224);
     two_apart.insert(226);
     for (std::size_t cpu = 240; cpu <= 252; cpu += 2)
         two_apart.insert(cpu);
-    CHECK(apart_in(two_apart, "240,224,226") == 224);
-    CHECK(apart_in(two_apart, "226,240") == 226);
-    CHECK(apart_of(crucible::warden::CpuSet{}) == -1);
 
     using CoreCount = ::fixy::Quantity<::fixy::unit::Element, std::size_t>;
     const bench::Cores ordered = planted_cores_in(two_apart, planted_isolated(), planted_order("246,224,250,240"));
@@ -1237,7 +1221,7 @@ int main() {
     test_slots_take_distinct_cores();
     test_slots_follow_the_order_of_the_claim();
     test_spread_of_a_run();
-    test_apart_core_of_a_claim();
+    test_measuring_core_of_a_claim();
     test_pins_of_the_threads_of_a_run();
     test_pause_between_planted_readings();
     test_planted_pause_is_caught();
