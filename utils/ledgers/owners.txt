@@ -204,9 +204,9 @@ test/fixy/test_tagged.cpp | unchecked-use | admit | (anonymous namespace)::edges
 test/fixy/test_tagged.cpp | unchecked-use | admit | (anonymous namespace)::entering_source(std::meta::info): std::meta::access_context::unchecked | walks the admitted retags to check the sealed relation
 test/fixy/test_tagged.cpp | unchecked-use | admit | (anonymous namespace)::every_edge_moves_a_value(): std::meta::access_context::unchecked | walks the admitted retags to check the sealed relation
 test/foundation/target_unit_body.h | detail-use | 1 | crucible::test::(anonymous namespace)::bodies_of_this_unit(): foundation::core::detail | the probe of the target namespace takes the address of the exact form of fp::fma in each unit, and the exact form is an out-of-line function of foundation::core::detail with no public door of its own
-test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::graded_runs_at_run_time(): foundation::algebra::detail | runs the fixtures of the algebra headers
-test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::graded_trait_runs_at_run_time(): foundation::algebra::detail | runs the fixtures of the algebra headers
-test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::lattice_runs_at_run_time(): foundation::algebra::detail | runs the fixtures of the algebra headers
+test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::graded_runs_at_run_time(fixy::check::Tally&): foundation::algebra::detail | runs the fixtures of the algebra headers
+test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::graded_trait_runs_at_run_time(fixy::check::Tally&): foundation::algebra::detail | runs the fixtures of the algebra headers
+test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::lattice_runs_at_run_time(fixy::check::Tally&): foundation::algebra::detail | runs the fixtures of the algebra headers
 test/foundation/test_algebra_core.cpp | detail-use | 3 | namespace-scope: foundation::algebra::detail | runs the fixtures of the algebra headers
 test/foundation/test_computation.cpp | detail-use | 4 | (anonymous namespace)::computation_graded_runs_at_run_time(): foundation::effects::detail | pins the graded capabilities of the computation carrier
 test/foundation/test_computation.cpp | detail-use | 1 | main(): foundation::effects::detail | pins the graded capabilities of the computation carrier
@@ -219,14 +219,14 @@ test/foundation/test_host_owner_attacks.cpp | detail-use | 4 | namespace-scope: 
 test/foundation/test_lattices_bands.cpp | detail-use | 1 | (anonymous namespace)::chain_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the chain, product and clock lattice headers
 test/foundation/test_lattices_bands.cpp | detail-use | 1 | (anonymous namespace)::clock_source_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the chain, product and clock lattice headers
 test/foundation/test_lattices_bands.cpp | detail-use | 1 | (anonymous namespace)::product_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the chain, product and clock lattice headers
-test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::bool_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
-test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::conf_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
-test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::fractional_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
-test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::monotone_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
-test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::qtt_semiring_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
-test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::seq_prefix_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
-test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::staleness_semiring_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
-test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::trust_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::bool_lattice_runs_at_run_time(fixy::check::Tally&): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::conf_lattice_runs_at_run_time(fixy::check::Tally&): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::fractional_lattice_runs_at_run_time(fixy::check::Tally&): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::monotone_lattice_runs_at_run_time(fixy::check::Tally&): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::qtt_semiring_runs_at_run_time(fixy::check::Tally&): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::seq_prefix_lattice_runs_at_run_time(fixy::check::Tally&): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::staleness_semiring_runs_at_run_time(fixy::check::Tally&): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::trust_lattice_runs_at_run_time(fixy::check::Tally&): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
 test/foundation/test_permissions_compile.cpp | detail-use | 1 | (anonymous namespace)::test_perm_set_compile(): foundation::permissions::detail | runs the permission-set smoke namespace
 test/foundation/test_platform.cpp | detail-use | 2 | main(): foundation::detail | asks the layer whether a debugger is attached
 test/foundation/test_row_hash.cpp | detail-use | 16 | namespace-scope: foundation::diag::detail | tests the sort helper of the row hash

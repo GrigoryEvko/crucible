@@ -20,5 +20,4 @@ test/ | escaped-static | 1 | - | -
 test/fixy/ | escaped-alias | 24 | - | -
 test/fixy/ | escaped-container | 5 | - | -
 test/fixy/ | escaped-return | 38 | - | -
-test/foundation/ | escaped-container | 1 | - | -
 test/foundation/ | escaped-return | 5 | - | -
