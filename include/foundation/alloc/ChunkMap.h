@@ -11,6 +11,8 @@
 //                                  guard (THE EXTENT)
 //   AddressWord                    the address of a byte of a window, as a
 //                                  64-bit word that no path reads through
+//   strip_tag(address)             the address with no tag byte (THE TAG
+//                                  BYTE)
 //   HeapId                         the id of a heap, 1 to 65,534
 //   ChunkOwner                     the entry of a chunk in the chunk map: no
 //                                  owner, a heap, or a chunk of a span
@@ -69,6 +71,19 @@
 //   block of it ended.  A thread that frees a block got the block through a
 //   publish that happens after the write, so the read is a plain load.
 //
+// THE TAG BYTE
+//   On aarch64 a load or a store ignores the top byte of its address (top
+//   byte ignore), so a pointer can hold a tag in its bits 56 to 63, as the
+//   memory tags of MTE and of HWASan do.  The chunk of a tagged address is
+//   the chunk of the same address with no tag.  So owner_of, is_in_window
+//   and chunk_of read each address through strip_tag, and on aarch64 the
+//   owner read is one bit-field extract and one load.  A process of the base
+//   on x86-64 has no tagged address: with no linear address masking, a
+//   tagged address faults at its first use.  So strip_tag keeps each bit
+//   there, and the owner read stays a shift and a load.  The user range of
+//   Linux is 48 bits, or 52 bits with the large virtual addresses of
+//   aarch64, so each window lies below 2^56.
+//
 // This header is in the layer F0_primitives of utils/rule-table.txt.  The
 // window door foundation/alloc/Window.h builds each record and each map.
 
@@ -99,6 +114,21 @@ inline constexpr std::uint32_t kChunksPerExtent = std::uint32_t{1} << (kExtentSh
 // a word or does pointer arithmetic on it.
 enum class AddressWord : std::uint64_t {
 };
+
+// The top bits of an address that hold a tag and name no byte (THE TAG
+// BYTE): 8 on aarch64, and none on x86-64.  The other bits name the byte.
+#if defined(__aarch64__)
+inline constexpr std::uint32_t kTagBits = 8;
+#else
+inline constexpr std::uint32_t kTagBits = 0;
+#endif
+inline constexpr std::uint64_t kAddressMask = ~std::uint64_t{0} >> kTagBits;
+
+// The address with no tag byte (THE TAG BYTE).  Complexity: O(1), one and
+// on aarch64, and no instruction on x86-64.
+[[nodiscard]] constexpr AddressWord strip_tag(AddressWord address) noexcept {
+    return AddressWord{static_cast<std::uint64_t>(address) & kAddressMask};
+}
 
 namespace side {
 
@@ -190,12 +220,16 @@ public:
     constexpr BiasedChunkMap& operator=(BiasedChunkMap&&) noexcept = default;
     ~BiasedChunkMap() = default;
 
-    // The entry of the chunk of an address of the window of the map.  The
-    // caller proves that the address is inside the window.  Complexity:
-    // O(1), one shift and one load.
+    // The entry of the chunk of an address of the window of the map, with or
+    // without a tag byte.  The caller proves that the address is inside the
+    // window.  Complexity: O(1), one shift and one load on x86-64, one
+    // bit-field extract and one load on aarch64 (THE TAG BYTE).
     [[nodiscard]] ChunkOwner owner_of(AddressWord address) const noexcept {
-        std::uint64_t const entry = word_ + ((static_cast<std::uint64_t>(address) >> kChunkShift) << 1);
-        return *__builtin_bit_cast(ChunkOwner const*, entry);
+        // The shift left drops the tag, as strip_tag does.  GCC makes this
+        // form one ubfx and one load with a scaled index on aarch64.  A mask
+        // gives a lsr and a ubfiz there, one more instruction.
+        std::uint64_t const chunk = (static_cast<std::uint64_t>(address) << kTagBits) >> (kTagBits + kChunkShift);
+        return *__builtin_bit_cast(ChunkOwner const*, word_ + (chunk << 1));
     }
 
     [[nodiscard]] constexpr bool is_empty() const noexcept { return word_ == 0; }
@@ -238,19 +272,21 @@ public:
 
     [[nodiscard]] constexpr bool is_empty() const noexcept { return length_ == 0; }
 
-    // True when the address is inside the window.  One subtraction and one
-    // compare, and the empty record holds no address.
+    // True when the address, with or without a tag byte, is inside the
+    // window (THE TAG BYTE).  One subtraction and one compare, and the empty
+    // record holds no address.
     [[nodiscard]] constexpr bool is_in_window(AddressWord address) const noexcept {
-        return static_cast<std::uint64_t>(address) - base_ < length_;
+        return static_cast<std::uint64_t>(strip_tag(address)) - base_ < length_;
     }
 
     // The count of the chunks of the window.
     [[nodiscard]] constexpr std::uint64_t chunk_count() const noexcept { return length_ >> kChunkShift; }
 
-    // The chunk of an address of the window.
+    // The chunk of an address of the window, with or without a tag byte.
     [[nodiscard]] constexpr ChunkIndex chunk_of(AddressWord address) const noexcept {
         CRUCIBLE_PRE(is_in_window(address));
-        return ChunkIndex{static_cast<std::uint32_t>((static_cast<std::uint64_t>(address) - base_) >> kChunkShift)};
+        std::uint64_t const offset = static_cast<std::uint64_t>(strip_tag(address)) - base_;
+        return ChunkIndex{static_cast<std::uint32_t>(offset >> kChunkShift)};
     }
 
     // The address of the first byte of a chunk of the window.

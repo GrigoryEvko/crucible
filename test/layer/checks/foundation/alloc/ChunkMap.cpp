@@ -31,6 +31,25 @@ static_assert(heap_of(ChunkOwner::none).is_none());
 static_assert(heap_of(ChunkOwner::span).is_none());
 static_assert(heap_of(owner_entry_of(HeapId{7})).value_or(HeapId{1}) == HeapId{7});
 
+// THE TAG BYTE: on aarch64 strip_tag removes bits 56 to 63, so a tagged
+// address names the chunk of the same address with no tag.  On x86-64 it
+// keeps each bit.  An address with no tag stays the same on each target.
+namespace chunk_map_check {
+
+inline constexpr std::uint64_t kUntagged = (std::uint64_t{0x7F12} << 32) | (std::uint64_t{7} << kChunkShift) | 4096;
+inline constexpr std::uint64_t kTagged = (std::uint64_t{0x5A} << 56) | kUntagged;
+
+}  // namespace chunk_map_check
+
+static_assert(strip_tag(AddressWord{chunk_map_check::kUntagged}) == AddressWord{chunk_map_check::kUntagged});
+#if defined(__aarch64__)
+static_assert(strip_tag(AddressWord{chunk_map_check::kTagged}) == AddressWord{chunk_map_check::kUntagged});
+static_assert(static_cast<std::uint64_t>(strip_tag(AddressWord{chunk_map_check::kTagged})) >> kChunkShift
+              == chunk_map_check::kUntagged >> kChunkShift);
+#else
+static_assert(strip_tag(AddressWord{chunk_map_check::kTagged}) == AddressWord{chunk_map_check::kTagged});
+#endif
+
 // The last chunk of each extent is its guard.
 static_assert(!is_guard_chunk(ChunkIndex{0}));
 static_assert(is_guard_chunk(ChunkIndex{511}));

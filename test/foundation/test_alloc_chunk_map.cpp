@@ -6,6 +6,8 @@
 //   - The map of a new window reads no owner for each chunk.  A write of an
 //     entry reads back through the record, and an address outside the
 //     window reads none.
+//   - On aarch64 an address with a tag byte reads the chunk and the owner of
+//     the same address with no tag.  On x86-64 the checked read refuses it.
 //   - The records of the first and of the last chunk and unit are inside the
 //     region, and each starts as zero bytes.
 //   - A read of the guard chunk of an extent ends the child by SIGSEGV, and
@@ -147,6 +149,32 @@ void new_map_reads_no_owner(TestRunnerCtx const& test) {
     pass(test, "  new_map_reads_no_owner: PASSED\n");
 }
 
+// THE TAG BYTE of foundation/alloc/ChunkMap.h: on aarch64 an address with a
+// tag in its top byte reads the chunk and the owner of the same address with
+// no tag.  On x86-64 the same word lies outside the window, and the checked
+// read refuses it.
+void tagged_address_reads_its_chunk(TestRunnerCtx const& test) {
+    alloc::Window window = reserve_capped(4 * kGibibyte);
+    alloc::WindowRecord const record = window.record();
+    alloc::ChunkIndex const chunk{7};
+    alloc::ChunkOwner const owner = alloc::owner_entry_of(alloc::HeapId{5});
+    window.set_owner(chunk, owner);
+    std::uint64_t const address = static_cast<std::uint64_t>(record.address_of(chunk)) + 4096;
+    alloc::AddressWord const tagged{address | (std::uint64_t{0x5A} << 56)};
+    CRUCIBLE_TEST_ASSERT(test, alloc::strip_tag(alloc::AddressWord{address}) == alloc::AddressWord{address});
+#if defined(__aarch64__)
+    CRUCIBLE_TEST_ASSERT(test, record.is_in_window(tagged));
+    CRUCIBLE_TEST_ASSERT(test, record.chunk_of(tagged) == chunk);
+    CRUCIBLE_TEST_ASSERT(test, record.chunk_map().owner_of(tagged) == owner);
+    CRUCIBLE_TEST_ASSERT(test, record.checked_owner_of(tagged).value_or(alloc::ChunkOwner::none) == owner);
+    CRUCIBLE_TEST_ASSERT(test, alloc::strip_tag(tagged) == alloc::AddressWord{address});
+#else
+    CRUCIBLE_TEST_ASSERT(test, !record.is_in_window(tagged));
+    CRUCIBLE_TEST_ASSERT(test, record.checked_owner_of(tagged).is_none());
+#endif
+    pass(test, "  tagged_address_reads_its_chunk: PASSED\n");
+}
+
 void records_inside_the_region(TestRunnerCtx const& test) {
     alloc::Window window = reserve_capped(4 * kGibibyte);
     alloc::WindowRecord const record = window.record();
@@ -238,6 +266,7 @@ int main() {
     ladder_under_a_cap(test);
     ladder_with_no_cap(test);
     new_map_reads_no_owner(test);
+    tagged_address_reads_its_chunk(test);
     records_inside_the_region(test);
     guard_chunk_faults(test);
     mappings_follow_extents(test);
