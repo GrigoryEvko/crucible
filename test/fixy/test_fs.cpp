@@ -245,15 +245,22 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     namespace core = foundation::core;
     using WriteAppend = fixy::atom::fs::mode<fs::open_mode::WriteAppend>;
     IoBlockCtx ctx{eff::testing::test()};
-    const std::string path = scratch.file("positioned");
+    auto opened_root = fs::open_directory(ctx, sanitized(scratch.path()));
+    if (opened_root.is_err()) {
+        fixy::report(fixy::Sink::Err, "open_directory on the scratch directory failed (errno {})\n",
+                     errno_of(opened_root));
+        return 1;
+    }
+    fs::DirectoryHandle const root_handle = std::move(opened_root).expect("the scratch directory opened");
+    fs::DirectoryRef<fs::directory_rights> const root = root_handle.ref();
     {
-        Opened<fs::FileOf<WriteTruncate>> writer = opened_of(fs::mint_file<WriteTruncate>(ctx, sanitized(path)));
+        Opened<fs::FileOf<WriteTruncate>> writer = opened_of(fs::mint_file_at<WriteTruncate>(ctx, root, "positioned"));
         if (writer.error_number != 0 || fs::write_full(ctx, writer.file.ref(), core::TextView{"0123456789"}).is_err()) {
             fixy::report(fixy::Sink::Err, "the test does not write the file of the positioned reads\n");
             return 1;
         }
     }
-    Opened<ReadOnlyFile> const reader = opened_of(fs::mint_file<fs::read_only>(ctx, sanitized(path)));
+    Opened<ReadOnlyFile> const reader = opened_of(fs::mint_file_at<fs::read_only>(ctx, root, "positioned"));
     if (reader.error_number != 0) {
         fixy::report(fixy::Sink::Err, "mint_file ReadOnly of the positioned file failed (errno {})\n",
                      reader.error_number);
@@ -301,7 +308,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         return 1;
     }
 
-    Opened<fs::FileOf<WriteAppend>> appender = opened_of(fs::mint_file<WriteAppend>(ctx, sanitized(path)));
+    Opened<fs::FileOf<WriteAppend>> appender = opened_of(fs::mint_file_at<WriteAppend>(ctx, root, "positioned"));
     if (appender.error_number != 0) {
         fixy::report(fixy::Sink::Err, "mint_file WriteAppend failed (errno {})\n", appender.error_number);
         return 1;
@@ -334,6 +341,47 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     if (errno_of(fs::read_full_at(ctx, empty.ref(), part.view(), fs::FileOffset{0})) != EBADF
         || errno_of(fs::set_file_size(ctx, empty.ref(), fs::FileOffset{0})) != EBADF) {
         fixy::report(fixy::Sink::Err, "a door at an offset on an empty handle was not refused with EBADF\n");
+        return 1;
+    }
+    return 0;
+}
+
+// An exclusive open makes a new file.  A second exclusive open of the same
+// name gives EEXIST and leaves the bytes of the first file, so two writers
+// never share one file.  After the remove of the name, an exclusive open
+// makes a new file again.
+[[nodiscard]] int exclusive_open_makes_a_new_file(const ScratchDir& scratch) {
+    namespace core = foundation::core;
+    using WriteExclusive = fixy::atom::fs::mode<fs::open_mode::WriteExclusive>;
+    IoBlockCtx ctx{eff::testing::test()};
+    auto opened_root = fs::open_directory(ctx, sanitized(scratch.path()));
+    if (opened_root.is_err()) {
+        fixy::report(fixy::Sink::Err, "open_directory on the scratch directory failed (errno {})\n",
+                     errno_of(opened_root));
+        return 1;
+    }
+    fs::DirectoryHandle const root_handle = std::move(opened_root).expect("the scratch directory opened");
+    fs::DirectoryRef<fs::directory_rights> const root = root_handle.ref();
+    Opened<fs::FileOf<WriteExclusive>> first = opened_of(fs::mint_file_at<WriteExclusive>(ctx, root, "exclusive"));
+    if (first.error_number != 0 || fs::write_full(ctx, first.file.ref(), core::TextView{"abc"}).is_err()) {
+        fixy::report(fixy::Sink::Err, "the first exclusive open did not make and write a file (errno {})\n",
+                     first.error_number);
+        return 1;
+    }
+    Opened<fs::FileOf<WriteExclusive>> second = opened_of(fs::mint_file_at<WriteExclusive>(ctx, root, "exclusive"));
+    if (second.error_number != EEXIST || second.file.is_open()) {
+        fixy::report(fixy::Sink::Err, "a second exclusive open of one name gave errno {} and not EEXIST\n",
+                     second.error_number);
+        return 1;
+    }
+    Opened<ReadOnlyFile> const reader = opened_of(fs::mint_file_at<fs::read_only>(ctx, root, "exclusive"));
+    if (reader.error_number != 0 || fs::file_size(ctx, reader.file.ref()).value_or(-1) != 3) {
+        fixy::report(fixy::Sink::Err, "the refused exclusive open changed the file of the first open\n");
+        return 1;
+    }
+    if (fs::unlink_at(ctx, root, "exclusive").is_err()
+        || opened_of(fs::mint_file_at<WriteExclusive>(ctx, root, "exclusive")).error_number != 0) {
+        fixy::report(fixy::Sink::Err, "an exclusive open after the remove of the name did not make a file\n");
         return 1;
     }
     return 0;
@@ -622,6 +670,7 @@ int main() {
     if (const int rc = dirfd_opens_and_flushes_the_entry(scratch); rc != 0) return rc;
     if (const int rc = full_reads_and_writes_round_trip(scratch); rc != 0) return rc;
     if (const int rc = reads_at_an_offset_and_sets_the_size(scratch); rc != 0) return rc;
+    if (const int rc = exclusive_open_makes_a_new_file(scratch); rc != 0) return rc;
     if (const int rc = full_transfers_end_on_a_zero_step(); rc != 0) return rc;
     if (const int rc = open_beneath_ends_at_the_bound_of_its_tries(); rc != 0) return rc;
     if (const int rc = calls_under_a_directory(scratch); rc != 0) return rc;

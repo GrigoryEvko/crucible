@@ -64,6 +64,9 @@ struct WriteCreate final {};
 struct WriteAppend final {};
 struct WriteTruncate final {};
 struct ReadWrite final {};
+// An open for writing that makes a new file and fails with EEXIST when an
+// entry has the name, so two writers never share one file.
+struct WriteExclusive final {};
 }  // namespace open_mode
 
 namespace flag {
@@ -276,12 +279,13 @@ using io_atom_roster =
 using fs_atom_roster =
     std::tuple<fs::mode<::fixy::fs::open_mode::ReadOnly>, fs::mode<::fixy::fs::open_mode::WriteCreate>,
                fs::mode<::fixy::fs::open_mode::WriteAppend>, fs::mode<::fixy::fs::open_mode::WriteTruncate>,
-               fs::mode<::fixy::fs::open_mode::ReadWrite>, fs::with_flag<::fixy::fs::flag::CloseOnExec>,
-               fs::with_flag<::fixy::fs::flag::NoFollow>, fs::with_flag<::fixy::fs::flag::DataSync>,
-               fs::with_flag<::fixy::fs::flag::FullSync>, fs::with_flag<::fixy::fs::flag::Direct>,
-               fs::durable<::fixy::fs::sync_op::None>, fs::durable<::fixy::fs::sync_op::Fdatasync>,
-               fs::durable<::fixy::fs::sync_op::Fsync>, fs::durable<::fixy::fs::sync_op::FsyncParentDir>,
-               fs::atomic_write<::fixy::fs::atomicity::None>, fs::atomic_write<::fixy::fs::atomicity::Rename>,
+               fs::mode<::fixy::fs::open_mode::ReadWrite>, fs::mode<::fixy::fs::open_mode::WriteExclusive>,
+               fs::with_flag<::fixy::fs::flag::CloseOnExec>, fs::with_flag<::fixy::fs::flag::NoFollow>,
+               fs::with_flag<::fixy::fs::flag::DataSync>, fs::with_flag<::fixy::fs::flag::FullSync>,
+               fs::with_flag<::fixy::fs::flag::Direct>, fs::durable<::fixy::fs::sync_op::None>,
+               fs::durable<::fixy::fs::sync_op::Fdatasync>, fs::durable<::fixy::fs::sync_op::Fsync>,
+               fs::durable<::fixy::fs::sync_op::FsyncParentDir>, fs::atomic_write<::fixy::fs::atomicity::None>,
+               fs::atomic_write<::fixy::fs::atomicity::Rename>,
                fs::atomic_write<::fixy::fs::atomicity::RenameAt2NoReplace>>;
 
 using mmap_atom_roster =

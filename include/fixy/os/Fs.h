@@ -90,6 +90,8 @@ inline constexpr ::fixy::atom_pack::tag_row<int> open_mode_table[] = {
     {^^open_mode::WriteTruncate,
      ::foundation::os::kOpenWriteOnly | ::foundation::os::kOpenCreate | ::foundation::os::kOpenTruncate},
     {^^open_mode::ReadWrite, ::foundation::os::kOpenReadWrite | ::foundation::os::kOpenCreate},
+    {^^open_mode::WriteExclusive,
+     ::foundation::os::kOpenWriteOnly | ::foundation::os::kOpenCreate | ::foundation::os::kOpenExclusive},
 };
 
 // The rights of the file of each open mode (THE RIGHTS of fixy/os/Handle.h).
@@ -104,6 +106,8 @@ inline constexpr ::fixy::atom_pack::tag_row<::fixy::os::RightSet> open_mode_righ
     {^^open_mode::WriteTruncate, ::fixy::os::RightSet::write | ::fixy::os::RightSet::seek | ::fixy::os::RightSet::sync},
     {^^open_mode::ReadWrite, ::fixy::os::RightSet::read | ::fixy::os::RightSet::write | ::fixy::os::RightSet::seek
                                  | ::fixy::os::RightSet::sync | ::fixy::os::RightSet::map},
+    {^^open_mode::WriteExclusive,
+     ::fixy::os::RightSet::write | ::fixy::os::RightSet::seek | ::fixy::os::RightSet::sync},
 };
 
 // The rights of a file with no name, which the door opens for reading and

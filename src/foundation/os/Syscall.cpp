@@ -55,6 +55,7 @@ static_assert(kOpenReadOnly == O_RDONLY, "kOpenReadOnly is not O_RDONLY of <linu
 static_assert(kOpenWriteOnly == O_WRONLY, "kOpenWriteOnly is not O_WRONLY of <linux/fcntl.h>");
 static_assert(kOpenReadWrite == O_RDWR, "kOpenReadWrite is not O_RDWR of <linux/fcntl.h>");
 static_assert(kOpenCreate == O_CREAT, "kOpenCreate is not O_CREAT of <linux/fcntl.h>");
+static_assert(kOpenExclusive == O_EXCL, "kOpenExclusive is not O_EXCL of <linux/fcntl.h>");
 static_assert(kOpenTruncate == O_TRUNC, "kOpenTruncate is not O_TRUNC of <linux/fcntl.h>");
 static_assert(kOpenAppend == O_APPEND, "kOpenAppend is not O_APPEND of <linux/fcntl.h>");
 static_assert(kOpenDataSync == O_DSYNC, "kOpenDataSync is not O_DSYNC of <linux/fcntl.h>");

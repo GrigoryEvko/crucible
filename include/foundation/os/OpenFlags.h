@@ -39,6 +39,11 @@ inline constexpr int kOpenReadWrite = 02;
 // kernel then reads the permission bits of the new file from the mode word.
 inline constexpr int kOpenCreate = 0100;
 
+// With kOpenCreate, the open fails with EEXIST when the path names an entry,
+// also a symbolic link (O_EXCL).  So the file of a successful open is a new
+// file that no other open of the same path made.
+inline constexpr int kOpenExclusive = 0200;
+
 // The open cuts a regular file that it opens for writing to a length of zero
 // (O_TRUNC).
 inline constexpr int kOpenTruncate = 01000;
