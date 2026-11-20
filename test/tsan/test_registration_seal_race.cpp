@@ -36,14 +36,13 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/concurrent/EventCount.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
+#include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <latch>
-#include <memory>
-#include <thread>
+#include <utility>
 
 namespace {
 
@@ -74,7 +73,8 @@ static_assert(WRITER_COUNT * WRITES_PER_WRITER <= crucible::SCHEMA_TABLE_CAP);
 // uses no Vigil, so it takes that context from the test door.
 constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
-using RegisteredFlags = std::array<std::array<bool, WRITES_PER_WRITER>, WRITER_COUNT>;
+using WriterFlags = ::fixy::FixedArray<bool, WRITES_PER_WRITER>;
+using RegisteredFlags = ::fixy::FixedArray<WriterFlags, WRITER_COUNT>;
 
 // A distinct, non-zero hash for each write of each writer in each round.
 [[nodiscard]] crucible::SchemaHash hash_of(uint32_t round, uint32_t writer, uint32_t index) {
@@ -91,30 +91,48 @@ void pause_for(uint32_t pause_count) {
         CRUCIBLE_SPIN_PAUSE;
 }
 
-// The pause instructions that a thread spins at the latch of a round before
-// it sleeps.  A thread that sleeps starts late when the latch opens, and a
-// late writer moves the seal ahead of the writes.  With the spin, each
-// thread that has a CPU sees the latch open at once.  On a busy host the
-// spin is short, compared with the time to wake a thread that sleeps.
-constexpr uint32_t LATCH_SPIN_PAUSES = 4096;
+// The nanoseconds that a thread spins at the latch of a round before it
+// sleeps.  A thread that sleeps starts late when the latch opens, and a late
+// writer moves the seal ahead of the writes.  With the spin, each thread
+// that has a CPU sees the latch open at once.  On a busy host the spin is
+// short, compared with the time to wake a thread that sleeps.
+constexpr uint32_t LATCH_SPIN_NANOS = 100000;
 
-void arrive_and_wait(std::latch& start) {
-    start.count_down();
-    for (uint32_t i = 0; i < LATCH_SPIN_PAUSES && !start.try_wait(); ++i)
-        CRUCIBLE_SPIN_PAUSE;
-    start.wait();
-}
+using LatchWait = ::fixy::concurrent::SpinThenPark<LATCH_SPIN_NANOS>;
+
+// The latch of one round.  The writers and the sealer count it down, and
+// each thread of the round waits until the count is zero: it spins, and then
+// it sleeps on the event count.  The last count down wakes each sleeper.
+class StartLatch {
+public:
+    // Counts the latch down, and waits until it opens.
+    void arrive_and_wait(::fixy::BgLoadCtx const& ctx) noexcept {
+        if (remaining_.fetch_sub_acq_rel(1) == 1) {
+            opened_.notify_all(ctx);
+        }
+        wait(ctx);
+    }
+
+    // Waits until the latch opens, with no count down.
+    void wait(::fixy::BgLoadCtx const& ctx) noexcept {
+        ::fixy::concurrent::wait_for<LatchWait>(ctx, opened_,
+                                                [this] noexcept { return remaining_.load_acquire() == 0; });
+    }
+
+private:
+    ::fixy::Atomic<uint32_t> remaining_{WRITER_COUNT + 1};
+    ::fixy::concurrent::EventCount opened_{};
+};
 
 // Keeps the writes of one writer in order and checks that a refusal is final.
 template <typename Register>
-void run_writer(uint32_t round, uint32_t writer, Register&& register_one,
-                std::array<bool, WRITES_PER_WRITER>& registered) {
+void run_writer(uint32_t round, uint32_t writer, Register&& register_one, WriterFlags& registered) {
     bool was_refused_before = false;
-    for (uint32_t index = 0; index < WRITES_PER_WRITER; ++index) {
-        const bool was_registered = register_one(hash_of(round, writer, index));
+    for (::fixy::Index<WRITES_PER_WRITER> const index : registered.indices()) {
+        const bool was_registered = register_one(hash_of(round, writer, static_cast<uint32_t>(index.raw())));
         CRUCIBLE_TEST_ASSERT(kTest, !(was_refused_before && was_registered));
         was_refused_before = was_refused_before || !was_registered;
-        registered[index] = was_registered;
+        registered.at(index) = was_registered;
     }
 }
 
@@ -180,60 +198,80 @@ struct Round {
     Table table;
     typename Table::MutableView view =
         table.mint_mutable_view(kVigilForeground).expect("a fresh table mints a mutable view");
-    std::latch start{WRITER_COUNT + 1};
+    StartLatch start{};
     RegisteredFlags registered{};
     uint32_t count_at_seal = 0;
     uint32_t count_seen_by_reader = 0;
 };
 
 template <typename Race>
-using Rounds = std::array<Round<typename Race::Table>, ROUND_COUNT>;
+using Rounds = ::fixy::FixedArray<Round<typename Race::Table>, ROUND_COUNT>;
 
-using ChainThreads = std::array<std::jthread, THREAD_COUNT>;
+// The state of the round with the number round, which is below ROUND_COUNT.
+template <typename Race>
+[[nodiscard]] Round<typename Race::Table>& round_of(Rounds<Race>& rounds, uint32_t round) noexcept {
+    return rounds.at(::fixy::Index<ROUND_COUNT>::check(round).expect("a chain runs only the rounds below the count"));
+}
 
-// Starts the threads of one chain of one table.  Each thread runs the
-// rounds of the chain in order.  A writer or the sealer that ends a round
-// waits at the latch of the next round of the chain, so the rounds of one
-// chain do not overlap.  The reader can still read a sealed table while the
-// next round races, as the background thread can.
+// The threads of one chain of one table.  Each thread runs the rounds of the
+// chain in order.  A writer or the sealer that ends a round waits at the
+// latch of the next round of the chain, so the rounds of one chain do not
+// overlap.  The reader can still read a sealed table while the next round
+// races, as the background thread can.
 //
 // The reader sleeps until the latch of its round opens, and it does not
 // count the latch down.  The latch opens before each write of the round, so
 // only the seal orders the writes before the reads.
 template <typename Race>
-[[nodiscard]] ChainThreads start_chain(Rounds<Race>& rounds, uint32_t chain) {
-    ChainThreads threads;
-    threads[0] = std::jthread{[&rounds, chain] {
+[[nodiscard]] auto reader_of(Rounds<Race>& rounds, uint32_t chain) noexcept {
+    return [&rounds, chain](::fixy::BgLoadCtx const& ctx) noexcept {
         for (uint32_t round = chain; round < ROUND_COUNT; round += CHAIN_COUNT) {
-            auto& state = rounds[round];
-            state.start.wait();
+            auto& state = round_of<Race>(rounds, round);
+            state.start.wait(ctx);
             while (!state.table.is_sealed())
                 CRUCIBLE_SPIN_PAUSE;
             state.count_seen_by_reader = Race::read_sealed(state.table, round);
         }
-    }};
-    threads[1] = std::jthread{[&rounds, chain] {
+    };
+}
+
+template <typename Race>
+[[nodiscard]] auto sealer_of(Rounds<Race>& rounds, uint32_t chain) noexcept {
+    return [&rounds, chain](::fixy::BgLoadCtx const& ctx) noexcept {
         for (uint32_t round = chain; round < ROUND_COUNT; round += CHAIN_COUNT) {
-            auto& state = rounds[round];
-            arrive_and_wait(state.start);
+            auto& state = round_of<Race>(rounds, round);
+            state.start.arrive_and_wait(ctx);
             pause_for(seal_delay_of(round));
             state.table.seal(kTest);
             state.count_at_seal = state.table.count();
         }
-    }};
-    for (uint32_t writer = 0; writer < WRITER_COUNT; ++writer) {
-        threads[2 + writer] = std::jthread{[&rounds, chain, writer] {
-            for (uint32_t round = chain; round < ROUND_COUNT; round += CHAIN_COUNT) {
-                auto& state = rounds[round];
-                arrive_and_wait(state.start);
-                run_writer(
-                    round, writer,
-                    [&state](crucible::SchemaHash hash) { return Race::register_one(state.table, state.view, hash); },
-                    state.registered[writer]);
-            }
-        }};
-    }
-    return threads;
+    };
+}
+
+template <typename Race>
+[[nodiscard]] auto writer_of(Rounds<Race>& rounds, uint32_t chain, ::fixy::Index<WRITER_COUNT> writer) noexcept {
+    return [&rounds, chain, writer](::fixy::BgLoadCtx const& ctx) noexcept {
+        for (uint32_t round = chain; round < ROUND_COUNT; round += CHAIN_COUNT) {
+            auto& state = round_of<Race>(rounds, round);
+            state.start.arrive_and_wait(ctx);
+            run_writer(
+                round, static_cast<uint32_t>(writer.raw()),
+                [&state](crucible::SchemaHash hash) { return Race::register_one(state.table, state.view, hash); },
+                state.registered.at(writer));
+        }
+    };
+}
+
+// The six bodies of one chain of one table: the reader, the sealer and the
+// four writers.
+template <typename Race>
+[[nodiscard]] auto chain_of(Rounds<Race>& rounds, uint32_t chain) noexcept {
+    return ::fixy::Record{reader_of<Race>(rounds, chain),
+                          sealer_of<Race>(rounds, chain),
+                          writer_of<Race>(rounds, chain, ::fixy::index<0>()),
+                          writer_of<Race>(rounds, chain, ::fixy::index<1>()),
+                          writer_of<Race>(rounds, chain, ::fixy::index<2>()),
+                          writer_of<Race>(rounds, chain, ::fixy::index<3>())};
 }
 
 // The rounds of one table in which the seal refused a write, and the rounds in
@@ -247,16 +285,20 @@ struct RaceCounts {
 template <typename Race>
 [[nodiscard]] RaceCounts check_rounds(Rounds<Race> const& rounds) {
     RaceCounts counts{};
-    for (uint32_t round = 0; round < ROUND_COUNT; ++round) {
-        auto const& state = rounds[round];
+    for (::fixy::Index<ROUND_COUNT> const at : rounds.indices()) {
+        const uint32_t round = static_cast<uint32_t>(at.raw());
+        auto const& state = rounds.at(at);
         const uint32_t final_count = state.table.count();
         CRUCIBLE_TEST_ASSERT(kTest, state.count_at_seal == final_count);
         CRUCIBLE_TEST_ASSERT(kTest, state.count_seen_by_reader == final_count);
         CRUCIBLE_TEST_ASSERT(kTest, count_true(state.registered) == final_count);
-        for (uint32_t writer = 0; writer < WRITER_COUNT; ++writer) {
-            for (uint32_t index = 0; index < WRITES_PER_WRITER; ++index) {
-                const bool is_present = Race::is_present(state.table, hash_of(round, writer, index));
-                CRUCIBLE_TEST_ASSERT(kTest, is_present == state.registered[writer][index]);
+        for (::fixy::Index<WRITER_COUNT> const writer : state.registered.indices()) {
+            WriterFlags const& per_writer = state.registered.at(writer);
+            for (::fixy::Index<WRITES_PER_WRITER> const index : per_writer.indices()) {
+                const bool is_present =
+                    Race::is_present(state.table, hash_of(round, static_cast<uint32_t>(writer.raw()),
+                                                          static_cast<uint32_t>(index.raw())));
+                CRUCIBLE_TEST_ASSERT(kTest, is_present == per_writer.at(index));
             }
         }
         const uint32_t refused_count = WRITER_COUNT * WRITES_PER_WRITER - final_count;
@@ -271,23 +313,41 @@ template <typename Race>
 int main() {
     // The main thread mints each view, so the tables are made before any
     // thread starts.  They are too large for the stack.
-    const auto schema_rounds = std::make_unique<Rounds<SchemaRace>>();
-    const auto kernel_rounds = std::make_unique<Rounds<KernelRace>>();
-    {
-        // Each thread joins at the end of this block.
-        std::array<ChainThreads, 2 * CHAIN_COUNT> chains;
-        for (uint32_t chain = 0; chain < CHAIN_COUNT; ++chain) {
-            chains[2 * chain] = start_chain<SchemaRace>(*schema_rounds, chain);
-            chains[2 * chain + 1] = start_chain<KernelRace>(*kernel_rounds, chain);
-        }
-    }
+    ::fixy::Box<Rounds<SchemaRace>> schema_rounds =
+        ::fixy::mint_box<Rounds<SchemaRace>>(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<Rounds<KernelRace>> kernel_rounds =
+        ::fixy::mint_box<Rounds<KernelRace>>(::foundation::effects::testing::test().alloc);
+
+    // The bodies of the four chains, each of THREAD_COUNT threads.  The door
+    // starts each thread before the first round, and it joins each thread
+    // before it returns.
+    static_assert(CHAIN_COUNT == 2 && WRITER_COUNT == 4 && THREAD_COUNT == 6,
+                  "the bodies below name two chains of each table, each of a reader, a sealer and four writers");
+    auto [schema_reader_0, schema_sealer_0, schema_writer_00, schema_writer_01, schema_writer_02, schema_writer_03] =
+        chain_of<SchemaRace>(*schema_rounds, 0);
+    auto [schema_reader_1, schema_sealer_1, schema_writer_10, schema_writer_11, schema_writer_12, schema_writer_13] =
+        chain_of<SchemaRace>(*schema_rounds, 1);
+    auto [kernel_reader_0, kernel_sealer_0, kernel_writer_00, kernel_writer_01, kernel_writer_02, kernel_writer_03] =
+        chain_of<KernelRace>(*kernel_rounds, 0);
+    auto [kernel_reader_1, kernel_sealer_1, kernel_writer_10, kernel_writer_11, kernel_writer_12, kernel_writer_13] =
+        chain_of<KernelRace>(*kernel_rounds, 1);
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    ::fixy::thread::run_joined_raw_probe(
+        ctx, kTest, "the race of a registration and the seal shares the rounds of each table on purpose",
+        ::fixy::thread::ThreadOptions{}, schema_reader_0, schema_sealer_0, schema_writer_00, schema_writer_01,
+        schema_writer_02, schema_writer_03, schema_reader_1, schema_sealer_1, schema_writer_10, schema_writer_11,
+        schema_writer_12, schema_writer_13, kernel_reader_0, kernel_sealer_0, kernel_writer_00, kernel_writer_01,
+        kernel_writer_02, kernel_writer_03, kernel_reader_1, kernel_sealer_1, kernel_writer_10, kernel_writer_11,
+        kernel_writer_12, kernel_writer_13)
+        .expect("the thread door starts each thread of the four chains");
 
     // The split between refused and admitted writes depends on the
     // scheduler, so the test reports it and does not assert it.
     const RaceCounts schema_counts = check_rounds<SchemaRace>(*schema_rounds);
     const RaceCounts kernel_counts = check_rounds<KernelRace>(*kernel_rounds);
-    std::printf("test_registration_seal_race: %u races, %u with a refused write, %u with an admitted write\n",
-                2 * ROUND_COUNT, schema_counts.with_a_refusal + kernel_counts.with_a_refusal,
-                schema_counts.with_a_write + kernel_counts.with_a_write);
+    ::fixy::report(::fixy::Sink::Out,
+                   "test_registration_seal_race: {} races, {} with a refused write, {} with an admitted write\n",
+                   2 * ROUND_COUNT, schema_counts.with_a_refusal + kernel_counts.with_a_refusal,
+                   schema_counts.with_a_write + kernel_counts.with_a_write);
     return 0;
 }
