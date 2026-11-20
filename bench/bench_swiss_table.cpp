@@ -244,11 +244,15 @@ int main() {
         }
         return sum;
     };
-    for (auto [bits, label] :
-         std::initializer_list<std::pair<uint16_t, const char*>>{{0x0010, "BitMask iterate — 1 bit"},
-                                                                 {0x1248, "BitMask iterate — 4 bits"},
-                                                                 {0x5555, "BitMask iterate — 8 bits"},
-                                                                 {0xFFFF, "BitMask iterate — 16 bits"}}) {
+    // The bits of a mask and the name of its row.
+    struct MaskRow {
+        uint16_t bits = 0;
+        ::fixy::TextView label{};
+    };
+    constexpr ::fixy::FixedArray<MaskRow, 4> kMaskRows{
+        MaskRow{0x0010, "BitMask iterate — 1 bit"}, MaskRow{0x1248, "BitMask iterate — 4 bits"},
+        MaskRow{0x5555, "BitMask iterate — 8 bits"}, MaskRow{0xFFFF, "BitMask iterate — 16 bits"}};
+    for (auto const& [bits, label] : kMaskRows) {
         bench::add_report(reports, [&, bits, label] {
             const BitMask m{bits};
             return bench::run(label, [&] {
@@ -299,7 +303,7 @@ int main() {
     // Each load factor contributes 2 Reports (hit + miss). Factored
     // into a lambda that returns a pair of Reports captured through
     // the outer reports vector.
-    auto bench_probe_at = [&](const char* label, double load_factor) {
+    auto bench_probe_at = [&](::fixy::TextView label, double load_factor) {
         constexpr size_t TABLE_CAP = 1u << 16;  // 65536 slots
         const size_t target_count = static_cast<size_t>(TABLE_CAP * load_factor);
 
@@ -322,9 +326,8 @@ int main() {
             if (!table->find(seed)) absent_hashes.push_back(seed);
         }
 
-        char name_hit[64], name_miss[64];
-        std::snprintf(name_hit, sizeof(name_hit), "probe HIT  — %s", label);
-        std::snprintf(name_miss, sizeof(name_miss), "probe MISS — %s", label);
+        const bench::RunName name_hit = bench::format_name("probe HIT  — {}", label);
+        const bench::RunName name_miss = bench::format_name("probe MISS — {}", label);
 
         uint32_t hit_idx = 0;
         bench::add_report(reports, bench::run(name_hit, [&, t = table.view()] {

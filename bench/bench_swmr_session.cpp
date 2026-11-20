@@ -58,7 +58,7 @@ using Swmr = ses::SwmrSession<Payload, WriterTag, ReaderTag, ::foundation::brand
 constexpr auto kForeground = ::foundation::effects::testing::foreground();
 
 template <typename Body>
-[[nodiscard]] bench::Report measure(char const* name, Body&& body) {
+[[nodiscard]] bench::Report measure(::fixy::TextView name, Body&& body) {
     return bench::Run{name}.samples(50000).warmup(5000).max_wall_ms(3000).measure(std::forward<Body>(body));
 }
 

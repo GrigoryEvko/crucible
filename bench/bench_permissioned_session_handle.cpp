@@ -71,7 +71,7 @@ static_assert(sizeof(PermittedLoopHandle) == sizeof(EmptySetLoopHandle),
 
 // Sends Item after Item through the handle, and detaches it at the end.
 template <typename Handle>
-[[nodiscard]] bench::Report send_loop(const char* name, Handle handle) {
+[[nodiscard]] bench::Report send_loop(::fixy::TextView name, Handle handle) {
     Item item = 0;
     auto report = bench::run(name, [&] { handle = std::move(handle).send(++item, send_item); });
     std::move(handle).detach(s::detach_reason::TestInstrumentation{});

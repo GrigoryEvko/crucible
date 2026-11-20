@@ -166,9 +166,9 @@ void check_ci_stable(const CI_t& a, const CI_t& b) {
 
 // The comparison reads only the samples and the percentiles, so a report
 // can be assembled directly instead of running a measurement.
-[[nodiscard]] bench::Report make_report_from(const char* name, ::fixy::View<const double> samples) {
+[[nodiscard]] bench::Report make_report_from(::fixy::TextView name, ::fixy::View<const double> samples) {
     bench::Report r;
-    r.name = name;
+    r.name = bench::name_of(name);
     r.samples = samples_of(samples);
     r.pct = bench::Percentiles::compute(r.samples);
     return r;
@@ -444,96 +444,97 @@ void test_snapshot_subtract() {
 void test_clobber_array_noexcept() {
     using std::is_same_v;
 
-    int arr_int[4] = {1, 2, 3, 4};
-    static_assert(noexcept(bench::clobber_array(std::span<int>{arr_int})));
+    ::fixy::FixedArray<int, 4> arr_int{1, 2, 3, 4};
+    static_assert(noexcept(bench::clobber_array(arr_int.view())));
 
-    int const arr_const[4] = {1, 2, 3, 4};
-    static_assert(noexcept(bench::clobber_array(std::span<int const>{arr_const})));
+    ::fixy::FixedArray<int, 4> const arr_const{1, 2, 3, 4};
+    static_assert(noexcept(bench::clobber_array(arr_const.view())));
 
-    static_assert(is_same_v<decltype(bench::clobber_array(std::span<int>{arr_int})), void>);
-    static_assert(is_same_v<decltype(bench::clobber_array(std::span<int const>{arr_const})), void>);
+    static_assert(is_same_v<decltype(bench::clobber_array(arr_int.view())), void>);
+    static_assert(is_same_v<decltype(bench::clobber_array(arr_const.view())), void>);
 }
 
 void test_clobber_array_does_not_mutate() {
-    std::array<int, 5> data{10, 20, 30, 40, 50};
-    bench::clobber_array(std::span<int>{data});
-    CHECK(data[0] == 10);
-    CHECK(data[1] == 20);
-    CHECK(data[2] == 30);
-    CHECK(data[3] == 40);
-    CHECK(data[4] == 50);
+    ::fixy::FixedArray<int, 5> data{10, 20, 30, 40, 50};
+    bench::clobber_array(data.view());
+    CHECK(data.at(::fixy::index<0>()) == 10);
+    CHECK(data.at(::fixy::index<1>()) == 20);
+    CHECK(data.at(::fixy::index<2>()) == 30);
+    CHECK(data.at(::fixy::index<3>()) == 40);
+    CHECK(data.at(::fixy::index<4>()) == 50);
 
-    // The same data through the const overload.
-    bench::clobber_array(std::span<int const>{data});
-    CHECK(data[0] == 10);
-    CHECK(data[4] == 50);
+    // The same data through a View of const elements.
+    bench::clobber_array(::fixy::View<int const>{data.view()});
+    CHECK(data.at(::fixy::index<0>()) == 10);
+    CHECK(data.at(::fixy::index<4>()) == 50);
 }
 
 void test_clobber_array_various_types() {
     // These three doubles are exact in binary, so a change of any kind
     // would show even through the tolerance comparator.
-    std::vector<double> dbls{1.5, -2.25, 3.125};
-    bench::clobber_array(std::span<double>{dbls});
-    CHECK(approx(dbls[0], 1.5));
-    CHECK(approx(dbls[1], -2.25));
-    CHECK(approx(dbls[2], 3.125));
+    ::fixy::FixedArray<double, 3> dbls{1.5, -2.25, 3.125};
+    bench::clobber_array(::fixy::View<double>{dbls.view()});
+    CHECK(approx(dbls.at(::fixy::index<0>()), 1.5));
+    CHECK(approx(dbls.at(::fixy::index<1>()), -2.25));
+    CHECK(approx(dbls.at(::fixy::index<2>()), 3.125));
 
     struct Pair {
-        int a;
-        double b;
+        int a = 0;
+        double b = 0.0;
     };
-    Pair pairs[3] = {{1, 1.5}, {2, 2.5}, {3, 3.5}};
-    bench::clobber_array(std::span<Pair>{pairs});
-    CHECK(pairs[0].a == 1);
-    CHECK(approx(pairs[2].b, 3.5));
+    ::fixy::FixedArray<Pair, 3> pairs{Pair{1, 1.5}, Pair{2, 2.5}, Pair{3, 3.5}};
+    bench::clobber_array(pairs.view());
+    CHECK(pairs.at(::fixy::index<0>()).a == 1);
+    CHECK(approx(pairs.at(::fixy::index<2>()).b, 3.5));
 
     // The element type a benchmark's timestamp buffer actually uses.
-    std::array<std::uint64_t, 8> cycles{};
-    for (std::size_t i = 0; i < cycles.size(); ++i)
-        cycles[i] = i * 100;
-    bench::clobber_array(std::span<std::uint64_t>{cycles});
-    for (std::size_t i = 0; i < cycles.size(); ++i) {
-        CHECK(cycles[i] == i * 100);
+    ::fixy::FixedArray<std::uint64_t, 8> cycles{};
+    for (::fixy::Index<8> const index : cycles.indices())
+        cycles.at(index) = index.raw() * 100;
+    bench::clobber_array(cycles.view());
+    for (::fixy::Index<8> const index : cycles.indices()) {
+        CHECK(cycles.at(index) == index.raw() * 100);
     }
 }
 
 void test_clobber_array_empty_and_single() {
-    // A zero-length array is not permitted, so the empty span is built
-    // as a length-zero view over a one-element one.
-    int empty_arr[1] = {};
-    std::span<int> empty{empty_arr, 0};
-    CHECK(empty.empty());
+    // A zero-length array is not permitted, so the empty View is built
+    // as a window of length zero over a one-element one.
+    ::fixy::FixedArray<int, 1> empty_arr{};
+    ::fixy::View<int> const empty = ::fixy::View<int>{empty_arr.view()}.window(0, 0).expect("an empty window");
+    CHECK(empty.size() == 0);
     bench::clobber_array(empty);
-    CHECK(empty.empty());
+    CHECK(empty.size() == 0);
 
-    int one[1] = {42};
-    bench::clobber_array(std::span<int>{one});
-    CHECK(one[0] == 42);
+    ::fixy::FixedArray<int, 1> one{42};
+    bench::clobber_array(one.view());
+    CHECK(one.at(::fixy::index<0>()) == 42);
 }
 
 void test_clobber_array_source_container_diversity() {
     {
-        std::array<int, 3> a{7, 8, 9};
-        bench::clobber_array(std::span<int>{a});
-        CHECK(a[1] == 8);
+        ::fixy::FixedArray<int, 3> a{7, 8, 9};
+        bench::clobber_array(a.view());
+        CHECK(a.at(::fixy::index<1>()) == 8);
     }
 
     {
-        std::vector<int> v{100, 200, 300, 400};
-        bench::clobber_array(std::span<int>{v});
+        ::fixy::HeapArray<int> v = ::fixy::mint_heap_array_with<int>(
+            ::foundation::effects::testing::test().alloc, 4,
+            [](std::size_t position) noexcept { return static_cast<int>(position + 1) * 100; });
+        bench::clobber_array(v.view());
         CHECK(v.size() == 4);
-        CHECK(v[2] == 300);
+        CHECK(*v.get(2).expect("a position below the count") == 300);
     }
 
     {
         constexpr std::size_t N = 16;
-        auto* heap = new int[N];
-        for (std::size_t i = 0; i < N; ++i)
-            heap[i] = static_cast<int>(i);
-        bench::clobber_array(std::span<int>{heap, N});
-        CHECK(heap[5] == 5);
-        CHECK(heap[15] == 15);
-        delete[] heap;
+        ::fixy::HeapArray<int> heap =
+            ::fixy::mint_heap_array_with<int>(::foundation::effects::testing::test().alloc, N,
+                                              [](std::size_t position) noexcept { return static_cast<int>(position); });
+        bench::clobber_array(::fixy::View<int const>{heap.view()});
+        CHECK(*heap.get(5).expect("a position below the count") == 5);
+        CHECK(*heap.get(15).expect("a position below the count") == 15);
     }
 }
 
@@ -980,6 +981,38 @@ void test_environment_values() {
     CHECK(bench::detail::value_in(::fixy::TextView{}, "PATH").is_none());
 }
 
+// The texts of the columns of a report.  A time takes two decimals in the
+// largest unit in which it is at least 1, rounded as printf %.2f rounds the
+// exact binary value, and a value whose digits do not fit writes nan.  A
+// JSON name escapes each character that a JSON string refuses.  A name holds
+// at most kNameBytes bytes, and a longer one ends the process.
+void name_of_a_long_text() {
+    constexpr ::fixy::TextView kLong{
+        "a name of more than 128 bytes, which no row of a bench may take, because the column of the name and the "
+        "reader of the JSON tail.."};
+    static_cast<void>(bench::name_of(kLong));
+}
+
+void test_texts_of_reports() {
+    // A text of the base, held while its view is compared.
+    const auto is_text = [](auto const& text, ::fixy::TextView expected) noexcept { return text.view() == expected; };
+    CHECK(is_text(bench::detail::ns_text(12.345), "12.35ns"));
+    CHECK(is_text(bench::detail::ns_text(999.994), "999.99ns"));
+    // The unit comes from the value before the rounding, as before.
+    CHECK(is_text(bench::detail::ns_text(999.995), "1000.00ns"));
+    CHECK(is_text(bench::detail::ns_text(0.0), "0.00ns"));
+    CHECK(is_text(bench::detail::ns_text(1500.0), "1.50µs"));
+    CHECK(is_text(bench::detail::ns_text(2.5e6), "2.50ms"));
+    CHECK(is_text(bench::detail::ns_text(3.0e9), "3.00s"));
+    CHECK(is_text(bench::detail::ns_text(1e40), "nans"));
+    CHECK(is_text(bench::detail::json_name_of("plain"), "\"plain\""));
+    CHECK(is_text(bench::detail::json_name_of("a\"b\\c\n\t\x01"), "\"a\\\"b\\\\c\\n\\t\\u0001\""));
+    CHECK(is_text(bench::detail::json_name_of(""), "\"\""));
+    CHECK(is_text(bench::format_name("{} P={}", ::fixy::TextView{"single"}, 4), "single P=4"));
+    CHECK(is_text(bench::name_of("row"), "row"));
+    ::fixy::check::expect_dies(kTest, name_of_a_long_text, ::fixy::TextView{"the name of a bench row holds 129 bytes"});
+}
+
 // A scaling_cur_freq file holds the frequency in kHz and a newline.  The
 // frequency in Hz is that number times 1000, and a text with no number, a
 // sign or an empty text gives 0, as for a CPU with no cpufreq directory.
@@ -1340,6 +1373,7 @@ int main() {
     test_planted_pause_is_caught();
     test_processor_of_stat();
     test_environment_values();
+    test_texts_of_reports();
     test_freq_of_text();
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     test_offcpu_top_keeps_the_longest();

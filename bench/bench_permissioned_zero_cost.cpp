@@ -200,13 +200,15 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== permissioned_zero_cost ===\n");
-    std::printf("  Item:    uint64_t (8 bytes)\n");
-    std::printf("  Cap:     %zu slots (1M — never fills)\n", kCap);
-    std::printf("  Method:  bare vs wrapped per primitive,\n");
-    std::printf("           bench::compare with Mann-Whitney U test\n");
-    std::printf("  PASS:    no pair flagged [REGRESS] (Δp99 > %.0f%% with p < 0.01)\n\n",
-                bench::Compare::kFlagDeltaP99Pct);
+    using ::fixy::Fixed;
+    using ::fixy::Sink;
+    ::fixy::report(Sink::Out, "=== permissioned_zero_cost ===\n");
+    ::fixy::report(Sink::Out, "  Item:    uint64_t (8 bytes)\n");
+    ::fixy::report(Sink::Out, "  Cap:     {} slots (1M — never fills)\n", kCap);
+    ::fixy::report(Sink::Out, "  Method:  bare vs wrapped per primitive,\n");
+    ::fixy::report(Sink::Out, "           bench::compare with Mann-Whitney U test\n");
+    ::fixy::report(Sink::Out, "  PASS:    no pair flagged [REGRESS] (Δp99 > {}% with p < 0.01)\n\n",
+                   Fixed<0>{bench::Compare::kFlagDeltaP99Pct});
 
     ::fixy::FixedArray<bench::Report, 6> reports{
         // 0..1   MPSC push
@@ -223,7 +225,7 @@ int main() {
     bench::emit_reports_text(reports.view());
 
     // ── Pair-by-pair comparison ───────────────────────────────────────
-    std::printf("\n=== zero-cost claim — pair deltas ===\n");
+    ::fixy::report(Sink::Out, "\n=== zero-cost claim — pair deltas ===\n");
     ::fixy::FixedArray<bench::Compare, 3> const compares{
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),
         bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<3>())),
@@ -232,20 +234,22 @@ int main() {
     bench::emit_compares(compares.view());
 
     // ── Headline verdict ──────────────────────────────────────────────
-    std::printf("\n=== verdict ===\n");
+    ::fixy::report(Sink::Out, "\n=== verdict ===\n");
     int regressions = 0;
     for (const auto& c : compares) {
         if (c.is_regression()) {
-            std::printf("  REGRESS: %s → %s  Δp99=%+.2f%%\n", c.a_name.c_str(), c.b_name.c_str(), c.delta_p99_pct);
+            ::fixy::report(Sink::Out, "  REGRESS: {} → {}  Δp99={}%\n", c.a_name.view(), c.b_name.view(),
+                           Fixed<2, 0, ::fixy::Align::Right, ::fixy::SignMark::Always>{c.delta_p99_pct});
             ++regressions;
         }
     }
     if (regressions == 0) {
-        std::printf("  PASS — no permissioned MPSC pair is slower than\n");
-        std::printf("         its bare counterpart by more than %.0f%% Δp99.\n", bench::Compare::kFlagDeltaP99Pct);
+        ::fixy::report(Sink::Out, "  PASS — no permissioned MPSC pair is slower than\n");
+        ::fixy::report(Sink::Out, "         its bare counterpart by more than {}% Δp99.\n",
+                       Fixed<0>{bench::Compare::kFlagDeltaP99Pct});
     } else {
-        std::printf("  FAIL — %d wrapper(s) regressed beyond %.0f%% Δp99.\n", regressions,
-                    bench::Compare::kFlagDeltaP99Pct);
+        ::fixy::report(Sink::Out, "  FAIL — {} wrapper(s) regressed beyond {}% Δp99.\n", regressions,
+                       Fixed<0>{bench::Compare::kFlagDeltaP99Pct});
     }
 
     bench::emit_reports_json(reports.view(), json);

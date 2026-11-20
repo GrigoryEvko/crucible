@@ -72,10 +72,11 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== meta_log ===\n");
-    std::printf("  TensorMeta size: %zu bytes (expect 168)\n", sizeof(TensorMeta));
-    std::printf("  MetaLog capacity: %u entries (~%zu MB)\n\n", MetaLog::CAPACITY,
-                (static_cast<size_t>(MetaLog::CAPACITY) * sizeof(TensorMeta)) / (1024 * 1024));
+    using ::fixy::Sink;
+    ::fixy::report(Sink::Out, "=== meta_log ===\n");
+    ::fixy::report(Sink::Out, "  TensorMeta size: {} bytes (expect 168)\n", sizeof(TensorMeta));
+    ::fixy::report(Sink::Out, "  MetaLog capacity: {} entries (~{} MB)\n\n", MetaLog::CAPACITY,
+                   (static_cast<size_t>(MetaLog::CAPACITY) * sizeof(TensorMeta)) / (1024 * 1024));
 
     // Reusable test data in stack-frame storage. MetaLog::try_append
     // copies the records of its View into the log, so the source lives only
@@ -231,14 +232,15 @@ int main() {
     // instruction but may exhibit cache-line contention differences
     // when the consumer is reading. Statistically indistinguishable
     // on a single-threaded bench.
-    std::printf("\n=== compare ===\n");
+    ::fixy::report(Sink::Out, "\n=== compare ===\n");
     bench::compare(reports.at(::fixy::index<5>()), reports.at(::fixy::index<6>())).print_text();
 
     // 95% bootstrap CI on the n=3 producer-side p99 — the most common
     // workload shape (2 inputs + 1 output → 3 meta slots per op).
     const bench::Report& producer_three = reports.at(::fixy::index<2>());
     const auto ci99 = producer_three.ci(0.99);
-    std::printf("  %s  p99 95%% CI: [%.2f, %.2f] ns\n", producer_three.name.c_str(), ci99.lo, ci99.hi);
+    ::fixy::report(Sink::Out, "  {}  p99 95% CI: [{}, {}] ns\n", producer_three.name.view(), ::fixy::Fixed<2>{ci99.lo},
+                   ::fixy::Fixed<2>{ci99.hi});
 
     bench::emit_reports_json(reports.view(), json);
     return 0;

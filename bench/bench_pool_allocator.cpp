@@ -138,9 +138,7 @@ int main() {
             PoolAllocator pool;
             pool.init(::foundation::effects::testing::test().alloc, plan);
             auto pv = pool.mint_initialized_view(kVigilForeground);
-            char label[64];
-            std::snprintf(label, sizeof(label), "slot_ptr(%u slots, sweep)", N);
-            auto r = bench::run(label, [&, N] {
+            auto r = bench::run(bench::format_name("slot_ptr({} slots, sweep)", N), [&, N] {
                 for (uint32_t i = 0; i < N; i++) {
                     bench::do_not_optimize(pool.slot_ptr(SlotId{i}, pv));
                 }
@@ -165,9 +163,7 @@ int main() {
             fill_random_indices(indices.data(), ACCESS_COUNT, N);
             uint32_t idx = 0;
 
-            char label[64];
-            std::snprintf(label, sizeof(label), "slot_ptr(%u slots, random)", N);
-            auto r = bench::run(label, [&] {
+            auto r = bench::run(bench::format_name("slot_ptr({} slots, random)", N), [&] {
                 bench::do_not_optimize(pool.slot_ptr(SlotId{indices[idx % ACCESS_COUNT]}, pv));
                 idx++;
             });
@@ -235,9 +231,7 @@ int main() {
         bench::add_report(reports, [&, N] {
             ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
             MemoryPlan plan = make_uniform_plan(slots.view(), 256);
-            char label[64];
-            std::snprintf(label, sizeof(label), "init(%u slots)", N);
-            return bench::run(label, [&] {
+            return bench::run(bench::format_name("init({} slots)", N), [&] {
                 PoolAllocator pool;
                 pool.init(::foundation::effects::testing::test().alloc, plan);
                 bench::do_not_optimize(pool.pool_base());

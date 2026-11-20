@@ -22,12 +22,14 @@
 //     bypassing cache (non-temporal stores, MOVNTPD).
 
 #include <array>
-#include <cstdio>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 
 #include <fixy/Core.h>
 #include <fixy/concurrent/SpscRing.h>
+#include <foundation/Quarantine.h>
+#include <foundation/effects/Effect.h>
 
 #include "bench_harness.h"
 
@@ -38,22 +40,22 @@ using ::fixy::concurrent::SpscRing;
 // Item type: 8-byte uint64 — the smallest practical SPSC payload.
 using Item = std::uint64_t;
 
+// The rings of the rows live on the heap: a ring of 1M slots holds 8 MiB.
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
+
 // Batch capacity must be ≥ 1024 so we can pre-fill once and never wrap.
 template <std::size_t N>
 struct SaturationCase {
     using Ring = SpscRing<Item, (1U << 20)>;  // 1M slots — never fills
 
     static bench::Report run() {
-        auto ring = std::make_unique<Ring>();
+        ::fixy::Box<Ring> ring = ::fixy::mint_box<Ring>(kAlloc);
         alignas(64) static ::fixy::FixedArray<Item, N> tx{};
         alignas(64) static ::fixy::FixedArray<Item, N> rx{};
         for (::fixy::Index<N> const index : tx.indices())
             tx.at(index) = index.raw();
 
-        char name[128];
-        std::snprintf(name, sizeof(name), "spsc_ring batch<%zu> round-trip (push+pop)", N);
-
-        return bench::run(name, [&] {
+        return bench::run(bench::format_name("spsc_ring batch<{}> round-trip (push+pop)", N), [&] {
             const std::size_t np = ring->try_push_batch(tx.view());
             const std::size_t nc = ring->try_pop_batch(rx.view());
             bench::do_not_optimize(np);
@@ -70,9 +72,16 @@ struct SaturationCase {
     }
 };
 
+}  // namespace
+
 // Reference: a raw memcpy of N×8B with no atomics, no SPSC bookkeeping.
 // Establishes the absolute "no-overhead" floor for moving N items
 // between two buffers.  Round-trip = 2 memcpys (push + pop direction).
+// The reference moves plain arrays with the memcpy of the C library, as
+// the hardware sees it, so it stays raw.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: a raw memcpy of plain arrays is the floor reference of the ring")
+namespace {
+
 template <std::size_t N>
 bench::Report raw_memcpy_roundtrip() {
     alignas(64) static std::array<Item, N> tx{};
@@ -81,10 +90,7 @@ bench::Report raw_memcpy_roundtrip() {
     for (std::size_t k = 0; k < N; ++k)
         tx[k] = k;
 
-    char name[128];
-    std::snprintf(name, sizeof(name), "raw_memcpy<%zu> round-trip (tx→mid→rx)", N);
-
-    return bench::run(name, [&] {
+    return bench::run(bench::format_name("raw_memcpy<{}> round-trip (tx→mid→rx)", N), [&] {
         std::memcpy(mid.data(), tx.data(), N * sizeof(Item));
         std::memcpy(rx.data(), mid.data(), N * sizeof(Item));
         // Same anti-DCE pattern as the SPSC bench above — clobber an
@@ -97,6 +103,11 @@ bench::Report raw_memcpy_roundtrip() {
         bench::do_not_optimize(rx[N - 1]);
     });
 }
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+namespace {
 
 // Per-item ns from a whole-batch round-trip p50.
 // Round-trip = N pushes + N pops = 2N items moved.
@@ -121,15 +132,21 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== concurrent_saturation ===\n");
-    std::printf("  Item: uint64_t (8 bytes)\n");
-    std::printf("  Ring: SpscRing<uint64_t, 1M>\n");
-    std::printf("\n");
+    using ::fixy::Align;
+    using ::fixy::Fixed;
+    using ::fixy::Padded;
+    using ::fixy::Sink;
+    using ::fixy::TextView;
+
+    ::fixy::report(Sink::Out, "=== concurrent_saturation ===\n");
+    ::fixy::report(Sink::Out, "  Item: uint64_t (8 bytes)\n");
+    ::fixy::report(Sink::Out, "  Ring: SpscRing<uint64_t, 1M>\n");
+    ::fixy::report(Sink::Out, "\n");
 
     ::fixy::FixedArray<bench::Report, 15> reports{
         // Single-call SPSC — N=1 baseline.
         [&] {
-            auto ring = std::make_unique<SpscRing<Item, (1U << 20)>>();
+            ::fixy::Box<SpscRing<Item, (1U << 20)>> ring = ::fixy::mint_box<SpscRing<Item, (1U << 20)>>(kAlloc);
             std::uint64_t i = 0;
             return bench::run("spsc_ring.try_push (N=1, single-call)", [&] {
                 const bool ok = ring->try_push(++i);
@@ -160,15 +177,18 @@ int main() {
     bench::emit_reports_text(reports.view());
 
     // ── Per-item cost table (the headline) ────────────────────────────
-    std::printf("\n=== saturation table (per-item cost) ===\n");
-    std::printf("\n  %-50s  %12s  %12s\n", "Bench", "ns/item", "GB/s");
-    std::printf("  %-50s  %12s  %12s\n", std::string(50, '-').c_str(), std::string(12, '-').c_str(),
-                std::string(12, '-').c_str());
+    ::fixy::report(Sink::Out, "\n=== saturation table (per-item cost) ===\n");
+    ::fixy::report(Sink::Out, "\n  {}  {}  {}\n", Padded<50, Align::Left>{TextView{"Bench"}},
+                   Padded<12>{TextView{"ns/item"}}, Padded<12>{TextView{"GB/s"}});
+    constexpr TextView kDashes12{"------------"};
+    ::fixy::report(Sink::Out, "  {}  {}  {}\n", TextView{"--------------------------------------------------"},
+                   kDashes12, kDashes12);
 
     auto print_row = [](const bench::Report& r, std::size_t batch_items) {
         const double per_item = per_item_ns(r.pct.p50, batch_items);
         const double gbps = bytes_per_sec(r.pct.p50, batch_items) / 1e9;
-        std::printf("  %-50s  %10.4f ns  %8.2f GB/s\n", r.name.c_str(), per_item, gbps);
+        ::fixy::report(Sink::Out, "  {}  {} ns  {} GB/s\n", Padded<50, Align::Left>{r.name.view()},
+                       Fixed<4, 10>{per_item}, Fixed<2, 8>{gbps});
     };
 
     // Single-call: N=1
@@ -191,7 +211,7 @@ int main() {
     print_row(reports.at(::fixy::index<14>()), 1024);
 
     // ── L1d-port ceiling theory vs observed ───────────────────────────
-    std::printf("\n=== Zen 3 L1d-port ceiling analysis ===\n");
+    ::fixy::report(Sink::Out, "\n=== Zen 3 L1d-port ceiling analysis ===\n");
     {
         // Round-trip per item = 1 store (push) + 1 load + 1 store (pop)
         // = 3 mem-ops.  L1d ports = 3 mem-ops/cycle on Zen 3.
@@ -204,14 +224,15 @@ int main() {
         // so one item per cycle.  At 4.6 GHz:
         //   1 item / 4.6e9 s = 0.217 ns/item.
         const double ns_floor_per_item = 0.217;
-        std::printf("  Theoretical L1d-port floor (Zen 3 @ 4.6 GHz):\n");
-        std::printf("    1 item per cycle × 0.217 ns/cycle = %.3f ns/item\n", ns_floor_per_item);
-        std::printf("  Largest observed (N=1024 batch round-trip):\n");
+        ::fixy::report(Sink::Out, "  Theoretical L1d-port floor (Zen 3 @ 4.6 GHz):\n");
+        ::fixy::report(Sink::Out, "    1 item per cycle × 0.217 ns/cycle = {} ns/item\n", Fixed<3>{ns_floor_per_item});
+        ::fixy::report(Sink::Out, "  Largest observed (N=1024 batch round-trip):\n");
         const double obs = per_item_ns(reports.at(::fixy::index<11>()).pct.p50, 1024);
-        std::printf("    %.3f ns/item — gap to ceiling = %.2f×\n", obs, obs / ns_floor_per_item);
-        std::printf("  Raw memcpy reference (N=1024, no atomics):\n");
+        ::fixy::report(Sink::Out, "    {} ns/item — gap to ceiling = {}×\n", Fixed<3>{obs},
+                       Fixed<2>{obs / ns_floor_per_item});
+        ::fixy::report(Sink::Out, "  Raw memcpy reference (N=1024, no atomics):\n");
         const double mref = per_item_ns(reports.at(::fixy::index<14>()).pct.p50, 1024);
-        std::printf("    %.3f ns/item — pure-bandwidth floor\n", mref);
+        ::fixy::report(Sink::Out, "    {} ns/item — pure-bandwidth floor\n", Fixed<3>{mref});
     }
 
     bench::emit_reports_json(reports.view(), json);

@@ -380,8 +380,8 @@ int main(int argc, char* argv[]) {
             auto test = ::foundation::effects::testing::test();
             // A path that fails the path check counts as a file that does not open.
             const std::string_view path_text{path};
-            auto sanitized_path = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(
-                ::fixy::mint_foreign_text(path_text.data(), path_text.size())));
+            const ::fixy::TextView path_view = ::fixy::mint_foreign_text(path_text.data(), path_text.size());
+            auto sanitized_path = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(path_view));
             auto loaded_trace =
                 sanitized_path.is_ok()
                     ? load_trace(::fixy::TestRunnerCtx{test},
@@ -403,9 +403,7 @@ int main(int argc, char* argv[]) {
             const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
             ::fixy::BumpArena scratch{arena_bytes};
 
-            char label[128];
-            std::snprintf(label, sizeof(label), "build_trace (%u ops, from %s)", trace.num_ops, path);
-            return bench::run(label, [&] {
+            return bench::run(bench::format_name("build_trace ({} ops, from {})", trace.num_ops, path_view), [&] {
                 const LoadedTrace& loaded = trace;
                 scratch.with_epoch([&]() noexcept {
                     bench::refill_meta_log(meta_log, loaded);

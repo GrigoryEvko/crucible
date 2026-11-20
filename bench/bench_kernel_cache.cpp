@@ -182,7 +182,7 @@ void seed_row_siblings(Cache& cache, std::span<FakeKernel> kernels) {
 }
 
 template <typename Cache>
-[[nodiscard]] bench::Report bench_hot_hit(char const* name, Cache& cache) {
+[[nodiscard]] bench::Report bench_hot_hit(::fixy::TextView name, Cache& cache) {
     std::uint64_t i = 0;
     return bench::Run{name}.samples(100000).warmup(10000).max_wall_ms(3000).measure([&] {
         const std::uint64_t idx = (i++ & 1023U);
@@ -192,7 +192,7 @@ template <typename Cache>
 }
 
 template <typename Cache>
-[[nodiscard]] bench::Report bench_row_sibling_hit(char const* name, Cache& cache) {
+[[nodiscard]] bench::Report bench_row_sibling_hit(::fixy::TextView name, Cache& cache) {
     std::uint64_t i = 0;
     return bench::Run{name}.samples(100000).warmup(10000).max_wall_ms(3000).measure([&] {
         const std::uint64_t idx = i++ & 1023U;
@@ -205,7 +205,7 @@ template <typename Cache>
 }
 
 template <typename Cache>
-[[nodiscard]] bench::Report bench_clean_miss(char const* name, Cache& cache) {
+[[nodiscard]] bench::Report bench_clean_miss(::fixy::TextView name, Cache& cache) {
     std::uint64_t i = 0;
     return bench::Run{name}.samples(100000).warmup(10000).max_wall_ms(3000).measure([&] {
         auto miss = cache.lookup(kNondet, ContentHash{0x90000000ULL + 1024 + (i++ & 255U)}, RowHash{0xFF});

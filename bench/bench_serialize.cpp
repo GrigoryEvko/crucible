@@ -77,9 +77,8 @@ int main() {
             64 + num_ops * (40 + 2 * sizeof(TensorMeta) + sizeof(TensorMeta) + 3 * 3 * sizeof(uint32_t));
         ::fixy::HeapArray<std::byte> buf = ::fixy::mint_heap_array(A, wire_cap, std::byte{0});
 
-        char label_ser[64], label_des[64];
-        std::snprintf(label_ser, sizeof(label_ser), "serialize_region   (%4u ops)", num_ops);
-        std::snprintf(label_des, sizeof(label_des), "deserialize_region (%4u ops)", num_ops);
+        const bench::RunName label_ser = bench::format_name("serialize_region   ({} ops)", ::fixy::Padded<4>{num_ops});
+        const bench::RunName label_des = bench::format_name("deserialize_region ({} ops)", ::fixy::Padded<4>{num_ops});
 
         bench::add_report(reports, bench::run(label_ser, [&] {
                               size_t n = serialize_region(SerializedRegion{*region}, buf.view());

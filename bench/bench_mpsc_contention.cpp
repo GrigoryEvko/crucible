@@ -158,10 +158,8 @@ void run_cycle(std::size_t producer_count) {
 }
 
 template <typename Worker>
-[[nodiscard]] bench::Report run_one(const char* label, std::size_t producer_count) {
-    char name[96];
-    std::snprintf(name, sizeof(name), "%s P=%zu", label, producer_count);
-    return bench::Run{name}
+[[nodiscard]] bench::Report run_one(::fixy::TextView label, std::size_t producer_count) {
+    return bench::Run{bench::format_name("{} P={}", label, producer_count)}
         .samples(kSamples)
         .warmup(kWarmup)
         .batch(1)

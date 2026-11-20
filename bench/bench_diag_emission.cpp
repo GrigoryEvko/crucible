@@ -29,7 +29,7 @@ int main() {
         bench::do_not_optimize(is_formatted);
     });
 
-    json.print_text(stdout);
+    json.print_text();
 
     return EXIT_SUCCESS;
 }

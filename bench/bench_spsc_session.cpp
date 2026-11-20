@@ -78,10 +78,8 @@ constexpr auto try_pop_item = [](auto& consumer) noexcept -> ::fixy::Option<Item
 
 // A rejected push means the next pop finds an empty ring, so the arm does
 // not measure a round trip.  The arm stops at the first one.
-[[noreturn]] CRUCIBLE_COLD void stop_on_rejected_push(const char* bench_name) noexcept {
-    std::fprintf(stderr, "bench_spsc_session: %s: the ring rejected a push, so the round trip is not measured\n",
-                 bench_name);
-    std::abort();
+[[noreturn]] CRUCIBLE_COLD void stop_on_rejected_push(::fixy::TextView bench_name) noexcept {
+    ::fixy::fatal("bench_spsc_session: {}: the ring rejected a push, so the round trip is not measured", bench_name);
 }
 
 // The bare pop takes the value out of the Option, so the barrier sees an
@@ -101,7 +99,7 @@ struct Rig {
 };
 
 [[nodiscard]] bench::Report bare_push_bare_pop() {
-    constexpr const char* name = "round-trip: bare push + bare pop";
+    constexpr ::fixy::TextView name = "round-trip: bare push + bare pop";
     Rig<0> rig;
     auto& [producer, consumer] = rig.handles;
     Item item = 0;
@@ -113,7 +111,7 @@ struct Rig {
 }
 
 [[nodiscard]] bench::Report typed_send_bare_pop() {
-    constexpr const char* name = "round-trip: typed send + bare pop";
+    constexpr ::fixy::TextView name = "round-trip: typed send + bare pop";
     Rig<1> rig;
     auto& [producer, consumer] = rig.handles;
     std::optional session{
@@ -128,7 +126,7 @@ struct Rig {
 }
 
 [[nodiscard]] bench::Report bare_push_typed_recv() {
-    constexpr const char* name = "round-trip: bare push + typed recv";
+    constexpr ::fixy::TextView name = "round-trip: bare push + typed recv";
     Rig<2> rig;
     auto& [producer, consumer] = rig.handles;
     std::optional session{
@@ -146,7 +144,7 @@ struct Rig {
 }
 
 [[nodiscard]] bench::Report typed_send_typed_recv() {
-    constexpr const char* name = "round-trip: typed send + typed recv";
+    constexpr ::fixy::TextView name = "round-trip: typed send + typed recv";
     Rig<3> rig;
     auto& [producer, consumer] = rig.handles;
     std::optional sender{

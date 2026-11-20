@@ -115,14 +115,12 @@ int main() {
         // sample hits the filesystem. Auto-batch is fine: each body
         // allocates its own arena + region, so state doesn't grow
         // unboundedly across batches.
-        char label_cold[64], label_warm[64], label_ca_warm[64];
-        char label_read[64], label_ca_read[64], label_record_event[64];
-        std::snprintf(label_cold, sizeof(label_cold), "store cold  (%u ops, distinct)", num_ops);
-        std::snprintf(label_warm, sizeof(label_warm), "store warm  (%u ops, dedup hit)", num_ops);
-        std::snprintf(label_ca_warm, sizeof(label_ca_warm), "store CA    (%u ops, dedup hit)", num_ops);
-        std::snprintf(label_read, sizeof(label_read), "load  cold  (%u ops)", num_ops);
-        std::snprintf(label_ca_read, sizeof(label_ca_read), "load  CA    (%u ops, cache hit)", num_ops);
-        std::snprintf(label_record_event, sizeof(label_record_event), "record event (%u ops, unified log)", num_ops);
+        const bench::RunName label_cold = bench::format_name("store cold  ({} ops, distinct)", num_ops);
+        const bench::RunName label_warm = bench::format_name("store warm  ({} ops, dedup hit)", num_ops);
+        const bench::RunName label_ca_warm = bench::format_name("store CA    ({} ops, dedup hit)", num_ops);
+        const bench::RunName label_read = bench::format_name("load  cold  ({} ops)", num_ops);
+        const bench::RunName label_ca_read = bench::format_name("load  CA    ({} ops, cache hit)", num_ops);
+        const bench::RunName label_record_event = bench::format_name("record event ({} ops, unified log)", num_ops);
 
         const std::size_t base_idx = reports.size();
         uint64_t record_step = static_cast<uint64_t>(num_ops) << 32;

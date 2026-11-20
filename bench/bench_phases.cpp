@@ -114,10 +114,7 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const Lo
     const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     ::fixy::BumpArena scratch{arena_bytes};
 
-    char label[64];
-    std::snprintf(label, sizeof(label), "build_trace (full pipeline, %u ops)", trace.num_ops);
-
-    bench::Run r{label};
+    bench::Run r{bench::format_name("build_trace (full pipeline, {} ops)", trace.num_ops)};
     if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
     return r.samples(500).warmup(10).batch(1).measure([&] {
         scratch.with_epoch([&]() noexcept {

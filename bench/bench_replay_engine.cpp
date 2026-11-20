@@ -178,11 +178,10 @@ int main() {
         CrucibleContext ctx{::foundation::effects::testing::test().alloc};
         (void)ctx.activate(br.region);
 
-        char label1[64], label2[64], label3[64], label4[64];
-        std::snprintf(label1, sizeof(label1), "advance only           [%4u ops]", n);
-        std::snprintf(label2, sizeof(label2), "advance + output_ptr   [%4u ops]", n);
-        std::snprintf(label3, sizeof(label3), "advance + out + in     [%4u ops]", n);
-        std::snprintf(label4, sizeof(label4), "CrucibleContext        [%4u ops]", n);
+        const bench::RunName label1 = bench::format_name("advance only           [{} ops]", ::fixy::Padded<4>{n});
+        const bench::RunName label2 = bench::format_name("advance + output_ptr   [{} ops]", ::fixy::Padded<4>{n});
+        const bench::RunName label3 = bench::format_name("advance + out + in     [{} ops]", ::fixy::Padded<4>{n});
+        const bench::RunName label4 = bench::format_name("CrucibleContext        [{} ops]", ::fixy::Padded<4>{n});
 
         bench::add_report(reports, bench::run(label1, [&] {
                               auto s = walk_advance_only(engine, br.region.ops);

@@ -44,22 +44,12 @@
 // 1000 cycles — batched percentiles are over batch means, labeled
 // "[batch-avg]" in the output.
 
-#include <algorithm>
-#include <charconv>
 #include <chrono>
-#include <climits>
-#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <expected>
-#include <optional>
-#include <span>
-#include <string>
-#include <system_error>
+#include <type_traits>
 #include <utility>
-#include <vector>
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
 // Bench BPF sensing uses the production observability substrate directly.
@@ -267,7 +257,7 @@ template <typename T>
     (void)v;
 }
 
-// ── clobber_array<T>(std::span<T>) — array-side DCE kill ──────────
+// ── clobber_array(View) — array-side DCE kill ─────────────────────
 //
 // Companion to `do_not_optimize()` (single-value DCE kill) and
 // `clobber()` (global memory barrier).  Use when the bench body
@@ -277,8 +267,8 @@ template <typename T>
 // result.
 //
 // Implementation: `[[gnu::noipa]]` empty function, same discipline
-// as `do_not_optimize`.  The span (data pointer + length) is passed
-// through real ABI registers; noipa blocks IPA so from the
+// as `do_not_optimize`.  The View (its first element and its count) is
+// passed through real ABI registers; noipa blocks IPA so from the
 // optimizer's point of view the function could read or write any
 // memory reachable from those arguments — therefore the writes/
 // reads to the array's elements MUST be materialized.
@@ -287,35 +277,30 @@ template <typename T>
 // `feedback/project_gcc16_miscompile`, that idiom miscompiles on
 // some types under GCC 16.  noipa is the recommended replacement.
 //
-// Two overloads — mutable and const — so callers don't need to
-// const_cast a read-only scan.  std::span deduces T from any
-// contiguous range (vector, array, C array, raw pointer + size).
+// One template takes a View of each element type and extent, so a View of
+// const elements serves a read-only scan.  A FixedArray, a HeapArray and
+// each other owner of the base gives its View through view().
 //
 // Cost: one real call instruction per use (same as do_not_optimize).
 // Acceptable for benchmark scaffolding.
 //
 // Usage:
 //
-//   std::array<int, N> data;
-//   for (auto& v : data) v = compute(...);
-//   bench::clobber_array(std::span{data});  // forces materialization
+//   ::fixy::FixedArray<int, N> data{};
+//   for (int& v : data) v = compute(...);
+//   bench::clobber_array(data.view());  // forces materialization
 //
-//   std::vector<float> readings(N);
+//   ::fixy::HeapArray<float> readings = ::fixy::mint_heap_array(alloc, N, 0.0f);
 //   bench::Run("scan").measure([&]() noexcept {
 //       float sum = 0;
 //       for (float x : readings) sum += x;
-//       bench::clobber_array(std::span<const float>{readings});
+//       bench::clobber_array(::fixy::View<const float>{readings.view()});
 //       bench::do_not_optimize(sum);
 //   });
 
-template <typename T>
-[[gnu::noipa]] void clobber_array(std::span<T> s) noexcept {
-    (void)s;
-}
-
-template <typename T>
-[[gnu::noipa]] void clobber_array(std::span<const T> s) noexcept {
-    (void)s;
+template <typename T, std::size_t Extent>
+[[gnu::noipa]] void clobber_array(::fixy::View<T, Extent> elements) noexcept {
+    (void)elements;
 }
 
 namespace detail {
@@ -1119,7 +1104,9 @@ struct WindowClock {
 namespace detail {
 
 // Writes the text that stdio holds for standard output, so a report of the
-// base, which writes at once, comes after it.
+// base, which writes at once, comes after it.  A bench that prints its own
+// lines through stdio then keeps the order of its lines and of the rows.  The
+// flush goes when no bench prints through stdio.
 inline void flush_standard_output() noexcept { static_cast<void>(std::fflush(stdout)); }
 
 // The value of the first line of text that starts with key: the characters
@@ -1870,12 +1857,216 @@ struct WindowSpread {
 
 // ── Report ────────────────────────────────────────────────────────
 
+// The longest name of a Run, of a Report and of a side of a Compare, in
+// bytes.  The longest name of a bench of the tree holds 55 bytes.
+inline constexpr std::size_t kNameBytes = 128;
+
+// The name of a Run, of a Report and of a side of a Compare.  It owns its
+// bytes, so a report keeps its name after the text that a bench formatted it
+// from ends.
+using RunName = ::fixy::FixedText<kNameBytes>;
+
+// The name of a text.  A text longer than kNameBytes ends the process, because
+// a cut name would name a different row.  Complexity: one copy of the text.
+[[nodiscard]] inline RunName name_of(::fixy::TextView text) noexcept {
+    RunName name{};
+    if (name.append(text).is_err()) {
+        ::fixy::fatal("the name of a bench row holds {} bytes, and a name holds at most {}: '{}'", text.size(),
+                      kNameBytes, text);
+    }
+    return name;
+}
+
+// The name of a row that a bench formats from its parts, such as a count of
+// threads, with the text and the arguments of the Report family.  A text
+// longer than kNameBytes ends the process, as for name_of.
+template <class... Args>
+    requires(::fixy::Formattable<Args> && ...)
+[[nodiscard]] RunName format_name(::fixy::Fmt<std::type_identity_t<Args>...> const& fmt, Args... args) noexcept {
+    RunName name{};
+    if (::fixy::format(name, fmt, args...).is_err()) {
+        ::fixy::fatal("the name of a bench row holds more than {} bytes: '{}'", kNameBytes, name.view());
+    }
+    return name;
+}
+
+namespace detail {
+
+// The text of a time in nanoseconds for the columns of a report: the value
+// with two decimals in ns, µs, ms or s, the largest unit in which the value is
+// at least 1, and the unit after it, as "12.35ns" or "1.00µs".  A value whose
+// digits do not fit 32 bytes, at least 10^29 s, writes nan before the unit.
+// µs is two bytes of UTF-8, so a column of 9 bytes holds "999.99µs".
+using NsText = ::fixy::FixedText<40>;
+
+[[nodiscard]] inline NsText ns_text(double ns) noexcept {
+    ::fixy::TextView unit{"ns"};
+    double scaled = ns;
+    if (ns >= 1e9) {
+        unit = ::fixy::TextView{"s"};
+        scaled = ns / 1e9;
+    } else if (ns >= 1e6) {
+        unit = ::fixy::TextView{"ms"};
+        scaled = ns / 1e6;
+    } else if (ns >= 1e3) {
+        unit = ::fixy::TextView{"µs"};
+        scaled = ns / 1e3;
+    }
+    ::fixy::FixedText<32> digits{};
+    const bool is_cut = ::fixy::format(digits, "{}", ::fixy::Fixed<2>{scaled}).is_err();
+    NsText text{};
+    static_cast<void>(::fixy::format(text, "{}{}", is_cut ? ::fixy::TextView{"nan"} : digits.view(), unit));
+    return text;
+}
+
+// The JSON text of a name: the characters between two quotes, with each
+// character that a JSON parser refuses in a string written as its escape of
+// RFC 8259.  A name holds at most kNameBytes characters, and an escape at
+// most 6, so the text holds each name.
+using JsonName = ::fixy::FixedText<2 + 6 * kNameBytes>;
+
+[[nodiscard]] inline JsonName json_name_of(::fixy::TextView name) noexcept {
+    JsonName text{};
+    const auto put = [&text](::fixy::TextView part) noexcept {
+        if (text.append(part).is_err()) ::fixy::fatal("the JSON text of a name holds each escaped name");
+    };
+    put(::fixy::TextView{"\""});
+    for (char const character : name) {
+        const auto code = static_cast<unsigned char>(character);
+        switch (code) {
+            case '"':
+                put(::fixy::TextView{"\\\""});
+                break;
+            case '\\':
+                put(::fixy::TextView{"\\\\"});
+                break;
+            case '\b':
+                put(::fixy::TextView{"\\b"});
+                break;
+            case '\f':
+                put(::fixy::TextView{"\\f"});
+                break;
+            case '\n':
+                put(::fixy::TextView{"\\n"});
+                break;
+            case '\r':
+                put(::fixy::TextView{"\\r"});
+                break;
+            case '\t':
+                put(::fixy::TextView{"\\t"});
+                break;
+            default:
+                if (code < 0x20) {
+                    ::fixy::FixedText<8> escape{};
+                    static_cast<void>(::fixy::format(escape, "\\u{}", ::fixy::Hex<4>{std::uint16_t{code}}));
+                    put(escape.view());
+                } else if (text.append(character).is_err()) {
+                    ::fixy::fatal("the JSON text of a name holds each escaped name");
+                }
+        }
+    }
+    put(::fixy::TextView{"\""});
+    return text;
+}
+
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
+// The unit of a counter of the sense hub in the BPF line of a report.
+enum class BpfUnit : std::uint8_t {
+    Count,
+    Ns,
+    Bytes
+};
+
+// One counter of the BPF line and of the BPF part of the JSON of a report:
+// its label, its slot of the snapshot, and its unit.
+struct BpfField {
+    ::fixy::TextView label{};
+    ::crucible::perf::Idx idx{};
+    BpfUnit unit = BpfUnit::Count;
+};
+
+// Every counter whose (post - pre) is meaningful. Order = the story
+// the reader walks: first what interrupted us, then what the bench
+// touched (memory → sync → I/O → thread mgmt), finally reliability.
+inline constexpr ::fixy::FixedArray<BpfField, 54> kBpfFields{
+    // Scheduling interference.
+    BpfField{"preempt", ::crucible::perf::SCHED_CTX_INVOL, BpfUnit::Count},
+    BpfField{"yield", ::crucible::perf::SCHED_CTX_VOL, BpfUnit::Count},
+    BpfField{"migrate", ::crucible::perf::SCHED_MIGRATIONS, BpfUnit::Count},
+    BpfField{"runtime", ::crucible::perf::SCHED_RUNTIME_NS, BpfUnit::Ns},
+    BpfField{"wait", ::crucible::perf::SCHED_WAIT_NS, BpfUnit::Ns},
+    BpfField{"sleep", ::crucible::perf::SCHED_SLEEP_NS, BpfUnit::Ns},
+    BpfField{"iowait", ::crucible::perf::SCHED_IOWAIT_NS, BpfUnit::Ns},
+    BpfField{"blocked", ::crucible::perf::SCHED_BLOCKED_NS, BpfUnit::Ns},
+    BpfField{"softirq", ::crucible::perf::SOFTIRQ_STOLEN_NS, BpfUnit::Ns},
+    BpfField{"wake_rx", ::crucible::perf::WAKEUPS_RECEIVED, BpfUnit::Count},
+    BpfField{"wake_tx", ::crucible::perf::WAKEUPS_SENT, BpfUnit::Count},
+    BpfField{"freq_chg", ::crucible::perf::CPU_FREQ_CHANGES, BpfUnit::Count},
+    BpfField{"tid_new", ::crucible::perf::THREADS_CREATED, BpfUnit::Count},
+    BpfField{"tid_end", ::crucible::perf::THREADS_EXITED, BpfUnit::Count},
+
+    // Memory.
+    BpfField{"pgfault", ::crucible::perf::MEM_PAGE_FAULTS_MIN, BpfUnit::Count},
+    BpfField{"majfault", ::crucible::perf::MEM_PAGE_FAULTS_MAJ, BpfUnit::Count},
+    BpfField{"mmap", ::crucible::perf::MEM_MMAP_COUNT, BpfUnit::Count},
+    BpfField{"munmap", ::crucible::perf::MEM_MUNMAP_COUNT, BpfUnit::Count},
+    BpfField{"brk", ::crucible::perf::MEM_BRK_CALLS, BpfUnit::Count},
+    BpfField{"reclaim_n", ::crucible::perf::DIRECT_RECLAIM_COUNT, BpfUnit::Count},
+    BpfField{"reclaim_t", ::crucible::perf::DIRECT_RECLAIM_NS, BpfUnit::Ns},
+    BpfField{"swap_out", ::crucible::perf::SWAP_OUT_PAGES, BpfUnit::Count},
+    BpfField{"thp_ok", ::crucible::perf::THP_COLLAPSE_OK, BpfUnit::Count},
+    BpfField{"thp_fail", ::crucible::perf::THP_COLLAPSE_FAIL, BpfUnit::Count},
+    BpfField{"numa", ::crucible::perf::NUMA_MIGRATE_PAGES, BpfUnit::Count},
+    BpfField{"compact", ::crucible::perf::COMPACTION_STALLS, BpfUnit::Count},
+    BpfField{"extfrag", ::crucible::perf::EXTFRAG_EVENTS, BpfUnit::Count},
+
+    // Sync contention.
+    BpfField{"futex", ::crucible::perf::FUTEX_WAIT_COUNT, BpfUnit::Count},
+    BpfField{"futex_t", ::crucible::perf::FUTEX_WAIT_NS, BpfUnit::Ns},
+    BpfField{"klock", ::crucible::perf::KERNEL_LOCK_COUNT, BpfUnit::Count},
+    BpfField{"klock_t", ::crucible::perf::KERNEL_LOCK_NS, BpfUnit::Ns},
+
+    // I/O (syscall-level).
+    BpfField{"read", ::crucible::perf::IO_READ_BYTES, BpfUnit::Bytes},
+    BpfField{"write", ::crucible::perf::IO_WRITE_BYTES, BpfUnit::Bytes},
+    BpfField{"r_ops", ::crucible::perf::IO_READ_OPS, BpfUnit::Count},
+    BpfField{"w_ops", ::crucible::perf::IO_WRITE_OPS, BpfUnit::Count},
+    BpfField{"fd_open", ::crucible::perf::FD_OPEN_OPS, BpfUnit::Count},
+
+    // Block I/O (device-level).
+    BpfField{"disk_r", ::crucible::perf::DISK_READ_BYTES, BpfUnit::Bytes},
+    BpfField{"disk_w", ::crucible::perf::DISK_WRITE_BYTES, BpfUnit::Bytes},
+    BpfField{"disk_t", ::crucible::perf::DISK_IO_LATENCY_NS, BpfUnit::Ns},
+    BpfField{"disk_n", ::crucible::perf::DISK_IO_COUNT, BpfUnit::Count},
+    BpfField{"pg_miss", ::crucible::perf::PAGE_CACHE_MISSES, BpfUnit::Count},
+    BpfField{"readahead", ::crucible::perf::READAHEAD_PAGES, BpfUnit::Count},
+    BpfField{"unplug", ::crucible::perf::IO_UNPLUG_COUNT, BpfUnit::Count},
+    BpfField{"throttle", ::crucible::perf::WRITE_THROTTLE_JIFFIES, BpfUnit::Count},
+
+    // Network.
+    BpfField{"tx", ::crucible::perf::NET_TX_BYTES, BpfUnit::Bytes},
+    BpfField{"rx", ::crucible::perf::NET_RX_BYTES, BpfUnit::Bytes},
+    BpfField{"retrans", ::crucible::perf::TCP_RETRANSMIT_COUNT, BpfUnit::Count},
+    BpfField{"rst", ::crucible::perf::TCP_RST_SENT, BpfUnit::Count},
+    BpfField{"sk_err", ::crucible::perf::TCP_ERROR_COUNT, BpfUnit::Count},
+    BpfField{"skb_drop", ::crucible::perf::SKB_DROP_COUNT, BpfUnit::Count},
+    BpfField{"cng_loss", ::crucible::perf::TCP_CONG_LOSS, BpfUnit::Count},
+
+    // Reliability (delta-meaningful signals only).
+    BpfField{"sig_fatal", ::crucible::perf::SIGNAL_FATAL_COUNT, BpfUnit::Count},
+    BpfField{"oom_kills", ::crucible::perf::OOM_KILLS_SYSTEM, BpfUnit::Count},
+    BpfField{"mce", ::crucible::perf::MCE_COUNT, BpfUnit::Count},
+};
+#endif
+
+}  // namespace detail
+
 // A report owns each of its parts: the name and the samples own their bytes,
 // and each other part is a plain value.  So a report moves to another
-// thread, and it states sendable (foundation/Transfer.h), which the pointers
-// of the name and of the samples hide.
+// thread, and it states sendable (foundation/Transfer.h), which the pointer
+// of the samples hides.
 struct[[= ::foundation::transfer::sendable{}]] Report {
-    std::string name;
+    RunName name{};
     size_t batch = 1;  // > 1 → pct over batch means  // TODO: strong type
     CpuId pinned_cpu{};  // CpuId::none() = -1 / no pin, or a Run::fan_out measurement
     // The CPUs that the measuring thread and the threads of its body could
@@ -1977,88 +2168,48 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
 
     [[nodiscard]] bool noisy(double cv_threshold = 0.05) const noexcept { return pct.cv > cv_threshold; }
 
-    // Auto-scaled ns formatter for the main summary columns: renders a
-    // fractional-ns double as "NN.NNns" / "NN.NNµs" / "NN.NNms" /
-    // "NN.NNs" with 2 decimals, right-padded to 9 bytes for column
-    // alignment. µs is 2-byte UTF-8 so alignment is slightly off on
-    // µs/ms/s columns — 9 bytes fits up to "9999.99ns" and "999.99µs".
-    static void fmt_ns_(char* buf, size_t len, double ns) noexcept {
-        const char* suffix = "ns";
-        double scaled = ns;
-        if (ns >= 1e9) {
-            suffix = "s";
-            scaled = ns / 1e9;
-        } else if (ns >= 1e6) {
-            suffix = "ms";
-            scaled = ns / 1e6;
-        } else if (ns >= 1e3) {
-            suffix = "µs";
-            scaled = ns / 1e3;
-        }
-
-        char value[32];
-        auto [ptr, ec] = std::to_chars(value, value + sizeof(value), scaled, std::chars_format::fixed, 2);
-        if (ec != std::errc{}) {
-            const char fallback[] = "nan";
-            const size_t fallback_len = sizeof(fallback) - 1;
-            const size_t suffix_len = std::strlen(suffix);
-            const size_t max_out = (len == 0) ? 0 : len - 1;
-            const size_t first = std::min(fallback_len, max_out);
-            std::memcpy(buf, fallback, first);
-            const size_t second = std::min(suffix_len, max_out > first ? max_out - first : 0);
-            std::memcpy(buf + first, suffix, second);
-            if (len != 0) buf[first + second] = '\0';
-            return;
-        }
-        const size_t value_len = static_cast<size_t>(ptr - value);
-        const size_t suffix_len = std::strlen(suffix);
-        const size_t max_out = (len == 0) ? 0 : len - 1;
-        const size_t first = std::min(value_len, max_out);
-        std::memcpy(buf, value, first);
-        const size_t second = std::min(suffix_len, max_out > first ? max_out - first : 0);
-        std::memcpy(buf + first, suffix, second);
-        if (len != 0) buf[first + second] = '\0';
-    }
-
-    // Writes the summary line to standard output.  The one reference to the
-    // stream is here, so a call of a bench names no C stream.
-    void print_text() const noexcept { print_text(stdout); }
-
-    // Writes a single summary line (optionally followed by the BPF
-    // sensory line) to `out`. Every underlying call is C stdio and
-    // std::string::c_str() — no throwing paths, so noexcept.
-    void print_text(FILE* out) const noexcept {
-        char p50_b[32], p90_b[32], p99_b[32], p999_b[32], max_b[32], mean_b[32], sigma_b[32];
-        fmt_ns_(p50_b, sizeof(p50_b), pct.p50);
-        fmt_ns_(p90_b, sizeof(p90_b), pct.p90);
-        fmt_ns_(p99_b, sizeof(p99_b), pct.p99);
-        fmt_ns_(p999_b, sizeof(p999_b), pct.p99_9);
-        fmt_ns_(max_b, sizeof(max_b), pct.max);
-        fmt_ns_(mean_b, sizeof(mean_b), pct.mean);
-        fmt_ns_(sigma_b, sizeof(sigma_b), pct.stddev);
-        std::fprintf(out,
-                     "  %-38s  p50=%9s  p90=%9s  p99=%9s  p99.9=%9s  "
-                     "max=%10s  μ=%9s  σ=%9s  cv=%4.1f%%",
-                     name.c_str(), p50_b, p90_b, p99_b, p999_b, max_b, mean_b, sigma_b, pct.cv * 100.0);
+    // Writes the summary line of the report to standard output, then the
+    // pause line when the pause is over its bound, then the BPF line.  The
+    // report of the base writes at once, and a bench can hold text of its
+    // own in the buffer of stdio, so a flush comes first.  The columns of
+    // the times are 9 bytes wide and the column of max 10 bytes, and µs is
+    // two bytes of UTF-8, so a column of µs holds one character less.
+    void print_text() const noexcept {
+        using ::fixy::Align;
+        using ::fixy::Fixed;
+        using ::fixy::Padded;
+        using ::fixy::Sink;
+        detail::flush_standard_output();
+        const detail::NsText p50_text = detail::ns_text(pct.p50);
+        const detail::NsText p90_text = detail::ns_text(pct.p90);
+        const detail::NsText p99_text = detail::ns_text(pct.p99);
+        const detail::NsText p999_text = detail::ns_text(pct.p99_9);
+        const detail::NsText max_text = detail::ns_text(pct.max);
+        const detail::NsText mean_text = detail::ns_text(pct.mean);
+        const detail::NsText sigma_text = detail::ns_text(pct.stddev);
+        ::fixy::report(Sink::Out, "  {}  p50={}  p90={}  p99={}  p99.9={}  max={}  μ={}  σ={}  cv={}%",
+                       Padded<38, Align::Left>{name.view()}, Padded<9>{p50_text.view()}, Padded<9>{p90_text.view()},
+                       Padded<9>{p99_text.view()}, Padded<9>{p999_text.view()}, Padded<10>{max_text.view()},
+                       Padded<9>{mean_text.view()}, Padded<9>{sigma_text.view()}, Fixed<1, 4>{pct.cv * 100.0});
         if (windows.windows > 0) print_windows_();
 
         if (cycles_per_op > 0.0) {
-            std::fprintf(out, "  cyc=%7.1f", cycles_per_op);
+            ::fixy::report(Sink::Out, "  cyc={}", Fixed<1, 7>{cycles_per_op});
         }
         if (freq_start_hz > 0) {
-            std::fprintf(out, "  @%.2fGHz", static_cast<double>(freq_start_hz) / 1e9);
+            ::fixy::report(Sink::Out, "  @{}GHz", Fixed<2>{static_cast<double>(freq_start_hz) / 1e9});
         }
-        std::fprintf(out, "  n=%zu", pct.n);
+        ::fixy::report(Sink::Out, "  n={}", pct.n);
         if (pinned_cpu_count > 1) {
-            std::fprintf(out, "  cpus=%zu", pinned_cpu_count);
+            ::fixy::report(Sink::Out, "  cpus={}", pinned_cpu_count);
         } else if (pinned_cpu.is_valid()) {
-            std::fprintf(out, "  cpu%d", pinned_cpu.raw());
+            ::fixy::report(Sink::Out, "  cpu{}", pinned_cpu.raw());
         }
-        if (batch > 1) std::fprintf(out, "  [batch-avg]");
-        if (noisy()) std::fprintf(out, "  [noisy]");
-        if (drift_flag) std::fprintf(out, "  [drift]");
-        if (freq_drift_flag) std::fprintf(out, "  [freq-drift]");
-        std::fprintf(out, "\n");
+        if (batch > 1) ::fixy::report(Sink::Out, "  [batch-avg]");
+        if (noisy()) ::fixy::report(Sink::Out, "  [noisy]");
+        if (drift_flag) ::fixy::report(Sink::Out, "  [drift]");
+        if (freq_drift_flag) ::fixy::report(Sink::Out, "  [freq-drift]");
+        ::fixy::report(Sink::Out, "\n");
         if (pause.is_over_bound()) print_pause_();
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
@@ -2067,83 +2218,44 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
         // as confirmation that senses ARE attached (so the reader can
         // trust the silence). When any counter fires, only the fields
         // that actually have a delta are printed.
-        print_bpf_summary_(out);
+        print_bpf_summary_();
 #endif
     }
 
-    // Minimal RFC-8259 string escape — covers every char that would
-    // make a JSON parser unhappy inside a "..."-quoted value. Names in
-    // benches can contain `"` (e.g. arena.copy_string(\"relu\")), and
-    // are user-controlled by the Run constructor. Escape these before
-    // emission to produce valid JSON unconditionally.
-    static void fprint_json_string(FILE* out, std::string_view s) noexcept {
-        std::fputc('"', out);
-        for (char ch : s) {
-            const auto c = static_cast<unsigned char>(ch);
-            switch (c) {
-                case '"':
-                    std::fputs("\\\"", out);
-                    break;
-                case '\\':
-                    std::fputs("\\\\", out);
-                    break;
-                case '\b':
-                    std::fputs("\\b", out);
-                    break;
-                case '\f':
-                    std::fputs("\\f", out);
-                    break;
-                case '\n':
-                    std::fputs("\\n", out);
-                    break;
-                case '\r':
-                    std::fputs("\\r", out);
-                    break;
-                case '\t':
-                    std::fputs("\\t", out);
-                    break;
-                default:
-                    if (c < 0x20) {
-                        std::fprintf(out, "\\u%04x", static_cast<unsigned>(c));
-                    } else {
-                        std::fputc(static_cast<char>(c), out);
-                    }
-            }
-        }
-        std::fputc('"', out);
-    }
-
-    // Writes the JSON object to standard output.  The one reference to the
-    // stream is here, so a call of emit_reports_json names no C stream.
-    void print_json() const noexcept { print_json(stdout); }
-
-    // JSON emitter — same argument as print_text(): C stdio + noexcept
-    // accessors only, no throwing paths.
-    void print_json(FILE* out) const noexcept {
-        std::fputc('{', out);
-        std::fputs("\"name\":", out);
-        fprint_json_string(out, name);
-        std::fprintf(out,
-                     ",\"batch\":%zu,\"n\":%zu,\"cpu\":%d,\"cpu_count\":%zu,"
-                     "\"p50\":%.3f,\"p75\":%.3f,\"p90\":%.3f,\"p95\":%.3f,"
-                     "\"p99\":%.3f,\"p99_9\":%.3f,\"p99_99\":%.3f,"
-                     "\"min\":%.3f,\"max\":%.3f,\"mean\":%.3f,\"stddev\":%.3f,"
-                     "\"cv\":%.5f,\"wall_ns\":%.0f,\"drift_pct\":%.3f,"
-                     "\"cycles_per_op\":%.3f,"
-                     "\"freq_start_hz\":%lu,\"freq_end_hz\":%lu,"
-                     "\"pause_ns\":%lu,\"thread_delay_ns\":%lu,\"thread_arrivals\":%lu,\"paused\":%d,"
-                     "\"windows\":%zu,\"window_p50_median\":%.3f,\"window_spread\":%.5f,\"windows_judged\":%d,"
-                     "\"paused_windows\":%zu",
-                     batch, pct.n, pinned_cpu.raw(), pinned_cpu_count, pct.p50, pct.p75, pct.p90, pct.p95, pct.p99,
-                     pct.p99_9, pct.p99_99, pct.min, pct.max, pct.mean, pct.stddev, pct.cv, wall_ns, drift_pct,
-                     cycles_per_op, static_cast<unsigned long>(freq_start_hz), static_cast<unsigned long>(freq_end_hz),
-                     pause.own_ns(), pause.other.run_delay_ns, pause.other.arrivals, pause.is_over_bound() ? 1 : 0,
-                     windows.windows, windows.median, windows.spread, window_basis == PauseBasis::LostTime ? 1 : 0,
-                     paused_windows);
+    // Writes the JSON object of the report to standard output: the name as
+    // a JSON string (detail::json_name_of), each percentile and time with
+    // three decimals, the variation and the spread with five, the wall time
+    // with none, each count and each flag as an integer, and the BPF counters
+    // when BPF is attached.  A flush of stdio comes first, as for
+    // print_text().
+    void print_json() const noexcept {
+        using ::fixy::Fixed;
+        using ::fixy::Sink;
+        detail::flush_standard_output();
+        const detail::JsonName json_name = detail::json_name_of(name.view());
+        ::fixy::report(Sink::Out, "{{\"name\":{},\"batch\":{},\"n\":{},\"cpu\":{},\"cpu_count\":{},", json_name.view(),
+                       batch, pct.n, pinned_cpu.raw(), pinned_cpu_count);
+        ::fixy::report(Sink::Out,
+                       "\"p50\":{},\"p75\":{},\"p90\":{},\"p95\":{},\"p99\":{},\"p99_9\":{},\"p99_99\":{},"
+                       "\"min\":{},\"max\":{},\"mean\":{},\"stddev\":{},",
+                       Fixed<3>{pct.p50}, Fixed<3>{pct.p75}, Fixed<3>{pct.p90}, Fixed<3>{pct.p95}, Fixed<3>{pct.p99},
+                       Fixed<3>{pct.p99_9}, Fixed<3>{pct.p99_99}, Fixed<3>{pct.min}, Fixed<3>{pct.max},
+                       Fixed<3>{pct.mean}, Fixed<3>{pct.stddev});
+        ::fixy::report(Sink::Out,
+                       "\"cv\":{},\"wall_ns\":{},\"drift_pct\":{},\"cycles_per_op\":{},\"freq_start_hz\":{},"
+                       "\"freq_end_hz\":{},",
+                       Fixed<5>{pct.cv}, Fixed<0>{wall_ns}, Fixed<3>{drift_pct}, Fixed<3>{cycles_per_op}, freq_start_hz,
+                       freq_end_hz);
+        ::fixy::report(Sink::Out,
+                       "\"pause_ns\":{},\"thread_delay_ns\":{},\"thread_arrivals\":{},\"paused\":{},\"windows\":{},"
+                       "\"window_p50_median\":{},\"window_spread\":{},\"windows_judged\":{},\"paused_windows\":{}",
+                       pause.own_ns(), pause.other.run_delay_ns, pause.other.arrivals, pause.is_over_bound() ? 1 : 0,
+                       windows.windows, Fixed<3>{windows.median}, Fixed<5>{windows.spread},
+                       window_basis == PauseBasis::LostTime ? 1 : 0, paused_windows);
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        print_bpf_json_(out);
+        print_bpf_json_();
 #endif
-        std::fputc('}', out);
+        ::fixy::report(Sink::Out, "}}");
     }
 
 private:
@@ -2219,143 +2331,66 @@ private:
     //
     // "N label" reads as English. Times auto-scale ns → µs → ms → s,
     // bytes auto-scale to KB/MB/GB, counts to k/M/G above 10k.
+    //
+    // The labels and the units of the counters are detail::kBpfFields.
 
-    enum class Unit : uint8_t {
-        Count,
-        Ns,
-        Bytes
-    };
-
-    struct Field {
-        const char* label;
-        ::crucible::perf::Idx idx;
-        Unit unit;
-    };
-
-    // Every counter whose (post - pre) is meaningful. Order = the story
-    // the reader walks: first what interrupted us, then what the bench
-    // touched (memory → sync → I/O → thread mgmt), finally reliability.
-    static constexpr Field kAll[] = {
-        // Scheduling interference.
-        {"preempt", ::crucible::perf::SCHED_CTX_INVOL, Unit::Count},
-        {"yield", ::crucible::perf::SCHED_CTX_VOL, Unit::Count},
-        {"migrate", ::crucible::perf::SCHED_MIGRATIONS, Unit::Count},
-        {"runtime", ::crucible::perf::SCHED_RUNTIME_NS, Unit::Ns},
-        {"wait", ::crucible::perf::SCHED_WAIT_NS, Unit::Ns},
-        {"sleep", ::crucible::perf::SCHED_SLEEP_NS, Unit::Ns},
-        {"iowait", ::crucible::perf::SCHED_IOWAIT_NS, Unit::Ns},
-        {"blocked", ::crucible::perf::SCHED_BLOCKED_NS, Unit::Ns},
-        {"softirq", ::crucible::perf::SOFTIRQ_STOLEN_NS, Unit::Ns},
-        {"wake_rx", ::crucible::perf::WAKEUPS_RECEIVED, Unit::Count},
-        {"wake_tx", ::crucible::perf::WAKEUPS_SENT, Unit::Count},
-        {"freq_chg", ::crucible::perf::CPU_FREQ_CHANGES, Unit::Count},
-        {"tid_new", ::crucible::perf::THREADS_CREATED, Unit::Count},
-        {"tid_end", ::crucible::perf::THREADS_EXITED, Unit::Count},
-
-        // Memory.
-        {"pgfault", ::crucible::perf::MEM_PAGE_FAULTS_MIN, Unit::Count},
-        {"majfault", ::crucible::perf::MEM_PAGE_FAULTS_MAJ, Unit::Count},
-        {"mmap", ::crucible::perf::MEM_MMAP_COUNT, Unit::Count},
-        {"munmap", ::crucible::perf::MEM_MUNMAP_COUNT, Unit::Count},
-        {"brk", ::crucible::perf::MEM_BRK_CALLS, Unit::Count},
-        {"reclaim_n", ::crucible::perf::DIRECT_RECLAIM_COUNT, Unit::Count},
-        {"reclaim_t", ::crucible::perf::DIRECT_RECLAIM_NS, Unit::Ns},
-        {"swap_out", ::crucible::perf::SWAP_OUT_PAGES, Unit::Count},
-        {"thp_ok", ::crucible::perf::THP_COLLAPSE_OK, Unit::Count},
-        {"thp_fail", ::crucible::perf::THP_COLLAPSE_FAIL, Unit::Count},
-        {"numa", ::crucible::perf::NUMA_MIGRATE_PAGES, Unit::Count},
-        {"compact", ::crucible::perf::COMPACTION_STALLS, Unit::Count},
-        {"extfrag", ::crucible::perf::EXTFRAG_EVENTS, Unit::Count},
-
-        // Sync contention.
-        {"futex", ::crucible::perf::FUTEX_WAIT_COUNT, Unit::Count},
-        {"futex_t", ::crucible::perf::FUTEX_WAIT_NS, Unit::Ns},
-        {"klock", ::crucible::perf::KERNEL_LOCK_COUNT, Unit::Count},
-        {"klock_t", ::crucible::perf::KERNEL_LOCK_NS, Unit::Ns},
-
-        // I/O (syscall-level).
-        {"read", ::crucible::perf::IO_READ_BYTES, Unit::Bytes},
-        {"write", ::crucible::perf::IO_WRITE_BYTES, Unit::Bytes},
-        {"r_ops", ::crucible::perf::IO_READ_OPS, Unit::Count},
-        {"w_ops", ::crucible::perf::IO_WRITE_OPS, Unit::Count},
-        {"fd_open", ::crucible::perf::FD_OPEN_OPS, Unit::Count},
-
-        // Block I/O (device-level).
-        {"disk_r", ::crucible::perf::DISK_READ_BYTES, Unit::Bytes},
-        {"disk_w", ::crucible::perf::DISK_WRITE_BYTES, Unit::Bytes},
-        {"disk_t", ::crucible::perf::DISK_IO_LATENCY_NS, Unit::Ns},
-        {"disk_n", ::crucible::perf::DISK_IO_COUNT, Unit::Count},
-        {"pg_miss", ::crucible::perf::PAGE_CACHE_MISSES, Unit::Count},
-        {"readahead", ::crucible::perf::READAHEAD_PAGES, Unit::Count},
-        {"unplug", ::crucible::perf::IO_UNPLUG_COUNT, Unit::Count},
-        {"throttle", ::crucible::perf::WRITE_THROTTLE_JIFFIES, Unit::Count},
-
-        // Network.
-        {"tx", ::crucible::perf::NET_TX_BYTES, Unit::Bytes},
-        {"rx", ::crucible::perf::NET_RX_BYTES, Unit::Bytes},
-        {"retrans", ::crucible::perf::TCP_RETRANSMIT_COUNT, Unit::Count},
-        {"rst", ::crucible::perf::TCP_RST_SENT, Unit::Count},
-        {"sk_err", ::crucible::perf::TCP_ERROR_COUNT, Unit::Count},
-        {"skb_drop", ::crucible::perf::SKB_DROP_COUNT, Unit::Count},
-        {"cng_loss", ::crucible::perf::TCP_CONG_LOSS, Unit::Count},
-
-        // Reliability (delta-meaningful signals only).
-        {"sig_fatal", ::crucible::perf::SIGNAL_FATAL_COUNT, Unit::Count},
-        {"oom_kills", ::crucible::perf::OOM_KILLS_SYSTEM, Unit::Count},
-        {"mce", ::crucible::perf::MCE_COUNT, Unit::Count},
-    };
-
-    static void print_scaled_(FILE* out, uint64_t v, Unit u) noexcept {
+    // Writes a counter in the unit of its field, with one decimal above the
+    // first step of its scale, as "1.2G", "4.3ms" or "12KB".
+    static void print_scaled_(uint64_t v, detail::BpfUnit u) noexcept {
+        using ::fixy::Fixed;
+        using ::fixy::Sink;
+        const auto value = static_cast<double>(v);
         switch (u) {
-            case Unit::Count:
+            case detail::BpfUnit::Count:
                 if (v >= 1000000000)
-                    std::fprintf(out, "%.1fG", static_cast<double>(v) / 1e9);
+                    ::fixy::report(Sink::Out, "{}G", Fixed<1>{value / 1e9});
                 else if (v >= 1000000)
-                    std::fprintf(out, "%.1fM", static_cast<double>(v) / 1e6);
+                    ::fixy::report(Sink::Out, "{}M", Fixed<1>{value / 1e6});
                 else if (v >= 10000)
-                    std::fprintf(out, "%.1fk", static_cast<double>(v) / 1e3);
+                    ::fixy::report(Sink::Out, "{}k", Fixed<1>{value / 1e3});
                 else
-                    std::fprintf(out, "%lu", v);
+                    ::fixy::report(Sink::Out, "{}", v);
                 break;
-            case Unit::Ns:
+            case detail::BpfUnit::Ns:
                 if (v >= 1000000000)
-                    std::fprintf(out, "%.1fs", static_cast<double>(v) / 1e9);
+                    ::fixy::report(Sink::Out, "{}s", Fixed<1>{value / 1e9});
                 else if (v >= 1000000)
-                    std::fprintf(out, "%.1fms", static_cast<double>(v) / 1e6);
+                    ::fixy::report(Sink::Out, "{}ms", Fixed<1>{value / 1e6});
                 else if (v >= 1000)
-                    std::fprintf(out, "%.1fµs", static_cast<double>(v) / 1e3);
+                    ::fixy::report(Sink::Out, "{}µs", Fixed<1>{value / 1e3});
                 else
-                    std::fprintf(out, "%luns", v);
+                    ::fixy::report(Sink::Out, "{}ns", v);
                 break;
-            case Unit::Bytes:
+            case detail::BpfUnit::Bytes:
                 if (v >= (1ULL << 30))
-                    std::fprintf(out, "%.1fGB", static_cast<double>(v) / static_cast<double>(1ULL << 30));
+                    ::fixy::report(Sink::Out, "{}GB", Fixed<1>{value / static_cast<double>(1ULL << 30)});
                 else if (v >= (1ULL << 20))
-                    std::fprintf(out, "%.1fMB", static_cast<double>(v) / static_cast<double>(1ULL << 20));
+                    ::fixy::report(Sink::Out, "{}MB", Fixed<1>{value / static_cast<double>(1ULL << 20)});
                 else if (v >= (1ULL << 10))
-                    std::fprintf(out, "%.1fKB", static_cast<double>(v) / 1024.0);
+                    ::fixy::report(Sink::Out, "{}KB", Fixed<1>{value / 1024.0});
                 else
-                    std::fprintf(out, "%luB", v);
+                    ::fixy::report(Sink::Out, "{}B", v);
                 break;
             default:
-                std::fprintf(out, "%lu", v);
+                ::fixy::report(Sink::Out, "{}", v);
                 break;
         }
     }
 
-    void print_bpf_summary_(FILE* out) const noexcept {
+    void print_bpf_summary_() const noexcept {
+        using ::fixy::Sink;
         if (bpf_attached == 0) return;
         const auto& d = bpf_delta;
 
-        std::fprintf(out, "     └─ ");
+        ::fixy::report(Sink::Out, "     └─ ");
         bool first = true;
-        for (const Field& f : kAll) {
+        for (const detail::BpfField& f : detail::kBpfFields) {
             const uint64_t v = d[f.idx];
             if (v == 0) continue;
-            if (!first) std::fprintf(out, " · ");
+            if (!first) ::fixy::report(Sink::Out, " · ");
             first = false;
-            std::fprintf(out, "%s=", f.label);
-            print_scaled_(out, v, f.unit);
+            ::fixy::report(Sink::Out, "{}=", f.label);
+            print_scaled_(v, f.unit);
         }
         // SchedSwitch off-CPU top-K — appended inline (same line) as
         // the SenseHub deltas.  Dense
@@ -2371,36 +2406,37 @@ private:
         // the reader knows the top-K is a truncation rather than the
         // exhaustive list.
         if (sched_offcpu.kept > 0) {
-            if (!first) std::fprintf(out, " · ");
+            if (!first) ::fixy::report(Sink::Out, " · ");
             first = false;
-            std::fprintf(out, "offcpu=");
+            ::fixy::report(Sink::Out, "offcpu=");
             std::uint32_t written = 0;
             for (detail::OffCpuSpike const& spike : sched_offcpu.longest) {
                 if (written == sched_offcpu.kept) break;
-                if (written > 0) std::fputc('/', out);
-                print_scaled_(out, spike.off_ns, Unit::Ns);
-                std::fprintf(out, "@%u", spike.cpu);
+                if (written > 0) ::fixy::report(Sink::Out, "/");
+                print_scaled_(spike.off_ns, detail::BpfUnit::Ns);
+                ::fixy::report(Sink::Out, "@{}", spike.cpu);
                 ++written;
             }
             if (sched_offcpu.count > sched_offcpu.kept) {
-                std::fprintf(out, " (×%u)", sched_offcpu.count);
+                ::fixy::report(Sink::Out, " (×{})", sched_offcpu.count);
             }
         }
-        if (first) std::fprintf(out, "clean");
-        std::fputc('\n', out);
+        if (first) ::fixy::report(Sink::Out, "clean");
+        ::fixy::report(Sink::Out, "\n");
     }
 
-    // JSON: emit every counter in the kAll table as a stable schema
+    // JSON: emit every counter in the kBpfFields table as a stable schema
     // (all present whether zero or not) so downstream consumers can
     // rely on field presence.
-    void print_bpf_json_(FILE* out) const noexcept {
+    void print_bpf_json_() const noexcept {
+        using ::fixy::Sink;
         if (bpf_attached == 0) return;
         const auto& d = bpf_delta;
-        std::fprintf(out, ",\"bpf\":{\"attached\":%zu", bpf_attached);
-        for (const Field& f : kAll) {
-            std::fprintf(out, ",\"%s\":%lu", f.label, d[f.idx]);
+        ::fixy::report(Sink::Out, ",\"bpf\":{{\"attached\":{}", bpf_attached);
+        for (const detail::BpfField& f : detail::kBpfFields) {
+            ::fixy::report(Sink::Out, ",\"{}\":{}", f.label, d[f.idx]);
         }
-        std::fputc('}', out);
+        ::fixy::report(Sink::Out, "}}");
     }
 #endif
 };
@@ -2408,7 +2444,8 @@ private:
 // ── Mann-Whitney U (Mann & Whitney 1947) for A/B ──────────────────
 
 struct Compare {
-    std::string a_name, b_name;
+    RunName a_name{};
+    RunName b_name{};
     double delta_p50_pct = 0;
     double delta_p99_pct = 0;
     double delta_mean_pct = 0;
@@ -2423,25 +2460,27 @@ struct Compare {
     [[nodiscard]] bool is_regression() const noexcept { return distinguishable && delta_p99_pct > kFlagDeltaP99Pct; }
     [[nodiscard]] bool is_improvement() const noexcept { return distinguishable && delta_p99_pct < -kFlagDeltaP99Pct; }
 
-    // Writes the summary line to standard output.  The one reference to the
-    // stream is here, so a call of a bench names no C stream.
-    void print_text() const noexcept { print_text(stdout); }
-
-    // One-line summary — C stdio + std::string::c_str() only, noexcept
-    // for the same reasons as Report::print_text.
-    // A pair that the test tells apart but whose p99 moves less than the
-    // threshold says so, and does not claim to be indistinguishable.
-    void print_text(FILE* out) const noexcept {
-        std::fprintf(out, "  Δ %s → %s:  Δp50=%+6.2f%%  Δp99=%+6.2f%%  Δμ=%+6.2f%%  z=%+5.2f", a_name.c_str(),
-                     b_name.c_str(), delta_p50_pct, delta_p99_pct, delta_mean_pct, z);
+    // Writes the one-line summary to standard output, after a flush of stdio
+    // as Report::print_text() does.  A pair that the test tells apart but
+    // whose p99 moves less than the threshold says so, and does not claim to
+    // be indistinguishable.
+    void print_text() const noexcept {
+        using ::fixy::Fixed;
+        using ::fixy::SignMark;
+        using ::fixy::Sink;
+        using Delta = Fixed<2, 6, ::fixy::Align::Right, SignMark::Always>;
+        detail::flush_standard_output();
+        ::fixy::report(Sink::Out, "  Δ {} → {}:  Δp50={}%  Δp99={}%  Δμ={}%  z={}", a_name.view(), b_name.view(),
+                       Delta{delta_p50_pct}, Delta{delta_p99_pct}, Delta{delta_mean_pct},
+                       Fixed<2, 5, ::fixy::Align::Right, SignMark::Always>{z});
         if (is_regression()) {
-            std::fputs("  [REGRESS]\n", out);
+            ::fixy::report(Sink::Out, "  [REGRESS]\n");
         } else if (is_improvement()) {
-            std::fputs("  [IMPROVE]\n", out);
+            ::fixy::report(Sink::Out, "  [IMPROVE]\n");
         } else if (distinguishable) {
-            std::fprintf(out, "  [distinguishable, |Δp99| <= %.0f%%]\n", kFlagDeltaP99Pct);
+            ::fixy::report(Sink::Out, "  [distinguishable, |Δp99| <= {}%]\n", Fixed<0>{kFlagDeltaP99Pct});
         } else {
-            std::fputs("  [indistinguishable]\n", out);
+            ::fixy::report(Sink::Out, "  [indistinguishable]\n");
         }
     }
 };
@@ -2555,16 +2594,16 @@ struct Compare {
 
 class Run {
 public:
-    explicit Run(std::string name) : name_{std::move(name)} {}
+    // A run whose name is a literal or a view of a text of the base.  The run
+    // copies the name, so the text can end before the run.  A name of more
+    // than kNameBytes bytes ends the process (name_of).
+    explicit Run(::fixy::TextView name) noexcept : name_{name_of(name)} {}
 
     // A run whose name is a text of the base that a bench formats, such as
     // the name of a row with its count of threads.  Complexity: one copy of
     // the text.
     template <std::size_t Capacity>
-    explicit Run(::fixy::FixedText<Capacity> const& name) {
-        for (char const character : name)
-            name_.push_back(character);
-    }
+    explicit Run(::fixy::FixedText<Capacity> const& name) noexcept : name_{name_of(name.view())} {}
 
     // Pinning policy:
     //   default:       pin to first isolcpu (else sched_getcpu())
@@ -3095,7 +3134,7 @@ private:
         FanOut
     };
 
-    std::string name_;
+    RunName name_{};
     size_t samples_ = 0;  // TODO: strong type (count, not an id)
     size_t warmup_ = 10000;  // TODO: strong type
     size_t batch_ = 0;  // TODO: strong type
@@ -3207,9 +3246,9 @@ private:
                       ::fixy::side_as<side::IsolatedCpus>(crucible::warden::isolated_cpus(startup)), read_core_order());
         int target = detail::core_of_run(cores, allowed, asked).raw();
         if (asked.is_valid() && target != asked.raw()) {
-            std::fprintf(stderr,
-                         "WARN bench: cpu%d is outside the affinity of the process, so the run measures on cpu%d\n",
-                         asked.raw(), target);
+            ::fixy::report(::fixy::Sink::Err,
+                           "WARN bench: cpu{} is outside the affinity of the process, so the run measures on cpu{}\n",
+                           asked.raw(), target);
         }
         if (target < 0) target = detail::calling_cpu().raw();
         if (target < 0) return PinResult{};
@@ -3548,10 +3587,16 @@ enum class JsonTail : std::uint8_t {
 // For benches that need .samples()/.warmup() overrides, construct Run
 // directly and apply env_core() manually.
 template <typename Body>
-[[nodiscard]] inline Report run(std::string name, Body&& body) {
-    Run r{std::move(name)};
+[[nodiscard]] inline Report run(::fixy::TextView name, Body&& body) {
+    Run r{name};
     if (const int c = env_core(); c >= 0) (void)r.core(c);
     return r.measure(std::forward<Body>(body));
+}
+
+// The same, for a name that a bench formats into a text of the base.
+template <std::size_t Capacity, typename Body>
+[[nodiscard]] inline Report run(::fixy::FixedText<Capacity> const& name, Body&& body) {
+    return run(name.view(), std::forward<Body>(body));
 }
 
 // Writes the text line of each report to standard output, in order.  A bench
@@ -3565,7 +3610,7 @@ inline void emit_reports_text(::fixy::View<const Report> reports) noexcept {
 // order of the view.
 inline void emit_compares(::fixy::View<const Compare> compares) noexcept {
     for (Compare const& compare : compares)
-        compare.print_text(stdout);
+        compare.print_text();
 }
 
 // Writes the line "=== json ===" and the JSON array of the reports to
@@ -3573,9 +3618,8 @@ inline void emit_compares(::fixy::View<const Compare> compares) noexcept {
 // utils/assay/readers/bench.py reads the text after the last such line, so a
 // bench calls this last.  A bench that prints more between the text and the
 // JSON, such as a bench::compare block, calls emit_reports_text, then its
-// prints, then this.  The frame of the array goes through fixy::report, which
-// writes at once, and each object through stdio, so a flush comes after each
-// object.
+// prints, then this.  The text that a bench holds in the buffer of stdio goes
+// out first, so no such text comes inside the array.
 inline void emit_reports_json(::fixy::View<const Report> reports, JsonTail tail) noexcept {
     using ::fixy::Sink;
     if (tail == JsonTail::Off) return;
@@ -3586,7 +3630,6 @@ inline void emit_reports_json(::fixy::View<const Report> reports, JsonTail tail)
         ++written;
         ::fixy::report(Sink::Out, "  ");
         report.print_json();
-        detail::flush_standard_output();
         ::fixy::report(Sink::Out, "{}\n", written < reports.size() ? ::fixy::TextView{","} : ::fixy::TextView{});
     }
     ::fixy::report(Sink::Out, "]\n");

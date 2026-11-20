@@ -26,7 +26,7 @@ int main() {
     const int core = bench::env_core();
     const bench::JsonTail json = bench::env_json();
 
-    auto run = [&](const char* name, auto&& body) { return bench::Run(name).core(core).measure(body); };
+    auto run = [&](::fixy::TextView name, auto&& body) { return bench::Run(name).core(core).measure(body); };
 
     std::printf("=== smoke ===\n");
 

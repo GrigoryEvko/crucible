@@ -279,10 +279,27 @@ void start_pipeline(Vigil& vigil) {
 // looks like the one that produced them.
 
 struct Ceiling {
-    std::string name;
+    bench::RunName name{};
     double p50_ns = 0.0;
     double p99_ns = 0.0;
     bool gate = false;  // false = report the case, never fail on it
+};
+
+// The rows of a baseline file, at most, and its bytes, at most.
+constexpr std::size_t kCeilings = 16;
+constexpr std::size_t kBaselineBytes = 8192;
+
+// Whether the baseline file opened, so that a missing file and a file with
+// no row differ.
+enum class BaselineFile : std::uint8_t {
+    Missing,
+    Present,
+};
+
+// The rows of a baseline file, in the order of the file.
+struct Baseline {
+    BaselineFile file = BaselineFile::Missing;
+    ::fixy::FixedList<Ceiling, kCeilings> rows{};
 };
 
 // Sized from the observed run-to-run spread of p50 across ten interleaved
@@ -313,50 +330,99 @@ constexpr bool kGateOnP99 = false;
 // the wall-cap unit fix in bench_harness.h — which left every run with 64 —
 // it could never fire at all.
 
+// The text after the first count characters of a text.
+[[nodiscard]] ::fixy::TextView text_after(::fixy::TextView text, std::size_t count) noexcept {
+    return crucible::warden::detail::text_suffix(text, count);
+}
+
+// The value of a decimal number of a baseline: digits, a point and digits,
+// after the blanks that lead it, up to the first other character.  The
+// number holds at most 15 digits and at most 15 after the point, so the
+// integer of its digits and the power of ten are exact doubles, and their
+// quotient is the nearest double to the decimal value, as strtod gives it.
+// Each other form ends the process, because the bench reads its own
+// committed file.  Complexity: linear in the digits.
+[[nodiscard]] double decimal_value(::fixy::TextView text) noexcept {
+    constexpr std::size_t kMostDigits = 15;
+    std::uint64_t digits = 0;
+    std::size_t count = 0;
+    std::size_t after_point = 0;
+    bool is_after_point = false;
+    for (char const character : crucible::warden::detail::trim_blanks(text)) {
+        if (character == '.' && !is_after_point) {
+            is_after_point = true;
+            continue;
+        }
+        if (character < '0' || character > '9') break;
+        digits = digits * 10 + static_cast<std::uint64_t>(character - '0');
+        ++count;
+        after_point += is_after_point ? std::size_t{1} : std::size_t{0};
+    }
+    if (count == 0 || count > kMostDigits) {
+        ::fixy::fatal("a number of the baseline is no decimal of 1 to {} digits: '{}'", kMostDigits, text);
+    }
+    double scale = 1.0;
+    for (std::size_t place = 0; place < after_point; ++place)
+        scale *= 10.0;
+    return static_cast<double>(digits) / scale;
+}
+
 // A deliberately small reader: the file is a flat list of
 // {"name":..,"p50_ns":..,"p99_ns":..} objects and nothing else, so a full
-// JSON parser would be a dependency bought for no reason.  is_present tells
-// if the file opens, so that a missing file and a file with no row differ.
-[[nodiscard]] std::vector<Ceiling> read_baseline(const char* path, bool& is_present) {
-    std::vector<Ceiling> out;
-    std::FILE* f = std::fopen(path, "rb");
-    is_present = f != nullptr;
-    if (!is_present) return out;
-    std::string text;
-    char buf[4096];
-    size_t n = 0;
-    while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0)
-        text.append(buf, n);
-    std::fclose(f);
-
-    size_t pos = 0;
-    // The value of a key starts after "key":. The result is nullptr when the key is absent.
-    auto value_after = [&](const char* key, size_t from) -> const char* {
-        const std::string needle = std::string("\"") + key + "\":";
-        const size_t k = text.find(needle, from);
-        return k == std::string::npos ? nullptr : text.c_str() + k + needle.size();
+// JSON parser would be a dependency bought for no reason.  The file of the
+// baseline tells if the file opens, so that a missing file and a file with
+// no row differ.  A key is searched from the end of the name of its row
+// onward.  Complexity: linear in the bytes of the file for each row.
+[[nodiscard]] Baseline read_baseline(::fixy::CText path) noexcept {
+    Baseline baseline{};
+    ::fixy::FixedText<kBaselineBytes> file{};
+    if (::foundation::os::read_file(path, file).is_err()) return baseline;
+    baseline.file = BaselineFile::Present;
+    if (file.size() == kBaselineBytes) {
+        ::fixy::fatal("the baseline {} holds {} bytes or more, and the reader holds fewer", path.view(),
+                      kBaselineBytes);
+    }
+    const ::fixy::TextView text = file.view();
+    // The value of a key starts after "key":.  None when the key is absent.
+    const auto value_after = [&text](::fixy::TextView needle,
+                                     std::size_t from) noexcept -> ::fixy::Option<::fixy::TextView> {
+        const ::fixy::TextView rest = text_after(text, from);
+        ::fixy::Option<std::size_t> found = ::fixy::find(rest, needle);
+        if (found.is_none()) return ::fixy::none;
+        return ::fixy::some(text_after(rest, std::move(found).value_or(0) + needle.size()));
     };
-    auto field = [&](const char* key, size_t from, double& into) -> bool {
-        const char* value = value_after(key, from);
-        if (value == nullptr) return false;
-        into = std::strtod(value, nullptr);
-        return true;
-    };
-    while ((pos = text.find("\"name\":", pos)) != std::string::npos) {
-        size_t q1 = text.find('"', pos + 7);
-        if (q1 == std::string::npos) break;
-        size_t q2 = text.find('"', q1 + 1);
-        if (q2 == std::string::npos) break;
-        Ceiling c;
-        c.name = text.substr(q1 + 1, q2 - q1 - 1);
-        if (!field("p50_ns", q2, c.p50_ns) || !field("p99_ns", q2, c.p99_ns)) break;
+    constexpr ::fixy::TextView kName{"\"name\":"};
+    std::size_t pos = 0;
+    for (;;) {
+        ::fixy::Option<std::size_t> name_at = ::fixy::find(text_after(text, pos), kName);
+        if (name_at.is_none()) break;
+        const std::size_t key = pos + std::move(name_at).value_or(0);
+        ::fixy::Option<std::size_t> open = ::fixy::find(text_after(text, key + kName.size()), '"');
+        if (open.is_none()) break;
+        const std::size_t q1 = key + kName.size() + std::move(open).value_or(0);
+        ::fixy::Option<std::size_t> close = ::fixy::find(text_after(text, q1 + 1), '"');
+        if (close.is_none()) break;
+        const std::size_t q2 = q1 + 1 + std::move(close).value_or(0);
+        ::fixy::Option<::fixy::TextView> p50 = value_after("\"p50_ns\":", q2);
+        ::fixy::Option<::fixy::TextView> p99 = value_after("\"p99_ns\":", q2);
+        if (p50.is_none() || p99.is_none()) break;
+        Ceiling row{};
+        row.name = bench::name_of(crucible::warden::detail::text_prefix(text_after(text, q1 + 1), q2 - q1 - 1));
+        row.p50_ns = decimal_value(std::move(p50).value_or(::fixy::TextView{}));
+        row.p99_ns = decimal_value(std::move(p99).value_or(::fixy::TextView{}));
         // The gate field is the integer 0 or 1.
-        const char* gate_value = value_after("gate", q2);
-        c.gate = gate_value != nullptr && std::strtol(gate_value, nullptr, 10) != 0;
-        out.push_back(std::move(c));
+        row.gate = value_after("\"gate\":", q2)
+                       .match(
+                           [](::fixy::TextView value) noexcept {
+                               return bench::detail::leading_number(value).value_or(0) != 0;
+                           },
+                           []() noexcept { return false; });
+        if (baseline.rows.append(row).is_err()) {
+            ::fixy::fatal("the baseline {} holds more than {} rows", path.view(), kCeilings);
+        }
         pos = q2 + 1;
     }
-    return out;
+    return baseline;
 }
 
 }  // namespace
@@ -542,52 +608,63 @@ int main() {
 
     // The baseline of the hardware tier of this host (bench/CMakeLists.txt).  A tier with no baseline file measures,
     // prints its numbers above and passes.  A baseline file that gives no row fails, because it gates nothing.
-    bool has_baseline_file = false;
-    const std::vector<Ceiling> baseline = read_baseline(CRUCIBLE_RECORD_LEAF_BASELINE, has_baseline_file);
-    if (baseline.empty()) {
-        std::fprintf(stderr,
-                     "\nbench_record_leaf: %s '%s', the baseline of the tier '%s' of this host.  The gate "
-                     "judges nothing, and the run %s.\n",
-                     has_baseline_file ? "no row in" : "no file at", CRUCIBLE_RECORD_LEAF_BASELINE,
-                     CRUCIBLE_RECORD_LEAF_TIER, has_baseline_file ? "fails" : "passes");
+    using ::fixy::Align;
+    using ::fixy::Fixed;
+    using ::fixy::Padded;
+    using ::fixy::Sink;
+    using ::fixy::TextView;
+    const Baseline baseline = read_baseline(CRUCIBLE_RECORD_LEAF_BASELINE);
+    const bool has_baseline_file = baseline.file == BaselineFile::Present;
+    if (baseline.rows.size() == 0) {
+        ::fixy::report(Sink::Err,
+                       "\nbench_record_leaf: {} '{}', the baseline of the tier '{}' of this host.  The gate "
+                       "judges nothing, and the run {}.\n",
+                       has_baseline_file ? TextView{"no row in"} : TextView{"no file at"},
+                       TextView{CRUCIBLE_RECORD_LEAF_BASELINE}, TextView{CRUCIBLE_RECORD_LEAF_TIER},
+                       has_baseline_file ? TextView{"fails"} : TextView{"passes"});
         bench::emit_reports_json(reports.view(), json);
         return has_baseline_file ? 1 : 0;
     }
 
-    std::printf("\n=== gate (ceiling = baseline x %.2f) ===\n", kTolerance);
+    ::fixy::report(Sink::Out, "\n=== gate (ceiling = baseline x {}) ===\n", Fixed<2>{kTolerance});
     int failures = 0;
     int skipped = 0;
     for (const auto& report : reports) {
-        const Ceiling* want = nullptr;
-        for (const auto& c : baseline)
-            if (c.name == report.name) want = &c;
-        if (want == nullptr) {
-            std::printf("  %-44s NO-BASELINE\n", report.name.c_str());
+        ::fixy::Option<Ceiling> want{};
+        for (const Ceiling& c : baseline.rows)
+            if (c.name == report.name) want = ::fixy::some(c);
+        if (want.is_none()) {
+            ::fixy::report(Sink::Out, "  {} NO-BASELINE\n", Padded<44, Align::Left>{report.name.view()});
             failures++;
             continue;
         }
-        if (!want->gate) {
-            std::printf("  %-44s ADVISORY  p50 %8.2f ns   p99 %8.2f ns   (recorded %6.2f / %6.2f)\n",
-                        report.name.c_str(), report.pct.p50, report.pct.p99, want->p50_ns, want->p99_ns);
+        const Ceiling ceiling = std::move(want).value_or(Ceiling{});
+        if (!ceiling.gate) {
+            ::fixy::report(Sink::Out, "  {} ADVISORY  p50 {} ns   p99 {} ns   (recorded {} / {})\n",
+                           Padded<44, Align::Left>{report.name.view()}, Fixed<2, 8>{report.pct.p50},
+                           Fixed<2, 8>{report.pct.p99}, Fixed<2, 6>{ceiling.p50_ns}, Fixed<2, 6>{ceiling.p99_ns});
             continue;
         }
         if (report.drift_flag) {
-            std::printf("  %-44s SKIP      the run drifted %.1f%% between its first and second half; "
-                        "the machine changed under it\n",
-                        report.name.c_str(), report.drift_pct);
+            ::fixy::report(Sink::Out,
+                           "  {} SKIP      the run drifted {}% between its first and second half; "
+                           "the machine changed under it\n",
+                           Padded<44, Align::Left>{report.name.view()}, Fixed<1>{report.drift_pct});
             skipped++;
             continue;
         }
-        const double p50_max = want->p50_ns * kTolerance;
-        const double p99_max = want->p99_ns * kTolerance;
+        const double p50_max = ceiling.p50_ns * kTolerance;
+        const double p99_max = ceiling.p99_ns * kTolerance;
         const bool ok = report.pct.p50 <= p50_max && (!kGateOnP99 || report.pct.p99 <= p99_max);
-        std::printf("  %-44s %s  p50 %6.2f / %6.2f ns   p99 %6.2f (recorded %6.2f, not gated)\n", report.name.c_str(),
-                    ok ? "PASS" : "FAIL", report.pct.p50, p50_max, report.pct.p99, want->p99_ns);
+        ::fixy::report(Sink::Out, "  {} {}  p50 {} / {} ns   p99 {} (recorded {}, not gated)\n",
+                       Padded<44, Align::Left>{report.name.view()}, ok ? TextView{"PASS"} : TextView{"FAIL"},
+                       Fixed<2, 6>{report.pct.p50}, Fixed<2, 6>{p50_max}, Fixed<2, 6>{report.pct.p99},
+                       Fixed<2, 6>{ceiling.p99_ns});
         if (!ok) failures++;
     }
 
-    std::printf("=== verdict: %s (%d failed, %d skipped for drift) ===\n", failures == 0 ? "PASS" : "FAIL", failures,
-                skipped);
+    ::fixy::report(Sink::Out, "=== verdict: {} ({} failed, {} skipped for drift) ===\n",
+                   failures == 0 ? TextView{"PASS"} : TextView{"FAIL"}, failures, skipped);
     bench::emit_reports_json(reports.view(), json);
     return failures == 0 ? 0 : 1;
 }

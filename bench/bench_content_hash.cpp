@@ -45,17 +45,18 @@ int main() {
     const bench::JsonTail json = bench::env_json();
 
     struct Config {
-        uint32_t n;
-        uint8_t ndim;
-        uint16_t ins;
-        const char* label;
+        uint32_t n = 0;
+        uint8_t ndim = 0;
+        uint16_t ins = 0;
+        ::fixy::TextView label{};
     };
-    const Config cfgs[] = {
-        {128, 4, 1, "128 ops ×  1×4D"},  {128, 4, 3, "128 ops ×  3×4D"},  {128, 8, 3, "128 ops ×  3×8D"},
-        {1024, 4, 3, "1024 ops × 3×4D"}, {1024, 8, 3, "1024 ops × 3×8D"},
+    constexpr ::fixy::FixedArray<Config, 5> cfgs{
+        Config{128, 4, 1, "128 ops ×  1×4D"},  Config{128, 4, 3, "128 ops ×  3×4D"},
+        Config{128, 8, 3, "128 ops ×  3×8D"},  Config{1024, 4, 3, "1024 ops × 3×4D"},
+        Config{1024, 8, 3, "1024 ops × 3×8D"},
     };
 
-    std::printf("=== content_hash ===\n\n");
+    ::fixy::report(::fixy::Sink::Out, "=== content_hash ===\n\n");
 
     // One arena + ops vector per config; kept alive in outer scope so
     // the body can reference the span by value-into-reference.
