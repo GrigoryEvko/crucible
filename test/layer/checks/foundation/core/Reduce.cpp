@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 
 namespace foundation::core {
@@ -26,6 +27,24 @@ struct ThrowingCombine {
 struct WideningCombine {
     [[nodiscard]] long operator()(int const& left, int const& right) const noexcept { return long{left} + right; }
 };
+
+// The leaves keep plain values of at most 64 bytes that assign.  A value with
+// a const member does not assign, and a large value would make the scratch of
+// a leaf large, so the two take the recursion.
+struct ConstLeaf {
+    int const value = 0;
+};
+struct LargeLeaf {
+    FixedArray<std::uint64_t, 9> words{};
+};
+struct SmallLeaf {
+    std::uint32_t low = 0;
+    std::uint32_t high = 0;
+};
+static_assert(TreeLeafValue<float> && TreeLeafValue<std::uint64_t> && TreeLeafValue<SmallLeaf>);
+static_assert(TreeValue<ConstLeaf> && !TreeLeafValue<ConstLeaf>);
+static_assert(TreeValue<LargeLeaf> && !TreeLeafValue<LargeLeaf>);
+static_assert(std::is_trivially_copyable_v<LargeLeaf> && sizeof(LargeLeaf) > tree_leaf_value_bytes);
 
 static_assert(TreeCombine<Mix, std::uint64_t>);
 static_assert(TreeCombine<TreeAdd, float>);

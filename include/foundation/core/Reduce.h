@@ -175,10 +175,16 @@ struct TreeAdd {
 // The largest leaf of the tree of a combine: a power of two of elements.
 inline constexpr std::size_t tree_leaf_count = 256;
 
+// The largest value, in bytes, that the leaves of a combine keep in a scratch
+// array: the scratch of the largest leaf then holds at most 12 KB.
+inline constexpr std::size_t tree_leaf_value_bytes = 64;
+
 // A value that the leaves of a combine keep in a scratch array: a default
-// value and a copy of the bytes, with no other effect.
+// value, a copy and an assignment of the bytes with no other effect, and at
+// most tree_leaf_value_bytes bytes.
 template <class T>
-concept TreeLeafValue = std::is_trivially_copyable_v<T> && std::is_nothrow_default_constructible_v<T>;
+concept TreeLeafValue = std::is_trivially_copyable_v<T> && std::is_nothrow_default_constructible_v<T>
+                     && std::is_nothrow_copy_assignable_v<T> && sizeof(T) <= tree_leaf_value_bytes;
 
 // One level of a leaf: the Width values of target from the 2 * Width values
 // of source, each the combine of an adjacent pair, the lower value as the left
