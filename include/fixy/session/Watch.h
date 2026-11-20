@@ -137,6 +137,8 @@
 
 #include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Text.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/Mix.h>
@@ -204,6 +206,12 @@ inline constexpr std::uint64_t untracked_owner = ~std::uint64_t{0};
     return static_cast<std::uint32_t>(packed >> 32);
 }
 
+// The brand of the protocol text of a record.  Each such text is an object of
+// static storage that a claim names as its template argument.
+struct protocol_text_brand {};
+
+using protocol_text_ref = ::foundation::core::Ref<::foundation::core::TextView const, protocol_text_brand>;
+
 // One live endpoint.  A record changes generation at each claim, so a
 // stale reference to an old session never matches a new one.
 struct alignas(64) endpoint_record {
@@ -211,7 +219,6 @@ struct alignas(64) endpoint_record {
     ::foundation::core::Atomic<std::uint32_t> generation{};
     // The next free record, one-based, while the record is free.
     ::foundation::core::Atomic<std::uint32_t> next_free{};
-    ::foundation::core::Atomic<std::uint32_t> protocol_size{};
     // The priority of the session, from its Resource.  0 is the lowest.
     ::foundation::core::Atomic<std::uint32_t> priority{};
     // The line of the site of the mint.
@@ -220,7 +227,9 @@ struct alignas(64) endpoint_record {
     ::foundation::core::Atomic<std::uint64_t> peer{};
     // The thread that holds the handle, packed with its slot generation.
     ::foundation::core::Atomic<std::uint64_t> owner{};
-    ::foundation::core::Atomic<char const*> protocol_text{};
+    // The text of the protocol at the mint, an object of static storage.  The
+    // cell holds one pointer, and an empty cell names no text.
+    ::foundation::core::Atomic<::foundation::core::Option<protocol_text_ref>> protocol_text{};
     // The file of the site of the mint, a text with a zero at its end.
     ::foundation::core::Atomic<char const*> site_file{};
 };
@@ -639,37 +648,51 @@ enum class holder_on_claim : std::uint8_t {
     none_yet
 };
 
-/// Claims a record for a session that starts at `protocol`, minted at
-/// `site`, with the priority of its Resource.  A full table gives
-/// endpoint_id::none, and the session is then not tracked.
-[[nodiscard]] inline endpoint_id claim(std::string_view protocol, std::source_location site, priority order,
-                                       holder_on_claim holder) noexcept {
-    std::uint32_t index = detail::pop_free();
+namespace detail {
+
+// Claims a record with the protocol text `protocol`.  claim below is the one
+// caller, and it gives a text of static storage.
+[[nodiscard]] inline endpoint_id claim_with_text(protocol_text_ref protocol, std::source_location site, priority order,
+                                                 holder_on_claim holder) noexcept {
+    std::uint32_t index = pop_free();
     if (index == 0) {
-        const std::uint32_t fresh = detail::g_registry.next_unused.fetch_add_acq_rel(1);
+        const std::uint32_t fresh = g_registry.next_unused.fetch_add_acq_rel(1);
         if (fresh >= endpoint_capacity) return endpoint_id::none;
         index = fresh + 1;
     }
-    detail::endpoint_record& record = detail::record_at_(index);
+    endpoint_record& record = record_at_(index);
     // The claimant is the only writer of a record's generation, so a load
     // and a store suffice.  A concurrent trace only reads it.
     record.generation.store_release(record.generation.load_acquire() + 1);
     record.peer.store_release(0);
-    record.protocol_text.store_release(protocol.data());
-    record.protocol_size.store_release(static_cast<std::uint32_t>(protocol.size()));
+    record.protocol_text.store_release(::foundation::core::Option<protocol_text_ref>::some(protocol));
     record.site_file.store_release(site.file_name());
     record.site_line.store_release(site.line());
     record.priority.store_release(std::to_underlying(order));
     if (holder == holder_on_claim::calling_thread) {
-        const std::uint64_t self = detail::owner_token();
+        const std::uint64_t self = owner_token();
         record.owner.store_release(self);
         record.is_live.store_release(1);
-        if (self != detail::untracked_owner) detail::remember_held(self, index);
+        if (self != untracked_owner) remember_held(self, index);
     } else {
         record.owner.store_release(0);
         record.is_live.store_release(1);
     }
     return static_cast<endpoint_id>(index);
+}
+
+}  // namespace detail
+
+/// Claims a record for a session that starts at the protocol whose text is
+/// Protocol, minted at `site`, with the priority of its Resource.  The text
+/// is a template argument, so it is an object of static storage, and the
+/// record never names a text that ends before it.  The body is one function
+/// for each text.  A full table gives endpoint_id::none, and the session is
+/// then not tracked.
+template <::foundation::core::TextView const& Protocol>
+[[nodiscard]] inline endpoint_id claim(std::source_location site, priority order, holder_on_claim holder) noexcept {
+    return detail::claim_with_text(::foundation::core::detail::RefDoor::lend<detail::protocol_text_brand>(Protocol),
+                                   site, order, holder);
 }
 
 /// Makes `first` and `second` the two ends of one channel.

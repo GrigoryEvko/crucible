@@ -1322,13 +1322,18 @@ struct LateRead {
     }
 };
 
+// The texts of the two claims below.  A claim takes its text as a template
+// argument, so each text is an object of static storage.
+constexpr ::foundation::core::TextView kFirstEndText{"first end"};
+constexpr ::foundation::core::TextView kSecondEndText{"second end"};
+
 [[nodiscard]] int channel_claim_names_no_holder() {
     namespace watch = s::watch;
     const std::source_location loc = std::source_location::current();
     const watch::endpoint_id first =
-        watch::claim("first end", loc, watch::priority::lowest, watch::holder_on_claim::none_yet);
+        watch::claim<kFirstEndText>(loc, watch::priority::lowest, watch::holder_on_claim::none_yet);
     const watch::endpoint_id second =
-        watch::claim("second end", loc, watch::priority::lowest, watch::holder_on_claim::none_yet);
+        watch::claim<kSecondEndText>(loc, watch::priority::lowest, watch::holder_on_claim::none_yet);
     watch::link(first, second);
     const auto owner_of = [](watch::endpoint_id endpoint) noexcept {
         return watch::detail::record_at_(static_cast<std::uint32_t>(endpoint)).owner.load_acquire();

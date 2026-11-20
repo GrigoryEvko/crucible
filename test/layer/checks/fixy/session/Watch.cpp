@@ -11,6 +11,13 @@ namespace detail {
 static_assert(thread_capacity < (1u << stamp_index_bits),
               "the one-based slot index must fit the low bits of a holder stamp");
 
+// The cell of the protocol text holds one word: the address of a text of
+// static storage, which carries the count of its characters.  A record stays
+// one cache line.
+static_assert(sizeof(endpoint_record{}.protocol_text) == sizeof(std::uint64_t),
+              "the cell of the protocol text holds the address of one text");
+static_assert(sizeof(endpoint_record) == 64, "an endpoint record is one cache line");
+
 }  // namespace detail
 
 // Each declared read and write of a session opens a wait scope, also under

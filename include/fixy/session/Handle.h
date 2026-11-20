@@ -2072,8 +2072,8 @@ constexpr watch::session_ref HandleFactory::claim_(std::source_location loc) noe
     watch::session_ref session{};
     if constexpr (Policy::checks_abandonment) {
         if !consteval {
-            const watch::endpoint_id endpoint = watch::claim(type_display_name_v<Proto>, loc, resource_priority,
-                                                             watch::holder_on_claim::calling_thread);
+            const watch::endpoint_id endpoint = watch::claim<type_display_text_v<Proto>>(
+                loc, resource_priority, watch::holder_on_claim::calling_thread);
             session = {endpoint, watch::current_thread_slot()};
         }
     }
@@ -2182,9 +2182,9 @@ template <typename SelfProto, typename PeerProto, AbandonmentPolicy Policy, watc
 [[nodiscard]] inline channel_records claim_channel_(std::source_location loc) noexcept {
     if constexpr (Policy::checks_abandonment) {
         const watch::endpoint_id self =
-            watch::claim(type_display_name_v<SelfProto>, loc, Order, watch::holder_on_claim::none_yet);
+            watch::claim<type_display_text_v<SelfProto>>(loc, Order, watch::holder_on_claim::none_yet);
         const watch::endpoint_id peer =
-            watch::claim(type_display_name_v<PeerProto>, loc, Order, watch::holder_on_claim::none_yet);
+            watch::claim<type_display_text_v<PeerProto>>(loc, Order, watch::holder_on_claim::none_yet);
         watch::link(self, peer);
         return {self, peer};
     } else {

@@ -48,11 +48,14 @@ constexpr std::size_t kLongestPath = 4096;
 // go to the sink write as they are.
 void print_endpoint(core::TextView label, std::uint32_t index) noexcept {
     endpoint_record const& record = record_at_(index);
-    char const* const text = record.protocol_text.load_acquire();
-    std::uint32_t const size = record.protocol_size.load_acquire();
+    core::Option<protocol_text_ref> const text = record.protocol_text.load_acquire();
     char const* const file = record.site_file.load_acquire();
     core::report(core::Sink::Err, "  {} endpoint {}: ", label, index);
-    if (text != nullptr) core::detail::write_sink_(core::Sink::Err, text, size);
+    text.match(
+        [](protocol_text_ref const& protocol) noexcept {
+            core::detail::write_sink_(core::Sink::Err, core::detail::text_first_(*protocol), protocol->size());
+        },
+        [] noexcept {});
     core::report(core::Sink::Err, "\n    minted at ");
     if (file != nullptr && file[0] != '\0') {
         core::detail::write_sink_(core::Sink::Err, file, length_of(file));
