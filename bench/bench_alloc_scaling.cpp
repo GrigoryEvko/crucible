@@ -8,6 +8,20 @@
 
 namespace bench_alloc {
 
+// The layout of the Tally of bench_alloc_scaling_rows.h.  A gap word lies
+// between two counters, and each Tally holds its own cache line.  With
+// adjacent counters GCC joins the updates of two counters into one 16-byte
+// load and one 16-byte store.  The 8-byte store of the live bytes of a take
+// then cannot forward to the 16-byte load of the next give, and each op of
+// each allocator waits for the store to reach the cache.
+static_assert(alignof(Tally) == 64 && sizeof(Tally) == 64, "each Tally holds one cache line of its own");
+static_assert(std::meta::offset_of(^^Tally::allocations).bytes == 0
+                  && std::meta::offset_of(^^Tally::gap_after_allocations).bytes == 8
+                  && std::meta::offset_of(^^Tally::releases).bytes == 16
+                  && std::meta::offset_of(^^Tally::gap_after_releases).bytes == 24
+                  && std::meta::offset_of(^^Tally::live_bytes).bytes == 32,
+              "a gap word lies between two counters of a Tally, so GCC joins no two updates");
+
 namespace {
 
 // The allocator or the row that an argument names, or none.
