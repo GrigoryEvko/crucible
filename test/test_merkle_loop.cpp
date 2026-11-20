@@ -60,7 +60,7 @@ using crucible::SchemaHash;
     CRUCIBLE_TEST_ASSERT(kTest, loop.feedback_edges.get(0).expect("the loop holds one feedback edge")->output_idx == 0);
     CRUCIBLE_TEST_ASSERT(kTest, loop.term_kind == crucible::LoopTermKind::REPEAT);
     CRUCIBLE_TEST_ASSERT(kTest, loop.repeat_count == 4);
-    CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uint32_t>(loop.epsilon) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::bit_cast<uint32_t>(loop.epsilon) == 0);
     static_assert(sizeof(crucible::LoopNode) == 72);
     static_assert(sizeof(crucible::FeedbackEdge) == 4);
 

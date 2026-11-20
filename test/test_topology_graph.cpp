@@ -112,7 +112,7 @@ static void test_default_topology_edge() {
         return zero.id.is_none() && zero.kind == topology::LinkKind::Unknown
             && zero.state == topology::CongestionState::Healthy && zero.peer.is_none()
             && zero.bandwidth_bytes_per_sec.value() == 0 && zero.rtt_ns_p50.value() == 0 && zero.rtt_ns_p99.value() == 0
-            && std::bit_cast<std::uint32_t>(zero.drop_rate.value()) == 0u;
+            && ::fixy::bit_cast<std::uint32_t>(zero.drop_rate.value()) == 0u;
     }());
 
     topology::TopologyEdge e{};
@@ -125,7 +125,7 @@ static void test_default_topology_edge() {
     CRUCIBLE_TEST_ASSERT(kTest, e.rtt_ns_p99.value() == 0);
     // Comparing the bits rather than the values, because comparing
     // floating-point values for equality is rejected outright.
-    CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<std::uint32_t>(e.drop_rate.value()) == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::bit_cast<std::uint32_t>(e.drop_rate.value()) == 0u);
 
     // The edge occupies exactly one cache line.
     static_assert(sizeof(topology::TopologyEdge) == 64);

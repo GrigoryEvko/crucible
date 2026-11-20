@@ -243,11 +243,11 @@ static void test_runtime_peer() {
     KernelCacheKey k_a_pure_dup{ContentHash{content_a_v}, RowHash{row_pure_v}};
     CRUCIBLE_TEST_ASSERT(kTest, k_a_pure == k_a_pure_dup);
 
-    auto bytes = std::bit_cast<std::array<uint64_t, 2>>(k_a_pure);
+    auto bytes = ::fixy::bit_cast<std::array<uint64_t, 2>>(k_a_pure);
     CRUCIBLE_TEST_ASSERT(kTest, bytes[0] == content_a_v);
     CRUCIBLE_TEST_ASSERT(kTest, bytes[1] == row_pure_v);
 
-    auto back = std::bit_cast<KernelCacheKey>(bytes);
+    auto back = ::fixy::bit_cast<KernelCacheKey>(bytes);
     CRUCIBLE_TEST_ASSERT(kTest, back == k_a_pure);
 
     ::fixy::check::pass(kTest, "  test_runtime_peer:              PASSED\n");
@@ -287,11 +287,11 @@ static void test_bit_cast_round_trip() {
         RowHash{0xDEADBEEF56789ABCULL},
     };
 
-    constexpr auto raw = std::bit_cast<std::array<uint64_t, 2>>(k_in);
+    constexpr auto raw = ::fixy::bit_cast<std::array<uint64_t, 2>>(k_in);
     static_assert(raw[0] == 0xC0FFEEBA12345678ULL);
     static_assert(raw[1] == 0xDEADBEEF56789ABCULL);
 
-    constexpr auto back = std::bit_cast<KernelCacheKey>(raw);
+    constexpr auto back = ::fixy::bit_cast<KernelCacheKey>(raw);
     static_assert(back == k_in);
     static_assert(back.content_hash == k_in.content_hash);
     static_assert(back.row_hash == k_in.row_hash);

@@ -129,7 +129,7 @@ static void test_gpu_target_caps_construction() {
     // verbatim, so the bits have to come back unchanged.
     volatile auto fp16 = caps.tflops_fp16.value();
     float fp16_seen = fp16;
-    CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<std::uint32_t>(fp16_seen) == std::bit_cast<std::uint32_t>(989.0f));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::bit_cast<std::uint32_t>(fp16_seen) == ::fixy::bit_cast<std::uint32_t>(989.0f));
     CRUCIBLE_TEST_ASSERT(kTest, caps.features.test(cog::GpuFeature::Tma));
     CRUCIBLE_TEST_ASSERT(kTest, !caps.features.test(cog::GpuFeature::ClusterLaunch));
 
