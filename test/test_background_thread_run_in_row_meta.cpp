@@ -351,9 +351,6 @@ void test_built_graph_owns_its_metadata() {
     BackgroundThread::TraceBuild built = work.build(bt, test.alloc, scratch);
     auto [graph, parts] = std::move(built).expect("the work builds a graph");
 
-    const std::less<const crucible::TensorMeta*> before{};
-    const crucible::TensorMeta* const log_begin = &metalog->records_.at(::fixy::index<0>());
-    const crucible::TensorMeta* const log_end = log_begin + MetaLog::CAPACITY;
     for (uint32_t op = 0; op < OPS; ++op) {
         // The expect ends the process when the op holds no output metadata.
         const crucible::TensorMeta& first_meta =
@@ -361,8 +358,7 @@ void test_built_graph_owns_its_metadata() {
                  .output_metas()
                  .get(0)
                  .expect("a test reads an element at or past the count of its View");
-        const crucible::TensorMeta* const metas = &first_meta;
-        CRUCIBLE_TEST_ASSERT(kTest, (before(metas, log_begin) || !before(metas, log_end))
+        CRUCIBLE_TEST_ASSERT(kTest, !metalog->holds_record(first_meta)
                                         && "an op of the graph points into the buffer of the metadata log");
         CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
         CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_tensor_dim(first_meta.sizes[0]) == 64);

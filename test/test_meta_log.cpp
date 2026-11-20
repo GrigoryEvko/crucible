@@ -55,6 +55,8 @@ static void test_single_append_returns_index_zero() {
     CRUCIBLE_TEST_ASSERT(kTest, got.data_ptr.value() == m.data_ptr.value());
     CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(got.sizes[0]) == 128);
     CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(got.sizes[1]) == 256);
+    // A copy of a record and the record of the caller lie outside the buffer.
+    CRUCIBLE_TEST_ASSERT(kTest, !log.holds_record(got) && !log.holds_record(m));
     ::fixy::check::pass(kTest, "  test_single_append:             PASSED\n");
 }
 

@@ -86,15 +86,21 @@ struct CRUCIBLE_OWNER MetaLog {
     // The copy of the head of the producer.  It holds the value of the head
     // after each publish.
     ::fixy::Monotonic<uint64_t> own_head_ = ::fixy::mint_monotonic<uint64_t>(0);
-    // The buffer owns the records, at the alignment of a huge page.
+
+private:
+    // The buffer owns the records, at the alignment of a huge page.  It is
+    // private, because an assignment to it would free the storage that the
+    // View below names.
     ::fixy::HeapArray<TensorMeta, crucible::warden::kHugePageBytes> entries_buffer_;
     // The View of the CAPACITY records of the buffer.  Its count is in its
     // type, so a masked slot and the window of a run of an append have no
     // check that the optimizer keeps.  The View holds only the base, so an
     // indexed access on the hot path is one load of that word from this
-    // object.  The log does not move, so the View stays valid.
+    // object.  The log does not move, and no code outside the log writes the
+    // buffer or the View, so the View stays valid.
     ::fixy::View<TensorMeta, CAPACITY> records_;
 
+public:
     alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> tail =
         ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
 
@@ -229,6 +235,16 @@ struct CRUCIBLE_OWNER MetaLog {
 
     // Copies the record at index, with the rule of copy_run.
     [[nodiscard]] TensorMeta copy_record(uint64_t index) const CRUCIBLE_NO_THREAD_SAFETY { return record_at_(index); }
+
+    // True when the record lies in the buffer of the log, such as for a test
+    // that no op of a built graph points into the log.  The test compares
+    // addresses only (offset_of of foundation/core/Region.h), and it gives no
+    // reference into a slot, because the producer writes a new record into a
+    // slot after its release.
+    [[nodiscard]] bool holds_record(TensorMeta const& record) const noexcept {
+        const ::fixy::View<TensorMeta const> ring = records_;
+        return ::foundation::core::offset_of(ring, record).is_some();
+    }
 
     // The consumer is the one writer of tail, so its relaxed load reads its
     // own last store.  The callers give only the new tail.
