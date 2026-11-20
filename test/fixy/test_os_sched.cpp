@@ -1,6 +1,6 @@
 // The scheduling family exercised at run time: the pin proof, the
 // scheduling-class band, the thread name, the four mints that reach the
-// kernel, and the deadline door.
+// kernel, the read of the current CPU, and the deadline door.
 //
 // Each case builds a scenario — construct a value, mutate it, mint over
 // it, call a syscall — rather than stating a property of a type as
@@ -28,6 +28,7 @@
 #include <fixy/os/ThreadName.h>
 
 #include <foundation/Platform.h>
+#include <foundation/Quarantine.h>
 #include <foundation/core/Choice.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/SchedWords.h>
@@ -41,6 +42,16 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: sched_getcpu of the C library is the oracle of the current CPU")
+namespace {
+
+// The CPU of the calling thread from the C library, the oracle of the door of
+// the current CPU, or -1 when the kernel gives no CPU.
+[[nodiscard]] std::int64_t oracle_cpu() noexcept { return ::sched_getcpu(); }
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace eff = foundation::effects;
 namespace ml = foundation::algebra::lattices;
@@ -80,6 +91,16 @@ static_assert(can_apply_mask<BgWitness>);
 static_assert(can_apply_mask<fixy::ColdInitCtx>);
 static_assert(!can_apply_mask<fixy::HotFgCtx>);
 static_assert(!can_apply_mask<int>);
+
+// The read of the current CPU asks for a context that owns Nondet: the test
+// context and the startup load context own it, and the foreground context
+// and a value that is not a context do not.
+template <class Ctx>
+concept can_read_current_cpu = requires(Ctx const& ctx) { fixy::sched::read_current_cpu(ctx); };
+static_assert(can_read_current_cpu<fixy::TestRunnerCtx>);
+static_assert(can_read_current_cpu<fixy::InitLoadCtx>);
+static_assert(!can_read_current_cpu<fixy::HotFgCtx>);
+static_assert(!can_read_current_cpu<int>);
 
 // True when the result of a pin holds the mask that the pin replaced.
 [[nodiscard]] bool
@@ -172,6 +193,67 @@ holds_prior_mask(foundation::core::Result<fixy::sched::PriorAffinity, foundation
     fixy::sched::PriorAffinity again = std::move(pinned_cpu).expect("the test above found the pin");
     if (std::move(again).restore().is_err()) {
         std::fprintf(stderr, "the restore after the one-CPU pin failed\n");
+        return 1;
+    }
+    return 0;
+}
+
+// The CPU of the calling thread as the door reads it, or -1 when the door
+// reads no CPU.
+[[nodiscard]] std::int64_t door_cpu(fixy::TestRunnerCtx const& test) noexcept {
+    return fixy::sched::read_current_cpu(test).match(
+        [](fixy::sched::CpuIndex index) noexcept { return static_cast<std::int64_t>(index.raw()); },
+        []() noexcept { return std::int64_t{-1}; });
+}
+
+// The door of the current CPU gives the CPU of each pin.  The leg pins the
+// thread to the first, the last and each eighth allowed CPU, and after each
+// pin the door and sched_getcpu of the C library, the oracle, give that CPU.
+// The restore then gives the thread its whole set back.  Complexity: one pin,
+// two reads and one restore for each chosen CPU.
+[[nodiscard]] int current_cpu_door_reads_the_cpu_of_each_pin() {
+    using fixy::Sink;
+    BgWitness bg{eff::testing::bg()};
+    fixy::TestRunnerCtx const test{eff::testing::test()};
+    const ml::AffinityMask allowed = fixy::sched::read_affinity(bg).expect("the thread reads its affinity");
+    const std::int64_t first_read = door_cpu(test);
+    if (first_read < 0 || first_read > std::int64_t{ml::AffinityMask::kMaxCore}) {
+        fixy::report(Sink::Err, "the door of the current CPU read no CPU of the kernel set ({})\n", first_read);
+        return 1;
+    }
+    std::uint32_t position = 0;
+    std::uint32_t pins = 0;
+    for (std::uint32_t core = 0; core <= ml::AffinityMask::kMaxCore; ++core) {
+        const auto cpu = static_cast<std::uint16_t>(core);
+        if (!allowed.contains(cpu)) continue;
+        const bool is_last = position + 1 == allowed.popcount();
+        const bool is_chosen = position % 8 == 0 || is_last;
+        ++position;
+        if (!is_chosen) continue;
+        auto pinned = fixy::sched::apply_affinity_to_cpu(bg, cpu);
+        if (!holds_prior_mask(pinned)) {
+            fixy::report(Sink::Err, "the one-CPU door did not pin the thread to CPU {}\n", cpu);
+            return 1;
+        }
+        const std::int64_t read = door_cpu(test);
+        const std::int64_t oracle = oracle_cpu();
+        if (std::move(pinned).expect("the test above found the pin").restore().is_err()) {
+            fixy::report(Sink::Err, "the restore after the pin to CPU {} failed\n", cpu);
+            return 1;
+        }
+        if (read != std::int64_t{cpu} || oracle != std::int64_t{cpu}) {
+            fixy::report(Sink::Err, "after a pin to CPU {}, the door read {} and sched_getcpu gave {}\n", cpu, read,
+                         oracle);
+            return 1;
+        }
+        ++pins;
+    }
+    if (pins == 0) {
+        fixy::report(Sink::Err, "the thread may use no CPU, so the leg pinned nothing\n");
+        return 1;
+    }
+    if (fixy::sched::read_affinity(bg).expect("the thread reads its affinity again") != allowed) {
+        fixy::report(Sink::Err, "the restores did not give the thread its prior mask\n");
         return 1;
     }
     return 0;
@@ -430,6 +512,7 @@ void attribute_doors_read_and_put_back_the_attributes() {
 
 int main() {
     if (const int rc = mask_door_pins_to_the_highest_allowed_cpu(); rc != 0) return rc;
+    if (const int rc = current_cpu_door_reads_the_cpu_of_each_pin(); rc != 0) return rc;
     if (const int rc = pin_proof_round_trips_through_an_earned_pin(); rc != 0) return rc;
     if (const int rc = sched_class_answers_read_at_run_time(); rc != 0) return rc;
     if (const int rc = thread_name_reaches_the_kernel(); rc != 0) return rc;

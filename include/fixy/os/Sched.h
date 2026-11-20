@@ -28,6 +28,7 @@
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Id.h>
 #include <foundation/core/Ref.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
@@ -53,6 +54,11 @@ using ml::AffinityMask;
 // The payload of a scheduling proof carries nothing. The authority is the
 // type, so a unit value is enough.
 using ProofUnit = int;
+
+// The index of a CPU, as the kernel numbers the CPUs from zero.  An index is
+// no integer, and its number comes out only through raw().
+struct CpuIndexTag final {};
+using CpuIndex = ::foundation::core::Id<CpuIndexTag, std::uint32_t>;
 
 // The nice value is a flat integer over [-20, 19] rather than a lattice, so
 // no graded wrapper fits and this surface owns the witness.
@@ -152,6 +158,14 @@ deadline_attributes(std::uint64_t runtime_ns, std::uint64_t deadline_ns, std::ui
 // call is the thread, and not each thread of the process.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 setpriority_sys(int nice) noexcept;
+
+// The CPU on which the calling thread runs, through sched_getcpu of the C
+// library, or none when the kernel gives no CPU.  The C library reads the CPU
+// from the area of restartable sequences that it registers for each thread,
+// with no system call, so a read costs some nanoseconds.  The body is in
+// src/fixy/os/ThreadTasks.cpp, the one owner of <pthread.h>, which gives the
+// symbols of <sched.h>.
+[[nodiscard]] ::foundation::core::Option<CpuIndex> sched_getcpu_lib() noexcept;
 
 template <SchedulerPolicy_v Policy>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
@@ -412,6 +426,24 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsRuntimeAffinity<Ctx>
 [[nodiscard]] ::foundation::core::Result<AffinityMask, ::foundation::os::Errno> read_affinity(Ctx const&) noexcept {
     return sf::detail::sched_getaffinity_sys();
+}
+
+// The gate of the read of the current CPU: a context that owns Nondet.  The
+// scheduler can move the thread to another CPU at each instruction, so two
+// reads can give two CPUs with no change of the program.
+template <typename Ctx>
+concept CtxFitsCurrentCpuRead = eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx, eff::Effect::Nondet>;
+
+// The CPU on which the calling thread runs at the read, or none when the
+// kernel gives no CPU.  The thread can run on another CPU right after the
+// read, unless a pin holds it to that one CPU.  The read changes nothing, and
+// it records no pin event.  It is not a mint, because it gives a fact of the
+// kernel and no authority.  Complexity: one read of the area of restartable
+// sequences of the thread (detail::sched_getcpu_lib).
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsCurrentCpuRead<Ctx>
+[[nodiscard]] ::foundation::core::Option<CpuIndex> read_current_cpu(Ctx const&) noexcept {
+    return detail::sched_getcpu_lib();
 }
 
 // The scheduling attributes of the calling thread: the policy, the flags, the

@@ -2,10 +2,13 @@
 // makes <pthread.h> give the symbols of <sched.h>, so the set of CPUs needs
 // no include of its own.  A call of <pthread.h> gives its error number as
 // its result, and the asm-generic numbers of foundation::os::Errno are the
-// numbers of the C library on x86_64 and aarch64.
+// numbers of the C library on x86_64 and aarch64.  The read of the current
+// CPU of fixy/os/Sched.h is here too, because sched_getcpu is a symbol of
+// <sched.h>.
 
 #include <fixy/os/ThreadTasks.h>
 
+#include <fixy/os/Sched.h>
 #include <fixy/os/Signal.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
 #include <foundation/core/Id.h>
@@ -207,3 +210,15 @@ run_in_fork_child_(void (*hook)() noexcept) noexcept {
 }
 
 }  // namespace fixy::thread::detail
+
+namespace fixy::sched::detail {
+
+// sched_getcpu gives -1 when the kernel has no getcpu call, and the CPU from
+// zero in each other case.
+::foundation::core::Option<CpuIndex> sched_getcpu_lib() noexcept {
+    int const cpu = ::sched_getcpu();
+    if (cpu < 0) return ::foundation::core::none;
+    return ::foundation::core::some(CpuIndex{static_cast<std::uint32_t>(cpu)});
+}
+
+}  // namespace fixy::sched::detail
