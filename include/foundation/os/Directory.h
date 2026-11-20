@@ -15,6 +15,12 @@
 // Result of the door, with the error Errno.  The names that the visitor got
 // before an error of a read stay given.
 //
+// A door of the base that holds the descriptor of a directory lists it with
+// detail::list_open_directory_.  That listing reads the entries of the
+// descriptor from its offset to the end of the directory, with the same
+// visitor, and it keeps the descriptor open.  The tree removal of
+// fixy/os/Fs.h reads each directory of its walk through it.
+//
 // The calls of the kernel are in src/foundation/os/Directory.cpp, in a
 // function that is not a template, so the ledger of the rule
 // syscalls names each call one time.
@@ -46,6 +52,24 @@ struct EntryVisit {
 // The door of the listing (Directory.cpp).
 [[nodiscard]] core::Result<core::Unit, Errno> list_directory_(core::CText path, EntryVisit visit) noexcept;
 
+// The door of the listing of the open directory DESCRIPTOR (Directory.cpp).
+// It gives each entry from the offset of the descriptor to the end of the
+// directory, and it keeps the descriptor open.
+[[nodiscard]] core::Result<core::Unit, Errno> list_open_directory_(int descriptor, EntryVisit visit) noexcept;
+
+// The EntryVisit of the visitor visit of a caller.  The EntryVisit holds the
+// address of visit, so it is valid while visit lives.
+template <class Visitor>
+    requires(std::is_nothrow_invocable_r_v<Visit, Visitor&, core::CText> && !std::is_const_v<Visitor>)
+[[nodiscard]] EntryVisit erase_visitor_(Visitor& visit) noexcept {
+    return EntryVisit{
+        .visitor = static_cast<void*>(&visit),
+        .call = [](void* visitor, core::CText name) noexcept -> Visit {
+            return (*static_cast<Visitor*>(visitor))(name);
+        },
+    };
+}
+
 }  // namespace detail
 
 // Gives the name of each entry of the directory path to visit, in the order
@@ -58,12 +82,7 @@ template <class Visitor>
     requires(std::is_nothrow_invocable_r_v<Visit, Visitor&, core::CText>
              && !std::is_const_v<std::remove_reference_t<Visitor>>)
 [[nodiscard]] core::Result<core::Unit, Errno> for_each_entry(core::CText path, Visitor&& visit) noexcept {
-    using Held = std::remove_reference_t<Visitor>;
-    detail::EntryVisit const entry_visit{
-        .visitor = static_cast<void*>(&visit),
-        .call = [](void* visitor, core::CText name) noexcept -> Visit { return (*static_cast<Held*>(visitor))(name); },
-    };
-    return detail::list_directory_(path, entry_visit);
+    return detail::list_directory_(path, detail::erase_visitor_(visit));
 }
 
 }  // namespace foundation::os

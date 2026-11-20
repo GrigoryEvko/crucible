@@ -73,11 +73,9 @@ enum class Walk : std::uint8_t {
 // program that a thread of the process starts before the close.
 constexpr int kDirectoryFlags = kOpenReadOnly | kOpenDirectory | kOpenCloseOnExec;
 
-// Reads the records of the open directory descriptor, gives each name to
-// visit, and closes the descriptor.  The close of a directory that a read
-// opened has no error that the caller can act on, so the door does not
-// report one.
-[[nodiscard]] core::Result<core::Unit, Errno> walk_and_close(int descriptor, EntryVisit visit) noexcept {
+// Reads the records of the open directory descriptor from its offset to the
+// end of the directory, and gives each name to visit.
+[[nodiscard]] core::Result<core::Unit, Errno> walk(int descriptor, EntryVisit visit) noexcept {
     alignas(8) char records[kRecordBytes]{};
     bool is_done = false;
     bool has_failed = false;
@@ -109,11 +107,19 @@ constexpr int kDirectoryFlags = kOpenReadOnly | kOpenDirectory | kOpenCloseOnExe
                     }
                 });
     }
-    static_cast<void>(raw_syscall(Syscall::close, descriptor));
     if (has_failed) {
         return core::err(failure);
     }
     return core::Unit{};
+}
+
+// Gives each name of the open directory descriptor to visit, and closes the
+// descriptor.  The close of a directory that a read opened has no error that
+// the caller can act on, so the door does not report one.
+[[nodiscard]] core::Result<core::Unit, Errno> walk_and_close(int descriptor, EntryVisit visit) noexcept {
+    core::Result<core::Unit, Errno> walked = walk(descriptor, visit);
+    static_cast<void>(raw_syscall(Syscall::close, descriptor));
+    return walked;
 }
 
 }  // namespace
@@ -124,6 +130,13 @@ core::Result<core::Unit, Errno> list_directory_(core::CText path, EntryVisit vis
                [first] { return raw_syscall(Syscall::openat, kAtCurrentDirectory, first, kDirectoryFlags); })
         .and_then(
             [visit](std::uint64_t descriptor) noexcept { return walk_and_close(static_cast<int>(descriptor), visit); });
+}
+
+core::Result<core::Unit, Errno> list_open_directory_(int descriptor, EntryVisit visit) noexcept {
+    if (descriptor < 0) {
+        return core::err(Errno::ebadf);
+    }
+    return walk(descriptor, visit);
 }
 
 }  // namespace foundation::os::detail
