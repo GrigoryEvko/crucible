@@ -494,6 +494,9 @@ TSAN_WORD = "tsan"
 #     __errno_location after a fork, a wait or a route.
 #   * The thread door of fixy/os/ThreadTasks.h starts each thread with the attributes of the call, names it, joins
 #     it, and registers the fork hook of a caller.  The C library starts the thread and holds its TLS.
+#   * The read of the current CPU of fixy/os/Sched.h, in the member of the thread door, calls sched_getcpu.  The C
+#     library reads the CPU from the area of restartable sequences that it registers for each thread, with no system
+#     call, and it owns that area.
 #   * The signal door of fixy/os/Signal.h installs the handlers of the signals that end a process, and it sets the
 #     signal stack of a thread.  The C library keeps the signal actions of the process and the signal sets of its
 #     threads.
@@ -525,6 +528,7 @@ DOOR_CALLS = (
             "pthread_self",
             "pthread_setname_np",
             "pthread_atfork",
+            "sched_getcpu",
         )
     ),
     *(
