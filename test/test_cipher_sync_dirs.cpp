@@ -18,6 +18,7 @@
 #include <crucible/MerkleDag.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/Fs.h>
 #include <fixy/os/Process.h>
 #include <foundation/Quarantine.h>
 #include <foundation/os/PathText.h>
@@ -238,11 +239,6 @@ void print_trace(const TraceLog& log) {
     }
 }
 
-// The characters of the path of the scratch directory.
-[[nodiscard]] fixy::TextView text_of(crucible::test::ScratchDir const& scratch) noexcept {
-    return fixy::mint_foreign_text(scratch.path().data(), scratch.path().size());
-}
-
 }  // namespace
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
@@ -286,13 +282,15 @@ TraceLog g_trace_log{};
 
 int main() {
     fixy::TestRunnerCtx const test{foundation::effects::testing::test()};
-    crucible::test::ScratchDir const scratch{"crucible-cipher-sync"};
-    if (!scratch.is_ready()) {
+    fixy::Result<fixy::fs::TemporaryDirectory, foundation::os::Errno> made =
+        crucible::test::make_scratch_directory(test);
+    if (made.is_err()) {
         fixy::report(fixy::Sink::Err, "[skipped] cannot make a scratch directory under /tmp\n");
         return 0;
     }
+    fixy::fs::TemporaryDirectory const scratch = std::move(made).expect("the scratch directory is made");
     PathBuffer root{};
-    root.append(text_of(scratch)).expect("the root fits its buffer");
+    root.append(scratch.path()).expect("the root fits its buffer");
     root.append(fixy::TextView{"/store"}).expect("the root fits its buffer");
 
     auto body = [&root]() { return store_into(root); };

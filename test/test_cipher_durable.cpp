@@ -5,8 +5,8 @@
 // mints.  A cold writer whose commit returned ENOSYS on every call would
 // pass each fixture, and the first case here refuses it.
 //
-// Everything runs in a scratch directory under /tmp (scratch_dir.h), which
-// the test removes at the end.  When the kernel refuses the scratch
+// Everything runs in a scratch directory of the base (scratch_dir.h), whose
+// owner removes it at the end.  When the kernel refuses the scratch
 // directory, the test reports a skip and does not fail.
 
 #include <crucible/cipher/CipherDurable.h>
@@ -20,12 +20,8 @@
 
 #include "scratch_dir.h"
 
-#include <cerrno>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
-#include <span>
-#include <string>
 #include <utility>
 
 namespace {
@@ -45,14 +41,14 @@ namespace {
 using IoBlockCtx =
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
+using crucible::test::ScratchPath;
+
 // Every path the surface takes is Path<Sanitized>, and the only way to
 // one is through the sanitizer: tag the text External, then launder it.
-[[nodiscard]] fixy::Path<src::Sanitized> sanitized(const std::string& raw) {
-    return fixy::sanitize_path(fixy::mint_tagged<src::External>(fixy::mint_foreign_text(raw.data(), raw.size())))
+[[nodiscard]] fixy::Path<src::Sanitized> sanitized(ScratchPath const& path) {
+    return fixy::sanitize_path(fixy::mint_tagged<src::External>(path.c_text().view()))
         .expect("each test path passes the sanitizer");
 }
-
-using crucible::test::ScratchDir;
 
 inline constexpr std::size_t kPayloadBytes = 4096;
 
@@ -78,15 +74,21 @@ opened(fixy::Result<fixy::Linear<Handle>, foundation::os::Errno> minted) noexcep
         [](foundation::os::Errno error) noexcept -> Opened { return fixy::err(error); });
 }
 
+// The error of a result, or the error number zero when it holds a value.
+template <typename T>
+[[nodiscard]] foundation::os::Errno error_of(fixy::Result<T, foundation::os::Errno> const& result) noexcept {
+    return result.err().value_or(foundation::os::Errno{});
+}
+
 // The error number of a result, or zero when it holds a value.
 template <typename T>
 [[nodiscard]] int errno_of(fixy::Result<T, foundation::os::Errno> const& result) noexcept {
-    return std::to_underlying(result.err().value_or(foundation::os::Errno{}));
+    return std::to_underlying(error_of(result));
 }
 
 // Reads a file back through the file door of fixy/os/Fs.h, and compares
 // each byte with the bytes that a writer put.
-[[nodiscard]] bool file_holds(const std::string& path, const Payload& expected) {
+[[nodiscard]] bool file_holds(ScratchPath const& path, const Payload& expected) {
     IoBlockCtx ctx{eff::testing::test()};
     auto reader = opened(fs::mint_file<fs::read_only>(ctx, sanitized(path)));
     if (reader.is_err()) return false;
@@ -101,12 +103,12 @@ template <typename T>
 // leg is what says the whole sequence — open with O_SYNC, write, fsync,
 // commit — reaches the target.  A commit body that returned ENOSYS
 // before it consulted a filesystem fails this leg.
-[[nodiscard]] int cold_writer_commit_succeeds(const ScratchDir& scratch) {
+[[nodiscard]] int cold_writer_commit_succeeds(fs::TemporaryDirectory const& scratch) {
     IoBlockCtx ctx{eff::testing::test()};
     const Payload pattern = pattern_of(2);
 
-    const std::string tmp = scratch.file("cold.tmp");
-    const std::string target = scratch.file("cold");
+    const ScratchPath tmp = crucible::test::make_scratch_path(scratch, "cold.tmp");
+    const ScratchPath target = crucible::test::make_scratch_path(scratch, "cold");
 
     auto opened_writer = opened(durable::mint_cold_writer<>(ctx, sanitized(tmp)));
     if (opened_writer.is_err()) {
@@ -124,7 +126,7 @@ template <typename T>
     }
     const auto committed = writer.commit_atomic(ctx, sanitized(tmp), sanitized(target));
     if (committed.is_err()) {
-        if (errno_of(committed) == ENOSYS) {
+        if (error_of(committed) == foundation::os::Errno::enosys) {
             ::fixy::report(::fixy::Sink::Err,
                            "the commit of the cold writer returned ENOSYS, so it did not reach a filesystem\n");
         } else {
@@ -145,13 +147,13 @@ template <typename T>
 // the flag reports EINVAL, which would be passed through too — a
 // fallback to plain rename would overwrite what the caller promised
 // not to.
-[[nodiscard]] int no_replace_commit_refuses_an_existing_target(const ScratchDir& scratch) {
+[[nodiscard]] int no_replace_commit_refuses_an_existing_target(fs::TemporaryDirectory const& scratch) {
     IoBlockCtx ctx{eff::testing::test()};
     const Payload pattern = pattern_of(3);
 
-    const std::string tmp = scratch.file("warm.tmp");
-    const std::string occupied = scratch.file("occupied");
-    const std::string fresh = scratch.file("warm");
+    const ScratchPath tmp = crucible::test::make_scratch_path(scratch, "warm.tmp");
+    const ScratchPath occupied = crucible::test::make_scratch_path(scratch, "occupied");
+    const ScratchPath fresh = crucible::test::make_scratch_path(scratch, "warm");
 
     // The occupied target exists before the commit.  The descriptor closes
     // at the end of the block.
@@ -184,12 +186,12 @@ template <typename T>
         ::fixy::report(::fixy::Sink::Err, "a no-replace commit overwrote an existing target\n");
         return 1;
     }
-    if (errno_of(refused) == EINVAL) {
+    if (error_of(refused) == foundation::os::Errno::einval) {
         ::fixy::check::pass(
             kTest, "[skipped] this filesystem has no RENAME_NOREPLACE; the errno is passed through as designed\n");
         return 0;
     }
-    if (errno_of(refused) != EEXIST) {
+    if (error_of(refused) != foundation::os::Errno::eexist) {
         ::fixy::report(::fixy::Sink::Err,
                        "a no-replace commit onto an existing target failed with errno {} and not with EEXIST\n",
                        errno_of(refused));
@@ -211,11 +213,12 @@ template <typename T>
 }  // namespace
 
 int main() {
-    const ScratchDir scratch{"cipher-durable-test"};
-    if (!scratch.is_ready()) {
+    fixy::Result<fs::TemporaryDirectory, foundation::os::Errno> made = crucible::test::make_scratch_directory(kTest);
+    if (made.is_err()) {
         ::fixy::report(::fixy::Sink::Err, "[skipped] cannot make a scratch directory under /tmp\n");
         return 0;
     }
+    const fs::TemporaryDirectory scratch = std::move(made).expect("the scratch directory is made");
     if (const int rc = cold_writer_commit_succeeds(scratch); rc != 0) return rc;
     if (const int rc = no_replace_commit_refuses_an_existing_target(scratch); rc != 0) return rc;
     return 0;
