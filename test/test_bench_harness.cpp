@@ -926,6 +926,19 @@ void test_processor_of_stat() {
     CHECK(bench::detail::processor_of_stat("no parenthesis 1 2 3").is_none());
 }
 
+// A scaling_cur_freq file holds the frequency in kHz and a newline.  The
+// frequency in Hz is that number times 1000, and a text with no number, a
+// sign or an empty text gives 0, as for a CPU with no cpufreq directory.
+void test_freq_of_text() {
+    CHECK(bench::detail::freq_hz_of_text("3450000\n") == 3450000000u);
+    CHECK(bench::detail::freq_hz_of_text("  800000\n") == 800000000u);
+    CHECK(bench::detail::freq_hz_of_text("1") == 1000u);
+    CHECK(bench::detail::freq_hz_of_text("") == 0u);
+    CHECK(bench::detail::freq_hz_of_text("-5\n") == 0u);
+    CHECK(bench::detail::freq_hz_of_text("unknown\n") == 0u);
+    CHECK(bench::detail::read_cpu_freq_hz(bench::CpuId::none()) == 0u);
+}
+
 // A worker pins itself to the core of its slot, and a thread that starts
 // inside run_on_core takes that core as its affinity and keeps it.  The
 // calling thread gets its affinity back after run_on_core.  The core is the
@@ -1267,6 +1280,7 @@ int main() {
     test_pause_between_planted_readings();
     test_planted_pause_is_caught();
     test_processor_of_stat();
+    test_freq_of_text();
     test_spread_of_planted_windows();
     test_median_of_a_part();
     test_run_measures_in_windows();

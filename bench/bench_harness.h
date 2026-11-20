@@ -794,24 +794,6 @@ namespace detail {
     return Cores::of(allowed, isolated, order).of_slot(kMeasuringSlot).value_or(CpuId::none());
 }
 
-// Read /sys/.../cpu<N>/cpufreq/scaling_cur_freq (kHz) → Hz, 0 on failure.
-[[nodiscard]] inline uint64_t read_cpu_freq_hz(int cpu) noexcept {
-#ifdef __linux__
-    if (cpu < 0) return 0;
-    char path[128];
-    std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", cpu);
-    FILE* f = std::fopen(path, "r");
-    if (!f) return 0;
-    long khz = 0;
-    const int got = std::fscanf(f, "%ld", &khz);
-    std::fclose(f);
-    return (got == 1 && khz > 0) ? static_cast<uint64_t>(khz) * 1000u : 0u;
-#else
-    (void)cpu;
-    return 0;
-#endif
-}
-
 }  // namespace detail
 
 // Pins the calling thread to one core for the rest of its life, through the
@@ -1181,6 +1163,28 @@ template <std::size_t Capacity>
     if (delay.is_none() || arrivals.is_none()) return ::fixy::none;
     return ::fixy::some(
         ThreadDelay{.run_delay_ns = std::move(delay).value_or(0), .arrivals = std::move(arrivals).value_or(0)});
+}
+
+// The frequency in Hz of the text of a scaling_cur_freq file of sysfs, which
+// holds kHz: the first decimal number after the blanks that lead it, times
+// 1000, or 0 for a text that starts with no digit.
+[[nodiscard]] inline std::uint64_t freq_hz_of_text(::fixy::TextView text) noexcept {
+    constexpr std::uint64_t kHzPerKhz = 1000;
+    return ::fixy::saturating_mul(leading_number(text).value_or(0), kHzPerKhz);
+}
+
+// The frequency of a CPU in Hz: scaling_cur_freq of its cpufreq directory in
+// sysfs, or 0 when the CPU is none or the file does not read.  Complexity: one
+// read of sysfs.
+[[nodiscard]] inline std::uint64_t read_cpu_freq_hz(CpuId cpu) noexcept {
+    if (!cpu.is_valid()) return 0;
+    ::foundation::os::PathText<96> path{};
+    const bool is_built = path.append(::fixy::TextView{"/sys/devices/system/cpu/cpu"}).is_ok()
+                       && path.append_decimal(static_cast<std::uint64_t>(cpu.raw())).is_ok()
+                       && path.append(::fixy::TextView{"/cpufreq/scaling_cur_freq"}).is_ok();
+    ::fixy::FixedText<32> text{};
+    if (!is_built || ::foundation::os::read_file(path.c_text(), text).is_err()) return 0;
+    return freq_hz_of_text(text.view());
 }
 
 // The run delay of each thread of the process, at most kPauseThreads of them.
@@ -2757,7 +2761,7 @@ private:
 
     [[nodiscard, gnu::noinline]] static SampleWindow start_window_(CpuId pinned_cpu) {
         SampleWindow window{};
-        window.freq_start = detail::read_cpu_freq_hz(pinned_cpu.raw());
+        window.freq_start = detail::read_cpu_freq_hz(pinned_cpu);
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         const ::crucible::perf::Senses* senses = detail::senses_instance();
         window.hub = senses->sense_hub();
@@ -2834,7 +2838,7 @@ private:
         for (auto const sw : window.sw)
             sched_post_idx = sw->timeline_write_index();
 #endif
-        const uint64_t freq_end = detail::read_cpu_freq_hz(pinned_cpu.raw());
+        const uint64_t freq_end = detail::read_cpu_freq_hz(pinned_cpu);
         // The measurement ends here, and so does the pin.  A failed restore
         // leaves the pin in place, and the next Run pins again in any case.
         PinResult& pin = opening.pin;
