@@ -247,6 +247,9 @@ inline constexpr std::meta::info open_templates[] = {
     ^^fp::tag::FederatedPeer,
     ^^fp::detail::fork_pack_,
     ^^fp::detail::fork_result_,
+    // A name for the key of the registry of the singleton roots.  It has no
+    // object and gives no authority.
+    ^^fp::detail::singleton_name_of,
 };
 
 struct ForgeVerdict {

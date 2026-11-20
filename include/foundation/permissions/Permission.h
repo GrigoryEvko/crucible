@@ -60,8 +60,6 @@
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Report.h>
-#include <foundation/core/SipHash.h>
-#include <foundation/core/StableIdentity.h>
 #include <foundation/core/Text.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/diag/FailClosed.h>
@@ -1017,11 +1015,10 @@ mint_permission_root(Args const&...) noexcept {
 //
 // THE KEY.  The key of a slot has 128 bits, as the key of ThreadLocalRef
 // (foundation/ThreadLocalRef.h) has: the stable type id of the tag
-// (foundation/reflect/Hash.h), and the SipHash-2-4 of its stable name under a
-// fixed public key (foundation/core/SipHash.h).  A key that meets the type id
-// of a different second key ends the process.  A tag with no stable
-// identity, such as a class with internal linkage, has no key, so the door
-// refuses it.
+// (foundation/reflect/Hash.h), and a second hash of its stable name.  A key
+// that meets the type id of a different second word ends the process.  A tag
+// with no stable identity, such as a class with internal linkage, has no key,
+// so the door refuses it.
 
 namespace detail {
 
@@ -1056,34 +1053,20 @@ struct SingletonRootIds {
     std::uint64_t name_hash = 0;
 };
 
-// The fixed public key of the second word: the 16 characters of the text
-// "SingletonRoot 01", one byte each.
-[[nodiscard]] consteval ::foundation::core::SipKeyBytes singleton_second_key_() noexcept {
-    constexpr ::foundation::core::TextView text{"SingletonRoot 01"};
-    ::foundation::core::SipKeyBytes key{};
-    auto letter = text.begin();
-    for (std::byte& byte : key) {
-        byte = static_cast<std::byte>(*letter);
-        ++letter;
-    }
-    return key;
-}
+// A class whose stable name is the stable name of the tag after a fixed
+// prefix.  It has no object.
+template <typename Tag>
+struct singleton_name_of {};
 
-// The key of a tag: its stable type id, and the SipHash-2-4 of its stable
-// name under the fixed key as one little-endian word.  The second word is a
-// function of the name that is independent of the first, so it catches an
-// accidental collision of the first word.
+// The key of a tag: its stable type id, which hashes its stable name, and the
+// stable type id of singleton_name_of<Tag>, which hashes the same name after
+// a fixed prefix.  The prefix gives the hash another state before the name,
+// so an accidental collision of the first word does not carry over to the
+// second word.
 template <typename Tag>
 [[nodiscard]] consteval SingletonRootIds singleton_ids_() noexcept {
-    ::foundation::core::SipTag const tag =
-        ::foundation::core::sip_hash(singleton_second_key_(), ::foundation::core::stable_name_text<Tag>());
-    std::uint64_t word = 0;
-    int shift = 0;
-    for (std::byte const byte : tag) {
-        word |= static_cast<std::uint64_t>(static_cast<std::uint8_t>(byte)) << shift;
-        shift += 8;
-    }
-    return SingletonRootIds{.type_id = ::foundation::reflect::stable_type_id(^^Tag), .name_hash = word};
+    return SingletonRootIds{.type_id = ::foundation::reflect::stable_type_id(^^Tag),
+                            .name_hash = ::foundation::reflect::stable_type_id(^^singleton_name_of<Tag>)};
 }
 
 // The slot of the key in the registry.  The first use of a key claims the
