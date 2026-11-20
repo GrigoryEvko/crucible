@@ -24,7 +24,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <type_traits>
-#include <vector>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
@@ -64,7 +63,7 @@ static_assert(std::is_same_v<decltype(bench::Percentiles{}.cv), double>, "Percen
 // variance rather than standard deviation, and it is allowed to return a
 // negative number: going negative under cancellation is the behaviour being
 // demonstrated.
-[[nodiscard]] double naive_variance_2pass(const std::vector<double>& xs) noexcept {
+[[nodiscard]] double naive_variance_2pass(::fixy::View<const double> xs) noexcept {
     if (xs.size() < 2) return 0.0;
     double sum = 0.0;
     double sumsq = 0.0;
@@ -76,12 +75,18 @@ static_assert(std::is_same_v<decltype(bench::Percentiles{}.cv), double>, "Percen
     return (sumsq - (sum * sum) / n) / (n - 1.0);
 }
 
-// The percentiles of the values, through a run of samples of the base, the
-// type that Percentiles::compute sorts.
-[[nodiscard]] bench::Percentiles percentiles_of(const std::vector<double>& xs) {
-    ::fixy::HeapArray<double> samples =
-        ::fixy::mint_heap_array_with<double>(::foundation::effects::testing::test().alloc, xs.size(),
-                                             [&xs](std::size_t position) noexcept { return xs[position]; });
+// The values of a fixed array as a View of the samples.
+template <std::size_t Count>
+[[nodiscard]] ::fixy::View<const double> view_of(::fixy::FixedArray<double, Count> const& values) {
+    return ::fixy::View<const double>{values.view()};
+}
+
+// The percentiles of the values, through a copy in a run of samples, the type
+// that Percentiles::compute sorts.
+[[nodiscard]] bench::Percentiles percentiles_of(::fixy::View<const double> xs) {
+    ::fixy::HeapArray<double> samples = ::fixy::mint_heap_array_with<double>(
+        ::foundation::effects::testing::test().alloc, xs.size(),
+        [&xs](std::size_t position) noexcept { return *xs.get(position).expect("a position below the count"); });
     return bench::Percentiles::compute(samples);
 }
 
@@ -99,8 +104,8 @@ int g_failures = 0;
 void test_welford_well_conditioned() {
     // Mean 3, squared deviations 4 + 1 + 0 + 1 + 4 = 10, and the
     // Bessel-corrected variance is 10 / 4 = 2.5.
-    const std::vector<double> xs{1.0, 2.0, 3.0, 4.0, 5.0};
-    const bench::Percentiles p = percentiles_of(xs);
+    const ::fixy::FixedArray<double, 5> xs{1.0, 2.0, 3.0, 4.0, 5.0};
+    const bench::Percentiles p = percentiles_of(view_of(xs));
 
     WELFORD_CHECK(p.n == 5);
     WELFORD_CHECK(approx(p.mean, 3.0, 1e-12));
@@ -110,8 +115,7 @@ void test_welford_well_conditioned() {
     // At this magnitude cancellation has not bitten yet, so the closed form
     // reaches the same answer. That is what makes the divergence in the next
     // test attributable to conditioning and not to a coding error here.
-    std::vector<double> xs_copy{1.0, 2.0, 3.0, 4.0, 5.0};
-    const double naive_var = naive_variance_2pass(xs_copy);
+    const double naive_var = naive_variance_2pass(view_of(xs));
     WELFORD_CHECK(approx(naive_var, 2.5, 1e-12));
 }
 
@@ -121,11 +125,11 @@ void test_welford_ill_conditioned() {
     // about five times 10^18 and the squared sum over n is the same
     // magnitude, so their difference of 10 falls off the end of binary64.
     constexpr double kBase = 1.0e9;
-    std::vector<double> xs{
+    const ::fixy::FixedArray<double, 5> xs{
         kBase + 1.0, kBase + 2.0, kBase + 3.0, kBase + 4.0, kBase + 5.0,
     };
 
-    const bench::Percentiles p = percentiles_of(xs);
+    const bench::Percentiles p = percentiles_of(view_of(xs));
 
     WELFORD_CHECK(p.n == 5);
     WELFORD_CHECK(approx(p.mean, kBase + 3.0, 1e-3));
@@ -138,8 +142,7 @@ void test_welford_ill_conditioned() {
     WELFORD_CHECK(std::isfinite(p.stddev));
     WELFORD_CHECK(p.stddev > 1.0);
 
-    std::vector<double> xs_copy = xs;
-    const double naive_var = naive_variance_2pass(xs_copy);
+    const double naive_var = naive_variance_2pass(view_of(xs));
 
     // Same inputs, same precision, same compiler flags. Only the algorithm
     // differs, and the closed form must visibly break: either the sign flips
@@ -160,11 +163,11 @@ void test_welford_ill_conditioned() {
 // that compute() performs, so the same multiset of samples yields the same
 // bits on every run and in each order of the input.
 void test_welford_deterministic() {
-    const std::vector<double> xs_a{17.0, 23.0, 31.0, 41.0, 59.0, 67.0, 73.0};
-    const std::vector<double> xs_b{73.0, 41.0, 17.0, 67.0, 23.0, 59.0, 31.0};
+    const ::fixy::FixedArray<double, 7> xs_a{17.0, 23.0, 31.0, 41.0, 59.0, 67.0, 73.0};
+    const ::fixy::FixedArray<double, 7> xs_b{73.0, 41.0, 17.0, 67.0, 23.0, 59.0, 31.0};
 
-    const bench::Percentiles a = percentiles_of(xs_a);
-    const bench::Percentiles b = percentiles_of(xs_b);
+    const bench::Percentiles a = percentiles_of(view_of(xs_a));
+    const bench::Percentiles b = percentiles_of(view_of(xs_b));
 
     // Comparing the copied-out bits rather than the doubles gives exact
     // equality and keeps the float-equality diagnostic satisfied.

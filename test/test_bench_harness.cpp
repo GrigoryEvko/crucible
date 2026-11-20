@@ -90,15 +90,18 @@ int g_failures = 0;
 // Several tests compare results against each other, so they have to be
 // reading the same input.  Building it once removes the chance of two
 // call sites drifting apart.
-[[nodiscard]] const std::vector<double>& ramp_1_to_N() {
-    static const std::vector<double> v = [] {
-        std::vector<double> out(kSampleN);
-        for (std::size_t i = 0; i < kSampleN; ++i) {
-            out[i] = static_cast<double>(i + 1);
-        }
-        return out;
-    }();
-    return v;
+// The samples of a run of count samples, each the value that make gives its
+// position.
+template <class Make>
+[[nodiscard]] ::fixy::HeapArray<double> run_of(std::size_t count, Make make) {
+    return ::fixy::mint_heap_array_with<double>(::foundation::effects::testing::test().alloc, count, make);
+}
+
+// The ramp 1, 2, ..., kSampleN.
+[[nodiscard]] ::fixy::View<const double> ramp_1_to_N() {
+    static const ::fixy::HeapArray<double> ramp =
+        run_of(kSampleN, [](std::size_t position) noexcept { return static_cast<double>(position + 1); });
+    return ::fixy::View<const double>{ramp.view()};
 }
 
 // The interval may be returned either wrapped in an optional or as a
@@ -136,83 +139,80 @@ void check_ci_stable(const CI_t& a, const CI_t& b) {
     }
 }
 
-// The values as a run of samples of the base, the type that the percentiles
-// and the bootstrap read.
-[[nodiscard]] ::fixy::HeapArray<double> samples_of(std::vector<double> const& values) {
-    return ::fixy::mint_heap_array_with<double>(::foundation::effects::testing::test().alloc, values.size(),
-                                                [&values](std::size_t position) noexcept { return values[position]; });
+// A copy of the values as a run of samples, the type that the percentiles and
+// the bootstrap read.
+[[nodiscard]] ::fixy::HeapArray<double> samples_of(::fixy::View<const double> values) {
+    return run_of(values.size(), [&values](std::size_t position) noexcept {
+        return *values.get(position).expect("a position below the count of the values");
+    });
 }
 
 // The percentile frac of sorted values.
-[[nodiscard]] double interp_of(std::vector<double> const& sorted, double frac) {
-    const ::fixy::HeapArray<double> samples = samples_of(sorted);
-    return bench::percentile_interp(::fixy::View<const double>{samples.view()}, frac);
+[[nodiscard]] double interp_of(::fixy::View<const double> sorted, double frac) {
+    return bench::percentile_interp(sorted, frac);
 }
 
 // The percentiles of the values.
-[[nodiscard]] bench::Percentiles percentiles_of(std::vector<double> const& values) {
+[[nodiscard]] bench::Percentiles percentiles_of(::fixy::View<const double> values) {
     ::fixy::HeapArray<double> samples = samples_of(values);
     return bench::Percentiles::compute(samples);
 }
 
 // The bootstrap interval of the percentile frac of the values.
-[[nodiscard]] bench::CI bootstrap_of(std::vector<double> const& values, double frac, std::size_t resamples,
+[[nodiscard]] bench::CI bootstrap_of(::fixy::View<const double> values, double frac, std::size_t resamples,
                                      double alpha = kAlpha, std::uint64_t seed = kDefaultSeed) {
-    const ::fixy::HeapArray<double> samples = samples_of(values);
-    return bench::bootstrap_ci(::fixy::View<const double>{samples.view()}, frac, resamples, alpha, seed);
+    return bench::bootstrap_ci(values, frac, resamples, alpha, seed);
 }
 
 // The comparison reads only the samples and the percentiles, so a report
 // can be assembled directly instead of running a measurement.
-[[nodiscard]] bench::Report make_report_from(const char* name, std::vector<double> const& samples) {
+[[nodiscard]] bench::Report make_report_from(const char* name, ::fixy::View<const double> samples) {
     bench::Report r;
     r.name = name;
     r.samples = samples_of(samples);
-    r.pct = percentiles_of(samples);
+    r.pct = bench::Percentiles::compute(r.samples);
     return r;
 }
 
+// The values of a fixed array as a View of the samples.
+template <std::size_t Count>
+[[nodiscard]] ::fixy::View<const double> view_of(::fixy::FixedArray<double, Count> const& values) {
+    return ::fixy::View<const double>{values.view()};
+}
+
 void test_percentile_interp() {
-    // An empty input returns zero only where the internal assert is
-    // compiled out.  In a debug build the assert fires first, so this
-    // case is unreachable there.
-#ifdef NDEBUG
-    {
-        const std::vector<double> empty;
-        CHECK(approx(interp_of(empty, 0.5), 0.0));
-    }
-#endif
+    // An empty input gives zero.
+    CHECK(approx(interp_of(::fixy::View<const double>{}, 0.5), 0.0));
 
     {
-        const std::vector<double> one{42.5};
-        CHECK(approx(interp_of(one, 0.0), 42.5));
-        CHECK(approx(interp_of(one, 0.5), 42.5));
-        CHECK(approx(interp_of(one, 1.0), 42.5));
+        const ::fixy::FixedArray<double, 1> one{42.5};
+        CHECK(approx(interp_of(view_of(one), 0.0), 42.5));
+        CHECK(approx(interp_of(view_of(one), 0.5), 42.5));
+        CHECK(approx(interp_of(view_of(one), 1.0), 42.5));
     }
 
     // With five samples every quartile lands on a sample, so these
     // expectations involve no interpolation at all.
     {
-        const std::vector<double> x{1.0, 2.0, 3.0, 4.0, 5.0};
-        CHECK(approx(interp_of(x, 0.00), 1.0));
-        CHECK(approx(interp_of(x, 0.25), 2.0));
-        CHECK(approx(interp_of(x, 0.50), 3.0));
-        CHECK(approx(interp_of(x, 0.75), 4.0));
-        CHECK(approx(interp_of(x, 1.00), 5.0));
+        const ::fixy::FixedArray<double, 5> x{1.0, 2.0, 3.0, 4.0, 5.0};
+        CHECK(approx(interp_of(view_of(x), 0.00), 1.0));
+        CHECK(approx(interp_of(view_of(x), 0.25), 2.0));
+        CHECK(approx(interp_of(view_of(x), 0.50), 3.0));
+        CHECK(approx(interp_of(view_of(x), 0.75), 4.0));
+        CHECK(approx(interp_of(view_of(x), 1.00), 5.0));
     }
 
     // With four samples the median falls between two of them, which is
     // where the interpolation rule actually shows.
     {
-        const std::vector<double> x{1.0, 2.0, 3.0, 4.0};
-        CHECK(approx(interp_of(x, 0.5), 2.5));
+        const ::fixy::FixedArray<double, 4> x{1.0, 2.0, 3.0, 4.0};
+        CHECK(approx(interp_of(view_of(x), 0.5), 2.5));
     }
 }
 
 void test_percentiles_compute() {
     {
-        const std::vector<double> empty;
-        const bench::Percentiles p = percentiles_of(empty);
+        const bench::Percentiles p = percentiles_of(::fixy::View<const double>{});
         CHECK(p.n == 0);
         CHECK(approx(p.p50, 0.0));
         CHECK(approx(p.p99, 0.0));
@@ -227,8 +227,8 @@ void test_percentiles_compute() {
     // the deviation is zero, which is the case a divide-by-spread bug
     // would show up in.
     {
-        const std::vector<double> uniform{5.0, 5.0, 5.0, 5.0, 5.0};
-        const bench::Percentiles p = percentiles_of(uniform);
+        const ::fixy::FixedArray<double, 5> uniform{5.0, 5.0, 5.0, 5.0, 5.0};
+        const bench::Percentiles p = percentiles_of(view_of(uniform));
         CHECK(p.n == 5);
         CHECK(approx(p.p50, 5.0));
         CHECK(approx(p.p75, 5.0));
@@ -249,8 +249,8 @@ void test_percentiles_compute() {
     // given out of order so that a missing internal sort shows up in the
     // minimum and maximum.
     {
-        const std::vector<double> sym{3.0, 1.0, 4.0, 5.0, 2.0};
-        const bench::Percentiles p = percentiles_of(sym);
+        const ::fixy::FixedArray<double, 5> sym{3.0, 1.0, 4.0, 5.0, 2.0};
+        const bench::Percentiles p = percentiles_of(view_of(sym));
         CHECK(p.n == 5);
         CHECK(approx(p.min, 1.0));
         CHECK(approx(p.max, 5.0));
@@ -267,16 +267,14 @@ void test_percentiles_compute() {
 // 50.5.
 void test_bootstrap_ci() {
     {
-        std::vector<double> small(kSmallN);
-        for (std::size_t i = 0; i < kSmallN; ++i) {
-            small[i] = static_cast<double>(i + 1);
-        }
-        auto result = bootstrap_of(small, 0.5, /*resamples=*/100);
+        const ::fixy::HeapArray<double> small =
+            run_of(kSmallN, [](std::size_t position) noexcept { return static_cast<double>(position + 1); });
+        auto result = bootstrap_of(::fixy::View<const double>{small.view()}, 0.5, /*resamples=*/100);
         check_ci_is_empty(result);
     }
 
     {
-        const auto& big = ramp_1_to_N();
+        const ::fixy::View<const double> big = ramp_1_to_N();
         auto a = bootstrap_of(big, 0.5, kBootstrapB, kAlpha, kDefaultSeed);
         auto b = bootstrap_of(big, 0.5, kBootstrapB, kAlpha, kDefaultSeed);
         check_ci_stable(a, b);
@@ -286,7 +284,7 @@ void test_bootstrap_ci() {
 
 void test_compare() {
     {
-        const auto& v = ramp_1_to_N();
+        const ::fixy::View<const double> v = ramp_1_to_N();
         const bench::Report a = make_report_from("a", v);
         const bench::Report b = make_report_from("b", v);
         const bench::Compare c = bench::compare(a, b);
@@ -304,15 +302,12 @@ void test_compare() {
     // so only the sign of the shift and the finiteness of the statistic
     // are checked.
     {
-        std::vector<double> va(kSampleN);
-        std::vector<double> vb(kSampleN);
-        for (std::size_t i = 0; i < kSampleN; ++i) {
-            const double base = static_cast<double>(i + 1);
-            va[i] = base;
-            vb[i] = base + 0.01;
-        }
-        const bench::Report a = make_report_from("a", va);
-        const bench::Report b = make_report_from("b+shift", vb);
+        const ::fixy::HeapArray<double> va =
+            run_of(kSampleN, [](std::size_t position) noexcept { return static_cast<double>(position + 1); });
+        const ::fixy::HeapArray<double> vb =
+            run_of(kSampleN, [](std::size_t position) noexcept { return static_cast<double>(position + 1) + 0.01; });
+        const bench::Report a = make_report_from("a", ::fixy::View<const double>{va.view()});
+        const bench::Report b = make_report_from("b+shift", ::fixy::View<const double>{vb.view()});
         const bench::Compare c = bench::compare(a, b);
 
         CHECK(c.delta_p50_pct > 0.0);
@@ -325,15 +320,12 @@ void test_compare() {
     // refusal.
     {
         constexpr std::size_t kSmallCmpN = 20;
-        std::vector<double> small_a(kSmallCmpN);
-        std::vector<double> small_b(kSmallCmpN);
-        for (std::size_t i = 0; i < kSmallCmpN; ++i) {
-            const double base = static_cast<double>(i);
-            small_a[i] = base;
-            small_b[i] = base + 100.0;
-        }
-        const bench::Report a = make_report_from("small_a", small_a);
-        const bench::Report b = make_report_from("small_b", small_b);
+        const ::fixy::HeapArray<double> small_a =
+            run_of(kSmallCmpN, [](std::size_t position) noexcept { return static_cast<double>(position); });
+        const ::fixy::HeapArray<double> small_b =
+            run_of(kSmallCmpN, [](std::size_t position) noexcept { return static_cast<double>(position) + 100.0; });
+        const bench::Report a = make_report_from("small_a", ::fixy::View<const double>{small_a.view()});
+        const bench::Report b = make_report_from("small_b", ::fixy::View<const double>{small_b.view()});
         const bench::Compare c = bench::compare(a, b);
 
         CHECK(!c.distinguishable);
@@ -345,16 +337,11 @@ void test_compare() {
     // and the result is zero no matter which variance formula divides
     // it.
     {
-        std::vector<double> tie_a(kSampleN);
-        std::vector<double> tie_b(kSampleN);
-        for (std::size_t i = 0; i < kSampleN / 2; ++i) {
-            tie_a[2 * i] = 1.0;
-            tie_a[2 * i + 1] = 2.0;
-            tie_b[2 * i] = 1.0;
-            tie_b[2 * i + 1] = 2.0;
-        }
-        const bench::Report a = make_report_from("tie_a", tie_a);
-        const bench::Report b = make_report_from("tie_b", tie_b);
+        const auto one_or_two = [](std::size_t position) noexcept { return position % 2 == 0 ? 1.0 : 2.0; };
+        const ::fixy::HeapArray<double> tie_a = run_of(kSampleN, one_or_two);
+        const ::fixy::HeapArray<double> tie_b = run_of(kSampleN, one_or_two);
+        const bench::Report a = make_report_from("tie_a", ::fixy::View<const double>{tie_a.view()});
+        const bench::Report b = make_report_from("tie_b", ::fixy::View<const double>{tie_b.view()});
         const bench::Compare c = bench::compare(a, b);
 
         CHECK(!c.distinguishable);
