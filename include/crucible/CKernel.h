@@ -90,9 +90,12 @@ public:
     // read it.  The same holds for every function below that calls it.
     [[nodiscard]] bool is_sealed() const noexcept { return seal_.is_sealed(); }
 
-    // A view is minted with a fresh brand and kept on the erased identity
-    // through erase_brand, so the table hands out one view type for each
-    // state.
+    // The two view doors below give their views on the erased identity
+    // through erase_brand, so the table gives one view type for each state.
+    // The brand of mint_view names the door and not the caller, so each table
+    // gets the same brand, and the rule brand-escape refuses a fresh brand
+    // that leaves the door.  A brand for each table waits for the brand of an
+    // arena or a store.
     using MutableView = ::fixy::ScopedView<CKernelTable, ckernel_state::Mutable>;
     using SealedView = ::fixy::ScopedView<CKernelTable, ckernel_state::Sealed>;
 

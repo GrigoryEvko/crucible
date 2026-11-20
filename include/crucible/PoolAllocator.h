@@ -345,7 +345,11 @@ private:
 
     // The precondition runs in the body, so it also fires when the compiler
     // folds a call at compile time, which a clause reading a member through
-    // `this` would skip.
+    // `this` would skip.  The door gives the view on the erased identity
+    // through erase_brand.  The brand of mint_view names the door and not the
+    // caller, so each pool gets the same brand, and the rule brand-escape
+    // refuses a fresh brand that leaves the door.  A brand for each pool
+    // waits for the brand of an arena or a store.
     [[nodiscard]] CRUCIBLE_INLINE constexpr InitializedView initialized_view_() const noexcept {
         CRUCIBLE_PRE(is_initialized());
         return ::fixy::erase_brand(::fixy::mint_view<pool_state::Initialized>(*this));

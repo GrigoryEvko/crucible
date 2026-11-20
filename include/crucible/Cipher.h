@@ -298,6 +298,14 @@ public:
     // A hot foreground context holds neither and gets no view.
     using open_view_required_row = ::crucible::CipherSessionEventPersistenceRow;
 
+    // The door gives the view on the erased identity through erase_brand.
+    // The brand of mint_view names the door and not the caller.  The call of
+    // mint_view names no template argument of the door, so each context and
+    // each Cipher get the same brand (foundation/Brand.h, fact 2).  The rule
+    // brand-escape refuses a fresh brand that leaves the door, and the
+    // receivers of the view have their bodies in src/Cipher.cpp, so they take
+    // the one view type.  A brand for each Cipher waits for the brand of an
+    // arena or a store.
     template <typename Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[nodiscard]] OpenView mint_open_view(Ctx const&) const noexcept {

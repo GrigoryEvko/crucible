@@ -750,6 +750,9 @@ struct IndexLine {
 
 }  // namespace
 
+// Each receiver of an open view below takes OpenView, the view on the erased
+// identity that mint_open_view gives.  The bodies are in this file and are not
+// templates, so no receiver can take the brand of a caller.
 ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddressedRegionPayload payload) {
     ContentAddressedRegionPayload::Value value = payload.get();
     if (value.is_none()) return ContentHash{};

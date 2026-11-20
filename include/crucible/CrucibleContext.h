@@ -223,6 +223,11 @@ struct CrucibleContext {
 
     // The context is foreground state, so the proof that it is compiled is
     // minted only on the thread that holds the producer claim of its Vigil.
+    // The door gives the view on the erased identity through erase_brand.
+    // The brand of mint_view names the door and not the caller, so each
+    // context gets the same brand, and the rule brand-escape refuses a fresh
+    // brand that leaves the door.  A brand for each context waits for the
+    // brand of an arena or a store.
     [[nodiscard]] CRUCIBLE_INLINE constexpr CompiledView mint_compiled_view(VigilFgCtx const&) const noexcept {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         return ::fixy::erase_brand(::fixy::mint_view<ctx_mode::Compiled>(*this));
