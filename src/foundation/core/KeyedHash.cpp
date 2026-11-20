@@ -834,17 +834,23 @@ inline void blake3_run_inputs_(Blake3Cv key, Blake3Input const* inputs, std::siz
 // chaining values are on the stack.
 inline constexpr std::size_t blake3_batch_chunks = 64;
 
+// The most chunks of a last batch that runs with arrays of its own small
+// size: a message of at most 16 chunks zeroes fewer bytes of arrays.
+inline constexpr std::size_t blake3_small_batch_chunks = 16;
+
 // One level of parents of the count chaining values of values, in place:
 // the values join in pairs from the left, and an odd last value goes up
 // alone.  The pair of two neighbor values is the 64 bytes of the block of
 // their parent.  The pairs run in lanes.  Each run reads its blocks before it
 // writes its values, and a run writes only the values below the pairs of the
-// runs after it, so the level needs no copy.  Returns the count of the values
-// of the next level.  Complexity: one compression for each pair.
+// runs after it, so the level needs no copy.  Count is at most Batch.
+// Returns the count of the values of the next level.  Complexity: one
+// compression for each pair.
+template <std::size_t Batch>
 inline std::size_t blake3_join_level_(Blake3Cv key, Blake3Cv* values, std::size_t count) noexcept {
     std::size_t const pairs = count / 2;
     std::byte const* const pair_bytes = static_cast<std::byte const*>(static_cast<void const*>(values));
-    Blake3Input inputs[blake3_batch_chunks / 2] = {};
+    Blake3Input inputs[Batch / 2] = {};
     for (std::size_t index = 0; index < pairs; ++index) {
         inputs[index] = Blake3Input{.first = pair_bytes + index * blake3_block_bytes, .blocks = 1};
     }
@@ -857,60 +863,44 @@ inline std::size_t blake3_join_level_(Blake3Cv key, Blake3Cv* values, std::size_
 // values, until stop values remain: one for the root of a subtree, two for
 // the pair of the root of the message.  The chunks form one subtree, whose
 // left subtrees are full, so the levels of pairs from the left give the
-// parents of the tree.  Returns the count of the values that remain.  Linear
-// in count.
+// parents of the tree.  Count is at most Batch.  Returns the count of the
+// values that remain.  Linear in count.
+template <std::size_t Batch>
 inline std::size_t blake3_join_levels_(Blake3Cv key, Blake3Cv* values, std::size_t count, std::size_t stop) noexcept {
     while (count > stop) {
-        count = blake3_join_level_(key, values, count);
+        count = blake3_join_level_<Batch>(key, values, count);
     }
     return count;
 }
 
-// The block of the root of a message of more than one chunk, at run time,
-// into node.  The chunks go in batches of blake3_batch_chunks, each a full
-// subtree at a multiple of its size, and a last batch with the chunks that
-// remain, the last chunk of the message with them.  That last batch starts
-// at the count of chunks before the last with its low bits cleared, so it is
-// the last right subtree of the tree.  The chunks of a batch run in lanes,
-// and each level of their parents runs in lanes.  The root of each full
-// batch joins a stack, as its chunks would.  The root of the last batch then
-// joins each value of the stack from the right.  Linear in the count of
-// chunks.
-[[gnu::noinline]] inline void blake3_tree_root_(Blake3Cv key, std::byte const* first, std::size_t count,
-                                                Blake3Node& node) noexcept {
+// The input of the full chunk at the index chunk of the message from first.
+[[nodiscard]] inline Blake3Input blake3_chunk_input_(std::byte const* first, std::size_t chunk) noexcept {
+    return Blake3Input{.first = first + chunk * blake3_chunk_bytes,
+                       .blocks = blake3_chunk_bytes / blake3_block_bytes,
+                       .counter = chunk,
+                       .start_flags = blake3_chunk_start,
+                       .end_flags = blake3_chunk_end};
+}
+
+// The block of the root of a message of count bytes into node, from its last
+// batch of chunks, which starts at the chunk last_first, and the depth roots
+// of the full batches before it in stack.  The last batch holds at most Batch
+// chunks: each caller checks it.  A short last chunk runs its full blocks
+// before its last block in a lane beside the full chunks, and its last block
+// runs after them in the rows, from a copy with zero bytes after its end.
+// With no stack, the last batch is the whole tree, and its last pair is the
+// root.  Else the root of the last batch joins each value of the stack from
+// the right.  Linear in the count of chunks of the batch.
+template <std::size_t Batch>
+[[gnu::noinline]] inline void blake3_last_batch_(Blake3Cv key, std::byte const* first, std::size_t count,
+                                                 std::size_t last_first, Blake3Cv const* stack, std::size_t depth,
+                                                 Blake3Node& node) noexcept {
     std::size_t const chunks = (count - 1) / blake3_chunk_bytes + 1;
-    std::size_t const last_first = (chunks - 1) / blake3_batch_chunks * blake3_batch_chunks;
-    Blake3Input inputs[blake3_batch_chunks] = {};
-    Blake3Cv values[blake3_batch_chunks] = {};
-    Blake3Cv stack[blake3_max_depth] = {};
-    std::size_t depth = 0;
-    auto const chunk_input = [first](std::size_t chunk) noexcept {
-        return Blake3Input{.first = first + chunk * blake3_chunk_bytes,
-                           .blocks = blake3_chunk_bytes / blake3_block_bytes,
-                           .counter = chunk,
-                           .start_flags = blake3_chunk_start,
-                           .end_flags = blake3_chunk_end};
-    };
-    for (std::size_t batch_first = 0; batch_first < last_first; batch_first += blake3_batch_chunks) {
-        for (std::size_t index = 0; index < blake3_batch_chunks; ++index) {
-            inputs[index] = chunk_input(batch_first + index);
-        }
-        blake3_run_inputs_(key, inputs, blake3_batch_chunks, blake3_keyed_hash, values);
-        blake3_join_levels_(key, values, blake3_batch_chunks, 1);
-        Blake3Cv value = values[0];
-        for (std::size_t total = batch_first / blake3_batch_chunks + 1; (total & 1U) == 0; total >>= 1) {
-            value = blake3_parent_cv_(key, stack[depth - 1], value);
-            --depth;
-        }
-        stack[depth] = value;
-        ++depth;
-    }
-    // The last batch.  A short last chunk runs its full blocks before its
-    // last block in a lane beside the full chunks, and its last block runs
-    // after them in the rows, from a copy with zero bytes after its end.
     std::size_t const batch = chunks - last_first;
+    Blake3Input inputs[Batch] = {};
+    Blake3Cv values[Batch] = {};
     for (std::size_t index = 0; index < batch; ++index) {
-        inputs[index] = chunk_input(last_first + index);
+        inputs[index] = blake3_chunk_input_(first, last_first + index);
     }
     std::size_t const last_bytes = count - (chunks - 1) * blake3_chunk_bytes;
     bool const is_short = last_bytes < blake3_chunk_bytes;
@@ -932,9 +922,7 @@ inline std::size_t blake3_join_levels_(Blake3Cv key, Blake3Cv* values, std::size
         Blake3Cv const prefix = runs == batch ? values[batch - 1] : key;
         values[batch - 1] = blake3_compress_cv_(prefix, tail.words, tail.counter, tail.bytes, tail.flags);
     }
-    // With no stack, the last batch is the whole tree, and its last pair is
-    // the root.  Else the root of the last batch joins the stack.
-    std::size_t const left = blake3_join_levels_(key, values, batch, depth == 0 ? 2 : 1);
+    std::size_t const left = blake3_join_levels_<Batch>(key, values, batch, depth == 0 ? 2 : 1);
     Blake3Cv left_value = values[0];
     Blake3Cv right_value = values[left - 1];
     if (depth != 0) {
@@ -951,6 +939,49 @@ inline std::size_t blake3_join_levels_(Blake3Cv key, Blake3Cv* values, std::size
     node.counter = 0;
     node.bytes = blake3_block_bytes;
     node.flags = blake3_keyed_hash | blake3_parent;
+}
+
+// The block of the root of a message of more than one chunk, at run time,
+// into node.  The chunks go in batches of blake3_batch_chunks, each a full
+// subtree at a multiple of its size, and a last batch with the chunks that
+// remain, the last chunk of the message with them.  That last batch starts
+// at the count of chunks before the last with its low bits cleared, so it is
+// the last right subtree of the tree.  The chunks of a batch run in lanes,
+// and each level of their parents runs in lanes.  The root of each full
+// batch joins a stack, as its chunks would.  A message of one batch needs no
+// stack, and one of at most 16 chunks needs only small arrays.  Linear in the
+// count of chunks.
+[[gnu::noinline]] inline void blake3_tree_root_(Blake3Cv key, std::byte const* first, std::size_t count,
+                                                Blake3Node& node) noexcept {
+    std::size_t const chunks = (count - 1) / blake3_chunk_bytes + 1;
+    std::size_t const last_first = (chunks - 1) / blake3_batch_chunks * blake3_batch_chunks;
+    if (last_first == 0) {
+        if (chunks <= blake3_small_batch_chunks) {
+            blake3_last_batch_<blake3_small_batch_chunks>(key, first, count, 0, nullptr, 0, node);
+        } else {
+            blake3_last_batch_<blake3_batch_chunks>(key, first, count, 0, nullptr, 0, node);
+        }
+        return;
+    }
+    Blake3Input inputs[blake3_batch_chunks] = {};
+    Blake3Cv values[blake3_batch_chunks] = {};
+    Blake3Cv stack[blake3_max_depth] = {};
+    std::size_t depth = 0;
+    for (std::size_t batch_first = 0; batch_first < last_first; batch_first += blake3_batch_chunks) {
+        for (std::size_t index = 0; index < blake3_batch_chunks; ++index) {
+            inputs[index] = blake3_chunk_input_(first, batch_first + index);
+        }
+        blake3_run_inputs_(key, inputs, blake3_batch_chunks, blake3_keyed_hash, values);
+        blake3_join_levels_<blake3_batch_chunks>(key, values, blake3_batch_chunks, 1);
+        Blake3Cv value = values[0];
+        for (std::size_t total = batch_first / blake3_batch_chunks + 1; (total & 1U) == 0; total >>= 1) {
+            value = blake3_parent_cv_(key, stack[depth - 1], value);
+            --depth;
+        }
+        stack[depth] = value;
+        ++depth;
+    }
+    blake3_last_batch_<blake3_batch_chunks>(key, first, count, last_first, stack, depth, node);
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
