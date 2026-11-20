@@ -37,16 +37,22 @@ enum class PeriodClass : uint8_t {
 };
 
 // The period of a switch of the environment for the class of an event, or
-// the default period of the event when the switch gives no period.
+// the default period of the event when the switch gives no period.  The
+// borrow match reads the field of the record of the switches in place.
 [[nodiscard]] uint64_t resolve_period(PeriodClass period_class, uint64_t default_period) noexcept {
+    ::fixy::env::Switches const& switches = ::fixy::env::switches();
+    auto const period_or_default = [default_period](::fixy::Option<uint64_t> const& period) noexcept {
+        return period.match([](uint64_t value) noexcept { return value; },
+                            [default_period] noexcept { return default_period; });
+    };
     switch (period_class) {
         case PeriodClass::dynamic:
-            return ::fixy::env::switches().pmu_period_dynamic.value_or(default_period);
+            return period_or_default(switches.pmu_period_dynamic);
         case PeriodClass::software:
-            return ::fixy::env::switches().pmu_period_software.value_or(default_period);
+            return period_or_default(switches.pmu_period_software);
         case PeriodClass::hardware:
         default:
-            return ::fixy::env::switches().pmu_period_hardware.value_or(default_period);
+            return period_or_default(switches.pmu_period_hardware);
     }
 }
 

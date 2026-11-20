@@ -121,6 +121,13 @@ constinit Switches switches_at_start{};
 
 }  // namespace
 
-Switches switches() noexcept { return switches_at_start; }
+// The call gives a reference, which is never null.  GCC 16 at -O3 suggests
+// the attribute returns_nonnull for a function that gives a reference, and it
+// refuses that attribute on such a function, so the suggestion is off for this
+// one body.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-attribute=returns_nonnull"
+Switches const& switches() noexcept { return switches_at_start; }
+#pragma GCC diagnostic pop
 
 }  // namespace fixy::env

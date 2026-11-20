@@ -1202,7 +1202,7 @@ template <class Ctx>
 ::foundation::core::Result<Linear<TemporaryDirectory>, ::foundation::os::Errno>
 TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
     using ::foundation::os::Errno;
-    ::fixy::env::Switches const switches = ::fixy::env::switches();
+    ::fixy::env::Switches const& switches = ::fixy::env::switches();
     ::foundation::core::TextView const host = switches.temporary_directory.match(
         [](::fixy::env::TemporaryDirectoryPath const& checked) noexcept { return checked.c_text().view(); },
         [] noexcept { return ::foundation::core::TextView{"/tmp"}; });

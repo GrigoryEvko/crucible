@@ -87,9 +87,12 @@ struct Switches {
     ::foundation::core::Option<TemporaryDirectoryPath> temporary_directory{};
 };
 
-// The switches that the start-up hook read.  The call copies a record that
-// no code writes after the start, so it takes no lock and no atomic, and
-// each thread can call it.
-[[nodiscard]] Switches switches() noexcept;
+// The switches that the start-up hook read.  The call gives a reference to
+// the one record of the process, which has static storage and which no code
+// writes after the start.  So the call copies no byte of the record, takes no
+// lock and no atomic, and each thread can call it.  A caller reads a field of
+// the record in place: an Option field takes the borrow match, which keeps
+// the field as it is.
+[[nodiscard]] Switches const& switches() noexcept;
 
 }  // namespace fixy::env
