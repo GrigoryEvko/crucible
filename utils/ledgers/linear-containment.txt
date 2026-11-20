@@ -14,7 +14,7 @@ include/fixy/concurrent/ | library-holder | 3 | - | -
 include/fixy/session/ | library-holder | 4 | - | -
 include/foundation/permissions/ | library-holder | 1 | - | -
 include/foundation/permissions/ | pinned-holder | 1 | - | -
-test/ | library-holder | 3 | - | -
+test/ | library-holder | 2 | - | -
 test/fixy/ | library-holder | 11 | - | -
 test/fixy/ | pinned-holder | 1 | - | -
 test/layer/checks/foundation/ | pinned-holder | 1 | - | -
