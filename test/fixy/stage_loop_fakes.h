@@ -122,4 +122,26 @@ using PublishJob = cc::LoopProcess<PublishName, cc::ReceivesOn<Mailbox>, cc::Sen
 using FlushArm = cc::StageLoop<ForegroundFlush, DrainProcess, DetectProcess, BuildProcess, PublishFlush>;
 using JobArm = cc::StageLoop<ForegroundJob, DrainProcess, DetectProcess, BuildProcess, PublishJob>;
 
+// The job arm of the shift of a poll (THE ARMS of fixy/concurrent/StageNet.h).
+// The last stage polls its mailbox before it receives, so a job that comes
+// after the poll waits for the next period of the stage.  The stage then
+// serves the job after its count, at the end of the period of the job.
+using PublishJobLate = cc::LoopProcess<PublishName, cc::InputsOf<PublishStage>, cc::ReadsLock<Holders>,
+                                       cc::SendsOn<Count>, cc::ReceivesOn<Mailbox>, cc::SendsOn<JobDone>>;
+using JobLateArm = cc::StageLoop<ForegroundJob, DrainProcess, DetectProcess, BuildProcess, PublishJobLate>;
+
+// The fake stages as a minted pipeline names them, and the graph of that
+// pipeline: the chain of the four stages.
+using FakePipeline = cc::Pipeline<DrainStage, DetectStage, BuildStage, PublishStage>;
+using FakeGraph = cc::pipeline_graph_t<FakePipeline>;
+
+// The processes of the stages over the edges of the graph.  The input end of
+// the first stage and the output end of the last stage are no edges.
+using DrainEdges = cc::LoopProcess<DrainName, cc::ReceivesOn<Ring>, cc::StageEdges<FakeGraph, 0>>;
+using DetectEdges = cc::LoopProcess<DetectName, cc::StageEdges<FakeGraph, 1>>;
+using BuildEdges = cc::LoopProcess<BuildName, cc::StageEdges<FakeGraph, 2>>;
+using PublishFlushEdges =
+    cc::LoopProcess<PublishName, cc::StageEdges<FakeGraph, 3>, cc::ReadsLock<Holders>, cc::SendsOn<Count>>;
+using FlushArmOfGraph = cc::StageLoop<ForegroundFlush, DrainEdges, DetectEdges, BuildEdges, PublishFlushEdges>;
+
 }  // namespace stage_loop_fakes

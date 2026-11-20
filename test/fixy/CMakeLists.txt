@@ -5197,12 +5197,29 @@ fixy_neg_compile_test(neg_pipeline_dag_mint_stage_pack_mismatch
 
 # The door of a loop (THE LOOP of fixy/concurrent/StageNet.h), each on a loop
 # of test/fixy/stage_loop_fakes.h with one wrong end: an end wired to the
-# wrong mailbox, a lock with a lost end, and a foreground that waits before
-# it records.  test_pipeline_dag.cpp admits each loop with the right end.
+# wrong mailbox, a lock with a lost end, a foreground that waits before it
+# records, a done mark that no process takes, and a wait inside a bracket of
+# the writer and inside a read.  test_pipeline_dag.cpp admits each loop with
+# the right end.
 fixy_neg_compile_test(neg_stage_loop_wrong_mailbox
   "static assertion failed"
-  "liveness: channel 'channel 1' has 1 sends and 0 receives\\.  Each send has its receive\\."
+  "loop: one period changes the count of the messages in 'channel 1': 1 sends and 0 receives\\."
   "neg_stage_loop_wrong_mailbox\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_stage_loop_token_left_behind
+  "static assertion failed"
+  "loop: one period changes the count of the messages in 'channel 6': 1 sends and 0 receives\\.  Each period gives back the marking that it starts from"
+  "neg_stage_loop_token_left_behind\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_stage_loop_writer_waits_in_bracket
+  "static assertion failed"
+  "loop: 'foreground' waits on 'channel 1' before it leaves its bracket of 'lock 0'\\."
+  "neg_stage_loop_writer_waits_in_bracket\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_stage_loop_reader_waits_in_bracket
+  "static assertion failed"
+  "loop: 'publish' waits on 'channel 4' before it leaves its bracket of 'lock 0'\\."
+  "neg_stage_loop_reader_waits_in_bracket\\.cpp:[0-9]+:[0-9]+: +required from here")
 
 fixy_neg_compile_test(neg_stage_loop_lost_lock_end
   "static assertion failed"

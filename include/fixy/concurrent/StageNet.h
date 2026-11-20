@@ -82,37 +82,94 @@
 //                           of the stage, in port order
 //     OutputsOf<Stage>      one send into the channel of each output handle
 //                           of the stage, in port order
-//     WritesLock<Lock>      the bracket of the writer of a sequence lock
-//     ReadsLock<Lock>       one read of a sequence lock, which waits while a
-//                           bracket of the writer is open
+//     StageEdges<Graph, S>  the actions of stage S of the graph on the edges
+//                           of the graph, in the order of the marked system
+//                           of the graph (THE MARKED SYSTEM).  The ends of
+//                           the graph are no part of it.
+//     WritesLock<Lock, Inside...>
+//                           the bracket of the writer of a sequence lock, and
+//                           the ends that the writer does inside it, in order
+//     ReadsLock<Lock, Inside...>
+//                           one read of a sequence lock, which waits while a
+//                           bracket of the writer is open, and the ends that
+//                           the reader does inside the read, in order
 //   A channel is a type: the type that SendsOn or ReceivesOn names, or the
-//   channel_type of a handle (fixy/concurrent/HandleTraits.h).  Two ends that
+//   channel_type of a handle (fixy/concurrent/HandleTraits.h).  StageEdges
+//   gives each edge the channel_type of its output handle.  Two ends that
 //   name one type are two sides of one channel, so an end that names another
 //   type names another channel.  The type tells two channels apart, and the
 //   identity of an instance does not.  The channels stand in the order of
 //   their first ends, with the names 'channel 0' and on.  The capacity of a
-//   channel is the channel_capacity that the type of its first send end
-//   states (StatesHandleCapacity): the type of SendsOn, or the output handle
-//   of OutputsOf.  A type that states none reads as a rendezvous, by the rule
-//   of THE MARKED SYSTEM.  A lock is a type too, and the locks stand in the
-//   order of their first ends, with the names 'lock 0' and on.
+//   channel is the capacity that its first send end states: the
+//   channel_capacity of the type of SendsOn or of the output handle of
+//   OutputsOf (StatesHandleCapacity), or the capacity of the edge in the
+//   marked system of the graph of StageEdges.  A type that states none reads
+//   as a rendezvous, by the rule of THE MARKED SYSTEM.  A lock is a type too,
+//   and the locks stand in the order of their first ends, with the names
+//   'lock 0' and on.  pipeline_graph_t gives the graph of a minted pipeline,
+//   so StageEdges reads the stages of a pipeline as the gate of the pipeline
+//   reads them.
 //
 //   marked_system_of_loop gives the processes in the order of the loop, each
-//   with the actions of its channel ends in the order of its ends.  A lock
-//   end adds no action, because the check of the marked graph reads no
-//   bracket (THE LIMITS of foundation/algebra/net/Priority.h).  So the door
-//   ensure_loop_live checks the wiring of each lock: one process writes it,
-//   and one other process reads it.  Then it checks the liveness of the
-//   marked system.  The door reads no wait inside a bracket.
+//   with the actions of its channel ends in the order of its ends.  An end
+//   inside a bracket stands after the end of its lock.  A lock end adds no
+//   action (THE LOCKS).  The door ensure_loop_live checks the locks, and then
+//   it checks the liveness of the marked system.
 //
+// THE LOCKS
+//   The check of the marked graph reads no bracket (THE LIMITS of
+//   foundation/algebra/net/Priority.h).  So the door checks each lock by two
+//   rules.  First, one process writes the lock, and one other process reads
+//   it.  Second, a process that writes or reads the lock waits on nothing
+//   before it leaves the bracket.  A send waits for a free slot, a receive
+//   waits for its message, and a read of a lock waits while the writer of
+//   that lock is in a bracket.  So a bracket holds none of them.  A bracket of
+//   the writer of another lock waits on nothing, so it can stand inside a
+//   bracket.
+//
+//   Then the writer leaves each bracket with no wait, and each wait of a
+//   reader on a bracket ends.  So a lock adds no wait to the marked system,
+//   and the liveness of the marked system is the liveness of the loop.  The
+//   second rule also holds for a read: a read that meets a write runs again,
+//   and each end inside the read runs again with it.
+//
+// THE ARMS
 //   A process that polls a channel and goes on when the channel is empty
-//   does not wait on it.  At each poll, such a process takes one of two arms,
-//   and a caller checks one loop for each arm.
+//   does not wait on it.  At each poll, such a process takes one of some
+//   arms, and a caller checks one loop for each arm.  The door refuses an arm
+//   whose period sends into a channel more often or less often than it
+//   receives from it.  So each period of an admitted arm gives back the
+//   marking where it starts: each channel holds as many messages as at the
+//   start, each bracket is closed, and each process stands at its first end.
+//
+//   Then a run that takes the admitted arms in any sequence is live, if three
+//   conditions hold.  In each period, the processes take one arm together.
+//   The arms agree on each channel: one process sends into it, one process
+//   receives from it, and the capacity is the same.  The arms agree on the
+//   writer and the reader of each lock.  The proof: the run is one marked
+//   graph.  Inside one period, its edges with no token are the edges with no
+//   token of the marked graph of the arm of that period, which hold no cycle.
+//   Each period starts with as many sends as receives on each channel, so
+//   each other edge goes from a period to a later period.  Thus the edges
+//   with no token hold no cycle, each action has a finite count of actions
+//   before it, and each action starts.
+//
+//   No door checks the three conditions across the arms, so the caller states
+//   them.  A poll can let two processes take two arms in one period, when a
+//   process serves a message in the period after the period of its sender.
+//   Then the caller checks the arm of that shift too, so that the processes
+//   take one arm together in each period again.
 //
 // THE COSTS
 //   One constant evaluation for each graph, linear in the stages, the ports
-//   and the edges.  The reading of a loop is quadratic in its ends, and its
-//   check is linear in the ends.
+//   and the edges.  The reading of a loop of N ends is quadratic in N,
+//   because each end looks for the first end of its channel or its lock.  The
+//   wiring check of the locks reads the N ends for each lock, and it does two
+//   scans of the N ends for each lock end, so it is O(N * K) for K lock ends.
+//   The rule of the brackets, the marked system and the shape of a reading
+//   are linear in N, and the liveness check is linear in the processes, the
+//   channels and the actions.  A StageEdges end reads the marked system of
+//   its graph.  So the check of a loop is quadratic in its ends.
 
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/Pipeline.h>
@@ -423,6 +480,41 @@ template <class Graph>
     return detail::marked_system_of_stage_graph_(typename traits::stage_pack_type{}, typename traits::edge_pack_type{});
 }
 
+namespace detail {
+
+// The edges of a chain from the stage Link to the stage Last: an edge from
+// each stage to the next.  Complexity: one step for each edge.
+template <std::size_t Link, std::size_t Last, class... Edges>
+struct chain_edges {
+    using type = typename chain_edges<Link + 1, Last, Edges..., StageEdge<Link, Link + 1>>::type;
+};
+template <std::size_t Last, class... Edges>
+struct chain_edges<Last, Last, Edges...> {
+    using type = EdgePack<Edges...>;
+};
+
+// The stage graph of a pipeline (pipeline_graph_t).
+template <class Runner>
+struct pipeline_graph {};
+template <class... Stages>
+struct pipeline_graph<Pipeline<Stages...>> {
+    using type = StageGraph<StagePack<Stages...>, typename chain_edges<0, sizeof...(Stages) - 1>::type>;
+};
+template <class Runner>
+    requires requires { typename Runner::graph_type; }
+struct pipeline_graph<Runner> {
+    using type = typename Runner::graph_type;
+};
+
+}  // namespace detail
+
+// The stage graph of a minted pipeline: the graph of a PipelineDag, and for a
+// Pipeline the chain of its stages, with an edge from each stage to the next.
+// The gate of a Pipeline admits each link of the chain, so the gate of the
+// stage graph holds for the chain too.
+template <class Runner>
+using pipeline_graph_t = typename detail::pipeline_graph<Runner>::type;
+
 // ── The loop ────────────────────────────────────────────────────────────
 
 // One send into the channel (THE LOOP).
@@ -443,13 +535,20 @@ struct InputsOf {};
 template <class Stage>
 struct OutputsOf {};
 
-// The bracket of the writer of a sequence lock.
-template <class Lock>
+// The actions of stage Stage of a stage graph on the edges of the graph, in
+// the order of the marked system of the graph.  Stage is the place of the
+// stage in the stage pack.
+template <class Graph, std::size_t Stage>
+struct StageEdges {};
+
+// The bracket of the writer of a sequence lock, and the ends that the writer
+// does inside the bracket, in order (THE LOCKS).
+template <class Lock, class... Inside>
 struct WritesLock {};
 
 // One read of a sequence lock, which waits while a bracket of the writer is
-// open.
-template <class Lock>
+// open, and the ends that the reader does inside the read, in order.
+template <class Lock, class... Inside>
 struct ReadsLock {};
 
 // A process of a loop: the type that names it, and its ends in the order of
@@ -493,10 +592,29 @@ template <class Stage>
 inline constexpr bool is_loop_end_v<InputsOf<Stage>> = IsStage<Stage>;
 template <class Stage>
 inline constexpr bool is_loop_end_v<OutputsOf<Stage>> = IsStage<Stage>;
-template <class Lock>
-inline constexpr bool is_loop_end_v<WritesLock<Lock>> = true;
-template <class Lock>
-inline constexpr bool is_loop_end_v<ReadsLock<Lock>> = true;
+template <class Lock, class... Inside>
+inline constexpr bool is_loop_end_v<WritesLock<Lock, Inside...>> = (is_loop_end_v<Inside> && ...);
+template <class Lock, class... Inside>
+inline constexpr bool is_loop_end_v<ReadsLock<Lock, Inside...>> = (is_loop_end_v<Inside> && ...);
+
+// The count of the stages of a stage graph.
+template <class Graph>
+inline constexpr std::size_t graph_stage_count_v = 0;
+template <class... Stages, class... Edges>
+inline constexpr std::size_t graph_stage_count_v<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>> =
+    sizeof...(Stages);
+
+// The count of the edges that leave or enter stage Stage of a stage graph.
+template <class Graph, std::size_t Stage>
+inline constexpr std::size_t stage_edge_count_v = 0;
+template <class... Stages, class... Edges, std::size_t Stage>
+inline constexpr std::size_t stage_edge_count_v<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>, Stage> =
+    (((Edges::from == Stage ? std::size_t{1} : std::size_t{0}) + (Edges::to == Stage ? std::size_t{1} : std::size_t{0}))
+     + ... + std::size_t{0});
+
+template <class Graph, std::size_t Stage>
+inline constexpr bool is_loop_end_v<StageEdges<Graph, Stage>> =
+    StageGraphWellFormed<Graph> && Stage < graph_stage_count_v<Graph>;
 
 // True when the type is a process of a loop.
 template <class Process>
@@ -519,6 +637,12 @@ template <class Stage>
 inline constexpr std::size_t loop_end_count_v<InputsOf<Stage>> = stage_input_count_v<Stage>;
 template <class Stage>
 inline constexpr std::size_t loop_end_count_v<OutputsOf<Stage>> = stage_output_count_v<Stage>;
+template <class Graph, std::size_t Stage>
+inline constexpr std::size_t loop_end_count_v<StageEdges<Graph, Stage>> = stage_edge_count_v<Graph, Stage>;
+template <class Lock, class... Inside>
+inline constexpr std::size_t loop_end_count_v<WritesLock<Lock, Inside...>> = (loop_end_count_v<Inside> + ... + 1);
+template <class Lock, class... Inside>
+inline constexpr std::size_t loop_end_count_v<ReadsLock<Lock, Inside...>> = (loop_end_count_v<Inside> + ... + 1);
 
 // The count of the ends of the reading that a process gives.
 template <class Process>
@@ -538,14 +662,19 @@ template <class Key>
 enum class LoopEndId : std::uint32_t {
 };
 
+// The bracket of an end that stands inside no bracket.
+inline constexpr LoopEndId no_bracket{0xFFFFFFFFu};
+
 // One end of a loop, as the reading holds it: the process, the first end of
-// its channel or of its lock, its kind, and the capacity that the type of the
-// end states.
+// its channel or of its lock, the lock end of the innermost bracket that holds
+// it, the capacity that the type of the end states, and its kind.
 struct loop_end {
     ::foundation::algebra::net::ProcessId process{};
     LoopEndId first{};
-    LoopMove move = LoopMove::Send;
+    LoopEndId bracket = no_bracket;
     std::uint32_t capacity = 0;
+    LoopMove move = LoopMove::Send;
+    std::uint8_t reserved[3]{};
 };
 
 // The ends of a loop, in the order of the processes and of their ends.
@@ -575,9 +704,10 @@ consteval void put_loop_end_(loop_scan<Count>& scan, loop_end const& end, std::m
 }
 
 // Puts the receive of the channel of each input handle of the stage, from
-// Port on.
+// Port on, inside the bracket.
 template <class Stage, std::size_t Port, std::size_t Count>
-consteval void put_stage_inputs_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process) noexcept {
+consteval void put_stage_inputs_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process,
+                                 LoopEndId bracket) noexcept {
     if constexpr (Port < stage_input_count_v<Stage>) {
         using handle = stage_input_handle_t<Stage, Port>;
         if constexpr (!NamesItsChannel<handle>) {
@@ -585,19 +715,22 @@ consteval void put_stage_inputs_(loop_scan<Count>& scan, ::foundation::algebra::
                           "a loop reads an input handle that names no channel: each handle of a loop states its "
                           "channel_type");
         } else {
-            put_loop_end_(
-                scan,
-                loop_end{.process = process, .move = LoopMove::Receive, .capacity = capacity_of_handle_<handle>()},
-                key_of_<handle_channel_t<handle>>());
-            put_stage_inputs_<Stage, Port + 1>(scan, process);
+            put_loop_end_(scan,
+                          loop_end{.process = process,
+                                   .bracket = bracket,
+                                   .capacity = capacity_of_handle_<handle>(),
+                                   .move = LoopMove::Receive},
+                          key_of_<handle_channel_t<handle>>());
+            put_stage_inputs_<Stage, Port + 1>(scan, process, bracket);
         }
     }
 }
 
 // Puts the send into the channel of each output handle of the stage, from
-// Port on.
+// Port on, inside the bracket.
 template <class Stage, std::size_t Port, std::size_t Count>
-consteval void put_stage_outputs_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process) noexcept {
+consteval void put_stage_outputs_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process,
+                                  LoopEndId bracket) noexcept {
     if constexpr (Port < stage_output_count_v<Stage>) {
         using handle = stage_output_handle_t<Stage, Port>;
         if constexpr (!NamesItsChannel<handle>) {
@@ -605,55 +738,103 @@ consteval void put_stage_outputs_(loop_scan<Count>& scan, ::foundation::algebra:
                           "a loop reads an output handle that names no channel: each handle of a loop states its "
                           "channel_type");
         } else {
-            put_loop_end_(
-                scan, loop_end{.process = process, .move = LoopMove::Send, .capacity = capacity_of_handle_<handle>()},
-                key_of_<handle_channel_t<handle>>());
-            put_stage_outputs_<Stage, Port + 1>(scan, process);
+            put_loop_end_(scan,
+                          loop_end{.process = process,
+                                   .bracket = bracket,
+                                   .capacity = capacity_of_handle_<handle>(),
+                                   .move = LoopMove::Send},
+                          key_of_<handle_channel_t<handle>>());
+            put_stage_outputs_<Stage, Port + 1>(scan, process, bracket);
         }
     }
 }
 
-// Puts the ends that one end of a process gives.
+// Puts the action of stage Stage on each edge of a graph whose gate holds,
+// in the order of the marked system of the graph, inside the bracket.  The
+// key of an edge is the channel_type of its output handle, and the gate of
+// the graph proves that the input handle names the same channel.
+// Complexity: linear in the actions of the marked system of the graph.
+template <std::size_t Stage, std::size_t Count, class... Stages, class... Edges>
+consteval void put_stage_edges_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process,
+                                LoopEndId bracket, StagePack<Stages...> stages, EdgePack<Edges...> edges) noexcept {
+    namespace net = ::foundation::algebra::net;
+    constexpr std::size_t edge_count = sizeof...(Edges);
+    if constexpr (edge_count != 0) {
+        constexpr auto marked = marked_system_of_stage_graph_(stages, edges);
+        std::meta::info const keys[] = {
+            key_of_<handle_channel_t<stage_output_handle_t<Stages...[Edges::from], Edges::from_output>>>()...};
+        for (net::Action const& action : marked.actions) {
+            auto const channel = static_cast<std::uint32_t>(action.channel);
+            if (action.process != net::ProcessId{static_cast<std::uint32_t>(Stage)} || channel >= edge_count) continue;
+            put_loop_end_(scan,
+                          loop_end{.process = process,
+                                   .bracket = bracket,
+                                   .capacity = marked.channels[channel].capacity,
+                                   .move = action.move == net::Move::Send ? LoopMove::Send : LoopMove::Receive},
+                          keys[channel]);
+        }
+    }
+}
+
+// Puts the ends that one end of a process gives, inside the bracket.
 template <std::size_t Count, class Channel>
-consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process,
+consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process, LoopEndId bracket,
                         SendsOn<Channel>) noexcept {
-    put_loop_end_(scan,
-                  loop_end{.process = process, .move = LoopMove::Send, .capacity = capacity_of_handle_<Channel>()},
-                  key_of_<Channel>());
+    put_loop_end_(
+        scan,
+        loop_end{
+            .process = process, .bracket = bracket, .capacity = capacity_of_handle_<Channel>(), .move = LoopMove::Send},
+        key_of_<Channel>());
 }
 template <std::size_t Count, class Channel>
-consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process,
+consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process, LoopEndId bracket,
                         ReceivesOn<Channel>) noexcept {
     put_loop_end_(scan,
-                  loop_end{.process = process, .move = LoopMove::Receive, .capacity = capacity_of_handle_<Channel>()},
+                  loop_end{.process = process,
+                           .bracket = bracket,
+                           .capacity = capacity_of_handle_<Channel>(),
+                           .move = LoopMove::Receive},
                   key_of_<Channel>());
 }
 template <std::size_t Count, class Stage>
-consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process,
+consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process, LoopEndId bracket,
                         InputsOf<Stage>) noexcept {
-    put_stage_inputs_<Stage, 0>(scan, process);
+    put_stage_inputs_<Stage, 0>(scan, process, bracket);
 }
 template <std::size_t Count, class Stage>
-consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process,
+consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process, LoopEndId bracket,
                         OutputsOf<Stage>) noexcept {
-    put_stage_outputs_<Stage, 0>(scan, process);
+    put_stage_outputs_<Stage, 0>(scan, process, bracket);
 }
-template <std::size_t Count, class Lock>
-consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process,
-                        WritesLock<Lock>) noexcept {
-    put_loop_end_(scan, loop_end{.process = process, .move = LoopMove::WriteLock}, key_of_<Lock>());
+template <std::size_t Count, class Graph, std::size_t Stage>
+consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process, LoopEndId bracket,
+                        StageEdges<Graph, Stage>) noexcept {
+    using traits = stage_graph_traits<Graph>;
+    put_stage_edges_<Stage>(scan, process, bracket, typename traits::stage_pack_type{},
+                            typename traits::edge_pack_type{});
 }
-template <std::size_t Count, class Lock>
-consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process,
-                        ReadsLock<Lock>) noexcept {
-    put_loop_end_(scan, loop_end{.process = process, .move = LoopMove::ReadLock}, key_of_<Lock>());
+// The end of the lock, and then each end inside the bracket, which names this
+// lock end as its bracket.
+template <std::size_t Count, class Lock, class... Inside>
+consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process, LoopEndId bracket,
+                        WritesLock<Lock, Inside...>) noexcept {
+    [[maybe_unused]] LoopEndId const opened{static_cast<std::uint32_t>(scan.count)};
+    put_loop_end_(scan, loop_end{.process = process, .bracket = bracket, .move = LoopMove::WriteLock}, key_of_<Lock>());
+    (put_end_(scan, process, opened, Inside{}), ...);
+}
+template <std::size_t Count, class Lock, class... Inside>
+consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process, LoopEndId bracket,
+                        ReadsLock<Lock, Inside...>) noexcept {
+    [[maybe_unused]] LoopEndId const opened{static_cast<std::uint32_t>(scan.count)};
+    put_loop_end_(scan, loop_end{.process = process, .bracket = bracket, .move = LoopMove::ReadLock}, key_of_<Lock>());
+    (put_end_(scan, process, opened, Inside{}), ...);
 }
 
 // Puts the ends of a process, in the order of its ends.
 template <std::size_t Count, class Name, class... Ends>
 consteval void put_process_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process,
                             LoopProcess<Name, Ends...>) noexcept {
-    (put_end_(scan, process, Ends{}), ...);
+    (put_end_(scan, process, no_bracket, Ends{}), ...);
 }
 
 // The name of a process.
@@ -729,18 +910,26 @@ template <std::size_t Count>
     return shape;
 }
 
-// The rule that the locks of a loop break.
+// The rule that the locks of a loop break (THE LOCKS).
 enum class LoopFaultCode : std::uint8_t {
     NoFault = 0,
     // The fault names the lock, the count of the processes that write it,
     // and the count of the processes that read it and do not write it.
     LockUnwired = 1,
+    // The fault names the process, the lock of the innermost bracket, and the
+    // kind and the place of the first end inside it that waits: a channel, or
+    // a lock that the process reads.
+    WaitInBracket = 2,
 };
 
 // The fault of the locks of a loop.
 struct LoopFault {
     LoopFaultCode code = LoopFaultCode::NoFault;
+    LoopMove inside = LoopMove::Send;
+    std::uint8_t reserved[2]{};
+    ::foundation::algebra::net::ProcessId process{};
     std::uint32_t lock = 0;
+    std::uint32_t place = 0;
     std::uint32_t writers = 0;
     std::uint32_t readers = 0;
 };
@@ -774,11 +963,12 @@ template <std::size_t Count>
 }
 
 // The first lock that one process does not write, or that one other process
-// does not read, as the fault LockUnwired, or NoFault (THE LOOP).
-// Complexity: quadratic in the ends for each lock.
+// does not read, as the fault LockUnwired, or NoFault (THE LOCKS).
+// Complexity: O(N * K) for N ends and K lock ends.  Each lock reads the N
+// ends, and each of its ends does two scans of the N ends.
 template <std::size_t Count>
-[[nodiscard]] consteval LoopFault find_lock_fault_(loop_reading<Count> const& reading,
-                                                   loop_shape<Count> const& shape) noexcept {
+[[nodiscard]] consteval LoopFault find_lock_wiring_fault_(loop_reading<Count> const& reading,
+                                                          loop_shape<Count> const& shape) noexcept {
     for (std::uint32_t lock = 0; lock < shape.lock_count; ++lock) {
         std::uint32_t writers = 0;
         std::uint32_t readers = 0;
@@ -798,6 +988,55 @@ template <std::size_t Count>
         }
     }
     return LoopFault{};
+}
+
+// The first end inside a bracket that waits, as the fault WaitInBracket, or
+// NoFault (THE LOCKS).  An end of a channel and a read of a lock wait, and a
+// bracket of the writer of a lock does not.  Complexity: linear in the ends.
+template <std::size_t Count>
+[[nodiscard]] consteval LoopFault find_bracket_fault_(loop_reading<Count> const& reading,
+                                                      loop_shape<Count> const& shape) noexcept {
+    for (std::uint32_t index = 0; index < reading.count; ++index) {
+        loop_end const& end = reading.ends[index];
+        if (end.bracket == no_bracket || end.move == LoopMove::WriteLock) continue;
+        return LoopFault{.code = LoopFaultCode::WaitInBracket,
+                         .inside = end.move,
+                         .process = end.process,
+                         .lock = shape.place_of[static_cast<std::uint32_t>(end.bracket)],
+                         .place = shape.place_of[index]};
+    }
+    return LoopFault{};
+}
+
+// The first fault of the locks of a loop: the wiring, and then the waits
+// inside the brackets (THE LOCKS).  Complexity: O(N * K) for N ends and K
+// lock ends.
+template <std::size_t Count>
+[[nodiscard]] consteval LoopFault find_lock_fault_(loop_reading<Count> const& reading,
+                                                   loop_shape<Count> const& shape) noexcept {
+    LoopFault const wiring = find_lock_wiring_fault_(reading, shape);
+    return wiring.code != LoopFaultCode::NoFault ? wiring : find_bracket_fault_(reading, shape);
+}
+
+// The name of the process at a place of a loop.
+template <class... Processes>
+[[nodiscard]] consteval ::foundation::algebra::net::NetName
+name_of_process_at_(StageLoop<Processes...>, ::foundation::algebra::net::ProcessId process) noexcept {
+    ::foundation::algebra::net::NetName const names[] = {name_of_loop_process_(Processes{})...};
+    return names[static_cast<std::uint32_t>(process)];
+}
+
+// The count of the actions with the move on a channel of a system.
+// Complexity: linear in the actions.
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard]] consteval std::uint32_t
+count_moves_(::foundation::algebra::net::ProcessSystem<Processes, Channels, Actions> const& marked,
+             ::foundation::algebra::net::ChannelId channel, ::foundation::algebra::net::Move move) noexcept {
+    std::uint32_t count = 0;
+    for (::foundation::algebra::net::Action const& action : marked.actions) {
+        if (action.channel == channel && action.move == move) ++count;
+    }
+    return count;
 }
 
 // The marked system of a loop with an end of a channel (THE LOOP).
@@ -848,34 +1087,65 @@ template <class Loop>
 }
 
 // The verdict on a loop (THE LOOP): the refusal of its first lock that one
-// process does not write or that one other process does not read, the
-// verdict of check_liveness on its marked system, or the admitted verdict for
-// a loop with no end of a channel.  Complexity: quadratic in the ends.
+// process does not write or that one other process does not read, or of its
+// first wait inside a bracket (THE LOCKS).  Then the refusal of a channel
+// whose period does not give back its marking (THE ARMS), the verdict of
+// check_liveness on its marked system, or the admitted verdict for a loop with
+// no end of a channel.  The marked graph finds each channel whose sends and
+// receives differ in count before it looks for a cycle, so the verdict of
+// that fault of the marked graph is the refusal of the marking.
+// Complexity: quadratic in the ends.
 template <class Loop>
     requires IsStageLoop<Loop>
 [[nodiscard]] consteval ::foundation::algebra::net::NetVerdict check_loop() noexcept {
     namespace net = ::foundation::algebra::net;
+    using detail::LabelKind;
+    using detail::LoopFaultCode;
     constexpr auto reading = detail::read_loop_(Loop{});
     constexpr auto shape = detail::shape_of_loop_(reading);
     constexpr detail::LoopFault fault = detail::find_lock_fault_(reading, shape);
-    if constexpr (fault.code != detail::LoopFaultCode::NoFault) {
+    if constexpr (fault.code == LoopFaultCode::LockUnwired) {
         return net::NetVerdict::refuse("loop: the processes that write the lock '")
-            .put_name(net::NetName{detail::index_label_v<detail::LabelKind::Lock, fault.lock>.text})
+            .put_name(net::NetName{detail::index_label_v<LabelKind::Lock, fault.lock>.text})
             .put("': ")
             .put_number(fault.writers)
             .put(", the processes that read it and do not write it: ")
             .put_number(fault.readers)
             .put(".  One process writes each lock, and one other process reads it.");
+    } else if constexpr (fault.code == LoopFaultCode::WaitInBracket) {
+        constexpr bool is_lock_read = fault.inside == detail::LoopMove::ReadLock;
+        return net::NetVerdict::refuse("loop: '")
+            .put_name(detail::name_of_process_at_(Loop{}, fault.process))
+            .put("' waits on '")
+            .put_name(is_lock_read ? net::NetName{detail::index_label_v<LabelKind::Lock, fault.place>.text}
+                                   : net::NetName{detail::index_label_v<LabelKind::Channel, fault.place>.text})
+            .put("' before it leaves its bracket of '")
+            .put_name(net::NetName{detail::index_label_v<LabelKind::Lock, fault.lock>.text})
+            .put("'.  A process that writes or reads a lock waits on nothing before it leaves the bracket.");
     } else if constexpr (shape.channel_count == 0) {
         return net::NetVerdict{};
     } else {
-        return net::check_liveness(detail::marked_system_of_loop_(Loop{}));
+        constexpr auto marked = detail::marked_system_of_loop_(Loop{});
+        constexpr net::LivenessFault liveness = net::find_liveness_fault(marked);
+        if constexpr (liveness.code == net::LivenessFaultCode::SendsWithoutReceives) {
+            return net::NetVerdict::refuse("loop: one period changes the count of the messages in '")
+                .put_name(marked.channels[static_cast<std::uint32_t>(liveness.channel)].name)
+                .put("': ")
+                .put_number(detail::count_moves_(marked, liveness.channel, net::Move::Send))
+                .put(" sends and ")
+                .put_number(detail::count_moves_(marked, liveness.channel, net::Move::Receive))
+                .put(" receives.  Each period gives back the marking that it starts from, so each sequence of arms "
+                     "stays live.");
+        } else {
+            return net::explain_liveness_fault(marked, liveness);
+        }
     }
 }
 
-// The door: a loop whose locks are not wired, or whose marked system holds a
-// cycle of waits with no token, does not compile.  One static_assert fires,
-// with the text of the verdict.
+// The door: a loop whose locks are not wired, whose process waits inside a
+// bracket, whose period changes the count of the messages in a channel, or
+// whose marked system holds a cycle of waits with no token, does not compile.
+// One static_assert fires, with the text of the verdict.
 template <class Loop>
     requires IsStageLoop<Loop>
 consteval void ensure_loop_live() noexcept {

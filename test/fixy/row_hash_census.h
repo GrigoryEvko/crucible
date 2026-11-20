@@ -1509,6 +1509,8 @@ inline constexpr StatedZero kZeros[] = {
      "an end of a process of a loop: the door of the loop reads it at compile time, and it is never a value"},
     {^^::fixy::concurrent::OutputsOf,
      "an end of a process of a loop: the door of the loop reads it at compile time, and it is never a value"},
+    {^^::fixy::concurrent::StageEdges,
+     "an end of a process of a loop: the door of the loop reads it at compile time, and it is never a value"},
     {^^::fixy::concurrent::WritesLock,
      "an end of a process of a loop: the door of the loop reads it at compile time, and it is never a value"},
     {^^::fixy::concurrent::ReadsLock,

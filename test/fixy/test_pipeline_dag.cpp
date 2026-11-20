@@ -290,14 +290,33 @@ static_assert(cc::check_loop<cc::StageLoop<
                   .is_admitted());
 
 // The last stage serves another mailbox than the mailbox of the foreground.
-// The mailbox of the foreground then has a send and no receive
-// (neg_stage_loop_wrong_mailbox).
+// The mailbox of the foreground then has a send and no receive, so a period
+// leaves a job in it (neg_stage_loop_wrong_mailbox).
 using WrongMailbox = cc::StageLoop<
     loop::ForegroundJob, loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
     cc::LoopProcess<loop::PublishName, cc::ReceivesOn<loop::OtherMailbox>, cc::SendsOn<loop::JobDone>,
                     cc::InputsOf<loop::PublishStage>, cc::ReadsLock<loop::Holders>, cc::SendsOn<loop::Count>>>;
 static_assert(cc::check_loop<WrongMailbox>().says(
-    "liveness: channel 'channel 1' has 1 sends and 0 receives.  Each send has its receive."));
+    "loop: one period changes the count of the messages in 'channel 1': 1 sends and 0 receives.  Each period gives "
+    "back the marking that it starts from, so each sequence of arms stays live."));
+
+// The foreground posts a job and does not wait on its done mark.  Each period
+// leaves a done mark in its cell, so the done mark of the next job waits for a
+// free cell for ever (neg_stage_loop_token_left_behind).  The marked system
+// refuses the same fault in its own words.
+using TokenLeftBehind =
+    cc::StageLoop<cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::Ring>, cc::SendsOn<loop::Mailbox>,
+                                  cc::WritesLock<loop::Holders>, cc::ReceivesOn<loop::Count>>,
+                  loop::DrainProcess, loop::DetectProcess, loop::BuildProcess, loop::PublishJob>;
+static_assert(cc::check_loop<TokenLeftBehind>().says(
+    "loop: one period changes the count of the messages in 'channel 6': 1 sends and 0 receives.  Each period gives "
+    "back the marking that it starts from, so each sequence of arms stays live."));
+static_assert(net::check_liveness(cc::marked_system_of_loop<TokenLeftBehind>())
+                  .says("liveness: channel 'channel 6' has 1 sends and 0 receives.  Each send has its receive."));
+
+// The arm of the shift of a poll: the last stage serves the job after its
+// count (stage_loop_fakes.h).  Each wait still goes forward.
+static_assert(cc::check_loop<loop::JobLateArm>().is_admitted());
 
 // The last stage reads no holders, so the lock has a writer and no reader
 // (neg_stage_loop_lost_lock_end).
@@ -338,6 +357,97 @@ using JobFlushes =
 static_assert(cc::check_loop<JobFlushes>().says("liveness: the receive side of channel 'channel 3' is held by "
                                                 "'foreground' and by 'publish'.  One process holds each side of a "
                                                 "channel."));
+
+// The ends inside a bracket (THE LOCKS of fixy/concurrent/StageNet.h).  A
+// second lock: the marks that the foreground writes, and that the last stage
+// reads.
+struct Marks {};
+
+// The foreground writes the marks inside its bracket of the holders.  A
+// bracket of a writer waits on nothing, so the door admits it.
+using NestedBracket =
+    cc::StageLoop<cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::Ring>,
+                                  cc::WritesLock<loop::Holders, cc::WritesLock<Marks>>, cc::ReceivesOn<loop::Count>>,
+                  loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
+                  cc::LoopProcess<loop::PublishName, cc::InputsOf<loop::PublishStage>, cc::ReadsLock<loop::Holders>,
+                                  cc::ReadsLock<Marks>, cc::SendsOn<loop::Count>>>;
+static_assert(cc::check_loop<NestedBracket>().is_admitted());
+// The ends inside a bracket stand after the end of the lock, so the system is
+// the system of the flush arm.
+static_assert(is_action_(cc::marked_system_of_loop<NestedBracket>().actions[1], net::ProcessId{0}, net::ChannelId{1},
+                         net::Move::Receive));
+
+// The foreground waits on the count inside its bracket.  The last stage reads
+// the holders before it sends the count, and the read waits while the
+// bracket is open: each of the two waits on the other
+// (neg_stage_loop_writer_waits_in_bracket).
+using WriterWaitsInBracket =
+    cc::StageLoop<cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::Ring>,
+                                  cc::WritesLock<loop::Holders, cc::ReceivesOn<loop::Count>>>,
+                  loop::DrainProcess, loop::DetectProcess, loop::BuildProcess, loop::PublishFlush>;
+static_assert(cc::check_loop<WriterWaitsInBracket>().says(
+    "loop: 'foreground' waits on 'channel 1' before it leaves its bracket of 'lock 0'.  A process that writes or "
+    "reads a lock waits on nothing before it leaves the bracket."));
+// The marked graph alone admits that loop, because a lock adds no action.
+static_assert(net::check_liveness(cc::marked_system_of_loop<WriterWaitsInBracket>()).is_admitted());
+
+// The last stage receives its input inside its read of the holders.  A read
+// that meets a write runs again, and the receive inside it runs again with it
+// (neg_stage_loop_reader_waits_in_bracket).
+using ReaderWaitsInBracket =
+    cc::StageLoop<loop::ForegroundFlush, loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
+                  cc::LoopProcess<loop::PublishName, cc::ReadsLock<loop::Holders, cc::InputsOf<loop::PublishStage>>,
+                                  cc::SendsOn<loop::Count>>>;
+static_assert(cc::check_loop<ReaderWaitsInBracket>().says(
+    "loop: 'publish' waits on 'channel 4' before it leaves its bracket of 'lock 0'.  A process that writes or reads "
+    "a lock waits on nothing before it leaves the bracket."));
+
+// The foreground reads the marks inside its bracket of the holders, and the
+// last stage writes the marks.  A read of a lock waits while its writer is in
+// a bracket, so it is a wait inside the bracket.
+using LockReadInBracket =
+    cc::StageLoop<cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::Ring>,
+                                  cc::WritesLock<loop::Holders, cc::ReadsLock<Marks>>, cc::ReceivesOn<loop::Count>>,
+                  loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
+                  cc::LoopProcess<loop::PublishName, cc::InputsOf<loop::PublishStage>, cc::ReadsLock<loop::Holders>,
+                                  cc::WritesLock<Marks>, cc::SendsOn<loop::Count>>>;
+static_assert(cc::check_loop<LockReadInBracket>().says(
+    "loop: 'foreground' waits on 'lock 1' before it leaves its bracket of 'lock 0'.  A process that writes or reads "
+    "a lock waits on nothing before it leaves the bracket."));
+
+// The graph of a minted pipeline (pipeline_graph_t): the chain of its stages,
+// or the graph of a PipelineDag.
+static_assert(std::is_same_v<
+              loop::FakeGraph,
+              cc::StageGraph<cc::StagePack<loop::DrainStage, loop::DetectStage, loop::BuildStage, loop::PublishStage>,
+                             cc::EdgePack<cc::StageEdge<0, 1>, cc::StageEdge<1, 2>, cc::StageEdge<2, 3>>>>);
+static_assert(cc::StageGraphWellFormed<loop::FakeGraph>);
+static_assert(std::is_same_v<cc::pipeline_graph_t<cc::PipelineDag<Diamond<1>>>, Diamond<1>>);
+
+// True when two systems hold the same names, capacities and actions.  The
+// two arguments can swap with no change of the result.
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard]] consteval bool is_same_system_(net::ProcessSystem<Processes, Channels, Actions> const& left,
+                                             net::ProcessSystem<Processes, Channels, Actions> const& right) noexcept {
+    for (std::size_t process = 0; process < Processes; ++process) {
+        if (!(left.process_names[process] == right.process_names[process])) return false;
+    }
+    for (std::size_t channel = 0; channel < Channels; ++channel) {
+        if (!(left.channels[channel].name == right.channels[channel].name)
+            || left.channels[channel].capacity != right.channels[channel].capacity)
+            return false;
+    }
+    for (std::size_t action = 0; action < Actions; ++action) {
+        net::Action const& other = right.actions[action];
+        if (!is_action_(left.actions[action], other.process, other.channel, other.move)) return false;
+    }
+    return true;
+}
+
+// The stages read through the edges of the graph give the system of the
+// stages read through their handles.
+static_assert(is_same_system_(cc::marked_system_of_loop<loop::FlushArmOfGraph>(), flush_system));
+static_assert(cc::check_loop<loop::FlushArmOfGraph>().is_admitted());
 
 // The coordinating context must admit the row of every stage, so the row
 // of a pipeline is the union of the stage rows, and no effect more.
