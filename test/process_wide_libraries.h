@@ -88,7 +88,6 @@ extern "C" {
 // Defined in the two libraries: the address of each control, null past the last.
 [[gnu::visibility("default")]] const void* process_wide_control_address(unsigned index) noexcept;
 
-
 // Defined in the two libraries.  The first writes the report of the fallback
 // rows that the release of the kernel floor lacks, through the one cell of the
 // process (report_kernel_fallbacks_once of foundation/os/KernelFloor.h).  The
