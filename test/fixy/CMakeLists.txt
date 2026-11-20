@@ -4723,6 +4723,12 @@ fixy_neg_compile_test(neg_sess_factory_pole_send_with_a_caller_transport
 fixy_neg_compile_test(neg_sess_factory_pole_recv_with_a_caller_transport
   "use of deleted function .static void fixy::session::HandleFactory::recv\\(fixy::session::SessionHandle<fixy::session::Recv<T, R>, Resource, LoopCtx, Policy, PS>&&, Arg&&\\)"
   "Pole_Owns_Its_Transport. a session over a pole of a channel receives through the read that the pole table")
+fixy_neg_compile_test(neg_sess_recorded_pole_send_with_a_caller_transport
+  "use of deleted function .void fixy::session::Recorded<Inner>::send\\(First&&, Second&&\\) &&"
+  "Pole_Owns_Its_Transport. a session over a pole of a channel sends through the write that the pole table")
+fixy_neg_compile_test(neg_sess_recorded_pole_recv_with_a_caller_transport
+  "use of deleted function .void fixy::session::Recorded<Inner>::recv\\(Arg&&\\) &&"
+  "Pole_Owns_Its_Transport. a session over a pole of a channel receives through the read that the pole table")
 fixy_neg_compile_test(neg_substrate_session_lvalue_handle
   "no matching function for call to .mint_substrate_session<substrate_lvalue_fixture::Channel"
   "cannot convert .producer.")
