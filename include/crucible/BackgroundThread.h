@@ -97,10 +97,21 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 //
 // The foreground thread and the stages of the pipeline share one object of
 // this class, each stage through a Ref of its input (foundation/Transfer.h).
-// Each field that two threads use is an atomic, a ring of one producer and
-// one consumer, or a field of one stage alone, as the comment of the field
-// tells, so the class states that two threads use it at the same time.
-struct[[= ::foundation::transfer::shareable{}]] BackgroundThread {
+// Each data member that is not private is a cell or a counter that two
+// threads can write, and the walk checks it.  Each private member is an
+// atomic, a ring of one producer and one consumer, a field of one stage
+// alone, or a field that start() writes before the pipeline thread starts,
+// as the comment of the member tells.  A job of the publish stage gets the
+// PublishStageView, not the class.  So the class states that two threads
+// can write it at the same time.
+//
+// The statement relies on the callers of some public doors.  build_trace_from
+// and ensure_scratch_buffers write the scratch of the build stage, and
+// run_in_row runs a pipeline, so call them only on an object whose pipeline
+// thread does not run.  pending_op_count, detector_history_count and at() of
+// the uncompiled queue read the state of a stage, so read them only as their
+// comments tell.
+struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // A vendor-encoded hardware identity measured by the startup calibration
     // pass, not synthesized or defaulted.  Zero marks the pre-init state.
     using DeviceCapability = ::fixy::Tagged<uint64_t, ::fixy::tags::source::Meridian>;

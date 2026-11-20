@@ -65,20 +65,18 @@ void write_first_byte(::foundation::os::GuardedRegion& region, char value) noexc
 
 // A word that the first thread of a case sets to a value other than zero
 // when it ends its part.  The two threads read and write it with relaxed
-// order only, so the sanitizer takes no happens-before edge from it.  Each
-// access is atomic, so the word states shareable: two threads can read and
-// write it at the same time.
-struct[[= ::foundation::transfer::shareable{}]] RelaxedWord {
-    std::uint64_t value = 0;
+// order only, so the sanitizer takes no happens-before edge from it.  The
+// word is private, and each access of it is atomic, so the word states
+// synchronized: two threads can read and write it at the same time.
+class[[= ::foundation::transfer::synchronized{}]] RelaxedWord {
+public:
+    void publish_relaxed(std::uint64_t value) noexcept { __atomic_store_n(&value_, value, __ATOMIC_RELAXED); }
+
+    [[nodiscard]] std::uint64_t read_relaxed() const noexcept { return __atomic_load_n(&value_, __ATOMIC_RELAXED); }
+
+private:
+    std::uint64_t value_ = 0;
 };
-
-void publish_relaxed(RelaxedWord& word, std::uint64_t value) noexcept {
-    __atomic_store_n(&word.value, value, __ATOMIC_RELAXED);
-}
-
-[[nodiscard]] std::uint64_t read_relaxed(RelaxedWord const& word) noexcept {
-    return __atomic_load_n(&word.value, __ATOMIC_RELAXED);
-}
 
 // A file of /dev/null, open for reading only.
 using NullFile = ::fixy::fs::FileOf<::fixy::fs::read_only>;
@@ -107,7 +105,7 @@ using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc
 
 // The second thread of a case spins until the first one publishes.
 void wait_for(RelaxedWord const& word) noexcept {
-    while (read_relaxed(word) == 0U) {
+    while (word.read_relaxed() == 0U) {
         CRUCIBLE_SPIN_PAUSE;
     }
 }
@@ -157,11 +155,11 @@ constexpr std::size_t kOpenTries = 64;
             foundation::core::FixedArray<std::byte, 8> bytes{};
             has_read.store_release(fs::read_full(thread_ctx, null.ref(), bytes.view()).is_ok());
         }
-        publish_relaxed(closed, static_cast<std::uint64_t>(first_number) + 1U);
+        closed.publish_relaxed(static_cast<std::uint64_t>(first_number) + 1U);
     };
     auto second = [&](BgCtx const& thread_ctx) noexcept {
         wait_for(closed);
-        int const first_number = static_cast<int>(read_relaxed(closed) - 1U);
+        int const first_number = static_cast<int>(closed.read_relaxed() - 1U);
         has_closed.store_release(open_again_and_close(thread_ctx, devices, first_number, kOpenTries));
     };
     if (::fixy::thread::run_joined(ctx, ThreadOptions{}, first, second).is_err()) return 1;
@@ -214,13 +212,13 @@ constexpr int kMapRounds = 16;
             first_address = address_of(region);
             write_first_byte(region, 1);
         }
-        publish_relaxed(unmapped, first_address);
+        unmapped.publish_relaxed(first_address);
         wait_for(second_done);
     };
     auto second = [&]() noexcept {
         wait_for(unmapped);
-        has_found_range.store_release(map_again_and_write(read_relaxed(unmapped), kMapTries));
-        publish_relaxed(second_done, 1);
+        has_found_range.store_release(map_again_and_write(unmapped.read_relaxed(), kMapTries));
+        second_done.publish_relaxed(1);
     };
     if (::fixy::thread::run_joined(ctx, ThreadOptions{}, first, second).is_err()) return false;
     return has_found_range.load_acquire();

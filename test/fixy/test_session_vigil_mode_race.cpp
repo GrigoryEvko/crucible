@@ -71,13 +71,22 @@ inline constexpr std::uint64_t kRounds = (2 * kDirectRounds) + (kSessions * kRou
 // the test, and each reply is an atomic of the base.  The mode cell orders
 // each access of the plain value: the writer stores it before the release
 // store of a mode, and the reader reads it after the acquire load of that
-// mode.  So two threads use one Shared at the same time with no race
-// (foundation/Transfer.h).
-struct[[= ::foundation::transfer::shareable{}]] Shared {
-    std::uint64_t written = 0;
+// mode.  The plain value is private, so only these two doors reach it.  So
+// two threads use one Shared at the same time with no race, and the class
+// states synchronized (foundation/Transfer.h).
+class[[= ::foundation::transfer::synchronized{}]] Shared {
+public:
+    // The writer calls it before the release store of a mode.
+    void write_round(std::uint64_t round) noexcept { written_ = round; }
+    // The reader calls it after the acquire load of that mode.
+    [[nodiscard]] std::uint64_t read_round() const noexcept { return written_; }
+
     ::foundation::core::Atomic<std::uint64_t> read_compiled{0};
     ::foundation::core::Atomic<std::uint64_t> read_recording{0};
     ::foundation::core::Atomic<std::uint64_t> wrong_reads{0};
+
+private:
+    std::uint64_t written_ = 0;
 };
 static_assert(::foundation::transfer::Synchronized<Shared>);
 // Each write of a cell is atomic, and the identity of its writer is const.
@@ -96,7 +105,7 @@ constexpr auto apply = []<typename Transition>(vm::ModeLease& lease, Transition&
 // One round of the publishers of the cell.  The round number counts from
 // one, so the value zero of a reply names no round.
 void publish_one_round(vm::ModeCell& cell, vm::ModeWriter const& writer, Shared& shared, std::uint64_t round) noexcept {
-    shared.written = round;
+    shared.write_round(round);
     cell.publish_compiled(writer);
     wait_until(shared.read_compiled, round);
     cell.publish_recording_after_divergence(writer);
@@ -109,7 +118,7 @@ template <typename AtChoice>
 [[nodiscard]] vm::ModeLease take_edges(AtChoice at_choice, Shared& shared, std::uint64_t round,
                                        std::uint64_t last) noexcept {
     if (round > last) return std::move(at_choice).template select<2>(s::no_label).close();
-    shared.written = round;
+    shared.write_round(round);
     auto compiled = std::move(at_choice).template select<0>(s::no_label).send(vm::ModeRecordingToCompiled{}, apply);
     wait_until(shared.read_compiled, round);
     auto recording = std::move(compiled).template select<1>(s::no_label).send(vm::ModeCompiledToRecording{}, apply);
@@ -151,7 +160,7 @@ void wait_for_mode(vm::ModeCell const& cell, vm::Mode mode, Shared& shared) noex
 void read_each_round(vm::ModeCell const& cell, Shared& shared) noexcept {
     for (std::uint64_t round = 1; round <= kRounds; ++round) {
         wait_for_mode(cell, vm::Mode::COMPILED, shared);
-        if (shared.written != round) static_cast<void>(shared.wrong_reads.fetch_add_acq_rel(1));
+        if (shared.read_round() != round) static_cast<void>(shared.wrong_reads.fetch_add_acq_rel(1));
         shared.read_compiled.store_release(round);
         wait_for_mode(cell, vm::Mode::RECORDING, shared);
         shared.read_recording.store_release(round);

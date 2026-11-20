@@ -207,10 +207,10 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: libatomic is the reference of each atomi
 namespace {
 
 // The cell of the reference: a value of 16 bytes that each operation reaches
-// through the __atomic builtins, which GCC sends to libatomic.  Each access is
-// atomic, so the cell states shareable: two threads can read and write it at
-// the same time.
-class[[= ::foundation::transfer::shareable{}]] LibatomicCell final {
+// through the __atomic builtins, which GCC sends to libatomic.  The value is
+// private, and each access of it is atomic, so the cell states synchronized:
+// two threads can read and write it at the same time.
+class[[= ::foundation::transfer::synchronized{}]] LibatomicCell final {
     __extension__ using Word = unsigned __int128;
 
     alignas(16) Word word_ = 0;

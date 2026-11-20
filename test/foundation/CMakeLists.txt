@@ -3339,6 +3339,12 @@ foundation_neg_compile_test(neg_transfer_statement_outside_its_seal
   "a_statement_of_transfer_facts_stands_outside_its_seal"
   "foundation::transfer::detail::statement_of"
   "non-constant condition for static assertion")
+# A class that states synchronized{} keeps each part that a holder writes
+# with no order private, and the walk names a public plain member.
+foundation_neg_compile_test(neg_transfer_synchronized_with_a_public_plain_member
+  "static assertion failed: transfer: a class states synchronized\\{\\}, but a part of it that is not private"
+  "static assertion failed: public_member::PublicCount"
+  "static assertion failed: public_member::PublicCount::count")
 foundation_neg_compile_test(neg_core_values_as_const_temporary
   "use of deleted function .void foundation::core::as_const\\(const T&&\\) \\[with T = int\\]."
   "as_const of a temporary gives a reference that dangles at the end of the full expression")

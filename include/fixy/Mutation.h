@@ -6,6 +6,7 @@
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/SoleWriterProof.h>
+#include <foundation/Transfer.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/algebra/lattices/MonotoneLattice.h>
@@ -720,6 +721,11 @@ template <typename Ptr>
 // alignment here makes an embedder that forgets it safe anyway, at a
 // cost of one cache line per counter.  The type states how many threads write
 // the counter (CounterWriters).
+//
+// The counter is a cell of its value: its one atomic is private, each step of
+// it is atomic, and a value that one thread stores, another thread loads.  So
+// the class states payload_cell{} (foundation/Transfer.h), and it holds each
+// transfer property, the shared write included, exactly when T is Sendable.
 
 // The gate of the reads and the writes of the one writer of a counter:
 // peek_relaxed and advance_sole_writer_from.  Each of the two members asks
@@ -737,7 +743,8 @@ template <typename T, CounterWriters Writers = CounterWriters::many, typename Cm
 
 template <typename T, CounterWriters Writers, typename Cmp>
     requires std::is_trivially_copyable_v<T>
-class [[nodiscard]] alignas(64) AtomicMonotonic : ::foundation::Pinned<AtomicMonotonic<T, Writers, Cmp>> {
+class [[nodiscard]][[= ::foundation::transfer::payload_cell{}]] alignas(64) AtomicMonotonic
+    : ::foundation::Pinned<AtomicMonotonic<T, Writers, Cmp>> {
     std::atomic<T> value_;
 
     static constexpr bool kIsLess = AscendingOrder<T, Cmp>;

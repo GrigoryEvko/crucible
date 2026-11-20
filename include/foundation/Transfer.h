@@ -81,15 +81,15 @@
 //        because a read through a reference to const can write it.
 //
 // THE SHARED WRITE
-//     T is Synchronized when T is a class that states shareable{}, such as
-//     the Atomic of the base, an array of such a type, or a class whose each
-//     base and each member is Synchronized or is const and Shareable.  A class
-//     that states thread_bound{} is not Synchronized.  No
-//     write reaches a const member, so a read is all it must allow.  A member
-//     that is a reference makes the class not Synchronized.  A scalar is not
-//     Synchronized: two plain writes of one scalar race.  An atomic of the
-//     standard library is not either: the base quarantines it, and its Atomic
-//     takes its place.
+//     T is Synchronized when T is a class that states synchronized{} or
+//     shareable{}, a cell of a payload that is Sendable, such as the Atomic
+//     of the base, an array of such a type, or a class whose each base and
+//     each member is Synchronized or is const and Shareable.  A class that
+//     states thread_bound{} is not Synchronized.  No write reaches a const
+//     member, so a read is all it must allow.  A member that is a reference
+//     makes the class not Synchronized.  A scalar is not Synchronized: two
+//     plain writes of one scalar race.  An atomic of the standard library is
+//     not either: the base quarantines it, and its Atomic takes its place.
 //
 // THE VALUE BESIDE ITS SENDER
 //     SendableBeside is Sendable with a stricter rule 1.  A reference, a class
@@ -121,6 +121,14 @@
 //     sendable{} and not_sendable{} state Sendable.  shareable{} and
 //     not_shareable{} state Shareable, and shareable{} also states that two
 //     threads can write an object of the class at the same time.
+//     synchronized{} states that two threads can write an object of the class
+//     at the same time, and thus that two threads can read it.  The walk
+//     checks the statement each time that it reads it: two threads can write
+//     each base, and each data member that is not private is no reference,
+//     and two threads can write it at the same time, or it is const and
+//     Shareable.  A part that fails stops the build, and the diagnostic names
+//     the class and the part.  A private member is state that the code of the
+//     class orders, as the comment beside the statement tells.
 //     by_arguments{} states that the class owns the object of its first type
 //     argument behind its pointers, as a Box does, and that its other type
 //     arguments name no object that it holds.  refers{} states that the class
@@ -209,6 +217,7 @@ struct refers_unique final {};
 struct refers_deep final {};
 struct thread_bound final {};
 struct payload_cell final {};
+struct synchronized final {};
 
 // A statement of the facts of a class that is only declared, and the seal of
 // a registry of such statements (THE OPAQUE TYPES).  is_synchronized states
@@ -411,6 +420,18 @@ void a_class_has_two_statements_of_transfer_facts() noexcept;
     return arguments.begin()->type;
 }
 
+// Stops the build when a class that states synchronized{} shows a part that
+// a holder of a reference that is not const can write with no order (THE
+// SHARED WRITE).  Such a part is a base that two threads cannot write, or a
+// data member that is not private and that is a reference, or that two
+// threads cannot write at the same time and that is not const and Shareable.
+// A private member is state that the code of the class orders, as the comment
+// beside the statement tells.  The diagnostic names the class and the part.
+// The definition follows is_shared_writable.  Complexity: linear in the bases
+// and the members, and the walk of each base and each member that is not
+// private.
+consteval void check_synchronized_statement(std::meta::info type);
+
 // The first type that two threads cannot write at the same time, or a null
 // reflection when two threads can write an object of the root (THE SHARED
 // WRITE).  A class answers for a member that refuses, so the answer names
@@ -444,6 +465,12 @@ void a_class_has_two_statements_of_transfer_facts() noexcept;
             if (payload == std::meta::info{} || !::foundation::transfer::holds(payload, Property::Send)) return type;
             continue;
         }
+        // A statement of the shared write, which the check reads (THE
+        // ANNOTATIONS).
+        if (states(type, ^^synchronized)) {
+            check_synchronized_statement(type);
+            continue;
+        }
         if (states(type, ^^shareable)) continue;
         bool has_part = false;
         for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{type, true})) {
@@ -468,6 +495,51 @@ void a_class_has_two_statements_of_transfer_facts() noexcept;
 // (THE SHARED WRITE).
 [[nodiscard]] consteval bool is_shared_writable(std::meta::info root) {
     return first_shared_write_refusal(root) == std::meta::info{};
+}
+
+// The refusal of a statement of synchronized{} (check_synchronized_statement).
+// The walk reads a specialization of the variable below, which stops the
+// build.  Its three messages give the rule, the class and the part that
+// refuses: a member, or the type of a base.
+template <std::meta::info Class, std::meta::info Part>
+consteval bool refuse_synchronized_statement() {
+    static_assert(Class == std::meta::info{},
+                  "transfer: a class states synchronized{}, but a part of it that is not private is a reference, or "
+                  "two threads cannot write the part at the same time and it is not const and Shareable.  A base "
+                  "counts as such a part, also a private one.  Make the part private, or give it a type that two "
+                  "threads can write, such as an Atomic (THE SHARED WRITE of foundation/Transfer.h).  The next two "
+                  "messages name the class and the part");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Part));
+    return false;
+}
+
+template <std::meta::info Class, std::meta::info Part>
+inline constexpr bool synchronized_statement_refusal = refuse_synchronized_statement<Class, Part>();
+
+// Reads the refusal of the class for the part, which stops the build.
+consteval void refuse_synchronized_part(std::meta::info type, std::meta::info part) {
+    const std::meta::info arguments[] = {std::meta::reflect_constant(type), std::meta::reflect_constant(part)};
+    static_cast<void>(std::meta::extract<bool>(std::meta::substitute(^^synchronized_statement_refusal, arguments)));
+}
+
+consteval void check_synchronized_statement(std::meta::info type) {
+    namespace refl = ::foundation::reflect;
+    for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{type, true})) {
+        // A node of a base names no member.  Each base, private or not, is
+        // Synchronized, so a base that two threads cannot write refuses.
+        if (part.member == std::meta::info{}) {
+            if (!is_shared_writable(part.type)) refuse_synchronized_part(type, part.type);
+            continue;
+        }
+        if (std::meta::is_private(part.member)) continue;
+        // A member that is a reference is not held by value.  No write
+        // reaches a const member, so a read is all it must allow.
+        const bool holds_write = part.is_held_by_value
+                              && (part.was_const ? ::foundation::transfer::holds(part.type, Property::Share)
+                                                 : is_shared_writable(part.type));
+        if (!holds_write) refuse_synchronized_part(type, part.member);
+    }
 }
 
 // The goal that rule 1 asks of a reference to the type of the node, for the
@@ -567,6 +639,12 @@ struct ReferenceAnswer {
             if (payload == std::meta::info{}) return bare;
             const Property moved = goal.property == Property::Share ? Property::Send : goal.property;
             pending.push(detail::Goal{payload, moved, detail::Reach::Part});
+            continue;
+        }
+        // A statement of the shared write states the read of two threads too,
+        // and the check reads it (THE ANNOTATIONS).
+        if (goal.property == Property::Share && detail::states(bare, ^^synchronized)) {
+            detail::check_synchronized_statement(bare);
             continue;
         }
         if (detail::states(bare, detail::stating_annotation(goal.property))) continue;

@@ -204,6 +204,21 @@ struct PinnedCount : EmptyMark {
 };
 static_assert(Synchronized<EmptyMark> && Synchronized<PinnedCount>);
 
+// A class that states synchronized{} orders its private parts in its own
+// code, so a private plain member passes the check.  Each part that is not
+// private is Synchronized, or is const and Shareable.  The statement states
+// the read of two threads too.
+class[[= synchronized{}]] OrdersItsCount {
+public:
+    ::foundation::core::Atomic<int> calls{0};
+    int const limit = 8;
+
+private:
+    int count_ = 0;
+};
+static_assert(Synchronized<OrdersItsCount> && Shareable<OrdersItsCount> && Sendable<OrdersItsCount>);
+static_assert(first_synchronized_refusal(^^OrdersItsCount) == std::meta::info{});
+
 // A class of one owner thread does not move and is not a target of a shared
 // write, but a read through a reference to const is safe when its parts are.
 // The same holds for a class that holds it.  A reference to const of it is

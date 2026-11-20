@@ -151,9 +151,9 @@ private:
 // last one.
 //
 // Two threads take and release one claim at the same time through its atomic
-// cell, so the class states shareable{} (THE SHARED WRITE of
-// foundation/Transfer.h).
-class[[= ::foundation::transfer::shareable{}]] EndpointClaim {
+// cell, which is private, so the class states synchronized{} (THE SHARED
+// WRITE of foundation/Transfer.h).
+class[[= ::foundation::transfer::synchronized{}]] EndpointClaim {
 public:
     constexpr EndpointClaim() noexcept = default;
 

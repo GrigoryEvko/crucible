@@ -18,6 +18,7 @@
 
 #include <fixy/os/OwnedThread.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Fatal.h>
 
 #include <atomic>
@@ -30,7 +31,12 @@ namespace fixy::handle {
 // The alignment sits on the class rather than on each embedded member,
 // so an embedder cannot forget it.  One flag then costs a whole cache
 // line instead of one byte, which is the price of the guarantee.
-class alignas(64) OneShotFlag {
+//
+// The flag is private, and each door reads or writes it atomically.  A reset
+// takes the proof that no other thread reaches the flag.  So two threads can
+// use one flag at the same time, and the class states synchronized{}
+// (foundation/Transfer.h).
+class[[= ::foundation::transfer::synchronized{}]] alignas(64) OneShotFlag {
     std::atomic<bool> flag_{false};
 
 public:

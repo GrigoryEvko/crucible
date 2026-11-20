@@ -11,6 +11,7 @@
 // second writer costs a second friend declaration that a reviewer sees.
 
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 
 #include <atomic>
 #include <cstdint>
@@ -21,8 +22,12 @@ namespace fixy::handle {
 
 // Declare a fresh Tag per pipeline.  Two pipelines that reuse one Tag share a
 // cell type even when their WriteAuth differs.
+//
+// The count is private, and each door reads or writes it atomically, so two
+// threads can use one cell at the same time, and the class states
+// synchronized{} (foundation/Transfer.h).
 template <typename Tag, typename WriteAuth>
-class PublishCommitCell {
+class[[= ::foundation::transfer::synchronized{}]] PublishCommitCell {
     alignas(64) std::atomic<uint64_t> value_{0};
 
     friend WriteAuth;
