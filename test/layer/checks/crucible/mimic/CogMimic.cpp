@@ -2,6 +2,8 @@
 
 #include <crucible/mimic/CogMimic.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 namespace crucible::mimic {
 
 namespace detail::cog_mimic_self_test {
@@ -33,7 +35,8 @@ inline constexpr bool carrier_is_closed_v =
 // two carriers must fold apart, because the kind seeds the high byte of
 // each fold.  Complexity: quadratic in the number of kinds.
 [[nodiscard]] consteval bool every_carrier_is_closed_and_apart() {
-    static constexpr auto kinds = std::define_static_array(std::meta::enumerators_of(^^cog::CogKind));
+    static constexpr ::foundation::reflect::ReflectionList kinds =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^cog::CogKind));
     std::array<std::uint64_t, ::foundation::reflect::enum_count<cog::CogKind>> default_folds{};
     std::size_t carrier_count = 0;
 #pragma GCC diagnostic push

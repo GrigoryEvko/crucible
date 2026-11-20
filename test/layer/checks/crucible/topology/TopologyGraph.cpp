@@ -2,6 +2,8 @@
 
 #include <crucible/topology/TopologyGraph.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 namespace crucible::topology {
 
 static_assert(sizeof(EdgeId) == sizeof(std::uint32_t),
@@ -79,7 +81,8 @@ static_assert(std::is_same_v<std::underlying_type_t<CongestionState>, std::uint8
 // Every kind lands in the layer its value range names.  The walk reads the
 // enumerators by reflection, so a kind added outside every range fails here.
 [[nodiscard]] consteval bool link_kind_partition_sound() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^LinkKind));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^LinkKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {

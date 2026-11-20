@@ -6,7 +6,7 @@ namespace foundation::algebra {
 
 namespace detail::modality_self_test {
 
-static_assert(modality_kind_count == std::meta::enumerators_of(^^ModalityKind).size(),
+static_assert(modality_kind_count == ::foundation::reflect::enum_count<ModalityKind>,
               "Modality count diverged from the five-member set (Comonad/RelativeMonad/Absolute/Relative/"
               "Stepping).  Confirm the addition is intentional, that the name pins below still cover the new "
               "enumerator, and write the new count in the initializer of modality_kind_count.");

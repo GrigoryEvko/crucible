@@ -2,6 +2,8 @@
 
 #include <fixy/Insights.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 // The four policies below are named verbatim inside the inert strings of
 // fixy/Insights.h, which no compiler ever checks.  These pins put a
 // rename or a removal in front of the reader who has to update those
@@ -63,8 +65,8 @@ static_assert(strict_pole_name_<Axis::Type>() == "the payload type the binding n
 // CRUCIBLE_DIAG_INSIGHTS_QV states.  The fault names the first entry and
 // field that fail, and it is empty when each one holds.
 [[nodiscard]] consteval std::string_view corpus_insight_fault_() {
-    static constexpr auto entries =
-        std::define_static_array(std::meta::template_arguments_of(std::meta::dealias(^^::fixy::corpus::Entries)));
+    static constexpr ::foundation::reflect::ReflectionList entries = ::foundation::reflect::reflection_list(
+        std::meta::template_arguments_of(std::meta::dealias(^^::fixy::corpus::Entries)));
     std::string fault;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"

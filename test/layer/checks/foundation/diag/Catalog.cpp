@@ -2,6 +2,8 @@
 
 #include <foundation/diag/Catalog.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 namespace foundation::diag {
 
 namespace detail {
@@ -68,7 +70,8 @@ static_assert(is_diagnostic_class_v<NumericalTierMismatch>);
 // the tuple. The tuple is derived from the enum, so the two counts agree by
 // construction; the count is kept as the witness that the derivation saw
 // every enumerator.
-inline constexpr auto category_enumerators = std::define_static_array(std::meta::enumerators_of(^^Category));
+inline constexpr ::foundation::reflect::ReflectionList category_enumerators =
+    ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^Category));
 
 inline constexpr std::size_t category_count = category_enumerators.size();
 

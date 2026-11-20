@@ -4,7 +4,7 @@
 
 namespace foundation::algebra::lattices {
 
-static_assert(numa_node_id_sentinel_count == std::meta::enumerators_of(^^NumaNodeId).size(),
+static_assert(numa_node_id_sentinel_count == ::foundation::reflect::enum_count<NumaNodeId>,
               "NumaNodeId must hold exactly the sentinels that numa_node_id_sentinel_count counts.  A third one "
               "needs a value that does not collide with the concrete node identifiers, a place in leq, join "
               "and meet, and an update to the initializer of numa_node_id_sentinel_count.");

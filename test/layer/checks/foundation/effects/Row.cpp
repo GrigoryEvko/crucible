@@ -2,6 +2,8 @@
 
 #include <foundation/effects/Row.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 #include <vector>
 
 namespace foundation::effects {
@@ -12,7 +14,8 @@ namespace foundation::effects {
 // every atom instead of counting them.  A check below calls it beside
 // the cardinality guard.
 [[nodiscard]] consteval bool every_effect_underlying_lt_64() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^Effect));
     // -Wshadow fires spuriously on the expansion-statement induction variable.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"

@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/RecipeFamilyLattice.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 namespace foundation::algebra::lattices {
 
 static_assert(::foundation::reflect::enum_count<RecipeFamily> == 6,
@@ -31,7 +33,8 @@ static_assert(verify_enum_lattice_exhaustive<RecipeFamilyLattice>(),
 // Every pair of distinct named families is a sibling pair: incomparable,
 // joined at Any and met at None.
 [[nodiscard]] consteval bool named_families_are_siblings() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^RecipeFamily));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^RecipeFamily));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {

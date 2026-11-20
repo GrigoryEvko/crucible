@@ -2,6 +2,9 @@
 
 #include <fixy/atoms/Syscall.h>
 
+#include <foundation/reflect/EnumName.h>
+#include <foundation/reflect/ReflectionList.h>
+
 #include <meta>
 #include <tuple>
 #include <type_traits>
@@ -21,7 +24,8 @@ using SI = syscall::SyscallId;
 // make the family depend on the order of the table.
 [[nodiscard]] consteval bool every_call_has_exactly_one_row_() noexcept {
     bool exact = true;
-    static constexpr auto calls = std::define_static_array(std::meta::enumerators_of(^^SI));
+    static constexpr ::foundation::reflect::ReflectionList calls =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^SI));
     template for (constexpr auto call_member : calls) {
         constexpr SI call = [:call_member:];
         exact = exact && (syscall_rows_naming_(call) == 1);
@@ -32,7 +36,8 @@ using SI = syscall::SyscallId;
 // Every row of the table names a call that exists.  A row for a value
 // outside the enumerators would pass the check above and name nothing.
 [[nodiscard]] consteval bool every_row_names_a_call_() noexcept {
-    static constexpr auto calls = std::define_static_array(std::meta::enumerators_of(^^SI));
+    static constexpr ::foundation::reflect::ReflectionList calls =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^SI));
     for (const auto& [row_id, row_family] : syscall_family_table) {
         bool known = false;
         template for (constexpr auto call_member : calls) { known = known || ([:call_member:] == row_id); }
@@ -46,7 +51,8 @@ using SI = syscall::SyscallId;
 // family with two would make its row depend on the order of the table.
 [[nodiscard]] consteval bool every_family_has_exactly_one_row_() noexcept {
     bool exact = true;
-    static constexpr auto families = std::define_static_array(std::meta::enumerators_of(^^SF));
+    static constexpr ::foundation::reflect::ReflectionList families =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^SF));
     template for (constexpr auto family_member : families) {
         constexpr SF family = [:family_member:];
         exact = exact && (syscall_family_rows_naming_(family) == 1);
@@ -62,15 +68,15 @@ static_assert(every_call_has_exactly_one_row_(),
 static_assert(every_row_names_a_call_(),
               "fixy/atoms/Syscall.h: a row of syscall_family_table names a value that is not an enumerator "
               "of SyscallId.");
-static_assert(syscall_family_table.size() == std::meta::enumerators_of(^^SI).size(),
+static_assert(syscall_family_table.size() == ::foundation::reflect::enum_count<SI>,
               "fixy/atoms/Syscall.h: the table and the catalog must have the same size.");
 
 // The catalog is append-only.  A new call raises this count.
-static_assert(std::meta::enumerators_of(^^SI).size() == 50,
+static_assert(::foundation::reflect::enum_count<SI> == 50,
               "fixy/atoms/Syscall.h: SyscallId has a different number of calls than this pin records.  A new "
               "call appends at the next free ordinal and raises the count.  A call that disappeared moves "
               "stored federation keys, and somebody has to justify it.");
-static_assert(std::meta::enumerators_of(^^SF).size() == 9,
+static_assert(::foundation::reflect::enum_count<SF> == 9,
               "fixy/atoms/Syscall.h: the family chain has nine families; a new family needs a row in "
               "syscall_family_effects_table and a place in the chain.");
 
@@ -78,7 +84,7 @@ static_assert(std::meta::enumerators_of(^^SF).size() == 9,
 static_assert(every_family_has_exactly_one_row_(),
               "fixy/atoms/Syscall.h: an enumerator of SyscallFamily holds no row, or two rows, in "
               "syscall_family_effects_table.  Add exactly one row that states its effects.");
-static_assert(syscall_family_effects_table.size() == std::meta::enumerators_of(^^SF).size(),
+static_assert(syscall_family_effects_table.size() == ::foundation::reflect::enum_count<SF>,
               "fixy/atoms/Syscall.h: the family table and the family chain must have the same size.");
 
 // The header names the atoms of the roster by hand.  These two lists
@@ -86,8 +92,10 @@ static_assert(syscall_family_effects_table.size() == std::meta::enumerators_of(^
 // SyscallId and one family atom for each enumerator of SyscallFamily, in
 // the order of the enumerators.  The hand lists must be these lists, so a
 // new call with no atom fails here.
-inline constexpr auto enumerated_calls = std::define_static_array(std::meta::enumerators_of(^^SI));
-inline constexpr auto enumerated_families = std::define_static_array(std::meta::enumerators_of(^^SF));
+inline constexpr ::foundation::reflect::ReflectionList enumerated_calls =
+    ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^SI));
+inline constexpr ::foundation::reflect::ReflectionList enumerated_families =
+    ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^SF));
 
 // Declared and never defined: only the return types are read.
 template <std::size_t... Call>

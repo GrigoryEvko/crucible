@@ -2,6 +2,8 @@
 
 #include <fixy/Corpus.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 namespace fixy::corpus {
 
 static_assert(detail::non_none_policy_count_() == 4,
@@ -78,8 +80,8 @@ template <class Entry>
 
 [[nodiscard]] consteval bool every_entry_is_well_formed_() noexcept {
     bool all_well_formed = true;
-    static constexpr auto entries =
-        std::define_static_array(std::meta::template_arguments_of(std::meta::dealias(^^Entries)));
+    static constexpr ::foundation::reflect::ReflectionList entries =
+        ::foundation::reflect::reflection_list(std::meta::template_arguments_of(std::meta::dealias(^^Entries)));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto entry : entries) {

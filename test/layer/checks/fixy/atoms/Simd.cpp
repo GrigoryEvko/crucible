@@ -2,6 +2,8 @@
 
 #include <fixy/atoms/Simd.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 namespace fixy::atom::detail::simd_atom_self_test {
 
 static_assert(every_atom_in_is_rostered_<^^::fixy::atom::simd, simd_atom_roster>(),
@@ -19,7 +21,8 @@ static_assert(every_roster_member_on_axis_<simd_atom_roster, Axis::SimdIsa>(),
 // honest the day an enumerator is added.
 [[nodiscard]] consteval bool trunks_partition_the_pinned_rungs_() noexcept {
     bool partitioned = true;
-    static constexpr auto isas = std::define_static_array(std::meta::enumerators_of(^^simd::SimdIsa));
+    static constexpr ::foundation::reflect::ReflectionList isas =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^simd::SimdIsa));
     template for (constexpr auto isa_member : isas) {
         constexpr simd::SimdIsa isa = [:isa_member:];
         constexpr bool x86 = simd::on_x86_trunk(isa);
@@ -38,7 +41,8 @@ static_assert(every_roster_member_on_axis_<simd_atom_roster, Axis::SimdIsa>(),
 // take a width by default.
 [[nodiscard]] consteval bool register_bits_table_partitions_the_enum_() noexcept {
     bool exact = true;
-    static constexpr auto isas = std::define_static_array(std::meta::enumerators_of(^^simd::SimdIsa));
+    static constexpr ::foundation::reflect::ReflectionList isas =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^simd::SimdIsa));
     template for (constexpr auto isa_member : isas) {
         constexpr simd::SimdIsa isa = [:isa_member:];
         constexpr std::size_t expected_rows = simd::has_fixed_register_width(isa) ? 1U : 0U;

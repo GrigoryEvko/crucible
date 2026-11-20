@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/MemoryScopeLattice.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 #include <cstdint>
 #include <meta>
 #include <utility>
@@ -46,7 +48,8 @@ static_assert(!mem_scope_is_accel(static_cast<MemoryScope>(0x14)) && !mem_scope_
 // its high nibble, so an enumerator that the switch omits fails here and
 // does not fall to the default.
 [[nodiscard]] consteval bool each_enumerator_holds_its_nibble_chain() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^MemoryScope));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^MemoryScope));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto scope : enumerators) {
@@ -77,7 +80,8 @@ static_assert(verify_enum_lattice_exhaustive<MemoryScopeLattice>(),
 // Admitting one chain for the other would let a fence that orders
 // nothing on the requesting side stand in for one that does.
 [[nodiscard]] consteval bool chains_order_within_and_not_across() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^MemoryScope));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^MemoryScope));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {

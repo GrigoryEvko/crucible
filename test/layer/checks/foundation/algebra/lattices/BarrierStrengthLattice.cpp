@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/BarrierStrengthLattice.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 namespace foundation::algebra::lattices {
 
 namespace detail::barrier_strength_lattice_self_test {
@@ -41,7 +43,8 @@ static_assert(verify_pinned_at<BarrierStrengthLattice>(),
 // assertion names the fault before join and meet can give a wrong bound.
 [[nodiscard]] consteval std::size_t incomparable_pairs() noexcept {
     std::size_t pairs = 0;
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^BarrierStrength));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^BarrierStrength));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto first : enumerators) {

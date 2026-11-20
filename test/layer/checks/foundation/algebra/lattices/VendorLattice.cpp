@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/VendorLattice.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 namespace foundation::algebra::lattices {
 
 namespace detail::vendor_lattice_self_test {
@@ -31,7 +33,8 @@ static_assert(verify_enum_lattice_exhaustive<VendorLattice>(),
 // for one where the other is required, which is the mistake this order exists
 // to reject.  Every pair of distinct named vendors is walked.
 [[nodiscard]] consteval bool named_vendors_stay_incomparable() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^VendorBackend));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^VendorBackend));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {

@@ -8,6 +8,7 @@
 // time, moved into the function that spends it, and consumed there.
 
 #include <foundation/effects/Capability.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <meta>
 #include <type_traits>
@@ -37,7 +38,8 @@ using BgNondetOnly = fe::ExecCtx<fe::Bg, fe::Row<Effect::Bg, Effect::Nondet>>;
 template <Effect E, class Ctx>
 concept MintsFromCtx = requires(Ctx const& ctx) { fe::mint_from_ctx<E>(ctx); };
 
-inline constexpr auto atoms = std::define_static_array(std::meta::enumerators_of(^^fe::Effect));
+inline constexpr ::foundation::reflect::ReflectionList atoms =
+    ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^fe::Effect));
 
 // True when the context mints the atoms of its row and no other atom, and
 // CapMatchesCtx admits a capability for exactly the same atoms, whatever

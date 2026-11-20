@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/QttSemiring.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 namespace foundation::algebra::lattices {
 
 namespace detail::qtt_self_test {
@@ -10,7 +12,8 @@ static_assert(::foundation::reflect::enum_count<QttGrade> == 4,
               "QttGrade must hold exactly the four grades 0, 1, ≤1 and ω.");
 
 // The grades, read one time for each walk below.
-inline constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^QttGrade));
+inline constexpr ::foundation::reflect::ReflectionList enumerators =
+    ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^QttGrade));
 
 // The hand-written switch is the one place where a new grade can be
 // missed, and this walk covers each grade.  The name of each At<Grade>

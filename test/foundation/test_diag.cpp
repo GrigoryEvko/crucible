@@ -12,6 +12,7 @@
 #include <fixy/check/Check.h>
 #include <foundation/core/Report.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <array>
 #include <atomic>
@@ -234,7 +235,8 @@ void test_accessor_strings_match_tag_fields() {
 // The tuple is derived from the enum by identifier: the tag at every
 // index spells the enumerator at that index.
 [[nodiscard]] consteval bool catalog_spells_the_enum() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^diag::Category));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^diag::Category));
     std::size_t position = 0;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"

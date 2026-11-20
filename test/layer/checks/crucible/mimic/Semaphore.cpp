@@ -2,6 +2,8 @@
 
 #include <crucible/mimic/Semaphore.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 namespace crucible::mimic {
 
 static_assert(::fixy::AtomicValue<std::uint64_t> && sizeof(SemaphoreCounter) == sizeof(std::uint64_t),
@@ -28,8 +30,8 @@ inline constexpr bool descriptor_is_closed_v =
 // gets its descriptor, and the walk checks it.  Complexity: linear in the
 // number of enumerators.
 [[nodiscard]] consteval bool every_descriptor_is_closed() {
-    static constexpr auto backends =
-        std::define_static_array(std::meta::enumerators_of(^^::foundation::algebra::lattices::VendorBackend));
+    static constexpr ::foundation::reflect::ReflectionList backends = ::foundation::reflect::reflection_list(
+        std::meta::enumerators_of(^^::foundation::algebra::lattices::VendorBackend));
     std::size_t descriptor_count = 0;
 // An expansion statement unrolls into successive scopes that each declare
 // the same induction variable, so -Wshadow fires once per iteration.

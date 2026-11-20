@@ -2,6 +2,8 @@
 
 #include <foundation/effects/Capability.h>
 
+#include <foundation/reflect/ReflectionList.h>
+
 namespace foundation::effects {
 
 namespace detail::capability_self_test {
@@ -193,8 +195,8 @@ static_assert(std::is_same_v<bare_tag_t<Effect::Block>, cap::Block>);
 // namespace with a type named for a thread atom, after which
 // HasBareTag<Effect::Bg> stayed false.
 [[nodiscard]] consteval std::size_t cap_tag_count_() noexcept {
-    static constexpr auto members =
-        std::define_static_array(std::meta::members_of(^^cap, std::meta::access_context::current()));
+    static constexpr ::foundation::reflect::ReflectionList members =
+        ::foundation::reflect::reflection_list(std::meta::members_of(^^cap, std::meta::access_context::current()));
     std::size_t count = 0;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
