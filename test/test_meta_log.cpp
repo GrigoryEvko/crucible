@@ -4,14 +4,11 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
-#include <atomic>
-#include <bit>
 #include <cstdint>
-#include <cstdio>
-#include <thread>
 
 namespace {
 
@@ -22,13 +19,15 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 using namespace crucible;
 
-static TensorMeta make_meta(void* ptr, int64_t d0 = 128, int64_t d1 = 256) {
+// A descriptor of the sizes [128, 256], whose data pointer is the synthetic
+// address.  No code reads through the pointer.
+static TensorMeta make_meta(SyntheticAddress address) {
     TensorMeta m{};
-    m.data_ptr = external_data_ptr(ptr);
+    m.data_ptr = mint_synthetic_data_ptr(address);
     m.ndim = 2;
-    m.sizes[0] = ::crucible::tensor_dim(d0);
-    m.sizes[1] = ::crucible::tensor_dim(d1);
-    m.strides[0] = ::crucible::tensor_dim(d1);
+    m.sizes[0] = ::crucible::tensor_dim(128);
+    m.sizes[1] = ::crucible::tensor_dim(256);
+    m.strides[0] = ::crucible::tensor_dim(256);
     m.strides[1] = ::crucible::tensor_dim(1);
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
@@ -45,7 +44,7 @@ static void test_empty_state() {
 
 static void test_single_append_returns_index_zero() {
     MetaLog log{::foundation::effects::testing::test().alloc};
-    TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x1000)));
+    TensorMeta m = make_meta(SyntheticAddress{0x1000});
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     auto idx = log.try_append(record.view());
     CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
@@ -65,7 +64,7 @@ static void test_batch_append_and_monotonic() {
     ::fixy::FixedArray<TensorMeta, 8> batch{};
     for (uint32_t i = 0; i < 8; ++i) {
         *batch.get(i).expect("a test reads an element at or past the count of its array") =
-            make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x1000 + i * 16)));
+            make_meta(SyntheticAddress{0x1000 + i * 16});
     }
     const ::fixy::View<const TensorMeta> records{batch.view()};
     auto idx1 = log.try_append(records.window(0, 3).expect("the first run fits the batch"));
@@ -89,7 +88,7 @@ static void test_batch_append_and_monotonic() {
 
 static void test_tail_advance_frees_capacity() {
     MetaLog log{::foundation::effects::testing::test().alloc};
-    TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x2000)));
+    TensorMeta m = make_meta(SyntheticAddress{0x2000});
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     auto idx = log.try_append(record.view());
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 1);
@@ -104,7 +103,7 @@ static void test_tail_advance_frees_capacity() {
 
 static void test_reset_zeroes_both_pointers() {
     MetaLog log{::foundation::effects::testing::test().alloc};
-    TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x3000)));
+    TensorMeta m = make_meta(SyntheticAddress{0x3000});
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     for (int i = 0; i < 10; ++i)
         (void)log.try_append(record.view());
@@ -133,7 +132,7 @@ static void test_copy_run_across_the_end() {
     ::fixy::FixedArray<TensorMeta, 5> tail5{};
     for (uint32_t i = 0; i < 5; ++i) {
         *tail5.get(i).expect("a test reads an element at or past the count of its array") =
-            make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x5000 + i * 0x100)));
+            make_meta(SyntheticAddress{0x5000 + i * 0x100});
     }
     auto idx = log.try_append(tail5.view());
     CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
@@ -173,7 +172,7 @@ static void test_counters_pass_two_to_the_32() {
     ::fixy::FixedArray<TensorMeta, 32> run{};
     for (uint32_t i = 0; i < 32; ++i) {
         *run.get(i).expect("a test reads an element at or past the count of its array") =
-            make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x6000 + i * 0x100)));
+            make_meta(SyntheticAddress{0x6000 + i * 0x100});
     }
     const ::fixy::View<const TensorMeta> records{run.view()};
     const MetaIndex first = log.try_append(records.window(0, 15).expect("the first run fits the array"));
@@ -230,12 +229,12 @@ static void test_spsc_concurrent_integrity() {
     constexpr uint32_t N = 100000;
     MetaLog log{::foundation::effects::testing::test().alloc};
 
-    std::atomic<bool> producer_done{false};
-    std::atomic<uint32_t> lost_spin{0};  // diagnostic only
+    ::fixy::Atomic<bool> producer_done{false};
+    ::fixy::Atomic<uint32_t, ::fixy::Counter> lost_spin{0};  // diagnostic only
 
-    std::jthread producer{[&] {
+    auto producer = [&] noexcept {
         for (uint32_t i = 0; i < N; /* advance only on success */) {
-            TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
+            TensorMeta m = make_meta(SyntheticAddress{uint64_t{i + 1} << 16});
             const ::fixy::FixedArray<TensorMeta, 1> record{m};
             auto idx = log.try_append(record.view());
             if (idx.is_valid()) [[likely]] {
@@ -244,13 +243,13 @@ static void test_spsc_concurrent_integrity() {
                 // The buffer is full, so back off and let the consumer
                 // drain before trying the same index again.
                 CRUCIBLE_SPIN_PAUSE;
-                lost_spin.fetch_add(1, std::memory_order_relaxed);
+                static_cast<void>(lost_spin.fetch_add_relaxed(1));
             }
         }
-        producer_done.store(true, std::memory_order_release);
-    }};
+        producer_done.store_release(true);
+    };
 
-    std::jthread consumer{[&] {
+    auto consumer = [&] noexcept {
         uint32_t next = 0;  // next expected sequence number (0-based)
         while (next < N) {
             const uint32_t avail = log.size().peek();
@@ -258,7 +257,7 @@ static void test_spsc_concurrent_integrity() {
                 // The size is re-read after observing the flag.  A
                 // producer that appended and then set the flag between
                 // the two reads would otherwise be missed.
-                if (producer_done.load(std::memory_order_acquire) && log.size().peek() == 0) {
+                if (producer_done.load_acquire() && log.size().peek() == 0) {
                     break;
                 }
                 CRUCIBLE_SPIN_PAUSE;
@@ -266,8 +265,9 @@ static void test_spsc_concurrent_integrity() {
             }
             for (uint32_t k = 0; k < avail; ++k) {
                 const TensorMeta m = log.copy_record(next + k);
-                const uintptr_t expected = static_cast<uintptr_t>(next + k + 1) << 16;
-                CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uintptr_t>(m.data_ptr.value()) == expected);
+                const ExternalDataPtr expected =
+                    mint_synthetic_data_ptr(SyntheticAddress{uint64_t{next + k + 1} << 16});
+                CRUCIBLE_TEST_ASSERT(kTest, m.data_ptr.value() == expected.value());
                 // The remaining fields are identical in every record,
                 // so they carry no sequence information.  They are
                 // checked anyway: a torn read shows up here.
@@ -280,14 +280,16 @@ static void test_spsc_concurrent_integrity() {
             next += avail;
         }
         CRUCIBLE_TEST_ASSERT(kTest, next == N);  // nothing was lost and nothing repeated
-    }};
+    };
 
-    producer.join();
-    consumer.join();
+    ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
+    ::fixy::thread::run_joined_raw_probe(bg, kTest, "the producer and the consumer share the log on purpose",
+                                         ::fixy::thread::ThreadOptions{}, producer, consumer)
+        .expect("the thread door starts the producer and the consumer");
     ::fixy::check::pass(kTest,
                         "  test_spsc_integrity:            PASSED "
                         "(N={}, producer_spins={})\n",
-                        N, lost_spin.load());
+                        N, lost_spin.load_acquire());
 }
 
 // Only the accepting legs of the row-typed facade run here.  The facade
@@ -311,7 +313,7 @@ static void test_try_append_pure() {
 
     {
         MetaLog log{::foundation::effects::testing::test().alloc};
-        TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xA0)));
+        TensorMeta m = make_meta(SyntheticAddress{0xA0});
         const ::fixy::FixedArray<TensorMeta, 1> record{m};
         auto idx = log.try_append_pure(kPure, record.view());
         CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
@@ -323,8 +325,8 @@ static void test_try_append_pure() {
 
     {
         MetaLog log{::foundation::effects::testing::test().alloc};
-        TensorMeta m1 = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xB0)));
-        TensorMeta m2 = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xC0)));
+        TensorMeta m1 = make_meta(SyntheticAddress{0xB0});
+        TensorMeta m2 = make_meta(SyntheticAddress{0xC0});
         const ::fixy::FixedArray<TensorMeta, 1> first_record{m1};
         const ::fixy::FixedArray<TensorMeta, 1> second_record{m2};
         auto idx1 = log.try_append_pure(kPure, first_record.view());
@@ -340,7 +342,7 @@ static void test_try_append_pure() {
     // storage rather than keeping a second one.
     {
         MetaLog log{::foundation::effects::testing::test().alloc};
-        TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xD0)));
+        TensorMeta m = make_meta(SyntheticAddress{0xD0});
         const ::fixy::FixedArray<TensorMeta, 1> record{m};
         auto i0 = log.try_append(record.view());  // index 0
         auto i1 = log.try_append_pure(kPure, record.view());  // index 1
@@ -375,30 +377,30 @@ static void test_try_append_pure_concurrent() {
     constexpr uint32_t N = 50000;
     MetaLog log{::foundation::effects::testing::test().alloc};
 
-    std::atomic<bool> producer_done{false};
-    std::atomic<uint32_t> lost_spin{0};
+    ::fixy::Atomic<bool> producer_done{false};
+    ::fixy::Atomic<uint32_t, ::fixy::Counter> lost_spin{0};
 
-    std::jthread producer{[&] {
+    auto producer = [&] noexcept {
         for (uint32_t i = 0; i < N; /* advance only on success */) {
-            TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
+            TensorMeta m = make_meta(SyntheticAddress{uint64_t{i + 1} << 16});
             const ::fixy::FixedArray<TensorMeta, 1> record{m};
             auto idx = log.try_append_pure(kPure, record.view());
             if (idx.is_valid()) [[likely]] {
                 ++i;
             } else {
                 CRUCIBLE_SPIN_PAUSE;
-                lost_spin.fetch_add(1, std::memory_order_relaxed);
+                static_cast<void>(lost_spin.fetch_add_relaxed(1));
             }
         }
-        producer_done.store(true, std::memory_order_release);
-    }};
+        producer_done.store_release(true);
+    };
 
-    std::jthread consumer{[&] {
+    auto consumer = [&] noexcept {
         uint32_t next = 0;
         while (next < N) {
             const uint32_t avail = log.size().peek();
             if (avail == 0) {
-                if (producer_done.load(std::memory_order_acquire) && log.size().peek() == 0) {
+                if (producer_done.load_acquire() && log.size().peek() == 0) {
                     break;
                 }
                 CRUCIBLE_SPIN_PAUSE;
@@ -406,8 +408,9 @@ static void test_try_append_pure_concurrent() {
             }
             for (uint32_t k = 0; k < avail; ++k) {
                 const TensorMeta m = log.copy_record(next + k);
-                const uintptr_t expected = static_cast<uintptr_t>(next + k + 1) << 16;
-                CRUCIBLE_TEST_ASSERT(kTest, std::bit_cast<uintptr_t>(m.data_ptr.value()) == expected);
+                const ExternalDataPtr expected =
+                    mint_synthetic_data_ptr(SyntheticAddress{uint64_t{next + k + 1} << 16});
+                CRUCIBLE_TEST_ASSERT(kTest, m.data_ptr.value() == expected.value());
                 CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(m.sizes[0]) == 128);
                 CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(m.sizes[1]) == 256);
                 CRUCIBLE_TEST_ASSERT(kTest, m.dtype == ScalarType::Float);
@@ -417,14 +420,16 @@ static void test_try_append_pure_concurrent() {
             next += avail;
         }
         CRUCIBLE_TEST_ASSERT(kTest, next == N);
-    }};
+    };
 
-    producer.join();
-    consumer.join();
+    ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
+    ::fixy::thread::run_joined_raw_probe(bg, kTest, "the producer and the consumer share the log on purpose",
+                                         ::fixy::thread::ThreadOptions{}, producer, consumer)
+        .expect("the thread door starts the producer and the consumer");
     ::fixy::check::pass(kTest,
                         "  test_try_append_pure_concurrent: "
                         "PASSED (N={}, producer_spins={})\n",
-                        N, lost_spin.load());
+                        N, lost_spin.load_acquire());
 }
 
 int main() {
