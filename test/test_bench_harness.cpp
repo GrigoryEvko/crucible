@@ -950,6 +950,36 @@ void test_offcpu_top_keeps_the_longest() {
 }
 #endif
 
+// An environment text holds each variable as NAME=VALUE with a zero after
+// it.  A variable is found by its whole name: a name that is a prefix of
+// another name finds nothing, and a value can be empty or hold an equals
+// sign.  The last variable needs no zero after it.
+void test_environment_values() {
+    ::fixy::FixedText<256> environment{};
+    constexpr ::fixy::FixedArray<::fixy::TextView, 5> kVariables{
+        ::fixy::TextView{"PATH=/usr/bin"}, ::fixy::TextView{"CRUCIBLE_BENCH_CORE=7"},
+        ::fixy::TextView{"CRUCIBLE_BENCH_JSON="}, ::fixy::TextView{"CRUCIBLE_BENCH_HARDENING=a=b"},
+        ::fixy::TextView{"CRUCIBLE_BENCH_SAMPLES=300"}};
+    std::size_t written = 0;
+    for (::fixy::TextView const variable : kVariables) {
+        CHECK(environment.append(variable).is_ok());
+        ++written;
+        if (written < kVariables.size()) CHECK(environment.append('\0').is_ok());
+    }
+    const auto value_of = [&environment](::fixy::TextView name) noexcept {
+        return bench::detail::value_in(environment.view(), name);
+    };
+    CHECK(value_of("CRUCIBLE_BENCH_CORE").value_or("none") == ::fixy::TextView{"7"});
+    CHECK(value_of("CRUCIBLE_BENCH_JSON").value_or("none") == ::fixy::TextView{});
+    CHECK(value_of("CRUCIBLE_BENCH_HARDENING").value_or("none") == ::fixy::TextView{"a=b"});
+    CHECK(value_of("CRUCIBLE_BENCH_SAMPLES").value_or("none") == ::fixy::TextView{"300"});
+    CHECK(value_of("PATH").value_or("none") == ::fixy::TextView{"/usr/bin"});
+    CHECK(value_of("CRUCIBLE_BENCH").is_none());
+    CHECK(value_of("CRUCIBLE_BENCH_CORE_ORDER").is_none());
+    CHECK(value_of("USR").is_none());
+    CHECK(bench::detail::value_in(::fixy::TextView{}, "PATH").is_none());
+}
+
 // A scaling_cur_freq file holds the frequency in kHz and a newline.  The
 // frequency in Hz is that number times 1000, and a text with no number, a
 // sign or an empty text gives 0, as for a CPU with no cpufreq directory.
@@ -1309,6 +1339,7 @@ int main() {
     test_pause_between_planted_readings();
     test_planted_pause_is_caught();
     test_processor_of_stat();
+    test_environment_values();
     test_freq_of_text();
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     test_offcpu_top_keeps_the_longest();

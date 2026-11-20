@@ -394,6 +394,82 @@ private:
     uint64_t overhead_cycles_;
 };
 
+// ── THE ENVIRONMENT ────────────────────────────────────────────────
+//
+// The harness reads its variables, such as CRUCIBLE_BENCH_SAMPLES and
+// CRUCIBLE_BENCH_CORE_ORDER, from /proc/self/environ: the environment of the
+// process at its start, with a zero after each variable.  loop bench and
+// ctest set the variables of a bench in that environment, and no bench
+// changes its environment.  The process reads the file one time, at the first
+// read of a variable.  A file that does not read gives no variable.  An
+// environment larger than the buffer ends the process, because a cut can drop
+// a variable.
+
+namespace detail {
+
+// The bytes of the environment that the harness reads, at most.
+inline constexpr std::size_t kEnvironBytes = 65536;
+
+// The text of /proc/self/environ, and whether the file read.
+struct StartEnvironment {
+    ::fixy::FixedText<kEnvironBytes> text{};
+    bool is_read = false;
+};
+
+// The environment of the process at its start.  Complexity: one read of
+// procfs at the first call, and none after it.
+[[nodiscard]] inline StartEnvironment const& start_environment() noexcept {
+    static StartEnvironment const environment = []() noexcept {
+        StartEnvironment read{};
+        read.is_read = ::foundation::os::read_file("/proc/self/environ", read.text).is_ok();
+        if (read.is_read && read.text.size() == kEnvironBytes) {
+            ::fixy::fatal("the environment of the process holds {} bytes or more, so the harness cannot read its "
+                          "variables in it",
+                          kEnvironBytes);
+        }
+        return read;
+    }();
+    return environment;
+}
+
+// The value of the variable name in an environment text, with a zero after
+// each variable, which can be empty, or none when the text has no such
+// variable.  The view borrows the text.  Complexity: linear in the text.
+[[nodiscard]] inline ::fixy::Option<::fixy::TextView> value_in(::fixy::TextView environment,
+                                                               ::fixy::TextView name) noexcept {
+    namespace topology = crucible::warden::detail;
+    ::fixy::TextView rest = environment;
+    while (rest.size() != 0) {
+        std::size_t const end = ::fixy::find(rest, '\0').value_or(rest.size());
+        ::fixy::TextView const variable = topology::text_prefix(rest, end);
+        rest = topology::text_suffix(rest, end + 1);
+        // The variable is the name, an equals sign, and the value.
+        bool const is_named = ::fixy::starts_with(variable, name)
+                           && ::fixy::starts_with(topology::text_suffix(variable, name.size()), ::fixy::TextView{"="});
+        if (is_named) return ::fixy::some(topology::text_suffix(variable, name.size() + 1));
+    }
+    return ::fixy::none;
+}
+
+// The value of the variable name in the environment at the start, as
+// value_in gives it.  The view lives as long as the process.
+[[nodiscard]] inline ::fixy::Option<::fixy::TextView> start_value(::fixy::TextView name) noexcept {
+    return value_in(start_environment().text.view(), name);
+}
+
+}  // namespace detail
+
+// The value of the variable name in the environment at the start, or none
+// when the variable is not set or empty, as the benches read an empty value
+// as no value (THE ENVIRONMENT).
+[[nodiscard]] inline ::fixy::Option<::fixy::TextView> env_value(::fixy::TextView name) noexcept {
+    ::fixy::Option<::fixy::TextView> const value = detail::start_value(name);
+    for (::fixy::TextView const text : value) {
+        if (text.size() == 0) return ::fixy::none;
+    }
+    return value;
+}
+
 // ── THE CORES OF A RUN ─────────────────────────────────────────────
 //
 // loop bench gives a bench the cores of its claim as the affinity of its
@@ -1881,7 +1957,7 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     // Bootstrap CI on a sample percentile. Returns CI{0,0} on insufficient
     // samples (n < 30) — callers that need to distinguish "no data" from
     // a genuine interval centred at zero should use `ci_opt()`, which
-    // surfaces the "not enough samples" case as std::nullopt.
+    // surfaces the "not enough samples" case as no value.
     //
     // Marked noexcept: bootstrap_ci allocates std::vectors, but OOM in
     // this project aborts() per the MemSafe axiom, so throwing here is
@@ -1891,14 +1967,12 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
         return bootstrap_ci(::fixy::View<const double>{samples.view()}, frac, B);
     }
 
-    // Same as ci() but distinguishes "insufficient samples" (nullopt)
-    // from a computed interval. Implicitly wraps the CI-returning
-    // bootstrap_ci — a CI with lo == hi == 0 still reports has_value()
-    // == true; callers that need the n < 30 signal should gate on
-    // samples.size() >= 30 before consulting the return.
-    [[nodiscard]] std::optional<CI> ci_opt(double frac, size_t B = 1000) const {
-        if (samples.size() < 30) return std::nullopt;
-        return bootstrap_ci(::fixy::View<const double>{samples.view()}, frac, B);
+    // Same as ci() but distinguishes "insufficient samples" (none) from a
+    // computed interval.  A CI with lo == hi == 0 from 30 or more samples is
+    // still a value.
+    [[nodiscard]] ::fixy::Option<CI> ci_opt(double frac, size_t B = 1000) const {
+        if (samples.size() < 30) return ::fixy::none;
+        return ::fixy::some(bootstrap_ci(::fixy::View<const double>{samples.view()}, frac, B));
     }
 
     [[nodiscard]] bool noisy(double cv_threshold = 0.05) const noexcept { return pct.cv > cv_threshold; }
@@ -2817,15 +2891,13 @@ private:
         // The bench applies a policy at the start of a measurement, which is
         // startup work, so it holds the startup load context.
         const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
-        if (have_hardening_) {
-            opening.hardening_guard = crucible::warden::mint_hardening(startup, detail::harness_topology(), hardening_);
-            opening.pin = PinResult::one(CpuId{opening.hardening_guard.pinned_cpu()});
-        } else if (auto env = env_hardening_(); env.has_value()) {
-            opening.hardening_guard = crucible::warden::mint_hardening(startup, detail::harness_topology(), *env);
-            opening.pin = PinResult::one(CpuId{opening.hardening_guard.pinned_cpu()});
-        } else {
-            opening.pin = pin_();
-        }
+        ::fixy::Option<crucible::warden::Policy> policy = have_hardening_ ? ::fixy::some(hardening_) : env_hardening_();
+        std::move(policy).match(
+            [&opening, &startup](crucible::warden::Policy chosen) noexcept {
+                opening.hardening_guard = crucible::warden::mint_hardening(startup, detail::harness_topology(), chosen);
+                opening.pin = PinResult::one(CpuId{opening.hardening_guard.pinned_cpu()});
+            },
+            [this, &opening]() noexcept { opening.pin = pin_(); });
         return opening;
     }
 
@@ -3041,14 +3113,12 @@ private:
     size_t max_wall_ms_ = kDefaultMaxWallMs;
     bool have_max_wall_ = false;  // true iff .max_wall_ms() was called
 
-    // CRUCIBLE_BENCH_WALL_MS=<n>. Empty/unset → default applies.
-    [[nodiscard]] static std::optional<size_t> env_wall_ms_() noexcept {
-        const char* s = std::getenv("CRUCIBLE_BENCH_WALL_MS");
-        if (s == nullptr || s[0] == '\0') return std::nullopt;
-        char* end = nullptr;
-        const long v = std::strtol(s, &end, 10);
-        if (end == s || v < 0) return std::nullopt;
-        return static_cast<size_t>(v);
+    // CRUCIBLE_BENCH_WALL_MS=<n>.  Empty, unset, or a text with no leading
+    // decimal number, such as a negative value → default applies.
+    [[nodiscard]] static ::fixy::Option<std::size_t> env_wall_ms_() noexcept {
+        return env_value("CRUCIBLE_BENCH_WALL_MS")
+            .match([](::fixy::TextView text) noexcept { return detail::leading_number(text); },
+                   []() noexcept -> ::fixy::Option<std::uint64_t> { return ::fixy::none; });
     }
 
     // Optional realtime policy applied for the duration of measure().
@@ -3064,24 +3134,31 @@ private:
     // applies the named profile to every Run that doesn't call
     // .hardening() itself. Unset -> fall through to direct pin_() (no
     // hardening).
-    [[nodiscard]] static std::optional<crucible::warden::Policy> env_hardening_() noexcept {
-        const char* s = std::getenv("CRUCIBLE_BENCH_HARDENING");
-        if (s == nullptr || s[0] == '\0') return std::nullopt;
-        if (std::strcmp(s, "production") == 0) return crucible::warden::Policy::production();
-        if (std::strcmp(s, "cloud_vm") == 0 || std::strcmp(s, "vm") == 0 || std::strcmp(s, "cloud") == 0)
-            return crucible::warden::Policy::cloud_vm();
-        if (std::strcmp(s, "dev_quiet") == 0 || std::strcmp(s, "dev") == 0)
-            return crucible::warden::Policy::dev_quiet();
-        if (std::strcmp(s, "none") == 0) return crucible::warden::Policy::none();
-        return std::nullopt;
+    [[nodiscard]] static ::fixy::Option<crucible::warden::Policy> env_hardening_() noexcept {
+        using Named = ::fixy::Option<crucible::warden::Policy>;
+        return env_value("CRUCIBLE_BENCH_HARDENING")
+            .match(
+                [](::fixy::TextView name) noexcept -> Named {
+                    using ::fixy::TextView;
+                    if (name == TextView{"production"}) return ::fixy::some(crucible::warden::Policy::production());
+                    if (name == TextView{"cloud_vm"} || name == TextView{"vm"} || name == TextView{"cloud"})
+                        return ::fixy::some(crucible::warden::Policy::cloud_vm());
+                    if (name == TextView{"dev_quiet"} || name == TextView{"dev"})
+                        return ::fixy::some(crucible::warden::Policy::dev_quiet());
+                    if (name == TextView{"none"}) return ::fixy::some(crucible::warden::Policy::none());
+                    return ::fixy::none;
+                },
+                []() noexcept -> Named { return ::fixy::none; });
     }
 
+    // CRUCIBLE_BENCH_SAMPLES=<n> with n above zero, or 100000.
     [[nodiscard]] static size_t env_samples_() noexcept {
-        if (const char* s = std::getenv("CRUCIBLE_BENCH_SAMPLES")) {
-            const long n = std::strtol(s, nullptr, 10);
-            if (n > 0) return static_cast<size_t>(n);
-        }
-        return 100000;
+        constexpr std::size_t kDefaultSamples = 100000;
+        const std::uint64_t asked =
+            env_value("CRUCIBLE_BENCH_SAMPLES")
+                .match([](::fixy::TextView text) noexcept { return detail::leading_number(text).value_or(0); },
+                       []() noexcept { return std::uint64_t{0}; });
+        return asked > 0 ? asked : kDefaultSamples;
     }
 
     // Apply affinity and return the CPU we actually ended up on.
@@ -3371,10 +3448,10 @@ inline void print_system_info() {
     ::fixy::report(Sink::Out, "  BPF senses: disabled at build time\n");
 #endif
 
-    if (const char* s = std::getenv("CRUCIBLE_BENCH_SAMPLES")) {
-        std::fprintf(stdout, "  samples:   %s (CRUCIBLE_BENCH_SAMPLES)\n", s);
+    for (TextView const samples : detail::start_value("CRUCIBLE_BENCH_SAMPLES")) {
+        ::fixy::report(Sink::Out, "  samples:   {} (CRUCIBLE_BENCH_SAMPLES)\n", samples);
     }
-    std::fprintf(stdout, "\n");
+    ::fixy::report(Sink::Out, "\n");
 }
 
 // The bench raises its nice value through the scheduling frame
@@ -3412,66 +3489,45 @@ inline void elevate_priority() noexcept {
 // CRUCIBLE_BENCH_HARDENING is NOT parsed here — it's consumed by
 // Run::measure() directly, so no bench-side work is required.
 
-// Read an env var; return nullptr if unset OR empty (matches the convention
-// of existing benches where an empty value is "unset").
-[[nodiscard]] inline const char* env(const char* name) noexcept {
-    const char* s = std::getenv(name);
-    return (s != nullptr && s[0] != '\0') ? s : nullptr;
-}
-
-// The text of CRUCIBLE_BENCH_CORE_ORDER comes from /proc/self/environ, the
-// environment of the process at its start, with a zero after each variable.
-// loop bench sets the variable in that environment (THE CORES OF A RUN).  A
-// file that does not read gives a warning and the empty order.  An
-// environment larger than the buffer ends the process, because a cut can drop
-// the variable.  A text that parse_core_order() refuses ends the process too,
-// because loop bench writes each such text.  Complexity: one read of procfs,
-// and linear in the environment.
+// The text of CRUCIBLE_BENCH_CORE_ORDER comes from the environment of the
+// process at its start (THE ENVIRONMENT).  loop bench sets the variable in
+// that environment (THE CORES OF A RUN).  A file that does not read gives a
+// warning and the empty order.  A text that parse_core_order() refuses ends
+// the process, because loop bench writes each such text.  Complexity: linear
+// in the environment.
 inline CoreOrder read_core_order() noexcept {
-    constexpr std::size_t kEnvironBytes = 65536;
-    namespace topology = crucible::warden::detail;
-    constexpr ::fixy::TextView kKey{"CRUCIBLE_BENCH_CORE_ORDER="};
-    ::fixy::FixedText<kEnvironBytes> environ_text{};
-    if (::foundation::os::read_file("/proc/self/environ", environ_text).is_err()) {
+    if (!detail::start_environment().is_read) {
         ::fixy::report(::fixy::Sink::Err, "WARN bench: /proc/self/environ does not read, so the slots of the run take "
                                           "the cores in ascending order\n");
         return CoreOrder{};
     }
-    if (environ_text.size() == kEnvironBytes) {
-        ::fixy::fatal("the environment of the process holds {} bytes or more, so the harness cannot read "
-                      "CRUCIBLE_BENCH_CORE_ORDER in it",
-                      kEnvironBytes);
-    }
-    ::fixy::TextView rest = environ_text.view();
-    while (rest.size() != 0) {
-        std::size_t const end = ::fixy::find(rest, '\0').value_or(rest.size());
-        ::fixy::TextView const variable = topology::text_prefix(rest, end);
-        rest = topology::text_suffix(rest, end + 1);
-        if (!::fixy::starts_with(variable, kKey)) continue;
-        ::fixy::TextView const text = topology::text_suffix(variable, kKey.size());
-        return parse_core_order(text).match(
-            [](CoreOrder order) noexcept { return order; },
-            [&text]() noexcept -> CoreOrder {
-                ::fixy::fatal("CRUCIBLE_BENCH_CORE_ORDER is '{}', and it must hold CPU numbers with a comma "
-                              "between two, each CPU one time, such as 240,242,224",
-                              text);
-            });
-    }
-    return CoreOrder{};
+    return detail::start_value("CRUCIBLE_BENCH_CORE_ORDER")
+        .match(
+            [](::fixy::TextView text) noexcept {
+                return parse_core_order(text).match(
+                    [](CoreOrder order) noexcept { return order; },
+                    [&text]() noexcept -> CoreOrder {
+                        ::fixy::fatal("CRUCIBLE_BENCH_CORE_ORDER is '{}', and it must hold CPU numbers with a comma "
+                                      "between two, each CPU one time, such as 240,242,224",
+                                      text);
+                    });
+            },
+            []() noexcept { return CoreOrder{}; });
 }
 
-// Parse CRUCIBLE_BENCH_CORE. Returns -1 when unset, invalid, or outside
-// the int range (the -1 sentinel is the "no explicit pin" signal that
-// Run::pin_() falls back to Auto on).
+// CRUCIBLE_BENCH_CORE as a CPU, or -1 when it is not set, is not a decimal
+// number, or is past the int range.  -1 is the "no explicit pin" signal that
+// Run::pin_() falls back to Auto on.  A negative value is no CPU, so it gives
+// -1 too.
 [[nodiscard]] inline int env_core() noexcept {
-    if (const char* s = env("CRUCIBLE_BENCH_CORE")) {
-        char* endp = nullptr;
-        const long v = std::strtol(s, &endp, 10);
-        if (endp != s && v >= static_cast<long>(INT_MIN) && v <= static_cast<long>(INT_MAX)) {
-            return static_cast<int>(v);
-        }
-    }
-    return -1;
+    return env_value("CRUCIBLE_BENCH_CORE")
+        .match(
+            [](::fixy::TextView text) noexcept {
+                return detail::leading_number(text).match(
+                    [](std::uint64_t cpu) noexcept { return ::fixy::narrow<int>(cpu).value_or(-1); },
+                    []() noexcept { return -1; });
+            },
+            []() noexcept { return -1; });
 }
 
 // Whether a bench prints the JSON tail of its reports after their text.
@@ -3482,8 +3538,10 @@ enum class JsonTail : std::uint8_t {
 
 // CRUCIBLE_BENCH_JSON set to a value other than "0" asks for the JSON tail.
 [[nodiscard]] inline JsonTail env_json() noexcept {
-    const char* s = env("CRUCIBLE_BENCH_JSON");
-    return s != nullptr && std::strcmp(s, "0") != 0 ? JsonTail::On : JsonTail::Off;
+    return env_value("CRUCIBLE_BENCH_JSON")
+        .match(
+            [](::fixy::TextView text) noexcept { return text == ::fixy::TextView{"0"} ? JsonTail::Off : JsonTail::On; },
+            []() noexcept { return JsonTail::Off; });
 }
 
 // One-shot: build a Run with env-driven core pinning and measure body.
