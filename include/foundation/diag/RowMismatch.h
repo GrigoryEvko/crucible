@@ -22,13 +22,14 @@
 // The runtime test is test/foundation/test_row_mismatch.cpp.
 
 #include <foundation/Platform.h>
+#include <foundation/core/Algorithms.h>
+#include <foundation/core/Text.h>
+#include <foundation/core/Verbs.h>
 #include <foundation/diag/Tag.h>
 
-#include <array>
 #include <cstddef>
 #include <meta>
 #include <source_location>
-#include <string_view>
 #include <type_traits>
 
 namespace foundation::diag {
@@ -44,10 +45,12 @@ inline constexpr std::size_t CRUCIBLE_DIAG_FORMAT_VERSION = 1;
 
 // The printed name of a type, for a message.  A message needs no stable
 // identity, so the name does not refuse a type that has none, and no key
-// reads it.  The text is in static storage.
+// reads it.  The text is in static storage, with a zero after its last
+// character.
 
 template <typename T>
-inline constexpr std::string_view type_name = std::meta::display_string_of(^^T);
+inline constexpr ::foundation::core::TextView type_name =
+    ::foundation::core::detail::static_text_<^^T>(std::meta::display_string_of(^^T));
 
 // Reflection cannot splice a value: the operator wants an entity, and an
 // auto template argument is a value. The name is therefore scraped out
@@ -59,111 +62,89 @@ inline constexpr std::string_view type_name = std::meta::display_string_of(^^T);
 namespace detail {
 
 template <auto FnPtr>
-[[nodiscard]] consteval std::string_view function_name_helper() noexcept {
+[[nodiscard]] consteval ::foundation::core::TextView function_name_helper() noexcept {
     // The rendering captured here belongs to this instantiation, so it
-    // spells out the template argument.
-    return std::source_location::current().function_name();
+    // spells out the template argument.  The rendering is a static string
+    // with a zero after its last character.
+    return ::foundation::core::mint_static_text(std::source_location::current().function_name());
 }
 
-[[nodiscard]] consteval std::string_view extract_pretty_fnptr(std::string_view pretty) noexcept {
-    constexpr std::string_view marker{"FnPtr = "};
-    std::size_t start = pretty.size();  // sentinel: not found
-    for (std::size_t i = 0; i + marker.size() <= pretty.size(); ++i) {
-        bool match = true;
-        for (std::size_t j = 0; j < marker.size(); ++j) {
-            if (pretty[i + j] != marker[j]) {
-                match = false;
-                break;
-            }
-        }
-        if (match) {
-            start = i + marker.size();
-            break;
-        }
-    }
-    if (start == pretty.size()) {
-        // The rendering no longer matches. Return something the
-        // diagnostic can still print.
-        return std::string_view{"<unknown function>"};
-    }
+[[nodiscard]] consteval ::foundation::core::TextView
+extract_pretty_fnptr(::foundation::core::TextView pretty) noexcept {
+    using ::foundation::core::TextView;
+    constexpr TextView marker{"FnPtr = "};
+    // The rendering no longer matches when it holds no marker. The
+    // diagnostic then prints a text that it can still show.
+    constexpr TextView unknown{"<unknown function>"};
+    // A match starts before the last character, so the size of the
+    // rendering marks no match.
+    std::size_t const found = ::foundation::core::find(pretty, marker).value_or(pretty.size());
+    if (found == pretty.size()) return unknown;
+    std::size_t const start = found + marker.size();
+    TextView const rest = pretty.window(start, pretty.size() - start).value_or(TextView{});
     // More than one substitution can appear inside the brackets,
     // separated by a semicolon, so the name ends at whichever of the
     // semicolon and the closing bracket comes first. A semicolon cannot
     // occur inside a qualified name, which makes that boundary safe.
-    std::size_t end = start;
-    for (; end < pretty.size(); ++end) {
-        char const c = pretty[end];
-        if (c == ']' || c == ';') break;
+    std::size_t length = 0;
+    for (char const letter : rest) {
+        if (letter == ']' || letter == ';') break;
+        ++length;
     }
-    return pretty.substr(start, end - start);
+    return rest.window(0, length).value_or(unknown);
 }
 
 }  // namespace detail
 
 template <auto FnPtr>
-inline constexpr std::string_view function_display_name =
+inline constexpr ::foundation::core::TextView function_display_name =
     detail::extract_pretty_fnptr(detail::function_name_helper<FnPtr>());
 
 namespace detail {
 
-template <std::size_t N>
-struct char_buffer {
-    std::array<char, N> data{};
-    std::size_t length = 0;
+// Has no constant definition.  A call to it stops the constant evaluation,
+// and the diagnostic names it.
+void row_mismatch_text_overflows_its_buffer() noexcept;
 
-    constexpr void append(std::string_view s) noexcept {
-        for (char c : s) {
-            data[length++] = c;
+// The text of one block.  Capacity is the exact length of the block, so the
+// type differs for each block: only a value of a complete type can be the
+// message of a static_assert.  data() and size() give the text, which
+// static_assert prints as its message, and view() gives it as a TextView.
+// The byte after the last character stays zero, so a zero follows the text.
+template <std::size_t Capacity>
+class char_buffer {
+    char text_[Capacity + 1]{};
+    std::size_t size_ = 0;
+
+public:
+    // Puts each character of text after the last character.  A text that
+    // does not fit stops the constant evaluation.  Complexity: one copy for
+    // each character.
+    consteval void append(::foundation::core::TextView text) noexcept {
+        for (char const letter : text) {
+            if (size_ == Capacity) row_mismatch_text_overflows_its_buffer();
+            text_[size_] = letter;
+            ++size_;
         }
     }
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept { return std::string_view{data.data(), length}; }
+    [[nodiscard]] constexpr char const* data() const noexcept { return text_; }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return size_; }
+
+    // The text.  The view borrows this buffer, so a view of a temporary
+    // buffer is refused: it would dangle at the end of the full expression.
+    [[nodiscard]] constexpr ::foundation::core::TextView view() const& noexcept {
+        return ::foundation::core::detail::c_text_over_(text_, size_).view();
+    }
+    ::foundation::core::TextView view() const&& = delete("a view of a temporary char_buffer points into an object "
+                                                         "that the full expression ends");
 };
 
-// The search functions on string_view reach the buffer through data()
-// and do pointer arithmetic that does not survive constant evaluation
-// there. These helpers index the array instead, which does. They exist
-// for the checks in the check file of this header. A runtime caller uses
-// the view and the standard search functions.
-
-template <std::size_t N>
-[[nodiscard]] consteval bool buffer_starts_with(char_buffer<N> const& buf, std::string_view prefix) noexcept {
-    if (prefix.size() > buf.length) return false;
-    for (std::size_t i = 0; i < prefix.size(); ++i) {
-        if (buf.data[i] != prefix[i]) return false;
-    }
-    return true;
-}
-
-template <std::size_t N>
-[[nodiscard]] consteval bool buffer_ends_with(char_buffer<N> const& buf, std::string_view suffix) noexcept {
-    if (suffix.size() > buf.length) return false;
-    std::size_t const start = buf.length - suffix.size();
-    for (std::size_t i = 0; i < suffix.size(); ++i) {
-        if (buf.data[start + i] != suffix[i]) return false;
-    }
-    return true;
-}
-
-// The caller computes the position from the format literals, so there is
-// nothing to search for.
-template <std::size_t N>
-[[nodiscard]] consteval bool buffer_substring_at(char_buffer<N> const& buf, std::size_t pos,
-                                                 std::string_view needle) noexcept {
-    if (pos + needle.size() > buf.length) return false;
-    for (std::size_t i = 0; i < needle.size(); ++i) {
-        if (buf.data[pos + i] != needle[i]) return false;
-    }
-    return true;
-}
-
-template <std::size_t N>
-[[nodiscard]] consteval std::size_t buffer_count_char(char_buffer<N> const& buf, char needle_char) noexcept {
-    std::size_t n = 0;
-    for (std::size_t i = 0; i < buf.length; ++i) {
-        if (buf.data[i] == needle_char) ++n;
-    }
-    return n;
+// The TextView of a text field of a tag.  The field holds its characters
+// and their count, and the view takes the two.
+template <class Field>
+[[nodiscard]] consteval ::foundation::core::TextView tag_field_text_(Field const& field) noexcept {
+    return ::foundation::core::detail::text_over_(field.data(), field.size());
 }
 
 }  // namespace detail
@@ -175,30 +156,31 @@ template <std::size_t N>
 
 namespace detail {
 
-inline constexpr std::string_view L1_PREFIX = "[";
-inline constexpr std::string_view L1_SUFFIX = "]\n";
-inline constexpr std::string_view L2_PREFIX = "  at ";
-inline constexpr std::string_view L2_SUFFIX = "\n";
-inline constexpr std::string_view L3_PREFIX = "  caller row contains: ";
-inline constexpr std::string_view L3_SUFFIX = "\n";
-inline constexpr std::string_view L4_PREFIX = "  callee requires:     Subrow<_, ";
-inline constexpr std::string_view L4_SUFFIX = ">\n";
-inline constexpr std::string_view L5_PREFIX = "  offending atoms:     ";
-inline constexpr std::string_view L5_SUFFIX = "\n";
-inline constexpr std::string_view L6_PREFIX = "  remediation: ";
-inline constexpr std::string_view L6_SUFFIX = "\n";
-inline constexpr std::string_view L7_LINE = "  docs: see foundation/diag/Catalog.h, 28_04_2026_effects.md §7\n";
+inline constexpr ::foundation::core::TextView L1_PREFIX = "[";
+inline constexpr ::foundation::core::TextView L1_SUFFIX = "]\n";
+inline constexpr ::foundation::core::TextView L2_PREFIX = "  at ";
+inline constexpr ::foundation::core::TextView L2_SUFFIX = "\n";
+inline constexpr ::foundation::core::TextView L3_PREFIX = "  caller row contains: ";
+inline constexpr ::foundation::core::TextView L3_SUFFIX = "\n";
+inline constexpr ::foundation::core::TextView L4_PREFIX = "  callee requires:     Subrow<_, ";
+inline constexpr ::foundation::core::TextView L4_SUFFIX = ">\n";
+inline constexpr ::foundation::core::TextView L5_PREFIX = "  offending atoms:     ";
+inline constexpr ::foundation::core::TextView L5_SUFFIX = "\n";
+inline constexpr ::foundation::core::TextView L6_PREFIX = "  remediation: ";
+inline constexpr ::foundation::core::TextView L6_SUFFIX = "\n";
+inline constexpr ::foundation::core::TextView L7_LINE =
+    "  docs: see foundation/diag/Catalog.h, 28_04_2026_effects.md §7\n";
 
 // Every literal of the block, in the order that the builder appends them.
 // The length and the line count of the block come from this table, and
 // the check file of this header holds the builder to both.
-inline constexpr auto row_mismatch_literals =
-    std::to_array<std::string_view>({L1_PREFIX, L1_SUFFIX, L2_PREFIX, L2_SUFFIX, L3_PREFIX, L3_SUFFIX, L4_PREFIX,
-                                     L4_SUFFIX, L5_PREFIX, L5_SUFFIX, L6_PREFIX, L6_SUFFIX, L7_LINE});
+inline constexpr ::foundation::core::TextView row_mismatch_literals[] = {
+    L1_PREFIX, L1_SUFFIX, L2_PREFIX, L2_SUFFIX, L3_PREFIX, L3_SUFFIX, L4_PREFIX,
+    L4_SUFFIX, L5_PREFIX, L5_SUFFIX, L6_PREFIX, L6_SUFFIX, L7_LINE};
 
 [[nodiscard]] consteval std::size_t format_newline_count() noexcept {
     std::size_t count = 0;
-    for (std::string_view const literal : row_mismatch_literals) {
+    for (::foundation::core::TextView const literal : row_mismatch_literals) {
         for (char const c : literal) {
             if (c == '\n') ++count;
         }
@@ -206,13 +188,16 @@ inline constexpr auto row_mismatch_literals =
     return count;
 }
 
-[[nodiscard]] consteval std::size_t format_total_length(std::string_view category, std::string_view fn_name,
-                                                        std::string_view caller_name, std::string_view callee_name,
-                                                        std::string_view offending,
-                                                        std::string_view remediation) noexcept {
+// The length of a block with the six texts.  The length is a sum, so the
+// texts can change places with no change of the result.  Complexity: one
+// add for each text and for each literal.
+[[nodiscard]] consteval std::size_t
+format_total_length(::foundation::core::TextView category, ::foundation::core::TextView fn_name,
+                    ::foundation::core::TextView caller_name, ::foundation::core::TextView callee_name,
+                    ::foundation::core::TextView offending, ::foundation::core::TextView remediation) noexcept {
     std::size_t length = category.size() + fn_name.size() + caller_name.size() + callee_name.size() + offending.size()
                        + remediation.size();
-    for (std::string_view const literal : row_mismatch_literals) {
+    for (::foundation::core::TextView const literal : row_mismatch_literals) {
         length += literal.size();
     }
     return length;
@@ -226,8 +211,8 @@ inline constexpr std::size_t CRUCIBLE_DIAG_FORMAT_LINES = detail::format_newline
 template <typename Tag, auto FnPtr, typename CallerRow, typename CalleeRow, typename OffendingDiff>
     requires is_diagnostic_class_v<Tag>
 [[nodiscard]] consteval auto build_row_mismatch_message() noexcept {
-    constexpr auto category = Tag::name;
-    constexpr auto remediation = Tag::remediation;
+    constexpr auto category = detail::tag_field_text_(Tag::name);
+    constexpr auto remediation = detail::tag_field_text_(Tag::remediation);
     constexpr auto fn_name = function_display_name<FnPtr>;
     constexpr auto caller_str = type_name<CallerRow>;
     constexpr auto callee_str = type_name<CalleeRow>;
@@ -302,6 +287,5 @@ inline constexpr auto& row_mismatch_message_v =
 // the argument at a template-argument list otherwise.
 
 #define CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT(cond, tag, fn, caller, callee, offending) \
-    static_assert(                                                                  \
-        (cond),                                                                     \
-        ::foundation::diag::row_mismatch_message_v<::foundation::diag::tag, fn, caller, callee, offending>.view())
+    static_assert((cond),                                                           \
+                  ::foundation::diag::row_mismatch_message_v<::foundation::diag::tag, fn, caller, callee, offending>)

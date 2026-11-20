@@ -2,6 +2,7 @@
 // through the target's full warning matrix.  The body then exercises
 // the consteval message builder with non-constant arguments.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/diag/RowMismatch.h>
@@ -10,8 +11,6 @@
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
-#include <cstdio>
-#include <string_view>
 #include <type_traits>
 
 // The display-name tests need functions at namespace scope.
@@ -21,6 +20,10 @@ inline void smoke_fn(int) noexcept {}
 
 namespace {
 
+using ::fixy::ends_with;
+using ::fixy::find;
+using ::fixy::starts_with;
+using ::fixy::TextView;
 using ::fixy::check::pass;
 
 namespace diag = ::foundation::diag;
@@ -32,13 +35,11 @@ void test_runtime_smoke() {
     constexpr auto msg = diag::row_mismatch_message_v<diag::EffectRowMismatch, &::smoke_fn, int, float, double>;
 
     // The signedness of char is implementation-defined, so each byte is
-    // cast to unsigned before it reaches the exclusive-or.
-    volatile std::size_t sink = msg.length;
-    auto const first = static_cast<unsigned char>(msg.data[std::size_t{0}]);
-    sink ^= first;
-    if (msg.length > 1) {
-        auto const last = static_cast<unsigned char>(msg.data[msg.length - 1]);
-        sink ^= last;
+    // cast to unsigned before it reaches the exclusive-or.  Each byte of
+    // the block goes into the sink, the first and the last too.
+    volatile std::size_t sink = msg.size();
+    for (char const letter : msg.view()) {
+        sink ^= static_cast<unsigned char>(letter);
     }
     (void)sink;
 
@@ -55,30 +56,31 @@ void test_type_name_is_the_printed_name(::fixy::TestRunnerCtx const& test) {
     static_assert(diag::type_name<float> == "float");
     static_assert(diag::type_name<void> == "void");
 
-    CRUCIBLE_TEST_ASSERT(test, diag::type_name<int>.ends_with("int"));
+    CRUCIBLE_TEST_ASSERT(test, ends_with(diag::type_name<int>, "int"));
 }
 
 void test_function_display_name_non_empty(::fixy::TestRunnerCtx const& test) {
     constexpr auto n1 = diag::function_display_name<&::sample_dispatch>;
     constexpr auto n2 = diag::function_display_name<&::sample_compute>;
-    static_assert(!n1.empty());
-    static_assert(!n2.empty());
+    static_assert(n1.size() != 0);
+    static_assert(n2.size() != 0);
 
-    CRUCIBLE_TEST_ASSERT(test, !n1.empty());
-    CRUCIBLE_TEST_ASSERT(test, !n2.empty());
+    CRUCIBLE_TEST_ASSERT(test, n1.size() != 0);
+    CRUCIBLE_TEST_ASSERT(test, n2.size() != 0);
 
     CRUCIBLE_TEST_ASSERT(test, n1 != n2);
 
     // The extracted name must carry the function's own identifier, not
-    // just its pointer-type signature.  The search runs at runtime
-    // because string_view::find is not constexpr-safe over a view
-    // backed by a static array.
-    std::fprintf(stderr,
-                 "\n      [function_display_name<&sample_dispatch>] = %.*s\n"
-                 "      [function_display_name<&sample_compute>]  = %.*s\n      ",
-                 static_cast<int>(n1.size()), n1.data(), static_cast<int>(n2.size()), n2.data());
-    CRUCIBLE_TEST_ASSERT(test, n1.find("sample_dispatch") != std::string_view::npos);
-    CRUCIBLE_TEST_ASSERT(test, n2.find("sample_compute") != std::string_view::npos);
+    // just its pointer-type signature.  The search of the base runs in a
+    // constant expression too, so the same search stands in each form.
+    static_assert(find(n1, "sample_dispatch").is_some());
+    static_assert(find(n2, "sample_compute").is_some());
+    ::fixy::report(::fixy::Sink::Err,
+                   "\n      [function_display_name<&sample_dispatch>] = {}\n"
+                   "      [function_display_name<&sample_compute>]  = {}\n      ",
+                   n1, n2);
+    CRUCIBLE_TEST_ASSERT(test, find(n1, "sample_dispatch").is_some());
+    CRUCIBLE_TEST_ASSERT(test, find(n2, "sample_compute").is_some());
 }
 
 // Version 1 is a block of 7 lines. The header derives the line count
@@ -93,35 +95,39 @@ void test_format_version() {
                   "test/foundation/test_diag.cpp. Then set the new line count here.");
 }
 
+// The count of the newlines of a block.
+[[nodiscard]] constexpr std::size_t count_newlines(TextView text) noexcept {
+    std::size_t newlines = 0;
+    for (char const letter : text) {
+        if (letter == '\n') ++newlines;
+    }
+    return newlines;
+}
+
 void test_message_builder_format_shape() {
-    // The compile-time checks index the buffer through the detail
-    // helpers rather than calling string_view::find, which libstdc++ 16
-    // cannot evaluate in a constant expression.  The same checks run
-    // through the ordinary string_view API below, because the defect is
-    // constexpr-only.
+    // The compile-time checks and the run-time checks read the block
+    // through the same text operations of the base, which evaluate in a
+    // constant expression too.
 
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     static constexpr auto msg =
         diag::build_row_mismatch_message<diag::EffectRowMismatch, &::sample_dispatch, int, float, double>();
 
-    static_assert(diag::detail::buffer_starts_with(msg, "[EffectRowMismatch]"));
-    static_assert(diag::detail::buffer_ends_with(msg, "\n"));
-    static_assert(diag::detail::buffer_count_char(msg, '\n') == diag::CRUCIBLE_DIAG_FORMAT_LINES);
+    static_assert(starts_with(msg.view(), "[EffectRowMismatch]"));
+    static_assert(ends_with(msg.view(), "\n"));
+    static_assert(count_newlines(msg.view()) == diag::CRUCIBLE_DIAG_FORMAT_LINES);
 
-    std::string_view const view = msg.view();
-    CRUCIBLE_TEST_ASSERT(test, view.starts_with("[EffectRowMismatch]"));
-    CRUCIBLE_TEST_ASSERT(test, view.ends_with("\n"));
-    CRUCIBLE_TEST_ASSERT(test, view.contains("\n  at "));
-    CRUCIBLE_TEST_ASSERT(test, view.contains("\n  caller row contains: "));
-    CRUCIBLE_TEST_ASSERT(test, view.contains("\n  callee requires:     Subrow<_, "));
-    CRUCIBLE_TEST_ASSERT(test, view.contains("\n  offending atoms:     "));
-    CRUCIBLE_TEST_ASSERT(test, view.contains("\n  remediation: "));
-    CRUCIBLE_TEST_ASSERT(test, view.contains("\n  docs: "));
+    TextView const view = msg.view();
+    CRUCIBLE_TEST_ASSERT(test, starts_with(view, "[EffectRowMismatch]"));
+    CRUCIBLE_TEST_ASSERT(test, ends_with(view, "\n"));
+    CRUCIBLE_TEST_ASSERT(test, find(view, "\n  at ").is_some());
+    CRUCIBLE_TEST_ASSERT(test, find(view, "\n  caller row contains: ").is_some());
+    CRUCIBLE_TEST_ASSERT(test, find(view, "\n  callee requires:     Subrow<_, ").is_some());
+    CRUCIBLE_TEST_ASSERT(test, find(view, "\n  offending atoms:     ").is_some());
+    CRUCIBLE_TEST_ASSERT(test, find(view, "\n  remediation: ").is_some());
+    CRUCIBLE_TEST_ASSERT(test, find(view, "\n  docs: ").is_some());
 
-    std::size_t newlines = 0;
-    for (char c : view) {
-        if (c == '\n') ++newlines;
-    }
+    std::size_t const newlines = count_newlines(view);
     CRUCIBLE_TEST_ASSERT(test, newlines == std::size_t{diag::CRUCIBLE_DIAG_FORMAT_LINES});
 }
 
@@ -131,11 +137,11 @@ void test_message_builder_per_category(::fixy::TestRunnerCtx const& test) {
     static constexpr auto msg_b =
         diag::build_row_mismatch_message<diag::DetSafeLeak, &::sample_dispatch, int, float, double>();
 
-    std::string_view const view_a = msg_a.view();
-    std::string_view const view_b = msg_b.view();
+    TextView const view_a = msg_a.view();
+    TextView const view_b = msg_b.view();
 
-    CRUCIBLE_TEST_ASSERT(test, view_a.starts_with("[HotPathViolation]"));
-    CRUCIBLE_TEST_ASSERT(test, view_b.starts_with("[DetSafeLeak]"));
+    CRUCIBLE_TEST_ASSERT(test, starts_with(view_a, "[HotPathViolation]"));
+    CRUCIBLE_TEST_ASSERT(test, starts_with(view_b, "[DetSafeLeak]"));
 
     // The category selects the remediation text as well as the tag.
     CRUCIBLE_TEST_ASSERT(test, view_a != view_b);
@@ -152,10 +158,11 @@ void test_row_mismatch_message_v_caching(::fixy::TestRunnerCtx const& test) {
     // message per use.
     CRUCIBLE_TEST_ASSERT(test, &cached1 == &cached2);
 
-    static_assert(cached1.data[std::size_t{0}] == '[');
-    CRUCIBLE_TEST_ASSERT(test, cached1.data[std::size_t{0}] == '[');
+    // The first character of the block is '['.
+    static_assert(starts_with(cached1.view(), "["));
+    CRUCIBLE_TEST_ASSERT(test, starts_with(cached1.view(), "["));
 
-    CRUCIBLE_TEST_ASSERT(test, cached1.view().starts_with("[EffectRowMismatch]"));
+    CRUCIBLE_TEST_ASSERT(test, starts_with(cached1.view(), "[EffectRowMismatch]"));
 }
 
 void test_macro_happy_path() {
