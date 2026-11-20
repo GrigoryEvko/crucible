@@ -7165,6 +7165,11 @@ fixy_neg_compile_test(neg_owned_region_unchecked_arena_permission
 fixy_neg_compile_test(neg_owned_region_unchecked_arena_holds_permission
   "no matching function for call to .mint_owned_region<\\{anonymous\\}::HoldsProof>"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = <unnamed>::HoldsProof\\]")
+# The arena door asks for a run that the region can write, so an arena that
+# gives a read-only run does not meet it.
+fixy_neg_compile_test(neg_owned_region_read_only_arena
+  "no matching function for call to .mint_owned_region<int>\\("
+  "required for the satisfaction of .ArrayArena<Allocator, T>. \\[with Allocator = <unnamed>::ReadOnlyArena; T = int\\]")
 
 # The fractional axis: no guard, no read.
 fixy_neg_compile_test(neg_shared_read_without_a_share

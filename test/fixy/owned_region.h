@@ -11,7 +11,6 @@
 #include <fixy/OwnedRegion.h>
 #include <fixy/check/Check.h>
 #include <foundation/Lifetime.h>
-#include <foundation/Quarantine.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Region.h>
 
@@ -47,9 +46,9 @@ struct DataB {
 // One bump pointer over a fixed block: the smallest thing adopt asks
 // of an arena.  The lifetime start gives a live object only to a type
 // whose every subobject is an implicit-lifetime type, so the constraint
-// refuses every other type.  The arena door asks for the raw pointer of
-// the first element, and no base type gives that shape, so the return
-// stands in a PROBE region.
+// refuses every other type.  The arena gives the View of the objects that
+// start over a window of its block, and the window of a request past the
+// block ends the process.
 class Arena {
     alignas(std::max_align_t)::foundation::core::FixedArray<unsigned char, std::size_t{1} << 16> block_{};
     std::size_t used_ = 0;
@@ -57,17 +56,15 @@ class Arena {
 public:
     template <typename T>
         requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
-    [[nodiscard]] T* alloc_array(::foundation::effects::Alloc, std::size_t n) noexcept {
-        if (n == 0) return nullptr;
+    [[nodiscard]] ::foundation::core::View<T> alloc_array(::foundation::effects::Alloc, std::size_t n) noexcept {
+        if (n == 0) return ::foundation::core::View<T>{};
         const std::size_t misalign = used_ % alignof(T);
         const std::size_t start = misalign == 0 ? used_ : used_ + (alignof(T) - misalign);
         const std::size_t nbytes = n * sizeof(T);
-        if (start + nbytes > block_.size()) std::abort();
+        const ::foundation::core::View<unsigned char> bytes =
+            block_.view().window(start, nbytes).expect("the block of the arena holds the request");
         used_ = start + nbytes;
-        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a bump arena of a test gives the raw pointer of the arena door")
-        return ::foundation::core::foreign_first(
-            ::foundation::lifetime::start_as_array<T>(::foundation::core::foreign_first(block_.view()) + start, n));
-        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+        return ::foundation::lifetime::start_as_array<T>(bytes);
     }
 };
 

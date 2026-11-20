@@ -5,26 +5,24 @@
 // the refusal does not rest on the allocator.  test_owned_region and the two
 // fixtures neg_owned_region_unchecked_arena_* name it.
 //
-// The allocator gives no storage.  The door never calls it for a type that it
-// refuses, and the tests call it for no other type.  The door asks for a
-// member that gives a raw pointer, and no base type gives that shape, so the
-// member stands in a PROBE region.
+// The allocator gives no storage: each request gets the empty View.  The door
+// never calls it for a type that it refuses.  For each other type the door
+// ends the process, because the View does not hold the count of the request,
+// and a death test of test_owned_region reads that end.
 
-#include <foundation/Quarantine.h>
+#include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
 
 namespace test_owned_region {
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: an allocator with no constraint gives the raw pointer of the arena door")
 class UncheckedArena {
 public:
     template <typename T>
-    [[nodiscard]] T* alloc_array(::foundation::effects::Alloc, std::size_t) noexcept {
-        return nullptr;
+    [[nodiscard]] ::foundation::core::View<T> alloc_array(::foundation::effects::Alloc, std::size_t) noexcept {
+        return ::foundation::core::View<T>{};
     }
 };
-CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 }  // namespace test_owned_region

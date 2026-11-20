@@ -37,6 +37,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Region.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -232,8 +233,11 @@ struct has_split_pack_authoring_witness<Parent, ::fixy::Slice<Parent, Is, SplitN
 namespace fixy {
 
 // What adopt reads of an allocator is one member template:
-// alloc_array<T>(token, count) returning T*, with a null result for a zero
-// count left to adopt itself.  The door also requires that T is an
+// alloc_array<T>(token, count) returning the View<T> of count elements.  The
+// door does not call the allocator for a zero count.  It ends the process when
+// the View holds a different count, in each build and under each contract
+// semantic, because the region would then cover elements that the allocator
+// did not give.  The door also requires that T is an
 // implicit-lifetime type throughout (foundation/Lifetime.h).  An allocator
 // gives bytes, and the lifetime of an object of such a type can start over
 // bytes.  A proof type, or an aggregate that holds one, has no object over
@@ -242,7 +246,7 @@ namespace fixy {
 template <typename Allocator, typename T>
 concept ArrayArena = ::foundation::lifetime::ImplicitLifetimeThroughout<T>
                   && requires(Allocator& arena, ::foundation::effects::Alloc token, std::size_t count) {
-                         { arena.template alloc_array<T>(token, count) } -> std::same_as<T*>;
+                         { arena.template alloc_array<T>(token, count) } -> std::same_as<::foundation::core::View<T>>;
                      };
 
 template <typename T, typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
@@ -456,7 +460,12 @@ template <typename T, typename Allocator, typename Tag, typename Brand>
 [[nodiscard]] OwnedRegion<T, Tag, Brand>
 mint_owned_region(::foundation::effects::Alloc alloc_token, Allocator& arena, std::size_t count,
                   ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept {
-    T* base = (count == 0) ? nullptr : arena.template alloc_array<T>(alloc_token, count);
+    T* base = nullptr;
+    if (count != 0) {
+        ::foundation::core::View<T> const run = arena.template alloc_array<T>(alloc_token, count);
+        CRUCIBLE_FATAL_INVARIANT(run.size() == count);
+        base = first_of_(::foundation::core::detail::ViewDoor::key(), run);
+    }
     return OwnedRegion<T, Tag, Brand>{base, count, std::move(perm)};
 }
 

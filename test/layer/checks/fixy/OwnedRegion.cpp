@@ -3,7 +3,6 @@
 #include <fixy/OwnedRegion.h>
 
 #include <foundation/Linear.h>
-#include <foundation/Quarantine.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Region.h>
 
@@ -126,8 +125,8 @@ static_assert(!std::is_constructible_v<OR_int_a_branded, OR_int_a&&>, "an erased
 // whose every subobject is an implicit-lifetime type.  For a proof type,
 // or an aggregate that holds one, it gives a pointer to an object whose
 // lifetime never started, so the constraint refuses that type.  The arena
-// door asks for the raw pointer of the first element, and no base type gives
-// that shape, so the return stands in a PROBE region.
+// gives the View of the objects that start over a window of its block, and
+// the window of a request past the block ends the process.
 class BumpArena {
     alignas(std::max_align_t)::foundation::core::FixedArray<unsigned char, 4096> block_{};
     std::size_t used_ = 0;
@@ -135,17 +134,24 @@ class BumpArena {
 public:
     template <typename T>
         requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
-    [[nodiscard]] T* alloc_array(::foundation::effects::Alloc, std::size_t n) noexcept {
-        if (n == 0) return nullptr;
+    [[nodiscard]] ::foundation::core::View<T> alloc_array(::foundation::effects::Alloc, std::size_t n) noexcept {
+        if (n == 0) return ::foundation::core::View<T>{};
         const std::size_t misalign = used_ % alignof(T);
         const std::size_t start = misalign == 0 ? used_ : used_ + (alignof(T) - misalign);
         const std::size_t nbytes = n * sizeof(T);
-        if (start + nbytes > block_.size()) std::abort();
+        const ::foundation::core::View<unsigned char> bytes =
+            block_.view().window(start, nbytes).expect("the block of the arena holds the request");
         used_ = start + nbytes;
-        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a bump arena of a test gives the raw pointer of the arena door")
-        return ::foundation::core::foreign_first(
-            ::foundation::lifetime::start_as_array<T>(::foundation::core::foreign_first(block_.view()) + start, n));
-        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+        return ::foundation::lifetime::start_as_array<T>(bytes);
+    }
+};
+// An arena that gives a read-only run.  A region writes its elements, so the
+// door asks for a run that it can write.
+class ReadOnlyArena {
+public:
+    template <typename T>
+    [[nodiscard]] ::foundation::core::View<T const> alloc_array(::foundation::effects::Alloc, std::size_t) noexcept {
+        return ::foundation::core::View<T const>{};
     }
 };
 struct HoldsPermission {
@@ -153,6 +159,7 @@ struct HoldsPermission {
 };
 static_assert(ArrayArena<BumpArena, int>);
 static_assert(!ArrayArena<int, int>);
+static_assert(!ArrayArena<ReadOnlyArena, int>, "the door must refuse an arena that gives a read-only run");
 static_assert(!ArrayArena<BumpArena, ::foundation::permissions::Permission<test_tag_a>>,
               "the arena must not start the lifetime of a proof type over its bytes");
 static_assert(!ArrayArena<BumpArena, HoldsPermission>,

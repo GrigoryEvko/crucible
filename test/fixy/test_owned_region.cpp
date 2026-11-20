@@ -67,6 +67,9 @@ using ::fixy::check::pass;
 // The report of a recombine of shards that do not rebuild one region.
 constexpr ::fixy::TextView kRefusedRecombine{"foundation: fatal invariant failed: contiguous"};
 
+// The report of an adopt whose arena gives a run of a different count.
+constexpr ::fixy::TextView kRefusedRun{"foundation: fatal invariant failed: run.size() == count"};
+
 // A lookalike declares the two member types that the extractors read, so
 // a refusal of it is the constraint's and not a missing member's.
 struct RegionLookalike {
@@ -150,6 +153,24 @@ void test_adopt_and_view(TestRunnerCtx const& test) {
         const std::uint32_t exp = std::bit_cast<std::uint32_t>(static_cast<float>(i));
         CRUCIBLE_TEST_ASSERT(test, got == exp);
     }
+}
+
+// The arena door ends the process when the arena gives a run of a count
+// other than the count of the request, because the region would then cover
+// elements that the arena did not give.  The unchecked arena gives the empty
+// View for each request.  The adopt runs in a child through expect_dies of
+// the Check family.
+void test_adopt_refuses_a_run_of_another_count(TestRunnerCtx const& test) {
+    expect_dies(
+        test,
+        [] noexcept {
+            UncheckedArena arena{};
+            auto perm = mint_permission_root<DataB>();
+            using Brand = decltype(perm)::brand_type;
+            auto region = OwnedRegion<float, DataB, Brand>::adopt(test_alloc_token(), arena, 4, std::move(perm));
+            ::foundation::linear::drop(std::move(region).release());
+        },
+        kRefusedRun);
 }
 
 void test_wrap_borrows_storage(TestRunnerCtx const& test) {
@@ -348,6 +369,8 @@ int main() {
     pass(test, "  test_adopt_zero_length: PASSED\n");
     test_adopt_and_view(test);
     pass(test, "  test_adopt_and_view: PASSED\n");
+    test_adopt_refuses_a_run_of_another_count(test);
+    pass(test, "  test_adopt_refuses_a_run_of_another_count: PASSED\n");
     test_wrap_borrows_storage(test);
     pass(test, "  test_wrap_borrows_storage: PASSED\n");
     test_split_into_chunk_math(test);
