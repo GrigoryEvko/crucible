@@ -28,13 +28,15 @@
 #include "permission_row_headers.h"
 
 #include <crucible/warden/Quarantine.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
+#include <foundation/reflect/ReflectionList.h>
 
-#include <cstdio>
+#include <cstddef>
+#include <cstdint>
 #include <meta>
 #include <string>
-#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -78,25 +80,23 @@ consteval std::string qualified_name(std::meta::info named) {
     return name;
 }
 
-// A structural type, so the rows can live in a static array: the name
-// points into a static string that define_static_string made.
-struct TagRow {
-    char const* name = nullptr;
-    bool is_empty = false;
-};
+// The qualified name of a tag, as a text of static storage.
+consteval ::fixy::TextView name_of_tag(std::meta::info tag) {
+    return ::fixy::mint_static_text(std::define_static_string(qualified_name(tag)));
+}
 
 // Each permission tag that the walk finds: an empty class with a row.
-consteval std::vector<TagRow> every_tag() {
-    static constexpr auto classes = std::define_static_array(every_class());
-    std::vector<TagRow> tags;
+consteval std::vector<std::meta::info> every_tag() {
+    static constexpr ::foundation::reflect::ReflectionList classes =
+        ::foundation::reflect::reflection_list(every_class());
+    std::vector<std::meta::info> tags;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr std::meta::info member : classes) {
         using Class = [:member:];
         if constexpr (std::is_empty_v<Class>) {
             if constexpr (fp::has_permission_row(member)) {
-                tags.push_back(
-                    TagRow{std::define_static_string(qualified_name(member)), fp::permission_row_empty(member)});
+                tags.push_back(member);
             }
         }
     }
@@ -104,41 +104,56 @@ consteval std::vector<TagRow> every_tag() {
     return tags;
 }
 
-constexpr auto kTags = std::define_static_array(every_tag());
+constexpr ::foundation::reflect::ReflectionList kTags = ::foundation::reflect::reflection_list(every_tag());
+
+// The row of a tag: a row that names an effect, or the empty row.
+enum class RowKind : std::uint8_t {
+    names_an_effect,
+    empty
+};
+
+consteval RowKind row_kind_of(std::meta::info tag) {
+    return fp::permission_row_empty(tag) ? RowKind::empty : RowKind::names_an_effect;
+}
 
 struct RosterEntry {
-    std::string_view name;
-    std::string_view reason;
+    ::fixy::TextView name{};
+    ::fixy::TextView reason{};
 };
+
+// The count of the entries of the roster.
+constexpr std::size_t kRosterEntries = 11;
 
 // The reason of each tag with an empty row.
-constexpr RosterEntry kEmptyRowRoster[] = {
-    {"crucible::KernelCache::KernelCompileTag",
-     "the token writes the slot that it is given, and the slots of a cache are private to the cache"},
-    {"crucible::observe::RuntimeMetricsWriterTag",
-     "the metrics channel names the brand of its writer root, so a root of another brand opens no writer"},
-    {"crucible::observe::RuntimeMetricsReaderTag",
-     "the metrics channel names the brand of its reader root, so a root of another brand opens no reader"},
-    {"fixy::detail::DummyTag", "a sample tag of fixy/os/OwnedMmap.h, which its checks and a test read"},
-    {"fixy::detail::owned_region_test_tag", "a self-test tag of fixy/OwnedRegion.h"},
-    {"fixy::concurrent::detail::ParallelTreeSlots",
-     "the tag of the slots of one call of a parallel tree form: the form mints the root in its body, the split of "
-     "mint_parallel_for gives each shard its slots, and the root never leaves the call"},
-    {"fixy::concurrent::detail::ParallelScanParts",
-     "the tag of the parts of the output of one parallel scan: the scan mints the root in its body, the split of "
-     "mint_parallel_for gives each shard its part, and the root never leaves the call"},
-    {"fixy::concurrent::detail::ParallelPointwiseShards",
-     "the tag of the slots of the shards of one call of the parallel pointwise walk: the form mints the root in its "
-     "body, the split of mint_parallel_for gives each shard its slot with its rows of the output, and the root "
-     "never leaves the call"},
-    {"fixy::channels::swmr_session::detail::swmr_session_witness::WriterTag",
-     "a witness tag of fixy/channels/SwmrSession.h"},
-    {"fixy::channels::swmr_session::detail::swmr_session_witness::ReaderTag",
-     "a witness tag of fixy/channels/SwmrSession.h"},
-    {"foundation::permissions::detail::read_view_test_tag", "a self-test tag of foundation/permissions/ReadView.h"},
+constexpr ::fixy::FixedArray<RosterEntry, kRosterEntries> kEmptyRowRoster{
+    RosterEntry{"crucible::KernelCache::KernelCompileTag",
+                "the token writes the slot that it is given, and the slots of a cache are private to the cache"},
+    RosterEntry{"crucible::observe::RuntimeMetricsWriterTag",
+                "the metrics channel names the brand of its writer root, so a root of another brand opens no writer"},
+    RosterEntry{"crucible::observe::RuntimeMetricsReaderTag",
+                "the metrics channel names the brand of its reader root, so a root of another brand opens no reader"},
+    RosterEntry{"fixy::detail::DummyTag", "a sample tag of fixy/os/OwnedMmap.h, which its checks and a test read"},
+    RosterEntry{"fixy::detail::owned_region_test_tag", "a self-test tag of fixy/OwnedRegion.h"},
+    RosterEntry{"fixy::concurrent::detail::ParallelTreeSlots",
+                "the tag of the slots of one call of a parallel tree form: the form mints the root in its body, the "
+                "split of mint_parallel_for gives each shard its slots, and the root never leaves the call"},
+    RosterEntry{"fixy::concurrent::detail::ParallelScanParts",
+                "the tag of the parts of the output of one parallel scan: the scan mints the root in its body, the "
+                "split of mint_parallel_for gives each shard its part, and the root never leaves the call"},
+    RosterEntry{
+        "fixy::concurrent::detail::ParallelPointwiseShards",
+        "the tag of the slots of the shards of one call of the parallel pointwise walk: the form mints the root "
+        "in its body, the split of mint_parallel_for gives each shard its slot with its rows of the output, "
+        "and the root never leaves the call"},
+    RosterEntry{"fixy::channels::swmr_session::detail::swmr_session_witness::WriterTag",
+                "a witness tag of fixy/channels/SwmrSession.h"},
+    RosterEntry{"fixy::channels::swmr_session::detail::swmr_session_witness::ReaderTag",
+                "a witness tag of fixy/channels/SwmrSession.h"},
+    RosterEntry{"foundation::permissions::detail::read_view_test_tag",
+                "a self-test tag of foundation/permissions/ReadView.h"},
 };
 
-consteval bool roster_names(std::string_view name) {
+consteval bool roster_names(::fixy::TextView name) {
     for (RosterEntry const& entry : kEmptyRowRoster) {
         if (entry.name == name) return true;
     }
@@ -146,54 +161,65 @@ consteval bool roster_names(std::string_view name) {
 }
 
 // The first empty-row tag that the roster does not name, or an empty
-// string when the roster names each one.
-consteval std::string_view first_unclassified() {
-    for (TagRow const& tag : kTags) {
-        if (tag.is_empty && !roster_names(tag.name)) return std::string_view{tag.name};
+// text when the roster names each one.
+consteval ::fixy::TextView first_unclassified() {
+    for (std::meta::info const tag : kTags) {
+        if (row_kind_of(tag) != RowKind::empty) continue;
+        ::fixy::TextView const name = name_of_tag(tag);
+        if (!roster_names(name)) return name;
     }
     return {};
 }
 
 // The first roster entry that the walk does not find as an empty-row
-// tag, or an empty string when the walk finds each one.
-consteval std::string_view first_stale() {
-    for (RosterEntry const& entry : kEmptyRowRoster) {
-        bool found = false;
-        for (TagRow const& tag : kTags) {
-            if (tag.is_empty && std::string_view{tag.name} == entry.name) found = true;
+// tag, or an empty text when the walk finds each one.  The walk reads the
+// name of each tag one time.
+consteval ::fixy::TextView first_stale() {
+    ::fixy::FixedArray<bool, kRosterEntries> found{};
+    for (std::meta::info const tag : kTags) {
+        if (row_kind_of(tag) != RowKind::empty) continue;
+        ::fixy::TextView const name = name_of_tag(tag);
+        for (::fixy::Index<kRosterEntries> const index : kEmptyRowRoster.indices()) {
+            if (kEmptyRowRoster.at(index).name == name) found.at(index) = true;
         }
-        if (!found) return entry.name;
+    }
+    for (::fixy::Index<kRosterEntries> const index : kEmptyRowRoster.indices()) {
+        if (!found.at(index)) return kEmptyRowRoster.at(index).name;
     }
     return {};
 }
 
-// Copies the characters one at a time.  The string constructors compare
-// the source address with null, and GCC does not fold that comparison for
-// an address of a static string that define_static_string made.
-consteval std::string message_naming(std::string_view head, std::string_view name, std::string_view tail) {
-    std::string message{head};
-    for (char const letter : name) {
+// Puts each character of text after the end of message.  The string
+// constructors compare the source address with null, and GCC does not
+// fold that comparison for an address of a static string that
+// define_static_string made.
+consteval void append_text(std::string& message, ::fixy::TextView text) {
+    for (char const letter : text) {
         message.push_back(letter);
     }
-    message += tail;
-    return message;
 }
 
 consteval std::string unclassified_message() {
-    return message_naming("the permission tag ", first_unclassified(),
-                          " has an empty row and no roster entry.  If a root of the tag is an authority, name an "
-                          "effect in its row.  If it is not, add the tag and the reason to kEmptyRowRoster");
+    std::string message;
+    append_text(message, "the permission tag ");
+    append_text(message, first_unclassified());
+    append_text(message, " has an empty row and no roster entry.  If a root of the tag is an authority, name an "
+                         "effect in its row.  If it is not, add the tag and the reason to kEmptyRowRoster");
+    return message;
 }
 
 consteval std::string stale_message() {
-    return message_naming("the roster entry ", first_stale(),
-                          " names no empty-row tag that the walk finds.  Remove the entry, or give the tag its "
-                          "empty row again");
+    std::string message;
+    append_text(message, "the roster entry ");
+    append_text(message, first_stale());
+    append_text(message, " names no empty-row tag that the walk finds.  Remove the entry, or give the tag its "
+                         "empty row again");
+    return message;
 }
 
-consteval bool tag_found_with_row(std::string_view name, bool is_empty) {
-    for (TagRow const& tag : kTags) {
-        if (std::string_view{tag.name} == name) return tag.is_empty == is_empty;
+consteval bool tag_found_with_row(::fixy::TextView name, RowKind row) {
+    for (std::meta::info const tag : kTags) {
+        if (name_of_tag(tag) == name) return row_kind_of(tag) == row;
     }
     return false;
 }
@@ -201,25 +227,31 @@ consteval bool tag_found_with_row(std::string_view name, bool is_empty) {
 // The walk is not vacuous: it finds the tags of the canonical namespace,
 // which have rows that name effects.
 static_assert(kTags.size() > 12, "the walk found almost no permission tag, so the roster check proves nothing");
-static_assert(tag_found_with_row("foundation::permissions::tag::HugePageTag", false));
-static_assert(tag_found_with_row("crucible::warden::quarantine_tag::OperatorOverride", false),
+static_assert(tag_found_with_row("foundation::permissions::tag::HugePageTag", RowKind::names_an_effect));
+static_assert(tag_found_with_row("crucible::warden::quarantine_tag::OperatorOverride", RowKind::names_an_effect),
               "the operator override is an authority, so its row names an effect");
 static_assert(std::is_same_v<fp::permission_row_t<crucible::warden::quarantine_tag::OperatorOverride>,
                              fe::Row<fe::Effect::Init>>);
 
-static_assert(first_unclassified().empty(), unclassified_message());
-static_assert(first_stale().empty(), stale_message());
+static_assert(first_unclassified().size() == 0, unclassified_message());
+static_assert(first_stale().size() == 0, stale_message());
 
 }  // namespace
 
 int main() {
     std::size_t empty_rows = 0;
-    std::printf("test_permission_row_roster: permission tags with an empty row\n");
-    for (TagRow const& tag : kTags) {
-        if (!tag.is_empty) continue;
-        ++empty_rows;
-        std::printf("  %s\n", tag.name);
+    ::fixy::report(::fixy::Sink::Out, "test_permission_row_roster: permission tags with an empty row\n");
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr std::meta::info tag : kTags) {
+        if constexpr (row_kind_of(tag) == RowKind::empty) {
+            ++empty_rows;
+            constexpr ::fixy::TextView name = name_of_tag(tag);
+            ::fixy::report(::fixy::Sink::Out, "  {}\n", name);
+        }
     }
-    std::printf("test_permission_row_roster: %zu tags, %zu with an empty row: PASSED\n", kTags.size(), empty_rows);
+#pragma GCC diagnostic pop
+    ::fixy::report(::fixy::Sink::Out, "test_permission_row_roster: {} tags, {} with an empty row: PASSED\n",
+                   kTags.size(), empty_rows);
     return 0;
 }
