@@ -15,12 +15,12 @@
 // Prefer the enum in a template parameter.  The tag types exist for the
 // cases where an overload set reads better than a non-type argument.
 
+#include <foundation/core/Text.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <concepts>
 #include <cstdint>
 #include <meta>
-#include <string_view>
 
 namespace foundation::algebra {
 
@@ -99,10 +99,10 @@ inline constexpr bool has_grade_only_v =
 // three Graded forwarders declare themselves consteval and call it, and
 // widening the signature here would say something this header does not
 // mean to say.  It is a template on the one type ModalityKind, so that
-// only a unit that asks for a name pays for the walk of enum_name.
+// only a unit that asks for a name pays for the walk of enum_name_text.
 template <std::same_as<ModalityKind> Kind>
-[[nodiscard]] consteval std::string_view modality_name(Kind kind) noexcept {
-    return ::foundation::reflect::enum_name(kind);
+[[nodiscard]] consteval ::foundation::core::TextView modality_name(Kind kind) noexcept {
+    return ::foundation::core::enum_name_text(kind);
 }
 
 namespace modality {

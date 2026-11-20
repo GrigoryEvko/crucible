@@ -17,6 +17,7 @@
 // field is therefore always additive.
 
 #include <foundation/Platform.h>
+#include <foundation/core/Text.h>
 #include <foundation/diag/Tag.h>
 #include <foundation/reflect/Enumerate.h>
 
@@ -31,10 +32,9 @@ namespace foundation::diag {
 
 // The name is the enumerator's own, read by reflection, so a new
 // severity needs no arm here.  A value no enumerator carries, which
-// only a cast can produce, comes back as the sentinel.
-[[nodiscard]] constexpr std::string_view severity_name(Severity s) noexcept {
-    const std::string_view name = ::foundation::reflect::enumerator_name(s);
-    return name.empty() ? std::string_view{"<unknown Severity>"} : name;
+// only a cast can produce, comes back as the sentinel "<unknown Severity>".
+[[nodiscard]] constexpr ::foundation::core::TextView severity_name(Severity s) noexcept {
+    return ::foundation::core::enum_name_text(s);
 }
 
 namespace detail {

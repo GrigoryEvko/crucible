@@ -379,7 +379,7 @@ void test_insights_runtime() {
     // consecutive from zero, which the loop's cast relies on.
     volatile std::size_t const cap = std::meta::enumerators_of(^^diag::Severity).size();
     for (std::size_t i = 0; i < cap; ++i) {
-        EXPECT(!diag::severity_name(static_cast<diag::Severity>(i)).empty());
+        EXPECT(diag::severity_name(static_cast<diag::Severity>(i)).size() != 0);
         EXPECT(diag::severity_name(static_cast<diag::Severity>(i)) != "<unknown Severity>");
     }
     EXPECT(diag::severity_name(static_cast<diag::Severity>(9)) == "<unknown Severity>");

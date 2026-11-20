@@ -251,8 +251,8 @@ template <typename E>
 
 }  // namespace detail::event_log
 
-[[nodiscard]] constexpr std::string_view session_op_name(SessionOp op) noexcept {
-    return ::foundation::reflect::enum_name(op);
+[[nodiscard]] constexpr ::foundation::core::TextView session_op_name(SessionOp op) noexcept {
+    return ::foundation::core::enum_name_text(op);
 }
 
 [[nodiscard]] constexpr bool session_op_is_cipher(SessionOp op) noexcept {

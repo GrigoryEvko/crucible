@@ -42,6 +42,7 @@
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/Modality.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -216,7 +217,7 @@ private:
     }
 
 public:
-    [[nodiscard]] static consteval std::string_view modality_name() noexcept {
+    [[nodiscard]] static consteval ::foundation::core::TextView modality_name() noexcept {
         return ::foundation::algebra::modality_name(M);
     }
     [[nodiscard]] static consteval std::string_view lattice_name() noexcept {

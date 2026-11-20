@@ -12,8 +12,10 @@ namespace detail::insights_self_test {
 // reserved for a value that no enumerator carries.
 [[nodiscard]] consteval bool every_severity_has_its_name() noexcept {
     bool all_named = true;
-    ::foundation::reflect::for_each_enumerator<Severity>(
-        [&](Severity value, std::string_view name) noexcept { all_named = all_named && severity_name(value) == name; });
+    ::foundation::core::for_each_enumerator_text<Severity>(
+        [&](Severity value, ::foundation::core::TextView name) noexcept {
+            all_named = all_named && severity_name(value) == name;
+        });
     return all_named;
 }
 static_assert(every_severity_has_its_name());
