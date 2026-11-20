@@ -88,61 +88,14 @@ void test_the_scaled_product_is_inside_its_bound() {
                         checked, largest_ratio);
 }
 
-// The count of the loops of an input of the lane path of
-// foundation/core/Pointwise.h: Dense, Splat, StepTwo and General.
-constexpr std::size_t kLaneLoops = 4;
-
 // Each mix of the loops of the lane path over the four inputs of the scaled
-// product gives the bits of the op on each element: one of the four loops on
-// each input, so 256 mixes.  The walk is the walk of the test of the bound
-// above, so the mixes add no instance of the lane path.  The last two inputs
-// take Dense and Splat in the lane plan, and their steps two and three take
-// the loop Switched.  Each input is a matrix in an array of its own that ends
-// at its last element, so a read past a view is a read past its allocation.
-// A Splat input reads one element for each row, and each row reads a
-// different element.  The output is dense, so each mix takes the lane plan,
-// with no tile.  O(256) walks.
+// product gives the bits of the op on each element: 256 mixes of
+// test_each_mix_of_the_loops of elementwise_rig.h.  The walk is the walk of
+// the test of the bound above, so the mixes add no instance of the lane path.
+// O(256) walks.
 void test_each_mix_of_the_loops_of_the_scaled_product() {
-    PhiloxStream stream{0xE1E0000000000005u};
-    ::fixy::FixedArray<std::size_t, kLaneLoops> const steps{1, 0, 2, 3};
-    auto const stepped = [&stream](std::size_t step) noexcept {
-        ::crucible::test::MatrixPlace place{};
-        place.row_stride = step == 0 ? 1 : kColumns * step;
-        place.column_stride = step;
-        place.extent = (kRows - 1) * place.row_stride + (kColumns - 1) * place.column_stride + 1;
-        Matrix<float> matrix{::crucible::test::MatrixShape{kRows, kColumns}, place,
-                             ::fixy::mint_heap_array(::crucible::test::rig_alloc(), place.extent, 0.0f)};
-        for (float& value : matrix.values) {
-            value = ::crucible::test::draw_hard_value<float>(stream);
-        }
-        return matrix;
-    };
-    ::fixy::elementwise::ScaledProductOfDifference const op{};
-    std::size_t const mixes = kLaneLoops * kLaneLoops * kLaneLoops * kLaneLoops;
-    for (std::size_t mix = 0; mix < mixes; ++mix) {
-        auto const step_of = [&steps, mix](std::size_t input) noexcept {
-            std::size_t loops = mix;
-            for (std::size_t skipped = 0; skipped < input; ++skipped) {
-                loops /= kLaneLoops;
-            }
-            return *steps.get(loops % kLaneLoops).expect("a loop below the count of the loops");
-        };
-        Matrix<float> const lefts = stepped(step_of(0));
-        Matrix<float> const rights = stepped(step_of(1));
-        Matrix<float> const scales = stepped(step_of(2));
-        Matrix<float> const factors = stepped(step_of(3));
-        Matrix<float> const outputs =
-            ::crucible::test::run_op<float>(kTest, op, Layout::RowMajor, lefts, rights, scales, factors);
-        for (std::size_t row = 0; row < kRows; ++row) {
-            for (std::size_t column = 0; column < kColumns; ++column) {
-                float const expected = ::crucible::test::canonical_output(
-                    op(lefts.at(row, column), rights.at(row, column), scales.at(row, column), factors.at(row, column)));
-                bool const is_same = ::crucible::test::bits_of_float(outputs.at(row, column))
-                                  == ::crucible::test::bits_of_float(expected);
-                CRUCIBLE_TEST_ASSERT(kTest, is_same);
-            }
-        }
-    }
+    std::size_t const mixes = ::crucible::test::test_each_mix_of_the_loops<float, 4>(
+        kTest, ::fixy::elementwise::ScaledProductOfDifference{}, 0xE1E0000000000005u);
     ::fixy::check::pass(kTest,
                         "test_core_elementwise: {} mixes of the loops of the scaled product give the bits of the op "
                         "on each element\n",

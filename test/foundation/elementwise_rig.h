@@ -122,6 +122,92 @@ template <class T>
     return bits_of_float(left) == bits_of_float(right);
 }
 
+// The count of the loops of an input of the lane path of
+// foundation/core/Pointwise.h: Dense, Splat, StepTwo and General.
+inline constexpr std::size_t kLaneLoops = 4;
+
+// The step of an input in a mix of the loops.  The loop of the input is the
+// digit of the mix at the place of the input in base kLaneLoops, and the
+// loops have the steps 1 (Dense), 0 (Splat), 2 (StepTwo) and 3 (General).
+[[nodiscard]] inline std::size_t lane_step_of(std::size_t mix, std::size_t input) noexcept {
+    std::size_t loops = mix;
+    for (std::size_t skipped = 0; skipped < input; ++skipped) {
+        loops /= kLaneLoops;
+    }
+    ::fixy::FixedArray<std::size_t, kLaneLoops> const steps{1, 0, 2, 3};
+    return *steps.get(loops % kLaneLoops).expect("a loop below the count of the loops");
+}
+
+// A matrix of values from the stream of seed, whose columns are step
+// elements apart.  The matrix is in an array of its own that ends at its last
+// element, so a read past the view is a read past its allocation.  A step of
+// zero reads one element for each row, and each row reads a different
+// element.
+template <class T>
+[[nodiscard]] Matrix<T> stepped_matrix(std::uint64_t seed, std::size_t step) noexcept {
+    PhiloxStream stream{seed};
+    MatrixPlace place{};
+    place.row_stride = step == 0 ? 1 : kColumns * step;
+    place.column_stride = step;
+    place.extent = (kRows - 1) * place.row_stride + (kColumns - 1) * place.column_stride + 1;
+    Matrix<T> matrix{MatrixShape{kRows, kColumns}, place, ::fixy::mint_heap_array(rig_alloc(), place.extent, T{})};
+    for (T& value : matrix.values) {
+        value = draw_hard_value<T>(stream);
+    }
+    return matrix;
+}
+
+// The value of op on one element of each input under THE NAN RULE of
+// foundation/core/Pointwise.h: the bits of op for an op that states
+// NanRule::KeepBits, and the canonical NaN in place of a NaN for each other
+// op.
+template <class T, class Op, class... Values>
+[[nodiscard]] T ruled_value(Op const& op, Values... values) noexcept {
+    T const value = op(values...);
+    if constexpr (requires { Op::nan_rule; }) {
+        if constexpr (Op::nan_rule == ::fixy::NanRule::KeepBits) return value;
+    }
+    return canonical_output(value);
+}
+
+// The output of op over the inputs in the dense layout gives the ruled value
+// of op on each element.
+template <class T, class Op, class... Inputs>
+void check_each_element(::fixy::TestRunnerCtx const& test, Op const& op, Inputs const&... inputs) noexcept {
+    Matrix<T> const outputs = run_op<T>(test, op, Layout::RowMajor, inputs...);
+    for (std::size_t row = 0; row < kRows; ++row) {
+        for (std::size_t column = 0; column < kColumns; ++column) {
+            CRUCIBLE_TEST_ASSERT(test,
+                                 same_bits(outputs.at(row, column), ruled_value<T>(op, inputs.at(row, column)...)));
+        }
+    }
+}
+
+// Each mix of the loops of the lane path over the Inputs inputs of op gives
+// the ruled value of op on each element: one of the kLaneLoops loops on each
+// input, so kLaneLoops^Inputs mixes.  The output is dense, so each mix takes
+// the lane plan, with no tile.  An input past the second takes Dense and
+// Splat in the lane plan, and its steps two and three take the loop Switched.
+// The walk is the walk of run_op, so the mixes add no instance of the lane
+// path to a unit that runs op through run_op.  Each matrix has a seed of its
+// own, so the order of the draws does not depend on the order in which the
+// compiler evaluates the arguments.  The result is the count of the mixes.
+// O(kLaneLoops^Inputs) walks.
+template <class T, std::size_t Inputs, class Op>
+[[nodiscard]] std::size_t test_each_mix_of_the_loops(::fixy::TestRunnerCtx const& test, Op const& op,
+                                                     std::uint64_t seed) noexcept {
+    std::size_t mixes = 1;
+    for (std::size_t input = 0; input < Inputs; ++input) {
+        mixes *= kLaneLoops;
+    }
+    for (std::size_t mix = 0; mix < mixes; ++mix) {
+        [&]<std::size_t... Is>(std::index_sequence<Is...>) noexcept {
+            check_each_element<T>(test, op, stepped_matrix<T>(seed + mix * Inputs + Is, lane_step_of(mix, Is))...);
+        }(std::make_index_sequence<Inputs>{});
+    }
+    return mixes;
+}
+
 // The selects and the copy give their stated values, and a NaN keeps its
 // bits.
 template <class T>
@@ -148,6 +234,14 @@ void test_the_selects_keep_their_bits(::fixy::TestRunnerCtx const& test) {
     }
     ::fixy::check::pass(test, "test_core_elementwise: the selects and the copy of {} bytes keep their bits\n",
                         sizeof(T));
+    // The three inputs of the threshold select take each mix of the loops, so
+    // the plans of the loop Switched of its third input run too.
+    std::size_t const mixes = test_each_mix_of_the_loops<T, 3>(test, ::fixy::elementwise::ZeroAtOrBelowThreshold{},
+                                                               0xE1E0000000000100u + sizeof(T));
+    ::fixy::check::pass(test,
+                        "test_core_elementwise: {} mixes of the loops of the threshold select of {} bytes keep its "
+                        "bits\n",
+                        mixes, sizeof(T));
 }
 
 // The IEEE result of a sum and of a quotient of two floats: the value in
