@@ -441,6 +441,7 @@ add_library(foundation STATIC
   src/foundation/os/Heap.cpp
   src/foundation/os/Intercepted.cpp
   src/foundation/os/KernelFallbacks.cpp
+  src/foundation/os/PageSource.cpp
   src/foundation/os/Poison.cpp
   src/foundation/os/ReportSink.cpp
   src/foundation/os/SpinHint.cpp

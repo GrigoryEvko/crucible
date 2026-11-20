@@ -91,6 +91,7 @@ static_assert(kMapShared == MAP_SHARED, "kMapShared is not MAP_SHARED of <linux/
 static_assert(kMapPrivate == MAP_PRIVATE, "kMapPrivate is not MAP_PRIVATE of <linux/mman.h>");
 static_assert(kMapAnonymous == MAP_ANONYMOUS, "kMapAnonymous is not MAP_ANONYMOUS of <linux/mman.h>");
 static_assert(kMapLocked == MAP_LOCKED, "kMapLocked is not MAP_LOCKED of <linux/mman.h>");
+static_assert(kMapNoReserve == MAP_NORESERVE, "kMapNoReserve is not MAP_NORESERVE of <linux/mman.h>");
 static_assert(kMapPopulate == MAP_POPULATE, "kMapPopulate is not MAP_POPULATE of <linux/mman.h>");
 static_assert(kMapHugeTlb == MAP_HUGETLB, "kMapHugeTlb is not MAP_HUGETLB of <linux/mman.h>");
 static_assert(kMapHuge2Mb == MAP_HUGE_2MB, "kMapHuge2Mb is not MAP_HUGE_2MB of <linux/mman.h>");
@@ -108,6 +109,8 @@ static_assert(kAdvisePopulateWrite == MADV_POPULATE_WRITE,
               "kAdvisePopulateWrite is not MADV_POPULATE_WRITE of <linux/mman.h>");
 static_assert(kAdviseCollapse == MADV_COLLAPSE, "kAdviseCollapse is not MADV_COLLAPSE of <linux/mman.h>");
 static_assert(kLockOnFault == MLOCK_ONFAULT, "kLockOnFault is not MLOCK_ONFAULT of <linux/mman.h>");
+static_assert(kRemapMayMove == MREMAP_MAYMOVE, "kRemapMayMove is not MREMAP_MAYMOVE of <linux/mman.h>");
+static_assert(kRemapFixed == MREMAP_FIXED, "kRemapFixed is not MREMAP_FIXED of <linux/mman.h>");
 
 // The argument words of foundation/os/MemoryPolicyWords.h are the words of the
 // kernel header.
@@ -287,6 +290,10 @@ constexpr long kNoCall = -1;
             return __NR_pread64;
         case Syscall::ftruncate:
             return __NR_ftruncate;
+        case Syscall::mremap:
+            return __NR_mremap;
+        case Syscall::getcpu:
+            return __NR_getcpu;
         default:
             return kNoCall;
     }
@@ -481,8 +488,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // renameat2 in 3.15, mlock2 in 4.4, copy_file_range in 4.5, io_uring_setup in
 // 5.1 and openat2 in 5.6.  ptrace came before 2.6.0, and the trace door of
 // fixy/os/Process.h reads each stop with PTRACE_GET_SYSCALL_INFO, which came in
-// 5.3.  mincore, gettid, clock_gettime and clock_nanosleep came
-// before 2.6.0.  The file door opens
+// 5.3.  mincore, gettid, clock_gettime, clock_nanosleep and mremap came
+// before 2.6.0, and getcpu came in 2.6.19.  The file door opens
 // each path under a directory with openat2 and RESOLVE_BENEATH, and an open
 // with openat would follow a path out of the directory with no error.  So
 // openat2 is no feature call, and it sets the floor at 5.6.
@@ -503,6 +510,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
             break;
         case Syscall::move_pages:
             added = KernelVersion{2, 6, 18};
+            break;
+        case Syscall::getcpu:
+            added = KernelVersion{2, 6, 19};
             break;
         case Syscall::pipe2:
         case Syscall::dup3:
@@ -571,6 +581,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::clock_nanosleep:
         case Syscall::pread:
         case Syscall::ftruncate:
+        case Syscall::mremap:
         default:
             break;
     }

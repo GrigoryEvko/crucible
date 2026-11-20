@@ -142,6 +142,11 @@ enum class Syscall : std::uint8_t {
     // of the descriptor.
     pread,
     ftruncate,
+    // The grow of a map of the page source door (foundation/os/PageSource.h),
+    // which moves page table entries and copies no byte.
+    mremap,
+    // The node of the CPU of the calling thread, for the page source door.
+    getcpu,
 };
 
 // True when the call can wait for a long time: for another thread or process

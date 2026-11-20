@@ -1,7 +1,8 @@
 #pragma once
 
 // The argument words of a memory map of the doors: the protections, the
-// flags of a map, the advice words of madvise, and the flag of mlock2.  The values are the
+// flags of a map, the advice words of madvise, the flag of mlock2 and the
+// flags of mremap.  The values are the
 // values of <linux/mman.h> on x86_64 and on aarch64.  The door file
 // src/foundation/os/Syscall.cpp holds a check of each value against that
 // header.  A door that includes a header of the C library cannot include
@@ -40,6 +41,10 @@ inline constexpr int kMapAnonymous = 0x20;
 // A map whose pages the kernel locks in memory.  MAP_LOCKED.
 inline constexpr int kMapLocked = 0x2000;
 
+// A map that reserves no swap and counts toward no limit of committed
+// memory, for a reservation of address space.  MAP_NORESERVE.
+inline constexpr int kMapNoReserve = 0x4000;
+
 // A map whose page tables the kernel fills at the map.  MAP_POPULATE.
 inline constexpr int kMapPopulate = 0x8000;
 
@@ -70,5 +75,10 @@ inline constexpr int kAdviseCollapse = 25;
 // The flag of mlock2 that locks each page of a range when it faults in, and
 // not at the call.  MLOCK_ONFAULT.
 inline constexpr unsigned kLockOnFault = 0x01;
+
+// The flags of mremap: the kernel can move the map to a new address
+// (MREMAP_MAYMOVE), and the new address is the fifth argument (MREMAP_FIXED).
+inline constexpr unsigned kRemapMayMove = 0x01;
+inline constexpr unsigned kRemapFixed = 0x02;
 
 }  // namespace foundation::os

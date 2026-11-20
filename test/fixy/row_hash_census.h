@@ -461,8 +461,11 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {std::meta::parent_of(^^::foundation::core::elementwise::Sum),
      "the ops of one element of the pointwise walk: empty classes that a walk calls, and none of them is a value "
      "in a kernel signature"},
-    {^^::foundation::os, "the raw system call primitive, its argument words, the kernel floor and the owner of a "
-                         "guarded map: words and memory of the kernel interface that carry no grade"},
+    {^^::foundation::os, "the raw system call primitive, its argument words, the kernel floor, the owner of a "
+                         "guarded map and the reservations of the page source: words and memory of the kernel "
+                         "interface that carry no grade"},
+    {^^::foundation::os::side, "the role of the offset of a range of the page source: an empty tag that a Side "
+                               "names at compile time, and no value"},
     {^^::fixy::tags::source, kGradeVocabulary},
     {^^::fixy::tags::trust, kGradeVocabulary},
     {^^::fixy::tags::access, kGradeVocabulary},

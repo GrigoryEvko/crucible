@@ -123,9 +123,11 @@ enum class KernelFlag : std::uint8_t {
     advise_free,
     // MADV_WIPEONFORK of a range that a child process gets as zeros.
     advise_wipe_on_fork,
-    // MADV_POPULATE_WRITE of the populate door of fixy/os/Pages.h.
+    // MADV_POPULATE_WRITE of the populate door of fixy/os/Pages.h and of the
+    // populate of the page source door of foundation/os/PageSource.h.
     advise_populate_write,
-    // MADV_COLLAPSE of the collapse door of fixy/os/Pages.h.
+    // MADV_COLLAPSE of the collapse door of fixy/os/Pages.h and of the
+    // collapse of the page source door.
     advise_collapse,
     // MLOCK_ONFAULT of the lock door of fixy/os/Pages.h.
     lock_on_fault,
@@ -133,6 +135,9 @@ enum class KernelFlag : std::uint8_t {
     memory_policy_bind,
     // MPOL_MF_MOVE of the memory policy door.
     memory_policy_move,
+    // MPOL_PREFERRED and MPOL_INTERLEAVE of the bind of the page source door
+    // of foundation/os/PageSource.h.
+    memory_policy_preferred,
     // FUTEX_PRIVATE_FLAG of each futex call.
     futex_private,
     // FUTEX_WAIT_BITSET of the wait of the futex door.
@@ -284,13 +289,15 @@ struct FlagFloor {
                              .need = FlagNeed::fallback,
                              .word = "MADV_POPULATE_WRITE",
                              .fallback = "The populate door gives einval. The prefault of the warden writes a "
-                                         "warning, and the first write of each page faults it in."};
+                                         "warning, and the first write of each page faults it in. The populate of "
+                                         "the page source faults in each page with an atomic or of zero."};
         case KernelFlag::advise_collapse:
             return FlagFloor{.release = {6, 1, 0},
                              .need = FlagNeed::fallback,
                              .word = "MADV_COLLAPSE",
-                             .fallback = "The collapse door gives einval. The range keeps its pages of the base "
-                                         "size until the THP daemon collapses them."};
+                             .fallback = "The collapse door gives einval, and the collapse of the page source gives "
+                                         "the base pages. The range keeps its pages of the base size until the THP "
+                                         "daemon collapses them."};
         case KernelFlag::lock_on_fault:
             return FlagFloor{.release = {4, 4, 0},
                              .need = FlagNeed::fallback,
@@ -301,6 +308,12 @@ struct FlagFloor {
             return FlagFloor{.release = {2, 6, 7}, .need = FlagNeed::each_call, .word = "MPOL_BIND, MPOL_MF_STRICT"};
         case KernelFlag::memory_policy_move:
             return FlagFloor{.release = {2, 6, 16}, .need = FlagNeed::each_call, .word = "MPOL_MF_MOVE"};
+        case KernelFlag::memory_policy_preferred:
+            return FlagFloor{.release = {2, 6, 7},
+                             .need = FlagNeed::fallback,
+                             .word = "MPOL_PREFERRED, MPOL_INTERLEAVE",
+                             .fallback = "The bind of the page source keeps the policy of the thread and gives the "
+                                         "unknown placement."};
         case KernelFlag::futex_private:
             return FlagFloor{.release = {2, 6, 22}, .need = FlagNeed::each_call, .word = "FUTEX_PRIVATE_FLAG"};
         case KernelFlag::futex_wait_bitset:

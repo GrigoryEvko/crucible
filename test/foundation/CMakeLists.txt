@@ -4159,6 +4159,15 @@ foundation_test(test_os_floor)
 # A request above the host ends the process in a child.
 foundation_test(test_os_x86_level)
 
+# The page source door: the reserve, the ranges, the commit and the decommit,
+# the populate, the huge page calls, the bind on one node and on two, the
+# grow, and the refusals of each.  A read of a reserved page faults in a
+# child of the child door, and a range of a different reservation ends a
+# child through expect_dies, so the test links fixy.  A refused collapse
+# needs the THP door of fixy/os/Pages.h.
+foundation_test(test_os_page_source)
+target_link_libraries(test_os_page_source PRIVATE fixy)
+
 # The CText of a temporary PathText would point into an object that the
 # full expression ends.
 foundation_neg_compile_test(neg_os_path_text_of_temporary
