@@ -154,15 +154,15 @@ struct AlignedBytesDoor {
     return aligned_block_bytes(bytes, alignment) + (alignment - 1);
 }
 
-// The layout of the storage of a block of `bytes` bytes at the alignment
-// (THE STORAGE): the stored bytes at an alignment of one, as the two doors of
-// a block take it.  bytes is above zero.  Storage past the largest object
-// ends the process.  Complexity: O(1).
+// The layout of the storage of a block from its two fields (THE STORAGE): the
+// unaligned storage of the layout of the block, as the two doors of a block
+// take it.  The fields come from a Layout, so the one check of the layout
+// holds.  Complexity: O(1).
 [[nodiscard]] constexpr ::foundation::alloc::Layout stored_block_layout(std::size_t bytes,
                                                                         std::size_t alignment) noexcept {
-    return ::foundation::alloc::mint_layout(core::ByteCount{stored_block_bytes(bytes, alignment)},
-                                            ::foundation::alloc::Alignment{1})
-        .expect("the storage of a block is a layout: its bytes are above zero and fit the largest object");
+    return ::foundation::alloc::mint_layout(core::ByteCount{bytes}, ::foundation::alloc::Alignment{alignment})
+        .expect("the fields of a block come from a layout")
+        .unaligned_storage();
 }
 
 // The door of the allocation door that gives the storage of a block: the
@@ -200,19 +200,20 @@ struct AlignedBytesState {
     }
 
     // The storage of a block of the layout, from the door of the kind (THE
-    // STORAGE).  Complexity: one allocation.
-    [[nodiscard]] static AlignedBytesState allocated(::foundation::alloc::Layout const& layout,
+    // STORAGE).  The layout of the caller holds each fact, so its unaligned
+    // storage needs no check.  Complexity: one allocation.
+    [[nodiscard]] static AlignedBytesState allocated(::foundation::alloc::Layout layout,
                                                      ::foundation::detail::BlockStorage kind) noexcept {
-        std::size_t const bytes = layout.bytes().raw();
-        auto const alignment = static_cast<std::size_t>(layout.alignment());
-        ::foundation::alloc::Layout const stored = ::foundation::detail::stored_block_layout(bytes, alignment);
+        ::foundation::alloc::Layout const stored = layout.unaligned_storage();
         void* const taken =
             kind == ::foundation::detail::BlockStorage::zeroed ? heap_allocate_zeroed_(stored) : heap_allocate_(stored);
-        return AlignedBytesState{static_cast<std::uint8_t*>(taken), bytes, alignment};
+        return AlignedBytesState{static_cast<std::uint8_t*>(taken), layout.bytes().raw(),
+                                 static_cast<std::size_t>(layout.alignment())};
     }
 
     // Gives the storage back to the allocation door with the layout of the
-    // storage, as the two doors of a block take it.
+    // storage, as the two doors of a block take it.  The release checks the
+    // layout of its fields one time.
     static constexpr void release(AlignedBytesState const& state) noexcept {
         if (state.storage != nullptr) {
             heap_release_(state.storage, ::foundation::detail::stored_block_layout(state.bytes, state.alignment));
@@ -308,7 +309,7 @@ public:
     // A block of the layout, with the key that only AlignedBytesDoor builds.
     // The bytes start their lifetime with no value and with no write.
     // Complexity: one allocation.
-    UnwrittenBytes(detail::AlignedBytesKey const& /*key*/, ::foundation::alloc::Layout const& layout) noexcept
+    UnwrittenBytes(detail::AlignedBytesKey const& /*key*/, ::foundation::alloc::Layout layout) noexcept
         : core::OwnerCore<State>{State::allocated(layout, detail::BlockStorage::unwritten)} {}
 
     UnwrittenBytes(UnwrittenBytes const&) =
@@ -371,8 +372,7 @@ concept CanMintAlignedBytes = core::AllocationCapability<Marker>;
 // shows at its call.  Complexity: one allocation, and no write of a byte.
 template <class Marker>
     requires CanMintAlignedBytes<Marker>
-[[nodiscard]] UnwrittenBytes mint_aligned_bytes(Marker /*allocation*/,
-                                                ::foundation::alloc::Layout const& layout) noexcept {
+[[nodiscard]] UnwrittenBytes mint_aligned_bytes(Marker /*allocation*/, ::foundation::alloc::Layout layout) noexcept {
     return UnwrittenBytes{detail::AlignedBytesDoor::key(), layout};
 }
 
@@ -383,7 +383,7 @@ template <class Marker>
 template <class Marker>
     requires CanMintAlignedBytes<Marker>
 [[nodiscard]] AlignedBytes mint_aligned_bytes_zeroed(Marker /*allocation*/,
-                                                     ::foundation::alloc::Layout const& layout) noexcept {
+                                                     ::foundation::alloc::Layout layout) noexcept {
     return AlignedBytes{detail::AlignedBytesDoor::key(),
                         core::detail::owner::AlignedBytesState::allocated(layout, detail::BlockStorage::zeroed)};
 }

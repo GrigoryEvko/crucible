@@ -2,6 +2,8 @@
 
 #include <foundation/alloc/Layout.h>
 
+#include <foundation/Lifetime.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
@@ -65,16 +67,40 @@ static_assert(mint_layout(core::ByteCount{24}, Alignment{0}).is_err());
 static_assert(mint_layout(core::ByteCount{kMaxLayoutBytes}, Alignment{1}).is_ok());
 static_assert(mint_layout(core::ByteCount{kMaxLayoutBytes}, Alignment{64}).is_err());
 
+// The last fact of THE LAYOUT counts the alignment - 1 bytes of the unaligned
+// storage, so the largest layout at 64 bytes leaves room for them.
+static_assert(mint_layout(core::ByteCount{kMaxLayoutBytes - 126}, Alignment{64}).is_ok());
+static_assert(mint_layout(core::ByteCount{kMaxLayoutBytes - 62}, Alignment{64}).is_err());
+static_assert(Layout::of_array<std::uint64_t>(core::ElementCount{(kMaxLayoutBytes - 7) / 8}).is_ok());
+static_assert(Layout::of_array<std::uint64_t>(core::ElementCount{(kMaxLayoutBytes - 7) / 8 + 1}).is_err());
+
+// The unaligned storage of a layout holds its bytes rounded up to the
+// alignment and alignment - 1 bytes more, at an alignment of one.
+static_assert(mint_layout(core::ByteCount{1000}, Alignment{256})
+                  .expect("a check gives a layout")
+                  .unaligned_storage()
+                  .bytes()
+                  .raw()
+              == 1024 + 255);
+static_assert(Layout::of<std::uint64_t>().unaligned_storage().bytes().raw() == 15);
+static_assert(Layout::of<std::uint64_t>().unaligned_storage().alignment() == Alignment{1});
+static_assert(Layout::of<std::uint8_t>().unaligned_storage() == Layout::of<std::uint8_t>());
+
 // No number converts to an Alignment or to a Layout, and only the doors make
-// a Layout.  The copy of a Layout is user-provided, so std::bit_cast and
-// std::start_lifetime_as build none.
+// a Layout.  A Layout holds a byte_seal: its copy and move constructors and
+// its destructor are trivial, so a call passes it in registers, and its
+// assignments are not, so std::bit_cast builds none and the checked lifetime
+// start refuses it.
 static_assert(!std::is_convertible_v<std::size_t, Alignment>);
 static_assert(!std::is_constructible_v<Layout, std::size_t, std::size_t>);
 static_assert(!std::is_constructible_v<Layout, core::ByteCount, Alignment>);
 static_assert(!std::is_default_constructible_v<Layout>);
-static_assert(std::is_nothrow_copy_constructible_v<Layout>);
+static_assert(sizeof(Layout) == 2 * sizeof(std::size_t));
+static_assert(std::is_trivially_copy_constructible_v<Layout>);
+static_assert(std::is_trivially_move_constructible_v<Layout>);
+static_assert(std::is_trivially_destructible_v<Layout>);
 static_assert(!std::is_trivially_copyable_v<Layout>);
-static_assert(!std::is_implicit_lifetime_v<Layout>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Layout>);
 
 // ── The size classes ───────────────────────────────────────────────────
 

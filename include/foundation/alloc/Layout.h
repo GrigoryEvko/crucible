@@ -33,13 +33,19 @@
 //   the door a request that it refuses.  A Layout holds these facts:
 //     - The bytes are more than zero.
 //     - The alignment is a power of two.
-//     - The bytes, rounded up to a whole count of the alignment, are at most
-//       kMaxLayoutBytes, the largest object that the allocator of the C
-//       library gives.
+//     - The bytes, rounded up to a whole count of the alignment, with
+//       alignment - 1 bytes more, are at most kMaxLayoutBytes, the largest
+//       object that the allocator of the C library gives.
 //   Only the three doors of Layout make one, and each door checks the facts.
 //   Layout::of<T>() needs no check at run time: each complete object type
-//   has a size above zero, and its alignment is a power of two.  The copy of
-//   a Layout is user-provided, so std::bit_cast builds no Layout from bytes
+//   has a size above zero, and its alignment is a power of two.  The last
+//   fact gives each Layout an unaligned_storage(), with no check: the layout
+//   of storage at an alignment of one that holds the block at its alignment.
+//
+//   A Layout holds a byte_seal of foundation/ByteSeal.h.  Its copy and move
+//   constructors and its destructor stay trivial, so a call passes a Layout
+//   in two registers.  Its assignments are not trivial, so std::bit_cast
+//   builds no Layout from bytes, and the checked lifetime start refuses it
 //   (test/fixy/test_forgeable_proofs.cpp).
 //
 // THE ALIGNMENT
@@ -75,6 +81,7 @@
 //   The bin of a thread holds 128 slots of a class to 128 bytes, then the
 //   slots of 16 KiB, and at least two slots.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
@@ -132,25 +139,35 @@ class Layout {
 public:
     template <LayoutType T>
     [[nodiscard]] static consteval Layout of() noexcept {
+        static_assert(sizeof(T) + (alignof(T) - 1) <= kMaxLayoutBytes, "an object of T has no layout");
         return Layout{::foundation::core::ByteCount{sizeof(T)}, alignment_of<T>()};
     }
 
     // The layout of count objects of T, a Result<Layout, LayoutError>.  Zero
-    // objects have no bytes, and a count whose bytes pass kMaxLayoutBytes is
-    // too large.
+    // objects have no bytes, and a count whose bytes break the last fact of
+    // THE LAYOUT is too large.
     template <LayoutType T>
     [[nodiscard]] static constexpr auto of_array(::foundation::core::ElementCount count) noexcept;
 
-    constexpr Layout(Layout const& other) noexcept : bytes_{other.bytes_}, alignment_{other.alignment_} {}
-    constexpr Layout& operator=(Layout const& other) noexcept {
-        bytes_ = other.bytes_;
-        alignment_ = other.alignment_;
-        return *this;
-    }
+    constexpr Layout(Layout const&) noexcept = default;
+    constexpr Layout(Layout&&) noexcept = default;
+    constexpr Layout& operator=(Layout const&) noexcept = default;
+    constexpr Layout& operator=(Layout&&) noexcept = default;
     ~Layout() = default;
 
     [[nodiscard]] constexpr ::foundation::core::ByteCount bytes() const noexcept { return bytes_; }
     [[nodiscard]] constexpr Alignment alignment() const noexcept { return alignment_; }
+
+    // The layout of storage at an alignment of one that holds a block of this
+    // layout at its alignment: the bytes rounded up to the alignment, and
+    // alignment - 1 bytes more, before the first address at the alignment.
+    // The last fact of THE LAYOUT holds the sum, so no check runs.
+    // Complexity: O(1).
+    [[nodiscard]] constexpr Layout unaligned_storage() const noexcept {
+        auto const step = static_cast<std::size_t>(alignment_);
+        std::size_t const rounded = (bytes_.raw() + (step - 1)) & ~(step - 1);
+        return Layout{::foundation::core::ByteCount{rounded + (step - 1)}, Alignment{1}};
+    }
 
     [[nodiscard]] constexpr bool operator==(Layout const& other) const noexcept {
         return bytes_ == other.bytes_ && alignment_ == other.alignment_;
@@ -164,6 +181,7 @@ private:
 
     ::foundation::core::ByteCount bytes_{std::size_t{0}};
     Alignment alignment_{};
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
 
 // The result of each door of Layout that checks a request.
@@ -171,8 +189,11 @@ using LayoutResult = ::foundation::core::Result<Layout, LayoutError>;
 
 template <LayoutType T>
 constexpr auto Layout::of_array(::foundation::core::ElementCount count) noexcept {
+    // The bytes of the objects are a whole count of the alignment, so the last
+    // fact adds only alignment - 1.
+    constexpr std::size_t kMostObjects = (kMaxLayoutBytes - (alignof(T) - 1)) / sizeof(T);
     if (count.raw() == 0) return LayoutResult{::foundation::core::err(LayoutError::zero_bytes)};
-    if (count.raw() > kMaxLayoutBytes / sizeof(T)) return LayoutResult{::foundation::core::err(LayoutError::too_large)};
+    if (count.raw() > kMostObjects) return LayoutResult{::foundation::core::err(LayoutError::too_large)};
     return LayoutResult{Layout{::foundation::core::ByteCount{count.raw() * sizeof(T)}, alignment_of<T>()}};
 }
 
@@ -187,7 +208,11 @@ constexpr auto Layout::of_array(::foundation::core::ElementCount count) noexcept
     // The bytes are above zero, so a round-up that fits gives more than zero,
     // and zero marks a round-up past std::size_t.
     std::size_t const rounded = ::foundation::core::align_up(bytes.raw(), step).value_or(0);
-    if (rounded == 0 || rounded > kMaxLayoutBytes) return LayoutResult{::foundation::core::err(LayoutError::too_large)};
+    if (rounded == 0) return LayoutResult{::foundation::core::err(LayoutError::too_large)};
+    // The last fact of THE LAYOUT: the rounded bytes and alignment - 1 more.
+    // Each power of two of std::size_t is at most kMaxLayoutBytes + 1, so the
+    // subtraction does not wrap.
+    if (rounded > kMaxLayoutBytes - (step - 1)) return LayoutResult{::foundation::core::err(LayoutError::too_large)};
     return LayoutResult{Layout{bytes, alignment}};
 }
 
@@ -262,7 +287,7 @@ namespace detail {
 // count of its alignment, or none for a layout past kLargestSlotBytes or for
 // an alignment past it (THE SIZE CLASSES).  Complexity: O(1), at most four
 // steps for an alignment above 16.
-[[nodiscard]] constexpr ::foundation::core::Option<SizeClass> class_for(Layout const& layout) noexcept {
+[[nodiscard]] constexpr ::foundation::core::Option<SizeClass> class_for(Layout layout) noexcept {
     std::size_t const bytes = layout.bytes().raw();
     auto const alignment = static_cast<std::size_t>(layout.alignment());
     if (alignment <= kSlotStepBytes) {

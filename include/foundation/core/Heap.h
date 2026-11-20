@@ -32,8 +32,10 @@ namespace foundation::core {
 namespace detail {
 
 // Gives back the storage that heap_allocate_ or heap_allocate_zeroed_ gave,
-// with the same layout.  storage must not be null.
-void heap_release_(void* storage, ::foundation::alloc::Layout const& layout) noexcept;
+// with the same layout.  storage must not be null.  A Layout passes in two
+// registers (THE LAYOUT of foundation/alloc/Layout.h), so each door takes it
+// by value.
+void heap_release_(void* storage, ::foundation::alloc::Layout layout) noexcept;
 
 // THE WORDS OF A LAYOUT.  The two bodies below take the two words of a
 // Layout as two numbers, because the attributes alloc_size and alloc_align
@@ -51,7 +53,7 @@ heap_take_zeroed_words_(std::size_t bytes, std::size_t alignment) noexcept;
 
 // Gives the storage of the layout.  The bytes hold no value until the caller
 // writes them.  The result is never null.
-[[nodiscard, gnu::always_inline]] inline void* heap_allocate_(::foundation::alloc::Layout const& layout) noexcept {
+[[nodiscard, gnu::always_inline]] inline void* heap_allocate_(::foundation::alloc::Layout layout) noexcept {
     return heap_take_words_(layout.bytes().raw(), static_cast<std::size_t>(layout.alignment()));
 }
 
@@ -71,8 +73,7 @@ template <class T>
 // take a large block from fresh pages of the kernel, which hold zero, so they
 // write no byte of such a block.  The allocator of ThreadSanitizer writes each
 // byte.  The result is never null.
-[[nodiscard, gnu::always_inline]] inline void*
-heap_allocate_zeroed_(::foundation::alloc::Layout const& layout) noexcept {
+[[nodiscard, gnu::always_inline]] inline void* heap_allocate_zeroed_(::foundation::alloc::Layout layout) noexcept {
     return heap_take_zeroed_words_(layout.bytes().raw(), static_cast<std::size_t>(layout.alignment()));
 }
 

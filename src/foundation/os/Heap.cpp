@@ -83,7 +83,7 @@ void* heap_take_zeroed_words_(std::size_t bytes, std::size_t alignment) noexcept
 }
 #pragma GCC diagnostic pop
 
-void heap_release_(void* storage, ::foundation::alloc::Layout const& /*layout*/) noexcept { __builtin_free(storage); }
+void heap_release_(void* storage, ::foundation::alloc::Layout /*layout*/) noexcept { __builtin_free(storage); }
 
 #if defined(__SANITIZE_ADDRESS__)
 
