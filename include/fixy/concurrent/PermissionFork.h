@@ -27,6 +27,7 @@
 
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/NoObject.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Region.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -66,10 +67,13 @@ consteval void check_fork_body_() noexcept {
 }  // namespace detail
 
 // The fit of the arm that starts threads: the fit of the inline arm, and a
-// context that owns the background effect.
+// context that owns the background effect.  The thread of each child copies
+// the context, so the context moves to another thread: it is Sendable
+// (foundation/Transfer.h), as the context of a stage is.
 template <typename Ctx, typename Parent, typename... Children>
 concept CtxFitsPermissionFork = ::foundation::permissions::CtxFitsPermissionForkInline<Ctx, Parent, Children...>
-                             && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>;
+                             && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>
+                             && ::foundation::transfer::Sendable<Ctx>;
 
 // The clause names the gate of the context, the count of the bodies and
 // the body of each child.  The last two are the test of

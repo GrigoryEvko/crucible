@@ -6478,6 +6478,17 @@ fixy_neg_compile_test(neg_thread_run_joined_shares_a_permission
 # The thread of an owner joins before each other member of the owner ends:
 # its member is the last member, the destructor of the owner is defaulted,
 # and the owner stays in place.
+# The thread writes its owner while the thread that starts it runs on, so the
+# owner is one that two threads can write: a plain field or a reference to a
+# plain int refuses.
+fixy_neg_compile_test(neg_owner_thread_owner_with_a_plain_field
+  "static assertion failed: mint_owner_thread: the thread writes its owner while the thread that starts it runs on"
+  "static assertion failed: .anonymous.::Counted"
+  "static assertion failed: .anonymous.::Counted::count")
+fixy_neg_compile_test(neg_owner_thread_owner_refers_to_a_plain_int
+  "static assertion failed: mint_owner_thread: the thread writes its owner while the thread that starts it runs on"
+  "static assertion failed: .anonymous.::CountsInto"
+  "static assertion failed: .anonymous.::CountsInto::count_")
 fixy_neg_compile_test(neg_owner_thread_member_not_last
   "no matching function for call to .mint_owner_thread<"
   "the expression .\\(is_last_owner_thread_member_<Owner, Member>\\)\\(\\) \\[with Owner = <unnamed>::Owner; Member = <unnamed>::Owner::thread_\\]. evaluated to .false.")

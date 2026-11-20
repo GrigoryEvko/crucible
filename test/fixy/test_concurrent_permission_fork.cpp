@@ -51,6 +51,11 @@ using ::foundation::permissions::WriteView;
 
 using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>>;
 
+// The thread of each child copies the context of the fork, so the gate asks
+// that the context is Sendable.  Each context that owns Bg is.
+static_assert(::foundation::transfer::Sendable<BgCtx>);
+static_assert(::fixy::concurrent::CtxFitsPermissionFork<BgCtx, fork_tags::Whole, fork_tags::Left, fork_tags::Right>);
+
 constinit thread_local bool is_main_thread = false;
 
 // Two bodies that wait on each other end only if they run at the same

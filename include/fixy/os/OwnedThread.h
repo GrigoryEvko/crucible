@@ -72,7 +72,12 @@
 //     then does nothing.  The body takes the owner as its one parameter and
 //     gives nothing.  The owner is its only borrow: the door checks its own
 //     captures under the policy of a thread that escapes (foundation/
-//     Closure.h).  A mint while the OwnerThread holds a thread ends the
+//     Closure.h).  The body writes the owner while the thread that starts it
+//     runs on, so the door asks that two threads can write the owner at the
+//     same time (Synchronized of foundation/Transfer.h).  Such an owner keeps
+//     thread_ and each plain part private and states synchronized{}, and a
+//     static assertion of the door names the first part that refuses.  A
+//     mint while the OwnerThread holds a thread ends the
 //     process.  quiescence(owner) gives the proof that no thread of the owner
 //     runs, while the OwnerThread holds no thread (THE QUIESCENCE OF AN
 //     OWNER, at QuiescenceProof).
@@ -405,6 +410,25 @@ template <typename Owner>
     return !std::meta::is_user_provided(destructor) || std::meta::is_defaulted(destructor);
 }
 
+// The first data member of the owner, in the order of the declarations, that
+// two threads cannot write at the same time: a reference, a const member that
+// is not Shareable, or a member that is not Synchronized (THE SHARED WRITE of
+// foundation/Transfer.h).  The owner itself when no member refuses, as when a
+// base refuses.  Complexity: linear in the members, and the walk of each one.
+[[nodiscard]] consteval std::meta::info first_unsynchronized_member_(std::meta::info owner) {
+    for (::foundation::reflect::TypeNode const& part :
+         ::foundation::reflect::member_components_of(::foundation::reflect::TypeNode{owner, true})) {
+        // A node of a base names no member.
+        if (part.member == std::meta::info{}) continue;
+        if (!part.is_held_by_value) return part.member;
+        const bool holds = part.was_const
+                             ? ::foundation::transfer::holds(part.type, ::foundation::transfer::Property::Share)
+                             : ::foundation::transfer::is_synchronized(part.type);
+        if (!holds) return part.member;
+    }
+    return owner;
+}
+
 }  // namespace detail
 
 // An owner that stays in place: it has no copy and no move, so a pointer to
@@ -543,6 +567,21 @@ mint_owner_thread(Ctx const& /*ctx*/, ThreadOptions const& options, Owner& owner
     constexpr ::foundation::closure::ClosureVerdict verdict =
         ::foundation::closure::check_closure(^^Body, escaping_body_policy, "mint_owner_thread");
     static_assert(verdict.is_admitted(), verdict);
+    // The body writes the owner while the thread that starts it runs on (THE
+    // THREAD OF AN OWNER).  The three messages give the rule, the owner and
+    // its first member that two threads cannot write.
+    if constexpr (!::foundation::transfer::Synchronized<Owner>) {
+        static_assert(::foundation::transfer::Synchronized<Owner>,
+                      "mint_owner_thread: the thread writes its owner while the thread that starts it runs on, so two "
+                      "threads write the owner at the same time, and the owner is not Synchronized "
+                      "(foundation/Transfer.h).  Keep thread_ and each plain part of the owner private, make each "
+                      "part that the two threads write an Atomic or a channel, and state synchronized{} with its "
+                      "reason.  The next two messages name the owner and its first member that two threads cannot "
+                      "write");
+        static_assert(::foundation::transfer::Synchronized<Owner>, std::meta::display_string_of(^^Owner));
+        static_assert(::foundation::transfer::Synchronized<Owner>,
+                      std::meta::display_string_of(detail::first_unsynchronized_member_(^^Owner)));
+    }
     OwnerThread<Owner>& slot = owner.*Member;
     CRUCIBLE_PRE(!slot.holds_thread());
     Owner* const held = __builtin_addressof(owner);

@@ -218,8 +218,10 @@ struct Canary {
 
 // An owner whose body loops over its members until the stop hook ends the
 // loop (THE THREAD OF AN OWNER of fixy/os/OwnedThread.h).  The thread is the
-// last member, so it ends before the canary and the cells of the loop.
-class LoopingOwner {
+// last member, so it ends before the canary and the cells of the loop.  The
+// body and the starter use only the atomic cells, and each member is
+// private, so the owner states synchronized{} (foundation/Transfer.h).
+class[[= ::foundation::transfer::synchronized{}]] LoopingOwner {
 public:
     LoopingOwner() noexcept = default;
     LoopingOwner(LoopingOwner const&) = delete("the thread borrows its owner at one address");

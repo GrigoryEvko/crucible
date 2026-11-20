@@ -94,8 +94,12 @@ static_assert(std::is_same_v<decltype(std::declval<h::OneShotFlag&>().peek()), b
 }
 
 // An owner of a flag and of the thread that reads it.  Its OwnerThread is the
-// one door to the proof that no thread of the owner runs.
-struct SignalOwner {
+// one door to the proof that no thread of the owner runs.  The thread and the
+// starter use only the flag, which two threads can use at once, and the
+// OwnerThread is private, so the owner states synchronized{}
+// (foundation/Transfer.h).
+class[[= ::foundation::transfer::synchronized{}]] SignalOwner {
+public:
     SignalOwner() = default;
     SignalOwner(SignalOwner const&) = delete("the thread borrows its owner at one address");
     SignalOwner(SignalOwner&&) = delete("the thread borrows its owner at one address");
@@ -105,14 +109,36 @@ struct SignalOwner {
 
     void request_stop() noexcept { stop.signal(); }
 
+    // The proof of the OwnerThread of this owner, for the owner that the
+    // caller names.  A test names another owner to show the refusal.
+    [[nodiscard]] ::fixy::thread::QuiescenceProof<SignalOwner> quiescence_for(SignalOwner const& owner) const noexcept {
+        return thread_.quiescence(owner);
+    }
+
+    // Starts the thread of the owner.  The body waits for the stop that the
+    // end of the OwnerThread signals.
+    void start_waiting_thread() noexcept {
+        ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
+        ::fixy::thread::mint_owner_thread<&SignalOwner::thread_, &SignalOwner::request_stop>(
+            bg, ::fixy::thread::ThreadOptions{}, *this,
+            [](SignalOwner& self) noexcept {
+                while (!self.stop.peek()) {
+                    CRUCIBLE_SPIN_PAUSE;
+                }
+            })
+            .expect("the thread door starts the thread of the owner");
+    }
+
     h::OneShotFlag stop;
+
+private:
     ::fixy::thread::OwnerThread<SignalOwner> thread_{};
 };
 
 [[nodiscard]] bool a_quiescent_reset_takes_the_flag_down() noexcept {
     SignalOwner owner{};
     owner.stop.signal();
-    owner.stop.reset_in_quiescent_context(owner.thread_.quiescence(owner));
+    owner.stop.reset_in_quiescent_context(owner.quiescence_for(owner));
     return !owner.stop.peek() && !owner.stop.check_and_run([]() noexcept {});
 }
 
@@ -121,31 +147,22 @@ struct SignalOwner {
 void a_reset_with_the_proof_of_another_owner_ends_the_process() noexcept {
     SignalOwner first{};
     SignalOwner second{};
-    second.stop.reset_in_quiescent_context(first.thread_.quiescence(first));
+    second.stop.reset_in_quiescent_context(first.quiescence_for(first));
 }
 
 // The proof names the owner of the OwnerThread that gives it.
 void a_proof_of_an_owner_that_does_not_hold_the_thread_ends_the_process() noexcept {
     SignalOwner first{};
     SignalOwner second{};
-    second.stop.reset_in_quiescent_context(first.thread_.quiescence(second));
+    second.stop.reset_in_quiescent_context(first.quiescence_for(second));
 }
 
 // A named proof outlives a later start of the thread of its owner.  The thread
-// then reads the flag, so a reset with that proof ends the process.  The body
-// waits for the stop that the end of the OwnerThread signals.
+// then reads the flag, so a reset with that proof ends the process.
 void a_reset_with_a_proof_of_before_the_start_ends_the_process() noexcept {
     SignalOwner owner{};
-    ::fixy::thread::QuiescenceProof<SignalOwner> const before_the_start = owner.thread_.quiescence(owner);
-    ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
-    ::fixy::thread::mint_owner_thread<&SignalOwner::thread_, &SignalOwner::request_stop>(
-        bg, ::fixy::thread::ThreadOptions{}, owner,
-        [](SignalOwner& self) noexcept {
-            while (!self.stop.peek()) {
-                CRUCIBLE_SPIN_PAUSE;
-            }
-        })
-        .expect("the thread door starts the thread of the owner");
+    ::fixy::thread::QuiescenceProof<SignalOwner> const before_the_start = owner.quiescence_for(owner);
+    owner.start_waiting_thread();
     owner.stop.reset_in_quiescent_context(before_the_start);
 }
 
