@@ -132,27 +132,28 @@ public:
             return std::move(perm_);
         }
 
-        [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append(::fixy::View<const value_type> metas) {
-            return ch_->log_.try_append(metas);
-        }
-
-        // The record goes into an array of one record, whose View the log
-        // copies.
-        [[nodiscard, gnu::hot]] bool try_append_one(const value_type& meta) {
-            const ::fixy::FixedArray<value_type, 1> record{meta};
-            return ch_->log_.try_append(record.view()).is_valid();
-        }
-
-        // The gate is this constraint: the row of the context of the caller
-        // is empty, and its source permits no atom, so a context narrowed
-        // with in_row fails it.  The body calls try_append, so the gate does
-        // not depend on the gate of MetaLog itself.
+        // Each append takes the context of the caller, and the gate is this
+        // constraint: the row of the context is empty, and its source permits
+        // no atom, so a context narrowed with in_row fails it.  The handle has
+        // no append with no context, so no caller skips the gate.  The body
+        // calls MetaLog::try_append, so the gate does not depend on the gate
+        // of MetaLog itself.
         template <::foundation::effects::IsExecCtx Ctx>
             requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
                   && ::foundation::effects::CtxHasPureSource<Ctx>
         [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append_pure(Ctx const&,
                                                                       ::fixy::View<const value_type> metas) {
             return ch_->log_.try_append(metas);
+        }
+
+        // The append of one record, with the same gate.  The record goes into
+        // an array of one record, whose View the log copies.
+        template <::foundation::effects::IsExecCtx Ctx>
+            requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
+                  && ::foundation::effects::CtxHasPureSource<Ctx>
+        [[nodiscard, gnu::hot]] bool try_append_one_pure(Ctx const&, const value_type& meta) {
+            const ::fixy::FixedArray<value_type, 1> record{meta};
+            return ch_->log_.try_append(record.view()).is_valid();
         }
 
         // A snapshot reads the index of the consumer, and the schedule decides

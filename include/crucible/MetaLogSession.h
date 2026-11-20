@@ -53,7 +53,8 @@ concept MetaLogSessionSurface =
     requires(Log& log, typename Log::ProducerHandle& producer, typename Log::ConsumerHandle& consumer,
              ::foundation::permissions::Permission<typename Log::producer_tag, typename Log::brand_type> prod_perm,
              ::foundation::permissions::Permission<typename Log::consumer_tag, typename Log::brand_type> cons_perm,
-             ::fixy::View<const MetaLogRecord> records, const MetaLogRecord& record) {
+             ::fixy::View<const MetaLogRecord> records, const MetaLogRecord& record,
+             ::foundation::effects::ExecCtx<> const& pure) {
         typename Log::value_type;
         typename Log::brand_type;
         typename Log::producer_tag;
@@ -67,15 +68,26 @@ concept MetaLogSessionSurface =
 
         { log.producer(std::move(prod_perm)) } -> std::same_as<typename Log::ProducerHandle>;
         { log.consumer(std::move(cons_perm)) } -> std::same_as<typename Log::ConsumerHandle>;
-        { producer.try_append(records) } -> std::same_as<::crucible::MetaIndex>;
-        { producer.try_append_one(record) } -> std::same_as<bool>;
+        { producer.try_append_pure(pure, records) } -> std::same_as<::crucible::MetaIndex>;
+        { producer.try_append_one_pure(pure, record) } -> std::same_as<bool>;
         { consumer.try_drain_one() } -> std::same_as<::fixy::Option<MetaLogRecord>>;
     };
 
-// The trying write of the producer: true when the log took the record.
-inline constexpr auto append_one = [](auto& producer, MetaLogRecord& record) -> bool {
-    return producer.try_append_one(record);
-};
+// The trying write of the producer under the pure context ctx: true when the
+// log took the record.  The append of the producer takes the context of its
+// caller, so the transport holds a reference to it, and the context lives
+// for each send of the transport.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::foundation::effects::CtxHasPureSource<Ctx>
+[[nodiscard]] constexpr auto append_one_in(Ctx const& ctx) noexcept {
+    return [&ctx](auto& producer, MetaLogRecord& record) -> bool { return producer.try_append_one_pure(ctx, record); };
+}
+
+// The transport holds a reference to the context.  A temporary context ends
+// at the end of the statement, and this twin refuses it.
+template <::foundation::effects::IsExecCtx Ctx>
+void append_one_in(Ctx const&&) = delete("the transport holds a reference to the context, and a temporary context ends "
+                                         "at the end of the statement. Give a context that has a name");
 
 // The polling read of the consumer: the next record, or none while the log
 // holds nothing.

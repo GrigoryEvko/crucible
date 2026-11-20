@@ -75,9 +75,10 @@ bench::Report bench_permissioned_append_drain(PermissionedLog::ProducerHandle& p
                                               PermissionedLog::ConsumerHandle& consumer, ::crucible::MetaLog& log) {
     reset_log(log);
     std::uint32_t i = 0;
+    const auto pure = ::foundation::effects::testing::foreground();
     auto report = bench::run("round-trip: permissioned append + drain", [&] {
         const auto meta = make_meta(++i);
-        const bool appended = producer.try_append_one(meta);
+        const bool appended = producer.try_append_one_pure(pure, meta);
         bench::do_not_optimize(appended);
         const auto drained = consumer.try_drain_one().value_or(::crucible::TensorMeta{});
         bench::do_not_optimize(drained.version);
@@ -99,7 +100,8 @@ bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle&& producer,
     std::optional cons{ses::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(consumer))};
     std::uint32_t i = 0;
     auto report = bench::run("round-trip: typed session send + recv", [&] {
-        prod.emplace(std::move(*prod).select<0>(::fixy::session::no_label).send(make_meta(++i), ses::append_one));
+        prod.emplace(
+            std::move(*prod).select<0>(::fixy::session::no_label).send(make_meta(++i), ses::append_one_in(ctx)));
         auto [meta, next] = std::move(*cons).select<0>(::fixy::session::no_label).recv(ses::drain_one);
         bench::do_not_optimize(meta.version);
         cons.emplace(std::move(next));

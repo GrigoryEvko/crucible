@@ -4289,6 +4289,16 @@ crucible_neg_compile_test(neg_metalog_consumer_append
     "has no member named .try_append."
     ".class crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ConsumerHandle. has no member")
 
+# Each append of the producer endpoint takes the context of the caller, so
+# the gate binds each caller.  The two fixtures call an append with no
+# context, which an endpoint with an ungated append beside its gate admitted.
+crucible_neg_compile_test(neg_metalog_producer_ungated_append
+    "has no member named .try_append.. did you mean"
+    ".class crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ProducerHandle. has no member")
+crucible_neg_compile_test(neg_metalog_producer_ungated_append_one
+    "has no member named .try_append_one."
+    ".class crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ProducerHandle. has no member")
+
 # Only the producer claim of the Vigils makes the proof of the record path, so
 # a caller outside the claim builds none, and the claim of another brand gives
 # a proof that the trace ring and the metadata log refuse.

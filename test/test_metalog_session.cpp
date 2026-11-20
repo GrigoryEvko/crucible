@@ -43,6 +43,10 @@ using BgCtx = ::fixy::BgDrainCtx;
 // The tag of a snapshot of the log.  The test context holds Nondet.
 constexpr ::foundation::effects::cap::Nondet kSnapshot = ::foundation::effects::testing::test().nondet;
 
+// The pure context of each append of the producer endpoint, whose gate reads
+// the row and the source of the context of the caller.
+constexpr FgCtx kPure = ::foundation::effects::testing::foreground();
+
 // The gate of each mint reads the context, the log and the handle.
 static_assert(ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, PermissionedLog::ProducerHandle>
               && ms::CtxFitsMetaLogConsumerSession<FgCtx, PermissionedLog, PermissionedLog::ConsumerHandle>);
@@ -54,6 +58,16 @@ static_assert(!ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, Permiss
               "the producer mint takes a producer");
 static_assert(!ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, PermissionedLog::ProducerHandle&>,
               "the mint takes the handle by move");
+
+// The transport of the producer holds a reference to a pure context.  It
+// refuses a temporary context and a context whose source permits atoms.
+template <typename Ctx>
+concept MakesAppendTransport = requires(Ctx&& ctx) { ms::append_one_in(static_cast<Ctx&&>(ctx)); };
+static_assert(MakesAppendTransport<FgCtx const&>);
+static_assert(!MakesAppendTransport<FgCtx>, "a temporary context ends at the end of the statement");
+static_assert(!MakesAppendTransport<::fixy::TestRunnerCtx const&>);
+static_assert(!MakesAppendTransport<
+              ::foundation::effects::ExecCtx<::foundation::effects::Test, ::foundation::effects::Row<>> const&>);
 
 // A mint cannot throw.
 static_assert(noexcept(ms::mint_metalog_producer_session<PermissionedLog>(
@@ -185,7 +199,7 @@ void test_single_append_drain() {
     auto [producer, consumer] = mint_handles(log);
 
     const ::crucible::TensorMeta source = make_meta(42);
-    CRUCIBLE_TEST_REQUIRE(producer.try_append_one(source));
+    CRUCIBLE_TEST_REQUIRE(producer.try_append_one_pure(kPure, source));
 
     auto drained = consumer.try_drain_one();
     CRUCIBLE_TEST_REQUIRE(drained.is_some());
@@ -198,7 +212,7 @@ void test_single_append_drain() {
     // opens a new handle of its role with no second claim.
     auto second_producer = log.producer(std::move(producer).release());
     auto second_consumer = log.consumer(std::move(consumer).release());
-    CRUCIBLE_TEST_REQUIRE(second_producer.try_append_one(source));
+    CRUCIBLE_TEST_REQUIRE(second_producer.try_append_one_pure(kPure, source));
     CRUCIBLE_TEST_REQUIRE(second_consumer.size_approx(kSnapshot) == 1);
     ::foundation::linear::drop(std::move(second_producer).release());
     ::foundation::linear::drop(std::move(second_consumer).release());
@@ -214,7 +228,7 @@ void test_partial_drain() {
     const ::fixy::FixedArray<::crucible::TensorMeta, 5> source{
         make_meta(1), make_meta(2), make_meta(3), make_meta(4), make_meta(5),
     };
-    const ::crucible::MetaIndex start = producer.try_append(source.view());
+    const ::crucible::MetaIndex start = producer.try_append_pure(kPure, source.view());
     CRUCIBLE_TEST_REQUIRE(start.is_valid());
     CRUCIBLE_TEST_REQUIRE(start.raw() == 0);
 
@@ -252,11 +266,11 @@ void test_metaindex_propagates() {
     const ::fixy::FixedArray<::crucible::TensorMeta, 2> first{make_meta(10), make_meta(20)};
     const ::fixy::FixedArray<::crucible::TensorMeta, 3> second{make_meta(30), make_meta(40), make_meta(50)};
 
-    const ::crucible::MetaIndex idx_first = producer.try_append(first.view());
+    const ::crucible::MetaIndex idx_first = producer.try_append_pure(kPure, first.view());
     CRUCIBLE_TEST_REQUIRE(idx_first.is_valid());
     CRUCIBLE_TEST_REQUIRE(idx_first.raw() == 0);
 
-    const ::crucible::MetaIndex idx_second = producer.try_append(second.view());
+    const ::crucible::MetaIndex idx_second = producer.try_append_pure(kPure, second.view());
     CRUCIBLE_TEST_REQUIRE(idx_second.is_valid());
     CRUCIBLE_TEST_REQUIRE(idx_second.raw() == first.size());
 
@@ -301,7 +315,8 @@ void test_typed_session_round_trip() {
         const FgCtx ctx = ::foundation::effects::testing::foreground();
         std::optional head{ms::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(producer))};
         for (int i = 0; i < kCount; ++i) {
-            head.emplace(std::move(*head).select<0>(::fixy::session::no_label).send(make_meta(i + 10), ms::append_one));
+            head.emplace(
+                std::move(*head).select<0>(::fixy::session::no_label).send(make_meta(i + 10), ms::append_one_in(ctx)));
         }
         auto back = std::move(*head).select<1>(::fixy::session::no_label).close();
         producer_handle_back.store(back.size_approx(kSnapshot) <= static_cast<std::uint32_t>(kCount),
@@ -343,7 +358,7 @@ void test_session_gives_the_handle_back() {
     auto producer_back = std::move(producer_head).select<1>(::fixy::session::no_label).close();
     auto consumer_back = std::move(consumer_head).select<1>(::fixy::session::no_label).close();
 
-    CRUCIBLE_TEST_REQUIRE(producer_back.try_append_one(make_meta(7)));
+    CRUCIBLE_TEST_REQUIRE(producer_back.try_append_one_pure(fg, make_meta(7)));
     auto drained = consumer_back.try_drain_one();
     CRUCIBLE_TEST_REQUIRE(drained.is_some());
     CRUCIBLE_TEST_REQUIRE(same_meta(std::move(drained).expect("the log holds one record"), make_meta(7)));
@@ -368,7 +383,7 @@ void log_producer() {
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
     [[maybe_unused]] auto moved = std::move(producer);
-    (void)opaque_ref(producer).try_append_one(make_meta(1));
+    (void)opaque_ref(producer).try_append_one_pure(kPure, make_meta(1));
 }
 
 void log_consumer() {
@@ -409,7 +424,8 @@ void copy_of_a_released_record() {
     auto producer = log.producer(std::move(producer_token));
     auto consumer = log.consumer(std::move(consumer_token));
     const ::crucible::TensorMeta record = make_meta(1);
-    CRUCIBLE_FATAL_INVARIANT(producer.try_append_one(record) && producer.try_append_one(record));
+    CRUCIBLE_FATAL_INVARIANT(producer.try_append_one_pure(kPure, record)
+                             && producer.try_append_one_pure(kPure, record));
     CRUCIBLE_FATAL_INVARIANT(consumer.drain([](const ::crucible::TensorMeta&) noexcept {}, 1) == 1);
     (void)consumer.copy_at(::crucible::MetaIndex{0});
 }
