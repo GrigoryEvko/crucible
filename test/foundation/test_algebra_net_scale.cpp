@@ -24,6 +24,7 @@
 namespace {
 
 using foundation::algebra::net::Action;
+using foundation::algebra::net::ActionId;
 using foundation::algebra::net::AgentId;
 using foundation::algebra::net::CanonicalNet;
 using foundation::algebra::net::ChannelId;
@@ -351,6 +352,18 @@ static_assert(crossed_dataflow_fault.is_path_cut);
 inline constexpr LivenessFault waiting_ring_fault = find_liveness_fault(waiting_ring_of_1000);
 static_assert(waiting_ring_fault.code == LivenessFaultCode::CycleWithoutToken);
 
+// The place of each fault: the agent and the port where the cycle closes, and
+// the first members of each path.  A body that finds the same verdict at
+// another place fails here.
+static_assert(crossed_proof_net_fault.agent == AgentId{200} && crossed_proof_net_fault.port == 1);
+static_assert(crossed_vicious_fault.agent == AgentId{101} && crossed_vicious_fault.path_count == max_fault_path
+              && crossed_vicious_fault.path[1] == AgentId{200} && crossed_vicious_fault.path[5] == AgentId{196});
+static_assert(crossed_dataflow_fault.agent == AgentId{101} && crossed_dataflow_fault.path[1] == AgentId{200}
+              && crossed_dataflow_fault.path[4] == AgentId{197});
+static_assert(waiting_ring_fault.path_count == max_liveness_path && waiting_ring_fault.is_path_cut
+              && waiting_ring_fault.path[0] == ActionId{1} && waiting_ring_fault.path[1] == ActionId{1999}
+              && waiting_ring_fault.path[3] == ActionId{1995});
+
 // The canonical form of the sum tree: its result is a boundary agent, so the
 // walk from it numbers each agent.  The chain has no boundary agent, so it
 // has no form.
@@ -463,6 +476,116 @@ template <class Graph>
         && is_same_fault(find_liveness_at_run_time(waiting), waiting_ring_fault);
 }
 
+// ── The places of the faults ────────────────────────────────────────────
+//
+// Each variant below comes from a net or a system above at run time, and
+// each expected fault holds every field that a check sets.  So a body that
+// gives the same verdict at another place fails the test.  noinline keeps
+// the copies of each function in a frame of its own.
+
+// A stage wired to itself, with its two neighbours joined: a wire of one
+// agent, and a net of two parts.  The signature of the chain has no par
+// kind, so the proof net check of this net names the port that closes the
+// cycle in the order of the agents and their ports.
+[[gnu::noinline, nodiscard]] bool does_looped_chain_keep_its_fault(LineNet const& chain) noexcept {
+    LineNet looped = chain;
+    looped.wires[499] = Wire{PortRef{AgentId{499}, 1}, PortRef{AgentId{501}, 0}};
+    looped.wires[500] = Wire{PortRef{AgentId{500}, 1}, PortRef{AgentId{500}, 0}};
+    NetFault const expected{.code = NetFaultCode::ProofNetCycle, .agent = AgentId{500}, .port = 1};
+    return is_same_fault(find_at_run_time<NetCheck::ProofNet>(looped), expected)
+        && is_same_fault(find_at_run_time<NetCheck::ProofNet>(seal_net(looped)), expected);
+}
+
+// The index of the wire with an end at a port of the fork tree.
+[[nodiscard]] std::uint32_t wire_at(ForkNet const& tree, PortRef end) noexcept {
+    for (std::uint32_t index = 0; index < 1332; ++index) {
+        PortRef const left = tree.wires[index].left;
+        PortRef const right = tree.wires[index].right;
+        if ((left.agent == end.agent && left.port == end.port)
+            || (right.agent == end.agent && right.port == end.port)) {
+            return index;
+        }
+    }
+    return 0;
+}
+
+// The fork at agent 16 has two bodies as its leaves, and its join is agent
+// 17.  In the looped tree, the kids of the join go back into the fork, and
+// the outside skips the two, so the par of the fork reaches its own class.
+// In the cycled tree, the kids of the join go into its right body, and the
+// right par port of the fork goes to the parent join, so the join and the
+// body close a cycle with no par.  In the swapped tree, two premise wires
+// change their ends, so the par ports of the fork at agent 23 never meet.
+[[gnu::noinline, nodiscard]] bool do_fork_variants_keep_their_faults(ForkNet const& tree) noexcept {
+    ForkNet looped = tree;
+    std::uint32_t const into_fork = wire_at(looped, PortRef{AgentId{16}, 0});
+    std::uint32_t const out_of_join = wire_at(looped, PortRef{AgentId{17}, 2});
+    PortRef const outer_give = looped.wires[into_fork].left;
+    PortRef const outer_take = looped.wires[out_of_join].right;
+    looped.wires[into_fork] = Wire{PortRef{AgentId{17}, 2}, PortRef{AgentId{16}, 0}};
+    looped.wires[out_of_join] = Wire{outer_give, outer_take};
+    ForkNet cycled = tree;
+    std::uint32_t const right_premise = wire_at(cycled, PortRef{AgentId{16}, 2});
+    PortRef const body_in = cycled.wires[right_premise].right;
+    cycled.wires[right_premise] = Wire{PortRef{AgentId{16}, 2}, outer_take};
+    cycled.wires[out_of_join] = Wire{PortRef{AgentId{17}, 2}, body_in};
+    ForkNet swapped = tree;
+    swapped.wires[5].right = tree.wires[9].right;
+    swapped.wires[9].right = tree.wires[5].right;
+    NetFault const reaches_itself{.code = NetFaultCode::ParReachesItself, .agent = AgentId{16}};
+    NetFault const closes_cycle{.code = NetFaultCode::ProofNetCycle, .agent = AgentId{19}, .port = 1};
+    NetFault const never_meets{.code = NetFaultCode::ParPortsNeverMeet, .agent = AgentId{23}};
+    return is_same_fault(find_at_run_time<NetCheck::ProofNet>(looped), reaches_itself)
+        && is_same_fault(find_at_run_time<NetCheck::ProofNet>(seal_net(looped)), reaches_itself)
+        && is_same_fault(find_at_run_time<NetCheck::ProofNet>(cycled), closes_cycle)
+        && is_same_fault(find_at_run_time<NetCheck::ProofNet>(seal_net(cycled)), closes_cycle)
+        && is_same_fault(find_at_run_time<NetCheck::ProofNet>(swapped), never_meets)
+        && is_same_fault(find_at_run_time<NetCheck::ProofNet>(seal_net(swapped)), never_meets);
+}
+
+// The sum tree with each fault of the wiring.  find_canonical_form checks the
+// wiring in its walk, so it gives the fault that find_wiring_fault gives.
+[[gnu::noinline, nodiscard]] bool do_sum_variants_keep_their_faults(LineNet const& sum) noexcept {
+    auto const keeps = [](LineNet const& graph, NetFault const& expected) noexcept {
+        return is_same_fault(find_form_at_run_time(graph).fault, expected)
+            && is_same_fault(find_at_run_time<NetCheck::Wiring>(graph), expected);
+    };
+    LineNet past_net = sum;
+    past_net.wires[10].left = PortRef{AgentId{1000}, 0};
+    LineNet past_ports = sum;
+    past_ports.wires[10].left.port = 3;
+    LineNet second_wire = sum;
+    second_wire.wires[10].right = sum.wires[11].right;
+    LineNet self_wire = sum;
+    self_wire.wires[10].right = sum.wires[10].left;
+    LineNet not_dual = sum;
+    not_dual.wires[10].right = sum.wires[20].left;
+    LineNet foreign = sum;
+    foreign.agents[700] = KindId{5};
+    return keeps(past_net, NetFault{.code = NetFaultCode::WireNodePastNet, .agent = AgentId{1000}, .wire = 10})
+        && keeps(past_ports,
+                 NetFault{.code = NetFaultCode::WirePortPastAgent, .agent = AgentId{503}, .port = 3, .wire = 10})
+        && keeps(second_wire,
+                 NetFault{.code = NetFaultCode::PortWithSecondWire, .agent = AgentId{505}, .port = 1, .wire = 11})
+        && keeps(self_wire,
+                 NetFault{.code = NetFaultCode::PortWithSecondWire, .agent = AgentId{503}, .port = 2, .wire = 10})
+        && keeps(not_dual, NetFault{.code = NetFaultCode::WireNotDual, .wire = 10})
+        && keeps(foreign, NetFault{.code = NetFaultCode::KindPastSignature, .agent = AgentId{700}});
+}
+
+// The waiting ring on channels of capacity 1: each role still receives
+// first, so its cycle of waits holds no token.
+[[gnu::noinline, nodiscard]] bool does_buffered_ring_keep_its_fault(WaitingRingSystem const& waiting) noexcept {
+    WaitingRingSystem buffered = waiting;
+    for (NetChannel& channel : buffered.channels)
+        channel.capacity = 1;
+    LivenessFault const expected{.code = LivenessFaultCode::CycleWithoutToken,
+                                 .path_count = max_liveness_path,
+                                 .is_path_cut = true,
+                                 .path = {ActionId{0}, ActionId{1999}, ActionId{1998}, ActionId{1997}}};
+    return is_same_fault(find_liveness_at_run_time(buffered), expected);
+}
+
 }  // namespace
 
 // The text of a refusal is a constant, and a program reads it at run time.
@@ -476,5 +599,8 @@ int main() {
     bool const is_run_time_same = does_fork_match(fork_of_1001) && does_chain_match(chain_of_1000)
                                && does_sum_match(sum_of_1000) && do_rings_match(ring_of_1000, waiting_ring_of_1000)
                                && do_sealed_nets_match(chain_of_1000, sum_of_1000);
-    return is_named && is_empty_refusal && is_run_time_same ? 0 : 1;
+    bool const is_each_place_kept =
+        does_looped_chain_keep_its_fault(chain_of_1000) && do_fork_variants_keep_their_faults(fork_of_1001)
+        && do_sum_variants_keep_their_faults(sum_of_1000) && does_buffered_ring_keep_its_fault(waiting_ring_of_1000);
+    return is_named && is_empty_refusal && is_run_time_same && is_each_place_kept ? 0 : 1;
 }
