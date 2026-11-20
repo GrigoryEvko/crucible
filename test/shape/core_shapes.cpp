@@ -1930,14 +1930,24 @@ struct RawOwnerWords final {
     return second;
 }
 
+// Takes the address of a block and does nothing.  The compiler cannot see
+// the body, so the address escapes, and a malloc and a free of the block
+// stay in the code of the caller.  The parameter is not const, so the
+// compiler does not read the call as a read of the unwritten bytes.
+[[gnu::noipa]] void hold_block(void* /*block*/) noexcept {}
+
 // The storage of a block holds its bytes rounded up to the alignment, and
-// alignment - 1 bytes more (THE STORAGE of foundation/AlignedBytes.h).
+// alignment - 1 bytes more (THE STORAGE of foundation/AlignedBytes.h).  Each
+// address goes to hold_block, so the compiler keeps the two malloc and free
+// pairs.  With no use of the addresses, it removes each pair.
 [[gnu::used]] std::size_t aligned_bytes_mint_two_raw(std::size_t first_bytes, std::size_t first_alignment,
                                                      std::size_t second_bytes, std::size_t second_alignment) noexcept {
     std::size_t const first_rounded = (first_bytes + (first_alignment - 1)) & ~(first_alignment - 1);
     std::size_t const second_rounded = (second_bytes + (second_alignment - 1)) & ~(second_alignment - 1);
     void* const one = __builtin_malloc(first_rounded + (first_alignment - 1));
     void* const two = __builtin_malloc(second_rounded + (second_alignment - 1));
+    hold_block(one);
+    hold_block(two);
     __builtin_free(two);
     __builtin_free(one);
     return first_bytes + second_bytes;

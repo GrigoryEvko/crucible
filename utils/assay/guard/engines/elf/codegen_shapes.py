@@ -735,9 +735,10 @@ PROBES: tuple[Probe, ...] = (
         "aligned_bytes_mint_two",
         "two mints of a block and their ends are the round ups of the raw form, a call of the allocation door in "
         "place of each malloc, and the test of the storage, the check of the layout and a call of the release door "
-        "in place of each free.  The mint, the constructor of the block and the take of its storage are always "
-        "inline, so a caller that keeps a function of two calls out of line, as the -O1 build does, makes no other "
-        "call",
+        "in place of each free.  The raw form gives each address to a function that the compiler cannot see, so it "
+        "keeps its two malloc and free pairs.  The mint, the constructor of the block and the take of its storage "
+        "are always inline, so a caller that keeps a function of two calls out of line, as the -O1 build does, "
+        "makes no other call",
         checks=("fatal",),
         branches=True,
         calls=(
