@@ -90,7 +90,7 @@ bench/ | c-array-object | 14 | - | -
 bench/ | c-library-call | 63 | - | -
 bench/ | inline-asm | 1 | - | -
 bench/ | opted-out | 2 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
-bench/ | opted-out | 2 | ABI: the BPF program of SchedSwitch writes the timeline that the harness reads | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
+bench/ | opted-out | 1 | ABI: the BPF program of SchedSwitch writes the timeline that the harness reads | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 bench/ | opted-out | 2 | ABI: the BPF programs of the perf facades write the timeline rings that the bench reads | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
 bench/ | opted-out | 9 | ABI: the pinned official BLAKE3 is a C library, the reference of the keyed hash | The bench measures the keyed hash of the base against the pinned official BLAKE3.  The reference is a C library with assembly, so its door takes raw pointers and a hasher of C, and the rows of the bench give the bytes of each row to that door
 bench/ | opted-out | 1 | MEASURE: a C array of descriptors is the raw floor of the zeroing of scenario A | the region of the mpsc bench narrows to the thread starts of each cycle, and the raw floor of scenario A of meta_zero is a C array
@@ -169,8 +169,8 @@ include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 1 | ABI: libbpf opened the descriptor of the BPF map, and the map door maps it | libbpf gives the descriptor of a BPF map as a raw int, and map_foreign_region is the door that maps a descriptor that a C library opened
-include/fixy/ | base-std-entity | 271 | - | -
-include/fixy/ | base-std-object | 148 | - | -
+include/fixy/ | base-std-entity | 239 | - | -
+include/fixy/ | base-std-object | 144 | - | -
 include/fixy/ | replace-pending:<array> | 4 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/ | replace-pending:<bit> | 2 | - | -
@@ -179,9 +179,9 @@ include/fixy/ | replace-pending:<functional> | 1 | - | -
 include/fixy/ | replace-pending:<limits> | 2 | - | -
 include/fixy/ | replace-pending:<memory> | 2 | - | -
 include/fixy/ | replace-pending:<optional> | 4 | - | -
-include/fixy/ | replace-pending:<span> | 4 | - | -
-include/fixy/ | replace-pending:<string> | 5 | - | -
-include/fixy/ | replace-pending:<string_view> | 12 | - | -
+include/fixy/ | replace-pending:<span> | 3 | - | -
+include/fixy/ | replace-pending:<string> | 4 | - | -
+include/fixy/ | replace-pending:<string_view> | 11 | - | -
 include/fixy/ | replace-pending:<tuple> | 4 | - | -
 include/fixy/ | replace-pending:<vector> | 11 | - | -
 include/fixy/atoms/ | base-std-entity | 46 | - | -
@@ -372,7 +372,7 @@ test/dag_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a type
 test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/dag_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
-test/fixy/ | c-array-object | 79 | - | -
+test/fixy/ | c-array-object | 75 | - | -
 test/fixy/ | c-library-call | 978 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 8 | - | -
@@ -395,7 +395,6 @@ test/fixy/ | opted-out | 1 | PROBE: cheat 27 forges is_refined_v, and IsRefined 
 test/fixy/ | opted-out | 1 | PROBE: cheat 30 forges is_tagged_v, and IsTagged must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: cheat 33 forges is_secret_v, and IsSecret must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: cheat 36 forges is_stale_v, and IsStale must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/fixy/ | opted-out | 1 | PROBE: cheat 39 forges is_borrowed_v, and IsBorrowed must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: cheat 42 forges is_owned_region_v, and IsOwnedRegion must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: cheat 45 forges the is_writeonce struct, and is_writeonce_v must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: cheat 55 forges is_recipe_spec_v, and IsRecipeSpec must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -410,7 +409,7 @@ test/fixy/ | opted-out | 2 | PROBE: the test states a payload rule of the role d
 test/fixy/ | opted-out | 5 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
-test/fixy/ | raw-pointer-object | 129 | - | -
+test/fixy/ | raw-pointer-object | 128 | - | -
 test/fixy/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | region | 1 | ORACLE: sched_getcpu of the C library is the oracle of the current CPU | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -430,7 +429,6 @@ test/fixy/ | region | 1 | PROBE: cheat 27 forges is_refined_v, and IsRefined mus
 test/fixy/ | region | 1 | PROBE: cheat 30 forges is_tagged_v, and IsTagged must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: cheat 33 forges is_secret_v, and IsSecret must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: cheat 36 forges is_stale_v, and IsStale must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/fixy/ | region | 1 | PROBE: cheat 39 forges is_borrowed_v, and IsBorrowed must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: cheat 42 forges is_owned_region_v, and IsOwnedRegion must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: cheat 45 forges the is_writeonce struct, and is_writeonce_v must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: cheat 55 forges is_recipe_spec_v, and IsRecipeSpec must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -446,11 +444,11 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/ | std-entity | 2297 | - | -
-test/fixy/ | std-object | 814 | - | -
-test/fixy/neg/ | c-array-object | 54 | - | -
+test/fixy/ | std-entity | 2286 | - | -
+test/fixy/ | std-object | 810 | - | -
+test/fixy/neg/ | c-array-object | 42 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
-test/fixy/neg/ | detail-use | 321 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | detail-use | 320 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -479,7 +477,6 @@ test/fixy/neg/ | opted-out | 1 | PROBE: the fixture gives the premises cell of a
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture gives the premises cell of a payload the cell of another payload | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture gives the record cell of a pack the cell of another pack | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture gives the verdict cell of a binding the cell of another binding | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/fixy/neg/ | opted-out | 5 | PROBE: the fixture needs a borrowed range of the library, which no base type gives | the overload of mint_borrowed for a borrowed rvalue range takes only a range of the library, such as std::span
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a corpus entry template of the base | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 52 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a reader of the base with no cell | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -518,7 +515,6 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture gives the premises cell of a pa
 test/fixy/neg/ | region | 1 | PROBE: the fixture gives the premises cell of a payload the cell of another payload | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture gives the record cell of a pack the cell of another pack | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture gives the verdict cell of a binding the cell of another binding | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/fixy/neg/ | region | 2 | PROBE: the fixture needs a borrowed range of the library, which no base type gives | the overload of mint_borrowed for a borrowed rvalue range takes only a range of the library, such as std::span
 test/fixy/neg/ | region | 1 | PROBE: the fixture plants a corpus entry template of the base | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 38 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/neg/ | region | 1 | PROBE: the fixture plants a reader of the base with no cell | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -530,7 +526,7 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member m
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/neg/ | std-entity | 78 | - | -
+test/fixy/neg/ | std-entity | 74 | - | -
 test/fixy/neg/ | std-object | 33 | - | -
 test/foundation/ | c-array-object | 9 | - | -
 test/foundation/ | c-library-call | 10 | - | -
@@ -678,10 +674,10 @@ test/layer/checks/crucible/cog/ | std-object | 19 | - | -
 test/layer/checks/crucible/mimic/ | std-entity | 3 | - | -
 test/layer/checks/crucible/mimic/ | std-object | 1 | - | -
 test/layer/checks/crucible/observe/ | std-entity | 1 | - | -
-test/layer/checks/fixy/ | c-array-object | 9 | - | -
+test/layer/checks/fixy/ | c-array-object | 2 | - | -
 test/layer/checks/fixy/ | raw-pointer-object | 8 | - | -
-test/layer/checks/fixy/ | std-entity | 100 | - | -
-test/layer/checks/fixy/ | std-object | 8 | - | -
+test/layer/checks/fixy/ | std-entity | 87 | - | -
+test/layer/checks/fixy/ | std-object | 5 | - | -
 test/layer/checks/fixy/atoms/ | std-entity | 18 | - | -
 test/layer/checks/fixy/atoms/ | std-object | 4 | - | -
 test/layer/checks/fixy/collision/ | std-entity | 16 | - | -

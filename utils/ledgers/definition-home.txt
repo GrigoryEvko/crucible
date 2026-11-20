@@ -7,8 +7,8 @@ reason include/fixy/os/ | Fd.h, ClockSource.h and SchedClass.h declare or befrie
 reason include/foundation/core/ | Record.h declares StaticIndex of Index.h.  The landing of the Region family moves the declaration into the header of the class
 reason include/foundation/effects/ | Effect.h declares Row, Computation, ExecCtx and Capability for the row-hash fold of each carrier.  Move the fold of each carrier into the header of the carrier, beside its definition, and remove the four declarations
 reason include/foundation/permissions/ | Fwd.h declares Permission and SharedPermission for the headers that name a token and do not include Permission.h.  Include the header of the definition in each user of Fwd.h, and remove Fwd.h
-include/fixy/ | elsewhere | 5 | - | -
-include/fixy/ | friend | 2 | - | -
+include/fixy/ | elsewhere | 3 | - | -
+include/fixy/ | friend | 1 | - | -
 include/fixy/ | undefined | 1 | - | the deduction of the row that a surface observes is declared and never defined, because only an unevaluated decltype reads its return type
 include/fixy/os/ | elsewhere | 6 | - | -
 include/fixy/os/ | friend | 1 | - | -
