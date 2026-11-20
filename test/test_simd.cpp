@@ -12,12 +12,8 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <memory>
 #include <type_traits>
 
 namespace {
@@ -83,10 +79,10 @@ static void test_det_safe_simd_concept() {
 }
 
 static void test_load() {
-    std::array<int64_t, 8> source{10, 20, 30, 40, 50, 60, 70, 80};
-    auto v = simd::load<simd::i64x8>(source.data());
-    for (int lane = 0; lane < 8; ++lane) {
-        CRUCIBLE_TEST_ASSERT(kTest, v[lane] == source[static_cast<size_t>(lane)]);
+    ::foundation::core::FixedArray<int64_t, 8> source{10, 20, 30, 40, 50, 60, 70, 80};
+    auto v = simd::load<simd::i64x8>(source.view());
+    for (auto const index : source.indices()) {
+        CRUCIBLE_TEST_ASSERT(kTest, v[static_cast<int>(index.raw())] == source.at(index));
     }
     ::fixy::check::pass(kTest, "  test_load: PASSED\n");
 }
@@ -228,8 +224,8 @@ static void test_for_each_register_run() {
 }
 
 static void test_reduce_xor_sum() {
-    std::array<int64_t, 8> values{0, 1, 2, 3, 4, 5, 6, 7};
-    auto input = simd::load<simd::i64x8>(values.data());
+    ::foundation::core::FixedArray<int64_t, 8> values{0, 1, 2, 3, 4, 5, 6, 7};
+    auto input = simd::load<simd::i64x8>(values.view());
 
     int64_t xor_expected = 0;
     int64_t sum_expected = 0;
@@ -247,27 +243,28 @@ static void test_reduce_xor_sum() {
 }
 
 static void test_reduce_or_and() {
-    std::array<uint64_t, 8> values{0x01ULL, 0x02ULL, 0x04ULL, 0x08ULL, 0x10ULL, 0x20ULL, 0x40ULL, 0x80ULL};
-    auto input = simd::load<simd::u64x8>(values.data());
+    ::foundation::core::FixedArray<uint64_t, 8> values{0x01ULL, 0x02ULL, 0x04ULL, 0x08ULL,
+                                                       0x10ULL, 0x20ULL, 0x40ULL, 0x80ULL};
+    auto input = simd::load<simd::u64x8>(values.view());
     CRUCIBLE_TEST_ASSERT(kTest, simd::reduce_or(input) == 0xFFULL);
     CRUCIBLE_TEST_ASSERT(kTest, simd::reduce_and(input) == 0ULL);
     ::fixy::check::pass(kTest, "  test_reduce_or_and: PASSED\n");
 }
 
 static void test_reduce_max_min() {
-    std::array<int64_t, 8> values{-5, 100, 33, -200, 7, 42, 999, 0};
-    auto input = simd::load<simd::i64x8>(values.data());
+    ::foundation::core::FixedArray<int64_t, 8> values{-5, 100, 33, -200, 7, 42, 999, 0};
+    auto input = simd::load<simd::i64x8>(values.view());
     CRUCIBLE_TEST_ASSERT(kTest, simd::reduce_max(input) == 999);
     CRUCIBLE_TEST_ASSERT(kTest, simd::reduce_min(input) == -200);
     ::fixy::check::pass(kTest, "  test_reduce_max_min: PASSED\n");
 }
 
 static void test_select() {
-    std::array<int64_t, 8> on_true{100, 200, 300, 400, 500, 600, 700, 800};
-    std::array<int64_t, 8> on_false{1, 2, 3, 4, 5, 6, 7, 8};
+    ::foundation::core::FixedArray<int64_t, 8> on_true{100, 200, 300, 400, 500, 600, 700, 800};
+    ::foundation::core::FixedArray<int64_t, 8> on_false{1, 2, 3, 4, 5, 6, 7, 8};
 
-    auto t_v = simd::load<simd::i64x8>(on_true.data());
-    auto f_v = simd::load<simd::i64x8>(on_false.data());
+    auto t_v = simd::load<simd::i64x8>(on_true.view());
+    auto f_v = simd::load<simd::i64x8>(on_false.view());
 
     auto mask = simd::prefix_mask<simd::i64x8>(4);
     auto out = simd::select(mask, t_v, f_v);
@@ -282,9 +279,10 @@ static void test_select() {
 
     // The two operands are re-read afterwards: a select that wrote
     // into one of them would still produce the right result above.
-    for (int lane = 0; lane < 8; ++lane) {
-        CRUCIBLE_TEST_ASSERT(kTest, t_v[lane] == on_true[static_cast<size_t>(lane)]);
-        CRUCIBLE_TEST_ASSERT(kTest, f_v[lane] == on_false[static_cast<size_t>(lane)]);
+    for (auto const index : on_true.indices()) {
+        int const lane = static_cast<int>(index.raw());
+        CRUCIBLE_TEST_ASSERT(kTest, t_v[lane] == on_true.at(index));
+        CRUCIBLE_TEST_ASSERT(kTest, f_v[lane] == on_false.at(index));
     }
     ::fixy::check::pass(kTest, "  test_select: PASSED\n");
 }
@@ -293,19 +291,19 @@ static void test_select() {
 // a full-width vector, with the identity covering the lanes past the
 // dimension count, instead of a select and a second pass.
 static void test_masked_reduce_for_dim_hash_pattern() {
-    std::array<int64_t, 8> sizes{2, 3, 4, 5, 6, 7, 8, 9};
-    std::array<int64_t, 8> mix_lo{7, 11, 13, 17, 19, 23, 29, 31};
+    ::foundation::core::FixedArray<int64_t, 8> sizes{2, 3, 4, 5, 6, 7, 8, 9};
+    ::foundation::core::FixedArray<int64_t, 8> mix_lo{7, 11, 13, 17, 19, 23, 29, 31};
     constexpr int ndim = 5;
 
-    auto sizes_v = simd::load<simd::i64x8>(sizes.data());
-    auto mix_v = simd::load<simd::i64x8>(mix_lo.data());
+    auto sizes_v = simd::load<simd::i64x8>(sizes.view());
+    auto mix_v = simd::load<simd::i64x8>(mix_lo.view());
     simd::i64x8 product = sizes_v * mix_v;
 
     int64_t simd_result = simd::reduce_xor(product, simd::prefix_mask<simd::i64x8>(ndim));
 
     int64_t scalar_result = 0;
-    for (int d = 0; d < ndim; ++d) {
-        scalar_result ^= sizes[static_cast<size_t>(d)] * mix_lo[static_cast<size_t>(d)];
+    for (auto const index : sizes.indices()) {
+        if (index.raw() < static_cast<std::size_t>(ndim)) scalar_result ^= sizes.at(index) * mix_lo.at(index);
     }
 
     CRUCIBLE_TEST_ASSERT(kTest, simd_result == scalar_result);
@@ -344,15 +342,26 @@ static crucible::TensorMeta make_meta(std::initializer_list<int64_t> sizes, std:
     crucible::TensorMeta meta{};
     meta.ndim = static_cast<uint8_t>(sizes.size());
     CRUCIBLE_TEST_ASSERT(kTest, strides.size() == sizes.size());
-    auto size_it = sizes.begin();
-    auto stride_it = strides.begin();
-    for (uint8_t d = 0; d < meta.ndim; ++d) {
-        meta.sizes[d] = ::crucible::tensor_dim(*size_it++);
-        meta.strides[d] = ::crucible::tensor_dim(*stride_it++);
+    uint8_t d = 0;
+    for (int64_t const size : sizes) {
+        meta.sizes[d] = ::crucible::tensor_dim(size);
+        ++d;
+    }
+    d = 0;
+    for (int64_t const stride : strides) {
+        meta.strides[d] = ::crucible::tensor_dim(stride);
+        ++d;
     }
     meta.dtype = dtype;
     return meta;
 }
+
+// A TensorMeta one natural alignment past a boundary of 64 bytes: the lead
+// fills the bytes before it.
+struct alignas(64) MisalignedMeta {
+    ::foundation::core::FixedArray<uint8_t, alignof(crucible::TensorMeta)> lead{};
+    crucible::TensorMeta meta{};
+};
 
 static void test_dim_hash_equivalence_handcoded() {
     using namespace crucible::detail;
@@ -396,26 +405,16 @@ static void test_dim_hash_equivalence_handcoded() {
     expect_agree(m_neg);
 
     // Real callers hand over metadata that is only aligned as the type
-    // requires, never to a vector boundary.  The search below picks
-    // such an address deliberately, because a load that assumed vector
-    // alignment would pass on every case above.
-    alignas(crucible::TensorMeta) std::array<std::byte, sizeof(crucible::TensorMeta) + 64> storage{};
-    std::uintptr_t chosen = 0;
-    const std::uintptr_t base = std::bit_cast<std::uintptr_t>(storage.data());
-    for (std::size_t offset = 0; offset < 64; ++offset) {
-        const std::uintptr_t candidate = base + offset;
-        if (candidate % alignof(crucible::TensorMeta) == 0 && candidate % 64 != 0) {
-            chosen = candidate;
-            break;
-        }
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, chosen != 0);
-    auto* unaligned =
-        std::construct_at(std::bit_cast<crucible::TensorMeta*>(chosen), make_meta({16, 32, 64}, {2048, 64, 1}));
+    // requires, never to a vector boundary.  The holder below puts the
+    // metadata at such an address deliberately, because a load that
+    // assumed vector alignment would pass on every case above.
+    MisalignedMeta holder{};
+    holder.meta = make_meta({16, 32, 64}, {2048, 64, 1});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::fixy::address_of(::fixy::to(holder.meta)).is_aligned<alignof(crucible::TensorMeta)>());
     CRUCIBLE_TEST_ASSERT(
-        kTest, !::fixy::address_of(::fixy::to(unaligned->sizes.lanes().at(::fixy::index<0>()))).is_aligned<64>());
-    expect_agree(*unaligned);
-    std::destroy_at(unaligned);
+        kTest, !::fixy::address_of(::fixy::to(holder.meta.sizes.lanes().at(::fixy::index<0>()))).is_aligned<64>());
+    expect_agree(holder.meta);
 
     // Agreement alone would be satisfied by a hash that returned a
     // constant, so two different shapes are required to differ.
