@@ -104,6 +104,10 @@ rule artifact-symbols
 @build/libfixy.a | libc-allow | 1 | at_quick_exit | -
 @build/libfixy.a | libc-allow | 1 | atexit | -
 @build/libfixy.a | libc-allow | 1 | clock_gettime | -
+@build/libfixy.a | libc-allow | 1 | dlclose | -
+@build/libfixy.a | libc-allow | 1 | dlerror | -
+@build/libfixy.a | libc-allow | 1 | dlopen | -
+@build/libfixy.a | libc-allow | 1 | dlsym | -
 @build/libfixy.a | libc-allow | 1 | getenv | -
 @build/libfixy.a | libc-allow | 1 | pthread_atfork | -
 @build/libfixy.a | libc-allow | 1 | pthread_attr_destroy | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
