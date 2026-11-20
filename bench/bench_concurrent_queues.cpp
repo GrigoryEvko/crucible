@@ -29,7 +29,6 @@
 // the ring never fills inside the default 100k sample run.  This
 // isolates pure try_push cost from drain/reset noise.
 
-#include <cstdio>
 #include <cstdint>
 
 #include <crucible/TraceRing.h>
@@ -55,6 +54,9 @@ using SmallSpsc = SpscRing<std::uint64_t, 1024>;
 // publish/load measurement (single cache line for storage_).
 using Snap = AtomicSnapshot<std::uint64_t>;
 
+// The allocation capability of the rings and the snapshots of the rows.
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
+
 }  // namespace
 
 int main() {
@@ -63,10 +65,10 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== concurrent_queues ===\n");
-    std::printf("  SpscRing<uint64,1M> sizeof: %zu bytes\n", sizeof(HugeSpsc));
-    std::printf("  AtomicSnapshot<uint64> sizeof: %zu bytes\n", sizeof(Snap));
-    std::printf("\n");
+    bench::print("=== concurrent_queues ===\n");
+    bench::print("  SpscRing<uint64,1M> sizeof: {} bytes\n", sizeof(HugeSpsc));
+    bench::print("  AtomicSnapshot<uint64> sizeof: {} bytes\n", sizeof(Snap));
+    bench::print("\n");
 
     ::fixy::FixedArray<bench::Report, 10> reports{
         // ── HARNESS BASELINE: pure do_not_optimize cost ───────────────
@@ -95,7 +97,7 @@ int main() {
 
         // ── SpscRing: pure push (huge cap, never fills) ───────────────
         [&] {
-            auto ring = std::make_unique<HugeSpsc>();
+            ::fixy::Box<HugeSpsc> ring = ::fixy::mint_box<HugeSpsc>(kAlloc);
             std::uint64_t i = 0;
             return bench::run("spsc_ring.try_push (huge cap, no drain)", [&] {
                 const bool ok = ring->try_push(++i);
@@ -119,7 +121,7 @@ int main() {
         // (~5ns) ≈ 13-15ns measured.  Per-item ≈ 0.117ns.
         // (Zen 4+ would emit AVX-512 ZMM stores; this CPU does not.)
         [&] {
-            auto ring = std::make_unique<HugeSpsc>();
+            ::fixy::Box<HugeSpsc> ring = ::fixy::mint_box<HugeSpsc>(kAlloc);
             alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> tx{};
             alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> rx{};
             for (::fixy::Index<64> const index : tx.indices())
@@ -134,7 +136,7 @@ int main() {
 
         // ── SpscRing: pure pop (pre-filled, never empties) ────────────
         [&] {
-            auto ring = std::make_unique<HugeSpsc>();
+            ::fixy::Box<HugeSpsc> ring = ::fixy::mint_box<HugeSpsc>(kAlloc);
             // Pre-fill enough so 100k pops don't drain — push 200k.
             for (std::uint64_t i = 0; i < 200000; ++i) {
                 (void)ring->try_push(i);
@@ -147,7 +149,7 @@ int main() {
 
         // ── SpscRing: round-trip push+pop (depth stays 0/1) ───────────
         [&] {
-            auto ring = std::make_unique<SmallSpsc>();
+            ::fixy::Box<SmallSpsc> ring = ::fixy::mint_box<SmallSpsc>(kAlloc);
             std::uint64_t i = 0;
             return bench::run("spsc_ring round-trip (push+pop)", [&] {
                 (void)ring->try_push(++i);
@@ -158,14 +160,14 @@ int main() {
 
         // ── AtomicSnapshot: publish (writer-only) ─────────────────────
         [&] {
-            auto snap = std::make_unique<Snap>();
+            ::fixy::Box<Snap> snap = ::fixy::mint_box<Snap>(kAlloc);
             std::uint64_t i = 0;
             return bench::run("atomic_snapshot.publish", [&] { snap->publish(++i); });
         }(),
 
         // ── AtomicSnapshot: load (reader-only, no writer) ─────────────
         [&] {
-            auto snap = std::make_unique<Snap>(42ULL);
+            ::fixy::Box<Snap> snap = ::fixy::mint_box<Snap>(kAlloc, std::uint64_t{42});
             // The load spins with no exit while a write is in flight, so it
             // takes a context that owns Div.
             const ::fixy::TestRunnerCtx reader{::foundation::effects::testing::test()};
@@ -177,7 +179,7 @@ int main() {
 
         // ── AtomicSnapshot: try_load fast path ────────────────────────
         [&] {
-            auto snap = std::make_unique<Snap>(42ULL);
+            ::fixy::Box<Snap> snap = ::fixy::mint_box<Snap>(kAlloc, std::uint64_t{42});
             return bench::run("atomic_snapshot.try_load (uncontended)", [&] {
                 auto v = snap->try_load();
                 bench::do_not_optimize(v);
@@ -189,7 +191,7 @@ int main() {
         // (+reset-on-full, const entry)" — periodic reset on full keeps
         // the bench from saturating; tail samples include reset cost.
         [&] {
-            auto ring = std::make_unique<crucible::TraceRing>();
+            ::fixy::Box<crucible::TraceRing> ring = ::fixy::mint_box<crucible::TraceRing>(kAlloc);
             crucible::TraceRing::Entry e{};
             e.schema_hash = crucible::SchemaHash{0xABCDEF};
             return bench::run("trace_ring.try_append (reference, +reset-on-full)", [&] {
@@ -203,7 +205,7 @@ int main() {
     bench::emit_reports_text(reports.view());
 
     // ── Comparisons (the headline result) ─────────────────────────────
-    std::printf("\n=== compare ===\n");
+    bench::print("\n=== compare ===\n");
 
     // Index map:
     //   [0] HARNESS BASELINE: do_not_optimize(++i)      ← bench overhead
@@ -220,48 +222,47 @@ int main() {
     // Headline #1: actual ring cost = single-push p50 - harness overhead p50.
     // (do_not_optimize is a [[gnu::noipa]] real CALL+RET ≈ 3-4 cycles ≈
     // 0.7-1ns at 4.6GHz on Zen 3.)
-    std::printf("\n[spsc_ring.try_push] vs [HARNESS BASELINE do_not_optimize]:\n");
+    bench::print("\n[spsc_ring.try_push] vs [HARNESS BASELINE do_not_optimize]:\n");
     bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<0>())).print_text();
 
     // Headline #2: SpscRing vs TraceRing — SpscRing is FASTER (no
     // parallel-array writes, no prefetches, no slot-mask compute).
-    std::printf("\n[spsc_ring.try_push] vs [trace_ring.try_append]:\n");
+    bench::print("\n[spsc_ring.try_push] vs [trace_ring.try_append]:\n");
     bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<9>())).print_text();
 
     // Headline #3: per-item batched cost vs per-item single-call cost.
     // batch[3] reports WHOLE-BATCH-PUSH-AND-POP time for 64 items each
     // way; per-item-push ≈ batch_p50 / (2 × 64).
-    std::printf("\n[spsc_ring batch<64> push+pop round-trip] vs [single try_push]:\n");
+    bench::print("\n[spsc_ring batch<64> push+pop round-trip] vs [single try_push]:\n");
     bench::compare(reports.at(::fixy::index<3>()), reports.at(::fixy::index<2>())).print_text();
 
     // Headline #4: AtomicSnapshot.load vs publish.
-    std::printf("\n[atomic_snapshot.load] vs [atomic_snapshot.publish]:\n");
+    bench::print("\n[atomic_snapshot.load] vs [atomic_snapshot.publish]:\n");
     bench::compare(reports.at(::fixy::index<7>()), reports.at(::fixy::index<6>())).print_text();
 
     // Bootstrap CIs on the headline percentiles + batched per-item.
-    std::printf("\n=== confidence intervals (95%%) ===\n");
+    bench::print("\n=== confidence intervals (95%) ===\n");
     {
         const auto ci = reports.at(::fixy::index<0>()).ci(0.50);
-        std::printf("  HARNESS BASELINE p50: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
+        bench::print("  HARNESS BASELINE p50: [{}, {}] ns\n", ::fixy::Fixed<2>{ci.lo}, ::fixy::Fixed<2>{ci.hi});
     }
     {
         const auto ci = reports.at(::fixy::index<2>()).ci(0.50);
-        std::printf("  spsc_ring.try_push p50: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
+        bench::print("  spsc_ring.try_push p50: [{}, {}] ns\n", ::fixy::Fixed<2>{ci.lo}, ::fixy::Fixed<2>{ci.hi});
     }
     {
         const auto ci = reports.at(::fixy::index<2>()).ci(0.99);
-        std::printf("  spsc_ring.try_push p99: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
+        bench::print("  spsc_ring.try_push p99: [{}, {}] ns\n", ::fixy::Fixed<2>{ci.lo}, ::fixy::Fixed<2>{ci.hi});
     }
     {
         const auto ci = reports.at(::fixy::index<3>()).ci(0.50);
         // round-trip = push 64 + pop 64.  Per-item-push ≈ ci / (2×64).
-        std::printf("  spsc_ring batch<64> push+pop round-trip p50: [%.2f, %.2f] ns "
-                    "(per-item ≈ %.3f ns)\n",
-                    ci.lo, ci.hi, ci.lo / 128.0);
+        bench::print("  spsc_ring batch<64> push+pop round-trip p50: [{}, {}] ns (per-item ≈ {} ns)\n",
+                     ::fixy::Fixed<2>{ci.lo}, ::fixy::Fixed<2>{ci.hi}, ::fixy::Fixed<3>{ci.lo / 128.0});
     }
     {
         const auto ci = reports.at(::fixy::index<9>()).ci(0.50);
-        std::printf("  trace_ring.try_append p50: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
+        bench::print("  trace_ring.try_append p50: [{}, {}] ns\n", ::fixy::Fixed<2>{ci.lo}, ::fixy::Fixed<2>{ci.hi});
     }
 
     bench::emit_reports_json(reports.view(), json);
