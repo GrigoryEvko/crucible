@@ -116,6 +116,7 @@ rule artifact-symbols
 @build/libfixy.a | libc-allow | 1 | pthread_self | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libfixy.a | libc-allow | 1 | pthread_setname_np | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libfixy.a | libc-allow | 1 | raise | -
+@build/libfixy.a | libc-allow | 1 | sched_getcpu | -
 @build/libfixy.a | libc-allow | 1 | sigaction | -
 @build/libfixy.a | libc-allow | 1 | sigaltstack | -
 @build/libfixy.a | libc-allow | 1 | sigemptyset | -
