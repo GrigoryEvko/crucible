@@ -15,9 +15,6 @@
 //     calls per op, typical of a compiled trace walk
 
 #include <cstdint>
-#include <cstdio>
-#include <random>
-#include <vector>
 
 #include <crucible/MerkleDag.h>
 #include <crucible/PoolAllocator.h>
@@ -93,10 +90,28 @@ MemoryPlan make_mixed_plan(::fixy::View<TensorSlot> slots, uint32_t n_internal, 
     return plan;
 }
 
-void fill_random_indices(uint32_t* indices, uint32_t count, uint32_t num_slots) {
-    std::mt19937 rng(42);
-    for (uint32_t i = 0; i < count; i++) {
-        indices[i] = static_cast<uint32_t>(rng() % num_slots);
+// A count of slots of a plan.
+using SlotCount = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
+
+// The position of a draw in a stream of Philox.
+using DrawIndex = ::fixy::Id<struct DrawIndexTag, uint64_t>;
+
+// The slot of a draw: the first word of the Philox block of the draw with the
+// key Seed, modulo the count of the slots.
+template <uint64_t Seed>
+[[nodiscard]] uint32_t random_slot(DrawIndex draw, SlotCount num_slots) noexcept {
+    const ::fixy::Philox4x32::Counter block = ::fixy::Philox4x32::generate(draw.raw(), Seed);
+    return block.at(::fixy::index<0>()) % num_slots.raw();
+}
+
+// Fills each index with a random slot below num_slots, from the Philox
+// stream of the key 42.
+template <std::size_t Count>
+void fill_random_indices(::fixy::FixedArray<uint32_t, Count>& indices, SlotCount num_slots) noexcept {
+    uint64_t draw = 0;
+    for (uint32_t& index : indices) {
+        index = random_slot<42>(DrawIndex{draw}, num_slots);
+        ++draw;
     }
 }
 
@@ -109,14 +124,16 @@ int main() {
     const bench::JsonTail json = bench::env_json();
     auto test = ::foundation::effects::testing::test();
 
-    std::printf("=== pool_allocator ===\n");
-    std::printf("  sizeof(PoolAllocator)               = %zu\n", sizeof(PoolAllocator));
-    std::printf("  sizeof(TensorSlot)                  = %zu\n", sizeof(TensorSlot));
-    std::printf("  sizeof(MemoryPlan)                  = %zu\n", sizeof(MemoryPlan));
-    std::printf("  sizeof(SlotId)                      = %zu\n\n", sizeof(SlotId));
+    bench::print("=== pool_allocator ===\n");
+    bench::print("  sizeof(PoolAllocator)               = {}\n", sizeof(PoolAllocator));
+    bench::print("  sizeof(TensorSlot)                  = {}\n", sizeof(TensorSlot));
+    bench::print("  sizeof(MemoryPlan)                  = {}\n", sizeof(MemoryPlan));
+    bench::print("  sizeof(SlotId)                      = {}\n\n", sizeof(SlotId));
 
     // The 18 rows below, three of them in each of the four loops.
     ::fixy::FixedList<bench::Report, 18> reports{};
+    // The slot counts of the rows of each loop.
+    constexpr ::fixy::FixedArray<uint32_t, 3> kSlotCounts{10u, 100u, 1000u};
 
     // ── slot_ptr sequential access ────────────────────────────────────
     bench::add_report(reports, [&] {
@@ -131,7 +148,7 @@ int main() {
         return r;
     }());
 
-    for (uint32_t N : {10u, 100u, 1000u}) {
+    for (uint32_t N : kSlotCounts) {
         bench::add_report(reports, [&, N] {
             ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
             MemoryPlan plan = make_uniform_plan(slots.view(), 256);
@@ -151,7 +168,7 @@ int main() {
     // ── slot_ptr random access ────────────────────────────────────────
     constexpr uint32_t ACCESS_COUNT = 10000;
 
-    for (uint32_t N : {10u, 100u, 1000u}) {
+    for (uint32_t N : kSlotCounts) {
         bench::add_report(reports, [&, N] {
             ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
             MemoryPlan plan = make_uniform_plan(slots.view(), 256);
@@ -159,12 +176,14 @@ int main() {
             pool.init(::foundation::effects::testing::test().alloc, plan);
             auto pv = pool.mint_initialized_view(kVigilForeground);
 
-            std::vector<uint32_t> indices(ACCESS_COUNT);
-            fill_random_indices(indices.data(), ACCESS_COUNT, N);
+            ::fixy::FixedArray<uint32_t, ACCESS_COUNT> indices{};
+            fill_random_indices(indices, SlotCount{N});
             uint32_t idx = 0;
 
             auto r = bench::run(bench::format_name("slot_ptr({} slots, random)", N), [&] {
-                bench::do_not_optimize(pool.slot_ptr(SlotId{indices[idx % ACCESS_COUNT]}, pv));
+                const ::fixy::Index<ACCESS_COUNT> at =
+                    ::fixy::Index<ACCESS_COUNT>::check(idx % ACCESS_COUNT).expect("a remainder is below the count");
+                bench::do_not_optimize(pool.slot_ptr(SlotId{indices.at(at)}, pv));
                 idx++;
             });
             pool.destroy();
@@ -199,11 +218,11 @@ int main() {
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
-        const PoolAllocator* pool_ptr = &pool;
-        bench::do_not_optimize(pool_ptr);
+        const ::fixy::Ref<const PoolAllocator> pool_ref = ::fixy::to(static_cast<const PoolAllocator&>(pool));
+        bench::do_not_optimize(pool_ref);
         auto r = bench::run("slot_ptr(100, via pointer)", [&] {
             for (uint32_t i = 0; i < N; i++)
-                bench::do_not_optimize(pool_ptr->slot_ptr(SlotId{i}, pv));
+                bench::do_not_optimize(pool_ref->slot_ptr(SlotId{i}, pv));
         });
         pool.destroy();
         return r;
@@ -227,7 +246,7 @@ int main() {
     }());
 
     // ── init cold path ────────────────────────────────────────────────
-    for (uint32_t N : {10u, 100u, 1000u}) {
+    for (uint32_t N : kSlotCounts) {
         bench::add_report(reports, [&, N] {
             ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
             MemoryPlan plan = make_uniform_plan(slots.view(), 256);
@@ -322,21 +341,25 @@ int main() {
         auto pv = pool.mint_initialized_view(kVigilForeground);
 
         struct OpSlots {
-            SlotId in0, in1, out;
+            SlotId in0{};
+            SlotId in1{};
+            SlotId out{};
         };
-        std::vector<OpSlots> op_slots(NUM_OPS);
-        std::mt19937 rng(123);
-        for (uint32_t i = 0; i < NUM_OPS; i++) {
-            op_slots[i].in0 = SlotId{static_cast<uint32_t>(rng() % NUM_SLOTS)};
-            op_slots[i].in1 = SlotId{static_cast<uint32_t>(rng() % NUM_SLOTS)};
-            op_slots[i].out = SlotId{static_cast<uint32_t>(rng() % NUM_SLOTS)};
+        // The three slots of each op, from the Philox stream of the key 123.
+        ::fixy::FixedArray<OpSlots, NUM_OPS> op_slots{};
+        uint64_t draw = 0;
+        for (OpSlots& op : op_slots) {
+            op.in0 = SlotId{random_slot<123>(DrawIndex{draw}, SlotCount{NUM_SLOTS})};
+            op.in1 = SlotId{random_slot<123>(DrawIndex{draw + 1}, SlotCount{NUM_SLOTS})};
+            op.out = SlotId{random_slot<123>(DrawIndex{draw + 2}, SlotCount{NUM_SLOTS})};
+            draw += 3;
         }
 
         auto r = bench::run("replay(200 ops, 3 slots each)", [&] {
-            for (uint32_t i = 0; i < NUM_OPS; i++) {
-                bench::do_not_optimize(pool.slot_ptr(op_slots[i].in0, pv));
-                bench::do_not_optimize(pool.slot_ptr(op_slots[i].in1, pv));
-                bench::do_not_optimize(pool.slot_ptr(op_slots[i].out, pv));
+            for (OpSlots const& op : op_slots) {
+                bench::do_not_optimize(pool.slot_ptr(op.in0, pv));
+                bench::do_not_optimize(pool.slot_ptr(op.in1, pv));
+                bench::do_not_optimize(pool.slot_ptr(op.out, pv));
             }
         });
         pool.destroy();
@@ -349,7 +372,7 @@ int main() {
     // should be statistically indistinguishable: same assembly after
     // inlining. The raw-table form skips one indirection and may shave
     // a cycle per lookup.
-    std::printf("\n=== compare — via-pointer overhead ===\n  ");
+    bench::print("\n=== compare — via-pointer overhead ===\n  ");
     // reports[7] = "slot_ptr(100, direct ref)", reports[8] = "slot_ptr(100, via pointer)"
     bench::compare(*reports.get(7).expect("the row of slot_ptr(100, direct ref)"),
                    *reports.get(8).expect("the row of slot_ptr(100, via pointer)"))
