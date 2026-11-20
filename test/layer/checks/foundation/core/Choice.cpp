@@ -745,6 +745,88 @@ static_assert(!TakesPayloadByValue<decltype([](auto const&) noexcept { return 0;
 static_assert(!TakesPayloadByValue<decltype([](long) noexcept { return 0; }), int>);
 static_assert(!TakesPayloadByValue<TwoCalls, int>);
 
+// ── The arms of a borrow match ────────────────────────────────────────
+
+// An arm of a borrow match reads its part with no conversion: its parameter
+// is the part type or a const reference to it.  A generic arm passes in each
+// form that a deduction from a const lvalue gives.  A class that converts, a
+// reference that is not const, an rvalue reference and a volatile reference
+// are refused, and so is each shape that the rvalue gate refuses.
+struct Meters {
+    double value = 0.0;
+};
+struct Feet {
+    double value = 0.0;
+    constexpr Feet() noexcept = default;
+    constexpr Feet(Meters meters) noexcept : value{meters.value} {}
+};
+static_assert(TakesPayloadByBorrow<decltype([](int) noexcept { return 0; }), int>);
+static_assert(TakesPayloadByBorrow<decltype([](int const) noexcept { return 0; }), int>);
+static_assert(TakesPayloadByBorrow<decltype([](int const&) noexcept { return 0; }), int>);
+static_assert(TakesPayloadByBorrow<decltype([](OptionBorrow) noexcept { return 0; }), int>);
+static_assert(TakesPayloadByBorrow<decltype([](auto) noexcept { return 0; }), int>);
+static_assert(TakesPayloadByBorrow<decltype([](auto const&) noexcept { return 0; }), int>);
+static_assert(TakesPayloadByBorrow<decltype([](auto&) noexcept { return 0; }), int>);
+static_assert(TakesPayloadByBorrow<decltype([](auto&&) noexcept { return 0; }), int>);
+static_assert(TakesPayloadByBorrow<InheritsCall, int> && TakesPayloadByBorrow<StaticCall, int>);
+static_assert(TakesPayloadByBorrow<StaticReference, int> && TakesPayloadByBorrow<decltype(&arm_function), int>);
+static_assert(TakesPayloadByBorrow<decltype([](Meters const&) noexcept { return 0; }), Meters>);
+static_assert(!TakesPayloadByBorrow<decltype([](Feet) noexcept { return 0; }), Meters>);
+static_assert(!TakesPayloadByBorrow<decltype([](Feet const&) noexcept { return 0; }), Meters>);
+static_assert(!TakesPayloadByBorrow<decltype([](long) noexcept { return 0; }), int>);
+static_assert(!TakesPayloadByBorrow<decltype([](int&) noexcept { return 0; }), int>);
+static_assert(!TakesPayloadByBorrow<decltype([](int&&) noexcept { return 0; }), int>);
+static_assert(!TakesPayloadByBorrow<decltype([](int const&&) noexcept { return 0; }), int>);
+static_assert(!TakesPayloadByBorrow<decltype([](int const volatile&) noexcept { return 0; }), int>);
+static_assert(!TakesPayloadByBorrow<ExplicitObject, int> && !TakesPayloadByBorrow<TwoCalls, int>);
+static_assert(!TakesPayloadByBorrow<TemplateAndReference, int>);
+
+// A generic arm by value can call a member of an rvalue that a const
+// payload does not have.  The gate reads no parameter of a template, so it
+// instantiates no arm with a type that the match does not give it.
+struct TakesOnce {
+    int value = 0;
+    [[nodiscard]] constexpr int take() && noexcept { return value; }
+};
+static_assert(TakesPayloadByBorrow<
+              decltype([](auto held) noexcept { return static_cast<decltype(held)&&>(held).take(); }), TakesOnce>);
+
+// A forwarding arm reads a const lvalue.  Its body can call a member that an
+// rvalue does not have, and the gate still reads the arm.
+struct ReadsOnlyLvalue {
+    int value = 0;
+    [[nodiscard]] constexpr int read() const& noexcept { return value; }
+    int read() && = delete("the probe reads only an lvalue");
+};
+static_assert(
+    TakesPayloadByBorrow<decltype([](auto&& held) noexcept { return static_cast<decltype(held)>(held).read(); }),
+                         ReadsOnlyLvalue>);
+
+// The borrow match of an Option and of a Result refuses an arm that reads
+// its part through an implicit constructor, and takes the exact arms.
+template <class O>
+constexpr bool borrowed_match_converts = requires(O const& option) {
+    option.match([](Feet feet) noexcept { return feet.value; }, []() noexcept { return 0.0; });
+};
+template <class O>
+constexpr bool borrowed_match_reads_exactly = requires(O const& option) {
+    option.match([](Meters const & meters) noexcept { return meters.value; }, []() noexcept { return 0.0; });
+    option.match([](Meters meters) noexcept { return meters.value; }, []() noexcept { return 0.0; });
+    option.match([](auto const & meters) noexcept { return meters.value; }, []() noexcept { return 0.0; });
+};
+static_assert(!borrowed_match_converts<Option<Meters>> && borrowed_match_reads_exactly<Option<Meters>>);
+template <class R>
+constexpr bool borrowed_result_match_converts = requires(R const& result) {
+    result.match([](Feet feet) noexcept { return feet.value; }, [](Code) noexcept { return 0.0; });
+};
+template <class R>
+constexpr bool borrowed_result_match_reads_exactly = requires(R const& result) {
+    result.match([](Meters const & meters) noexcept { return meters.value; }, [](Code const&) noexcept { return 0.0; });
+    result.match([](auto meters) noexcept { return meters.value; }, [](auto&&) noexcept { return 0.0; });
+};
+static_assert(!borrowed_result_match_converts<Result<Meters, Code>>);
+static_assert(borrowed_result_match_reads_exactly<Result<Meters, Code>>);
+
 // The result of an rvalue match holds no borrow: no reference, no address,
 // and no closure that captures by reference.  A closure that captures by
 // value holds a value, because the sixth GCC patch shows its fields.

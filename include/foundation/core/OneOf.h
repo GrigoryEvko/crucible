@@ -271,20 +271,35 @@ public:
                                            "the OneOf and match its borrow");
 
     // The total match of a borrow: the arm of the active alternative gets its
-    // value as a const reference, and the OneOf keeps it.  The rule
-    // borrow-match of the plugin refuses an arm that assigns, moves or changes
-    // this OneOf, and an owning OneOf counts the lend (THE LEND COUNT of
-    // Choice.h).
+    // value as a const reference, and the OneOf keeps it.  The parameter of
+    // each arm is the alternative at its position or a const reference to
+    // it, so no conversion reads an alternative as another type, and arms in
+    // the wrong order do not compile.  The rule borrow-match of the plugin
+    // refuses an arm that assigns, moves or changes this OneOf, and an owning
+    // OneOf counts the lend (THE LEND COUNT of Choice.h).
     template <class... Arms>
         requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts const&> && ...)
              && (std::same_as<std::invoke_result_t<Arms, Ts const&>, std::invoke_result_t<Arms...[0], Ts...[0] const&>>
                  && ...)
+             && (TakesPayloadByBorrow<Arms, Ts> && ...)
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Arms...[0], Ts...[0] const&>
         match(Arms&&... arms) const& noexcept((std::is_nothrow_invocable_v<Arms, Ts const&> && ...)) {
         using Result = std::invoke_result_t<Arms...[0], Ts...[0] const&>;
         [[maybe_unused]] auto const lend = slot_.lend_(detail::SumDoor::key());
         return this->template borrowed_from_<0, Result>(static_cast<Arms&&>(arms)...);
     }
+
+    // An arm of the borrow match that takes another type binds to this
+    // overload, so the refusal gives its reason.
+    template <class... Arms>
+        requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts const&> && ...)
+                 && (std::same_as<std::invoke_result_t<Arms, Ts const&>,
+                                  std::invoke_result_t<Arms...[0], Ts...[0] const&>>
+                     && ...)
+                 && (!(TakesPayloadByBorrow<Arms, Ts> && ...))
+    void match(Arms&&... arms) const& = delete("an arm of the borrow match takes the alternative at its position, as a "
+                                               "value or a const reference, so no conversion reads an alternative as "
+                                               "another type: write the parameter as that alternative");
 
     // A const rvalue of a OneOf that the borrow match would take binds to
     // this overload, so an arm cannot give a reference into an object that the
@@ -296,6 +311,7 @@ public:
                  && (std::same_as<std::invoke_result_t<Arms, Ts const&>,
                                   std::invoke_result_t<Arms...[0], Ts...[0] const&>>
                      && ...)
+                 && (TakesPayloadByBorrow<Arms, Ts> && ...)
     void match(Arms&&... arms) const&& = delete("a borrow match of a temporary OneOf gives a reference into an object "
                                                 "that the full expression ends: match the rvalue, or name the OneOf");
 

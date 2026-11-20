@@ -2318,6 +2318,14 @@ foundation_neg_compile_test(neg_core_option_match_arm_takes_reference
 foundation_neg_compile_test(neg_core_result_match_gives_borrow
   "use of deleted function .void foundation::core::Result<T, E>::match\\(OnOk&&, OnErr&&\\) && \\[with OnOk = main\\(\\)::<lambda\\(Numbers\\)>; OnErr = main\\(\\)::<lambda\\(Code\\)>; T = foundation::core::FixedArray<int, 4>; E = Code\\]."
   "the result of the rvalue match holds no borrow, because each part ends in its arm")
+# An arm of a borrow match takes the payload type, as a value or a const
+# reference, so no implicit constructor reads the payload as another class.
+foundation_neg_compile_test(neg_core_option_borrow_match_converting_arm
+  "use of deleted function .void foundation::core::Option<T>::match\\(OnSome&&, OnNone&&\\) const & \\[with OnSome = main\\(\\)::<lambda\\(Feet\\)>; OnNone = main\\(\\)::<lambda\\(\\)>; T = Meters\\]."
+  "an arm of the borrow match takes the payload type, as a value or a const reference")
+foundation_neg_compile_test(neg_core_result_borrow_match_converting_arm
+  "use of deleted function .void foundation::core::Result<T, E>::match\\(OnOk&&, OnErr&&\\) const & \\[with OnOk = main\\(\\)::<lambda\\(Feet\\)>; OnErr = main\\(\\)::<lambda\\(Refusal\\)>; T = Meters; E = Refusal\\]."
+  "an arm of the borrow match takes its part type, as a value or a const reference")
 foundation_neg_compile_test(neg_core_option_map_takes_reference
   "use of deleted function .void foundation::core::Option<T>::map\\(Fn&&\\) &&"
   "the function of map takes the payload by value, so it names no object that map ends")
@@ -2474,6 +2482,9 @@ foundation_neg_compile_test(neg_core_one_of_match_gives_borrow
 foundation_neg_compile_test(neg_core_one_of_match_arm_takes_reference
   "use of deleted function .void foundation::core::OneOf<Ts>::match\\(Arms&& \\.\\.\\.\\) && \\[with Arms = \\{main\\(\\)::<lambda\\(auto:[0-9]+&&\\)>, main\\(\\)::<lambda\\(Code\\)>\\}; Ts = \\{int, Code\\}\\]."
   "an arm of the rvalue match takes its alternative by value, so it names no object that the match ends")
+foundation_neg_compile_test(neg_core_one_of_borrow_match_swapped_arms
+  "use of deleted function .void foundation::core::OneOf<Ts>::match\\(Arms&& \\.\\.\\.\\) const & \\[with Arms = \\{main\\(\\)::<lambda\\(Kelvin\\)>, main\\(\\)::<lambda\\(Celsius\\)>\\}; Ts = \\{Celsius, Kelvin\\}\\]."
+  "an arm of the borrow match takes the alternative at its position, as a value or a const reference")
 foundation_neg_compile_test(neg_core_one_of_is_non_member
   "no matching function for call to .foundation::core::OneOf<int, long int>::is<short int>\\(\\) const."
   "required for the satisfaction of .OccursIn<T, Ts \\.\\.\\.>. \\[with T = short int. Ts = \\{int, long int\\}\\]")

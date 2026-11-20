@@ -189,6 +189,35 @@ concept MovedMatchTakesReference = requires(O value) {
 static_assert(!MovedMatchTakesReference<OneOf<int, Code8, long>>);
 static_assert(BorrowedMatchGivesReference<OneOf<int, Code8, long>>);
 
+// Each arm of a borrow match takes the alternative at its position, as a
+// value or a const reference.  Two classes that convert into each other
+// cannot take arms in the wrong order, and a generic arm still passes.
+struct Celsius;
+struct Kelvin {
+    double value = 0.0;
+    constexpr Kelvin() noexcept = default;
+    constexpr Kelvin(Celsius celsius) noexcept;
+};
+struct Celsius {
+    double value = 0.0;
+    constexpr Celsius() noexcept = default;
+    constexpr Celsius(Kelvin kelvin) noexcept : value{kelvin.value - 273.15} {}
+};
+constexpr Kelvin::Kelvin(Celsius celsius) noexcept : value{celsius.value + 273.15} {}
+template <class O>
+concept BorrowedMatchSwapsArms = requires(O const& value) {
+    value.match([](Kelvin kelvin) noexcept { return kelvin.value; },
+                [](Celsius celsius) noexcept { return celsius.value; });
+};
+template <class O>
+concept BorrowedMatchReadsExactly = requires(O const& value) {
+    value.match([](Celsius const & celsius) noexcept { return celsius.value; },
+                [](Kelvin kelvin) noexcept { return kelvin.value; });
+    value.match([](auto const & reading) noexcept { return reading.value; },
+                [](auto&& reading) noexcept { return reading.value; });
+};
+static_assert(!BorrowedMatchSwapsArms<OneOf<Celsius, Kelvin>> && BorrowedMatchReadsExactly<OneOf<Celsius, Kelvin>>);
+
 // get<T> lends the active alternative as a Ref of T const, from a OneOf that
 // is const or not, and no Ref from a temporary.  So no write and no move
 // through the Ref changes the alternative that the OneOf keeps.  get names
