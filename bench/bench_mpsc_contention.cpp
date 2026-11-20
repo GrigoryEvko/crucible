@@ -21,18 +21,16 @@
 //   • bench::compare(single, batched<64>) gives Mann-Whitney U for
 //     statistical significance of the contention-reduction claim.
 //
-// The body is heavy (P jthread spawns + join), so we tune for low
+// The body is heavy (P thread starts + join), so we tune for low
 // sample count and large per-sample work:
 //   • samples(20)     — enough for p50/p99.9
-//   • warmup(2)       — flush any first-call jthread/futex overhead
+//   • warmup(2)       — flush any first-call thread start overhead
 //   • batch(1)        — never auto-batch a multi-thread cycle
 //   • no_pin()        — multi-thread can't pin to one core
 //   • max_wall_ms(60_000) — generous wall budget; cap protects CI
 //   • per_producer = 5'000 — keeps each iteration ≈ 1-50 ms
 
-#include <atomic>
 #include <cstdint>
-#include <memory>
 #include <thread>
 #include <vector>
 
@@ -52,26 +50,34 @@ constexpr std::size_t kSamples = 32;  // ≥30 for Mann-Whitney
 constexpr std::size_t kWarmup = 3;
 constexpr std::size_t kMaxWallMs = 60000;
 
-}  // namespace
+using Ring = MpscRing<Item, kCap>;
 
-// The rows time the bare ring, which holds no permission of its two sides.
-// The thread doors of the base refuse a borrow of such a ring beside the
-// caller, so each cycle starts its producers and its consumer on
-// std::jthread, as the rows of the bare rings of bench_thread_scaling do.
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: each cycle of the bare MPSC ring runs its threads on std::jthread")
-namespace {
+// The allocation capability of the ring of each cycle.
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
-// Producer-side single-call write loop.  Each producer pushes K items
-// via individual try_push calls.  Spin-yield if full.
-struct SinglePushWorker {
-    MpscRing<Item, kCap>& ring;
-    std::atomic<bool>& start;
-    Item base;
+// The gate of a cycle.  The cycle opens it when each thread exists, so the
+// producers and the consumer start their work together.
+struct StartGate {
+    ::fixy::Atomic<bool> is_open{false};
 
-    void operator()(std::stop_token) noexcept {
-        while (!start.load(std::memory_order_acquire)) {
+    void wait() const noexcept {
+        while (!is_open.load_acquire()) {
             CRUCIBLE_SPIN_PAUSE;
         }
+    }
+
+    void open() noexcept { is_open.store_release(true); }
+};
+
+// Producer-side single-call write loop.  Each producer pushes K items
+// via individual try_push calls.  Spin if full.
+struct SinglePushWorker {
+    Ring& ring;
+    StartGate& gate;
+    Item base = 0;
+
+    void operator()() noexcept {
+        gate.wait();
         for (std::size_t i = 0; i < kPerProducer; ++i) {
             const Item value = base + static_cast<Item>(i);
             while (!ring.try_push(value)) {
@@ -85,14 +91,12 @@ struct SinglePushWorker {
 // try_push_batch<BATCH> calls — amortizes head_ CAS contention.
 template <std::size_t BATCH>
 struct BatchedPushWorker {
-    MpscRing<Item, kCap>& ring;
-    std::atomic<bool>& start;
-    Item base;
+    Ring& ring;
+    StartGate& gate;
+    Item base = 0;
 
-    void operator()(std::stop_token) noexcept {
-        while (!start.load(std::memory_order_acquire)) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
+    void operator()() noexcept {
+        gate.wait();
         ::fixy::FixedArray<Item, BATCH> buf{};
         std::size_t pushed = 0;
         while (pushed < kPerProducer) {
@@ -116,30 +120,14 @@ struct BatchedPushWorker {
     }
 };
 
-// One full multi-thread cycle: spawn P producers, drain consumer,
-// join.  Returned to bench::Run as the body callable.
-template <typename Worker>
-void run_cycle(std::size_t producer_count) {
-    auto ring_ptr = std::make_unique<MpscRing<Item, kCap>>();
-    auto& ring = *ring_ptr;
+// Consumer-side drain loop.  It pops until it has each item of the cycle.
+struct DrainWorker {
+    Ring& ring;
+    StartGate& gate;
+    std::size_t total = 0;
 
-    const std::size_t total = producer_count * kPerProducer;
-    std::atomic<bool> start{false};
-    std::atomic<std::size_t> consumed{0};
-
-    // Spawn producers — Worker constructed in-place with refs.
-    std::vector<std::jthread> producers;
-    producers.reserve(producer_count);
-    for (std::size_t p = 0; p < producer_count; ++p) {
-        const Item base = static_cast<Item>(p) * kPerProducer;
-        producers.emplace_back(Worker{ring, start, base});
-    }
-
-    // Spawn consumer.  Drains until total items observed.
-    std::jthread consumer([&ring, &consumed, &start, total](std::stop_token) noexcept {
-        while (!start.load(std::memory_order_acquire)) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
+    void operator()() noexcept {
+        gate.wait();
         ::fixy::FixedArray<Item, 64> buf{};
         std::size_t local = 0;
         // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.
@@ -155,13 +143,29 @@ void run_cycle(std::size_t producer_count) {
             bench::do_not_optimize(*buf.get(n - 1).expect("a pop gives at most the count of the buffer"));
             local += n;
         }
-        consumed.store(local, std::memory_order_release);
-    });
+    }
+};
 
-    // Release the start gate — measured wall begins at the FIRST
-    // producer's first push and ends at the consumer's join.
-    start.store(true, std::memory_order_release);
-    producers.clear();  // join all producers
+}  // namespace
+
+// The rows time the bare ring, which holds no permission of its two sides.
+// Each cycle times its thread starts, and a cycle through the raw probe door
+// of the base costs much more than a cycle of std::jthread.  So the thread
+// starts stay on std::jthread, and the workers are outside the region.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: each cycle of the bare MPSC ring starts its threads on std::jthread")
+namespace {
+
+// Starts the producers and the consumer of one cycle, opens the gate, and
+// joins each thread.
+template <typename Worker, std::size_t Producers>
+void start_and_join(Ring& ring, StartGate& gate) {
+    std::vector<std::jthread> producers(Producers);
+    for (std::size_t p = 0; p < Producers; ++p) {
+        producers[p] = std::jthread(Worker{ring, gate, static_cast<Item>(p) * kPerProducer});
+    }
+    std::jthread consumer(DrainWorker{ring, gate, Producers * kPerProducer});
+    gate.open();
+    producers.clear();
     consumer.join();
 }
 
@@ -170,15 +174,32 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace {
 
-template <typename Worker>
-[[nodiscard]] bench::Report run_one(::fixy::TextView label, std::size_t producer_count) {
-    return bench::Run{bench::format_name("{} P={}", label, producer_count)}
+// One full multi-thread cycle: start Producers producers and one consumer,
+// and join them.
+template <typename Worker, std::size_t Producers>
+void run_cycle() {
+    ::fixy::Box<Ring> ring_box = ::fixy::mint_box<Ring>(kAlloc);
+    StartGate gate{};
+    start_and_join<Worker, Producers>(*ring_box, gate);
+}
+
+template <typename Worker, std::size_t Producers>
+[[nodiscard]] bench::Report run_one(::fixy::TextView label) {
+    return bench::Run{bench::format_name("{} P={}", label, Producers)}
         .samples(kSamples)
         .warmup(kWarmup)
         .batch(1)
         .no_pin()
         .max_wall_ms(kMaxWallMs)
-        .measure([producer_count] { run_cycle<Worker>(producer_count); });
+        .measure([] { run_cycle<Worker, Producers>(); });
+}
+
+// The three rows of one producer count.
+template <std::size_t Producers>
+void add_rows(::fixy::FixedList<bench::Report, 12>& reports) {
+    bench::add_report(reports, run_one<SinglePushWorker, Producers>("single"));
+    bench::add_report(reports, run_one<BatchedPushWorker<16>, Producers>("batched<16>"));
+    bench::add_report(reports, run_one<BatchedPushWorker<64>, Producers>("batched<64>"));
 }
 
 }  // namespace
@@ -199,12 +220,10 @@ int main() {
 
     // 4 producer counts × 3 API kinds = 12 cells.
     ::fixy::FixedList<bench::Report, 12> reports{};
-    ::fixy::FixedArray<std::size_t, 4> const producer_counts{1, 2, 4, 8};
-    for (std::size_t const P : producer_counts.view()) {
-        bench::add_report(reports, run_one<SinglePushWorker>("single", P));
-        bench::add_report(reports, run_one<BatchedPushWorker<16>>("batched<16>", P));
-        bench::add_report(reports, run_one<BatchedPushWorker<64>>("batched<64>", P));
-    }
+    add_rows<1>(reports);
+    add_rows<2>(reports);
+    add_rows<4>(reports);
+    add_rows<8>(reports);
 
     // Standard text + JSON emission.  Each Report's pct.p50 is the
     // wall-time of one workload cycle (P producers × kPerProducer items).
