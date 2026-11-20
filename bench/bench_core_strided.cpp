@@ -16,7 +16,17 @@
 //   raw transposed, raw step 2
 //                       the raw loop with a left matrix of two run-time
 //                       strides: the baselines of the strided rows
-//   walk dense          the walk over three dense views
+//   raw transposed blocked
+//                       the raw loop of the add with a transposed left matrix
+//                       over blocks of 16 x 16 elements: the blocked baseline
+//                       of the transposed rows
+//   raw four inputs     the raw loop of the op of the pointwise rows of four
+//                       inputs over dense runs, with the NaN rule of the
+//                       pointwise walk
+//   raw three inputs step 2, raw three inputs step 3
+//                       the raw loop of out = a * b + c with every second or
+//                       third column of a wider run as c, with the NaN rule
+//   walk dense         the walk over three dense views
 //   walk broadcast      the right view is one row with a stride of zero
 //   walk step 2         the left view is every second column of a wider run
 //   walk transposed     the left view is the transpose of a matrix
@@ -41,6 +51,13 @@
 //                       out = (c * (a - b)) * d over five dense views, and
 //                       with c of one element and d one broadcast row, as
 //                       scale_product_of_difference of the same header
+//   pointwise four inputs step 2, four inputs step 3
+//                       the same op with every second or third column of a
+//                       wider run as d: the loop Switched of a later input
+//   pointwise three inputs step 2 rows
+//                       out = a * b + c with every second column of a run
+//                       whose rows are three columns of the plane apart, so
+//                       the plan has a row for each row of the plane
 //   rows dense, rows transposed
 //                       mint_strided_rows of foundation/core/StridedRows.h with
 //                       the add as the counted loop of each row
@@ -151,7 +168,7 @@ template <class Out, class First, class Second>
 // clone of the function for the constant strides of a call.  The caller
 // gives a View of the left run that holds each element that the strides
 // reach.
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw loop over two strides is the baseline of the strided walk")
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw loops over runs and strides are the baselines of the strided walks")
 [[gnu::noipa, gnu::hot]] void add_raw_strided(::fixy::View<float> out, ::fixy::View<float const> left_run,
                                               ::fixy::View<float const> right, std::size_t rows, std::size_t columns,
                                               std::size_t row_stride, std::size_t column_stride) noexcept {
@@ -162,6 +179,77 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw loop over two strides is the bas
         for (std::size_t column = 0; column < columns; ++column) {
             target[row * columns + column] =
                 left[row * row_stride + column * column_stride] + second[row * columns + column];
+        }
+    }
+}
+// The raw loop of the add with a transposed left matrix, over blocks of
+// kRawBlock x kRawBlock elements in the row-major order of the blocks: the
+// blocked reference of the transposed rows.  The lines of the left matrix
+// that one block reads stay in L1 while the block runs.  The left matrix has
+// a stride of one on its rows, and the caller gives its stride on its
+// columns.
+constexpr std::size_t kRawBlock = 16;
+
+[[gnu::noipa, gnu::hot]] void add_raw_blocked(::fixy::View<float> out, ::fixy::View<float const> left_run,
+                                              ::fixy::View<float const> right, std::size_t rows, std::size_t columns,
+                                              std::size_t column_stride) noexcept {
+    float* const target = &*out.begin();
+    float const* const left = &*left_run.begin();
+    float const* const second = &*right.begin();
+    for (std::size_t row_block = 0; row_block < rows; row_block += kRawBlock) {
+        std::size_t const row_end = rows - row_block < kRawBlock ? rows : row_block + kRawBlock;
+        for (std::size_t column_block = 0; column_block < columns; column_block += kRawBlock) {
+            std::size_t const column_end = columns - column_block < kRawBlock ? columns : column_block + kRawBlock;
+            for (std::size_t row = row_block; row < row_end; ++row) {
+                for (std::size_t column = column_block; column < column_end; ++column) {
+                    target[row * columns + column] =
+                        left[row + column * column_stride] + second[row * columns + column];
+                }
+            }
+        }
+    }
+}
+
+// The canonical NaN of the pointwise walk for a NaN, and each other value
+// as it is.
+[[nodiscard]] inline float raw_canonical(float value) noexcept {
+    return __builtin_isnan(value) ? __builtin_nanf("") : value;
+}
+
+// The raw loop of the op of four inputs over dense runs, with the NaN rule of
+// the pointwise walk and restrict pointers: the baseline of the pointwise rows
+// of four inputs.
+[[gnu::noipa, gnu::hot]] void four_raw(::fixy::View<float> out, ::fixy::View<float const> first_run,
+                                       ::fixy::View<float const> second_run, ::fixy::View<float const> scale_run,
+                                       ::fixy::View<float const> factor_run) noexcept {
+    float* __restrict const target = &*out.begin();
+    float const* __restrict const first = &*first_run.begin();
+    float const* __restrict const second = &*second_run.begin();
+    float const* __restrict const scale = &*scale_run.begin();
+    float const* __restrict const factor = &*factor_run.begin();
+    std::size_t const count = out.size();
+    for (std::size_t position = 0; position < count; ++position) {
+        target[position] = raw_canonical((scale[position] * (first[position] - second[position])) * factor[position]);
+    }
+}
+
+// The raw loop of the op of three inputs with a third matrix of two strides,
+// in row-major order, with the NaN rule of the pointwise walk and restrict
+// pointers: the baseline of the pointwise rows of three inputs with a stepped
+// third input.  noipa keeps the strides a value of run time, as in the walk.
+[[gnu::noipa, gnu::hot]] void three_raw_strided(::fixy::View<float> out, ::fixy::View<float const> first_run,
+                                                ::fixy::View<float const> second_run,
+                                                ::fixy::View<float const> third_run, std::size_t rows,
+                                                std::size_t columns, std::size_t row_stride,
+                                                std::size_t column_stride) noexcept {
+    float* __restrict const target = &*out.begin();
+    float const* __restrict const first = &*first_run.begin();
+    float const* __restrict const second = &*second_run.begin();
+    float const* __restrict const third = &*third_run.begin();
+    for (std::size_t row = 0; row < rows; ++row) {
+        for (std::size_t column = 0; column < columns; ++column) {
+            std::size_t const at = row * columns + column;
+            target[at] = raw_canonical(first[at] * second[at] + third[row * row_stride + column * column_stride]);
         }
     }
 }
@@ -329,7 +417,11 @@ template <class Out>
     // The left run read as a matrix of columns x rows, transposed.
     PlaneRead const transposed = plane_of(left_run, rows, columns, 1, rows);
     PlaneRead const every_second = plane_of(wide_run, rows, columns, 2 * columns, 2);
-    PlaneRead const every_third = plane_of(::fixy::View<float const>{wider.view()}, rows, columns, 3 * columns, 3);
+    ::fixy::View<float const> const wider_run = wider.view();
+    PlaneRead const every_third = plane_of(wider_run, rows, columns, 3 * columns, 3);
+    // Every second column, with rows three columns of the plane apart, so the
+    // rows do not merge and the plan has a row for each row of the plane.
+    PlaneRead const apart_second = plane_of(wider_run, rows, columns, 3 * columns, 2);
     ::fixy::FixedArray<std::size_t, 1> const row_size{columns};
     ::fixy::FixedArray<std::size_t, 1> const row_stride{1};
     ::fixy::FixedArray<std::size_t, 2> const plane_sizes{rows, columns};
@@ -354,6 +446,36 @@ template <class Out>
                           bench::do_not_optimize(out);
                       }),
               three_views, roof);
+    print_row(level, "raw transposed blocked",
+              measure(bench::Run{"raw transposed blocked"}, wall,
+                      [&] {
+                          add_raw_blocked(out.view(), left_run, right_run, rows, columns, rows);
+                          bench::do_not_optimize(out);
+                      }),
+              three_views, roof);
+    ::fixy::View<float const> const third_run = third.view();
+    ::fixy::View<float const> const fourth_run = fourth.view();
+    print_row(level, "raw four inputs",
+              measure(bench::Run{"raw four inputs"}, wall,
+                      [&] {
+                          four_raw(out.view(), left_run, right_run, third_run, fourth_run);
+                          bench::do_not_optimize(out);
+                      }),
+              five_views, roof);
+    print_row(level, "raw three inputs step 2",
+              measure(bench::Run{"raw three inputs step 2"}, wall,
+                      [&] {
+                          three_raw_strided(out.view(), left_run, right_run, wide_run, rows, columns, 2 * columns, 2);
+                          bench::do_not_optimize(out);
+                      }),
+              four_views, roof);
+    print_row(level, "raw three inputs step 3",
+              measure(bench::Run{"raw three inputs step 3"}, wall,
+                      [&] {
+                          three_raw_strided(out.view(), left_run, right_run, wider_run, rows, columns, 3 * columns, 3);
+                          bench::do_not_optimize(out);
+                      }),
+              four_views, roof);
     print_row(level, "walk dense",
               measure(bench::Run{"walk dense"}, wall,
                       [&] {
@@ -457,6 +579,18 @@ template <class Out>
                   measure(bench::Run{"pointwise four inputs scaled"}, wall,
                           [&] { pointwise_four(unique, left_view, right_view, splat, broadcast); }),
                   five_views, roof);
+        print_row(level, "pointwise four inputs step 2",
+                  measure(bench::Run{"pointwise four inputs step 2"}, wall,
+                          [&] { pointwise_four(unique, left_view, right_view, third_view, every_second); }),
+                  five_views, roof);
+        print_row(level, "pointwise four inputs step 3",
+                  measure(bench::Run{"pointwise four inputs step 3"}, wall,
+                          [&] { pointwise_four(unique, left_view, right_view, third_view, every_third); }),
+                  five_views, roof);
+        print_row(level, "pointwise three inputs step 2 rows",
+                  measure(bench::Run{"pointwise three inputs step 2 rows"}, wall,
+                          [&] { pointwise_three(unique, left_view, right_view, apart_second); }),
+                  four_views, roof);
         print_row(level, "rows dense",
                   measure(bench::Run{"rows dense"}, wall, [&] { rows_add(unique, left_view, right_view); }),
                   three_views, roof);

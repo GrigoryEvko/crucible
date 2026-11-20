@@ -5,8 +5,11 @@
 // the private cache of the core holds after the first call, the row of 2^20
 // floats reads the L3, and the row of 2^24 floats reads memory.  The left
 // fold is the order that the tree replaces: one chain of adds, which the
-// latency of an add bounds.  Each call that writes takes its output through a
-// frame door: a HeapArray moves in and out.
+// latency of an add bounds.  The raw bottom-up tree is the reference of
+// reduce_by_tree with a combine: the same tree, level by level over leaves of
+// 256 elements, so the same bits, which the bench checks before the row.
+// Each call that writes takes its output through a frame door: a HeapArray
+// moves in and out.
 //
 // Each line gives the core of its row (the core that the harness reads after
 // its pin, or cpu-1 for a row with no pin), the percentiles of one call in
@@ -15,6 +18,7 @@
 // integers only.
 
 #include <fixy/Core.h>
+#include <foundation/Quarantine.h>
 #include <foundation/core/Reduce.h>
 #include <foundation/core/Scan.h>
 #include <foundation/effects/Effect.h>
@@ -87,6 +91,67 @@ template <typename Body>
     return sum;
 }
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw tree is the reference of reduce_by_tree with a combine")
+
+// The largest count of the leaf of the raw tree: a power of two.
+constexpr std::size_t kRawLeaf = 256;
+
+// The balanced tree of count floats from first, a power of two from 2 to
+// kRawLeaf, level by level: each level adds the adjacent pairs of the level
+// below it into a scratch array, with the lower element as the left operand.
+// Two arrays take turns, so no level writes an element that it reads.
+[[gnu::always_inline]] inline float raw_leaf_tree(float const* first, std::size_t count) noexcept {
+    float low[kRawLeaf / 2] = {};
+    float high[kRawLeaf / 4] = {};
+    std::size_t width = count / 2;
+    for (std::size_t position = 0; position < width; ++position) {
+        low[position] = first[2 * position] + first[2 * position + 1];
+    }
+    float* source = low;
+    float* target = high;
+    while (width > 1) {
+        width /= 2;
+        for (std::size_t position = 0; position < width; ++position) {
+            target[position] = source[2 * position] + source[2 * position + 1];
+        }
+        float* const read = target;
+        target = source;
+        source = read;
+    }
+    return source[0];
+}
+
+// The balanced tree of count floats from first, a power of two: the halves
+// down to the leaf of kRawLeaf elements.
+[[gnu::noinline]] float raw_balanced_tree(float const* first, std::size_t count) noexcept {
+    if (count == 1) return first[0];
+    if (count <= kRawLeaf) return raw_leaf_tree(first, count);
+    std::size_t const half = count / 2;
+    float const left = raw_balanced_tree(first, half);
+    float const right = raw_balanced_tree(first + half, half);
+    return left + right;
+}
+
+// The tree of THE ORDER of foundation/core/Reduce.h over count floats from
+// first, count at least 1: a power of two is a balanced tree, and each other
+// count splits at the largest power of two below it.
+[[nodiscard]] float raw_tree_of(float const* first, std::size_t count) noexcept {
+    if ((count & (count - 1)) == 0) return raw_balanced_tree(first, count);
+    std::size_t const split = std::size_t{1} << (63 - __builtin_clzll(count - 1));
+    float const left = raw_tree_of(first, split);
+    float const right = raw_tree_of(first + split, count - split);
+    return left + right;
+}
+
+// The raw bottom-up tree of a run: the reference of reduce_by_tree with a
+// combine of a plain add, with the same tree and so the same bits.
+[[gnu::noipa, gnu::hot]] float raw_tree(View<float const> run) noexcept {
+    if (run.size() == 0) return 0.0f;
+    return raw_tree_of(&*run.begin(), run.size());
+}
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 void bench_reduces(View<float const> all, View<double const> wide) {
     View<float const> const small = first(all, 1024);
     View<float const> const core = first(all, 65536);
@@ -113,6 +178,17 @@ void bench_reduces(View<float const> all, View<double const> wide) {
     print_row("reduce_by_tree float add, 65536", core.size(), measure_row(bench::Run{"reduce_by_tree 65536"}, [&] {
                   bench::do_not_optimize(::foundation::core::reduce_by_tree(core, add).value_or(0.0f));
               }));
+    // The raw tree computes the tree of reduce_by_tree, so the two give the
+    // same bits, for a count of a power of two and for each other count.
+    ::fixy::FixedArray<View<float const>, 2> const checked{core, first(all, 65536 + 1000)};
+    for (View<float const> const run : checked) {
+        float const tree = ::foundation::core::reduce_by_tree(run, add).value_or(0.0f);
+        if (::fixy::bit_cast<std::uint32_t>(tree) != ::fixy::bit_cast<std::uint32_t>(raw_tree(run))) {
+            ::fixy::fatal("the raw tree gives other bits than reduce_by_tree: it is no reference");
+        }
+    }
+    print_row("raw bottom-up tree float add, 65536", core.size(),
+              measure_row(bench::Run{"raw tree 65536"}, [&] { bench::do_not_optimize(raw_tree(core)); }));
 }
 
 void bench_runs_and_segments(View<float const> all) {
