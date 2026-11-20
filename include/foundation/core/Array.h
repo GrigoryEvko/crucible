@@ -589,7 +589,9 @@ public:
     // key that only HeapArrayDoor builds.  A count of zero gives the empty
     // array and allocates nothing.  The allocation door never gives a null
     // pointer, and a count whose bytes do not fit ends the process before the
-    // allocation.  Complexity: one allocation and O(count) copies.
+    // allocation.  The loop runs a cursor to the end of the storage, as the
+    // loop of the BuildEach constructor does.  Complexity: one allocation and
+    // O(count) copies.
     explicit HeapArray(detail::HeapArrayKey const& /*key*/, std::size_t count, T const& fill) noexcept
         requires std::is_nothrow_copy_constructible_v<T>
     {
@@ -597,8 +599,9 @@ public:
             return;
         }
         T* const first = static_cast<T*>(detail::allocate_heap_elements_<T, Align>(count));
-        for (std::size_t position = 0; position != count; ++position) {
-            ::new(static_cast<void*>(first + position)) T(fill);
+        T* const end = first + count;
+        for (T* slot = first; slot != end; ++slot) {
+            ::new(static_cast<void*>(slot)) T(fill);
         }
         this->state_ = State{first, count};
     }
