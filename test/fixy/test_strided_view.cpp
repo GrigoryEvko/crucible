@@ -249,6 +249,50 @@ void matrix_and_transpose(::fixy::TestRunnerCtx const& test) noexcept {
     pass(test, "  matrix_and_transpose: PASSED\n");
 }
 
+// A walk of three views of 2 x 4 elements gives the sum of the two inputs at
+// each index, for each step of one or two on the inner axis of each view.  A
+// dense output takes the loop with the read of each input as a template
+// argument, so each of its four loops runs, and an output of a step of two
+// takes the loop of no view known dense.
+void walk_reads_of_each_mix(::fixy::TestRunnerCtx const& test) noexcept {
+    ::fixy::FixedArray<int, 16> left{};
+    ::fixy::FixedArray<int, 16> right{};
+    for (std::size_t position = 0; position < 16; ++position) {
+        *left.get(position).expect("sixteen elements") = static_cast<int>(position);
+        *right.get(position).expect("sixteen elements") = static_cast<int>(100 * position);
+    }
+    ::fixy::FixedArray<std::size_t, 2> const sizes{2, 4};
+    auto const view_of = [&sizes](::fixy::View<int> run, std::size_t step) noexcept {
+        ::fixy::FixedArray<std::size_t, 2> const strides{4 * step, step};
+        return ::fixy::mint_strided_view(run, sizes.view(), strides.view(), 0).expect("the view fits");
+    };
+    std::size_t mixes = 0;
+    for (std::size_t mix = 0; mix < 8; ++mix) {
+        std::size_t const out_step = 1 + (mix & 1);
+        std::size_t const left_step = 1 + ((mix >> 1) & 1);
+        std::size_t const right_step = 1 + ((mix >> 2) & 1);
+        ::fixy::FixedArray<int, 16> out{};
+        bool const is_walked =
+            ::fixy::walk([](int& sum, int const& first, int const& second) noexcept { sum = first + second; },
+                         view_of(out.view(), out_step),
+                         ::fixy::StridedView<int const, 2>{view_of(left.view(), left_step)},
+                         ::fixy::StridedView<int const, 2>{view_of(right.view(), right_step)})
+                .is_ok();
+        bool is_summed = is_walked;
+        for (std::size_t row = 0; row < 2; ++row) {
+            for (std::size_t column = 0; column < 4; ++column) {
+                int const expected = *left.get(row * 4 * left_step + column * left_step).expect("inside")
+                                   + *right.get(row * 4 * right_step + column * right_step).expect("inside");
+                is_summed = is_summed && *out.get(row * 4 * out_step + column * out_step).expect("inside") == expected;
+            }
+        }
+        CRUCIBLE_TEST_ASSERT(test, is_summed);
+        ++mixes;
+    }
+    CRUCIBLE_TEST_ASSERT(test, mixes == 8);
+    pass(test, "  walk_reads_of_each_mix: PASSED\n");
+}
+
 // The door refuses each layout that leaves the run or wraps.
 void door_refusals(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<int, 8> values{};
@@ -965,6 +1009,7 @@ void unique_door_agrees_with_model(::fixy::TestRunnerCtx const& test) noexcept {
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     matrix_and_transpose(test);
+    walk_reads_of_each_mix(test);
     door_refusals(test);
     reshape_cases(test);
     rank_zero_and_empty(test);

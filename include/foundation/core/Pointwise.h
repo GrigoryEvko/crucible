@@ -1449,24 +1449,28 @@ write_pointwise_(Op const& op, std::index_sequence<Is...> sequence, bool const (
     if (planned.is_shared) {
         if constexpr (is_lane_op) {
             LaneStep<Op, T> step{op};
-            run_walk_(step, sequence, plan, count, out, strided_first_of_(StridedDoor::key(), sources)...);
+            run_walk_<WalkRows::Fixed>(step, sequence, plan, count, out,
+                                       strided_first_of_(StridedDoor::key(), sources)...);
         } else {
             ScalarStep<Op, T> step{op};
-            run_walk_(step, sequence, plan, count, out, strided_first_of_(StridedDoor::key(), sources)...);
+            run_walk_<WalkRows::Fixed>(step, sequence, plan, count, out,
+                                       strided_first_of_(StridedDoor::key(), sources)...);
         }
         return Unit{};
     }
     if constexpr (is_lane_op) {
         if (plan.rank == 0) {
             LaneStep<Op, T> step{op};
-            run_walk_(step, sequence, plan, count, out, strided_first_of_(StridedDoor::key(), sources)...);
+            run_walk_<WalkRows::Fixed>(step, sequence, plan, count, out,
+                                       strided_first_of_(StridedDoor::key(), sources)...);
         } else {
             run_lanes_(op, plan, out, strided_first_of_(StridedDoor::key(), sources)...);
         }
     } else {
         if (plan.rank == 0) {
             ScalarStep<Op, T> step{op};
-            run_walk_(step, sequence, plan, count, out, strided_first_of_(StridedDoor::key(), sources)...);
+            run_walk_<WalkRows::Fixed>(step, sequence, plan, count, out,
+                                       strided_first_of_(StridedDoor::key(), sources)...);
         } else {
             run_scalar_plan_(op, sequence, plan, planned.is_restrict, out,
                              strided_first_of_(StridedDoor::key(), sources)...);

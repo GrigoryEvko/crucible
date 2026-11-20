@@ -113,9 +113,12 @@
 // each view is the inner stride times the inner size.  Such a merge keeps the
 // row-major order.  When each view then has a stride of one on the last axis,
 // the inner loop reads consecutive elements, and the optimizer can make it a
-// vector loop.  When only the first view has a stride of one there, such as
-// the output of a kernel with a transposed input, the inner loop writes
-// consecutive elements and steps over the elements of the other views.
+// vector loop.  When the first view has a stride of one there, such as the
+// output of a kernel with a stepped input, the inner loop writes consecutive
+// elements.  When each other view has a stride of less than a cache line
+// there, the loop knows which of them have a stride of one, so it reads them
+// as consecutive elements too, and steps only over the elements of the
+// others.
 //
 // THE SCOPE
 //   mint_strided_scope(view, body)
@@ -166,10 +169,12 @@
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
+#include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Branded.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Fatal.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
@@ -1109,14 +1114,83 @@ constexpr void step_rows_(WalkPlan<Views, Capacity> const& plan, std::size_t (&c
     }
 }
 
+// The read of a view along a row of a walk whose first view reads
+// consecutive elements: Unit for a stride of one, which reads with no product
+// of the stride, so the optimizer loads the elements of the view as a vector,
+// and Stepped for each other stride.
+enum class WalkRead : std::uint8_t {
+    Unit,
+    Stepped,
+};
+
+// The reads of the views after the first, as template arguments.
+template <WalkRead... Reads>
+struct WalkReads final {};
+
+// The element at position of the row of a view with the read Read.
+template <WalkRead Read, class T>
+[[nodiscard]] CRUCIBLE_INLINE constexpr T& read_walk_row_(T* row, std::size_t position, std::size_t step) noexcept {
+    if constexpr (Read == WalkRead::Unit) {
+        return row[position];
+    } else {
+        return row[position * step];
+    }
+}
+
+// The inner loop of a walk when the first view reads consecutive elements,
+// with the read of each other view as a template argument.  A Unit view gives
+// the optimizer a vector load, as in the raw loop, and only a Stepped view
+// builds its vector from single loads.
+template <WalkRead... Reads, class Body, std::size_t... Is, class First, class... Rest>
+constexpr void walk_read_row_(WalkReads<Reads...> /*reads*/, Body& body, std::index_sequence<Is...> /*rest*/,
+                              std::size_t length, std::size_t const (&steps)[1 + sizeof...(Rest)], First* first,
+                              Rest*... rest) noexcept {
+    for (std::size_t position = 0; position < length; ++position) {
+        body(first[position], read_walk_row_<Reads>(rest, position, steps[Is + 1])...);
+    }
+}
+
+// Calls next with the reads of the views from the index Done on, as template
+// arguments: Unit for a step of one, else Stepped.  The first view is not in
+// the list, so a walk of k views has 2^(k-1) lists.
+template <std::size_t Done, std::size_t Views, WalkRead... Chosen, class Next>
+constexpr void choose_walk_reads_(std::size_t const (&steps)[Views], Next const& next) noexcept {
+    if constexpr (Done == Views) {
+        next(WalkReads<Chosen...>{});
+    } else if (steps[Done] == 1) {
+        choose_walk_reads_<Done + 1, Views, Chosen..., WalkRead::Unit>(steps, next);
+    } else {
+        choose_walk_reads_<Done + 1, Views, Chosen..., WalkRead::Stepped>(steps, next);
+    }
+}
+
+// The loops of the rows of a walk.
+enum class WalkRows : std::uint8_t {
+    // Three loops: each view dense, the first view dense, and no view known
+    // dense.  The stated order of the pointwise walk takes them: a body of
+    // lanes there gets no vector loop from the reads.
+    Fixed,
+    // The three loops, and a loop for each list of reads of a row with a
+    // dense first view, a view of a short step and no view of a long step:
+    // 2^(k-1) - 1 more loops for k views.  walk() takes them.
+    ByReads,
+};
+
+// The largest step of a short step, in bytes: the bytes of a cache line.  A
+// row with a view of a short step and dense views reads the dense views as
+// vectors, as the raw loop does.  A view of a longer step reads one line for
+// each element.  There the loop that reads each view with its step of run
+// time keeps more loads in flight, so the row keeps that loop.
+inline constexpr std::size_t short_step_bytes = 64;
+
 // The loops of a walk over the plan of count elements: each row of the inner
 // axis, in row-major order.  The count of the rows is a number before the
 // first row, so the outer loop is a counted loop around the inner loop, with
 // one exit.  The tests of the inner strides do not change during the walk,
-// so each kind of row has a loop of its own: each view dense, the first view
-// dense, and no view known dense.
+// so each kind of row has a loop of its own (WalkRows), and a row with a
+// first view that is not dense has the loop of no view known dense.
 // The index pack counts the views after the first one.
-template <class Body, std::size_t... Is, std::size_t Capacity, class First, class... Rest>
+template <WalkRows Rows, class Body, std::size_t... Is, std::size_t Capacity, class First, class... Rest>
 constexpr void run_walk_(Body& body, std::index_sequence<Is...> rest_views,
                          WalkPlan<1 + sizeof...(Rest), Capacity> const& plan, std::size_t count, First* first,
                          Rest*... rest) noexcept {
@@ -1138,6 +1212,24 @@ constexpr void run_walk_(Body& body, std::index_sequence<Is...> rest_views,
         return;
     }
     std::size_t const steps[1 + sizeof...(Rest)] = {plan.strides[0][inner], plan.strides[Is + 1][inner]...};
+    if constexpr (Rows == WalkRows::ByReads) {
+        if (is_first_dense && ((steps[Is + 1] * sizeof(Rest) < short_step_bytes) && ...)) {
+            choose_walk_reads_<1, 1 + sizeof...(Rest)>(
+                steps, [&]<WalkRead... Reads>(WalkReads<Reads...> reads) noexcept {
+                    if constexpr (((Reads == WalkRead::Unit) && ...)) {
+                        // The loop of each view dense takes such a row.
+                        ::foundation::core::unreachable();
+                    } else {
+                        for (std::size_t row = 0; row < rows; ++row) {
+                            walk_read_row_(reads, body, rest_views, length, steps, first + offsets[0],
+                                           (rest + offsets[Is + 1])...);
+                            step_rows_(plan, counters, offsets);
+                        }
+                    }
+                });
+            return;
+        }
+    }
     if (is_first_dense) {
         for (std::size_t row = 0; row < rows; ++row) {
             walk_first_dense_row_(body, rest_views, length, steps, first + offsets[0], (rest + offsets[Is + 1])...);
@@ -1169,8 +1261,9 @@ constexpr void walk_equal_views_(Body& body, StridedView<First, Rank> const& fir
     if (count == 0) return;
     auto const& shape = strided_lanes_of_(StridedDoor::key(), first);
     auto const plan = plan_walk_(shape, shape, strided_lanes_of_(StridedDoor::key(), rest)...);
-    run_walk_(body, std::index_sequence_for<Rest...>{}, plan, count, strided_first_of_(StridedDoor::key(), first),
-              strided_first_of_(StridedDoor::key(), rest)...);
+    run_walk_<WalkRows::ByReads>(body, std::index_sequence_for<Rest...>{}, plan, count,
+                                 strided_first_of_(StridedDoor::key(), first),
+                                 strided_first_of_(StridedDoor::key(), rest)...);
 }
 
 }  // namespace detail
