@@ -10,9 +10,8 @@
 // match-advance, reset, and a 1000-op tight loop. Each scenario gets
 // a freshly warmed detector so the bench observes the right phase.
 
+#include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 
 #include <crucible/IterationDetector.h>
 
@@ -41,16 +40,16 @@ constexpr uint32_t NUM_HASHES = 1u << 16;  // 65536
 
 // The allocation capability of each detector of the bench.
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
-SchemaHash random_hashes[NUM_HASHES];
+::fixy::FixedArray<SchemaHash, NUM_HASHES> random_hashes{};
 
 void init_random_hashes() noexcept {
-    for (uint32_t i = 0; i < NUM_HASHES; i++) {
-        random_hashes[i] = SchemaHash{splitmix64()};
+    for (SchemaHash& hash : random_hashes) {
+        hash = SchemaHash{splitmix64()};
     }
 }
 
 // Known pattern for signature-match phase tests.
-constexpr SchemaHash SIG[IterationDetector::K] = {
+constexpr ::fixy::FixedArray<SchemaHash, IterationDetector::K> SIG{
     SchemaHash{0xAAAABBBBCCCC0001ULL}, SchemaHash{0xAAAABBBBCCCC0002ULL}, SchemaHash{0xAAAABBBBCCCC0003ULL},
     SchemaHash{0xAAAABBBBCCCC0004ULL}, SchemaHash{0xAAAABBBBCCCC0005ULL},
 };
@@ -72,15 +71,17 @@ void warmup_detector(IterationDetector& d) {
     d.reset();
     ::foundation::core::FixedArray<SchemaHash, WARMUP_LEN> iteration{};
     for (::foundation::core::Index<WARMUP_LEN> const index : iteration.indices()) {
-        iteration.at(index) = index.raw() < IterationDetector::K ? SIG[index.raw()] : SchemaHash{splitmix64()};
+        iteration.at(index) = index.raw() < IterationDetector::K
+                                ? SIG.at(::fixy::Index<IterationDetector::K>::check(index.raw())
+                                             .expect("the test above keeps the index below K"))
+                                : SchemaHash{splitmix64()};
     }
     for (uint32_t turn = 0; turn < WARMUP_MAX_TURNS; turn++) {
         for (SchemaHash const hash : iteration) {
             if (d.check(kAlloc, hash)) return;
         }
     }
-    std::fprintf(stderr, "ERROR: warmup did not produce a boundary\n");
-    std::abort();
+    ::fixy::fatal("the warmup of the detector gave no boundary in {} turns", WARMUP_MAX_TURNS);
 }
 
 }  // namespace
@@ -91,8 +92,8 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== iteration_detector ===\n");
-    std::printf("  sizeof(IterationDetector): %zu bytes\n\n", sizeof(IterationDetector));
+    ::fixy::report(::fixy::Sink::Out, "=== iteration_detector ===\n");
+    ::fixy::report(::fixy::Sink::Out, "  sizeof(IterationDetector): {} bytes\n\n", sizeof(IterationDetector));
 
     init_random_hashes();
 
@@ -103,8 +104,12 @@ int main() {
             IterationDetector d;
             warmup_detector(d);
             uint32_t hash_idx = 0;
+            // The mask keeps the position below NUM_HASHES, so the compiler
+            // folds the check of the index.
             return bench::run("check() steady state (no match)", [&] {
-                bool b = d.check(kAlloc, random_hashes[hash_idx & (NUM_HASHES - 1)]);
+                bool b =
+                    d.check(kAlloc, random_hashes.at(::fixy::Index<NUM_HASHES>::check(hash_idx & (NUM_HASHES - 1))
+                                                         .expect("a mask of the low bits stays below NUM_HASHES")));
                 bench::do_not_optimize(b);
                 hash_idx++;
             });
@@ -116,18 +121,24 @@ int main() {
             IterationDetector d;
             warmup_detector(d);
             constexpr uint32_t ITER_LEN = 100;
-            SchemaHash pattern[ITER_LEN];
-            for (uint32_t i = 0; i < ITER_LEN - IterationDetector::K; i++) {
-                pattern[i] = SchemaHash{splitmix64()};
+            constexpr uint32_t kRandomOps = ITER_LEN - IterationDetector::K;
+            // The 95 random ops in order, then the K ops of SIG.
+            ::fixy::FixedArray<SchemaHash, ITER_LEN> pattern{};
+            for (::fixy::Index<ITER_LEN> const i : pattern.indices()) {
+                pattern.at(i) = i.raw() < kRandomOps
+                                  ? SchemaHash{splitmix64()}
+                                  : SIG.at(::fixy::Index<IterationDetector::K>::check(i.raw() - kRandomOps)
+                                               .expect("the last K positions take the ops of SIG"));
             }
-            for (uint32_t i = 0; i < IterationDetector::K; i++) {
-                pattern[ITER_LEN - IterationDetector::K + i] = SIG[i];
-            }
-            uint32_t pat_idx = 0;
+            // The next position is below ITER_LEN on each arm, so the
+            // compiler folds the check of the index.
+            ::fixy::Index<ITER_LEN> pat_idx = ::fixy::index<0>();
             return bench::run("check() boundaries / 100 ops", [&] {
-                bool b = d.check(kAlloc, pattern[pat_idx]);
+                bool b = d.check(kAlloc, pattern.at(pat_idx));
                 bench::do_not_optimize(b);
-                if (++pat_idx >= ITER_LEN) pat_idx = 0;
+                std::size_t const next = pat_idx.raw() + 1;
+                pat_idx = ::fixy::Index<ITER_LEN>::check(next >= ITER_LEN ? 0 : next)
+                              .expect("the next position wraps to 0 at ITER_LEN");
             });
         }(),
 
@@ -137,8 +148,8 @@ int main() {
             IterationDetector d;
             return bench::run("check() signature build (K=5)", [&] {
                 d.reset();
-                for (uint32_t i = 0; i < IterationDetector::K; i++) {
-                    bool b = d.check(kAlloc, SIG[i]);
+                for (SchemaHash const hash : SIG) {
+                    bool b = d.check(kAlloc, hash);
                     bench::do_not_optimize(b);
                 }
             });
@@ -151,8 +162,8 @@ int main() {
             IterationDetector d;
             warmup_detector(d);
             return bench::run("check() match advance (K=5 + 10 rand)", [&] {
-                for (uint32_t i = 0; i < IterationDetector::K; i++) {
-                    bool b = d.check(kAlloc, SIG[i]);
+                for (SchemaHash const hash : SIG) {
+                    bool b = d.check(kAlloc, hash);
                     bench::do_not_optimize(b);
                 }
                 for (uint32_t i = 0; i < 10; i++) {
@@ -183,7 +194,9 @@ int main() {
             uint32_t hash_idx = 0;
             return bench::run("check() × 1000 (sustained)", [&] {
                 for (uint32_t i = 0; i < BATCH; i++) {
-                    bool b = d.check(kAlloc, random_hashes[hash_idx & (NUM_HASHES - 1)]);
+                    bool b =
+                        d.check(kAlloc, random_hashes.at(::fixy::Index<NUM_HASHES>::check(hash_idx & (NUM_HASHES - 1))
+                                                             .expect("a mask of the low bits stays below NUM_HASHES")));
                     bench::do_not_optimize(b);
                     hash_idx++;
                 }

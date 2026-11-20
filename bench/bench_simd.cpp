@@ -18,7 +18,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 
 #include <crucible/DimHash.h>
 #include <crucible/StorageNbytes.h>
@@ -67,14 +66,18 @@ int main() {
     // so readers know exactly which SIMD path was exercised.
 
     using namespace foundation::simd;
-    std::printf("=== simd architecture ===\n");
-    std::printf("  compile-time: avx512=%s avx2=%s sse42=%s neon=%s\n", kAvx512Available ? "yes" : "no",
-                kAvx2Available ? "yes" : "no", kSse42Available ? "yes" : "no", kNeonAvailable ? "yes" : "no");
+    using ::fixy::Sink;
+    using ::fixy::TextView;
+    constexpr TextView yes{"yes"};
+    constexpr TextView no{"no"};
+    ::fixy::report(Sink::Out, "=== simd architecture ===\n");
+    ::fixy::report(Sink::Out, "  compile-time: avx512={} avx2={} sse42={} neon={}\n", kAvx512Available ? yes : no,
+                   kAvx2Available ? yes : no, kSse42Available ? yes : no, kNeonAvailable ? yes : no);
 #if defined(__x86_64__) || defined(__i386__)
-    std::printf("  runtime CPU:  avx512=%s avx2=%s sse42=%s\n", runtime_supports_avx512() ? "yes" : "no",
-                runtime_supports_avx2() ? "yes" : "no", runtime_supports_sse42() ? "yes" : "no");
+    ::fixy::report(Sink::Out, "  runtime CPU:  avx512={} avx2={} sse42={}\n", runtime_supports_avx512() ? yes : no,
+                   runtime_supports_avx2() ? yes : no, runtime_supports_sse42() ? yes : no);
 #endif
-    std::printf("\n");
+    ::fixy::report(Sink::Out, "\n");
 
     // ── Volatile inputs to defeat constant folding ────────────────
 
@@ -90,13 +93,15 @@ int main() {
 
     // Input vectors for std::simd primitives (volatile-loaded to
     // prevent constant-folding the entire reduction).
-    alignas(64) static uint64_t v_in[8] = {
+    // The View of the eight lanes proves the count of the load, and the
+    // static has the alignment of one register.
+    alignas(64) static ::fixy::FixedArray<uint64_t, 8> v_in{
         0x0123456789ABCDEFULL, 0xFEDCBA9876543210ULL, 0xCAFEBABEDEADBEEFULL, 0x1111222233334444ULL,
         0x5555666677778888ULL, 0x9999AAAABBBBCCCCULL, 0xDDDDEEEEFFFF1234ULL, 0x6666777788889999ULL,
     };
-    auto load_u64x8 = []() { return foundation::simd::load_aligned<u64x8>(v_in); };
+    auto load_u64x8 = []() { return foundation::simd::load<u64x8>(v_in.view()); };
 
-    std::printf("=== simd ===\n\n");
+    ::fixy::report(Sink::Out, "=== simd ===\n\n");
 
     ::fixy::FixedArray<bench::Report, 23> reports{
         // ─── Facade primitives ──────────────────────────────────────
