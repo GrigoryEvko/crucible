@@ -146,6 +146,7 @@
 // The crash attack campaign pins each of these on its ledger.
 
 #include <foundation/Platform.h>
+#include <foundation/core/Ref.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
@@ -354,9 +355,13 @@ using ::fixy::session::transition::payload_role;
 // A hash that the program stores or that two units compare reads the type
 // with its brands erased.  The walk writes DefaultBrand, the erased identity,
 // at each brand position that the session layer knows: the brand argument of
-// a payload rule, and argument 1 of Permission, LentOut, BorrowedIn, ReadLoan
-// and LentPermission.  It erases inside each template argument that is a
-// type too, so a brand inside a marker, a Record or a permission set goes.
+// a payload rule, and argument 1 of Permission, LentOut, BorrowedIn, ReadLoan,
+// LentPermission and the Ref of foundation/core/Ref.h.  A payload rule stands
+// in the file of its shape (fixy/session/Registry.h), and a header of the
+// foundation layer names no rule of this layer, so the walk names the Ref
+// here, as it names the token.  It erases inside each template argument that
+// is a type too, so a brand inside a marker, a Record, a Ref or a permission
+// set goes.
 //
 // A type with no brand at these positions keeps its spelling, so its hash
 // stays the same.  A brand at a position that the walk does not know stays,
@@ -367,7 +372,8 @@ using ::fixy::session::transition::payload_role;
 [[nodiscard]] consteval std::size_t known_brand_position(std::meta::info specialization) {
     const std::meta::info family = std::meta::template_of(specialization);
     if (family == ^^::foundation::permissions::Permission || family == ^^LentOut || family == ^^BorrowedIn
-        || family == ^^::foundation::permissions::ReadLoan || family == ^^::foundation::permissions::LentPermission) {
+        || family == ^^::foundation::permissions::ReadLoan || family == ^^::foundation::permissions::LentPermission
+        || family == ^^::foundation::core::Ref) {
         return 1;
     }
     const payload_lookup rule = payload_rule_of(specialization);

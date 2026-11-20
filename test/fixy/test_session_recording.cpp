@@ -475,6 +475,44 @@ int check_fresh_brand_recording() {
 
 }  // namespace
 
+// ── A Ref of a fresh brand ──────────────────────────────────────────
+//
+// to() gives each of its sites a fresh brand, so the stable id refuses a Ref
+// of that brand.  The recorder writes the erased brand at argument 1 of a
+// Ref, so the schema hash and the protocol hash of a type that holds or names
+// a Ref of a fresh brand are the hashes of the type with the Ref on the
+// erased brand, also inside a Record.  A session refuses a payload that holds
+// or names a borrow (Payload_Not_Owned), so the checks read the two hashes
+// and send no message.
+
+// A type that names a type and holds one number.
+template <class Named>
+struct NamesType {
+    int value = 0;
+};
+
+namespace {
+
+consteval bool hashes_a_ref_of_a_fresh_brand() {
+    int const number = 6;
+    auto branded = ::fixy::to(number);
+    using Branded = decltype(branded);
+    using Erased = decltype(::fixy::erase_brand(branded));
+    static_assert(!::foundation::reflect::HasStableIdentity<Branded>,
+                  "the brand of a site of to() is a closure, which has no stable id");
+    static_assert(s::default_schema_hash<Erased> == s::SchemaHash{::foundation::reflect::stable_type_id(^^Erased)});
+    static_assert(s::default_schema_hash<Branded> == s::default_schema_hash<Erased>);
+    static_assert(s::default_schema_hash<NamesType<Branded>> == s::default_schema_hash<NamesType<Erased>>);
+    static_assert(s::default_schema_hash<::fixy::Record<int, Branded>>
+                  == s::default_schema_hash<::fixy::Record<int, Erased>>);
+    static_assert(s::default_proto_hash<s::Send<NamesType<Branded>, s::End>>
+                  == s::default_proto_hash<s::Send<NamesType<Erased>, s::End>>);
+    return *branded == 6;
+}
+static_assert(hashes_a_ref_of_a_fresh_brand());
+
+}  // namespace
+
 // ── A keyed choice, and the replay of a choice ──────────────────────
 //
 // The two sides hold the labels in another order.  Each records the
