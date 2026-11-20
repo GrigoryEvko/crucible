@@ -19,7 +19,7 @@ crucible/MetaLogSession.cpp | 0.2 | ::fixy::session::combinators, ::fixy::sessio
 crucible/Serialize.cpp | 1.6 | ::fixy::tags::admitted_retags
 crucible/SingletonInitGraph.cpp | 0.1 | unknown
 crucible/SwissTable.cpp | 0.1 | unknown
-crucible/TensorMeta.cpp | 0.0 | ::fixy::tags::admitted_retags
+crucible/TensorMeta.cpp | 0.0 | ::fixy::tags::admitted_retags, unknown
 crucible/TraceRing.cpp | 0.1 | unknown
 crucible/Types.cpp | 0.2 | ::crucible
 crucible/cipher/CipherDurable.cpp | unmeasured | unknown
@@ -114,6 +114,7 @@ fixy/session/Network.cpp | 0.0 | ::fixy::session::combinators
 fixy/session/Protocol.cpp | 0.4 | ::fixy::session::combinators
 fixy/session/VigilMode.cpp | 0.4 | ::fixy::session::combinators
 fixy/session/Witnessed.cpp | 0.1 | ::foundation::permissions::permission_rows
+foundation/ChannelBinding.cpp | unmeasured | unknown
 foundation/Closure.cpp | unmeasured | unknown
 foundation/Transfer.cpp | unmeasured | unknown
 foundation/algebra/net/Reflect.cpp | unmeasured | unknown

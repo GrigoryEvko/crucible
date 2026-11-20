@@ -262,7 +262,7 @@ that the axis does not apply to the row.
 | `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_numa_policy` | `include/fixy/os/NumaPlacement.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_owned_thread` | `include/fixy/os/OwnedThread.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
-| `mint_owner_thread` | `include/fixy/os/OwnedThread.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
+| `mint_owner_thread` | `include/fixy/os/OwnedThread.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
 | `mint_perf_event` | `include/fixy/os/PerfEvent.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_priority` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
@@ -378,7 +378,7 @@ that the axis does not apply to the row.
 | `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 216 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 217 |
 | `mint_permission_share` | `include/foundation/permissions/SharedPermission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 40 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |
