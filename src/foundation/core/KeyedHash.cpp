@@ -30,76 +30,137 @@ namespace foundation::core::detail {
 // foundation/Platform.h).
 inline namespace CRUCIBLE_SIMD_TARGET {
 
-// Four words of 32 bits, a row of the state.
-typedef std::uint32_t Blake3Row __attribute__((vector_size(16)));
-typedef std::uint16_t Blake3Halves __attribute__((vector_size(16)));
-typedef std::uint8_t Blake3Bytes __attribute__((vector_size(16)));
+// The vector types of Count words of 32 bits: the words, their halves and
+// their bytes.  A row of the state of Count / 4 inputs holds the 4 words of
+// the row of each input in its own block of 128 bits.
+template <std::size_t Count>
+struct Blake3RowTypes final {
+    typedef std::uint32_t Words __attribute__((vector_size(4 * Count)));
+    typedef std::uint16_t Halves __attribute__((vector_size(4 * Count)));
+    typedef std::uint8_t Bytes __attribute__((vector_size(4 * Count)));
+};
+
+template <std::size_t Count>
+using Blake3Rows = typename Blake3RowTypes<Count>::Words;
+
+// Four words of 32 bits, a row of the state of one input.
+using Blake3Row = Blake3Rows<4>;
+
+// The index of the byte at position of a rotation right by Count bits in
+// each word, for Count a multiple of 8.
+template <int Count>
+[[nodiscard]] consteval int blake3_rotr_byte_index_(std::size_t position) noexcept {
+    return static_cast<int>((position & ~std::size_t{3}) | ((position + Count / 8) & 3));
+}
+
+// The lane at position of a shuffle that takes, in each block of 4 lanes,
+// the lanes Picks of the same block of the first vector (0 to 3) or of the
+// second (4 to 7).  A pick of -1 takes no lane.
+template <std::size_t Count, int First, int Second, int Third, int Fourth>
+[[nodiscard]] consteval int blake3_block_pick_index_(std::size_t position) noexcept {
+    int const picks[4] = {First, Second, Third, Fourth};
+    int const pick = picks[position % 4];
+    int const block = static_cast<int>(position / 4 * 4);
+    if (pick < 0) return -1;
+    return pick < 4 ? block + pick : static_cast<int>(Count) + block + pick - 4;
+}
+
+template <int First, int Second, int Third, int Fourth, std::size_t Count, std::size_t... Positions>
+[[nodiscard, gnu::always_inline]] inline Blake3Rows<Count>
+blake3_block_pick_(Blake3Rows<Count> first, Blake3Rows<Count> second, std::index_sequence<Positions...>) noexcept {
+    return __builtin_shufflevector(first, second,
+                                   blake3_block_pick_index_<Count, First, Second, Third, Fourth>(Positions)...);
+}
+
+template <int First, int Second, int Third, int Fourth, std::size_t Count>
+[[nodiscard, gnu::always_inline]] inline Blake3Rows<Count> blake3_pick_(Blake3Rows<Count> first,
+                                                                        Blake3Rows<Count> second) noexcept {
+    return blake3_block_pick_<First, Second, Third, Fourth, Count>(first, second, std::make_index_sequence<Count>{});
+}
+
+template <std::size_t Count, std::size_t... Positions>
+[[nodiscard]] inline Blake3Rows<Count> blake3_swap_halves_(Blake3Rows<Count> row,
+                                                           std::index_sequence<Positions...>) noexcept {
+    using Halves = typename Blake3RowTypes<Count>::Halves;
+    Halves const halves = __builtin_bit_cast(Halves, row);
+    return __builtin_bit_cast(Blake3Rows<Count>,
+                              __builtin_shufflevector(halves, halves, static_cast<int>(Positions ^ 1)...));
+}
+
+template <int Rotation, std::size_t Count, std::size_t... Positions>
+[[nodiscard]] inline Blake3Rows<Count> blake3_rotr_row_bytes_(Blake3Rows<Count> row,
+                                                              std::index_sequence<Positions...>) noexcept {
+    using Bytes = typename Blake3RowTypes<Count>::Bytes;
+    Bytes const bytes = __builtin_bit_cast(Bytes, row);
+    return __builtin_bit_cast(Blake3Rows<Count>,
+                              __builtin_shufflevector(bytes, bytes, blake3_rotr_byte_index_<Rotation>(Positions)...));
+}
 
 // A rotation right of each word of a row.  With AVX-512 each rotation is one
 // instruction.  Else a rotation by 16 is one shuffle of the halves, which
 // SSE2 does in two steps, a rotation by 8 with SSSE3 or NEON is one shuffle
 // of the bytes, and the others are two shifts and an or.
-template <int Count>
-[[nodiscard]] inline Blake3Row blake3_rotr_row_(Blake3Row row) noexcept {
+template <int Rotation, std::size_t Count>
+[[nodiscard]] inline Blake3Rows<Count> blake3_rotr_row_(Blake3Rows<Count> row) noexcept {
 #if !defined(__AVX512VL__) && (defined(__SSE2__) || defined(__ARM_NEON) || defined(__ARM_NEON__))
-    if constexpr (Count == 16) {
-        Blake3Halves const halves = __builtin_bit_cast(Blake3Halves, row);
-        return __builtin_bit_cast(Blake3Row, __builtin_shufflevector(halves, halves, 1, 0, 3, 2, 5, 4, 7, 6));
+    if constexpr (Rotation == 16) {
+        return blake3_swap_halves_<Count>(row, std::make_index_sequence<2 * Count>{});
     }
 #endif
 #if !defined(__AVX512VL__) && (defined(__SSSE3__) || defined(__ARM_NEON) || defined(__ARM_NEON__))
-    if constexpr (Count == 8) {
-        Blake3Bytes const bytes = __builtin_bit_cast(Blake3Bytes, row);
-        return __builtin_bit_cast(
-            Blake3Row, __builtin_shufflevector(bytes, bytes, 1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12));
+    if constexpr (Rotation == 8) {
+        return blake3_rotr_row_bytes_<Rotation, Count>(row, std::make_index_sequence<4 * Count>{});
     }
 #endif
-    return (row >> Count) | (row << (32 - Count));
+    return (row >> Rotation) | (row << (32 - Rotation));
 }
 
 // The g function on the four rows.  The word of the message joins first, so
 // the sum waits on the second row with one add.
-[[gnu::always_inline]] inline void blake3_g_rows_(Blake3Row& first, Blake3Row& second, Blake3Row& third,
-                                                  Blake3Row& fourth, Blake3Row mix_x, Blake3Row mix_y) noexcept {
+template <std::size_t Count>
+[[gnu::always_inline]] inline void blake3_g_rows_(Blake3Rows<Count>& first, Blake3Rows<Count>& second,
+                                                  Blake3Rows<Count>& third, Blake3Rows<Count>& fourth,
+                                                  Blake3Rows<Count> mix_x, Blake3Rows<Count> mix_y) noexcept {
     first = first + mix_x + second;
-    fourth = blake3_rotr_row_<16>(fourth ^ first);
+    fourth = blake3_rotr_row_<16, Count>(fourth ^ first);
     third = third + fourth;
-    second = blake3_rotr_row_<12>(second ^ third);
+    second = blake3_rotr_row_<12, Count>(second ^ third);
     first = first + mix_y + second;
-    fourth = blake3_rotr_row_<8>(fourth ^ first);
+    fourth = blake3_rotr_row_<8, Count>(fourth ^ first);
     third = third + fourth;
-    second = blake3_rotr_row_<7>(second ^ third);
+    second = blake3_rotr_row_<7, Count>(second ^ third);
 }
 
-// One round of the rows.  The column step mixes the columns of the state.
-// The diagonal step turns the rows first, third and fourth by three, one and
-// two lanes, so that its columns are the diagonals, and its words of the
-// message turn with them.  The second row stays in place: the column step
-// writes it last, so no turn waits on it.  After the diagonal step the three
-// rows turn back, and the words take the order of the next round.
-template <std::size_t Round>
-[[gnu::always_inline]] inline void blake3_round_rows_(Blake3Row& first, Blake3Row& second, Blake3Row& third,
-                                                      Blake3Row& fourth, Blake3Row& word0, Blake3Row& word1,
-                                                      Blake3Row& word2, Blake3Row& word3) noexcept {
-    blake3_g_rows_(first, second, third, fourth, __builtin_shufflevector(word0, word1, 0, 2, 4, 6),
-                   __builtin_shufflevector(word0, word1, 1, 3, 5, 7));
-    first = __builtin_shufflevector(first, first, 3, 0, 1, 2);
-    third = __builtin_shufflevector(third, third, 1, 2, 3, 0);
-    fourth = __builtin_shufflevector(fourth, fourth, 2, 3, 0, 1);
-    blake3_g_rows_(first, second, third, fourth, __builtin_shufflevector(word2, word3, 6, 0, 2, 4),
-                   __builtin_shufflevector(word2, word3, 7, 1, 3, 5));
-    first = __builtin_shufflevector(first, first, 1, 2, 3, 0);
-    third = __builtin_shufflevector(third, third, 3, 0, 1, 2);
-    fourth = __builtin_shufflevector(fourth, fourth, 2, 3, 0, 1);
+// One round of the rows of Count / 4 inputs.  The column step mixes the
+// columns of the state.  The diagonal step turns the rows first, third and
+// fourth by three, one and two lanes, so that its columns are the
+// diagonals, and its words of the message turn with them.  The second row
+// stays in place: the column step writes it last, so no turn waits on it.
+// After the diagonal step the three rows turn back, and the words take the
+// order of the next round.  Each shuffle stays in the block of each input.
+template <std::size_t Round, std::size_t Count>
+[[gnu::always_inline]] inline void blake3_round_rows_(Blake3Rows<Count>& first, Blake3Rows<Count>& second,
+                                                      Blake3Rows<Count>& third, Blake3Rows<Count>& fourth,
+                                                      Blake3Rows<Count>& word0, Blake3Rows<Count>& word1,
+                                                      Blake3Rows<Count>& word2, Blake3Rows<Count>& word3) noexcept {
+    blake3_g_rows_<Count>(first, second, third, fourth, blake3_pick_<0, 2, 4, 6, Count>(word0, word1),
+                          blake3_pick_<1, 3, 5, 7, Count>(word0, word1));
+    first = blake3_pick_<3, 0, 1, 2, Count>(first, first);
+    third = blake3_pick_<1, 2, 3, 0, Count>(third, third);
+    fourth = blake3_pick_<2, 3, 0, 1, Count>(fourth, fourth);
+    blake3_g_rows_<Count>(first, second, third, fourth, blake3_pick_<6, 0, 2, 4, Count>(word2, word3),
+                          blake3_pick_<7, 1, 3, 5, Count>(word2, word3));
+    first = blake3_pick_<1, 2, 3, 0, Count>(first, first);
+    third = blake3_pick_<3, 0, 1, 2, Count>(third, third);
+    fourth = blake3_pick_<2, 3, 0, 1, Count>(fourth, fourth);
     if constexpr (Round + 1 < 7) {
-        Blake3Row const next0 =
-            __builtin_shufflevector(__builtin_shufflevector(word0, word1, 2, 6, 3, -1), word2, 0, 1, 2, 6);
-        Blake3Row const next1 =
-            __builtin_shufflevector(__builtin_shufflevector(word1, word0, 3, 4, 0, -1), word3, 0, 1, 2, 5);
-        Blake3Row const next2 = __builtin_shufflevector(
-            __builtin_shufflevector(__builtin_shufflevector(word0, word2, 1, 7, -1, -1), word3, 0, 1, 4, -1), word1, 0,
-            1, 2, 5);
-        Blake3Row const next3 = __builtin_shufflevector(word2, word3, 1, 6, 7, 0);
+        Blake3Rows<Count> const next0 =
+            blake3_pick_<0, 1, 2, 6, Count>(blake3_pick_<2, 6, 3, -1, Count>(word0, word1), word2);
+        Blake3Rows<Count> const next1 =
+            blake3_pick_<0, 1, 2, 5, Count>(blake3_pick_<3, 4, 0, -1, Count>(word1, word0), word3);
+        Blake3Rows<Count> const next2 = blake3_pick_<0, 1, 2, 5, Count>(
+            blake3_pick_<0, 1, 4, -1, Count>(blake3_pick_<1, 7, -1, -1, Count>(word0, word2), word3), word1);
+        Blake3Rows<Count> const next3 = blake3_pick_<1, 6, 7, 0, Count>(word2, word3);
         word0 = next0;
         word1 = next1;
         word2 = next2;
@@ -107,12 +168,12 @@ template <std::size_t Round>
     }
 }
 
-template <std::size_t... Rounds>
-[[gnu::always_inline]] inline void blake3_rounds_rows_(Blake3Row& first, Blake3Row& second, Blake3Row& third,
-                                                       Blake3Row& fourth, Blake3Row& word0, Blake3Row& word1,
-                                                       Blake3Row& word2, Blake3Row& word3,
-                                                       std::index_sequence<Rounds...>) noexcept {
-    (blake3_round_rows_<Rounds>(first, second, third, fourth, word0, word1, word2, word3), ...);
+template <std::size_t Count, std::size_t... Rounds>
+[[gnu::always_inline]] inline void
+blake3_rounds_rows_(Blake3Rows<Count>& first, Blake3Rows<Count>& second, Blake3Rows<Count>& third,
+                    Blake3Rows<Count>& fourth, Blake3Rows<Count>& word0, Blake3Rows<Count>& word1,
+                    Blake3Rows<Count>& word2, Blake3Rows<Count>& word3, std::index_sequence<Rounds...>) noexcept {
+    (blake3_round_rows_<Rounds, Count>(first, second, third, fourth, word0, word1, word2, word3), ...);
 }
 
 // ── The run-time arm ────────────────────────────────────────────────────
@@ -148,7 +209,7 @@ struct Blake3Node final {
     Blake3Row word1 = words[1];
     Blake3Row word2 = words[2];
     Blake3Row word3 = words[3];
-    blake3_rounds_rows_(row0, row1, row2, row3, word0, word1, word2, word3, std::make_index_sequence<7>{});
+    blake3_rounds_rows_<4>(row0, row1, row2, row3, word0, word1, word2, word3, std::make_index_sequence<7>{});
     return Blake3Cv{row0 ^ row2, row1 ^ row3};
 }
 
@@ -216,13 +277,6 @@ using Blake3Lanes = typename Blake3LaneTypes<Width>::Words;
 
 template <std::size_t Width>
 using Blake3LaneBytes = typename Blake3LaneTypes<Width>::Bytes;
-
-// The index of the byte at position of a rotation right by Count bits in
-// each word, for Count a multiple of 8.
-template <int Count>
-[[nodiscard]] consteval int blake3_rotr_byte_index_(std::size_t position) noexcept {
-    return static_cast<int>((position & ~std::size_t{3}) | ((position + Count / 8) & 3));
-}
 
 template <int Count, std::size_t Width, std::size_t... Positions>
 [[nodiscard]] inline Blake3Lanes<Width> blake3_rotr_bytes_(Blake3Lanes<Width> lanes,
@@ -531,10 +585,197 @@ inline void blake3_run_lanes_(Blake3Cv key, Blake3Input const* inputs, std::size
     }
 }
 
+// ── The stacked rows: a few inputs at once ──────────────────────────────
+//
+// A vector of Count words holds the row of each of Count / 4 inputs in its
+// own block of 128 bits.  The rows run as the rows of one input, with each
+// shuffle inside its block, so the inputs run side by side in the time of
+// one compression.  The lanes need more inputs than they have at a level of
+// a few parents or at a message of a few chunks, and then the time of a run
+// of the lanes is one step for each input that it lacks.
+
+// The vector of Count words whose each block of 4 words is row.
+template <std::size_t Count, std::size_t... Positions>
+[[nodiscard]] inline Blake3Rows<Count> blake3_repeat_row_(Blake3Row row, std::index_sequence<Positions...>) noexcept {
+    return __builtin_shufflevector(row, row, static_cast<int>(Positions % 4)...);
+}
+
+// The vector of the words of low and then the words of high.
+template <std::size_t Half, std::size_t... Positions>
+[[nodiscard]] inline Blake3Rows<2 * Half> blake3_concatenate_(Blake3Rows<Half> low, Blake3Rows<Half> high,
+                                                              std::index_sequence<Positions...>) noexcept {
+    return __builtin_shufflevector(low, high, static_cast<int>(Positions)...);
+}
+
+// The vector of the rows of Count / 4 inputs, each from the bytes at the
+// offset after the first byte of its input.
+template <std::size_t Count>
+[[nodiscard]] inline Blake3Rows<Count> blake3_load_stacked_(std::byte const* const* firsts,
+                                                            std::size_t offset) noexcept {
+    if constexpr (Count == 4) {
+        Blake3Row row{};
+        __builtin_memcpy(&row, firsts[0] + offset, sizeof(row));
+        return row;
+    } else {
+        Blake3Rows<Count / 2> const low = blake3_load_stacked_<Count / 2>(firsts, offset);
+        Blake3Rows<Count / 2> const high = blake3_load_stacked_<Count / 2>(firsts + Count / 8, offset);
+        return blake3_concatenate_<Count / 2>(low, high, std::make_index_sequence<Count>{});
+    }
+}
+
+// The row of the input at index of a vector of stacked rows.
+template <std::size_t Count>
+[[nodiscard]] inline Blake3Row blake3_row_of_(Blake3Rows<Count> rows, std::size_t index) noexcept {
+    std::uint32_t words[Count] = {};
+    __builtin_memcpy(&words[0], &rows, sizeof(rows));
+    Blake3Row row{};
+    __builtin_memcpy(&row, &words[4 * index], sizeof(row));
+    return row;
+}
+
+// One round of Groups vectors of stacked rows, one group after the other, so
+// the groups run side by side.
+template <std::size_t Round, std::size_t Count, std::size_t Groups>
+[[gnu::always_inline]] inline void
+blake3_round_groups_(Blake3Rows<Count> (&first)[Groups], Blake3Rows<Count> (&second)[Groups],
+                     Blake3Rows<Count> (&third)[Groups], Blake3Rows<Count> (&fourth)[Groups],
+                     Blake3Rows<Count> (&word0)[Groups], Blake3Rows<Count> (&word1)[Groups],
+                     Blake3Rows<Count> (&word2)[Groups], Blake3Rows<Count> (&word3)[Groups]) noexcept {
+    for (std::size_t group = 0; group < Groups; ++group) {
+        blake3_round_rows_<Round, Count>(first[group], second[group], third[group], fourth[group], word0[group],
+                                         word1[group], word2[group], word3[group]);
+    }
+}
+
+template <std::size_t Count, std::size_t Groups, std::size_t... Rounds>
+[[gnu::always_inline]] inline void blake3_rounds_groups_(
+    Blake3Rows<Count> (&first)[Groups], Blake3Rows<Count> (&second)[Groups], Blake3Rows<Count> (&third)[Groups],
+    Blake3Rows<Count> (&fourth)[Groups], Blake3Rows<Count> (&word0)[Groups], Blake3Rows<Count> (&word1)[Groups],
+    Blake3Rows<Count> (&word2)[Groups], Blake3Rows<Count> (&word3)[Groups], std::index_sequence<Rounds...>) noexcept {
+    (blake3_round_groups_<Rounds, Count, Groups>(first, second, third, fourth, word0, word1, word2, word3), ...);
+}
+
+// The chaining values of count inputs, at most Groups times Count / 4, in
+// Groups vectors of stacked rows of Count words.  A vector stays at the width
+// of a register of the target, and two groups run side by side where one
+// register holds too few inputs.  As in the lanes, each input runs for the
+// steps of its longest input, and a shorter input waits on the bytes before
+// it until its first block.  An input past count repeats input 0.
+// Complexity: one compression of the rows for each block of the longest
+// input.
+template <std::size_t Count, std::size_t Groups>
+inline void blake3_run_rows_(Blake3Cv key, Blake3Input const* inputs, std::size_t count, std::uint32_t flags,
+                             Blake3Cv* out) noexcept {
+    using Rows = Blake3Rows<Count>;
+    constexpr std::size_t stacked = Count / 4;
+    constexpr std::size_t total = Groups * stacked;
+    constexpr auto positions = std::make_index_sequence<Count>{};
+    std::size_t steps = 0;
+    for (std::size_t input = 0; input < count; ++input) {
+        steps = steps < inputs[input].blocks ? inputs[input].blocks : steps;
+    }
+    std::byte const* firsts[total] = {};
+    std::size_t waits[total] = {};
+    std::size_t longest_wait = 0;
+    std::uint32_t fourth_words[Groups * Count] = {};
+    std::uint32_t start_words[Groups * Count] = {};
+    std::uint32_t end_words[Groups * Count] = {};
+    for (std::size_t input = 0; input < total; ++input) {
+        Blake3Input const& source = inputs[input < count ? input : 0];
+        std::size_t const wait = steps - source.blocks;
+        firsts[input] = source.first - wait * blake3_block_bytes;
+        waits[input] = wait;
+        longest_wait = longest_wait < wait ? wait : longest_wait;
+        fourth_words[4 * input] = static_cast<std::uint32_t>(source.counter);
+        fourth_words[4 * input + 1] = static_cast<std::uint32_t>(source.counter >> 32);
+        fourth_words[4 * input + 2] = static_cast<std::uint32_t>(blake3_block_bytes);
+        fourth_words[4 * input + 3] = flags;
+        start_words[4 * input + 3] = source.start_flags;
+        end_words[4 * input + 3] = source.end_flags;
+    }
+    Rows fourth_base[Groups] = {};
+    Rows start_rows[Groups] = {};
+    Rows end_rows[Groups] = {};
+    __builtin_memcpy(&fourth_base[0], fourth_words, sizeof(fourth_base));
+    __builtin_memcpy(&start_rows[0], start_words, sizeof(start_rows));
+    __builtin_memcpy(&end_rows[0], end_words, sizeof(end_rows));
+    Rows const key_low = blake3_repeat_row_<Count>(key.low, positions);
+    Rows const key_high = blake3_repeat_row_<Count>(key.high, positions);
+    Rows const iv =
+        blake3_repeat_row_<Count>(Blake3Row{blake3_iv[0], blake3_iv[1], blake3_iv[2], blake3_iv[3]}, positions);
+    Rows first[Groups] = {};
+    Rows second[Groups] = {};
+    for (std::size_t group = 0; group < Groups; ++group) {
+        first[group] = key_low;
+        second[group] = key_high;
+    }
+    for (std::size_t step = 0; step < steps; ++step) {
+        Rows third[Groups] = {};
+        Rows fourth[Groups] = {};
+        for (std::size_t group = 0; group < Groups; ++group) {
+            third[group] = iv;
+            fourth[group] = fourth_base[group];
+        }
+        if (step <= longest_wait) {
+            // All ones in the block of each input whose first block is at
+            // this step.
+            std::uint32_t is_first_words[Groups * Count] = {};
+            for (std::size_t input = 0; input < total; ++input) {
+                std::uint32_t const is_first = waits[input] == step ? ~std::uint32_t{0} : 0;
+                for (std::size_t word = 0; word < 4; ++word) {
+                    is_first_words[4 * input + word] = is_first;
+                }
+            }
+            Rows is_first[Groups] = {};
+            __builtin_memcpy(&is_first[0], is_first_words, sizeof(is_first));
+            for (std::size_t group = 0; group < Groups; ++group) {
+                fourth[group] |= start_rows[group] & is_first[group];
+                if (step != 0) {
+                    first[group] = (first[group] & ~is_first[group]) | (key_low & is_first[group]);
+                    second[group] = (second[group] & ~is_first[group]) | (key_high & is_first[group]);
+                }
+            }
+        }
+        if (step + 1 == steps) {
+            for (std::size_t group = 0; group < Groups; ++group) {
+                fourth[group] |= end_rows[group];
+            }
+        }
+        std::size_t const offset = step * blake3_block_bytes;
+        Rows word0[Groups] = {};
+        Rows word1[Groups] = {};
+        Rows word2[Groups] = {};
+        Rows word3[Groups] = {};
+        for (std::size_t group = 0; group < Groups; ++group) {
+            std::byte const* const* const group_firsts = firsts + group * stacked;
+            word0[group] = blake3_load_stacked_<Count>(group_firsts, offset);
+            word1[group] = blake3_load_stacked_<Count>(group_firsts, offset + 16);
+            word2[group] = blake3_load_stacked_<Count>(group_firsts, offset + 32);
+            word3[group] = blake3_load_stacked_<Count>(group_firsts, offset + 48);
+        }
+        blake3_rounds_groups_<Count, Groups>(first, second, third, fourth, word0, word1, word2, word3,
+                                             std::make_index_sequence<7>{});
+        for (std::size_t group = 0; group < Groups; ++group) {
+            first[group] = first[group] ^ third[group];
+            second[group] = second[group] ^ fourth[group];
+        }
+    }
+    for (std::size_t input = 0; input < count; ++input) {
+        out[input] = Blake3Cv{blake3_row_of_<Count>(first[input / stacked], input % stacked),
+                              blake3_row_of_<Count>(second[input / stacked], input % stacked)};
+    }
+}
+
 // The chaining values of count inputs into out: runs of the widest lanes
-// while they fill, then one run of the narrowest lanes that hold the rest.
-// Fewer inputs than fewest_lanes run one after the other in the rows.
-// Complexity: one compression of the lanes for each block of each run.
+// while they fill, then one run of the narrowest form that holds the rest.
+// One input runs in the rows.  Two inputs run in one vector of 256 bits of
+// stacked rows with AVX2 or AVX-512, else in two vectors of 128 bits side by
+// side.  Three or four inputs run in two vectors of 256 bits with AVX2 or
+// AVX-512, else in four lanes.  A vector of 512 bits of stacked rows is no
+// faster than two of 256 bits on a target that splits each instruction of
+// 512 bits in two halves, and a vector wider than the registers of the
+// target loses each shuffle to scalar code.  Complexity: one compression of
+// the lanes for each block of each run.
 inline void blake3_run_inputs_(Blake3Cv key, Blake3Input const* inputs, std::size_t count, std::uint32_t flags,
                                Blake3Cv* out) noexcept {
     std::size_t done = 0;
@@ -544,30 +785,31 @@ inline void blake3_run_inputs_(Blake3Cv key, Blake3Input const* inputs, std::siz
     }
     std::size_t const rest = count - done;
     if (rest == 0) return;
-    // With SSE2 alone a rotation by 16 or by 8 is three steps, so two
-    // inputs run faster one after the other than in four lanes.
-#if defined(__SSSE3__) || defined(__AVX__) || defined(__ARM_NEON) || defined(__ARM_NEON__)
-    constexpr std::size_t fewest_lanes = 2;
-#else
-    constexpr std::size_t fewest_lanes = 3;
-#endif
-    if (rest < fewest_lanes) {
-        for (; done < count; ++done) {
-            Blake3Input const& input = inputs[done];
-            Blake3Cv value = key;
-            for (std::size_t block = 0; block < input.blocks; ++block) {
-                Blake3Row words[4];
-                blake3_load_rows_(input.first + block * blake3_block_bytes, words);
-                std::uint32_t const block_flags =
-                    flags | (block == 0 ? input.start_flags : 0) | (block + 1 == input.blocks ? input.end_flags : 0);
-                value = blake3_compress_cv_(value, words, input.counter, blake3_block_bytes, block_flags);
-            }
-            out[done] = value;
+    if (rest == 1) {
+        Blake3Input const& input = inputs[done];
+        Blake3Cv value = key;
+        for (std::size_t block = 0; block < input.blocks; ++block) {
+            Blake3Row words[4];
+            blake3_load_rows_(input.first + block * blake3_block_bytes, words);
+            std::uint32_t const block_flags =
+                flags | (block == 0 ? input.start_flags : 0) | (block + 1 == input.blocks ? input.end_flags : 0);
+            value = blake3_compress_cv_(value, words, input.counter, blake3_block_bytes, block_flags);
         }
+        out[done] = value;
         return;
     }
-    if (rest <= 4) {
-        blake3_run_lanes_<4>(key, inputs + done, rest, flags, out + done);
+    if (rest == 2) {
+        if constexpr (blake3_widest_lanes >= 8) {
+            blake3_run_rows_<8, 1>(key, inputs + done, rest, flags, out + done);
+        } else {
+            blake3_run_rows_<4, 2>(key, inputs + done, rest, flags, out + done);
+        }
+    } else if (rest <= 4) {
+        if constexpr (blake3_widest_lanes >= 8) {
+            blake3_run_rows_<8, 2>(key, inputs + done, rest, flags, out + done);
+        } else {
+            blake3_run_lanes_<4>(key, inputs + done, rest, flags, out + done);
+        }
     } else if constexpr (blake3_widest_lanes >= 8) {
         if (rest <= 8) {
             blake3_run_lanes_<8>(key, inputs + done, rest, flags, out + done);
