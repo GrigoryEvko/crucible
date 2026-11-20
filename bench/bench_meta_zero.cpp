@@ -51,16 +51,20 @@ struct Percentiles {
     double p50 = 0, p99 = 0, p999 = 0, max = 0;
 };
 
-// The value at the fraction frac of the samples in ascending order, as the
-// index frac * (n - 1) rounded down.
-[[nodiscard]] double at_fraction(::fixy::HeapArray<double> const& sorted, double frac) noexcept {
-    const auto idx = static_cast<std::size_t>(frac * static_cast<double>(sorted.size() - 1));
+// The value at PerMille thousandths of the samples in ascending order, as the
+// index PerMille * (n - 1) / 1000 rounded down.  For the counts of the bench,
+// the index is the index of the fraction in a double.
+template <std::size_t PerMille>
+    requires(PerMille <= 1000)
+[[nodiscard]] double at_per_mille(::fixy::HeapArray<double> const& sorted) noexcept {
+    const std::size_t idx = PerMille * (sorted.size() - 1) / 1000;
     return *sorted.get(idx).expect("a fraction in [0, 1] names a sample");
 }
 
 [[nodiscard]] Percentiles percentiles_of(::fixy::HeapArray<double> samples) {
     ::fixy::HeapArray<double> const sorted = bench::sorted_samples(std::move(samples));
-    return {at_fraction(sorted, 0.50), at_fraction(sorted, 0.99), at_fraction(sorted, 0.999), at_fraction(sorted, 1.0)};
+    return {at_per_mille<500>(sorted), at_per_mille<990>(sorted), at_per_mille<999>(sorted),
+            at_per_mille<1000>(sorted)};
 }
 
 // Scenario A: default-construct Count descriptors, which is the zeroing the
@@ -103,7 +107,7 @@ void report(::fixy::TextView label, Batch const& one_batch) {
     }
     ::fixy::HeapArray<double> const sorted_p50s = bench::sorted_samples(std::move(run_p50s));
     const double median_p50 = *sorted_p50s.get(kRuns / 2).expect("the middle run is below kRuns");
-    const double spread = (at_fraction(sorted_p50s, 1.0) - at_fraction(sorted_p50s, 0.0)) / median_p50;
+    const double spread = (at_per_mille<1000>(sorted_p50s) - at_per_mille<0>(sorted_p50s)) / median_p50;
     const double per_descriptor = Descriptors != 0 ? median_p50 / static_cast<double>(Descriptors) : median_p50;
     bench::print("{} p50={}  p99={}  p99.9={}  max={}  per-descriptor={}  spread={}%  {}\n",
                  ::fixy::Padded<44, ::fixy::Align::Left>{label}, ::fixy::Fixed<2, 7>{median_p50},

@@ -91,9 +91,6 @@ inline constexpr std::uint64_t kNsPerMs = 1000000;
     return end_ns.value() > start_ns.value() ? (end_ns.value() - start_ns.value()) / kNsPerMs : 0;
 }
 
-// The text of a flag of the coverage, as the C form %d of a bool printed it.
-[[nodiscard]] constexpr int flag_of(bool is_attached) noexcept { return is_attached ? 1 : 0; }
-
 void print_coverage(const crucible::perf::CoverageReport& cov) {
     // The denominator is the number of facade flags in CoverageReport,
     // read by reflection, so a facade added to the aggregator moves it.
@@ -110,11 +107,12 @@ void print_coverage(const crucible::perf::CoverageReport& cov) {
         //   • sudo ./bench_perf_loader  (per-invocation)
         bench::print(" — run it through /usr/local/bin/crucible-caps, as `loop bench` does, or invoke under sudo");
     }
+    // Each flag prints as the C form %d of a bool printed it: 1 or 0.
     bench::print("\n  sense_hub={} sched_switch={} pmu_sample={} lock_contention={} syscall_latency={} "
                  "sched_tp_btf={} syscall_tp_btf={}\n",
-                 flag_of(cov.sense_hub_attached), flag_of(cov.sched_switch_attached), flag_of(cov.pmu_sample_attached),
-                 flag_of(cov.lock_contention_attached), flag_of(cov.syscall_latency_attached),
-                 flag_of(cov.sched_tp_btf_attached), flag_of(cov.syscall_tp_btf_attached));
+                 cov.sense_hub_attached ? 1 : 0, cov.sched_switch_attached ? 1 : 0, cov.pmu_sample_attached ? 1 : 0,
+                 cov.lock_contention_attached ? 1 : 0, cov.syscall_latency_attached ? 1 : 0,
+                 cov.sched_tp_btf_attached ? 1 : 0, cov.syscall_tp_btf_attached ? 1 : 0);
 }
 
 }  // namespace
@@ -123,16 +121,17 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the BPF programs of the perf facades write t
 namespace {
 
 // The count of the events with a stamp that is not zero in the 64 slots of a
-// timeline ring of Capacity slots before the slot end, newest first.  The
-// kernel writes the stamp of a slot last, so an acquire load of the stamp
+// timeline ring of Capacity slots before the write index end, newest first.
+// The kernel writes the stamp of a slot last, so an acquire load of the stamp
 // orders the read of the rest of the slot.  Capacity is a power of two.  The
 // body is inline in each drain row, so the row times the loads and no call.
 template <std::uint64_t Capacity, class Span>
-[[nodiscard, gnu::always_inline]] inline std::uint64_t count_live_newest(Span const& view, std::uint64_t end) noexcept {
+[[nodiscard, gnu::always_inline]] inline std::uint64_t
+count_live_newest(Span const& view, ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end) noexcept {
     constexpr std::uint64_t mask = Capacity - 1;
     std::uint64_t live = 0;
     for (std::uint64_t i = 0; i < 64; ++i) {
-        const std::uint64_t slot = (end - 1 - i) & mask;
+        const std::uint64_t slot = (end.value() - 1 - i) & mask;
         const std::uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
         if (ts != 0) ++live;
     }
@@ -518,8 +517,8 @@ int main() {
                         bench::do_not_optimize(view);
                         return;
                     }
-                    const std::uint64_t live =
-                        count_live_newest<crucible::perf::TIMELINE_CAPACITY>(view, h->timeline_write_index());
+                    const std::uint64_t live = count_live_newest<crucible::perf::TIMELINE_CAPACITY>(
+                        view, ::fixy::side_as<bench::side::ReadingAfter>(h->timeline_write_index()));
                     bench::do_not_optimize(live);
                 }
             });
@@ -532,8 +531,8 @@ int main() {
                         bench::do_not_optimize(view);
                         return;
                     }
-                    const std::uint64_t live =
-                        count_live_newest<crucible::perf::PMU_SAMPLE_CAPACITY>(view, h->timeline_write_index());
+                    const std::uint64_t live = count_live_newest<crucible::perf::PMU_SAMPLE_CAPACITY>(
+                        view, ::fixy::side_as<bench::side::ReadingAfter>(h->timeline_write_index()));
                     bench::do_not_optimize(live);
                 }
             });
@@ -546,8 +545,8 @@ int main() {
                         bench::do_not_optimize(view);
                         return;
                     }
-                    const std::uint64_t live =
-                        count_live_newest<crucible::perf::TIMELINE_CAPACITY>(view, h->timeline_write_index());
+                    const std::uint64_t live = count_live_newest<crucible::perf::TIMELINE_CAPACITY>(
+                        view, ::fixy::side_as<bench::side::ReadingAfter>(h->timeline_write_index()));
                     bench::do_not_optimize(live);
                 }
             });
@@ -560,8 +559,8 @@ int main() {
                         bench::do_not_optimize(view);
                         return;
                     }
-                    const std::uint64_t live =
-                        count_live_newest<crucible::perf::TIMELINE_CAPACITY>(view, h->timeline_write_index());
+                    const std::uint64_t live = count_live_newest<crucible::perf::TIMELINE_CAPACITY>(
+                        view, ::fixy::side_as<bench::side::ReadingAfter>(h->timeline_write_index()));
                     bench::do_not_optimize(live);
                 }
             });
@@ -574,8 +573,8 @@ int main() {
                         bench::do_not_optimize(view);
                         return;
                     }
-                    const std::uint64_t live =
-                        count_live_newest<crucible::perf::TIMELINE_CAPACITY>(view, h->timeline_write_index());
+                    const std::uint64_t live = count_live_newest<crucible::perf::TIMELINE_CAPACITY>(
+                        view, ::fixy::side_as<bench::side::ReadingAfter>(h->timeline_write_index()));
                     bench::do_not_optimize(live);
                 }
             });
@@ -588,8 +587,8 @@ int main() {
                         bench::do_not_optimize(view);
                         return;
                     }
-                    const std::uint64_t live =
-                        count_live_newest<crucible::perf::TIMELINE_CAPACITY>(view, h->timeline_write_index());
+                    const std::uint64_t live = count_live_newest<crucible::perf::TIMELINE_CAPACITY>(
+                        view, ::fixy::side_as<bench::side::ReadingAfter>(h->timeline_write_index()));
                     bench::do_not_optimize(live);
                 }
             });
