@@ -381,8 +381,9 @@ void test_built_graph_owns_its_metadata() {
             owner.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
             owner.release_meta_log(stage, OPS);
         });
-    const crucible::RegionNode* const region = bt.active_region().try_get();
-    CRUCIBLE_TEST_ASSERT(kTest, region != nullptr && &region->op_at(0) == &graph->op(crucible::OpIndex{0}));
+    const ::fixy::Ref<const crucible::RegionNode> region =
+        bt.active_region().expect("the publish gives the active region");
+    CRUCIBLE_TEST_ASSERT(kTest, &region->op_at(0) == &graph->op(crucible::OpIndex{0}));
     CRUCIBLE_TEST_ASSERT(kTest, metalog->tail.get() == OPS);
 
     ::fixy::check::pass(kTest, "  built_graph_owns_its_metadata:             PASSED\n");

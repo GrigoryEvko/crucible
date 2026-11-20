@@ -344,11 +344,12 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             if (input_meta.data_ptr.value() == nullptr) continue;
             const PtrMapKey input_key = storage_key(input_meta);
             const uint64_t input_span = span_bytes_of_(input_meta);
-            const ::fixy::WeakRef<PtrSlot> entry = ptr_map_find(scratch_map_, local_gen, input_key);
-            if (entry) {
+            const PtrSlotLink found = ptr_map_find(scratch_map_, local_gen, input_key);
+            if (found.is_some()) {
                 // A storage that an op of the region wrote, or an external
                 // storage that an op read before.  The op is a reader of the
                 // storage, so an output of the op on it is the same storage.
+                const ::fixy::Ref<PtrSlot> entry = PtrSlotLink{found}.expect("the test above found the entry");
                 entry->reader = OpIndex{i};
                 producer = entry->op_index;
                 input_slot = entry->slot_id;
@@ -392,7 +393,8 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                 slot_info.layout = input_meta.layout;
                 const InsertResult inserted =
                     ptr_map_insert(scratch_map_, local_gen, input_key, OpIndex{}, 0, new_slot);
-                if (inserted.slot) inserted.slot->reader = OpIndex{i};
+                for (const ::fixy::Ref<PtrSlot>& claimed : inserted.slot)
+                    claimed->reader = OpIndex{i};
             }
         }
 
@@ -403,7 +405,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             if (output_meta.data_ptr.value() == nullptr) continue;
             const PtrMapKey output_key = storage_key(output_meta);
             const uint64_t output_span = span_bytes_of_(output_meta);
-            const ::fixy::WeakRef<PtrSlot> entry = ptr_map_find(scratch_map_, local_gen, output_key);
+            const PtrSlotLink found = ptr_map_find(scratch_map_, local_gen, output_key);
 
             // A key with a known generation names one storage of the process,
             // so a key of the map with a known generation is the same storage.
@@ -430,11 +432,16 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             // period the front end records no new storage with no generation
             // at the address of a dead one.
             const bool is_written_in_the_nest =
-                entry && entry->op_index.is_valid() && entry->op_index.raw() >= nest_start;
-            const bool is_same_storage = entry && entry->slot_id.is_valid()
-                                      && (output_key.generation.is_known() || entry->reader == OpIndex{i}
-                                          || (output_meta.flags & meta_flags::IS_VIEW) != 0 || is_written_in_the_nest);
+                found.is_some_and([nest_start](::fixy::Ref<PtrSlot> const& entry) noexcept {
+                    return entry->op_index.is_valid() && entry->op_index.raw() >= nest_start;
+                });
+            const bool is_same_storage = found.is_some_and([&](::fixy::Ref<PtrSlot> const& entry) noexcept {
+                return entry->slot_id.is_valid()
+                    && (output_key.generation.is_known() || entry->reader == OpIndex{i}
+                        || (output_meta.flags & meta_flags::IS_VIEW) != 0 || is_written_in_the_nest);
+            });
             if (is_same_storage) {
+                const ::fixy::Ref<PtrSlot> entry = PtrSlotLink{found}.expect("the test above found the entry");
                 output_slot = entry->slot_id;
                 // A slot id at or past slot_cap names no slot of this call.
                 for (auto slot_info : local_slots.get(entry->slot_id.raw())) {
@@ -482,7 +489,8 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                 slot_info.layout = output_meta.layout;
                 output_slot = new_slot;
             }
-            if (entry) {
+            if (found.is_some()) {
+                const ::fixy::Ref<PtrSlot> entry = PtrSlotLink{found}.expect("the test above found the entry");
                 entry->op_index = OpIndex{i};
                 entry->port = static_cast<uint8_t>(j);
                 entry->slot_id = output_slot;
@@ -533,7 +541,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     build_csr(a, scratch, *graph,
               local_edges.window(0, num_edges).expect("the edge scratch holds each edge of the build"), count);
 
-    return BuiltTrace{.graph = ::fixy::WeakRef<TraceGraph>{*graph},
+    return BuiltTrace{.graph = graph,
                       .region = BuiltRegion{BuiltRegion::Parts{.ops = std::move(op_buffer),
                                                                .metas = std::move(meta_buffer),
                                                                .scalars = std::move(scalar_buffer),

@@ -1,17 +1,17 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// The live-slot pointer of TransactionLog is
-// fixy::Tagged<Transaction*, source::Ring>.  A raw Transaction* does not
-// convert to it, because the constructor from the value is private and
-// mint_tagged<source::Ring> is the one door, which names at the call site
-// that the pointer came from the ring's inline slots.
+// The live slot of TransactionLog is
+// fixy::Tagged<Option<Ref<Transaction>>, source::Ring>.  An Option of a Ref
+// with no tag does not convert to it, because the constructor from the value
+// is private and mint_tagged<source::Ring> is the one door, which names at
+// the call site that the transaction came from the inline slots of the ring.
 //
-// Companion: neg_active_tx_ptr_cross_source_assignment.cpp refuses a
-// pointer under a different source tag.
+// Companion: neg_active_tx_ptr_cross_source_assignment.cpp refuses a slot
+// under a different source tag.
 
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
-#include <foundation/Quarantine.h>
 
 namespace crucible {
 struct FakeTransaction {
@@ -20,14 +20,13 @@ struct FakeTransaction {
 }  // namespace crucible
 
 int main() {
-    using ActiveTxPtr = ::fixy::Tagged<crucible::FakeTransaction*, ::fixy::tags::source::Ring>;
+    using TxLink = ::fixy::Option<::fixy::Ref<crucible::FakeTransaction>>;
+    using ActiveTxLink = ::fixy::Tagged<TxLink, ::fixy::tags::source::Ring>;
 
     crucible::FakeTransaction tx{};
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it")
-    crucible::FakeTransaction* raw_ptr = &tx;
+    const TxLink untagged = ::fixy::some(::fixy::erase_brand(::fixy::to(tx)));
 
-    ActiveTxPtr field = raw_ptr;
+    ActiveTxLink field = untagged;
     (void)field;
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return 0;
 }

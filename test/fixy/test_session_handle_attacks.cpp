@@ -226,18 +226,27 @@ struct Mailbox {
     ::fixy::Atomic<bool> full{false};
 };
 
+// The brand of each Ref of a pipe: a pipe lives for its whole test, as the
+// ends that reach it do.
+struct PipeBrand {};
+
 struct Pipe : ::foundation::Pinned<Pipe> {
+    using brand_type = PipeBrand;
     Mailbox to_left;
     Mailbox to_right;
     ::fixy::Atomic<bool> left_cancelled{false};
 };
 
+// The pipe of an end, or no pipe for the end of a handle that gave its end
+// away.
+using PipeLink = ::fixy::Option<::fixy::Ref<Pipe, PipeBrand>>;
+
 struct LeftEnd {
-    ::fixy::WeakRef<Pipe> pipe{};
+    PipeLink pipe{};
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 struct RightEnd {
-    ::fixy::WeakRef<Pipe> pipe{};
+    PipeLink pipe{};
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
@@ -245,11 +254,15 @@ struct RightEnd {
 // the thread of its side (foundation/Transfer.h).
 static_assert(::foundation::transfer::Sendable<LeftEnd> && ::foundation::transfer::Sendable<RightEnd>);
 
+// The pipe of an end that holds one.  An end with no pipe ends the process.
+[[nodiscard]] Pipe& pipe_of(PipeLink const& pipe) noexcept { return *PipeLink{pipe}.expect("the end holds its pipe"); }
+
 // The left end can cancel: it tells the right end through the pipe.  The
 // end of a handle that gave its end away holds no pipe, and then the cancel
 // has no one to tell.
 void cancel_session(LeftEnd& end) noexcept {
-    if (end.pipe.has_value()) end.pipe.get().left_cancelled.store_release(true);
+    for (const ::fixy::Ref<Pipe, PipeBrand>& pipe : end.pipe)
+        pipe->left_cancelled.store_release(true);
 }
 
 void put(Mailbox& box, int value) noexcept {
@@ -277,7 +290,7 @@ struct PollLeftBox {
 
     template <typename End>
     [[nodiscard]] ::fixy::Option<Ping> operator()(End& end) const noexcept {
-        Mailbox& box = end.pipe->to_left;
+        Mailbox& box = pipe_of(end.pipe).to_left;
         if (!box.full.load_acquire()) {
             if (std::chrono::steady_clock::now() > deadline) deadlock_detected(where);
             return ::fixy::none;
@@ -603,7 +616,7 @@ template <Receive How, typename Head>
         return std::move(head).recv(PollLeftBox{where});
     } else {
         return std::move(head).recv(
-            [where](LeftEnd& e, s::watch::wait_scope&) noexcept { return Ping{take(e.pipe->to_left, where)}; });
+            [where](LeftEnd& e, s::watch::wait_scope&) noexcept { return Ping{take(pipe_of(e.pipe).to_left, where)}; });
     }
 }
 
@@ -617,7 +630,7 @@ struct TakesBothBody {
         RightHead other = g_right_endpoint.take("the left body, for the right endpoint");
         auto [ping, done] = receive_ping<How>(std::move(head), "left recv");
         g_right_done.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping& p) noexcept {
-            put(e.pipe->to_left, p.value);
+            put(pipe_of(e.pipe).to_left, p.value);
             return true;
         }));
         return std::move(done);
@@ -629,8 +642,8 @@ template <Receive How>
     Pipe pipe{};
     const BgCtx ctx{eff::testing::bg()};
     auto back = s::mint_forked_channel<LeftProto, attack_tags::Left, attack_tags::Right>(
-        ctx, perm::mint_permission_root<attack_tags::Whole>(), LeftEnd{::fixy::WeakRef<Pipe>{pipe}},
-        RightEnd{::fixy::WeakRef<Pipe>{pipe}}, TakesBothBody<How>{}, GiveAwayBody{});
+        ctx, perm::mint_permission_root<attack_tags::Whole>(), LeftEnd{::fixy::some(::fixy::to(pipe))},
+        RightEnd{::fixy::some(::fixy::to(pipe))}, TakesBothBody<How>{}, GiveAwayBody{});
     ::foundation::linear::drop(std::move(back));
     std::_Exit(kSilentExit);
 }
@@ -653,8 +666,8 @@ template <Receive How>
 [[noreturn]] void one_thread_holds_both_rewound_ends() {
     Pipe pipe{};
     const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
-    auto [left_end, right_end] =
-        s::mint_test_channel<s::End>(ctx, LeftEnd{::fixy::WeakRef<Pipe>{pipe}}, RightEnd{::fixy::WeakRef<Pipe>{pipe}});
+    auto [left_end, right_end] = s::mint_test_channel<s::End>(ctx, LeftEnd{::fixy::some(::fixy::to(pipe))},
+                                                              RightEnd{::fixy::some(::fixy::to(pipe))});
     auto [left_again, right_again] =
         s::HandleFactory::rewind_channel<LeftProto, void>(std::move(left_end), std::move(right_end));
     auto right_done = std::move(right_again).send(Ping{1}, [](RightEnd&, Ping&) noexcept { return false; });
@@ -704,7 +717,7 @@ struct CycleLeftA {
         CycleHeadB other = g_cycle_endpoint_b.take("session A's left body, for session B's endpoint");
         auto [ping, done] = receive_ping<Receive::Polling>(std::move(head), "A recv");
         g_cycle_done_b.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping& p) noexcept {
-            put(e.pipe->to_left, p.value);
+            put(pipe_of(e.pipe).to_left, p.value);
             return true;
         }));
         return std::move(done);
@@ -716,7 +729,7 @@ struct CycleLeftB {
         CycleHeadA other = g_cycle_endpoint_a.take("session B's left body, for session A's endpoint");
         auto [ping, done] = receive_ping<Receive::Polling>(std::move(head), "B recv");
         g_cycle_done_a.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping& p) noexcept {
-            put(e.pipe->to_left, p.value);
+            put(pipe_of(e.pipe).to_left, p.value);
             return true;
         }));
         return std::move(done);
@@ -729,14 +742,14 @@ struct CycleLeftB {
     const BgCtx ctx{eff::testing::bg()};
     std::jthread run_a{[&] {
         auto back = s::mint_forked_channel<LeftProto, attack_tags::Left, attack_tags::Right>(
-            ctx, perm::mint_permission_root<attack_tags::Whole>(), LeftEnd{::fixy::WeakRef<Pipe>{pipe_a}},
-            RightEnd{::fixy::WeakRef<Pipe>{pipe_a}}, CycleLeftA{}, CycleRightA{});
+            ctx, perm::mint_permission_root<attack_tags::Whole>(), LeftEnd{::fixy::some(::fixy::to(pipe_a))},
+            RightEnd{::fixy::some(::fixy::to(pipe_a))}, CycleLeftA{}, CycleRightA{});
         ::foundation::linear::drop(std::move(back));
     }};
     std::jthread run_b{[&] {
         auto back = s::mint_forked_channel<LeftProto, attack_tags::Left2, attack_tags::Right2>(
-            ctx, perm::mint_permission_root<attack_tags::Whole2>(), LeftEnd{::fixy::WeakRef<Pipe>{pipe_b}},
-            RightEnd{::fixy::WeakRef<Pipe>{pipe_b}}, CycleLeftB{}, CycleRightB{});
+            ctx, perm::mint_permission_root<attack_tags::Whole2>(), LeftEnd{::fixy::some(::fixy::to(pipe_b))},
+            RightEnd{::fixy::some(::fixy::to(pipe_b))}, CycleLeftB{}, CycleRightB{});
         ::foundation::linear::drop(std::move(back));
     }};
     run_a.join();
@@ -812,21 +825,22 @@ using OneRead = s::Recv<int, s::End>;
         Pipe pipe{};
         std::jthread left{[&pipe] {
             const ::fixy::TestRunnerCtx left_ctx{eff::testing::test()};
-            auto handle = s::mint_session<LeftSide, s::check::Cancel>(left_ctx, LeftEnd{::fixy::WeakRef<Pipe>{pipe}});
+            auto handle =
+                s::mint_session<LeftSide, s::check::Cancel>(left_ctx, LeftEnd{::fixy::some(::fixy::to(pipe))});
             (void)handle;
         }};
-        auto right = s::mint_session<s::dual_of_t<LeftSide>>(ctx, RightEnd{::fixy::WeakRef<Pipe>{pipe}});
+        auto right = s::mint_session<s::dual_of_t<LeftSide>>(ctx, RightEnd{::fixy::some(::fixy::to(pipe))});
         auto waits = std::move(right).send(Ping{round}, [](RightEnd& e, Ping& p) noexcept {
-            put(e.pipe->to_left, p.value);
+            put(pipe_of(e.pipe).to_left, p.value);
             return true;
         });
         const auto deadline = std::chrono::steady_clock::now() + kAttackDeadline;
         for (;;) {
-            if (waits.resource().pipe->to_right.full.load_acquire()) {
+            if (pipe_of(waits.resource().pipe).to_right.full.load_acquire()) {
                 std::fprintf(stderr, "[attack] a cancelled left side sent a Pong\n");
                 std::_Exit(kSilentExit);
             }
-            if (waits.resource().pipe->left_cancelled.load_acquire()) {
+            if (pipe_of(waits.resource().pipe).left_cancelled.load_acquire()) {
                 std::move(waits).detach(s::detach_reason::AsyncCancellation{});
                 break;
             }

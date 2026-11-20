@@ -242,7 +242,7 @@ int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     job_runs_on_the_caller_without_a_stage();
     ::fixy::check::expect_dies(test, nested_job_ends_the_process,
-                               ::fixy::TextView{"foundation: contract violation: stage_held_by_this_thread_"});
+                               ::fixy::TextView{"foundation: contract violation: !holds_stage_on_this_thread_()"});
     rollback_on_a_fresh_vigil();
     rollback_while_regions_are_in_flight();
     rollback_reads_its_region_while_the_store_sweeps();

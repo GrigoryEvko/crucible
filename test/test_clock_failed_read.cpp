@@ -347,7 +347,7 @@ void transaction_stamps_read_no_clock(Tally& tally) {
     tally.expect(holds_place(first, 2, "commit of the first transaction, with a clock that fails"));
 
     give_each_read(8, 0);
-    tally.expect(log.activate(owner, *first).try_get() == nullptr);
+    tally.expect(log.activate(owner, *first).is_none());
     tally.expect(holds_place(first, 3, "activate of the first transaction, with the clock at 8 s"));
 
     refuse_each_read();
@@ -359,7 +359,7 @@ void transaction_stamps_read_no_clock(Tally& tally) {
     tally.expect(holds_place(second, 5, "commit of the second transaction, with the clock at 9 s"));
 
     refuse_each_read();
-    tally.expect(log.activate(owner, *second).try_get() == first);
+    tally.expect(::fixy::same_target(log.activate(owner, *second), ::fixy::some(::fixy::to(*first))));
     tally.expect(holds_place(first, 6, "the first transaction, displaced with a clock that fails"));
     tally.expect(holds_place(second, 7, "activate of the second transaction, with a clock that fails"));
 
@@ -368,7 +368,7 @@ void transaction_stamps_read_no_clock(Tally& tally) {
     give_each_read(11, 0);
     tally.expect(commit(third, regions[2]));
     give_each_read(12, 0);
-    tally.expect(log.activate(owner, *third).try_get() == second);
+    tally.expect(::fixy::same_target(log.activate(owner, *third), ::fixy::some(::fixy::to(*second))));
     tally.expect(holds_place(second, 10, "the second transaction, displaced with the clock at 12 s"));
     tally.expect(holds_place(third, 11, "activate of the third transaction, with the clock at 12 s"));
 

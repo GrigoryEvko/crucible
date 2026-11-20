@@ -129,7 +129,7 @@ bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     CrucibleContext context{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, context.activate(old_region));
     const bool was_switched = context.switch_region(new_region, 1);
-    return was_switched && context.active_region().try_get() == &new_region;
+    return was_switched && ::fixy::same_target(context.active_region(), ::fixy::some(::fixy::to(new_region)));
 }
 
 // The text of each refusal names the bound.

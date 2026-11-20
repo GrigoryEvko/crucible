@@ -42,8 +42,7 @@ void test_pipeline_data_flow() {
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     wait_processed(bt, *ring);
-    auto* region = bt.active_region().try_get();
-    CRUCIBLE_TEST_ASSERT(kTest, region != nullptr);
+    const ::fixy::Ref<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
@@ -94,8 +93,7 @@ void test_pipeline_pool_bounds() {
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     wait_processed(bt, *ring);
-    auto* region = bt.active_region().try_get();
-    CRUCIBLE_TEST_ASSERT(kTest, region != nullptr);
+    const ::fixy::Ref<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));

@@ -492,7 +492,8 @@ void test_divergence_leaves_no_stale_active_region() {
     }
     CRUCIBLE_TEST_ASSERT(kTest,
                          vigil.context().is_compiled() && "the foreground aligns on the region of the first cycle");
-    const crucible::ContentHash replayed_hash = vigil.context().active_region()->content_hash;
+    const crucible::ContentHash replayed_hash =
+        vigil.context().active_region().expect("the compiled context replays a region")->content_hash;
     CRUCIBLE_TEST_ASSERT(kTest, vigil.active_region().expect("the first cycle published a region")->content_hash
                                     == replayed_hash);
 

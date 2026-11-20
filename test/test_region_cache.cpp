@@ -147,10 +147,10 @@ void test_cache_dedup_and_cap() {
     cache.insert(*overflow);
     CRUCIBLE_TEST_ASSERT(kTest, cache.size() == RegionCache::CAP);
 
-    CRUCIBLE_TEST_ASSERT(kTest, cache.find(ContentHash{0xFFFF}).has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, cache.find(ContentHash{0xFFFF}).is_some());
 
     // 0x1234 went in first, so it is the one that leaves.
-    CRUCIBLE_TEST_ASSERT(kTest, !cache.find(ContentHash{0x1234}).has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, cache.find(ContentHash{0x1234}).is_none());
 
     ::fixy::check::pass(kTest, "  test_cache_dedup_and_cap: PASSED\n");
 }
@@ -188,13 +188,13 @@ void test_find_alternate_tracks_live_plan() {
 
     cache.insert(*region);
     CRUCIBLE_TEST_ASSERT(kTest, cache.size() == 1);
-    CRUCIBLE_TEST_ASSERT(kTest, cache.find(region->content_hash).try_get() == &*region
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(cache.find(region->content_hash), ::fixy::some(region))
                                     && "a planless region is still cached and still findable by hash");
 
     // Not eligible to switch to: without a plan the context cannot enter
     // compiled mode, so offering it would strand the caller.
-    CRUCIBLE_TEST_ASSERT(kTest, !cache.find_alternate(0, op0.schema_hash, op0.shape_hash).has_value());
-    CRUCIBLE_TEST_ASSERT(kTest, !cache.find_alternate(1, op1.schema_hash, op1.shape_hash).has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(0, op0.schema_hash, op0.shape_hash).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(1, op1.schema_hash, op1.shape_hash).is_none());
 
     // The plan arrives after the insert. No second call into the cache.
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
@@ -208,20 +208,23 @@ void test_find_alternate_tracks_live_plan() {
     plan->pool_bytes = 4096;
     region->plan = make_plan_link(*plan);
 
-    CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(0, op0.schema_hash, op0.shape_hash).try_get() == &*region
-                                    && "a region cached before its plan existed stayed unfindable after the plan "
-                                       "arrived: find_alternate is reading an insert-time snapshot again, and the "
-                                       "repair path for it has no caller");
-    CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(1, op1.schema_hash, op1.shape_hash).try_get() == &*region);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, ::fixy::same_target(cache.find_alternate(0, op0.schema_hash, op0.shape_hash), ::fixy::some(region))
+                   && "a region cached before its plan existed stayed unfindable after the plan "
+                      "arrived: find_alternate is reading an insert-time snapshot again, and the "
+                      "repair path for it has no caller");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, ::fixy::same_target(cache.find_alternate(1, op1.schema_hash, op1.shape_hash), ::fixy::some(region)));
 
     // The position bound now means one thing: how many ops the region has.
-    CRUCIBLE_TEST_ASSERT(kTest, !cache.find_alternate(2, op1.schema_hash, op1.shape_hash).has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(2, op1.schema_hash, op1.shape_hash).is_none());
     // A matching position with the wrong shape is still a miss.
-    CRUCIBLE_TEST_ASSERT(kTest, !cache.find_alternate(0, op0.schema_hash, ShapeHash{0xDEAD}).has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(0, op0.schema_hash, ShapeHash{0xDEAD}).is_none());
     // And exclude still excludes.
-    CRUCIBLE_TEST_ASSERT(
-        kTest, !cache.find_alternate(0, op0.schema_hash, op0.shape_hash, ::fixy::WeakRef<const RegionNode>{*region})
-                    .has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, cache
+                                    .find_alternate(0, op0.schema_hash, op0.shape_hash,
+                                                    ConstRegionLink::some(::fixy::erase_brand(::fixy::to(*region))))
+                                    .is_none());
 
     ::fixy::check::pass(kTest, "  test_find_alternate_tracks_live_plan: PASSED\n");
 }

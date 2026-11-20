@@ -1,9 +1,8 @@
-// Sentinel TU for fixy/Borrowed.h: the three views cost one pointer or
-// one span, the owner tag keeps two borrows apart, a borrow of a
-// temporary selects a deleted constructor, the detection surface
-// answers through the one reflection query, and every accessor of the
-// three views answers on a value.  The WeakRef null-dereference contract
-// is shown to abort.
+// Sentinel TU for fixy/Borrowed.h: the two views cost one pointer or one
+// span, the owner tag keeps two borrows apart, a borrow of a temporary
+// selects a deleted constructor, the detection surface answers through the
+// one reflection query, and every accessor of the two views answers on a
+// value.
 
 #include <fixy/Borrowed.h>
 
@@ -25,7 +24,6 @@ namespace {
 
 using ::fixy::Borrowed;
 using ::fixy::BorrowedRef;
-using ::fixy::WeakRef;
 using ::fixy::check::expect_dies;
 
 struct OwnerA {
@@ -41,14 +39,11 @@ using B_B = Borrowed<int, OwnerB>;
 // One span or one pointer, nothing more.
 static_assert(sizeof(B_A) == sizeof(std::span<int>));
 static_assert(sizeof(BorrowedRef<int>) == sizeof(int*));
-static_assert(sizeof(WeakRef<int>) == sizeof(int*));
 
 // A borrow of a temporary selects the deleted twin.  The lvalue forms
 // stay open, so the twins remove exactly the dangling shape.
 static_assert(!std::is_constructible_v<BorrowedRef<int const>, int>);
 static_assert(std::is_constructible_v<BorrowedRef<int const>, int const&>);
-static_assert(!std::is_constructible_v<WeakRef<int const>, int>);
-static_assert(std::is_constructible_v<WeakRef<int const>, int const&>);
 static_assert(!std::is_constructible_v<Borrowed<int const, OwnerA>, int const (&&)[2]>);
 static_assert(std::is_constructible_v<Borrowed<int const, OwnerA>, int const (&)[2]>);
 
@@ -73,16 +68,12 @@ consteval bool all_forms_satisfy() {
 
 constexpr auto is_borrowed = []<typename T>() { return ::fixy::is_borrowed_v<T>; };
 constexpr auto is_borrowed_ref = []<typename T>() { return ::fixy::is_borrowed_ref_v<T>; };
-constexpr auto is_weak_ref = []<typename T>() { return ::fixy::is_weak_ref_v<T>; };
-constexpr auto is_none = []<typename T>() {
-    return !::fixy::is_borrowed_v<T> && !::fixy::is_borrowed_ref_v<T> && !::fixy::is_weak_ref_v<T>;
-};
+constexpr auto is_none = []<typename T>() { return !::fixy::is_borrowed_v<T> && !::fixy::is_borrowed_ref_v<T>; };
 
 static_assert(all_forms_satisfy<qualified_forms<B_A>, is_borrowed>());
 static_assert(all_forms_satisfy<qualified_forms<Borrowed<char const, OwnerB>>, is_borrowed>());
 static_assert(all_forms_satisfy<qualified_forms<BorrowedRef<int>>, is_borrowed_ref>());
 static_assert(all_forms_satisfy<qualified_forms<BorrowedRef<int const>>, is_borrowed_ref>());
-static_assert(all_forms_satisfy<qualified_forms<WeakRef<int>>, is_weak_ref>());
 
 // The carriers underneath the wrappers, and the wrappers under the
 // wrong question, all answer no.
@@ -91,13 +82,11 @@ static_assert(all_forms_satisfy<qualified_forms<int*>, is_none>());
 static_assert(all_forms_satisfy<qualified_forms<int>, is_none>());
 static_assert(!::fixy::is_borrowed_ref_v<B_A>);
 static_assert(!::fixy::is_borrowed_v<BorrowedRef<int>>);
-static_assert(!::fixy::is_weak_ref_v<BorrowedRef<int>>);
 static_assert(!::fixy::is_borrowed_v<void>);
 
 static_assert(std::is_same_v<::fixy::borrowed_value_t<B_A const&>, int>);
 static_assert(std::is_same_v<::fixy::borrowed_source_t<B_B&&>, OwnerB>);
 static_assert(std::is_same_v<::fixy::borrowed_ref_value_t<BorrowedRef<double>>, double>);
-static_assert(std::is_same_v<::fixy::weak_ref_value_t<WeakRef<OwnerA>>, OwnerA>);
 
 // Two owners are two types.
 static_assert(!std::is_assignable_v<B_A&, B_B>);
@@ -117,11 +106,6 @@ int check_views_over_a_vector() {
     *third = 30;
     if (whole[2] != 30) return 13;
 
-    WeakRef<int> weak{owner[4]};
-    if (!weak || *weak != 5) return 14;
-    weak.reset();
-    if (weak.has_value()) return 15;
-
     // Each accessor checks its index or its window in each build, the release
     // build too, so a read past the borrow ends the process.  The bounds check
     // of the standard library is on only in Debug.  Each read runs in a child
@@ -140,19 +124,6 @@ int check_views_over_a_vector() {
     expect_dies(
         test, [&whole] noexcept { (void)whole.subview(4, 2); },
         ::fixy::TextView{"foundation: contract violation: offset <= size() && count <= size() - offset"});
-    return 0;
-}
-
-// Each read of the empty WeakRef runs in a child through expect_dies of the
-// Check family.
-int check_weak_ref_null_aborts() {
-    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
-    WeakRef<int> empty{};
-    if (empty.try_get() != nullptr) return 20;
-    constexpr ::fixy::TextView kNullRead{"foundation: contract violation: ptr_ != nullptr"};
-    expect_dies(test, [&empty] noexcept { (void)empty.get(); }, kNullRead);
-    expect_dies(test, [&empty] noexcept { (void)*empty; }, kNullRead);
-    expect_dies(test, [&empty] noexcept { (void)empty.operator->(); }, kNullRead);
     return 0;
 }
 
@@ -208,38 +179,6 @@ int check_every_accessor() {
     if (window.size() != 3) return 45;
     if (window[0] != 20 || window[2] != 40) return 46;
     if (!b.subview(0, 0).empty()) return 47;
-
-    WeakRef<int> w_empty{};
-    if (w_empty.has_value() || static_cast<bool>(w_empty)) return 48;
-    if (w_empty.try_get() != nullptr) return 49;
-
-    volatile int seed = 77;
-    int box = static_cast<int>(seed);
-    WeakRef<int> w{box};
-    if (!w.has_value() || !static_cast<bool>(w)) return 50;
-    if (w.try_get() != &box) return 51;
-    if (w.get() != box || *w != box) return 52;
-
-    struct Pair {
-        int a;
-        int b;
-    };
-    Pair p{box, box + 1};
-    WeakRef<Pair> wp{p};
-    if (wp->a != box || wp->b != box + 1) return 53;
-
-    w.reset();
-    if (w.has_value() || w.try_get() != nullptr) return 54;
-
-    // from_raw is the arm that accepts a null, unlike the reference
-    // constructor, so both of its outcomes are walked.
-    if (WeakRef<int>::from_raw(nullptr).has_value()) return 55;
-    WeakRef<int> from_full = WeakRef<int>::from_raw(&box);
-    if (!from_full.has_value() || from_full.try_get() != &box) return 56;
-
-    WeakRef<int> wa{box};
-    WeakRef<int> wb = wa;
-    if (!(wa == wb) || wa.try_get() != wb.try_get()) return 57;
 
     return 0;
 }
@@ -334,7 +273,6 @@ int check_mint_of_base_runs() {
 int main() {
     if (int rc = check_every_accessor(); rc != 0) return rc;
     if (int rc = check_views_over_a_vector(); rc != 0) return rc;
-    if (int rc = check_weak_ref_null_aborts(); rc != 0) return rc;
     if (int rc = check_mint_of_a_span_rvalue(); rc != 0) return rc;
     if (int rc = check_span_constructor_keeps_its_callers(); rc != 0) return rc;
     if (int rc = check_mint_of_base_runs(); rc != 0) return rc;

@@ -801,7 +801,6 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::BorrowedRef, ^^::fixy::BorrowedRef<int>},
     {^^::fixy::Borrowed, ^^BorrowedInt},
     {^^::fixy::OwnedRegion, ^^::fixy::OwnedRegion<int, PureRegionTag>},
-    {^^::fixy::WeakRef, ^^::fixy::WeakRef<int>},
     {^^::fixy::fn, ^^::fixy::role::PureCopy<int>},
     {^^::fixy::graded_facade, ^^::fixy::graded_facade<fa::ModalityKind::Absolute, PureDet, int>},
     {^^::fixy::WriteOnce, ^^::fixy::WriteOnce<int>},

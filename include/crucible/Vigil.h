@@ -40,7 +40,6 @@
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <crucible/warden/Policy.h>
 #include <crucible/warden/WatchdogVerdict.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Mutation.h>
@@ -352,7 +351,7 @@ public:
         // visible here.  A relaxed load could miss the store for one op and
         // record it instead of aligning, which costs an extra op before
         // alignment completes.
-        if (pending_region_.load_acquire().is_some() || pending_activation_) [[unlikely]]
+        if (pending_region_.load_acquire().is_some() || pending_activation_.is_some()) [[unlikely]]
             return dispatch_transition_(fg, op, scope_hash, callsite_hash, depth);
 
         (void)record_proven_(fg, op, scope_hash, callsite_hash, depth);
@@ -597,7 +596,7 @@ public:
                     // Each region cut before the load holds ops that ran before it.
                     bg_.request_mark(ring_total_produced());
                     adopt_region_(fg, *region);
-                    keep_load_(std::move(arena), ::fixy::WeakRef<const RegionNode>{*region});
+                    keep_load_(std::move(arena), ConstRegionLink::some(region));
                     return true;
                 }
                 return false;
@@ -831,18 +830,17 @@ private:
     [[nodiscard]] ::fixy::Option<::fixy::Ref<const RegionNode>> newest_region_() const noexcept {
         const PendingRegion pending = pending_region_.load_acquire();
         for (const auto& published : pending) {
-            if (published->reset_point == bg_.requested_reset())
-                return region_of_(::fixy::WeakRef<const RegionNode>{published->region.get()});
+            if (published->reset_point == bg_.requested_reset()) return region_of_(published->region);
         }
-        return region_of_(taken_region_.load_acquire());
+        return taken_region_.load_acquire();
     }
 
     // The region of a slot that can be empty, or no region for an empty
     // slot.  The foreground reads a region of the pipeline only as const.
-    [[nodiscard]] static ::fixy::Option<::fixy::Ref<const RegionNode>>
-    region_of_(::fixy::WeakRef<const RegionNode> slot) noexcept {
-        if (!slot.has_value()) return ::fixy::none;
-        return ::fixy::some(::fixy::Ref<const RegionNode>{::fixy::to(slot.get())});
+    [[nodiscard]] static ConstRegionLink region_of_(RegionLink slot) noexcept {
+        for (const ::fixy::Ref<RegionNode>& region : slot)
+            return ConstRegionLink::some(region);
+        return ::fixy::none;
     }
 
     // The store parts of persist and load.  The store is a template
@@ -927,7 +925,7 @@ private:
             const uint64_t before = held_regions_.sequence.load_acquire();
             if ((before & 1u) == 0) {
                 BackgroundThread::RegionMarks read = marks;
-                for (const ::fixy::Atomic<::fixy::WeakRef<const RegionNode>>& cell : held_regions_.cells) {
+                for (const ::fixy::Atomic<ConstRegionLink>& cell : held_regions_.cells) {
                     read.hold(cell.load_acquire());
                 }
                 if (held_regions_.sequence.load_acquire() == before) {
@@ -945,9 +943,9 @@ private:
     // writes the cells at the end of each cold path that changes a holder,
     // so on that thread the cells name each region that the foreground
     // holds.  Complexity: O(HeldRegions::CAP).
-    [[nodiscard]] bool is_held_by_foreground_(::fixy::WeakRef<const RegionNode> region) const noexcept {
-        for (const ::fixy::Atomic<::fixy::WeakRef<const RegionNode>>& cell : held_regions_.cells) {
-            if (cell.load_acquire() == region) return true;
+    [[nodiscard]] bool is_held_by_foreground_(ConstRegionLink region) const noexcept {
+        for (const ::fixy::Atomic<ConstRegionLink>& cell : held_regions_.cells) {
+            if (::fixy::same_target(cell.load_acquire(), region)) return true;
         }
         return false;
     }
@@ -969,8 +967,7 @@ private:
     // holders name at most HeldRegions::CAP regions, and the release before
     // the load left a slot only for a region that a holder names.  So one
     // slot of LOAD_SLOTS is free for the new load.
-    [[gnu::cold]] void keep_load_(::fixy::Box<::fixy::BumpArena>&& arena,
-                                  ::fixy::WeakRef<const RegionNode> region) noexcept {
+    [[gnu::cold]] void keep_load_(::fixy::Box<::fixy::BumpArena>&& arena, ConstRegionLink region) noexcept {
         for (::fixy::Option<LoadedRegion>& load : loads_) {
             if (load.is_some()) continue;
             load = ::fixy::some(LoadedRegion{.arena = std::move(arena), .region = region});
@@ -1096,20 +1093,22 @@ private:
         // while a walk is open: an alignment closes its walk when it
         // activates, and adopt_region_ closes it for a rollback or a load.
         // The reset here keeps that rule local to this function.
-        pending_activation_.reset();
+        pending_activation_ = ::fixy::none;
         alignment_pos_ = alignment_pos_at(0);
         alignment_ops_ = 0;
 
         // The context is compiled, so it replays a region.
-        const ::fixy::WeakRef<const RegionNode> diverged = replay_.context().active_region();
-        region_cache_.insert(diverged.get());
+        const ConstRegionLink diverged = replay_.context().active_region();
+        region_cache_.insert(*ConstRegionLink{diverged}.expect("a compiled context replays a region"));
 
         // Look for a cached region that matches at the divergence position,
         // excluding the current one.
-        const ::fixy::WeakRef<const RegionNode> alt =
-            region_cache_.find_alternate(div_pos, schema_hash, shape_hash, diverged);
+        const ConstRegionLink alt = region_cache_.find_alternate(div_pos, schema_hash, shape_hash, diverged);
 
-        if (alt.has_value() && try_switch_region_(fg, alt.get(), div_pos)) {
+        const bool is_switched = alt.is_some_and([this, &fg, div_pos](::fixy::Ref<const RegionNode> const& region) {
+            return try_switch_region_(fg, *region, div_pos);
+        });
+        if (is_switched) {
             // The switch leaves the context compiled, so advance past the
             // divergent op.
             auto compiled_view = replay_.context().mint_compiled_view(fg);
@@ -1165,7 +1164,7 @@ private:
         // An alignment that completes activates the region, and the next op
         // is the first op that replays: the front end reads its eager word.
         bool enters_region = false;
-        if (pending_activation_) {
+        if (pending_activation_.is_some()) {
             // Nothing is recorded during alignment, because it would create
             // false iteration boundaries in the background detector.  The
             // bound of try_align_ ends an alignment that finds no match.
@@ -1193,12 +1192,14 @@ private:
         eager_ = live;
         const NumericsHash numerics = compute_numerics_hash(cfg_.numerics, live);
         cache_pending_region_();
-        if (pending_activation_.has_value()) region_cache_.insert(pending_activation_.get());
-        pending_activation_.reset();
+        for (const ::fixy::Ref<const RegionNode>& walked : pending_activation_)
+            region_cache_.insert(*walked);
+        pending_activation_ = ::fixy::none;
         alignment_pos_ = alignment_pos_at(0);
         alignment_ops_ = 0;
-        const ::fixy::WeakRef<const RegionNode> replayed = replay_.context().active_region();
-        if (replay_.change_numerics(numerics)) region_cache_.insert(replayed.get());
+        const ConstRegionLink replayed = replay_.context().active_region();
+        if (replay_.change_numerics(numerics))
+            region_cache_.insert(*ConstRegionLink{replayed}.expect("a replay that changes its numerics has a region"));
         bg_.request_numerics(ring_total_produced(), numerics);
         publish_held_regions_();
     }
@@ -1207,8 +1208,10 @@ private:
     // each region the slot can hold is stale.
     [[gnu::cold]] void cache_pending_region_() {
         const PendingRegion stale = pending_region_.exchange_acq_rel(::fixy::none);
-        for (const auto& published : stale)
-            region_cache_.insert(*published->region);
+        for (const auto& published : stale) {
+            for (const ::fixy::Ref<RegionNode>& region : published->region)
+                region_cache_.insert(*region);
+        }
     }
 
     // Moves the published region into foreground-only alignment state.  It
@@ -1228,20 +1231,24 @@ private:
     }
 
     [[gnu::cold]] void take_published_region_(BackgroundThread::PublishedRegion const& published) {
+        const RegionNode& region = *RegionLink{published.region}.expect("the publish stage gives a record of a region");
         if (published.reset_point != bg_.requested_reset()) {
-            region_cache_.insert(*published.region);
+            region_cache_.insert(region);
             return;
         }
-        taken_region_.store_release(::fixy::WeakRef<const RegionNode>{published.region.get()});
-        if (published.region->num_ops() == 0) return;
+        const ConstRegionLink taken = ConstRegionLink::some(::fixy::erase_brand(::fixy::to(region)));
+        taken_region_.store_release(taken);
+        if (region.num_ops() == 0) return;
 
         // A newer region that holds the ops of an open walk takes the walk
         // over, and the walk keeps its position.  The background publishes
         // a region at each iteration boundary of a backlog, and each one has
         // the same ops, so a restart at each one would lose the matched ops.
-        const bool continues_walk = pending_activation_.has_value()
-                                 && holds_walk_(*pending_activation_, *published.region, alignment_pos_.value());
-        pending_activation_ = ::fixy::WeakRef<const RegionNode>{*published.region};
+        const bool continues_walk =
+            pending_activation_.is_some_and([&region, this](::fixy::Ref<const RegionNode> const& walked) noexcept {
+                return holds_walk_(*walked, region, alignment_pos_.value());
+            });
+        pending_activation_ = taken;
         if (continues_walk) return;
         alignment_pos_ = alignment_pos_at(0);
         alignment_ops_ = 0;
@@ -1271,9 +1278,10 @@ private:
     // coincidence; K in a row will not.
     [[gnu::cold]] void try_align_(VigilFgCtx const& fg, SchemaHash schema, ShapeHash shape) {
         // The single caller reaches this helper from inside a branch that
-        // tested pending_activation_.  get() checks it again in each build,
-        // with one branch on this cold path.
-        const RegionNode& region = pending_activation_.get();
+        // tested pending_activation_.  expect() checks it again in each
+        // build, with one branch on this cold path.
+        const RegionNode& region =
+            *ConstRegionLink{pending_activation_}.expect("the caller tested the region of the alignment");
         ++alignment_ops_;
 
         const uint8_t pos = alignment_pos_.value();
@@ -1293,7 +1301,7 @@ private:
             if (!replay_.activate(region)) {
                 // A region with no memory plan, or with other numerics than
                 // the run, cannot replay.
-                pending_activation_.reset();
+                pending_activation_ = ::fixy::none;
                 return;
             }
 
@@ -1314,7 +1322,7 @@ private:
                 CRUCIBLE_FATAL_INVARIANT(status == ReplayStatus::MATCH || status == ReplayStatus::COMPLETE);
             }
 
-            pending_activation_.reset();
+            pending_activation_ = ::fixy::none;
             return;
         }
 
@@ -1331,7 +1339,7 @@ private:
         // into a region a sequence that the stream does not hold.
         if (alignment_ops_ >= alignment_bound(region.num_ops())) {
             region_cache_.insert(region);
-            pending_activation_.reset();
+            pending_activation_ = ::fixy::none;
             alignment_pos_ = alignment_pos_at(0);
         }
     }
@@ -1486,8 +1494,9 @@ private:
         // schema and shape in both regions.
         if (div_pos > 0) {
             // A divergence position above zero comes from a compiled
-            // context, which holds an active region.  get() checks it.
-            const RegionNode& old_region = replay_.context().active_region().get();
+            // context, which holds an active region.  expect() checks it.
+            const RegionNode& old_region =
+                *replay_.context().active_region().expect("a compiled context holds an active region");
 
             if (div_pos > alt.num_ops()) return false;
 
@@ -1504,7 +1513,7 @@ private:
         // Pinning it here catches a refactor that skips the publication or
         // publishes the wrong region, which would otherwise keep dispatching
         // against the stale one.
-        CRUCIBLE_POST(0, replay_.context().active_region() == ::fixy::WeakRef<const RegionNode>{alt});
+        CRUCIBLE_POST(0, ::fixy::same_target(replay_.context().active_region(), ::fixy::some(::fixy::to(alt))));
         return true;
     }
 
@@ -1543,7 +1552,7 @@ private:
     // arena holds each byte of the region.
     struct LoadedRegion {
         ::fixy::Box<::fixy::BumpArena> arena;
-        ::fixy::WeakRef<const RegionNode> region{};
+        ConstRegionLink region{};
     };
     // The bytes of the first block of the arena of a load.  A larger region
     // takes a block of its own size.
@@ -1570,9 +1579,9 @@ private:
     alignas(64)::fixy::Atomic<PendingRegion> pending_region_{};
     // The region that the producer thread took last (active_region).  Only
     // the producer thread writes it, and a reader on another thread loads it.
-    ::fixy::Atomic<::fixy::WeakRef<const RegionNode>> taken_region_{};
+    ::fixy::Atomic<ConstRegionLink> taken_region_{};
     // The five below are foreground-only.
-    ::fixy::WeakRef<const RegionNode> pending_activation_{};
+    ConstRegionLink pending_activation_{};
     AlignmentPos alignment_pos_ = alignment_pos_at(0);
     // The ops that the alignment of pending_activation_ read (alignment_bound).
     uint32_t alignment_ops_ = 0;
@@ -1696,7 +1705,7 @@ private:
     struct HeldRegions {
         static constexpr uint32_t CAP = 3 + RegionCache::CAP;
         ::fixy::Atomic<uint64_t> sequence{};
-        ::fixy::FixedArray<::fixy::Atomic<::fixy::WeakRef<const RegionNode>>, CAP> cells{};
+        ::fixy::FixedArray<::fixy::Atomic<ConstRegionLink>, CAP> cells{};
     };
     static_assert(LOAD_SLOTS == HeldRegions::CAP + 1,
                   "Vigil::LOAD_SLOTS must exceed the count of regions that the holders name by one");

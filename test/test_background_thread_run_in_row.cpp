@@ -156,15 +156,15 @@ void test_uncompiled_queue_is_bounded() {
     constexpr uint64_t OVERRUN = 4u * CAP + 3u;
     static ::fixy::FixedArray<crucible::RegionNode, OVERRUN> regions{};
     auto region_at = [](uint64_t i) {
-        return ::fixy::WeakRef<crucible::RegionNode>{
-            *regions.get(i).expect("a test reads an element at or past the count of its array")};
+        return ::fixy::some(
+            ::fixy::erase_brand(regions.get(i).expect("a test reads an element at or past the count of its array")));
     };
 
     for (uint64_t i = 0; i < CAP; ++i) {
         queue.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
         CRUCIBLE_TEST_ASSERT(kTest, queue.total() == i + 1);
         CRUCIBLE_TEST_ASSERT(kTest, queue.size() == i + 1);
-        CRUCIBLE_TEST_ASSERT(kTest, queue.at(0) == region_at(i) && "age 0 is the newest");
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(queue.at(0), region_at(i)) && "age 0 is the newest");
     }
 
     // One past the bound: the total keeps counting, the retention does not.
@@ -174,7 +174,7 @@ void test_uncompiled_queue_is_bounded() {
     CRUCIBLE_TEST_ASSERT(kTest, queue.total() == OVERRUN);
     CRUCIBLE_TEST_ASSERT(kTest, queue.size() == CAP && "retention must stop at the bound");
     for (uint32_t age = 0; age < CAP; ++age)
-        CRUCIBLE_TEST_ASSERT(kTest, queue.at(age) == region_at(OVERRUN - 1 - age)
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(queue.at(age), region_at(OVERRUN - 1 - age))
                                         && "the bound keeps the newest CAP, in order");
 
     ::fixy::check::pass(kTest,
@@ -198,10 +198,10 @@ void test_uncompiled_queue_refuses_past_its_capacity(::fixy::TestRunnerCtx const
     }
     CRUCIBLE_TEST_ASSERT(test, three.total() == 8 && three.size() == 3);
     for (uint32_t age = 0; age < 3; ++age) {
-        CRUCIBLE_TEST_ASSERT(test, three.at(age)
-                                       == ::fixy::WeakRef<crucible::RegionNode>{
-                                           *regions.get(uint64_t{7} - age)
-                                                .expect("a test reads an element at or past the count of its array")});
+        CRUCIBLE_TEST_ASSERT(
+            test, ::fixy::same_target(three.at(age), ::fixy::some(regions.get(uint64_t{7} - age)
+                                                                      .expect("a test reads an element at or past "
+                                                                              "the count of its array"))));
     }
     CRUCIBLE_TEST_ASSERT(test, none.total() == 8 && none.size() == 0);
     ::fixy::check::pass(test, "  uncompiled_queue_refuses_past_its_capacity: PASSED\n");

@@ -322,6 +322,12 @@ struct LoopNode;
 // pointer, so a link takes eight bytes.
 using TraceLink = ::fixy::Option<::fixy::Ref<TraceNode>>;
 
+// A link to one region of the DAG, or no region, as TraceLink is.  A table of
+// the pipeline that holds the regions of many sites, such as the region cache
+// or the slot of a publication, holds each region in this form.
+using RegionLink = ::fixy::Option<::fixy::Ref<RegionNode>>;
+using ConstRegionLink = ::fixy::Option<::fixy::Ref<RegionNode const>>;
+
 // A link of a node to the node that it continues to or runs.  A const node
 // gives the node of each such link only as const, so a reader of a const
 // region writes no node that the region reaches.  The link takes eight bytes

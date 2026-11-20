@@ -95,7 +95,7 @@ static void test_initial_state() {
     CRUCIBLE_TEST_ASSERT(kTest, !ctx.is_compiled());
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, !ctx.active_region().has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.active_region().is_none());
 
     ::fixy::check::pass(kTest, "  test_initial_state: PASSED\n");
 }
@@ -122,7 +122,7 @@ static void test_activate() {
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.mode() == ContextMode::COMPILED);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.active_region().try_get() == &region);
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(ctx.active_region(), ::fixy::some(::fixy::to(region))));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().is_initialized());
     CRUCIBLE_TEST_ASSERT(kTest, ctx.engine().is_initialized());
 
@@ -221,7 +221,7 @@ static void test_divergence() {
 
     ctx.deactivate();
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
-    CRUCIBLE_TEST_ASSERT(kTest, !ctx.active_region().has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.active_region().is_none());
 
     ::fixy::check::pass(kTest, "  test_divergence: PASSED\n");
 }
@@ -272,7 +272,7 @@ static void test_reactivate() {
     // Each activation needs a fresh view, which is why the replays sit in
     // scopes that end before the next activation.
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region_b));
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.active_region().try_get() == &region_b);
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(ctx.active_region(), ::fixy::some(::fixy::to(region_b))));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
         CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{30}, ShapeHash{40}, cv).status() == ReplayStatus::MATCH);

@@ -859,17 +859,22 @@ struct Mailbox {
     ::fixy::Atomic<bool> full{false};
 };
 
+// The brand of each Ref of a pipe: a pipe lives for its whole test, as the
+// ends that reach it do.
+struct PipeBrand {};
+
 struct Pipe : ::foundation::Pinned<Pipe> {
+    using brand_type = PipeBrand;
     Mailbox to_peer;
     Mailbox to_self;
 };
 
 struct SelfEnd {
-    ::fixy::WeakRef<Pipe> pipe{};
+    ::fixy::Ref<Pipe, PipeBrand> pipe;
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 struct PeerEnd {
-    ::fixy::WeakRef<Pipe> pipe{};
+    ::fixy::Ref<Pipe, PipeBrand> pipe;
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
@@ -930,8 +935,7 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
 [[nodiscard]] int walk_test_channel() {
     Pipe pipe{};
     const ::foundation::effects::detail::ctx_witnesses::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto [self_head, peer_head] =
-        s::mint_test_channel<Once>(ctx, SelfEnd{::fixy::WeakRef<Pipe>{pipe}}, PeerEnd{::fixy::WeakRef<Pipe>{pipe}});
+    auto [self_head, peer_head] = s::mint_test_channel<Once>(ctx, SelfEnd{::fixy::to(pipe)}, PeerEnd{::fixy::to(pipe)});
 
     auto self_waits =
         std::move(self_head).send(Ping{7}, [](SelfEnd& e, Ping& p) noexcept { return put(e.pipe->to_peer, p.value); });
@@ -957,8 +961,7 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
 [[nodiscard]] int rewind_test_channel() {
     Pipe pipe{};
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto [self_end, peer_end] =
-        s::mint_test_channel<s::End>(ctx, SelfEnd{::fixy::WeakRef<Pipe>{pipe}}, PeerEnd{::fixy::WeakRef<Pipe>{pipe}});
+    auto [self_end, peer_end] = s::mint_test_channel<s::End>(ctx, SelfEnd{::fixy::to(pipe)}, PeerEnd{::fixy::to(pipe)});
     auto [self_again, peer_again] =
         s::HandleFactory::rewind_channel<Once, void>(std::move(self_end), std::move(peer_end));
     const bool is_each_end_live =
@@ -990,7 +993,7 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
     auto whole = ::foundation::permissions::mint_permission_root<channel_tags::Whole>();
 
     auto back = s::mint_forked_channel<Once, channel_tags::Self, channel_tags::Peer>(
-        ctx, std::move(whole), SelfEnd{::fixy::WeakRef<Pipe>{pipe}}, PeerEnd{::fixy::WeakRef<Pipe>{pipe}},
+        ctx, std::move(whole), SelfEnd{::fixy::to(pipe)}, PeerEnd{::fixy::to(pipe)},
         [&seen_pong](auto head, auto const& /*self_view*/, BgCtx const&) noexcept {
             auto waits = std::move(head).send(
                 Ping{20}, [](SelfEnd& e, Ping& p) noexcept { return put(e.pipe->to_peer, p.value); });
@@ -1246,8 +1249,8 @@ struct PollBox {
     const auto send_to_self = [](PeerEnd& e, int& v) noexcept { return put(e.pipe->to_self, v); };
 
     auto back = s::mint_forked_channel<Twice, channel_tags::Self, channel_tags::Peer>(
-        ctx, ::foundation::permissions::mint_permission_root<channel_tags::Whole>(),
-        SelfEnd{::fixy::WeakRef<Pipe>{pipe}}, PeerEnd{::fixy::WeakRef<Pipe>{pipe}},
+        ctx, ::foundation::permissions::mint_permission_root<channel_tags::Whole>(), SelfEnd{::fixy::to(pipe)},
+        PeerEnd{::fixy::to(pipe)},
         [&](auto head, auto const& /*self_view*/, BgCtx const&) noexcept {
             auto first_wait = std::move(head).send(1, send_to_peer);
             auto [first_reply, second_send] = std::move(first_wait).recv(to_self);

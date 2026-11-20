@@ -30,32 +30,23 @@ static_assert(sizeof(Borrowed<int, detail::borrowed_layout::OwnerA>) == sizeof(s
 static_assert(sizeof(Borrowed<int, detail::borrowed_layout::OwnerA, detail::borrowed_layout::brand_a>)
               == sizeof(std::span<int>));
 static_assert(sizeof(Borrowed<const char, detail::borrowed_layout::OwnerA>) == sizeof(std::span<const char>));
-static_assert(sizeof(WeakRef<int>) == sizeof(int*));
-static_assert(alignof(WeakRef<int>) == alignof(int*));
 
 // A borrow keeps the trivial copy that passes it in a register, and no byte
-// route builds one.  A WeakRef proves nothing, so it stays trivially
-// copyable.
+// route builds one.
 static_assert(!std::is_trivially_copyable_v<detail::borrowed_layout::sealed_ref>
               && !::foundation::lifetime::ImplicitLifetimeThroughout<detail::borrowed_layout::sealed_ref>);
 static_assert(!std::is_trivially_copyable_v<detail::borrowed_layout::sealed_range>
               && !::foundation::lifetime::ImplicitLifetimeThroughout<detail::borrowed_layout::sealed_range>);
 static_assert(std::is_trivially_copy_constructible_v<detail::borrowed_layout::sealed_ref>
               && std::is_trivially_copy_constructible_v<detail::borrowed_layout::sealed_range>);
-static_assert(std::is_trivially_copyable_v<WeakRef<int>>);
 static_assert(std::is_trivially_destructible_v<BorrowedRef<int>>);
 static_assert(std::is_trivially_destructible_v<Borrowed<int, detail::borrowed_layout::OwnerA>>);
-static_assert(std::is_trivially_destructible_v<WeakRef<int>>);
 
 static_assert(!std::is_default_constructible_v<BorrowedRef<int>>,
               "BorrowedRef<T> is not default-constructible.  A default constructor "
               "admits a null sentinel that the rest of the API does not handle.");
 
 static_assert(std::is_default_constructible_v<Borrowed<int, detail::borrowed_layout::OwnerA>>);
-static_assert(std::is_default_constructible_v<WeakRef<int>>);
-
-static_assert(!std::is_convertible_v<WeakRef<int>, int*>);
-static_assert(!std::is_convertible_v<int&, WeakRef<int>>);
 
 // The deleted rvalue twins are what the temporary selects.  The lvalue
 // forms, a span and a Borrowed stay constructible, so the twins remove
@@ -63,8 +54,6 @@ static_assert(!std::is_convertible_v<int&, WeakRef<int>>);
 static_assert(!std::is_constructible_v<BorrowedRef<int>, int>);
 static_assert(!std::is_constructible_v<BorrowedRef<int const>, int>);
 static_assert(std::is_constructible_v<BorrowedRef<int>, int&>);
-static_assert(!std::is_constructible_v<WeakRef<int>, int>);
-static_assert(std::is_constructible_v<WeakRef<int>, int&>);
 static_assert(!std::is_constructible_v<Borrowed<int const, detail::borrowed_layout::OwnerA>, int const (&&)[3]>);
 static_assert(std::is_constructible_v<Borrowed<int const, detail::borrowed_layout::OwnerA>, std::span<int const>>);
 static_assert(std::is_constructible_v<Borrowed<int, detail::borrowed_layout::OwnerA>, int (&)[3]>);
@@ -270,9 +259,9 @@ concept can_assign_ref = requires(R1 a, R2 b) {
 };
 static_assert(!can_assign_ref<BorrowedRef<int>, BorrowedRef<double>>);
 
-// The three kinds are built from the prefix and the class identifier,
+// The two kinds are built from the prefix and the class identifier,
 // so the pins check that shape rather than restating the literal a
-// fourth, fifth and sixth time.
+// third and fourth time.
 template <class W, std::meta::info Cls>
 [[nodiscard]] consteval bool kind_is_prefix_and_identifier() noexcept {
     constexpr std::string_view prefix = "structural::";
@@ -283,64 +272,10 @@ template <class W, std::meta::info Cls>
 
 static_assert(kind_is_prefix_and_identifier<BorrowedRef<int>, ^^BorrowedRef>());
 static_assert(kind_is_prefix_and_identifier<B_A, ^^Borrowed>());
-static_assert(kind_is_prefix_and_identifier<WeakRef<int>, ^^WeakRef>());
 
-// The three are distinct, which is what a caller reading the kind off a
+// The two are distinct, which is what a caller reading the kind off a
 // diagnostic relies on.
 static_assert(BorrowedRef<int>::wrapper_kind() != B_A::wrapper_kind());
-static_assert(B_A::wrapper_kind() != WeakRef<int>::wrapper_kind());
-
-[[nodiscard]] consteval bool default_is_empty() noexcept {
-    WeakRef<int> w{};
-    return !w.has_value() && !static_cast<bool>(w) && w.try_get() == nullptr;
-}
-static_assert(default_is_empty());
-
-[[nodiscard]] consteval bool binds_and_derefs() noexcept {
-    int x = 42;
-    WeakRef<int> w{x};
-    return w.has_value() && static_cast<bool>(w) && w.try_get() == &x && w.get() == 42 && *w == 42;
-}
-static_assert(binds_and_derefs());
-
-[[nodiscard]] consteval bool arrow_reaches_member() noexcept {
-    struct Pair {
-        int a;
-        int b;
-    };
-    Pair p{7, 9};
-    WeakRef<Pair> w{p};
-    return w->a == 7 && w->b == 9;
-}
-static_assert(arrow_reaches_member());
-
-[[nodiscard]] consteval bool from_raw_is_nullable() noexcept {
-    WeakRef<int> empty = WeakRef<int>::from_raw(nullptr);
-    int x = 5;
-    WeakRef<int> full = WeakRef<int>::from_raw(&x);
-    return !empty.has_value() && full.has_value() && full.try_get() == &x;
-}
-static_assert(from_raw_is_nullable());
-
-[[nodiscard]] consteval bool reset_evicts() noexcept {
-    int x = 1;
-    WeakRef<int> w{x};
-    if (!w.has_value()) return false;
-    w.reset();
-    return !w.has_value() && w.try_get() == nullptr;
-}
-static_assert(reset_evicts());
-
-// x and y hold the same value in different objects.
-[[nodiscard]] consteval bool identity_equality_and_copy() noexcept {
-    int x = 3;
-    int y = 3;
-    WeakRef<int> a{x};
-    WeakRef<int> b = a;
-    WeakRef<int> c{y};
-    return a == b && !(a == c) && a.try_get() == b.try_get() && WeakRef<int>{} == WeakRef<int>{};
-}
-static_assert(identity_equality_and_copy());
 
 using B_dbl = Borrowed<double, OwnerA>;
 using B_cc = Borrowed<const char, OwnerB>;
@@ -397,7 +332,6 @@ static_assert(!is_borrowed_ref_v<int&>);
 static_assert(!is_borrowed_ref_v<R_int*>);
 static_assert(!is_borrowed_ref_v<void>);
 static_assert(!is_borrowed_ref_v<B_A>);
-static_assert(!is_borrowed_ref_v<WeakRef<int>>);
 
 struct LookalikeBorrowedRef {
     int* ptr_;
@@ -412,13 +346,6 @@ static_assert(!IsBorrowedRef<int*>);
 static_assert(std::is_same_v<borrowed_ref_value_t<R_int>, int>);
 static_assert(std::is_same_v<borrowed_ref_value_t<R_holder>, Holder>);
 static_assert(std::is_same_v<borrowed_ref_value_t<R_const>, const int>);
-
-static_assert(is_weak_ref_v<WeakRef<int>>);
-static_assert(is_weak_ref_v<WeakRef<Holder> const&>);
-static_assert(!is_weak_ref_v<R_int>);
-static_assert(!is_weak_ref_v<int*>);
-static_assert(IsWeakRef<WeakRef<int>&&>);
-static_assert(std::is_same_v<weak_ref_value_t<WeakRef<Holder>>, Holder>);
 
 }  // namespace detail::borrowed_self_test
 

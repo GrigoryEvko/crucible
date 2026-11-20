@@ -111,7 +111,7 @@ struct ReplayEngine {
         const uint32_t op_count = region.num_ops();
         ops_ = region.ops;
         cursor_ = ops_.begin();
-        current_.reset();
+        current_ = ::fixy::none;
         // The precondition above already established what minting this view
         // checks.  An initialized pool holds at least one slot.
         const auto pool_view = pool->initialized_view_();
@@ -140,7 +140,7 @@ struct ReplayEngine {
     // before the cursor, or the last op when the cursor is at the first op,
     // which is the position that matched_op_index reads.
     CRUCIBLE_INLINE void reset() {
-        if (!cursor_.is_at_end()) current_.reset();
+        if (!cursor_.is_at_end()) current_ = ::fixy::none;
         rewind_();
     }
 
@@ -158,7 +158,7 @@ struct ReplayEngine {
         if (shape_hash != expected_shape_) [[unlikely]]
             return ReplayStep{ReplayStatus::DIVERGED, OpIndex{}};
 
-        current_ = ::fixy::WeakRef<const TraceEntry>{entry};
+        current_ = ::fixy::some(::fixy::erase_brand(::fixy::to(entry)));
         // The position of the entry, before the step of the cursor.
         const OpIndex matched{ops_matched()};
 
@@ -195,9 +195,7 @@ struct ReplayEngine {
     // folds into the bound, so the read has no second check.  The member is
     // read into a local, so no contract reads a member through this.
     [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t j) const {
-        const ::fixy::WeakRef<const TraceEntry> matched = current_;
-        CRUCIBLE_PRE(matched.has_value());
-        ::fixy::View<const SlotId> const slot_ids = matched->output_slot_ids();
+        ::fixy::View<const SlotId> const slot_ids = matched_entry_().output_slot_ids();
         CRUCIBLE_PRE(j < slot_ids.size());
         SlotId const sid =
             slot_ids.window<1>(j).expect("the precondition bounds the output index").at(::fixy::index<0>());
@@ -206,9 +204,7 @@ struct ReplayEngine {
 
     // The same for one of the inputs.
     [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t j) const {
-        const ::fixy::WeakRef<const TraceEntry> matched = current_;
-        CRUCIBLE_PRE(matched.has_value());
-        ::fixy::View<const SlotId> const slot_ids = matched->input_slot_ids();
+        ::fixy::View<const SlotId> const slot_ids = matched_entry_().input_slot_ids();
         CRUCIBLE_PRE(j < slot_ids.size());
         SlotId const sid =
             slot_ids.window<1>(j).expect("the precondition bounds the input index").at(::fixy::index<0>());
@@ -216,18 +212,7 @@ struct ReplayEngine {
     }
 
     // The entry is in the region, and the engine only points at it.
-    [[nodiscard]] const TraceEntry& current_entry() const {
-        // current_ is empty only before the first advance returns MATCH,
-        // which is a mistake of the order of the calls of the caller.  The
-        // precondition refuses it in each build.
-        //
-        // The member is read into a local first because a contract predicate
-        // that reaches a member through `this` is rejected as non-constant
-        // when the compiler folds this body.
-        const ::fixy::WeakRef<const TraceEntry> matched = current_;
-        CRUCIBLE_PRE(matched.has_value());
-        return matched.get();
-    }
+    [[nodiscard]] const TraceEntry& current_entry() const { return matched_entry_(); }
 
     // The position of the last matched op in the region.  The reset at the
     // end of an iteration keeps the matched op, so after a COMPLETE this is
@@ -235,9 +220,9 @@ struct ReplayEngine {
     [[nodiscard]] ::fixy::Tagged<OpIndex, op_role::Matched> matched_op_index() const {
         // Armed in every build.  An empty current_ has no position, and the
         // index then reaches a caller that indexes with it.  The local is for
-        // the same folding reason as in current_entry.
-        const ::fixy::WeakRef<const TraceEntry> matched = current_;
-        CRUCIBLE_PRE(matched.has_value());
+        // the same folding reason as in matched_entry_.
+        const ::fixy::Option<::fixy::Ref<const TraceEntry>> matched = current_;
+        CRUCIBLE_PRE(matched.is_some());
         // The writers of the cursor and of the matched op keep the matched op
         // before the cursor, or at the last op after the rewind at the end of
         // an iteration (reset).  So the position of the cursor gives the
@@ -322,6 +307,18 @@ private:
     // CrucibleContext::advance_ calls it only in its case of COMPLETE.
     CRUCIBLE_INLINE void rewind_after_complete_() { rewind_(); }
 
+    // The last matched op.  The engine has none only before the first advance
+    // returns MATCH, which is a mistake of the order of the calls of the
+    // caller.  The precondition refuses it in each build, and the unwrap after
+    // it folds into the precondition.  The member is read into a local first,
+    // because a contract predicate that reaches a member through `this` is
+    // rejected as non-constant when the compiler folds this body.
+    [[nodiscard]] CRUCIBLE_INLINE const TraceEntry& matched_entry_() const noexcept {
+        const ::fixy::Option<::fixy::Ref<const TraceEntry>> matched = current_;
+        CRUCIBLE_PRE(matched.is_some());
+        return *::fixy::Option<::fixy::Ref<const TraceEntry>>{matched}.expect("the precondition found the matched op");
+    }
+
     // The cursor at the first op, and the guard values of that op.  The
     // matched op does not change.
     CRUCIBLE_INLINE void rewind_() {
@@ -396,7 +393,7 @@ private:
     ShapeHash expected_shape_{};
     // Where the next operation is read, and the end of the region.
     ::foundation::core::ViewCursor<const TraceEntry> cursor_ = ::fixy::View<const TraceEntry>{}.begin();
-    ::fixy::WeakRef<const TraceEntry> current_{};  // the last operation that matched
+    ::fixy::Option<::fixy::Ref<const TraceEntry>> current_{};  // the last operation that matched
     SlotTable slot_table_{};
     ::fixy::View<const TraceEntry> ops_{};  // the region, for rewinding and for the positions
 };

@@ -113,9 +113,10 @@ int main() {
             const uint32_t pos = 5;
             const auto schema = fix.regions[7]->op_at(pos).schema_hash;
             const auto shape = fix.regions[7]->op_at(pos).shape_hash;
-            const RegionNode* excl = fix.regions[6];
+            const crucible::ConstRegionLink excl =
+                crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(*fix.regions[6])));
             return bench::run("find_alternate: hit MRU (i=0)", [&] {
-                auto r = cache.find_alternate(pos, schema, shape, ::fixy::WeakRef<const RegionNode>::from_raw(excl));
+                auto r = cache.find_alternate(pos, schema, shape, excl);
                 bench::do_not_optimize(r);
             });
         }(),
@@ -128,9 +129,10 @@ int main() {
             const uint32_t pos = 5;
             const auto schema = fix.regions[0]->op_at(pos).schema_hash;
             const auto shape = fix.regions[0]->op_at(pos).shape_hash;
-            const RegionNode* excl = fix.regions[7];
+            const crucible::ConstRegionLink excl =
+                crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(*fix.regions[7])));
             return bench::run("find_alternate: hit LRU (i=7)", [&] {
-                auto r = cache.find_alternate(pos, schema, shape, ::fixy::WeakRef<const RegionNode>::from_raw(excl));
+                auto r = cache.find_alternate(pos, schema, shape, excl);
                 bench::do_not_optimize(r);
             });
         }(),
@@ -166,9 +168,10 @@ int main() {
             const uint32_t pos = 5;
             const auto schema = fix.regions[0]->op_at(pos).schema_hash;
             const auto shape = fix.regions[0]->op_at(pos).shape_hash;
-            const RegionNode* excl = fix.regions[1];
+            const crucible::ConstRegionLink excl =
+                crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(*fix.regions[1])));
             return bench::run("find_alternate: hit (2 entries, excl MRU)", [&] {
-                auto r = cache.find_alternate(pos, schema, shape, ::fixy::WeakRef<const RegionNode>::from_raw(excl));
+                auto r = cache.find_alternate(pos, schema, shape, excl);
                 bench::do_not_optimize(r);
             });
         }(),

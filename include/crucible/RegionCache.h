@@ -10,7 +10,6 @@
 // this class deliberately does not have.
 
 #include <crucible/MerkleDag.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Cyclic.h>
 #include <fixy/Mutation.h>
@@ -45,7 +44,7 @@ struct RegionCache {
         }
 
         const Slot slot = prove_slot_(head_.index());
-        regions_.at(slot) = ::fixy::WeakRef<const RegionNode>{region};
+        regions_.at(slot) = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
         content_hashes_.at(slot) = hash;
         head_.advance();
         // The counter does not saturate on its own. Its increment carries a
@@ -67,26 +66,27 @@ struct RegionCache {
     //
     // The region store of the pipeline owns each region, and the cache only
     // points at it.  The store keeps each region that the cache holds.
-    [[nodiscard]] ::fixy::WeakRef<const RegionNode> find_alternate(uint32_t pos, SchemaHash schema, ShapeHash shape,
-                                                                   ::fixy::WeakRef<const RegionNode> exclude = {}) const
-        CRUCIBLE_NO_THREAD_SAFETY {
+    [[nodiscard]] ConstRegionLink find_alternate(uint32_t pos, SchemaHash schema, ShapeHash shape,
+                                                 ConstRegionLink exclude = {}) const CRUCIBLE_NO_THREAD_SAFETY {
         for (uint32_t i = 0; i < count_.get(); i++) {
-            const ::fixy::WeakRef<const RegionNode> candidate = regions_.at(prove_slot_(head_.index_back(i)));
-            if (!candidate.has_value() || candidate == exclude) continue;
-            if (candidate->plan.is_none()) continue;
-            if (pos >= candidate->num_ops()) continue;
-            if (candidate->op_at(pos).schema_hash == schema && candidate->op_at(pos).shape_hash == shape)
-                return candidate;
+            const ConstRegionLink candidate = regions_.at(prove_slot_(head_.index_back(i)));
+            if (::fixy::same_target(candidate, exclude)) continue;
+            const bool is_match =
+                candidate.is_some_and([pos, schema, shape](::fixy::Ref<const RegionNode> const& region) noexcept {
+                    return region->plan.is_some() && pos < region->num_ops() && region->op_at(pos).schema_hash == schema
+                        && region->op_at(pos).shape_hash == shape;
+                });
+            if (is_match) return candidate;
         }
-        return {};
+        return ::fixy::none;
     }
 
-    [[nodiscard]] ::fixy::WeakRef<const RegionNode> find(ContentHash hash) const CRUCIBLE_NO_THREAD_SAFETY {
+    [[nodiscard]] ConstRegionLink find(ContentHash hash) const CRUCIBLE_NO_THREAD_SAFETY {
         for (uint32_t i = 0; i < count_.get(); i++) {
             const Slot slot = prove_slot_(head_.index_back(i));
             if (content_hashes_.at(slot) == hash) return regions_.at(slot);
         }
-        return {};
+        return ::fixy::none;
     }
 
     [[nodiscard]] uint32_t size() const { return count_.get(); }
@@ -96,8 +96,8 @@ struct RegionCache {
     // entry, or an empty reference past the count.  The foreground gives
     // these regions to the region store of the pipeline, which keeps each
     // region that the cache holds.
-    [[nodiscard]] ::fixy::WeakRef<const RegionNode> region_at(uint32_t age) const CRUCIBLE_NO_THREAD_SAFETY {
-        if (age >= count_.get()) return {};
+    [[nodiscard]] ConstRegionLink region_at(uint32_t age) const CRUCIBLE_NO_THREAD_SAFETY {
+        if (age >= count_.get()) return ::fixy::none;
         return regions_.at(prove_slot_(head_.index_back(age)));
     }
 
@@ -115,7 +115,9 @@ private:
     // A slot holds a region the region store owns and this cache does not.
     // The slot type makes that explicit and keeps the identity read behind
     // an accessor that can report an empty slot.
-    ::fixy::FixedArray<::fixy::WeakRef<const RegionNode>, CAP> regions_{};
+    // The region store of the pipeline owns each region, so a slot holds its
+    // region on the erased brand.
+    ::fixy::FixedArray<ConstRegionLink, CAP> regions_{};
     ::fixy::FixedArray<ContentHash, CAP> content_hashes_{};
 
     // A free-running counter. index() is the next slot to write and

@@ -3207,34 +3207,35 @@ crucible_neg_compile_test(neg_content_hash_default_construct
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsNonZero\\(\\), crucible::ContentHash>\\(crucible::ContentHash\\(\\)\\)")
 
-# The live-slot pointer of TransactionLog is
-# fixy::Tagged<Transaction*, source::Ring>: a pointer into the ring's inline
-# slots, valid for the log's lifetime.
-#   * neg_active_tx_ptr_raw_assignment: a raw pointer does not convert,
+# The live slot of TransactionLog is
+# fixy::Tagged<Option<Ref<Transaction>>, source::Ring>: a Ref into the inline
+# slots of the ring, valid for the life of the log.
+#   * neg_active_tx_ptr_raw_assignment: an untagged slot does not convert,
 #     because the constructor from the value is private.
-#   * neg_active_tx_ptr_cross_source_assignment: a pointer under the Arena
-#     tag does not convert, because no retag edge joins the two tags.
+#   * neg_active_tx_ptr_cross_source_assignment: a slot under the Arena tag
+#     does not convert, because no retag edge joins the two tags.
 crucible_neg_compile_test(neg_active_tx_ptr_raw_assignment
-  "neg_active_tx_ptr_raw_assignment.cpp:29:25: error: conversion from .crucible::FakeTransaction\\*. to non-scalar type"
-  "\\{aka .fixy::Tagged<crucible::FakeTransaction\\*, fixy::tags::source::Ring>.\\} requested")
+  "neg_active_tx_ptr_raw_assignment.cpp:29:26: error: conversion from .const TxLink. .aka .const foundation::core::Option<foundation::core::Ref<crucible::FakeTransaction> >.. to non-scalar type"
+  "\\{aka .fixy::Tagged<foundation::core::Option<foundation::core::Ref<crucible::FakeTransaction> >, fixy::tags::source::Ring>.\\} requested")
 crucible_neg_compile_test(neg_active_tx_ptr_cross_source_assignment
-  "neg_active_tx_ptr_cross_source_assignment.cpp:27:20: error: conversion from"
+  "neg_active_tx_ptr_cross_source_assignment.cpp:29:20: error: conversion from"
   ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Ring>. requested")
 
-# CrucibleContext's active region is a
-# `fixy::Tagged<const RegionNode*, tags::source::Vigil>`: a pointer that
-# Vigil's background worker published.  One fixture per mismatch class:
-#   * neg_active_region_ptr_raw_assignment: a raw pointer cannot take the
-#     tag, because only mint_tagged writes a provenance (bypass).
-#   * neg_active_region_ptr_cross_source_assignment: a pointer tagged
-#     Arena cannot become one tagged Vigil, because no retag edge joins
-#     the two sources (laundering).
+# The active region of CrucibleContext is a
+# `fixy::Tagged<Option<Ref<const RegionNode>>, tags::source::Vigil>`: a region
+# that the background worker of the Vigil published.  One fixture per mismatch
+# class:
+#   * neg_active_region_ptr_raw_assignment: an untagged region cannot take
+#     the tag, because only mint_tagged writes a provenance (bypass).
+#   * neg_active_region_ptr_cross_source_assignment: a region tagged Arena
+#     cannot become one tagged Vigil, because no retag edge joins the two
+#     sources (laundering).
 crucible_neg_compile_test(neg_active_region_ptr_raw_assignment
-  "conversion from .const crucible::FakeRegionNode\\*. to non-scalar type .ActiveRegionPtr."
-  "fixy::Tagged<const crucible::FakeRegionNode\\*, fixy::tags::source::Vigil>")
+  "conversion from .const RegionLink. .aka .const foundation::core::Option<foundation::core::Ref<const crucible::FakeRegionNode> >.. to non-scalar type .ActiveRegionLink."
+  "fixy::Tagged<foundation::core::Option<foundation::core::Ref<const crucible::FakeRegionNode> >, fixy::tags::source::Vigil>")
 crucible_neg_compile_test(neg_active_region_ptr_cross_source_assignment
   "conversion from .Tagged<\\[...\\],fixy::tags::source::Arena>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::Vigil>. requested"
-  "neg_active_region_ptr_cross_source_assignment.cpp:35")
+  "neg_active_region_ptr_cross_source_assignment.cpp:37")
 
 # BackgroundThread::device_capability holds a DeviceCapability,
 # fixy::Tagged<uint64_t, tags::source::Meridian>.  The tag says that the

@@ -41,8 +41,8 @@ void test_pipeline_multi_iteration() {
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     wait_processed(bt, *ring);
-    auto* region1 = bt.active_region().try_get();
-    CRUCIBLE_TEST_ASSERT(kTest, region1 != nullptr);
+    const ::fixy::Ref<const RegionNode> region1 =
+        bt.active_region().expect("BackgroundThread did not produce a region");
     CRUCIBLE_TEST_ASSERT(kTest, region1->num_ops() == NUM_OPS);
 
     // The loop starts at K because the background thread already holds
@@ -65,8 +65,9 @@ void test_pipeline_multi_iteration() {
     feed_trigger(ring, meta_log, 4);
 
     wait_processed(bt, *ring);
-    auto* region2 = bt.active_region().try_get();
-    CRUCIBLE_TEST_ASSERT(kTest, region2 != nullptr && region2 != region1 && "Second boundary did not fire");
+    const ::fixy::Ref<const RegionNode> region2 =
+        bt.active_region().expect("BackgroundThread did not produce a second region");
+    CRUCIBLE_TEST_ASSERT(kTest, !::fixy::same_object(region2, region1) && "Second boundary did not fire");
     CRUCIBLE_TEST_ASSERT(kTest, region2->num_ops() == NUM_OPS);
     CRUCIBLE_TEST_ASSERT(kTest, region2->plan.is_some());
 

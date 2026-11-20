@@ -321,7 +321,7 @@ struct BackgroundThread::Pipeline {
     // The sink takes the end mark of the pipeline by value, and it takes
     // each mark at its first push.
     struct BgSinkProducerHandle {
-        ::fixy::WeakRef<BackgroundThread> owner{};
+        ::fixy::Option<::fixy::Ref<BackgroundThread>> owner{};
 
         [[nodiscard]] bool try_push(BgPipelineDone const& /*done*/) noexcept { return true; }
     };
@@ -581,18 +581,18 @@ void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_floor
 // no free slot discards the region, as a reset discards a stale region.
 void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
                                       StreamPoint reset_point) {
-    ::fixy::WeakRef<RegionMemory> free_slot{};
+    ::fixy::Option<::fixy::Ref<RegionMemory>> free_slot{};
     for (RegionMemory& slot : region_store_) {
         if (slot.node.size() == 0) {
-            free_slot = ::fixy::WeakRef<RegionMemory>{slot};
+            free_slot = ::fixy::some(::fixy::erase_brand(::fixy::to(slot)));
             break;
         }
     }
-    if (!free_slot.has_value()) [[unlikely]] {
+    if (free_slot.is_none()) [[unlikely]] {
         ++regions_dropped_full_;
         return;
     }
-    RegionMemory& memory = free_slot.get();
+    RegionMemory& memory = *std::move(free_slot).expect("the test above found a free slot");
     memory = RegionMemory{
         .parts = std::move(parts),
         .node = ::fixy::mint_heap_array_with<RegionNode>(bg.alloc, 1, [](size_t) noexcept { return RegionNode{}; }),
@@ -619,12 +619,12 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     }
 
     recompute_merkle(region);
-    const ::fixy::WeakRef<RegionNode> published{region};
-    last_published_ = ::fixy::WeakRef<const RegionNode>{region};
+    const RegionLink published = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
+    last_published_ = ConstRegionLink::some(::fixy::erase_brand(::fixy::to(region)));
 
     memory.published = PublishedRegion{.region = published, .reset_point = reset_point};
 
-    uncompiled_regions_.push(published.get());
+    uncompiled_regions_.push(region);
     active_region_.store_release(published);
     owner_marks_ = RegionMarks{};
     // The callback gets a proof of its own, which dies with the call.
@@ -643,8 +643,9 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
 void BackgroundThread::sweep_regions_(PublishStage const&) noexcept {
     for (RegionMemory& memory : region_store_) {
         if (memory.node.size() == 0) continue;
-        const ::fixy::WeakRef<const RegionNode> region{*memory.node.get(0).expect("a used slot holds its node")};
-        if (region == last_published_ || region == owner_marks_.handed) {
+        const ConstRegionLink region =
+            ConstRegionLink::some(::fixy::erase_brand(memory.node.get(0).expect("a used slot holds its node")));
+        if (::fixy::same_target(region, last_published_) || ::fixy::same_target(region, owner_marks_.handed)) {
             memory.left_generation = NOT_LEFT;
             continue;
         }
@@ -658,22 +659,22 @@ void BackgroundThread::sweep_regions_(PublishStage const&) noexcept {
     }
 }
 
-bool BackgroundThread::is_held_(::fixy::WeakRef<const RegionNode> region) const noexcept {
-    for (const ::fixy::WeakRef<const RegionNode> held :
+bool BackgroundThread::is_held_(ConstRegionLink region) const noexcept {
+    for (const ConstRegionLink& held :
          owner_marks_.held.view().window(0, owner_marks_.count).expect("the marks hold at most CAP regions")) {
-        if (held == region) return true;
+        if (::fixy::same_target(held, region)) return true;
     }
     const uint32_t queued = uncompiled_regions_.size();
     for (uint32_t age = 0; age < queued; ++age) {
-        if (::fixy::WeakRef<const RegionNode>{uncompiled_regions_.at(age).get()} == region) return true;
+        if (::fixy::same_target(uncompiled_regions_.at(age), region)) return true;
     }
     return false;
 }
 
-void BackgroundThread::keep_region(PublishStage const&, ::fixy::WeakRef<const RegionNode> region) noexcept {
+void BackgroundThread::keep_region(PublishStage const&, ConstRegionLink region) noexcept {
     for (RegionMemory& memory : region_store_) {
         if (memory.node.size() == 0) continue;
-        if (::fixy::WeakRef<const RegionNode>{*memory.node.get(0).expect("a used slot holds its node")} == region) {
+        if (::fixy::same_target(::fixy::some(memory.node.get(0).expect("a used slot holds its node")), region)) {
             memory.left_generation = NOT_LEFT;
             return;
         }
@@ -863,7 +864,7 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
 void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProducerHandle&& out) {
     const ::foundation::effects::Bg bg = ::foundation::effects::host::BackgroundOwner::mint_background_context();
     BackgroundThread& owner = in.owner();
-    CRUCIBLE_FATAL_INVARIANT(out.owner.try_get() == &owner);
+    CRUCIBLE_FATAL_INVARIANT(::fixy::same_target(out.owner, ::fixy::some(::fixy::to(owner))));
     const OwnerMailboxScope mailbox{owner, PublishStage{}};
     detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::MAILBOX_MAX_SLEEP_NANOS};
 
@@ -1048,7 +1049,8 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
     auto build_stage =
         ::fixy::concurrent::mint_stage<&Pipeline::BuildTraceFn>(ctx, std::move(build_cons), std::move(publish_prod));
     auto publish_stage = ::fixy::concurrent::mint_stage<&Pipeline::MakeRegionFn>(
-        ctx, std::move(publish_cons), Pipeline::BgSinkProducerHandle{::fixy::WeakRef<BackgroundThread>{*this}});
+        ctx, std::move(publish_cons),
+        Pipeline::BgSinkProducerHandle{::fixy::some(::fixy::erase_brand(::fixy::to(*this)))});
 
     auto pipeline = ::fixy::concurrent::mint_pipeline(ctx, std::move(drain_stage), std::move(detect_stage),
                                                       std::move(build_stage), std::move(publish_stage));

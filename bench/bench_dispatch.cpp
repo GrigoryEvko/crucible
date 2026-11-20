@@ -680,9 +680,10 @@ int main() {
 
         SchemaHash tgt_schema = SCHEMA[3];
         ShapeHash tgt_shape{SHAPE[3].raw() + 2 * 0x100};
+        const crucible::ConstRegionLink excluded =
+            crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(*regions[0])));
         return bench::run("RegionCache::find_alternate (4 entries)", [&] {
-            auto found =
-                cache.find_alternate(3, tgt_schema, tgt_shape, ::fixy::WeakRef<const RegionNode>::from_raw(regions[0]));
+            auto found = cache.find_alternate(3, tgt_schema, tgt_shape, excluded);
             bench::do_not_optimize(found);
         });
     }());

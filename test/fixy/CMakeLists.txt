@@ -1846,12 +1846,7 @@ fixy_neg_compile_test(neg_borrowed_span_address_names_held_brand
   "invalid initialization of non-const reference of type .HeldBorrow \\(&\\)\\(std::span<int>&&\\) noexcept."
   "from an rvalue of type .<unresolved overloaded function type>.")
 
-# A WeakRef over a reference type has no pointer to form.
-fixy_neg_compile_test(neg_weak_ref_of_a_reference
-  "template constraint failure for .template<class T> +requires +is_object_v<T> class fixy::WeakRef."
-  "the expression .is_object_v<T> \\[with T = int&\\]. evaluated to .false.")
-
-# The four extractors read a member of one wrapper, and each refuses a
+# The three extractors read a member of one wrapper, and each refuses a
 # type that has the member but is not that wrapper.
 fixy_neg_compile_test(neg_borrowed_value_of_a_span
   "template constraint failure for .template<class T> +requires +IsBorrowed<T> using fixy::borrowed_value_t"
@@ -1862,9 +1857,6 @@ fixy_neg_compile_test(neg_borrowed_source_of_a_look_alike
 fixy_neg_compile_test(neg_borrowed_ref_value_of_a_span
   "template constraint failure for .template<class T> +requires +IsBorrowedRef<T> using fixy::borrowed_ref_value_t"
   "required for the satisfaction of .IsBorrowedRef<T>. \\[with T = std::span<int")
-fixy_neg_compile_test(neg_weak_ref_value_of_a_span
-  "template constraint failure for .template<class T> +requires +IsWeakRef<T> using fixy::weak_ref_value_t"
-  "required for the satisfaction of .IsWeakRef<T>. \\[with T = std::span<int")
 
 # weaken towards a fresher grade in a constant expression reaches the
 # CRUCIBLE_PRE trap inside Stale::weaken.
@@ -3295,7 +3287,7 @@ fixy_neg_compile_test(neg_sess_mint_session_payload_unclassified
 fixy_neg_compile_test(neg_sess_send_weak_ref
   "no matching function for call to .mint_session<neg_sess_send_weak_ref_types::Proto>"
   "Payload_Not_Owned.: a payload of the protocol cannot move to another thread, or it holds a borrow"
-  "satisfaction of .ProtocolPayloadsTransfer<Proto>. \\[with Proto = fixy::session::Send<fixy::WeakRef<const int>, fixy::session::End>\\]")
+  "satisfaction of .ProtocolPayloadsTransfer<Proto>. \\[with Proto = fixy::session::Send<foundation::core::Option<foundation::core::Ref<const int, neg_sess_send_weak_ref_types::CounterBrand> >, fixy::session::End>\\]")
 fixy_neg_compile_test(neg_sess_send_view
   "no matching function for call to .mint_session<neg_sess_send_view_types::Proto>"
   "Payload_Not_Owned.: a payload of the protocol cannot move to another thread, or it holds a borrow"
@@ -4636,8 +4628,8 @@ fixy_neg_compile_test(neg_channel_of_unsendable_payload
 # A producer can end before the consumer pops its value, so a value of a
 # channel holds no borrow at any depth.
 fixy_neg_compile_test(neg_channel_of_a_weak_reference
-  "required for the satisfaction of .ChannelValue<T>. \\[with T = fixy::WeakRef<const int>\\]"
-  "required for the satisfaction of .SendableOwned<T>. \\[with T = fixy::WeakRef<const int>\\]")
+  "required for the satisfaction of .ChannelValue<T>. \\[with T = .*WeakWord<const int>\\]"
+  "required for the satisfaction of .SendableOwned<T>. \\[with T = .*WeakWord<const int>\\]")
 fixy_neg_compile_test(neg_channel_of_a_message_with_a_borrow
   "required for the satisfaction of .ChannelValue<T>. \\[with T = .*Message\\]"
   "required for the satisfaction of .SendableOwned<T>. \\[with T = .*Message\\]")
@@ -6467,7 +6459,7 @@ fixy_neg_compile_test(neg_thread_run_joined_captures_a_timing_sink
   "static assertion failed: run_joined: the body captures .sink. \\(field [_a-z]+, type fixy::observe::TimingSink<2>&\\)"
   "its type is not Sendable")
 fixy_neg_compile_test(neg_thread_run_joined_captures_a_cell_of_a_timing_sink
-  "static assertion failed: run_joined: the body captures .cell. \\(field [_a-z]+, type foundation::core::Atomic<fixy::WeakRef<fixy::observe::TimingSink<2> > >&\\)"
+  "static assertion failed: run_joined: the body captures .cell. \\(field [_a-z]+, type foundation::core::Atomic<foundation::core::Option<foundation::core::Ref<fixy::observe::TimingSink<2>, .*SinkBrand> > >&\\)"
   "its type is not Sendable")
 # A binding refers to its channel, so it moves beside its sender only when two
 # threads can write the channel.

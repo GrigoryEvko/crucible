@@ -110,6 +110,14 @@ static_assert(sizeof(crucible::Transaction::ArenaRegionLink) == sizeof(void*));
     return &*region;
 }
 
+// The address of the transaction that a slot of the log reaches, or null for
+// an empty slot, so a check compares it with the address of a transaction.
+crucible::Transaction* address_of_tx(::fixy::Option<::fixy::Ref<crucible::Transaction>> const& slot) {
+    for (const ::fixy::Ref<crucible::Transaction>& tx : slot)
+        return &*tx;
+    return nullptr;
+}
+
 // Begins, commits and activates the transaction of one step, as the publish
 // stage of a Vigil does for each region.  Returns the transaction that the
 // activation displaced.
@@ -117,13 +125,12 @@ crucible::Transaction* publish(auto& log, const SoloOwner& owner, uint32_t step,
     auto& tx = log.begin_tx(owner, step);
     CRUCIBLE_TEST_ASSERT(kTest,
                          log.commit(owner, tx, arena_region(*region), region->content_hash, region->merkle_hash));
-    return log.activate(owner, tx).try_get();
+    return address_of_tx(log.activate(owner, tx));
 }
 
 // The log holds the transaction of `step` as the active one, with its region.
 void expect_active(auto& log, const SoloOwner& owner, uint32_t step, crucible::RegionNode* region) {
-    const crucible::Transaction* active = log.active(owner).try_get();
-    CRUCIBLE_TEST_ASSERT(kTest, active != nullptr);
+    const ::fixy::Ref<crucible::Transaction> active = log.active(owner).expect("the log holds an active transaction");
     CRUCIBLE_TEST_ASSERT(kTest, active->status == crucible::TxStatus::ACTIVE);
     CRUCIBLE_TEST_ASSERT(kTest, active->step_id.get() == step);
     CRUCIBLE_TEST_ASSERT(kTest, crucible::holds_region(*active, ::fixy::to(*region)));
@@ -178,7 +185,7 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
     CRUCIBLE_TEST_ASSERT(kTest, displaced->step_id.get() == 1);
     CRUCIBLE_TEST_ASSERT(kTest, crucible::holds_region(*displaced, ::fixy::to(*regions[1])));
     expect_active(log, owner, kSlots + 1, regions[kSlots + 1]);
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == displaced);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.previous(owner)) == displaced);
 
     CRUCIBLE_TEST_ASSERT(kTest, log.rollback(owner));
     expect_active(log, owner, 1, regions[1]);
@@ -202,26 +209,26 @@ void previous_follows_the_order_of_displacements(::foundation::effects::Alloc al
 
     // The third transaction displaces nothing, the first displaces the
     // third, and the second displaces the first.
-    CRUCIBLE_TEST_ASSERT(kTest, log.activate(owner, *txs[3]).try_get() == nullptr);
-    CRUCIBLE_TEST_ASSERT(kTest, log.activate(owner, *txs[1]).try_get() == txs[3]);
-    CRUCIBLE_TEST_ASSERT(kTest, log.activate(owner, *txs[2]).try_get() == txs[1]);
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == txs[1]);
+    CRUCIBLE_TEST_ASSERT(kTest, log.activate(owner, *txs[3]).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.activate(owner, *txs[1])) == txs[3]);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.activate(owner, *txs[2])) == txs[1]);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.previous(owner)) == txs[1]);
 
     CRUCIBLE_TEST_ASSERT(kTest, log.rollback(owner));
     expect_active(log, owner, 1, regions[1]);
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == txs[3]);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.previous(owner)) == txs[3]);
 
     // A second displacement of the restored first transaction comes after
     // the displacement of the third, although its claim comes before.
-    CRUCIBLE_TEST_ASSERT(kTest, log.activate(owner, *txs[4]).try_get() == txs[1]);
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == txs[1]);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.activate(owner, *txs[4])) == txs[1]);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.previous(owner)) == txs[1]);
 
     CRUCIBLE_TEST_ASSERT(kTest, log.rollback(owner));
     expect_active(log, owner, 1, regions[1]);
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == txs[3]);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.previous(owner)) == txs[3]);
     CRUCIBLE_TEST_ASSERT(kTest, log.rollback(owner));
     expect_active(log, owner, 3, regions[3]);
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == nullptr);
+    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).is_none());
     CRUCIBLE_TEST_ASSERT(kTest, !log.rollback(owner));
 }
 
@@ -243,15 +250,15 @@ void claim_keeps_the_target_of_out_of_order_activations(::foundation::effects::A
         CRUCIBLE_TEST_ASSERT(kTest, log.commit(owner, *txs[step], arena_region(*regions[step]),
                                                regions[step]->content_hash, regions[step]->merkle_hash));
     }
-    CRUCIBLE_TEST_ASSERT(kTest, log.activate(owner, *txs[2]).try_get() == nullptr);
-    CRUCIBLE_TEST_ASSERT(kTest, log.activate(owner, *txs[1]).try_get() == txs[2]);
-    CRUCIBLE_TEST_ASSERT(kTest, log.activate(owner, *txs[3]).try_get() == txs[1]);
+    CRUCIBLE_TEST_ASSERT(kTest, log.activate(owner, *txs[2]).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.activate(owner, *txs[1])) == txs[2]);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.activate(owner, *txs[3])) == txs[1]);
     CRUCIBLE_TEST_ASSERT(kTest, log.size(owner) == kSlots);
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == txs[1]);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.previous(owner)) == txs[1]);
 
     const crucible::Transaction* claimed = &log.begin_tx(owner, kSlots + 1);
     CRUCIBLE_TEST_ASSERT(kTest, claimed != txs[1] && claimed != txs[3] && claimed != txs[4]);
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == txs[1]);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.previous(owner)) == txs[1]);
     CRUCIBLE_TEST_ASSERT(kTest, txs[1]->step_id.get() == 1);
     CRUCIBLE_TEST_ASSERT(kTest, txs[4]->status == crucible::TxStatus::COMMITTED);
     CRUCIBLE_TEST_ASSERT(kTest, txs[4]->step_id.get() == 4);
@@ -279,13 +286,13 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     (void)log.begin_tx(owner, kSlots + 1);
     CRUCIBLE_TEST_ASSERT(kTest, log.rollback(owner));
     expect_active(log, owner, 3, regions[3]);
-    const crucible::Transaction* target = log.previous(owner).try_get();
+    const crucible::Transaction* target = address_of_tx(log.previous(owner));
     CRUCIBLE_TEST_ASSERT(kTest, target != nullptr);
     CRUCIBLE_TEST_ASSERT(kTest, target->step_id.get() == 2);
 
     const crucible::Transaction* claimed = &log.begin_tx(owner, kSlots + 2);
-    CRUCIBLE_TEST_ASSERT(kTest, claimed != target && claimed != log.active(owner).try_get());
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == target);
+    CRUCIBLE_TEST_ASSERT(kTest, claimed != target && claimed != address_of_tx(log.active(owner)));
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.previous(owner)) == target);
     CRUCIBLE_TEST_ASSERT(kTest, target->step_id.get() == 2);
 
     CRUCIBLE_TEST_ASSERT(kTest, log.rollback(owner));
@@ -303,7 +310,7 @@ using RunStamps = ::fixy::FixedArray<uint64_t, kRunSteps>;
 [[nodiscard]] RunStamps publish_and_stamp(::foundation::effects::Alloc alloc, ::fixy::BumpArena& arena,
                                           const SoloOwner& owner) {
     Log log{};
-    ::fixy::FixedArray<::fixy::WeakRef<crucible::Transaction>, kRunSteps> txs{};
+    ::fixy::FixedArray<::fixy::Option<::fixy::Ref<crucible::Transaction>>, kRunSteps> txs{};
     for (const ::fixy::Index<kRunSteps> slot : txs.indices()) {
         const uint32_t step = static_cast<uint32_t>(slot.raw()) + 1;
         crucible::RegionNode& region = *region_of_step(alloc, arena, step);
@@ -312,11 +319,11 @@ using RunStamps = ::fixy::FixedArray<uint64_t, kRunSteps>;
                              log.commit(owner, tx, arena_region(region), region.content_hash, region.merkle_hash));
         (void)log.activate(owner, tx);
         if (step % 3 == 0) CRUCIBLE_TEST_ASSERT(kTest, log.rollback(owner));
-        txs.at(slot) = ::fixy::WeakRef<crucible::Transaction>{tx};
+        txs.at(slot) = ::fixy::some(::fixy::erase_brand(::fixy::to(tx)));
     }
     RunStamps stamps{};
     for (const ::fixy::Index<kRunSteps> slot : stamps.indices())
-        stamps.at(slot) = txs.at(slot)->event_order.get();
+        stamps.at(slot) = address_of_tx(txs.at(slot))->event_order.get();
     return stamps;
 }
 
@@ -353,8 +360,8 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     CRUCIBLE_TEST_ASSERT(kTest, region2->merkle_hash.raw() != 0);
 
     CRUCIBLE_TEST_ASSERT(kTest, log.size(owner) == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, log.active(owner).try_get() == nullptr);
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == nullptr);
+    CRUCIBLE_TEST_ASSERT(kTest, log.active(owner).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).is_none());
 
     auto* tx1 = &log.begin_tx(owner, 1);
     CRUCIBLE_TEST_ASSERT(kTest, tx1->step_id.get() == 1);
@@ -383,11 +390,11 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     const bool double_commit = log.commit(owner, *tx1, arena_region(*region1), hash1, merkle1);
     CRUCIBLE_TEST_ASSERT(kTest, !double_commit && "commit on COMMITTED tx must return false");
 
-    auto* prev = log.activate(owner, *tx1).try_get();
-    CRUCIBLE_TEST_ASSERT(kTest, prev == nullptr && "no previous ACTIVE on first activation");
+    const bool displaces_none = log.activate(owner, *tx1).is_none();
+    CRUCIBLE_TEST_ASSERT(kTest, displaces_none && "no previous ACTIVE on first activation");
     CRUCIBLE_TEST_ASSERT(kTest, tx1->status == crucible::TxStatus::ACTIVE);
-    CRUCIBLE_TEST_ASSERT(kTest, log.active(owner).try_get() == tx1);
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == nullptr);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.active(owner)) == tx1);
+    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).is_none());
 
     auto* tx2 = &log.begin_tx(owner, 2);
     CRUCIBLE_TEST_ASSERT(kTest, tx2->step_id.get() == 2);
@@ -399,12 +406,12 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     CRUCIBLE_TEST_ASSERT(kTest, log.commit(owner, *tx2, arena_region(*region2), hash2, merkle2));
     CRUCIBLE_TEST_ASSERT(kTest, tx2->status == crucible::TxStatus::COMMITTED);
 
-    auto* superseded = log.activate(owner, *tx2).try_get();
-    CRUCIBLE_TEST_ASSERT(kTest, superseded == tx1 && "tx1 must be returned as the superseded tx");
+    const bool supersedes_tx1 = address_of_tx(log.activate(owner, *tx2)) == tx1;
+    CRUCIBLE_TEST_ASSERT(kTest, supersedes_tx1 && "tx1 must be returned as the superseded tx");
     CRUCIBLE_TEST_ASSERT(kTest, tx1->status == crucible::TxStatus::SUPERSEDED);
     CRUCIBLE_TEST_ASSERT(kTest, tx2->status == crucible::TxStatus::ACTIVE);
-    CRUCIBLE_TEST_ASSERT(kTest, log.active(owner).try_get() == tx2);
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == tx1);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.active(owner)) == tx2);
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.previous(owner)) == tx1);
 
     // The activation of tx1 took place 3, the claim and the commit of tx2
     // took 4 and 5, the displacement of tx1 took 6 and the activation of tx2
@@ -417,8 +424,8 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     CRUCIBLE_TEST_ASSERT(kTest, tx2->status == crucible::TxStatus::ROLLED_BACK);
     // The rollback stamps the current transaction first, then the restored one.
     CRUCIBLE_TEST_ASSERT(kTest, stamp_of(*tx2) == 8 && stamp_of(*tx1) == 9);
-    CRUCIBLE_TEST_ASSERT(kTest, log.active(owner).try_get() == tx1);
-    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).try_get() == nullptr && "no more SUPERSEDED after rollback");
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.active(owner)) == tx1);
+    CRUCIBLE_TEST_ASSERT(kTest, log.previous(owner).is_none() && "no more SUPERSEDED after rollback");
 
     const bool rolled2 = log.rollback(owner);
     CRUCIBLE_TEST_ASSERT(kTest, !rolled2 && "rollback with no SUPERSEDED must return false");
@@ -436,8 +443,8 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
         (void)log.activate(owner, tx);
     }
     // The loop ends at 32, so the last transaction is the active one.
-    CRUCIBLE_TEST_ASSERT(kTest, log.active(owner).has_value());
-    CRUCIBLE_TEST_ASSERT(kTest, log.active(owner)->step_id.get() == 32);
+    CRUCIBLE_TEST_ASSERT(kTest, log.active(owner).is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.active(owner))->step_id.get() == 32);
 
     claim_passes_over_the_active_slot(test.alloc, owner, RollbackOrder::AfterEachPublication);
     claim_passes_over_the_active_slot(test.alloc, owner, RollbackOrder::InARow);

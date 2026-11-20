@@ -1,22 +1,22 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Mismatch class 1 of 2 for the active region pointer of
-// CrucibleContext: a raw `const RegionNode*` cannot become a
-// `fixy::Tagged<const RegionNode*, tags::source::Vigil>`.
+// Mismatch class 1 of 2 for the active region of CrucibleContext: an Option
+// of a Ref of a region with no tag cannot become a
+// `fixy::Tagged<Option<Ref<const RegionNode>>, tags::source::Vigil>`.
 //
 // The only doors into a Tagged are mint_tagged, which names the source
-// at the call site, and retag along an admitted edge.  A raw pointer
-// assigned straight into the field would carry the Vigil provenance
-// without anyone having written it, so a region that Vigil's background
-// worker never published could reach the context's active region.
+// at the call site, and retag along an admitted edge.  A region assigned
+// straight into the field would carry the Vigil provenance without anyone
+// having written it, so a region that the background worker of the Vigil
+// never published could reach the active region of the context.
 //
 // Companion fixture: neg_active_region_ptr_cross_source_assignment.cpp
-//   * That one refuses a pointer tagged with another source (laundering).
-//   * This one refuses a pointer with no tag at all (bypass).
+//   * That one refuses a region tagged with another source (laundering).
+//   * This one refuses a region with no tag at all (bypass).
 
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
-#include <foundation/Quarantine.h>
 
 namespace crucible {
 struct FakeRegionNode {
@@ -25,16 +25,15 @@ struct FakeRegionNode {
 }  // namespace crucible
 
 int main() {
-    using ActiveRegionPtr = ::fixy::Tagged<const crucible::FakeRegionNode*, ::fixy::tags::source::Vigil>;
+    using RegionLink = ::fixy::Option<::fixy::Ref<const crucible::FakeRegionNode>>;
+    using ActiveRegionLink = ::fixy::Tagged<RegionLink, ::fixy::tags::source::Vigil>;
 
-    crucible::FakeRegionNode region{};
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it")
-    const crucible::FakeRegionNode* raw_ptr = &region;
+    crucible::FakeRegionNode const region{};
+    const RegionLink untagged = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
 
-    // Should FAIL: no conversion from a raw pointer to the tagged
-    // pointer; the provenance is written only through mint_tagged.
-    ActiveRegionPtr field = raw_ptr;
+    // Should FAIL: no conversion from an untagged region to the tagged slot;
+    // the provenance is written only through mint_tagged.
+    ActiveRegionLink field = untagged;
     (void)field;
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return 0;
 }

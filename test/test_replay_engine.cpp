@@ -464,10 +464,10 @@ static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx
     CRUCIBLE_FATAL_INVARIANT(engine.ops_matched() == 0);
     ::fixy::check::expect_dies(
         test, [&engine] noexcept { static_cast<void>(engine.matched_op_index()); },
-        ::fixy::TextView{"contract violation: matched.has_value()"});
+        ::fixy::TextView{"contract violation: matched.is_some()"});
     ::fixy::check::expect_dies(
         test, [&engine, &av] noexcept { static_cast<void>(engine.output_ptr(0, av)); },
-        ::fixy::TextView{"contract violation: matched.has_value()"});
+        ::fixy::TextView{"contract violation: matched.is_some()"});
     CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{700}, ShapeHash{800}, av).status() == ReplayStatus::MATCH);
     require_matched(engine, 0);
 

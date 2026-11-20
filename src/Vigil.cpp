@@ -106,15 +106,15 @@ bool Vigil::rollback() {
             bg.request_mark(ops_before);
             // The restored transaction was active before, and only a commit
             // with a region makes a transaction active.
-            const ::fixy::WeakRef<Transaction> active = tx_log.active(stage);
-            CRUCIBLE_FATAL_INVARIANT(active.has_value());
+            const ::fixy::Ref<Transaction> active =
+                tx_log.active(stage).expect("a rollback leaves the restored transaction active");
             ::fixy::Option<::fixy::handle::Published<RegionNode>> region_of_rollback{};
             for (const ::fixy::Ref<RegionNode const>& region : active->region.value()) {
                 region_of_rollback = ::fixy::some(::fixy::handle::mint_published(stage, *region));
                 // The foreground gets the region outside the publication slot,
                 // so the store keeps it until the foreground writes its holders
                 // again (THE LIFE OF A REGION of BackgroundThread.h).
-                bg.keep_region(stage, ::fixy::WeakRef<const RegionNode>{*region});
+                bg.keep_region(stage, ::fixy::some(region));
             }
             CRUCIBLE_FATAL_INVARIANT(region_of_rollback.is_some());
             return region_of_rollback;
@@ -131,10 +131,10 @@ void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode const& region) {
     // No op reached the ring after the mark, so the pipeline cut each region
     // that the slot can hold before the mark.
     cache_pending_region_();
-    pending_activation_.reset();
+    pending_activation_ = ::fixy::none;
     alignment_pos_ = alignment_pos_at(0);
     alignment_ops_ = 0;
-    taken_region_.store_release(::fixy::WeakRef<const RegionNode>{region});
+    taken_region_.store_release(::fixy::some(::fixy::erase_brand(::fixy::to(region))));
     if (replay_.activate(region)) {
         // A rollback or a load resumes the replay at the first op.
         register_inputs_from_region_(fg, region, 0);
@@ -145,7 +145,7 @@ void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode const& region) {
 
 void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
                             BackgroundThread::PublishedRegion const& published) noexcept {
-    RegionNode& region = published.region.get();
+    RegionNode& region = *RegionLink{published.region}.expect("the publish stage gives a record of a region");
     // bump returns the previous value, which is the index this call
     // reserved.  The background thread is the sole writer.
     const uint64_t step = step_.bump();
@@ -177,10 +177,12 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // did not get, and the cells of held_regions_ hold the regions of the
     // foreground.
     BackgroundThread::RegionMarks marks{};
-    tx_log_.for_each_region(stage, [&marks](::fixy::WeakRef<const RegionNode> held) noexcept { marks.hold(held); });
+    tx_log_.for_each_region(stage, [&marks](ConstRegionLink held) noexcept { marks.hold(held); });
     const PendingRegion handed = pending_region_.load_acquire();
-    for (const auto& record : handed)
-        marks.handed = ::fixy::WeakRef<const RegionNode>{*record->region};
+    for (const auto& record : handed) {
+        for (const ::fixy::Ref<RegionNode>& handed_region : record->region)
+            marks.handed = ConstRegionLink::some(handed_region);
+    }
     mark_held_regions_(marks);
     bg_.set_region_marks(stage, marks);
 

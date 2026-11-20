@@ -20,7 +20,6 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/TraceGraph.h>
 #include <crucible/TraceRing.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Mutation.h>
@@ -126,8 +125,11 @@ struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // The last published region, or an empty reference before the first
     // publication.  The acquire load sees each write of the region before
     // its publication, and no code writes a published region.
-    [[nodiscard]] ::fixy::WeakRef<const RegionNode> active_region() const noexcept {
-        return ::fixy::WeakRef<const RegionNode>::from_raw(active_region_.load_acquire().try_get());
+    [[nodiscard]] ConstRegionLink active_region() const noexcept {
+        for (::fixy::Ref<RegionNode> const region : active_region_.load_acquire()) {
+            return ConstRegionLink::some(region);
+        }
+        return ::fixy::none;
     }
 
 private:
@@ -152,7 +154,7 @@ private:
     // Own cache line, because a reader reads it while the background writes
     // the fields that follow.  The reference is empty until the first
     // publication.
-    alignas(64)::fixy::Atomic<::fixy::WeakRef<RegionNode>> active_region_{};
+    alignas(64)::fixy::Atomic<RegionLink> active_region_{};
 
 public:
     // A point of the recorded op stream, and the kind of the reset at it.
@@ -196,7 +198,7 @@ public:
     // the region.  The region store holds the record with its region, so
     // the address of the record lives as long as the region.
     struct PublishedRegion {
-        ::fixy::WeakRef<RegionNode> region{};
+        RegionLink region{};
         StreamPoint reset_point{};
     };
 
@@ -392,12 +394,12 @@ private:
     // runs it on the caller while no publish stage runs (run_on_publish_stage).
     template <typename Call>
     void post_owner_job_(Call& call) noexcept {
-        CRUCIBLE_PRE(stage_held_by_this_thread_ != ::fixy::WeakRef<const BackgroundThread>{*this});
+        CRUCIBLE_PRE(!holds_stage_on_this_thread_());
         OwnerJob request{.call = OwnerJobCall{call}};
-        const ::fixy::WeakRef<OwnerJob> posted{request};
+        const JobLink posted = ::fixy::some(::fixy::erase_brand(::fixy::to(request)));
         while (true) {
-            const ::fixy::WeakRef<OwnerJob> seen = owner_mailbox_.load_acquire();
-            if (!seen.has_value()) {
+            const JobLink seen = owner_mailbox_.load_acquire();
+            if (seen.is_none()) {
                 if (owner_mailbox_.cas_acq_rel(seen, posted).is_ok()) {
                     while (!request.done.load_acquire()) {
                         CRUCIBLE_SPIN_PAUSE;
@@ -406,10 +408,10 @@ private:
                 }
                 continue;
             }
-            if (seen == closed_mark_()) {
+            if (::fixy::same_target(seen, closed_mark_())) {
                 if (owner_mailbox_.cas_acq_rel(seen, inline_mark_()).is_ok()) {
-                    const ::fixy::WeakRef<const BackgroundThread> held_before = stage_held_by_this_thread_;
-                    stage_held_by_this_thread_ = ::fixy::WeakRef<const BackgroundThread>{*this};
+                    const StageHolder held_before = stage_held_by_this_thread_;
+                    stage_held_by_this_thread_ = stage_holder_();
                     request.call(PublishStage{});
                     stage_held_by_this_thread_ = held_before;
                     owner_mailbox_.store_release(closed_mark_());
@@ -646,7 +648,7 @@ public:
     // and the parts of its region.  The graph dies with the epoch of the
     // scratch arena.  The region does not depend on the graph.
     struct BuiltTrace {
-        ::fixy::WeakRef<TraceGraph> graph;
+        ::fixy::Ref<TraceGraph> graph;
         BuiltRegion region;
     };
 
@@ -658,12 +660,12 @@ public:
     // the pipeline names.
     struct RegionMarks {
         static constexpr uint32_t CAP = 32;
-        ::fixy::FixedArray<::fixy::WeakRef<const RegionNode>, CAP> held{};
+        ::fixy::FixedArray<ConstRegionLink, CAP> held{};
         uint32_t count = 0;
         // The region that the owner can still give to its foreground, such
         // as the region in a publication slot.  The store keeps it as it
         // keeps the last published region.
-        ::fixy::WeakRef<const RegionNode> handed{};
+        ConstRegionLink handed{};
         // A foreground writes the regions that it holds, and each write
         // advances the generation.  The store releases a region that left
         // the view of the foreground only after a later write that does not
@@ -673,8 +675,8 @@ public:
 
         // Adds a region to the held regions.  An empty reference adds
         // nothing.
-        void hold(::fixy::WeakRef<const RegionNode> region) noexcept {
-            if (!region.has_value()) return;
+        void hold(ConstRegionLink region) noexcept {
+            if (region.is_none()) return;
             held.at(::fixy::Index<CAP>::check(count).expect(
                 "the region marks of the pipeline are full: raise BackgroundThread::RegionMarks::CAP")) = region;
             ++count;
@@ -726,7 +728,7 @@ private:
     // never gets a region writes no holders, and its regions stay.  A publish
     // into a full table then discards its region and counts it.
     ::fixy::HeapArray<RegionMemory> region_store_;
-    ::fixy::WeakRef<const RegionNode> last_published_{};
+    ConstRegionLink last_published_{};
     RegionMarks owner_marks_{};
     uint64_t regions_dropped_full_ = 0;
 
@@ -735,7 +737,7 @@ private:
     void sweep_regions_(PublishStage const& stage) noexcept;
 
     // True when the uncompiled queue or the marks of the owner name region.
-    [[nodiscard]] bool is_held_(::fixy::WeakRef<const RegionNode> region) const noexcept;
+    [[nodiscard]] bool is_held_(ConstRegionLink region) const noexcept;
 
 public:
     // Regions that have been published but not compiled.  This is the
@@ -766,13 +768,13 @@ public:
         // region, and push then only counts.
         UncompiledRegionQueue(::foundation::effects::Alloc allocation,
                               ::fixy::Quantity<::fixy::unit::Element, uint32_t> capacity) noexcept
-            : slots_{::fixy::mint_heap_array(allocation, capacity.raw(), ::fixy::WeakRef<RegionNode>{})} {}
+            : slots_{::fixy::mint_heap_array(allocation, capacity.raw(), RegionLink{})} {}
 
         void push(RegionNode& region) noexcept {
             const uint64_t capacity = slots_.size();
             if (capacity != 0) {
                 *slots_.get(total_.peek_relaxed() % capacity).expect("a count modulo the capacity is below it") =
-                    ::fixy::WeakRef<RegionNode>{region};
+                    ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
             }
             (void)total_.bump();
         }
@@ -796,7 +798,7 @@ public:
         // empty reference a never-written slot still holds.  The clause is the
         // in-body macro because its predicate reaches a member through
         // `this`, which a plain pre() skips when the compiler folds this body.
-        [[nodiscard]] ::fixy::WeakRef<RegionNode> at(uint32_t age) const noexcept {
+        [[nodiscard]] RegionLink at(uint32_t age) const noexcept {
             CRUCIBLE_PRE(age < size());
             const uint64_t seen = total_.get();
             const uint64_t capacity = slots_.size();
@@ -805,7 +807,7 @@ public:
         }
 
     private:
-        ::fixy::HeapArray<::fixy::WeakRef<RegionNode>> slots_;
+        ::fixy::HeapArray<RegionLink> slots_;
         ::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> total_ =
             ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
     };
@@ -877,7 +879,7 @@ public:
     template <class Ctx>
         requires ::fixy::concurrent::CtxFitsWaitPolicy<Ctx, FlushPolicy>
     [[nodiscard]] FlushResult flush(Ctx const& ctx) noexcept {
-        CRUCIBLE_PRE(stage_held_by_this_thread_ != ::fixy::WeakRef<const BackgroundThread>{*this});
+        CRUCIBLE_PRE(!holds_stage_on_this_thread_());
         if (!ring_.has_value()) return ::fixy::Unit{};
         const uint64_t target_produced = ring_.get()->total_produced();
         const auto is_settled = [this, target_produced]() noexcept {
@@ -992,14 +994,19 @@ public:
 
 private:
     // The references of the two sentinels.
-    [[nodiscard]] static ::fixy::WeakRef<OwnerJob> closed_mark_() noexcept {
-        return ::fixy::WeakRef<OwnerJob>{mailbox_closed_};
+    // A job of the mailbox, or no job.  A job lives in the frame of its
+    // caller, and the sentinels live as long as the process, so the mailbox
+    // holds each one on the erased brand.
+    using JobLink = ::fixy::Option<::fixy::Ref<OwnerJob>>;
+
+    [[nodiscard]] static JobLink closed_mark_() noexcept {
+        return ::fixy::some(::fixy::erase_brand(::fixy::to(mailbox_closed_)));
     }
-    [[nodiscard]] static ::fixy::WeakRef<OwnerJob> inline_mark_() noexcept {
-        return ::fixy::WeakRef<OwnerJob>{mailbox_inline_};
+    [[nodiscard]] static JobLink inline_mark_() noexcept {
+        return ::fixy::some(::fixy::erase_brand(::fixy::to(mailbox_inline_)));
     }
 
-    alignas(64)::fixy::Atomic<::fixy::WeakRef<OwnerJob>> owner_mailbox_{closed_mark_()};
+    alignas(64)::fixy::Atomic<JobLink> owner_mailbox_{closed_mark_()};
 
     // One acquire load when no job waits, which is the common case.  While
     // the stage runs, the mailbox holds no sentinel: the stage opened it,
@@ -1007,35 +1014,53 @@ private:
     // The parameter proves that the caller is the stage.  The job gets a
     // proof of its own.
     void serve_owner_mailbox_(PublishStage const&) noexcept {
-        const ::fixy::WeakRef<OwnerJob> job = owner_mailbox_.load_acquire();
-        if (!job.has_value()) return;
-        CRUCIBLE_FATAL_INVARIANT(job != closed_mark_() && job != inline_mark_());
-        job->call(PublishStage{});
-        owner_mailbox_.store_release(::fixy::WeakRef<OwnerJob>{});
+        const JobLink job = owner_mailbox_.load_acquire();
+        if (job.is_none()) return;
+        CRUCIBLE_FATAL_INVARIANT(!::fixy::same_target(job, closed_mark_())
+                                 && !::fixy::same_target(job, inline_mark_()));
+        const ::fixy::Ref<OwnerJob> served = JobLink{job}.expect("the test above found a job");
+        served->call(PublishStage{});
+        owner_mailbox_.store_release(JobLink{});
         // The caller returns once it reads done, and its record dies with
         // its stack frame, so nothing reads the record after this store.
-        job->done.store_release(true);
+        served->done.store_release(true);
     }
 
     void close_owner_mailbox_(PublishStage const&) noexcept {
-        const ::fixy::WeakRef<OwnerJob> last = owner_mailbox_.exchange_acq_rel(closed_mark_());
-        if (!last.has_value()) return;
-        last->call(PublishStage{});
-        last->done.store_release(true);
+        const JobLink last = owner_mailbox_.exchange_acq_rel(closed_mark_());
+        for (const ::fixy::Ref<OwnerJob>& served : last) {
+            served->call(PublishStage{});
+            served->done.store_release(true);
+        }
     }
 
     void open_owner_mailbox_() noexcept {
         while (true) {
-            auto opened = owner_mailbox_.cas_acq_rel(closed_mark_(), ::fixy::WeakRef<OwnerJob>{});
+            auto opened = owner_mailbox_.cas_acq_rel(closed_mark_(), JobLink{});
             if (opened.is_ok()) return;
             // The stage waits while a caller runs a job inline.  Any value
             // that is not a sentinel means a second stage runs, and the
             // state would then have two owners.
-            const ::fixy::WeakRef<OwnerJob> seen =
-                std::move(opened).err().expect("a refused swap gives the value that it read").observed;
-            CRUCIBLE_FATAL_INVARIANT(seen == inline_mark_() || seen == closed_mark_());
+            const JobLink seen = std::move(opened).err().expect("a refused swap gives the value that it read").observed;
+            CRUCIBLE_FATAL_INVARIANT(::fixy::same_target(seen, inline_mark_())
+                                     || ::fixy::same_target(seen, closed_mark_()));
             CRUCIBLE_SPIN_PAUSE;
         }
+    }
+
+    // The holder of a stage: a background thread as const, or no value.  A
+    // thread holds the stage of a background thread for less time than the
+    // background thread lives, so the holder takes the erased brand.
+    using StageHolder = ::fixy::Option<::fixy::Ref<const BackgroundThread>>;
+
+    // This background thread as the holder of its stage.
+    [[nodiscard]] StageHolder stage_holder_() const noexcept {
+        return ::fixy::some(::fixy::erase_brand(::fixy::to(*this)));
+    }
+
+    // True when this thread holds the stage of this background thread.
+    [[nodiscard]] bool holds_stage_on_this_thread_() const noexcept {
+        return ::fixy::same_target(stage_held_by_this_thread_, stage_holder_());
     }
 
     // The background thread whose stage this thread holds, or an empty
@@ -1044,8 +1069,7 @@ private:
     // reads the same copy on a thread.  A static member is no part of an
     // object, so it stays public.
 public:
-    CRUCIBLE_PROCESS_WIDE static inline thread_local ::fixy::WeakRef<const BackgroundThread>
-        stage_held_by_this_thread_{};
+    CRUCIBLE_PROCESS_WIDE static inline thread_local StageHolder stage_held_by_this_thread_{};
 
 private:
     // The publish stage holds the mailbox open for as long as this scope
@@ -1058,7 +1082,7 @@ private:
         OwnerMailboxScope(BackgroundThread& owner, PublishStage const&) noexcept
             : owner_{owner}, held_before_{stage_held_by_this_thread_} {
             owner_.open_owner_mailbox_();
-            stage_held_by_this_thread_ = ::fixy::WeakRef<const BackgroundThread>{owner_};
+            stage_held_by_this_thread_ = owner_.stage_holder_();
         }
         ~OwnerMailboxScope() {
             stage_held_by_this_thread_ = held_before_;
@@ -1069,7 +1093,7 @@ private:
 
     private:
         BackgroundThread& owner_;
-        ::fixy::WeakRef<const BackgroundThread> held_before_;
+        StageHolder held_before_;
     };
 
 public:
@@ -1288,7 +1312,7 @@ public:
     // releases the region only after a later write of the foreground
     // holders that does not name it.  A region that the store does not hold
     // changes nothing.
-    void keep_region(PublishStage const& stage, ::fixy::WeakRef<const RegionNode> region) noexcept;
+    void keep_region(PublishStage const& stage, ConstRegionLink region) noexcept;
 
     // The count of regions in the store, and the count of published regions
     // that a full store discarded.  The publish stage owns the store.
@@ -1310,7 +1334,7 @@ public:
 
         void request_mark(uint64_t ops_before) noexcept { owner_.request_mark(ops_before); }
 
-        void keep_region(PublishStage const& stage, ::fixy::WeakRef<const RegionNode> region) noexcept {
+        void keep_region(PublishStage const& stage, ConstRegionLink region) noexcept {
             owner_.keep_region(stage, region);
         }
 
@@ -1397,10 +1421,14 @@ public:
 
     static_assert(sizeof(SlotInfo) == 24, "SlotInfo: matches TensorSlot bulk region");
 
+    // An entry of the map, or no entry.  The map lives as long as the build
+    // scratch, so a link holds its entry on the erased brand.
+    using PtrSlotLink = ::fixy::Option<::fixy::Ref<PtrSlot>>;
+
     // old_op, old_port and old_slot carry the displaced entry and are
     // meaningful only when was_alias is true.
     struct InsertResult {
-        ::fixy::WeakRef<PtrSlot> slot{};
+        PtrSlotLink slot{};
         bool was_alias = false;
         OpIndex old_op;
         uint8_t old_port = 0;
@@ -1445,15 +1473,15 @@ public:
 
     // The entry of key in the map, or no entry when the map does not hold
     // the key.  The probes stop at the first empty slot.
-    [[nodiscard]] static ::fixy::WeakRef<PtrSlot> ptr_map_find(::fixy::MaskedArray<PtrSlot>& map, uint8_t gen,
-                                                               PtrMapKey key) noexcept {
+    [[nodiscard]] static PtrSlotLink ptr_map_find(::fixy::MaskedArray<PtrSlot>& map, uint8_t gen,
+                                                  PtrMapKey key) noexcept {
         const uint64_t bucket_idx = hash_ptr(key);
         for (uint64_t probe = 0; probe < map.size(); probe++) {
             PtrSlot& slot = map.at_masked(bucket_idx + probe);
-            if (slot.gen != gen) return {};
-            if (slot.key == key) return ::fixy::WeakRef<PtrSlot>{slot};
+            if (slot.gen != gen) return ::fixy::none;
+            if (slot.key == key) return ::fixy::some(::fixy::erase_brand(::fixy::to(slot)));
         }
-        return {};
+        return ::fixy::none;
     }
 
     // The probes of the map start at the hash of the key, and the mask of
@@ -1471,14 +1499,14 @@ public:
                 slot.slot_id = slot_id;
                 slot.reader = OpIndex{};
                 slot.gen = gen;
-                return {.slot = ::fixy::WeakRef<PtrSlot>{slot},
+                return {.slot = ::fixy::some(::fixy::erase_brand(::fixy::to(slot))),
                         .was_alias = false,
                         .old_op = {},
                         .old_port = 0,
                         .old_slot = {}};
             }
             if (slot.key == key) {
-                InsertResult result{.slot = ::fixy::WeakRef<PtrSlot>{slot},
+                InsertResult result{.slot = ::fixy::some(::fixy::erase_brand(::fixy::to(slot))),
                                     .was_alias = (slot.op_index != op_index),
                                     .old_op = slot.op_index,
                                     .old_port = slot.port,

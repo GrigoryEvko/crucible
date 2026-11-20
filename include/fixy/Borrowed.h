@@ -23,19 +23,11 @@
 // claimed for a different object by spelling it.  foundation/Brand.h
 // states the facts a brand rests on.
 //
-// WeakRef is the nullable member of the family: the slot starts empty,
-// holds a borrowed pointer, and may be evicted.  There is no control
-// block, so expiry of the referent is not detected.  The check this
-// type provides is a null check and nothing more: try_get returns a
-// pointer the caller has to inspect, and the unconditional accessors
-// carry a non-null precondition so a missing check aborts instead of
-// going quietly wrong.  Keeping the referent alive for as long as a
-// WeakRef points at it remains the owner's obligation.  It carries no
-// brand: a nullable slot has no one identity to carry.
+// A borrow that can be empty is an Option of a Ref (foundation/core/Ref.h).
 //
 // The lifetime bound the parameter attribute announces is not enforced
 // on this compiler, where the macro expands to nothing.  What the
-// three types can do is refuse the one shape that always dangles: a
+// two types can do is refuse the one shape that always dangles: a
 // borrow taken from a temporary.  Each binding constructor and each
 // mint therefore has a deleted rvalue twin, so the temporary selects
 // the deleted overload and the compiler names the reason.
@@ -103,7 +95,6 @@ struct borrow_mint_t {};
 namespace row_discipline {
 struct borrowed_ref;
 struct borrowed;
-struct weak_ref;
 }  // namespace row_discipline
 
 template <class T, class Brand = ::foundation::brand::DefaultBrand>
@@ -523,62 +514,6 @@ mint_borrowed(R&& owner CRUCIBLE_LIFETIMEBOUND) noexcept {
                                                                       detail::first_of_run_(run), run.size()};
 }
 
-// A WeakRef is a reference that can be empty, so it moves between threads
-// as a reference to T does (foundation/Transfer.h).
-template <class T>
-    requires(std::is_object_v<T>)
-class [[nodiscard]][[= ::foundation::transfer::refers{}]] WeakRef {
-public:
-    using element_type = T;
-
-    static constexpr std::string_view wrapper_kind() noexcept { return detail::structural_kind_v<^^WeakRef>; }
-    using row_discipline = ::fixy::row_discipline::weak_ref;
-    using row_payload = T;
-
-private:
-    T* ptr_ = nullptr;
-
-    struct from_raw_tag_t {};
-    constexpr WeakRef(from_raw_tag_t, T* p) noexcept : ptr_{p} {}
-
-public:
-    constexpr WeakRef() noexcept = default;
-
-    constexpr explicit WeakRef(T& ref CRUCIBLE_LIFETIMEBOUND) noexcept : ptr_{&ref} {}
-
-    explicit WeakRef(T&&) = delete("WeakRef of a temporary dangles at the end of the full expression; "
-                                   "bind the object to a name first");
-
-    // Null is a valid input here, so there is no precondition.  The
-    // lifetime claim is unenforceable for the same reason as
-    // BorrowedRef::from_raw_nonnull, so it is stated here rather than
-    // annotated: a pointer parameter cannot tell a live pointee from a
-    // dead one, and the T& constructor above is the door that can.
-    [[nodiscard]] static constexpr WeakRef from_raw(T* p) noexcept { return WeakRef{from_raw_tag_t{}, p}; }
-
-    [[nodiscard]] constexpr bool has_value() const noexcept { return ptr_ != nullptr; }
-    [[nodiscard]] constexpr explicit operator bool() const noexcept { return ptr_ != nullptr; }
-
-    [[nodiscard]] constexpr T* try_get() const noexcept { return ptr_; }
-
-    [[nodiscard]] constexpr T& get() const noexcept {
-        CRUCIBLE_PRE(ptr_ != nullptr);
-        return *ptr_;
-    }
-    [[nodiscard]] constexpr T& operator*() const noexcept {
-        CRUCIBLE_PRE(ptr_ != nullptr);
-        return *ptr_;
-    }
-    [[nodiscard]] constexpr T* operator->() const noexcept {
-        CRUCIBLE_PRE(ptr_ != nullptr);
-        return ptr_;
-    }
-
-    constexpr void reset() noexcept { ptr_ = nullptr; }
-
-    [[nodiscard]] friend constexpr bool operator==(WeakRef a, WeakRef b) noexcept { return a.ptr_ == b.ptr_; }
-};
-
 template <typename T>
     requires IsBorrowed<T>
 using borrowed_value_t = typename std::remove_cvref_t<T>::element_type;
@@ -590,15 +525,5 @@ using borrowed_source_t = typename std::remove_cvref_t<T>::source_type;
 template <typename T>
     requires IsBorrowedRef<T>
 using borrowed_ref_value_t = typename std::remove_cvref_t<T>::element_type;
-
-template <typename T>
-concept IsWeakRef = ::foundation::reflect::IsInstanceOf<T, ^^WeakRef>;
-
-template <typename T>
-inline constexpr bool is_weak_ref_v = IsWeakRef<T>;
-
-template <typename T>
-    requires IsWeakRef<T>
-using weak_ref_value_t = typename std::remove_cvref_t<T>::element_type;
 
 }  // namespace fixy

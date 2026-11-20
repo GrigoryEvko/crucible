@@ -82,7 +82,12 @@ struct Mailbox {
     ::fixy::Atomic<bool> full{false};
 };
 
+// The brand of each Ref of a pipe: a pipe lives for its whole test, as the
+// ends that reach it do.
+struct PipeBrand {};
+
 struct Pipe : ::foundation::Pinned<Pipe> {
+    using brand_type = PipeBrand;
     Mailbox to_left;
     Mailbox to_right;
 };
@@ -129,12 +134,12 @@ struct Deadline {
 // The two ends state the capacity of the pipe: one message each way.
 struct LeftEnd {
     static constexpr std::size_t channel_capacity = 1;
-    ::fixy::WeakRef<Pipe> pipe{};
+    ::fixy::Ref<Pipe, PipeBrand> pipe;
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 struct RightEnd {
     static constexpr std::size_t channel_capacity = 1;
-    ::fixy::WeakRef<Pipe> pipe{};
+    ::fixy::Ref<Pipe, PipeBrand> pipe;
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
@@ -262,8 +267,8 @@ struct RightBody {
     const BgCtx ctx{eff::testing::bg()};
     const std::uint32_t live_before = s::watch::live_count();
     auto back = s::mint_forked_async_channel<LeftProto, RightProto, async_tags::Left, async_tags::Right>(
-        ctx, perm::mint_permission_root<async_tags::Whole>(), LeftEnd{::fixy::WeakRef<Pipe>{pipe}},
-        RightEnd{::fixy::WeakRef<Pipe>{pipe}}, LeftBody{}, RightBody{});
+        ctx, perm::mint_permission_root<async_tags::Whole>(), LeftEnd{::fixy::to(pipe)}, RightEnd{::fixy::to(pipe)},
+        LeftBody{}, RightBody{});
     ::foundation::linear::drop(std::move(back));
     if (g_left_received.load(std::memory_order_relaxed) != 22
         || g_right_received.load(std::memory_order_relaxed) != 11) {

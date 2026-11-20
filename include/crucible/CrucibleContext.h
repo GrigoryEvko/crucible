@@ -100,27 +100,27 @@ struct CrucibleContext {
 
         pool_.init(allocation_, *plan);
         engine_.init(region, ReplayEngine::PoolBorrow{pool_});
-        active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(&region);
+        active_region_ = link_active_region_(region);
         mode_ = ContextMode::COMPILED;
 
         // The mode and the active region move together. Every compiled-mode
         // method requires the first and dereferences the second, so publishing
         // one without the other leaves a pair that no method can safely act on.
         CRUCIBLE_POST(0, mode_ == ContextMode::COMPILED);
-        CRUCIBLE_POST(0, active_region_.value() == &region);
+        CRUCIBLE_POST(0, ::fixy::same_target(active_region_.value(), ::fixy::some(::fixy::to(region))));
         return true;
     }
 
     void deactivate() {
         mode_ = ContextMode::RECORD;
         pool_.destroy();
-        active_region_ = ActiveRegionPtr{};
+        active_region_ = ActiveRegionLink{};
 
         // The dual of the pair above: clearing the mode while leaving the
         // region pointer behind would let the next region switch replay a
         // prefix against a region that is gone.
         CRUCIBLE_POST(0, mode_ == ContextMode::RECORD);
-        CRUCIBLE_POST(0, active_region_.value() == nullptr);
+        CRUCIBLE_POST(0, active_region_.value().is_none());
     }
 
     // Stops the replay at a divergence that no guard of an op saw, such as
@@ -174,8 +174,10 @@ struct CrucibleContext {
         // has a plan, and the migration reads the slots of the two plans. The
         // path runs once per shape change, so an always-on check costs
         // nothing worth counting.
-        CRUCIBLE_FATAL_INVARIANT(active_region_.value() != nullptr && active_region_.value()->plan.is_some());
-        const RegionNode& old_region = *active_region_.value();
+        CRUCIBLE_FATAL_INVARIANT(active_region_.value().is_some_and(
+            [](::fixy::Ref<RegionNode const> const& active) noexcept { return active->plan.is_some(); }));
+        const RegionNode& old_region =
+            *::fixy::Option<::fixy::Ref<RegionNode const>>{active_region_.value()}.expect("the check above found it");
 
         // Detaching empties the pool, which makes the view stale, but it goes
         // out of scope before anything touches the pool again.
@@ -185,7 +187,7 @@ struct CrucibleContext {
         migrate_prefix_slots_(old_region, alt, old_pool.view(), div_pos);
 
         engine_.init(alt, ReplayEngine::PoolBorrow{pool_});
-        active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(&alt);
+        active_region_ = link_active_region_(alt);
 
         // Replay the prefix the two regions share, so the new region resumes
         // where the old one diverged.
@@ -203,7 +205,7 @@ struct CrucibleContext {
         // Leaving the region pointer on the old region while the engine has
         // moved to the new one is the torn pair the activation contract
         // guards against. The early exit above reaches it through activate.
-        CRUCIBLE_POST(0, active_region_.value() == &alt);
+        CRUCIBLE_POST(0, ::fixy::same_target(active_region_.value(), ::fixy::some(::fixy::to(alt))));
         CRUCIBLE_POST(0, mode_ == ContextMode::COMPILED);
         return true;
     }
@@ -262,9 +264,7 @@ struct CrucibleContext {
     // The Vigil owns the region, and this context only points at it.  The
     // reference does not point into this context, and it has no twin.  It
     // is empty while the context records.
-    [[nodiscard]] ::fixy::WeakRef<const RegionNode> active_region() const {
-        return ::fixy::WeakRef<const RegionNode>::from_raw(active_region_.value());
-    }
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode const>> active_region() const { return active_region_.value(); }
 
     [[nodiscard]] const ReplayEngine& engine() const& { return engine_; }
     const ReplayEngine& engine() const&& =
@@ -394,18 +394,21 @@ private:
     ::fixy::Monotonic<uint32_t> compiled_iterations_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 76
     ::fixy::Monotonic<uint32_t> diverged_count_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 80
     [[maybe_unused]] ::fixy::FixedArray<uint8_t, 4> pad2_{};
-    // The tag records that this pointer was published by the owning
-    // foreground's background worker. A region allocated somewhere else has a
+    // The tag records that the background worker of the owning foreground
+    // published this region. A region allocated somewhere else has a
     // different lifetime regime, and without the tag the two would be
-    // interchangeable here.  The default is the empty slot: a null pointer
-    // under the tag, which every reader tests before it dereferences.
-    using ActiveRegionPtr = ::fixy::Tagged<const RegionNode*, ::fixy::tags::source::Vigil>;
-    // The tag must not add storage, or every offset in this class shifts.
-    static_assert(sizeof(ActiveRegionPtr) == sizeof(const RegionNode*),
-                  "a tagged region pointer must be the size of the pointer it wraps");
-    static_assert(alignof(ActiveRegionPtr) == alignof(const RegionNode*),
-                  "a tagged region pointer must be aligned as the pointer it wraps");
-    ActiveRegionPtr active_region_{};  // offset 88
+    // interchangeable here.  The default is the empty slot: no value under
+    // the tag, which every reader tests before it reads the region.  The
+    // empty Option is the null pointer, so the slot takes eight bytes.
+    using ActiveRegionLink = ::fixy::Tagged<::fixy::Option<::fixy::Ref<RegionNode const>>, ::fixy::tags::source::Vigil>;
+
+    // The slot of a region that the context replays.  The region outlives the
+    // replay, so the slot holds it on the erased brand.
+    [[nodiscard]] static ActiveRegionLink link_active_region_(const RegionNode& region) noexcept {
+        return ::fixy::mint_tagged<::fixy::tags::source::Vigil>(::fixy::some(::fixy::erase_brand(::fixy::to(region))));
+    }
+
+    ActiveRegionLink active_region_{};  // offset 88
     PoolAllocator pool_;  // 64 bytes, offset 96
     // The allocation capability that the constructor received.  The pool of
     // each activated region allocates only through it.  The tag is empty, so
