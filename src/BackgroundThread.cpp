@@ -339,6 +339,10 @@ struct BackgroundThread::Pipeline {
         // input names and reports the channel of the consumer end that it
         // holds.
         using channel_type = typename Consumer::channel_type;
+        // The count of the messages that the channel holds: the
+        // channel_capacity of the consumer end that the input holds, which
+        // the producer end of the channel states too.
+        static constexpr std::size_t channel_capacity = Consumer::channel_capacity;
 
         [[nodiscard]] ::foundation::ChannelIdentity<channel_type> channel_identity() const noexcept {
             return inner_.channel_identity();
@@ -392,7 +396,10 @@ struct BackgroundThread::Pipeline {
     // iteration, so the stage can serve the owner mailbox before any
     // region arrives.
     // The sink takes the end mark of the pipeline by value, and it takes
-    // each mark at its first push.
+    // each mark at its first push.  The sink holds no message, because the
+    // push itself takes the mark.  So it states no channel_capacity, and the
+    // marked system of a stage graph reads its channel as a rendezvous (THE
+    // MARKED SYSTEM of fixy/concurrent/StageNet.h).
     struct BgSinkProducerHandle {
         ::fixy::Option<::fixy::Ref<BackgroundThread>> owner{};
 
