@@ -28,13 +28,16 @@
 namespace fe = ::foundation::effects;
 namespace fp = ::foundation::permissions;
 
-namespace {
 // A pure region: the token names no effect, so the tag needs no context
-// to mint from.
+// to mint from.  The token is the singleton root of the tag, so the tag has
+// a stable identity and external linkage.
+namespace neg_computation_extract_permission_payload_types {
 struct RegionTag {
     using permission_row = fe::Row<>;
 };
-}  // namespace
+}  // namespace neg_computation_extract_permission_payload_types
+
+using neg_computation_extract_permission_payload_types::RegionTag;
 
 using RegionToken = fp::Permission<RegionTag>;
 
@@ -42,7 +45,7 @@ using RegionToken = fp::Permission<RegionTag>;
 using PureOverPermission = fe::Computation<fe::Row<>, RegionToken>;
 
 int main() {
-    RegionToken token = fp::permission_erase_brand(fp::mint_permission_root<RegionTag>());
+    RegionToken token = fp::mint_singleton_root<RegionTag>();
     PureOverPermission pure = PureOverPermission::mint_computation(std::move(token));
 
     // THE LOAD-BEARING LINE: must FAIL to compile.  A pure-typed carrier

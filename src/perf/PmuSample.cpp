@@ -18,11 +18,14 @@
 
 namespace crucible::perf {
 
+// The tag of the mapping of the facade.  The mapping takes the singleton
+// root of the tag, so the tag has a stable identity and external linkage.
+struct PmuSampleRingTag {};
+
 namespace {
 
 using ::crucible::perf::detail::verbose;
 
-struct PmuSampleRingTag {};
 using PmuSampleRing = detail::RingLayout<PmuSampleHeader, PmuSampleEvent, PMU_SAMPLE_CAPACITY>;
 
 // The class of the period of an event.  A switch of the environment can

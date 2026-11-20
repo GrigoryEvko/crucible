@@ -15,10 +15,14 @@
 // combine demands that its children agree, and a share carries the
 // exclusive's.  foundation/Brand.h states the three facts a brand
 // rests on.  A spelling that names no brand is the erased identity
-// DefaultBrand.  permission_erase_brand drops the brand of a token where
-// its holder cannot name the brand, and no conversion drops it.
-// The rule erased-brand (utils/assay/guard/engines/tsast/erased_brand.py)
-// counts each spelling on the erased identity.
+// DefaultBrand, under which each token of one tag is one type.  So only a
+// root that is the one live root of its tag can be on it: mint_singleton_root
+// gives such a root, and a second live singleton root of one tag ends the
+// process.  A root of mint_permission_root keeps its brand, and no
+// conversion drops a brand.  The session erase door below is the one other
+// route to the erased identity.  The rule erased-brand
+// (utils/assay/guard/engines/tsast/erased_brand.py) counts each spelling on
+// the erased identity.
 //
 // Nothing ties a tag to the memory it names, and nothing confines the
 // holder's writes to that memory.  Both are obligations on the code
@@ -53,12 +57,18 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Record.h>
+#include <foundation/core/Report.h>
+#include <foundation/core/SipHash.h>
+#include <foundation/core/StableIdentity.h>
+#include <foundation/core/Text.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/FederationDoor.h>
 #include <foundation/permissions/Fwd.h>
+#include <foundation/reflect/Hash.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -652,6 +662,16 @@ concept PermissionRootArgs =
     RootMintableTag<Tag>
     && ((sizeof...(Args) == 0) || (sizeof...(Args) == 1 && (detail::CtxAdmitsEach<Args, Tag> && ...)));
 
+// A tag of a singleton root: a tag that the root mint admits, with a stable
+// identity, so the registry of the singleton roots can key its live count.
+template <typename Tag>
+concept SingletonRootTag = RootMintableTag<Tag> && ::foundation::reflect::HasStableIdentity<Tag>;
+
+// The fit of one singleton root mint: the fit of the root mint, for a tag of
+// a singleton root.
+template <typename Tag, typename... Args>
+concept SingletonRootArgs = SingletonRootTag<Tag> && PermissionRootArgs<Tag, Args...>;
+
 template <typename L, typename R, typename... Args>
 concept PermissionSplitArgs = detail::MintArgs<2, 1, Args...>
                            && (detail::leading_ctx_count({^^Args...}) == 0
@@ -692,6 +712,21 @@ template <typename Tag, typename... Args, typename Brand = CRUCIBLE_FRESH_BRAND>
     requires PermissionRootArgs<Tag, Args...>
 [[nodiscard]] constexpr Permission<Tag, ::foundation::brand::undeducible_brand_t<Brand>>
 mint_permission_root(Args const&...) noexcept;
+
+// The token of a tag on the erased identity DefaultBrand, under which each
+// token of the tag is one type.  For a tag that a root mint admits, only the
+// singleton root door and the session erase door give a token of this type.
+// Each site that names the erased token names this alias, so a search for it
+// lists them.
+template <typename Tag>
+using ErasedPermission = Permission<Tag>;
+
+// The root of a tag on the erased identity, which the singleton root
+// section below the class Permission defines.  It takes the live count of
+// the tag, so it is no constant expression.
+template <typename Tag, typename... Args>
+    requires SingletonRootArgs<Tag, Args...>
+[[nodiscard]] ErasedPermission<Tag> mint_singleton_root(Args const&...) noexcept;
 
 template <typename L, typename R, typename... Args>
     requires PermissionSplitArgs<L, R, Args...>
@@ -761,6 +796,10 @@ private:
     friend constexpr Permission<Tag, ::foundation::brand::undeducible_brand_t<Brand>>
     mint_permission_root(Args const&...) noexcept;
 
+    template <typename Tag, typename... Args>
+        requires SingletonRootArgs<Tag, Args...>
+    friend ErasedPermission<Tag> mint_singleton_root(Args const&...) noexcept;
+
     template <typename L, typename R, typename... Args>
         requires PermissionSplitArgs<L, R, Args...>
     friend constexpr ::foundation::core::Record<Permission<L, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>,
@@ -788,11 +827,24 @@ private:
 // foundation/permissions/FederationDoor.h.  It builds a token whose tag is
 // a FederatedPeer and no other token.
 
-// The key of the one door that drops a brand.  Only permission_erase_brand
-// makes one, so no other expression converts a branded token to the
-// erased identity.  Both constructors are user-provided, for the reason
-// perm_mint_key gives.  The friend declaration declares the door in this
-// namespace, and the definition below the class Permission matches it.
+// The session erase door.  A session permission set keys a region by its
+// tag, so the entries of a session hold drop the brand of each token that
+// they take.  This header names the class, and fixy/session/Flow.h defines
+// it: its one member is private, and its one friend is the HoldFactory of
+// that header.  The rule home of the quarantine plugin refuses a
+// definition of the class in each other file, as it does for
+// FederationAdmission (foundation/permissions/FederationDoor.h).
+//
+// The door is a known hole.  A token that leaves a session is on the
+// erased identity, so a session gives the same erased type as a singleton
+// root.  The door goes when the session layer carries the brand of each
+// token.
+class SessionEraseDoor;
+
+// The key of the one conversion that drops a brand.  Only the session
+// erase door makes one, so no other expression converts a branded token to
+// the erased identity.  Both constructors are user-provided, for the reason
+// perm_mint_key gives.
 class erase_brand_key {
     constexpr erase_brand_key() noexcept {}
 
@@ -800,8 +852,7 @@ public:
     constexpr erase_brand_key(const erase_brand_key&) noexcept {}
 
 private:
-    template <typename Tag, typename Brand>
-    friend constexpr auto permission_erase_brand(Permission<Tag, Brand>&&) noexcept;
+    friend class SessionEraseDoor;
 };
 
 // The tag constraint is a class-body static_assert rather than a
@@ -848,8 +899,8 @@ public:
     {}
 
     // Erasure.  A token of one instance becomes a token on the erased
-    // identity, and the conversion consumes the branded token.  Only
-    // permission_erase_brand makes the key, so a search for that name
+    // identity, and the conversion consumes the branded token.  Only the
+    // session erase door makes the key, so a search for SessionEraseDoor
     // lists each site that drops a brand.  The erasure runs in one
     // direction only.  Nothing makes a branded token out of an erased one,
     // and nothing rebrands a token.  Either one mints an identity that the
@@ -908,27 +959,12 @@ public:
 // A token that a caller gives up goes through the drop door of
 // foundation/Linear.h, ::foundation::linear::drop.
 
-// The one door that drops a brand.  It consumes the token of one instance
-// and gives a token on the erased identity DefaultBrand, which each erased
-// token of the tag shares.  Nothing gives a brand back.  Call it only where
-// the holder cannot name the brand: a session permission set keys a region
-// by its tag, and a class member names its type before the root exists.
-// Every other site carries the brand.  A search for this name lists each
-// site that drops one.
-template <typename Tag, typename Brand>
-[[nodiscard]] constexpr auto permission_erase_brand(Permission<Tag, Brand>&& token) noexcept {
-    if constexpr (std::is_same_v<Brand, ::foundation::brand::DefaultBrand>) {
-        return token;
-    } else {
-        return Permission<Tag>{std::move(token), erase_brand_key{}};
-    }
-}
-
-// Reentrant by design.  The contract is a fresh token per call, not one
-// token per tag per program.  Soundness rides on each token's move-only
-// linearity at the scope that holds it, so two live tokens for one tag
-// are sound as long as neither is aliased, and since each call site
-// mints its own brand the two are two types.
+// The root mint is reentrant: each call gives a fresh token.  Each call
+// site gives its own brand, so the roots of two sites are two types.  A site
+// that runs two times gives two live roots of one brand (fact 2 of
+// foundation/Brand.h), and each root is sound while its holder does not
+// alias it.  Code that needs one type for each tag, before a root exists,
+// mints its root with mint_singleton_root below.
 template <typename Tag, typename... Args, typename Brand>
     requires PermissionRootArgs<Tag, Args...>
 [[nodiscard]] constexpr Permission<Tag, ::foundation::brand::undeducible_brand_t<Brand>>
@@ -951,6 +987,213 @@ mint_permission_root(Args const&...) noexcept {
     return Permission<Tag, Brand>{perm_mint_key{}};
 }
 
+// ── The singleton root ───────────────────────────────────────────────
+//
+// Some code names the type of a token before its root exists, such as the
+// type of a mapping member of a facade.  That type is on the erased identity
+// DefaultBrand, under which each token of the tag is one type.  So the erased
+// identity is sound only for the one live root of its tag.
+//
+// mint_singleton_root gives that root.  It records the tag as taken in the
+// live count of the tag, and a second live singleton root of one tag ends the
+// process.  release_singleton_root consumes the root and clears the count, so
+// a later mint takes the tag again.  A token is an empty class with a trivial
+// destructor, so its end is no run-time event.  A holder that drops a
+// singleton root with no release keeps the tag taken, and the next singleton
+// mint of the tag ends the process.
+//
+// A split and a combine refuse a token on the erased identity (the mints
+// below).  The children of a split would be erased tokens of other tags, and
+// the count of the parent says nothing about them.  A singleton root of a
+// child tag would then be a second erased token of that tag.
+//
+// THE REGISTRY.  The live count of a tag must be one cell for the process,
+// also when two shared libraries hold the door.  A variable of a template has
+// a copy in each library, because the hidden visibility of the tree hides
+// each instance, so no template holds a count.  One registry with
+// CRUCIBLE_PROCESS_WIDE (foundation/Platform.h) holds a slot for each tag.
+// The first mint of a tag claims a slot, the same slot in each library, and
+// the tag keeps it for the life of the process.
+//
+// THE KEY.  The key of a slot has 128 bits, as the key of ThreadLocalRef
+// (foundation/ThreadLocalRef.h) has: the stable type id of the tag
+// (foundation/reflect/Hash.h), and the SipHash-2-4 of its stable name under a
+// fixed public key (foundation/core/SipHash.h).  A key that meets the type id
+// of a different second key ends the process.  A tag with no stable
+// identity, such as a class with internal linkage, has no key, so the door
+// refuses it.
+
+namespace detail {
+
+// The slots of the registry.  A raise of the count costs 25 bytes of the
+// process for each slot.
+inline constexpr std::uint32_t singleton_root_slot_count = 64;
+
+// The state of the key of a slot.
+inline constexpr std::uint32_t singleton_slot_free = 0;
+inline constexpr std::uint32_t singleton_slot_claiming = 1;
+inline constexpr std::uint32_t singleton_slot_published = 2;
+
+// Slot I holds the key of one tag and the live count of that tag: true while
+// its singleton root lives.  A thread that claims a free slot writes the key
+// and then publishes the slot with release, so a reader that sees the slot
+// published with acquire sees the key.  Each thread can take and release a
+// live count, and mint_singleton_root and release_singleton_root are its only
+// writers.  The exchange of a take acquires what the last release released,
+// so a new holder sees each write of the last one.
+struct SingletonRootRegistry {
+    ::foundation::core::Atomic<std::uint32_t> states[singleton_root_slot_count]{};
+    ::foundation::core::Atomic<std::uint64_t> type_ids[singleton_root_slot_count]{};
+    ::foundation::core::Atomic<std::uint64_t> name_hashes[singleton_root_slot_count]{};
+    ::foundation::core::Atomic<bool> live[singleton_root_slot_count]{};
+};
+
+CRUCIBLE_PROCESS_WIDE inline constinit SingletonRootRegistry singleton_root_registry_{};
+
+// The two words of the key of one tag.
+struct SingletonRootIds {
+    std::uint64_t type_id = 0;
+    std::uint64_t name_hash = 0;
+};
+
+// The fixed public key of the second word: the 16 characters of the text
+// "SingletonRoot 01", one byte each.
+[[nodiscard]] consteval ::foundation::core::SipKeyBytes singleton_second_key_() noexcept {
+    constexpr ::foundation::core::TextView text{"SingletonRoot 01"};
+    ::foundation::core::SipKeyBytes key{};
+    auto letter = text.begin();
+    for (std::byte& byte : key) {
+        byte = static_cast<std::byte>(*letter);
+        ++letter;
+    }
+    return key;
+}
+
+// The key of a tag: its stable type id, and the SipHash-2-4 of its stable
+// name under the fixed key as one little-endian word.  The second word is a
+// function of the name that is independent of the first, so it catches an
+// accidental collision of the first word.
+template <typename Tag>
+[[nodiscard]] consteval SingletonRootIds singleton_ids_() noexcept {
+    ::foundation::core::SipTag const tag =
+        ::foundation::core::sip_hash(singleton_second_key_(), ::foundation::core::stable_name_text<Tag>());
+    std::uint64_t word = 0;
+    int shift = 0;
+    for (std::byte const byte : tag) {
+        word |= static_cast<std::uint64_t>(static_cast<std::uint8_t>(byte)) << shift;
+        shift += 8;
+    }
+    return SingletonRootIds{.type_id = ::foundation::reflect::stable_type_id(^^Tag), .name_hash = word};
+}
+
+// The slot of the key in the registry.  The first use of a key claims the
+// first free slot.  A thread that finds a slot in the middle of its claim
+// waits for its publication, which is a few stores away.  Complexity: linear
+// in singleton_root_slot_count, on each mint and each release of a singleton
+// root, which are cold.
+[[nodiscard, gnu::cold, gnu::noinline]] inline std::uint32_t singleton_slot_of_(SingletonRootIds ids) noexcept {
+    SingletonRootRegistry& registry = singleton_root_registry_;
+    for (std::uint32_t index = 0; index < singleton_root_slot_count; ++index) {
+        ::foundation::core::Atomic<std::uint32_t>& state = registry.states[index];
+        if (state.load_acquire() == singleton_slot_free
+            && state.cas_acq_rel(singleton_slot_free, singleton_slot_claiming).is_ok()) {
+            registry.type_ids[index].store_release(ids.type_id);
+            registry.name_hashes[index].store_release(ids.name_hash);
+            state.store_release(singleton_slot_published);
+            return index;
+        }
+        while (state.load_acquire() != singleton_slot_published) {
+            CRUCIBLE_SPIN_PAUSE;
+        }
+        if (registry.type_ids[index].load_acquire() != ids.type_id) continue;
+        if (registry.name_hashes[index].load_acquire() != ids.name_hash) {
+            ::foundation::core::fatal("two permission tags have the stable type id {} and two names, so they "
+                                      "cannot share a singleton root slot.  Rename one tag.",
+                                      ids.type_id);
+        }
+        return index;
+    }
+    ::foundation::core::fatal("the singleton root of the permission tag of the stable type id {} finds no free "
+                              "slot: the process already has singleton_root_slot_count tags with a singleton root.  "
+                              "Raise singleton_root_slot_count of foundation/permissions/Permission.h.",
+                              ids.type_id);
+}
+
+// The live count of the singleton root of Tag.
+template <typename Tag>
+[[nodiscard]] ::foundation::core::Atomic<bool>& singleton_live_of_() noexcept {
+    const std::uint32_t index = singleton_slot_of_(singleton_ids_<Tag>());
+    [[assume(index < singleton_root_slot_count)]];
+    return singleton_root_registry_.live[index];
+}
+
+// A view of a text in static storage, with a zero after it, so the view
+// borrows it for the whole program.  The text has a type that depends on a
+// template parameter, so only a unit that names the view instantiates the
+// static string (foundation/reflect/Anchor.h).
+template <typename Text>
+[[nodiscard]] consteval ::foundation::core::TextView static_text_view_(Text const& text) {
+    return ::foundation::core::detail::text_over_(std::define_static_string(text), text.size());
+}
+
+// The name of the tag, for the report of a refused take or release.
+template <typename Tag>
+inline constexpr ::foundation::core::TextView singleton_tag_name =
+    static_text_view_(std::meta::display_string_of(^^Tag));
+
+[[noreturn]] CRUCIBLE_COLD inline void singleton_root_taken_abort_(::foundation::core::TextView tag) noexcept {
+    ::foundation::core::fatal("LinearityViolation: a second live singleton root of the permission tag {} was "
+                              "minted.  The erased identity of the tag is one type, so two live roots would be two "
+                              "owners of one region.  Release the first root with release_singleton_root before "
+                              "the next mint, or keep the brand of mint_permission_root.",
+                              tag);
+}
+
+[[noreturn]] CRUCIBLE_COLD inline void singleton_root_free_abort_(::foundation::core::TextView tag) noexcept {
+    ::foundation::core::fatal("LinearityViolation: a token of the permission tag {} went to release_singleton_root, "
+                              "but no singleton root of the tag lives.  The token came from a door other than "
+                              "mint_singleton_root.  Give release_singleton_root only the root that "
+                              "mint_singleton_root gave.",
+                              tag);
+}
+
+}  // namespace detail
+
+// Takes the live count of the tag and gives its root on the erased
+// identity.  A second call while the first root lives ends the process.
+// The context rule is the rule of mint_permission_root.
+template <typename Tag, typename... Args>
+    requires SingletonRootArgs<Tag, Args...>
+[[nodiscard]] ErasedPermission<Tag> mint_singleton_root(Args const&...) noexcept {
+    constexpr detail::rows_facts facts =
+        sizeof...(Args) == 0 ? detail::rows_facts_of({^^Tag}) : detail::rows_facts_of({});
+    if constexpr (!facts.declared) {
+        static_assert(has_permission_row(^^Tag), "mint_singleton_root<Tag>: no effect row is declared for Tag, so "
+                                                 "nothing says which contexts may own its region.  Declare a "
+                                                 "permission_row member on the tag.  A pure tag declares Row<> "
+                                                 "explicitly.");
+    } else if constexpr (!facts.empty) {
+        static_assert(!has_permission_row(^^Tag) || sizeof...(Args) == 1 || permission_row_empty(^^Tag),
+                      "mint_singleton_root<Tag>() without an ExecCtx is only valid for permission_row<Tag> == "
+                      "Row<>.  Mint an effectful tag with mint_singleton_root<Tag>(ctx) so Ctx admits the row.");
+    }
+    if (detail::singleton_live_of_<Tag>().exchange_acq_rel(true)) [[unlikely]] {
+        detail::singleton_root_taken_abort_(detail::singleton_tag_name<Tag>);
+    }
+    return ErasedPermission<Tag>{perm_mint_key{}};
+}
+
+// Consumes the singleton root of the tag and clears its live count.  A
+// token on the erased identity that no singleton mint gave ends the process.
+template <typename Tag>
+    requires SingletonRootTag<Tag>
+void release_singleton_root(ErasedPermission<Tag>&& root) noexcept {
+    ::foundation::linear::drop(std::move(root));
+    if (!detail::singleton_live_of_<Tag>().exchange_acq_rel(false)) [[unlikely]] {
+        detail::singleton_root_free_abort_(detail::singleton_tag_name<Tag>);
+    }
+}
+
 template <typename Tag, typename Brand, ::foundation::effects::IsExecCtx Ctx>
     requires CtxAdmitsPermission<Tag, Ctx>
 [[nodiscard]] constexpr Permission<Tag, Brand> admit_permission(Ctx const&, Permission<Tag, Brand>&& perm) noexcept {
@@ -971,6 +1214,10 @@ template <typename L, typename R, typename... Args>
 mint_permission_split(Args&&...) noexcept {
     using In = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
     using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
+    static_assert(::foundation::brand::IsFreshBrand<Brand>,
+                  "mint_permission_split<L, R>: the parent is on the erased identity DefaultBrand.  Its children "
+                  "would be erased tokens of L and R, and a singleton root of L or R would then be a second "
+                  "erased token of that tag.  Split a token of a brand.");
     // The fit concept proves the row of each tag that a context admits.
     // The facts read the row of each other tag one time: each tag without
     // a context, and the parent beside the two contexts of its children.
@@ -1020,6 +1267,10 @@ template <typename In, typename... Args>
                   "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&): the two children carry "
                   "different brands, so they were split from two different regions of one tag.  Only the "
                   "children of one split recombine into their parent.");
+    static_assert(::foundation::brand::IsFreshBrand<Brand>,
+                  "mint_permission_combine<In>: the children are on the erased identity DefaultBrand.  The parent "
+                  "would be an erased token of In, and a singleton root of In would then be a second erased token "
+                  "of that tag.  Combine the children of a split of a token of a brand.");
     // With a context, the fit concept proves the row of each tag.  Without
     // one, the facts read each row one time.
     constexpr detail::rows_facts facts = detail::leading_ctx_count({^^Args...}) == 0
@@ -1054,6 +1305,10 @@ template <typename... Children, typename... Args>
     Children, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>...> mint_permission_split_n(Args&&...) noexcept {
     using In = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
     using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
+    static_assert(::foundation::brand::IsFreshBrand<Brand>,
+                  "mint_permission_split_n<Children...>: the parent is on the erased identity DefaultBrand.  Its "
+                  "children would be erased tokens of their tags, and a singleton root of a child tag would then "
+                  "be a second erased token of that tag.  Split a token of a brand.");
     // With a context, the fit concept proves the row of each tag.  Without
     // one, the facts read each row one time.
     constexpr detail::rows_facts facts = detail::leading_ctx_count({^^Args...}) == 0
@@ -1142,6 +1397,11 @@ mint_permission_combine_n(Args&&...) noexcept {
                   "mint_permission_combine_n<Parent, Children...>(...): the children carry different brands, "
                   "so they were split from different regions of one tag.  Only the children of one split "
                   "recombine into their parent.");
+    static_assert(::foundation::brand::IsFreshBrand<Brand>,
+                  "mint_permission_combine_n<Parent, Children...>: the children are on the erased identity "
+                  "DefaultBrand.  The parent would be an erased token of Parent, and a singleton root of Parent "
+                  "would then be a second erased token of that tag.  Combine the children of a split of a token "
+                  "of a brand.");
     static_assert(manifest.rows_declared, "mint_permission_combine_n<Parent, Children...>: a tag named here "
                                           "declares no effect row.  Declare an edge in "
                                           "foundation::permissions::permission_rows or a permission_row "

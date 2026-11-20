@@ -307,18 +307,19 @@ template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
     }
     const std::size_t length = std::move(rounded).expect("the test above found the rounded length");
     // The mapping is on the erased identity of its tag, because a facade
-    // names the type of its mapping member before the root exists.  The
-    // root drops its brand through the one door that drops a brand.
-    // Nothing discards the pages of the mapping, so no advise_release_aware
-    // asks for its brand.
-    const ::foundation::permissions::Permission<bpf_map_region<Tag>> owner =
-        ::foundation::permissions::permission_erase_brand(
-            ::foundation::permissions::mint_permission_root<bpf_map_region<Tag>>());
+    // names the type of its mapping member before the root exists.  So the
+    // root is the singleton root of the tag.  The map door only reads it,
+    // and the root goes back right after the map, so two loads of one facade
+    // at one time end the process.  Nothing discards the pages of the
+    // mapping, so no advise_release_aware asks for the root later.
+    ::foundation::permissions::ErasedPermission<bpf_map_region<Tag>> owner =
+        ::foundation::permissions::mint_singleton_root<bpf_map_region<Tag>>();
     // The map door refuses a negative descriptor with ebadf.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: libbpf opened the descriptor of the BPF map, and the map door maps it")
     ::fixy::Result<ReadOnlyMapping<Tag>, ::foundation::os::Errno> mapped =
         ReadOnlyMapping<Tag>::map_foreign_region(ctx, owner, map_descriptor.value(), length, ::fixy::fs::FileOffset{0});
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    ::foundation::permissions::release_singleton_root(std::move(owner));
     for (::foundation::os::Errno const error : mapped.err()) {
         report_unavailable(facade, map_name.text,
                            "mmap failed (apply CAP_BPF; BPF_F_MMAPABLE needs CAP_BPF or kernel 5.5 or later)",

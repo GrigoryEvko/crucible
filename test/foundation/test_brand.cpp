@@ -24,6 +24,14 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 }  // namespace
 
+// The tag of a singleton root has a stable identity, so it has external
+// linkage.
+namespace test_brand_singleton {
+struct ErasedRegion {
+    using permission_row = ::foundation::effects::Row<>;
+};
+}  // namespace test_brand_singleton
+
 namespace {
 
 namespace brand = ::foundation::brand;
@@ -136,15 +144,19 @@ concept LendsByMove = requires(P&& p) { perm::with_read_view(std::move(p), [](au
     return 0;
 }
 
-// The erasure goes through one named door, runs one way and costs nothing.
-[[nodiscard]] int erasure_one_way_and_free() {
-    auto branded = perm::mint_permission_root<Region>();
+// The erased identity comes only from the singleton root of a tag.  No
+// conversion takes a branded root to it, and none gives a brand back.  A
+// brand costs nothing.
+[[nodiscard]] int erased_identity_only_from_the_singleton_root() {
+    using test_brand_singleton::ErasedRegion;
+    auto branded = perm::mint_permission_root<ErasedRegion>();
     static_assert(sizeof(branded) == 1, "a brand costs no bytes");
-    auto erased = perm::permission_erase_brand(std::move(branded));
+    auto erased = perm::mint_singleton_root<ErasedRegion>();
     static_assert(brand::IsErased<decltype(erased)>);
     static_assert(!std::is_constructible_v<decltype(branded), decltype(erased)&&>, "no brand from the erased spelling");
-    static_assert(!std::is_constructible_v<decltype(erased), decltype(branded)&&>, "no erasure outside the door");
-    ::foundation::linear::drop(std::move(erased));
+    static_assert(!std::is_constructible_v<decltype(erased), decltype(branded)&&>, "no erasure of a branded root");
+    perm::release_singleton_root(std::move(erased));
+    ::foundation::linear::drop(std::move(branded));
     return 0;
 }
 
@@ -154,7 +166,7 @@ int main() {
     if (const int rc = a_callee_names_the_brand(); rc != 0) return rc;
     if (const int rc = one_site_is_one_brand(); rc != 0) return rc;
     if (const int rc = door_and_brand_refuse_differently(); rc != 0) return rc;
-    if (const int rc = erasure_one_way_and_free(); rc != 0) return rc;
+    if (const int rc = erased_identity_only_from_the_singleton_root(); rc != 0) return rc;
     ::fixy::check::pass(kTest, "test_brand: ALL PASSED\n");
     return 0;
 }

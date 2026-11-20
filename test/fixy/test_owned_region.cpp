@@ -215,16 +215,11 @@ void test_brand_travels_through_split_and_recombine(TestRunnerCtx const& test) {
 }
 
 // A split inside one function is one split site, so every call gives
-// shards and a receipt of one type.  On the erased brand every region of
-// the tag is also one type.  A rebuild from shard 0 of one region and
-// shard 1 of another is well typed, and recombine aborts on it, because
-// shard 1 does not start where shard 0 ends.  The root drops its brand
-// through the one door that drops a brand.
-auto split_erased_in_two(std::uint64_t* storage) {
-    return ::fixy::mint_split<2>(OwnedRegion<std::uint64_t, DataA>::wrap(
-        storage, 4, ::foundation::permissions::permission_erase_brand(mint_permission_root<DataA>())));
-}
-
+// shards and a receipt of one type.  A rebuild from shard 0 of one region
+// and shard 1 of another is well typed, and recombine aborts on it, because
+// shard 1 does not start where shard 0 ends.  A region on the erased brand
+// does not split at all: the split of its token refuses the erased identity
+// (neg_permission_split_of_a_singleton_root).
 auto split_branded_in_two(std::uint64_t* storage) {
     return ::fixy::mint_split<2>(::fixy::mint_owned_region(storage, std::size_t{4}, mint_permission_root<DataA>()));
 }
@@ -254,10 +249,6 @@ void require_mixed_rebuild_aborts(TestRunnerCtx const& test, Split split) {
     auto parts_c = split(third);
     auto whole = Region::recombine(std::move(parts_c.witness), std::move(parts_c.shards));
     CRUCIBLE_TEST_ASSERT(test, whole.data() == third && whole.size() == 4);
-}
-
-void test_recombine_refuses_shards_of_two_erased_regions(TestRunnerCtx const& test) {
-    require_mixed_rebuild_aborts(test, split_erased_in_two);
 }
 
 // A shard moved out of the tuple before the recombine is empty at a null
@@ -371,8 +362,6 @@ int main() {
     pass(test, "  test_split_then_rebuild_through_recombine: PASSED\n");
     test_brand_travels_through_split_and_recombine(test);
     pass(test, "  test_brand_travels_through_split_and_recombine: PASSED\n");
-    test_recombine_refuses_shards_of_two_erased_regions(test);
-    pass(test, "  test_recombine_refuses_shards_of_two_erased_regions: PASSED\n");
     test_recombine_refuses_shards_of_two_regions_of_one_site(test);
     pass(test, "  test_recombine_refuses_shards_of_two_regions_of_one_site: PASSED\n");
     test_recombine_refuses_a_shard_moved_out_of_the_tuple(test);

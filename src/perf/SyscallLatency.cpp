@@ -8,9 +8,9 @@
 
 namespace crucible::perf {
 
-namespace {
+// The tag of the mapping of the facade.  The mapping takes the singleton
+// root of the tag, so the tag has a stable identity and external linkage.
 struct SyscallLatencyRingTag {};
-}  // namespace
 
 struct SyscallLatency::State : detail::RingState<SyscallLatencyRingTag, TimelineSyscallEvent> {};
 

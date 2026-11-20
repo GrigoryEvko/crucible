@@ -11,7 +11,9 @@
 namespace fp = ::foundation::permissions;
 namespace sess = ::fixy::session;
 
-namespace {
+// The loan comes from a singleton root, so each tag has a stable identity
+// and external linkage.
+namespace neg_session_borrowed_proof_of_another_region_types {
 
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
@@ -20,10 +22,14 @@ struct Other {
     using permission_row = ::foundation::effects::Row<>;
 };
 
-}  // namespace
+}  // namespace neg_session_borrowed_proof_of_another_region_types
+
+using namespace neg_session_borrowed_proof_of_another_region_types;
 
 int main() {
-    auto [loan, lent] = fp::mint_read_loan(fp::permission_erase_brand(fp::mint_permission_root<Other>()));
+    // The singleton root of Other is on the erased identity, as the loan of a
+    // Borrowed is, so only the tags differ.
+    auto [loan, lent] = fp::mint_read_loan(fp::mint_singleton_root<Other>());
     sess::Borrowed<int, Region> message{1, std::move(loan)};
     return message.peek();
 }

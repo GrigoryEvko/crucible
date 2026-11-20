@@ -15,6 +15,14 @@
 
 using namespace foundation::permissions;
 
+// The tag of a singleton root has a stable identity, so it has external
+// linkage.
+namespace test_read_view_singleton {
+struct ErasedData {
+    using permission_row = ::foundation::effects::Row<>;
+};
+}  // namespace test_read_view_singleton
+
 namespace {
 
 using ::fixy::check::pass;
@@ -101,21 +109,23 @@ void test_door_struct_body(::fixy::TestRunnerCtx const& test) {
 }
 
 // A generic body sees the view of the brand of the source, and an erased
-// source lends an erased view.  A branded source lends no erased view,
-// which neg_brand_read_view_body_asks_the_erased_view shows.
+// source, the singleton root of its tag, lends an erased view.  A branded
+// source lends no erased view, which
+// neg_brand_read_view_body_asks_the_erased_view shows.
 void test_door_lends_the_view_of_the_source_brand(::fixy::TestRunnerCtx const& test) {
     auto perm = mint_permission_root<ConfigData>();
     using Brand = decltype(perm)::brand_type;
     auto [branded, back] = with_read_view(std::move(perm), [](auto const& view) noexcept {
         return std::is_same_v<std::remove_cvref_t<decltype(view)>, ReadView<ConfigData, Brand>>;
     });
-    auto erased_token = permission_erase_brand(std::move(back));
-    auto [erased, erased_back] = with_read_view(std::move(erased_token), [](auto const& view) noexcept {
-        return ::foundation::brand::IsErased<std::remove_cvref_t<decltype(view)>>;
-    });
+    auto [erased, erased_back] =
+        with_read_view(mint_singleton_root<test_read_view_singleton::ErasedData>(), [](auto const& view) noexcept {
+            return ::foundation::brand::IsErased<std::remove_cvref_t<decltype(view)>>;
+        });
     CRUCIBLE_TEST_ASSERT(test, branded);
     CRUCIBLE_TEST_ASSERT(test, erased);
-    ::foundation::linear::drop(std::move(erased_back));
+    ::foundation::linear::drop(std::move(back));
+    release_singleton_root(std::move(erased_back));
 }
 
 namespace fork_tags {

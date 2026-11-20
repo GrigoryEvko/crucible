@@ -89,6 +89,31 @@ namespace fixy::session {
 // the one friend of the hold and of the loan markers.
 class HoldFactory;
 
+}  // namespace fixy::session
+
+// The session erase door that foundation/permissions/Permission.h names.  A
+// session permission set keys a region by its tag, so an entry of a hold
+// drops the brand of each token that it takes.  The member is private, and
+// its one friend is HoldFactory, so no code outside the session layer drops a
+// brand.  The rule home refuses a definition of the class in each other file.
+// A token that leaves a session stays on the erased identity, so a session
+// gives the same erased type as a singleton root.  The door goes when the
+// session layer carries the brand of each token.
+class foundation::permissions::SessionEraseDoor final : ::foundation::NoObject<SessionEraseDoor> {
+    friend class ::fixy::session::HoldFactory;
+
+    template <class Tag, class Brand>
+    [[nodiscard]] static constexpr ErasedPermission<Tag> erase_(Permission<Tag, Brand>&& token) noexcept {
+        if constexpr (std::is_same_v<Brand, ::foundation::brand::DefaultBrand>) {
+            return std::move(token);
+        } else {
+            return ErasedPermission<Tag>{std::move(token), erase_brand_key{}};
+        }
+    }
+};
+
+namespace fixy::session {
+
 // ── The markers ─────────────────────────────────────────────────────
 //
 // Every marker is move-only.  A copy of a token is a second owner, and
@@ -126,15 +151,14 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Transferable {
 private:
     friend class HoldFactory;
 
-    // A protocol names the tag and not the instance, so the message drops
-    // the brand of the token through the one door that drops a brand.
-    template <class Brand>
-    constexpr Transferable(T v, ::foundation::permissions::Permission<Tag, Brand>&& p) noexcept(
+    // A protocol names the tag and not the instance, so the message holds
+    // the token of the slots, which is on the erased identity of its tag.
+    constexpr Transferable(T v, ::foundation::permissions::ErasedPermission<Tag>&& p) noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        : value_{std::move(v)}, perm_{::foundation::permissions::permission_erase_brand(std::move(p))} {}
+        : value_{std::move(v)}, perm_{std::move(p)} {}
 
     T value_;
-    [[no_unique_address]] ::foundation::permissions::Permission<Tag> perm_;
+    [[no_unique_address]] ::foundation::permissions::ErasedPermission<Tag> perm_;
 };
 
 template <class T, class Tag>
@@ -156,14 +180,13 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Returned {
 private:
     friend class HoldFactory;
 
-    // The brand drops as it does for Transferable.
-    template <class Brand>
-    constexpr Returned(T v, ::foundation::permissions::Permission<Tag, Brand>&& p) noexcept(
+    // The token comes from the slots, as it does for Transferable.
+    constexpr Returned(T v, ::foundation::permissions::ErasedPermission<Tag>&& p) noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        : value_{std::move(v)}, perm_{::foundation::permissions::permission_erase_brand(std::move(p))} {}
+        : value_{std::move(v)}, perm_{std::move(p)} {}
 
     T value_;
-    [[no_unique_address]] ::foundation::permissions::Permission<Tag> perm_;
+    [[no_unique_address]] ::foundation::permissions::ErasedPermission<Tag> perm_;
 };
 
 // The loan comes from mint_read_loan, which parks the token of the tag.
@@ -1253,14 +1276,15 @@ public:
     // ── The slots ──────────────────────────────────────────────────
 
     // Consumes the tokens and builds the slots of their set.  The brand of
-    // each token is erased, so the slots name regions by tag, as a set does.
+    // each token drops through the session erase door, so the slots name
+    // regions by tag, as a set does.
     template <class... Tags, class... Brands>
         requires ::foundation::permissions::DistinctTags<Tags...>
     [[nodiscard]] static constexpr HoldSlots<::foundation::permissions::PermSet<Tags...>>
     slots_of(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
         return HoldSlots<::foundation::permissions::PermSet<Tags...>>{
             detail::hold_from_slots{}, typename HoldSlots<::foundation::permissions::PermSet<Tags...>>::parts_type{
-                                           ::foundation::permissions::permission_erase_brand(std::move(tokens))...}};
+                                           ::foundation::permissions::SessionEraseDoor::erase_(std::move(tokens))...}};
     }
 
     // The slots of a set under another spelling of the same set.  A step
@@ -1294,7 +1318,7 @@ public:
                                                  ::foundation::permissions::Permission<Tag, Brand> token) noexcept
         -> HoldSlots<::foundation::permissions::perm_set_insert_t<Set, Tag>> {
         return transition_<::foundation::permissions::perm_set_insert_t<Set, Tag>>(
-            std::move(slots), ::foundation::permissions::permission_erase_brand(std::move(token)));
+            std::move(slots), ::foundation::permissions::SessionEraseDoor::erase_(std::move(token)));
     }
 
     // Builds the message of a send from the slots, around the value that

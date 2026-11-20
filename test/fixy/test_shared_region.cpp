@@ -23,6 +23,14 @@
 namespace eff = ::foundation::effects;
 namespace perm = ::foundation::permissions;
 
+// The tag of a singleton root has a stable identity, so it has external
+// linkage.
+namespace test_shared_region_singleton {
+struct ErasedCache {
+    using permission_row = ::foundation::effects::Row<>;
+};
+}  // namespace test_shared_region_singleton
+
 namespace {
 
 using ::fixy::TestRunnerCtx;
@@ -179,18 +187,24 @@ void test_a_context_that_refuses_the_row_refuses_the_read(TestRunnerCtx const& t
 }
 
 // On the erased brand every region of the tag is one type, so the
-// deduction would pair any guard with any region.  The gate refuses it.
+// deduction would pair any guard with any region.  The gate refuses it.  The
+// region holds the singleton root of the tag, and the root goes back when no
+// share is out.
 void test_the_erased_brand_reads_nothing(TestRunnerCtx const& test) {
     static std::uint64_t storage[2] = {5, 6};
     BgCtx ctx{eff::testing::bg()};
 
-    ::fixy::SharedRegion<std::uint64_t, Cache> shared{::fixy::OwnedRegion<std::uint64_t, Cache>::wrap(
-        storage, std::size_t{2}, perm::permission_erase_brand(perm::mint_permission_root<Cache>()))};
-    auto guard = shared.lend(ctx).expect("an idle region lends a share");
-
-    using Guard = decltype(guard);
-    using Shared = std::remove_cvref_t<decltype(shared)>;
-    static_assert(!CanRead<BgCtx, Guard, Shared>, "a share on the erased brand reads nothing");
+    using test_shared_region_singleton::ErasedCache;
+    ::fixy::SharedRegion<std::uint64_t, ErasedCache> shared{::fixy::OwnedRegion<std::uint64_t, ErasedCache>::wrap(
+        storage, std::size_t{2}, perm::mint_singleton_root<ErasedCache>())};
+    {
+        auto guard = shared.lend(ctx).expect("an idle region lends a share");
+        using Guard = decltype(guard);
+        using Shared = std::remove_cvref_t<decltype(shared)>;
+        static_assert(!CanRead<BgCtx, Guard, Shared>, "a share on the erased brand reads nothing");
+    }
+    auto owned = shared.try_upgrade(ctx).expect("no share is out, so the upgrade gives the region");
+    perm::release_singleton_root(std::move(owned).release());
     CRUCIBLE_TEST_ASSERT(test, true);
 }
 

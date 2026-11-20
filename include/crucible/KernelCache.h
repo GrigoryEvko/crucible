@@ -11,6 +11,7 @@
 #include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/os/SpinBudget.h>
+#include <foundation/Brand.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
@@ -123,13 +124,15 @@ public:
         KernelCacheSlot() noexcept = default;
 
         // The writer handle is linear (foundation/Linear.h).  Its door is
-        // release(), which gives the token back to the caller.
+        // release(), which gives the token back to the caller.  The handle
+        // keeps the brand of its token, so no erased token opens a writer.
+        template <class Brand>
         class[[= ::foundation::linear::linear{}]] WriterHandle {
             ::fixy::Ref<KernelCacheSlot> slot_;
-            [[no_unique_address]] ::foundation::permissions::Permission<writer_tag> perm_;
+            [[no_unique_address]] ::foundation::permissions::Permission<writer_tag, Brand> perm_;
 
             constexpr WriterHandle(KernelCacheSlot& slot,
-                                   ::foundation::permissions::Permission<writer_tag>&& perm) noexcept
+                                   ::foundation::permissions::Permission<writer_tag, Brand>&& perm) noexcept
                 : slot_{::fixy::to(slot)}, perm_{std::move(perm)} {}
 
             friend class KernelCacheSlot;
@@ -154,7 +157,7 @@ public:
 
             // The release door.  The handle gives the token back to the
             // caller, and the call spends the handle.
-            [[nodiscard]] constexpr ::foundation::permissions::Permission<writer_tag> release() && noexcept {
+            [[nodiscard]] constexpr ::foundation::permissions::Permission<writer_tag, Brand> release() && noexcept {
                 return std::move(perm_);
             }
 
@@ -207,8 +210,11 @@ public:
             [[nodiscard]] CRUCIBLE_INLINE FoundKernel kernel() const noexcept { return slot_->kernel_.load_acquire(); }
         };
 
-        [[nodiscard]] WriterHandle writer(::foundation::permissions::Permission<writer_tag>&& perm) noexcept {
-            return WriterHandle{*this, std::move(perm)};
+        template <class Brand>
+            requires ::foundation::brand::IsFreshBrand<Brand>
+        [[nodiscard]] WriterHandle<Brand>
+        writer(::foundation::permissions::Permission<writer_tag, Brand>&& perm) noexcept {
+            return WriterHandle<Brand>{*this, std::move(perm)};
         }
 
         [[nodiscard]] ReaderHandle reader() const noexcept { return ReaderHandle{*this}; }
@@ -245,8 +251,6 @@ public:
                                                  "8B kernel pointer — the wire format matches this.");
     static_assert(alignof(KernelCacheSlot) == 8, "KernelCacheSlot must stay 8-byte aligned: atomic<uint64_t> and "
                                                  "atomic<ptr> need it, and over-alignment wastes cache.");
-    static_assert(sizeof(KernelCacheSlot::WriterHandle) == sizeof(KernelCacheSlot*),
-                  "KernelCacheSlot::WriterHandle must EBO-collapse its Permission.");
 
     enum class SlotState : uint8_t {
         Empty = 0,
@@ -329,9 +333,12 @@ public:
         for (std::size_t probe = 0; probe < slots; probe++) {
             KernelCacheSlot& entry = table_.at_masked(lookup_hash + probe);
             uint64_t expected = 0;
-            // A successful CAS claims the slot for this thread.
+            // A successful CAS claims the slot for this thread.  The writer
+            // token keeps the brand of its root.  Two inserts can run at one
+            // time, so each takes a root of its own, and the claim gives each
+            // token its one slot.
             if (entry.try_claim_content_hash(expected, lookup_hash)) {
-                auto writer = entry.writer(fresh_writer_permission_());
+                auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
                 writer.publish(KernelCacheSlotSnapshot{
                     .content_hash = lookup_hash,
                     .row_hash = lookup_row,
@@ -358,7 +365,7 @@ public:
                         // Variant update: the row stays pinned and only the
                         // kernel changes, so a concurrent reader observes one
                         // kernel or the other and both are valid.
-                        auto writer = entry.writer(fresh_writer_permission_());
+                        auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
                         writer.publish_kernel_variant(kernel);
                         ::foundation::linear::drop(std::move(writer).release());
                         return ::fixy::Unit{};
@@ -471,16 +478,6 @@ private:
             return kernel.is_some();
         }));
         return kernel;
-    }
-
-    // A writer token for one slot write.  The handle names its token type
-    // before a root exists, so the root drops its brand through the one
-    // door that drops a brand.  A brand gives no protection here, because
-    // the token writes only the slot that the content-hash claim gives it.
-    [[nodiscard]] static constexpr ::foundation::permissions::Permission<KernelCompileTag>
-    fresh_writer_permission_() noexcept {
-        return ::foundation::permissions::permission_erase_brand(
-            ::foundation::permissions::mint_permission_root<KernelCompileTag>());
     }
 
     ::fixy::MaskedArray<KernelCacheSlot, 64> table_;

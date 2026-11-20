@@ -15,23 +15,27 @@ namespace {
 struct Buffer {
     using permission_row = ::foundation::effects::Row<>;
 };
+
+int storage_a[4] = {};
+int storage_b[4] = {};
+
+// The arguments of the root mint are concrete, so each instantiation of the
+// template shares one brand (foundation/Brand.h).  The two regions below are
+// then one type, and the brand does not refuse the mixed rebuild.  The
+// receipt is what refuses.
+template <auto& Storage>
+auto region_at_one_site() {
+    return ::fixy::mint_owned_region(Storage, std::size_t{4},
+                                     ::foundation::permissions::mint_permission_root<Buffer>());
+}
 }  // namespace
 
 int main() {
-    namespace fp = ::foundation::permissions;
-    int storage_a[4] = {};
-    int storage_b[4] = {};
-    using Region = ::fixy::OwnedRegion<int, Buffer>;
-
-    // Both regions are built on the erased identity, so their shards are
-    // one type and the mixed tuple below is well formed.  The receipt is
-    // what refuses.
-    Region erased_first =
-        Region::wrap(storage_a, std::size_t{4}, fp::permission_erase_brand(fp::mint_permission_root<Buffer>()));
-    Region erased_second =
-        Region::wrap(storage_b, std::size_t{4}, fp::permission_erase_brand(fp::mint_permission_root<Buffer>()));
-    auto parts_first = ::fixy::mint_split<2>(std::move(erased_first));
-    auto parts_second = ::fixy::mint_split<2>(std::move(erased_second));
+    auto first = region_at_one_site<storage_a>();
+    auto second = region_at_one_site<storage_b>();
+    using Region = decltype(first);
+    auto parts_first = ::fixy::mint_split<2>(std::move(first));
+    auto parts_second = ::fixy::mint_split<2>(std::move(second));
 
     auto whole = Region::recombine(std::move(parts_first.witness), std::move(parts_second.shards));
     (void)whole;

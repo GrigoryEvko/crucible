@@ -22,10 +22,9 @@ namespace s = ::fixy::session;
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
-// The token after the erase of its brand: the identity on which the slots
-// keep each token of a set.
-using Token = decltype(::foundation::permissions::permission_erase_brand(
-    ::foundation::permissions::mint_permission_root<Region>()));
+// The token on the erased identity, on which the slots keep each token of a
+// set.
+using Token = decltype(::foundation::permissions::mint_singleton_root<Region>());
 struct Wire {
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
@@ -37,8 +36,8 @@ int main() {
     using namespace neg_sess_recv_token_to_the_caller_types;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto receiver = s::mint_session<s::Recv<Token, s::End>>(ctx, Wire{});
-    auto [token, done] = std::move(receiver).recv(
-        [](Wire&) noexcept { return ::fixy::some(fp::permission_erase_brand(fp::mint_permission_root<Region>())); });
+    auto [token, done] =
+        std::move(receiver).recv([](Wire&) noexcept { return ::fixy::some(fp::mint_singleton_root<Region>()); });
     ::foundation::linear::drop(std::move(token));
     static_cast<void>(std::move(done).close());
     return 0;

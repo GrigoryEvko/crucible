@@ -17,7 +17,9 @@
 
 #include <utility>
 
-namespace {
+// The tokens are singleton roots, so each tag has a stable identity and
+// external linkage.
+namespace neg_loan_end_with_the_loan_of_another_tag_types {
 
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
@@ -27,13 +29,16 @@ struct Other {
     using permission_row = ::foundation::effects::Row<>;
 };
 
-}  // namespace
+}  // namespace neg_loan_end_with_the_loan_of_another_tag_types
+
+using namespace neg_loan_end_with_the_loan_of_another_tag_types;
 
 int main() {
     namespace fp = ::foundation::permissions;
-    auto [region_loan, region_lent] =
-        fp::mint_read_loan(fp::permission_erase_brand(fp::mint_permission_root<Region>()));
-    auto [other_loan, other_lent] = fp::mint_read_loan(fp::permission_erase_brand(fp::mint_permission_root<Other>()));
+    // The two singleton roots share the erased identity, so only the tags
+    // differ.
+    auto [region_loan, region_lent] = fp::mint_read_loan(fp::mint_singleton_root<Region>());
+    auto [other_loan, other_lent] = fp::mint_read_loan(fp::mint_singleton_root<Other>());
     auto token = fp::mint_permission_after_loan(std::move(region_lent), std::move(other_loan));
     (void)token;
     return 0;

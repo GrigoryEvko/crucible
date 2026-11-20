@@ -55,6 +55,9 @@ foundation_test(test_json_emitter_frame)
 target_compile_options(test_json_emitter_frame PRIVATE -Werror=frame-larger-than=8192)
 foundation_test(test_pinned)
 foundation_test(test_brand)
+# The singleton root of a tag: a release clears its live count, and a second
+# live root of one tag ends the process in a child.
+foundation_test(test_singleton_root)
 # Each reduction of foundation/Simd.h at the limits of each lane type.  In
 # the preset ubsan-strict, a signed overflow ends the test.
 foundation_test(test_simd_reduction_limits)
@@ -1298,8 +1301,8 @@ foundation_neg_compile_test(neg_read_view_body_result_moves_with_throw
   "static assertion failed"
   "the body returns a value whose move or end can throw")
 foundation_neg_compile_test(neg_read_view_stored_past_the_callback
-  "no matching function for call to .std::optional<foundation::permissions::ReadView<.anonymous.::Region> >::emplace\\("
-  "enable_if<false, foundation::permissions::ReadView<.anonymous.::Region>&>")
+  "no matching function for call to .std::optional<foundation::permissions::ReadView<neg_read_view_stored_past_the_callback_types::Region> >::emplace\\("
+  "enable_if<false, foundation::permissions::ReadView<neg_read_view_stored_past_the_callback_types::Region>&>")
 foundation_neg_compile_test(neg_read_loan_copied
   "use of deleted function"
   "a ReadLoan is one read right. A copy is a second right")
@@ -1308,7 +1311,7 @@ foundation_neg_compile_test(neg_loan_end_with_the_loan_of_another_region
   "deduced conflicting types for parameter .Brand. \\(.foundation::permissions::<lambda\\(\\)>. and .foundation::permissions::<lambda\\(\\)>.\\)")
 foundation_neg_compile_test(neg_loan_end_with_the_loan_of_another_tag
   "no matching function for call to .mint_permission_after_loan\\("
-  "deduced conflicting types for parameter .Tag. \\(..anonymous.::Region. and ..anonymous.::Other.\\)")
+  "deduced conflicting types for parameter .Tag. \\(.neg_loan_end_with_the_loan_of_another_tag_types::Region. and .neg_loan_end_with_the_loan_of_another_tag_types::Other.\\)")
 
 # ── Brands: identity per mint ────────────────────────────────────────
 #
@@ -1343,7 +1346,7 @@ foundation_neg_compile_test(neg_brand_read_view_body_asks_the_erased_view
   "no matching function for call to .with_read_view\\("
   "no known conversion for argument 1 from .const foundation::permissions::ReadView<\\{anonymous\\}::Region, foundation::permissions::<lambda\\(\\)> >. to .const foundation::permissions::ReadView<\\{anonymous\\}::Region>&.")
 
-# A branded token does not erase implicitly.  Only permission_erase_brand
+# A branded token does not erase implicitly.  Only the session erase door
 # drops a brand, so a search for that name lists each site that drops one.
 foundation_neg_compile_test(neg_brand_permission_does_not_erase_implicitly
   "conversion from .Permission<\\[\\.\\.\\.\\],foundation::permissions::<lambda\\(\\)>>."
@@ -1572,7 +1575,7 @@ foundation_neg_compile_test(neg_brand_root_mint_address
 
 # Erasure runs one way.
 foundation_neg_compile_test(neg_brand_erased_token_does_not_rebrand
-  "no matching function for call to .foundation::permissions::Permission<\\{anonymous\\}::Region, \\{anonymous\\}::HeldBrand>::Permission\\("
+  "no matching function for call to .foundation::permissions::Permission<neg_brand_erased_token_does_not_rebrand_types::Region, neg_brand_erased_token_does_not_rebrand_types::HeldBrand>::Permission\\("
   "requires \\(is_same_v<Brand, foundation::brand::DefaultBrand>\\) && \\(IsFreshBrand<Other>\\)")
 
 # ── The row relation is closed ───────────────────────────────────────
@@ -1676,6 +1679,29 @@ foundation_neg_compile_test(neg_permission_root_ctx_refuses_federated_peer
   "no matching function for call to .mint_permission_root<foundation::permissions::tag::FederatedPeer<\\{anonymous\\}::PeerOrg> >\\(\\{anonymous\\}::IoCtx&\\)."
   "required for the satisfaction of .RootMintableTag<Tag>. \\[with Tag = foundation::permissions::tag::FederatedPeer<<unnamed>::PeerOrg>\\]"
   "the expression .!\\(IsFederatedPeerTag<Tag>\\) \\[with Tag = foundation::permissions::tag::FederatedPeer<<unnamed>::PeerOrg>\\]. evaluated to .false.")
+
+# ── The singleton root ───────────────────────────────────────────────
+#
+# The singleton root mint refuses a federation peer tag and a context that
+# does not admit the row of the tag, as the plain root mint does.  Only a
+# singleton root goes back through release_singleton_root, so no door takes a
+# plain branded root to the erased identity.  A split and a combine refuse a
+# token on the erased identity.
+foundation_neg_compile_test(neg_singleton_root_refuses_federated_peer
+  "no matching function for call to .mint_singleton_root<foundation::permissions::tag::FederatedPeer<\\{anonymous\\}::PeerOrg> >\\(\\)."
+  "required for the satisfaction of .RootMintableTag<Tag>. \\[with Tag = foundation::permissions::tag::FederatedPeer<<unnamed>::PeerOrg>\\]")
+foundation_neg_compile_test(neg_singleton_root_outside_the_ctx_row
+  "no matching function for call to .mint_singleton_root<neg_singleton_root_outside_the_ctx_row_types::IoRegion>\\(\\{anonymous\\}::BgOnlyCtx&\\)."
+  "required for the satisfaction of .PermissionRootArgs<Tag, Args \\.\\.\\.>. \\[with Tag = neg_singleton_root_outside_the_ctx_row_types::IoRegion. Args = \\{foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >\\}\\]")
+foundation_neg_compile_test(neg_singleton_release_of_a_branded_root
+  "no matching function for call to .release_singleton_root\\(foundation::permissions::Permission<\\{anonymous\\}::Region, foundation::permissions::<lambda\\(\\)> >\\)."
+  "mismatched types .foundation::brand::DefaultBrand. and .foundation::permissions::<lambda\\(\\)>.")
+foundation_neg_compile_test(neg_permission_split_of_a_singleton_root
+  "static assertion failed: mint_permission_split<L, R>: the parent is on the erased identity DefaultBrand"
+  "the expression .!\\(is_same_v<B, foundation::brand::DefaultBrand>\\) \\[with B = foundation::brand::DefaultBrand\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_permission_combine_of_singleton_roots
+  "static assertion failed: mint_permission_combine<In>: the children are on the erased identity DefaultBrand"
+  "the expression .!\\(is_same_v<B, foundation::brand::DefaultBrand>\\) \\[with B = foundation::brand::DefaultBrand\\]. evaluated to .false.")
 
 # Only an admission builds the key of the federation peer token.
 foundation_neg_compile_test(neg_federation_admission_key_outside_admission
@@ -4243,6 +4269,6 @@ foreach(_death_test
     test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_link test_core_masked_array
     test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
     test_core_slot_map test_core_small_list test_core_sort test_core_walk test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
-    test_swiss_table_buffer test_swiss_table_buffer_ignore test_thread_local_ref)
+    test_singleton_root test_swiss_table_buffer test_swiss_table_buffer_ignore test_thread_local_ref)
   target_link_libraries(${_death_test} PRIVATE fixy)
 endforeach()

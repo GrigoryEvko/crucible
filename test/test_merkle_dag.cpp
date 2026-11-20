@@ -160,11 +160,15 @@ template <class Fake>
     static_assert(sizeof(KernelSlot) == 24);
     static_assert(alignof(KernelSlot) == 8);
     static_assert(sizeof(SlotSnapshot) == 24);
-    static_assert(::fixy::concurrent::IsSwmrWriter<KernelSlot::WriterHandle>);
-    static_assert(::foundation::linear::is_marked_linear(^^KernelSlot::WriterHandle),
+    // The writer handle takes the brand of its token.  An empty class stands
+    // in for that brand here.
+    struct WriterBrand {};
+    using SlotWriter = KernelSlot::WriterHandle<WriterBrand>;
+    static_assert(::fixy::concurrent::IsSwmrWriter<SlotWriter>);
+    static_assert(::foundation::linear::is_marked_linear(^^SlotWriter),
                   "the writer handle holds a linear token, and release() is its door");
     static_assert(::fixy::concurrent::IsSwmrReader<KernelSlot::ReaderHandle>);
-    static_assert(std::is_same_v<::fixy::concurrent::swmr_writer_value_t<KernelSlot::WriterHandle>, SlotSnapshot>);
+    static_assert(std::is_same_v<::fixy::concurrent::swmr_writer_value_t<SlotWriter>, SlotSnapshot>);
     static_assert(std::is_same_v<::fixy::concurrent::swmr_reader_value_t<KernelSlot::ReaderHandle>, SlotSnapshot>);
 
     CRUCIBLE_FATAL_INVARIANT(cache.lookup(test.nondet, ContentHash{0x1234}, RowHash{0}).is_none());

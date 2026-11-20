@@ -162,15 +162,15 @@ template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
         && !heap_new_reaches_v<Token> && std::is_nothrow_constructible_v<std::optional<Token>, Token&&>;
 }
 
-// No conversion drops or changes a brand.  permission_erase_brand is the
-// one door to the erased spelling (erasure_keeps_the_tag below).  Nothing
-// converts an erased token to a brand, and nothing converts one brand to
-// another.
+// No conversion drops or changes a brand.  The singleton root is the door to
+// the erased spelling (singleton_root_is_erased below), and the session erase
+// door of fixy/session/Flow.h is the one other.  Nothing converts an erased
+// token to a brand, and nothing converts one brand to another.
 struct brand_a {};
 struct brand_b {};
 static_assert(!std::is_constructible_v<Permission<seplog_test_tag>, Permission<seplog_test_tag, brand_a>&&>,
-              "only permission_erase_brand drops a brand, and no conversion does");
-static_assert(!std::is_default_constructible_v<erase_brand_key>, "only permission_erase_brand makes the erasure key");
+              "no conversion drops a brand");
+static_assert(!std::is_default_constructible_v<erase_brand_key>, "only the session erase door makes the erasure key");
 static_assert(!std::is_constructible_v<Permission<seplog_test_tag, brand_a>, Permission<seplog_test_tag>&&>,
               "an erased token does not acquire a brand");
 static_assert(!std::is_constructible_v<Permission<seplog_test_tag, brand_a>, Permission<seplog_test_tag, brand_b>&&>,
@@ -248,13 +248,17 @@ static_assert(token_is_sound<seplog_test_tag, brand_a>(), "a branded token keeps
     return distinct && branded && same_tag;
 }
 
-// The one door that drops a brand keeps the tag, and an erased token
-// passes through it unchanged.
-[[nodiscard]] consteval bool erasure_keeps_the_tag() noexcept {
-    auto branded = mint_permission_root<seplog_test_tag>();
-    auto erased = permission_erase_brand(std::move(branded));
-    auto again = permission_erase_brand(std::move(erased));
-    return IsPermissionFor<decltype(again), seplog_test_tag> && ::foundation::brand::IsErased<decltype(again)>;
+// The singleton root is the token of its tag on the erased identity, and no
+// branded root converts to it.  A federation peer tag has no singleton root,
+// and neither has a tag with no stable identity, which the registry of the
+// live counts cannot key.  neg_singleton_release_of_a_branded_root shows that
+// the release takes no branded root.
+[[nodiscard]] consteval bool singleton_root_is_erased() noexcept {
+    struct local_tag {};
+    using Root = decltype(mint_singleton_root<seplog_test_tag>());
+    return std::is_same_v<Root, ErasedPermission<seplog_test_tag>>
+        && !std::is_constructible_v<Root, decltype(mint_permission_root<seplog_test_tag>())&&>
+        && SingletonRootTag<seplog_test_tag> && !SingletonRootTag<seplog_peer_tag> && !SingletonRootTag<local_tag>;
 }
 
 }  // namespace detail::seplog_roster
@@ -439,7 +443,7 @@ constexpr bool split_gives_a_record() noexcept {
 }
 static_assert(split_gives_a_record());
 static_assert(seplog_roster::root_brands_are_fresh());
-static_assert(seplog_roster::erasure_keeps_the_tag());
+static_assert(seplog_roster::singleton_root_is_erased());
 }  // namespace detail
 
 }  // namespace foundation::permissions

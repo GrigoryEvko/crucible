@@ -4333,6 +4333,9 @@ fixy_test(test_session_payload_seal)
 # through expect_dies, and each test passes only on its diagnostic.
 fixy_test(test_session_hold_consumed_aborts)
 fixy_test(test_session_hold_open_loan_aborts)
+# A token that leaves a hold is on the erased identity, so the release of a
+# singleton root refuses it in a child process.
+fixy_test(test_session_erase_hole)
 
 # An accept after a move, a delegation with a consumed hold, and an
 # assignment over a live delegated endpoint each abort with a named
@@ -4407,6 +4410,11 @@ fixy_neg_compile_test(neg_sess_payload_hand_off_behind_pointer
   "Payload_Refused.: the payload cannot travel on a session channel, because it reaches a DelegatedSession through a pointer"
   "The refused type: fixy::session::DelegatedSession<fixy::session::End, neg_sess_payload_hand_off_behind_pointer_types::Wire")
 
+# Only the hold factory drops the brand of a token through the session erase
+# door.
+fixy_neg_compile_test(neg_session_erase_door_outside_the_session_layer
+  "is private within this context"
+  "foundation::permissions::SessionEraseDoor::erase_")
 # A token reaches a hold once: never by name, and never twice by tag.
 fixy_neg_compile_test(neg_session_hold_lvalue_token
   "use of deleted function .foundation::permissions::Permission<Tag, Brand>::Permission\\(const foundation::permissions::Permission<Tag, Brand>&\\)"
@@ -4435,8 +4443,8 @@ fixy_neg_compile_test(neg_session_borrowed_without_proof
   "no matching function for call to .fixy::session::Borrowed<int, .anonymous.::Region>::Borrowed\\("
   "candidate expects 2 arguments, 1 provided")
 fixy_neg_compile_test(neg_session_borrowed_proof_of_another_region
-  "no matching function for call to .fixy::session::Borrowed<int, .anonymous.::Region>::Borrowed\\("
-  "ReadLoan<.anonymous.::Other, foundation::brand::DefaultBrand>.\\} to .foundation::permissions::ReadLoan<.anonymous.::Region, foundation::brand::DefaultBrand>&&.")
+  "no matching function for call to .fixy::session::Borrowed<int, neg_session_borrowed_proof_of_another_region_types::Region>::Borrowed\\("
+  "ReadLoan<neg_session_borrowed_proof_of_another_region_types::Other, foundation::brand::DefaultBrand>.\\} to .foundation::permissions::ReadLoan<neg_session_borrowed_proof_of_another_region_types::Region, foundation::brand::DefaultBrand>&&.")
 fixy_neg_compile_test(neg_session_hold_lend_without_token
   "no matching function for call to .fixy::session::PermHold<foundation::permissions::PermSet<.anonymous.::Other> >::lend<.anonymous.::Region>"
   "required for the satisfaction of .SendablePayload<fixy::session::Borrowed<T, Tag>")
@@ -6870,8 +6878,8 @@ fixy_neg_compile_test(neg_disjoint_recombine_without_receipt
 # takes one shard from each.  The shard's own type carries the name of
 # the split, so the mixed tuple is not the one the receipt goes with.
 fixy_neg_compile_test(neg_disjoint_receipt_from_another_split
-  "no matching function for call to .fixy::OwnedRegion<int, \\{anonymous\\}::Buffer>::recombine\\("
-  "fixy::Disjoint<\\{anonymous\\}::Buffer, foundation::brand::DefaultBrand, fixy::<lambda\\(\\)>, 2>"
+  "no matching function for call to .fixy::OwnedRegion<int, \\{anonymous\\}::Buffer, foundation::permissions::<lambda\\(\\)> >::recombine\\("
+  "fixy::Disjoint<\\{anonymous\\}::Buffer, foundation::permissions::<lambda\\(\\)>, fixy::<lambda\\(\\)>, 2>"
   "std::tuple<fixy::OwnedRegion<T, fixy::Slice<Tag, Is, SplitName>, Brand>\\.\\.\\.>&&")
 
 # One split authorizes one rebuild.
