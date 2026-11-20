@@ -1051,6 +1051,12 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::mmap::SharedWords,
      "a borrow of the words of a shared mapping that another writer stores: it owns nothing and makes no claim "
      "about what the words hold"},
+    {^^::foundation::core::Fixed,
+     "an argument of a report: the bits of a float and the layout of its text, and never a value in a kernel "
+     "signature"},
+    {^^::foundation::core::Padded,
+     "an argument of a report: a text or an integer and the width of its column, and never a value in a kernel "
+     "signature"},
     {^^::foundation::core::Record,
      "a product of values: it holds its parts and makes no claim about them, and a binding gives out each part"},
     {^^::foundation::core::Index,
@@ -1580,6 +1586,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::sched::PriorAffinity,
      "the mask that one pin replaced: it holds the authority to undo that pin on its thread, and it is never a value "
      "in a kernel signature"},
+    {^^::fixy::sched::CpuIndexTag, "the tag of the id of a CPU index: it holds no value and makes no claim"},
     {^^::fixy::session::witness::AtProtocol, kVocabulary},
     {^^::fixy::session::witness::UnderRow, kVocabulary},
 };
