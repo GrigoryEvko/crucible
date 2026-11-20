@@ -28,7 +28,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 #include <meta>
 #include <span>
 #include <string>
@@ -144,13 +143,19 @@ concept carries_brand = brand_of(^^LoopCtx) == std::meta::dealias(^^Brand);
 
 namespace detail {
 
-// The number of distinct roles that some local types name as peers,
-// together.  The walk is collect_named_peers of fixy/session/Flow.h.
-// Complexity: quadratic in the number of peer names that the walk finds.
-[[nodiscard]] consteval std::size_t distinct_peer_count(std::initializer_list<std::meta::info> protocols) {
+// The number of distinct roles that a local type and the loop around it
+// name as peers, together.  The loop is the Loop that the loop context
+// stands for, read through each form of fixy/session/Protocol.h: a session
+// brand and a loop frame are not nodes of the registry, so the walk of the
+// context itself would see no peer of the body.  A context of no known form
+// stops the build, so no unread context counts as one with no peer.  The
+// walk is collect_named_peers of fixy/session/Flow.h.  Complexity: quadratic
+// in the number of peer names that the walk finds.
+[[nodiscard]] consteval std::size_t distinct_peer_count(std::meta::info protocol, std::meta::info loop_ctx) {
     stack<std::meta::info> distinct{};
-    for (const std::meta::info protocol : protocols)
-        collect_named_peers(protocol, distinct);
+    collect_named_peers(protocol, distinct);
+    const std::meta::info loop = loop_of_inner(inner_loop_ctx_of(loop_ctx));
+    if (loop != ^^void) collect_named_peers(loop, distinct);
     return distinct.top;
 }
 
@@ -163,7 +168,7 @@ namespace detail {
 // so it refuses such a local type.  A multiparty binding asks
 // CarrierImplements of fixy/session/Network.h with the global type first.
 template <typename Proto>
-concept NamesAtMostOnePeer = detail::distinct_peer_count({^^Proto}) <= 1;
+concept NamesAtMostOnePeer = detail::distinct_peer_count(^^Proto, ^^void) <= 1;
 
 // An empty choice is not well-formed either.  The empty-choice clause
 // comes first so that the refusal of such a protocol names that fault
@@ -325,7 +330,7 @@ concept ResumablePosition = (std::is_void_v<LoopCtx> && !std::is_same_v<R, Conti
                              && (std::is_same_v<R, Continue>
                                  || (WellFormedRunnableProtocol<Loop<R>>
                                      && PermissionFlowCloses<Loop<R>, ::foundation::permissions::EmptyPermSet>
-                                     && detail::distinct_peer_count({^^R, ^^LoopCtx}) <= 1)));
+                                     && detail::distinct_peer_count(^^R, ^^LoopCtx) <= 1)));
 
 // The gate of HandleFactory::rewind.
 template <typename R, typename LoopCtx, typename EndLoopCtx>

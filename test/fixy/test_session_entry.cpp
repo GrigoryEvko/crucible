@@ -8,6 +8,7 @@
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
+#include <fixy/session/Projection.h>
 
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
@@ -24,6 +25,13 @@ namespace {
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 }  // namespace
+
+// The role and the label key feed a stable id, so each has external linkage.
+namespace test_session_entry_roles {
+struct Peer {};
+struct Key {};
+struct Brand {};
+}  // namespace test_session_entry_roles
 
 namespace {
 
@@ -59,6 +67,29 @@ static_assert(!s::CtxFitsSession<int, Once, Counter>, "an int is not an executio
 static_assert(!s::CtxFitsSession<BgCtx, Once, Counter*>, "a raw pointer is not a Resource");
 static_assert(!s::CtxFitsSession<BgCtx, Once, Counter&>, "a reference to an object that can move is refused");
 static_assert(!s::CtxFitsSession<BgCtx, SendsRegion, Counter>, "the empty set holds no token to send");
+
+// A local choice reads the body of the loop through each form of a loop
+// context.  PeerLoop sends to a peer before its choice, so the protocol at
+// the choice names no peer and only the body names one.  No form admits that
+// choice.  Stream names no peer, so each form admits its choice.
+using PeerLoop = s::Loop<s::Send<s::PeerMsg<test_session_entry_roles::Peer, test_session_entry_roles::Key, int>,
+                                 s::Select<s::Send<int, s::Continue>, s::End>>>;
+using LocalChoice = s::Select<s::Send<int, s::Continue>, s::End>;
+using HoldsRegion = ::foundation::permissions::PermSet<Region>;
+template <class Inner>
+using Branded = s::detail::session_brand<test_session_entry_roles::Brand, Inner>;
+template <class LoopType>
+using Framed = s::detail::PermLoopFrame<LoopType, HoldsRegion>;
+
+static_assert(!s::AdmitsLocalChoice<Counter, LocalChoice, PeerLoop>);
+static_assert(!s::AdmitsLocalChoice<Counter, LocalChoice, Framed<PeerLoop>>, "a loop frame is read through");
+static_assert(!s::AdmitsLocalChoice<Counter, LocalChoice, Branded<PeerLoop>>, "a session brand is read through");
+static_assert(!s::AdmitsLocalChoice<Counter, LocalChoice, Branded<Framed<PeerLoop>>>, "the two forms nest");
+static_assert(s::AdmitsLocalChoice<Counter, LocalChoice, void>);
+static_assert(s::AdmitsLocalChoice<Counter, LocalChoice, Stream>);
+static_assert(s::AdmitsLocalChoice<Counter, LocalChoice, Framed<Stream>>);
+static_assert(s::AdmitsLocalChoice<Counter, LocalChoice, Branded<void>>);
+static_assert(s::AdmitsLocalChoice<Counter, LocalChoice, Branded<Framed<Stream>>>);
 
 // mint_session and mint_permissioned_session read one concept: this gate
 // is the permissioned gate at the empty set.

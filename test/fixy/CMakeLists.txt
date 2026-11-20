@@ -4169,6 +4169,16 @@ fixy_neg_compile_test(neg_sess_with_session_local_names_two_peers
 fixy_neg_compile_test(neg_sess_select_no_label_on_a_channel
   "\\[Local_Choice_Needs_A_Local_Carrier\\] select<I>\\(no_label\\) puts no word on the wire"
   "use of deleted function .void fixy::session::SessionHandle<fixy::session::Select<Branches ...>, Resource, LoopCtx, Policy, PS>::select\\(Transport\\) && \\[with long unsigned int I = 1. Transport = fixy::session::no_label_t")
+# A local choice whose loop body names a peer before the choice is refused
+# through the session brand of the callback entry.
+fixy_neg_compile_test(neg_sess_local_choice_peer_in_branded_loop_body
+  "\\[Local_Choice_Needs_A_Local_Carrier\\] select<I>\\(no_label\\) puts no word on the wire"
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Select<Branches ...>, Resource, LoopCtx, Policy, PS>::select\\(Transport\\) && \\[with long unsigned int I = 1. Transport = fixy::session::no_label_t")
+# The admission of a local choice stops the build at a loop context of no
+# known form, and does not count it as a loop with no peer.
+fixy_neg_compile_test(neg_sess_local_choice_unknown_loop_context
+  "call to non-.constexpr. function .void fixy::session::detail::a_loop_context_has_no_known_form\\(\\)."
+  "required by the constraints of .template<class Resource, class Proto, class LoopCtx> concept fixy::session::AdmitsLocalChoice.")
 fixy_neg_compile_test(neg_sess_network_local_two_roles
   "fixy::session::diagnostic \\[Network_Local_Has_A_Peer\\]"
   "the carrier states the Local network, so it has no peer")

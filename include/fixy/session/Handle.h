@@ -709,10 +709,10 @@ struct no_label_t {
 inline constexpr no_label_t no_label{};
 
 // True when a choice of Proto in the loop context LoopCtx may put no label
-// on a wire: the Resource states the Local network, and the protocol names
-// no peer.
+// on a wire: the Resource states the Local network, and neither the
+// protocol nor the body of the loop around it names a peer.
 template <typename Resource, typename Proto, typename LoopCtx>
-concept AdmitsLocalChoice = LocalCarrier<Resource> && detail::distinct_peer_count({^^Proto, ^^LoopCtx}) == 0;
+concept AdmitsLocalChoice = LocalCarrier<Resource> && detail::distinct_peer_count(^^Proto, ^^LoopCtx) == 0;
 
 // True when the Transport of a select may write the word of the branch:
 // every write except no_label, and no_label where a local choice is
