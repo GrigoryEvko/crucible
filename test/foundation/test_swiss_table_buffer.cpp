@@ -7,11 +7,12 @@
 
 #include <foundation/SwissTableBuffer.h>
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -21,11 +22,19 @@ namespace {
 
 using PtrBuffer = ::foundation::SwissTableBuffer<const int*>;
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the layout test reads the address of the first element of each array of a buffer")
+// The address of the first element of a view, as an integer.
+template <class T>
+[[nodiscard]] std::uintptr_t address_of_first(::fixy::View<T> view) noexcept {
+    return std::bit_cast<std::uintptr_t>(::foundation::core::foreign_first(view));
+}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 // A slot of 2^34 - 1 bytes.  At the largest capacity, 2^30, the slots take
 // 2^64 - 2^30 bytes, and the control bytes in front of them make the sum
 // wrap to zero.  The type is never built, only named.
 struct HugeSlot {
-    unsigned char bytes[(std::size_t{1} << 34) - 1];
+    ::fixy::FixedArray<unsigned char, (std::size_t{1} << 34) - 1> bytes;
 };
 using HugeBuffer = ::foundation::SwissTableBuffer<HugeSlot>;
 
@@ -35,8 +44,8 @@ using HugeBuffer = ::foundation::SwissTableBuffer<HugeSlot>;
     PtrBuffer buffer = PtrBuffer::allocate(16);
     if (!buffer || buffer.empty() || buffer.capacity() != 16) return 1;
     if (buffer.ctrl().size() != 16 || buffer.slots().size() != 16) return 5;
-    const auto ctrl_address = std::bit_cast<std::uintptr_t>(buffer.ctrl().data());
-    const auto slots_address = std::bit_cast<std::uintptr_t>(buffer.slots().data());
+    const std::uintptr_t ctrl_address = address_of_first(buffer.ctrl());
+    const std::uintptr_t slots_address = address_of_first(buffer.slots());
     if ((ctrl_address & 63U) != 0) return 2;
     if (slots_address - ctrl_address != 16) return 3;
     // 16 control bytes and 16 pointers of 8 bytes are 144 bytes, rounded to 192.
@@ -46,15 +55,18 @@ using HugeBuffer = ::foundation::SwissTableBuffer<HugeSlot>;
 
 // Every slot and every control byte is writable and reads back.
 [[nodiscard]] int slots_hold_values() {
-    static const std::array<int, 16> anchors{};
+    static const ::fixy::FixedArray<int, 16> anchors{};
     PtrBuffer buffer = PtrBuffer::allocate(16);
-    for (std::size_t i = 0; i < buffer.capacity(); ++i) {
-        buffer.ctrl()[i] = static_cast<std::int8_t>(-128);
-        buffer.slots()[i] = &anchors[i];
+    if (buffer.capacity() != 16) return 3;
+    const auto ctrl = buffer.ctrl().window<16>(0).expect("a buffer of capacity 16 holds 16 control bytes");
+    const auto slots = buffer.slots().window<16>(0).expect("a buffer of capacity 16 holds 16 slots");
+    for (const ::fixy::Index<16> i : ::fixy::IndexRange<16>{}) {
+        ctrl.at(i) = static_cast<std::int8_t>(-128);
+        slots.at(i) = &anchors.at(i);
     }
-    for (std::size_t i = 0; i < buffer.capacity(); ++i) {
-        if (buffer.ctrl()[i] != static_cast<std::int8_t>(-128)) return 1;
-        if (buffer.slots()[i] != &anchors[i]) return 2;
+    for (const ::fixy::Index<16> i : ::fixy::IndexRange<16>{}) {
+        if (ctrl.at(i) != static_cast<std::int8_t>(-128)) return 1;
+        if (slots.at(i) != &anchors.at(i)) return 2;
     }
     return 0;
 }
@@ -63,13 +75,14 @@ using HugeBuffer = ::foundation::SwissTableBuffer<HugeSlot>;
 // allocation of its target before it takes the new one.
 [[nodiscard]] int move_hands_the_block_on() {
     PtrBuffer first = PtrBuffer::allocate(32);
-    const auto* const ctrl = first.ctrl().data();
+    const std::uintptr_t ctrl_address = address_of_first(first.ctrl());
     PtrBuffer second{std::move(first)};
-    if (first || !first.empty() || !first.ctrl().empty() || !first.slots().empty()) return 1;
-    if (first.alloc_bytes() != 0 || second.ctrl().data() != ctrl || second.capacity() != 32) return 2;
+    if (first || !first.empty() || first.ctrl().size() != 0 || first.slots().size() != 0) return 1;
+    if (first.alloc_bytes() != 0 || address_of_first(second.ctrl()) != ctrl_address || second.capacity() != 32)
+        return 2;
     PtrBuffer third = PtrBuffer::allocate(64);
     third = std::move(second);
-    if (second || third.ctrl().data() != ctrl || third.capacity() != 32) return 3;
+    if (second || address_of_first(third.ctrl()) != ctrl_address || third.capacity() != 32) return 3;
     third.reset();
     if (third || !third.empty() || third.alloc_bytes() != 0) return 4;
     return 0;
@@ -78,7 +91,7 @@ using HugeBuffer = ::foundation::SwissTableBuffer<HugeSlot>;
 // Capacity zero is the empty table and allocates nothing.
 [[nodiscard]] int zero_capacity_is_empty() {
     PtrBuffer buffer = PtrBuffer::allocate(0);
-    if (buffer || !buffer.empty() || !buffer.ctrl().empty() || buffer.alloc_bytes() != 0) return 1;
+    if (buffer || !buffer.empty() || buffer.ctrl().size() != 0 || buffer.alloc_bytes() != 0) return 1;
     return 0;
 }
 

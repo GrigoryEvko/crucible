@@ -14,11 +14,11 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Owner.h>
+#include <foundation/core/Region.h>
 
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <string_view>
 #include <type_traits>
 
@@ -121,16 +121,32 @@ public:
     // starts.
     void reset() noexcept { this->reset_(); }
 
-    // Each array is handed out as a span of `capacity` elements, so a reader
-    // holds its bound with its address.
-    [[nodiscard]] std::span<ctrl_type> ctrl() noexcept { return {this->state_.ctrl, this->state_.capacity}; }
-    [[nodiscard]] std::span<const ctrl_type> ctrl() const noexcept {
-        return {this->state_.ctrl, this->state_.capacity};
+    // Each array is handed out as a View of `capacity` elements, so a reader
+    // holds its bound with its address.  The View borrows this buffer.  The
+    // buffer holds `capacity` control bytes and `capacity` slots, or no
+    // allocation and a capacity of zero, so each View comes through the door
+    // of the base layer, with no check.
+    [[nodiscard]] core::View<ctrl_type> ctrl() & noexcept {
+        return core::View<ctrl_type>{core::detail::ViewDoor::key(), this->state_.ctrl, this->state_.capacity};
     }
-    [[nodiscard]] std::span<slot_type> slots() noexcept { return {this->state_.slots, this->state_.capacity}; }
-    [[nodiscard]] std::span<const slot_type> slots() const noexcept {
-        return {this->state_.slots, this->state_.capacity};
+    [[nodiscard]] core::View<const ctrl_type> ctrl() const& noexcept {
+        return core::View<const ctrl_type>{core::detail::ViewDoor::key(), this->state_.ctrl, this->state_.capacity};
     }
+    void
+    ctrl() && = delete("a view of a temporary SwissTableBuffer points into storage that the full expression frees");
+    void ctrl() const&& =
+        delete("a view of a temporary SwissTableBuffer points into storage that the full expression frees");
+
+    [[nodiscard]] core::View<slot_type> slots() & noexcept {
+        return core::View<slot_type>{core::detail::ViewDoor::key(), this->state_.slots, this->state_.capacity};
+    }
+    [[nodiscard]] core::View<const slot_type> slots() const& noexcept {
+        return core::View<const slot_type>{core::detail::ViewDoor::key(), this->state_.slots, this->state_.capacity};
+    }
+    void
+    slots() && = delete("a view of a temporary SwissTableBuffer points into storage that the full expression frees");
+    void slots() const&& =
+        delete("a view of a temporary SwissTableBuffer points into storage that the full expression frees");
 
     [[nodiscard]] size_type capacity() const noexcept { return this->state_.capacity; }
     [[nodiscard]] size_type alloc_bytes() const noexcept { return this->state_.alloc_bytes; }

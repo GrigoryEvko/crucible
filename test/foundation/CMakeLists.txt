@@ -2107,6 +2107,9 @@ foundation_neg_compile_test(neg_swiss_table_buffer_overaligned_slot
 foundation_neg_compile_test(neg_swiss_table_buffer_copied
   "use of deleted function .foundation::SwissTableBuffer<SlotPtr>::SwissTableBuffer\\(const foundation::SwissTableBuffer<SlotPtr>&\\) \\[with SlotPtr = const int\\*\\]."
   "SwissTableBuffer is move-only")
+foundation_neg_compile_test(neg_swiss_table_buffer_view_of_temporary
+  "use of deleted function .void foundation::SwissTableBuffer<SlotPtr>::slots\\(\\) && \\[with SlotPtr = const int\\*\\]."
+  "a view of a temporary SwissTableBuffer points into storage that the full expression frees")
 
 # A block of bytes at an alignment of the run: the mint takes the
 # allocation capability and no other tag, and a View of a block that a
