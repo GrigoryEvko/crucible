@@ -219,11 +219,22 @@ inline void blake3_load_rows_(std::byte const* first, Blake3Row (&words)[4]) noe
 }
 
 // The 4 rows of a block of count bytes from first, with zero bytes after
-// them.
+// them.  With AVX-512BW a masked load reads the count bytes and gives zero
+// bytes after them.  Else the bytes go through a copy, and the load of the
+// rows from the copy waits on its stores, which a load of 64 bytes cannot
+// take from the narrow stores of a short copy.
 inline void blake3_load_partial_rows_(std::byte const* first, std::size_t count, Blake3Row (&words)[4]) noexcept {
+#if defined(__AVX512BW__)
+    typedef char Blake3Chars __attribute__((vector_size(blake3_block_bytes)));
+    std::uint64_t const mask = count >= blake3_block_bytes ? ~std::uint64_t{0} : (std::uint64_t{1} << count) - 1;
+    Blake3Chars const bytes = __builtin_ia32_loaddquqi512_mask(
+        static_cast<char const*>(static_cast<void const*>(first)), Blake3Chars{}, mask);
+    __builtin_memcpy(&words[0], &bytes, blake3_block_bytes);
+#else
     unsigned char bytes[blake3_block_bytes] = {};
     __builtin_memcpy(bytes, first, count);
     __builtin_memcpy(&words[0], bytes, blake3_block_bytes);
+#endif
 }
 
 [[nodiscard]] constexpr std::uint32_t blake3_chunk_flags_(std::size_t block) noexcept {
