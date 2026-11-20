@@ -271,6 +271,21 @@ include(ExternalProject)
 crucible_bench(bench_alloc_scaling CORES 9)
 target_sources(bench_alloc_scaling PRIVATE bench_alloc_scaling_base.cpp bench_alloc_scaling_glibc.cpp)
 crucible_alloc_references(bench_alloc_scaling)
+# The owner read of the chunk map against the lookups of the metadata of a
+# block in mimalloc and jemalloc.  The libraries of the two references come
+# from the call above, and the check of the symbols runs on this binary too.
+crucible_bench(bench_alloc_owner_lookup)
+foreach(_reference mimalloc jemalloc)
+  if(TARGET ${_reference}_reference)
+    string(TOUPPER "${_reference}" _reference_upper)
+    target_link_libraries(bench_alloc_owner_lookup PRIVATE ${_reference}_reference)
+    target_compile_definitions(bench_alloc_owner_lookup PRIVATE CRUCIBLE_BENCH_${_reference_upper}=1)
+  endif()
+endforeach()
+add_custom_command(TARGET bench_alloc_owner_lookup POST_BUILD
+  COMMAND "${CMAKE_COMMAND}" "-DNM=${CMAKE_NM}" "-DBINARY=$<TARGET_FILE:bench_alloc_owner_lookup>"
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/check_no_interposition.cmake"
+  VERBATIM)
 crucible_bench(bench_decide_compile_time)
 crucible_bench(bench_dispatch)
 crucible_bench(bench_fp_control)
