@@ -2087,6 +2087,12 @@ crucible_neg_compile_test(neg_transaction_log_copyable_owner
 crucible_neg_compile_test(neg_publish_stage_built_outside
   "is private within this context"
   ".crucible::BackgroundThread::PublishStage::PublishStage\\(\\). is private within this context")
+# The ops of a built region point into its buffers, so no code outside the
+# background thread assigns one buffer, which would free the storage that
+# the ops name.
+crucible_neg_compile_test(neg_built_region_buffer_assignment
+  "crucible::BackgroundThread::BuiltRegion::slots_. is private within this context"
+  "neg_built_region_buffer_assignment\\.cpp:14:[0-9]+: error:")
 crucible_neg_compile_test(neg_publish_job_captures_this
   "static assertion failed: run_on_publish_stage: the body captures .this. \\(field __this, type \\{anonymous\\}::Owner\\*\\)"
   "Capture the parts that the body uses, not the whole object")

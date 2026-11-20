@@ -454,14 +454,14 @@ void test_scalars_of_an_op_with_no_tensors() {
     five_seven.push_op_with_scalars(0, 5, 7);
     auto [graph_b, region_b] = five_seven.build(bt, test.alloc, scratch).expect("the work builds a graph");
 
-    const crucible::TraceEntry& op = *region_a.ops.get(0).expect("the region holds its one op");
+    const crucible::TraceEntry& op = *region_a.ops().get(0).expect("the region holds its one op");
     CRUCIBLE_TEST_ASSERT(kTest, op.num_inputs() == 0 && op.num_outputs() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, op.num_scalar_args() == 2 && op.scalar_args().size() == 2);
     CRUCIBLE_TEST_ASSERT(
         kTest, *op.scalar_args().get(0).expect("a test reads an element at or past the count of its View") == 5);
     CRUCIBLE_TEST_ASSERT(
         kTest, *op.scalar_args().get(1).expect("a test reads an element at or past the count of its View") == 6);
-    CRUCIBLE_TEST_ASSERT(kTest, region_a.content_hash != region_b.content_hash
+    CRUCIBLE_TEST_ASSERT(kTest, region_a.content_hash() != region_b.content_hash()
                                     && "two ops that differ only in a scalar must give two content hashes");
 
     ::fixy::check::pass(kTest, "  scalars_of_an_op_with_no_tensors:          PASSED\n");

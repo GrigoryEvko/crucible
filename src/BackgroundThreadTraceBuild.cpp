@@ -534,14 +534,14 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
               local_edges.window(0, num_edges).expect("the edge scratch holds each edge of the build"), count);
 
     return BuiltTrace{.graph = ::fixy::WeakRef<TraceGraph>{*graph},
-                      .region = BuiltRegion{.ops = std::move(op_buffer),
-                                            .metas = std::move(meta_buffer),
-                                            .scalars = std::move(scalar_buffer),
-                                            .producers = std::move(producer_buffer),
-                                            .slot_ids = std::move(slot_buffer),
-                                            .slots = std::move(slots),
-                                            .content_hash = graph->content_hash,
-                                            .numerics = numerics}};
+                      .region = BuiltRegion{BuiltRegion::Parts{.ops = std::move(op_buffer),
+                                                               .metas = std::move(meta_buffer),
+                                                               .scalars = std::move(scalar_buffer),
+                                                               .producers = std::move(producer_buffer),
+                                                               .slot_ids = std::move(slot_buffer),
+                                                               .slots = std::move(slots),
+                                                               .content_hash = graph->content_hash,
+                                                               .numerics = numerics}}};
 }
 
 }  // namespace crucible

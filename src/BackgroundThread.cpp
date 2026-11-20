@@ -600,8 +600,10 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
         .published = {},
         .left_generation = NOT_LEFT};
     RegionNode& region = *memory.node.get(0).expect("the region memory holds one node");
-    init_region_node(region, memory.parts.ops.view(), memory.parts.content_hash, memory.parts.numerics);
-    const uint32_t num_slots = static_cast<uint32_t>(memory.parts.slots.size());
+    // RegionNode and MemoryPlan hold Views that can write, so the node and
+    // the plan read the buffers of the parts, not the Views of const.
+    init_region_node(region, memory.parts.ops_.view(), memory.parts.content_hash(), memory.parts.numerics());
+    const uint32_t num_slots = static_cast<uint32_t>(memory.parts.slots().size());
     if (num_slots > 0) {
         memory.plan =
             ::fixy::mint_heap_array_with<MemoryPlan>(bg.alloc, 1, [](size_t) noexcept { return MemoryPlan{}; });
@@ -612,7 +614,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
         // leaves the region with no plan, so the region stays on eager.
         publish_scratch_.with_epoch([&]() noexcept {
             region.plan = make_plan_link(
-                compute_memory_plan(bg.alloc, plan_storage, publish_scratch_, memory.parts.slots.view()).ok());
+                compute_memory_plan(bg.alloc, plan_storage, publish_scratch_, memory.parts.slots_.view()).ok());
         });
     }
 

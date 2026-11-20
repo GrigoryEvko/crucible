@@ -209,7 +209,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         // The forward edges are in the order of their sources.
         const ::fixy::HeapArray<Edge> saved_edges = ::fixy::mint_heap_array_copy<Edge>(A, ref->fwd_edges);
 
-        const ::fixy::View<const TensorSlot> saved_slots = ref_region.slots.view();
+        const ::fixy::View<const TensorSlot> saved_slots = ref_region.slots();
 
         // build_csr
         for (uint32_t iter = 0; iter < iters; iter++) {
@@ -510,7 +510,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             bench::refill_meta_log(meta_log, trace);
             ref = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
         });
-        const ::fixy::View<TraceEntry const> ref_ops = ref.ops.view();
+        const ::fixy::View<TraceEntry const> ref_ops = ref.ops();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             const uint64_t t0 = bench::rdtsc_start();
@@ -551,7 +551,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             bench::refill_meta_log(meta_log, trace);
             ref = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
         });
-        const ::fixy::View<TraceEntry const> ref_ops = ref.ops.view();
+        const ::fixy::View<TraceEntry const> ref_ops = ref.ops();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             BuildScratchOfBench::map_generation(bg)++;
@@ -602,7 +602,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             bench::refill_meta_log(meta_log, trace);
             ref = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
         });
-        const ::fixy::View<TraceEntry const> ref_ops = ref.ops.view();
+        const ::fixy::View<TraceEntry const> ref_ops = ref.ops();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             BuildScratchOfBench::map_generation(bg)++;

@@ -165,7 +165,7 @@ struct Rig {
 };
 
 [[nodiscard]] crucible::SlotId input_slot(const BackgroundThread::BuiltRegion& region, uint32_t op, uint32_t input) {
-    return *region.ops.view()
+    return *region.ops()
                 .get(op)
                 .expect("the region holds the op")
                 ->input_slot_ids()
@@ -174,7 +174,7 @@ struct Rig {
 }
 
 [[nodiscard]] crucible::SlotId output_slot(const BackgroundThread::BuiltRegion& region, uint32_t op, uint32_t output) {
-    return *region.ops.view()
+    return *region.ops()
                 .get(op)
                 .expect("the region holds the op")
                 ->output_slot_ids()
@@ -183,7 +183,7 @@ struct Rig {
 }
 
 [[nodiscard]] crucible::OpIndex producer(const BackgroundThread::BuiltRegion& region, uint32_t op, uint32_t input) {
-    return *region.ops.view()
+    return *region.ops()
                 .get(op)
                 .expect("the region holds the op")
                 ->input_trace_indices()
@@ -192,7 +192,7 @@ struct Rig {
 }
 
 [[nodiscard]] const crucible::TensorSlot& slot_of(const BackgroundThread::BuiltRegion& region, crucible::SlotId slot) {
-    return *region.slots.view().get(slot.raw()).expect("the region holds the slot");
+    return *region.slots().get(slot.raw()).expect("the region holds the slot");
 }
 
 [[nodiscard]] BackgroundThread::BuiltRegion build_three_ops(uint32_t last_output) {
@@ -207,11 +207,11 @@ void test_reused_address_keeps_the_hash() {
     const BackgroundThread::BuiltRegion fresh = build_three_ops(kZ);
     const BackgroundThread::BuiltRegion reused = build_three_ops(kX);
     CRUCIBLE_TEST_ASSERT(
-        kTest, fresh.content_hash == reused.content_hash
+        kTest, fresh.content_hash() == reused.content_hash()
                    && "the content hash does not depend on the address that the allocator gives a new tensor");
-    CRUCIBLE_TEST_ASSERT(kTest, fresh.content_hash == crucible::compute_content_hash(fresh.ops.view(), fresh.numerics));
+    CRUCIBLE_TEST_ASSERT(kTest, fresh.content_hash() == crucible::compute_content_hash(fresh.ops(), fresh.numerics()));
     CRUCIBLE_TEST_ASSERT(kTest,
-                         reused.content_hash == crucible::compute_content_hash(reused.ops.view(), reused.numerics));
+                         reused.content_hash() == crucible::compute_content_hash(reused.ops(), reused.numerics()));
     ::fixy::check::pass(kTest, "  test_reused_address_keeps_the_hash: PASSED\n");
 }
 
@@ -219,7 +219,7 @@ void test_reused_address_keeps_the_hash() {
 // storage: it takes a slot of its own, and the slot of op 0 dies at op 1.
 void test_reused_address_gets_a_new_slot() {
     const BackgroundThread::BuiltRegion reused = build_three_ops(kX);
-    CRUCIBLE_TEST_ASSERT(kTest, reused.slots.size() == 3
+    CRUCIBLE_TEST_ASSERT(kTest, reused.slots().size() == 3
                                     && "a new storage at the address of a dead one takes a slot of its own");
     const crucible::SlotId first = output_slot(reused, 0, 0);
     const crucible::SlotId last = output_slot(reused, 2, 0);
@@ -242,7 +242,8 @@ void test_view_at_an_offset_reads_its_base() {
     const BackgroundThread::BuiltRegion region = rig.build();
 
     const crucible::SlotId base = output_slot(region, 0, 0);
-    CRUCIBLE_TEST_ASSERT(kTest, region.slots.size() == 3 && "the views of B take the slot of B, and no external slot");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         region.slots().size() == 3 && "the views of B take the slot of B, and no external slot");
     CRUCIBLE_TEST_ASSERT(kTest, input_slot(region, 1, 0) == base && producer(region, 1, 0) == crucible::OpIndex{0}
                                     && "a view at an offset reads the slot of its base");
     CRUCIBLE_TEST_ASSERT(kTest,
@@ -334,7 +335,7 @@ void test_result_of_a_nest_is_internal() {
 void test_numerics_policy_moves_the_hash() {
     const BackgroundThread::BuiltRegion ordered = build_three_ops(kZ);
     CRUCIBLE_TEST_ASSERT(kTest,
-                         ordered.numerics
+                         ordered.numerics()
                              == crucible::compute_numerics_hash(crucible::NumericsPolicy{}, crucible::EagerNumerics{}));
 
     crucible::NumericsPolicy strict_policy{};
@@ -350,10 +351,10 @@ void test_numerics_policy_moves_the_hash() {
         rig.work.push_unary(*rig.log, 1, vector_at(kX), vector_at(kY));
         rig.work.push_unary(*rig.log, 2, vector_at(kY), vector_at(kZ));
         const BackgroundThread::BuiltRegion region = rig.build();
-        CRUCIBLE_TEST_ASSERT(kTest, region.numerics == numerics);
-        CRUCIBLE_TEST_ASSERT(kTest, region.content_hash != ordered.content_hash
+        CRUCIBLE_TEST_ASSERT(kTest, region.numerics() == numerics);
+        CRUCIBLE_TEST_ASSERT(kTest, region.content_hash() != ordered.content_hash()
                                         && "the numerics of the run separate two regions");
-        CRUCIBLE_TEST_ASSERT(kTest, region.content_hash == crucible::compute_content_hash(region.ops.view(), numerics));
+        CRUCIBLE_TEST_ASSERT(kTest, region.content_hash() == crucible::compute_content_hash(region.ops(), numerics));
     }
     CRUCIBLE_TEST_ASSERT(kTest,
                          *others.view().get(0).expect("two hashes") != *others.view().get(1).expect("two hashes"));
@@ -375,7 +376,7 @@ void test_reads_of_an_external_take_one_slot() {
     CRUCIBLE_TEST_ASSERT(kTest, !producer(region, 1, 0).is_valid());
     CRUCIBLE_TEST_ASSERT(kTest, slot_of(region, external).is_external
                                     && slot_of(region, external).death_op == crucible::OpIndex{1});
-    CRUCIBLE_TEST_ASSERT(kTest, region.slots.size() == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, region.slots().size() == 3);
     ::fixy::check::pass(kTest, "  test_reads_of_an_external_take_one_slot: PASSED\n");
 }
 
@@ -398,7 +399,7 @@ void test_new_storage_at_a_dead_address_is_a_new_input() {
     CRUCIBLE_TEST_ASSERT(kTest, slot_of(fresh, read).is_external);
     CRUCIBLE_TEST_ASSERT(kTest, slot_of(fresh, written).death_op == crucible::OpIndex{1}
                                     && "the dead storage dies at its last read");
-    CRUCIBLE_TEST_ASSERT(kTest, fresh.slots.size() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, fresh.slots().size() == 4);
 
     Rig unknown;
     unknown.work.push_source(*unknown.log, 0, vector_at(kX));
@@ -463,7 +464,7 @@ void test_unknown_storage_of_another_period_is_a_new_input() {
     CRUCIBLE_TEST_ASSERT(kTest, !producer(region, 2, 0).is_valid() && slot_of(region, later).is_external);
     CRUCIBLE_TEST_ASSERT(kTest, slot_of(region, first).death_op == crucible::OpIndex{1}
                                     && "the storage of the first period dies at op 1");
-    CRUCIBLE_TEST_ASSERT(kTest, region.slots.size() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, region.slots().size() == 4);
     ::fixy::check::pass(kTest, "  test_unknown_storage_of_another_period_is_a_new_input: PASSED\n");
 }
 

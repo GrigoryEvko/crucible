@@ -582,21 +582,64 @@ public:
     // into the buffers of its own region, which move with it, and no object
     // outside the region points into them, so the region states the property
     // that the pointers of its ops hide.
-    struct[[= ::foundation::transfer::sendable{}]] BuiltRegion {
-        ::fixy::HeapArray<TraceEntry> ops;
+    //
+    // The buffers are private, because an assignment to one buffer would
+    // free the storage that the ops still name.  The region gives Views of
+    // const of its buffers, and it moves only as a whole.  Only
+    // BackgroundThread builds a region with parts.  The default region is
+    // empty, as in a commit message.
+    class[[= ::foundation::transfer::sendable{}]] BuiltRegion {
+    public:
+        BuiltRegion() noexcept = default;
+
+        [[nodiscard]] ::fixy::View<TraceEntry const> ops() const noexcept { return ops_.view(); }
+        [[nodiscard]] ::fixy::View<TensorMeta const> metas() const noexcept { return metas_.view(); }
+        [[nodiscard]] ::fixy::View<int64_t const> scalars() const noexcept { return scalars_.view(); }
+        [[nodiscard]] ::fixy::View<OpIndex const> producers() const noexcept { return producers_.view(); }
+        [[nodiscard]] ::fixy::View<SlotId const> slot_ids() const noexcept { return slot_ids_.view(); }
+        [[nodiscard]] ::fixy::View<TensorSlot const> slots() const noexcept { return slots_.view(); }
+        [[nodiscard]] ContentHash content_hash() const noexcept { return content_hash_; }
+        [[nodiscard]] NumericsHash numerics() const noexcept { return numerics_; }
+
+    private:
+        friend struct BackgroundThread;
+
+        // The parts of one build.  The ops point into the other buffers.
+        struct Parts {
+            ::fixy::HeapArray<TraceEntry> ops{};
+            ::fixy::HeapArray<TensorMeta> metas{};
+            ::fixy::HeapArray<int64_t> scalars{};
+            ::fixy::HeapArray<OpIndex> producers{};
+            ::fixy::HeapArray<SlotId> slot_ids{};
+            ::fixy::HeapArray<TensorSlot> slots{};
+            ContentHash content_hash{};
+            NumericsHash numerics{};
+        };
+
+        explicit BuiltRegion(Parts&& parts) noexcept
+            : ops_{std::move(parts.ops)},
+              metas_{std::move(parts.metas)},
+              scalars_{std::move(parts.scalars)},
+              producers_{std::move(parts.producers)},
+              slot_ids_{std::move(parts.slot_ids)},
+              slots_{std::move(parts.slots)},
+              content_hash_{parts.content_hash},
+              numerics_{parts.numerics} {}
+
+        ::fixy::HeapArray<TraceEntry> ops_{};
         // The tensor metadata of the ops.  An op points into this buffer.
-        ::fixy::HeapArray<TensorMeta> metas;
+        ::fixy::HeapArray<TensorMeta> metas_{};
         // The scalars, the producer of each input, and the slot ids of the
         // inputs and the outputs of the ops.  An op points into these
         // buffers.
-        ::fixy::HeapArray<int64_t> scalars;
-        ::fixy::HeapArray<OpIndex> producers;
-        ::fixy::HeapArray<SlotId> slot_ids;
+        ::fixy::HeapArray<int64_t> scalars_{};
+        ::fixy::HeapArray<OpIndex> producers_{};
+        ::fixy::HeapArray<SlotId> slot_ids_{};
         // The slots of the memory plan.
-        ::fixy::HeapArray<TensorSlot> slots;
-        ContentHash content_hash;
+        ::fixy::HeapArray<TensorSlot> slots_{};
+        ContentHash content_hash_{};
         // The numerics hash that the content hash folds.
-        NumericsHash numerics;
+        NumericsHash numerics_{};
     };
 
     // A build: the trace graph, in the scratch arena that the caller gave,
@@ -646,6 +689,11 @@ private:
     // The memory of one published region: its parts, its RegionNode and its
     // MemoryPlan.  The publish stage makes the node, and the plan when the
     // region has slots.  A slot of the store with no node is free.
+    //
+    // The node and the plan point into the buffers of the parts.  The type
+    // is private, and the publish stage is its one owner.  It fills a slot
+    // only when the slot is free, and the sweep empties a slot as a whole.
+    // The parts are one BuiltRegion, so no code assigns one buffer of them.
     struct RegionMemory {
         BuiltRegion parts;
         // One RegionNode, and one MemoryPlan when the region has slots.  An
