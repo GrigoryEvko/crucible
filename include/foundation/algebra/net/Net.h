@@ -1667,16 +1667,24 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
                                                         AgentCount agents, WireCount wires) noexcept {
     constexpr std::uint32_t none = no_index;
     std::uint32_t const agent_count = count_of(agents);
+    std::uint32_t principal_of[Kinds]{};
+    for (std::uint32_t kind = 0; kind < Kinds; ++kind)
+        principal_of[kind] = graph.signature.kinds[kind].principal;
     std::uint32_t next[AgentCapacity]{};
     for (std::uint32_t& slot : next)
         slot = none;
+    // A wire whose two ends are principal, or whose two ends are auxiliary,
+    // points nowhere.  Each other wire makes the agent of its principal end
+    // point to the agent of its auxiliary end.
     for (std::uint32_t index = 0; index < count_of(wires); ++index) {
         PortRef const left = graph.wires[index].left;
         PortRef const right = graph.wires[index].right;
-        bool const is_left_principal = left.port == kind_of_(graph, left.agent).principal;
-        bool const is_right_principal = right.port == kind_of_(graph, right.agent).principal;
-        if (is_left_principal && !is_right_principal) next[index_of(left.agent)] = index_of(right.agent);
-        if (is_right_principal && !is_left_principal) next[index_of(right.agent)] = index_of(left.agent);
+        bool const is_left_principal = left.port == principal_of[index_of(graph.agents[index_of(left.agent)])];
+        bool const is_right_principal = right.port == principal_of[index_of(graph.agents[index_of(right.agent)])];
+        if (is_left_principal == is_right_principal) continue;
+        PortRef const from = is_left_principal ? left : right;
+        PortRef const to = is_left_principal ? right : left;
+        next[index_of(from.agent)] = index_of(to.agent);
     }
     std::uint8_t color[AgentCapacity]{};
     for (std::uint32_t start = 0; start < agent_count; ++start) {
