@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = foundation::alloc::WindowRecord{forge::rvalue<std::uint64_t>(), forge::rvalue<std::uint64_t>(), forge::rvalue<foundation::alloc::BiasedChunkMap>(), forge::rvalue<std::uint64_t>(), forge::rvalue<std::uint64_t>()};
+    [[maybe_unused]] auto forged = foundation::alloc::WindowRecord{forge::rvalue<foundation::alloc::WindowBase>(), forge::rvalue<foundation::alloc::WindowLength>(), forge::rvalue<foundation::alloc::BiasedChunkMap>(), forge::rvalue<foundation::alloc::RegionBase>(), forge::rvalue<foundation::alloc::RegionLength>()};
     return 0;
 }
