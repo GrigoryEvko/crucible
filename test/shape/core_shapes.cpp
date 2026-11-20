@@ -29,6 +29,7 @@
 #include <foundation/AlignedBytes.h>
 #include <foundation/Quarantine.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/core/Immortal.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 
@@ -735,6 +736,12 @@ public:
 // ── Ref, Choice and Report ──────────────────────────────────────────────────
 
 [[gnu::used]] std::uint32_t box_read(fixy::Box<Payload>& box) noexcept { return box->value; }
+
+// A read through an Immortal: one load of the address of its object, one test
+// with a branch to a cold call, and the read.
+[[gnu::used]] std::uint32_t immortal_read(foundation::core::Immortal<Payload>& holder) noexcept {
+    return holder.get()->value;
+}
 
 // A Box built in a Hole: one test of the storage of the Hole with a branch
 // to a cold call, the clear of the Hole, and the build of the object in the
@@ -1967,6 +1974,15 @@ struct RawOwnerWords final {
 }
 
 [[gnu::used]] std::uint32_t box_read_raw(std::unique_ptr<Payload>& box) noexcept { return box->value; }
+
+// The raw holder of an object of the whole process: its storage and the
+// address of the object in it.
+struct ImmortalRaw final {
+    alignas(Payload) unsigned char storage[sizeof(Payload)]{};
+    Payload* object = nullptr;
+};
+
+[[gnu::used]] std::uint32_t immortal_read_raw(ImmortalRaw& holder) noexcept { return holder.object->value; }
 
 [[gnu::used]] Payload* box_in_hole_raw(void* storage, std::uint32_t value) noexcept {
     return ::new(storage) Payload{value};

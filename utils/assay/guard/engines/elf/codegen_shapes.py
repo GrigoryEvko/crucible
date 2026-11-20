@@ -760,6 +760,12 @@ PROBES: tuple[Probe, ...] = (
         checks=("fatal",),
     ),
     Probe(
+        "immortal_read",
+        "A read through an Immortal is the load of the address of its object and the read, with one test and one "
+        "branch to a call of the fatal exit",
+        checks=("fatal",),
+    ),
+    Probe(
         "box_in_hole",
         "mint_box in a Hole is the placement new of the raw form in the storage of the Hole, with no call of the "
         "allocation door.  It adds one test of the storage and one branch to a call of the fatal exit, the clear of "

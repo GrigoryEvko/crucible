@@ -154,6 +154,7 @@
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/CallRef.h>
+#include <foundation/core/Immortal.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/diag/Insights.h>
@@ -949,6 +950,9 @@ inline constexpr StatedZero kZeros[] = {
      "an owned allocation of one object: it holds storage and makes no claim about what the object holds"},
     {^^::foundation::core::Hole,
      "the owned storage of one object with no object in it: it holds storage and makes no claim about a value"},
+    {^^::foundation::core::Immortal,
+     "the storage of one object of the whole process: it holds storage, makes no claim about the object, and is "
+     "never a value in a kernel signature"},
     {^^::foundation::core::BoxWord,
      "the object of a Box in a ring cell: one address that its authority claims, and never a value in a kernel "
      "signature"},

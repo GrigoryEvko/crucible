@@ -2847,6 +2847,11 @@ foundation_test(test_alloc_size_class)
 foundation_test(test_alloc_chunk_map)
 target_link_libraries(test_alloc_chunk_map PRIVATE fixy)
 foundation_test(test_core_ref)
+# The holder of foundation/core/Immortal.h: a fill and a read through a Ref,
+# no destructor of the payload at the end of the holder, and the two
+# refusals in a child process through the Check family of fixy.
+foundation_test(test_core_immortal)
+target_link_libraries(test_core_immortal PRIVATE fixy)
 
 # A Link gives its object as a Ref of const through a const Link, and its
 # expect of no object ends the process.
