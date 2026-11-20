@@ -420,6 +420,7 @@ enforce include/foundation/ error include
 enforce src/ report
 enforce src/fixy/ error include
 enforce src/foundation/ error include
+enforce src/perf/ error
 enforce test/ report
 enforce test/bench_neg/ error
 enforce test/cipher_neg/ error
@@ -457,7 +458,7 @@ enforce test/types_neg/ error
 enforce test/vessel_neg/ error
 enforce test/vigil_neg/ error
 enforce test/warden_neg/ error
-enforce utils/tools/ report
+enforce utils/tools/ error
 enforce vessel/ report
 
 language F0_primitives include/foundation/core/ src/foundation/core/ include/fixy/Core.h
