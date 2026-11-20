@@ -109,6 +109,15 @@ struct FoundName final {
     bool is_found = false;
 };
 
+// The characters of the identifier of the entity that `entity` reflects.  The
+// identifier of a reflection has a zero after its last character.  The
+// function is not a template, so each walk and each sentinel of each enum
+// share one body.  Complexity: constant.
+consteval NameChars read_identifier_chars(std::meta::info entity) {
+    const std::string_view name = std::meta::identifier_of(entity);
+    return NameChars{name.data(), name.size()};
+}
+
 // Calls f(value, name) for each enumerator of E in declaration order, with
 // the characters of the identifier of the enumerator.  The identifier of a
 // reflection has a zero after its last character.  foundation/core/Text.h
@@ -127,8 +136,8 @@ constexpr void walk_enumerator_names(F&& f) {
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto e : enumerators) {
         constexpr E value = [:e:];
-        constexpr std::string_view name = std::meta::identifier_of(e);
-        f(value, NameChars{name.data(), name.size()});
+        constexpr NameChars name = read_identifier_chars(e);
+        f(value, name);
     }
 #pragma GCC diagnostic pop
 }
@@ -152,8 +161,8 @@ constexpr void walk_single_bit_enumerator_names(F&& f) {
         constexpr E flag = [:e:];
         constexpr U raw = static_cast<U>(flag);
         if constexpr (std::popcount(static_cast<std::make_unsigned_t<U>>(raw)) == 1) {
-            constexpr std::string_view name = std::meta::identifier_of(e);
-            f(flag, NameChars{name.data(), name.size()});
+            constexpr NameChars name = read_identifier_chars(e);
+            f(flag, name);
         }
     }
 #pragma GCC diagnostic pop
@@ -166,18 +175,7 @@ constexpr void walk_single_bit_enumerator_names(F&& f) {
 // each value with its name.
 template <ScopedEnum E, typename F>
 constexpr void for_each_enumerator_value(F&& f) {
-    static constexpr auto enumerators = [] consteval {
-        std::array<std::meta::info, std::meta::enumerators_of(^^E).size()> items{};
-        detail::copy_enumerators(^^E, items.data(), items.size());
-        return items;
-    }();
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto e : enumerators) {
-        constexpr E value = [:e:];
-        f(value);
-    }
-#pragma GCC diagnostic pop
+    detail::walk_enumerator_names<E>([&f](E const value, detail::NameChars) { f(value); });
 }
 
 // Calls f(flag) for each enumerator of E whose value has one bit set, in
@@ -209,14 +207,14 @@ template <ScopedEnum E>
 [[nodiscard]] consteval NameChars make_unknown_enum_chars() {
     static constexpr char prefix[] = "<unknown ";
     static constexpr std::size_t prefix_size = sizeof(prefix) - 1;
-    static constexpr std::string_view name = std::meta::identifier_of(^^E);
-    static constexpr std::size_t name_size = name.size();
+    static constexpr NameChars name = read_identifier_chars(^^E);
+    static constexpr std::size_t name_size = name.size;
     struct SentinelChars {
         char bytes[prefix_size + name_size + 2]{};
     };
     static constexpr SentinelChars text = [] consteval {
         SentinelChars chars{};
-        char const* const tail = name.data();
+        char const* const tail = name.first;
         for (std::size_t index = 0; index < prefix_size; ++index)
             chars.bytes[index] = prefix[index];
         for (std::size_t index = 0; index < name_size; ++index)
