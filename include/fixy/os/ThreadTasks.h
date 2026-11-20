@@ -49,13 +49,31 @@
 //     back.  A join that fails ends the process too, because the door started
 //     and joins each thread one time.
 //
+// THE WAIT OF THE CALLER
+//     The door has no spin.  A start calls pthread_create, and a join calls
+//     pthread_join, which parks the caller until the thread ends.  run_joined
+//     holds the caller from the first start to the last join.  So the caller
+//     cannot open a gate of its bodies between the starts and the joins, and
+//     bodies that wait for each other need a wait of their own.  run_beside
+//     and run_beside_each run a continuation on the caller between the starts
+//     and the joins.
+//
+//     A spin of a body is correct only when each body has a CPU of its own,
+//     such as through OneCpuEach over one CPU for each body.  On a CPU that
+//     two bodies share, a spin holds the CPU until the scheduler ends its time
+//     slice, some milliseconds, while the body that it waits for cannot run.
+//     Bodies that can share a CPU wait with SpinThenPark of
+//     fixy/concurrent/EventCount.h.
+//
 // THE ALTERNATE STACK
 //     Each thread that the door starts holds a ThreadSignalStack of
 //     fixy/os/Signal.h while its task runs.  The handler of a fatal signal
 //     then runs on that stack, also when the task overflows its own stack.
 //     The thread puts back its earlier alternate stack and unmaps the stack
 //     of the door when its task returns.  A thread that the base does not
-//     start gets no alternate stack from the door.
+//     start gets no alternate stack from the door.  The stack costs each
+//     thread six system calls: mmap, mprotect, three calls of sigaltstack and
+//     munmap.
 //
 // THE OWNED THREAD
 //     start_thread_task starts one thread and gives its handle, and
