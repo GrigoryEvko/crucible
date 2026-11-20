@@ -10,22 +10,23 @@
 
 #include <crucible/cntp/MtlsTransport.h>
 #include <fixy/ConstantTime.h>
+#include <fixy/Core.h>
 #include <fixy/Secret.h>
 #include <fixy/Tags.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/Classified.h>
+#include <foundation/Quarantine.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <utility>
 
 namespace {
 
+using ::fixy::check::Tally;
 using ct_taint::make_public;
 using ct_taint::make_secret;
 using ct_taint::opaque;
-using ct_taint::Tally;
 
 // The fixy::ct primitives, spelled for the shared checks.
 struct FixyCt {
@@ -53,32 +54,44 @@ struct FixyCt {
         return ::fixy::ct::eq(a, b);
     }
     template <std::size_t N>
-    static bool eq_static(std::array<std::byte, N> const& a, std::array<std::byte, N> const& b) noexcept {
-        return ::fixy::ct::eq(::fixy::bytes(a), ::fixy::bytes(b));
+    static bool eq_static(::fixy::View<std::byte const, N> a, ::fixy::View<std::byte const, N> b) noexcept {
+        return ::fixy::ct::eq(a, b);
     }
 };
 
 struct[[= ::fixy::session::constant_time_value{}]] AuthTag {
-    std::array<std::uint8_t, 16> bytes{};
+    ::fixy::FixedArray<std::uint8_t, 16> bytes{};
 };
 
+// The index of the byte whose low bit differs between the two tags of one
+// compare, or no index for two equal tags.
+using FlippedByte = ::fixy::Option<::fixy::Index<16>>;
+
+void check_one_payload(Tally& tally, FlippedByte const flip) noexcept {
+    using enum ::fixy::check::CheckOutcome;
+    AuthTag left{};
+    for (::fixy::Index<16> const index : left.bytes.indices())
+        left.bytes.at(index) = opaque(static_cast<std::uint8_t>(index.raw() * 7));
+    AuthTag right = left;
+    flip.match([&right](::fixy::Index<16> const at) noexcept { right.bytes.at(at) ^= 0x01; }, [] noexcept {});
+    make_secret(left);
+    make_secret(right);
+    ::fixy::session::CTPayload<AuthTag> const lhs{left};
+    ::fixy::session::CTPayload<AuthTag> const rhs{right};
+    tally.count(make_public(::fixy::session::eq(lhs, rhs)) == flip.is_none() ? held : failed, "session CTPayload eq");
+}
+
+// The equal tags first, then a flip of each byte in order.
 void check_session_payload(Tally& tally) noexcept {
-    for (int flip = -1; flip < 16; ++flip) {
-        AuthTag left{};
-        for (std::size_t i = 0; i < left.bytes.size(); ++i)
-            left.bytes[i] = opaque(static_cast<std::uint8_t>(i * 7));
-        AuthTag right = left;
-        if (flip >= 0) right.bytes[static_cast<std::size_t>(flip)] ^= 0x01;
-        make_secret(left);
-        make_secret(right);
-        ::fixy::session::CTPayload<AuthTag> const lhs{left};
-        ::fixy::session::CTPayload<AuthTag> const rhs{right};
-        tally.expect(make_public(::fixy::session::eq(lhs, rhs)) == (flip < 0), "session CTPayload eq");
-    }
+    check_one_payload(tally, ::fixy::none);
+    for (::fixy::Index<16> const flip : ::fixy::IndexRange<16>{})
+        check_one_payload(tally, ::fixy::some(flip));
 }
 
 void check_secret_derivation(Tally& tally) noexcept {
-    for (std::uint64_t const bit_value : {std::uint64_t{0}, std::uint64_t{1}}) {
+    using enum ::fixy::check::CheckOutcome;
+    constexpr ::fixy::FixedArray<std::uint64_t, 2> bit_values{std::uint64_t{0}, std::uint64_t{1}};
+    for (std::uint64_t const bit_value : bit_values) {
         std::uint64_t bit = opaque(bit_value);
         make_secret(bit);
         auto classified = ::fixy::mint_secret<std::uint64_t>(bit);
@@ -86,32 +99,37 @@ void check_secret_derivation(Tally& tally) noexcept {
             return ::fixy::ct::select(b, std::uint64_t{0xAA}, std::uint64_t{0x55});
         });
         std::uint64_t const out = std::move(chosen).declassify<::fixy::tags::secret_policy::HashForCompare>();
-        tally.expect(make_public(out) == (bit_value == 1 ? 0xAAu : 0x55u), "Secret transform through select");
+        tally.count(make_public(out) == (bit_value == 1 ? 0xAAu : 0x55u) ? held : failed,
+                    "Secret transform through select");
     }
 }
 
 // The mTLS private key is the one key the production tree holds.  Its
 // admission copies the secret bytes into the key buffer, the key moves
 // into the Secret, and the destructor zeroizes each copy.  The length of
-// the key is public, so only the bytes are secret.
+// the key is public, so only the bytes are secret.  The array holds its
+// bytes and no other byte, so make_secret marks exactly them.
 void check_mtls_private_key(Tally& tally) noexcept {
+    using enum ::fixy::check::CheckOutcome;
     using ::crucible::cntp::MtlsKeyAlgorithm;
-    std::array<std::byte, 64> pem{};
-    for (std::size_t i = 0; i < pem.size(); ++i)
-        pem[i] = static_cast<std::byte>(opaque(static_cast<unsigned>(i * 13u + 5u)));
-    ct_taint::make_secret_bytes(pem.data(), pem.size());
+    ::fixy::FixedArray<std::byte, 64> pem{};
+    static_assert(sizeof(pem) == 64, "make_secret of the key marks the bytes of the key and no other byte");
+    for (::fixy::Index<64> const index : pem.indices())
+        pem.at(index) = static_cast<std::byte>(opaque(static_cast<unsigned>(index.raw() * 13u + 5u)));
+    make_secret(pem);
     {
         auto admitted = ::crucible::cntp::admit_private_key_pem<MtlsKeyAlgorithm::Ed25519>(::fixy::bytes(pem));
-        tally.expect(admitted.is_ok(), "mTLS private key admission");
+        tally.count(admitted.is_ok() ? held : failed, "mTLS private key admission");
         auto key = std::move(admitted).expect("the key admission succeeds");
         auto moved = std::move(key);
-        tally.expect(moved.declassify<::fixy::tags::secret_policy::LengthOnly>() == pem.size(),
-                     "mTLS private key length");
+        tally.count(moved.declassify<::fixy::tags::secret_policy::LengthOnly>() == pem.size() ? held : failed,
+                    "mTLS private key length");
     }
 }
 
 }  // namespace
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: main takes the arguments of the C runtime as a count and an array of texts")
 int main(int argc, char** argv) {
     return ct_taint::run(::fixy::os::args(argc, argv), [](Tally& tally) noexcept {
         ct_taint::check_scalars<FixyCt>(tally);
@@ -121,3 +139,4 @@ int main(int argc, char** argv) {
         check_mtls_private_key(tally);
     });
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

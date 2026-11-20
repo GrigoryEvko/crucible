@@ -96,7 +96,9 @@ set(CRUCIBLE_CT_TAINT_FLAGS
 
 # One taint test per source and optimization level.  The same binary also
 # runs the two leaking controls, which pass only when memcheck reports the
-# leak, so a blind harness fails.
+# leak, so a blind harness fails.  The Tally of the Check family counts the
+# functional checks, so each binary also compiles the cold reports of the
+# family (src/fixy/check/Check.cpp) with its own flags.
 #
 # When DEBUGINFOD_URLS names a server, valgrind asks that server for the
 # debug information of each loaded object that has none on the host.  A
@@ -104,7 +106,7 @@ set(CRUCIBLE_CT_TAINT_FLAGS
 # runs with no DEBUGINFOD_URLS, and the harness refuses a run that has one.
 function(ct_taint_test source opt)
   set(name ${source}_${opt})
-  add_executable(${name} ${source}.cpp ${CRUCIBLE_HANDLER_SOURCES})
+  add_executable(${name} ${source}.cpp ${CMAKE_SOURCE_DIR}/src/fixy/check/Check.cpp ${CRUCIBLE_HANDLER_SOURCES})
   target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/include ${CRUCIBLE_VALGRIND_INCLUDE})
   target_compile_options(${name} PRIVATE -${opt} ${CRUCIBLE_CT_TAINT_FLAGS})
   crucible_release_code_target(${name})

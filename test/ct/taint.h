@@ -13,42 +13,24 @@
 // about the code that ships.
 //
 // A run outside valgrind proves nothing either: every client request is
-// then a no-op.  require_valgrind() makes that case a failure.
+// then a no-op.  is_under_valgrind() lets the harness refuse that case.
 
 #include <valgrind/memcheck.h>
 #include <valgrind/valgrind.h>
 
-#include <cstddef>
-#include <cstdio>
+#include <foundation/Quarantine.h>
+
 #include <cstdlib>
 
 namespace ct_taint {
 
-// Stops the run when valgrind is not the host.  Called first in main.
-inline void require_valgrind() noexcept {
-    if (RUNNING_ON_VALGRIND == 0) {
-        std::fputs("ct_taint: this test must run under valgrind --tool=memcheck; outside valgrind every "
-                   "taint request is a no-op and the run proves nothing\n",
-                   stderr);
-        std::exit(2);
-    }
-}
+// The client requests of valgrind.  Each request is inline asm that hands
+// the address of a C array of words to the tool, so the whole interface to
+// the tool is in one region.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a client request of valgrind is inline asm over a C array of words")
 
-// Stops the run when DEBUGINFOD_URLS names a server.  valgrind reads the
-// variable at its start, and it asks each server for the debug information
-// of each loaded object that has none on the host.  A test must not depend
-// on the network: one lookup can take seconds.  test/ct/CMakeLists.txt
-// removes the variable from the environment of each taint test.  Called in
-// main after require_valgrind().
-inline void require_no_debuginfod() noexcept {
-    char const* const servers = std::getenv("DEBUGINFOD_URLS");
-    if (servers != nullptr && servers[0] != '\0') {
-        std::fputs("ct_taint: DEBUGINFOD_URLS names a server, so valgrind asked the network for debug information "
-                   "at its start.  Unset DEBUGINFOD_URLS for this test.\n",
-                   stderr);
-        std::exit(2);
-    }
-}
+// True when valgrind is the host of the process.
+[[nodiscard]] inline bool is_under_valgrind() noexcept { return RUNNING_ON_VALGRIND != 0; }
 
 // Marks the bytes of `value` as undefined, which is how this harness
 // spells "secret".  The value itself is unchanged.
@@ -66,25 +48,21 @@ template <typename T>
     return value;
 }
 
-// Marks a byte range as undefined.
-inline void make_secret_bytes(void* data, std::size_t size) noexcept { (void)VALGRIND_MAKE_MEM_UNDEFINED(data, size); }
-
 // The number of memcheck errors so far in this process.
 [[nodiscard]] inline unsigned long reported_errors() noexcept {
     return static_cast<unsigned long>(VALGRIND_COUNT_ERRORS);
 }
 
-// A failed functional check.  The taint result is separate: memcheck
-// reports its own errors and --error-exitcode turns them into a failure.
-struct Tally {
-    int failures = 0;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-    void expect(bool is_equal, char const* what) noexcept {
-        if (!is_equal) {
-            std::fprintf(stderr, "ct_taint: wrong result: %s\n", what);
-            ++failures;
-        }
-    }
-};
+// True when DEBUGINFOD_URLS names a server.  valgrind reads the variable at
+// its start, and it asks each server for the debug information of each
+// loaded object that has none on the host.  A test must not depend on the
+// network: one lookup can take seconds.  test/ct/CMakeLists.txt removes the
+// variable from the environment of each taint test.
+[[nodiscard]] inline bool names_debuginfod_server() noexcept {
+    char const* const servers = std::getenv("DEBUGINFOD_URLS");
+    return servers != nullptr && servers[0] != '\0';
+}
 
 }  // namespace ct_taint

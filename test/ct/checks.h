@@ -4,20 +4,26 @@
 // primitives through static member functions, so a check does not spell
 // the namespace of fixy::ct.  Each check marks its operands secret, runs
 // the primitive inline and out of line, and makes only the result public.
+//
+// A Tally of the Check family counts the functional checks.  The taint
+// result is separate: memcheck reports its own errors and --error-exitcode
+// turns them into a failure.
 
 #include "taint.h"
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/os/Args.h>
+#include <foundation/effects/Effect.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <span>
-#include <string_view>
+#include <utility>
 
 namespace ct_taint {
+
+inline constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 // Operands pass through a volatile slot, so the optimizer cannot fold a
 // primitive into a constant and hide the code under test.
@@ -28,7 +34,7 @@ template <typename T>
 }
 
 template <typename T>
-constexpr std::array<T, 6> probe_values() noexcept {
+constexpr ::fixy::FixedArray<T, 6> probe_values() noexcept {
     return {T{0},
             T{1},
             T{2},
@@ -62,10 +68,13 @@ template <typename Ct>
 }
 
 template <typename Ct, typename T>
-void check_scalar_width(Tally& tally) noexcept {
-    for (T const a_value : probe_values<T>()) {
-        for (T const b_value : probe_values<T>()) {
-            for (T const bit_value : {T{0}, T{1}}) {
+void check_scalar_width(::fixy::check::Tally& tally) noexcept {
+    using enum ::fixy::check::CheckOutcome;
+    constexpr ::fixy::FixedArray<T, 6> values = probe_values<T>();
+    constexpr ::fixy::FixedArray<T, 2> bits{T{0}, T{1}};
+    for (T const a_value : values) {
+        for (T const b_value : values) {
+            for (T const bit_value : bits) {
                 T a = opaque(a_value);
                 T b = opaque(b_value);
                 T bit = opaque(bit_value);
@@ -94,23 +103,26 @@ void check_scalar_width(Tally& tally) noexcept {
                 T const expected_left = bit_value == T{1} ? b_value : a_value;
                 T const expected_right = bit_value == T{1} ? a_value : b_value;
 
-                tally.expect(make_public(mask) == expected_mask, "mask_from_bit");
-                tally.expect(make_public(chosen) == expected_chosen, "select");
-                tally.expect(make_public(chosen_outline) == expected_chosen, "select, out of line");
-                tally.expect(make_public(is_less) == expected_less, "less");
-                tally.expect(make_public(is_less_outline) == expected_less, "less, out of line");
-                tally.expect(make_public(zero_a) == expected_zero, "is_zero");
-                tally.expect(make_public(zero_a_outline) == expected_zero, "is_zero, out of line");
-                tally.expect(make_public(left) == expected_left && make_public(right) == expected_right, "cswap");
-                tally.expect(make_public(left_outline) == expected_left && make_public(right_outline) == expected_right,
-                             "cswap, out of line");
+                tally.count(make_public(mask) == expected_mask ? held : failed, "mask_from_bit");
+                tally.count(make_public(chosen) == expected_chosen ? held : failed, "select");
+                tally.count(make_public(chosen_outline) == expected_chosen ? held : failed, "select, out of line");
+                tally.count(make_public(is_less) == expected_less ? held : failed, "less");
+                tally.count(make_public(is_less_outline) == expected_less ? held : failed, "less, out of line");
+                tally.count(make_public(zero_a) == expected_zero ? held : failed, "is_zero");
+                tally.count(make_public(zero_a_outline) == expected_zero ? held : failed, "is_zero, out of line");
+                tally.count(make_public(left) == expected_left && make_public(right) == expected_right ? held : failed,
+                            "cswap");
+                tally.count(make_public(left_outline) == expected_left && make_public(right_outline) == expected_right
+                                ? held
+                                : failed,
+                            "cswap, out of line");
             }
         }
     }
 }
 
 template <typename Ct>
-void check_scalars(Tally& tally) noexcept {
+void check_scalars(::fixy::check::Tally& tally) noexcept {
     check_scalar_width<Ct, std::uint8_t>(tally);
     check_scalar_width<Ct, std::uint16_t>(tally);
     check_scalar_width<Ct, std::uint32_t>(tally);
@@ -118,34 +130,44 @@ void check_scalars(Tally& tally) noexcept {
 }
 
 // Two byte buffers that differ at `diff_at`, or nowhere when diff_at is
-// the length.  The contents are secret.  The length is public.
+// the length.  The contents are secret.  The length is public.  An array
+// holds its bytes and no other byte, so make_secret marks exactly them.
 template <typename Ct, std::size_t N>
-void check_eq_length(Tally& tally) noexcept {
+void check_eq_length(::fixy::check::Tally& tally) noexcept {
+    using enum ::fixy::check::CheckOutcome;
+    using Bytes = ::fixy::FixedArray<std::byte, N>;
+    static_assert(sizeof(Bytes) == N, "make_secret of an array marks the bytes of its elements and no other byte");
     for (std::size_t diff_at = 0; diff_at <= N; ++diff_at) {
-        std::array<std::byte, N> a{};
-        std::array<std::byte, N> b{};
-        for (std::size_t i = 0; i < N; ++i) {
-            a[i] = static_cast<std::byte>(opaque(static_cast<unsigned>(i * 37u + 11u)));
-            b[i] = a[i];
+        Bytes a{};
+        Bytes b{};
+        for (::fixy::Index<N> const index : a.indices()) {
+            a.at(index) = static_cast<std::byte>(opaque(static_cast<unsigned>(index.raw() * 37u + 11u)));
+            b.at(index) = a.at(index);
         }
-        if (diff_at < N) b[diff_at] ^= std::byte{0x40};
-        make_secret_bytes(a.data(), a.size());
-        make_secret_bytes(b.data(), b.size());
+        ::fixy::Index<N>::check(diff_at).match(
+            [&b](::fixy::Index<N> const at) noexcept { b.at(at) ^= std::byte{0x40}; }, [] noexcept {});
+        make_secret(a);
+        make_secret(b);
 
         bool const expected = diff_at == N;
-        tally.expect(make_public(Ct::eq(::fixy::View<std::byte const>{::fixy::bytes(a)},
-                                        ::fixy::View<std::byte const>{::fixy::bytes(b)}))
-                         == expected,
-                     "eq");
-        tally.expect(make_public(eq_outline<Ct>(::fixy::bytes(a), ::fixy::bytes(b))) == expected, "eq, out of line");
-        if constexpr (requires { Ct::template eq_static<N>(a, b); }) {
-            tally.expect(make_public(Ct::template eq_static<N>(a, b)) == expected, "eq, static extent");
+        tally.count(make_public(Ct::eq(::fixy::View<std::byte const>{::fixy::bytes(a)},
+                                       ::fixy::View<std::byte const>{::fixy::bytes(b)}))
+                            == expected
+                        ? held
+                        : failed,
+                    "eq");
+        tally.count(make_public(eq_outline<Ct>(::fixy::bytes(a), ::fixy::bytes(b))) == expected ? held : failed,
+                    "eq, out of line");
+        if constexpr (requires { Ct::template eq_static<N>(::fixy::bytes(a), ::fixy::bytes(b)); }) {
+            tally.count(make_public(Ct::template eq_static<N>(::fixy::bytes(a), ::fixy::bytes(b))) == expected ? held
+                                                                                                               : failed,
+                        "eq, static extent");
         }
     }
 }
 
 template <typename Ct>
-void check_eq(Tally& tally) noexcept {
+void check_eq(::fixy::check::Tally& tally) noexcept {
     check_eq_length<Ct, 1>(tally);
     check_eq_length<Ct, 7>(tally);
     check_eq_length<Ct, 16>(tally);
@@ -155,18 +177,20 @@ void check_eq(Tally& tally) noexcept {
 
 // The leaking controls.  Each branches or indexes on a secret on purpose.
 // The branch calls a function on one arm, so the optimizer cannot turn it
-// into a conditional move, which memcheck does not report.
+// into a conditional move, which memcheck does not report.  The index is
+// below the count of the table by its mask, so its check folds away and the
+// read is the only use of the secret.
 [[gnu::noinline]] inline int control_branch_on_secret(std::uint32_t secret) noexcept {
     if (secret & 1u) {
-        std::puts("control: the secret is odd");
+        ::fixy::report(::fixy::Sink::Out, "control: the secret is odd\n");
         return 3;
     }
     return 5;
 }
 
 [[gnu::noinline]] inline int control_index_by_secret(std::uint32_t secret) noexcept {
-    static std::array<std::uint8_t, 16> table{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-    return table[secret & 15u];
+    static constexpr ::fixy::FixedArray<std::uint8_t, 16> table{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    return table.at(::fixy::Index<16>::check(secret & 15u).expect("a mask of four bits gives an index below 16"));
 }
 
 // A control passes only when memcheck reported an error inside the
@@ -179,10 +203,12 @@ int run_control(Leak&& leak) noexcept {
     unsigned long const before = reported_errors();
     int const result = leak(secret);
     unsigned long const after = reported_errors();
-    std::printf("control: result %d, %lu memcheck errors in the leaking call\n", make_public(result), after - before);
+    ::fixy::report(::fixy::Sink::Out, "control: result {}, {} memcheck errors in the leaking call\n",
+                   make_public(result), after - before);
     if (after == before) {
-        std::fputs("ct_taint: the control leaked a secret and memcheck reported nothing, so the harness is blind\n",
-                   stderr);
+        ::fixy::report(
+            ::fixy::Sink::Err,
+            "ct_taint: the control leaked a secret and memcheck reported nothing, so the harness is blind\n");
         return 1;
     }
     return 0;
@@ -190,11 +216,23 @@ int run_control(Leak&& leak) noexcept {
 
 // The shared entry: a control mode when one is named, the checks
 // otherwise.  The argument door of fixy/os/Args.h gives the arguments of
-// main.  `run_checks` is the list of checks of the test.
+// main.  `run_checks` is the list of checks of the test.  A run outside
+// valgrind, or a run that asks a debuginfod server, ends with the code 2.
+// A failed check ends the run at the close of the Tally.
 template <typename Checks>
 int run(::fixy::os::Args const arguments, Checks&& run_checks) noexcept {
-    require_valgrind();
-    require_no_debuginfod();
+    if (!is_under_valgrind()) {
+        ::fixy::report(::fixy::Sink::Err,
+                       "ct_taint: this test must run under valgrind --tool=memcheck; outside valgrind every "
+                       "taint request is a no-op and the run proves nothing\n");
+        return 2;
+    }
+    if (names_debuginfod_server()) {
+        ::fixy::report(::fixy::Sink::Err,
+                       "ct_taint: DEBUGINFOD_URLS names a server, so valgrind asked the network for debug information "
+                       "at its start.  Unset DEBUGINFOD_URLS for this test.\n");
+        return 2;
+    }
     if (arguments.size() == 2) {
         ::fixy::TextView const mode = arguments.get(1).expect("a count of two holds a first argument").view();
         if (mode == ::fixy::TextView{"--control-branch"}) return run_control(control_branch_on_secret);
@@ -202,10 +240,11 @@ int run(::fixy::os::Args const arguments, Checks&& run_checks) noexcept {
         ::fixy::report(::fixy::Sink::Err, "ct_taint: unknown mode {}\n", mode);
         return 2;
     }
-    Tally tally;
+    ::fixy::check::Tally tally{kTest, "ct_taint"};
     run_checks(tally);
-    std::printf("ct_taint: %d wrong results, %lu memcheck errors\n", tally.failures, reported_errors());
-    return tally.failures == 0 ? 0 : 1;
+    std::move(tally).close();
+    ::fixy::report(::fixy::Sink::Out, "ct_taint: 0 wrong results, {} memcheck errors\n", reported_errors());
+    return 0;
 }
 
 }  // namespace ct_taint
