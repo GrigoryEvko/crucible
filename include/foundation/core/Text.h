@@ -51,11 +51,15 @@
 // THE NAME OF AN ENUMERATOR
 //   enum_name_text(value) gives the identifier of the enumerator that holds
 //   value, and enum_words_text<E, Separator>(value) gives it in lower-case
-//   words.  They give the texts of enum_name and enum_words of
-//   foundation/reflect/EnumName.h as a TextView.  That header is on a lower
-//   layer than this one, so it cannot name a TextView itself.  Each text has
-//   static storage and a zero after its last character, so the view never
-//   dangles.  enumerator_named<E>(name) is the search in the other direction:
+//   words.  A value that no enumerator holds gives unknown_enum_text<E>,
+//   "<unknown E>".  enumerator_name_text(value) gives the identifier, or no
+//   value when no enumerator holds the value.  for_each_enumerator_text<E>(f)
+//   calls f with each value and the TextView of its identifier.  These forms
+//   take the characters of each name from foundation/reflect/EnumName.h.
+//   That header is on a lower layer than this one, so it cannot name a
+//   TextView itself.  Each text has static storage and a zero after its last
+//   character, so the view never dangles.  enumerator_named<E>(name) is the
+//   search in the other direction:
 //   at compile time, the enumerator of E whose identifier is name, or no
 //   value.  has_enumerator_named<E>(name) asks only if E declares it, with
 //   no Option over E, for a foreign enum.
@@ -441,6 +445,38 @@ template <::foundation::reflect::ScopedEnum E, char Separator>
     ::foundation::reflect::detail::NameChars const words =
         ::foundation::reflect::detail::enum_words_chars<E, Separator>(value);
     return detail::c_text_over_(words.first, words.size).view();
+}
+
+// The text "<unknown E>" with the unqualified name of E: the name that
+// enum_name_text and enum_words_text give for a value that no enumerator
+// holds.  The text has static storage and a zero after its last character.
+template <::foundation::reflect::ScopedEnum E>
+inline constexpr TextView unknown_enum_text =
+    detail::c_text_over_(::foundation::reflect::detail::unknown_enum_chars<E>.first,
+                         ::foundation::reflect::detail::unknown_enum_chars<E>.size)
+        .view();
+
+// The identifier of the enumerator that holds value, or no value when no
+// enumerator holds it.  When two enumerators share a value, the first in
+// declaration order wins.  Complexity: one compare for each enumerator.
+template <::foundation::reflect::ScopedEnum E>
+[[nodiscard]] constexpr Option<TextView> enumerator_name_text(E value) noexcept {
+    ::foundation::reflect::detail::FoundName const found = ::foundation::reflect::detail::enumerator_chars(value);
+    if (!found.is_found) return Option<TextView>{none};
+    return Option<TextView>::some(detail::c_text_over_(found.name.first, found.name.size).view());
+}
+
+// Calls f(value, name) for each enumerator of E, in declaration order, with
+// the identifier of the enumerator as a TextView.  Each text has static
+// storage and a zero after its last character.  An alias is an enumerator of
+// its own, so the walk gives its identifier too.  Complexity: one call of f
+// for each enumerator.
+template <::foundation::reflect::ScopedEnum E, typename F>
+constexpr void for_each_enumerator_text(F&& f) {
+    ::foundation::reflect::detail::walk_enumerator_names<E>(
+        [&f](E value, ::foundation::reflect::detail::NameChars name) {
+            f(value, detail::c_text_over_(name.first, name.size).view());
+        });
 }
 
 // True when E declares an enumerator whose identifier is name.  A patch of a

@@ -84,8 +84,13 @@ using ::foundation::core::unreachable;
 // The door foreign_c_str of a CText stays in foundation::core.  A call stands
 // only in an ABI region, and the full name shows the reader the escape.
 using ::foundation::core::CText;
+using ::foundation::core::enum_name_text;
+using ::foundation::core::enum_words_text;
+using ::foundation::core::enumerator_name_text;
 using ::foundation::core::enumerator_named;
+using ::foundation::core::for_each_enumerator_text;
 using ::foundation::core::has_enumerator_named;
+using ::foundation::core::unknown_enum_text;
 using ::foundation::core::FixedText;
 using ::foundation::core::freeze;
 using ::foundation::core::GrowText;

@@ -181,6 +181,25 @@ static_assert(ends_with_zero(enum_name_text(static_cast<Lane>(9))));
 static_assert(ends_with_zero(enum_words_text<Lane, '_'>(Lane::CopyHostToDevice)));
 static_assert(ends_with_zero(enum_words_text<Lane, '_'>(static_cast<Lane>(9))));
 
+// The sentinel is a constant, the search of the identifier gives no value for
+// a value that no enumerator holds, and the walk gives each identifier in
+// declaration order, an alias too.  A zero follows each text.
+static_assert(unknown_enum_text<Lane> == TextView{"<unknown Lane>"});
+static_assert(ends_with_zero(unknown_enum_text<Lane>));
+static_assert(enumerator_name_text(Lane::Alias).expect("an enumerator holds the value") == TextView{"Send"});
+static_assert(enumerator_name_text(static_cast<Lane>(9)).is_none());
+static_assert(ends_with_zero(enumerator_name_text(Lane::CopyHostToDevice).expect("an enumerator holds the value")));
+[[nodiscard]] consteval bool walks_each_identifier_in_order() noexcept {
+    FixedText<32> names{};
+    bool is_whole = true;
+    for_each_enumerator_text<Lane>([&names, &is_whole](Lane, TextView name) noexcept {
+        if (names.size() != 0) is_whole = is_whole && names.append(TextView{","}).is_ok();
+        is_whole = is_whole && ends_with_zero(name) && names.append(name).is_ok();
+    });
+    return is_whole && names.view() == TextView{"Send,CopyHostToDevice,Alias"};
+}
+static_assert(walks_each_identifier_in_order());
+
 // The search of an enumerator by its identifier.  An alias gives the value of
 // the enumerator that it names, and a name of no enumerator, also a prefix of
 // one, gives no value.  An enum of no enumerators gives no value.

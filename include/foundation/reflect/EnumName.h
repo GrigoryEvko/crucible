@@ -301,6 +301,52 @@ template <std::meta::info Entity>
     return NameChars{first, size};
 }
 
+// The name of the enumerator that a search found, or no name.
+struct FoundName final {
+    NameChars name{};
+    bool is_found = false;
+};
+
+// Calls f(value, name) for each enumerator of E in declaration order, with
+// the characters of the identifier of the enumerator.  The identifier of a
+// reflection has a zero after its last character.  foundation/core/Text.h
+// gives the name to the caller as a TextView (for_each_enumerator_text).
+template <ScopedEnum E, typename F>
+constexpr void walk_enumerator_names(F&& f) {
+    static constexpr auto enumerators = [] consteval {
+        std::array<std::meta::info, std::meta::enumerators_of(^^E).size()> items{};
+        copy_enumerators(^^E, items.data(), items.size());
+        return items;
+    }();
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto e : enumerators) {
+        constexpr E value = [:e:];
+        constexpr std::string_view name = std::meta::identifier_of(e);
+        f(value, NameChars{name.data(), name.size()});
+    }
+#pragma GCC diagnostic pop
+}
+
+// The characters of the sentinel of E.
+template <ScopedEnum E>
+inline constexpr NameChars unknown_enum_chars =
+    NameChars{unknown_enum_sentinel<E>.data(), unknown_enum_sentinel<E>.size()};
+
+// The identifier of the enumerator that holds `value`, or no name when no
+// enumerator holds it.  When two enumerators share a value, the first in
+// declaration order wins.  Complexity: one compare for each enumerator.
+template <ScopedEnum E>
+[[nodiscard]] constexpr FoundName enumerator_chars(E value) noexcept {
+    FoundName found{};
+    walk_enumerator_names<E>([&found, value](E candidate, NameChars name) noexcept {
+        if (!found.is_found && candidate == value) {
+            found = FoundName{name, true};
+        }
+    });
+    return found;
+}
+
 }  // namespace detail
 
 }  // namespace foundation::reflect
