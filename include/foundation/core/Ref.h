@@ -635,6 +635,13 @@ template <class T>
     return std::meta::is_complete_type(^^T) && ::foundation::linear::is_linear_type(^^T);
 }
 
+// The one fact of linearity of a Box of T: the answer of
+// is_linear_box_payload where a unit first names the Box.  The annotation of
+// the Box and its two assignments read this variable, so the three agree, and
+// no constraint of a member of the Box walks the payload again.
+template <class T>
+inline constexpr bool is_linear_box = is_linear_box_payload<T>();
+
 // The object of a Box that a path other than a consume can end: a complete
 // payload that is not linear, because the end of a linear object drops it.
 // The mint of a Hole ends the object.  A word of a Box is not linear, and the
@@ -808,9 +815,8 @@ public:
 // its object alone, so it moves between threads as its payload does
 // (foundation/Transfer.h).
 template <BoxPayload T>
-class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box_payload<T>()>]]
-                   [[= ::foundation::transfer::by_arguments{}]] Box final
-    : public OwnerCore<detail::owner::BoxState<T>> {
+class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box<T>>]][[= ::foundation::transfer::by_arguments{}]]
+    Box final : public OwnerCore<detail::owner::BoxState<T>> {
     using State = detail::owner::BoxState<T>;
     using Core = OwnerCore<State>;
 
@@ -894,13 +900,20 @@ public:
 
     // The assignment ends the object that this Box holds after it takes
     // other, so other can live inside that object.  A linear object must not
-    // end that way, so a Box of a linear payload has no assignment.
+    // end that way, so a Box of a linear payload has no assignment.  The two
+    // assignments read is_linear_box, the one fact of linearity that the Box
+    // fixes where a unit first names it, and they walk no payload.  GCC checks
+    // the constraints of each member function again when a later read lists
+    // the members of a class, so a walk of the payload here could reach a
+    // member read of a node that holds this Box, which is still open.  A Box
+    // that a unit names early is thus not linear, and the end of its object
+    // stops the build when the payload is linear.
     Box(Box&&) noexcept = default;
     Box& operator=(Box&&) noexcept
-        requires(!is_linear_box_payload<T>())
+        requires(!is_linear_box<T>)
     = default;
     Box& operator=(Box&&)
-        requires(is_linear_box_payload<T>())
+        requires(is_linear_box<T>)
     = delete("an assignment ends the linear payload that the target Box holds, and a linear value must not be "
              "dropped: consume the target first, or build a new Box");
 

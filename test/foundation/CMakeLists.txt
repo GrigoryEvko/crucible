@@ -2844,6 +2844,20 @@ foundation_neg_compile_test(neg_core_identity_from_integer
   "constexpr foundation::core::Identity::Identity\\([a-z_:0-9]+\\). is private within this context"
   "declared private here")
 foundation_test(test_core_box)
+# A node that holds a Box of its own type compiles and builds, in each order of
+# the first question of a unit (box_self_node.h).  GCC keeps the results of
+# constraints in a cache that its garbage collector empties, and a later read
+# of the members of a class then checks the constraints of its member
+# functions again.  In the default configuration, the unit of the transfer
+# walk compiles with a collection at each opportunity, so each build empties
+# the cache at each question of that unit.  The other units compile with the
+# usual settings of the compiler.
+foundation_test(test_core_box_self_node test_core_box_self_node.cpp box_self_node_send.cpp box_self_node_owned.cpp
+  box_self_node_linear.cpp box_self_node_droppable.cpp box_self_node_build.cpp)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE AND NOT CRUCIBLE_BENCH AND NOT CRUCIBLE_SYNTAX_ONLY)
+  set_source_files_properties(box_self_node_send.cpp
+    PROPERTIES COMPILE_OPTIONS "--param=ggc-min-expand=0;--param=ggc-min-heapsize=0")
+endif()
 # The test counts the calls of the allocation door: each reference of the
 # link to the allocator of the C library goes to a wrapper of the test.
 foundation_test(test_core_hole)
@@ -3081,7 +3095,7 @@ foundation_neg_compile_test(neg_core_hole_copied
 # Hole from it end the payload with no consume, so each of the two is
 # refused.
 foundation_neg_compile_test(neg_core_box_of_linear_payload_assigned
-  "use of deleted function .foundation::core::Box<T>& foundation::core::Box<T>::operator=\\(foundation::core::Box<T>&&\\) requires \\(is_linear_box_payload<T>\\)\\(\\) \\[with T = foundation::core::Hole<8, 8>\\]."
+  "use of deleted function .foundation::core::Box<T>& foundation::core::Box<T>::operator=\\(foundation::core::Box<T>&&\\) requires +is_linear_box<T> \\[with T = foundation::core::Hole<8, 8>\\]."
   "an assignment ends the linear payload that the target Box holds")
 foundation_neg_compile_test(neg_core_hole_of_box_of_linear_payload
   "no matching function for call to .mint_hole\\(std::remove_reference<foundation::core::Box<foundation::core::Hole<8, 8> >&>::type\\)."
@@ -3091,6 +3105,12 @@ foundation_neg_compile_test(neg_core_hole_of_box_of_linear_payload
 foundation_neg_compile_test(neg_core_box_of_linear_payload_named_early
   "static assertion failed: a Box of a linear payload is linear only when a unit first names the Box where the payload is complete"
   "name the Box first after the definition of the payload")
+# The two assignments of such a Box read the fact of its first naming, so the
+# assignment is no deleted function.  It ends the payload of the target, and
+# that end stops the build: the one error is the static assertion.
+foundation_neg_compile_test(neg_core_box_of_linear_payload_named_early_assigned
+  "static assertion failed: a Box of a linear payload is linear only when a unit first names the Box where the payload is complete"
+  "In instantiation of .static void foundation::core::detail::owner::BoxState<T>::release\\(const foundation::core::detail::owner::BoxState<T>&\\) \\[with T = Node\\].")
 
 foundation_neg_compile_test(neg_core_box_mint_forged_body
   "no matching function for call to .foundation::core::Box<int>::Box\\(<brace-enclosed initializer list>\\)."
