@@ -95,7 +95,7 @@ public:
 private:
     [[nodiscard]] ::fixy::Ref<std::byte> byte_at_(ByteCount at) noexcept {
         if (at.raw() >= count_) ::fixy::fatal("an edit of a byte is at a position of the input");
-        return front_.view().get(at.raw()).expect("a position of the input is in the buffer");
+        return ::fixy::erase_brand(front_.view().get(at.raw()).expect("a position of the input is in the buffer"));
     }
 
     void swap_() noexcept {

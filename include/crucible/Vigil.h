@@ -1757,7 +1757,7 @@ private:
 class [[nodiscard]] VigilOpNest {
 public:
     VigilOpNest(Vigil& vigil, VigilFgCtx const& fg) noexcept
-        : vigil_{::fixy::to(vigil)}, nest_{vigil.op_record_stack(fg)} {}
+        : vigil_{::fixy::erase_brand(::fixy::to(vigil))}, nest_{vigil.op_record_stack(fg)} {}
 
     ~VigilOpNest() {
         if (nest_.is_unrecorded()) [[unlikely]]

@@ -202,7 +202,8 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // comes after the close of the nest, also in an unwind.
 class [[nodiscard]] AllocatorFollowScope {
 public:
-    explicit AllocatorFollowScope(const crucible::CrucibleContext& context) noexcept : context_{::fixy::to(context)} {
+    explicit AllocatorFollowScope(const crucible::CrucibleContext& context) noexcept
+        : context_{::fixy::erase_brand(::fixy::to(context))} {
         follow_vigil_mode(context.mode());
     }
 

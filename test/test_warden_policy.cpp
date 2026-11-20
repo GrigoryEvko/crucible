@@ -381,14 +381,14 @@ void test_choice_reads_the_node_of_the_lent_topology() {
 
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     ::fixy::topology::Topology const planted = ::fixy::topology::Topology::probe_tree(test, TWO_PACKAGE_SYSFS_ROOT);
+    TopologyRef const lent = ::fixy::erase_brand(::fixy::to(planted));
     CpuSet allowed{};
     allowed.insert_range(0, 5);
 
     CpuSet const same_node =
-        detail::select_warm_cpus_of(allowed, ::fixy::to(planted), ::fixy::some(CpuId{2}), ::fixy::ElementCount{1});
+        detail::select_warm_cpus_of(allowed, lent, ::fixy::some(CpuId{2}), ::fixy::ElementCount{1});
     CHECK(same_node.size() == 1 && same_node.contains(3), "the one companion of CPU 2 is CPU 3 of node 1");
-    CpuSet const three =
-        detail::select_warm_cpus_of(allowed, ::fixy::to(planted), ::fixy::some(CpuId{4}), ::fixy::ElementCount{3});
+    CpuSet const three = detail::select_warm_cpus_of(allowed, lent, ::fixy::some(CpuId{4}), ::fixy::ElementCount{3});
     CHECK(three.size() == 3 && three.contains(5) && three.contains(0) && three.contains(1),
           "CPU 5 of node 3 comes first, then the lowest CPUs of the other nodes");
 
@@ -400,10 +400,10 @@ void test_choice_reads_the_node_of_the_lent_topology() {
     sel.numa_hint = 3;
     auto const allowed_side = ::fixy::side_as<crucible::warden::side::AllowedCpus>(allowed);
     auto const no_exclusion = ::fixy::side_as<crucible::warden::side::ExcludedCpus>(CpuSet{});
-    CHECK(detail::select_hot_cpu_of(allowed_side, ::fixy::to(planted), sel, no_exclusion) == 4,
+    CHECK(detail::select_hot_cpu_of(allowed_side, lent, sel, no_exclusion) == 4,
           "the hint of node 3 picks CPU 4, the lowest CPU of node 3");
     sel.numa_hint = 2;
-    CHECK(detail::select_hot_cpu_of(allowed_side, ::fixy::to(planted), sel, no_exclusion) == 0,
+    CHECK(detail::select_hot_cpu_of(allowed_side, lent, sel, no_exclusion) == 0,
           "a hint of a node that the topology does not name gives no bonus");
 }
 
@@ -518,7 +518,7 @@ void test_policy_production_degrades_gracefully(crucible::warden::TopologyRef to
 // The region of a snapshot that starts at the first byte of bytes, or no
 // region.
 [[nodiscard]] ::fixy::Option<crucible::warden::HotRegion> region_at(::fixy::View<std::byte const> bytes) noexcept {
-    ::fixy::Ref<std::byte const> const first = bytes.get(0).expect("the View holds a first byte");
+    auto const first = bytes.get(0).expect("the View holds a first byte");
     for (crucible::warden::HotRegion const& region : crucible::warden::HotRegionRegistry::instance().snapshot()) {
         auto const start = region.bytes.get(0);
         for (auto const start_byte : start) {
@@ -815,7 +815,7 @@ int main() {
     // The suite is the owner of the warden: it loads the topology of the
     // host one time and lends it to each choice of a CPU.
     ::fixy::topology::Topology const host = ::fixy::topology::Topology::load(kStartup);
-    crucible::warden::TopologyRef const topology = ::fixy::to(host);
+    crucible::warden::TopologyRef const topology = ::fixy::erase_brand(::fixy::to(host));
 
     test_topology_basic();
     test_allowed_cpus_reads_the_calling_thread();

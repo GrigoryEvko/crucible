@@ -122,7 +122,7 @@ int main() {
         ::fixy::BumpArena warm_dag_arena{1 << 18};
         const RegionNode& warm_region = *synth_region(warm_dag_arena, num_ops, 0xC0FFEE + num_ops);
         check_unset_ids(warm_region);
-        const auto warm_payload = Cipher::content_addressed(::fixy::to(warm_region));
+        const auto warm_payload = Cipher::content_addressed(::fixy::erase_brand(::fixy::to(warm_region)));
         (void)cipher.store(ctx, open_view, warm_payload);  // prime the warm path
         const ContentHash warm_h = warm_region.content_hash;
 

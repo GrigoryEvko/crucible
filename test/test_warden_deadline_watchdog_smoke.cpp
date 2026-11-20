@@ -249,8 +249,8 @@ int main() {
         if (senses.sched_switch().is_none()) {
             failures += crucible::test::verdict_of_no_load("warden::DeadlineWatchdog with a sched_switch source");
         } else {
-            DeadlineWatchdog sensing =
-                mint_deadline_watchdog(startup, crucible::warden::WatchdogSource::some(::fixy::to(senses)), policy);
+            DeadlineWatchdog sensing = mint_deadline_watchdog(
+                startup, crucible::warden::WatchdogSource::some(::fixy::erase_brand(::fixy::to(senses))), policy);
             const auto boot_clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(runner);
             const auto reading = boot_clock.read(
                 ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(runner));

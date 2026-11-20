@@ -6967,6 +6967,13 @@ fixy_neg_compile_test(neg_scoped_view_erases_implicitly
   "to non-scalar type .ScopedView<\\[\\.\\.\\.\\],\\[\\.\\.\\.\\],foundation::brand::DefaultBrand>. requested"
   "neg_scoped_view_erases_implicitly\\.cpp:22:[0-9]+: error")
 
+# A view of a carrier with a named brand takes the brand of the carrier, and
+# no conversion drops that brand either.
+fixy_neg_compile_test(neg_scoped_view_of_a_named_brand_erases_implicitly
+  "conversion from .ScopedView<\\[\\.\\.\\.\\],\\[\\.\\.\\.\\],.anonymous.::NamedBrand>."
+  "to non-scalar type .ScopedView<\\[\\.\\.\\.\\],\\[\\.\\.\\.\\],foundation::brand::DefaultBrand>. requested"
+  "neg_scoped_view_of_a_named_brand_erases_implicitly\\.cpp:27:[0-9]+: error")
+
 # A view of a temporary carrier: the refusal by value category, which
 # is the deleted rvalue twin.
 fixy_neg_compile_test(neg_brand_scoped_view_from_temporary_carrier

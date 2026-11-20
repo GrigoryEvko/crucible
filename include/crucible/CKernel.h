@@ -269,7 +269,7 @@ CRUCIBLE_PROCESS_WIDE inline constinit ::fixy::Atomic<::fixy::Option<::fixy::Ref
 // array with static storage duration satisfies that; a local does not.
 inline void publish_static_ckernel_table(const StaticCKernelTable& table CRUCIBLE_LIFETIMEBOUND) noexcept {
     detail::static_ckernel_table_.store_release(
-        ::fixy::Option<::fixy::Ref<const StaticCKernelTable>>::some(::fixy::to(table)));
+        ::fixy::Option<::fixy::Ref<const StaticCKernelTable>>::some(::fixy::erase_brand(::fixy::to(table))));
 }
 
 // The lifetime of a temporary table stops at the end of the statement, but

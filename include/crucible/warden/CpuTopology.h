@@ -216,9 +216,13 @@ private:
     std::size_t position_ = CpuSet::capacity;
 };
 
-constexpr CpuSetCursor CpuSet::begin() const& noexcept { return CpuSetCursor{::fixy::to(*this), next_from_(0)}; }
+constexpr CpuSetCursor CpuSet::begin() const& noexcept {
+    return CpuSetCursor{::fixy::erase_brand(::fixy::to(*this)), next_from_(0)};
+}
 
-constexpr CpuSetCursor CpuSet::end() const& noexcept { return CpuSetCursor{::fixy::to(*this), capacity}; }
+constexpr CpuSetCursor CpuSet::end() const& noexcept {
+    return CpuSetCursor{::fixy::erase_brand(::fixy::to(*this)), capacity};
+}
 
 // A query of the affinity of the calling thread reads procfs, and when
 // procfs gives no answer, it asks the kernel through the affinity door of

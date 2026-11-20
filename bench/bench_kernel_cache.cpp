@@ -33,7 +33,7 @@ struct FakeKernel {
 // The cache never reads a kernel, so the address of a fake object stands
 // for one.
 [[nodiscard]] KernelCache::KernelRef kernel_ref(FakeKernel& kernel) noexcept {
-    return ::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&kernel)));
+    return ::fixy::erase_brand(::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&kernel))));
 }
 
 }  // namespace

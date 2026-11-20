@@ -822,7 +822,7 @@ namespace detail {
 // The topology of the host that the harness lends to each choice of a CPU of
 // the warden.  A bench process probes it one time, at its first use.
 [[nodiscard]] inline crucible::warden::TopologyRef harness_topology() noexcept {
-    return ::fixy::to(::fixy::topology::Topology::instance());
+    return ::fixy::erase_brand(::fixy::to(::fixy::topology::Topology::instance()));
 }
 
 // The core of a run in the affinity allowed of the process: the asked core
@@ -1611,7 +1611,7 @@ namespace detail {
                                                                          .sense_hub = true,
                                                                          .sched_switch = true,
                                                                      });
-    return ::fixy::to(slot);
+    return ::fixy::erase_brand(::fixy::to(slot));
 }
 
 // The longest off-CPU spikes of the window of a run (Report::sched_offcpu).

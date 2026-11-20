@@ -36,7 +36,7 @@ uint32_t TraceGraph::offset_(::fixy::View<const uint32_t> offsets, uint32_t inde
 }
 
 ::fixy::Ref<TraceGraph> alloc_trace_graph(::foundation::effects::Alloc a, ::fixy::BumpArena& arena) noexcept {
-    return arena.make<TraceGraph>(a);
+    return ::fixy::erase_brand(arena.make<TraceGraph>(a));
 }
 
 void build_csr(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, TraceGraph& graph,

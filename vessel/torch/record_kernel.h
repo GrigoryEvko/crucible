@@ -1141,7 +1141,7 @@ static_assert(sizeof(RecordingBinding) == sizeof(crucible::TraceRing::ValidatedE
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     if (!vigil.is_producer_thread()) [[unlikely]]
         return ::fixy::none;
-    return Recorder::some(::fixy::to(vigil));
+    return Recorder::some(::fixy::erase_brand(::fixy::to(vigil)));
 }
 
 // Bits 2 and 3 of op_flags. `is_foreach` is a property of the operator, which

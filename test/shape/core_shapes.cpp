@@ -850,7 +850,7 @@ namespace {
 // A full Option of a Ref is the address in one register, with no test of
 // the null pointer.
 [[gnu::used]] fixy::Option<fixy::Ref<std::uint32_t>> option_ref_some(std::uint32_t& slot) noexcept {
-    return fixy::some(fixy::Ref<std::uint32_t>{fixy::to(slot)});
+    return fixy::some(fixy::erase_brand(fixy::to(slot)));
 }
 
 // ok_or gives the payload of an Option as a Result, in the same register.

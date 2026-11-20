@@ -203,7 +203,7 @@ public:
         friend class ConnectionPool;
 
         constexpr LeaseGuard(ConnectionPool& pool, SlotIndex slot_index, Ctx const& ctx) noexcept
-            : pool_{::fixy::some(::fixy::Ref<ConnectionPool>{::fixy::to(pool)})}, slot_index_{slot_index}, ctx_{ctx} {}
+            : pool_{::fixy::some(::fixy::erase_brand(::fixy::to(pool)))}, slot_index_{slot_index}, ctx_{ctx} {}
 
         // The pool of a live lease.  Each caller tested the lease first.
         [[nodiscard]] ConnectionPool const& pool() const noexcept {
@@ -244,7 +244,7 @@ public:
         }
 
         [[nodiscard]] ::fixy::Ref<Connection<T> const> operator->() const noexcept {
-            return ::fixy::to(connection_of(pool().slots_.at(slot_index_)));
+            return ::fixy::erase_brand(::fixy::to(connection_of(pool().slots_.at(slot_index_))));
         }
 
         [[nodiscard]] explicit constexpr operator bool() const noexcept { return pool_.is_some(); }

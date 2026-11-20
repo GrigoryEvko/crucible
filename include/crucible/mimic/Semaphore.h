@@ -107,7 +107,7 @@ public:
 
 private:
     constexpr DeviceSemaphore(SemaphoreCounter& counter, std::uint64_t native_handle) noexcept
-        : counter_{::fixy::to(counter)}, native_handle_{native_handle} {}
+        : counter_{::fixy::erase_brand(::fixy::to(counter))}, native_handle_{native_handle} {}
 
     template <VendorBackend B>
         requires SemaphoreBackend<B>

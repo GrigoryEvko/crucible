@@ -99,7 +99,7 @@ using PlanLink = ::fixy::Option<::fixy::Ref<MemoryPlan const>>;
 
 // A full link to the plan.
 [[nodiscard]] inline PlanLink make_plan_link(MemoryPlan const& plan) noexcept {
-    return ::fixy::some(::fixy::Ref<MemoryPlan const>{::fixy::to(plan)});
+    return ::fixy::some(::fixy::erase_brand(::fixy::to(plan)));
 }
 
 // The link to the plan that a planner or a loader made, or no plan.
@@ -356,7 +356,9 @@ struct TraceNode {
 
     // The node as a region, a branch or a loop, or no value when its kind is
     // a different kind.  The doors read the kind, so no walk downcasts a node
-    // by hand.
+    // by hand.  Each door of this class gives a Ref on the erased brand, the
+    // brand of each link of the DAG, because a walk stores the node in a link
+    // that holds nodes of many arenas.
     [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode>> as_region() noexcept;
     [[nodiscard]] ::fixy::Option<::fixy::Ref<BranchNode>> as_branch() noexcept;
     [[nodiscard]] ::fixy::Option<::fixy::Ref<LoopNode>> as_loop() noexcept;
@@ -378,7 +380,7 @@ struct TraceNode {
 
 // A full link to the node.
 [[nodiscard]] inline TraceLink make_link(TraceNode& node) noexcept {
-    return ::fixy::some(::fixy::Ref<TraceNode>{::fixy::to(node)});
+    return ::fixy::some(::fixy::erase_brand(::fixy::to(node)));
 }
 
 // True when the link reaches the node.  The test compares the addresses of
@@ -621,32 +623,32 @@ struct LoopNode : TraceNode {
 
 inline ::fixy::Option<::fixy::Ref<RegionNode>> TraceNode::as_region() noexcept {
     if (kind != TraceNodeKind::REGION) return ::fixy::none;
-    return ::fixy::some(::fixy::Ref<RegionNode>{::fixy::to(static_cast<RegionNode&>(*this))});
+    return ::fixy::some(::fixy::erase_brand(::fixy::to(static_cast<RegionNode&>(*this))));
 }
 
 inline ::fixy::Option<::fixy::Ref<BranchNode>> TraceNode::as_branch() noexcept {
     if (kind != TraceNodeKind::BRANCH) return ::fixy::none;
-    return ::fixy::some(::fixy::Ref<BranchNode>{::fixy::to(static_cast<BranchNode&>(*this))});
+    return ::fixy::some(::fixy::erase_brand(::fixy::to(static_cast<BranchNode&>(*this))));
 }
 
 inline ::fixy::Option<::fixy::Ref<LoopNode>> TraceNode::as_loop() noexcept {
     if (kind != TraceNodeKind::LOOP) return ::fixy::none;
-    return ::fixy::some(::fixy::Ref<LoopNode>{::fixy::to(static_cast<LoopNode&>(*this))});
+    return ::fixy::some(::fixy::erase_brand(::fixy::to(static_cast<LoopNode&>(*this))));
 }
 
 inline ::fixy::Option<::fixy::Ref<RegionNode const>> TraceNode::as_region() const noexcept {
     if (kind != TraceNodeKind::REGION) return ::fixy::none;
-    return ::fixy::some(::fixy::Ref<RegionNode const>{::fixy::to(static_cast<RegionNode const&>(*this))});
+    return ::fixy::some(::fixy::erase_brand(::fixy::to(static_cast<RegionNode const&>(*this))));
 }
 
 inline ::fixy::Option<::fixy::Ref<BranchNode const>> TraceNode::as_branch() const noexcept {
     if (kind != TraceNodeKind::BRANCH) return ::fixy::none;
-    return ::fixy::some(::fixy::Ref<BranchNode const>{::fixy::to(static_cast<BranchNode const&>(*this))});
+    return ::fixy::some(::fixy::erase_brand(::fixy::to(static_cast<BranchNode const&>(*this))));
 }
 
 inline ::fixy::Option<::fixy::Ref<LoopNode const>> TraceNode::as_loop() const noexcept {
     if (kind != TraceNodeKind::LOOP) return ::fixy::none;
-    return ::fixy::some(::fixy::Ref<LoopNode const>{::fixy::to(static_cast<LoopNode const&>(*this))});
+    return ::fixy::some(::fixy::erase_brand(::fixy::to(static_cast<LoopNode const&>(*this))));
 }
 
 // The check of each door is a fatal invariant and not a precondition.  GCC
@@ -655,32 +657,32 @@ inline ::fixy::Option<::fixy::Ref<LoopNode const>> TraceNode::as_loop() const no
 // the kind in a unit on the ignore semantic.
 inline ::fixy::Ref<RegionNode> TraceNode::expect_region() noexcept {
     CRUCIBLE_FATAL_INVARIANT(kind == TraceNodeKind::REGION);
-    return ::fixy::Ref<RegionNode>{::fixy::to(static_cast<RegionNode&>(*this))};
+    return ::fixy::erase_brand(::fixy::to(static_cast<RegionNode&>(*this)));
 }
 
 inline ::fixy::Ref<BranchNode> TraceNode::expect_branch() noexcept {
     CRUCIBLE_FATAL_INVARIANT(kind == TraceNodeKind::BRANCH);
-    return ::fixy::Ref<BranchNode>{::fixy::to(static_cast<BranchNode&>(*this))};
+    return ::fixy::erase_brand(::fixy::to(static_cast<BranchNode&>(*this)));
 }
 
 inline ::fixy::Ref<LoopNode> TraceNode::expect_loop() noexcept {
     CRUCIBLE_FATAL_INVARIANT(kind == TraceNodeKind::LOOP);
-    return ::fixy::Ref<LoopNode>{::fixy::to(static_cast<LoopNode&>(*this))};
+    return ::fixy::erase_brand(::fixy::to(static_cast<LoopNode&>(*this)));
 }
 
 inline ::fixy::Ref<RegionNode const> TraceNode::expect_region() const noexcept {
     CRUCIBLE_FATAL_INVARIANT(kind == TraceNodeKind::REGION);
-    return ::fixy::Ref<RegionNode const>{::fixy::to(static_cast<RegionNode const&>(*this))};
+    return ::fixy::erase_brand(::fixy::to(static_cast<RegionNode const&>(*this)));
 }
 
 inline ::fixy::Ref<BranchNode const> TraceNode::expect_branch() const noexcept {
     CRUCIBLE_FATAL_INVARIANT(kind == TraceNodeKind::BRANCH);
-    return ::fixy::Ref<BranchNode const>{::fixy::to(static_cast<BranchNode const&>(*this))};
+    return ::fixy::erase_brand(::fixy::to(static_cast<BranchNode const&>(*this)));
 }
 
 inline ::fixy::Ref<LoopNode const> TraceNode::expect_loop() const noexcept {
     CRUCIBLE_FATAL_INVARIANT(kind == TraceNodeKind::LOOP);
-    return ::fixy::Ref<LoopNode const>{::fixy::to(static_cast<LoopNode const&>(*this))};
+    return ::fixy::erase_brand(::fixy::to(static_cast<LoopNode const&>(*this)));
 }
 
 // The hash of the Protocol family of the edges as one run: their images one
@@ -1064,7 +1066,7 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
 [[nodiscard]] inline ::fixy::Ref<RegionNode> make_region(::foundation::effects::Alloc a,
                                                          ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND,
                                                          ::fixy::View<TraceEntry> ops) noexcept {
-    const ::fixy::Ref<RegionNode> node = arena.make<RegionNode>(a);
+    const ::fixy::Ref<RegionNode> node = ::fixy::erase_brand(arena.make<RegionNode>(a));
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
     node->content_hash = compute_content_hash(ops);
@@ -1103,7 +1105,7 @@ inline void init_region_node(RegionNode& node, ::fixy::View<TraceEntry> ops, Con
                                                          const NumericalRecipe& recipe) noexcept {
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(recipe.hash));
     CRUCIBLE_PRE(!recipe.hash.is_sentinel());
-    const ::fixy::Ref<RegionNode> node = arena.make<RegionNode>(a);
+    const ::fixy::Ref<RegionNode> node = ::fixy::erase_brand(arena.make<RegionNode>(a));
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
     node->content_hash = compute_content_hash(ops, recipe);
@@ -1124,7 +1126,7 @@ template <class... Rest>
 
 [[nodiscard]] inline ::fixy::Ref<TraceNode> make_terminal(::foundation::effects::Alloc a,
                                                           ::fixy::BumpArena& arena) noexcept {
-    const ::fixy::Ref<TraceNode> node = arena.make<TraceNode>(a);
+    const ::fixy::Ref<TraceNode> node = ::fixy::erase_brand(arena.make<TraceNode>(a));
     node->kind = TraceNodeKind::TERMINAL;
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::TERMINAL);
     return node;
@@ -1174,7 +1176,7 @@ template <class... Rest>
     // REPEAT keeps zero, where it means what it says: run the body no times
     // and continue.
     CRUCIBLE_PRE(term_kind != LoopTermKind::UNTIL || repeat_count > 0u);
-    const ::fixy::Ref<LoopNode> node = arena.make<LoopNode>(a);
+    const ::fixy::Ref<LoopNode> node = ::fixy::erase_brand(arena.make<LoopNode>(a));
     node->kind = TraceNodeKind::LOOP;
     node->body = make_link(body);
     node->body_content_hash = body_content_hash;
@@ -1308,7 +1310,7 @@ inline void recompute_merkle(TraceNode& node) {
 template <typename GuardEval, typename RegionExec>
 [[nodiscard, gnu::flatten]] inline bool replay(TraceNode const& first, GuardEval&& eval_guard,
                                                RegionExec&& exec_region) {
-    ::fixy::Option<::fixy::Ref<TraceNode const>> walk = ::fixy::some(::fixy::Ref<TraceNode const>{::fixy::to(first)});
+    ::fixy::Option<::fixy::Ref<TraceNode const>> walk = ::fixy::some(::fixy::erase_brand(::fixy::to(first)));
     while (walk.is_some()) {
         const ::fixy::Ref<TraceNode const> node =
             ::fixy::Option<::fixy::Ref<TraceNode const>>{walk}.expect("the condition of the loop tests the link");

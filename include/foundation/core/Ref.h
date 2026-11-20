@@ -11,9 +11,10 @@
 // deleted, because the Ref dangles at the end of the full expression.
 //
 // *ref and ref->member reach the object with no test, because a Ref has no
-// empty state.  A Ref<T, Brand> converts to a Ref<T const, Brand> and to the
-// erased brand DefaultBrand, and nothing converts it back.  erase_brand(ref)
-// is the named door to the erased brand, and it refuses a scope brand.
+// empty state.  A Ref<T, Brand> converts to a Ref<T const, Brand>, and no
+// conversion changes its brand.  erase_brand(ref) is the one door to the
+// erased brand DefaultBrand, it refuses a scope brand, and nothing gives the
+// brand back.
 // same_object(a, b) tells if two Refs reach one object, and same_target(a, b)
 // tells if two Options of a Ref are both empty or reach one object.  A Ref
 // has no ==, no default value and no conversion from a pointer.  Option<Ref<T, Brand>> has the size of one
@@ -118,13 +119,12 @@ class Ref;
 
 namespace detail {
 
-// A Ref<From, FromBrand> converts to a Ref<To, ToBrand> when the conversion
-// adds a const, erases the brand, or does the two.  No conversion removes a
-// const, and no conversion gives an erased Ref a brand.
+// A Ref<From, Brand> converts to a Ref<From const, Brand>: the conversion
+// adds a const and keeps the brand.  No conversion removes a const, and no
+// conversion changes a brand.  erase_brand is the one door to the erased
+// brand.
 template <class From, class FromBrand, class To, class ToBrand>
-concept RefWidens = (std::same_as<From, To> || std::same_as<From const, To>)
-                 && (std::same_as<FromBrand, ToBrand> || std::same_as<ToBrand, ::foundation::brand::DefaultBrand>)
-                 && !(std::same_as<From, To> && std::same_as<FromBrand, ToBrand>);
+concept RefWidens = std::same_as<From const, To> && !std::same_as<From, To> && std::same_as<FromBrand, ToBrand>;
 
 // The door of an owner of the base that lends one of its objects with the
 // fresh brand of its own call, as get() of the Region family does.  The
@@ -197,7 +197,7 @@ public:
     // (cmake/CodeFlags.cmake).
     constexpr Ref(T& object, detail::RefKey const& /*key*/) noexcept : object_{__builtin_addressof(object)} {}
 
-    // Adds a const to the target, erases the brand, or does the two.
+    // Adds a const to the target, and keeps the brand.
     template <class U, class UBrand>
         requires detail::RefWidens<U, UBrand, T, Brand>
     constexpr Ref(Ref<U, UBrand> other) noexcept : object_{__builtin_addressof(*other)} {}

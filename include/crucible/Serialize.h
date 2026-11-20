@@ -645,7 +645,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     uint32_t num_slots = 0;
     const bool has_plan = r.read_bool();
     if (has_plan) {
-        const ::fixy::Ref<MemoryPlan> loaded_plan = arena.make<MemoryPlan>(a);
+        const ::fixy::Ref<MemoryPlan> loaded_plan = ::fixy::erase_brand(arena.make<MemoryPlan>(a));
         plan = ::fixy::Option<::fixy::Ref<MemoryPlan>>::some(loaded_plan);
         loaded_plan->pool_bytes = r.r<uint64_t>();
         // The next three checks all guard the same thing: a loaded plan goes
@@ -829,7 +829,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     for (const LoadError fault : checksum_fault(image, r.pos))
         return ::fixy::err(fault);
 
-    const ::fixy::Ref<RegionNode> node = arena.make<RegionNode>(a);
+    const ::fixy::Ref<RegionNode> node = ::fixy::erase_brand(arena.make<RegionNode>(a));
     node->kind = TraceNodeKind::REGION;
     node->merkle_hash = hdr.merkle_hash;
     node->content_hash = hdr.content_hash;
@@ -908,7 +908,7 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         return ::fixy::err(r.reason_or(LoadError::truncated));
     }
 
-    const ::fixy::Ref<BranchNode> node = arena.make<BranchNode>(a);
+    const ::fixy::Ref<BranchNode> node = ::fixy::erase_brand(arena.make<BranchNode>(a));
     node->kind = TraceNodeKind::BRANCH;
     node->merkle_hash = hdr.merkle_hash;
     node->next = ::fixy::none;  // the caller resolves the continuation separately

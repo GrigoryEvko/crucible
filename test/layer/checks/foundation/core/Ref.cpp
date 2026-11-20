@@ -150,24 +150,28 @@ static_assert(!std::is_constructible_v<Ref<long, CheckBrand>, Ref<int, CheckBran
 static_assert(!std::is_constructible_v<Ref<int, OtherBrand>, Ref<int, CheckBrand>>);
 static_assert(!std::is_constructible_v<Ref<int const, OtherBrand>, Ref<int, CheckBrand>>);
 
-// The one conversion to the erased brand, with or without a const, and no
-// conversion back.  Each of the two aliases spells the erased form on
-// purpose, and the ledger of the rule erased-brand admits the two.
+// No conversion reaches the erased brand, with or without a const, and no
+// conversion comes back from it.  erase_brand is the one door.  Each of the
+// two aliases spells the erased form on purpose, and the ledger of the rule
+// erased-brand admits the two.
 using ErasedRef = Ref<int, ::foundation::brand::DefaultBrand>;
 using ErasedConstRef = Ref<int const, ::foundation::brand::DefaultBrand>;
-static_assert(std::is_convertible_v<Ref<int, CheckBrand>, ErasedRef>);
-static_assert(std::is_convertible_v<Ref<int, CheckBrand>, ErasedConstRef>);
+static_assert(!std::is_convertible_v<Ref<int, CheckBrand>, ErasedRef>);
+static_assert(!std::is_constructible_v<ErasedRef, Ref<int, CheckBrand>>);
+static_assert(!std::is_convertible_v<Ref<int, CheckBrand>, ErasedConstRef>);
+static_assert(!std::is_constructible_v<ErasedConstRef, Ref<int const, CheckBrand>>);
 static_assert(!std::is_constructible_v<Ref<int, CheckBrand>, ErasedRef>);
+static_assert(std::is_convertible_v<ErasedRef, ErasedConstRef>);
 
 // Two calls of get of an array give two fresh brands.  The two Refs reach
-// one element, so same_object accepts them, and each one converts to the
-// erased brand.
+// one element, so same_object accepts them, and erase_brand gives each one
+// on the erased brand.
 consteval bool two_gets_reach_one_element() {
     FixedArray<int, 3> numbers{1, 2, 3};
     auto const first = numbers.get(1).expect("the position is below the count");
     auto const second = numbers.get(1).expect("the position is below the count");
-    ErasedRef const erased_first = first;
-    ErasedConstRef const erased_second = second;
+    ErasedRef const erased_first = erase_brand(first);
+    ErasedConstRef const erased_second = erase_brand(second);
     return !std::same_as<decltype(first), decltype(second)> && same_object(first, second)
         && same_object(erased_first, erased_second);
 }

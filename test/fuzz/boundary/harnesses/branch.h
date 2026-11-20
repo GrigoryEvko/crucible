@@ -21,7 +21,7 @@ namespace crucible::fuzz::boundary {
     ::fixy::BumpArena arena{};
     const auto alloc = test_alloc();
     const auto arms = static_cast<std::uint32_t>(values.size());
-    const ::fixy::Ref<BranchNode> branch = arena.make<BranchNode>(alloc);
+    const auto branch = arena.make<BranchNode>(alloc);
     branch->kind = TraceNodeKind::BRANCH;
     branch->merkle_hash = MerkleHash{0x5eed0000u + arms};
     branch->set_arms(arena.array<BranchNode::Arm>(alloc, arms, BranchNode::Arm{}));

@@ -60,7 +60,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             };
             ::foundation::core::FixedArray<FakeKernel, N> fakes{};
             const auto kernel_of = [&fakes](::fixy::Index<N> index) noexcept -> KernelCache::KernelRef {
-                return ::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&fakes.at(index))));
+                return ::fixy::erase_brand(
+                    ::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&fakes.at(index)))));
             };
 
             for (const ::fixy::Index<N> index : fakes.indices()) {

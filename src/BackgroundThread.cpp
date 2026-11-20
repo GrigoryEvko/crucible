@@ -339,7 +339,10 @@ struct BackgroundThread::Pipeline {
 
         StageInput(Consumer&& inner, BackgroundThread& owner, ::fixy::BgLoadCtx const& ctx,
                    detail::bg_pipeline::ChannelParks& parks) noexcept
-            : inner_{std::move(inner)}, owner_{::fixy::to(owner)}, ctx_{ctx}, parks_{::fixy::to(parks)} {}
+            : inner_{std::move(inner)},
+              owner_{::fixy::erase_brand(::fixy::to(owner))},
+              ctx_{ctx},
+              parks_{::fixy::erase_brand(::fixy::to(parks))} {}
         friend struct BackgroundThread;
 
     public:
@@ -501,7 +504,7 @@ struct BackgroundThread::Pipeline {
 // before the Ref of it.  The region store holds one empty slot for each
 // region of the limits.
 BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, PipelineLimits const& limits)
-    : region_ready_{::fixy::to(ignore_regions_)},
+    : region_ready_{::fixy::erase_brand(::fixy::to(ignore_regions_))},
       region_store_{::fixy::mint_heap_array_with<RegionMemory>(allocation, limits.region_store.raw(),
                                                                [](size_t) noexcept { return RegionMemory{}; })},
       uncompiled_regions_{allocation, limits.uncompiled_queue},
@@ -512,7 +515,7 @@ BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, Pipe
 
 BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, RegionReadyCall const& on_region_ready,
                                    PipelineLimits const& limits)
-    : region_ready_{::fixy::to(on_region_ready)},
+    : region_ready_{::fixy::erase_brand(::fixy::to(on_region_ready))},
       region_store_{::fixy::mint_heap_array_with<RegionMemory>(allocation, limits.region_store.raw(),
                                                                [](size_t) noexcept { return RegionMemory{}; })},
       uncompiled_regions_{allocation, limits.uncompiled_queue},

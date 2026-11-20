@@ -24,8 +24,8 @@ int main() {
     // The band holds a Ref of a region, so the scope is the one fault.
     using RegionRef = ::fixy::Ref<const ::crucible::RegionNode>;
     const ::crucible::RegionNode region{};
-    auto request_scoped =
-        ::fixy::mint_band<::fixy::opaque_lifetime::PerRequest<RegionRef>>(RegionRef{::fixy::to(region)});
+    auto request_scoped = ::fixy::mint_band<::fixy::opaque_lifetime::PerRequest<RegionRef>>(
+        RegionRef{::fixy::erase_brand(::fixy::to(region))});
     auto result = cipher.commit_per_program(store_ctx, view, std::move(request_scoped));
     return static_cast<int>(static_cast<bool>(std::move(result).consume()));
 }

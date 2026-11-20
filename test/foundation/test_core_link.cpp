@@ -26,9 +26,9 @@ struct Node {
 // A walk of three nodes writes each node through a Link that is not const.
 void test_walk_writes_through_a_link() {
     Node third{.value = 3};
-    Node second{.value = 2, .next = Ref<Node>{::foundation::core::to(third)}};
-    Node first{.value = 1, .next = Ref<Node>{::foundation::core::to(second)}};
-    Link<Node> walk = Ref<Node>{::foundation::core::to(first)};
+    Node second{.value = 2, .next = ::foundation::core::erase_brand(::foundation::core::to(third))};
+    Node first{.value = 1, .next = ::foundation::core::erase_brand(::foundation::core::to(second))};
+    Link<Node> walk = ::foundation::core::erase_brand(::foundation::core::to(first));
     int count = 0;
     while (walk.is_some()) {
         const Ref<Node> node = Link<Node>{walk}.expect("the condition of the loop tests the link");
@@ -44,7 +44,7 @@ void test_walk_writes_through_a_link() {
 // empty Link makes no pass.
 void test_const_link_reads() {
     Node last{.value = 7};
-    Node head{.value = 1, .next = Ref<Node>{::foundation::core::to(last)}};
+    Node head{.value = 1, .next = ::foundation::core::erase_brand(::foundation::core::to(last))};
     Node const& read = head;
     int seen = 0;
     for (Ref<Node const> const& object : read.next)

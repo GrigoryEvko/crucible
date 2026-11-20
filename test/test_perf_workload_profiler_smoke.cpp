@@ -38,7 +38,7 @@ constexpr ::foundation::effects::cap::Nondet kRead = ::foundation::effects::test
 
 // A profiler that borrows senses.
 [[nodiscard]] WorkloadProfiler make_profiler(const crucible::perf::Senses& senses) noexcept {
-    return make_profiler(crucible::perf::ProfiledSenses::some(::fixy::to(senses)));
+    return make_profiler(crucible::perf::ProfiledSenses::some(::fixy::erase_brand(::fixy::to(senses))));
 }
 
 // The header asserts that the proof of origin carries no storage.

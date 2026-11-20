@@ -11,8 +11,9 @@ namespace {
 template <class Facade>
 [[nodiscard]] ::fixy::Option<::fixy::Ref<Facade const>> borrow_of(::fixy::Option<Facade> const& option) noexcept {
     using Borrow = ::fixy::Option<::fixy::Ref<Facade const>>;
-    return option.match([](Facade const& facade) noexcept { return Borrow::some(::fixy::to(facade)); },
-                        [] noexcept { return Borrow{::fixy::none}; });
+    return option.match(
+        [](Facade const& facade) noexcept { return Borrow::some(::fixy::erase_brand(::fixy::to(facade))); },
+        [] noexcept { return Borrow{::fixy::none}; });
 }
 #endif
 

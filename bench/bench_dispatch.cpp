@@ -242,7 +242,7 @@ struct BenchRegion {
     ::fixy::Ref<MemoryPlan> plan;
 
     BenchRegion(::fixy::View<const SchemaHash> schemas, ::fixy::View<const ShapeHash> shapes)
-        : region{make_ops_region_(schemas, shapes)}, plan{arena.make<MemoryPlan>(test.alloc)} {
+        : region{make_ops_region_(schemas, shapes)}, plan{::fixy::erase_brand(arena.make<MemoryPlan>(test.alloc))} {
         const auto n_ops = static_cast<uint32_t>(schemas.size());
         const ::fixy::View<TensorSlot> slots = dag_arena.array<TensorSlot>(test.alloc, n_ops, TensorSlot{});
         uint32_t i = 0;
@@ -366,7 +366,7 @@ int main() {
             check_cpu_slot(slot);
             i++;
         }
-        const ::fixy::Ref<MemoryPlan> plan = arena.make<MemoryPlan>(test.alloc);
+        const auto plan = arena.make<MemoryPlan>(test.alloc);
         plan->slots = slots;
         plan->num_external = 0;
         plan->pool_bytes = NSLOTS * 256;
@@ -684,7 +684,7 @@ int main() {
                 op.shape_hash = ShapeHash{SHAPE.at(i).raw() + r * 0x100};
             }
             const ::fixy::Ref<RegionNode> region = make_region(test.alloc, arena, ops);
-            const ::fixy::Ref<MemoryPlan> plan = arena.make<MemoryPlan>(test.alloc);
+            const auto plan = arena.make<MemoryPlan>(test.alloc);
             plan->slots = ::fixy::View<TensorSlot>{};
             plan->pool_bytes = 0;
             check_single_cpu_plan(*plan);

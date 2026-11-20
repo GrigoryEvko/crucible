@@ -54,7 +54,7 @@ struct FakeKernel {
 // The cache never reads a kernel, so the address of an unrelated object
 // supplies the stable identity that the test compares against.
 static KernelCache::KernelRef kernel_ref(FakeKernel& fake) noexcept {
-    return ::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&fake)));
+    return ::fixy::erase_brand(::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&fake))));
 }
 
 // True when the lookup found the kernel that the fake object stands for.

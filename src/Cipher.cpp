@@ -703,7 +703,7 @@ struct IndexLine {
             high = middle;
         }
     }
-    for (const ::fixy::Ref<const IndexLine> found : lines.get(low)) {
+    for (auto const found : lines.get(low)) {
         return found->first == line.first && found->last == line.last && found->count == line.count
             && found->hash == line.hash;
     }

@@ -172,7 +172,7 @@ static void test_cog_identity_topology_links() {
 
     // A child names its package as its parent.
     cog::CogIdentity child = gpu0;
-    child.parent = ::fixy::some(::fixy::Ref<const cog::CogIdentity>{::fixy::to(package)});
+    child.parent = ::fixy::some(::fixy::Ref<const cog::CogIdentity>{::fixy::erase_brand(::fixy::to(package))});
     CRUCIBLE_TEST_ASSERT(kTest, child.parent.match(
                                     [&package](::fixy::Ref<const cog::CogIdentity> const& parent) noexcept {
                                         return ::fixy::same_object(parent, ::fixy::to(package));

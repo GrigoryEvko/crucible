@@ -79,11 +79,11 @@ public:
     };
 
     [[nodiscard]] constexpr Slot operator[](std::size_t index) noexcept {
-        return Slot{::fixy::to(lanes_.at(lane_of_(index)))};
+        return Slot{::fixy::erase_brand(::fixy::to(lanes_.at(lane_of_(index))))};
     }
 
     [[nodiscard]] constexpr ConstSlot operator[](std::size_t index) const noexcept {
-        return ConstSlot{::fixy::to(lanes_.at(lane_of_(index)))};
+        return ConstSlot{::fixy::erase_brand(::fixy::to(lanes_.at(lane_of_(index))))};
     }
 
     // Each lane, the lanes past ndim too, for a reader that takes the whole

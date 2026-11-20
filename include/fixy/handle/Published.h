@@ -91,7 +91,7 @@ private:
 template <class Proof, class T>
     requires CanPublish<Proof, T>
 [[nodiscard]] constexpr Published<T> mint_published(Proof const& /*proof*/, T const& object) noexcept {
-    return Published<T>{published_key{}, ::foundation::core::Ref<T const>{::foundation::core::to(object)}};
+    return Published<T>{published_key{}, ::foundation::core::erase_brand(::foundation::core::to(object))};
 }
 
 }  // namespace fixy::handle

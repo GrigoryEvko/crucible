@@ -224,8 +224,9 @@ int main() {
         int max_flips = 0;
         for (int bit = 0; bit < 64 * 4; ++bit) {
             AvalancheSpec perturbed = base;
-            const ::fixy::FixedArray<::fixy::Ref<uint64_t>, 4> fields{::fixy::to(perturbed.a), ::fixy::to(perturbed.b),
-                                                                      ::fixy::to(perturbed.c), ::fixy::to(perturbed.d)};
+            const ::fixy::FixedArray<::fixy::Ref<uint64_t>, 4> fields{
+                ::fixy::erase_brand(::fixy::to(perturbed.a)), ::fixy::erase_brand(::fixy::to(perturbed.b)),
+                ::fixy::erase_brand(::fixy::to(perturbed.c)), ::fixy::erase_brand(::fixy::to(perturbed.d))};
             const auto bit_idx = static_cast<unsigned>(bit % 64);
             *fields.at(
                 ::fixy::Index<4>::check(static_cast<std::size_t>(bit / 64)).expect("a bit of one of the fields")) ^=

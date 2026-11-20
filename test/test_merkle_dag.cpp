@@ -27,7 +27,7 @@ namespace {
 // for one.
 template <class Fake>
 [[nodiscard]] crucible::KernelCache::KernelRef kernel_ref(Fake& fake) noexcept {
-    return ::fixy::to(*static_cast<crucible::CompiledKernel*>(static_cast<void*>(&fake)));
+    return ::fixy::erase_brand(::fixy::to(*static_cast<crucible::CompiledKernel*>(static_cast<void*>(&fake))));
 }
 
 // True when the lookup found the kernel that the fake object stands for.

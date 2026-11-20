@@ -13,7 +13,7 @@
 
 int main() {
     crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
-    const ::fixy::Ref<crucible::BackgroundThread> whole{::fixy::to(background)};
+    const ::fixy::Ref<crucible::BackgroundThread> whole{::fixy::erase_brand(::fixy::to(background))};
     background.run_on_publish_stage(
         [whole](crucible::BackgroundThread::PublishStageView&,
                 crucible::BackgroundThread::PublishStage const&) noexcept { static_cast<void>(whole->works_built()); });

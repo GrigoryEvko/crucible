@@ -218,7 +218,7 @@ int main() {
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
-        const ::fixy::Ref<const PoolAllocator> pool_ref = ::fixy::to(static_cast<const PoolAllocator&>(pool));
+        const auto pool_ref = ::fixy::to(static_cast<const PoolAllocator&>(pool));
         bench::do_not_optimize(pool_ref);
         auto r = bench::run("slot_ptr(100, via pointer)", [&] {
             for (uint32_t i = 0; i < N; i++)

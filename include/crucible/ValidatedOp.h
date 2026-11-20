@@ -104,7 +104,7 @@ private:
 class [[nodiscard]] OpNest {
 public:
     explicit OpNest(OpRecordStack& stack) noexcept
-        : stack_{::fixy::to(stack)}, depth_{stack.depth_}, given_at_open_{stack.given_} {
+        : stack_{::fixy::erase_brand(::fixy::to(stack))}, depth_{stack.depth_}, given_at_open_{stack.given_} {
         stack.depth_ = depth_.nested();
     }
 
@@ -150,7 +150,10 @@ private:
 class [[nodiscard]] OpRecordFrame {
 public:
     OpRecordFrame(OpRecordStack& stack, uint32_t count) noexcept
-        : stack_{::fixy::to(stack)}, base_{stack.top_}, count_{count}, slots_{take_slots_(stack, count)} {}
+        : stack_{::fixy::erase_brand(::fixy::to(stack))},
+          base_{stack.top_},
+          count_{count},
+          slots_{take_slots_(stack, count)} {}
 
     ~OpRecordFrame() {
         if (slots_.is_none()) return;

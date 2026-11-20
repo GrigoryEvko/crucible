@@ -115,6 +115,12 @@ cipher::CompiledBody hot_body{};
     return *bodies.view().get(position).expect("each position of the test is below eight");
 }
 
+// The Ref of a body on the erased brand.  A slot of the cache holds the
+// bodies of each site, so an insert takes a Ref on the erased brand.
+[[nodiscard]] ::fixy::Ref<cipher::CompiledBody> lend_erased(cipher::CompiledBody& body) noexcept {
+    return ::fixy::erase_brand(::fixy::to(body));
+}
+
 // Variadic, so that a comma inside a template argument list is not
 // taken for a macro argument separator.  The single-argument assertion
 // macro cannot express these calls.
@@ -140,7 +146,7 @@ int main() {
 
         ASSERT_TRUE(cipher::lookup_computation_cache<&ic_unary, int>().is_none());
 
-        cipher::insert_computation_cache<&ic_unary, int>(::fixy::to(fast_path_body));
+        cipher::insert_computation_cache<&ic_unary, int>(lend_erased(fast_path_body));
 
         // Looking up repeatedly, because a slot that reset itself would
         // pass a single probe.
@@ -158,14 +164,14 @@ int main() {
     {
         ::fixy::report(::fixy::Sink::Err, "  scenario 2 (row_blind_aware_disjoint): ");
 
-        cipher::insert_computation_cache_in_row<&ic_binary, EmptyR, int, double>(::fixy::to(aware_body));
+        cipher::insert_computation_cache_in_row<&ic_binary, EmptyR, int, double>(lend_erased(aware_body));
 
         ASSERT_TRUE(cipher::lookup_computation_cache<&ic_binary, int, double>().is_none());
         ASSERT_TRUE(holds(cipher::lookup_computation_cache_in_row<&ic_binary, EmptyR, int, double>(), aware_body));
 
         // With both slots occupied by different bodies, each lookup
         // still finds its own.
-        cipher::insert_computation_cache<&ic_binary, int, double>(::fixy::to(blind_body));
+        cipher::insert_computation_cache<&ic_binary, int, double>(lend_erased(blind_body));
 
         ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_binary, int, double>(), blind_body));
         ASSERT_TRUE(holds(cipher::lookup_computation_cache_in_row<&ic_binary, EmptyR, int, double>(), aware_body));
@@ -181,9 +187,9 @@ int main() {
     {
         ::fixy::report(::fixy::Sink::Err, "  scenario 3 (cross_row_body_isolation): ");
 
-        cipher::insert_computation_cache_in_row<&ic_void, EmptyR>(::fixy::to(empty_row_body));
-        cipher::insert_computation_cache_in_row<&ic_void, BgR>(::fixy::to(bg_row_body));
-        cipher::insert_computation_cache_in_row<&ic_void, IOR>(::fixy::to(io_row_body));
+        cipher::insert_computation_cache_in_row<&ic_void, EmptyR>(lend_erased(empty_row_body));
+        cipher::insert_computation_cache_in_row<&ic_void, BgR>(lend_erased(bg_row_body));
+        cipher::insert_computation_cache_in_row<&ic_void, IOR>(lend_erased(io_row_body));
 
         ASSERT_TRUE(holds(cipher::lookup_computation_cache_in_row<&ic_void, EmptyR>(), empty_row_body));
         ASSERT_TRUE(holds(cipher::lookup_computation_cache_in_row<&ic_void, BgR>(), bg_row_body));
@@ -208,25 +214,25 @@ int main() {
     {
         ::fixy::report(::fixy::Sink::Err, "  scenario 4 (population_disjointness): ");
 
-        cipher::insert_computation_cache<&ic_pop1, int>(::fixy::to(body_at(blind_population, 0)));
-        cipher::insert_computation_cache<&ic_pop2, int>(::fixy::to(body_at(blind_population, 1)));
-        cipher::insert_computation_cache<&ic_pop3, int>(::fixy::to(body_at(blind_population, 2)));
-        cipher::insert_computation_cache<&ic_pop4, int>(::fixy::to(body_at(blind_population, 3)));
-        cipher::insert_computation_cache<&ic_pop5, int>(::fixy::to(body_at(blind_population, 4)));
-        cipher::insert_computation_cache<&ic_pop6, int>(::fixy::to(body_at(blind_population, 5)));
-        cipher::insert_computation_cache<&ic_pop7, int>(::fixy::to(body_at(blind_population, 6)));
-        cipher::insert_computation_cache<&ic_pop8, int>(::fixy::to(body_at(blind_population, 7)));
+        cipher::insert_computation_cache<&ic_pop1, int>(lend_erased(body_at(blind_population, 0)));
+        cipher::insert_computation_cache<&ic_pop2, int>(lend_erased(body_at(blind_population, 1)));
+        cipher::insert_computation_cache<&ic_pop3, int>(lend_erased(body_at(blind_population, 2)));
+        cipher::insert_computation_cache<&ic_pop4, int>(lend_erased(body_at(blind_population, 3)));
+        cipher::insert_computation_cache<&ic_pop5, int>(lend_erased(body_at(blind_population, 4)));
+        cipher::insert_computation_cache<&ic_pop6, int>(lend_erased(body_at(blind_population, 5)));
+        cipher::insert_computation_cache<&ic_pop7, int>(lend_erased(body_at(blind_population, 6)));
+        cipher::insert_computation_cache<&ic_pop8, int>(lend_erased(body_at(blind_population, 7)));
 
         // The same functions and arguments again, on the row-aware
         // side.
-        cipher::insert_computation_cache_in_row<&ic_pop1, EmptyR, int>(::fixy::to(body_at(aware_population, 0)));
-        cipher::insert_computation_cache_in_row<&ic_pop2, EmptyR, int>(::fixy::to(body_at(aware_population, 1)));
-        cipher::insert_computation_cache_in_row<&ic_pop3, EmptyR, int>(::fixy::to(body_at(aware_population, 2)));
-        cipher::insert_computation_cache_in_row<&ic_pop4, EmptyR, int>(::fixy::to(body_at(aware_population, 3)));
-        cipher::insert_computation_cache_in_row<&ic_pop5, EmptyR, int>(::fixy::to(body_at(aware_population, 4)));
-        cipher::insert_computation_cache_in_row<&ic_pop6, EmptyR, int>(::fixy::to(body_at(aware_population, 5)));
-        cipher::insert_computation_cache_in_row<&ic_pop7, EmptyR, int>(::fixy::to(body_at(aware_population, 6)));
-        cipher::insert_computation_cache_in_row<&ic_pop8, EmptyR, int>(::fixy::to(body_at(aware_population, 7)));
+        cipher::insert_computation_cache_in_row<&ic_pop1, EmptyR, int>(lend_erased(body_at(aware_population, 0)));
+        cipher::insert_computation_cache_in_row<&ic_pop2, EmptyR, int>(lend_erased(body_at(aware_population, 1)));
+        cipher::insert_computation_cache_in_row<&ic_pop3, EmptyR, int>(lend_erased(body_at(aware_population, 2)));
+        cipher::insert_computation_cache_in_row<&ic_pop4, EmptyR, int>(lend_erased(body_at(aware_population, 3)));
+        cipher::insert_computation_cache_in_row<&ic_pop5, EmptyR, int>(lend_erased(body_at(aware_population, 4)));
+        cipher::insert_computation_cache_in_row<&ic_pop6, EmptyR, int>(lend_erased(body_at(aware_population, 5)));
+        cipher::insert_computation_cache_in_row<&ic_pop7, EmptyR, int>(lend_erased(body_at(aware_population, 6)));
+        cipher::insert_computation_cache_in_row<&ic_pop8, EmptyR, int>(lend_erased(body_at(aware_population, 7)));
 
         ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_pop1, int>(), body_at(blind_population, 0)));
         ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_pop2, int>(), body_at(blind_population, 1)));
@@ -293,7 +299,7 @@ int main() {
     // the second block only compares against.
     {
         ::fixy::report(::fixy::Sink::Err, "  scenario 5a (lifetime_persist_insert): ");
-        cipher::insert_computation_cache<&ic_lifetime, int>(::fixy::to(lifetime_body));
+        cipher::insert_computation_cache<&ic_lifetime, int>(lend_erased(lifetime_body));
         ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_lifetime, int>(), lifetime_body));
         ::fixy::report(::fixy::Sink::Err, "PASSED\n");
     }
@@ -366,7 +372,7 @@ int main() {
     {
         ::fixy::report(::fixy::Sink::Err, "  scenario 7 (hot_loop_hit_rate): ");
 
-        cipher::insert_computation_cache<&ic_hotloop, int>(::fixy::to(hot_body));
+        cipher::insert_computation_cache<&ic_hotloop, int>(lend_erased(hot_body));
 
         for (int i = 0; i < 1024; ++i) {
             ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_hotloop, int>(), hot_body));

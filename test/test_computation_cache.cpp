@@ -130,6 +130,12 @@ Bodies contended_row_bodies{};
 // The body at position of bodies.
 [[nodiscard]] cipher::CompiledBody& body_at(Bodies& bodies, BodyIndex position) noexcept { return bodies.at(position); }
 
+// The Ref of a body on the erased brand.  A slot of the cache holds the
+// bodies of each site, so an insert takes a Ref on the erased brand.
+[[nodiscard]] ::fixy::Ref<cipher::CompiledBody> lend_erased(cipher::CompiledBody& body) noexcept {
+    return ::fixy::erase_brand(::fixy::to(body));
+}
+
 // The gate of one race.  Each worker counts itself ready and spins until the
 // opener opens the gate.  The opener waits until each worker is ready, so
 // the inserts of the workers overlap.
@@ -186,10 +192,10 @@ bool computation_cache_smoke_test() noexcept {
     ok = ok && cipher::lookup_computation_cache<&p_unary, float>().is_none();
     ok = ok && cipher::lookup_computation_cache<&p_binary, int, double>().is_none();
 
-    cipher::insert_computation_cache<&p_unary, int>(::fixy::to(smoke_body_a));
+    cipher::insert_computation_cache<&p_unary, int>(lend_erased(smoke_body_a));
     ok = ok && holds(cipher::lookup_computation_cache<&p_unary, int>(), smoke_body_a);
 
-    cipher::insert_computation_cache<&p_unary, int>(::fixy::to(smoke_body_b));
+    cipher::insert_computation_cache<&p_unary, int>(lend_erased(smoke_body_b));
     ok = ok && holds(cipher::lookup_computation_cache<&p_unary, int>(), smoke_body_a);
 
     ok = ok && cipher::lookup_computation_cache<&p_unary, float>().is_none();
@@ -199,7 +205,7 @@ bool computation_cache_smoke_test() noexcept {
     // must still instantiate as a template rather than collapse onto
     // a plain function.
     ok = ok && cipher::lookup_computation_cache<&p_void>().is_none();
-    cipher::insert_computation_cache<&p_void>(::fixy::to(smoke_body_c));
+    cipher::insert_computation_cache<&p_void>(lend_erased(smoke_body_c));
     ok = ok && holds(cipher::lookup_computation_cache<&p_void>(), smoke_body_c);
     ok = ok && holds(cipher::lookup_computation_cache<&p_unary, int>(), smoke_body_a);
 
@@ -208,7 +214,7 @@ bool computation_cache_smoke_test() noexcept {
     // must not be folded onto one symbol.
     ok = ok && cipher::lookup_computation_cache<&p_throwing, int>().is_none();
     ok = ok && cipher::lookup_computation_cache<&p_noexcept, int>().is_none();
-    cipher::insert_computation_cache<&p_throwing, int>(::fixy::to(smoke_body_d));
+    cipher::insert_computation_cache<&p_throwing, int>(lend_erased(smoke_body_d));
     ok = ok && holds(cipher::lookup_computation_cache<&p_throwing, int>(), smoke_body_d);
     ok = ok && cipher::lookup_computation_cache<&p_noexcept, int>().is_none();
 
@@ -233,7 +239,7 @@ void test_lookup_before_insert_misses(::fixy::TestRunnerCtx const& test) {
 }
 
 void test_insert_then_lookup_roundtrips(::fixy::TestRunnerCtx const& test) {
-    cipher::insert_computation_cache<&test_fn_a, int>(::fixy::to(round_trip_body));
+    cipher::insert_computation_cache<&test_fn_a, int>(lend_erased(round_trip_body));
     CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache<&test_fn_a, int>(), round_trip_body));
 }
 
@@ -242,7 +248,7 @@ void test_second_insert_is_idempotent(::fixy::TestRunnerCtx const& test) {
     // insert must not displace what it put there.
     CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache<&test_fn_a, int>(), round_trip_body));
 
-    cipher::insert_computation_cache<&test_fn_a, int>(::fixy::to(overwrite_body));
+    cipher::insert_computation_cache<&test_fn_a, int>(lend_erased(overwrite_body));
 
     CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache<&test_fn_a, int>(), round_trip_body));
     CRUCIBLE_TEST_ASSERT(test, !holds(cipher::lookup_computation_cache<&test_fn_a, int>(), overwrite_body));
@@ -257,7 +263,7 @@ void test_distinct_instantiations_are_isolated(::fixy::TestRunnerCtx const& test
 
     CRUCIBLE_TEST_ASSERT(test, cipher::lookup_computation_cache<&test_fn_c, int>().is_none());
 
-    cipher::insert_computation_cache<&test_fn_b, int, double>(::fixy::to(isolated_body));
+    cipher::insert_computation_cache<&test_fn_b, int, double>(lend_erased(isolated_body));
     CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache<&test_fn_b, int, double>(), isolated_body));
 
     CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache<&test_fn_a, int>(), round_trip_body));
@@ -319,19 +325,19 @@ void test_concurrent_inserts_disjoint_slots(::fixy::TestRunnerCtx const& test) {
     // reaches a different slot.
     auto worker_0 = [&gate] noexcept {
         wait_at(gate);
-        cipher::insert_computation_cache<&ct_fn_t0, int>(::fixy::to(body_at(disjoint_bodies, ::fixy::index<0>())));
+        cipher::insert_computation_cache<&ct_fn_t0, int>(lend_erased(body_at(disjoint_bodies, ::fixy::index<0>())));
     };
     auto worker_1 = [&gate] noexcept {
         wait_at(gate);
-        cipher::insert_computation_cache<&ct_fn_t1, int>(::fixy::to(body_at(disjoint_bodies, ::fixy::index<1>())));
+        cipher::insert_computation_cache<&ct_fn_t1, int>(lend_erased(body_at(disjoint_bodies, ::fixy::index<1>())));
     };
     auto worker_2 = [&gate] noexcept {
         wait_at(gate);
-        cipher::insert_computation_cache<&ct_fn_t2, int>(::fixy::to(body_at(disjoint_bodies, ::fixy::index<2>())));
+        cipher::insert_computation_cache<&ct_fn_t2, int>(lend_erased(body_at(disjoint_bodies, ::fixy::index<2>())));
     };
     auto worker_3 = [&gate] noexcept {
         wait_at(gate);
-        cipher::insert_computation_cache<&ct_fn_t3, int>(::fixy::to(body_at(disjoint_bodies, ::fixy::index<3>())));
+        cipher::insert_computation_cache<&ct_fn_t3, int>(lend_erased(body_at(disjoint_bodies, ::fixy::index<3>())));
     };
 
     // Hold every thread at the gate and release them together, so
@@ -359,7 +365,7 @@ void test_concurrent_inserts_same_slot_first_wins(::fixy::TestRunnerCtx const& t
     auto contender_of = [&gate](BodyIndex position) noexcept {
         return [&gate, position] noexcept {
             wait_at(gate);
-            cipher::insert_computation_cache<&test_fn_c, int>(::fixy::to(body_at(contended_bodies, position)));
+            cipher::insert_computation_cache<&test_fn_c, int>(lend_erased(body_at(contended_bodies, position)));
         };
     };
     auto contender_0 = contender_of(::fixy::index<0>());
@@ -388,7 +394,7 @@ void test_row_aware_slots_are_isolated_by_row(::fixy::TestRunnerCtx const& test)
     CRUCIBLE_TEST_ASSERT(test, cipher::lookup_computation_cache_in_row<&test_fn_a, BgR, int>().is_none());
     CRUCIBLE_TEST_ASSERT(test, cipher::lookup_computation_cache_in_row<&test_fn_a, IOR, int>().is_none());
 
-    cipher::insert_computation_cache_in_row<&test_fn_a, EmptyR, int>(::fixy::to(empty_row_body));
+    cipher::insert_computation_cache_in_row<&test_fn_a, EmptyR, int>(lend_erased(empty_row_body));
 
     CRUCIBLE_TEST_ASSERT(test,
                          holds(cipher::lookup_computation_cache_in_row<&test_fn_a, EmptyR, int>(), empty_row_body));
@@ -403,7 +409,7 @@ void test_row_aware_slots_are_isolated_by_row(::fixy::TestRunnerCtx const& test)
 void test_row_blind_and_row_aware_slots_disjoint(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, cipher::lookup_computation_cache_in_row<&test_fn_b, EmptyR, int, double>().is_none());
 
-    cipher::insert_computation_cache_in_row<&test_fn_b, EmptyR, int, double>(::fixy::to(blind_pair_body));
+    cipher::insert_computation_cache_in_row<&test_fn_b, EmptyR, int, double>(lend_erased(blind_pair_body));
 
     CRUCIBLE_TEST_ASSERT(
         test, holds(cipher::lookup_computation_cache_in_row<&test_fn_b, EmptyR, int, double>(), blind_pair_body));
@@ -420,7 +426,7 @@ void test_row_aware_slot_id_is_type_driven_not_hash_driven(::fixy::TestRunnerCtx
     CRUCIBLE_TEST_ASSERT(
         test, cipher::computation_cache_key_in_row<&test_fn_a, BgIOR, int>
                   == cipher::computation_cache_key_in_row<&test_fn_a, eff::Row<eff::Effect::IO, eff::Effect::Bg>, int>);
-    cipher::insert_computation_cache_in_row<&test_fn_a, BgIOR, int>(::fixy::to(bg_io_body));
+    cipher::insert_computation_cache_in_row<&test_fn_a, BgIOR, int>(lend_erased(bg_io_body));
     CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache_in_row<&test_fn_a, BgIOR, int>(), bg_io_body));
     // A distinct type is a distinct slot.
     CRUCIBLE_TEST_ASSERT(
@@ -438,22 +444,22 @@ void test_concurrent_inserts_disjoint_slots_in_row(::fixy::TestRunnerCtx const& 
     auto worker_0 = [&gate] noexcept {
         wait_at(gate);
         cipher::insert_computation_cache_in_row<&cr_fn_t0, EmptyR, int>(
-            ::fixy::to(body_at(disjoint_row_bodies, ::fixy::index<0>())));
+            lend_erased(body_at(disjoint_row_bodies, ::fixy::index<0>())));
     };
     auto worker_1 = [&gate] noexcept {
         wait_at(gate);
         cipher::insert_computation_cache_in_row<&cr_fn_t1, EmptyR, int>(
-            ::fixy::to(body_at(disjoint_row_bodies, ::fixy::index<1>())));
+            lend_erased(body_at(disjoint_row_bodies, ::fixy::index<1>())));
     };
     auto worker_2 = [&gate] noexcept {
         wait_at(gate);
         cipher::insert_computation_cache_in_row<&cr_fn_t2, EmptyR, int>(
-            ::fixy::to(body_at(disjoint_row_bodies, ::fixy::index<2>())));
+            lend_erased(body_at(disjoint_row_bodies, ::fixy::index<2>())));
     };
     auto worker_3 = [&gate] noexcept {
         wait_at(gate);
         cipher::insert_computation_cache_in_row<&cr_fn_t3, EmptyR, int>(
-            ::fixy::to(body_at(disjoint_row_bodies, ::fixy::index<3>())));
+            lend_erased(body_at(disjoint_row_bodies, ::fixy::index<3>())));
     };
     run_race(test, gate, worker_0, worker_1, worker_2, worker_3);
 
@@ -477,7 +483,7 @@ void test_concurrent_inserts_same_slot_first_wins_in_row(::fixy::TestRunnerCtx c
         return [&gate, position] noexcept {
             wait_at(gate);
             cipher::insert_computation_cache_in_row<&cr_contention_fn, EmptyR, int>(
-                ::fixy::to(body_at(contended_row_bodies, position)));
+                lend_erased(body_at(contended_row_bodies, position)));
         };
     };
     auto contender_0 = contender_of(::fixy::index<0>());

@@ -22,7 +22,8 @@ int main() {
     // The band holds a Ref of a region, so the lattice is the one fault.
     using RegionRef = ::fixy::Ref<const ::crucible::RegionNode>;
     const ::crucible::RegionNode region{};
-    auto hot_tier = ::fixy::mint_band<::fixy::cipher_tier::Hot<RegionRef>>(RegionRef{::fixy::to(region)});
+    auto hot_tier =
+        ::fixy::mint_band<::fixy::cipher_tier::Hot<RegionRef>>(RegionRef{::fixy::erase_brand(::fixy::to(region))});
     auto result = cipher.commit_per_request(view, std::move(hot_tier));
     return static_cast<int>(static_cast<bool>(std::move(result).consume()));
 }

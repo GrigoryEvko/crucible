@@ -2965,6 +2965,11 @@ foundation_neg_compile_test(neg_core_ref_changes_brand
 foundation_neg_compile_test(neg_core_ref_erase_scope_brand
   "no matching function for call to .erase_brand\\(.*foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >"
   "required for the satisfaction of .ErasableBrand<Brand>.")
+# No conversion drops the brand of a Ref, and a named brand keeps its brand
+# too.  erase_brand(ref) is the one door to the erased brand.
+foundation_neg_compile_test(neg_core_ref_erases_implicitly
+  "conversion from .Ref<\\[\\.\\.\\.\\],.anonymous.::NamedBrand>. to non-scalar type .Ref<\\[\\.\\.\\.\\],foundation::brand::DefaultBrand>. requested"
+  "neg_core_ref_erases_implicitly\\.cpp:23:[0-9]+: error")
 foundation_neg_compile_test(neg_core_ref_names_brand
   "no matching function for call to .to<int, ArenaBrand>\\(int&\\)."
   "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int, ArenaBrand\\}\\]. evaluated to .false.")

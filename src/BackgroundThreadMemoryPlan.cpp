@@ -35,7 +35,7 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan
     plan.device_idx = -1;
     ::fixy::fill(plan.pad0.view(), uint8_t{0});
 
-    if (num_slots == 0) return ::fixy::Ref<MemoryPlan>{::fixy::to(plan)};
+    if (num_slots == 0) return ::fixy::erase_brand(::fixy::to(plan));
 
     // The slot at an index of the sweep.  Each index of the sweep is a
     // position in the slots, so it is below their count.
@@ -75,7 +75,7 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan
     }
 
     uint32_t num_internal = num_slots - plan.num_external;
-    if (num_internal == 0) return ::fixy::Ref<MemoryPlan>{::fixy::to(plan)};
+    if (num_internal == 0) return ::fixy::erase_brand(::fixy::to(plan));
 
     // Bucket the slots by birth_op and by death_op + 1.  The sweep range
     // is [0, max_op].  The checks above keep max_op in [1, UINT32_MAX - 2],
@@ -260,7 +260,7 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan
     }
 
     plan.pool_bytes = pool_end;
-    return ::fixy::Ref<MemoryPlan>{::fixy::to(plan)};
+    return ::fixy::erase_brand(::fixy::to(plan));
 }
 
 }  // namespace crucible

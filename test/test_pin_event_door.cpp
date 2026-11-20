@@ -74,7 +74,7 @@ int main() {
 
     // The pin of the hardening policy.
     fixy::topology::Topology const host = fixy::topology::Topology::load(startup);
-    auto applied = crucible::warden::mint_hardening(startup, fixy::to(host), pin_only_policy());
+    auto applied = crucible::warden::mint_hardening(startup, fixy::erase_brand(fixy::to(host)), pin_only_policy());
     require(applied.affinity_applied() && applied.pinned_cpu() == 0, "the policy pins the thread to CPU 0");
     require(!is_in_force(first), "a pin proof stayed in force after Hardening::apply pinned the thread");
 

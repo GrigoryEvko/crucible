@@ -54,8 +54,8 @@ static_assert(transfer::Sendable<Link<Cell>> && transfer::SendableBeside<Link<Ce
 // const and reads through a const Link.
 consteval int sum_of_a_chain() {
     Node last{.value = 2};
-    Node first{.value = 1, .next = Ref<Node>{to(last)}};
-    Link<Node> walk = Ref<Node>{to(first)};
+    Node first{.value = 1, .next = erase_brand(to(last))};
+    Link<Node> walk = erase_brand(to(first));
     int sum = 0;
     while (walk.is_some()) {
         const Ref<Node> node = Link<Node>{walk}.expect("the condition of the loop tests the link");

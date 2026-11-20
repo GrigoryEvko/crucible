@@ -366,8 +366,9 @@ public:
                                                                                      cog::Uuid dst) const noexcept {
         using Latency = ::fixy::Option<::fixy::Ref<histogram_type const>>;
         ::fixy::Result<PairIndex, PingmeshError> const located = enabled_pair(src, dst);
-        return located.match([&](PairIndex const& index) { return Latency::some(::fixy::to(latency_.at(index))); },
-                             [](PingmeshError const&) { return Latency{::fixy::none}; });
+        return located.match(
+            [&](PairIndex const& index) { return Latency::some(::fixy::erase_brand(::fixy::to(latency_.at(index)))); },
+            [](PingmeshError const&) { return Latency{::fixy::none}; });
     }
 
     [[nodiscard]] PingmeshPairStats pair_stats(cog::Uuid src, cog::Uuid dst) const noexcept {

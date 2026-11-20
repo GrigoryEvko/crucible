@@ -556,9 +556,10 @@ static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) 
     const crucible::RegionNode& writer_region = *make_test_region(writers_dag, 0x61);
     const crucible::ContentHash writer_hash = writer_region.content_hash;
     write_beside_object(cipher.root(), writer_hash, ::fixy::TextView{".tmp"}, ::fixy::TextView{"another writer"});
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(writer_region)))
-                             == writer_hash);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, cipher.store(store_ctx(), ov,
+                            crucible::Cipher::content_addressed(::fixy::erase_brand(::fixy::to(writer_region))))
+                   == writer_hash);
     CRUCIBLE_TEST_ASSERT(kTest, holds_beside_object(cipher.root(), writer_hash, ::fixy::TextView{".tmp"},
                                                     ::fixy::TextView{"another writer"})
                                     && "the store leaves the temporary file of another writer");
@@ -579,8 +580,10 @@ static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) 
                       variant_image.view().window(0, variant_bytes).expect("the writer writes inside its image"));
     const crucible::RegionNode& plain = *make_test_region(writers_dag, 0x62);
     CRUCIBLE_TEST_ASSERT(kTest, plain.content_hash == variant.content_hash);
-    CRUCIBLE_TEST_ASSERT(kTest, cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(plain)))
-                                    == plain.content_hash);
+    CRUCIBLE_TEST_ASSERT(
+        kTest,
+        cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::erase_brand(::fixy::to(plain))))
+            == plain.content_hash);
     const crucible::Cipher fresh = open_cipher_under(root, ::fixy::TextView{"writers"});
     const auto fresh_ov = fresh.mint_open_view(store_ctx());
     ::fixy::BumpArena fresh_arena{1 << 16};
@@ -607,8 +610,8 @@ static void test_two_writers_of_one_object(::fixy::TextView root) {
     const auto store_again_and_again = [&cipher, &ov, &child_ctx, &two_region, &two_root, &object] noexcept {
         for (std::size_t round = 0; round < 40; ++round) {
             static_cast<void>(::fixy::fs::unlink_at(child_ctx, two_root.ref(), object.c_text()).is_ok());
-            const crucible::ContentHash stored =
-                cipher.store(child_ctx, ov, crucible::Cipher::content_addressed(::fixy::to(two_region)));
+            const crucible::ContentHash stored = cipher.store(
+                child_ctx, ov, crucible::Cipher::content_addressed(::fixy::erase_brand(::fixy::to(two_region))));
             if (stored != two_region.content_hash) ::fixy::fatal("a store of one of two writers gave no hash");
         }
     };
@@ -677,7 +680,7 @@ int main() {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
         const crucible::ContentHash stored_hash =
-            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(region)));
+            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::erase_brand(::fixy::to(region))));
         CRUCIBLE_TEST_ASSERT(kTest, stored_hash == expected_hash);
 
         CRUCIBLE_TEST_ASSERT(kTest, holds_object_file(cipher, expected_hash)
@@ -686,7 +689,7 @@ int main() {
         // The content decides the name, so storing the same region
         // again names the same object.
         const crucible::ContentHash second_hash =
-            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(region)));
+            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::erase_brand(::fixy::to(region))));
         CRUCIBLE_TEST_ASSERT(kTest, second_hash == expected_hash);
     }
 
@@ -705,7 +708,8 @@ int main() {
     {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
-        (void)cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(region)));
+        (void)cipher.store(store_ctx(), ov,
+                           crucible::Cipher::content_addressed(::fixy::erase_brand(::fixy::to(region))));
 
         // The log line of the first commit of the store holds the first
         // place, one.
@@ -794,7 +798,7 @@ int main() {
 
         ::fixy::BumpArena ca_dag_arena{1 << 16};
         const crucible::RegionNode& ca_region = *make_test_region(ca_dag_arena);
-        const auto ca_payload = crucible::Cipher::content_addressed(::fixy::to(ca_region));
+        const auto ca_payload = crucible::Cipher::content_addressed(::fixy::erase_brand(::fixy::to(ca_region)));
 
         auto cipher = open_cipher(dir_ca.path().view());
         auto ov = cipher.mint_open_view(store_ctx());

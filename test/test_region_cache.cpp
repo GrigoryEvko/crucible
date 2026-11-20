@@ -203,7 +203,7 @@ void test_find_alternate_tracks_live_plan() {
     slot.birth_op = OpIndex{0};
     slot.death_op = OpIndex{1};
     slot.slot_id = SlotId{0};
-    const ::fixy::Ref<MemoryPlan> plan = arena.make<MemoryPlan>(test.alloc);
+    const auto plan = arena.make<MemoryPlan>(test.alloc);
     plan->slots = slots.view();
     plan->pool_bytes = 4096;
     region->plan = make_plan_link(*plan);

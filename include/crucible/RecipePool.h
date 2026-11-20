@@ -140,10 +140,10 @@ private:
         const auto recipe = arena_->make<NumericalRecipe>(a, fields);
         recipe->hash = h;
 
-        slots_.at_masked(key) =
-            Slot{.hash = h.raw(), .recipe = ::fixy::some(::fixy::Ref<const NumericalRecipe>{recipe})};
+        slots_.at_masked(key) = Slot{
+            .hash = h.raw(), .recipe = ::fixy::some(::fixy::Ref<const NumericalRecipe>{::fixy::erase_brand(recipe)})};
         size_.bump();
-        return recipe;
+        return ::fixy::erase_brand(recipe);
     }
 
     [[gnu::cold, gnu::noinline]]

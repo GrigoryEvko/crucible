@@ -133,7 +133,7 @@ public:
 
             constexpr WriterHandle(KernelCacheSlot& slot,
                                    ::foundation::permissions::Permission<writer_tag, Brand>&& perm) noexcept
-                : slot_{::fixy::to(slot)}, perm_{std::move(perm)} {}
+                : slot_{::fixy::erase_brand(::fixy::to(slot))}, perm_{std::move(perm)} {}
 
             friend class KernelCacheSlot;
 
@@ -180,7 +180,8 @@ public:
         class ReaderHandle {
             ::fixy::Ref<const KernelCacheSlot> slot_;
 
-            constexpr explicit ReaderHandle(KernelCacheSlot const& slot) noexcept : slot_{::fixy::to(slot)} {}
+            constexpr explicit ReaderHandle(KernelCacheSlot const& slot) noexcept
+                : slot_{::fixy::erase_brand(::fixy::to(slot))} {}
 
             friend class KernelCacheSlot;
 
@@ -527,7 +528,7 @@ private:
         .match([new_region](KernelCache::KernelRef kernel) noexcept { new_region->compiled.publish(&*kernel); },
                []() noexcept {});
 
-    const ::fixy::Ref<BranchNode> branch = arena.make<BranchNode>(a);
+    const ::fixy::Ref<BranchNode> branch = ::fixy::erase_brand(arena.make<BranchNode>(a));
     branch->kind = TraceNodeKind::BRANCH;
     branch->guard = guard;
     // Arms go in sorted by value: replay binary-searches them.

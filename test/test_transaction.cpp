@@ -86,7 +86,7 @@ static_assert(std::is_default_constructible_v<Log>);
 
 [[nodiscard]] crucible::Transaction::ArenaRegion arena_region(crucible::RegionNode& region) {
     return ::fixy::mint_tagged<::fixy::tags::source::Arena>(
-        ::fixy::Ref<crucible::RegionNode const>{::fixy::to(region)});
+        ::fixy::Ref<crucible::RegionNode const>{::fixy::erase_brand(::fixy::to(region))});
 }
 
 // A commit takes a Ref, so it cannot take a null region.  A slot that no
@@ -133,7 +133,7 @@ void expect_active(auto& log, const SoloOwner& owner, uint32_t step, crucible::R
     const ::fixy::Ref<crucible::Transaction> active = log.active(owner).expect("the log holds an active transaction");
     CRUCIBLE_TEST_ASSERT(kTest, active->status == crucible::TxStatus::ACTIVE);
     CRUCIBLE_TEST_ASSERT(kTest, active->step_id.get() == step);
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::holds_region(*active, ::fixy::to(*region)));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::holds_region(*active, ::fixy::erase_brand(::fixy::to(*region))));
 }
 
 // The two orders of publications and rollbacks that make the oldest
@@ -183,7 +183,7 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
     CRUCIBLE_TEST_ASSERT(kTest, displaced != nullptr);
     CRUCIBLE_TEST_ASSERT(kTest, displaced->status == crucible::TxStatus::SUPERSEDED);
     CRUCIBLE_TEST_ASSERT(kTest, displaced->step_id.get() == 1);
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::holds_region(*displaced, ::fixy::to(*regions[1])));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::holds_region(*displaced, ::fixy::erase_brand(::fixy::to(*regions[1]))));
     expect_active(log, owner, kSlots + 1, regions[kSlots + 1]);
     CRUCIBLE_TEST_ASSERT(kTest, address_of_tx(log.previous(owner)) == displaced);
 

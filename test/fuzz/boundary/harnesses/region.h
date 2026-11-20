@@ -90,7 +90,7 @@ enum class SeedSlotFault : std::uint8_t {
     }
     const ::fixy::Ref<RegionNode> region = make_region(alloc, dag_arena, ops);
     if (has_plan) {
-        const ::fixy::Ref<MemoryPlan> plan = arena.make<MemoryPlan>(alloc);
+        const auto plan = arena.make<MemoryPlan>(alloc);
         plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
         plan->num_external = 0;
         plan->device_type = DeviceType::CPU;
@@ -135,8 +135,7 @@ inline void add_region_regressions(SeedList& seeds) noexcept {
 
     // The header states a content hash that is not the hash of the ops.
     SeedBytes wrong_hash = region_image(*build_seed_region(arena, dag_arena, SeedPlan::none));
-    const ::fixy::Ref<std::byte> hash_byte =
-        wrong_hash.view().get(kImageContentHashOffset).expect("the image holds its header");
+    const auto hash_byte = wrong_hash.view().get(kImageContentHashOffset).expect("the image holds its header");
     *hash_byte = static_cast<std::byte>(static_cast<unsigned>(*hash_byte) ^ 0x01U);
     add_seed(seeds, std::move(wrong_hash));
 

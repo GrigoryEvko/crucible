@@ -24,9 +24,9 @@ static_assert(Vigil::Config::CIPHER_PATH_MAX == Cipher::MAX_ROOT_PATH_BYTES,
 Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
     : cfg_(std::move(cfg)),
       ring_owner_{::fixy::mint_box<TraceRing>(startup.cap().alloc)},
-      ring_{ring_owner_.view()},
+      ring_{::fixy::erase_brand(ring_owner_.view())},
       meta_log_owner_{::fixy::mint_box<MetaLog>(startup.cap().alloc, startup.cap().alloc)},
-      meta_log_{meta_log_owner_.view()},
+      meta_log_{::fixy::erase_brand(meta_log_owner_.view())},
       tx_log_{},
       replay_{startup.cap().alloc, compute_numerics_hash(cfg_.numerics, cfg_.eager)},
       allocation_{startup.cap().alloc},
@@ -73,8 +73,9 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
             ::crucible::perf::Senses::load_subset(startup, ::crucible::perf::SensesMask{.sched_switch = true}));
         wd_ = ::fixy::some(::fixy::mint_box<::crucible::warden::DeadlineWatchdog>(
             startup.cap().alloc,
-            ::crucible::warden::mint_deadline_watchdog(startup, ::crucible::warden::WatchdogSource::some(senses.view()),
-                                                       cfg_.watchdog_policy)));
+            ::crucible::warden::mint_deadline_watchdog(
+                startup, ::crucible::warden::WatchdogSource::some(::fixy::erase_brand(senses.view())),
+                cfg_.watchdog_policy)));
         senses_ = ::fixy::some(std::move(senses));
     }
 
@@ -158,9 +159,10 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // The merkle root goes through the checked accessor so the non-zero
     // invariant is witnessed at this call site: its precondition fires
     // here if the hash was never recomputed.
-    (void)tx_log_.commit(
-        stage, tx, ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Ref<RegionNode const>{::fixy::to(region)}),
-        region.content_hash, ::crucible::make_merkle_root(region.computed_merkle_hash()));
+    (void)tx_log_.commit(stage, tx,
+                         ::fixy::mint_tagged<::fixy::tags::source::Arena>(
+                             ::fixy::Ref<RegionNode const>{::fixy::erase_brand(::fixy::to(region))}),
+                         region.content_hash, ::crucible::make_merkle_root(region.computed_merkle_hash()));
     (void)tx_log_.activate(stage, tx);
 
     // Publishing the region signals the foreground, which picks it up
@@ -170,7 +172,7 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // never reports a replay that has not started.  An observer that
     // waits for this publication reads has_pending_region.  The slot holds
     // the record, so the foreground can compare the reset point.
-    pending_region_.store_release(PendingRegion::some(::fixy::to(published)));
+    pending_region_.store_release(PendingRegion::some(::fixy::erase_brand(::fixy::to(published))));
 
     // The sweep of the region store after this callback releases each region
     // that no holder names.  The transaction log holds each region that a

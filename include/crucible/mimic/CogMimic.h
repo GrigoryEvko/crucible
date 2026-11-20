@@ -215,7 +215,7 @@ public:
 
 private:
     constexpr CogMimic(cog::CogIdentity const& identity, CalibratedCaps calibrated_caps, OpcodeTable opcodes) noexcept
-        : identity_{::fixy::to(identity)},
+        : identity_{::fixy::erase_brand(::fixy::to(identity))},
           calibrated_caps_{std::move(calibrated_caps)},
           opcode_latency_table_{std::move(opcodes)} {}
 
