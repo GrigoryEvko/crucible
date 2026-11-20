@@ -36,9 +36,7 @@
 //     channel takes the producer token, and the consumer handle takes
 //     the consumer token.
 
-#include <cstdio>
 #include <cstdint>
-#include <memory>
 #include <utility>
 
 #include <fixy/Core.h>
@@ -76,8 +74,12 @@ auto bench_halves() noexcept {
 // MpscRing pair
 // ─────────────────────────────────────────────────────────────────────
 
+// The allocation capability of the rings and the channels of the rows.
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
+
 bench::Report bare_mpsc_push() {
-    auto ring = std::make_unique<::fixy::concurrent::MpscRing<Item, kCap>>();
+    ::fixy::Box<::fixy::concurrent::MpscRing<Item, kCap>> ring =
+        ::fixy::mint_box<::fixy::concurrent::MpscRing<Item, kCap>>(kAlloc);
     Item i = 0;
     return bench::run("bare MpscRing.try_push", [&] {
         const bool ok = ring->try_push(++i);
@@ -88,7 +90,7 @@ bench::Report bare_mpsc_push() {
 bench::Report wrapped_mpsc_push() {
     auto [producer_root, consumer_perm] = bench_halves();
     (void)consumer_perm;
-    auto ch = std::make_unique<Channel>(std::move(producer_root));
+    ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(kAlloc, std::move(producer_root));
     auto p_opt = ch->producer();
     CRUCIBLE_BENCH_CHECK(p_opt.is_some());
     auto p = std::move(p_opt).expect("the test above found a producer");
@@ -100,7 +102,8 @@ bench::Report wrapped_mpsc_push() {
 }
 
 bench::Report bare_mpsc_pop() {
-    auto ring = std::make_unique<::fixy::concurrent::MpscRing<Item, kCap>>();
+    ::fixy::Box<::fixy::concurrent::MpscRing<Item, kCap>> ring =
+        ::fixy::mint_box<::fixy::concurrent::MpscRing<Item, kCap>>(kAlloc);
     for (Item i = 0; i < kCap / 2; ++i)
         (void)ring->try_push(i);
     // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.
@@ -113,7 +116,7 @@ bench::Report bare_mpsc_pop() {
 
 bench::Report wrapped_mpsc_pop() {
     auto [producer_root, consumer_perm] = bench_halves();
-    auto ch = std::make_unique<Channel>(std::move(producer_root));
+    ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(kAlloc, std::move(producer_root));
     {
         auto p_opt = ch->producer();
         CRUCIBLE_BENCH_CHECK(p_opt.is_some());
