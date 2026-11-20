@@ -432,6 +432,16 @@ enforce test/forge_neg/ error
 enforce test/kernel_neg/ error
 enforce test/layer/ error
 enforce test/layer/checks/ report
+enforce test/layer/checks/crucible/cipher/ error
+enforce test/layer/checks/crucible/cntp/ error
+enforce test/layer/checks/crucible/forge/ error
+enforce test/layer/checks/crucible/mimic/_wip/ error
+enforce test/layer/checks/crucible/perf/ error
+enforce test/layer/checks/crucible/warden/ error
+enforce test/layer/checks/fixy/channels/ error
+enforce test/layer/checks/fixy/check/ error
+enforce test/layer/checks/foundation/algebra/net/ error
+enforce test/layer/checks/foundation/os/ error
 enforce test/memory_neg/ error
 enforce test/mimic_neg/ error
 enforce test/observe_neg/ error
