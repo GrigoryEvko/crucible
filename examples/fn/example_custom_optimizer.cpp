@@ -27,11 +27,14 @@
 #include <fixy/Fn.h>
 #include <fixy/Role.h>
 #include <fixy/Tags.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
-#include <cmath>
-#include <cstdio>
+#include <fixy/Core.h>
+
+#include <cstddef>
+#include <cstdint>
 #include <type_traits>
 
 namespace {
@@ -43,26 +46,75 @@ using ::fixy::Axis;
 using ::fixy::strict_pole_t;
 using Effect = ::foundation::effects::Effect;
 
-// One step over an array of n parameters.  In production p, m and v stay
-// alive across calls as the running state of the optimizer, and g comes
-// from the backward pass of each step.  lr, beta1, beta2 and eps are the
-// hyperparameters, and step_t is the iteration count for the bias
-// correction.
-using AdamStepPtr = void (*)(float* params, float* m, float* v, const float* grad, int n, float lr, float beta1,
-                             float beta2, float eps, int step_t) noexcept;
+// The roles of the four buffers of one step.  Each buffer is a Side of its
+// role, so a call cannot swap two buffers of one element type.
+namespace buffer_role {
+struct Parameters final {};
+struct Gradients final {};
+struct FirstMoment final {};
+struct SecondMoment final {};
+}  // namespace buffer_role
 
-void adam_step_ref(float* params, float* m, float* v, const float* grad, int n, float lr, float beta1, float beta2,
-                   float eps, int step_t) noexcept {
-    const float bias1 = 1.f - std::pow(beta1, static_cast<float>(step_t));
-    const float bias2 = 1.f - std::pow(beta2, static_cast<float>(step_t));
-    for (int i = 0; i < n; ++i) {
-        const float g = grad[i];
-        m[i] = beta1 * m[i] + (1.f - beta1) * g;
-        v[i] = beta2 * v[i] + (1.f - beta2) * g * g;
-        const float m_hat = m[i] / bias1;
-        const float v_hat = v[i] / bias2;
-        params[i] -= lr * m_hat / (std::sqrt(v_hat) + eps);
+using Parameters = ::fixy::Side<buffer_role::Parameters, ::fixy::StridedView<float, 1>>;
+using Gradients = ::fixy::Side<buffer_role::Gradients, ::fixy::StridedView<float const, 1>>;
+using FirstMoment = ::fixy::Side<buffer_role::FirstMoment, ::fixy::StridedView<float, 1>>;
+using SecondMoment = ::fixy::Side<buffer_role::SecondMoment, ::fixy::StridedView<float, 1>>;
+
+// The hyperparameters of one step, each with its name at the call.  step is
+// the iteration count of the bias correction, from 1.
+struct AdamHyperparameters {
+    float learning_rate = 0.f;
+    float beta1 = 0.f;
+    float beta2 = 0.f;
+    float epsilon = 0.f;
+    std::uint32_t step = 0;
+};
+
+// One step over the parameters.  In production the parameters and the two
+// moments stay alive across calls as the running state of the optimizer,
+// and the gradients come from the backward pass of each step.  The count of
+// the parameters comes from the views.
+using AdamStepPtr = void (*)(Parameters const& params, FirstMoment const& m, SecondMoment const& v,
+                             Gradients const& grad, AdamHyperparameters const& hyper) noexcept;
+
+// base to the power exponent, as exponent products in order.  The product
+// calls no function of libm, so its bits are the same on each host.
+// Complexity: O(exponent).
+[[nodiscard]] float power_of(float base, std::uint32_t exponent) noexcept {
+    float result = 1.f;
+    for (std::uint32_t turn = 0; turn < exponent; ++turn) {
+        result *= base;
     }
+    return result;
+}
+
+// The step of each parameter, in the order of the parameters.  The
+// precondition states that the four buffers hold one count.  Complexity:
+// O(N) in the count of the parameters.
+void adam_step_ref(Parameters const& params, FirstMoment const& m, SecondMoment const& v, Gradients const& grad,
+                   AdamHyperparameters const& hyper) noexcept {
+    std::size_t const count = params.value().count();
+    CRUCIBLE_PRE(m.value().count() == count && v.value().count() == count && grad.value().count() == count);
+    const float bias1 = 1.f - power_of(hyper.beta1, hyper.step);
+    const float bias2 = 1.f - power_of(hyper.beta2, hyper.step);
+    auto const step = [&hyper, bias1, bias2](float& param, float& m_i, float& v_i, float const& g) noexcept {
+        m_i = hyper.beta1 * m_i + (1.f - hyper.beta1) * g;
+        v_i = hyper.beta2 * v_i + (1.f - hyper.beta2) * g * g;
+        const float m_hat = m_i / bias1;
+        const float v_hat = v_i / bias2;
+        param -= hyper.learning_rate * m_hat / (::fixy::fp::sqrt(v_hat) + hyper.epsilon);
+    };
+    if (::fixy::walk(step, params.value(), m.value(), v.value(), grad.value()).is_err()) [[unlikely]] {
+        ::fixy::fatal("adam_step_ref: the precondition holds, so the four buffers have one count");
+    }
+}
+
+// The rank-1 view of the elements of run, in order.
+template <class T, std::size_t Count>
+[[nodiscard]] ::fixy::StridedView<T, 1> line_of(::fixy::View<T, Count> run) noexcept {
+    ::fixy::FixedArray<std::size_t, 1> const sizes{Count};
+    ::fixy::FixedArray<std::size_t, 1> const strides{std::size_t{1}};
+    return ::fixy::mint_strided_view(run, sizes.view(), strides.view(), 0).expect("a dense line fits its run");
 }
 
 // The pack of a user optimizer step on the background thread, named one
@@ -119,28 +171,32 @@ int main() {
     const BoundOptimizer bound = ::fixy::mint_fn_for<UserBgOptimizer>(&adam_step_ref);
 
     // A model of four parameters, and one step of the optimizer.
-    constexpr int N = 4;
-    float params[N] = {1.0f, -0.5f, 2.0f, 0.0f};
-    float m[N] = {};
-    float v[N] = {};
-    const float grad[N] = {0.1f, -0.2f, 0.05f, 0.0f};
+    constexpr std::size_t N = 4;
+    ::fixy::FixedArray<float, N> params{1.0f, -0.5f, 2.0f, 0.0f};
+    ::fixy::FixedArray<float, N> m{};
+    ::fixy::FixedArray<float, N> v{};
+    const ::fixy::FixedArray<float, N> grad{0.1f, -0.2f, 0.05f, 0.0f};
 
-    bound.value()(params, m, v, grad, N,
-                  /*lr=*/0.01f, /*beta1=*/0.9f, /*beta2=*/0.999f,
-                  /*eps=*/1e-8f, /*step_t=*/1);
+    bound.value()(
+        ::fixy::side_as<buffer_role::Parameters>(line_of(params.view())),
+        ::fixy::side_as<buffer_role::FirstMoment>(line_of(m.view())),
+        ::fixy::side_as<buffer_role::SecondMoment>(line_of(v.view())),
+        ::fixy::side_as<buffer_role::Gradients>(line_of(grad.view())),
+        AdamHyperparameters{.learning_rate = 0.01f, .beta1 = 0.9f, .beta2 = 0.999f, .epsilon = 1e-8f, .step = 1});
 
-    std::printf("custom_optimizer params after 1 step: [%g, %g, %g, %g]\n", static_cast<double>(params[0]),
-                static_cast<double>(params[1]), static_cast<double>(params[2]), static_cast<double>(params[3]));
+    ::fixy::report(::fixy::Sink::Out, "custom_optimizer params after 1 step: [{}, {}, {}, {}]\n",
+                   params.at(::fixy::index<0>()), params.at(::fixy::index<1>()), params.at(::fixy::index<2>()),
+                   params.at(::fixy::index<3>()));
 
     // After the first step the bias correction gives m' = g and v' = g^2,
     // so each parameter with a gradient moves by lr against the sign of
     // its gradient.  The parameter with a zero gradient does not move.
-    const float expected[N] = {0.99f, -0.49f, 1.99f, 0.0f};
-    for (int i = 0; i < N; ++i) {
-        if (std::fabs(params[i] - expected[i]) > 1e-5f) return 1;
+    const ::fixy::FixedArray<float, N> expected{0.99f, -0.49f, 1.99f, 0.0f};
+    for (::fixy::Index<N> const i : params.indices()) {
+        if (::fixy::fp::abs(params.at(i) - expected.at(i)) > 1e-5f) return 1;
     }
 
-    std::printf("BoundOptimizer sizeof = %zu (== sizeof(AdamStepPtr) %zu)\n", sizeof(BoundOptimizer),
-                sizeof(AdamStepPtr));
+    ::fixy::report(::fixy::Sink::Out, "BoundOptimizer sizeof = {} (== sizeof(AdamStepPtr) {})\n",
+                   sizeof(BoundOptimizer), sizeof(AdamStepPtr));
     return 0;
 }

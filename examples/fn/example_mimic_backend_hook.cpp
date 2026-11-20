@@ -35,9 +35,10 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
+#include <fixy/Core.h>
+
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <type_traits>
 
 namespace {
@@ -171,13 +172,14 @@ int main() {
 
     const CompiledBytes out = bound.value().peek()(kernel, caps, arena);
 
-    std::printf("mimic_nv_emit: kernel kind=%d tile=%dx%dx%d recipe=%d -> %zu bytes at offset %zu "
-                "(arena bumped %zu)\n",
-                kernel.kernel_kind, kernel.tile_m, kernel.tile_n, kernel.tile_k, kernel.recipe_id, out.size, out.offset,
-                arena.bump);
+    ::fixy::report(::fixy::Sink::Out,
+                   "mimic_nv_emit: kernel kind={} tile={}x{}x{} recipe={} -> {} bytes at offset {} "
+                   "(arena bumped {})\n",
+                   kernel.kernel_kind, kernel.tile_m, kernel.tile_n, kernel.tile_k, kernel.recipe_id, out.size,
+                   out.offset, arena.bump);
     if (out.size != 4096 || out.offset != 0 || arena.bump != 4096) return 1;
 
-    std::printf("BoundMimicNvEmit sizeof = %zu (== sizeof(EmitKernelPtr) %zu)\n", sizeof(BoundMimicNvEmit),
-                sizeof(EmitKernelPtr));
+    ::fixy::report(::fixy::Sink::Out, "BoundMimicNvEmit sizeof = {} (== sizeof(EmitKernelPtr) {})\n",
+                   sizeof(BoundMimicNvEmit), sizeof(EmitKernelPtr));
     return 0;
 }

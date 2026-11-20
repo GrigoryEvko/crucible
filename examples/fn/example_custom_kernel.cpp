@@ -20,13 +20,15 @@
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Fn.h>
+#include <fixy/Reductions.h>
 #include <fixy/Tags.h>
+#include <foundation/contracts/Pre.h>
 
-#include <bit>
+#include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <type_traits>
 
 namespace {
@@ -41,21 +43,52 @@ using ::fixy::strict_pole_t;
 // a GEMM library of their own.  The scalar reference below is only a
 // stand-in, because the grades describe the behavior of the function and
 // not the quality of its code.
-using GemmFp32Ptr = void (*)(const float* a,  // M x K, row-major
-                             const float* b,  // K x N, row-major
-                             float* c,  // M x N, row-major, the output
-                             int m, int n, int k) noexcept;
+//
+// Each matrix is a rank-2 strided view of the base: the output C of the
+// sizes [M, N], the left factor A of the sizes [M, K] and the right factor
+// B of the sizes [K, N].  The two factors take the roles LeftFactor and
+// RightFactor, so a call cannot swap them, and the sizes M, N and K come
+// from the views.
+using GemmFp32Ptr = void (*)(::fixy::StridedView<float, 2> c, ::fixy::LeftFactorOf<float> const& a,
+                             ::fixy::RightFactorOf<float> const& b) noexcept;
 
-void scalar_gemm_ref(const float* a, const float* b, float* c, int m, int n, int k) noexcept {
-    for (int row = 0; row < m; ++row) {
-        for (int col = 0; col < n; ++col) {
-            float acc = 0.f;
-            for (int p = 0; p < k; ++p) {
-                acc += a[row * k + p] * b[p * n + col];
-            }
-            c[row * n + col] = acc;
-        }
-    }
+// C = A @ B.  Each output is the sum of its products in the order of k, from
+// zero.  The precondition states that the sizes of the three views agree.
+// Complexity: O(M N K).
+void scalar_gemm_ref(::fixy::StridedView<float, 2> c, ::fixy::LeftFactorOf<float> const& a,
+                     ::fixy::RightFactorOf<float> const& b) noexcept {
+    ::fixy::StridedView<float const, 2> const left = a.value();
+    ::fixy::StridedView<float const, 2> const right = b.value();
+    std::size_t const m = left.size(::fixy::index<0>());
+    std::size_t const k = left.size(::fixy::index<1>());
+    std::size_t const n = right.size(::fixy::index<1>());
+    CRUCIBLE_PRE(right.size(::fixy::index<0>()) == k && c.size(::fixy::index<0>()) == m
+                 && c.size(::fixy::index<1>()) == n);
+    static_cast<void>(::fixy::mint_strided_scope(c, [&](auto const out) noexcept {
+        return ::fixy::mint_strided_scope(left, [&](auto const lhs) noexcept {
+            return ::fixy::mint_strided_scope(right, [&](auto const rhs) noexcept {
+                for (std::size_t row = 0; row < m; ++row) {
+                    for (std::size_t col = 0; col < n; ++col) {
+                        float acc = 0.f;
+                        for (std::size_t p = 0; p < k; ++p) {
+                            acc += lhs.at(lhs.index(row, p).expect("the precondition bounds the index of A"))
+                                 * rhs.at(rhs.index(p, col).expect("the precondition bounds the index of B"));
+                        }
+                        out.at(out.index(row, col).expect("the precondition bounds the index of C")) = acc;
+                    }
+                }
+                return ::fixy::Unit{};
+            });
+        });
+    }));
+}
+
+// The rank-2 view of the M x N elements of run in row-major order.
+template <class T, std::size_t Count>
+[[nodiscard]] ::fixy::StridedView<T, 2> matrix_of(::fixy::View<T, Count> run,
+                                                  ::fixy::FixedArray<std::size_t, 2> const& sizes) noexcept {
+    ::fixy::FixedArray<std::size_t, 2> const strides{sizes.at(::fixy::index<1>()), std::size_t{1}};
+    return ::fixy::mint_strided_view(run, sizes.view(), strides.view(), 0).expect("a dense matrix fits its run");
 }
 
 // The pack of a user kernel on the background thread.  The alias names
@@ -127,24 +160,28 @@ int main() {
     // The mint is the only door to a binding.
     const BoundGemm bound = ::fixy::mint_fn_for<UserBgKernel>(&scalar_gemm_ref);
 
-    constexpr int M = 2, N = 2, K = 2;
-    const float a[M * K] = {1.f, 2.f, 3.f, 4.f};
-    const float b[K * N] = {5.f, 6.f, 7.f, 8.f};
-    float c[M * N] = {};
+    constexpr std::size_t M = 2, N = 2, K = 2;
+    const ::fixy::FixedArray<float, M * K> a{1.f, 2.f, 3.f, 4.f};
+    const ::fixy::FixedArray<float, K * N> b{5.f, 6.f, 7.f, 8.f};
+    ::fixy::FixedArray<float, M * N> c{};
 
-    bound.value()(a, b, c, M, N, K);
+    bound.value()(
+        matrix_of(c.view(), ::fixy::FixedArray<std::size_t, 2>{M, N}),
+        ::fixy::side_as<::fixy::side::LeftFactor>(matrix_of(a.view(), ::fixy::FixedArray<std::size_t, 2>{M, K})),
+        ::fixy::side_as<::fixy::side::RightFactor>(matrix_of(b.view(), ::fixy::FixedArray<std::size_t, 2>{K, N})));
 
     // C = [[1*5 + 2*7, 1*6 + 2*8], [3*5 + 4*7, 3*6 + 4*8]] = [[19, 22], [43, 50]].
     // Each product and each sum is a small integer, so the result is exact
     // and the check compares bits.
-    const float expected[M * N] = {19.f, 22.f, 43.f, 50.f};
-    std::printf("custom_kernel result: [[%g, %g], [%g, %g]] (expected [[19, 22], [43, 50]])\n",
-                static_cast<double>(c[0]), static_cast<double>(c[1]), static_cast<double>(c[2]),
-                static_cast<double>(c[3]));
-    for (int i = 0; i < M * N; ++i) {
-        if (std::bit_cast<std::uint32_t>(c[i]) != std::bit_cast<std::uint32_t>(expected[i])) return 1;
+    const ::fixy::FixedArray<float, M * N> expected{19.f, 22.f, 43.f, 50.f};
+    ::fixy::report(::fixy::Sink::Out, "custom_kernel result: [[{}, {}], [{}, {}]] (expected [[19, 22], [43, 50]])\n",
+                   c.at(::fixy::index<0>()), c.at(::fixy::index<1>()), c.at(::fixy::index<2>()),
+                   c.at(::fixy::index<3>()));
+    for (::fixy::Index<M* N> const i : c.indices()) {
+        if (::fixy::bit_cast<std::uint32_t>(c.at(i)) != ::fixy::bit_cast<std::uint32_t>(expected.at(i))) return 1;
     }
 
-    std::printf("BoundGemm sizeof = %zu (== sizeof(GemmFp32Ptr) %zu)\n", sizeof(BoundGemm), sizeof(GemmFp32Ptr));
+    ::fixy::report(::fixy::Sink::Out, "BoundGemm sizeof = {} (== sizeof(GemmFp32Ptr) {})\n", sizeof(BoundGemm),
+                   sizeof(GemmFp32Ptr));
     return 0;
 }

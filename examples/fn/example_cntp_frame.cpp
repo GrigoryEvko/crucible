@@ -29,9 +29,9 @@
 #include <fixy/Tags.h>
 #include <foundation/diag/RowHash.h>
 
+#include <fixy/Core.h>
+
 #include <cstdint>
-#include <cstdio>
-#include <expected>
 #include <type_traits>
 
 // The region of the network buffer that holds the frame.  in_region names
@@ -166,13 +166,13 @@ enum class CntpError : std::uint8_t {
 
 // The retag.  It mints a validated frame only after each check passes.
 // A production validator also checks the FNV-1a checksum.
-[[nodiscard]] std::expected<ValidatedFrame<CntpHeader>, CntpError>
+[[nodiscard]] ::fixy::Result<ValidatedFrame<CntpHeader>, CntpError>
 validate(const UnvalidatedFrame<CntpHeader>& raw) noexcept {
     // The checks read one copy of the header.
     const CntpHeader header = raw.value();
-    if (header.magic != cntp_magic) return std::unexpected(CntpError::BadMagic);
-    if (header.version != cntp_version) return std::unexpected(CntpError::BadVersion);
-    if (header.length < sizeof(CntpHeader)) return std::unexpected(CntpError::BadLength);
+    if (header.magic != cntp_magic) return ::fixy::err(CntpError::BadMagic);
+    if (header.version != cntp_version) return ::fixy::err(CntpError::BadVersion);
+    if (header.length < sizeof(CntpHeader)) return ::fixy::err(CntpError::BadLength);
     return ::fixy::mint_fn_for<ValidatedFrame>(header);
 }
 
@@ -196,22 +196,26 @@ int main() {
         const auto magic = untrusted.value().magic;
         const auto version = untrusted.value().version;
         const auto length = untrusted.value().length;
-        std::printf("untrusted frame: magic=0x%08X version=%u length=%u (sizeof=%zu)\n", magic, version, length,
-                    sizeof(CntpHeader));
+        ::fixy::report(::fixy::Sink::Out, "untrusted frame: magic=0x{} version={} length={} (sizeof={})\n",
+                       ::fixy::Hex<8>{magic}, version, length, sizeof(CntpHeader));
     }
 
     const auto trusted = validate(untrusted);
-    if (!trusted.has_value()) return 1;
-    std::printf("validated frame: source retagged External->Sanitized, trust retagged Unverified->Tested\n");
-    std::printf("ValidatedFrame sizeof = %zu (== sizeof(CntpHeader) %zu)\n", sizeof(ValidatedFrame<CntpHeader>),
-                sizeof(CntpHeader));
+    if (!trusted.is_ok()) return 1;
+    ::fixy::report(::fixy::Sink::Out,
+                   "validated frame: source retagged External->Sanitized, trust retagged Unverified->Tested\n");
+    ::fixy::report(::fixy::Sink::Out, "ValidatedFrame sizeof = {} (== sizeof(CntpHeader) {})\n",
+                   sizeof(ValidatedFrame<CntpHeader>), sizeof(CntpHeader));
 
     // A frame with a bad magic stays untrusted: validate() mints nothing.
     CntpHeader forged = on_wire;
     forged.magic = 0;
     const auto refused = validate(::fixy::mint_fn_for<UnvalidatedFrame>(forged));
-    if (refused.has_value() || refused.error() != CntpError::BadMagic) return 2;
-    std::printf("forged frame: refused with BadMagic\n");
+    const bool is_refused_for_magic =
+        refused.match([](ValidatedFrame<CntpHeader> const&) noexcept { return false; },
+                      [](CntpError const error) noexcept { return error == CntpError::BadMagic; });
+    if (!is_refused_for_magic) return 2;
+    ::fixy::report(::fixy::Sink::Out, "forged frame: refused with BadMagic\n");
 
     return 0;
 }

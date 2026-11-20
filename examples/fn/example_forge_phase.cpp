@@ -34,8 +34,9 @@
 #include <fixy/Tags.h>
 #include <foundation/effects/Effect.h>
 
+#include <fixy/Core.h>
+
 #include <cstddef>
-#include <cstdio>
 #include <type_traits>
 
 namespace {
@@ -145,14 +146,15 @@ int main() {
 
     const KernelGraph& before = input.peek();
     const KernelGraph& after = fused.peek();
-    std::printf("forge_phase: input %d nodes / %d edges (gen %d) -> fused %d nodes / %d edges (gen %d), "
-                "arena bumped %zu bytes\n",
-                before.num_nodes, before.num_edges, before.generation, after.num_nodes, after.num_edges,
-                after.generation, arena.bump);
+    ::fixy::report(::fixy::Sink::Out,
+                   "forge_phase: input {} nodes / {} edges (gen {}) -> fused {} nodes / {} edges (gen {}), "
+                   "arena bumped {} bytes\n",
+                   before.num_nodes, before.num_edges, before.generation, after.num_nodes, after.num_edges,
+                   after.generation, arena.bump);
     if (after.num_nodes != 90 || after.num_edges != 180 || after.generation != 1) return 1;
     if (arena.bump != sizeof(KernelGraph)) return 2;
 
-    std::printf("BoundForgePhase sizeof = %zu (== sizeof(ForgePhasePtr) %zu)\n", sizeof(BoundForgePhase),
-                sizeof(ForgePhasePtr));
+    ::fixy::report(::fixy::Sink::Out, "BoundForgePhase sizeof = {} (== sizeof(ForgePhasePtr) {})\n",
+                   sizeof(BoundForgePhase), sizeof(ForgePhasePtr));
     return 0;
 }
