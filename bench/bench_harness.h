@@ -2189,8 +2189,10 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     // report of the base writes at once, and a bench can hold text of its
     // own in the buffer of stdio, so a flush comes first.  The columns of
     // the times are 9 bytes wide and the column of max 10 bytes, and µs is
-    // two bytes of UTF-8, so a column of µs holds one character less.
-    void print_text() const noexcept {
+    // two bytes of UTF-8, so a column of µs holds one character less.  It is
+    // not inline, so its report() calls stay out of a caller that measures
+    // more rows after it, as for print().
+    [[gnu::noinline]] void print_text() const noexcept {
         using ::fixy::Align;
         using ::fixy::Fixed;
         using ::fixy::Padded;
@@ -2242,9 +2244,9 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     // a JSON string (detail::json_name_of), each percentile and time with
     // three decimals, the variation and the spread with five, the wall time
     // with none, each count and each flag as an integer, and the BPF counters
-    // when BPF is attached.  A flush of stdio comes first, as for
-    // print_text().
-    void print_json() const noexcept {
+    // when BPF is attached.  A flush of stdio comes first, and the function
+    // is not inline, as for print_text().
+    [[gnu::noinline]] void print_json() const noexcept {
         using ::fixy::Fixed;
         using ::fixy::Sink;
         detail::flush_standard_output();
@@ -2479,8 +2481,8 @@ struct Compare {
     // Writes the one-line summary to standard output, after a flush of stdio
     // as Report::print_text() does.  A pair that the test tells apart but
     // whose p99 moves less than the threshold says so, and does not claim to
-    // be indistinguishable.
-    void print_text() const noexcept {
+    // be indistinguishable.  It is not inline, as Report::print_text().
+    [[gnu::noinline]] void print_text() const noexcept {
         using ::fixy::Fixed;
         using ::fixy::SignMark;
         using ::fixy::Sink;
@@ -3618,15 +3620,17 @@ template <std::size_t Capacity, typename Body>
 }
 
 // Writes the text line of each report to standard output, in order.  A bench
-// holds its reports in an owner of the base and passes its view().
-inline void emit_reports_text(::fixy::View<const Report> reports) noexcept {
+// holds its reports in an owner of the base and passes its view().  Each emit
+// function is not inline, so its report() calls stay out of a caller that
+// measures more rows after it, as for print().
+[[gnu::noinline]] inline void emit_reports_text(::fixy::View<const Report> reports) noexcept {
     for (Report const& report : reports)
         report.print_text();
 }
 
 // Writes the one-line summary of each Compare to standard output, in the
 // order of the view.
-inline void emit_compares(::fixy::View<const Compare> compares) noexcept {
+[[gnu::noinline]] inline void emit_compares(::fixy::View<const Compare> compares) noexcept {
     for (Compare const& compare : compares)
         compare.print_text();
 }
@@ -3638,7 +3642,7 @@ inline void emit_compares(::fixy::View<const Compare> compares) noexcept {
 // JSON, such as a bench::compare block, calls emit_reports_text, then its
 // prints, then this.  The text that a bench holds in the buffer of stdio goes
 // out first, so no such text comes inside the array.
-inline void emit_reports_json(::fixy::View<const Report> reports, JsonTail tail) noexcept {
+[[gnu::noinline]] inline void emit_reports_json(::fixy::View<const Report> reports, JsonTail tail) noexcept {
     using ::fixy::Sink;
     if (tail == JsonTail::Off) return;
     detail::flush_standard_output();
@@ -3654,7 +3658,7 @@ inline void emit_reports_json(::fixy::View<const Report> reports, JsonTail tail)
 }
 
 // The usual end of main: the text of the reports, then their JSON tail.
-inline void emit_reports(::fixy::View<const Report> reports, JsonTail tail) noexcept {
+[[gnu::noinline]] inline void emit_reports(::fixy::View<const Report> reports, JsonTail tail) noexcept {
     emit_reports_text(reports);
     emit_reports_json(reports, tail);
 }
