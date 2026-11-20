@@ -179,7 +179,7 @@ static void check_descriptor_images_agree() {
     CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(original_content_hash));
 
     ::fixy::HeapArray<std::byte> buf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
-    const size_t n = crucible::serialize_region(crucible::SerializedRegion{*region}, buf.view());
+    const size_t n = crucible::serialize_region(::fixy::to(*region), buf.view());
     CRUCIBLE_TEST_ASSERT(kTest, n > 0 && "serialize_region returned 0 — buffer too small or bad region");
     const ::fixy::View<const std::byte> wire = buf.view().window(0, n).expect("the writer writes inside its image");
 
@@ -275,8 +275,8 @@ static void check_descriptor_images_agree() {
         ::fixy::HeapArray<std::byte> buf_a = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0xAA});
         ::fixy::HeapArray<std::byte> buf_b = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0xBB});
 
-        const size_t na = crucible::serialize_region(crucible::SerializedRegion{*region}, buf_a.view());
-        const size_t nb = crucible::serialize_region(crucible::SerializedRegion{*region}, buf_b.view());
+        const size_t na = crucible::serialize_region(::fixy::to(*region), buf_a.view());
+        const size_t nb = crucible::serialize_region(::fixy::to(*region), buf_b.view());
         CRUCIBLE_TEST_ASSERT(kTest, na == nb && "serialize_region byte count must be deterministic");
         CRUCIBLE_TEST_ASSERT(kTest, na > 0);
         CRUCIBLE_TEST_ASSERT(kTest,
@@ -337,7 +337,7 @@ static void check_descriptor_images_agree() {
     }
 
     ::fixy::HeapArray<std::byte> tiny_buf = ::fixy::mint_heap_array(test.alloc, 4, std::byte{0});
-    const size_t n_tiny = crucible::serialize_region(crucible::SerializedRegion{*region}, tiny_buf.view());
+    const size_t n_tiny = crucible::serialize_region(::fixy::to(*region), tiny_buf.view());
     CRUCIBLE_TEST_ASSERT(kTest, n_tiny == 0 && "serialize_region must return 0 on buffer overflow");
 
     ::fixy::BumpArena arena3{1 << 16};
@@ -407,7 +407,7 @@ static void check_descriptor_images_agree() {
         branch.arms().get(0).expect("the branch holds two arms")->value = 2;
         branch.arms().get(1).expect("the branch holds two arms")->value = 1;
         ::fixy::HeapArray<std::byte> branch_buf = ::fixy::mint_heap_array(test.alloc, 256, std::byte{0});
-        const size_t branch_bytes = crucible::serialize_branch(crucible::SerializedBranch{branch}, branch_buf.view());
+        const size_t branch_bytes = crucible::serialize_branch(::fixy::to(branch), branch_buf.view());
         CRUCIBLE_TEST_ASSERT(kTest, branch_bytes > 0);
         const ::fixy::View<const std::byte> branch_image =
             branch_buf.view().window(0, branch_bytes).expect("the writer writes inside its image");
@@ -453,7 +453,7 @@ static void check_descriptor_images_agree() {
         region->plan = crucible::make_plan_link(ok_plan);
 
         ::fixy::HeapArray<std::byte> pbuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
-        const size_t pn = crucible::serialize_region(crucible::SerializedRegion{*region}, pbuf.view());
+        const size_t pn = crucible::serialize_region(::fixy::to(*region), pbuf.view());
         CRUCIBLE_TEST_ASSERT(kTest, pn > 0 && "plan-bearing serialize failed");
         ::fixy::BumpArena parena{1 << 16};
         auto ok_loaded = crucible::deserialize_region(
@@ -465,7 +465,7 @@ static void check_descriptor_images_agree() {
         region->plan = crucible::make_plan_link(bad_plan);
 
         ::fixy::HeapArray<std::byte> nbuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
-        const size_t nn = crucible::serialize_region(crucible::SerializedRegion{*region}, nbuf.view());
+        const size_t nn = crucible::serialize_region(::fixy::to(*region), nbuf.view());
         CRUCIBLE_TEST_ASSERT(kTest, nn > 0 && "plan-bearing (oob) serialize failed");
         ::fixy::BumpArena narena{1 << 16};
         auto bad_loaded = crucible::deserialize_region(
@@ -489,7 +489,7 @@ static void check_descriptor_images_agree() {
         region->plan = crucible::make_plan_link(over_plan);
 
         ::fixy::HeapArray<std::byte> obuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
-        const size_t on = crucible::serialize_region(crucible::SerializedRegion{*region}, obuf.view());
+        const size_t on = crucible::serialize_region(::fixy::to(*region), obuf.view());
         CRUCIBLE_TEST_ASSERT(kTest, on > 0 && "over-pool_bytes serialize failed");
         ::fixy::BumpArena oarena{1 << 16};
         auto over_loaded = crucible::deserialize_region(
@@ -503,7 +503,7 @@ static void check_descriptor_images_agree() {
         region->plan = crucible::make_plan_link(at_plan);
 
         ::fixy::HeapArray<std::byte> abuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
-        const size_t an = crucible::serialize_region(crucible::SerializedRegion{*region}, abuf.view());
+        const size_t an = crucible::serialize_region(::fixy::to(*region), abuf.view());
         CRUCIBLE_TEST_ASSERT(kTest, an > 0 && "at-cap pool_bytes serialize failed");
         ::fixy::BumpArena aarena{1 << 16};
         auto at_loaded = crucible::deserialize_region(
@@ -528,7 +528,7 @@ static void check_descriptor_images_agree() {
         region->plan = crucible::make_plan_link(pad_plan);
 
         ::fixy::HeapArray<std::byte> image_buf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
-        const size_t image_bytes = crucible::serialize_region(crucible::SerializedRegion{*region}, image_buf.view());
+        const size_t image_bytes = crucible::serialize_region(::fixy::to(*region), image_buf.view());
         CRUCIBLE_TEST_ASSERT(kTest, image_bytes > 0 && "pad-probe serialize failed");
         const ::fixy::View<const std::byte> image =
             image_buf.view().window(0, image_bytes).expect("the writer writes inside its image");
@@ -595,8 +595,7 @@ static void check_descriptor_images_agree() {
         const crucible::RegionNode& scalar_region = *crucible::make_region(test.alloc, scalar_arena, scalar_ops);
 
         ::fixy::HeapArray<std::byte> scalar_buf = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
-        const size_t scalar_bytes =
-            crucible::serialize_region(crucible::SerializedRegion{scalar_region}, scalar_buf.view());
+        const size_t scalar_bytes = crucible::serialize_region(::fixy::to(scalar_region), scalar_buf.view());
         CRUCIBLE_TEST_ASSERT(kTest,
                              scalar_bytes > 0 && "the region of an op with scalars and no tensors must serialize");
         ::fixy::BumpArena load_arena{1 << 16};
@@ -629,8 +628,7 @@ static void check_descriptor_images_agree() {
                                    numerics);
 
         ::fixy::HeapArray<std::byte> policy_buf = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
-        const size_t policy_bytes =
-            crucible::serialize_region(crucible::SerializedRegion{policy_region}, policy_buf.view());
+        const size_t policy_bytes = crucible::serialize_region(::fixy::to(policy_region), policy_buf.view());
         CRUCIBLE_TEST_ASSERT(kTest, policy_bytes > 0);
         ::fixy::BumpArena policy_load{1 << 16};
         const crucible::RegionNode& loaded_policy =
@@ -694,7 +692,7 @@ static void check_descriptor_images_agree() {
         flip_region.plan = crucible::make_plan_link(flip_plan);
 
         ::fixy::HeapArray<std::byte> flip_buf = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
-        const size_t flip_bytes = crucible::serialize_region(crucible::SerializedRegion{flip_region}, flip_buf.view());
+        const size_t flip_bytes = crucible::serialize_region(::fixy::to(flip_region), flip_buf.view());
         CRUCIBLE_TEST_ASSERT(kTest, flip_bytes > 0);
         const ::fixy::View<const std::byte> flip_image =
             flip_buf.view().window(0, flip_bytes).expect("the writer writes inside its image");

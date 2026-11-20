@@ -10,7 +10,6 @@
 // pool owns its slot table on the heap, and a growth frees the old table.
 
 #include <crucible/NumericalRecipe.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
@@ -32,27 +31,24 @@ namespace crucible {
 
 class CRUCIBLE_OWNER RecipePool {
 public:
-    using ArenaBorrow = ::fixy::BorrowedRef<::fixy::BumpArena>;
+    using ArenaBorrow = ::fixy::Ref<::fixy::BumpArena>;
     using Capacity = ::fixy::PowerOfTwo<uint32_t>;
     using Size = ::fixy::Monotonic<uint32_t>;
     using init_required_row = ::foundation::effects::Row<::foundation::effects::Effect::Init>;
 
-    static_assert(::fixy::IsBorrowedRef<ArenaBorrow>);
-
     // The table never passes half full, so the initial capacity holds half
     // that many distinct recipes before the first resize.
     //
-    // The arena comes through ::fixy::mint_borrowed_ref, and the constructor
-    // refuses a borrow that names no brand.  The pool keeps the erased
-    // pointer, so the layout does not change.  Each mint site is a new
-    // brand, so this constructor only checks and forwards.  The one body
-    // below does the work out of line.
+    // The arena comes as a Ref from ::fixy::to, and the constructor refuses
+    // a Ref that names no brand.  The pool keeps the Ref on the erased brand
+    // through erase_brand, so the layout does not change.  Each call of to()
+    // is a new brand, so this constructor only checks and forwards.  The one
+    // body below does the work out of line.
     template <typename Brand, typename CallerRow = init_required_row>
-        requires ::foundation::brand::IsFreshBrand<Brand> && ::foundation::effects::Subrow<init_required_row, CallerRow>
-    [[gnu::cold]] explicit RecipePool(::fixy::BorrowedRef<::fixy::BumpArena, Brand> arena,
-                                      ::foundation::effects::Init init, uint32_t initial_capacity = 32,
-                                      std::type_identity<CallerRow> = {}) noexcept
-        : RecipePool{erased_door_{}, ArenaBorrow{arena}, init, admitted_capacity_(initial_capacity)} {}
+        requires ::fixy::ErasableBrand<Brand> && ::foundation::effects::Subrow<init_required_row, CallerRow>
+    [[gnu::cold]] explicit RecipePool(::fixy::Ref<::fixy::BumpArena, Brand> arena, ::foundation::effects::Init init,
+                                      uint32_t initial_capacity = 32, std::type_identity<CallerRow> = {}) noexcept
+        : RecipePool{erased_door_{}, ::fixy::erase_brand(arena), init, admitted_capacity_(initial_capacity)} {}
 
     RecipePool(const RecipePool&) = delete("RecipePool owns interior pointers into arena_");
     RecipePool& operator=(const RecipePool&) = delete("RecipePool owns interior pointers into arena_");

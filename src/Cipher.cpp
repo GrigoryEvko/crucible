@@ -786,7 +786,7 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
 
     const size_t cap = estimate_serial_size(region).value();
     ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(allocation_, cap, std::byte{0});
-    const size_t n = serialize_region(SerializedRegion{region}, image.view());
+    const size_t n = serialize_region(::fixy::to(region), image.view());
     if (n == 0) return ContentHash{};
     const ::fixy::View<const std::byte> written =
         image.view().window(0, n).expect("the writer writes inside its image");

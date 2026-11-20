@@ -80,12 +80,12 @@ int main() {
         const bench::RunName label_des = bench::format_name("deserialize_region ({} ops)", ::fixy::Padded<4>{num_ops});
 
         bench::add_report(reports, bench::run(label_ser, [&] {
-                              size_t n = serialize_region(SerializedRegion{*region}, buf.view());
+                              size_t n = serialize_region(::fixy::to(*region), buf.view());
                               bench::do_not_optimize(n);
                           }));
 
         // Prime the buffer once — deserialize consumes stable bytes.
-        const size_t serial_len = serialize_region(SerializedRegion{*region}, buf.view());
+        const size_t serial_len = serialize_region(::fixy::to(*region), buf.view());
         if (serial_len == 0) {
             ::fixy::fatal("serialize_region wrote no byte for a region of {} ops", num_ops);
         }

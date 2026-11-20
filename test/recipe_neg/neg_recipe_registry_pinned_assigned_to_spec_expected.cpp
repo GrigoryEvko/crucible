@@ -15,7 +15,6 @@
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Bands.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
@@ -25,8 +24,8 @@ int main() {
     ::fixy::BumpArena arena{};
     auto test_ctx = ::foundation::effects::testing::test();
     auto init_ctx = ::foundation::effects::testing::init();
-    RecipePool pool{::fixy::mint_borrowed_ref(arena), init_ctx};
-    RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), test_ctx.alloc};
+    RecipePool pool{::fixy::to(arena), init_ctx};
+    RecipeRegistry reg{::fixy::to(pool), test_ctx.alloc};
 
     ::fixy::Result<::fixy::RecipeSpec<RecipeRegistry::RecipeRef>, RecipeError> wrong_slot =
         reg.by_name_pinned<::fixy::Tolerance::BITEXACT>(::foundation::effects::testing::foreground(),

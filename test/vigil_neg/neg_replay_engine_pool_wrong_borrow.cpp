@@ -1,17 +1,16 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// ReplayEngine::init requires a borrow of the PoolAllocator.  A
-// fixy::BorrowedRef over another owner type cannot
-// substitute, even though all BorrowedRef instantiations are
-// pointer-sized.
+// ReplayEngine::init requires a Ref of the PoolAllocator.  A fixy::Ref of
+// another owner type cannot substitute, even though each Ref has the size of
+// a pointer.
 //
-// Expected diagnostic: no init overload accepting BorrowedRef<RegionNode>.
+// Expected diagnostic: no init overload accepting a Ref of a RegionNode.
 
 #include <crucible/ReplayEngine.h>
 
 int main() {
     crucible::ReplayEngine engine{};
     crucible::RegionNode region{};
-    engine.init(region, ::fixy::BorrowedRef<crucible::RegionNode>{region});
+    engine.init(region, ::fixy::to(region));
     return 0;
 }

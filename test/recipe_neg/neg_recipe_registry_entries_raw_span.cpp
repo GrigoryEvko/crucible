@@ -9,7 +9,6 @@
 
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
@@ -19,8 +18,8 @@ int main() {
     auto test = ::foundation::effects::testing::test();
     auto init = ::foundation::effects::testing::init();
     ::fixy::BumpArena arena{};
-    crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
-    crucible::RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), test.alloc};
+    crucible::RecipePool pool{::fixy::to(arena), init};
+    crucible::RecipeRegistry registry{::fixy::to(pool), test.alloc};
     auto const raw = registry.entries(::foundation::effects::testing::foreground()).value();
     consume(raw);
     return 0;

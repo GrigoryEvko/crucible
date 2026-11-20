@@ -62,11 +62,6 @@
       "constructor": "\\bBorrowed\\("
     },
     {
-      "name": "neg_witness_borrowedref_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bBorrowedRef\\("
-    },
-    {
       "name": "neg_witness_boundedmonotonic_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bBoundedMonotonic\\("
@@ -1948,10 +1943,6 @@
     {
       "type": "fixy::BudgetStamp",
       "header": "fixy/Budgeted.h"
-    },
-    {
-      "type": "fixy::BorrowedRef<int>",
-      "header": "fixy/Borrowed.h"
     },
     {
       "type": "fixy::Borrowed<int, int>",

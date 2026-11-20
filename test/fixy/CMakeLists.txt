@@ -1803,20 +1803,14 @@ fixy_neg_compile_test(neg_borrowed_of_a_braced_list
   "use of deleted function .fixy::Borrowed<T, Source, Brand>::Borrowed\\(std::initializer_list<"
   "Borrowed of a braced list dangles")
 
-# A brand has no data member.  The IsBrand check in each class body
+# A brand has no data member.  The IsBrand check in the class body
 # refuses one that does.
-fixy_neg_compile_test(neg_borrowed_ref_brand_not_empty
-  "static assertion failed"
-  "BorrowedRef<T, Brand>: Brand must be an empty class type")
 fixy_neg_compile_test(neg_borrowed_brand_not_empty
   "static assertion failed"
   "Borrowed<T, Source, Brand>: Brand must be an empty class type")
 
 # The doors that take an address are erased, because an address names no
 # identity a brand could claim, and a branded borrow never rebrands.
-fixy_neg_compile_test(neg_borrowed_ref_branded_from_an_address
-  "no matching function for call to .fixy::BorrowedRef<int, .anonymous.::ClaimedBrand>::from_raw_nonnull\\(int\\*\\)."
-  "the expression .is_same_v<Brand, foundation::brand::DefaultBrand> \\[with Brand = <unnamed>::ClaimedBrand\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_borrowed_branded_from_pointer_and_count
   "no matching function for call to .fixy::Borrowed<int, .anonymous.::Owner, .anonymous.::ClaimedBrand>::Borrowed"
   "required by the constraints of .template<class T, class Source, class Brand> constexpr fixy::Borrowed<T, Source, Brand>::Borrowed\\(T\\*, std::size_t\\) requires +is_same_v<Brand, foundation::brand::DefaultBrand>.")
@@ -1827,9 +1821,6 @@ fixy_neg_compile_test(neg_borrowed_rebrand
 # A caller cannot give a mint of a borrow the brand of a borrow that it
 # holds.  An explicit template argument lands in the pack Refused, and the
 # binding of a target type cannot deduce the brand of the result.
-fixy_neg_compile_test(neg_borrowed_ref_names_held_brand
-  "no matching function for call to .mint_borrowed_ref<int, HeldBrand>\\(int&\\)."
-  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int, ")
 fixy_neg_compile_test(neg_borrowed_names_held_brand
   "no matching function for call to .mint_borrowed<.anonymous.::Owner, int \\(&\\)\\[2\\], HeldBrand>"
   "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int \\(&\\)\\[2\\], ")
@@ -1846,17 +1837,14 @@ fixy_neg_compile_test(neg_borrowed_span_address_names_held_brand
   "invalid initialization of non-const reference of type .HeldBorrow \\(&\\)\\(std::span<int>&&\\) noexcept."
   "from an rvalue of type .<unresolved overloaded function type>.")
 
-# The three extractors read a member of one wrapper, and each refuses a
-# type that has the member but is not that wrapper.
+# The two extractors read a member of the wrapper, and each refuses a
+# type that has the member but is not the wrapper.
 fixy_neg_compile_test(neg_borrowed_value_of_a_span
   "template constraint failure for .template<class T> +requires +IsBorrowed<T> using fixy::borrowed_value_t"
   "required for the satisfaction of .IsBorrowed<T>. \\[with T = std::span<int")
 fixy_neg_compile_test(neg_borrowed_source_of_a_look_alike
   "template constraint failure for .template<class T> +requires +IsBorrowed<T> using fixy::borrowed_source_t"
   "required for the satisfaction of .IsBorrowed<T>. \\[with T = <unnamed>::LookalikeBorrow\\]")
-fixy_neg_compile_test(neg_borrowed_ref_value_of_a_span
-  "template constraint failure for .template<class T> +requires +IsBorrowedRef<T> using fixy::borrowed_ref_value_t"
-  "required for the satisfaction of .IsBorrowedRef<T>. \\[with T = std::span<int")
 
 # weaken towards a fresher grade in a constant expression reaches the
 # CRUCIBLE_PRE trap inside Stale::weaken.
@@ -7011,27 +6999,11 @@ fixy_neg_compile_test(neg_brand_borrowed_cross_brand
   "no matching function for call to .same_minting\\("
   "deduced conflicting types for parameter .Brand. \\(.fixy::<lambda\\(\\)>. and .fixy::<lambda\\(\\)>.\\)")
 
-fixy_neg_compile_test(neg_brand_borrowed_ref_cross_brand
-  "no matching function for call to .same_minting\\("
-  "deduced conflicting types for parameter .(Brand|Other). \\(.fixy::<lambda\\(\\)>. and .fixy::<lambda\\(\\)>.\\)")
-
-# A brand read off one borrow cannot be spelled onto another object:
-# the one public constructor is constrained to the erased brand.
-fixy_neg_compile_test(neg_brand_borrowed_ref_forged_brand
-  "no matching function for call to .fixy::BorrowedRef<int, fixy::<lambda\\(\\)> >::BorrowedRef\\("
-  "the expression .is_same_v<Brand, foundation::brand::DefaultBrand> \\[with Brand = fixy::[^]]*\\]. evaluated to .false.")
-
-# The twins of the two borrow mints.  The template-argument list the
-# compiler prints opens with `[` and carries a `;` between arguments,
-# and CMake counts brackets when it splits a list: an unbalanced `[` in
-# one regex swallows the `;` and the regex that follows it.  So the
-# bracket is matched by `.` and the argument list is cut before its
-# first separator.
-fixy_neg_compile_test(neg_brand_mint_borrowed_ref_from_temporary
-  "use of deleted function"
-  "mint_borrowed_ref\\(T&&\\) .with T = int"
-  "a borrow of a temporary dangles at the end of the full expression")
-
+# The twins of the borrow mint.  The template-argument list the compiler
+# prints opens with `[` and carries a `;` between arguments, and CMake
+# counts brackets when it splits a list: an unbalanced `[` in one regex
+# swallows the `;` and the regex that follows it.  So the bracket is
+# matched by `.` and the argument list is cut before its first separator.
 fixy_neg_compile_test(neg_brand_mint_borrowed_from_temporary_range
   "use of deleted function"
   "mint_borrowed\\(R&&\\) .with Source = \\{anonymous\\}::Owner"

@@ -115,7 +115,7 @@ enum class SeedSlotFault : std::uint8_t {
 // The image of a region, as the writer writes it.
 [[nodiscard]] inline SeedBytes region_image(const RegionNode& region) noexcept {
     ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(test_alloc(), std::size_t{1} << 16, std::byte{0});
-    const std::size_t written = serialize_region(SerializedRegion{region}, image.view());
+    const std::size_t written = serialize_region(::fixy::to(region), image.view());
     return copy_seed(
         ::fixy::View<std::byte const>{image.view()}.window(0, written).expect("the writer writes inside its image"));
 }
@@ -178,7 +178,7 @@ inline void run_region(::fixy::View<std::byte const> bytes) noexcept {
         // The loaded region writes back to an image that loads to the same
         // region: the loader keeps every field the writer reads.
         ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, input.size() + 4096, std::byte{0});
-        const std::size_t written = serialize_region(SerializedRegion{region}, image.view());
+        const std::size_t written = serialize_region(::fixy::to(region), image.view());
         CRUCIBLE_FUZZ_CLAIM("region", written > 0);
         const ::fixy::Option<LoadedRegionNode> reloaded =
             deserialize_region(alloc, image.view().window(0, written).expect("the writer writes inside its image"),

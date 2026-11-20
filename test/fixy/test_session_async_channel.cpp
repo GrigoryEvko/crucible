@@ -15,7 +15,6 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/session/AsyncChannel.h>
-#include <fixy/Borrowed.h>
 
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>

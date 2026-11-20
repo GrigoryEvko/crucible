@@ -1,8 +1,7 @@
-// Sentinel TU for fixy/Borrowed.h: the two views cost one pointer or one
-// span, the owner tag keeps two borrows apart, a borrow of a temporary
-// selects a deleted constructor, the detection surface answers through the
-// one reflection query, and every accessor of the two views answers on a
-// value.
+// Sentinel TU for fixy/Borrowed.h: the view costs one span, the owner tag
+// keeps two borrows apart, a borrow of a temporary selects a deleted
+// constructor, the detection surface answers through the one reflection
+// query, and every accessor of the view answers on a value.
 
 #include <fixy/Borrowed.h>
 
@@ -23,7 +22,6 @@
 namespace {
 
 using ::fixy::Borrowed;
-using ::fixy::BorrowedRef;
 using ::fixy::check::expect_dies;
 
 struct OwnerA {
@@ -32,18 +30,16 @@ struct OwnerA {
 struct OwnerB {
     int dummy = 0;
 };
+struct RefBrand {};
 
 using B_A = Borrowed<int, OwnerA>;
 using B_B = Borrowed<int, OwnerB>;
 
-// One span or one pointer, nothing more.
+// One span, nothing more.
 static_assert(sizeof(B_A) == sizeof(std::span<int>));
-static_assert(sizeof(BorrowedRef<int>) == sizeof(int*));
 
 // A borrow of a temporary selects the deleted twin.  The lvalue forms
 // stay open, so the twins remove exactly the dangling shape.
-static_assert(!std::is_constructible_v<BorrowedRef<int const>, int>);
-static_assert(std::is_constructible_v<BorrowedRef<int const>, int const&>);
 static_assert(!std::is_constructible_v<Borrowed<int const, OwnerA>, int const (&&)[2]>);
 static_assert(std::is_constructible_v<Borrowed<int const, OwnerA>, int const (&)[2]>);
 
@@ -67,26 +63,20 @@ consteval bool all_forms_satisfy() {
 }
 
 constexpr auto is_borrowed = []<typename T>() { return ::fixy::is_borrowed_v<T>; };
-constexpr auto is_borrowed_ref = []<typename T>() { return ::fixy::is_borrowed_ref_v<T>; };
-constexpr auto is_none = []<typename T>() { return !::fixy::is_borrowed_v<T> && !::fixy::is_borrowed_ref_v<T>; };
+constexpr auto is_none = []<typename T>() { return !::fixy::is_borrowed_v<T>; };
 
 static_assert(all_forms_satisfy<qualified_forms<B_A>, is_borrowed>());
 static_assert(all_forms_satisfy<qualified_forms<Borrowed<char const, OwnerB>>, is_borrowed>());
-static_assert(all_forms_satisfy<qualified_forms<BorrowedRef<int>>, is_borrowed_ref>());
-static_assert(all_forms_satisfy<qualified_forms<BorrowedRef<int const>>, is_borrowed_ref>());
 
-// The carriers underneath the wrappers, and the wrappers under the
-// wrong question, all answer no.
+// The carriers underneath the wrapper, and a Ref, all answer no.
 static_assert(all_forms_satisfy<qualified_forms<std::span<int>>, is_none>());
 static_assert(all_forms_satisfy<qualified_forms<int*>, is_none>());
 static_assert(all_forms_satisfy<qualified_forms<int>, is_none>());
-static_assert(!::fixy::is_borrowed_ref_v<B_A>);
-static_assert(!::fixy::is_borrowed_v<BorrowedRef<int>>);
+static_assert(all_forms_satisfy<qualified_forms<::fixy::Ref<int, RefBrand>>, is_none>());
 static_assert(!::fixy::is_borrowed_v<void>);
 
 static_assert(std::is_same_v<::fixy::borrowed_value_t<B_A const&>, int>);
 static_assert(std::is_same_v<::fixy::borrowed_source_t<B_B&&>, OwnerB>);
-static_assert(std::is_same_v<::fixy::borrowed_ref_value_t<BorrowedRef<double>>, double>);
 
 // Two owners are two types.
 static_assert(!std::is_assignable_v<B_A&, B_B>);
@@ -102,8 +92,7 @@ int check_views_over_a_vector() {
     if (tail.size() != 3 || tail[0] != 3) return 11;
     if (tail == whole) return 12;
 
-    BorrowedRef<int> third{owner[2]};
-    *third = 30;
+    owner[2] = 30;
     if (whole[2] != 30) return 13;
 
     // Each accessor checks its index or its window in each build, the release
@@ -127,33 +116,10 @@ int check_views_over_a_vector() {
     return 0;
 }
 
-struct Holder {
-    int v = 0;
-};
-
-// Every accessor of the three views, and the equality each one carries.
-// A view is a value, so two views over the same range compare equal and
-// two over different ranges do not.
+// Every accessor of the view, and the equality it carries.  A view is a
+// value, so two views over the same range compare equal and two over
+// different ranges do not.
 int check_every_accessor() {
-    int x = 42;
-    BorrowedRef<int> r{x};
-    if (r.get() != 42) return 30;
-    if (*r != 42) return 31;
-    if (r.raw_ptr() != &x) return 32;
-
-    int y = 99;
-    BorrowedRef<int> other{y};
-    if (r == other) return 33;
-    BorrowedRef<int> r_copy = r;
-    if (!(r == r_copy)) return 34;
-
-    if (BorrowedRef<int>::from_raw_nonnull(&x).get() != 42) return 35;
-
-    Holder h{};
-    h.v = 7;
-    BorrowedRef<Holder> rh{h};
-    if (rh->v != 7) return 36;
-
     B_A empty{};
     if (!empty.empty() || empty.size() != 0) return 37;
 

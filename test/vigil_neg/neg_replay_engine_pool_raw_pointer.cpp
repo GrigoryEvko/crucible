@@ -1,8 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// ReplayEngine::init admits the pool dependency as
-// ReplayEngine::PoolBorrow = fixy::BorrowedRef<const PoolAllocator>.
-// A raw PoolAllocator* must not cross the init boundary.
+// ReplayEngine::init takes the pool as a fixy::Ref of a PoolAllocator.  A
+// raw PoolAllocator* must not cross the init boundary.
 //
 // Expected diagnostic: no init overload accepting PoolAllocator*.
 

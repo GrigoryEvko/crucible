@@ -172,7 +172,7 @@ int main() {
         pool.init(::foundation::effects::testing::test().alloc, br.plan);
 
         ReplayEngine engine;
-        engine.init(br.region, ReplayEngine::PoolBorrow{pool});
+        engine.init(br.region, ::fixy::to(pool));
 
         CrucibleContext ctx{::foundation::effects::testing::test().alloc};
         (void)ctx.activate(br.region);

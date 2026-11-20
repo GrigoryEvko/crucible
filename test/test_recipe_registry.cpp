@@ -14,7 +14,6 @@
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Tagged.h>
@@ -61,8 +60,8 @@ auto g_init = eff::testing::init();
 inline eff::Alloc alloc_cap() noexcept { return g_test.alloc; }
 inline eff::Init init_cap() noexcept { return g_init; }
 
-// The borrow that the mint door gives.
-using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipePool&>()));
+// The Ref that to() gives, with the fresh brand of its call.
+using MintedPoolBorrow = decltype(::fixy::to(std::declval<RecipePool&>()));
 
 // A context whose row is empty, which each read of the registry admits.  The
 // reads take the row of the context, so a context that holds an effect does
@@ -91,10 +90,10 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
 
         static_assert(RecipeRegistry::STARTER_COUNT == 8);
         static_assert(RecipeRegistry::size() == 8);
-        static_assert(std::is_same_v<RecipeRegistry::PoolBorrow, ::fixy::BorrowedRef<RecipePool>>);
+        static_assert(std::is_same_v<RecipeRegistry::PoolBorrow, ::fixy::Ref<RecipePool>>);
         static_assert(sizeof(RecipeRegistry::PoolBorrow) == sizeof(RecipePool*));
         static_assert(std::is_constructible_v<RecipeRegistry, MintedPoolBorrow, eff::Alloc>,
-                      "RecipeRegistry takes the borrow that mint_borrowed_ref gives");
+                      "RecipeRegistry takes the Ref that to() gives");
         static_assert(!std::is_constructible_v<RecipeRegistry, RecipeRegistry::PoolBorrow, eff::Alloc>,
                       "RecipeRegistry refuses a borrow that names no brand");
         using EntryView = ::fixy::View<RecipeRegistry::Entry const, RecipeRegistry::STARTER_COUNT>;
@@ -111,8 +110,8 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
 
     {
         BumpArena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(arena), init_cap()};
+        RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
         CRUCIBLE_TEST_ASSERT(kTest, entries_view(reg).size() == RecipeRegistry::STARTER_COUNT);
         CRUCIBLE_TEST_ASSERT(kTest, pool.size() == RecipeRegistry::STARTER_COUNT);
@@ -134,8 +133,8 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
 
     {
         BumpArena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(arena), init_cap()};
+        RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
         std::unordered_set<const NumericalRecipe*> entry_ptrs;
         for (const auto& e : entries_view(reg)) {
@@ -172,8 +171,8 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // below have to miss just as firmly as the nonsense ones.
     {
         BumpArena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(arena), init_cap()};
+        RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
         const ::fixy::TextView missing[] = {
             "F32_STRICT",  // wrong case
@@ -199,8 +198,8 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // receives, without any of them changing a line.
     {
         BumpArena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(arena), init_cap()};
+        RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
         {
             auto r = reg.by_name(kPure, names::kF32Strict);
@@ -269,8 +268,8 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // become unreachable without anything reporting it.
     {
         BumpArena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(arena), init_cap()};
+        RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
         // Each name matches exactly one entry: its own.  O(STARTER_COUNT^2).
         for (const auto& e : entries_view(reg)) {
@@ -287,8 +286,8 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // the pool would simply hold fewer entries than there are names.
     {
         BumpArena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(arena), init_cap()};
+        RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
         std::unordered_set<const NumericalRecipe*> ptrs;
         std::unordered_set<uint64_t> hashes;
@@ -313,8 +312,8 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // been audited and accepted.
     {
         BumpArena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(arena), init_cap()};
+        RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
         struct Golden {
             ::fixy::TextView name{};
@@ -353,8 +352,8 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // already holds, rather than adding a second copy beside it.
     {
         BumpArena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(arena), init_cap()};
+        RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
         for (const auto& spec : crucible::detail_recipe_registry::kStarterRecipes) {
             // Re-intern the starter spec's fields → must hit the canonical
@@ -371,8 +370,8 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // it has to reach the same pointer as lookup by name.
     {
         BumpArena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(arena), init_cap()};
+        RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
         for (const auto& entry : entries_view(reg)) {
             RecipeRegistry::RecipeRef const via_hash =
@@ -411,10 +410,10 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     {
         BumpArena arena_a{};
         BumpArena arena_b{};
-        RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap()};
-        RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap()};
-        RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
-        RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
+        RecipePool pool_a{::fixy::to(arena_a), init_cap()};
+        RecipePool pool_b{::fixy::to(arena_b), init_cap()};
+        RecipeRegistry reg_a{::fixy::to(pool_a), alloc_cap()};
+        RecipeRegistry reg_b{::fixy::to(pool_b), alloc_cap()};
 
         RecipeRegistry::RecipeRef const a =
             reg_a.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");

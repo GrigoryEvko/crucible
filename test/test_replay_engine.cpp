@@ -115,7 +115,7 @@ static void test_linear_match() {
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
 
     CRUCIBLE_TEST_ASSERT(kTest, engine.is_initialized());
@@ -170,7 +170,7 @@ static void test_schema_divergence() {
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{100}, ShapeHash{200}, av).status() == ReplayStatus::MATCH);
 
@@ -206,7 +206,7 @@ static void test_shape_divergence() {
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{100}, ShapeHash{200}, av).status() == ReplayStatus::MATCH);
 
@@ -238,7 +238,7 @@ static void test_reset() {
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{10}, ShapeHash{20}, av).status() == ReplayStatus::MATCH);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{11}, ShapeHash{21}, av).status() == ReplayStatus::COMPLETE);
@@ -281,7 +281,7 @@ static void test_input_ptr() {
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{50}, ShapeHash{60}, av).status() == ReplayStatus::MATCH);
     CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
@@ -312,7 +312,7 @@ static void test_invalid_slot() {
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{77}, ShapeHash{88}, av).status() == ReplayStatus::COMPLETE);
 
@@ -342,7 +342,7 @@ static void test_current_entry() {
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     for (uint32_t i = 0; i < 3; i++) {
         const ReplayStep step = engine.advance(SchemaHash{300 + i}, ShapeHash{400 + i}, av);
@@ -373,7 +373,7 @@ static void test_matched_index_after_reset() {
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     for (uint32_t i = 0; i < 3; i++) {
         static_cast<void>(engine.advance(SchemaHash{500 + i}, ShapeHash{600 + i}, av));
@@ -417,7 +417,7 @@ static void test_matched_index_follows_the_cursor() {
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     for (uint32_t round = 0; round < 2; round++) {
         for (uint32_t i = 0; i < 3; i++) {
@@ -457,7 +457,7 @@ static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{700}, ShapeHash{800}, av).status() == ReplayStatus::MATCH);
     engine.reset(av);
@@ -492,7 +492,7 @@ static void test_diverged_step_has_no_matched_position(::fixy::TestRunnerCtx con
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     const ReplayStep diverged = engine.advance(SchemaHash{999}, ShapeHash{910}, av);
     CRUCIBLE_FATAL_INVARIANT(diverged.status() == ReplayStatus::DIVERGED);
@@ -518,7 +518,7 @@ static void test_advance_past_the_end_aborts(::fixy::TestRunnerCtx const& test) 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{70}, ShapeHash{71}, av).status() == ReplayStatus::COMPLETE);
     // A hash that differs from each op: the read of the cursor ends the
@@ -550,7 +550,7 @@ static void test_slot_id_past_the_table_aborts_init(::fixy::TestRunnerCtx const&
     pool.init(::foundation::effects::testing::test().alloc, plan);
     ReplayEngine engine;
     ::fixy::check::expect_dies(
-        test, [&engine, &region, &pool] noexcept { engine.init(region, ReplayEngine::PoolBorrow{pool}); },
+        test, [&engine, &region, &pool] noexcept { engine.init(region, ::fixy::to(pool)); },
         ::fixy::TextView{"op 1 has the input slot id 5"});
 
     ::fixy::check::pass(kTest, "  test_slot_id_past_the_table_aborts_init: PASSED\n");
@@ -636,7 +636,7 @@ static void test_integration_with_pool() {
     init_region(&region, ops.view());
 
     ReplayEngine engine;
-    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest,
                          engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}, av).status() == ReplayStatus::MATCH);
@@ -673,8 +673,8 @@ static void test_integration_with_pool() {
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     ::fixy::report(::fixy::Sink::Out, "test_replay_engine:\n");
-    static_assert(std::is_same_v<ReplayEngine::PoolBorrow, ::fixy::BorrowedRef<const PoolAllocator>>);
-    static_assert(sizeof(ReplayEngine::PoolBorrow) == sizeof(const PoolAllocator*));
+    static_assert(crucible::ReplayPool<PoolAllocator> && crucible::ReplayPool<const PoolAllocator>);
+    static_assert(!crucible::ReplayPool<crucible::RegionNode>);
     test_linear_match();
     test_schema_divergence();
     test_shape_divergence();

@@ -1,36 +1,31 @@
 #pragma once
 
-// Non-owning views over memory a longer-lived owner holds.
-//
-// BorrowedRef refers to one object and is never null: there is no
-// default constructor, because a null borrow would push a null check
-// onto every dereference.  A caller who wants a may-be-null borrow
-// wraps the borrow in an optional and says so.
+// A non-owning view over memory a longer-lived owner holds.
 //
 // Borrowed views a range and carries a phantom tag naming the owner.
 // The tag is what makes a view of one owner's memory a different type
 // from a view of another's, so a refactor that hands the wrong borrow
 // to a caller fails to compile instead of reading the wrong bytes.
 //
-// Both carry a brand, which is the identity of the one borrow event or
+// It carries a brand, which is the identity of the one borrow event or
 // of the branded object the borrow was taken from.  A borrow minted by
-// mint_borrowed or mint_borrowed_ref carries a fresh brand, or the
-// brand of a carrier that has one, and a callee that wants two borrows
-// of the same thing asks for one brand on both.  The constructors are
-// the erased doors: a borrow built through one names no brand and is
-// interchangeable with every other erased borrow of its type.  A
-// branded borrow has no public constructor, so a brand cannot be
-// claimed for a different object by spelling it.  foundation/Brand.h
-// states the facts a brand rests on.
+// mint_borrowed carries a fresh brand, or the brand of a region, and a
+// callee that wants two borrows of the same thing asks for one brand on
+// both.  The constructors are the erased doors: a borrow built through
+// one names no brand and is interchangeable with every other erased
+// borrow of its type.  A branded borrow has no public constructor, so a
+// brand cannot be claimed for a different range by spelling it.
+// foundation/Brand.h states the facts a brand rests on.
 //
-// A borrow that can be empty is an Option of a Ref (foundation/core/Ref.h).
+// A borrow of one object is a Ref (foundation/core/Ref.h), and a borrow
+// that can be empty is an Option of a Ref.
 //
 // The lifetime bound the parameter attribute announces is not enforced
-// on this compiler, where the macro expands to nothing.  What the
-// two types can do is refuse the one shape that always dangles: a
-// borrow taken from a temporary.  Each binding constructor and each
-// mint therefore has a deleted rvalue twin, so the temporary selects
-// the deleted overload and the compiler names the reason.
+// on this compiler, where the macro expands to nothing.  What the type
+// can do is refuse the one shape that always dangles: a borrow taken
+// from a temporary.  Each binding constructor and each mint therefore
+// has a deleted rvalue twin, so the temporary selects the deleted
+// overload and the compiler names the reason.
 
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
@@ -93,12 +88,8 @@ struct borrow_mint_t {};
 // foundation/diag/RowHash.h folds each identity, so every carrier here
 // takes a cache slot of its own rather than the zero a bare payload has.
 namespace row_discipline {
-struct borrowed_ref;
 struct borrowed;
 }  // namespace row_discipline
-
-template <class T, class Brand = ::foundation::brand::DefaultBrand>
-class BorrowedRef;
 
 template <class T, class Source, class Brand = ::foundation::brand::DefaultBrand>
 class Borrowed;
@@ -114,12 +105,12 @@ template <class T, class Tag, class Brand>
 [[nodiscard]] constexpr Borrowed<T, Tag, Brand> mint_borrowed(OwnedRegion<T, Tag, Brand>& region
                                                               CRUCIBLE_LIFETIMEBOUND) noexcept;
 
-// The detection surface of Borrowed and BorrowedRef.  One reflection
-// query answers each, and the associated types are read off the
-// wrapper's own typedefs.  Each concept is the question.  The value
-// spelling beside it is derived from it, and nothing that gates reads
-// it.  They are declared ahead of the classes because the deleted
-// rvalue twins below exclude a Borrowed from the ranges they refuse.
+// The detection surface of Borrowed.  One reflection query answers it,
+// and the associated types are read off the wrapper's own typedefs.  The
+// concept is the question.  The value spelling beside it is derived from
+// it, and nothing that gates reads it.  They are declared ahead of the
+// class because the deleted rvalue twins below exclude a Borrowed from
+// the ranges they refuse.
 
 template <typename T>
 concept IsBorrowed = ::foundation::reflect::IsInstanceOf<T, ^^Borrowed>;
@@ -127,36 +118,11 @@ concept IsBorrowed = ::foundation::reflect::IsInstanceOf<T, ^^Borrowed>;
 template <typename T>
 inline constexpr bool is_borrowed_v = IsBorrowed<T>;
 
-template <typename T>
-concept IsBorrowedRef = ::foundation::reflect::IsInstanceOf<T, ^^BorrowedRef>;
-
-template <typename T>
-inline constexpr bool is_borrowed_ref_v = IsBorrowedRef<T>;
-
 // The element type of a borrow taken from a range: the range's
 // reference type with the reference removed, so a const range yields a
 // borrow of const elements.
 template <class R>
 using range_element_t = std::remove_reference_t<std::ranges::range_reference_t<R>>;
-
-// A branded borrow of one object.  The brand is the carrier's own when
-// the carrier has one, so the borrow is pinned to that instance, and a
-// fresh one otherwise.  The pack Refused takes each explicit template
-// argument and the constraint refuses it, so no caller spells the fresh
-// brand (foundation/Brand.h).
-template <class... Refused, class T, class Fresh = CRUCIBLE_FRESH_BRAND>
-    requires(sizeof...(Refused) == 0 && std::is_object_v<T>)
-[[nodiscard]] constexpr BorrowedRef<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>
-mint_borrowed_ref(T& ref CRUCIBLE_LIFETIMEBOUND) noexcept;
-
-// A borrow of a temporary dangles at the end of the statement.  The
-// forwarding reference is the better match for an rvalue, and it is
-// constrained away from lvalues so a named object still reaches the
-// mint above.  The twin names no brand, because it gives no borrow.
-template <class T>
-    requires(!std::is_lvalue_reference_v<T>)
-constexpr auto mint_borrowed_ref(T&&) = delete("a borrow of a temporary dangles at the end of the full expression; "
-                                               "bind the object to a name first");
 
 // A branded borrow of a contiguous range, tagged with its owner.  The
 // range is taken by lvalue reference, or by rvalue when it is a
@@ -227,85 +193,6 @@ template <class Source, class R>
 constexpr auto mint_borrowed(R&&) = delete("a borrow of a temporary owner dangles at the end of the full expression; "
                                            "give the owner a name that outlives the borrow");
 
-template <class T, class Brand>
-class [[nodiscard]] BorrowedRef {
-    static_assert(::foundation::brand::IsBrand<Brand>, "BorrowedRef<T, Brand>: Brand must be an empty class type: "
-                                                       "a mint's fresh brand, the carrier's own, or DefaultBrand.");
-
-public:
-    using element_type = T;
-    using brand_type = Brand;
-
-    static constexpr std::string_view wrapper_kind() noexcept { return detail::structural_kind_v<^^BorrowedRef>; }
-    using row_discipline = ::fixy::row_discipline::borrowed_ref;
-    using row_payload = T;
-
-private:
-    // No reachable constructor leaves this initializer in play.  It is
-    // here so that a constructor added later, or an aggregate path,
-    // lands on a deterministic null rather than an indeterminate value.
-    T* ptr_ = nullptr;
-    // No byte route builds a borrow, so a branded borrow names only the
-    // object that its mint took.
-    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
-
-    struct from_raw_tag_t {};
-    constexpr BorrowedRef(from_raw_tag_t, T* p) noexcept : ptr_{p} {}
-
-    // The branded door.  Only the mint holds the key, so a brand cannot
-    // be claimed for a second object by spelling it.
-    constexpr BorrowedRef(detail::borrow_mint_t, T& ref) noexcept : ptr_{&ref} {}
-
-    template <class... URefused, class U, class Fresh>
-        requires(sizeof...(URefused) == 0 && std::is_object_v<U>)
-    friend constexpr BorrowedRef<U, ::foundation::brand::inherited_or_fresh_brand_t<U, Fresh>>
-    mint_borrowed_ref(U& ref CRUCIBLE_LIFETIMEBOUND) noexcept;
-
-public:
-    BorrowedRef() = delete;
-
-    // The erased door.  A borrow built here names no brand.
-    constexpr explicit BorrowedRef(T& ref CRUCIBLE_LIFETIMEBOUND) noexcept
-        requires std::is_same_v<Brand, ::foundation::brand::DefaultBrand>
-        : ptr_{&ref} {}
-
-    // A const T& binds a temporary, so without this twin a BorrowedRef
-    // of a prvalue compiles and dangles at the end of the statement.
-    explicit BorrowedRef(T&&) = delete("BorrowedRef of a temporary dangles at the end of the full expression; "
-                                       "bind the object to a name first");
-
-    // Erasure, one way only: a borrow of one instance becomes a borrow
-    // on the erased identity.  Nothing gives an erased borrow a brand.
-    template <class Other>
-        requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
-    constexpr BorrowedRef(BorrowedRef<T, Other> const& other) noexcept : ptr_{other.raw_ptr()} {}
-
-    // Unenforceable by construction, and that is why the annotation is
-    // absent rather than decorative.  The hazard is the POINTEE's
-    // lifetime, and a pointer parameter cannot see it: every argument
-    // is a prvalue, so no deleted rvalue twin can tell a pointer to a
-    // live object from a pointer to a dead one.  The constructor above
-    // takes T& and has its twin, and that is the door to use whenever
-    // the caller has an object rather than an address.  This factory is
-    // the address door, for a pointer that arrived from C, and the
-    // caller owns the lifetime argument.  It is erased, because an
-    // address carries no identity a brand could name.
-    [[nodiscard]] static constexpr BorrowedRef from_raw_nonnull(T* p) noexcept
-        requires std::is_same_v<Brand, ::foundation::brand::DefaultBrand>
-    {
-        CRUCIBLE_PRE(p != nullptr);
-        return BorrowedRef{from_raw_tag_t{}, p};
-    }
-
-    [[nodiscard]] constexpr T& get() const noexcept { return *ptr_; }
-    [[nodiscard]] constexpr T& operator*() const noexcept { return *ptr_; }
-    [[nodiscard]] constexpr T* operator->() const noexcept { return ptr_; }
-
-    [[nodiscard]] constexpr T* raw_ptr() const noexcept { return ptr_; }
-
-    [[nodiscard]] friend constexpr bool operator==(BorrowedRef a, BorrowedRef b) noexcept { return a.ptr_ == b.ptr_; }
-};
-
 template <class T, class Source, class Brand>
 class [[nodiscard]] Borrowed {
     static_assert(::foundation::brand::IsBrand<Brand>, "Borrowed<T, Source, Brand>: Brand must be an empty class "
@@ -373,9 +260,9 @@ public:
         requires std::is_same_v<Brand, ::foundation::brand::DefaultBrand>
         : span_{span} {}
 
-    // Unenforceable by construction, like BorrowedRef::from_raw_nonnull:
-    // the hazard is the lifetime of what data points at, every pointer
-    // argument is a prvalue, and no overload can separate the two cases.
+    // Unenforceable by construction: the hazard is the lifetime of what
+    // data points at, every pointer argument is a prvalue, and no
+    // overload can separate the two cases.
     // The span and array constructors above carry their twins; this is
     // the pointer-and-count door for a C boundary.
     constexpr Borrowed(T* data, std::size_t count) noexcept
@@ -413,7 +300,8 @@ public:
         "Borrowed of a braced list dangles at the end of the full expression; "
         "give the elements a name that outlives the borrow");
 
-    // Erasure, one way only, as on BorrowedRef.
+    // Erasure, one way only: a borrow of one instance becomes a borrow on
+    // the erased identity.  Nothing gives an erased borrow a brand.
     template <class Other>
         requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
     constexpr Borrowed(Borrowed<T, Source, Other> const& other) noexcept : span_{other.as_span()} {}
@@ -456,13 +344,6 @@ public:
         return a.span_.data() == b.span_.data() && a.span_.size() == b.span_.size();
     }
 };
-
-template <class... Refused, class T, class Fresh>
-    requires(sizeof...(Refused) == 0 && std::is_object_v<T>)
-[[nodiscard]] constexpr BorrowedRef<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>
-mint_borrowed_ref(T& ref CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return BorrowedRef<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>{detail::borrow_mint_t{}, ref};
-}
 
 template <class Source, class... Refused, class R, class Fresh>
     requires(sizeof...(Refused) == 0
@@ -521,9 +402,5 @@ using borrowed_value_t = typename std::remove_cvref_t<T>::element_type;
 template <typename T>
     requires IsBorrowed<T>
 using borrowed_source_t = typename std::remove_cvref_t<T>::source_type;
-
-template <typename T>
-    requires IsBorrowedRef<T>
-using borrowed_ref_value_t = typename std::remove_cvref_t<T>::element_type;
 
 }  // namespace fixy

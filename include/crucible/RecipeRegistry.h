@@ -4,7 +4,6 @@
 #include <crucible/RecipePool.h>
 #include <crucible/Types.h>
 #include <fixy/Bands.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -135,10 +134,8 @@ enum class RecipeError : uint8_t {
 // lookups race only against each other and need no synchronisation.
 class CRUCIBLE_OWNER RecipeRegistry {
 public:
-    using PoolBorrow = ::fixy::BorrowedRef<RecipePool>;
+    using PoolBorrow = ::fixy::Ref<RecipePool>;
     using pure_projection_row = ::foundation::effects::Row<>;
-
-    static_assert(::fixy::IsBorrowedRef<PoolBorrow>);
 
     static constexpr std::size_t STARTER_COUNT = 8;
 
@@ -158,14 +155,13 @@ public:
     // construction the registry holds only non-owning pointers into it, and
     // never mutates or destroys it.
     //
-    // The pool comes through ::fixy::mint_borrowed_ref, and the constructor
-    // refuses a borrow that names no brand.  Each mint site is a new brand,
-    // so this constructor only forwards to the one body below.
+    // The pool comes as a Ref from ::fixy::to, and the constructor refuses a
+    // Ref that names no brand.  Each call of to() is a new brand, so this
+    // constructor only forwards to the one body below, on the erased brand.
     template <typename Brand>
-        requires ::foundation::brand::IsFreshBrand<Brand>
-    [[gnu::cold]] explicit RecipeRegistry(::fixy::BorrowedRef<RecipePool, Brand> pool,
-                                          ::foundation::effects::Alloc a) noexcept
-        : RecipeRegistry{erased_door_{}, PoolBorrow{pool}, a} {}
+        requires ::fixy::ErasableBrand<Brand>
+    [[gnu::cold]] explicit RecipeRegistry(::fixy::Ref<RecipePool, Brand> pool, ::foundation::effects::Alloc a) noexcept
+        : RecipeRegistry{erased_door_{}, ::fixy::erase_brand(pool), a} {}
 
     RecipeRegistry(const RecipeRegistry&) =
         delete("RecipeRegistry holds interior recipe pointers into the caller's pool arena");

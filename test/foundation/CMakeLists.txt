@@ -2943,6 +2943,10 @@ foundation_neg_compile_test(neg_core_ref_array_target
 foundation_neg_compile_test(neg_core_ref_volatile_target
   "template constraint failure for .template<class T, class Brand>  requires \\(RefTarget<T>\\) && \\(IsBrand<Brand>\\) class foundation::core::Ref."
   "the expression .!\\(is_volatile_v<T>\\) \\[with T = volatile int\\]. evaluated to .false.")
+# A brand has no data member, so the IsBrand constraint refuses one that does.
+foundation_neg_compile_test(neg_core_ref_brand_not_empty
+  "template constraint failure for .template<class T, class Brand>  requires \\(RefTarget<T>\\) && \\(IsBrand<Brand>\\) class foundation::core::Ref."
+  "required for the satisfaction of .IsBrand<Brand>. \\[with Brand = <unnamed>::StatefulBrand\\]")
 foundation_neg_compile_test(neg_core_address_alignment_not_power_of_two
   "no matching function for call to .foundation::core::Address::is_aligned<24>\\(\\)."
   "the expression .\\(Alignment & Alignment - 1\\) == 0 \\[with Alignment = 24\\]. evaluated to .false.")

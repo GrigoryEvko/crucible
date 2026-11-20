@@ -72,7 +72,6 @@
 #include <fixy/session/Handle.h>
 #include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
-#include <fixy/Borrowed.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/ChildProcess.h>

@@ -3,6 +3,7 @@
 #include <fixy/Borrowed.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/List.h>
+#include <foundation/core/Ref.h>
 
 namespace fixy {
 
@@ -15,17 +16,11 @@ struct OwnerB {
     int dummy = 0;
 };
 struct brand_a {};
-struct brand_b {};
 
-using sealed_ref = BorrowedRef<int, brand_a>;
 using sealed_range = Borrowed<int, OwnerA, brand_a>;
 
 }  // namespace detail::borrowed_layout
 
-static_assert(sizeof(BorrowedRef<int>) == sizeof(int*));
-static_assert(sizeof(BorrowedRef<double>) == sizeof(double*));
-static_assert(sizeof(BorrowedRef<int, detail::borrowed_layout::brand_a>) == sizeof(int*),
-              "a branded borrow keeps the layout of an erased one");
 static_assert(sizeof(Borrowed<int, detail::borrowed_layout::OwnerA>) == sizeof(std::span<int>));
 static_assert(sizeof(Borrowed<int, detail::borrowed_layout::OwnerA, detail::borrowed_layout::brand_a>)
               == sizeof(std::span<int>));
@@ -33,27 +28,16 @@ static_assert(sizeof(Borrowed<const char, detail::borrowed_layout::OwnerA>) == s
 
 // A borrow keeps the trivial copy that passes it in a register, and no byte
 // route builds one.
-static_assert(!std::is_trivially_copyable_v<detail::borrowed_layout::sealed_ref>
-              && !::foundation::lifetime::ImplicitLifetimeThroughout<detail::borrowed_layout::sealed_ref>);
 static_assert(!std::is_trivially_copyable_v<detail::borrowed_layout::sealed_range>
               && !::foundation::lifetime::ImplicitLifetimeThroughout<detail::borrowed_layout::sealed_range>);
-static_assert(std::is_trivially_copy_constructible_v<detail::borrowed_layout::sealed_ref>
-              && std::is_trivially_copy_constructible_v<detail::borrowed_layout::sealed_range>);
-static_assert(std::is_trivially_destructible_v<BorrowedRef<int>>);
+static_assert(std::is_trivially_copy_constructible_v<detail::borrowed_layout::sealed_range>);
 static_assert(std::is_trivially_destructible_v<Borrowed<int, detail::borrowed_layout::OwnerA>>);
-
-static_assert(!std::is_default_constructible_v<BorrowedRef<int>>,
-              "BorrowedRef<T> is not default-constructible.  A default constructor "
-              "admits a null sentinel that the rest of the API does not handle.");
 
 static_assert(std::is_default_constructible_v<Borrowed<int, detail::borrowed_layout::OwnerA>>);
 
 // The deleted rvalue twins are what the temporary selects.  The lvalue
 // forms, a span and a Borrowed stay constructible, so the twins remove
 // exactly the shapes that dangle.
-static_assert(!std::is_constructible_v<BorrowedRef<int>, int>);
-static_assert(!std::is_constructible_v<BorrowedRef<int const>, int>);
-static_assert(std::is_constructible_v<BorrowedRef<int>, int&>);
 static_assert(!std::is_constructible_v<Borrowed<int const, detail::borrowed_layout::OwnerA>, int const (&&)[3]>);
 static_assert(std::is_constructible_v<Borrowed<int const, detail::borrowed_layout::OwnerA>, std::span<int const>>);
 static_assert(std::is_constructible_v<Borrowed<int, detail::borrowed_layout::OwnerA>, int (&)[3]>);
@@ -68,19 +52,13 @@ static_assert(!std::is_constructible_v<Borrowed<int, detail::borrowed_layout::Ow
                                        ::foundation::core::View<int>>);
 
 // A branded borrow has no public constructor over its target: the brand
-// is claimed by a mint and cannot be spelled onto another object.
-static_assert(!std::is_constructible_v<BorrowedRef<int, detail::borrowed_layout::brand_a>, int&>,
-              "a branded BorrowedRef is minted, never constructed, or a brand could be claimed for any object");
+// is claimed by a mint and cannot be spelled onto another range.
 static_assert(!std::is_constructible_v<Borrowed<int, detail::borrowed_layout::OwnerA, detail::borrowed_layout::brand_a>,
                                        std::span<int>>,
               "a branded Borrowed is minted, never constructed");
 static_assert(!std::is_constructible_v<Borrowed<int, detail::borrowed_layout::OwnerA, detail::borrowed_layout::brand_a>,
                                        int (&)[3]>);
 // The erasure runs one way.
-static_assert(std::is_convertible_v<BorrowedRef<int, detail::borrowed_layout::brand_a>, BorrowedRef<int>>);
-static_assert(!std::is_constructible_v<BorrowedRef<int, detail::borrowed_layout::brand_a>, BorrowedRef<int>>);
-static_assert(!std::is_constructible_v<BorrowedRef<int, detail::borrowed_layout::brand_a>,
-                                       BorrowedRef<int, detail::borrowed_layout::brand_b>>);
 static_assert(std::is_convertible_v<Borrowed<int, detail::borrowed_layout::OwnerA, detail::borrowed_layout::brand_a>,
                                     Borrowed<int, detail::borrowed_layout::OwnerA>>);
 static_assert(!std::is_constructible_v<Borrowed<int, detail::borrowed_layout::OwnerA, detail::borrowed_layout::brand_a>,
@@ -90,52 +68,6 @@ namespace detail::borrowed_self_test {
 
 using OwnerA = ::fixy::detail::borrowed_layout::OwnerA;
 using OwnerB = ::fixy::detail::borrowed_layout::OwnerB;
-
-[[nodiscard]] consteval bool ref_binds_and_dereferences() noexcept {
-    int x = 42;
-    BorrowedRef<int> r{x};
-    return r.get() == 42 && *r == 42 && r.raw_ptr() == &x;
-}
-static_assert(ref_binds_and_dereferences());
-
-[[nodiscard]] consteval bool ref_from_raw_nonnull() noexcept {
-    int x = 7;
-    auto r = BorrowedRef<int>::from_raw_nonnull(&x);
-    return r.get() == 7;
-}
-static_assert(ref_from_raw_nonnull());
-
-[[nodiscard]] consteval bool ref_copy_preserves_identity() noexcept {
-    int x = 100;
-    BorrowedRef<int> a{x};
-    BorrowedRef<int> b = a;
-    return a == b && a.raw_ptr() == b.raw_ptr() && a.get() == 100;
-}
-static_assert(ref_copy_preserves_identity());
-
-[[nodiscard]] consteval bool ref_two_objects_compare_distinct() noexcept {
-    int x = 1;
-    int y = 2;
-    BorrowedRef<int> a{x};
-    BorrowedRef<int> b{y};
-    return !(a == b) && a.get() != b.get();
-}
-static_assert(ref_two_objects_compare_distinct());
-
-struct Holder {
-    int v = 99;
-};
-[[nodiscard]] consteval bool ref_arrow_operator() noexcept {
-    Holder h{};
-    BorrowedRef<Holder> r{h};
-    return r->v == 99;
-}
-static_assert(ref_arrow_operator());
-
-template <class W>
-concept can_default_construct = requires { W{}; };
-static_assert(!can_default_construct<BorrowedRef<int>>, "BorrowedRef<T> has a deleted default constructor.  A null "
-                                                        "sentinel defeats the always-bound contract.");
 
 [[nodiscard]] consteval bool span_default_is_empty() noexcept {
     Borrowed<int, OwnerA> b{};
@@ -202,8 +134,8 @@ static_assert(subview_preserves_source());
 }
 static_assert(subview_empty_at_zero_count());
 
-// The mints brand.  Two mints at two sites are two brands, a mint of a
-// branded carrier takes the carrier's brand, a subview keeps its
+// The mints brand.  Two mints at two sites are two brands, a Ref of a
+// branded borrow takes the brand of the borrow, a subview keeps its
 // parent's, and a branded borrow still erases.
 [[nodiscard]] consteval bool mints_brand_and_erase() noexcept {
     int arr[3] = {1, 2, 3};
@@ -215,15 +147,12 @@ static_assert(subview_empty_at_zero_count());
     auto sub = first.subview(1, 2);
     static_assert(::foundation::brand::SameBrand<decltype(sub), decltype(first)>, "a subview keeps the brand");
     Borrowed<int, OwnerA> erased = first;
-    int x = 5;
-    auto r1 = mint_borrowed_ref(x);
-    auto r2 = mint_borrowed_ref(x);
-    static_assert(!std::is_same_v<decltype(r1), decltype(r2)>);
-    auto of_borrowed = mint_borrowed_ref(first);
-    static_assert(::foundation::brand::SameBrand<decltype(of_borrowed), decltype(first)>,
-                  "a borrow of a branded carrier takes the carrier's brand");
-    BorrowedRef<int> erased_ref = r1;
-    return erased.size() == 3 && sub[0] == 2 && *erased_ref == 5 && of_borrowed->size() == 3;
+    auto of_borrowed = ::foundation::core::to(first);
+    static_assert(
+        std::is_same_v<decltype(of_borrowed),
+                       ::foundation::core::Ref<decltype(first), ::foundation::brand::brand_of_t<decltype(first)>>>,
+        "a Ref of a branded borrow takes the brand of the borrow");
+    return erased.size() == 3 && sub[0] == 2 && of_borrowed->size() == 3;
 }
 static_assert(mints_brand_and_erase());
 
@@ -253,15 +182,8 @@ using B_A_int = Borrowed<int, OwnerA>;
 using B_A_double = Borrowed<double, OwnerA>;
 static_assert(!can_assign<B_A_int, B_A_double>);
 
-template <class R1, class R2>
-concept can_assign_ref = requires(R1 a, R2 b) {
-    { a = b };
-};
-static_assert(!can_assign_ref<BorrowedRef<int>, BorrowedRef<double>>);
-
-// The two kinds are built from the prefix and the class identifier,
-// so the pins check that shape rather than restating the literal a
-// third and fourth time.
+// The kind is built from the prefix and the class identifier, so the pin
+// checks that shape rather than restating the literal a second time.
 template <class W, std::meta::info Cls>
 [[nodiscard]] consteval bool kind_is_prefix_and_identifier() noexcept {
     constexpr std::string_view prefix = "structural::";
@@ -270,12 +192,7 @@ template <class W, std::meta::info Cls>
     return kind.substr(prefix.size()) == std::meta::identifier_of(Cls);
 }
 
-static_assert(kind_is_prefix_and_identifier<BorrowedRef<int>, ^^BorrowedRef>());
 static_assert(kind_is_prefix_and_identifier<B_A, ^^Borrowed>());
-
-// The two are distinct, which is what a caller reading the kind off a
-// diagnostic relies on.
-static_assert(BorrowedRef<int>::wrapper_kind() != B_A::wrapper_kind());
 
 using B_dbl = Borrowed<double, OwnerA>;
 using B_cc = Borrowed<const char, OwnerB>;
@@ -310,42 +227,6 @@ static_assert(std::is_same_v<borrowed_value_t<B_cc>, const char>);
 static_assert(std::is_same_v<borrowed_source_t<B_A>, OwnerA>);
 static_assert(std::is_same_v<borrowed_source_t<B_cc>, OwnerB>);
 static_assert(std::is_same_v<borrowed_source_t<B_dbl>, OwnerA>);
-
-using R_int = BorrowedRef<int>;
-using R_holder = BorrowedRef<Holder>;
-using R_double = BorrowedRef<double>;
-using R_const = BorrowedRef<const int>;
-
-static_assert(is_borrowed_ref_v<R_int>);
-static_assert(is_borrowed_ref_v<R_holder>);
-static_assert(is_borrowed_ref_v<R_double>);
-static_assert(is_borrowed_ref_v<R_const>);
-static_assert(is_borrowed_ref_v<R_int&>);
-static_assert(is_borrowed_ref_v<R_int const&>);
-static_assert(is_borrowed_ref_v<R_int&&>);
-static_assert(!is_borrowed_ref_v<int>);
-static_assert(!is_borrowed_ref_v<int*>,
-              "A bare T* must not satisfy is_borrowed_ref_v. It is the underlying carrier, not "
-              "the wrapper. Without this rejection, raw pointers slip through concept gates that "
-              "expect a BorrowedRef.");
-static_assert(!is_borrowed_ref_v<int&>);
-static_assert(!is_borrowed_ref_v<R_int*>);
-static_assert(!is_borrowed_ref_v<void>);
-static_assert(!is_borrowed_ref_v<B_A>);
-
-struct LookalikeBorrowedRef {
-    int* ptr_;
-};
-static_assert(!is_borrowed_ref_v<LookalikeBorrowedRef>,
-              "is_borrowed_ref_v must reject lookalikes. If this fires, the detection "
-              "has weakened to duck-typing and any struct holding a T* would "
-              "falsely match.");
-
-static_assert(IsBorrowedRef<R_int>);
-static_assert(!IsBorrowedRef<int*>);
-static_assert(std::is_same_v<borrowed_ref_value_t<R_int>, int>);
-static_assert(std::is_same_v<borrowed_ref_value_t<R_holder>, Holder>);
-static_assert(std::is_same_v<borrowed_ref_value_t<R_const>, const int>);
 
 }  // namespace detail::borrowed_self_test
 

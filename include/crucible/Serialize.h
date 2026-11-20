@@ -16,7 +16,6 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/TraceRing.h>
 #include <foundation/core/KeyedHash.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Protocol.h>
 #include <fixy/Refined.h>
@@ -475,32 +474,31 @@ region_checksum(::fixy::View<const std::byte> covered) noexcept {
 
 }  // namespace detail_ser
 
-// The region that serialize_region reads.  A borrow is never null.
-using SerializedRegion = ::fixy::BorrowedRef<const RegionNode>;
+// The node that a serialize reads: a Ref of a RegionNode or of a BranchNode,
+// with or without a const and with any brand.  A Ref is never null, and the
+// serialize only reads it.
+template <class Node, class Kind>
+concept SerializedNode = std::same_as<std::remove_const_t<Node>, Kind>;
 
-// The branch that serialize_branch reads.  A borrow is never null.
-using SerializedBranch = ::fixy::BorrowedRef<const BranchNode>;
+namespace detail_ser {
 
-// Writes the image of the region into the first bytes of image.  Returns the
-// byte count written, or zero if image was too small.  Each entry of the
-// region carries its own tensor metadata, so the function reads no metadata
-// log.
-CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion region, ::fixy::View<std::byte> image) {
-    using namespace detail_ser;
+// The body of serialize_region.  It is no template, so the callers of each
+// brand share one copy of it.
+CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& region, ::fixy::View<std::byte> image) {
     Writer w{.image = image};
 
-    write_header(w, TraceNodeKind::REGION, region->merkle_hash, region->content_hash);
+    write_header(w, TraceNodeKind::REGION, region.merkle_hash, region.content_hash);
 
-    w.w(region->num_ops());
-    w.w(region->first_op_schema.raw());
-    w.w(region->numerics.raw());
-    w.w(region->measured_ms);
-    w.w(region->variant_id.get());
+    w.w(region.num_ops());
+    w.w(region.first_op_schema.raw());
+    w.w(region.numerics.raw());
+    w.w(region.measured_ms);
+    w.w(region.variant_id.get());
 
     // The writes of the image are byte writes, and the compiler cannot prove
     // that they leave the link of the region as it is.  The copy of the link
     // keeps one test of the plan.
-    const PlanLink plan_link = region->plan;
+    const PlanLink plan_link = region.plan;
     w.w(plan_link.is_some());
     for (const ::fixy::Ref<MemoryPlan const>& plan_ref : plan_link) {
         const MemoryPlan& plan = *plan_ref;
@@ -518,7 +516,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
         }
     }
 
-    for (const TraceEntry& te : region->ops) {
+    for (const TraceEntry& te : region.ops) {
         w.w(te.schema_hash.raw());
         w.w(te.shape_hash.raw());
         w.w(te.scope_hash.raw());
@@ -572,6 +570,45 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
     }
 
     return w.has_room ? w.pos : 0;
+}
+
+// The body of serialize_branch.  It is no template, so the callers of each
+// brand share one copy of it.
+[[nodiscard]] inline size_t write_branch_image(const BranchNode& branch, ::fixy::View<std::byte> image) {
+    Writer w{.image = image};
+
+    // A branch node repurposes the header's content-hash field to hold the
+    // merkle hash of the continuation, the suffix the arms merge back into.
+    const MerkleHash cont_hash = branch.next.match(
+        [](::fixy::Ref<TraceNode const> const& continuation) noexcept { return continuation->merkle_hash; },
+        []() noexcept { return MerkleHash{}; });
+    write_header(w, TraceNodeKind::BRANCH, branch.merkle_hash, ContentHash{cont_hash.raw()});
+
+    w.write_image(branch.guard);
+
+    w.w(branch.num_arms());
+    for (const BranchNode::Arm& arm : branch.arms()) {
+        w.w(arm.value);
+        // An arm with no target writes the hash zero.
+        const uint64_t target_hash =
+            arm.target().match([](::fixy::Ref<TraceNode const> target) noexcept { return target->merkle_hash.raw(); },
+                               []() noexcept { return uint64_t{0}; });
+        w.w(target_hash);
+    }
+
+    return w.has_room ? w.pos : 0;
+}
+
+}  // namespace detail_ser
+
+// Writes the image of the region into the first bytes of image.  Returns the
+// byte count written, or zero if image was too small.  Each entry of the
+// region carries its own tensor metadata, so the function reads no metadata
+// log.  The serialize reads the region only as const.
+template <class Region, ::foundation::brand::IsBrand Brand>
+    requires SerializedNode<Region, RegionNode>
+[[nodiscard]] inline size_t serialize_region(::fixy::Ref<Region, Brand> node, ::fixy::View<std::byte> image) {
+    return detail_ser::write_region_image(*node, image);
 }
 
 // Gives the region of the image, or the reason that refused the image: a
@@ -831,31 +868,12 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
 }
 
 // Writes the image of the branch into the first bytes of image.  Returns the
-// byte count written, or zero if image was too small.
-[[nodiscard]] inline size_t serialize_branch(SerializedBranch branch, ::fixy::View<std::byte> image) {
-    using namespace detail_ser;
-    Writer w{.image = image};
-
-    // A branch node repurposes the header's content-hash field to hold the
-    // merkle hash of the continuation, the suffix the arms merge back into.
-    const MerkleHash cont_hash = branch->next.match(
-        [](::fixy::Ref<TraceNode const> const& continuation) noexcept { return continuation->merkle_hash; },
-        []() noexcept { return MerkleHash{}; });
-    write_header(w, TraceNodeKind::BRANCH, branch->merkle_hash, ContentHash{cont_hash.raw()});
-
-    w.write_image(branch->guard);
-
-    w.w(branch->num_arms());
-    for (const BranchNode::Arm& arm : branch->arms()) {
-        w.w(arm.value);
-        // An arm with no target writes the hash zero.
-        const uint64_t target_hash =
-            arm.target().match([](::fixy::Ref<TraceNode const> target) noexcept { return target->merkle_hash.raw(); },
-                               []() noexcept { return uint64_t{0}; });
-        w.w(target_hash);
-    }
-
-    return w.has_room ? w.pos : 0;
+// byte count written, or zero if image was too small.  The serialize reads
+// the branch only as const.
+template <class Branch, ::foundation::brand::IsBrand Brand>
+    requires SerializedNode<Branch, BranchNode>
+[[nodiscard]] inline size_t serialize_branch(::fixy::Ref<Branch, Brand> node, ::fixy::View<std::byte> image) {
+    return detail_ser::write_branch_image(*node, image);
 }
 
 // The resolver turns each persisted merkle hash back into a link to a node,

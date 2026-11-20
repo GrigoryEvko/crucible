@@ -20,7 +20,6 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/PoolAllocator.h>
-#include <fixy/Borrowed.h>
 #include <fixy/ScopedView.h>
 #include <fixy/Tagged.h>
 #include <foundation/Platform.h>
@@ -89,11 +88,11 @@ private:
     OpIndex matched_{};
 };
 
+// The pool of an activation: a PoolAllocator, with or without a const.
+template <class Pool>
+concept ReplayPool = std::same_as<std::remove_const_t<Pool>, PoolAllocator>;
+
 struct ReplayEngine {
-    using PoolBorrow = ::fixy::BorrowedRef<const PoolAllocator>;
-
-    static_assert(::fixy::IsBorrowedRef<PoolBorrow>);
-
     ReplayEngine() = default;
 
     ReplayEngine(const ReplayEngine&) = delete("ReplayEngine tracks mutable cursor position");
@@ -103,33 +102,12 @@ struct ReplayEngine {
 
     // An empty region is legitimate, but a non-empty one must have operations.
     // Init runs at the activation of a region, and the check of the slot ids
-    // reads each slot id of the region once: O(ops + slot ids).
-    void init(const RegionNode& region, PoolBorrow pool) CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(pool->is_initialized());
-        // A region counts its ops in 32 bits, so each position below fits the
-        // word of an OpIndex.  num_ops() of the region checks that bound.
-        const uint32_t op_count = region.num_ops();
-        ops_ = region.ops;
-        cursor_ = ops_.begin();
-        current_ = ::fixy::none;
-        // The precondition above already established what minting this view
-        // checks.  An initialized pool holds at least one slot.
-        const auto pool_view = pool->initialized_view_();
-        slot_table_ = pool->table(pool_view);
-        check_slot_ids_(ops_, pool->num_slots());
-        // Load the first operation's guard values, so the first advance finds
-        // them here like every later one does.
-        expected_schema_ = SchemaHash{};
-        expected_shape_ = ShapeHash{};
-        load_first_guard_();
-
-        // A contract predicate that reads a member through `this` is skipped
-        // when the compiler folds the body at compile time, so every such
-        // check in this file runs from the body rather than a clause. These
-        // fold trivially true, which is exactly why they need that.
-        CRUCIBLE_POST(0, cursor_ == ops_.begin());
-        CRUCIBLE_POST(0, num_ops() == op_count);
-        CRUCIBLE_POST(0, slot_table_.size() == pool->num_slots());
+    // reads each slot id of the region once: O(ops + slot ids).  The engine
+    // reads the pool only during the call, so the Ref keeps its brand, and
+    // the engine reads it only as const.
+    template <ReplayPool Pool, ::foundation::brand::IsBrand Brand>
+    void init(const RegionNode& region, ::fixy::Ref<Pool, Brand> pool) CRUCIBLE_NO_THREAD_SAFETY {
+        init_(region, *pool);
     }
 
     // Rewinds to the first operation for the next iteration. A rewind at the
@@ -292,6 +270,36 @@ private:
     // The context mints the view on paths that the gate of its Vigil
     // already passed, so it reaches the view without a context.
     friend struct CrucibleContext;
+
+    // The body of init.  It is no template, so the callers of each brand
+    // share one copy of it.
+    void init_(const RegionNode& region, const PoolAllocator& pool) CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(pool.is_initialized());
+        // A region counts its ops in 32 bits, so each position below fits the
+        // word of an OpIndex.  num_ops() of the region checks that bound.
+        const uint32_t op_count = region.num_ops();
+        ops_ = region.ops;
+        cursor_ = ops_.begin();
+        current_ = ::fixy::none;
+        // The precondition above already established what minting this view
+        // checks.  An initialized pool holds at least one slot.
+        const auto pool_view = pool.initialized_view_();
+        slot_table_ = pool.table(pool_view);
+        check_slot_ids_(ops_, pool.num_slots());
+        // Load the first operation's guard values, so the first advance finds
+        // them here like every later one does.
+        expected_schema_ = SchemaHash{};
+        expected_shape_ = ShapeHash{};
+        load_first_guard_();
+
+        // A contract predicate that reads a member through `this` is skipped
+        // when the compiler folds the body at compile time, so every such
+        // check in this file runs from the body rather than a clause. These
+        // fold trivially true, which is exactly why they need that.
+        CRUCIBLE_POST(0, cursor_ == ops_.begin());
+        CRUCIBLE_POST(0, num_ops() == op_count);
+        CRUCIBLE_POST(0, slot_table_.size() == pool.num_slots());
+    }
 
     // The precondition runs in the body, so it also fires when the compiler
     // folds a call at compile time, which a clause reading a member through

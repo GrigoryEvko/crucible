@@ -5,7 +5,6 @@
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Bands.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
@@ -128,8 +127,8 @@ template <class Found>
     }
 
     BumpArena arena{};
-    RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-    RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+    RecipePool pool{::fixy::to(arena), init_cap()};
+    RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
     {
         auto pinned = reg.by_name_pinned<Tolerance::BITEXACT>(kPure, names::kF32Strict);

@@ -29,7 +29,7 @@ namespace crucible::fuzz::boundary {
         *branch->arms().get(i).expect("i is below the count of arms") =
             BranchNode::Arm{*values.get(i).expect("i is below the count of values"), TraceLink{}};
     ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, 4096, std::byte{0});
-    const std::size_t written = serialize_branch(SerializedBranch{*branch}, image.view());
+    const std::size_t written = serialize_branch(::fixy::to(*branch), image.view());
     return copy_seed(
         ::fixy::View<std::byte const>{image.view()}.window(0, written).expect("the writer writes inside its image"));
 }
@@ -70,7 +70,7 @@ inline void run_branch(::fixy::View<std::byte const> bytes) noexcept {
         CRUCIBLE_FUZZ_CLAIM("branch", branch->are_arms_sorted_by_value());
 
         ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, input.size() + 256, std::byte{0});
-        const std::size_t written = serialize_branch(SerializedBranch{*branch}, image.view());
+        const std::size_t written = serialize_branch(::fixy::to(*branch), image.view());
         CRUCIBLE_FUZZ_CLAIM("branch", written > 0);
         const ::fixy::Option<::fixy::Ref<BranchNode>> reloaded =
             deserialize_branch(alloc, image.view().window(0, written).expect("the writer writes inside its image"),

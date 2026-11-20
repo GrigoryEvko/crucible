@@ -1,13 +1,13 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// The RecipePool constructor takes a borrow of the BumpArena that owns the
-// recipes.  A minted borrow of a different type must not take its place,
-// so the lifetime dependency stays attached to the real owner.
+// The RecipePool constructor takes a Ref of the BumpArena that owns the
+// recipes.  A Ref of a different type must not take its place, so the
+// lifetime dependency stays attached to the real owner.
 //
-// Expected diagnostic: no constructor takes a BorrowedRef<OtherArena>.
+// Expected diagnostic: no constructor takes a Ref<OtherArena>.
 
 #include <crucible/RecipePool.h>
-#include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
 struct OtherArena {};
@@ -15,6 +15,6 @@ struct OtherArena {};
 int main() {
     OtherArena other{};
     auto init = ::foundation::effects::testing::init();
-    crucible::RecipePool pool{::fixy::mint_borrowed_ref(other), init};
+    crucible::RecipePool pool{::fixy::to(other), init};
     return pool.capacity() == 0;
 }

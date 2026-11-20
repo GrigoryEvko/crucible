@@ -20,7 +20,6 @@
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <crucible/Types.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
@@ -414,8 +413,8 @@ int main() {
 
     {
         BumpArena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(arena), init_cap()};
+        RecipeRegistry registry{::fixy::to(pool), alloc_cap()};
 
         for (const auto& cell : kCoverageMatrix) {
             if (cell.covered) {

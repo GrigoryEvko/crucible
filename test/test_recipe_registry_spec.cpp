@@ -9,7 +9,6 @@
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Bands.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
@@ -103,8 +102,8 @@ template <class Found>
     }
 
     BumpArena arena{};
-    RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-    RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+    RecipePool pool{::fixy::to(arena), init_cap()};
+    RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
     {
         auto found = reg.by_name_spec(kPure, names::kF32Strict);
@@ -408,8 +407,8 @@ template <class Found>
         // The persisted hash of each entry, and the second registry that
         // resolves it.
         BumpArena arena2{};
-        RecipePool pool2{::fixy::mint_borrowed_ref(arena2), init_cap()};
-        RecipeRegistry reg2{::fixy::mint_borrowed_ref(pool2), alloc_cap()};
+        RecipePool pool2{::fixy::to(arena2), init_cap()};
+        RecipeRegistry reg2{::fixy::to(pool2), alloc_cap()};
 
         for (const auto& entry : entries_view(reg)) {
             const RecipeHash persisted = entry.recipe->hash;

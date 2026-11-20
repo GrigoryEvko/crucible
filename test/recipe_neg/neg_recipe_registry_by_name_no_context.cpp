@@ -10,7 +10,6 @@
 
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
@@ -28,7 +27,7 @@ namespace {
 int main() {
     const ::fixy::TestRunnerCtx test{eff::testing::test()};
     ::fixy::BumpArena arena{};
-    crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), eff::testing::init()};
-    crucible::RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), eff::testing::test().alloc};
+    crucible::RecipePool pool{::fixy::to(arena), eff::testing::init()};
+    crucible::RecipeRegistry reg{::fixy::to(pool), eff::testing::test().alloc};
     return reads_from_an_allocating_caller(test, reg) ? 0 : 1;
 }

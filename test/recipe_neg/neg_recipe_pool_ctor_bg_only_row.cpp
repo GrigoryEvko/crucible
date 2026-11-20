@@ -8,7 +8,6 @@
 // constructor is not satisfied.
 
 #include <crucible/RecipePool.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -20,7 +19,6 @@ namespace eff = ::foundation::effects;
 int main() {
     ::fixy::BumpArena arena{};
     auto init = eff::testing::init();
-    crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init, 32u,
-                              std::type_identity<eff::Row<eff::Effect::Bg>>{}};
+    crucible::RecipePool pool{::fixy::to(arena), init, 32u, std::type_identity<eff::Row<eff::Effect::Bg>>{}};
     return pool.capacity() == 0;
 }

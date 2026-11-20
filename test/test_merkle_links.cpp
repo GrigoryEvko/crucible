@@ -139,7 +139,7 @@ namespace {
     // resolver that knows only the first target gives the second arm no
     // target, and the image of the loaded branch writes zero for it.
     ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
-    const size_t written = crucible::serialize_branch(crucible::SerializedBranch{branch}, image.view());
+    const size_t written = crucible::serialize_branch(::fixy::to(branch), image.view());
     CRUCIBLE_TEST_ASSERT(kTest, written > 0);
     crucible::BranchNode& loaded =
         *crucible::deserialize_branch(
@@ -154,7 +154,7 @@ namespace {
     CRUCIBLE_TEST_ASSERT(kTest, loaded_second.target().is_none());
 
     ::fixy::HeapArray<std::byte> image_again = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
-    const size_t written_again = crucible::serialize_branch(crucible::SerializedBranch{loaded}, image_again.view());
+    const size_t written_again = crucible::serialize_branch(::fixy::to(loaded), image_again.view());
     CRUCIBLE_TEST_ASSERT(kTest, written_again == written);
     // The hash of the second target is the last eight bytes of the image.
     for (size_t index = written - 8; index < written; ++index) {

@@ -57,7 +57,7 @@ namespace {
                   ::fixy::check::run_of(kTest, bg.alloc, dag_arena, crucible::SlotId{}));
 
     const ::fixy::Ref<crucible::RegionNode> region = crucible::make_region(bg.alloc, dag_arena, ops);
-    return crucible::serialize_region(crucible::SerializedRegion{*region}, out_buf);
+    return crucible::serialize_region(::fixy::to(*region), out_buf);
 }
 
 // The wire layout, little-endian, restated here as this test's ground

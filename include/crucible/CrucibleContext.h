@@ -99,7 +99,7 @@ struct CrucibleContext {
         if (mode_ == ContextMode::COMPILED) deactivate();
 
         pool_.init(allocation_, *plan);
-        engine_.init(region, ReplayEngine::PoolBorrow{pool_});
+        engine_.init(region, ::fixy::to(pool_));
         active_region_ = link_active_region_(region);
         mode_ = ContextMode::COMPILED;
 
@@ -186,7 +186,7 @@ struct CrucibleContext {
         pool_.init(allocation_, *new_plan);
         migrate_prefix_slots_(old_region, alt, old_pool.view(), div_pos);
 
-        engine_.init(alt, ReplayEngine::PoolBorrow{pool_});
+        engine_.init(alt, ::fixy::to(pool_));
         active_region_ = link_active_region_(alt);
 
         // Replay the prefix the two regions share, so the new region resumes

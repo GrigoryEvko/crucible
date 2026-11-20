@@ -24,7 +24,6 @@
 
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
@@ -57,7 +56,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             // slot table at construction.  Each intern() call takes an
             // Alloc capability.
             const ::foundation::effects::Init init = ::foundation::effects::testing::init();
-            RecipePool pool{::fixy::mint_borrowed_ref(arena), init,
+            RecipePool pool{::fixy::to(arena), init,
                             /*initial_capacity=*/8};
 
             // Phase 1: insert all, keep a Ref of each recipe.

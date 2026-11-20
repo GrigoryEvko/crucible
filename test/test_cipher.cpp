@@ -573,8 +573,7 @@ static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) 
     crucible::RegionNode& variant = *make_test_region(writers_dag, 0x62);
     variant.variant_id.advance(7);
     ::fixy::HeapArray<std::byte> variant_image = ::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0});
-    const std::size_t variant_bytes =
-        crucible::serialize_region(crucible::SerializedRegion{variant}, variant_image.view());
+    const std::size_t variant_bytes = crucible::serialize_region(::fixy::to(variant), variant_image.view());
     CRUCIBLE_TEST_ASSERT(kTest, variant_bytes > 0);
     write_object_file(cipher.root(), variant.content_hash,
                       variant_image.view().window(0, variant_bytes).expect("the writer writes inside its image"));
@@ -768,8 +767,7 @@ int main() {
 
         const crucible::RegionNode& other_region = *make_test_region(reason_dag_arena, 0x5E);
         ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0});
-        const std::size_t image_bytes =
-            crucible::serialize_region(crucible::SerializedRegion{other_region}, image.view());
+        const std::size_t image_bytes = crucible::serialize_region(::fixy::to(other_region), image.view());
         CRUCIBLE_TEST_ASSERT(kTest, image_bytes > 0);
         const ::fixy::View<std::byte> sound = image.view().window(0, image_bytes).expect("the image holds its bytes");
 

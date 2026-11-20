@@ -6,7 +6,6 @@
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
@@ -80,10 +79,10 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
     {
         BumpArena arena_a{};
         BumpArena arena_b{};
-        RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap()};
-        RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap()};
-        RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
-        RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
+        RecipePool pool_a{::fixy::to(arena_a), init_cap()};
+        RecipePool pool_b{::fixy::to(arena_b), init_cap()};
+        RecipeRegistry reg_a{::fixy::to(pool_a), alloc_cap()};
+        RecipeRegistry reg_b{::fixy::to(pool_b), alloc_cap()};
 
         RecipeRegistry::RecipeRef const a =
             reg_a.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");
@@ -106,8 +105,8 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
     {
         BumpArena arena{};
         BumpArena recipe_arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
-        RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(recipe_arena), init_cap()};
+        RecipeRegistry registry{::fixy::to(pool), alloc_cap()};
 
         RecipeRegistry::RecipeRef const rec_tc =
             registry.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");
@@ -142,8 +141,8 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
     {
         BumpArena arena{};
         BumpArena recipe_arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
-        RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(recipe_arena), init_cap()};
+        RecipeRegistry registry{::fixy::to(pool), alloc_cap()};
 
         // Persistence time: the original process pins a recipe and takes
         // the region's content hash.
@@ -184,8 +183,8 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         // The original process.
         BumpArena arena_a{};
         BumpArena recipe_arena_a{};
-        RecipePool pool_a{::fixy::mint_borrowed_ref(recipe_arena_a), init_cap()};
-        RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
+        RecipePool pool_a{::fixy::to(recipe_arena_a), init_cap()};
+        RecipeRegistry reg_a{::fixy::to(pool_a), alloc_cap()};
         RecipeRegistry::RecipeRef const rec_a =
             reg_a.by_name(kPure, names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
 
@@ -198,8 +197,8 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         // with different addresses throughout.
         BumpArena arena_b{};
         BumpArena recipe_arena_b{};
-        RecipePool pool_b{::fixy::mint_borrowed_ref(recipe_arena_b), init_cap()};
-        RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
+        RecipePool pool_b{::fixy::to(recipe_arena_b), init_cap()};
+        RecipeRegistry reg_b{::fixy::to(pool_b), alloc_cap()};
         RecipeRegistry::RecipeRef const rec_b =
             reg_b.by_name(kPure, names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
         // Different pointers, so the two pools really are independent.
@@ -224,8 +223,8 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
     {
         BumpArena arena{};
         BumpArena recipe_arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
-        RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
+        RecipePool pool{::fixy::to(recipe_arena), init_cap()};
+        RecipeRegistry registry{::fixy::to(pool), alloc_cap()};
 
         RecipeRegistry::RecipeRef const rec_tc =
             registry.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");
@@ -292,7 +291,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
     {
         BumpArena arena{};
         BumpArena recipe_arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
+        RecipePool pool{::fixy::to(recipe_arena), init_cap()};
         const NumericalRecipe zero_bytes{
             .accum_dtype = crucible::ScalarType::Byte,
             .out_dtype = crucible::ScalarType::Byte,

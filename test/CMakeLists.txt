@@ -3530,12 +3530,12 @@ crucible_neg_compile_test(neg_recipe_pool_size_assign_raw
   "no match for .operator=."
   "crucible::RecipePool::Size.*fixy::Monotonic<unsigned int")
 
-# The RecipePool constructor takes a minted BorrowedRef<BumpArena, Brand>.
-# A raw pointer to the arena and a borrow of a different type must fail at
-# the constructor.
+# The RecipePool constructor takes a branded Ref<BumpArena, Brand>.  A raw
+# pointer to the arena and a Ref of a different type must fail at the
+# constructor.
 crucible_neg_compile_test(neg_recipe_pool_arena_raw_pointer
   "no matching function for call to .crucible::RecipePool::RecipePool"
-  "mismatched types .fixy::BorrowedRef<foundation::core::BumpArena, Brand>. and .foundation::core::BumpArena\\*.")
+  "mismatched types .foundation::core::Ref<foundation::core::BumpArena, [A-Za-z]+>. and .foundation::core::BumpArena\\*.")
 crucible_neg_compile_test(neg_recipe_pool_arena_wrong_borrow
   "no matching function for call to .crucible::RecipePool::RecipePool"
   "mismatched types .foundation::core::BumpArena. and .OtherArena.")
@@ -3553,12 +3553,12 @@ crucible_neg_compile_test(neg_recipe_pool_ctor_bg_only_row
   "constraints.*not satisfied"
   "Subrow<foundation::effects::Row<foundation::effects::Effect::Init>, CallerRow>. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Bg>\\]")
 
-# The RecipeRegistry constructor takes a minted BorrowedRef<RecipePool,
-# Brand>.  A raw RecipePool* and a borrow of a different type must fail
-# at the constructor.
+# The RecipeRegistry constructor takes a branded Ref<RecipePool, Brand>.  A
+# raw RecipePool* and a Ref of a different type must fail at the
+# constructor.
 crucible_neg_compile_test(neg_recipe_registry_pool_raw_pointer
   "no matching function for call to .crucible::RecipeRegistry::RecipeRegistry"
-  "mismatched types .fixy::BorrowedRef<crucible::RecipePool, Brand>. and .crucible::RecipePool\\*.")
+  "mismatched types .foundation::core::Ref<crucible::RecipePool, [A-Za-z]+>. and .crucible::RecipePool\\*.")
 crucible_neg_compile_test(neg_recipe_registry_pool_wrong_borrow
   "no matching function for call to .crucible::RecipeRegistry::RecipeRegistry"
   "mismatched types .crucible::RecipePool. and .foundation::core::BumpArena.")
@@ -3677,15 +3677,15 @@ crucible_neg_compile_test(neg_mimic_semaphore_default_construct
   "use of deleted function .crucible::mimic::DeviceSemaphore<Backend>::DeviceSemaphore\\(\\) \\[with foundation::algebra::lattices::VendorBackend Backend = foundation::algebra::lattices::VendorBackend::CPU\\]."
   ".: A DeviceSemaphore borrows a counter. Take one from mint_device_semaphore.")
 
-# ReplayEngine::init takes the pool as fixy::BorrowedRef<const
-# PoolAllocator>.  A raw pointer and a borrow of another owner type are
-# both refused at the init boundary.
+# ReplayEngine::init takes the pool as a fixy::Ref of a PoolAllocator.  A raw
+# pointer and a Ref of another owner type are both refused at the init
+# boundary.
 crucible_neg_compile_test(neg_replay_engine_pool_raw_pointer
-  "cannot convert .const crucible::PoolAllocator\\*. to .crucible::ReplayEngine::PoolBorrow."
-  "neg_replay_engine_pool_raw_pointer.cpp:17")
+  "mismatched types .foundation::core::Ref<[A-Za-z]+, [A-Za-z]+>. and .const crucible::PoolAllocator\\*."
+  "neg_replay_engine_pool_raw_pointer.cpp:16")
 crucible_neg_compile_test(neg_replay_engine_pool_wrong_borrow
-  "cannot convert .BorrowedRef<crucible::RegionNode>. to .BorrowedRef<const crucible::PoolAllocator>."
-  "neg_replay_engine_pool_wrong_borrow.cpp:15")
+  "required for the satisfaction of .ReplayPool<Pool>. \\[with Pool = crucible::RegionNode\\]"
+  "neg_replay_engine_pool_wrong_borrow.cpp:14")
 
 # Production-call-site fence: a hot-path consumer that requires the
 # Pool allocation class refuses a Heap band.  This is the rejection that

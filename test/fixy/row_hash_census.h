@@ -798,7 +798,6 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^fe::resource::RackPowerKw, ^^fe::resource::RackPowerKw<1>},
     {^^fe::resource::CarbonGramsPerKwh, ^^fe::resource::CarbonGramsPerKwh<1>},
 
-    {^^::fixy::BorrowedRef, ^^::fixy::BorrowedRef<int>},
     {^^::fixy::Borrowed, ^^BorrowedInt},
     {^^::fixy::OwnedRegion, ^^::fixy::OwnedRegion<int, PureRegionTag>},
     {^^::fixy::fn, ^^::fixy::role::PureCopy<int>},

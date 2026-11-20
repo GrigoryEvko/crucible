@@ -30,7 +30,6 @@
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
@@ -57,8 +56,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             // RecipeRegistry takes an Alloc capability, because it
             // interns the starter recipes into the pool at construction.
             const ::foundation::effects::Init init = ::foundation::effects::testing::init();
-            RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
-            RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), init.alloc};
+            RecipePool pool{::fixy::to(arena), init};
+            RecipeRegistry registry{::fixy::to(pool), init.alloc};
             // Each read of the registry takes a context whose row is empty.
             constexpr ::fixy::HotFgCtx pure = ::foundation::effects::testing::foreground();
 

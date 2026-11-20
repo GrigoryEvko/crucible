@@ -10,7 +10,6 @@
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Bands.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
@@ -24,8 +23,8 @@ int main() {
     auto init = eff::testing::init();
     auto test = eff::testing::test();
     const ::fixy::TestRunnerCtx runner{eff::testing::test()};
-    crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
-    crucible::RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), test.alloc};
+    crucible::RecipePool pool{::fixy::to(arena), init};
+    crucible::RecipeRegistry reg{::fixy::to(pool), test.alloc};
     auto wrong = reg.by_name_pinned<::fixy::Tolerance::BITEXACT>(runner.in_row<eff::Row<eff::Effect::Alloc>>(),
                                                                  crucible::recipe_names::kF32Strict);
     return wrong.has_value() ? 0 : 1;

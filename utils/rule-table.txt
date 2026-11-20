@@ -963,7 +963,6 @@ witness <fixy/Budgeted.h> private | fixy::BudgetStamp | fixy::BudgetStamp{forge:
 # the mints hold, and the public constructors beside it are constrained
 # to the erased brand.  The expressions below hand the door its key and
 # are refused anyway, because the key is not the door.
-witness <fixy/Borrowed.h> private | fixy::BorrowedRef<int> | fixy::BorrowedRef<int>{fixy::detail::borrow_mint_t{}, forge::lvalue<int>()}
 witness <fixy/Borrowed.h> private | fixy::Borrowed<int, int> | fixy::Borrowed<int, int>{fixy::detail::borrow_mint_t{}, std::span<int>{}}
 # A region's constructor takes the base pointer and the count beside the
 # permission, so a forger who reaches it describes a region that need

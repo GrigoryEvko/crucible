@@ -374,7 +374,7 @@ int main() {
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, *br.plan);
         ReplayEngine engine;
-        engine.init(*br.region, ReplayEngine::PoolBorrow{pool});
+        engine.init(*br.region, ::fixy::to(pool));
         auto av = engine.mint_active_view(kVigilForeground);
 
         uint32_t op_idx = 0;
