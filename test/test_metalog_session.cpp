@@ -1,13 +1,7 @@
-#include <array>
-#include <atomic>
-#include <cstdio>
 #include <cstdint>
-#include <cstdlib>
 #include <optional>
-#include <thread>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 #include <crucible/MetaLog.h>
 #include <crucible/MetaLogSession.h>
@@ -16,6 +10,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
 #include <foundation/Linear.h>
@@ -27,6 +22,9 @@ namespace {
 
 namespace ms = ::crucible::metalog_session;
 namespace fp = ::foundation::permissions;
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 struct TestMetaLogTag {};
 
@@ -109,28 +107,14 @@ static_assert(!std::is_copy_assignable_v<PermissionedLog>);
 static_assert(!std::is_move_assignable_v<PermissionedLog>);
 
 int total_passed = 0;
-int total_failed = 0;
 
-#define CRUCIBLE_TEST_REQUIRE(cond)                                                            \
-    do {                                                                                       \
-        if (!(cond)) {                                                                         \
-            std::fprintf(stderr, "  REQUIRE FAILED: %s @ %s:%d\n", #cond, __FILE__, __LINE__); \
-            ++total_failed;                                                                    \
-            return;                                                                            \
-        }                                                                                      \
-    } while (0)
-
+// Runs the body of one group.  A check of the group that fails ends the
+// process with its condition and its site, so a group that returns passed.
 template <typename Body>
-void run_test(const char* name, Body body) {
-    std::fprintf(stderr, "  %s ... ", name);
-    int before = total_failed;
+void run_test(::fixy::TextView name, Body body) {
     body();
-    if (total_failed == before) {
-        ++total_passed;
-        std::fprintf(stderr, "OK\n");
-    } else {
-        std::fprintf(stderr, "FAILED\n");
-    }
+    ++total_passed;
+    ::fixy::check::pass(kTest, "  {} ... OK\n", name);
 }
 
 [[nodiscard]] ::crucible::TensorMeta make_meta(std::int64_t id) {
@@ -159,7 +143,7 @@ void run_test(const char* name, Body body) {
 
 [[nodiscard]] auto mint_handles(PermissionedLog& log) {
     auto [pp, cp] = mint_halves();
-    return std::pair{log.producer(std::move(pp)), log.consumer(std::move(cp))};
+    return ::fixy::Record{log.producer(std::move(pp)), log.consumer(std::move(cp))};
 }
 
 void test_permissioned_bulk_drain() {
@@ -177,20 +161,23 @@ void test_permissioned_bulk_drain() {
     // the plain append appends.
     const FgCtx fg = ::foundation::effects::testing::foreground();
     const ::crucible::MetaIndex start = producer.try_append_pure(fg, records.view());
-    CRUCIBLE_TEST_REQUIRE(start.is_valid());
-    CRUCIBLE_TEST_REQUIRE(start.raw() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, start.is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, start.raw() == 0);
 
-    std::vector<::crucible::TensorMeta> drained(records.size());
+    ::fixy::FixedArray<::crucible::TensorMeta, 3> drained{};
     std::size_t next = 0;
-    const std::uint32_t count = consumer.drain([&](const ::crucible::TensorMeta& meta) { drained[next++] = meta; });
+    const std::uint32_t count = consumer.drain([&](const ::crucible::TensorMeta& meta) {
+        *drained.get(next++).expect("the drain gives at most the appended records") = meta;
+    });
 
-    CRUCIBLE_TEST_REQUIRE(count == records.size());
-    CRUCIBLE_TEST_REQUIRE(next == records.size());
+    CRUCIBLE_TEST_ASSERT(kTest, count == records.size());
+    CRUCIBLE_TEST_ASSERT(kTest, next == records.size());
     for (std::size_t i = 0; i < records.size(); ++i) {
-        CRUCIBLE_TEST_REQUIRE(
-            same_meta(drained[i], *records.get(i).expect("a test reads an element at or past the count of its array")));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, same_meta(*drained.get(i).expect("a test reads an element at or past the count of its array"),
+                             *records.get(i).expect("a test reads an element at or past the count of its array")));
     }
-    CRUCIBLE_TEST_REQUIRE(consumer.tail_index() == records.size());
+    CRUCIBLE_TEST_ASSERT(kTest, consumer.tail_index() == records.size());
 }
 
 void test_single_append_drain() {
@@ -199,21 +186,21 @@ void test_single_append_drain() {
     auto [producer, consumer] = mint_handles(log);
 
     const ::crucible::TensorMeta source = make_meta(42);
-    CRUCIBLE_TEST_REQUIRE(producer.try_append_one_pure(kPure, source));
+    CRUCIBLE_TEST_ASSERT(kTest, producer.try_append_one_pure(kPure, source));
 
     auto drained = consumer.try_drain_one();
-    CRUCIBLE_TEST_REQUIRE(drained.is_some());
-    CRUCIBLE_TEST_REQUIRE(same_meta(std::move(drained).expect("the log holds one record"), source));
+    CRUCIBLE_TEST_ASSERT(kTest, drained.is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, same_meta(std::move(drained).expect("the log holds one record"), source));
 
     auto empty = consumer.try_drain_one();
-    CRUCIBLE_TEST_REQUIRE(empty.is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, empty.is_none());
 
     // The release door gives each role and its token back, and each token
     // opens a new handle of its role with no second claim.
     auto second_producer = log.producer(std::move(producer).release());
     auto second_consumer = log.consumer(std::move(consumer).release());
-    CRUCIBLE_TEST_REQUIRE(second_producer.try_append_one_pure(kPure, source));
-    CRUCIBLE_TEST_REQUIRE(second_consumer.size_approx(kSnapshot) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, second_producer.try_append_one_pure(kPure, source));
+    CRUCIBLE_TEST_ASSERT(kTest, second_consumer.size_approx(kSnapshot) == 1);
     ::foundation::linear::drop(std::move(second_producer).release());
     ::foundation::linear::drop(std::move(second_consumer).release());
 }
@@ -229,31 +216,35 @@ void test_partial_drain() {
         make_meta(1), make_meta(2), make_meta(3), make_meta(4), make_meta(5),
     };
     const ::crucible::MetaIndex start = producer.try_append_pure(kPure, source.view());
-    CRUCIBLE_TEST_REQUIRE(start.is_valid());
-    CRUCIBLE_TEST_REQUIRE(start.raw() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, start.is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, start.raw() == 0);
 
-    std::array<::crucible::TensorMeta, 3> first_three{};
+    ::fixy::FixedArray<::crucible::TensorMeta, 3> first_three{};
     std::size_t next = 0;
-    const std::uint32_t drained_count =
-        consumer.drain([&](const ::crucible::TensorMeta& meta) { first_three[next++] = meta; },
-                       /*max_items=*/3);
-    CRUCIBLE_TEST_REQUIRE(drained_count == 3);
-    CRUCIBLE_TEST_REQUIRE(next == 3);
+    const std::uint32_t drained_count = consumer.drain(
+        [&](const ::crucible::TensorMeta& meta) {
+            *first_three.get(next++).expect("the drain gives at most its limit of records") = meta;
+        },
+        /*max_items=*/3);
+    CRUCIBLE_TEST_ASSERT(kTest, drained_count == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, next == 3);
     for (std::size_t i = 0; i < first_three.size(); ++i) {
-        CRUCIBLE_TEST_REQUIRE(same_meta(
-            first_three[i], *source.get(i).expect("a test reads an element at or past the count of its array")));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, same_meta(*first_three.get(i).expect("a test reads an element at or past the count of its array"),
+                             *source.get(i).expect("a test reads an element at or past the count of its array")));
     }
-    CRUCIBLE_TEST_REQUIRE(consumer.size_approx(kSnapshot) == 2);
-    CRUCIBLE_TEST_REQUIRE(producer.size_approx(kSnapshot) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, consumer.size_approx(kSnapshot) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, producer.size_approx(kSnapshot) == 2);
 
-    std::array<::crucible::TensorMeta, 2> rest{};
+    ::fixy::FixedArray<::crucible::TensorMeta, 2> rest{};
     std::size_t rest_next = 0;
-    const std::uint32_t remaining =
-        consumer.drain([&](const ::crucible::TensorMeta& meta) { rest[rest_next++] = meta; });
-    CRUCIBLE_TEST_REQUIRE(remaining == 2);
-    CRUCIBLE_TEST_REQUIRE(same_meta(rest[0], source.at(::fixy::index<3>())));
-    CRUCIBLE_TEST_REQUIRE(same_meta(rest[1], source.at(::fixy::index<4>())));
-    CRUCIBLE_TEST_REQUIRE(consumer.size_approx(kSnapshot) == 0);
+    const std::uint32_t remaining = consumer.drain([&](const ::crucible::TensorMeta& meta) {
+        *rest.get(rest_next++).expect("the drain gives the records that stay") = meta;
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, remaining == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, same_meta(rest.at(::fixy::index<0>()), source.at(::fixy::index<3>())));
+    CRUCIBLE_TEST_ASSERT(kTest, same_meta(rest.at(::fixy::index<1>()), source.at(::fixy::index<4>())));
+    CRUCIBLE_TEST_ASSERT(kTest, consumer.size_approx(kSnapshot) == 0);
 }
 
 // A bulk append returns the index of the first record it wrote, and copy_at()
@@ -267,15 +258,15 @@ void test_metaindex_propagates() {
     const ::fixy::FixedArray<::crucible::TensorMeta, 3> second{make_meta(30), make_meta(40), make_meta(50)};
 
     const ::crucible::MetaIndex idx_first = producer.try_append_pure(kPure, first.view());
-    CRUCIBLE_TEST_REQUIRE(idx_first.is_valid());
-    CRUCIBLE_TEST_REQUIRE(idx_first.raw() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, idx_first.is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, idx_first.raw() == 0);
 
     const ::crucible::MetaIndex idx_second = producer.try_append_pure(kPure, second.view());
-    CRUCIBLE_TEST_REQUIRE(idx_second.is_valid());
-    CRUCIBLE_TEST_REQUIRE(idx_second.raw() == first.size());
+    CRUCIBLE_TEST_ASSERT(kTest, idx_second.is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, idx_second.raw() == first.size());
 
-    CRUCIBLE_TEST_REQUIRE(same_meta(consumer.copy_at(::crucible::MetaIndex{0}), make_meta(10)));
-    CRUCIBLE_TEST_REQUIRE(same_meta(consumer.copy_at(::crucible::MetaIndex{2}), make_meta(30)));
+    CRUCIBLE_TEST_ASSERT(kTest, same_meta(consumer.copy_at(::crucible::MetaIndex{0}), make_meta(10)));
+    CRUCIBLE_TEST_ASSERT(kTest, same_meta(consumer.copy_at(::crucible::MetaIndex{2}), make_meta(30)));
 }
 
 void test_empty_drain() {
@@ -286,11 +277,11 @@ void test_empty_drain() {
 
     std::size_t visited = 0;
     const std::uint32_t count = consumer.drain([&](const ::crucible::TensorMeta&) { ++visited; });
-    CRUCIBLE_TEST_REQUIRE(count == 0);
-    CRUCIBLE_TEST_REQUIRE(visited == 0);
-    CRUCIBLE_TEST_REQUIRE(consumer.size_approx(kSnapshot) == 0);
-    CRUCIBLE_TEST_REQUIRE(consumer.tail_index() == 0);
-    CRUCIBLE_TEST_REQUIRE(consumer.head_index() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, count == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, visited == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, consumer.size_approx(kSnapshot) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, consumer.tail_index() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, consumer.head_index() == 0);
 }
 
 // Each side holds its session through its mint, stops by its own choice and
@@ -300,48 +291,54 @@ void test_empty_drain() {
 // A MetaLog handle refuses move-assignment, so a session over it refuses
 // move-assignment too.  Each loop keeps its current session in an optional
 // and puts the next one in its place with emplace.
+//
+// Each body owns its handle, and it writes its results into Atomics of the
+// test.  The thread door joins both threads before it returns, and the test
+// reads the results after it.
 void test_typed_session_round_trip() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
 
     constexpr int kCount = 128;
-    std::atomic<bool> producer_done{false};
-    std::atomic<bool> producer_handle_back{false};
-    int matched_count = 0;
-    bool consumer_handle_back = false;
+    ::fixy::Atomic<bool> producer_done{false};
+    ::fixy::Atomic<bool> producer_handle_back{false};
+    ::fixy::Atomic<int> matched_count{0};
+    ::fixy::Atomic<bool> consumer_handle_back{false};
 
-    std::jthread prod_thread{[&producer, &producer_done, &producer_handle_back](auto) mutable {
+    auto produce = [handle = std::move(producer), &producer_done, &producer_handle_back]() mutable noexcept {
         const FgCtx ctx = ::foundation::effects::testing::foreground();
-        std::optional head{ms::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(producer))};
+        std::optional head{ms::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(handle))};
         for (int i = 0; i < kCount; ++i) {
             head.emplace(std::move(*head).select<0>(::fixy::session::no_label).send(ctx, make_meta(i + 10)));
         }
         auto back = std::move(*head).select<1>(::fixy::session::no_label).close();
-        producer_handle_back.store(back.size_approx(kSnapshot) <= static_cast<std::uint32_t>(kCount),
-                                   std::memory_order_release);
-        producer_done.store(true, std::memory_order_release);
-    }};
+        producer_handle_back.store_release(back.size_approx(kSnapshot) <= static_cast<std::uint32_t>(kCount));
+        producer_done.store_release(true);
+    };
 
-    std::jthread cons_thread{[&consumer, &matched_count, &consumer_handle_back](auto) mutable {
+    auto consume = [handle = std::move(consumer), &matched_count, &consumer_handle_back]() mutable noexcept {
         const BgCtx ctx{::foundation::effects::testing::bg()};
-        std::optional head{ms::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(consumer))};
+        int matched = 0;
+        std::optional head{ms::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(handle))};
         for (int i = 0; i < kCount; ++i) {
             auto [meta, next] = std::move(*head).select<0>(::fixy::session::no_label).recv(ctx);
-            matched_count += same_meta(meta, make_meta(i + 10)) ? 1 : 0;
+            matched += same_meta(meta, make_meta(i + 10)) ? 1 : 0;
             head.emplace(std::move(next));
         }
         auto back = std::move(*head).select<1>(::fixy::session::no_label).close();
-        consumer_handle_back = back.tail_index() == static_cast<std::uint32_t>(kCount);
-    }};
+        matched_count.store_release(matched);
+        consumer_handle_back.store_release(back.tail_index() == static_cast<std::uint32_t>(kCount));
+    };
 
-    prod_thread.join();
-    cons_thread.join();
+    const ::fixy::BgLoadCtx bg{::foundation::effects::testing::bg()};
+    ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, produce, consume)
+        .expect("the thread door starts the producer and the consumer");
 
-    CRUCIBLE_TEST_REQUIRE(producer_done.load(std::memory_order_acquire));
-    CRUCIBLE_TEST_REQUIRE(producer_handle_back.load(std::memory_order_acquire));
-    CRUCIBLE_TEST_REQUIRE(consumer_handle_back);
-    CRUCIBLE_TEST_REQUIRE(matched_count == kCount);
+    CRUCIBLE_TEST_ASSERT(kTest, producer_done.load_acquire());
+    CRUCIBLE_TEST_ASSERT(kTest, producer_handle_back.load_acquire());
+    CRUCIBLE_TEST_ASSERT(kTest, consumer_handle_back.load_acquire());
+    CRUCIBLE_TEST_ASSERT(kTest, matched_count.load_acquire() == kCount);
 }
 
 // A session that ends at once gives back a handle that still reaches the
@@ -357,10 +354,10 @@ void test_session_gives_the_handle_back() {
     auto producer_back = std::move(producer_head).select<1>(::fixy::session::no_label).close();
     auto consumer_back = std::move(consumer_head).select<1>(::fixy::session::no_label).close();
 
-    CRUCIBLE_TEST_REQUIRE(producer_back.try_append_one_pure(fg, make_meta(7)));
+    CRUCIBLE_TEST_ASSERT(kTest, producer_back.try_append_one_pure(fg, make_meta(7)));
     auto drained = consumer_back.try_drain_one();
-    CRUCIBLE_TEST_REQUIRE(drained.is_some());
-    CRUCIBLE_TEST_REQUIRE(same_meta(std::move(drained).expect("the log holds one record"), make_meta(7)));
+    CRUCIBLE_TEST_ASSERT(kTest, drained.is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, same_meta(std::move(drained).expect("the log holds one record"), make_meta(7)));
 }
 
 // A use of a moved-from handle ends the process.  The move gives the
@@ -449,7 +446,7 @@ void test_moved_from_handles_end_the_process(::fixy::TestRunnerCtx const& test) 
 
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
-    std::fprintf(stderr, "[test_metalog_session]\n");
+    ::fixy::report(::fixy::Sink::Err, "[test_metalog_session]\n");
     // The attacks fork, so they run before a test starts a thread.
     test_moved_from_handles_end_the_process(test);
     run_test("permissioned_bulk_drain", test_permissioned_bulk_drain);
@@ -459,6 +456,6 @@ int main() {
     run_test("empty_drain", test_empty_drain);
     run_test("typed_session_round_trip", test_typed_session_round_trip);
     run_test("session_gives_the_handle_back", test_session_gives_the_handle_back);
-    ::fixy::check::pass(test, "\n{} passed, {} failed\n", total_passed, total_failed);
-    return total_failed == 0 ? 0 : 1;
+    ::fixy::check::pass(test, "\n{} passed, {} failed\n", total_passed, 0);
+    return 0;
 }
