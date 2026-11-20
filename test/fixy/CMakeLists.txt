@@ -6117,7 +6117,7 @@ fixy_neg_compile_test(neg_os_perf_event_read_count_ctx_lacks_block
 # start of the process, and an absent switch.
 fixy_test(test_os_environment)
 set_tests_properties(test_os_environment PROPERTIES ENVIRONMENT_MODIFICATION
-  "CRUCIBLE_PERF_QUIET=set:10;CRUCIBLE_PERF_VERBOSE=unset:;CRUCIBLE_WARDEN_QUIET=set:10;CRUCIBLE_WARDEN_FORCE=set:1;CRUCIBLE_PERF_PMU_PERIOD_HW=set:12345;CRUCIBLE_PERF_PMU_PERIOD_IBS=set:0;CRUCIBLE_PERF_PMU_PERIOD_SW=set:-5;TMPDIR=set:/var/tmp/")
+  "CRUCIBLE_PERF_QUIET=set:10;CRUCIBLE_PERF_VERBOSE=unset:;CRUCIBLE_WARDEN_QUIET=set:10;CRUCIBLE_WARDEN_FORCE=set:1;CRUCIBLE_PERF_PMU_PERIOD_HW=set:12345;CRUCIBLE_PERF_PMU_PERIOD_IBS=set:0;CRUCIBLE_PERF_PMU_PERIOD_SW=set:-5;TMPDIR=set:/var/tmp/;DEBUGINFOD_URLS=unset:")
 
 # The tree removal under a directory.  The setup test makes the fixture tree
 # with two links in the directory of the test before each run.

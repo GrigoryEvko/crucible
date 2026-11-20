@@ -104,9 +104,13 @@ set(CRUCIBLE_CT_TAINT_FLAGS
 # debug information of each loaded object that has none on the host.  A
 # lookup goes over the network and can take seconds.  So each taint test
 # runs with no DEBUGINFOD_URLS, and the harness refuses a run that has one.
+# The harness reads the variable through the environment door of fixy, so
+# each binary also compiles the source of that door
+# (src/fixy/os/ExitHooks.cpp) with its own flags.
 function(ct_taint_test source opt)
   set(name ${source}_${opt})
-  add_executable(${name} ${source}.cpp ${CMAKE_SOURCE_DIR}/src/fixy/check/Check.cpp ${CRUCIBLE_HANDLER_SOURCES})
+  add_executable(${name} ${source}.cpp ${CMAKE_SOURCE_DIR}/src/fixy/check/Check.cpp
+                 ${CMAKE_SOURCE_DIR}/src/fixy/os/ExitHooks.cpp ${CRUCIBLE_HANDLER_SOURCES})
   target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/include ${CRUCIBLE_VALGRIND_INCLUDE})
   target_compile_options(${name} PRIVATE -${opt} ${CRUCIBLE_CT_TAINT_FLAGS})
   crucible_release_code_target(${name})

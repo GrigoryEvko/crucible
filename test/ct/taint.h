@@ -18,9 +18,8 @@
 #include <valgrind/memcheck.h>
 #include <valgrind/valgrind.h>
 
+#include <fixy/os/Environment.h>
 #include <foundation/Quarantine.h>
-
-#include <cstdlib>
 
 namespace ct_taint {
 
@@ -59,10 +58,8 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // its start, and it asks each server for the debug information of each
 // loaded object that has none on the host.  A test must not depend on the
 // network: one lookup can take seconds.  test/ct/CMakeLists.txt removes the
-// variable from the environment of each taint test.
-[[nodiscard]] inline bool names_debuginfod_server() noexcept {
-    char const* const servers = std::getenv("DEBUGINFOD_URLS");
-    return servers != nullptr && servers[0] != '\0';
-}
+// variable from the environment of each taint test.  The environment door
+// reads the variable one time, before main.
+[[nodiscard]] inline bool names_debuginfod_server() noexcept { return ::fixy::env::switches().has_debuginfod_server; }
 
 }  // namespace ct_taint

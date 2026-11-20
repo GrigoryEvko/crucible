@@ -10,6 +10,8 @@
 //   CRUCIBLE_PERF_PMU_PERIOD_IBS=0    no period: zero turns the sampling off
 //   CRUCIBLE_PERF_PMU_PERIOD_SW=-5    no period: the grammar refuses a sign
 //   TMPDIR=/var/tmp/                  the checked path /var/tmp/
+//   DEBUGINFOD_URLS absent            off
+// The launcher of the tests drops DEBUGINFOD_URLS, so no test can set it.
 // The values differ between the switches, so a hook that reads a switch
 // into the field of a different switch fails a check.  The check also
 // proves that the link keeps the hook, and that the hook runs before main.
@@ -47,6 +49,7 @@ namespace {
         },
         [] noexcept { return false; });
     if (!is_tmpdir_read) return 8;
+    if (switches.has_debuginfod_server) return 9;
     return 0;
 }
 

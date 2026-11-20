@@ -62,6 +62,12 @@ constexpr std::size_t kLongestValue = static_cast<std::size_t>(__PTRDIFF_MAX__);
                                   [] noexcept { return false; });
 }
 
+// True when the variable name holds a value of one character or more.
+[[nodiscard]] bool has_text(core::CText name) noexcept {
+    return read_value(name).match([](core::TextView value) noexcept { return value.size() != 0; },
+                                  [] noexcept { return false; });
+}
+
 // The decimal number above zero that the variable name holds.  The grammar
 // of parse refuses a sign, so "-5" does not become a value near the maximum
 // of the type.  A zero period would turn the sampling off, so zero gives no
@@ -105,6 +111,7 @@ constinit Switches switches_at_start{};
         .is_perf_verbose = has_leading_one("CRUCIBLE_PERF_VERBOSE"),
         .is_warden_quiet = has_sole_one("CRUCIBLE_WARDEN_QUIET"),
         .is_warden_forced = has_sole_one("CRUCIBLE_WARDEN_FORCE"),
+        .has_debuginfod_server = has_text("DEBUGINFOD_URLS"),
         .pmu_period_hardware = read_period("CRUCIBLE_PERF_PMU_PERIOD_HW"),
         .pmu_period_dynamic = read_period("CRUCIBLE_PERF_PMU_PERIOD_IBS"),
         .pmu_period_software = read_period("CRUCIBLE_PERF_PMU_PERIOD_SW"),

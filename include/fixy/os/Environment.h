@@ -64,7 +64,12 @@ struct Switches {
     // CRUCIBLE_WARDEN_FORCE: the warden sets a real-time class on a CPU that
     // is not isolated.  The switch is on when its value is the text 1.
     bool is_warden_forced = false;
-    std::uint32_t pad_after_flags = 0;
+    // DEBUGINFOD_URLS: the servers that valgrind asks for the debug
+    // information of each loaded object at its start.  The switch is on when
+    // the value holds one character or more.
+    bool has_debuginfod_server = false;
+    std::uint8_t pad_after_flags = 0;
+    std::uint16_t pad_before_periods = 0;
     // The sample periods of the PMU events of the perf layer, each a decimal
     // number above zero.  No value stands for an absent variable, a text
     // that is no decimal number, a sign, or zero, and the caller then takes
