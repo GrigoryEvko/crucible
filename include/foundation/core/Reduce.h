@@ -96,9 +96,21 @@
 //
 // THE COSTS
 //   reduce_by_tree makes one combine for each element after the first, with a
-//   recursion of depth ceil(log2 n) + popcount(n).  sum_by_tree makes one load
-//   and about two shuffles and one add for each vector.  No operation
-//   allocates, and each split form takes its partials from the caller.
+//   recursion of depth ceil(log2 n) + popcount(n).  For a value that copies as
+//   bytes and has a default value (TreeLeafValue), each aligned block of a
+//   power of two of at most 256 elements is a leaf: a pass over a scratch
+//   array, level by level, with no call.  A long run then makes about one
+//   call for each 128 elements, and the loops of a plain combine are vector
+//   loops.  Each other value takes the recursion, with about one call for
+//   each two elements.  sum_by_tree makes one load and about two shuffles and
+//   one add for each vector.  No operation allocates, and each split form
+//   takes its partials from the caller.
+//
+// THE CALLS OF A COMBINE
+//   The tree states the two operands of each combine, and not the sequence of
+//   the calls: a leaf makes the combines of one level before the next level.
+//   So a combine gives a value that depends only on its two operands, and a
+//   state of the combine must not change its result.
 //
 // THE TARGET
 //   sum_by_tree, sum_by_tree_in_lanes, sum_runs_by_tree, sum_segments_by_tree and
@@ -160,11 +172,88 @@ struct TreeAdd {
     }
 };
 
+// The largest leaf of the tree of a combine: a power of two of elements.
+inline constexpr std::size_t tree_leaf_count = 256;
+
+// A value that the leaves of a combine keep in a scratch array: a default
+// value and a copy of the bytes, with no other effect.
+template <class T>
+concept TreeLeafValue = std::is_trivially_copyable_v<T> && std::is_nothrow_default_constructible_v<T>;
+
+// One level of a leaf: the Width values of target from the 2 * Width values
+// of source, each the combine of an adjacent pair, the lower value as the left
+// operand.  The count is a constant, so the loop of a plain combine is a
+// vector loop with no tail.
+template <std::size_t Width, class T, class Combine>
+CRUCIBLE_INLINE constexpr void combine_level_(T const* source, T* target, Combine& combine) noexcept {
+    for (std::size_t position = 0; position < Width; ++position) {
+        target[position] = combine(source[2 * position], source[2 * position + 1]);
+    }
+}
+
+// The levels of a leaf from Width values in source, with target for the next
+// level: the two scratch arrays take turns, so no level writes a value that it
+// reads.
+template <std::size_t Width, class T, class Combine>
+[[nodiscard]] CRUCIBLE_INLINE constexpr T tree_of_levels_(T* source, T* target, Combine& combine) noexcept {
+    if constexpr (Width == 1) {
+        return source[0];
+    } else {
+        combine_level_<Width / 2>(source, target, combine);
+        return tree_of_levels_<Width / 2>(target, source, combine);
+    }
+}
+
+// The balanced tree of the Count elements from first, a power of two from 8
+// to tree_leaf_count, level by level.  The first level combines each adjacent
+// pair of elements, and each later level combines each adjacent pair of the
+// level below it, with the lower value as the left operand.  Each value of a
+// level is the node of THE ORDER over its aligned block, so the last value is
+// the tree of the run.  Count - 1 combines.
+template <std::size_t Count, class T, class Combine>
+[[nodiscard]] constexpr T tree_of_leaf_(T const* first, Combine& combine) noexcept {
+    T low[Count / 2]{};
+    T high[Count / 4]{};
+    combine_level_<Count / 2>(first, low, combine);
+    return tree_of_levels_<Count / 2>(low, high, combine);
+}
+
+// The leaves of the tree of a combine.
+enum class TreeLeaves : std::uint8_t {
+    // Each part of up to four elements has its tree inline: the form for the
+    // short runs of the sum forms, which take no leaf.
+    Inline,
+    // A part of a TreeLeafValue of a power of two from 8 to tree_leaf_count
+    // takes the leaf of its count.
+    Blocked,
+};
+
 // The tree of the count elements from first, by the rule of THE ORDER.  The
-// count is at least 1.  A run of up to four elements has its tree inline,
-// so the recursion makes about one call for each two elements.
-template <class T, class Combine>
+// count is at least 1.  A run of up to four elements has its tree inline.
+// With the Blocked leaves, a part of a TreeLeafValue of a power of two from 8
+// to tree_leaf_count takes the leaf of its count, so a long run makes about
+// one call for each 128 elements.  Each other run makes about one call for
+// each two elements.
+template <TreeLeaves Leaves, class T, class Combine>
 [[nodiscard]] constexpr T tree_of_run_(T const* first, std::size_t count, Combine& combine) noexcept {
+    if constexpr (Leaves == TreeLeaves::Blocked && TreeLeafValue<T>) {
+        switch (count) {
+            case 8:
+                return tree_of_leaf_<8>(first, combine);
+            case 16:
+                return tree_of_leaf_<16>(first, combine);
+            case 32:
+                return tree_of_leaf_<32>(first, combine);
+            case 64:
+                return tree_of_leaf_<64>(first, combine);
+            case 128:
+                return tree_of_leaf_<128>(first, combine);
+            case tree_leaf_count:
+                return tree_of_leaf_<tree_leaf_count>(first, combine);
+            default:
+                break;
+        }
+    }
     switch (count) {
         case 1:
             return first[0];
@@ -183,8 +272,8 @@ template <class T, class Combine>
             break;
     }
     std::size_t const split = bit_floor(count - 1);
-    T const left = tree_of_run_(first, split, combine);
-    T const right = tree_of_run_(first + split, count - split, combine);
+    T const left = tree_of_run_<Leaves>(first, split, combine);
+    T const right = tree_of_run_<Leaves>(first + split, count - split, combine);
     return combine(left, right);
 }
 
@@ -264,7 +353,7 @@ template <class T, int Lanes>
 [[nodiscard]] T sum_run_by_tree_(T const* first, std::size_t count) noexcept {
     constexpr auto lanes = static_cast<std::size_t>(Lanes);
     TreeAdd add{};
-    if (count < lanes) return tree_of_run_(first, count, add);
+    if (count < lanes) return tree_of_run_<TreeLeaves::Inline>(first, count, add);
     if (has_single_bit(count)) return reduce_tree_lanes_<T, Lanes>(tree_block_vector_<T, Lanes>(first, count / lanes));
     std::size_t const split = bit_floor(count - 1);
     T const left = sum_run_by_tree_<T, Lanes>(first, split);
@@ -291,7 +380,7 @@ template <class T, std::size_t Extent, class Combine>
     using Value = std::remove_const_t<T>;
     if (elements.size() == 0) return none;
     Value const* const first = first_of_(detail::ViewDoor::key(), elements);
-    return Option<Value>::some(detail::tree_of_run_(first, elements.size(), combine));
+    return Option<Value>::some(detail::tree_of_run_<detail::TreeLeaves::Blocked>(first, elements.size(), combine));
 }
 
 inline namespace CRUCIBLE_SIMD_TARGET {
@@ -510,7 +599,9 @@ reduce_segments_by_tree(View<T const> elements, View<std::size_t const> offsets,
     T* const out = first_of_(detail::ViewDoor::key(), results);
     for (std::size_t segment = 0; segment < results.size(); ++segment) {
         std::size_t const count = offset[segment + 1] - offset[segment];
-        out[segment] = count == 0 ? empty : detail::tree_of_run_(first + offset[segment], count, combine);
+        out[segment] = count == 0
+                         ? empty
+                         : detail::tree_of_run_<detail::TreeLeaves::Blocked>(first + offset[segment], count, combine);
     }
     return Unit{};
 }
@@ -550,7 +641,7 @@ constexpr void reduce_grains_by_tree_(View<T const> elements, std::size_t first_
     for (std::size_t index = 0; index < partials; ++index) {
         std::size_t const start = (first_grain + index) * Grain;
         std::size_t const size = count - start < Grain ? count - start : Grain;
-        out[index] = tree_of_run_(first + start, size, combine);
+        out[index] = tree_of_run_<TreeLeaves::Blocked>(first + start, size, combine);
     }
 }
 

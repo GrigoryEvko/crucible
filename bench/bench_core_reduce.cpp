@@ -96,10 +96,38 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw tree is the reference of reduce_
 // The largest count of the leaf of the raw tree: a power of two.
 constexpr std::size_t kRawLeaf = 256;
 
+// One level of the leaf of the raw tree: the adds of the adjacent pairs of
+// the 2 * Width elements of source into target, with the lower element as the
+// left operand.  The count is a constant, so the loop has no tail.
+template <std::size_t Width>
+[[gnu::always_inline]] inline void raw_level(float const* source, float* target) noexcept {
+    for (std::size_t position = 0; position < Width; ++position) {
+        target[position] = source[2 * position] + source[2 * position + 1];
+    }
+}
+
+// The levels of the leaf from Width elements in source: two arrays take
+// turns, so no level writes an element that it reads.
+template <std::size_t Width>
+[[gnu::always_inline]] inline float raw_levels(float* source, float* target) noexcept {
+    if constexpr (Width == 1) {
+        return source[0];
+    } else {
+        raw_level<Width / 2>(source, target);
+        return raw_levels<Width / 2>(target, source);
+    }
+}
+
+// The balanced tree of the kRawLeaf floats from first, level by level.
+[[gnu::always_inline]] inline float raw_full_leaf_tree(float const* first) noexcept {
+    float low[kRawLeaf / 2] = {};
+    float high[kRawLeaf / 4] = {};
+    raw_level<kRawLeaf / 2>(first, low);
+    return raw_levels<kRawLeaf / 2>(low, high);
+}
+
 // The balanced tree of count floats from first, a power of two from 2 to
-// kRawLeaf, level by level: each level adds the adjacent pairs of the level
-// below it into a scratch array, with the lower element as the left operand.
-// Two arrays take turns, so no level writes an element that it reads.
+// kRawLeaf, level by level, with counts of run time.
 [[gnu::always_inline]] inline float raw_leaf_tree(float const* first, std::size_t count) noexcept {
     float low[kRawLeaf / 2] = {};
     float high[kRawLeaf / 4] = {};
@@ -125,7 +153,8 @@ constexpr std::size_t kRawLeaf = 256;
 // down to the leaf of kRawLeaf elements.
 [[gnu::noinline]] float raw_balanced_tree(float const* first, std::size_t count) noexcept {
     if (count == 1) return first[0];
-    if (count <= kRawLeaf) return raw_leaf_tree(first, count);
+    if (count == kRawLeaf) return raw_full_leaf_tree(first);
+    if (count < kRawLeaf) return raw_leaf_tree(first, count);
     std::size_t const half = count / 2;
     float const left = raw_balanced_tree(first, half);
     float const right = raw_balanced_tree(first + half, half);

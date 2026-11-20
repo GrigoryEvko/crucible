@@ -92,6 +92,11 @@ template <std::size_t... N>
 static_assert(plans_agree(std::make_index_sequence<40>{}));
 static_assert(plan_agrees_with_reduce<63>() && plan_agrees_with_reduce<64>() && plan_agrees_with_reduce<65>());
 static_assert(plan_agrees_with_reduce<127>() && plan_agrees_with_reduce<128>() && plan_agrees_with_reduce<129>());
+// The counts around the largest leaf of 256 elements, and a count whose
+// blocks are 512, 256 and 8 elements: each leaf and the joins of the leaves.
+static_assert(plan_agrees_with_reduce<255>() && plan_agrees_with_reduce<256>() && plan_agrees_with_reduce<257>());
+static_assert(plan_agrees_with_reduce<511>() && plan_agrees_with_reduce<512>() && plan_agrees_with_reduce<513>());
+static_assert(plan_agrees_with_reduce<776>());
 
 // An empty View has no tree, and one element is its own tree.
 static_assert(reduce_by_tree(View<std::uint64_t const>{}, Mix{}).is_none());
