@@ -7,8 +7,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
@@ -61,12 +59,14 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== serialize ===\n\n");
+    using ::fixy::Sink;
+    ::fixy::report(Sink::Out, "=== serialize ===\n\n");
 
     // Two rows for each of the three sizes.
     ::fixy::FixedList<bench::Report, 6> reports{};
 
-    for (uint32_t num_ops : {16u, 128u, 1024u}) {
+    constexpr ::fixy::FixedArray<uint32_t, 3> kSizes{16u, 128u, 1024u};
+    for (uint32_t const num_ops : kSizes) {
         // Per-size fixture: one arena, one region, one wire buffer sized
         // generously for the worst-case row shape. Lives across both
         // (ser, deser) Runs.
@@ -88,8 +88,7 @@ int main() {
         // Prime the buffer once — deserialize consumes stable bytes.
         const size_t serial_len = serialize_region(SerializedRegion{*region}, buf.view());
         if (serial_len == 0) {
-            std::fprintf(stderr, "serialize failed at num_ops=%u\n", num_ops);
-            std::exit(1);
+            ::fixy::fatal("serialize_region wrote no byte for a region of {} ops", num_ops);
         }
         const ::fixy::View<const std::byte> image =
             buf.view().window(0, serial_len).expect("the writer writes inside its buffer");
@@ -102,11 +101,11 @@ int main() {
                               bench::do_not_optimize(is_loaded);
                           }));
 
-        std::printf("  [%u ops] wire = %zu bytes (%.1f B/op)\n", num_ops, serial_len,
-                    static_cast<double>(serial_len) / num_ops);
+        ::fixy::report(Sink::Out, "  [{} ops] wire = {} bytes ({} B/op)\n", num_ops, serial_len,
+                       ::fixy::Fixed<1>{static_cast<double>(serial_len) / num_ops});
     }
 
-    std::printf("\n");
+    ::fixy::report(Sink::Out, "\n");
     bench::emit_reports(reports.view(), json);
     return 0;
 }

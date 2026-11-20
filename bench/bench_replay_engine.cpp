@@ -11,8 +11,6 @@
 // engine.reset() at the top of each walk so state is repeatable.
 
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 
 #include <crucible/CrucibleContext.h>
 #include <crucible/ReplayEngine.h>
@@ -156,15 +154,17 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== replay_engine ===\n");
-    std::printf("  sizeof(ReplayEngine)    : %zu B\n", sizeof(ReplayEngine));
-    std::printf("  sizeof(CrucibleContext) : %zu B\n", sizeof(CrucibleContext));
-    std::printf("  sizeof(TraceEntry)      : %zu B\n\n", sizeof(TraceEntry));
+    using ::fixy::Sink;
+    ::fixy::report(Sink::Out, "=== replay_engine ===\n");
+    ::fixy::report(Sink::Out, "  sizeof(ReplayEngine)    : {} B\n", sizeof(ReplayEngine));
+    ::fixy::report(Sink::Out, "  sizeof(CrucibleContext) : {} B\n", sizeof(CrucibleContext));
+    ::fixy::report(Sink::Out, "  sizeof(TraceEntry)      : {} B\n\n", sizeof(TraceEntry));
 
     // Four rows for each of the three sizes.
     ::fixy::FixedList<bench::Report, 12> reports{};
 
-    for (uint32_t n : {8u, 100u, 1000u}) {
+    constexpr ::fixy::FixedArray<uint32_t, 3> kSizes{8u, 100u, 1000u};
+    for (uint32_t const n : kSizes) {
         // Each size scope owns a BenchRegion, a PoolAllocator, the
         // ReplayEngine, and a CrucibleContext — all shared across the 4
         // Runs for this N. IIFE-lambdas capture by reference.
@@ -208,7 +208,7 @@ int main() {
     // Per-op amortized cost at N=1000 ops: report p50 / 1000 ns per op.
     // advance-only at 1000 ops vs. 100 ops should reveal whether the
     // walk is purely linear (ratio ≈ 10) or has startup overhead.
-    std::printf("\n=== compare — per-op scaling (advance-only) ===\n  ");
+    ::fixy::report(Sink::Out, "\n=== compare — per-op scaling (advance-only) ===\n  ");
     bench::compare(*reports.get(4).expect("the advance row of 100 ops"),
                    *reports.get(8).expect("the advance row of 1000 ops"))
         .print_text();
