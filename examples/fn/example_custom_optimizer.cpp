@@ -77,13 +77,23 @@ struct AdamHyperparameters {
 using AdamStepPtr = void (*)(Parameters const& params, FirstMoment const& m, SecondMoment const& v,
                              Gradients const& grad, AdamHyperparameters const& hyper) noexcept;
 
+// The roles of the two operands of a power.  Each operand is a Side of its
+// role, so a call states which number is the base and which is the exponent.
+namespace power_role {
+struct Base final {};
+struct Exponent final {};
+}  // namespace power_role
+
+using PowerBase = ::fixy::Side<power_role::Base, float>;
+using PowerExponent = ::fixy::Side<power_role::Exponent, std::uint32_t>;
+
 // base to the power exponent, as exponent products in order.  The product
 // calls no function of libm, so its bits are the same on each host.
 // Complexity: O(exponent).
-[[nodiscard]] float power_of(float base, std::uint32_t exponent) noexcept {
+[[nodiscard]] float power_of(PowerBase const& base, PowerExponent const& exponent) noexcept {
     float result = 1.f;
-    for (std::uint32_t turn = 0; turn < exponent; ++turn) {
-        result *= base;
+    for (std::uint32_t turn = 0; turn < exponent.value(); ++turn) {
+        result *= base.value();
     }
     return result;
 }
@@ -95,8 +105,9 @@ void adam_step_ref(Parameters const& params, FirstMoment const& m, SecondMoment 
                    AdamHyperparameters const& hyper) noexcept {
     std::size_t const count = params.value().count();
     CRUCIBLE_PRE(m.value().count() == count && v.value().count() == count && grad.value().count() == count);
-    const float bias1 = 1.f - power_of(hyper.beta1, hyper.step);
-    const float bias2 = 1.f - power_of(hyper.beta2, hyper.step);
+    const PowerExponent step_count = ::fixy::side_as<power_role::Exponent>(hyper.step);
+    const float bias1 = 1.f - power_of(::fixy::side_as<power_role::Base>(hyper.beta1), step_count);
+    const float bias2 = 1.f - power_of(::fixy::side_as<power_role::Base>(hyper.beta2), step_count);
     auto const step = [&hyper, bias1, bias2](float& param, float& m_i, float& v_i, float const& g) noexcept {
         m_i = hyper.beta1 * m_i + (1.f - hyper.beta1) * g;
         v_i = hyper.beta2 * v_i + (1.f - hyper.beta2) * g * g;
