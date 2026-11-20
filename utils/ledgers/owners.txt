@@ -173,6 +173,7 @@ test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::chai
 test/fixy/test_session_handle.cpp | detail-use | 2 | (anonymous namespace)::channel_claim_names_no_holder(): fixy::session::watch::detail | reads the owner of a watched endpoint record, and the layout of a link of a wait-for chain, which no public door gives
 test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::move_token_through_session(): foundation::effects::detail | builds a background context from its witness
 test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::polling_channel_waits_without_a_false_deadlock(): foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_handle.cpp | detail-use | 2 | (anonymous namespace)::record_keeps_the_site_of_the_mint(): fixy::session::watch::detail | reads the site file and the site line of a watched endpoint record, which no public door gives
 test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::walk_forked_channel(): foundation::effects::detail | builds a background context from its witness
 test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::walk_loop_with_permission_set(): fixy::session::detail | pins the loop frames and the forms of a loop context of the session handle
 test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::walk_loop_with_permission_set(): foundation::effects::detail | builds a background context from its witness
