@@ -26,16 +26,34 @@
 //   • samples(20)     — enough for p50/p99.9
 //   • warmup(2)       — flush any first-call thread start overhead
 //   • batch(1)        — never auto-batch a multi-thread cycle
-//   • no_pin()        — multi-thread can't pin to one core
+//   • fan_out()       — the measuring thread takes the core of slot 0
 //   • max_wall_ms(60_000) — generous wall budget; cap protects CI
 //   • per_producer = 5'000 — keeps each iteration ≈ 1-50 ms
+//
+// THE CORES OF A CYCLE
+//   The bench states 10 cores in bench/CMakeLists.txt: the measuring thread,
+//   the eight producers of the largest row and the consumer.  The thread door
+//   of fixy/os/ThreadTasks.h gives each thread of a cycle one core of the
+//   claim apart from the core of the measuring thread, through the placement
+//   OneCpuEach.  The line after each row names those cores.  A claim with
+//   fewer cores than the threads of a row puts two threads on one core.  A
+//   spin of one of them then holds the core until its time slice ends, and the
+//   row measures the slices of the scheduler and not the contention.
+//
+// THE GATE
+//   Each thread of a cycle arrives at the gate, and it waits until each
+//   thread of the cycle has arrived.  So the producers and the consumer start
+//   their work at the same time, also when the starts of the threads take
+//   longer than the work.  The door holds the measuring thread from the first
+//   start to the last join, so the threads open the gate themselves.  Each
+//   thread has a core of its own, so the wait is a spin.
 
 #include <cstdint>
-#include <thread>
-#include <vector>
+#include <utility>
 
 #include <fixy/Core.h>
 #include <fixy/concurrent/MpscRing.h>
+#include <fixy/os/ThreadTasks.h>
 
 #include "bench_harness.h"
 
@@ -51,22 +69,24 @@ constexpr std::size_t kWarmup = 3;
 constexpr std::size_t kMaxWallMs = 60000;
 
 using Ring = MpscRing<Item, kCap>;
+using CoreCount = ::fixy::Quantity<::fixy::unit::Element, std::size_t>;
 
 // The allocation capability of the ring of each cycle.
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
-// The gate of a cycle.  The cycle opens it when each thread exists, so the
-// producers and the consumer start their work together.
-struct StartGate {
-    ::fixy::Atomic<bool> is_open{false};
+// The gate of a cycle (THE GATE).  The gate holds the count of the threads
+// that arrived, and the gate is open when the count is the count of the
+// threads of the cycle.
+struct alignas(64) StartGate {
+    ::fixy::Atomic<std::uint32_t> arrived{0};
+    std::uint32_t threads = 0;
 
-    void wait() const noexcept {
-        while (!is_open.load_acquire()) {
+    void arrive_and_wait() noexcept {
+        static_cast<void>(arrived.fetch_add_acq_rel(1));
+        while (arrived.load_acquire() < threads) {
             CRUCIBLE_SPIN_PAUSE;
         }
     }
-
-    void open() noexcept { is_open.store_release(true); }
 };
 
 // Producer-side single-call write loop.  Each producer pushes K items
@@ -77,7 +97,7 @@ struct SinglePushWorker {
     Item base = 0;
 
     void operator()() noexcept {
-        gate.wait();
+        gate.arrive_and_wait();
         for (std::size_t i = 0; i < kPerProducer; ++i) {
             const Item value = base + static_cast<Item>(i);
             while (!ring.try_push(value)) {
@@ -96,7 +116,7 @@ struct BatchedPushWorker {
     Item base = 0;
 
     void operator()() noexcept {
-        gate.wait();
+        gate.arrive_and_wait();
         ::fixy::FixedArray<Item, BATCH> buf{};
         std::size_t pushed = 0;
         while (pushed < kPerProducer) {
@@ -127,7 +147,7 @@ struct DrainWorker {
     std::size_t total = 0;
 
     void operator()() noexcept {
-        gate.wait();
+        gate.arrive_and_wait();
         ::fixy::FixedArray<Item, 64> buf{};
         std::size_t local = 0;
         // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.
@@ -146,61 +166,69 @@ struct DrainWorker {
     }
 };
 
-}  // namespace
-
-// The rows time the bare ring, which holds no permission of its two sides.
-// Each cycle times its thread starts.  On the one core of this bench, a
-// cycle through the raw probe door of the base costs much more than a cycle
-// of std::jthread.  So the thread starts stay on std::jthread, and the
-// workers are outside the region.
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: each cycle of the bare MPSC ring starts its threads on std::jthread")
-namespace {
-
-// Starts the producers and the consumer of one cycle, opens the gate, and
-// joins each thread.
-template <typename Worker, std::size_t Producers>
-void start_and_join(Ring& ring, StartGate& gate) {
-    std::vector<std::jthread> producers(Producers);
-    for (std::size_t p = 0; p < Producers; ++p) {
-        producers[p] = std::jthread(Worker{ring, gate, static_cast<Item>(p) * kPerProducer});
-    }
-    std::jthread consumer(DrainWorker{ring, gate, Producers * kPerProducer});
-    gate.open();
-    producers.clear();
-    consumer.join();
+// The options of the threads of a row (THE CORES OF A CYCLE): one core of
+// the claim for each thread, apart from the core of the measuring thread.
+// With no claim, as under ctest, the threads keep the affinity of the process.
+[[nodiscard]] ::fixy::thread::ThreadOptions cycle_options(crucible::warden::CpuSet const& cpus) noexcept {
+    if (cpus.is_empty()) return ::fixy::thread::ThreadOptions{};
+    return ::fixy::thread::ThreadOptions{.affinity = bench::detail::mask_of(cpus),
+                                         .placement = ::fixy::thread::ThreadPlacement::OneCpuEach};
 }
 
-}  // namespace
-CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-
-namespace {
-
-// One full multi-thread cycle: start Producers producers and one consumer,
-// and join them.
-template <typename Worker, std::size_t Producers>
-void run_cycle() {
+// One full multi-thread cycle: start Producers producers and one consumer
+// through the thread door, and join them.  The rows time the bare ring,
+// which holds no permission of its two sides, so the cycle starts its
+// threads through the raw probe of the door.
+template <typename Worker, std::size_t Producers, std::size_t... Producer>
+void run_cycle(::fixy::thread::ThreadOptions const& options, std::index_sequence<Producer...> /*order*/) {
     ::fixy::Box<Ring> ring_box = ::fixy::mint_box<Ring>(kAlloc);
-    StartGate gate{};
-    start_and_join<Worker, Producers>(*ring_box, gate);
+    StartGate gate{.threads = static_cast<std::uint32_t>(Producers + 1)};
+    ::fixy::FixedArray<Worker, Producers> producers{Worker{*ring_box, gate, Producer * kPerProducer}...};
+    DrainWorker drain{*ring_box, gate, Producers * kPerProducer};
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+                                         "the bare MPSC ring is the state under test", options,
+                                         producers.at(::fixy::index<Producer>())..., drain)
+        .expect("the thread door starts the producers and the consumer of a cycle");
+}
+
+// Prints the cores of the threads of a row, or that the threads keep the
+// affinity of the process.
+void print_cycle_cores(crucible::warden::CpuSet const& cpus, std::size_t threads) noexcept {
+    if (cpus.is_empty()) {
+        bench::print("     └─ {} threads of each cycle with the affinity of the process\n", threads);
+        return;
+    }
+    bench::print("     └─ {} threads of each cycle on the cores", threads);
+    for (int const cpu : cpus) {
+        bench::print(" cpu{}", cpu);
+    }
+    bench::print("\n");
 }
 
 template <typename Worker, std::size_t Producers>
-[[nodiscard]] bench::Report run_one(::fixy::TextView label) {
-    return bench::Run{bench::format_name("{} P={}", label, Producers)}
-        .samples(kSamples)
-        .warmup(kWarmup)
-        .batch(1)
-        .no_pin()
-        .max_wall_ms(kMaxWallMs)
-        .measure([] { run_cycle<Worker, Producers>(); });
+[[nodiscard]] bench::Report run_one(bench::Cores const& cores, ::fixy::TextView label) {
+    const bench::CpuId measuring = cores.of_slot(bench::kMeasuringSlot).value_or(bench::CpuId::none());
+    const crucible::warden::CpuSet cpus = cores.first_slots_apart(measuring, CoreCount{Producers + 1});
+    const ::fixy::thread::ThreadOptions options = cycle_options(cpus);
+    bench::Report report =
+        bench::Run{bench::format_name("{} P={}", label, Producers)}
+            .samples(kSamples)
+            .warmup(kWarmup)
+            .batch(1)
+            .fan_out()
+            .max_wall_ms(kMaxWallMs)
+            .measure([&options] { run_cycle<Worker, Producers>(options, std::make_index_sequence<Producers>{}); });
+    print_cycle_cores(cpus, Producers + 1);
+    return report;
 }
 
 // The three rows of one producer count.
 template <std::size_t Producers>
-void add_rows(::fixy::FixedList<bench::Report, 12>& reports) {
-    bench::add_report(reports, run_one<SinglePushWorker, Producers>("single"));
-    bench::add_report(reports, run_one<BatchedPushWorker<16>, Producers>("batched<16>"));
-    bench::add_report(reports, run_one<BatchedPushWorker<64>, Producers>("batched<64>"));
+void add_rows(bench::Cores const& cores, ::fixy::FixedList<bench::Report, 12>& reports) {
+    bench::add_report(reports, run_one<SinglePushWorker, Producers>(cores, "single"));
+    bench::add_report(reports, run_one<BatchedPushWorker<16>, Producers>(cores, "batched<16>"));
+    bench::add_report(reports, run_one<BatchedPushWorker<64>, Producers>(cores, "batched<64>"));
 }
 
 }  // namespace
@@ -210,6 +238,8 @@ int main() {
     bench::elevate_priority();
 
     const bench::JsonTail json = bench::env_json();
+    // The cores of the claim, read before the first Run pins the thread.
+    const bench::Cores cores = bench::Cores::of_calling_thread();
 
     bench::print("=== mpsc_contention ===\n");
     bench::print("  Item:              uint64_t\n");
@@ -221,10 +251,10 @@ int main() {
 
     // 4 producer counts × 3 API kinds = 12 cells.
     ::fixy::FixedList<bench::Report, 12> reports{};
-    add_rows<1>(reports);
-    add_rows<2>(reports);
-    add_rows<4>(reports);
-    add_rows<8>(reports);
+    add_rows<1>(cores, reports);
+    add_rows<2>(cores, reports);
+    add_rows<4>(cores, reports);
+    add_rows<8>(cores, reports);
 
     // Standard text + JSON emission.  Each Report's pct.p50 is the
     // wall-time of one workload cycle (P producers × kPerProducer items).
@@ -262,13 +292,14 @@ int main() {
     }
 
     bench::print("\n  Interpretation:\n");
-    bench::print("  • At P=1 (no contention), batched API gives the single-thread\n");
-    bench::print("    speedup (~4.5×).\n");
+    bench::print("  • Each time is one full cycle: the starts of the threads, the\n");
+    bench::print("    work and the joins.\n");
+    bench::print("  • At P=1, the single row moves each item through the lines of\n");
+    bench::print("    the ring one at a time, while the consumer reads the same lines.\n");
     bench::print("  • At P=2..8 (contention rises), the gap widens: batched API\n");
     bench::print("    does 1 CAS per N items, so head_ contention is reduced N×\n");
     bench::print("    vs single-call which CASes per item.\n");
-    bench::print("  • CV >5% on any cell indicates throttling — re-run on a\n");
-    bench::print("    quiet machine and check `dmesg | grep thermal`.\n");
+    bench::print("  • A spread above 5% on a row means: run the bench again.\n");
 
     bench::emit_reports_json(reports.view(), json);
     return 0;

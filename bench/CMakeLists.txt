@@ -364,7 +364,10 @@ crucible_bench(bench_pipeline_dispatch)
 # The measuring thread and the eight threads of the largest parallel arm, each
 # on a core of its own.
 crucible_bench(bench_no_regression CORES 9)
-crucible_bench(bench_mpsc_contention)
+# The measuring thread, the eight producers of the largest row and the
+# consumer, each on a core of its own.  The measuring thread starts the
+# threads of a cycle while the first ones already spin, so it has a core too.
+crucible_bench(bench_mpsc_contention CORES 10)
 crucible_bench(bench_permissioned_zero_cost)
 # Rows of 2 and 4 threads, one on each core of one L3 group.
 crucible_bench(bench_permissioned_channel CORES 4)
