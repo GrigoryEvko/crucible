@@ -9,8 +9,8 @@
 // Expected diagnostic: the ImplicitLifetimeThroughout constraint fails.
 
 #include <crucible/BackgroundThread.h>
-#include <foundation/Lifetime.h>
 #include <foundation/Quarantine.h>
+#include <foundation/core/Array.h>
 
 int main() {
     using Stage = crucible::BackgroundThread::PublishStage;

@@ -5,7 +5,7 @@
 // reading started over bytes would state a value that no clock returned.
 
 #include <fixy/os/ClockSource.h>
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 
 #include <cstdint>
 

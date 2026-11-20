@@ -3,7 +3,7 @@
 // start refuses it.
 
 #include <fixy/EpochVersioned.h>
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 
 int main() {
     alignas(8) unsigned char bytes[sizeof(fixy::VersionSource)]{};

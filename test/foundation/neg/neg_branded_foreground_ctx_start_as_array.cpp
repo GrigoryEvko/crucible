@@ -6,7 +6,7 @@
 // Expected diagnostic: no matching call to start_as_array, because
 // ImplicitLifetimeThroughout is not satisfied.
 
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 #include <foundation/effects/Ctx.h>
 
 namespace {

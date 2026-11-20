@@ -87,20 +87,10 @@ static_assert(!ImplicitLifetimeThroughout<HoldsMarkedCarrier> && !ImplicitLifeti
 static_assert(ImplicitLifetimeThroughout<CountCarrier>, "a closure that captures a plain count holds a plain count");
 static_assert(ImplicitLifetimeThroughout<std::remove_const_t<decltype(carries_nothing)>>);
 
-// The element of the span is const when the storage or T is const, and
-// volatile storage is refused.
-template <typename Storage, typename T>
-concept can_start_as = requires(Storage* storage) {
-    { start_as_array<T>(storage, 1) } -> std::same_as<std::span<element_for_storage_t<Storage, T>>>;
-};
-static_assert(can_start_as<unsigned char, Plain> && can_start_as<void, Plain>);
-static_assert(can_start_as<const unsigned char, Plain> && can_start_as<unsigned char, const Plain>);
+// The element of a start over bytes is const when the storage or T is const.
+// The check file of foundation/core/Array.h holds the checks of the start.
 static_assert(std::is_same_v<element_for_storage_t<const unsigned char, Plain>, const Plain>);
 static_assert(std::is_same_v<element_for_storage_t<unsigned char, const Plain>, const Plain>);
-static_assert(!can_start_as<volatile unsigned char, Plain> && !can_start_as<const volatile void, Plain>,
-              "volatile storage is refused, and a caller adds volatile to data()");
-static_assert(!can_start_as<unsigned char, HoldsProof> && !can_start_as<const void, ProofShape[1]>,
-              "the checked start refuses a proof subobject through every storage qualifier");
 
 // A sealed class keeps a trivial copy, a trivial destructor and its size,
 // and the two byte routes refuse it.  A class that holds only a seal stays

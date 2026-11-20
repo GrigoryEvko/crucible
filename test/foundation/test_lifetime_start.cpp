@@ -1,4 +1,4 @@
-// Runtime checks of the checked lifetime start of foundation/Lifetime.h.
+// Runtime checks of the checked lifetime start of foundation/core/Array.h.
 //
 // start_as_array gives the guarantee of std::start_lifetime_as_array with
 // the asm statement of libstdc++.  A new object over bytes holds the bytes
@@ -34,18 +34,18 @@ using PairBytes = core::FixedArray<std::byte, 2 * sizeof(Pair)>;
 using EmptyBytes = core::FixedArray<unsigned char, 4>;
 
 // The probes start a lifetime over the raw address of a storage.  The start
-// gives its objects as a std::span, and each probe reads that span.
+// gives its objects as a View of the base, and each probe reads that View.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the checked lifetime start reads raw bytes through pointers of two types")
 // An integer store, then a float store through a second pointer to the same
 // bytes, then a read through a new integer over the bytes.  The function is
 // not inlined, so GCC cannot see that the two pointers are equal.  Returns
 // the bits that the read gives.
 [[gnu::noinline]] std::uint32_t read_after_a_store_of_another_type(unsigned char* storage, void* same_bytes) {
-    std::uint32_t* const counter = lifetime::start_as_array<std::uint32_t>(storage, 1).data();
-    *counter = 5;
-    float* const ratio = lifetime::start_as_array<float>(same_bytes, 1).data();
-    *ratio = 1.0F;
-    return lifetime::start_as_array<std::uint32_t>(storage, 1).front();
+    const core::View<std::uint32_t> counter = lifetime::start_as_array<std::uint32_t>(storage, 1);
+    *counter.begin() = 5;
+    const core::View<float> ratio = lifetime::start_as_array<float>(same_bytes, 1);
+    *ratio.begin() = 1.0F;
+    return *lifetime::start_as_array<std::uint32_t>(storage, 1).begin();
 }
 
 // The bits of the read after the two stores, with the two pointers at the
@@ -58,19 +58,23 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the checked lifetime start reads raw bytes
 // the values 1 and 2, then 3 and 4.  Each other value names the check that
 // fails.
 [[nodiscard]] int read_pairs_of(PairBytes const& storage) {
-    const auto pairs = lifetime::start_as_array<Pair>(core::foreign_first(storage.view()), 2);
+    const core::View<Pair const> pairs = lifetime::start_as_array<Pair>(core::foreign_first(storage.view()), 2);
     if (pairs.size() != 2) return 1;
-    if (pairs[0].first != 1 || pairs[0].second != 2 || pairs[1].first != 3 || pairs[1].second != 4) return 2;
+    const core::View<Pair const, 2> both = pairs.window<2>(0).expect("a View of two pairs has a window of two");
+    const Pair& head = both.at(core::index<0>());
+    const Pair& tail = both.at(core::index<1>());
+    if (head.first != 1 || head.second != 2 || tail.first != 3 || tail.second != 4) return 2;
     return 0;
 }
 
-// Starts no object over the storage.  Returns 0 when the span is empty and
+// Starts no object over the storage.  Returns 0 when the View is empty and
 // starts at the storage.  Each other value names the check that fails.
 [[nodiscard]] int read_none_of(EmptyBytes& storage) {
-    const auto none = lifetime::start_as_array<std::uint32_t>(core::foreign_first(storage.view()), 0);
-    if (!none.empty()) return 1;
-    const bool starts_at_the_storage =
-        static_cast<const void*>(none.data()) == static_cast<const void*>(core::foreign_first(storage.view()));
+    const core::View<std::uint32_t> none =
+        lifetime::start_as_array<std::uint32_t>(core::foreign_first(storage.view()), 0);
+    if (none.size() != 0) return 1;
+    const bool starts_at_the_storage = static_cast<const void*>(core::foreign_first(none))
+                                    == static_cast<const void*>(core::foreign_first(storage.view()));
     return starts_at_the_storage ? 0 : 2;
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -90,7 +94,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return read_pairs_of(storage);
 }
 
-// A count of zero is an empty span that starts at the storage.
+// A count of zero is an empty View that starts at the storage.
 [[nodiscard]] int zero_count_is_empty_at_the_storage() {
     alignas(4) EmptyBytes storage{};
     return read_none_of(storage);

@@ -5,8 +5,8 @@
 // reads the epoch in the closure and refuses it, as it refuses the epoch
 // alone.
 
-#include <foundation/Lifetime.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
+#include <foundation/core/Array.h>
 
 #include <cstdint>
 #include <type_traits>

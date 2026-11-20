@@ -5,7 +5,7 @@
 // thread that nobody named.
 
 #include <fixy/os/ThreadName.h>
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 
 int main() {
     using Witness = fixy::ThreadNamed<"forged">;

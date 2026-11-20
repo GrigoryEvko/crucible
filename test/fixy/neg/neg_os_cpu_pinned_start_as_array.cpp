@@ -4,7 +4,7 @@
 // over bytes would claim a sched_setaffinity call that nobody made.
 
 #include <fixy/os/CpuPinned.h>
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 
 namespace ml = foundation::algebra::lattices;
 

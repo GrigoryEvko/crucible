@@ -5,7 +5,7 @@
 // checked start refuses a type that carries the annotation
 // no_start_over_bytes, and the token carries it.
 
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 #include <foundation/permissions/Permission.h>
 
 namespace fl = ::foundation::lifetime;

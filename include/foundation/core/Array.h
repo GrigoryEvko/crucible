@@ -88,6 +88,14 @@
 //                       the ViewMut of the elements, with the brand of the
 //                       frame, and the door gives the array back
 //                       (foundation/core/Frame.h)
+//
+// THE LIFETIME START
+//   lifetime::start_as_array<T>(storage, count)
+//                       the View of count objects of T whose lifetime starts
+//                       over the bytes at storage, with no constructor.  T is
+//                       an implicit-lifetime type throughout, the concept of
+//                       foundation/Lifetime.h.  This header includes that
+//                       header and the View, so the door stands here
 
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
@@ -1035,3 +1043,61 @@ void with_mut(Owner&& owner, Body&& body) = delete(
     "call returns");
 
 }  // namespace foundation::core
+
+namespace foundation::lifetime {
+
+// Starts the lifetime of count objects of type T over the storage and
+// returns them as a View of the base.  The storage must hold count * sizeof(T)
+// bytes aligned for T.  The element of the View is const when the storage or
+// T is const.  A single object is a View of one.
+//
+// The function gives the guarantee of std::start_lifetime_as_array
+// ([obj.lifetime], P2590R2).  Each object that it starts has an
+// implicit-lifetime type ([basic.types.general]), and the object
+// representation of each object is the bytes that the storage holds before
+// the call.  The function uses the empty asm statement that libstdc++ 16
+// uses for that function (bits/stl_construct.h).  The statement reads and
+// writes the bytes of the region, and it returns the pointer.  GCC then
+// keeps each store to the bytes before the statement.  It keeps each access
+// through the result after the statement.  The type of an earlier object in
+// the bytes then does not apply to the new objects.  The statement writes no
+// byte and emits no instruction.
+//
+// The operand has the type of an array of unknown bound of unsigned char.
+// GCC reads that type as an access of unknown length (the GCC manual,
+// "Extended Asm"), so the operand needs no variable length array.  The bit
+// cast removes a const of the storage only for the operand, as the
+// const_cast of libstdc++ does.
+//
+// A View holds at most max_view_count elements, and a pointer that is not
+// null when it holds an element.  So the function ends the process for a
+// larger count and for a null storage with a count, in each build and under
+// each contract semantic.  The two checks read the storage before the asm
+// statement, because the statement hides the pointer from the optimizer.  The
+// View then comes through the door of the base layer, with no second check.
+//
+// Volatile storage is refused, because a View holds no volatile element.  A
+// caller that reads through volatile converts the address of an element to a
+// pointer to volatile, which is an implicit conversion.  An array type T is
+// refused for the same reason: a caller starts the lifetime of its elements.
+template <ImplicitLifetimeThroughout T, typename Storage>
+    requires(!std::is_volatile_v<Storage> && ::foundation::core::ViewElement<element_for_storage_t<Storage, T>>)
+[[nodiscard]] ::foundation::core::View<element_for_storage_t<Storage, T>> start_as_array(Storage* storage,
+                                                                                         std::size_t count) noexcept {
+    using Element = element_for_storage_t<Storage, T>;
+    using Untyped = std::conditional_t<std::is_const_v<Storage>, const void, void>;
+    if (count > ::foundation::core::max_view_count(sizeof(Element))) [[unlikely]] {
+        ::foundation::core::fatal("start_as_array got a count past the largest count of a View");
+    }
+    if (storage == nullptr && count != 0) [[unlikely]] {
+        ::foundation::core::fatal("start_as_array got a null storage with a count");
+    }
+    Element* first = static_cast<Element*>(static_cast<Untyped*>(storage));
+    if (count != 0) {
+        auto* const region = __builtin_bit_cast(unsigned char (*)[], static_cast<Untyped*>(storage));
+        __asm__ __volatile__("" : "+r"(first), "=m"(*region) : "m"(*region));
+    }
+    return ::foundation::core::View<Element>{::foundation::core::detail::ViewDoor::key(), first, count};
+}
+
+}  // namespace foundation::lifetime

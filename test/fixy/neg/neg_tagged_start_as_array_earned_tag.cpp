@@ -5,7 +5,7 @@
 // would carry a tag that no retag gave it.
 
 #include <fixy/Tagged.h>
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 
 namespace tags = ::fixy::tags;
 

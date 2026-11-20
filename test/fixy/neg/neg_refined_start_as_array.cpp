@@ -5,7 +5,7 @@
 // number that its predicate never checked.
 
 #include <fixy/Refined.h>
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 
 int main() {
     using Positive = fixy::Refined<fixy::positive, int>;

@@ -2,7 +2,7 @@
 // names no alternative, such as a tag of 2.  The cells of the tag carry the
 // mark closed_tag, so the checked lifetime start refuses the Option.
 
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 
 #include <cstdint>

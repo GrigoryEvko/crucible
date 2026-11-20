@@ -17,11 +17,12 @@
 // A proof type (a mint key, a context, a capability, a permission) is not
 // an implicit-lifetime type.  So each of the three routes gives a pointer
 // to a proof object whose lifetime never started, and a read through it
-// is undefined behavior.  start_as_array refuses the three routes at
-// compile time.  The test walks the type through each array extent,
-// each base class and each non-static data member, the members of a
-// union included, and it refuses a reference member, which no lifetime
-// start binds.
+// is undefined behavior.  The concept ImplicitLifetimeThroughout refuses the
+// three routes at compile time, and start_as_array of foundation/core/Array.h
+// takes only a type that the concept accepts.  The test walks the type
+// through each array extent, each base class and each non-static data
+// member, the members of a union included, and it refuses a reference
+// member, which no lifetime start binds.
 //
 // The walk also refuses a class whose state it cannot read, as a subobject
 // at every depth (foundation/reflect/TypeComponents.h names the shape).  A
@@ -41,9 +42,11 @@
 // names no alternative.  So no lifetime start over bytes makes an Option or
 // a Result of the plain form, or a type that holds one.
 //
-// start_as_array does not call std::start_lifetime_as_array, so this header
-// does not include <memory>.  It gives the same guarantee with a builtin and
-// the barrier of libstdc++.  The comment on start_as_array tells how.
+// start_as_array gives its objects as a View of the base, so it stands in
+// foundation/core/Array.h, which includes this header and the View.  It does
+// not call std::start_lifetime_as_array, so no header of the base includes
+// <memory> for it.  It gives the same guarantee with a builtin and the
+// barrier of libstdc++.  The comment on start_as_array tells how.
 //
 // The rule owners of the quarantine plugin refuses each use of the two
 // library functions in a file that a build compiles, other than this header.
@@ -53,11 +56,9 @@
 #include <foundation/Linear.h>
 #include <foundation/reflect/TypeComponents.h>
 
-#include <bit>
 #include <concepts>
 #include <cstddef>
 #include <meta>
-#include <span>
 #include <type_traits>
 
 namespace foundation::lifetime {
@@ -107,49 +108,10 @@ template <typename T>
 concept ImplicitLifetimeThroughout = detail::is_implicit_lifetime_throughout_at(^^T, 0);
 
 // T, made const when the storage is const.  A view over read-only bytes
-// keeps that access in its element type.
+// keeps that access in its element type.  start_as_array of
+// foundation/core/Array.h gives its View this element type.
 template <typename Storage, typename T>
 using element_for_storage_t = std::conditional_t<std::is_const_v<Storage>, const T, T>;
-
-// Starts the lifetime of count objects of type T over the storage and
-// returns them as a span.  The storage must hold count * sizeof(T) bytes
-// aligned for T.  The element of the span is const when the storage or T
-// is const.  A single object is a span of one.
-//
-// The function gives the guarantee of std::start_lifetime_as_array
-// ([obj.lifetime], P2590R2).  Each object that it starts has an
-// implicit-lifetime type ([basic.types.general]), and the object
-// representation of each object is the bytes that the storage holds before
-// the call.  The function uses the empty asm statement that libstdc++ 16
-// uses for that function (bits/stl_construct.h).  The statement reads and
-// writes the bytes of the region, and it returns the pointer.  GCC then
-// keeps each store to the bytes before the statement.  It keeps each access
-// through the result after the statement.  The type of an earlier object in
-// the bytes then does not apply to the new objects.  The statement writes no
-// byte and emits no instruction.
-//
-// The operand has the type of an array of unknown bound of unsigned char.
-// GCC reads that type as an access of unknown length (the GCC manual,
-// "Extended Asm"), so the operand needs no variable length array.  The
-// bit_cast removes a const of the storage only for the operand, as the
-// const_cast of libstdc++ does.
-//
-// Volatile storage is refused, because libstdc++ cannot build a span of a
-// volatile class type.  A caller that reads through volatile converts
-// data() to a pointer to volatile, which is an implicit conversion.
-template <ImplicitLifetimeThroughout T, typename Storage>
-    requires(!std::is_volatile_v<Storage> && !std::is_volatile_v<T>)
-[[nodiscard]] std::span<element_for_storage_t<Storage, T>> start_as_array(Storage* storage,
-                                                                          std::size_t count) noexcept {
-    using Element = element_for_storage_t<Storage, T>;
-    using Untyped = std::conditional_t<std::is_const_v<Storage>, const void, void>;
-    Element* first = static_cast<Element*>(static_cast<Untyped*>(storage));
-    if (count != 0) {
-        auto* const region = std::bit_cast<unsigned char (*)[]>(static_cast<Untyped*>(storage));
-        __asm__ __volatile__("" : "+r"(first), "=m"(*region) : "m"(*region));
-    }
-    return {first, count};
-}
 
 namespace detail {
 

@@ -11,6 +11,9 @@
 #include <fixy/OwnedRegion.h>
 #include <fixy/check/Check.h>
 #include <foundation/Lifetime.h>
+#include <foundation/Quarantine.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Region.h>
 
 #include "owned_region_unchecked_arena.h"
 
@@ -44,9 +47,11 @@ struct DataB {
 // One bump pointer over a fixed block: the smallest thing adopt asks
 // of an arena.  The lifetime start gives a live object only to a type
 // whose every subobject is an implicit-lifetime type, so the constraint
-// refuses every other type.
+// refuses every other type.  The arena door asks for the raw pointer of
+// the first element, and no base type gives that shape, so the return
+// stands in a PROBE region.
 class Arena {
-    alignas(std::max_align_t) unsigned char block_[1 << 16]{};
+    alignas(std::max_align_t)::foundation::core::FixedArray<unsigned char, std::size_t{1} << 16> block_{};
     std::size_t used_ = 0;
 
 public:
@@ -57,9 +62,12 @@ public:
         const std::size_t misalign = used_ % alignof(T);
         const std::size_t start = misalign == 0 ? used_ : used_ + (alignof(T) - misalign);
         const std::size_t nbytes = n * sizeof(T);
-        if (start + nbytes > sizeof(block_)) std::abort();
+        if (start + nbytes > block_.size()) std::abort();
         used_ = start + nbytes;
-        return ::foundation::lifetime::start_as_array<T>(block_ + start, n).data();
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a bump arena of a test gives the raw pointer of the arena door")
+        return ::foundation::core::foreign_first(
+            ::foundation::lifetime::start_as_array<T>(::foundation::core::foreign_first(block_.view()) + start, n));
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     }
 };
 

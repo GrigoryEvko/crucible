@@ -1,7 +1,7 @@
 // Zero bytes are a Result that no constructor made: a value, or the error
 // of the first enumerator.  The checked lifetime start refuses each Result.
 
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 
 #include <cstdint>

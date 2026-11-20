@@ -4,7 +4,7 @@
 // key is not an implicit-lifetime type, and the checked lifetime start
 // refuses it at its constraint.
 
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 #include <foundation/effects/Ctx.h>
 
 namespace fe = ::foundation::effects;

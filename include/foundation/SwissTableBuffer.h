@@ -12,6 +12,7 @@
 #include <foundation/AlignedBytes.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Region.h>
@@ -104,9 +105,11 @@ public:
 
         // The allocator creates the control bytes implicitly: an array of a
         // byte type is an implicit-lifetime type.  The slots start their
-        // lifetime through the checked start.
+        // lifetime through the checked start, and the state keeps the first
+        // slot of its View.
         ctrl_type* ctrl = static_cast<ctrl_type*>(raw);
-        slot_type* slots = lifetime::start_as_array<slot_type>(static_cast<char*>(raw) + capacity, capacity).data();
+        slot_type* slots = first_of_(core::detail::ViewDoor::key(),
+                                     lifetime::start_as_array<slot_type>(static_cast<char*>(raw) + capacity, capacity));
 
         return SwissTableBuffer{raw, ctrl, slots, capacity, rounded};
     }

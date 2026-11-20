@@ -3,7 +3,7 @@
 // annotation no_start_over_bytes, and the cells of its tag carry the mark
 // closed_tag, so the checked lifetime start refuses the OneOf.
 
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/OneOf.h>
 
 #include <cstdint>

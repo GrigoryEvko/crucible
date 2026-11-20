@@ -762,7 +762,7 @@ void process(const TraceEntry* entry) {
 - No `std::shared_ptr`. No `std::unique_ptr` in new code outside the base: one owned object is a `fixy::Box<T>` from `mint_box`, and an owned buffer is a `fixy::HeapArray<T>` (the table of base types in CLAUDE.md section 3).
 - `= delete("reason")` on copy and move of non-value types. WITH a reason string.
 - `static_assert(sizeof(T) == N)` on layout-critical structs.
-- `BumpArena` builds each element with its constructor, through `make` and `array`. A lifetime start over bytes uses `foundation::lifetime::start_as_array` (`include/foundation/Lifetime.h`), which refuses a proof type — NOT `reinterpret_cast`. The rule `owners` refuses `std::start_lifetime_as` outside that header.
+- `BumpArena` builds each element with its constructor, through `make` and `array`. A lifetime start over bytes uses `foundation::lifetime::start_as_array` (`include/foundation/core/Array.h`), which refuses a proof type and gives a View — NOT `reinterpret_cast`. The rule `owners` refuses `std::start_lifetime_as` outside `include/foundation/Lifetime.h`.
 
 ```cpp
 // ✓ CORRECT (include/foundation/core/BumpArena.h, in short)
@@ -889,7 +889,7 @@ At the end of the migration, the families of §XXII replace each row of these ta
 
 | Feature | Paper | Usage |
 |---|---|---|
-| Explicit lifetime management | P2590R2 | `foundation::lifetime::start_as_array` (`include/foundation/Lifetime.h`) starts the lifetime of objects over bytes, and refuses a type that holds a proof type or a reference. The rule `owners` refuses `std::start_lifetime_as` and `std::start_lifetime_as_array` outside that header |
+| Explicit lifetime management | P2590R2 | `foundation::lifetime::start_as_array` (`include/foundation/core/Array.h`) starts the lifetime of objects over bytes and gives them as a View. It refuses a type that holds a proof type or a reference, through the concept of `include/foundation/Lifetime.h`. The rule `owners` refuses `std::start_lifetime_as` and `std::start_lifetime_as_array` outside `include/foundation/Lifetime.h` |
 | Deducing `this` | P0847R7 | CRTP without CRTP boilerplate |
 | Portable assumptions (`[[assume]]`) | P1774R8 | Compile-time invariants to optimizer |
 | `static operator()` | P1169R4 | Stateless callable with no `this` |
@@ -910,7 +910,7 @@ At the end of the migration, the families of §XXII replace each row of these ta
 | `memory_order::consume` | P3475R2 deprecated; `-Werror=deprecated-declarations` | Compilers promote to acquire anyway |
 | VLAs (`int arr[n]`) | `-Werror=vla` | Stack UB |
 | C-style casts | `-Werror=old-style-cast` | Silent UB conversions |
-| `reinterpret_cast` | The kind `reinterpret-cast` of the rule `banned` (`utils/assay/guard/engines/tsast/banned.py`) reads the parse tree of `include/`, `src/` and `vessel/`. No row of the ledger of the rule admits a cast | Use `std::bit_cast<T>` for value reinterpretation, with the limits of §IV. Use `foundation::lifetime::start_as_array` (`include/foundation/Lifetime.h`) for a lifetime start over bytes, and `<simd>` first-class intrinsic interop for SIMD |
+| `reinterpret_cast` | The kind `reinterpret-cast` of the rule `banned` (`utils/assay/guard/engines/tsast/banned.py`) reads the parse tree of `include/`, `src/` and `vessel/`. No row of the ledger of the rule admits a cast | Use `std::bit_cast<T>` for value reinterpretation, with the limits of §IV. Use `foundation::lifetime::start_as_array` (`include/foundation/core/Array.h`) for a lifetime start over bytes, and `<simd>` first-class intrinsic interop for SIMD |
 | `const_cast` | `-Werror=cast-qual` | Casting away const is almost always wrong |
 | Static downcast (`static_cast<Derived*>`) | N/A — no inheritance in data types | We have no `virtual` |
 | Implicit narrowing | `-Werror=conversion -Werror=sign-conversion` | Silent truncation |
@@ -935,7 +935,7 @@ At the end of the migration, the families of §XXII replace these tables. The op
 | `std::expected<T,E>` (C++23) | Error paths without exceptions |
 | `std::flat_map` / `std::flat_set` (C++23) | Sorted vector container, cache-friendly |
 | `std::move_only_function` (C++23) | Move-only callable |
-| `std::start_lifetime_as` (C++23) | Only `include/foundation/Lifetime.h` can name it, and the rule `owners` refuses each other use. A lifetime start over bytes uses `foundation::lifetime::start_as_array` of that header |
+| `std::start_lifetime_as` (C++23) | Only `include/foundation/Lifetime.h` can name it, and the rule `owners` refuses each other use. A lifetime start over bytes uses `foundation::lifetime::start_as_array` of `include/foundation/core/Array.h` |
 | `std::bit_cast` (C++20) | A copy of the bits of a value into a different type. The result is undefined behavior when the bit pattern is no value of the destination type. For a `bool` from the byte 2, a constant evaluation gives `false`. At run time, `-O0` gives a value that is true in a condition and not equal to `true`, and `-O3` gives `true`. New code does not use `std::bit_cast` to make a `bool` or a value of an enumeration. In a quarantined file, the restriction `plain-result` of its admit row refuses a destination type that holds one (§XXII). A value from outside the program, such as the bytes of a file or of the wire, becomes a value of an enumeration only after a comparison with its enumerators. The Scalar family replaces `std::bit_cast` (§XXII). The admitted list keeps it until that change is on main |
 | `std::saturating_add` / `saturating_sub` / `saturating_mul` (C++26) | Saturation arithmetic at size-math sites. libstdc++ 16 declares these names in `<numeric>` and has no `std::add_sat`. Call sites use `saturating_add` / `saturating_sub` / `saturating_mul` of the Scalar family (`include/foundation/core/Arithmetic.h`), which use the overflow builtins and no `<numeric>` |
 | `std::breakpoint()` (C++26) | Hardware breakpoint for debug asserts. **libstdc++ 16 status:** the `<debugging>` header declares the symbol, and the library ships no definition — use the `foundation::detail::breakpoint*` stand-ins in `include/foundation/Platform.h` |

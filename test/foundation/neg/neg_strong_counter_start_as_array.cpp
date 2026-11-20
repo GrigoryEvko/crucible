@@ -2,8 +2,8 @@
 // its copy is trivial, so the class carries no_start_over_bytes, and the
 // checked lifetime start refuses it.
 
-#include <foundation/Lifetime.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
+#include <foundation/core/Array.h>
 
 int main() {
     namespace fl = ::foundation::algebra::lattices;

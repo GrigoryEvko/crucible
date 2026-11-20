@@ -4,7 +4,7 @@
 // constraint.
 
 #include <fixy/os/NumaPlacement.h>
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 
 namespace {
 struct Region final {};

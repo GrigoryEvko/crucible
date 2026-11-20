@@ -3,6 +3,9 @@
 #include <fixy/OwnedRegion.h>
 
 #include <foundation/Linear.h>
+#include <foundation/Quarantine.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Region.h>
 
 namespace fixy {
 
@@ -122,9 +125,11 @@ static_assert(!std::is_constructible_v<OR_int_a_branded, OR_int_a&&>, "an erased
 // fixed block.  The lifetime start gives a live object only to a type
 // whose every subobject is an implicit-lifetime type.  For a proof type,
 // or an aggregate that holds one, it gives a pointer to an object whose
-// lifetime never started, so the constraint refuses that type.
+// lifetime never started, so the constraint refuses that type.  The arena
+// door asks for the raw pointer of the first element, and no base type gives
+// that shape, so the return stands in a PROBE region.
 class BumpArena {
-    alignas(std::max_align_t) std::array<unsigned char, 4096> block_{};
+    alignas(std::max_align_t)::foundation::core::FixedArray<unsigned char, 4096> block_{};
     std::size_t used_ = 0;
 
 public:
@@ -137,7 +142,10 @@ public:
         const std::size_t nbytes = n * sizeof(T);
         if (start + nbytes > block_.size()) std::abort();
         used_ = start + nbytes;
-        return ::foundation::lifetime::start_as_array<T>(block_.data() + start, n).data();
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a bump arena of a test gives the raw pointer of the arena door")
+        return ::foundation::core::foreign_first(
+            ::foundation::lifetime::start_as_array<T>(::foundation::core::foreign_first(block_.view()) + start, n));
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     }
 };
 struct HoldsPermission {

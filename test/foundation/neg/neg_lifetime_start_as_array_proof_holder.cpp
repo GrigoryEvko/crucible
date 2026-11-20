@@ -4,7 +4,7 @@
 // element.  The member token would have no live object.  The checked
 // start walks each subobject, finds the token, and refuses the type.
 
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 #include <foundation/permissions/Permission.h>
 
 namespace fl = ::foundation::lifetime;

@@ -2,7 +2,7 @@
 // are then a full Option that no constructor made, so the checked lifetime
 // start refuses the Option.
 
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 
 #include <cstdint>

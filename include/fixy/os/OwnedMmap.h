@@ -56,6 +56,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Owner.h>
@@ -625,7 +626,8 @@ private:
     template <typename T>
     [[nodiscard]] T* start_at_(std::size_t offset, std::size_t count) const noexcept {
         unsigned char* const bytes = static_cast<unsigned char*>(this->state_.address) + offset;
-        return ::foundation::lifetime::start_as_array<std::remove_const_t<T>>(bytes, count).data();
+        return first_of_(::foundation::core::detail::ViewDoor::key(),
+                         ::foundation::lifetime::start_as_array<std::remove_const_t<T>>(bytes, count));
     }
 
     template <typename T>

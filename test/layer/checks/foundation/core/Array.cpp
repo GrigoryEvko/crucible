@@ -446,3 +446,29 @@ static_assert(empty_masked_reads() == 0);
 }  // namespace detail::array_checks
 
 }  // namespace foundation::core
+
+namespace foundation::lifetime {
+
+namespace detail::array_start_checks {
+
+using ::foundation::core::detail::array_checks::Record;
+
+// The checked start gives a View of the base.  Its element is const when the
+// storage or T is const.  Volatile storage is refused, and so is an array
+// element, because a View holds neither.
+template <typename Storage, typename T>
+concept can_start_as = requires(Storage* storage) {
+    { start_as_array<T>(storage, 1) } -> std::same_as<::foundation::core::View<element_for_storage_t<Storage, T>>>;
+};
+static_assert(can_start_as<unsigned char, Record> && can_start_as<void, Record>);
+static_assert(can_start_as<const unsigned char, Record> && can_start_as<unsigned char, const Record>);
+static_assert(!can_start_as<volatile unsigned char, Record> && !can_start_as<const volatile void, Record>,
+              "volatile storage is refused, and a caller adds volatile to the address of an element");
+static_assert(!can_start_as<unsigned char, HoldsProof> && !can_start_as<const void, ProofShape[1]>,
+              "the checked start refuses a proof subobject through every storage qualifier");
+static_assert(ImplicitLifetimeThroughout<std::uint32_t[4]> && !can_start_as<unsigned char, std::uint32_t[4]>,
+              "a View holds no array element, so the start refuses an array type that the concept accepts");
+
+}  // namespace detail::array_start_checks
+
+}  // namespace foundation::lifetime

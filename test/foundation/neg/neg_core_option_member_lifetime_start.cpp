@@ -3,7 +3,7 @@
 // and the cells of the tag carry the mark closed_tag, so the walk refuses the
 // class too.
 
-#include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 
 #include <cstdint>

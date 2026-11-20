@@ -47,6 +47,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Array.h>
 #include <foundation/diag/Tag.h>
 #include <foundation/diag/Runtime.h>
 #include <foundation/effects/Ctx.h>
@@ -164,8 +165,11 @@ public:
 
             if (pre == post) {
                 // The lifetime start is the type-system step alone and
-                // says nothing about the data race.
-                return ::foundation::lifetime::start_as_array<T>(buf.data(), 1).front();
+                // says nothing about the data race.  The buffer is a local,
+                // so its address is not null and the checks of the start
+                // fold away.
+                return *first_of_(::foundation::core::detail::ViewDoor::key(),
+                                  ::foundation::lifetime::start_as_array<T>(buf.data(), 1));
             }
 
             CRUCIBLE_SPIN_PAUSE;
@@ -188,7 +192,8 @@ public:
         if (pre != post) {
             return ::fixy::none;
         }
-        return ::fixy::some(::foundation::lifetime::start_as_array<T>(buf.data(), 1).front());
+        return ::fixy::some(*first_of_(::foundation::core::detail::ViewDoor::key(),
+                                       ::foundation::lifetime::start_as_array<T>(buf.data(), 1)));
     }
 
     // Counts completed publishes, and never wraps at this width.  A
