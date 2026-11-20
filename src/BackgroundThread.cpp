@@ -237,16 +237,16 @@ template <class T>
 //
 // The publish stage serves the mailbox before each receive and after each
 // park, and it goes on when the mailbox is empty.  So a job is a branch of the
-// stage, and the door checks one loop for each arm.  In the flush arm, the
-// stage serves no job.  In the job arm, the foreground records, posts a job,
-// waits on its done mark and then flushes, and the stage serves the job
-// before its receive.  A job that comes after the receive of the stage waits
-// for the next serve, after the count of that period: the late job arm.  With
-// that third arm, the foreground and the stage take one arm together in each
-// period.  The three arms agree on each channel and on the lock: a process
-// holds the same sides in each arm, and each channel takes its capacity from
-// the same type.  So a run that takes the arms in any sequence is live (THE
-// ARMS).
+// stage, and the door ensure_arms_live checks each arm and the arms together.
+// In the flush arm, the stage serves no job.  In the job arm, the foreground
+// records, posts a job, waits on its done mark and then flushes, and the
+// stage serves the job before its receive.  A job that comes after the
+// receive of the stage waits for the next serve, after the count of that
+// period: the late job arm.  With that third arm, the foreground and the
+// stage take one arm together in each period.  The door checks that the
+// three arms agree on each channel and on the lock: a process holds the same
+// sides in each arm, and the ends of each channel state one capacity.  So a
+// run that takes the arms in any sequence is live (THE ARMS).
 //
 // Each channel of the loop states its capacity.  The ring holds
 // TraceRing::CAPACITY ops, and a full ring refuses an op with no wait, so the
@@ -260,7 +260,8 @@ template <class T>
 // stores, and the region callback of the publish stage reads them, with a
 // wait while a bracket is open.  The loop states the two ends of the lock.
 // The door checks that one process writes the lock and one other process
-// reads it, and that no process waits inside a bracket (THE LOCKS).
+// reads it, that no process waits inside a bracket, and that no write stands
+// inside a read (THE LOCKS).
 //
 // A proof of the base holds some ends at each call: RecordProof the publish
 // of the head of the ring, PublishStageAuth the bump of the count, and
@@ -1190,9 +1191,7 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
                       cc::LoopProcess<loop::PublishName, cc::StageEdges<graph, 3>, cc::ReadsLock<loop::HeldRegionsLock>,
                                       cc::SendsOn<loop::ProcessedCountChannel>,
                                       cc::ReceivesOn<loop::OwnerMailboxChannel>, cc::SendsOn<loop::JobDoneChannel>>>;
-    cc::ensure_loop_live<flush_arm>();
-    cc::ensure_loop_live<job_arm>();
-    cc::ensure_loop_live<late_job_arm>();
+    cc::ensure_arms_live<flush_arm, job_arm, late_job_arm>();
     // The channels of the flush arm are the ring, the count and the three
     // channels between the stages, and each takes the capacity of its type.
     static_assert([] consteval noexcept {
