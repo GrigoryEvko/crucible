@@ -2,6 +2,8 @@
 
 #include <foundation/Lifetime.h>
 
+#include <foundation/core/Array.h>
+
 namespace foundation::lifetime {
 
 namespace detail::lifetime_self_test {
@@ -10,12 +12,14 @@ struct DerivesProof : ProofShape {};
 struct HoldsReference {
     int& target;
 };
+// A FixedArray holds a C array of its elements, so the walk reads an array
+// extent in each member below.
 struct Plain {
     int value;
-    double weight[4];
+    ::foundation::core::FixedArray<double, 4> weight;
 };
 struct Nested {
-    Plain inner[2];
+    ::foundation::core::FixedArray<Plain, 2> inner;
     unsigned char tail;
 };
 
