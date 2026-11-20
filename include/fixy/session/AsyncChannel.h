@@ -45,7 +45,6 @@
 
 #include <concepts>
 #include <cstddef>
-#include <source_location>
 #include <type_traits>
 #include <utility>
 
@@ -91,10 +90,10 @@ template <typename SelfProto, typename PeerProto, typename SelfTag, typename Pee
 [[nodiscard]] ::foundation::permissions::Permission<Parent, Brand>
 mint_forked_async_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                           ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body,
-                          PeerBody peer_body, std::source_location loc = std::source_location::current()) noexcept {
+                          PeerBody peer_body, detail::mint_site_ site = {}) noexcept {
     return SessionMintDoor::fork_channel<SelfProto, PeerProto, SelfTag, PeerTag, Policy>(
         ctx, std::move(parent), std::forward<ResourceSelf>(self_resource), std::forward<ResourcePeer>(peer_resource),
-        std::move(self_body), std::move(peer_body), loc);
+        std::move(self_body), std::move(peer_body), site);
 }
 
 // The relation of this mint: the two Resources state one capacity, and

@@ -53,7 +53,6 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/PermSet.h>
 
-#include <source_location>
 #include <type_traits>
 #include <utility>
 
@@ -73,8 +72,7 @@ concept CtxFitsSession = CtxFitsSessionFrom<Ctx, Proto, Resource>;
 // refusal that the gate states only as a boolean.
 template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource>
     requires CtxFitsSession<Ctx, Proto, Resource>
-[[nodiscard]] constexpr auto mint_session(Ctx const& ctx, Resource resource,
-                                          std::source_location loc = std::source_location::current()) noexcept {
+[[nodiscard]] constexpr auto mint_session(Ctx const& ctx, Resource resource, detail::mint_site_ site = {}) noexcept {
     static_assert(is_well_formed_v<Proto>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
                                            "protocol is ill-formed.  Most likely cause: a Continue "
                                            "appears outside any enclosing Loop<Body>.  Every Continue must "
@@ -112,11 +110,11 @@ template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, t
     static_assert(!std::is_same_v<Proto, Continue>, "fixy::session::diagnostic [Continue_Without_Loop]: "
                                                     "Continue cannot be the top-level protocol.");
 
-    // Forwarding `loc` keeps the caller's site in the abandonment
-    // diagnostic even though the unroll inserts an intermediate handle
-    // whose own default location would otherwise win.
+    // Forwarding `site` keeps the caller's site in the abandonment
+    // diagnostic and in the record of the watch, although the unroll inserts
+    // an intermediate handle whose own default location would otherwise win.
     return detail::late_door_t<SessionMintDoor, Proto>::template open<Proto, Policy, Ctx, Resource>(
-        ctx, std::forward<Resource>(resource), loc);
+        ctx, std::forward<Resource>(resource), site);
 }
 
 // The gate of the context-bound callback: the gate of mint_session, and a
@@ -136,15 +134,13 @@ concept CtxFitsSessionBody = CtxFitsSession<Ctx, Proto, Resource> && SessionBody
 template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource,
           typename Body>
     requires CtxFitsSessionBody<Ctx, Proto, Resource, Policy, Body>
-[[nodiscard]] constexpr Resource with_session(
-    Ctx const& ctx, Resource resource, Body body,
-    std::source_location loc = std::source_location::
-        current()) noexcept(std::is_nothrow_invocable_v<Body,
-                                                        detail::first_handle_t<Proto, Resource, Policy,
-                                                                               ::foundation::permissions::EmptyPermSet,
-                                                                               detail::brand_ctx_t<Body>>>) {
+[[nodiscard]] constexpr Resource
+with_session(Ctx const& ctx, Resource resource, Body body, detail::mint_site_ site = {}) noexcept(
+    std::is_nothrow_invocable_v<Body,
+                                detail::first_handle_t<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
+                                                       detail::brand_ctx_t<Body>>>) {
     return detail::late_door_t<SessionMintDoor, Proto>::template run<Proto, Policy, Ctx, Resource>(
-        ctx, std::forward<Resource>(resource), std::move(body), loc);
+        ctx, std::forward<Resource>(resource), std::move(body), site);
 }
 
 }  // namespace fixy::session

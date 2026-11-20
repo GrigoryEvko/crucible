@@ -53,8 +53,9 @@ namespace fixy::session {
 // asks for one token or more.  mint_session of fixy/session/Entry.h reads
 // the same concept with no token.
 //
-// The tokens are the last parameters, so the mint cannot take a
-// source_location after them.  The session records the site of the mint.
+// The tokens are the last parameters, so the mint cannot take a site after
+// them.  The session records a site in the door of the mints of
+// fixy/session/Handle.h.
 // Complexity: linear in the size of the protocol, at compile time.
 
 template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource,
@@ -110,11 +111,11 @@ template <typename Proto, typename SelfTag, typename PeerTag, AbandonmentPolicy 
 [[nodiscard]] ::foundation::permissions::Permission<Parent, Brand>
 mint_forked_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                     ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body,
-                    std::source_location loc = std::source_location::current()) noexcept {
+                    detail::mint_site_ site = {}) noexcept {
     return detail::late_door_t<SessionMintDoor, Proto>::template fork_channel<Proto, dual_of_t<Proto>, SelfTag, PeerTag,
                                                                               Policy>(
         ctx, std::move(parent), std::forward<ResourceSelf>(self_resource), std::forward<ResourcePeer>(peer_resource),
-        std::move(self_body), std::move(peer_body), loc);
+        std::move(self_body), std::move(peer_body), site);
 }
 
 // The two ends of one channel to one caller, for a test that drives the
@@ -126,9 +127,9 @@ template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, t
     requires CtxFitsTestChannel<Ctx, Proto> && PlainSessionResource<ResourceA> && PlainSessionResource<ResourceB>
           && ChannelEndsShareAPriority<ResourceA, ResourceB>
 [[nodiscard]] constexpr auto mint_test_channel(Ctx const& ctx, ResourceA resource_a, ResourceB resource_b,
-                                               std::source_location loc = std::source_location::current()) noexcept {
+                                               detail::mint_site_ site = {}) noexcept {
     return detail::late_door_t<SessionMintDoor, Proto>::template open_test_channel<Proto, Policy>(
-        ctx, std::forward<ResourceA>(resource_a), std::forward<ResourceB>(resource_b), loc);
+        ctx, std::forward<ResourceA>(resource_a), std::forward<ResourceB>(resource_b), site);
 }
 
 }  // namespace fixy::session

@@ -37,7 +37,6 @@
 #include <concepts>
 #include <cstdint>
 #include <expected>
-#include <source_location>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -102,8 +101,7 @@ public:
     // exchange, so two observers that race get one handle between them.
     template <::foundation::effects::IsExecCtx Ctx>
         requires ::fixy::session::CtxFitsSession<Ctx, Proto, Resource&>
-    [[nodiscard]] auto mint_established_session(Ctx const& ctx,
-                                                std::source_location loc = std::source_location::current()) noexcept
+    [[nodiscard]] auto mint_established_session(Ctx const& ctx, ::fixy::session::detail::mint_site_ site = {}) noexcept
         -> std::expected<decltype(::fixy::session::mint_session<Proto, ::fixy::session::DefaultAbandonmentPolicy, Ctx,
                                                                 Resource&>(ctx, std::declval<Resource&>())),
                          LazyChannelRefusal> {
@@ -113,7 +111,7 @@ public:
             return std::unexpected(LazyChannelRefusal::AlreadyClaimed);
         }
         return ::fixy::session::mint_session<Proto, ::fixy::session::DefaultAbandonmentPolicy, Ctx, Resource&>(
-            ctx, *published, loc);
+            ctx, *published, site);
     }
 
     // This read carries no ordering.  Get the session through

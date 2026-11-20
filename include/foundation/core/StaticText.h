@@ -3,10 +3,10 @@
 // A static text in one word.
 //
 // A StaticText names a run of characters with static storage and a zero
-// after its last character.  Only a string literal and the site door of the
-// base layer make one.  So the text is never null and lives until the
-// program ends, and an atomic cell holds it in one pointer.  view() gives
-// the TextView of the characters before the zero.
+// after its last character.  Only a string literal and the file of a Site of
+// foundation/core/Fatal.h make one.  So the text is never null and lives
+// until the program ends, and an atomic cell holds it in one pointer.
+// view() gives the TextView of the characters before the zero.
 //
 // The type stands in a header of its own, because its atomic word stands
 // beside it, and foundation/core/Atomic.h includes foundation/core/Text.h
@@ -16,6 +16,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Atomic.h>
+#include <foundation/core/Fatal.h>
 #include <foundation/core/Text.h>
 
 #include <cstddef>
@@ -30,8 +31,6 @@ namespace detail {
 // Has no constant definition.  A call to it stops the constant evaluation,
 // and the diagnostic names it.
 void static_text_holds_a_zero_before_its_end() noexcept;
-
-struct StaticTextDoor;
 
 }  // namespace detail
 
@@ -63,6 +62,12 @@ public:
         if (mint_static_text(literal).size() + 1 != Count) detail::static_text_holds_a_zero_before_its_end();
     }
 
+    // The file of a site.  The constructor of a Site is consteval, so its
+    // file is a constant: a string literal or the file of __builtin_FILE,
+    // with static storage.  A pointer of the run time cannot make a Site,
+    // so it cannot reach this constructor.
+    explicit constexpr StaticText(Site const& site) noexcept : first_{detail::site_file_(site)} {}
+
     // A literal binds to the array form above, and a pointer gets here.
     template <class Pointer>
         requires std::is_pointer_v<std::remove_cvref_t<Pointer>>
@@ -81,39 +86,15 @@ public:
 
 private:
     friend struct atomic_word<StaticText>;
-    friend struct detail::StaticTextDoor;
-
-    // The tag of the site door, which only the door names.
-    struct SiteFile {};
 
     // The text of a word that the atomic word of this class gave.
     constexpr StaticText(char const* first, atomic_word_key<StaticText> const& /*key*/) noexcept : first_{first} {}
-
-    // The file of a site, through the door below.
-    constexpr StaticText(char const* first, SiteFile /*tag*/) noexcept : first_{first} {}
 
     char const* first_ = "";
     // The seal makes the assignment user-provided, so std::bit_cast cannot
     // build a StaticText from the bytes of an address.
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
-
-namespace detail {
-
-// The door of the base to the text of the file of a site.  The file name of
-// a std::source_location is never null: the standard gives it as a string of
-// static storage with a zero at its end.  The watch of fixy/session/Watch.h
-// gives it here.  A null pointer is the empty word of the atomic cell, so a
-// store of it in the cell of the watch ends the process.  The door is in
-// namespace detail, so code outside the base cannot reach it, and the base
-// gives it only the file name of a site.
-struct StaticTextDoor {
-    [[nodiscard]] static constexpr StaticText of_site_file(char const* file) noexcept {
-        return StaticText{file, StaticText::SiteFile{}};
-    }
-};
-
-}  // namespace detail
 
 constexpr atomic_word<StaticText>::word_type atomic_word<StaticText>::to_word(StaticText const& text) noexcept {
     return text.first_;

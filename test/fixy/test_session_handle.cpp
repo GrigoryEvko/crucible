@@ -1348,11 +1348,11 @@ constexpr ::foundation::core::TextView kSecondEndText{"second end"};
 
 [[nodiscard]] int channel_claim_names_no_holder() {
     namespace watch = s::watch;
-    const std::source_location loc = std::source_location::current();
+    const ::foundation::core::Site site{};
     const watch::endpoint_id first =
-        watch::claim<kFirstEndText>(loc, watch::priority::lowest, watch::holder_on_claim::none_yet);
+        watch::claim<kFirstEndText>(site, watch::priority::lowest, watch::holder_on_claim::none_yet);
     const watch::endpoint_id second =
-        watch::claim<kSecondEndText>(loc, watch::priority::lowest, watch::holder_on_claim::none_yet);
+        watch::claim<kSecondEndText>(site, watch::priority::lowest, watch::holder_on_claim::none_yet);
     watch::link(first, second);
     const auto owner_of = [](watch::endpoint_id endpoint) noexcept {
         return watch::detail::record_at_(static_cast<std::uint32_t>(endpoint)).owner.load_acquire();
@@ -1389,6 +1389,36 @@ constexpr ::foundation::core::TextView kSecondEndText{"second end"};
     return 0;
 }
 
+// The record of a session keeps the site of the call of its mint: the file
+// and the line of this test, and no place in a header of the session layer.
+// The site is a constant, so the file of the record is a static text.
+constexpr ::foundation::core::TextView kThisFile{"test_session_handle.cpp"};
+
+[[nodiscard]] int record_keeps_the_site_of_the_mint() {
+    namespace watch = s::watch;
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    constexpr unsigned mint_line = __LINE__ + 1;
+    auto head = s::mint_session<s::Recv<int, s::End>>(ctx, LateWire{});
+    const watch::detail::endpoint_record& record =
+        watch::detail::record_at_(static_cast<unsigned>(head.watch_endpoint()));
+    const bool is_this_line = record.site_line.load_acquire() == mint_line;
+    const bool is_this_file = record.site_file.load_acquire().match(
+        [](::foundation::core::StaticText file) noexcept {
+            const ::foundation::core::TextView text = file.view();
+            if (text.size() < kThisFile.size()) return false;
+            return text.window(text.size() - kThisFile.size(), kThisFile.size())
+                .match([](::foundation::core::TextView tail) noexcept { return tail == kThisFile; },
+                       []() noexcept { return false; });
+        },
+        []() noexcept { return false; });
+    std::move(head).detach(s::detach_reason::TestInstrumentation{});
+    if (!is_this_line || !is_this_file) {
+        ::fixy::report(::fixy::Sink::Err, "the record of a session does not keep the site of the call of its mint\n");
+        return 1;
+    }
+    return 0;
+}
+
 // A wait-for chain holds a fixed list of links, and each padding byte of a
 // link costs one store for each link at each return of trace_chain
 // (padding_bytes.h).
@@ -1420,6 +1450,7 @@ int main() {
     if (const int rc = watch_counts_sessions(); rc != 0) return rc;
     if (const int rc = polling_channel_waits_without_a_false_deadlock(); rc != 0) return rc;
     if (const int rc = channel_claim_names_no_holder(); rc != 0) return rc;
+    if (const int rc = record_keeps_the_site_of_the_mint(); rc != 0) return rc;
     if (const int rc = each_transport_shape_waits_through_the_watch(); rc != 0) return rc;
     if (const int rc = chain_link_has_no_padding_byte(); rc != 0) return rc;
     return 0;

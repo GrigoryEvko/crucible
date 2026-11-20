@@ -3323,7 +3323,7 @@ fixy_neg_compile_test(neg_sess_ctx_with_session_foreign_end
   "satisfaction of .carries_brand<typename H::loop_ctx, Brand>.")
 fixy_neg_compile_test(neg_sess_ctx_with_session_copies_resource
   "use of deleted function .copies_resource_fixture::Channel::Channel\\(const copies_resource_fixture::Channel&\\)."
-  "initializing argument 2 of .constexpr Resource fixy::session::with_session\\(const Ctx&, Resource, Body, std::source_location\\)")
+  "initializing argument 2 of .constexpr Resource fixy::session::with_session\\(const Ctx&, Resource, Body, detail::mint_site_\\)")
 # Each session mint takes the execution context of the caller, and the
 # door of the mints states the gate of each mint, the row of the protocol
 # too.  A call with no context is not viable, and the door refuses a
@@ -4703,6 +4703,9 @@ fixy_neg_compile_test(neg_sess_factory_pole_send_with_a_caller_transport
 fixy_neg_compile_test(neg_sess_factory_pole_recv_with_a_caller_transport
   "use of deleted function .static void fixy::session::HandleFactory::recv\\(fixy::session::SessionHandle<fixy::session::Recv<T, R>, Resource, LoopCtx, Policy, PS>&&, Arg&&\\)"
   "Pole_Owns_Its_Transport. a session over a pole of a channel receives through the read that the pole table")
+fixy_neg_compile_test(neg_sess_mint_site_from_a_run_time_location
+  "call to consteval function .fixy::session::detail::mint_site_\\(policy\\..*construction_loc\\(\\)\\). is not a constant expression"
+  "the value of .policy. is not usable in a constant expression")
 fixy_neg_compile_test(neg_sess_recorded_pole_send_with_a_caller_transport
   "use of deleted function .void fixy::session::Recorded<Inner>::send\\(First&&, Second&&\\) &&"
   "Pole_Owns_Its_Transport. a session over a pole of a channel sends through the write that the pole table")

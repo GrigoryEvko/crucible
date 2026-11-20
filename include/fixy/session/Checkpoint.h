@@ -93,7 +93,6 @@
 #include <functional>
 #include <meta>
 #include <optional>
-#include <source_location>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -1035,10 +1034,10 @@ public:
     template <typename Proto, typename PeerProto, AbandonmentPolicy Policy,
               std::size_t WorkBound = checkpoint_work_bound, typename Ctx, typename Resource>
         requires CtxFitsCheckpointSession<Ctx, Proto, PeerProto, Resource, WorkBound>
-    [[nodiscard]] static constexpr auto open(Ctx const& ctx, Resource resource, std::source_location loc) noexcept {
+    [[nodiscard]] static constexpr auto open(Ctx const& ctx, Resource resource, detail::mint_site_ site) noexcept {
         using Start = detail::checkpoint::resolve<Proto, void>;
         auto inner =
-            mint_session<checkpoint_erase_t<Proto>, Policy, Ctx, Resource>(ctx, std::forward<Resource>(resource), loc);
+            mint_session<checkpoint_erase_t<Proto>, Policy, Ctx, Resource>(ctx, std::forward<Resource>(resource), site);
         return CheckpointHandle<decltype(inner), typename Start::head, typename Start::loop,
                                 CheckpointFrame<Proto, Proto, void>>{std::move(inner)};
     }
@@ -1222,10 +1221,9 @@ public:
 template <typename Proto, typename PeerProto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy,
           std::size_t WorkBound = checkpoint_work_bound, typename Ctx, typename Resource>
     requires CtxFitsCheckpointSession<Ctx, Proto, PeerProto, Resource, WorkBound>
-[[nodiscard]] constexpr auto
-mint_checkpoint_session(Ctx const& ctx, Resource resource,
-                        std::source_location loc = std::source_location::current()) noexcept {
-    return CheckpointDoor::open<Proto, PeerProto, Policy, WorkBound>(ctx, std::forward<Resource>(resource), loc);
+[[nodiscard]] constexpr auto mint_checkpoint_session(Ctx const& ctx, Resource resource,
+                                                     detail::mint_site_ site = {}) noexcept {
+    return CheckpointDoor::open<Proto, PeerProto, Policy, WorkBound>(ctx, std::forward<Resource>(resource), site);
 }
 
 }  // namespace fixy::session

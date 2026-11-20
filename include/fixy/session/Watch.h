@@ -137,6 +137,7 @@
 
 #include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
+#include <foundation/core/Fatal.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Text.h>
 #include <foundation/core/StaticText.h>
@@ -147,7 +148,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <source_location>
 #include <string_view>
 #include <utility>
 
@@ -653,9 +653,11 @@ enum class holder_on_claim : std::uint8_t {
 namespace detail {
 
 // Claims a record with the protocol text `protocol`.  claim below is the one
-// caller, and it gives a text of static storage.
-[[nodiscard]] inline endpoint_id claim_with_text(protocol_text_ref protocol, std::source_location site, priority order,
-                                                 holder_on_claim holder) noexcept {
+// caller, and it gives a text of static storage.  The site is a constant Site
+// of foundation/core/Fatal.h, so the file that the record keeps is a static
+// text.
+[[nodiscard]] inline endpoint_id claim_with_text(protocol_text_ref protocol, ::foundation::core::Site site,
+                                                 priority order, holder_on_claim holder) noexcept {
     std::uint32_t index = pop_free();
     if (index == 0) {
         const std::uint32_t fresh = g_registry.next_unused.fetch_add_acq_rel(1);
@@ -668,9 +670,9 @@ namespace detail {
     record.generation.store_release(record.generation.load_acquire() + 1);
     record.peer.store_release(0);
     record.protocol_text.store_release(::foundation::core::Option<protocol_text_ref>::some(protocol));
-    record.site_file.store_release(::foundation::core::Option<::foundation::core::StaticText>::some(
-        ::foundation::core::detail::StaticTextDoor::of_site_file(site.file_name())));
-    record.site_line.store_release(site.line());
+    record.site_file.store_release(
+        ::foundation::core::Option<::foundation::core::StaticText>::some(::foundation::core::StaticText{site}));
+    record.site_line.store_release(::foundation::core::detail::site_line_(site));
     record.priority.store_release(std::to_underlying(order));
     if (holder == holder_on_claim::calling_thread) {
         const std::uint64_t self = owner_token();
@@ -689,11 +691,12 @@ namespace detail {
 /// Claims a record for a session that starts at the protocol whose text is
 /// Protocol, minted at `site`, with the priority of its Resource.  The text
 /// is a template argument, so it is an object of static storage, and the
-/// record never names a text that ends before it.  The body is one function
-/// for each text.  A full table gives endpoint_id::none, and the session is
-/// then not tracked.
+/// record never names a text that ends before it.  The site is a constant
+/// Site, so the file of the record is a static text too.  The body is one
+/// function for each text.  A full table gives endpoint_id::none, and the
+/// session is then not tracked.
 template <::foundation::core::TextView const& Protocol>
-[[nodiscard]] inline endpoint_id claim(std::source_location site, priority order, holder_on_claim holder) noexcept {
+[[nodiscard]] inline endpoint_id claim(::foundation::core::Site site, priority order, holder_on_claim holder) noexcept {
     return detail::claim_with_text(::foundation::core::detail::RefDoor::lend<detail::protocol_text_brand>(Protocol),
                                    site, order, holder);
 }
