@@ -6092,6 +6092,24 @@ add_test(NAME test_os_remove_tree_setup
 set_tests_properties(test_os_remove_tree_setup PROPERTIES LABELS "fixy" FIXTURES_SETUP remove_tree_fixture)
 set_tests_properties(test_os_remove_tree PROPERTIES FIXTURES_REQUIRED remove_tree_fixture)
 
+# The temporary directory door, with no TMPDIR and with TMPDIR set to the
+# directory of the test.
+fixy_test(test_os_temporary_directory)
+set_tests_properties(test_os_temporary_directory PROPERTIES ENVIRONMENT_MODIFICATION "TMPDIR=unset:")
+add_test(NAME test_os_temporary_directory_tmpdir COMMAND test_os_temporary_directory)
+set_tests_properties(test_os_temporary_directory_tmpdir PROPERTIES LABELS "fixy"
+  ENVIRONMENT_MODIFICATION "TMPDIR=set:${CMAKE_CURRENT_BINARY_DIR}")
+
+# mint_temporary_directory makes a directory, which is IO, and it reads the id
+# of the process, which is Nondet.  One fixture for each missing effect.
+fixy_neg_compile_test(neg_temporary_directory_without_io
+  "no matching function for call to .mint_temporary_directory\\(const .anonymous.::ForegroundCtx&\\)"
+  "required for the satisfaction of .CtxAdmitsFs<Ctx>.")
+
+fixy_neg_compile_test(neg_temporary_directory_without_nondet
+  "no matching function for call to .mint_temporary_directory\\(const .anonymous.::IoBlockCtx&\\)"
+  "required for the satisfaction of .CtxFitsIdentityRead<Ctx>.")
+
 fixy_neg_compile_test(neg_os_fs_mint_file_duplicate_mode
   "no matching function for call"
   "mode<fixy::fs::open_mode::WriteTruncate> >\\(\\{anonymous\\}::IoBlockCtx&")

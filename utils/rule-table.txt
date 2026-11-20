@@ -1071,6 +1071,7 @@ witness <fixy/os/Socket.h> private | fixy::net::ForeignSocketRef<fixy::net::sock
 # members are private, and its friends are the gated mints that open a
 # descriptor.
 witness <fixy/os/Fs.h> deleted | fixy::fs::FileDoor | fixy::fs::FileDoor{}
+witness <fixy/os/Fs.h> deleted | fixy::fs::TemporaryDirectoryDoor | fixy::fs::TemporaryDirectoryDoor{}
 witness <fixy/os/Socket.h> deleted | fixy::net::SocketDoor | fixy::net::SocketDoor{}
 witness <fixy/os/Time.h> deleted | fixy::time::PtpDeviceDoor | fixy::time::PtpDeviceDoor{}
 witness <fixy/os/PerfEvent.h> deleted | fixy::perf::PerfEventDoor | fixy::perf::PerfEventDoor{}

@@ -1530,6 +1530,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::net::SocketIdentityTag,
      "the tag of the identity of a socket: an incomplete class that an Id names, and never a value"},
     {^^::fixy::fs::FileDoor, kDescriptorDoor},
+    {^^::fixy::fs::TemporaryDirectory, kDescriptor},
+    {^^::fixy::fs::TemporaryDirectoryDoor, kDescriptorDoor},
     {^^::fixy::numa::PageNodeCensus, kPayload},
     {^^::fixy::NumaNodeMask, kPayload},
     {^^::fixy::numa::NodeAllocationCounters, kPayload},

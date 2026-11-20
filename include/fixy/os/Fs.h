@@ -2,7 +2,8 @@
 
 // The file syscalls: open, the two syncs, the atomic commit, and the
 // directory descriptor that flushes an entry.  The removal of a tree under a
-// directory.
+// directory, and the owner of a temporary directory that removes its tree at
+// its end.
 //
 // An atom pack says how a file is opened — its mode, its flags, and the
 // durability and commit it is opened FOR — and the pack is read twice.
@@ -51,10 +52,13 @@
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>
+#include <fixy/os/Environment.h>
 #include <fixy/os/Fd.h>
 #include <fixy/os/Handle.h>
+#include <fixy/os/Process.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Grow.h>
 #include <foundation/core/Heap.h>
@@ -1053,6 +1057,201 @@ remove_entries_below(Ctx const&, DirectoryRef<Rights> dir) noexcept {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
     return detail::remove_entries_below_(::fixy::os::detail::HandleDoor::descriptor_of(dir));
+}
+
+// THE TEMPORARY DIRECTORY
+//   mint_temporary_directory makes a new directory under the temporary
+//   directory of the host, and gives its owner in a Linear.  The temporary
+//   directory of the host is the checked path of TMPDIR in the start-up record
+//   of fixy/os/Environment.h, or /tmp when the record holds no value.  The name
+//   of the new directory is crucible-PROCESS-COUNT, with the id of the process
+//   and a count that each mint of the process takes one time.  So two mints of
+//   one process, and two processes that live at one time, get two names.
+//
+//   An entry can hold the name already, such as a directory that an ended
+//   process of the same id left.  The mint then takes the next count, and
+//   after kTemporaryDirectoryTries names that are in use it gives eexist.  The
+//   new directory has the permission bits owner_all, so no other user can read
+//   it.  The temporary directory of the host opens with O_NOFOLLOW, so a TMPDIR
+//   whose last part is a symbolic link gives eloop.
+//
+//   The end of the owner removes each entry below the directory through the
+//   descriptor of the owner (THE TREE REMOVAL), and then the empty directory by
+//   its name under the temporary directory of the host.  The end reports no
+//   error, as the end of a handle does.  A process that ends with no end of the
+//   owner, such as a process that aborts, leaves the directory.
+//
+//   The mint reads the id of the process, which changes from run to run, so its
+//   context admits the row of an identity read of fixy/os/Process.h as well as
+//   the file calls.
+
+// The count of the names that a mint tries.
+inline constexpr std::size_t kTemporaryDirectoryTries = 64;
+
+// The bytes of the name of a temporary directory: "crucible-", the decimal
+// digits of a process id and of a count, and the dash between them.
+inline constexpr std::size_t kTemporaryNameBytes = 64;
+
+namespace detail {
+
+// The count that the next mint of a temporary directory takes.  One count for
+// the process, whatever shared library makes the directory, so two libraries
+// do not try one name.  Only mint_temporary_directory changes it.
+CRUCIBLE_PROCESS_WIDE inline constinit ::foundation::core::Atomic<std::uint64_t> temporary_directory_count{0};
+
+}  // namespace detail
+
+// A context that can make a temporary directory.
+template <typename Ctx>
+concept CtxFitsTemporaryDirectoryMint = CtxAdmitsFs<Ctx> && ::fixy::process::CtxFitsIdentityRead<Ctx>;
+
+class TemporaryDirectoryDoor;
+
+// The owner of a temporary directory (THE TEMPORARY DIRECTORY).
+class [[nodiscard]] TemporaryDirectory final {
+public:
+    // The empty owner holds no directory, and its end removes nothing.
+    TemporaryDirectory() noexcept = default;
+
+    TemporaryDirectory(TemporaryDirectory const&) = delete("a directory has one owner, and its end removes the tree");
+    TemporaryDirectory&
+    operator=(TemporaryDirectory const&) = delete("a directory has one owner, and its end removes the tree");
+
+    // A move takes the directory, and the source holds none.
+    TemporaryDirectory(TemporaryDirectory&&) noexcept = default;
+
+    // A move assignment removes the tree that this owner holds, and then takes
+    // the directory of the source.
+    TemporaryDirectory& operator=(TemporaryDirectory&& other) noexcept {
+        if (this != &other) {
+            remove_();
+            parent_ = std::move(other.parent_);
+            directory_ = std::move(other.directory_);
+            path_ = other.path_;
+            name_ = other.name_;
+        }
+        return *this;
+    }
+
+    ~TemporaryDirectory() noexcept { remove_(); }
+
+    // False for the empty owner, such as one that a move emptied.
+    [[nodiscard]] bool is_open() const noexcept { return directory_.is_open(); }
+
+    // The borrow of the directory, for the calls under a directory.
+    [[nodiscard]] DirectoryRef<directory_rights> ref() const& noexcept { return directory_.ref(); }
+    void ref() const&& = delete("the borrow of a temporary owner dangles at the end of the full expression");
+
+    // The absolute path of the directory, for a door that takes a path.
+    [[nodiscard]] ::foundation::core::CText path() const& noexcept { return path_.c_text(); }
+    void path() const&& = delete("the path of a temporary owner dangles at the end of the full expression");
+
+private:
+    friend class TemporaryDirectoryDoor;
+
+    // Removes the entries below the directory, then the directory, and leaves
+    // the owner empty.
+    void remove_() noexcept {
+        if (!directory_.is_open()) return;
+        static_cast<void>(
+            detail::remove_entries_below_(::fixy::os::detail::HandleDoor::descriptor_of(directory_.ref())));
+        directory_ = DirectoryHandle{};
+        static_cast<void>(detail::remove_empty_directory_beneath_(
+            ::fixy::os::detail::HandleDoor::descriptor_of(parent_.ref()), name_.c_text()));
+        parent_ = DirectoryHandle{};
+    }
+
+    // The temporary directory of the host, and the new directory under it.
+    DirectoryHandle parent_{};
+    DirectoryHandle directory_{};
+    // The absolute path of the new directory, and its name under the parent.
+    ::foundation::os::PathText<kPathBytes> path_{};
+    ::foundation::os::PathText<kTemporaryNameBytes> name_{};
+};
+
+// Declared here and defined below TemporaryDirectoryDoor, because the door
+// names it as a friend, and a friend must already have been declared.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsTemporaryDirectoryMint<Ctx>
+[[nodiscard]] ::foundation::core::Result<Linear<TemporaryDirectory>, ::foundation::os::Errno>
+mint_temporary_directory(Ctx const& ctx) noexcept;
+
+// The door to the parts of a TemporaryDirectory.  No object of it exists.  Its
+// member is private, and its friend is mint_temporary_directory, so an owner
+// that holds a directory comes only from the mint, after its gate.
+class TemporaryDirectoryDoor final : ::foundation::NoObject<TemporaryDirectoryDoor> {
+    template <eff::IsExecCtx FriendCtx>
+        requires CtxFitsTemporaryDirectoryMint<FriendCtx>
+    friend auto mint_temporary_directory(FriendCtx const& ctx) noexcept
+        -> ::foundation::core::Result<Linear<TemporaryDirectory>, ::foundation::os::Errno>;
+
+    // The body of the mint (THE TEMPORARY DIRECTORY).
+    template <class Ctx>
+    [[nodiscard]] static ::foundation::core::Result<Linear<TemporaryDirectory>, ::foundation::os::Errno>
+    make_(Ctx const& ctx) noexcept;
+};
+
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsTemporaryDirectoryMint<Ctx>
+[[nodiscard]] ::foundation::core::Result<Linear<TemporaryDirectory>, ::foundation::os::Errno>
+mint_temporary_directory(Ctx const& ctx) noexcept {
+    return TemporaryDirectoryDoor::make_(ctx);
+}
+
+template <class Ctx>
+::foundation::core::Result<Linear<TemporaryDirectory>, ::foundation::os::Errno>
+TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
+    using ::foundation::os::Errno;
+    ::fixy::env::Switches const switches = ::fixy::env::switches();
+    ::foundation::core::TextView const host = switches.temporary_directory.match(
+        [](::fixy::env::TemporaryDirectoryPath const& checked) noexcept { return checked.c_text().view(); },
+        [] noexcept { return ::foundation::core::TextView{"/tmp"}; });
+    CRUCIBLE_TRY(host_path,
+                 sanitize_path(mint_tagged<tags::source::External>(host)).map_err([](PathTraversalError) noexcept {
+                     return Errno::einval;
+                 }));
+    CRUCIBLE_TRY(parent, open_directory(ctx, host_path));
+    ::fixy::process::ProcessId const process = ::fixy::process::current_process(ctx);
+    TemporaryDirectory owner{};
+    // The state of the tries: a name is made, a name is in use, or the make
+    // failed with another error.
+    bool is_made = false;
+    ::foundation::core::Option<Errno> failure{};
+    for (std::size_t tried = 0; tried < kTemporaryDirectoryTries && !is_made && failure.is_none(); ++tried) {
+        std::uint64_t const count = detail::temporary_directory_count.fetch_add_acq_rel(std::uint64_t{1});
+        owner.name_ = ::foundation::os::PathText<kTemporaryNameBytes>{};
+        owner.path_ = ::foundation::os::PathText<kPathBytes>{};
+        // The path comes before the make, so a path that does not fit makes no
+        // directory.
+        CRUCIBLE_TRY(_, owner.name_.append(::foundation::core::TextView{"crucible-"}));
+        CRUCIBLE_TRY(_, owner.name_.append_decimal(std::to_underlying(process)));
+        CRUCIBLE_TRY(_, owner.name_.append('-'));
+        CRUCIBLE_TRY(_, owner.name_.append_decimal(count));
+        CRUCIBLE_TRY(_, owner.path_.append(host));
+        CRUCIBLE_TRY(_, owner.path_.append('/'));
+        CRUCIBLE_TRY(_, owner.path_.append(owner.name_.c_text()));
+        make_directory_at(ctx, parent.ref(), owner.name_.c_text(), FileMode::owner_all)
+            .match([&is_made](::foundation::core::Unit) noexcept { is_made = true; },
+                   [&failure](Errno error) noexcept {
+                       if (error != Errno::eexist) failure = ::foundation::core::Option<Errno>::some(error);
+                   });
+    }
+    if (failure.is_some()) return ::foundation::core::err(std::move(failure).value_or(Errno::eio));
+    if (!is_made) return ::foundation::core::err(Errno::eexist);
+    return open_directory_at(ctx, parent.ref(), owner.name_.c_text())
+        .match(
+            [&](DirectoryHandle directory) noexcept -> ::foundation::core::Result<Linear<TemporaryDirectory>, Errno> {
+                owner.parent_ = std::move(parent);
+                owner.directory_ = std::move(directory);
+                return mint_linear<TemporaryDirectory>(std::move(owner));
+            },
+            [&](Errno error) noexcept -> ::foundation::core::Result<Linear<TemporaryDirectory>, Errno> {
+                // The directory is made and holds no entry, so the mint removes
+                // it before it gives the error.
+                static_cast<void>(detail::remove_empty_directory_beneath_(
+                    ::fixy::os::detail::HandleDoor::descriptor_of(parent.ref()), owner.name_.c_text()));
+                return ::foundation::core::err(error);
+            });
 }
 
 // The calls below read and write through a handle that is open.  A signal
