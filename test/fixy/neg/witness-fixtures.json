@@ -1351,7 +1351,7 @@
     },
     {
       "type": "foundation::core::Alloc",
-      "header": "foundation/core/Heap.h"
+      "header": "foundation/core/AllocTag.h"
     },
     {
       "type": "foundation::alloc::Layout",

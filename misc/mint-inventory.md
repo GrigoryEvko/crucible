@@ -306,6 +306,13 @@ that the axis does not apply to the row.
 | `mint_aligned_bytes` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_aligned_bytes_zeroed` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 2 |
 
+## include/foundation/alloc/
+
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_alignment` | `include/foundation/alloc/Layout.h` | Y | Y | Y | · | token | · | HS14: 2 |
+| `mint_layout` | `include/foundation/alloc/Layout.h` | Y | Y | Y | · | token | · | HS14: 2 |
+
 ## include/foundation/core/
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
@@ -390,4 +397,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 80 | 46 | 25 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 161 | 62 | 95 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 163 | 62 | 97 | 4 | 0 | 3 |
