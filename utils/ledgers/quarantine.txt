@@ -110,7 +110,7 @@ bench/ | opted-out | 5 | MEASURE: the pinned SPSCQueue of Erik Rigtorp is the re
 bench/ | opted-out | 9 | MEASURE: the pinned fluxsort is the stable reference of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 4 | MEASURE: the pinned rapidhash is the reference of the hash of the Protocol family | the reference rows of bench_reflect: the pinned rapidhash of Nicolas De Carli (utils/pins.txt), its door unit, and the bytes of a batch that go to the door, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 15 | MEASURE: the pinned x86-simd-sort is the speed roof of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
-bench/ | opted-out | 9 | MEASURE: the plain sort of Kahn and the plain union-find are the references | the plain sort of Kahn and the plain union-find in bench_net_checks are the references of the run-time net checks, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
+bench/ | opted-out | 49 | MEASURE: the plain loops over the nets and the ring are the references | the plain loops over the nets and the ring in bench_net_checks are the references of the run-time net checks, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 25 | MEASURE: the raw forms of the state of the art are the references of the containers | the raw forms of the state of the art are the reference rows of bench_core_containers: a raw bitmap, a raw heap bitmap, the generational table of the slotmap crate of Rust and the push_back of llvm::SmallVector, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 29 | MEASURE: the raw loop and the ranges form are the references of each walk | -
 bench/ | opted-out | 3 | MEASURE: the raw loop of the add is the reference of the parallel walk | -
@@ -142,7 +142,7 @@ bench/ | region | 1 | MEASURE: the pinned SPSCQueue of Erik Rigtorp is the refer
 bench/ | region | 1 | MEASURE: the pinned fluxsort is the stable reference of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 1 | MEASURE: the pinned rapidhash is the reference of the hash of the Protocol family | the reference rows of bench_reflect: the pinned rapidhash of Nicolas De Carli (utils/pins.txt), its door unit, and the bytes of a batch that go to the door, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 2 | MEASURE: the pinned x86-simd-sort is the speed roof of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
-bench/ | region | 1 | MEASURE: the plain sort of Kahn and the plain union-find are the references | the plain sort of Kahn and the plain union-find in bench_net_checks are the references of the run-time net checks, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
+bench/ | region | 1 | MEASURE: the plain loops over the nets and the ring are the references | the plain loops over the nets and the ring in bench_net_checks are the references of the run-time net checks, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 1 | MEASURE: the raw forms of the state of the art are the references of the containers | the raw forms of the state of the art are the reference rows of bench_core_containers: a raw bitmap, a raw heap bitmap, the generational table of the slotmap crate of Rust and the push_back of llvm::SmallVector, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 1 | MEASURE: the raw loop and the ranges form are the references of each walk | -
 bench/ | region | 1 | MEASURE: the raw loop of the add is the reference of the parallel walk | -
@@ -328,8 +328,8 @@ src/perf/ | opted-out | 3 | ABI: libbpf attaches a program to the raw descriptor
 src/perf/ | opted-out | 2 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
 src/perf/ | region | 1 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
 src/perf/ | region | 1 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
-test/ | c-array-object | 131 | - | -
-test/ | c-library-call | 276 | - | -
+test/ | c-array-object | 126 | - | -
+test/ | c-library-call | 243 | - | -
 test/ | c-library-object | 9 | - | -
 test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 5 | - | -
@@ -344,7 +344,7 @@ test/ | opted-out | 22 | PROBE: the test sets the current directory, the modes a
 test/ | opted-out | 28 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | raw-function-pointer | 13 | - | -
 test/ | raw-new-delete | 37 | - | -
-test/ | raw-pointer-object | 315 | - | -
+test/ | raw-pointer-object | 312 | - | -
 test/ | region | 1 | ABI: dlsym finds each entry point of a test library by its C name | the case fallbacks of test_process_wide_across_libraries finds the two entry points of each test library by their C names with dlsym, as Python finds the entry points of the vessel, so the two declarations have C linkage
 test/ | region | 1 | PROBE: probe of the run-time check of a thread-bound object | -
 test/ | region | 4 | PROBE: the address of a body tells which unit of the link holds it | PROBE: test_crucible_target_units reads the address of a kernel in each of two units of two targets, a probe of the raw behavior of the link.  The test test_target_units of foundation holds the same regions
@@ -353,9 +353,9 @@ test/ | region | 1 | PROBE: the private key of mTLS leaves no byte of the key in
 test/ | region | 1 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | replace-pending:<limits> | 11 | - | -
-test/ | replace-pending:std::bit_cast | 59 | - | -
-test/ | std-entity | 1357 | - | -
-test/ | std-object | 468 | - | -
+test/ | replace-pending:std::bit_cast | 55 | - | -
+test/ | std-entity | 1285 | - | -
+test/ | std-object | 435 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
 test/cipher_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
