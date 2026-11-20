@@ -128,13 +128,13 @@ void test_statistical_sanity() {
     if (::fixy::fp::abs(mean) > kMeanTol) {
         ::fixy::fatal("statistical FAIL: sample mean {} exceeds tolerance {} "
                       "(N={}).  Polynomial sin/cos/log may have a sign bug.",
-                      mean, kMeanTol, kSamples);
+                      ::fixy::Fixed<6>{mean}, ::fixy::Fixed<3>{kMeanTol}, kSamples);
     }
     if (::fixy::fp::abs(variance - 1.0) > kVarTol) {
         ::fixy::fatal("statistical FAIL: sample variance {} deviates from 1.0 "
                       "by more than {} (N={}).  Polynomial log() may have a scale "
                       "bug.",
-                      variance, kVarTol, kSamples);
+                      ::fixy::Fixed<6>{variance}, ::fixy::Fixed<3>{kVarTol}, kSamples);
     }
 }
 
