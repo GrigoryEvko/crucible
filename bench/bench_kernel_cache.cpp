@@ -210,8 +210,12 @@ template <typename Cache>
         const std::uint64_t idx = i++ & 1023U;
         const std::uint64_t cluster = idx / kRowsPerCluster;
         const std::uint64_t row = idx % kRowsPerCluster;
+        // idx / 128 is below 8, so the compiler folds the check of the index,
+        // and at() of a proven index reads the base with no test.
         auto hit = cache.lookup(
-            kNondet, ContentHash{0xABC00000ULL | *kRowClusterSlotBases.get(cluster).expect("idx / 128 is below 8")},
+            kNondet,
+            ContentHash{0xABC00000ULL
+                        | kRowClusterSlotBases.at(::fixy::Index<8>::check(cluster).expect("idx / 128 is below 8"))},
             RowHash{0x200 + (cluster * kRowsPerCluster) + row});
         bench::do_not_optimize(hit);
     });
