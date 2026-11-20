@@ -225,7 +225,7 @@ static_assert(net::check_liveness(
 // (stage_loop_fakes.h, THE LOOP of fixy/concurrent/StageNet.h).  The channels
 // of the flush arm stand in the order of their first ends: the ring, the
 // count, and the three edges between the stages.  Each channel takes the
-// capacity of the type of its first send end.  The lock adds no action, so
+// capacity that the types of its ends state.  The lock adds no action, so
 // the system is the system of the pipeline with the loop of the Vigil in
 // foundation/algebra/net/Priority.cpp, with the same order of the actions.
 namespace loop = ::stage_loop_fakes;
@@ -414,6 +414,110 @@ using LockReadInBracket =
 static_assert(cc::check_loop<LockReadInBracket>().says(
     "loop: 'foreground' waits on 'lock 1' before it leaves its bracket of 'lock 0'.  A process that writes or reads "
     "a lock waits on nothing before it leaves the bracket."));
+
+// The last stage writes the marks inside its read of the holders, and the
+// foreground reads the marks.  A read of the holders that meets a write runs
+// again, and then the write of the marks runs two times
+// (neg_stage_loop_writer_inside_read).  The same write after the read is
+// admitted.
+using WriteInRead =
+    cc::StageLoop<cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::Ring>, cc::WritesLock<loop::Holders>,
+                                  cc::ReadsLock<Marks>, cc::ReceivesOn<loop::Count>>,
+                  loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
+                  cc::LoopProcess<loop::PublishName, cc::InputsOf<loop::PublishStage>,
+                                  cc::ReadsLock<loop::Holders, cc::WritesLock<Marks>>, cc::SendsOn<loop::Count>>>;
+static_assert(cc::check_loop<WriteInRead>().says(
+    "loop: 'publish' writes 'lock 1' inside its read of 'lock 0'.  A read of a sequence lock can run again, and then "
+    "each write inside it runs two times."));
+static_assert(
+    cc::check_loop<
+        cc::StageLoop<cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::Ring>, cc::WritesLock<loop::Holders>,
+                                      cc::ReadsLock<Marks>, cc::ReceivesOn<loop::Count>>,
+                      loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
+                      cc::LoopProcess<loop::PublishName, cc::InputsOf<loop::PublishStage>, cc::ReadsLock<loop::Holders>,
+                                      cc::WritesLock<Marks>, cc::SendsOn<loop::Count>>>>()
+        .is_admitted());
+
+// The capacities of the ends of a channel (THE LOOP).  The build stage sends
+// into edge 3 through a handle of eight values, and the last stage receives
+// through a handle of four (neg_stage_loop_capacity_disagrees).
+using NarrowReceive = cc::StageLoop<loop::ForegroundFlush, loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
+                                    cc::LoopProcess<loop::PublishName, cc::InputsOf<loop::NarrowPublishStage>,
+                                                    cc::ReadsLock<loop::Holders>, cc::SendsOn<loop::Count>>>;
+static_assert(cc::check_loop<NarrowReceive>().says(
+    "loop: the ends of 'channel 4' state two capacities: 8 and 4.  Each end that states the capacity of a channel "
+    "states the same capacity."));
+// An end whose type states no capacity agrees with each capacity, so edge 3
+// takes the capacity of the handle of the build stage.
+using UnstatedReceive =
+    cc::StageLoop<loop::ForegroundFlush, loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
+                  cc::LoopProcess<loop::PublishName, cc::ReceivesOn<loop::EdgeChannel<3>>, cc::ReadsLock<loop::Holders>,
+                                  cc::SendsOn<loop::Count>>>;
+static_assert(cc::check_loop<UnstatedReceive>().is_admitted());
+static_assert(cc::marked_system_of_loop<UnstatedReceive>().channels[4].capacity == 8);
+// A stage edge takes the capacity of the input handle for its receive.
+using NarrowReceiveOfGraph = cc::StageLoop<loop::ForegroundFlush, loop::DrainEdges, loop::DetectEdges, loop::BuildEdges,
+                                           cc::LoopProcess<loop::PublishName, cc::InputsOf<loop::NarrowPublishStage>,
+                                                           cc::ReadsLock<loop::Holders>, cc::SendsOn<loop::Count>>>;
+static_assert(cc::check_loop<NarrowReceiveOfGraph>().says(
+    "loop: the ends of 'channel 4' state two capacities: 8 and 4.  Each end that states the capacity of a channel "
+    "states the same capacity."));
+
+// The door over the arms (THE ARMS).  The three arms of the loop agree, and
+// so do the flush arm through the handles and through the graph.
+static_assert(cc::check_arms<loop::FlushArm, loop::JobArm, loop::JobLateArm>().is_admitted());
+static_assert(cc::check_arms<loop::FlushArm, loop::FlushArmOfGraph>().is_admitted());
+[[nodiscard]] consteval bool admits_the_three_arms_() noexcept {
+    cc::ensure_arms_live<loop::FlushArm, loop::JobArm, loop::JobLateArm>();
+    return true;
+}
+static_assert(admits_the_three_arms_());
+// The door names the first arm that the door of a loop refuses.
+static_assert(cc::check_arms<loop::FlushArm, LostLockEnd>().says(
+    "arms: arm 1: loop: the processes that write the lock 'lock 0': 1, the processes that read it and do not write "
+    "it: 0.  One process writes each lock, and one other process reads it."));
+// Each arm alone is live, and edge 3 states eight values in the first arm
+// and four in the second (neg_stage_loop_arms_disagree_on_capacity).
+static_assert(cc::check_loop<loop::NarrowFlushArm>().is_admitted());
+static_assert(cc::check_arms<loop::FlushArm, loop::NarrowFlushArm>().says(
+    "arms: in arm 0 an end of 'channel 4' states the capacity 8, and in arm 1 an end of it states 4.  The arms agree "
+    "on the capacity of each channel."));
+// An arm whose edge 3 states no capacity agrees with each capacity.
+using UnstatedEdgeArm =
+    cc::StageLoop<loop::ForegroundFlush, loop::DrainProcess, loop::DetectProcess,
+                  cc::LoopProcess<loop::BuildName, cc::InputsOf<loop::BuildStage>, cc::SendsOn<loop::EdgeChannel<3>>>,
+                  cc::LoopProcess<loop::PublishName, cc::ReceivesOn<loop::EdgeChannel<3>>, cc::ReadsLock<loop::Holders>,
+                                  cc::SendsOn<loop::Count>>>;
+static_assert(cc::check_arms<loop::FlushArm, UnstatedEdgeArm, loop::NarrowFlushArm>().says(
+    "arms: in arm 0 an end of 'channel 4' states the capacity 8, and in arm 2 an end of it states 4.  The arms agree "
+    "on the capacity of each channel."));
+static_assert(cc::check_arms<loop::FlushArm, UnstatedEdgeArm>().is_admitted());
+// Each arm alone is live, and the writer of the holders is the foreground in
+// the first arm and the last stage in the second
+// (neg_stage_loop_arms_disagree_on_writer).
+static_assert(cc::check_loop<loop::SwappedLockArm>().is_admitted());
+static_assert(cc::check_arms<loop::FlushArm, loop::SwappedLockArm>().says(
+    "arms: in arm 0 'foreground' writes 'lock 0', and in arm 1 'publish' writes it.  The arms agree on the writer and "
+    "the reader of each lock."));
+// The build stage sends the count in the second arm.
+using BuildCounts =
+    cc::StageLoop<loop::ForegroundFlush, loop::DrainProcess, loop::DetectProcess,
+                  cc::LoopProcess<loop::BuildName, cc::InputsOf<loop::BuildStage>, cc::OutputsOf<loop::BuildStage>,
+                                  cc::SendsOn<loop::Count>>,
+                  cc::LoopProcess<loop::PublishName, cc::InputsOf<loop::PublishStage>, cc::ReadsLock<loop::Holders>>>;
+static_assert(cc::check_loop<BuildCounts>().is_admitted());
+static_assert(cc::check_arms<loop::FlushArm, BuildCounts>().says(
+    "arms: in arm 0 'publish' sends into 'channel 1', and in arm 1 'build' sends into it.  The arms agree on each "
+    "channel: one process sends into it, and one process receives from it."));
+// Two processes of one arm with one name.
+using DrainTwice =
+    cc::StageLoop<loop::ForegroundFlush, loop::DrainProcess,
+                  cc::LoopProcess<loop::DrainName, cc::InputsOf<loop::DetectStage>, cc::OutputsOf<loop::DetectStage>>,
+                  loop::BuildProcess, loop::PublishFlush>;
+static_assert(cc::check_loop<DrainTwice>().is_admitted());
+static_assert(cc::check_arms<DrainTwice>().says(
+    "arms: arm 0 holds two processes with the name 'drain'.  The arms compare their processes by the type of the "
+    "name, so each process of an arm has a name of its own."));
 
 // The graph of a minted pipeline (pipeline_graph_t): the chain of its stages,
 // or the graph of a PipelineDag.

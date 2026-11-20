@@ -5258,9 +5258,11 @@ fixy_neg_compile_test(neg_pipeline_dag_mint_stage_pack_mismatch
 # The door of a loop (THE LOOP of fixy/concurrent/StageNet.h), each on a loop
 # of test/fixy/stage_loop_fakes.h with one wrong end: an end wired to the
 # wrong mailbox, a lock with a lost end, a foreground that waits before it
-# records, a done mark that no process takes, and a wait inside a bracket of
-# the writer and inside a read.  test_pipeline_dag.cpp admits each loop with
-# the right end.
+# records, a done mark that no process takes, a wait inside a bracket of the
+# writer and inside a read, a write inside a read, and two ends of one channel
+# that state two capacities.  test_pipeline_dag.cpp admits each loop with the
+# right end.  The door over the arms (THE ARMS) refuses two arms that state two
+# capacities of one channel and two arms that name two writers of one lock.
 fixy_neg_compile_test(neg_stage_loop_wrong_mailbox
   "static assertion failed"
   "loop: one period changes the count of the messages in 'channel 1': 1 sends and 0 receives\\."
@@ -5290,6 +5292,26 @@ fixy_neg_compile_test(neg_stage_loop_waits_first
   "static assertion failed"
   "liveness: a cycle of waits holds no token: foreground receives 'channel 0' step 0 <- publish sends 'channel 0' step 0 <- publish receives 'channel 4' step 0"
   "neg_stage_loop_waits_first\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_stage_loop_writer_inside_read
+  "static assertion failed"
+  "loop: 'publish' writes 'lock 1' inside its read of 'lock 0'\\.  A read of a sequence lock can run again"
+  "neg_stage_loop_writer_inside_read\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_stage_loop_capacity_disagrees
+  "static assertion failed"
+  "loop: the ends of 'channel 4' state two capacities: 8 and 4\\."
+  "neg_stage_loop_capacity_disagrees\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_stage_loop_arms_disagree_on_capacity
+  "static assertion failed"
+  "arms: in arm 0 an end of 'channel 4' states the capacity 8, and in arm 1 an end of it states 4\\."
+  "neg_stage_loop_arms_disagree_on_capacity\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_stage_loop_arms_disagree_on_writer
+  "static assertion failed"
+  "arms: in arm 0 'foreground' writes 'lock 0', and in arm 1 'publish' writes it\\."
+  "neg_stage_loop_arms_disagree_on_writer\\.cpp:[0-9]+:[0-9]+: +required from here")
 
 # The child door of fixy/os/Process.h: the exit code, the abort and the
 # output of a child, an output larger than the report, a Child that no wait

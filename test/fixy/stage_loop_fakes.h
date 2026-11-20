@@ -46,6 +46,24 @@ struct EdgeProducer {
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
 
+// The two handles of an edge that state a queue of four values on the same
+// channel as EdgeConsumer and EdgeProducer.
+template <int Edge>
+struct NarrowConsumer {
+    using channel_type = EdgeChannel<Edge>;
+    static constexpr std::size_t per_call_working_set = 64;
+    static constexpr std::size_t channel_capacity = 4;
+    [[nodiscard]] ::fixy::Option<int> try_pop() noexcept { return {}; }
+};
+
+template <int Edge>
+struct NarrowProducer {
+    using channel_type = EdgeChannel<Edge>;
+    static constexpr std::size_t per_call_working_set = 64;
+    static constexpr std::size_t channel_capacity = 4;
+    [[nodiscard]] bool try_push(int const&) noexcept { return true; }
+};
+
 // The bodies of the four stages.  Edge 0 is the go signal of the first
 // stage, and edge 4 is the end mark of the last stage, so the loop reads
 // neither of them.
@@ -54,10 +72,17 @@ inline void detect_body(EdgeConsumer<1>&&, EdgeProducer<2>&&) noexcept {}
 inline void build_body(EdgeConsumer<2>&&, EdgeProducer<3>&&) noexcept {}
 inline void publish_body(EdgeConsumer<3>&&, EdgeProducer<4>&&) noexcept {}
 
+// The bodies of a build stage and a last stage whose handles of edge 3 state
+// the narrow queue.
+inline void narrow_build_body(EdgeConsumer<2>&&, NarrowProducer<3>&&) noexcept {}
+inline void narrow_publish_body(NarrowConsumer<3>&&, EdgeProducer<4>&&) noexcept {}
+
 using DrainStage = cc::Stage<&drain_body, ::fixy::HotFgCtx>;
 using DetectStage = cc::Stage<&detect_body, ::fixy::HotFgCtx>;
 using BuildStage = cc::Stage<&build_body, ::fixy::HotFgCtx>;
 using PublishStage = cc::Stage<&publish_body, ::fixy::HotFgCtx>;
+using NarrowBuildStage = cc::Stage<&narrow_build_body, ::fixy::HotFgCtx>;
+using NarrowPublishStage = cc::Stage<&narrow_publish_body, ::fixy::HotFgCtx>;
 
 // The cells around the stages, each with the count of the messages that it
 // holds.  The count holds each bump, so its writer never waits.
@@ -129,6 +154,22 @@ using JobArm = cc::StageLoop<ForegroundJob, DrainProcess, DetectProcess, BuildPr
 using PublishJobLate = cc::LoopProcess<PublishName, cc::InputsOf<PublishStage>, cc::ReadsLock<Holders>,
                                        cc::SendsOn<Count>, cc::ReceivesOn<Mailbox>, cc::SendsOn<JobDone>>;
 using JobLateArm = cc::StageLoop<ForegroundJob, DrainProcess, DetectProcess, BuildProcess, PublishJobLate>;
+
+// The flush arm with the narrow handles on edge 3.  The two ends of edge 3
+// state the capacity 4, so the arm agrees with itself, and edge 3 holds 8
+// values in FlushArm.
+using NarrowFlushArm = cc::StageLoop<
+    ForegroundFlush, DrainProcess, DetectProcess,
+    cc::LoopProcess<BuildName, cc::InputsOf<NarrowBuildStage>, cc::OutputsOf<NarrowBuildStage>>,
+    cc::LoopProcess<PublishName, cc::InputsOf<NarrowPublishStage>, cc::ReadsLock<Holders>, cc::SendsOn<Count>>>;
+
+// The flush arm in which the last stage writes the holders, and the
+// foreground reads them.  The arm lists the last stage first: the arms
+// compare their processes by name, and not by place.
+using SwappedLockArm =
+    cc::StageLoop<cc::LoopProcess<PublishName, cc::InputsOf<PublishStage>, cc::WritesLock<Holders>, cc::SendsOn<Count>>,
+                  cc::LoopProcess<ForegroundName, cc::SendsOn<Ring>, cc::ReadsLock<Holders>, cc::ReceivesOn<Count>>,
+                  DrainProcess, DetectProcess, BuildProcess>;
 
 // The fake stages as a minted pipeline names them, and the graph of that
 // pipeline: the chain of the four stages.

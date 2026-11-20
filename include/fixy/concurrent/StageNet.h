@@ -84,8 +84,10 @@
 //                           of the stage, in port order
 //     StageEdges<Graph, S>  the actions of stage S of the graph on the edges
 //                           of the graph, in the order of the marked system
-//                           of the graph (THE MARKED SYSTEM).  The ends of
-//                           the graph are no part of it.
+//                           of the graph (THE MARKED SYSTEM): a send through
+//                           the output handle of the edge, and a receive
+//                           through its input handle.  The ends of the graph
+//                           are no part of it.
 //     WritesLock<Lock, Inside...>
 //                           the bracket of the writer of a sequence lock, and
 //                           the ends that the writer does inside it, in order
@@ -99,12 +101,14 @@
 //   name one type are two sides of one channel, so an end that names another
 //   type names another channel.  The type tells two channels apart, and the
 //   identity of an instance does not.  The channels stand in the order of
-//   their first ends, with the names 'channel 0' and on.  The capacity of a
-//   channel is the capacity that its first send end states: the
-//   channel_capacity of the type of SendsOn or of the output handle of
-//   OutputsOf (StatesHandleCapacity), or the capacity of the edge in the
-//   marked system of the graph of StageEdges.  A type that states none reads
-//   as a rendezvous, by the rule of THE MARKED SYSTEM.  A lock is a type too,
+//   their first ends, with the names 'channel 0' and on.  Each end of a
+//   channel can state the capacity of the channel: the channel_capacity of
+//   the type of SendsOn or ReceivesOn, or of the handle of an end of InputsOf,
+//   OutputsOf or StageEdges (StatesHandleCapacity).  The ends that state a
+//   capacity state the same capacity, and the door refuses two ends of one
+//   channel that state two capacities.  The capacity of the channel is the
+//   capacity that its ends state.  A channel whose ends state none reads as a
+//   rendezvous, by the rule of THE MARKED SYSTEM.  A lock is a type too,
 //   and the locks stand in the order of their first ends, with the names
 //   'lock 0' and on.  pipeline_graph_t gives the graph of a minted pipeline,
 //   so StageEdges reads the stages of a pipeline as the gate of the pipeline
@@ -113,25 +117,26 @@
 //   marked_system_of_loop gives the processes in the order of the loop, each
 //   with the actions of its channel ends in the order of its ends.  An end
 //   inside a bracket stands after the end of its lock.  A lock end adds no
-//   action (THE LOCKS).  The door ensure_loop_live checks the locks, and then
-//   it checks the liveness of the marked system.
+//   action (THE LOCKS).  The door ensure_loop_live checks the locks and the
+//   capacities, and then it checks the liveness of the marked system.
 //
 // THE LOCKS
 //   The check of the marked graph reads no bracket (THE LIMITS of
-//   foundation/algebra/net/Priority.h).  So the door checks each lock by two
-//   rules.  First, one process writes the lock, and one other process reads
-//   it.  Second, a process that writes or reads the lock waits on nothing
-//   before it leaves the bracket.  A send waits for a free slot, a receive
-//   waits for its message, and a read of a lock waits while the writer of
-//   that lock is in a bracket.  So a bracket holds none of them.  A bracket of
-//   the writer of another lock waits on nothing, so it can stand inside a
-//   bracket.
+//   foundation/algebra/net/Priority.h).  So the door checks each lock by
+//   three rules.  First, one process writes the lock, and one other process
+//   reads it.  Second, a process that writes or reads the lock waits on
+//   nothing before it leaves the bracket.  A send waits for a free slot, a
+//   receive waits for its message, and a read of a lock waits while the
+//   writer of that lock is in a bracket.  So a bracket holds none of them.  A
+//   bracket of the writer of another lock waits on nothing, so it can stand
+//   inside a bracket of a writer.  Third, no bracket of a writer stands inside
+//   a read.  A read that meets a write runs again, and each end inside the
+//   read runs again with it.  So a write inside a read runs two times.
 //
 //   Then the writer leaves each bracket with no wait, and each wait of a
 //   reader on a bracket ends.  So a lock adds no wait to the marked system,
 //   and the liveness of the marked system is the liveness of the loop.  The
-//   second rule also holds for a read: a read that meets a write runs again,
-//   and each end inside the read runs again with it.
+//   second rule also holds for a read, because a read can run again.
 //
 // THE ARMS
 //   A process that polls a channel and goes on when the channel is empty
@@ -154,11 +159,23 @@
 //   with no token hold no cycle, each action has a finite count of actions
 //   before it, and each action starts.
 //
-//   No door checks the three conditions across the arms, so the caller states
-//   them.  A poll can let two processes take two arms in one period, when a
-//   process serves a message in the period after the period of its sender.
-//   Then the caller checks the arm of that shift too, so that the processes
-//   take one arm together in each period again.
+//   The door ensure_arms_live checks each arm with the door of a loop, and
+//   then it checks the second and the third condition across the arms.  The
+//   arms compare a process by the type of its name, so each process of an
+//   arm has a name of its own.  They compare a channel and a lock by its type.
+//   The sends into a channel stand in one process, and so do its receives.
+//   The ends that state its capacity state one capacity.  An end that states
+//   none agrees with each capacity: an arm whose channel reads as a
+//   rendezvous is live with each capacity of that channel, because a slot
+//   more only adds a token to the marked graph.  The writes of a lock stand in
+//   one process, and so do its reads by a process that does not write it.  A
+//   channel or a lock of one arm only agrees with each other arm.
+//
+//   The first condition is a condition of the run, and no door reads it, so
+//   the caller states it.  A poll can let two processes take two arms in one
+//   period, when a process serves a message in the period after the period of
+//   its sender.  Then the caller checks the arm of that shift too, so that the
+//   processes take one arm together in each period again.
 //
 // THE COSTS
 //   One constant evaluation for each graph, linear in the stages, the ports
@@ -166,10 +183,12 @@
 //   because each end looks for the first end of its channel or its lock.  The
 //   wiring check of the locks reads the N ends for each lock, and it does two
 //   scans of the N ends for each lock end, so it is O(N * K) for K lock ends.
-//   The rule of the brackets, the marked system and the shape of a reading
-//   are linear in N, and the liveness check is linear in the processes, the
-//   channels and the actions.  A StageEdges end reads the marked system of
-//   its graph.  So the check of a loop is quadratic in its ends.
+//   The rules of the brackets and of the capacities, the marked system and
+//   the shape of a reading are linear in N, and the liveness check is linear
+//   in the processes, the channels and the actions.  A StageEdges end reads
+//   the marked system of its graph.  So the check of a loop is quadratic in
+//   its ends.  The door over the arms reads the ends of all the arms one more
+//   time, and its check is quadratic in those ends and in their processes.
 
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/Pipeline.h>
@@ -304,6 +323,18 @@ template <class Handle>
     } else {
         return 0;
     }
+}
+
+// Whether the type of an end of a loop states the capacity of its channel.
+enum class CapacityStatement : std::uint8_t {
+    None = 0,
+    Stated = 1,
+};
+
+// The capacity statement of a handle or of a channel type.
+template <class Handle>
+[[nodiscard]] consteval CapacityStatement capacity_statement_of_() noexcept {
+    return StatesHandleCapacity<Handle> ? CapacityStatement::Stated : CapacityStatement::None;
 }
 
 // The kinds of the names of the processes and the channels of the marked
@@ -667,14 +698,16 @@ inline constexpr LoopEndId no_bracket{0xFFFFFFFFu};
 
 // One end of a loop, as the reading holds it: the process, the first end of
 // its channel or of its lock, the lock end of the innermost bracket that holds
-// it, the capacity that the type of the end states, and its kind.
+// it, the capacity that the type of the end states, whether the type states
+// one, and its kind.
 struct loop_end {
     ::foundation::algebra::net::ProcessId process{};
     LoopEndId first{};
     LoopEndId bracket = no_bracket;
     std::uint32_t capacity = 0;
     LoopMove move = LoopMove::Send;
-    std::uint8_t reserved[3]{};
+    CapacityStatement statement = CapacityStatement::None;
+    std::uint8_t reserved[2]{};
 };
 
 // The ends of a loop, in the order of the processes and of their ends.
@@ -719,7 +752,8 @@ consteval void put_stage_inputs_(loop_scan<Count>& scan, ::foundation::algebra::
                           loop_end{.process = process,
                                    .bracket = bracket,
                                    .capacity = capacity_of_handle_<handle>(),
-                                   .move = LoopMove::Receive},
+                                   .move = LoopMove::Receive,
+                                   .statement = capacity_statement_of_<handle>()},
                           key_of_<handle_channel_t<handle>>());
             put_stage_inputs_<Stage, Port + 1>(scan, process, bracket);
         }
@@ -742,35 +776,51 @@ consteval void put_stage_outputs_(loop_scan<Count>& scan, ::foundation::algebra:
                           loop_end{.process = process,
                                    .bracket = bracket,
                                    .capacity = capacity_of_handle_<handle>(),
-                                   .move = LoopMove::Send},
+                                   .move = LoopMove::Send,
+                                   .statement = capacity_statement_of_<handle>()},
                           key_of_<handle_channel_t<handle>>());
             put_stage_outputs_<Stage, Port + 1>(scan, process, bracket);
         }
     }
 }
 
+// The marked system of a stage graph, one time in a unit.  Each reading of a
+// loop with a StageEdges end of the graph reads this one constant.
+template <class Graph>
+inline constexpr auto stage_graph_system_v = marked_system_of_stage_graph<Graph>();
+
 // Puts the action of stage Stage on each edge of a graph whose gate holds,
 // in the order of the marked system of the graph, inside the bracket.  The
 // key of an edge is the channel_type of its output handle, and the gate of
-// the graph proves that the input handle names the same channel.
-// Complexity: linear in the actions of the marked system of the graph.
-template <std::size_t Stage, std::size_t Count, class... Stages, class... Edges>
+// the graph proves that the input handle names the same channel.  A send
+// takes the capacity that the output handle of the edge states, and a
+// receive the capacity that its input handle states.  Complexity: linear in
+// the actions of the marked system of the graph.
+template <class Graph, std::size_t Stage, std::size_t Count, class... Stages, class... Edges>
 consteval void put_stage_edges_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process,
-                                LoopEndId bracket, StagePack<Stages...> stages, EdgePack<Edges...> edges) noexcept {
+                                LoopEndId bracket, StagePack<Stages...>, EdgePack<Edges...>) noexcept {
     namespace net = ::foundation::algebra::net;
     constexpr std::size_t edge_count = sizeof...(Edges);
     if constexpr (edge_count != 0) {
-        constexpr auto marked = marked_system_of_stage_graph_(stages, edges);
+        constexpr auto const& marked = stage_graph_system_v<Graph>;
         std::meta::info const keys[] = {
             key_of_<handle_channel_t<stage_output_handle_t<Stages...[Edges::from], Edges::from_output>>>()...};
+        constexpr std::uint32_t input_capacities[] = {
+            capacity_of_handle_<stage_input_handle_t<Stages...[Edges::to], Edges::to_input>>()...};
+        constexpr CapacityStatement output_statements[] = {
+            capacity_statement_of_<stage_output_handle_t<Stages...[Edges::from], Edges::from_output>>()...};
+        constexpr CapacityStatement input_statements[] = {
+            capacity_statement_of_<stage_input_handle_t<Stages...[Edges::to], Edges::to_input>>()...};
         for (net::Action const& action : marked.actions) {
             auto const channel = static_cast<std::uint32_t>(action.channel);
             if (action.process != net::ProcessId{static_cast<std::uint32_t>(Stage)} || channel >= edge_count) continue;
+            bool const is_send = action.move == net::Move::Send;
             put_loop_end_(scan,
                           loop_end{.process = process,
                                    .bracket = bracket,
-                                   .capacity = marked.channels[channel].capacity,
-                                   .move = action.move == net::Move::Send ? LoopMove::Send : LoopMove::Receive},
+                                   .capacity = is_send ? marked.channels[channel].capacity : input_capacities[channel],
+                                   .move = is_send ? LoopMove::Send : LoopMove::Receive,
+                                   .statement = is_send ? output_statements[channel] : input_statements[channel]},
                           keys[channel]);
         }
     }
@@ -780,11 +830,13 @@ consteval void put_stage_edges_(loop_scan<Count>& scan, ::foundation::algebra::n
 template <std::size_t Count, class Channel>
 consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process, LoopEndId bracket,
                         SendsOn<Channel>) noexcept {
-    put_loop_end_(
-        scan,
-        loop_end{
-            .process = process, .bracket = bracket, .capacity = capacity_of_handle_<Channel>(), .move = LoopMove::Send},
-        key_of_<Channel>());
+    put_loop_end_(scan,
+                  loop_end{.process = process,
+                           .bracket = bracket,
+                           .capacity = capacity_of_handle_<Channel>(),
+                           .move = LoopMove::Send,
+                           .statement = capacity_statement_of_<Channel>()},
+                  key_of_<Channel>());
 }
 template <std::size_t Count, class Channel>
 consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process, LoopEndId bracket,
@@ -793,7 +845,8 @@ consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::Proc
                   loop_end{.process = process,
                            .bracket = bracket,
                            .capacity = capacity_of_handle_<Channel>(),
-                           .move = LoopMove::Receive},
+                           .move = LoopMove::Receive,
+                           .statement = capacity_statement_of_<Channel>()},
                   key_of_<Channel>());
 }
 template <std::size_t Count, class Stage>
@@ -810,8 +863,8 @@ template <std::size_t Count, class Graph, std::size_t Stage>
 consteval void put_end_(loop_scan<Count>& scan, ::foundation::algebra::net::ProcessId process, LoopEndId bracket,
                         StageEdges<Graph, Stage>) noexcept {
     using traits = stage_graph_traits<Graph>;
-    put_stage_edges_<Stage>(scan, process, bracket, typename traits::stage_pack_type{},
-                            typename traits::edge_pack_type{});
+    put_stage_edges_<Graph, Stage>(scan, process, bracket, typename traits::stage_pack_type{},
+                                   typename traits::edge_pack_type{});
 }
 // The end of the lock, and then each end inside the bracket, which names this
 // lock end as its bracket.
@@ -877,14 +930,13 @@ struct loop_shape {
     std::uint32_t action_count = 0;
 };
 
-// The shape of a reading.  The capacity of a channel is the capacity of its
-// first send end.  A channel with no send end keeps the capacity of its first
-// end, and the liveness check refuses that channel.  Complexity: linear in
-// the ends.
+// The shape of a reading.  The capacity of a channel is the capacity of the
+// first of its ends that states one, or 0 for a channel whose ends state
+// none (THE LOOP).  Complexity: linear in the ends.
 template <std::size_t Count>
 [[nodiscard]] consteval loop_shape<Count> shape_of_loop_(loop_reading<Count> const& reading) noexcept {
     loop_shape<Count> shape{};
-    bool has_send[Count == 0 ? 1 : Count]{};
+    bool is_stated[Count == 0 ? 1 : Count]{};
     for (std::size_t index = 0; index < reading.count; ++index) {
         loop_end const& end = reading.ends[index];
         bool const is_channel = is_channel_move_(end.move);
@@ -893,7 +945,6 @@ template <std::size_t Count>
             shape.place_of[index] = shape.place_of[first];
         } else if (is_channel) {
             shape.place_of[index] = shape.channel_count;
-            shape.capacity_of[shape.channel_count] = end.capacity;
             ++shape.channel_count;
         } else {
             shape.place_of[index] = shape.lock_count;
@@ -902,15 +953,15 @@ template <std::size_t Count>
         if (!is_channel) continue;
         ++shape.action_count;
         std::uint32_t const channel = shape.place_of[index];
-        if (end.move == LoopMove::Send && !has_send[channel]) {
-            has_send[channel] = true;
+        if (end.statement == CapacityStatement::Stated && !is_stated[channel]) {
+            is_stated[channel] = true;
             shape.capacity_of[channel] = end.capacity;
         }
     }
     return shape;
 }
 
-// The rule that the locks of a loop break (THE LOCKS).
+// The rule that the ends of a loop break (THE LOCKS, THE LOOP).
 enum class LoopFaultCode : std::uint8_t {
     NoFault = 0,
     // The fault names the lock, the count of the processes that write it,
@@ -920,9 +971,15 @@ enum class LoopFaultCode : std::uint8_t {
     // kind and the place of the first end inside it that waits: a channel, or
     // a lock that the process reads.
     WaitInBracket = 2,
+    // The fault names the process, the lock of the read, and the place of the
+    // lock of the bracket of the writer inside the read.
+    WriteInRead = 3,
+    // The fault names the channel, the capacity of the channel, and the other
+    // capacity that an end of the channel states.
+    CapacityDisagrees = 4,
 };
 
-// The fault of the locks of a loop.
+// The fault of the ends of a loop.
 struct LoopFault {
     LoopFaultCode code = LoopFaultCode::NoFault;
     LoopMove inside = LoopMove::Send;
@@ -932,6 +989,8 @@ struct LoopFault {
     std::uint32_t place = 0;
     std::uint32_t writers = 0;
     std::uint32_t readers = 0;
+    std::uint32_t channel_capacity = 0;
+    std::uint32_t end_capacity = 0;
 };
 
 // True when no end before index has the process, the lock and the kind of the
@@ -991,31 +1050,69 @@ template <std::size_t Count>
 }
 
 // The first end inside a bracket that waits, as the fault WaitInBracket, or
+// the first bracket of a writer inside a read, as the fault WriteInRead, or
 // NoFault (THE LOCKS).  An end of a channel and a read of a lock wait, and a
-// bracket of the writer of a lock does not.  Complexity: linear in the ends.
+// bracket of the writer of a lock does not.  The scan reads the ends in the
+// order of the reading, and a bracket stands before each end inside it.  So
+// the first write inside a read stands directly inside that read, or a wait
+// inside a bracket stands before it.  Complexity: linear in the ends.
 template <std::size_t Count>
 [[nodiscard]] consteval LoopFault find_bracket_fault_(loop_reading<Count> const& reading,
                                                       loop_shape<Count> const& shape) noexcept {
     for (std::uint32_t index = 0; index < reading.count; ++index) {
         loop_end const& end = reading.ends[index];
-        if (end.bracket == no_bracket || end.move == LoopMove::WriteLock) continue;
+        if (end.bracket == no_bracket) continue;
+        auto const bracket = static_cast<std::uint32_t>(end.bracket);
+        if (end.move == LoopMove::WriteLock) {
+            if (reading.ends[bracket].move != LoopMove::ReadLock) continue;
+            return LoopFault{.code = LoopFaultCode::WriteInRead,
+                             .inside = end.move,
+                             .process = end.process,
+                             .lock = shape.place_of[bracket],
+                             .place = shape.place_of[index]};
+        }
         return LoopFault{.code = LoopFaultCode::WaitInBracket,
                          .inside = end.move,
                          .process = end.process,
-                         .lock = shape.place_of[static_cast<std::uint32_t>(end.bracket)],
+                         .lock = shape.place_of[bracket],
                          .place = shape.place_of[index]};
     }
     return LoopFault{};
 }
 
-// The first fault of the locks of a loop: the wiring, and then the waits
-// inside the brackets (THE LOCKS).  Complexity: O(N * K) for N ends and K
-// lock ends.
+// The first end of a channel that states another capacity than the capacity
+// of its channel, as the fault CapacityDisagrees, or NoFault (THE LOOP).  The
+// capacity of the channel is the capacity of its first end that states one.
+// Complexity: linear in the ends.
 template <std::size_t Count>
-[[nodiscard]] consteval LoopFault find_lock_fault_(loop_reading<Count> const& reading,
+[[nodiscard]] consteval LoopFault find_capacity_fault_(loop_reading<Count> const& reading,
+                                                       loop_shape<Count> const& shape) noexcept {
+    for (std::uint32_t index = 0; index < reading.count; ++index) {
+        loop_end const& end = reading.ends[index];
+        if (!is_channel_move_(end.move) || end.statement != CapacityStatement::Stated) continue;
+        std::uint32_t const channel = shape.place_of[index];
+        if (end.capacity == shape.capacity_of[channel]) continue;
+        return LoopFault{.code = LoopFaultCode::CapacityDisagrees,
+                         .inside = end.move,
+                         .process = end.process,
+                         .place = channel,
+                         .channel_capacity = shape.capacity_of[channel],
+                         .end_capacity = end.capacity};
+    }
+    return LoopFault{};
+}
+
+// The first fault of the ends of a loop: the wiring of the locks, the ends
+// inside the brackets (THE LOCKS), and then the capacities that the ends of
+// each channel state (THE LOOP).  Complexity: O(N * K) for N ends and K lock
+// ends.
+template <std::size_t Count>
+[[nodiscard]] consteval LoopFault find_loop_fault_(loop_reading<Count> const& reading,
                                                    loop_shape<Count> const& shape) noexcept {
     LoopFault const wiring = find_lock_wiring_fault_(reading, shape);
-    return wiring.code != LoopFaultCode::NoFault ? wiring : find_bracket_fault_(reading, shape);
+    if (wiring.code != LoopFaultCode::NoFault) return wiring;
+    LoopFault const bracket = find_bracket_fault_(reading, shape);
+    return bracket.code != LoopFaultCode::NoFault ? bracket : find_capacity_fault_(reading, shape);
 }
 
 // The name of the process at a place of a loop.
@@ -1070,6 +1167,230 @@ template <class... Processes>
     }
 }
 
+// ── The arms ────────────────────────────────────────────────────────────
+
+// The place of an arm in the arms of a loop.
+enum class ArmId : std::uint32_t {
+};
+
+// The count of the processes of a loop, and the count of the ends of its
+// reading.
+template <class Loop>
+inline constexpr std::size_t loop_process_count_v = 0;
+template <class... Processes>
+inline constexpr std::size_t loop_process_count_v<StageLoop<Processes...>> = sizeof...(Processes);
+template <class Loop>
+inline constexpr std::size_t loop_end_total_v = 0;
+template <class... Processes>
+inline constexpr std::size_t loop_end_total_v<StageLoop<Processes...>> =
+    (loop_process_end_count_v<Processes> + ... + 0);
+
+// The ends of all the arms of a loop, while the check of the arms runs (THE
+// ARMS).  Each end has its key, its arm and its process, which is a place in
+// the processes of all the arms, in the order of the arms.  Each process has
+// its arm, the key of the type of its name, and its name.  As in loop_scan,
+// only this local holds the keys.
+template <std::size_t Count, std::size_t Processes>
+struct arms_scan {
+    loop_scan<Count> ends{};
+    ArmId arm_of[Count == 0 ? 1 : Count]{};
+    std::uint32_t process_of[Count == 0 ? 1 : Count]{};
+    ArmId arm_of_process[Processes]{};
+    std::meta::info name_keys[Processes]{};
+    ::foundation::algebra::net::NetName names[Processes]{};
+    std::uint32_t process_count = 0;
+};
+
+// Puts the ends of one process of an arm.
+template <std::size_t Count, std::size_t Processes, class Name, class... Ends>
+consteval void put_arm_process_(arms_scan<Count, Processes>& scan, ArmId arm,
+                                ::foundation::algebra::net::ProcessId process,
+                                LoopProcess<Name, Ends...> named) noexcept {
+    std::size_t const start = scan.ends.count;
+    put_process_(scan.ends, process, named);
+    std::uint32_t const place = scan.process_count;
+    scan.arm_of_process[place] = arm;
+    scan.name_keys[place] = key_of_<Name>();
+    scan.names[place] = Name::process_name;
+    ++scan.process_count;
+    for (std::size_t index = start; index < scan.ends.count; ++index) {
+        scan.arm_of[index] = arm;
+        scan.process_of[index] = place;
+    }
+}
+
+// Puts the ends of each process of an arm, in the order of the processes.
+template <std::size_t Count, std::size_t Processes, class... Members>
+consteval void put_arm_(arms_scan<Count, Processes>& scan, ArmId arm, StageLoop<Members...>) noexcept {
+    std::uint32_t place = 0;
+    ((put_arm_process_(scan, arm, ::foundation::algebra::net::ProcessId{place}, Members{}), ++place), ...);
+}
+
+// True when the end at index is the first end of its key and of its kind of
+// key (a channel or a lock) in its arm.  Complexity: linear in the ends.
+template <std::size_t Count, std::size_t Processes>
+[[nodiscard]] consteval bool is_first_in_arm_(arms_scan<Count, Processes> const& scan, LoopEndId index) noexcept {
+    auto const at = static_cast<std::uint32_t>(index);
+    bool const is_channel = is_channel_move_(scan.ends.ends[at].move);
+    for (std::uint32_t earlier = 0; earlier < at; ++earlier) {
+        if (scan.arm_of[earlier] == scan.arm_of[at] && scan.ends.keys[earlier] == scan.ends.keys[at]
+            && is_channel_move_(scan.ends.ends[earlier].move) == is_channel)
+            return false;
+    }
+    return true;
+}
+
+// The place of the channel or the lock of the end at index in its arm: the
+// count of the channels or the locks whose first end in the arm stands before
+// the first end of this one, as the names 'channel 0' and 'lock 0' of the
+// arm count them.  Complexity: quadratic in the ends.
+template <std::size_t Count, std::size_t Processes>
+[[nodiscard]] consteval std::uint32_t place_in_arm_(arms_scan<Count, Processes> const& scan, LoopEndId index) noexcept {
+    auto const at = static_cast<std::uint32_t>(index);
+    bool const is_channel = is_channel_move_(scan.ends.ends[at].move);
+    std::uint32_t place = 0;
+    for (std::uint32_t earlier = 0; earlier < at; ++earlier) {
+        if (scan.arm_of[earlier] != scan.arm_of[at] || is_channel_move_(scan.ends.ends[earlier].move) != is_channel)
+            continue;
+        if (scan.ends.keys[earlier] == scan.ends.keys[at]) return place;
+        if (is_first_in_arm_(scan, LoopEndId{earlier})) ++place;
+    }
+    return place;
+}
+
+// True when the process of the end at index writes the lock of that end in
+// its arm.  Complexity: linear in the ends.
+template <std::size_t Count, std::size_t Processes>
+[[nodiscard]] consteval bool writes_own_lock_(arms_scan<Count, Processes> const& scan, LoopEndId index) noexcept {
+    auto const at = static_cast<std::uint32_t>(index);
+    for (std::uint32_t other = 0; other < scan.ends.count; ++other) {
+        if (scan.ends.ends[other].move == LoopMove::WriteLock && scan.process_of[other] == scan.process_of[at]
+            && scan.ends.keys[other] == scan.ends.keys[at])
+            return true;
+    }
+    return false;
+}
+
+// The rule that the arms of a loop break (THE ARMS).
+enum class ArmsFaultCode : std::uint8_t {
+    NoFault = 0,
+    // The fault names the arm and the name of its two processes.
+    NameTwice = 1,
+    // The fault names the move, the channel in the first arm that holds it,
+    // the two arms, and the two processes that hold that side.
+    SideDisagrees = 2,
+    // The fault names the channel in the first arm that states its capacity,
+    // the two arms, and the two capacities.
+    CapacityDisagrees = 3,
+    // The fault names the move (a write or a read), the lock in the first arm
+    // that holds it, the two arms, and the two processes.
+    LockSideDisagrees = 4,
+};
+
+// The fault of the arms of a loop.  The first arm, the first name and the
+// channel capacity are of the earlier end, and the arm, the name and the end
+// capacity are of the end that disagrees with it.
+struct ArmsFault {
+    ArmsFaultCode code = ArmsFaultCode::NoFault;
+    LoopMove move = LoopMove::Send;
+    std::uint8_t reserved[2]{};
+    ArmId first_arm{};
+    ArmId arm{};
+    std::uint32_t place = 0;
+    std::uint32_t channel_capacity = 0;
+    std::uint32_t end_capacity = 0;
+    ::foundation::algebra::net::NetName first_name{};
+    ::foundation::algebra::net::NetName name{};
+};
+
+// The first earlier end of the channel of the end at index that disagrees
+// with it, as a fault, or NoFault: a send or a receive of another process,
+// or a capacity that another arm states (THE ARMS).  Complexity: linear in
+// the ends.
+template <std::size_t Count, std::size_t Processes>
+[[nodiscard]] consteval ArmsFault find_channel_disagreement_(arms_scan<Count, Processes> const& scan,
+                                                             LoopEndId index) noexcept {
+    auto const at = static_cast<std::uint32_t>(index);
+    loop_end const& end = scan.ends.ends[at];
+    for (std::uint32_t earlier = 0; earlier < at; ++earlier) {
+        loop_end const& other = scan.ends.ends[earlier];
+        if (!is_channel_move_(other.move) || scan.ends.keys[earlier] != scan.ends.keys[at]) continue;
+        bool const is_other_side =
+            other.move == end.move && scan.name_keys[scan.process_of[earlier]] != scan.name_keys[scan.process_of[at]];
+        bool const is_other_capacity = other.statement == CapacityStatement::Stated
+                                    && end.statement == CapacityStatement::Stated && other.capacity != end.capacity;
+        if (!is_other_side && !is_other_capacity) continue;
+        return ArmsFault{.code = is_other_side ? ArmsFaultCode::SideDisagrees : ArmsFaultCode::CapacityDisagrees,
+                         .move = end.move,
+                         .first_arm = scan.arm_of[earlier],
+                         .arm = scan.arm_of[at],
+                         .place = place_in_arm_(scan, LoopEndId{earlier}),
+                         .channel_capacity = other.capacity,
+                         .end_capacity = end.capacity,
+                         .first_name = scan.names[scan.process_of[earlier]],
+                         .name = scan.names[scan.process_of[at]]};
+    }
+    return ArmsFault{};
+}
+
+// The first earlier end of the lock of the end at index that holds the same
+// side in another process, as the fault LockSideDisagrees, or NoFault (THE
+// ARMS).  A read by a process that writes the lock holds no side.
+// Complexity: quadratic in the ends.
+template <std::size_t Count, std::size_t Processes>
+[[nodiscard]] consteval ArmsFault find_lock_disagreement_(arms_scan<Count, Processes> const& scan,
+                                                          LoopEndId index) noexcept {
+    auto const at = static_cast<std::uint32_t>(index);
+    loop_end const& end = scan.ends.ends[at];
+    if (end.move == LoopMove::ReadLock && writes_own_lock_(scan, index)) return ArmsFault{};
+    for (std::uint32_t earlier = 0; earlier < at; ++earlier) {
+        loop_end const& other = scan.ends.ends[earlier];
+        if (other.move != end.move || scan.ends.keys[earlier] != scan.ends.keys[at]) continue;
+        if (other.move == LoopMove::ReadLock && writes_own_lock_(scan, LoopEndId{earlier})) continue;
+        if (scan.name_keys[scan.process_of[earlier]] == scan.name_keys[scan.process_of[at]]) return ArmsFault{};
+        return ArmsFault{.code = ArmsFaultCode::LockSideDisagrees,
+                         .move = end.move,
+                         .first_arm = scan.arm_of[earlier],
+                         .arm = scan.arm_of[at],
+                         .place = place_in_arm_(scan, LoopEndId{earlier}),
+                         .first_name = scan.names[scan.process_of[earlier]],
+                         .name = scan.names[scan.process_of[at]]};
+    }
+    return ArmsFault{};
+}
+
+// The first fault of the arms of a loop (THE ARMS): two processes of one arm
+// with one name, and then the first end that disagrees with an earlier end of
+// its channel or its lock.  Complexity: quadratic in the ends and in the
+// processes of all the arms.
+template <class... Arms>
+[[nodiscard]] consteval ArmsFault find_arms_fault_() noexcept {
+    constexpr std::size_t count = (loop_end_total_v<Arms> + ... + 0);
+    constexpr std::size_t processes = (loop_process_count_v<Arms> + ... + 0);
+    arms_scan<count, processes> scan{};
+    std::uint32_t arm = 0;
+    ((put_arm_(scan, ArmId{arm}, Arms{}), ++arm), ...);
+    for (std::uint32_t process = 0; process < scan.process_count; ++process) {
+        for (std::uint32_t earlier = 0; earlier < process; ++earlier) {
+            if (scan.arm_of_process[earlier] != scan.arm_of_process[process]
+                || scan.name_keys[earlier] != scan.name_keys[process])
+                continue;
+            return ArmsFault{.code = ArmsFaultCode::NameTwice,
+                             .first_arm = scan.arm_of_process[process],
+                             .arm = scan.arm_of_process[process],
+                             .first_name = scan.names[process],
+                             .name = scan.names[process]};
+        }
+    }
+    for (std::uint32_t index = 0; index < scan.ends.count; ++index) {
+        LoopEndId const at{index};
+        ArmsFault const fault = is_channel_move_(scan.ends.ends[index].move) ? find_channel_disagreement_(scan, at)
+                                                                             : find_lock_disagreement_(scan, at);
+        if (fault.code != ArmsFaultCode::NoFault) return fault;
+    }
+    return ArmsFault{};
+}
+
 }  // namespace detail
 
 // True when the type is a loop (THE LOOP): a StageLoop of one process or
@@ -1087,13 +1408,15 @@ template <class Loop>
 }
 
 // The verdict on a loop (THE LOOP): the refusal of its first lock that one
-// process does not write or that one other process does not read, or of its
-// first wait inside a bracket (THE LOCKS).  Then the refusal of a channel
-// whose period does not give back its marking (THE ARMS), the verdict of
-// check_liveness on its marked system, or the admitted verdict for a loop with
-// no end of a channel.  The marked graph finds each channel whose sends and
-// receives differ in count before it looks for a cycle, so the verdict of
-// that fault of the marked graph is the refusal of the marking.
+// process does not write or that one other process does not read, of its
+// first wait inside a bracket, or of its first bracket of a writer inside a
+// read (THE LOCKS).  Then the refusal of the first end of a channel that
+// states another capacity than an earlier end of that channel, the refusal of
+// a channel whose period does not give back its marking (THE ARMS), the
+// verdict of check_liveness on its marked system, or the admitted verdict for
+// a loop with no end of a channel.  The marked graph finds each channel whose
+// sends and receives differ in count before it looks for a cycle, so the
+// verdict of that fault of the marked graph is the refusal of the marking.
 // Complexity: quadratic in the ends.
 template <class Loop>
     requires IsStageLoop<Loop>
@@ -1103,7 +1426,7 @@ template <class Loop>
     using detail::LoopFaultCode;
     constexpr auto reading = detail::read_loop_(Loop{});
     constexpr auto shape = detail::shape_of_loop_(reading);
-    constexpr detail::LoopFault fault = detail::find_lock_fault_(reading, shape);
+    constexpr detail::LoopFault fault = detail::find_loop_fault_(reading, shape);
     if constexpr (fault.code == LoopFaultCode::LockUnwired) {
         return net::NetVerdict::refuse("loop: the processes that write the lock '")
             .put_name(net::NetName{detail::index_label_v<LabelKind::Lock, fault.lock>.text})
@@ -1122,6 +1445,22 @@ template <class Loop>
             .put("' before it leaves its bracket of '")
             .put_name(net::NetName{detail::index_label_v<LabelKind::Lock, fault.lock>.text})
             .put("'.  A process that writes or reads a lock waits on nothing before it leaves the bracket.");
+    } else if constexpr (fault.code == LoopFaultCode::WriteInRead) {
+        return net::NetVerdict::refuse("loop: '")
+            .put_name(detail::name_of_process_at_(Loop{}, fault.process))
+            .put("' writes '")
+            .put_name(net::NetName{detail::index_label_v<LabelKind::Lock, fault.place>.text})
+            .put("' inside its read of '")
+            .put_name(net::NetName{detail::index_label_v<LabelKind::Lock, fault.lock>.text})
+            .put("'.  A read of a sequence lock can run again, and then each write inside it runs two times.");
+    } else if constexpr (fault.code == LoopFaultCode::CapacityDisagrees) {
+        return net::NetVerdict::refuse("loop: the ends of '")
+            .put_name(net::NetName{detail::index_label_v<LabelKind::Channel, fault.place>.text})
+            .put("' state two capacities: ")
+            .put_number(fault.channel_capacity)
+            .put(" and ")
+            .put_number(fault.end_capacity)
+            .put(".  Each end that states the capacity of a channel states the same capacity.");
     } else if constexpr (shape.channel_count == 0) {
         return net::NetVerdict{};
     } else {
@@ -1150,6 +1489,106 @@ template <class Loop>
     requires IsStageLoop<Loop>
 consteval void ensure_loop_live() noexcept {
     constexpr ::foundation::algebra::net::NetVerdict verdict = check_loop<Loop>();
+    static_assert(verdict.is_admitted(), verdict);
+}
+
+namespace detail {
+
+// The place of the first arm that check_loop refuses, or the count of the
+// arms when it admits each arm.
+template <class... Arms>
+[[nodiscard]] consteval std::size_t first_refused_arm_() noexcept {
+    bool const is_admitted[] = {check_loop<Arms>().is_admitted()...};
+    for (std::size_t arm = 0; arm < sizeof...(Arms); ++arm) {
+        if (!is_admitted[arm]) return arm;
+    }
+    return sizeof...(Arms);
+}
+
+}  // namespace detail
+
+// The verdict on the arms of a loop (THE ARMS): the verdict of check_loop on
+// the first arm that it refuses, after the place of the arm.  Then the
+// refusal of an arm with two processes of one name, of a channel whose
+// sends or whose receives stand in two processes, of a channel whose ends
+// state two capacities, or of a lock whose writes or whose reads stand in two
+// processes, across the arms.  The arms name their processes by the type of
+// the name, and their channels and locks by type.  Complexity: quadratic in
+// the ends of each arm, and quadratic in the ends of all the arms.
+template <class... Arms>
+    requires(sizeof...(Arms) != 0 && (IsStageLoop<Arms> && ...))
+[[nodiscard]] consteval ::foundation::algebra::net::NetVerdict check_arms() noexcept {
+    namespace net = ::foundation::algebra::net;
+    using detail::ArmsFaultCode;
+    using detail::LabelKind;
+    constexpr std::size_t refused = detail::first_refused_arm_<Arms...>();
+    if constexpr (refused < sizeof...(Arms)) {
+        constexpr net::NetVerdict verdict = check_loop<Arms...[refused]>();
+        return net::NetVerdict::refuse("arms: arm ").put_number(refused).put(": ").put(verdict.data());
+    } else {
+        constexpr detail::ArmsFault fault = detail::find_arms_fault_<Arms...>();
+        constexpr auto first_arm = static_cast<std::uint32_t>(fault.first_arm);
+        constexpr auto arm = static_cast<std::uint32_t>(fault.arm);
+        if constexpr (fault.code == ArmsFaultCode::NameTwice) {
+            return net::NetVerdict::refuse("arms: arm ")
+                .put_number(arm)
+                .put(" holds two processes with the name '")
+                .put_name(fault.name)
+                .put("'.  The arms compare their processes by the type of the name, so each process of an arm has a "
+                     "name of its own.");
+        } else if constexpr (fault.code == ArmsFaultCode::SideDisagrees) {
+            constexpr bool is_send = fault.move == detail::LoopMove::Send;
+            return net::NetVerdict::refuse("arms: in arm ")
+                .put_number(first_arm)
+                .put(" '")
+                .put_name(fault.first_name)
+                .put(is_send ? "' sends into '" : "' receives from '")
+                .put_name(net::NetName{detail::index_label_v<LabelKind::Channel, fault.place>.text})
+                .put("', and in arm ")
+                .put_number(arm)
+                .put(" '")
+                .put_name(fault.name)
+                .put(is_send ? "' sends into it." : "' receives from it.")
+                .put("  The arms agree on each channel: one process sends into it, and one process receives from it.");
+        } else if constexpr (fault.code == ArmsFaultCode::CapacityDisagrees) {
+            return net::NetVerdict::refuse("arms: in arm ")
+                .put_number(first_arm)
+                .put(" an end of '")
+                .put_name(net::NetName{detail::index_label_v<LabelKind::Channel, fault.place>.text})
+                .put("' states the capacity ")
+                .put_number(fault.channel_capacity)
+                .put(", and in arm ")
+                .put_number(arm)
+                .put(" an end of it states ")
+                .put_number(fault.end_capacity)
+                .put(".  The arms agree on the capacity of each channel.");
+        } else if constexpr (fault.code == ArmsFaultCode::LockSideDisagrees) {
+            constexpr bool is_write = fault.move == detail::LoopMove::WriteLock;
+            return net::NetVerdict::refuse("arms: in arm ")
+                .put_number(first_arm)
+                .put(" '")
+                .put_name(fault.first_name)
+                .put(is_write ? "' writes '" : "' reads '")
+                .put_name(net::NetName{detail::index_label_v<LabelKind::Lock, fault.place>.text})
+                .put("', and in arm ")
+                .put_number(arm)
+                .put(" '")
+                .put_name(fault.name)
+                .put(is_write ? "' writes it." : "' reads it.")
+                .put("  The arms agree on the writer and the reader of each lock.");
+        } else {
+            return net::NetVerdict{};
+        }
+    }
+}
+
+// The door over the arms of a loop: an arm that the door of a loop refuses,
+// or arms that disagree on a name, a side or a capacity, do not compile (THE
+// ARMS).  One static_assert fires, with the text of the verdict.
+template <class... Arms>
+    requires(sizeof...(Arms) != 0 && (IsStageLoop<Arms> && ...))
+consteval void ensure_arms_live() noexcept {
+    constexpr ::foundation::algebra::net::NetVerdict verdict = check_arms<Arms...>();
     static_assert(verdict.is_admitted(), verdict);
 }
 
