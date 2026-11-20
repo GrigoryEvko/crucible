@@ -636,7 +636,7 @@ struct IndexLine {
 
 // Conservative upper bound on the serialized size of a RegionNode.
 //
-// The three unconditional terms sum to 352 bytes, so the result is
+// The four unconditional terms sum to 384 bytes, so the result is
 // positive by construction.  Stating that in the return type means a
 // refactor that drops the headroom or makes a header conditional trips
 // the mint's precondition here, instead of silently handing the caller
@@ -644,6 +644,7 @@ struct IndexLine {
 ::fixy::Positive<std::size_t> estimate_serial_size(RegionNode const& region) {
     size_t sz = 64;  // header
     sz += 32;  // region fixed fields
+    sz += detail_ser::kRegionChecksumBytes;
     for (const ::fixy::Ref<MemoryPlan const>& plan : region.plan) {
         sz += 64 + plan->num_slots() * sizeof(TensorSlot);
     }
@@ -1063,19 +1064,9 @@ namespace {
 
 // The text whose 32 bytes are the key of the session-event batches.
 constexpr ::fixy::TextView kSessionEventBatchKeyText{"crucible cipher session events 2"};
-static_assert(kSessionEventBatchKeyText.size() == 32, "a key of keyed_hash holds 32 bytes");
 
-[[nodiscard]] consteval ::foundation::core::KeyedHashKeyBytes session_event_batch_hash_key_() noexcept {
-    ::fixy::FixedArray<std::byte, 32> bytes{};
-    auto cursor = bytes.begin();
-    for (char const letter : kSessionEventBatchKeyText) {
-        *cursor = static_cast<std::byte>(letter);
-        ++cursor;
-    }
-    return ::foundation::core::KeyedHashKeyBytes{bytes.view()};
-}
-
-constexpr ::foundation::core::KeyedHashKeyBytes kSessionEventBatchHashKey = session_event_batch_hash_key_();
+constexpr ::foundation::core::KeyedHashKeyBytes kSessionEventBatchHashKey =
+    detail_ser::key_of_text(kSessionEventBatchKeyText);
 
 }  // namespace
 

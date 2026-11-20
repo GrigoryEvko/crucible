@@ -295,7 +295,7 @@ static void check_descriptor_images_agree() {
     // The byte length catches size drift, the hash catches content
     // drift at a stable size.
     {
-        static constexpr uint32_t EXPECTED_CDAG_VERSION = 18;
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 19;
         static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
                       "CDAG_VERSION bump detected — update wire-byte golden below "
                       "after confirming the new bytes hash to the expected value.");
@@ -320,9 +320,10 @@ static void check_descriptor_images_agree() {
         // hash of the header move the bytes.  CDAG_VERSION 18 writes each
         // tensor descriptor as its image of the Protocol family, with no data
         // pointer and no hash of the grad_fn: 16 bytes less for each of the 9
-        // descriptors of the image, so 144 bytes less.
-        constexpr size_t EXPECTED_WIRE_BYTES = 1684;
-        constexpr uint64_t EXPECTED_WIRE_HASH = 0xaa19bc806f609735ULL;
+        // descriptors of the image, so 144 bytes less.  CDAG_VERSION 19 ends
+        // the image with the 32 bytes of the checksum of each byte before it.
+        constexpr size_t EXPECTED_WIRE_BYTES = 1716;
+        constexpr uint64_t EXPECTED_WIRE_HASH = 0xe29f72ffea662ef1ULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             std::fprintf(stderr,
@@ -659,6 +660,60 @@ static void check_descriptor_images_agree() {
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_region(test.alloc, other.view(), other_load))
                                             == crucible::LoadError::content_hash_mismatch
                                         && "the ops of the image do not hash to its content hash under another policy");
+    }
+
+    // A flipped bit in any byte of an image is refused.  The image holds a
+    // plan of two slots that the pool allocator can serve.  So the flips reach
+    // the merkle hash, the measured time, the variant, the pool size and the
+    // offset and the size of each slot, which no fold of the ops covers.  The
+    // old loader took most of those flips, and a replay of such a plan puts
+    // two tensors on wrong or overlapping memory.
+    {
+        ::fixy::BumpArena flip_dag{1 << 16};
+        const ::fixy::View<crucible::TraceEntry> flip_ops =
+            flip_dag.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
+        crucible::TraceEntry& flip_op = *flip_ops.get(0).expect("the region holds one op");
+        flip_op.schema_hash = crucible::SchemaHash{0x79};
+        flip_op.set_inputs(::fixy::check::run_of(kTest, test.alloc, flip_dag, make_meta(16)),
+                           ::fixy::check::run_of(kTest, test.alloc, flip_dag, crucible::OpIndex{}),
+                           ::fixy::check::run_of(kTest, test.alloc, flip_dag, crucible::SlotId{0}));
+        flip_op.set_outputs(::fixy::check::run_of(kTest, test.alloc, flip_dag, make_meta(16)),
+                            ::fixy::check::run_of(kTest, test.alloc, flip_dag, crucible::SlotId{1}));
+        crucible::RegionNode& flip_region = *crucible::make_region(test.alloc, flip_dag, flip_ops);
+        crucible::MemoryPlan flip_plan{};
+        flip_plan.pool_bytes = 2 * crucible::PoolAllocator::ALIGNMENT;
+        const ::fixy::View<crucible::TensorSlot> flip_slots =
+            flip_dag.array<crucible::TensorSlot>(test.alloc, 2, crucible::TensorSlot{});
+        std::uint32_t slot_index = 0;
+        for (crucible::TensorSlot& slot : flip_slots) {
+            slot.offset_bytes = slot_index * crucible::PoolAllocator::ALIGNMENT;
+            slot.nbytes = 64;
+            slot.dtype = crucible::ScalarType::Float;
+            slot.slot_id = crucible::SlotId{slot_index};
+            ++slot_index;
+        }
+        flip_plan.slots = flip_slots;
+        flip_region.plan = crucible::make_plan_link(flip_plan);
+
+        ::fixy::HeapArray<std::byte> flip_buf = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
+        const size_t flip_bytes = crucible::serialize_region(crucible::SerializedRegion{flip_region}, flip_buf.view());
+        CRUCIBLE_TEST_ASSERT(kTest, flip_bytes > 0);
+        const ::fixy::View<const std::byte> flip_image =
+            flip_buf.view().window(0, flip_bytes).expect("the writer writes inside its image");
+        ::fixy::BumpArena clean_load{1 << 16};
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::deserialize_region(test.alloc, flip_image, clean_load).is_ok()
+                                        && "the image with a plan loads before a flip");
+        size_t accepted_flips = 0;
+        for (size_t at = 0; at < flip_bytes; ++at) {
+            const uint8_t original = static_cast<uint8_t>(*flip_image.get(at).expect("the byte is inside the image"));
+            for (uint32_t bit = 0; bit < 8; ++bit) {
+                const ::fixy::HeapArray<std::byte> flipped =
+                    with_byte(test.alloc, flip_image, at, std::byte{static_cast<uint8_t>(original ^ (1u << bit))});
+                ::fixy::BumpArena flip_load{1 << 12};
+                if (crucible::deserialize_region(test.alloc, flipped.view(), flip_load).is_ok()) ++accepted_flips;
+            }
+        }
+        CRUCIBLE_TEST_ASSERT(kTest, accepted_flips == 0 && "each flipped bit of an image is refused");
     }
 
     ::fixy::check::pass(kTest, "test_serialize: all tests passed\n");

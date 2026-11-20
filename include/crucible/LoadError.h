@@ -63,6 +63,10 @@ enum class LoadError : std::uint8_t {
     // steps are not consecutive, or the batch names a step that the load
     // holds already.
     batch_steps_mismatch,
+    // The region image does not end with the checksum of the bytes before
+    // it: the checksum differs, or bytes come between the last field and the
+    // checksum.
+    checksum_mismatch,
 };
 
 // The text of a reason, for a report to a person.  Each reason has its own
@@ -108,6 +112,8 @@ enum class LoadError : std::uint8_t {
         case LoadError::batch_steps_mismatch:
             return ::fixy::TextView{
                 "an event of the session-event batch has another session, a gap in its steps, or a loaded step"};
+        case LoadError::checksum_mismatch:
+            return ::fixy::TextView{"the region image does not end with the checksum of the bytes before it"};
         default:
             ::fixy::unreachable();
     }

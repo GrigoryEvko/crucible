@@ -2,7 +2,8 @@
 
 // The wire format is a 32-byte header followed by a flat payload. The header
 // is a 4-byte magic, a 4-byte version, a 1-byte node kind, 7 zero pad bytes,
-// an 8-byte merkle hash and an 8-byte content hash.
+// an 8-byte merkle hash and an 8-byte content hash.  A region image ends with
+// a 32-byte checksum of each byte before it (THE CHECKSUM OF A REGION IMAGE).
 //
 // Nothing in the format is a raw pointer, so a loaded image is independent of
 // where it was written. A tensor's data pointer is written as zero, and a
@@ -14,6 +15,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/PoolAllocator.h>
 #include <crucible/TraceRing.h>
+#include <foundation/core/KeyedHash.h>
 #include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Protocol.h>
@@ -75,8 +77,13 @@ using LoadedRegionNode = ::fixy::Tagged<::fixy::Ref<RegionNode>, ::fixy::tags::s
 // of the family, with no data pointer and no hash of the grad_fn: 16 bytes
 // less for each tensor.  A region of version 17 holds other bytes and other
 // hashes.
+// 19 (2026-11-20): each region image ends with a checksum of each byte
+// before it.  The content hash folds only the ops and the numerics, so a
+// flipped bit of the merkle hash, the measured time, the variant or the plan
+// loaded as a sound image.  A region of version 18 has no checksum, and the
+// version refuses it.  The image of a branch changes only its version word.
 static constexpr CdagFormatVersion CDAG_VERSION =
-    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{18});
+    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{19});
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();
@@ -407,6 +414,65 @@ inline constexpr size_t kHeaderWireBytes = 4 + 4 + 1 + kHeaderPadBytes + 8 + 8;
     return ::fixy::none;
 }
 
+// THE CHECKSUM OF A REGION IMAGE
+//   A region image ends with the keyed BLAKE3 of each byte before it, under
+//   the key of kRegionChecksumKeyText.  The content hash stays the identity
+//   of the region, and it folds only the ops and the numerics.  The checksum
+//   covers the other fields too: the merkle hash, the measured time, the
+//   variant and the plan.  So a flipped bit of a stored image gives another
+//   checksum, and the loader refuses the image.  The key is a constant of the
+//   format and names no secret.  Anyone who writes the store can compute the
+//   checksum, so it finds a damaged image, and the checks of the fields stay
+//   the defense against a hostile writer.  The loader checks the checksum
+//   after the fields, so a field that a check refuses keeps its reason.
+
+// The text whose 32 bytes are the key of the checksum of a region image.
+inline constexpr ::fixy::TextView kRegionChecksumKeyText{"crucible cdag region checksum 01"};
+
+// The key whose 32 bytes are the characters of text.  A text of another size
+// is no constant expression, so a wrong key text does not compile.
+[[nodiscard]] consteval ::foundation::core::KeyedHashKeyBytes key_of_text(::fixy::TextView text) noexcept {
+    if (text.size() != 32) ::fixy::unreachable();
+    ::fixy::FixedArray<std::byte, 32> bytes{};
+    auto cursor = bytes.begin();
+    for (char const letter : text) {
+        *cursor = static_cast<std::byte>(letter);
+        ++cursor;
+    }
+    return ::foundation::core::KeyedHashKeyBytes{bytes.view()};
+}
+
+inline constexpr ::foundation::core::KeyedHashKeyBytes kRegionChecksumKey = key_of_text(kRegionChecksumKeyText);
+
+// The bytes of the checksum at the end of a region image.
+inline constexpr size_t kRegionChecksumBytes = 32;
+
+// The checksum of the bytes of a region image before its checksum.
+// Complexity: linear in the count of the bytes.
+[[nodiscard]] inline ::fixy::FixedArray<std::byte, kRegionChecksumBytes>
+region_checksum(::fixy::View<const std::byte> covered) noexcept {
+    return ::foundation::core::keyed_hash(kRegionChecksumKey, covered).bytes();
+}
+
+// The fault of an image whose last kRegionChecksumBytes bytes must be the
+// checksum of each byte before them, or none.  An image shorter than covered
+// and a checksum is truncated.  A checksum that differs, and a byte between
+// the covered bytes and the checksum, give checksum_mismatch.  Complexity:
+// linear in the size of the image.
+[[nodiscard]] inline ::fixy::Option<LoadError> checksum_fault(::fixy::View<const std::byte> image,
+                                                              size_t covered) noexcept {
+    if (covered > image.size() || image.size() - covered < kRegionChecksumBytes) {
+        return ::fixy::some(LoadError::truncated);
+    }
+    if (image.size() - covered != kRegionChecksumBytes) return ::fixy::some(LoadError::checksum_mismatch);
+    const ::fixy::FixedArray<std::byte, kRegionChecksumBytes> expected =
+        region_checksum(image.window(0, covered).expect("the covered bytes are inside the image"));
+    const bool is_same = ::fixy::equal(
+        image.window(covered, kRegionChecksumBytes).expect("the checksum is inside the image"), expected.view());
+    if (!is_same) return ::fixy::some(LoadError::checksum_mismatch);
+    return ::fixy::none;
+}
+
 }  // namespace detail_ser
 
 // The region that serialize_region reads.  A borrow is never null.
@@ -492,6 +558,16 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
         }
         for (const SlotId slot_id : te.output_slot_ids()) {
             w.w(slot_id.raw());
+        }
+    }
+
+    // The checksum of each byte before it is the last field (THE CHECKSUM OF
+    // A REGION IMAGE).
+    if (w.has_room) {
+        const ::fixy::FixedArray<std::byte, kRegionChecksumBytes> checksum =
+            region_checksum(image.window(0, w.pos).expect("the writer wrote inside its image"));
+        for (const std::byte byte : checksum) {
+            w.write_word(std::to_integer<uint8_t>(byte));
         }
     }
 
@@ -710,6 +786,11 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     if (first_op_schema != first_op_schema_of(ops)) [[unlikely]] {
         return ::fixy::err(LoadError::first_schema_mismatch);
     }
+    // The checksum covers the fields that no fold covers (THE CHECKSUM OF A
+    // REGION IMAGE).  It comes after the checks of the fields, so a field that
+    // a check refuses keeps its reason.
+    for (const LoadError fault : checksum_fault(image, r.pos))
+        return ::fixy::err(fault);
 
     const ::fixy::Ref<RegionNode> node = arena.make<RegionNode>(a);
     node->kind = TraceNodeKind::REGION;
