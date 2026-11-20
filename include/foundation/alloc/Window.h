@@ -4,9 +4,11 @@
 // and of its metadata region, the ladder of sizes, and the commits of an
 // extent and of the records (foundation/alloc/ChunkMap.h, THE WINDOW).
 //
-//   reserve_window()                 the window of the first size of the
-//                                    ladder that the kernel gives
-//   reserve_window(cap)              the same, with each reserve above cap
+//   reserve_window(diagnostic)       the window of the first size of the
+//                                    ladder that the kernel gives, or
+//                                    WindowFull with the remedy in the
+//                                    diagnostic (THE FULL WINDOW)
+//   reserve_window(cap, diagnostic)  the same, with each reserve above cap
 //                                    refused with no call (the test door of
 //                                    THE LADDER)
 //   window.record()                  the WindowRecord of the window
@@ -30,9 +32,19 @@
 //   with ThreadSanitizer starts at 64 GiB.  For each size, the door reserves
 //   the window at the alignment of a chunk, and then its region.  When the
 //   kernel refuses one of the two, the door unmaps the other and takes the
-//   next size.  When the kernel refuses each size, the door gives the error
-//   of the last refusal.  A full window is the address-space limit of the
-//   process, as an exhausted heap is its memory limit.
+//   next size.  When the kernel refuses each size, the door gives
+//   WindowFull (THE FULL WINDOW).
+//
+// THE FULL WINDOW
+//   The window is the address-space limit of the allocator, as the memory of
+//   the host is the limit of its heap.  When the kernel refuses each size of
+//   THE LADDER, the door gives WindowFull::no_address_space, and it writes
+//   the remedy into the WindowDiagnostic of the caller: the sizes that the
+//   page source refused, the name of the error of the last refusal, and the
+//   limits of the process to raise.  The Result holds only the small kind,
+//   so the error never allocates, and the caller keeps expect and
+//   CRUCIBLE_TRY.  Each call empties the diagnostic first, so a call that
+//   succeeds leaves it empty, and no text stays in a state of the thread.
 //
 // THE COMMITS
 //   Each commit is one mprotect of a range that is next to a range with the
@@ -66,6 +78,7 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Quantity.h>
 #include <foundation/core/Ref.h>
+#include <foundation/core/Text.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/PageSource.h>
 
@@ -77,6 +90,34 @@ namespace foundation::alloc {
 // The words of the map of the committed extents of a window: one bit for
 // each extent of a window of 1 TiB.
 inline constexpr std::size_t kExtentMapWords = ((std::size_t{1} << 40) >> kExtentShift) / 64;
+
+// The reason that the window door gives no room (THE FULL WINDOW).
+enum class WindowFull : std::uint8_t {
+    // The page source refused each size of THE LADDER: the process has no
+    // free range of address space for the smallest window and its region.
+    no_address_space,
+};
+
+// The largest count of the characters of the text of a WindowDiagnostic.
+inline constexpr std::size_t kWindowDiagnosticBytes = 384;
+
+// The remedy of the last refusal of the window door (THE FULL WINDOW).
+class WindowDiagnostic final {
+public:
+    // The empty diagnostic.
+    WindowDiagnostic() noexcept = default;
+
+    // The text of the last refusal, or the empty text after a call that
+    // succeeded.
+    [[nodiscard]] ::foundation::core::TextView text() const& noexcept { return text_.view(); }
+    ::foundation::core::TextView
+    text() const&& = delete("the text of a temporary diagnostic points into an object that the full expression ends");
+
+private:
+    friend struct detail::WindowRecordDoor;
+
+    ::foundation::core::FixedText<kWindowDiagnosticBytes> text_{};
+};
 
 // One window and its metadata region (THE WINDOW).  The window owns the two
 // reservations, and its end unmaps them.
@@ -160,14 +201,30 @@ private:
     std::size_t slab_records_front_ = 0;
 };
 
-// The window of the first size of THE LADDER that the kernel gives, or the
-// error of the last refusal.
-[[nodiscard]] ::foundation::core::Result<Window, ::foundation::os::Errno> reserve_window() noexcept;
+namespace detail {
+
+// The cold body of the two doors below: the climb of THE LADDER.  On a
+// refusal it writes the remedy into the diagnostic.
+[[nodiscard]] ::foundation::core::Result<Window, WindowFull> reserve_window_(::foundation::os::ReserveCap cap,
+                                                                             WindowDiagnostic& diagnostic) noexcept;
+
+}  // namespace detail
+
+// The window of the first size of THE LADDER that the kernel gives, or
+// WindowFull with the remedy in the diagnostic (THE FULL WINDOW).
+template <class Brand>
+[[nodiscard]] ::foundation::core::Result<Window, WindowFull>
+reserve_window(::foundation::core::Ref<WindowDiagnostic, Brand> diagnostic) noexcept {
+    return detail::reserve_window_(::foundation::os::ReserveCap{~std::size_t{0}}, *diagnostic);
+}
 
 // The same, with each reserve above the cap refused with enomem and with no
 // call: the test door of THE LADDER.
-[[nodiscard]] ::foundation::core::Result<Window, ::foundation::os::Errno>
-reserve_window(::foundation::os::ReserveCap cap) noexcept;
+template <class Brand>
+[[nodiscard]] ::foundation::core::Result<Window, WindowFull>
+reserve_window(::foundation::os::ReserveCap cap, ::foundation::core::Ref<WindowDiagnostic, Brand> diagnostic) noexcept {
+    return detail::reserve_window_(cap, *diagnostic);
+}
 
 // Writes the record of the window into the host slot of the table.  Only the
 // init of the root calls it, one time, before it gives a block of the

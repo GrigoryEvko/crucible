@@ -10,6 +10,7 @@
 #include <foundation/alloc/Metadata.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Fatal.h>
+#include <foundation/core/Format.h>
 #include <foundation/core/Quantity.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Side.h>
@@ -48,6 +49,12 @@ struct WindowRecordDoor {
 
     static void place(WindowTable& table, WindowSlot slot, WindowRecord record) noexcept {
         table.records_[slot.raw()] = record;
+    }
+
+    // The text of the diagnostic, which a call empties first and a refusal
+    // writes (THE FULL WINDOW).
+    [[nodiscard]] static core::FixedText<kWindowDiagnosticBytes>& text_of(WindowDiagnostic& diagnostic) noexcept {
+        return diagnostic.text_;
     }
 };
 
@@ -103,19 +110,38 @@ using Rung = core::Index<kRungCount>;
     return detail::WindowRecordDoor::window_of(std::move(window), std::move(region), layout, record);
 }
 
-// The window of the first rung that the kernel gives (THE LADDER).
-[[nodiscard]] core::Result<Window, os::Errno> climb_ladder(os::ReserveCap cap) noexcept {
+// Writes the remedy of a refusal of each rung into the diagnostic (THE FULL
+// WINDOW).  A text past the capacity keeps its first characters.
+CRUCIBLE_COLD void write_full_window(WindowDiagnostic& diagnostic, os::Errno refusal) noexcept {
+    Rung const first = Rung::check(kFirstRung).expect("the first rung is below kRungCount");
+    static_cast<void>(core::format(detail::WindowRecordDoor::text_of(diagnostic),
+                                   "foundation: the window door got no window of the allocator. The page source "
+                                   "refused each size of the ladder from {} GiB to 1 GiB of address space, the last "
+                                   "with {}. Raise the address-space limit of the process (ulimit -v) or "
+                                   "vm.max_map_count, or end other mappings of the process, and start it again.",
+                                   rung_bytes(first).raw() >> 30, core::enum_name_text(refusal)));
+}
+
+}  // namespace
+
+namespace detail {
+
+core::Result<Window, WindowFull> reserve_window_(os::ReserveCap cap, WindowDiagnostic& diagnostic) noexcept {
+    WindowRecordDoor::text_of(diagnostic) = core::FixedText<kWindowDiagnosticBytes>{};
     os::Errno refusal = os::Errno::enomem;
     for (std::size_t raw = kFirstRung; raw < kRungCount; ++raw) {
         Rung const rung = Rung::check(raw).expect("each rung of the loop is below kRungCount");
         core::Result<Window, os::Errno> taken = reserve_rung(rung_bytes(rung), cap);
-        if (taken.is_ok()) return taken;
+        if (taken.is_ok()) {
+            return std::move(taken).map_err([](os::Errno) noexcept { return WindowFull::no_address_space; });
+        }
         refusal = taken.err().value_or(os::Errno::enomem);
     }
-    return core::err(refusal);
+    write_full_window(diagnostic, refusal);
+    return core::err(WindowFull::no_address_space);
 }
 
-}  // namespace
+}  // namespace detail
 
 Window::Window(os::Reservation&& window, os::Reservation&& region, MetadataLayout layout, WindowRecord record) noexcept
     : window_{std::move(window)}, region_{std::move(region)}, layout_{layout}, record_{record} {}
@@ -178,10 +204,6 @@ core::Result<SlabMeta*, os::Errno> Window::start_slab_meta_(ChunkIndex chunk, Un
     void* const place = __builtin_bit_cast(void*, static_cast<std::uint64_t>(record_.region_base()) + offset);
     return ::new(place) SlabMeta{};
 }
-
-core::Result<Window, os::Errno> reserve_window() noexcept { return climb_ladder(os::ReserveCap{~std::size_t{0}}); }
-
-core::Result<Window, os::Errno> reserve_window(os::ReserveCap cap) noexcept { return climb_ladder(cap); }
 
 void publish_host_window(Window const& window, WindowTable& table) noexcept {
     CRUCIBLE_FATAL_INVARIANT(table.host().is_empty());

@@ -3,6 +3,8 @@
 //
 //   - The ladder with a cap of 4 GiB gives a window of 4 GiB, with no end of
 //     the process, and the window with no cap has one size of the ladder.
+//   - A cap below the smallest size gives WindowFull and the remedy text in
+//     the diagnostic, and the next call that succeeds empties it.
 //   - The map of a new window reads no owner for each chunk.  A write of an
 //     entry reads back through the record, and an address outside the
 //     window reads none.
@@ -29,6 +31,7 @@
 #include <fixy/check/Check.h>
 #include <fixy/os/Signal.h>
 #include <foundation/Quarantine.h>
+#include <foundation/core/Algorithms.h>
 #include <foundation/core/Text.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/File.h>
@@ -56,7 +59,19 @@ constexpr std::size_t kMapsBytes = std::size_t{1} << 20;
 constinit ::foundation::core::FixedText<kMapsBytes> maps_text{};
 
 [[nodiscard]] alloc::Window reserve_capped(std::size_t cap) noexcept {
-    return alloc::reserve_window(os::ReserveCap{cap}).expect("the ladder gives a window under the cap");
+    alloc::WindowDiagnostic diagnostic{};
+    return alloc::reserve_window(os::ReserveCap{cap}, ::foundation::core::to(diagnostic))
+        .expect("the ladder gives a window under the cap");
+}
+
+[[nodiscard]] alloc::Window reserve_any() noexcept {
+    alloc::WindowDiagnostic diagnostic{};
+    return alloc::reserve_window(::foundation::core::to(diagnostic))
+        .expect("the host gives a window of one size of the ladder");
+}
+
+[[nodiscard]] bool holds_text(alloc::WindowDiagnostic const& diagnostic, ::foundation::core::TextView part) noexcept {
+    return ::foundation::core::find(diagnostic.text(), part).is_some();
 }
 
 // The count of the lines of /proc/self/maps whose first address lies in the
@@ -105,12 +120,32 @@ void ladder_under_a_cap(TestRunnerCtx const& test) {
     alloc::Window const window = reserve_capped(4 * kGibibyte);
     CRUCIBLE_TEST_ASSERT(test, window.record().length().raw() == 4 * kGibibyte);
     CRUCIBLE_TEST_ASSERT(test, window.record().chunk_count() == 2048);
-    CRUCIBLE_TEST_ASSERT(test, alloc::reserve_window(os::ReserveCap{kGibibyte / 2}).is_err());
     pass(test, "  ladder_under_a_cap: PASSED\n");
 }
 
+// THE FULL WINDOW of foundation/alloc/Window.h: a cap below the smallest
+// size of the ladder gives WindowFull, with no end of the process, and the
+// diagnostic names the sizes, the error and the limits to raise.  The next
+// call that succeeds empties the diagnostic.
+void full_window_gives_the_remedy(TestRunnerCtx const& test) {
+    alloc::WindowDiagnostic diagnostic{};
+    bool const is_full =
+        alloc::reserve_window(os::ReserveCap{kGibibyte / 2}, ::foundation::core::to(diagnostic))
+            .match([](alloc::Window) noexcept { return false; },
+                   [](alloc::WindowFull full) noexcept { return full == alloc::WindowFull::no_address_space; });
+    CRUCIBLE_TEST_ASSERT(test, is_full);
+    CRUCIBLE_TEST_ASSERT(test, holds_text(diagnostic, "GiB to 1 GiB of address space, the last with enomem."));
+    CRUCIBLE_TEST_ASSERT(test, holds_text(diagnostic, "(ulimit -v) or vm.max_map_count"));
+    alloc::Window const window =
+        alloc::reserve_window(os::ReserveCap{4 * kGibibyte}, ::foundation::core::to(diagnostic))
+            .expect("the ladder gives a window under the cap");
+    CRUCIBLE_TEST_ASSERT(test, window.record().length().raw() == 4 * kGibibyte);
+    CRUCIBLE_TEST_ASSERT(test, diagnostic.text().size() == 0);
+    pass(test, "  full_window_gives_the_remedy: PASSED\n");
+}
+
 void ladder_with_no_cap(TestRunnerCtx const& test) {
-    alloc::Window const window = alloc::reserve_window().expect("the host gives a window of one size of the ladder");
+    alloc::Window const window = reserve_any();
     std::size_t const length = window.record().length().raw();
     bool is_rung = false;
     for (std::size_t rung = 0; rung < 6; ++rung) {
@@ -217,7 +252,7 @@ void guard_chunk_faults(TestRunnerCtx const& test) {
 }
 
 void mappings_follow_extents(TestRunnerCtx const& test) {
-    alloc::Window window = alloc::reserve_window().expect("the host gives a window of one size of the ladder");
+    alloc::Window window = reserve_any();
     alloc::WindowRecord const record = window.record();
     alloc::UnitIndex const first_unit{::foundation::core::StaticIndex<0>{}};
     constexpr std::size_t kChunks = 4096;
@@ -291,6 +326,7 @@ void device_slots_fill_then_refuse(TestRunnerCtx const& test) {
 int main() {
     TestRunnerCtx const test{::foundation::effects::testing::test()};
     ladder_under_a_cap(test);
+    full_window_gives_the_remedy(test);
     ladder_with_no_cap(test);
     new_map_reads_no_owner(test);
     tagged_address_reads_its_chunk(test);
