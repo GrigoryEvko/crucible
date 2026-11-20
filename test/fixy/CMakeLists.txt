@@ -4113,6 +4113,29 @@ fixy_neg_compile_test(neg_sess_context_live_queue_mismatch
   "fixy::session::diagnostic \\[Association_Queue_Mismatch\\]"
   "Liveness\\.h:[0-9]+:[0-9]+: +required from here")
 
+# The door of the marked system of a context (fixy/session/ContextNet.h):
+# two contexts whose waits make a cycle, and two contexts outside the model
+# of the check.
+fixy_neg_compile_test(neg_sess_context_net_crossed_sessions
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Context_Not_Live\\]: liveness: a cycle of waits holds no token: P receives 'Q to P' step 0 <- Q sends 'Q to P' step 0 <- Q receives 'P to Q' step 0 <- P sends 'P to Q' step 0\\."
+  "neg_sess_context_net_crossed_sessions\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_sess_context_net_crossed_ring
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Context_Not_Live\\]: liveness: a cycle of waits holds no token: P receives 'R to P' step 0 <- R sends 'R to P' step 0 <- R receives 'Q to R' step 0"
+  "neg_sess_context_net_crossed_ring\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_sess_context_net_queued_message
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Context_Outside_Marked_Model\\]: context: the role 'P' holds a message in its queue\\."
+  "neg_sess_context_net_queued_message\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_sess_context_net_peer_outside
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Context_Outside_Marked_Model\\]: context: the local type of the role 'P' names the peer 'R', which is no role of the context\\."
+  "neg_sess_context_net_peer_outside\\.cpp:[0-9]+:[0-9]+: +required from here")
+
 fixy_neg_compile_test(neg_sess_strip_peers_two_peers
   "template constraint failure for .template<class Local>"
   "fixy::session::strip_peers_t"
