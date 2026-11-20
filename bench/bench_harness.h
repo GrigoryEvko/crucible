@@ -888,23 +888,28 @@ namespace detail {
 // its affinity at the end of the scope.  A hold of no core changes nothing.
 // The process ends when the pin or the restore fails, because the thread would
 // then run on a CPU that the claim does not give it.
+//
+// The constructors and the destructor are not inline.  They are setup work
+// outside the timed loops.  Inline in the hot code of a caller, GCC 16 at -O3
+// reported a read of the storage of an empty prior_ (-Wmaybe-uninitialized),
+// although the flag of the Option keeps each read on the full arm.
 class CoreHold {
 public:
-    explicit CoreHold(CpuId core) noexcept {
+    [[gnu::noinline]] explicit CoreHold(CpuId core) noexcept {
         if (!core.is_valid()) return;
         const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
         prior_ = ::fixy::some(::fixy::sched::apply_affinity_to_cpu(startup, core.raw())
                                   .expect("the pin of a thread to a core of the claim of its run"));
     }
 
-    explicit CoreHold(crucible::warden::CpuSet const& cores) noexcept {
+    [[gnu::noinline]] explicit CoreHold(crucible::warden::CpuSet const& cores) noexcept {
         if (cores.is_empty()) return;
         const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
         prior_ = ::fixy::some(::fixy::sched::apply_affinity_to_mask(startup, detail::mask_of(cores))
                                   .expect("the pin of a thread to the cores of the claim of its run"));
     }
 
-    ~CoreHold() {
+    [[gnu::noinline]] ~CoreHold() {
         std::move(prior_).match(
             [](::fixy::sched::PriorAffinity held) noexcept {
                 std::move(held).restore().expect("the restore of the affinity of a thread after a hold of one core");
