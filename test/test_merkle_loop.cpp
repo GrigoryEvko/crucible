@@ -9,7 +9,6 @@
 
 #include <bit>
 #include <cstdint>
-#include <vector>
 
 namespace {
 
@@ -116,21 +115,23 @@ using crucible::SchemaHash;
     auto counter_of = [](uint32_t& count) { return [&count](crucible::RegionNode const&) { ++count; }; };
 
     uint32_t exec_count = 0;
-    std::vector<ContentHash> replay_log;
-    replay_log.reserve(16);
+    ::fixy::FixedList<ContentHash, 16> replay_log{};
     bool replay_ok = crucible::replay(loop, never_diverges, [&](crucible::RegionNode const& r) {
-        replay_log.push_back(r.content_hash);
+        static_cast<void>(replay_log.append(r.content_hash).expect("the replay runs at most 16 regions"));
         exec_count++;
     });
     CRUCIBLE_TEST_ASSERT(kTest, replay_ok);
     // 4 iterations × 2 body regions + 1 continuation region.
     CRUCIBLE_TEST_ASSERT(kTest, exec_count == 9);
     CRUCIBLE_TEST_ASSERT(kTest, replay_log.size() == 9);
+    auto const logged = [&replay_log](uint32_t position) noexcept {
+        return *replay_log.get(position).expect("the log holds 9 regions");
+    };
     for (uint32_t i = 0; i < 8; i += 2) {
-        CRUCIBLE_TEST_ASSERT(kTest, replay_log[i] == body_r1.content_hash);
-        CRUCIBLE_TEST_ASSERT(kTest, replay_log[i + 1] == body_r2.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, logged(i) == body_r1.content_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, logged(i + 1) == body_r2.content_hash);
     }
-    CRUCIBLE_TEST_ASSERT(kTest, replay_log[8] == final_region.content_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, logged(8) == final_region.content_hash);
 
     crucible::LoopNode& loop_zero =
         *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 0);
