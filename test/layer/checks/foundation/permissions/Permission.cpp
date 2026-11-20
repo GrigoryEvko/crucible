@@ -163,15 +163,13 @@ template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
         && !heap_new_reaches_v<Token> && std::is_nothrow_constructible_v<std::optional<Token>, Token&&>;
 }
 
-// No conversion drops or changes a brand.  The singleton root is the door to
-// the erased spelling (singleton_root_is_erased below), and the session erase
-// door of fixy/session/Flow.h is the one other.  Nothing converts an erased
-// token to a brand, and nothing converts one brand to another.
+// No conversion drops or changes a brand.  The singleton root is the one door
+// to the erased spelling (singleton_root_is_erased below).  Nothing converts
+// an erased token to a brand, and nothing converts one brand to another.
 struct brand_a {};
 struct brand_b {};
 static_assert(!std::is_constructible_v<Permission<seplog_test_tag>, Permission<seplog_test_tag, brand_a>&&>,
               "no conversion drops a brand");
-static_assert(!std::is_default_constructible_v<erase_brand_key>, "only the session erase door makes the erasure key");
 static_assert(!std::is_constructible_v<Permission<seplog_test_tag, brand_a>, Permission<seplog_test_tag>&&>,
               "an erased token does not acquire a brand");
 static_assert(!std::is_constructible_v<Permission<seplog_test_tag, brand_a>, Permission<seplog_test_tag, brand_b>&&>,

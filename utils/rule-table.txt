@@ -471,7 +471,6 @@ home owner foundation::effects::host::ProducerClaim include/foundation/effects/C
 home owner foundation::effects::host::ImageReader include/foundation/effects/ImageRead.h | the owner of the key of an image read of a counter or a clock, whose one friend is mint_from_image, the door that asks for a context that owns IO
 home owner foundation::effects::host::AtomOwner include/foundation/effects/Effect.h | the owner of the bare value atoms Alloc, IO and Block, whose friends are the three contexts and extract_bare, so a second definition builds an atom from nothing
 home federation foundation::permissions::FederationAdmission include/fixy/Federation.h | the federation door: the key of a federation peer token befriends this class template, and its definition builds the key only after a handshake verifies
-home owner foundation::permissions::SessionEraseDoor include/fixy/session/Flow.h | the session erase door: the key that drops the brand of a token befriends this class, and its one member, which only the hold factory of a session calls, drops the brand at an entry of a session hold
 
 home combine foundation::reflect::combine_ids include/foundation/reflect/Mix.h | row_hash folds through one body of combine_ids, and a copy of the salt, of the shift mix or of fmix64 can drift from it with no failed check
 
@@ -644,9 +643,6 @@ witness <foundation/effects/Effect.h> private | foundation::effects::host::AtomO
 
 # -- Permissions -----------------------------------------------------
 witness <foundation/permissions/Permission.h> private | foundation::permissions::perm_mint_key | foundation::permissions::perm_mint_key{}
-# Only the session erase door builds the key that drops the brand of a
-# permission token.
-witness <foundation/permissions/Permission.h> private | foundation::permissions::erase_brand_key | foundation::permissions::erase_brand_key{}
 witness <foundation/permissions/Permission.h> no-match | foundation::permissions::Permission<foundation::permissions::tag::HugePageTag> | foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>{}
 # Only the write borrow door builds the view that it lends a body.  Any
 # empty class is a brand, so a second canonical tag stands in for one here.

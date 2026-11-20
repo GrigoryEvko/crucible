@@ -107,31 +107,6 @@ namespace fixy::session {
 // the one friend of the hold and of the loan markers.
 class HoldFactory;
 
-}  // namespace fixy::session
-
-// The session erase door that foundation/permissions/Permission.h names.  A
-// session permission set keys a region by its tag, so an entry of a hold
-// drops the brand of each token that it takes.  The member is private, and
-// its one friend is HoldFactory, so no code outside the session layer drops a
-// brand.  The rule home refuses a definition of the class in each other file.
-// A token that leaves a session stays on the erased identity, so a session
-// gives the same erased type as a singleton root.  The door goes when the
-// session layer carries the brand of each token.
-class foundation::permissions::SessionEraseDoor final : ::foundation::NoObject<SessionEraseDoor> {
-    friend class ::fixy::session::HoldFactory;
-
-    template <class Tag, class Brand>
-    [[nodiscard]] static constexpr ErasedPermission<Tag> erase_(Permission<Tag, Brand>&& token) noexcept {
-        if constexpr (std::is_same_v<Brand, ::foundation::brand::DefaultBrand>) {
-            return std::move(token);
-        } else {
-            return ErasedPermission<Tag>{std::move(token), erase_brand_key{}};
-        }
-    }
-};
-
-namespace fixy::session {
-
 // ── The markers ─────────────────────────────────────────────────────
 //
 // Every marker is move-only.  A copy of a token is a second owner, and

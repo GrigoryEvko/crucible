@@ -1351,8 +1351,8 @@ foundation_neg_compile_test(neg_brand_read_view_body_asks_the_erased_view
   "no matching function for call to .with_read_view\\("
   "no known conversion for argument 1 from .const foundation::permissions::ReadView<\\{anonymous\\}::Region, foundation::permissions::<lambda\\(\\)> >. to .const foundation::permissions::ReadView<\\{anonymous\\}::Region>&.")
 
-# A branded token does not erase implicitly.  Only the session erase door
-# drops a brand, so a search for that name lists each site that drops one.
+# A branded token does not erase, and no constructor takes a token of
+# another brand.
 foundation_neg_compile_test(neg_brand_permission_does_not_erase_implicitly
   "conversion from .Permission<\\[\\.\\.\\.\\],foundation::permissions::<lambda\\(\\)>>."
   "to non-scalar type .Permission<\\[\\.\\.\\.\\],foundation::brand::DefaultBrand>. requested")

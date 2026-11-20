@@ -1199,12 +1199,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^fp::has_split_authoring_witness, kMetafunction},
     {^^fp::has_split_pack_authoring_witness, kMetafunction},
     {^^fp::perm_mint_key, kPasskey},
-    {^^fp::erase_brand_key, kPasskey},
     {^^fp::federation_admission_key, kPasskey},
     {^^fp::FederationAdmission, "the verifier of federation handshakes: it holds the local key and the replay window, "
                                 "the peer tokens that it admits fold, and it is never a value in a signature"},
-    {^^fp::SessionEraseDoor,
-     "the session erase door: it has a static member only, no object of it exists, and it is never a value"},
     {^^::fixy::concurrent::PermissionForkThreads,
      "the holder of the fork body: it has static members only, no object of it exists, and it is never a value"},
 

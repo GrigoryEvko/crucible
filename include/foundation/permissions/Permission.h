@@ -19,8 +19,8 @@
 // root that is the one live root of its tag can be on it: mint_singleton_root
 // gives such a root, and a second live singleton root of one tag ends the
 // process.  A root of mint_permission_root keeps its brand, and no
-// conversion drops a brand.  The session erase door below is the one other
-// route to the erased identity.  The rule erased-brand
+// conversion drops a brand.  A session hold keeps the brand of each token
+// that it takes (fixy/session/Flow.h).  The rule erased-brand
 // (utils/assay/guard/engines/tsast/erased_brand.py) counts each spelling on
 // the erased identity.
 //
@@ -714,7 +714,7 @@ mint_permission_root(Args const&...) noexcept;
 
 // The token of a tag on the erased identity DefaultBrand, under which each
 // token of the tag is one type.  For a tag that a root mint admits, only the
-// singleton root door and the session erase door give a token of this type.
+// singleton root door gives a token of this type.
 // Each site that names the erased token names this alias, so a search for it
 // lists them.
 template <typename Tag>
@@ -826,34 +826,6 @@ private:
 // foundation/permissions/FederationDoor.h.  It builds a token whose tag is
 // a FederatedPeer and no other token.
 
-// The session erase door.  A session permission set keys a region by its
-// tag, so the entries of a session hold drop the brand of each token that
-// they take.  This header names the class, and fixy/session/Flow.h defines
-// it: its one member is private, and its one friend is the HoldFactory of
-// that header.  The rule home of the quarantine plugin refuses a
-// definition of the class in each other file, as it does for
-// FederationAdmission (foundation/permissions/FederationDoor.h).
-//
-// The door is a known hole.  A token that leaves a session is on the
-// erased identity, so a session gives the same erased type as a singleton
-// root.  The door goes when the session layer carries the brand of each
-// token.
-class SessionEraseDoor;
-
-// The key of the one conversion that drops a brand.  Only the session
-// erase door makes one, so no other expression converts a branded token to
-// the erased identity.  Both constructors are user-provided, for the reason
-// perm_mint_key gives.
-class erase_brand_key {
-    constexpr erase_brand_key() noexcept {}
-
-public:
-    constexpr erase_brand_key(const erase_brand_key&) noexcept {}
-
-private:
-    friend class SessionEraseDoor;
-};
-
 // The tag constraint is a class-body static_assert rather than a
 // requires-clause on the primary template.  A requires-clause would
 // force every forward declaration of Permission to repeat it, which
@@ -905,17 +877,10 @@ public:
         requires IsFederatedPeerTag<Tag>
     {}
 
-    // Erasure.  A token of one instance becomes a token on the erased
-    // identity, and the conversion consumes the branded token.  Only the
-    // session erase door makes the key, so a search for SessionEraseDoor
-    // lists each site that drops a brand.  The erasure runs in one
-    // direction only.  Nothing makes a branded token out of an erased one,
-    // and nothing rebrands a token.  Either one mints an identity that the
-    // caller does not hold.
-    template <typename Other>
-        requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
-    constexpr Permission(Permission<Tag, Other>&&, erase_brand_key) noexcept {}
-
+    // No constructor takes a token of another brand.  An erasure would give
+    // a token of the type of a singleton root, a rebrand would give a token of
+    // an identity that the caller does not hold, and a brand from an erased
+    // token would do both.
     Permission(const Permission&) = delete(
         "Permission<Tag>: linear — duplicating creates two simultaneous owners of the same region, breaking CSL's frame rule.  Use std::move to transfer.");
     Permission& operator=(const Permission&) =

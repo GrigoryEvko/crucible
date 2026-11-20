@@ -4451,11 +4451,6 @@ fixy_neg_compile_test(neg_sess_payload_hand_off_behind_pointer
   "Payload_Refused.: the payload cannot travel on a session channel, because it reaches a DelegatedSession through a pointer"
   "The refused type: fixy::session::DelegatedSession<fixy::session::End, neg_sess_payload_hand_off_behind_pointer_types::Wire")
 
-# Only the hold factory drops the brand of a token through the session erase
-# door.
-fixy_neg_compile_test(neg_session_erase_door_outside_the_session_layer
-  "is private within this context"
-  "foundation::permissions::SessionEraseDoor::erase_")
 # A token reaches a hold once: never by name, and never twice by tag.
 fixy_neg_compile_test(neg_session_hold_lvalue_token
   "use of deleted function .foundation::permissions::Permission<Tag, Brand>::Permission\\(const foundation::permissions::Permission<Tag, Brand>&\\)"

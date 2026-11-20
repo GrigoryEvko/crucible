@@ -6,8 +6,7 @@
 // live owners.
 //
 // Expected diagnostic: the conversion from the branded token to the erased
-// token is refused, because the erasure constructor asks for the key that
-// only the session erase door makes.
+// token is refused, because no constructor takes a token of another brand.
 
 #include <foundation/permissions/Permission.h>
 

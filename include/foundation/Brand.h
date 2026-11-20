@@ -79,8 +79,7 @@
 // token of one tag is one type.  A share, a read loan, a parked token and
 // an owned region never drop their brand.  A permission token is on the
 // erased identity only as the singleton root of its tag, the one live root
-// of that tag, or at an entry of a session hold.  A borrow (Borrowed,
-// BorrowedRef, ScopedView) converts to its
+// of that tag.  A borrow (Borrowed, BorrowedRef, ScopedView) converts to its
 // erased spelling implicitly.  Nothing converts an erased value back to a
 // brand, so no caller can give an erased value to code that asks for a
 // brand.  The rule erased-brand (utils/assay/guard/engines/tsast/
