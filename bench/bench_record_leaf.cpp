@@ -47,12 +47,6 @@
 
 #include <bit>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <span>
-#include <string>
-#include <vector>
 
 using namespace crucible;
 
@@ -87,14 +81,23 @@ ValidatedOp certify_synthetic_op(const TraceRing::Entry&&, ::fixy::View<const Te
 constexpr uint32_t NUM_OPS = 8;
 constexpr uint32_t K = Vigil::ALIGNMENT_K;
 
-constexpr SchemaHash SCHEMA[NUM_OPS] = {
+constexpr ::fixy::FixedArray<SchemaHash, NUM_OPS> SCHEMA{
     SchemaHash{0x100}, SchemaHash{0x101}, SchemaHash{0x102}, SchemaHash{0x103},
     SchemaHash{0x104}, SchemaHash{0x105}, SchemaHash{0x106}, SchemaHash{0x107},
 };
-constexpr ShapeHash SHAPE[NUM_OPS] = {
+constexpr ::fixy::FixedArray<ShapeHash, NUM_OPS> SHAPE{
     ShapeHash{0x200}, ShapeHash{0x201}, ShapeHash{0x202}, ShapeHash{0x203},
     ShapeHash{0x204}, ShapeHash{0x205}, ShapeHash{0x206}, ShapeHash{0x207},
 };
+
+// The position of an op in the cycle of the NUM_OPS ops.
+using OpSlot = ::fixy::Index<NUM_OPS>;
+
+// The position after slot in the cycle of the ops.  A remainder is below its
+// divisor, so the optimizer removes the check of the index.
+[[nodiscard]] OpSlot next_in_cycle(OpSlot slot) noexcept {
+    return OpSlot::check((slot.raw() + 1) % NUM_OPS).expect("a remainder is below its divisor");
+}
 
 // The ring bounds the run. Warmup plus samples must stay below it so that
 // every timed body appends rather than being refused.
@@ -195,8 +198,9 @@ records_of(const OpData&&) = delete("the result points into the op, and a tempor
 
 OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
     OpData d;
-    d.entry.schema_hash = SCHEMA[op_idx];
-    d.entry.shape_hash = SHAPE[op_idx];
+    const OpSlot slot = OpSlot::check(op_idx).expect("the position of an op is below NUM_OPS");
+    d.entry.schema_hash = SCHEMA.at(slot);
+    d.entry.shape_hash = SHAPE.at(slot);
     d.entry.num_inputs = (op_idx == 0) ? 0 : 1;
     d.entry.num_outputs = 1;
 
@@ -227,10 +231,7 @@ void feed_trigger(Vigil& vigil, uint32_t iter) {
 void wait_region_published(Vigil& vigil) {
     uint64_t spins = 0;
     while (!vigil.has_pending_region()) {
-        if (++spins > 100000000) {
-            std::fprintf(stderr, "bench_record_leaf: Vigil never published a region\n");
-            std::abort();
-        }
+        if (++spins > 100000000) ::fixy::fatal("bench_record_leaf: Vigil never published a region");
         CRUCIBLE_SPIN_PAUSE;
     }
 }
@@ -470,9 +471,15 @@ int main() {
     // Reset on full rather than a bounded run, so the sample count is free.
     // The ring takes 65,536 entries and the log 1,048,576, so a reset lands
     // roughly once in 65,536 bodies and rounds to nothing per op.
+    //
+    // The two rings live on the heap, as they do in Vigil.  The timed body
+    // reads each ring through a Ref, so no test of a Box is in the timed loop.
     bench::add_report(reports, [&] {
-        auto ring = std::make_unique<TraceRing>();
-        auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
+        const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
+        ::fixy::Box<TraceRing> ring_box = ::fixy::mint_box<TraceRing>(alloc);
+        ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(alloc, alloc);
+        auto const ring = ::fixy::to(*ring_box);
+        auto const log = ::fixy::to(*log_box);
         ring->reset();
         log->reset();
 
@@ -519,11 +526,9 @@ int main() {
                               bench::do_not_optimize(took);
                           });
         if (refused != 0) {
-            std::fprintf(stderr,
-                         "bench_record_leaf: %llu of %zu appends were refused. The ring filled, so "
-                         "this case measured the reject path. Lower RECORD_SAMPLES.\n",
-                         static_cast<unsigned long long>(refused), RECORD_BODIES);
-            std::abort();
+            ::fixy::fatal("bench_record_leaf: {} of {} appends were refused. The ring filled, so "
+                          "this case measured the reject path. Lower RECORD_SAMPLES.",
+                          refused, RECORD_BODIES);
         }
         bench::print_thread_cpus("record_op [2 metas, ring has room]");
         return report;
@@ -562,13 +567,11 @@ int main() {
         // reads far below the number of ops that went through it.
         const uint64_t bodies = RECORD_BODIES;
         if (recorded < bodies) {
-            std::fprintf(stderr,
-                         "bench_record_leaf: only %llu of %llu calls took the RECORD path (%.1f%%). The "
-                         "Vigil switched to COMPILED mid-run, so this case stopped measuring the "
-                         "recording leaf.\n",
-                         static_cast<unsigned long long>(recorded), static_cast<unsigned long long>(bodies),
-                         100.0 * static_cast<double>(recorded) / static_cast<double>(bodies));
-            std::abort();
+            ::fixy::fatal("bench_record_leaf: only {} of {} calls took the RECORD path ({}%). The "
+                          "Vigil switched to COMPILED mid-run, so this case stopped measuring the "
+                          "recording leaf.",
+                          recorded, bodies,
+                          ::fixy::Fixed<1>{100.0 * static_cast<double>(recorded) / static_cast<double>(bodies)});
         }
         bench::print_thread_cpus("dispatch_op [RECORD leaf, ring has room]");
         return report;
@@ -582,16 +585,16 @@ int main() {
     bench::add_report(reports, [&] {
         Vigil vigil = make_vigil(cores);
         setup_compiled_vigil(vigil);
-        OpData ops[NUM_OPS];
-        for (uint32_t i = 0; i < NUM_OPS; i++)
-            ops[i] = make_op(10, i);
+        ::fixy::FixedArray<OpData, NUM_OPS> ops{};
+        for (OpSlot const slot : ::fixy::IndexRange<NUM_OPS>{})
+            ops.at(slot) = make_op(10, static_cast<uint32_t>(slot.raw()));
 
-        uint32_t op_idx = 0;
+        OpSlot slot = ::fixy::index<0>();
         bench::Report report =
             bench::Run("dispatch_op [COMPILED leaf, cyclic]").core(record_core_of(cores)).measure([&] {
-                auto& d = ops[op_idx];
+                const OpData& d = ops.at(slot);
                 bench::do_not_optimize(vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d))));
-                op_idx = (op_idx + 1) % NUM_OPS;
+                slot = next_in_cycle(slot);
             });
         bench::print_thread_cpus("dispatch_op [COMPILED leaf, cyclic]");
         return report;
