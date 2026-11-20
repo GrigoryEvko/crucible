@@ -26,10 +26,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <fcntl.h>
-#include <sanitizer/common_interface_defs.h>
-#include <unistd.h>
-
 CRUCIBLE_FUZZ_DECLARE_HARNESS_OF(CRUCIBLE_FUZZ_HARNESS_NAME)
 
 void crucible::fuzz::boundary::run_input(::fixy::View<std::byte const> input) noexcept {
@@ -96,6 +92,11 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // The death path calls only functions of the C library that are safe in a
 // signal handler.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the death path runs in a signal handler and in the death callback of the sanitizer")
+
+// The calls of the C library and of the sanitizer that the death path makes.
+#include <fcntl.h>
+#include <sanitizer/common_interface_defs.h>
+#include <unistd.h>
 
 namespace {
 

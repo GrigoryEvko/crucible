@@ -135,7 +135,9 @@ inline void add_region_regressions(SeedList& seeds) noexcept {
 
     // The header states a content hash that is not the hash of the ops.
     SeedBytes wrong_hash = region_image(*build_seed_region(arena, dag_arena, SeedPlan::none));
-    *wrong_hash.view().get(kImageContentHashOffset).expect("the image holds its header") ^= std::byte{0x01};
+    const ::fixy::Ref<std::byte> hash_byte =
+        wrong_hash.view().get(kImageContentHashOffset).expect("the image holds its header");
+    *hash_byte = static_cast<std::byte>(static_cast<unsigned>(*hash_byte) ^ 0x01U);
     add_seed(seeds, std::move(wrong_hash));
 
     // The plan flag holds a byte that is no value of a bool.

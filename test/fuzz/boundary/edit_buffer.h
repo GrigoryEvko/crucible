@@ -42,7 +42,10 @@ public:
     [[nodiscard]] bool is_empty() const noexcept { return count_ == 0; }
 
     // The byte at a position below size(), xor mask.
-    void xor_at(ByteCount at, std::byte mask) noexcept { *byte_at_(at) ^= mask; }
+    void xor_at(ByteCount at, std::byte mask) noexcept {
+        ::fixy::Ref<std::byte> const byte = byte_at_(at);
+        *byte = static_cast<std::byte>(static_cast<unsigned>(*byte) ^ static_cast<unsigned>(mask));
+    }
 
     // The byte at a position below size() becomes value.
     void set_at(ByteCount at, std::byte value) noexcept { *byte_at_(at) = value; }
