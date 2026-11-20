@@ -143,11 +143,13 @@ public:
             return ch_->log_.try_append(record.view()).is_valid();
         }
 
-        // The row gate is this constraint, on the row of the context of the
-        // caller.  The body calls try_append, so the gate does not depend on
-        // the gate of MetaLog itself.
+        // The gate is this constraint: the row of the context of the caller
+        // is empty, and its source permits no atom, so a context narrowed
+        // with in_row fails it.  The body calls try_append, so the gate does
+        // not depend on the gate of MetaLog itself.
         template <::foundation::effects::IsExecCtx Ctx>
             requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
+                  && ::foundation::effects::CtxHasPureSource<Ctx>
         [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append_pure(Ctx const&,
                                                                       ::fixy::View<const value_type> metas) {
             return ch_->log_.try_append(metas);

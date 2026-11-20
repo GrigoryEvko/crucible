@@ -28,10 +28,13 @@ namespace eff = ::fixy;
 
 namespace {
 
-// A context whose row is empty, which the pure gates admit.  The gates read
-// the row of the context, so a context that holds Test, Alloc, IO, Block or
-// Nondet does not pass.
+// A context whose row is empty and whose source permits no atom, which the
+// pure gates admit.  The gates read the row and the source of the context, so
+// a context that holds Test, Alloc, IO, Block or Nondet does not pass, and a
+// test or background context narrowed to the empty row does not pass either.
 constexpr ::fixy::HotFgCtx kPure = ::foundation::effects::testing::foreground();
+using NarrowedTestCtx = ::foundation::effects::ExecCtx<::foundation::effects::Test, ::foundation::effects::Row<>>;
+using NarrowedBgCtx = ::foundation::effects::ExecCtx<::foundation::effects::Bg, ::foundation::effects::Row<>>;
 
 template <typename Ctx>
 concept AppendsPure = requires(crucible::TraceRing& ring, Ctx const& ctx, crucible::TraceRing::Entry const& entry) {
@@ -47,6 +50,8 @@ static_assert(!AppendsPure<::fixy::TestRunnerCtx>);
 static_assert(!DrainsPure<::fixy::TestRunnerCtx>);
 static_assert(!AppendsPure<::fixy::BgDrainCtx>);
 static_assert(!DrainsPure<::fixy::BgDrainCtx>);
+static_assert(!AppendsPure<NarrowedTestCtx> && !DrainsPure<NarrowedTestCtx>);
+static_assert(!AppendsPure<NarrowedBgCtx> && !DrainsPure<NarrowedBgCtx>);
 
 // Each function holds one group of cases, so that no function of the test
 // is larger than the limit of the kind function of the rule object-size.

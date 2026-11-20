@@ -3894,6 +3894,21 @@ crucible_neg_compile_test(neg_tracering_drain_pure_no_context
   "no matching function for call to .crucible::TraceRing::drain_pure\\("
   "IsExecCtx")
 
+# Each pure gate also reads the source of the context (CtxHasPureSource).
+# A context that narrowed its row to the empty row with in_row keeps the
+# source of a test runner, an init step or a background stage, and each
+# fixture passes such a context.  If a gate reads only the row again, the
+# fixture compiles.
+crucible_neg_compile_test(neg_tracering_try_append_pure_narrowed_test
+  "no matching function for call to .crucible::TraceRing::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<> >"
+  "satisfaction of .CtxHasPureSource<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<> >\\]")
+crucible_neg_compile_test(neg_tracering_drain_pure_narrowed_bg
+  "no matching function for call to .crucible::TraceRing::drain_pure\\(foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<> >"
+  "satisfaction of .CtxHasPureSource<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_test(neg_metalog_try_append_pure_narrowed_init
+  "no matching function for call to .crucible::MetaLog::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<> >"
+  "satisfaction of .CtxHasPureSource<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<> >\\]")
+
 # Vigil::dispatch_op_pure takes crucible::VigilFgCtx, the context of the
 # Vigil's producer claim.  Each fixture passes another context, or none.
 # The first regex pins the refused context or call, and the second pins the
@@ -4266,6 +4281,9 @@ crucible_neg_compile_test(neg_metalog_producer_drain
 crucible_neg_compile_test(neg_metalog_producer_try_append_pure_test_row
     "no matching function for call to .crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ProducerHandle::try_append_pure\\("
     "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, ")
+crucible_neg_compile_test(neg_metalog_producer_try_append_pure_narrowed_test
+    "no matching function for call to .crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ProducerHandle::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<> >"
+    "satisfaction of .CtxHasPureSource<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<> >\\]")
 
 crucible_neg_compile_test(neg_metalog_consumer_append
     "has no member named .try_append."

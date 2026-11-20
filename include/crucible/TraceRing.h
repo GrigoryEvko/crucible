@@ -379,14 +379,16 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         head.advance_sole_writer_by_proof(proof, own_head_, h + 1);
     }
 
-    // Preferred at new call sites: appending touches memory only, so the row
-    // of the context of the caller must be empty.  A context that allocates,
-    // blocks, performs I/O, or runs at init or test time is rejected here
-    // rather than discovered later.  The row comes from the context, so a
-    // caller cannot state a row that is not its own.  The plain try_append
-    // remains for callers that hold no context.
+    // The append of a pure caller.  The gate reads the row of the context of
+    // the caller and its source.  A context that allocates, blocks, performs
+    // I/O, or runs at init or test time fails the row test.  A context that
+    // narrowed its row with in_row keeps its source, and the source of a test,
+    // an init step or a background stage permits atoms, so it fails the
+    // source test (CtxHasPureSource).  The plain try_append stays for a
+    // caller that holds no context.
     template <::foundation::effects::IsExecCtx Ctx>
         requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
+              && ::foundation::effects::CtxHasPureSource<Ctx>
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
     try_append_pure(Ctx const&, const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
                     CallsiteHash callsite_hash = {}, OpDepth depth = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
@@ -491,10 +493,13 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         return static_cast<uint32_t>(count);
     }
 
-    // The consumer counterpart of try_append_pure. A drain touches memory
-    // only, so the row of the context of the caller must be empty.
+    // The consumer counterpart of try_append_pure, with the same gate: the
+    // row of the context of the caller is empty, and its source permits no
+    // atom.  A background stage holds a source that permits atoms, so it
+    // drains with try_pop_batch, and not here.
     template <::foundation::effects::IsExecCtx Ctx>
         requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
+              && ::foundation::effects::CtxHasPureSource<Ctx>
     [[nodiscard, gnu::hot]] uint32_t
     drain_pure(Ctx const&, ::fixy::View<Entry> out, ::fixy::View<MetaIndex> out_meta_starts = {},
                ::fixy::View<ScopeHash> out_scope_hashes = {}, ::fixy::View<CallsiteHash> out_callsite_hashes = {},

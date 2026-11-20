@@ -260,6 +260,20 @@ static_assert(!NarrowsTo<BgWitness, Row<Effect::Bg, Effect::Alloc, Effect::IO>>,
               "A context does not widen its row.  The atom it would add needs the source as evidence.");
 static_assert(!NarrowsTo<InitWitness, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>);
 
+// A gate that promises a pure caller reads the source.  The foreground
+// sources permit no atom.  A narrowed context keeps its source, so a test,
+// init or background context narrowed to the empty row still fails.
+static_assert(CtxHasPureSource<FgWitness> && CtxHasPureSource<HotFgCtx> && CtxHasPureSource<BrandedFgWitness>);
+static_assert(CtxHasPureSource<FgWitness const&>);
+static_assert(!CtxHasPureSource<TestWitnessCtx> && !CtxHasPureSource<BgLoadCtx> && !CtxHasPureSource<InitLoadCtx>);
+static_assert(!CtxHasPureSource<ExecCtx<Test, Row<>>> && !CtxHasPureSource<ExecCtx<Bg, Row<>>>
+                  && !CtxHasPureSource<ExecCtx<Init, Row<>>>,
+              "A narrowed row tells what the body does, not who the caller is.  The source of a test, an init "
+              "step or a background stage permits atoms, so its narrowed context is no pure caller.");
+static_assert(std::is_same_v<decltype(std::declval<TestWitnessCtx const&>().in_row<Row<>>()), ExecCtx<Test, Row<>>>,
+              "in_row keeps the source.");
+static_assert(!CtxHasPureSource<int>);
+
 }  // namespace detail::ctx_witnesses
 
 }  // namespace foundation::effects

@@ -2,8 +2,9 @@
 //
 // TraceRing::drain_pure reads the row of the context of the caller, and the
 // gate IsPure asks that the row is empty.  The background thread holds Bg in
-// its row, and the pure drain asks it to narrow its context to the empty row
-// before the call.  A context whose row holds Bg fails the gate.
+// its row, so a context whose row holds Bg fails the gate.  A narrowed
+// background context fails the test of the source instead
+// (neg_tracering_drain_pure_narrowed_bg.cpp).
 //
 // Expected diagnostic: IsPure of the row of the context is not satisfied.
 

@@ -289,8 +289,9 @@ static void test_spsc_concurrent_integrity() {
 }
 
 // Only the accepting legs of the row-typed facade run here.  The facade
-// reads the row of the context of the caller, and a context whose row is
-// not empty fails to compile, in the concept below and in the fixtures.
+// reads the row and the source of the context of the caller.  A context whose
+// row is not empty, or whose source permits an atom, fails to compile, in the
+// concept below and in the fixtures.
 
 constexpr ::fixy::HotFgCtx kPure = ::foundation::effects::testing::foreground();
 
@@ -300,6 +301,8 @@ concept AppendsPure =
 static_assert(AppendsPure<::fixy::HotFgCtx>);
 static_assert(!AppendsPure<::fixy::TestRunnerCtx>);
 static_assert(!AppendsPure<::fixy::BgDrainCtx>);
+static_assert(!AppendsPure<::foundation::effects::ExecCtx<::foundation::effects::Init, ::foundation::effects::Row<>>>);
+static_assert(!AppendsPure<::foundation::effects::ExecCtx<::foundation::effects::Test, ::foundation::effects::Row<>>>);
 
 static void test_try_append_pure() {
     namespace eff = ::fixy;

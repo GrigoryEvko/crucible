@@ -191,13 +191,13 @@ struct CRUCIBLE_OWNER MetaLog {
             [] noexcept { return MetaIndex::none(); });
     }
 
-    // Preferred at new call sites: appending touches memory only, so the row
-    // of the context of the caller must be empty.  A context that allocates,
-    // blocks, performs I/O, or runs at init or test time is rejected here
-    // rather than discovered later.  The row comes from the context, so a
-    // caller cannot state a row that is not its own.
+    // The append of a pure caller, with the gate of TraceRing::try_append_pure:
+    // the row of the context of the caller is empty, and its source permits no
+    // atom.  A context narrowed with in_row keeps its source, so a narrowed
+    // context of a test, an init step or a background stage fails the gate.
     template <::foundation::effects::IsExecCtx Ctx>
         requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
+              && ::foundation::effects::CtxHasPureSource<Ctx>
     [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append_pure(Ctx const&, ::fixy::View<const TensorMeta> metas)
         CRUCIBLE_NO_THREAD_SAFETY {
         return try_append(metas);

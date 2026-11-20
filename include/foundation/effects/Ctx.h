@@ -365,6 +365,18 @@ concept CtxOwnsAnyOf = IsExecCtx<Ctx> && (row_contains(^^row_type_of_t<Ctx>, Es)
 template <class Ctx, Effect... Es>
 concept CtxOwnsAllOf = IsExecCtx<Ctx> && (row_contains(^^row_type_of_t<Ctx>, Es) && ...);
 
+// A context of a pure caller: its source permits no atom.  The row of a
+// context tells what one body does, and in_row drops atoms from the row with
+// no evidence.  The narrowed context keeps its source, so the context of a
+// test, an init step or a background stage keeps a source that permits atoms.
+// A gate that promises a pure caller reads the source with this concept, and
+// not only the row.  The foreground source, each branded source and the kernel
+// source permit no atom.  The row of a context is a subrow of what its source
+// permits, so a context that passes has the empty row too.
+template <class Ctx>
+concept CtxHasPureSource =
+    IsExecCtx<Ctx> && Subrow<cap_permitted_row_t<cap_type_of_t<std::remove_cvref_t<Ctx>>>, Row<>>;
+
 // The bare tag of the value atom E, from a context whose row holds E.  The
 // read of a clock reader and the pop of a merge take cap::Nondet in this
 // form.  The context names this door as a friend, and the door copies the
@@ -479,6 +491,10 @@ public:
     // itself, held by value: ExecCtx<Cap, Wider>{source}.  cap() lends the
     // source only from a context that already claims every atom of it, so
     // that evidence never comes out of a narrower context.
+    //
+    // A narrowed row tells what the body does, and not who the caller is.
+    // The narrowed context keeps the source, so a gate that promises a pure
+    // caller reads the source (CtxHasPureSource) and refuses it.
     template <class NewRow>
         requires IsEffectRow<NewRow> && Subrow<NewRow, Row>
     [[nodiscard]] constexpr auto in_row() const noexcept -> ExecCtx<Cap, NewRow> {
