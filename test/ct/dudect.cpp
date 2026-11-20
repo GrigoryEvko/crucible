@@ -19,16 +19,14 @@
 
 #include <fixy/ConstantTime.h>
 #include <fixy/Core.h>
+#include <foundation/Quarantine.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
-#include <span>
-#include <string_view>
 #include <vector>
 
 #include <sched.h>
@@ -166,7 +164,7 @@ struct FixyCt {
 };
 
 struct Target {
-    std::string_view name;
+    ::fixy::TextView name;
     Probe probe;
 };
 
@@ -180,18 +178,35 @@ constexpr std::array kTargets{
     Target{"fixy eq, static 32 bytes", probe_fixy_eq_static},
 };
 
+// The reads of the time stamp counter around one timed call.  A fence
+// before and after the first read keeps the call after it, and the second
+// read waits for the call to end.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the harness reads the time stamp counter around each timed call")
+
+[[gnu::always_inline]] inline std::uint64_t read_cycles_before_call() noexcept {
+    _mm_lfence();
+    std::uint64_t const start = __rdtsc();
+    _mm_lfence();
+    return start;
+}
+
+[[gnu::always_inline]] inline std::uint64_t read_cycles_after_call() noexcept {
+    unsigned aux = 0;
+    std::uint64_t const stop = __rdtscp(&aux);
+    _mm_lfence();
+    return stop;
+}
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 // Time one batch of calls.  The classes and the inputs are ready before
 // the first timed call.
 void measure_batch(Probe probe, std::vector<Input> const& inputs, std::vector<double>& cycles) noexcept {
     volatile std::uint64_t sink = 0;
     for (std::size_t i = 0; i < inputs.size(); ++i) {
-        unsigned aux = 0;
-        _mm_lfence();
-        std::uint64_t const start = __rdtsc();
-        _mm_lfence();
+        std::uint64_t const start = read_cycles_before_call();
         sink = sink ^ probe(inputs[i]);
-        std::uint64_t const stop = __rdtscp(&aux);
-        _mm_lfence();
+        std::uint64_t const stop = read_cycles_after_call();
         cycles[i] = static_cast<double>(stop - start);
     }
 }
@@ -204,7 +219,9 @@ struct Result {
 
 // Run `measurements` timed calls of one probe and return the largest |t|
 // over the uncropped test and the 100 cropped tests.  O(measurements).
-Result run_target(Probe probe, std::size_t measurements) {
+// The function is out of line: main calls the report, and GCC puts the
+// code that follows a report in main into the cold part of main.
+[[gnu::noinline]] Result run_target(Probe probe, std::size_t measurements) {
     Xorshift rng;
     std::vector<Input> inputs(kBatch);
     std::vector<std::size_t> classes(kBatch);
@@ -253,17 +270,18 @@ Result run_target(Probe probe, std::size_t measurements) {
 }
 
 // Name the verdict for one |t|.
-std::string_view verdict(double max_abs_t) noexcept {
+::fixy::TextView verdict(double max_abs_t) noexcept {
     if (max_abs_t < kNoEvidence) return "no evidence of a leak";
     if (max_abs_t < kLeak) return "possible leak";
     return "leak";
 }
 
-// Print one line of the report.
-void report(std::string_view name, Result const& result) noexcept {
-    std::printf("%-28.*s max |t| = %8.2f  crop %3zu  samples %10.0f  %.*s\n", static_cast<int>(name.size()),
-                name.data(), result.max_abs_t, result.crop, result.samples,
-                static_cast<int>(verdict(result.max_abs_t).size()), verdict(result.max_abs_t).data());
+// Write one line of the report.  The columns are the columns of
+// "%-28s max |t| = %8.2f  crop %3zu  samples %10.0f  %s".
+void write_row(::fixy::TextView name, Result const& result) noexcept {
+    ::fixy::report(::fixy::Sink::Out, "{} max |t| = {}  crop {}  samples {}  {}\n",
+                   ::fixy::Padded<28, ::fixy::Align::Left>{name}, ::fixy::Fixed<2, 8>{result.max_abs_t},
+                   ::fixy::Padded<3>{result.crop}, ::fixy::Fixed<0, 10>{result.samples}, verdict(result.max_abs_t));
 }
 
 }  // namespace
@@ -272,25 +290,27 @@ int main(int argc, char** argv) {
     std::size_t measurements = std::size_t{1} << 24;
     if (argc == 2) measurements = static_cast<std::size_t>(std::strtoull(argv[1], nullptr, 10));
     if (argc > 2 || measurements < kBatch) {
-        std::fprintf(stderr, "usage: ct_dudect [measurements, at least %zu]\n", kBatch);
+        ::fixy::report(::fixy::Sink::Err, "usage: ct_dudect [measurements, at least {}]\n", kBatch);
         return 2;
     }
-    std::printf("dudect: %zu measurements per primitive on cpu %d, fixed class against random class\n", measurements,
-                sched_getcpu());
+    ::fixy::report(::fixy::Sink::Out,
+                   "dudect: {} measurements per primitive on cpu {}, fixed class against random class\n", measurements,
+                   sched_getcpu());
 
     Result const control = run_target(probe_control_early_exit, measurements);
-    report("control, early-exit compare", control);
+    write_row("control, early-exit compare", control);
     if (control.max_abs_t < kLeak) {
-        std::fputs("dudect: the leaking control shows no leak, so the harness is blind\n", stderr);
+        ::fixy::report(::fixy::Sink::Err, "dudect: the leaking control shows no leak, so the harness is blind\n");
         return 1;
     }
 
     int leaks = 0;
     for (Target const& target : kTargets) {
         Result const result = run_target(target.probe, measurements);
-        report(target.name, result);
+        write_row(target.name, result);
         if (result.max_abs_t >= kNoEvidence) ++leaks;
     }
-    std::printf("dudect: %d of %zu primitives show |t| >= %.1f\n", leaks, kTargets.size(), kNoEvidence);
+    ::fixy::report(::fixy::Sink::Out, "dudect: {} of {} primitives show |t| >= {}\n", leaks, kTargets.size(),
+                   ::fixy::Fixed<1>{kNoEvidence});
     return 0;
 }
