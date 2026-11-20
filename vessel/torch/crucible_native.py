@@ -1060,7 +1060,7 @@ class _VesselLib:
         L.crucible_create.argtypes = [ctypes.c_uint32]
         L.crucible_destroy.restype = None
         L.crucible_destroy.argtypes = [ctypes.c_void_p]
-        L.crucible_flush.restype = None
+        L.crucible_flush.restype = ctypes.c_int
         L.crucible_flush.argtypes = [ctypes.c_void_p]
 
         # Queries

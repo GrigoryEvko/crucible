@@ -897,6 +897,10 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
             // pairs with the foreground's acquire load.
             owner.release_meta_log(PublishStage{}, publish->meta_floor);
             (void)PublishStageAuth::commit(owner.total_processed, publish->commit_count);
+            // The count comes first, and then the notify wakes each flush
+            // that parks.  With no flush that parks, the notify is one fence
+            // and one load.
+            owner.processed_events_.notify_all(in.ctx());
             continue;
         }
 
@@ -960,12 +964,16 @@ void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trac
     // The lambda is the entry of the pipeline thread, so it takes the
     // background context of that thread from the door.  It borrows this
     // object through the door, which keeps the thread in thread_.  The
-    // process ends when the host has no resource for one more thread.
+    // process ends when the host has no resource for one more thread.  The
+    // run state is running before the thread starts, so a flush after this
+    // start waits for the pipeline, and the thread stores stopped at its end.
+    pipeline_run_.store_release(PipelineRun::running);
     ::fixy::thread::mint_owner_thread<&BackgroundThread::thread_, &BackgroundThread::request_stop_>(
         startup, ::fixy::thread::ThreadOptions{}, *this,
         [](BackgroundThread& owner) noexcept {
-            owner.run_in_row(
-                ::fixy::BgLoadCtx{::foundation::effects::host::BackgroundOwner::mint_background_context()});
+            const ::fixy::BgLoadCtx ctx{::foundation::effects::host::BackgroundOwner::mint_background_context()};
+            owner.run_in_row(ctx);
+            owner.end_pipeline_run_(ctx);
         })
         .expect("the thread door starts the pipeline thread");
 }

@@ -266,7 +266,7 @@ void test_unrecorded_nest_keeps_the_loop_eager() {
         crucible::Vigil vigil;
         for (uint32_t iter = 0; iter < kIterations; ++iter)
             give_iteration(vigil, true);
-        vigil.flush();
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
         CRUCIBLE_TEST_ASSERT(kTest,
                              vigil.flush_complete() && "flush() returned but bg thread did not finish processing");
         CRUCIBLE_TEST_ASSERT(kTest, !vigil.has_pending_region() && vigil.active_region().is_none()
@@ -337,7 +337,7 @@ public:
     void give_iterations_until_replay() {
         for (uint32_t step = 0; step < kReplayBound && !vigil.is_compiled(); ++step) {
             give_iteration(NestEnd::RECORDED);
-            if (!vigil.is_compiled()) vigil.flush();
+            if (!vigil.is_compiled()) CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
         }
     }
 
@@ -412,7 +412,7 @@ void test_raise_in_each_iteration_after_a_replay_keeps_the_loop_eager() {
 
     for (uint32_t step = 0; step < kReplayBound; ++step) {
         loop.give_iteration(NestEnd::RAISED);
-        loop.vigil.flush();
+        CRUCIBLE_TEST_ASSERT(kTest, loop.vigil.flush(kTest).is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, !loop.vigil.is_compiled() && "a loop that raises in each iteration stays eager");
     }
     CRUCIBLE_TEST_ASSERT(kTest, loop.vigil.diverged_count() == 1);

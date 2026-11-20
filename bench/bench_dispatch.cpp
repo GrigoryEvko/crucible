@@ -182,7 +182,8 @@ void wait_region_published(Vigil& vigil) {
     feed_record(vigil, 0);
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
-    vigil.flush();
+    const ::fixy::TestRunnerCtx waiter{::foundation::effects::testing::test()};
+    vigil.flush(waiter).expect("the pipeline of the bench runs");
     wait_region_published(vigil);
     return align_and_activate(vigil, 3);
 }

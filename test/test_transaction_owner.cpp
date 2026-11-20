@@ -128,14 +128,14 @@ void rollback_while_regions_are_in_flight() {
         feed_one_region(vigil, round * 4);
         (void)vigil.rollback();
     }
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
 
     // With the pipeline idle, two more regions leave one superseded entry,
     // and a rollback must restore it.
     feed_one_region(vigil, 1000);
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     feed_one_region(vigil, 1004);
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     if (!vigil.rollback()) fail("a rollback with a superseded transaction restored nothing");
 }
 
@@ -167,7 +167,7 @@ void rollback_reads_its_region_while_the_store_sweeps() {
             }
         }
     }
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     if (restored == 0) fail("no rollback restored a region while regions were in flight");
 }
 

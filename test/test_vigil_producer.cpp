@@ -108,7 +108,7 @@ void test_two_publishes_keep_one_copy_of_the_head() {
 void test_foreground_reads_the_iteration_count() {
     crucible::Vigil vigil;
     divrig::feed_one_region(vigil, 0);
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     const uint32_t after_flush = vigil.bg_iterations_completed();
     CRUCIBLE_TEST_ASSERT(kTest, after_flush > 0 && "one region needs at least one iteration");
 
@@ -118,7 +118,7 @@ void test_foreground_reads_the_iteration_count() {
         CRUCIBLE_SPIN_PAUSE;
     }
 
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     const uint32_t after_all = vigil.bg_iterations_completed();
     CRUCIBLE_TEST_ASSERT(kTest, after_all > after_flush && "the two regions after the flush add iterations");
 

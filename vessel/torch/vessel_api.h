@@ -231,10 +231,12 @@ CRUCIBLE_VESSEL_API int crucible_is_structural_scalar(uint64_t schema_hash, uint
 
 // ── Control ──────────────────────────────────────────────────────────
 
-// Waits in a spin loop until the background thread completes the work for
-// each ring entry that exists at the call.  That work includes the build and
-// the publication of a region.  The call has no timeout.
-CRUCIBLE_VESSEL_API void crucible_flush(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// Waits until the background thread completes the work for each ring entry
+// that exists at the call.  That work includes the build and the publication
+// of a region.  The wait spins, and then it parks in the kernel.  Returns 1
+// when the work is complete, and 0 when the background thread stopped before
+// it completed the work.  The call does not wait for a stopped background.
+CRUCIBLE_VESSEL_API int crucible_flush(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Query mode: 1 while the Vigil replays a region, 0 while it records.  A
 // region that the background thread published and the foreground has not

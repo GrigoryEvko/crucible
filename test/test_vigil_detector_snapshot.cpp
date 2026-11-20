@@ -66,7 +66,7 @@ void test_detector_reads_while_the_pipeline_runs(::fixy::TestRunnerCtx const& te
         largest_seen = ::fixy::max(largest_seen, vigil.bg_detector_boundaries());
         if (vigil.bg_detector_confirmed()) ++confirmed_reads;
     }
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(test, vigil.flush(test).is_ok());
     CRUCIBLE_TEST_ASSERT(test, vigil.bg_detector_confirmed());
     CRUCIBLE_TEST_ASSERT(test, vigil.bg_detector_boundaries() > 0);
     CRUCIBLE_TEST_ASSERT(test, vigil.bg_detector_boundaries() >= largest_seen);

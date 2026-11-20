@@ -27,7 +27,7 @@ inline void wait_region_published(::fixy::TestRunnerCtx const& test, Vigil& vigi
 }
 
 inline void flush_and_wait_region_published(::fixy::TestRunnerCtx const& test, Vigil& vigil) {
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(test, vigil.flush(test).is_ok() && "the background thread stopped before the flush");
     CRUCIBLE_TEST_ASSERT(test, vigil.flush_complete() && "flush() returned but bg thread did not finish processing");
     wait_region_published(test, vigil);
 }

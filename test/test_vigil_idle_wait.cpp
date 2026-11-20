@@ -190,7 +190,7 @@ void test_parked_pipeline_publishes_a_region() {
     for (; iteration < 16 && vigil.current_step() == 0; ++iteration) {
         idle_for(20);
         record_iteration(vigil);
-        vigil.flush();
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     }
     CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() != 0 && "a parked pipeline published no region");
     CRUCIBLE_TEST_ASSERT(kTest, iteration <= 8);

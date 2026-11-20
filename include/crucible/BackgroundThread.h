@@ -26,6 +26,7 @@
 #include <fixy/Mutation.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <fixy/concurrent/EventCount.h>
 #include <fixy/handle/OneShotFlag.h>
 #include <fixy/handle/Published.h>
 #include <fixy/handle/PublishCommit.h>
@@ -69,6 +70,18 @@ struct PipelineLimits {
     ::fixy::Quantity<::fixy::unit::Element, uint32_t> region_store{DEFAULT_REGION_STORE};
     ::fixy::Quantity<::fixy::unit::Element, uint32_t> uncompiled_queue{DEFAULT_UNCOMPILED_QUEUE};
 };
+
+// Why a flush gives no Unit (BackgroundThread::flush).
+enum class FlushRefusal : uint8_t {
+    // No pipeline thread runs, and the pipeline did not process each op that
+    // the ring held at the call.  The rest of the ops stay in the ring, and a
+    // later start of the pipeline reads them.
+    pipeline_stopped,
+};
+
+// The result of a flush: Unit when the pipeline processed each op that the
+// ring held at the call.
+using FlushResult = ::fixy::Result<::fixy::Unit, FlushRefusal>;
 
 // The policy of a job of run_on_publish_stage (THE CLOSURE OF A JOB of
 // BackgroundThread): the caller waits while the job runs on the thread of the
@@ -731,6 +744,43 @@ public:
     using TotalProcessedCell = ::fixy::handle::PublishCommitCell<PublishStageTag, PublishStageAuth>;
     TotalProcessedCell total_processed;
 
+    // The wait of a flush: a spin of 50 microseconds, and then a park on the
+    // event count of the processed ops.  The context of the caller owns
+    // Block and Nondet, so a context of the hot path cannot flush.
+    using FlushPolicy = ::fixy::concurrent::SpinThenPark<50000>;
+
+    // Waits until the pipeline has fully processed each op that the ring held
+    // at the call, or until no pipeline thread runs.  Fully processed means
+    // drained, given to the detector and carried through the publish stage,
+    // the publication of each region included.  The release and acquire on
+    // total_processed make each write of the pipeline before the count
+    // visible to the caller.
+    //
+    // A pipeline that stops before it reaches the count leaves the rest of the
+    // ops in the ring, and the flush then gives pipeline_stopped with no wait.
+    // The pipeline thread stores the stop after its last count, so a caller
+    // that reads the stop reads each count before it.  A BackgroundThread
+    // that never started has no ring, holds no op, and gives Unit.
+    //
+    // The publish stage notifies the event count after each count, and the
+    // pipeline thread notifies it after the stop, so no wake is lost (THE
+    // PROTOCOL of fixy/concurrent/EventCount.h).  A region callback or a job
+    // of the publish stage must not flush: it would wait on its own stage.
+    template <class Ctx>
+        requires ::fixy::concurrent::CtxFitsWaitPolicy<Ctx, FlushPolicy>
+    [[nodiscard]] FlushResult flush(Ctx const& ctx) noexcept {
+        CRUCIBLE_PRE(stage_held_by_this_thread_ != ::fixy::WeakRef<const BackgroundThread>{*this});
+        if (!ring.has_value()) return ::fixy::Unit{};
+        const uint64_t target_produced = ring.get()->total_produced();
+        const auto is_settled = [this, target_produced]() noexcept {
+            return total_processed.load_acquire() >= target_produced
+                || pipeline_run_.load_acquire() == PipelineRun::stopped;
+        };
+        ::fixy::concurrent::wait_for<FlushPolicy>(ctx, processed_events_, is_settled);
+        if (total_processed.load_acquire() >= target_produced) return ::fixy::Unit{};
+        return ::fixy::err(FlushRefusal::pipeline_stopped);
+    }
+
     // The reset.  When compiled replay diverges, the producer requests a
     // restart at the point of the divergence, before it puts the next op
     // into the ring.  The detect stage applies the reset when its count of
@@ -879,8 +929,8 @@ public:
     }
 
     // The background thread whose stage this thread holds, or an empty
-    // reference.  Read only by the contract in run_on_publish_stage, on the
-    // cold path.  It is one object for the process, so every shared library
+    // reference.  Read only by the contracts of run_on_publish_stage and of
+    // flush, on the cold path.  It is one object for the process, so every shared library
     // reads the same copy on a thread.
     CRUCIBLE_PROCESS_WIDE static inline thread_local ::fixy::WeakRef<const BackgroundThread>
         stage_held_by_this_thread_{};
@@ -1422,6 +1472,30 @@ private:
     // fixy/os/OwnedThread.h).  It signals the drain stage to stop, and it does
     // not join.  The stage reads the signal at the end of its sleep.
     void request_stop_() noexcept { stop_requested.signal(); }
+
+    // Whether a pipeline thread runs: start() stores running before it starts
+    // the thread, and the thread stores stopped after run_in_row returns.
+    enum class PipelineRun : uint8_t {
+        stopped,
+        running,
+    };
+
+    // The end of a run of the pipeline thread.  The pipeline joined each
+    // stage, so each count of total_processed comes before this release
+    // store.  The notify then wakes each flush that waits.
+    void end_pipeline_run_(::fixy::BgLoadCtx const& ctx) noexcept {
+        pipeline_run_.store_release(PipelineRun::stopped);
+        processed_events_.notify_all(ctx);
+    }
+
+    // The thread that holds the BackgroundThread and start() write the run
+    // state, and each flush reads it.  It has a line of its own.
+    alignas(64)::fixy::Atomic<PipelineRun> pipeline_run_{PipelineRun::stopped};
+
+    // The event count of each flush that waits.  The publish stage notifies
+    // it after each count of total_processed, and the pipeline thread after
+    // its end.  The count has a line of its own (fixy/concurrent/EventCount.h).
+    ::fixy::concurrent::EventCount processed_events_{};
 
     // The thread that runs run_in_row, while one runs.  start() gives it a
     // thread, and stop() and the end of this object call request_stop_ and

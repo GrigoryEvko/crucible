@@ -509,11 +509,16 @@ public:
     // the produced and processed counters is what closes that window, and
     // the release-acquire pairing on the processed counter is what makes
     // every background side effect visible on return.
-    void flush() {
-        const uint64_t target_produced = ring_->total_produced();
-        while (bg_.total_processed.load_acquire() < target_produced) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
+    //
+    // The wait spins and then parks (BackgroundThread::flush), so the context
+    // of the caller owns Block and Nondet: an init, test or background
+    // context.  The foreground context of the hot path owns neither.  When
+    // the background thread stops before it reaches the count, the result is
+    // FlushRefusal::pipeline_stopped, and the call does not hang.
+    template <class Ctx>
+        requires ::fixy::concurrent::CtxFitsWaitPolicy<Ctx, BackgroundThread::FlushPolicy>
+    [[nodiscard]] FlushResult flush(Ctx const& ctx) noexcept {
+        return bg_.flush(ctx);
     }
 
     [[nodiscard]] bool flush_complete() const { return bg_.total_processed.load_acquire() >= ring_->total_produced(); }

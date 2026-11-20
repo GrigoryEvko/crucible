@@ -250,7 +250,8 @@ void setup_compiled_vigil(Vigil& vigil) {
     feed_record(vigil, 0);
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
-    vigil.flush();
+    const ::fixy::TestRunnerCtx waiter{::foundation::effects::testing::test()};
+    vigil.flush(waiter).expect("the pipeline of the bench runs");
     wait_region_published(vigil);
     align_and_activate(vigil, 3);
 }
@@ -266,7 +267,8 @@ void start_pipeline(Vigil& vigil) {
     OpData d = make_op(0, 1);
     d.entry.schema_hash = SchemaHash{0x900};
     static_cast<void>(vigil.record_op(certify_synthetic_op(d.entry, records_of(d))));
-    vigil.flush();
+    const ::fixy::TestRunnerCtx waiter{::foundation::effects::testing::test()};
+    vigil.flush(waiter).expect("the pipeline of the bench runs");
 }
 
 // ── The gate ───────────────────────────────────────────────────────

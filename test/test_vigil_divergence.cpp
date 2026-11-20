@@ -109,7 +109,7 @@ void test_divergence_drops_the_unobserved_region() {
     // context is compiled, so the region the background thread publishes for
     // them lands in a slot the replay branch of dispatch_op never reads.
     feed_one_region(vigil, 4);
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, vigil.flush_complete() && "flush() returned before the background thread finished");
     CRUCIBLE_TEST_ASSERT(kTest,
                          vigil.current_step() > step_after_first
@@ -190,7 +190,7 @@ void test_divergence_drops_the_regions_of_the_backlog() {
     CRUCIBLE_TEST_ASSERT(kTest, result_diverged.status == ReplayStatus::DIVERGED);
     CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled());
 
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, vigil.flush_complete() && "flush() returned before the background thread finished");
 
     const uint64_t produced_before = vigil.ring_total_produced();
@@ -233,7 +233,7 @@ void test_divergence_drops_a_half_finished_alignment() {
     const uint64_t step_after_first = vigil.current_step();
 
     feed_one_region(vigil, 4);
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() > step_after_first && "a second region must be published");
 
     // Open a walk two ops deep and stop.  K is 5, so this does not activate.
@@ -303,7 +303,7 @@ void publish_planless_then_planned(crucible::Vigil& vigil) {
     crucible::test::flush_and_wait_region_published(kTest, vigil);
     const uint64_t step_after_planless = vigil.current_step();
     divrig::feed_one_region(vigil, 0);
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest,
                          vigil.current_step() > step_after_planless && "the region with tensors must be published");
 }
@@ -433,7 +433,7 @@ void test_region_store_stays_bounded() {
         CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled() && "each cycle aligns on its region");
 
         feed_cycle_region(vigil, cycle, base + 4);
-        vigil.flush();
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
         OpData foreign_op = op_at(base + 7, 0);
         foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
         auto diverged =
@@ -441,7 +441,7 @@ void test_region_store_stays_bounded() {
         CRUCIBLE_TEST_ASSERT(kTest, diverged.status == crucible::ReplayStatus::DIVERGED);
         base += 8;
     }
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
 
     const uint32_t stored = vigil.region_store_count();
     const uint64_t dropped = vigil.region_store_drops();
@@ -466,7 +466,7 @@ void test_small_region_store_discards_and_counts() {
         for (uint32_t i = 0; i < divrig::NUM_OPS; i++)
             record_cycle_op(vigil, 0, iter, i);
     }
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     CRUCIBLE_TEST_ASSERT(test, vigil.region_store_count() == 1);
     CRUCIBLE_TEST_ASSERT(test, vigil.region_store_drops() > 0);
     ::fixy::check::pass(test, "  test_small_region_store_discards_and_counts: PASSED (dropped={})\n",
@@ -498,7 +498,7 @@ void test_divergence_leaves_no_stale_active_region() {
 
     const uint64_t step_before = vigil.current_step();
     feed_cycle_region(vigil, 1, 4);
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest,
                          vigil.current_step() > step_before && "the region of the second cycle must be published");
     CRUCIBLE_TEST_ASSERT(kTest, vigil.active_region().expect("the second cycle published a region")->content_hash
@@ -543,7 +543,7 @@ void test_same_region_keeps_the_alignment() {
         OpData recorded = op_at(3, i);
         (void)vigil.record_op(crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
     }
-    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() > step_before && "the second region must be published");
     CRUCIBLE_TEST_ASSERT(kTest, vigil.has_pending_region());
 

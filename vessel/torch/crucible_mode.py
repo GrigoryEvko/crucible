@@ -108,7 +108,7 @@ class _VesselLib:
         lib.crucible_is_structural_scalar.restype = ctypes.c_int
         lib.crucible_is_structural_scalar.argtypes = [ctypes.c_uint64, ctypes.c_uint32]
 
-        lib.crucible_flush.restype = None
+        lib.crucible_flush.restype = ctypes.c_int
         lib.crucible_flush.argtypes = [ctypes.c_void_p]
 
         lib.crucible_is_compiled.restype = ctypes.c_int
@@ -322,7 +322,13 @@ class CrucibleMode(TorchDispatchMode):
         return self._vessel.crucible_diverged_count(self._handle)
 
     def flush(self):
-        self._vessel.crucible_flush(self._handle)
+        """Wait until the background thread processed each recorded op.
+
+        Raises RuntimeError when the background thread stopped first, because
+        the ops after that point stay unprocessed.
+        """
+        if self._vessel.crucible_flush(self._handle) == 0:
+            raise RuntimeError("the background thread of the Vigil stopped before the flush completed")
 
     # ── Trace export ─────────────────────────────────────────────────
 

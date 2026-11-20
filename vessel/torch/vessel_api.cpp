@@ -390,7 +390,14 @@ int crucible_is_structural_scalar(uint64_t schema_hash, uint32_t position) noexc
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 
-void crucible_flush(CrucibleHandle h) noexcept { crucible::vessel::as_vigil_typed(h).value()->flush(); }
+// The flush waits on a thread of the caller, outside the hot path, and it
+// parks in the kernel after its spin.  The door of the init context gives the
+// Block and the Nondet of the wait.  1 when the background processed each op
+// that the ring held, and 0 when the background stopped first.
+int crucible_flush(CrucibleHandle h) noexcept {
+    const ::fixy::InitLoadCtx waiter{::foundation::effects::host::InitOwner::mint_init_context()};
+    return crucible::vessel::as_vigil_typed(h).value()->flush(waiter).is_ok() ? 1 : 0;
+}
 
 int crucible_is_compiled(CrucibleHandle h) noexcept {
     return crucible::vessel::as_vigil_typed(h).value()->is_compiled() ? 1 : 0;
@@ -523,8 +530,15 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
                    [](::fixy::PathTraversalError) noexcept { return ::fixy::Option<Sanitized>{::fixy::none}; });
     if (sanitized.is_none()) return 0;
 
+    // The export runs on a thread of the caller, outside the hot path.  The
+    // flush parks, and the open and the write wait on the disk.  The door of
+    // the init context gives the Block and the Nondet of the wait, the
+    // allocation of the buffer and the right to open and to write the file.
+    // A background that stopped before the flush leaves the region unsure,
+    // so the export writes nothing.
+    const ::fixy::InitLoadCtx io{::foundation::effects::host::InitOwner::mint_init_context()};
     const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
-    vigil->flush();
+    if (vigil->flush(io).is_err()) return 0;
 
     ::fixy::Option<::fixy::Ref<const crucible::RegionNode>> active = vigil->active_region();
     if (active.is_none()) return 0;
@@ -564,10 +578,6 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     const size_t file_bytes = crucible::TRACE_HEADER_BYTES + size_t{num_ops} * sizeof(crucible::TraceOpRecord)
                             + size_t{total_metas} * crucible::TRACE_META_BYTES + sizeof(uint32_t) + name_bytes;
 
-    // The export runs on a thread of the caller, outside the hot path, and
-    // it waits on the disk.  The door of the init context gives the
-    // allocation of the buffer and the right to open and to write the file.
-    const ::fixy::InitLoadCtx io{::foundation::effects::host::InitOwner::mint_init_context()};
     ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(io.cap().alloc, file_bytes, std::byte{0});
     ExportCursor cursor{image.view()};
 
