@@ -133,7 +133,7 @@ template <typename L, typename E = typename L::element_type>
         if (!name.ends_with(">")) return false;
         const std::string_view middle = name.substr(L::name().size());
         if (!middle.starts_with("::At<")) return false;
-        if (middle.substr(5, middle.size() - 6) != fr::enum_name([:en:])) return false;
+        if (middle.substr(5, middle.size() - 6) != std::meta::identifier_of(en)) return false;
     }
 #pragma GCC diagnostic pop
     return true;

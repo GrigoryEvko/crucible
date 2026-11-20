@@ -44,7 +44,7 @@ struct NodeId {
     constexpr auto operator<=>(NodeId const&) const = default;
 };
 
-// foundation::reflect::enum_name gives the log spelling of the three enums
+// foundation::core::enum_name_text gives the log spelling of the three enums
 // below, and foundation::reflect::enum_count their cardinality.
 
 // The underlying value encodes the layer by range.  Zero is the unknown

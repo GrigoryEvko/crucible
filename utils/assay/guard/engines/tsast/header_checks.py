@@ -173,7 +173,7 @@ WHAT THE RULE CANNOT SEE
     and reads a variable template.  It also cannot see a plain call into a
     function that walks reflection.  A function that is not a template and calls a
     template with a concrete argument instantiates that template where the
-    function stands.  A name function of one enum that calls enum_name
+    function stands.  A name function of one enum that calls enum_name_text
     then instantiates the walk over the enum in each includer.  The kinds
     of a call read one call, and they do not follow such a chain.
 

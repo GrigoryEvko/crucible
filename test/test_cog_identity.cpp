@@ -14,7 +14,6 @@
 #include <foundation/reflect/EnumName.h>
 
 #include <cstdio>
-#include <string_view>
 
 namespace {
 
@@ -24,17 +23,16 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 }  // namespace
 
 namespace cog = crucible::cog;
-namespace fr = ::foundation::reflect;
 
 // Each enumerator's name comes back through a volatile, so the lookup runs
 // at run time as well as in the constant folder.
 template <typename E>
 static void check_every_name_at_run_time() {
-    fr::for_each_enumerator<E>([](E value, std::string_view identifier) {
+    ::fixy::for_each_enumerator_text<E>([](E value, ::fixy::TextView identifier) {
         volatile E runtime_value = value;
-        const std::string_view name = fr::enum_name(static_cast<E>(runtime_value));
+        const ::fixy::TextView name = ::fixy::enum_name_text(static_cast<E>(runtime_value));
         CRUCIBLE_TEST_ASSERT(kTest, name == identifier);
-        CRUCIBLE_TEST_ASSERT(kTest, name != fr::unknown_enum_sentinel<E>);
+        CRUCIBLE_TEST_ASSERT(kTest, name != ::fixy::unknown_enum_text<E>);
     });
 }
 

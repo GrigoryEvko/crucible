@@ -24,7 +24,7 @@ using PositivePingmeshProbeBytes = ::fixy::Positive<std::uint16_t>;
 using PositivePingmeshLatencyNs = ::fixy::Positive<std::uint64_t>;
 using PositivePingmeshZScoreMilli = ::fixy::Positive<std::uint32_t>;
 
-// foundation::reflect::enum_name gives the log spelling of both enums.
+// foundation::core::enum_name_text gives the log spelling of both enums.
 enum class PingmeshProbeStatus : std::uint8_t {
     Delivered = 0,
     Lost = 1,

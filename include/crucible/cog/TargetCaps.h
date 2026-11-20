@@ -22,7 +22,7 @@ namespace crucible::cog {
 // change. A deleted atom leaves its value empty, and no new atom takes
 // that value, because a stored schema can still hold it.
 //
-// ::foundation::reflect::enum_name gives the name of an enumerator, and
+// ::foundation::core::enum_name_text gives the name of an enumerator, and
 // ::foundation::reflect::enum_count the number of enumerators.
 enum class LinkLayer : std::uint8_t {
     Ethernet = 0,

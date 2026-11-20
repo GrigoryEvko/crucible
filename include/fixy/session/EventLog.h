@@ -239,8 +239,8 @@ namespace detail::event_log {
 template <typename E>
 inline constexpr std::array<bool, 256> enumerator_bytes = [] {
     std::array<bool, 256> table{};
-    ::foundation::reflect::for_each_enumerator<E>(
-        [&table](E value, std::string_view) noexcept { table[static_cast<std::uint8_t>(value)] = true; });
+    ::foundation::core::for_each_enumerator_text<E>(
+        [&table](E value, ::foundation::core::TextView) noexcept { table[static_cast<std::uint8_t>(value)] = true; });
     return table;
 }();
 

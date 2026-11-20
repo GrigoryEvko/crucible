@@ -60,13 +60,13 @@ static cog::CogIdentity nic(std::uint64_t lo) {
 
 // The log spelling of the three enums comes from reflection.
 static void test_name_accessors() {
-    using ::foundation::reflect::enum_name;
-    static_assert(enum_name(topology::PtpError::NonNicCog) == "NonNicCog");
-    static_assert(enum_name(topology::PtpServoState::Slave) == "Slave");
-    static_assert(enum_name(topology::PtpDegradationReason::ExcessiveSkew) == "ExcessiveSkew");
+    using ::fixy::enum_name_text;
+    static_assert(enum_name_text(topology::PtpError::NonNicCog) == "NonNicCog");
+    static_assert(enum_name_text(topology::PtpServoState::Slave) == "Slave");
+    static_assert(enum_name_text(topology::PtpDegradationReason::ExcessiveSkew) == "ExcessiveSkew");
     volatile auto error = topology::PtpError::TimestampOverflow;
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         enum_name(static_cast<topology::PtpError>(error)) == std::string_view{"TimestampOverflow"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(static_cast<topology::PtpError>(error))
+                                    == ::fixy::TextView{"TimestampOverflow"});
     ::fixy::check::pass(kTest, "  test_name_accessors:        PASSED\n");
 }
 
@@ -228,8 +228,7 @@ static void test_daemon_report_boundary() {
     auto diagnostic = topology::ptp_diagnostic_from_daemon_report(declared);
     CRUCIBLE_TEST_ASSERT(kTest, !diagnostic.value().degraded());
     CRUCIBLE_TEST_ASSERT(kTest, diagnostic.value().reason == topology::PtpDegradationReason::None);
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         ::foundation::reflect::enum_name(diagnostic.value().reason) == std::string_view{"None"});
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::enum_name_text(diagnostic.value().reason) == ::fixy::TextView{"None"});
 
     report.grandmaster_present = false;
     auto no_grandmaster = topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(bg, report));

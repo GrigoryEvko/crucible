@@ -64,7 +64,7 @@ template <Axis A>
         if constexpr (requires { Strict::value; }) {
             constexpr auto value = Strict::value;
             if constexpr (std::is_enum_v<decltype(value)>) {
-                return ::foundation::reflect::enum_name(value);
+                return ::foundation::reflect::detail::enum_name_view_(value);
             } else {
                 return digits_<::foundation::reflect::anchored_t<^^Strict, void>>(
                     static_cast<unsigned long long>(value));

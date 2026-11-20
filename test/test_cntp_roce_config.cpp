@@ -30,7 +30,7 @@ namespace src = ::fixy::tags::source;
 namespace {
 
 void test_admission_and_names() {
-    static_assert(::foundation::reflect::enum_name(cntp::RoceError::InvalidDscp) == std::string_view{"InvalidDscp"});
+    static_assert(::fixy::enum_name_text(cntp::RoceError::InvalidDscp) == ::fixy::TextView{"InvalidDscp"});
 
     auto pfc = cntp::admit_pfc_priorities(0b00001000);
     CRUCIBLE_TEST_ASSERT(kTest, pfc.is_ok());
@@ -179,10 +179,10 @@ void test_live_surfaces_if_available() {
     // did not ask".
     auto state = cntp::query_dcqcn_state(lo);
     CRUCIBLE_TEST_ASSERT(kTest, state == cntp::DcqcnState::BackendUnavailable);
-    static_assert(::foundation::reflect::enum_name(cntp::DcqcnState::BackendUnavailable)
-                  == std::string_view{"BackendUnavailable"});
-    static_assert(::foundation::reflect::enum_name(cntp::DcqcnState::Inactive) == std::string_view{"Inactive"});
-    static_assert(::foundation::reflect::enum_name(cntp::DcqcnState::Active) == std::string_view{"Active"});
+    static_assert(::fixy::enum_name_text(cntp::DcqcnState::BackendUnavailable)
+                  == ::fixy::TextView{"BackendUnavailable"});
+    static_assert(::fixy::enum_name_text(cntp::DcqcnState::Inactive) == ::fixy::TextView{"Inactive"});
+    static_assert(::fixy::enum_name_text(cntp::DcqcnState::Active) == ::fixy::TextView{"Active"});
 
     // The boolean-shaped accessor maps that unknown state onto its own error
     // code, so a caller written against it keeps working unchanged.

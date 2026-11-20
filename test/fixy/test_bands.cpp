@@ -27,7 +27,6 @@
 namespace {
 
 namespace fa = ::foundation::algebra;
-namespace fr = ::foundation::reflect;
 
 struct TwoWords {
     std::uint64_t lo{0};
@@ -399,7 +398,7 @@ int main() {
         std::fprintf(stderr, "test_bands: RecipeSpec admission is wrong at runtime\n");
         return 1;
     }
-    if (fr::enum_name(fixy::tolerance_of(spec)) != "ULP_FP16") {
+    if (::foundation::core::enum_name_text(fixy::tolerance_of(spec)) != "ULP_FP16") {
         std::fprintf(stderr, "test_bands: the reflected tolerance name is wrong\n");
         return 1;
     }

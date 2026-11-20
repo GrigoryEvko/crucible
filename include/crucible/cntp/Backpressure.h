@@ -12,7 +12,7 @@
 namespace crucible::cntp {
 
 // An error has no spelling of its own, so its name is its enumerator's
-// identifier, read by foundation::reflect::enum_name.
+// identifier, read by foundation::core::enum_name_text.
 enum class BackpressureError : std::uint8_t {
     InvalidCreditBytes,
     InvalidConnectionLimit,

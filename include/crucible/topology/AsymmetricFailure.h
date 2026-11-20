@@ -20,7 +20,7 @@
 
 namespace crucible::topology {
 
-// foundation::reflect::enum_name gives the log spelling of both enums.
+// foundation::core::enum_name_text gives the log spelling of both enums.
 enum class FailureClass : std::uint8_t {
     BidiOk = 0,
     TxBroken = 1,

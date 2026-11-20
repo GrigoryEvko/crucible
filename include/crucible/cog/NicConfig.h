@@ -5,7 +5,7 @@
 // administration capability. A privileged backend consumes the
 // declared values this header mints.
 //
-// foundation::reflect::enum_name gives the name of each enumerator.
+// foundation::core::enum_name_text gives the name of each enumerator.
 // qdisc_kind_name is a different mapping: it gives the name that the
 // kernel uses for the queueing discipline.
 

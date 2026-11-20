@@ -67,8 +67,8 @@ static ::fixy::SequenceSource& advance_to(::fixy::SequenceSource& sequences, std
 
 // The log spelling of both enums comes from reflection.
 static void test_name_accessors() {
-    static_assert(::foundation::reflect::enum_name(topology::HealthState::Quarantined) == "Quarantined");
-    static_assert(::foundation::reflect::enum_name(topology::HealthIssue::DropRateCritical) == "DropRateCritical");
+    static_assert(::fixy::enum_name_text(topology::HealthState::Quarantined) == "Quarantined");
+    static_assert(::fixy::enum_name_text(topology::HealthIssue::DropRateCritical) == "DropRateCritical");
     ::fixy::check::pass(kTest, "  test_name_accessors:              PASSED\n");
 }
 

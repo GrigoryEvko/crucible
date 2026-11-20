@@ -84,7 +84,7 @@ mint_demote(CipherTier<From, T> source) noexcept(std::is_nothrow_move_constructi
     return ::fixy::mint_band<CipherTier<To, T>>(std::move(source).consume());
 }
 
-// A diagnostic prints a refusal with ::foundation::reflect::enum_name.
+// A diagnostic prints a refusal with ::foundation::core::enum_name_text.
 enum class RestoreError : std::uint8_t {
     EmptyContentHash,
     EmptyColdHandle,

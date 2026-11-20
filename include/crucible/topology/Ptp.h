@@ -38,7 +38,7 @@ using PtpClockReader = ::fixy::time::PtpClockReader;
 using PtpDeviceIndex = ::fixy::time::PtpDeviceIndex;
 using PtpClockCaps = ::fixy::time::PtpClockCaps;
 
-// foundation::reflect::enum_name gives the log spelling of the three enums
+// foundation::core::enum_name_text gives the log spelling of the three enums
 // below.  Each error keeps a fixed number, and no error has the number 3.
 enum class PtpError : std::uint8_t {
     None = 0,

@@ -41,8 +41,8 @@ cntp::BackpressureError error_of(::fixy::Result<Value, cntp::BackpressureError> 
 }
 
 void test_admission_helpers() {
-    static_assert(::foundation::reflect::enum_name(cntp::BackpressureError::CreditOverflow)
-                  == std::string_view{"CreditOverflow"});
+    static_assert(::fixy::enum_name_text(cntp::BackpressureError::CreditOverflow)
+                  == ::fixy::TextView{"CreditOverflow"});
     static_assert(cntp::admission_decision_kind_name(cntp::AdmissionDecisionKind::RejectedResource)
                   == "rejected_resource");
 

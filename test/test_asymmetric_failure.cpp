@@ -55,8 +55,8 @@ static void record_pair(Detector& detector, cog::CogIdentity const& p, bool outb
 
 // The log spelling of both enums comes from reflection.
 static void test_name_accessors() {
-    static_assert(::foundation::reflect::enum_name(topology::FailureClass::TxBroken) == "TxBroken");
-    static_assert(::foundation::reflect::enum_name(topology::FailureSignal::WitnessReachable) == "WitnessReachable");
+    static_assert(::fixy::enum_name_text(topology::FailureClass::TxBroken) == "TxBroken");
+    static_assert(::fixy::enum_name_text(topology::FailureSignal::WitnessReachable) == "WitnessReachable");
     ::fixy::check::pass(kTest, "  test_name_accessors:                     PASSED\n");
 }
 

@@ -161,11 +161,11 @@ topology::TcpInfoSnapshot sample(std::uint64_t bw, std::uint64_t rtt, topology::
 
 // The log spelling of both enums comes from reflection.
 void test_names_and_admission() {
-    static_assert(::foundation::reflect::enum_name(topology::CongestionMode::BbrDrain) == "BbrDrain");
-    static_assert(::foundation::reflect::enum_name(topology::TelemetryError::InvalidNicCog) == "InvalidNicCog");
+    static_assert(::fixy::enum_name_text(topology::CongestionMode::BbrDrain) == "BbrDrain");
+    static_assert(::fixy::enum_name_text(topology::TelemetryError::InvalidNicCog) == "InvalidNicCog");
     volatile auto mode = topology::CongestionMode::BbrProbeRtt;
-    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::reflect::enum_name(static_cast<topology::CongestionMode>(mode))
-                                    == std::string_view{"BbrProbeRtt"});
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::enum_name_text(static_cast<topology::CongestionMode>(mode))
+                                    == ::fixy::TextView{"BbrProbeRtt"});
     auto zero = topology::admit_sample_period_ns(0);
     CRUCIBLE_TEST_ASSERT(kTest, zero.is_err());
     CRUCIBLE_TEST_ASSERT(kTest, zero.err() == ::fixy::some(topology::TelemetryError::DeadlineOverflow));

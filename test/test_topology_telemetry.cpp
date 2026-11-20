@@ -70,11 +70,11 @@ error_of(::fixy::Result<T, topology::NicTelemetryError> const& result) {
 }
 
 static void test_enumerator_names() {
-    using ::foundation::reflect::enum_name;
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         enum_name(topology::NicTelemetryError::InvalidNicCog) == std::string_view{"InvalidNicCog"});
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(static_cast<topology::NicTelemetryError>(0xFF))
-                                    == std::string_view{"<unknown NicTelemetryError>"});
+    using ::fixy::enum_name_text;
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(topology::NicTelemetryError::InvalidNicCog)
+                                    == ::fixy::TextView{"InvalidNicCog"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(static_cast<topology::NicTelemetryError>(0xFF))
+                                    == ::fixy::TextView{"<unknown NicTelemetryError>"});
     ::fixy::check::pass(kTest, "  test_enumerator_names:                PASSED\n");
 }
 

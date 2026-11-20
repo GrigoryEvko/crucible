@@ -4,7 +4,7 @@
 // snapshot of one NIC at one sequence number, and a bounded history of
 // snapshots.
 //
-// foundation::reflect::enum_name gives the name of each enumerator.
+// foundation::core::enum_name_text gives the name of each enumerator.
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/topology/CongestionTelemetry.h>

@@ -75,8 +75,8 @@ static_assert(s::AcceptsFrom<HotPromoteAccept<ContentHash>, HotPromote<ContentHa
 static_assert(std::is_same_v<s::dual_of_t<HotPromoteDelegate<ContentHash>>, HotPromoteAccept<ContentHash>>);
 
 // A diagnostic prints a refusal by its enumerator name.
-static_assert(::foundation::reflect::enum_name(RestoreError::EmptyContentHash) == "EmptyContentHash");
-static_assert(::foundation::reflect::enum_name(RestoreError::BackendUnavailable) == "BackendUnavailable");
+static_assert(::fixy::enum_name_text(RestoreError::EmptyContentHash) == "EmptyContentHash");
+static_assert(::fixy::enum_name_text(RestoreError::BackendUnavailable) == "BackendUnavailable");
 
 void test_promote_and_demote_preserve_value() {
     constexpr ContentHash cold_hash{0xA001000000000001ULL};

@@ -128,11 +128,11 @@ void test_names_layout_and_static_gates() {
     static_assert(sizeof(phase::DeclaredFusedCommDecision) == sizeof(phase::FusedCommDecision));
     static_assert(std::is_trivially_copyable_v<phase::FusedCommDecision>);
 
-    static_assert(::foundation::reflect::enum_name(phase::CommPhaseKind::Fuse) == std::string_view{"Fuse"});
-    static_assert(::foundation::reflect::enum_name(phase::CommFusionPattern::ScatterFromAttention)
-                  == std::string_view{"ScatterFromAttention"});
-    static_assert(::foundation::reflect::enum_name(phase::CommPhaseError::RecipeForbidsPattern)
-                  == std::string_view{"RecipeForbidsPattern"});
+    static_assert(::fixy::enum_name_text(phase::CommPhaseKind::Fuse) == ::fixy::TextView{"Fuse"});
+    static_assert(::fixy::enum_name_text(phase::CommFusionPattern::ScatterFromAttention)
+                  == ::fixy::TextView{"ScatterFromAttention"});
+    static_assert(::fixy::enum_name_text(phase::CommPhaseError::RecipeForbidsPattern)
+                  == ::fixy::TextView{"RecipeForbidsPattern"});
 
     // The shape table decides which node kinds a pattern accepts.
     static_assert(phase::comm_fusion_shape(phase::CommFusionPattern::CompressBeforeSend).lossy);

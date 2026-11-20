@@ -208,7 +208,7 @@ void test_derives_the_floor() {
 // does not admit.
 consteval std::size_t count_rows_that_break_a_rule() {
     std::size_t broken = 0;
-    ::foundation::reflect::for_each_enumerator<os::KernelFlag>([&broken](os::KernelFlag flag, auto) {
+    ::foundation::reflect::for_each_enumerator_value<os::KernelFlag>([&broken](os::KernelFlag flag) {
         os::FlagFloor const row = os::flag_floor(flag);
         bool const has_fallback_text = row.fallback[0] != '\0';
         bool const is_fallback_row = row.need == os::FlagNeed::fallback;
@@ -283,7 +283,7 @@ void test_refuses_a_flag_of_each_call() {
 // by judge_flag: the oracle of the text of the report.
 [[nodiscard]] std::size_t count_fallback_rows(os::KernelVersion running) noexcept {
     std::size_t count = 0;
-    ::foundation::reflect::for_each_enumerator<os::KernelFlag>([&](os::KernelFlag flag, auto) noexcept {
+    ::foundation::reflect::for_each_enumerator_value<os::KernelFlag>([&](os::KernelFlag flag) noexcept {
         if (os::judge_flag(flag, running) == os::FlagVerdict::fallback) ++count;
     });
     return count;

@@ -22,7 +22,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
-#include <string_view>
 #include <type_traits>
 
 namespace foundation::reflect {
@@ -44,15 +43,11 @@ template <ScopedEnum E>
         if (cap > 0 && needed + 1 < cap) out[needed] = c;
         ++needed;
     };
-    auto emit_view = [&](std::string_view s) noexcept {
-        for (char c : s)
-            emit_byte(c);
-    };
-
-    for_each_single_bit_enumerator<E>([&](E flag, std::string_view name) noexcept {
+    detail::walk_single_bit_enumerator_names<E>([&](E flag, detail::NameChars name) noexcept {
         if ((mask & static_cast<U>(flag)) != U{0}) {
             if (!first) emit_byte('|');
-            emit_view(name);
+            for (std::size_t index = 0; index < name.size; ++index)
+                emit_byte(name.first[index]);
             first = false;
         }
     });

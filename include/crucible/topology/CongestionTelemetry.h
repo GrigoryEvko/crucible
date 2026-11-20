@@ -17,7 +17,7 @@
 
 namespace crucible::topology {
 
-// foundation::reflect::enum_name gives the log spelling of both enums.
+// foundation::core::enum_name_text gives the log spelling of both enums.
 enum class CongestionMode : std::uint8_t {
     Open = 0,
     Disorder = 1,

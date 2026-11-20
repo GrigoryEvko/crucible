@@ -25,7 +25,7 @@
 
 namespace crucible::cog {
 
-// ::foundation::reflect::enum_name gives the name of an enumerator.
+// ::foundation::core::enum_name_text gives the name of an enumerator.
 enum class CalibrationError : std::uint8_t {
     None = 0,
     ZeroCog = 1,

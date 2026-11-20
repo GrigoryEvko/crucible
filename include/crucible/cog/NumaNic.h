@@ -5,7 +5,7 @@
 // elsewhere and handed in. Nothing here steers an interrupt or writes
 // a packet-steering map.
 //
-// foundation::reflect::enum_name gives the name of each enumerator.
+// foundation::core::enum_name_text gives the name of each enumerator.
 
 #include <crucible/cog/AuditFindings.h>
 #include <crucible/cog/CogIdentity.h>

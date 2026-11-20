@@ -923,15 +923,15 @@ foundation_neg_compile_test(neg_base_namespace_global_directive
 # its layer.
 foundation_test(test_reflect_foundation test_reflect.cpp)
 
-# The enumerator walk calls its callback with a value and a name, so a
+# The value walk of the enumerators calls its callback with a value, so a
 # callback of another arity meets no call.  bits_to_string admits a null
 # buffer only with a capacity of 0, and its precondition stops a constant
 # evaluation that breaks the rule.  The second regex of that fixture names
 # the call and its arguments, and the third names the header that holds the
 # precondition.
 foundation_neg_compile_test(neg_reflect_for_each_enumerator_zero_arg_callback
-  "foundation/reflect/EnumName\\.h:[0-9]+:[0-9]+: error: no match for call to .\\(main\\(\\)::<lambda\\(\\)>\\) \\(const \\{anonymous\\}::Signal&, const std::basic_string_view<char>&\\)."
-  "candidate expects 0 arguments, 2 provided")
+  "foundation/reflect/EnumName\\.h:[0-9]+:[0-9]+: error: no match for call to .\\(main\\(\\)::<lambda\\(\\)>\\) \\(const \\{anonymous\\}::Signal&\\)."
+  "candidate expects 0 arguments, 1 provided")
 foundation_neg_compile_test(neg_reflect_bits_to_string_null_buffer_with_capacity
   "__builtin_trap.*is not a constant expression"
   "foundation::reflect::bits_to_string<\\{anonymous\\}::Signal>\\(.*, 0, 100\\)"

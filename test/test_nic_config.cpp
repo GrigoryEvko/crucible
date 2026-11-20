@@ -271,11 +271,12 @@ void test_audit_mapping() {
 }
 
 void test_enumerator_names() {
-    using ::foundation::reflect::enum_name;
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(nic::NicConfigError::QueryDeferred) == std::string_view{"QueryDeferred"});
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(nic::NicOffload::RxHash) == std::string_view{"RxHash"});
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(static_cast<nic::NicConfigError>(0xFF))
-                                    == std::string_view{"<unknown NicConfigError>"});
+    using ::fixy::enum_name_text;
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         enum_name_text(nic::NicConfigError::QueryDeferred) == ::fixy::TextView{"QueryDeferred"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(nic::NicOffload::RxHash) == ::fixy::TextView{"RxHash"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(static_cast<nic::NicConfigError>(0xFF))
+                                    == ::fixy::TextView{"<unknown NicConfigError>"});
 
     ::fixy::check::pass(kTest, "  test_enumerator_names: PASSED\n");
 }

@@ -152,7 +152,7 @@ concept CtxFitsDiscoveryBg =
     ::foundation::effects::IsExecCtx<Ctx>
     && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
-// foundation::reflect::enum_name gives the log spelling of the four enums
+// foundation::core::enum_name_text gives the log spelling of the four enums
 // above.
 
 [[nodiscard]] constexpr ExternalDiscoveryText tag_external_discovery_text(::fixy::TextView text) noexcept {

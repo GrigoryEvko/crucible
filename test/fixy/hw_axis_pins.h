@@ -69,7 +69,7 @@ template <::fixy::Axis... Listed>
     for (std::size_t index = 0; index < want.size(); ++index) {
         if (want[index] && !have[index]) {
             names += ' ';
-            names += ::foundation::reflect::enum_name(static_cast<::fixy::Axis>(index));
+            names += ::fixy::axis_name(static_cast<::fixy::Axis>(index));
         }
     }
     return names;

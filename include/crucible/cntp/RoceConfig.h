@@ -25,7 +25,7 @@ namespace crucible::cntp {
 inline constexpr bool privileged_apply_implemented = false;
 
 // An error has no spelling of its own, so its name is its enumerator's
-// identifier, read by foundation::reflect::enum_name.
+// identifier, read by foundation::core::enum_name_text.
 enum class RoceError : std::uint8_t {
     InvalidPfcPriorityMask,
     InvalidDscp,

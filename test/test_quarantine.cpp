@@ -63,10 +63,9 @@ static observe::ProbeOutcome probe(bool ok, std::uint64_t sequence) {
 }
 
 static void test_names() {
-    static_assert(::foundation::reflect::enum_name(warden::QuarantineState::Quarantined) == "Quarantined");
-    static_assert(::foundation::reflect::enum_name(warden::QuarantineSignal::OperatorOverride) == "OperatorOverride");
-    static_assert(::foundation::reflect::enum_name(static_cast<warden::QuarantineState>(0xFF))
-                  == "<unknown QuarantineState>");
+    static_assert(::fixy::enum_name_text(warden::QuarantineState::Quarantined) == "Quarantined");
+    static_assert(::fixy::enum_name_text(warden::QuarantineSignal::OperatorOverride) == "OperatorOverride");
+    static_assert(::fixy::enum_name_text(static_cast<warden::QuarantineState>(0xFF)) == "<unknown QuarantineState>");
     ::fixy::check::pass(kTest, "  test_names:                              PASSED\n");
 }
 

@@ -22,7 +22,7 @@
 
 namespace crucible::topology {
 
-// foundation::reflect::enum_name gives the log spelling of both enums.
+// foundation::core::enum_name_text gives the log spelling of both enums.
 enum class HealthState : std::uint8_t {
     Healthy = 0,
     Suspect = 1,

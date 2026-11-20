@@ -38,16 +38,16 @@ namespace eff = ::fixy;
 // each enum; a new enumerator moves a count and fails here.
 static void test_enum_names_come_from_reflection() {
     using ::foundation::reflect::enum_count;
-    using ::foundation::reflect::enum_name;
+    using ::fixy::enum_name_text;
     static_assert(enum_count<topology::LinkKind> == 13);
     static_assert(enum_count<topology::LinkLayer> == 3);
     static_assert(enum_count<topology::CongestionState> == 5);
-    static_assert(enum_name(topology::LinkKind::AmdInfinityFabric) == "AmdInfinityFabric");
-    static_assert(enum_name(topology::LinkLayer::L3) == "L3");
-    static_assert(enum_name(topology::CongestionState::Saturated) == "Saturated");
+    static_assert(enum_name_text(topology::LinkKind::AmdInfinityFabric) == "AmdInfinityFabric");
+    static_assert(enum_name_text(topology::LinkLayer::L3) == "L3");
+    static_assert(enum_name_text(topology::CongestionState::Saturated) == "Saturated");
 
     volatile auto kind = topology::LinkKind::RoceV2;
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(static_cast<topology::LinkKind>(kind)) == std::string_view{"RoceV2"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(static_cast<topology::LinkKind>(kind)) == ::fixy::TextView{"RoceV2"});
     ::fixy::check::pass(kTest, "  test_enum_names_come_from_reflection: PASSED\n");
 }
 

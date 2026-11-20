@@ -260,11 +260,9 @@ int main() {
     static_assert(!cog::calibration_quantiles_valid(cog::LatencyQuantiles{0u, 2u, 3u}));
     static_assert(!cog::calibration_quantiles_valid(cog::LatencyQuantiles{3u, 2u, 1u}));
 
-    static_assert(::foundation::reflect::enum_name(cog::CalibrationError::BackendUnavailable) == "BackendUnavailable");
-    static_assert(::foundation::reflect::enum_name(cog::CalibrationError::InvalidDriftBasisPoints)
-                  == "InvalidDriftBasisPoints");
-    static_assert(::foundation::reflect::enum_name(static_cast<cog::CalibrationError>(200))
-                  == "<unknown CalibrationError>");
+    static_assert(::fixy::enum_name_text(cog::CalibrationError::BackendUnavailable) == "BackendUnavailable");
+    static_assert(::fixy::enum_name_text(cog::CalibrationError::InvalidDriftBasisPoints) == "InvalidDriftBasisPoints");
+    static_assert(::fixy::enum_name_text(static_cast<cog::CalibrationError>(200)) == "<unknown CalibrationError>");
 
     ::fixy::report(::fixy::Sink::Out, "test_calibrate:\n");
     test_admission();

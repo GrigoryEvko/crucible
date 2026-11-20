@@ -83,14 +83,13 @@ namespace detail {
 // whole program.
 template <typename Outer, auto Value>
 [[nodiscard]] consteval std::string_view make_pinned_at_name() {
-    using E = decltype(Value);
     ::foundation::reflect::anchored_t<^^Outer, std::string> text{Outer::name()};
     text += "::At<";
-    const std::string_view identifier = ::foundation::reflect::enum_name(Value);
-    if (identifier == ::foundation::reflect::unknown_enum_sentinel<E>) {
+    const ::foundation::reflect::detail::FoundName found = ::foundation::reflect::detail::enumerator_chars(Value);
+    if (!found.is_found) {
         text += '?';
     } else {
-        text += identifier;
+        text.append(found.name.first, found.name.size);
     }
     text += '>';
     return std::define_static_string(text);
@@ -313,8 +312,9 @@ template <typename L>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
         template for (constexpr auto ea : enumerators) {
-            const std::string_view identifier = ::foundation::reflect::enum_name([:ea:]);
-            if (identifier.empty() || identifier == ::foundation::reflect::unknown_enum_sentinel<EnumT>) {
+            const ::foundation::reflect::detail::FoundName found =
+                ::foundation::reflect::detail::enumerator_chars([:ea:]);
+            if (!found.is_found || found.name.size == 0) {
                 return false;
             }
             std::size_t position_b = 0;

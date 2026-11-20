@@ -30,7 +30,7 @@
 
 namespace crucible::warden {
 
-// foundation::reflect::enum_name gives the log spelling of a state and
+// foundation::core::enum_name_text gives the log spelling of a state and
 // of a signal.
 enum class QuarantineState : std::uint8_t {
     Healthy = 0,

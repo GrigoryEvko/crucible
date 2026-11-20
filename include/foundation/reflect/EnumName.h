@@ -10,6 +10,16 @@
 // that chain cannot include Enumerate.h.  This header has no such
 // dependency, so Effect.h and Modality.h read their enumerator names
 // through it.
+//
+// THE NAMES
+//   This header is on a lower layer than foundation/core/Text.h, so it
+//   cannot name a TextView.  So it gives no name in a public form.  Its
+//   detail functions give the characters of each name as a NameChars, and
+//   foundation/core/Text.h gives each name as a TextView: enum_name_text,
+//   enum_words_text, enumerator_name_text, unknown_enum_text and the walk
+//   for_each_enumerator_text.  The two walks of this header,
+//   for_each_enumerator_value and for_each_single_bit_enumerator_value,
+//   give only the value of each enumerator.
 
 #pragma once
 
@@ -33,10 +43,10 @@ namespace foundation::reflect {
 template <class E>
 concept ScopedEnum = std::is_scoped_enum_v<E>;
 
-// `f` takes the value and the name as ordinary runtime parameters, not
-// as an NTTP `std::meta::info`.  `info` is consteval-only, so a lambda
-// taking it as an NTTP is immediate-escalated and can no longer mutate
-// runtime state such as an output buffer.
+// `f` takes the value as an ordinary runtime parameter, not as an NTTP
+// `std::meta::info`.  `info` is consteval-only, so a lambda taking it as an
+// NTTP is immediate-escalated and can no longer mutate runtime state such as
+// an output buffer.
 //
 // Each walk below holds its enumerators in a std::array, and no walk
 // calls std::define_static_array.  A function that is not a template
@@ -84,13 +94,30 @@ template <ScopedEnum E>
     return std::meta::extract<E>(std::meta::enumerators_of(^^E)[position]);
 }
 
-}  // namespace detail
+// The parts of a name of this header: its first character and its count of
+// characters.  A zero follows the last character.  foundation/core/Text.h
+// makes a TextView of the two parts, because a file of the language names
+// no member of std::string_view.
+struct NameChars final {
+    char const* first = "";
+    std::size_t size = 0;
+};
 
+// The name of the enumerator that a search found, or no name.
+struct FoundName final {
+    NameChars name{};
+    bool is_found = false;
+};
+
+// Calls f(value, name) for each enumerator of E in declaration order, with
+// the characters of the identifier of the enumerator.  The identifier of a
+// reflection has a zero after its last character.  foundation/core/Text.h
+// gives the name to the caller as a TextView (for_each_enumerator_text).
 template <ScopedEnum E, typename F>
-constexpr void for_each_enumerator(F&& f) {
+constexpr void walk_enumerator_names(F&& f) {
     static constexpr auto enumerators = [] consteval {
         std::array<std::meta::info, std::meta::enumerators_of(^^E).size()> items{};
-        detail::copy_enumerators(^^E, items.data(), items.size());
+        copy_enumerators(^^E, items.data(), items.size());
         return items;
     }();
 // An expansion statement unrolls into successive scopes that each
@@ -101,21 +128,22 @@ constexpr void for_each_enumerator(F&& f) {
     template for (constexpr auto e : enumerators) {
         constexpr E value = [:e:];
         constexpr std::string_view name = std::meta::identifier_of(e);
-        f(value, name);
+        f(value, NameChars{name.data(), name.size()});
     }
 #pragma GCC diagnostic pop
 }
 
-// The popcount filter sits here rather than in the lambda because once
-// the value reaches the lambda as a runtime parameter it is no longer a
-// constant expression, and `if constexpr` cannot see it.
-
+// The same walk over the enumerators whose value has one bit set, for
+// bits_to_string of foundation/reflect/Enumerate.h.  The popcount filter
+// sits here rather than in the callback because once the value reaches the
+// callback as a runtime parameter it is no longer a constant expression, and
+// `if constexpr` cannot see it.
 template <ScopedEnum E, typename F>
-constexpr void for_each_single_bit_enumerator(F&& f) {
+constexpr void walk_single_bit_enumerator_names(F&& f) {
     using U = std::underlying_type_t<E>;
     static constexpr auto enumerators = [] consteval {
         std::array<std::meta::info, std::meta::enumerators_of(^^E).size()> items{};
-        detail::copy_enumerators(^^E, items.data(), items.size());
+        copy_enumerators(^^E, items.data(), items.size());
         return items;
     }();
 #pragma GCC diagnostic push
@@ -125,24 +153,38 @@ constexpr void for_each_single_bit_enumerator(F&& f) {
         constexpr U raw = static_cast<U>(flag);
         if constexpr (std::popcount(static_cast<std::make_unsigned_t<U>>(raw)) == 1) {
             constexpr std::string_view name = std::meta::identifier_of(e);
-            f(flag, name);
+            f(flag, NameChars{name.data(), name.size()});
         }
     }
 #pragma GCC diagnostic pop
 }
 
-// When two enumerators share a value, the first in declaration order
-// wins.  The view points at compile-time-immortal storage.
+}  // namespace detail
 
-template <ScopedEnum E>
-[[nodiscard]] constexpr std::string_view enumerator_name(E value) noexcept {
-    std::string_view result{};
-    for_each_enumerator<E>([&](E candidate, std::string_view name) noexcept {
-        if (result.empty() && candidate == value) {
-            result = name;
-        }
-    });
-    return result;
+// Calls f(value) for each enumerator of E, in declaration order.  The walk
+// gives no name: for_each_enumerator_text of foundation/core/Text.h gives
+// each value with its name.
+template <ScopedEnum E, typename F>
+constexpr void for_each_enumerator_value(F&& f) {
+    static constexpr auto enumerators = [] consteval {
+        std::array<std::meta::info, std::meta::enumerators_of(^^E).size()> items{};
+        detail::copy_enumerators(^^E, items.data(), items.size());
+        return items;
+    }();
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto e : enumerators) {
+        constexpr E value = [:e:];
+        f(value);
+    }
+#pragma GCC diagnostic pop
+}
+
+// Calls f(flag) for each enumerator of E whose value has one bit set, in
+// declaration order.
+template <ScopedEnum E, typename F>
+constexpr void for_each_single_bit_enumerator_value(F&& f) {
+    detail::walk_single_bit_enumerator_names<E>([&f](E flag, detail::NameChars) { f(flag); });
 }
 
 // The number of enumerators of E.  A count constant that a lattice
@@ -155,7 +197,7 @@ inline constexpr std::size_t enum_count = std::meta::enumerators_of(^^E).size();
 namespace detail {
 
 // The text is "<unknown E>" with the unqualified name of E.  It lives
-// in a static array of its own length and one zero, so the view stays
+// in a static array of its own length and one zero, so the characters stay
 // valid for the whole program.  A zero follows each name of this header,
 // as it follows the text of a reflection, so a TextView of the base can
 // borrow each one (foundation/core/Text.h).  A name function of one enum
@@ -164,7 +206,7 @@ namespace detail {
 // instantiate that function.
 
 template <ScopedEnum E>
-[[nodiscard]] consteval std::string_view make_unknown_enum_sentinel() {
+[[nodiscard]] consteval NameChars make_unknown_enum_chars() {
     static constexpr char prefix[] = "<unknown ";
     static constexpr std::size_t prefix_size = sizeof(prefix) - 1;
     static constexpr std::string_view name = std::meta::identifier_of(^^E);
@@ -182,27 +224,66 @@ template <ScopedEnum E>
         chars.bytes[prefix_size + name_size] = '>';
         return chars;
     }();
-    return std::string_view{text.bytes, prefix_size + name_size + 1};
+    return NameChars{text.bytes, prefix_size + name_size + 1};
 }
 
-}  // namespace detail
-
+// The characters of the sentinel of E.
 template <ScopedEnum E>
-inline constexpr std::string_view unknown_enum_sentinel = detail::make_unknown_enum_sentinel<E>();
+inline constexpr NameChars unknown_enum_chars = make_unknown_enum_chars<E>();
 
-// The identifier of the enumerator that holds `value`, or the sentinel
-// when no enumerator holds it.  This is enumerator_name with the empty
-// result replaced, so a diagnostic never prints an empty name.  It is
-// constexpr rather than consteval so that a runtime diagnostic can call
-// it.
-
+// The characters of the identifier of the first enumerator, in declaration
+// order, that holds `value`, or no characters when no enumerator holds it.
+// An identifier is never empty, so the count zero marks the value of no
+// enumerator, and the search keeps two words and no flag.  Complexity: one
+// compare for each enumerator.
 template <ScopedEnum E>
-[[nodiscard]] constexpr std::string_view enum_name(E value) noexcept {
-    const std::string_view found = enumerator_name(value);
-    return found.empty() ? unknown_enum_sentinel<E> : found;
+[[nodiscard]] constexpr NameChars first_name_chars_(E value) noexcept {
+    NameChars found{};
+    walk_enumerator_names<E>([&found, value](E candidate, NameChars name) noexcept {
+        if (found.size == 0 && candidate == value) {
+            found = name;
+        }
+    });
+    return found;
 }
 
-namespace detail {
+// The identifier of the enumerator that holds `value`, or no name when no
+// enumerator holds it.  When two enumerators share a value, the first in
+// declaration order wins.  It is constexpr rather than consteval so that a
+// runtime diagnostic can call it.
+template <ScopedEnum E>
+[[nodiscard]] constexpr FoundName enumerator_chars(E value) noexcept {
+    NameChars const found = first_name_chars_(value);
+    return FoundName{found, found.size != 0};
+}
+
+// The identifier of the enumerator that holds `value`, or the sentinel when
+// no enumerator holds it, so a diagnostic never prints an empty name.
+template <ScopedEnum E>
+[[nodiscard]] constexpr NameChars enum_name_chars(E value) noexcept {
+    NameChars const found = first_name_chars_(value);
+    return found.size != 0 ? found : unknown_enum_chars<E>;
+}
+
+// The identifier of the enumerator that holds `value`, or the sentinel, as a
+// std::string_view, for a builder of the std::string_view texts of the
+// insights of fixy/Insights.h and of axis_name of fixy/Axis.h.
+template <ScopedEnum E>
+[[nodiscard]] constexpr std::string_view enum_name_view_(E value) noexcept {
+    NameChars const name = enum_name_chars(value);
+    return std::string_view{name.first, name.size};
+}
+
+// True when identifier spells the name of the enumerator that holds value,
+// for a reader of reflection that compares an identifier, such as the bare
+// tag of an effect in foundation/effects/Effect.h.  A value that no
+// enumerator holds matches no identifier.  Complexity: linear in the
+// enumerators and the characters of the identifier.
+template <ScopedEnum E>
+[[nodiscard]] consteval bool is_enumerator_identifier(std::string_view identifier, E value) {
+    FoundName const found = enumerator_chars(value);
+    return found.is_found && identifier == std::string_view{found.name.first, found.name.size};
+}
 
 // The identifier in lower case, with the separator between words.  An
 // upper-case letter that follows a lower-case letter or a digit starts a
@@ -227,57 +308,30 @@ template <class Anchor = void>
     return std::define_static_string(words);
 }
 
-}  // namespace detail
-
 // The identifier of the enumerator that holds `value`, in lower-case words
 // joined by Separator, or the sentinel when no enumerator holds it.  When
-// two enumerators share a value, the first in declaration order wins, as
-// in enumerator_name.
+// two enumerators share a value, the first in declaration order wins, as in
+// enumerator_chars.
 template <ScopedEnum E, char Separator>
-[[nodiscard]] constexpr std::string_view enum_words(E value) noexcept {
+[[nodiscard]] constexpr NameChars enum_words_chars(E value) noexcept {
     static constexpr auto enumerators = [] consteval {
         std::array<std::meta::info, std::meta::enumerators_of(^^E).size()> items{};
-        detail::copy_enumerators(^^E, items.data(), items.size());
+        copy_enumerators(^^E, items.data(), items.size());
         return items;
     }();
-    std::string_view words = unknown_enum_sentinel<E>;
+    NameChars words = unknown_enum_chars<E>;
     bool is_found = false;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto e : enumerators) {
-        constexpr std::string_view spelled = detail::lower_words_of(std::meta::identifier_of(e), Separator);
+        constexpr std::string_view spelled = lower_words_of(std::meta::identifier_of(e), Separator);
         if (!is_found && value == [:e:]) {
-            words = spelled;
+            words = NameChars{spelled.data(), spelled.size()};
             is_found = true;
         }
     }
 #pragma GCC diagnostic pop
     return words;
-}
-
-namespace detail {
-
-// The parts of a name of this header: its first character and its count of
-// characters.  A zero follows the last character.  foundation/core/Text.h
-// makes a TextView of the two parts, because a file of the language names
-// no member of std::string_view.
-struct NameChars final {
-    char const* first = "";
-    std::size_t size = 0;
-};
-
-// The parts of the name that enum_name gives.
-template <ScopedEnum E>
-[[nodiscard]] constexpr NameChars enum_name_chars(E value) noexcept {
-    std::string_view const name = enum_name(value);
-    return NameChars{name.data(), name.size()};
-}
-
-// The parts of the words that enum_words gives.
-template <ScopedEnum E, char Separator>
-[[nodiscard]] constexpr NameChars enum_words_chars(E value) noexcept {
-    std::string_view const words = enum_words<E, Separator>(value);
-    return NameChars{words.data(), words.size()};
 }
 
 // The identifier of Entity.  Its return type is deduced, so a call of it
@@ -299,52 +353,6 @@ template <std::meta::info Entity>
         ++size;
     }
     return NameChars{first, size};
-}
-
-// The name of the enumerator that a search found, or no name.
-struct FoundName final {
-    NameChars name{};
-    bool is_found = false;
-};
-
-// Calls f(value, name) for each enumerator of E in declaration order, with
-// the characters of the identifier of the enumerator.  The identifier of a
-// reflection has a zero after its last character.  foundation/core/Text.h
-// gives the name to the caller as a TextView (for_each_enumerator_text).
-template <ScopedEnum E, typename F>
-constexpr void walk_enumerator_names(F&& f) {
-    static constexpr auto enumerators = [] consteval {
-        std::array<std::meta::info, std::meta::enumerators_of(^^E).size()> items{};
-        copy_enumerators(^^E, items.data(), items.size());
-        return items;
-    }();
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto e : enumerators) {
-        constexpr E value = [:e:];
-        constexpr std::string_view name = std::meta::identifier_of(e);
-        f(value, NameChars{name.data(), name.size()});
-    }
-#pragma GCC diagnostic pop
-}
-
-// The characters of the sentinel of E.
-template <ScopedEnum E>
-inline constexpr NameChars unknown_enum_chars =
-    NameChars{unknown_enum_sentinel<E>.data(), unknown_enum_sentinel<E>.size()};
-
-// The identifier of the enumerator that holds `value`, or no name when no
-// enumerator holds it.  When two enumerators share a value, the first in
-// declaration order wins.  Complexity: one compare for each enumerator.
-template <ScopedEnum E>
-[[nodiscard]] constexpr FoundName enumerator_chars(E value) noexcept {
-    FoundName found{};
-    walk_enumerator_names<E>([&found, value](E candidate, NameChars name) noexcept {
-        if (!found.is_found && candidate == value) {
-            found = FoundName{name, true};
-        }
-    });
-    return found;
 }
 
 }  // namespace detail

@@ -63,11 +63,11 @@ static cog::NumaNicFacts local_facts() {
 }
 
 static void test_enumerator_names() {
-    using ::foundation::reflect::enum_name;
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         enum_name(cog::NumaNicIssue::IrqRemoteFromTarget) == std::string_view{"IrqRemoteFromTarget"});
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(static_cast<cog::NumaNicIssue>(1u << 31))
-                                    == std::string_view{"<unknown NumaNicIssue>"});
+    using ::fixy::enum_name_text;
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(cog::NumaNicIssue::IrqRemoteFromTarget)
+                                    == ::fixy::TextView{"IrqRemoteFromTarget"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(static_cast<cog::NumaNicIssue>(1u << 31))
+                                    == ::fixy::TextView{"<unknown NumaNicIssue>"});
     ::fixy::check::pass(kTest, "  test_enumerator_names:            PASSED\n");
 }
 

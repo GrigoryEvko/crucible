@@ -32,14 +32,15 @@ template <class T>
 
 // The log spelling of the four enums comes from reflection.
 static void test_enum_names_come_from_reflection() {
-    using ::foundation::reflect::enum_name;
-    static_assert(enum_name(topology::DiscoveryError::TooManyNodes) == "TooManyNodes");
-    static_assert(enum_name(topology::DiscoverySource::EthtoolInfo) == "EthtoolInfo");
-    static_assert(enum_name(topology::DiscoveryOutcome::Partial) == "Partial");
-    static_assert(enum_name(topology::DiscoveryNodeKind::NicPort) == "NicPort");
+    using ::fixy::enum_name_text;
+    static_assert(enum_name_text(topology::DiscoveryError::TooManyNodes) == "TooManyNodes");
+    static_assert(enum_name_text(topology::DiscoverySource::EthtoolInfo) == "EthtoolInfo");
+    static_assert(enum_name_text(topology::DiscoveryOutcome::Partial) == "Partial");
+    static_assert(enum_name_text(topology::DiscoveryNodeKind::NicPort) == "NicPort");
 
     volatile auto source = topology::DiscoverySource::Lldp;
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(static_cast<topology::DiscoverySource>(source)) == std::string_view{"Lldp"});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         enum_name_text(static_cast<topology::DiscoverySource>(source)) == ::fixy::TextView{"Lldp"});
     ::fixy::check::pass(kTest, "  test_enum_names_come_from_reflection: PASSED\n");
 }
 

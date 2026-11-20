@@ -19,7 +19,6 @@
 #include <bit>
 #include <cstdint>
 #include <cstdio>
-#include <string_view>
 #include <type_traits>
 
 namespace {
@@ -48,11 +47,11 @@ static constexpr cog::CalibratedValue<T> calibrated(std::type_identity_t<T> valu
 // at run time as well as in the constant folder.
 template <typename E>
 static void check_every_name_at_run_time() {
-    fr::for_each_enumerator<E>([](E value, std::string_view identifier) {
+    ::fixy::for_each_enumerator_text<E>([](E value, ::fixy::TextView identifier) {
         volatile E runtime_value = value;
-        const std::string_view name = fr::enum_name(static_cast<E>(runtime_value));
+        const ::fixy::TextView name = ::fixy::enum_name_text(static_cast<E>(runtime_value));
         CRUCIBLE_TEST_ASSERT(kTest, name == identifier);
-        CRUCIBLE_TEST_ASSERT(kTest, name != fr::unknown_enum_sentinel<E>);
+        CRUCIBLE_TEST_ASSERT(kTest, name != ::fixy::unknown_enum_text<E>);
     });
 }
 
@@ -78,14 +77,18 @@ static void test_names_at_run_time() {
 // The underlying value of each PCIe generation is the generation number,
 // so GenN holds N.
 static void test_pcie_gen_value_is_generation() {
-    fr::for_each_enumerator<cog::PcieGen>([](cog::PcieGen gen, std::string_view identifier) {
+    ::fixy::for_each_enumerator_text<cog::PcieGen>([](cog::PcieGen gen, ::fixy::TextView identifier) {
         volatile auto runtime_value = static_cast<std::uint8_t>(gen);
         const std::uint8_t value = runtime_value;
         if (identifier == "None") {
             CRUCIBLE_TEST_ASSERT(kTest, value == 0);
         } else {
-            CRUCIBLE_TEST_ASSERT(kTest, identifier.size() == 4 && identifier.starts_with("Gen"));
-            CRUCIBLE_TEST_ASSERT(kTest, value == static_cast<std::uint8_t>(identifier[3] - '0'));
+            CRUCIBLE_TEST_ASSERT(kTest, identifier.size() == 4 && ::fixy::starts_with(identifier, "Gen"));
+            char digit = '0';
+            for (char const letter : identifier.window(3, 1).expect("the identifier has four characters")) {
+                digit = letter;
+            }
+            CRUCIBLE_TEST_ASSERT(kTest, value == static_cast<std::uint8_t>(digit - '0'));
         }
     });
     ::fixy::check::pass(kTest, "  test_pcie_gen_value_is_generation:    PASSED\n");
@@ -93,7 +96,7 @@ static void test_pcie_gen_value_is_generation() {
 
 static void test_gpu_feature_runtime() {
     ::fixy::Bits<cog::GpuFeature> all_set{};
-    fr::for_each_enumerator<cog::GpuFeature>([&](cog::GpuFeature flag, std::string_view) { all_set.set(flag); });
+    fr::for_each_enumerator_value<cog::GpuFeature>([&](cog::GpuFeature flag) { all_set.set(flag); });
     CRUCIBLE_TEST_ASSERT(kTest, all_set.popcount() == static_cast<int>(fr::enum_count<cog::GpuFeature>));
     CRUCIBLE_TEST_ASSERT(kTest, all_set.test(cog::GpuFeature::Tma));
     CRUCIBLE_TEST_ASSERT(kTest, all_set.test(cog::GpuFeature::Fp8));

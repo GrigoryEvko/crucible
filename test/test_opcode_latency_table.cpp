@@ -16,7 +16,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <span>
-#include <string_view>
 #include <type_traits>
 
 namespace {
@@ -45,19 +44,18 @@ static constexpr cog::OrderedLatencyQuantiles ordered(std::uint32_t p50_ns, std:
 template <reflect::ScopedEnum E>
 static void check_enum_names(std::underlying_type_t<E> unheld_value) {
     std::size_t walked = 0;
-    reflect::for_each_enumerator<E>([&](E value, std::string_view declared) {
+    ::fixy::for_each_enumerator_text<E>([&](E value, ::fixy::TextView declared) {
         volatile auto runtime_value = value;
-        const std::string_view name = reflect::enum_name(static_cast<E>(runtime_value));
-        CRUCIBLE_TEST_ASSERT(kTest, !name.empty());
+        const ::fixy::TextView name = ::fixy::enum_name_text(static_cast<E>(runtime_value));
+        CRUCIBLE_TEST_ASSERT(kTest, name.size() != 0);
         CRUCIBLE_TEST_ASSERT(kTest, name == declared);
-        CRUCIBLE_TEST_ASSERT(kTest, name != reflect::unknown_enum_sentinel<E>);
+        CRUCIBLE_TEST_ASSERT(kTest, name != ::fixy::unknown_enum_text<E>);
         ++walked;
     });
     CRUCIBLE_TEST_ASSERT(kTest, walked == reflect::enum_count<E>);
 
     volatile auto runtime_unheld = unheld_value;
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         reflect::enum_name(static_cast<E>(runtime_unheld)) == reflect::unknown_enum_sentinel<E>);
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::enum_name_text(static_cast<E>(runtime_unheld)) == ::fixy::unknown_enum_text<E>);
 }
 
 static void test_enum_names() {
@@ -71,9 +69,9 @@ static void test_enum_names() {
     check_enum_names<cog::CpuOpcode>(999);
     check_enum_names<cog::DramOpcode>(999);
 
-    static_assert(reflect::enum_name(cog::GpuOpcode::Conv2D) == "Conv2D");
-    static_assert(reflect::enum_name(cog::MessageSizeBucket::M64B) == "M64B");
-    static_assert(reflect::unknown_enum_sentinel<cog::SizeBucket> == "<unknown SizeBucket>");
+    static_assert(::fixy::enum_name_text(cog::GpuOpcode::Conv2D) == "Conv2D");
+    static_assert(::fixy::enum_name_text(cog::MessageSizeBucket::M64B) == "M64B");
+    static_assert(::fixy::unknown_enum_text<cog::SizeBucket> == "<unknown SizeBucket>");
     ::fixy::check::pass(kTest, "  test_enum_names:                      PASSED\n");
 }
 

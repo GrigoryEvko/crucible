@@ -625,7 +625,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
             largest = needed;
         }
     }
-    ::foundation::reflect::for_each_enumerator<KernelFlag>([&largest](KernelFlag flag, auto) {
+    ::foundation::reflect::for_each_enumerator_value<KernelFlag>([&largest](KernelFlag flag) {
         FlagFloor const row = flag_floor(flag);
         if (row.need == FlagNeed::each_call && row.release > largest) {
             largest = row.release;

@@ -57,20 +57,20 @@ using LampWord = std::underlying_type_t<Lamp>;
 static_assert(fr::ScopedEnum<Lamp>);
 static_assert(!fr::ScopedEnum<LampWord>);
 
-static_assert(fr::enumerator_name(Lamp::Off) == "Off");
-static_assert(fr::enumerator_name(Lamp::Red) == "Red");
-static_assert(fr::enumerator_name(Lamp::Magenta) == "Magenta");
-static_assert(fr::enumerator_name(static_cast<Lamp>(0x06)).empty());
+static_assert(fixy::enumerator_name_text(Lamp::Off).expect("an enumerator holds the value") == "Off");
+static_assert(fixy::enumerator_name_text(Lamp::Red).expect("an enumerator holds the value") == "Red");
+static_assert(fixy::enumerator_name_text(Lamp::Magenta).expect("an enumerator holds the value") == "Magenta");
+static_assert(fixy::enumerator_name_text(static_cast<Lamp>(0x06)).is_none());
 
-// enum_count derives from the enumerator list, and enum_name answers the
-// sentinel where enumerator_name answers empty.  The sentinel spells the
-// unqualified enum name.
+// enum_count derives from the enumerator list, and enum_name_text answers
+// the sentinel where enumerator_name_text answers no value.  The sentinel
+// spells the unqualified enum name.
 static_assert(fr::enum_count<Lamp> == 5);
-static_assert(fr::unknown_enum_sentinel<Lamp> == "<unknown Lamp>");
-static_assert(fr::enum_name(Lamp::Off) == "Off");
-static_assert(fr::enum_name(Lamp::Magenta) == "Magenta");
-static_assert(fr::enum_name(static_cast<Lamp>(0x06)) == "<unknown Lamp>");
-static_assert(fr::enum_name(static_cast<Lamp>(0x06)) == fr::unknown_enum_sentinel<Lamp>);
+static_assert(fixy::unknown_enum_text<Lamp> == "<unknown Lamp>");
+static_assert(fixy::enum_name_text(Lamp::Off) == "Off");
+static_assert(fixy::enum_name_text(Lamp::Magenta) == "Magenta");
+static_assert(fixy::enum_name_text(static_cast<Lamp>(0x06)) == "<unknown Lamp>");
+static_assert(fixy::enum_name_text(static_cast<Lamp>(0x06)) == fixy::unknown_enum_text<Lamp>);
 
 // A pin table deduces its enum and holds the full underlying width.  The
 // table for Lamp pins every value, and each table below drifts from it
@@ -102,17 +102,29 @@ static_assert(!fr::pin_enum(stride_pins_low_byte_only));
 
 [[nodiscard]] consteval int count_lamp_enumerators() noexcept {
     int n = 0;
-    fr::for_each_enumerator<Lamp>([&](Lamp, std::string_view) noexcept { ++n; });
+    fr::for_each_enumerator_value<Lamp>([&](Lamp) noexcept { ++n; });
     return n;
 }
 static_assert(count_lamp_enumerators() == 5);
 
 [[nodiscard]] consteval int count_lamp_single_bit_enumerators() noexcept {
     int n = 0;
-    fr::for_each_single_bit_enumerator<Lamp>([&](Lamp, std::string_view) noexcept { ++n; });
+    fr::for_each_single_bit_enumerator_value<Lamp>([&](Lamp) noexcept { ++n; });
     return n;
 }
 static_assert(count_lamp_single_bit_enumerators() == 3);
+
+// The walk with names gives each value with its own identifier.
+[[nodiscard]] consteval bool lamp_walk_names_each_value() noexcept {
+    int named = 0;
+    bool is_own = true;
+    fixy::for_each_enumerator_text<Lamp>([&](Lamp value, fixy::TextView name) noexcept {
+        is_own = is_own && fixy::enum_name_text(value) == name;
+        ++named;
+    });
+    return is_own && named == 5;
+}
+static_assert(lamp_walk_names_each_value());
 
 // The composite enumerator's value names its two single bits, never itself.
 [[nodiscard]] consteval bool magenta_spells_red_and_blue() noexcept {
@@ -134,7 +146,7 @@ template <typename E>
 concept RendersBits =
     requires(char* out, std::size_t cap) { fr::bits_to_string<E>(std::underlying_type_t<E>{}, out, cap); };
 template <typename E>
-concept WalksEnumerators = requires { fr::for_each_enumerator<E>([](E, std::string_view) noexcept {}); };
+concept WalksEnumerators = requires { fr::for_each_enumerator_value<E>([](E) noexcept {}); };
 
 static_assert(RendersBits<Lamp> && !RendersBits<LegacyLamp>);
 static_assert(WalksEnumerators<Lamp> && !WalksEnumerators<LegacyLamp>);
@@ -245,29 +257,42 @@ void enumerate_runs_at_run_time() {
     }
 }
 
+// True when an enumerator holds the value and its identifier is the text.
+[[nodiscard]] bool is_named(TF value, fixy::TextView expected) noexcept {
+    return fixy::enumerator_name_text(value).match(
+        [expected](fixy::TextView name) noexcept { return name == expected; }, [] noexcept { return false; });
+}
+
 void enum_name_runs_at_run_time() {
     using namespace ::foundation::reflect;
-    CRUCIBLE_TEST_ASSERT(kTest, enumerator_name(TF::None) == "None");
-    CRUCIBLE_TEST_ASSERT(kTest, enumerator_name(TF::Alpha) == "Alpha");
-    CRUCIBLE_TEST_ASSERT(kTest, enumerator_name(TF::Delta) == "Delta");
-    CRUCIBLE_TEST_ASSERT(kTest, enumerator_name(TF::AlphaBeta) == "AlphaBeta");
+    CRUCIBLE_TEST_ASSERT(kTest, is_named(TF::None, "None"));
+    CRUCIBLE_TEST_ASSERT(kTest, is_named(TF::Alpha, "Alpha"));
+    CRUCIBLE_TEST_ASSERT(kTest, is_named(TF::Delta, "Delta"));
+    CRUCIBLE_TEST_ASSERT(kTest, is_named(TF::AlphaBeta, "AlphaBeta"));
 
     auto fancy = static_cast<TF>(static_cast<std::uint8_t>(TF::Alpha) | static_cast<std::uint8_t>(TF::Delta));
-    CRUCIBLE_TEST_ASSERT(kTest, enumerator_name(fancy).empty());
+    CRUCIBLE_TEST_ASSERT(kTest, fixy::enumerator_name_text(fancy).is_none());
 
-    // enum_name runs under runtime semantics here, with the sentinel
+    // enum_name_text runs under runtime semantics here, with the sentinel
     // read from static storage.
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(fancy) == "<unknown TestFlags>");
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(TF::Gamma) == "Gamma");
+    CRUCIBLE_TEST_ASSERT(kTest, fixy::enum_name_text(fancy) == "<unknown TestFlags>");
+    CRUCIBLE_TEST_ASSERT(kTest, fixy::enum_name_text(TF::Gamma) == "Gamma");
     CRUCIBLE_TEST_ASSERT(kTest, enum_count<TF> == 6);
 
     int counter = 0;
-    for_each_enumerator<TF>([&](TF, std::string_view) noexcept { ++counter; });
+    for_each_enumerator_value<TF>([&](TF) noexcept { ++counter; });
     CRUCIBLE_TEST_ASSERT(kTest, counter == 6);
 
     int single_bit_counter = 0;
-    for_each_single_bit_enumerator<TF>([&](TF, std::string_view) noexcept { ++single_bit_counter; });
+    for_each_single_bit_enumerator_value<TF>([&](TF) noexcept { ++single_bit_counter; });
     CRUCIBLE_TEST_ASSERT(kTest, single_bit_counter == 4);
+
+    int named_counter = 0;
+    fixy::for_each_enumerator_text<TF>([&](TF value, fixy::TextView name) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, fixy::enum_name_text(value) == name);
+        ++named_counter;
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, named_counter == 6);
 }
 
 void stable_name_runs_at_run_time() noexcept {
@@ -321,23 +346,26 @@ int main() {
             return 1;
         }
         Lamp volatile lamp_v = Lamp::Green;
-        if (fr::enumerator_name(static_cast<Lamp>(lamp_v)) != "Green") {
+        bool const is_green_found =
+            fixy::enumerator_name_text(static_cast<Lamp>(lamp_v))
+                .match([](fixy::TextView name) noexcept { return name == "Green"; }, [] noexcept { return false; });
+        if (!is_green_found) {
             ::fixy::report(::fixy::Sink::Err, "test_reflect: enumerator_name(Green) is wrong\n");
             return 1;
         }
-        if (fr::enum_name(static_cast<Lamp>(lamp_v)) != "Green") {
+        if (fixy::enum_name_text(static_cast<Lamp>(lamp_v)) != "Green") {
             ::fixy::report(::fixy::Sink::Err, "test_reflect: enum_name(Green) is wrong\n");
             return 1;
         }
         Lamp volatile bad_v = static_cast<Lamp>(0x06);
-        if (fr::enum_name(static_cast<Lamp>(bad_v)) != "<unknown Lamp>") {
+        if (fixy::enum_name_text(static_cast<Lamp>(bad_v)) != "<unknown Lamp>") {
             ::fixy::report(::fixy::Sink::Err, "test_reflect: enum_name(0x06) is not the sentinel\n");
             return 1;
         }
         int counter = 0;
-        fr::for_each_enumerator<Lamp>([&](Lamp, std::string_view) noexcept { ++counter; });
+        fr::for_each_enumerator_value<Lamp>([&](Lamp) noexcept { ++counter; });
         int single_bit_counter = 0;
-        fr::for_each_single_bit_enumerator<Lamp>([&](Lamp, std::string_view) noexcept { ++single_bit_counter; });
+        fr::for_each_single_bit_enumerator_value<Lamp>([&](Lamp) noexcept { ++single_bit_counter; });
         if (counter != 5 || single_bit_counter != 3) {
             ::fixy::report(::fixy::Sink::Err, "test_reflect: enumerator counts {}/{}, expected 5/3\n", counter,
                            single_bit_counter);

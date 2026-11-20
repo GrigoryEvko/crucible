@@ -21,7 +21,7 @@ namespace crucible::cog {
 // would reinterpret a stored row. New atoms take the next free value
 // and extend their pin table in the same change.
 //
-// ::foundation::reflect::enum_name gives the name of an enumerator. It
+// ::foundation::core::enum_name_text gives the name of an enumerator. It
 // reads the identifier that the enum declares, so no name table can
 // fall out of step with the enum.
 //

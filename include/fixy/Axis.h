@@ -181,9 +181,11 @@ inline constexpr std::size_t axis_count = 33;
 // so a new axis is named the moment it is declared.  A value outside
 // the enum yields the sentinel "<unknown Axis>" rather than an empty
 // view, so a caller that prints a corrupt byte sees that it was one.
-// Constexpr rather than consteval so a runtime diagnostic can call it.
+// Constexpr rather than consteval so a runtime diagnostic can call it.  The
+// name is a std::string_view, because the insight texts that the builders of
+// fixy/Reject.h and fixy/Insights.h make are std::string_view.
 [[nodiscard]] constexpr std::string_view axis_name(Axis axis) noexcept {
-    return ::foundation::reflect::enum_name(axis);
+    return ::foundation::reflect::detail::enum_name_view_(axis);
 }
 
 namespace detail {

@@ -63,7 +63,7 @@ core::Result<core::TextView, core::Full<char>>
 format_kernel_fallbacks(KernelVersion running, core::FixedText<kernel_fallback_text_capacity>& out) noexcept {
     out.clear();
     bool is_full = false;
-    ::foundation::reflect::for_each_enumerator<KernelFlag>([&](KernelFlag flag, auto) noexcept {
+    ::foundation::reflect::for_each_enumerator_value<KernelFlag>([&](KernelFlag flag) noexcept {
         if (is_full || judge_flag(flag, running) != FlagVerdict::fallback) {
             return;
         }

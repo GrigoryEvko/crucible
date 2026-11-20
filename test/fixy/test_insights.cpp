@@ -65,6 +65,19 @@ using ::fixy::duplicate_atom_on;
     return std::define_static_string(text);
 }
 
+// The identifier of the enumerator that holds Value, read by reflection, so
+// the expected name does not come from a name form of the base.
+template <auto Value>
+[[nodiscard]] consteval std::string_view identifier_of_value() noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : std::define_static_array(std::meta::enumerators_of(^^decltype(Value)))) {
+        if ([:en:] == Value) return std::meta::identifier_of(en);
+    }
+#pragma GCC diagnostic pop
+    return {};
+}
+
 template <Axis A>
 [[nodiscard]] consteval std::string_view expected_pole_name() noexcept {
     if constexpr (::fixy::IsCallerSupplied<A>) {
@@ -74,7 +87,7 @@ template <Axis A>
         if constexpr (requires { Strict::value; }) {
             constexpr auto value = Strict::value;
             if constexpr (std::is_enum_v<decltype(value)>) {
-                return ::foundation::reflect::enum_name(value);
+                return identifier_of_value<value>();
             } else {
                 return digits(static_cast<unsigned long long>(value));
             }

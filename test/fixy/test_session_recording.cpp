@@ -90,10 +90,9 @@ static_assert(s::session_op_name(s::SessionOp::CheckpointRoll) == "CheckpointRol
 // kind, and a pending store or a load commits nothing.
 consteval std::uint64_t ops_admitted_by(bool (*admits)(s::SessionOp) noexcept) {
     std::uint64_t admitted = 0;
-    ::foundation::reflect::for_each_enumerator<s::SessionOp>(
-        [&admitted, admits](s::SessionOp op, std::string_view) noexcept {
-            if (admits(op)) admitted |= std::uint64_t{1} << std::to_underlying(op);
-        });
+    ::foundation::reflect::for_each_enumerator_value<s::SessionOp>([&admitted, admits](s::SessionOp op) noexcept {
+        if (admits(op)) admitted |= std::uint64_t{1} << std::to_underlying(op);
+    });
     return admitted;
 }
 consteval std::uint64_t op_bits(std::same_as<s::SessionOp> auto... ops) {

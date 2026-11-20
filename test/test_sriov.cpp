@@ -249,10 +249,10 @@ void test_apply_paths_are_stubbed() {
 }
 
 void test_enumerator_names() {
-    using ::foundation::reflect::enum_name;
-    CRUCIBLE_TEST_ASSERT(kTest, enum_name(sriov::SrIovError::QueryDeferred) == std::string_view{"QueryDeferred"});
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         enum_name(static_cast<sriov::SrIovError>(0xFF)) == std::string_view{"<unknown SrIovError>"});
+    using ::fixy::enum_name_text;
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(sriov::SrIovError::QueryDeferred) == ::fixy::TextView{"QueryDeferred"});
+    CRUCIBLE_TEST_ASSERT(kTest, enum_name_text(static_cast<sriov::SrIovError>(0xFF))
+                                    == ::fixy::TextView{"<unknown SrIovError>"});
 
     ::fixy::check::pass(kTest, "  test_enumerator_names: PASSED\n");
 }

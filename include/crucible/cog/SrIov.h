@@ -4,7 +4,7 @@
 // Nothing here mutates kernel state or guesses at vendor behaviour. A
 // privileged backend consumes the declared plan this header mints.
 //
-// foundation::reflect::enum_name gives the name of each enumerator.
+// foundation::core::enum_name_text gives the name of each enumerator.
 
 #include <crucible/cntp/Pacing.h>
 #include <crucible/cog/CogIdentity.h>

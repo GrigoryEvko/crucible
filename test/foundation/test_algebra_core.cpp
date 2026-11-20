@@ -120,7 +120,7 @@ void lattice_runs_at_run_time(Tally& checks) {
 }
 
 // modality_name is consteval.  The run-time name read is enum_name_text,
-// which gives the text of enum_name, which modality_name calls.  So a kind
+// which modality_name calls too.  So a kind
 // that arrives at run time names itself, and a byte outside the enum
 // reaches the sentinel.
 void modality_runs_at_run_time(Tally& checks) {

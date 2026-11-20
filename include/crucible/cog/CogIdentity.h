@@ -57,7 +57,7 @@ struct Uuid {
 // would reinterpret a stored atom. A new atom takes the next free value
 // and extends its pin table in the same change.
 //
-// ::foundation::reflect::enum_name gives the name of an enumerator, and
+// ::foundation::core::enum_name_text gives the name of an enumerator, and
 // ::foundation::reflect::enum_count the number of enumerators.
 enum class CogLevel : std::uint8_t {
     L0_Atomic = 0,
