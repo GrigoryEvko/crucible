@@ -178,10 +178,14 @@ static_assert(two_gets_reach_one_element());
 // Ref has no brand to drop.  The fixture neg_core_ref_erase_scope_brand shows
 // the refusal of a scope brand at a call.  The Ref of the door reaches the
 // same object, on the erased brand.
+template <class Inner, std::size_t Position>
+struct WrapsBrand final {};
 template <class... Refused, class Scope = CRUCIBLE_SCOPE_BRAND>
 consteval bool scope_brand_erases() {
-    return ErasableBrand<Scope>;
+    return ErasableBrand<Scope> || ErasableBrand<WrapsBrand<Scope, 0>>
+        || ErasableBrand<WrapsBrand<WrapsBrand<Scope, 1>, 0>>;
 }
+static_assert(ErasableBrand<WrapsBrand<CheckBrand, 0>>);
 static_assert(ErasableBrand<CheckBrand> && !ErasableBrand<::foundation::brand::DefaultBrand>);
 static_assert(!scope_brand_erases());
 consteval bool erases_to_the_same_object() {
