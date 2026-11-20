@@ -324,6 +324,21 @@ template <typename T>
     (void)s;
 }
 
+namespace detail {
+
+// The time of the monotonic clock in nanoseconds, through the clock door of
+// fixy/os/Time.h.  Each caller times a loop with it, so a clock that does not
+// read ends the process.  The read is not inline, so a loop that a template
+// instantiates holds only the call.
+[[nodiscard, gnu::noinline]] inline std::uint64_t read_monotonic_ns() noexcept {
+    const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+    const ::foundation::effects::cap::Nondet nondet = ::foundation::effects::testing::test().nondet;
+    const auto wall = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(startup);
+    return wall.read(nondet).expect("the monotonic clock of the bench harness reads").peek();
+}
+
+}  // namespace detail
+
 // ── Timer: ns/cycle calibration + rdtsc overhead (Meyer singleton) ──
 
 class Timer {
@@ -349,24 +364,23 @@ private:
         return t;
     }
 
-    // Correlate TSC vs steady_clock over 200 ms. Longer window dampens
+    // Correlate TSC vs the monotonic clock over 200 ms. Longer window dampens
     // transient frequency wobble at process start.
     [[nodiscard]] static double calibrate_() noexcept {
-        using namespace std::chrono;
-        constexpr auto window = milliseconds(200);
+        constexpr std::uint64_t kWindowNs = 200000000;
 
-        (void)steady_clock::now();
+        (void)detail::read_monotonic_ns();
         (void)rdtsc_start();
 
-        const auto wall0 = steady_clock::now();
+        const std::uint64_t wall0_ns = detail::read_monotonic_ns();
         const uint64_t tsc0 = rdtsc_start();
-        const auto deadline = wall0 + window;
-        while (steady_clock::now() < deadline) { /* spin */
+        const std::uint64_t deadline_ns = wall0_ns + kWindowNs;
+        while (detail::read_monotonic_ns() < deadline_ns) { /* spin */
         }
         const uint64_t tsc1 = rdtsc_end();
-        const auto wall1 = steady_clock::now();
+        const std::uint64_t wall1_ns = detail::read_monotonic_ns();
 
-        const double ns = static_cast<double>(duration_cast<nanoseconds>(wall1 - wall0).count());
+        const double ns = static_cast<double>(wall1_ns - wall0_ns);
         const double cycles = static_cast<double>(tsc1 - tsc0);
         return (cycles > 0) ? (ns / cycles) : 0.0;
     }
@@ -2581,26 +2595,20 @@ public:
         // CRUCIBLE_BENCH_WALL_MS; else default `kDefaultMaxWallMs`.
         // Zero disables capping entirely.
         const size_t wall_cap_ms = have_max_wall_ ? max_wall_ms_ : env_wall_ms_().value_or(kDefaultMaxWallMs);
-        const auto start_all = std::chrono::steady_clock::now();
-        const auto wall_budget = std::chrono::milliseconds(wall_cap_ms);
-        const auto warmup_budget = wall_budget / 4;
+        const std::uint64_t start_all_ns = detail::read_monotonic_ns();
+        // Both budgets are in nanoseconds, the unit of the clock.  A
+        // compare of a count of milliseconds with a count of nanoseconds once
+        // ended the warmup after 2.5 us in place of 2.5 s.
+        const std::uint64_t wall_budget_ns = ::fixy::saturating_mul(std::uint64_t{wall_cap_ms}, kNsPerMs);
+        const std::uint64_t warmup_budget_ns = wall_budget_ns / 4;
 
         for (size_t i = 0; i < warmup_; ++i) {
             body();
-            // Budget check every 64 iterations — steady_clock::now() is
+            // Budget check every 64 iterations — a read of the clock is
             // ~20 ns, amortizing it keeps overhead under 1% for ≥2 µs
             // bodies and invisible for anything heavier.
             if (wall_cap_ms > 0 && (i & 63) == 63) {
-                const auto elapsed = std::chrono::steady_clock::now() - start_all;
-                // Compare the durations, not their counts. steady_clock's
-                // duration is nanoseconds and warmup_budget is milliseconds,
-                // so comparing .count() to .count() put 2,500 ns against a
-                // budget meant to read 2,500 ms — a factor of a million. The
-                // warmup then ended at the first 64-iteration check past
-                // 2.5 us, which is 64 or 128 iterations for any body worth
-                // measuring, never the 10,000 the default asks for. Letting
-                // chrono convert is the whole reason it carries units.
-                if (elapsed > warmup_budget) {
+                if (detail::read_monotonic_ns() - start_all_ns > warmup_budget_ns) {
                     break;
                 }
             }
@@ -2614,13 +2622,13 @@ public:
         size_t filled = 0;
 
         SampleWindow window = start_window_(pinned_cpu);
-        const auto wall0 = std::chrono::steady_clock::now();
         // The windows share the samples and the time that the cap leaves
         // after the warmup (THE WINDOWS).
+        const std::uint64_t used_ns = window.start_ns - start_all_ns;
         const WindowPlan plan = plan_windows_(WindowRequest{
             .samples = S,
             .cap = wall_cap_ms > 0 ? WallCap::On : WallCap::Off,
-            .remaining = std::chrono::duration_cast<std::chrono::nanoseconds>(wall_budget - (wall0 - start_all)),
+            .remaining_ns = wall_budget_ns > used_ns ? wall_budget_ns - used_ns : 0,
         });
 
         for (WindowBound const& bound : plan.bounds) {
@@ -2654,7 +2662,7 @@ public:
             static_cast<void>(window.ends.append(filled));
             close_window_(window);
         }
-        return close_(std::move(opening), window, ns_samples, filled, batch, wall0);
+        return close_(std::move(opening), window, ns_samples, LoopCounts{.filled = filled, .batch = batch});
     }
 
 private:
@@ -2672,11 +2680,18 @@ private:
     };
 
     // What plan_windows_ splits: the samples of the run, and the time that
-    // the cap leaves after the warmup, which can be zero or less.
+    // the cap leaves after the warmup, which can be zero.
     struct WindowRequest {
         std::size_t samples = 0;
         WallCap cap = WallCap::Off;
-        std::chrono::nanoseconds remaining{0};
+        std::uint64_t remaining_ns = 0;
+    };
+
+    // What the sampled loop gives close_: the count of the samples that it
+    // filled, and the count of the calls of the body in each sample.
+    struct LoopCounts {
+        std::size_t filled = 0;
+        std::size_t batch = 1;
     };
 
     // One window of the sampled loop: its part of the samples, and the
@@ -2697,6 +2712,9 @@ private:
     // the measuring thread lost in it.
     struct SampleWindow {
         uint64_t freq_start = 0;
+        // The monotonic clock at the start of the sampled loop, in
+        // nanoseconds.
+        std::uint64_t start_ns = 0;
         // The first reading of the pause check (THE PAUSE CHECK).
         PauseReading pause_before{};
         // The clocks at the end of the last window, and the count of the
@@ -2751,6 +2769,7 @@ private:
 #endif
         window.pause_before = detail::read_pause();
         window.clock_last = detail::read_window_clock();
+        window.start_ns = detail::read_monotonic_ns();
         return window;
     }
 
@@ -2765,8 +2784,7 @@ private:
         if (count == 0) return plan;
         double const nspc = Timer::ns_per_cycle();
         bool const is_timed = request.cap == WallCap::On && nspc > 0.0;
-        double const remaining_ns =
-            request.remaining.count() > 0 ? static_cast<double>(request.remaining.count()) : 0.0;
+        auto const remaining_ns = static_cast<double>(request.remaining_ns);
         std::uint64_t const span_tsc =
             is_timed ? static_cast<std::uint64_t>(remaining_ns / nspc / static_cast<double>(count)) : 0;
         std::size_t const base = request.samples / count;
@@ -2794,8 +2812,9 @@ private:
     // Ends the measurement and builds its report from the samples that the
     // sampled loop filled.
     [[nodiscard, gnu::noinline]] Report close_(MeasureOpening opening, SampleWindow const& window,
-                                               ::fixy::HeapArray<double> const& taken, size_t filled, size_t batch,
-                                               std::chrono::steady_clock::time_point wall0) const {
+                                               ::fixy::HeapArray<double> const& taken, LoopCounts counts) const {
+        const std::size_t filled = counts.filled;
+        const std::size_t batch = counts.batch;
         const PauseReading pause_after = detail::read_pause();
         // The samples that the loop filled, the first filled of taken.
         ::fixy::HeapArray<double> ns_samples =
@@ -2804,7 +2823,7 @@ private:
         const CpuId pinned_cpu = opening.pin.cpu;
         const uint64_t freq_start = window.freq_start;
 
-        const auto wall1 = std::chrono::steady_clock::now();
+        const std::uint64_t end_ns = detail::read_monotonic_ns();
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         ::crucible::perf::Snapshot const& bpf_pre = window.bpf_pre;
         const uint64_t sched_pre_idx = window.sched_pre_idx;
@@ -2866,7 +2885,7 @@ private:
         r.pinned_cpu_count = pin.cpu_count;
         r.drift_pct = drift;
         r.drift_flag = drift_flag;
-        r.wall_ns = static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(wall1 - wall0).count());
+        r.wall_ns = static_cast<double>(end_ns - window.start_ns);
         r.pct = Percentiles::compute(ns_samples);
         r.samples = std::move(ns_samples);
         r.pause = detail::pause_between(::fixy::side_as<side::ReadingBefore>(window.pause_before),
@@ -2983,6 +3002,7 @@ private:
     // CRUCIBLE_BENCH_WALL_MS; per-Run via .max_wall_ms(ms); disable
     // entirely via .max_wall_ms(0) or CRUCIBLE_BENCH_WALL_MS=0.
     static constexpr size_t kDefaultMaxWallMs = 10000;
+    static constexpr std::uint64_t kNsPerMs = 1000000;
     size_t max_wall_ms_ = kDefaultMaxWallMs;
     bool have_max_wall_ = false;  // true iff .max_wall_ms() was called
 
