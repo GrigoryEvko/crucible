@@ -37,11 +37,13 @@ static_assert(is_guard_chunk(ChunkIndex{511}));
 static_assert(!is_guard_chunk(ChunkIndex{512}));
 static_assert(is_guard_chunk(ChunkIndex{1023}));
 
-// The map is one word, and a record is five words that copy as words.
+// The map is one word, and a record is five words.  Each copies as words
+// with a trivial copy constructor, and its seal keeps it from a byte image.
 static_assert(sizeof(BiasedChunkMap) == 8);
 static_assert(BiasedChunkMap{}.is_empty());
 static_assert(sizeof(WindowRecord) == 40);
-static_assert(std::is_trivially_copyable_v<WindowRecord>);
+static_assert(std::is_trivially_copy_constructible_v<WindowRecord> && !std::is_trivially_copyable_v<WindowRecord>);
+static_assert(std::is_trivially_copy_constructible_v<BiasedChunkMap> && !std::is_trivially_copyable_v<BiasedChunkMap>);
 
 // The empty record holds no address, and a new table holds the empty record
 // in each slot.

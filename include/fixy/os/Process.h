@@ -331,10 +331,14 @@ public:
     ForkedChild(ForkedChild&&) = delete("the proof belongs to the one call of the body in the child");
     ForkedChild& operator=(ForkedChild const&) = delete("the proof belongs to the one call of the body in the child");
     ForkedChild& operator=(ForkedChild&&) = delete("the proof belongs to the one call of the body in the child");
-    ~ForkedChild() = default;
+
+    // User-provided, as the constructor below: the proof is then neither
+    // trivially copyable nor an implicit-lifetime type, so std::bit_cast and
+    // std::start_lifetime_as build none from bytes.
+    ~ForkedChild() {}
 
 private:
-    ForkedChild() noexcept = default;
+    ForkedChild() noexcept {}
 
     friend struct detail::ChildDoor;
 };

@@ -67,6 +67,7 @@
 // This header is in the layer F0_primitives of utils/rule-table.txt.  The
 // window door foundation/alloc/Window.h builds each record and each map.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/alloc/Layout.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Choice.h>
@@ -151,7 +152,10 @@ struct WindowRecordDoor;
 
 // The word of the chunk map of one window (THE MAP READ).  The empty map
 // holds the word zero, and it names no window: the sentinel heap holds it
-// until the init of the root.
+// until the init of the root.  A forged word would read each address, so
+// the map and the record below hold a byte_seal of foundation/ByteSeal.h:
+// their assignments are user-provided, so std::bit_cast builds neither from
+// bytes, and their copies stay trivial, so a call passes them in registers.
 class BiasedChunkMap final {
 public:
     constexpr BiasedChunkMap() noexcept = default;
@@ -176,6 +180,7 @@ private:
     constexpr explicit BiasedChunkMap(std::uint64_t word) noexcept : word_{word} {}
 
     std::uint64_t word_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
 
 // The record of one window: its base, its length, its biased map and its
@@ -242,6 +247,7 @@ private:
     BiasedChunkMap chunk_map_{};
     std::uint64_t region_base_ = 0;
     std::uint64_t region_length_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
 
 // The count of the slots of the table of windows: the host and 15 devices.

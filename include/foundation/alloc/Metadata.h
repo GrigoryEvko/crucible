@@ -48,6 +48,7 @@
 // includes core/Heap.h, and the allocation door of core/Heap.h reads the
 // headers of foundation/alloc.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/alloc/ChunkMap.h>
 #include <foundation/alloc/Layout.h>
 #include <foundation/contracts/Pre.h>
@@ -236,6 +237,9 @@ private:
     std::size_t chunk_records_offset_ = 0;
     std::size_t slab_records_offset_ = 0;
     std::size_t end_offset_ = 0;
+    // The assignments are user-provided, so std::bit_cast builds no layout
+    // from bytes (foundation/ByteSeal.h).
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
 
 }  // namespace foundation::alloc
