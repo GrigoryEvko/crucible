@@ -99,6 +99,33 @@ ProcessStatus decode_process_status(std::int32_t word) noexcept {
 
 }  // namespace foundation::os::detail
 
+#if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__)
+
+namespace foundation::os::detail {
+
+// The map and the unmap of a build with ThreadSanitizer or AddressSanitizer.
+// Only the interceptors of mmap and munmap reset the shadow of the range.
+// The interceptor of AddressSanitizer resets the shadow of a large range with
+// a new map of the shadow pages, so the unmap of a reservation of 1 TiB
+// touches no page of shadow.
+
+long map_intercepted(std::uint64_t address, std::uint64_t length, std::uint64_t protection, std::uint64_t flags,
+                     std::uint64_t descriptor, std::uint64_t offset) noexcept {
+    void* const mapped = ::mmap(__builtin_bit_cast(void*, address), length, static_cast<int>(protection),
+                                static_cast<int>(flags), static_cast<int>(descriptor), static_cast<::off_t>(offset));
+    // MAP_FAILED is the address of the word -1.
+    long const word = __builtin_bit_cast(long, mapped);
+    return word == -1 ? -static_cast<long>(errno) : word;
+}
+
+long unmap_intercepted(std::uint64_t address, std::uint64_t length) noexcept {
+    return ::munmap(__builtin_bit_cast(void*, address), length) == 0 ? 0 : -static_cast<long>(errno);
+}
+
+}  // namespace foundation::os::detail
+
+#endif
+
 #if defined(__SANITIZE_THREAD__)
 
 // The system call hooks of ThreadSanitizer for futex(2), which libtsan
@@ -178,19 +205,6 @@ namespace {
 [[gnu::no_sanitize_thread]] long write_intercepted(std::uint64_t descriptor, std::uint64_t address,
                                                    std::uint64_t count) {
     return kernel_word(::write(static_cast<int>(descriptor), __builtin_bit_cast(void const*, address), count));
-}
-
-long map_intercepted(std::uint64_t address, std::uint64_t length, std::uint64_t protection, std::uint64_t flags,
-                     std::uint64_t descriptor, std::uint64_t offset) noexcept {
-    void* const mapped = ::mmap(__builtin_bit_cast(void*, address), length, static_cast<int>(protection),
-                                static_cast<int>(flags), static_cast<int>(descriptor), static_cast<::off_t>(offset));
-    // MAP_FAILED is the address of the word -1.
-    long const word = __builtin_bit_cast(long, mapped);
-    return word == -1 ? -static_cast<long>(errno) : word;
-}
-
-long unmap_intercepted(std::uint64_t address, std::uint64_t length) noexcept {
-    return ::munmap(__builtin_bit_cast(void*, address), length) == 0 ? 0 : -static_cast<long>(errno);
 }
 
 void enter_futex(FutexCall const& call) noexcept {

@@ -65,16 +65,18 @@
 //
 // THE SANITIZERS
 //   The door issues each call through raw_syscall of foundation/os/Syscall.h.
-//   In a build with ThreadSanitizer, the primitive gives the map and the
-//   unmap to the C library, so the sanitizer resets its shadow of the range
-//   (rule R18).  mremap stays raw: the sanitizer has no interceptor of it.
-//   The old range of a move is unmapped, and the next map of its addresses
-//   goes through the interceptor, which resets the shadow.  The new range of
-//   a move was free, and the unmap of each range of the process went through
-//   the interceptor, so its shadow is clean.  In a build with
-//   AddressSanitizer, the destructor unpoisons the whole range before the
-//   unmap, so a poison of an owner of the pages does not stay on a later map
-//   at the same addresses (foundation/os/Poison.h).
+//   In a build with ThreadSanitizer or AddressSanitizer, the primitive gives
+//   the map and the unmap to the C library, so the sanitizer resets its
+//   shadow of the range (rule R18).  So a poison of an owner of the pages
+//   does not stay on a later map at the same addresses
+//   (foundation/os/Poison.h).  The interceptor of AddressSanitizer resets the
+//   shadow of a large range with a new map of its shadow pages, so the end of
+//   a reservation of 1 TiB touches no page of shadow.  mremap stays raw: the
+//   sanitizer has no interceptor of it.  The old range of a move is unmapped,
+//   and the next map of its addresses goes through the interceptor, which
+//   resets the shadow.  The new range of a move was free, and the unmap of
+//   each range of the process went through the interceptor, so its shadow is
+//   clean.
 //
 // This header is in the layer F0_doors of utils/rule-table.txt.  The door file
 // is src/foundation/os/PageSource.cpp, which issues raw_syscall.
@@ -339,7 +341,8 @@ public:
     Reservation&
     operator=(Reservation&&) = delete("a reservation owns one range for its life and takes no other range");
 
-    // Unpoisons and unmaps the whole range (THE SANITIZERS).  A reservation
+    // Unmaps the whole range, which resets its shadow in a build with a
+    // sanitizer (THE SANITIZERS).  A reservation
     // that moved holds no range and unmaps nothing.
     ~Reservation();
 

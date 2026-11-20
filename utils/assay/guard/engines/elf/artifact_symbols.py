@@ -181,8 +181,9 @@ THE DOORS
     read of fixy/os/Time.h in an object of crucible.  A read or a write of
     the door src/foundation/os/Intercepted.cpp is a door call only in a
     build kind with the word tsan, because only a build with
-    ThreadSanitizer compiles the routes (rule R18).  Its fork, waitpid,
-    _exit and __errno_location are door calls in each build.  The plan names
+    ThreadSanitizer compiles the routes (rule R18).  Its mmap and munmap,
+    which a build with ThreadSanitizer or AddressSanitizer compiles, and its
+    fork, waitpid, _exit and __errno_location are door calls in each build.  The plan names
     each door call in decision D12.  The change that adds a door adds its
     calls to DOOR_CALLS and to D12.
 
@@ -486,8 +487,11 @@ TSAN_WORD = "tsan"
 #   * The allocation door of foundation/core/Heap.h calls malloc, calloc, aligned_alloc and free.  The allocator of
 #     the C library owns the state of the heap, and the deny row of brk keeps its program break.
 #   * In a build with ThreadSanitizer, the door src/foundation/os/Intercepted.cpp of rule R18 calls read and write.
-#     It also calls mmap and munmap (the owner decision of 2026-11-14): only the interceptors of the two functions
-#     reset the shadow of a range, and the system call hooks of the two calls are empty.
+#     In a build with ThreadSanitizer or AddressSanitizer, it also calls mmap and munmap (the owner decision of
+#     2026-11-14, and the decision of 2026-11-20 for AddressSanitizer): only the interceptors of the two
+#     functions reset the shadow of a range, and the system call hooks of the two calls are empty.  The kind words of
+#     the two sanitizer builds differ, so the two calls are door calls in each build, and a build with no sanitizer
+#     imports neither.
 #   * In each build, the same door forks, waits for and ends a child process for the child door of
 #     foundation/os/ChildProcess.h.  The C library runs the fork hooks and keeps the state of its threads, and the
 #     deny rows of the rule table refuse a raw clone, fork, exit and exit_group.  The door reads errno through
@@ -514,8 +518,8 @@ DOOR_CALLS = (
     *(DoorCall(symbol, FOUNDATION, "Heap.cpp.o") for symbol in ("malloc", "calloc", "aligned_alloc", "free")),
     DoorCall("read", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
     DoorCall("write", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
-    DoorCall("mmap", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
-    DoorCall("munmap", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
+    DoorCall("mmap", FOUNDATION, "Intercepted.cpp.o"),
+    DoorCall("munmap", FOUNDATION, "Intercepted.cpp.o"),
     DoorCall("__errno_location", FOUNDATION, "Intercepted.cpp.o"),
     *(DoorCall(symbol, FOUNDATION, "Intercepted.cpp.o") for symbol in ("fork", "waitpid", "_exit")),
     *(

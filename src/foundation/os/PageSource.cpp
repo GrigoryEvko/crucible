@@ -10,7 +10,6 @@
 #include <foundation/core/Report.h>
 #include <foundation/os/MapWords.h>
 #include <foundation/os/MemoryPolicyWords.h>
-#include <foundation/os/Poison.h>
 #include <foundation/os/Syscall.h>
 
 #include <cstddef>
@@ -146,7 +145,6 @@ core::Result<NumaNodeId, Errno> current_node() noexcept {
 
 Reservation::~Reservation() {
     if (first_ == nullptr) return;
-    unpoison_bytes(first_, bytes_);
     unmap_mapped(first_, bytes_);
 }
 

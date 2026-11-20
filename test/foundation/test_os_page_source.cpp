@@ -27,6 +27,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Auxiliary.h>
 #include <foundation/os/Errno.h>
+#include <foundation/os/File.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -345,6 +346,45 @@ void test_range_of_another_reservation_dies(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::pass(test, "a range of a different reservation, or of the old place of a grow, ends the process\n");
 }
 
+// The resident pages of the process: the second field of /proc/self/statm.
+[[nodiscard]] std::uint64_t resident_pages(::fixy::TestRunnerCtx const& test) noexcept {
+    ::foundation::core::FixedText<256> text{};
+    CRUCIBLE_TEST_ASSERT(test, os::read_file("/proc/self/statm", text).is_ok());
+    std::uint64_t resident = 0;
+    std::uint32_t field = 0;
+    for (char const character : text.view()) {
+        if (character == ' ') {
+            ++field;
+            continue;
+        }
+        if (field == 1 && character >= '0' && character <= '9') {
+            resident = resident * 10 + static_cast<std::uint64_t>(character - '0');
+        }
+    }
+    return resident;
+}
+
+// The end of a reservation of 2 GiB with no commit writes no shadow of a
+// sanitizer: the resident pages grow by at most 16 MiB.  An unpoison of the
+// whole range before a raw unmap wrote 256 MiB of shadow.
+void test_end_of_a_large_reservation_writes_no_shadow(::fixy::TestRunnerCtx const& test) {
+    constexpr std::size_t kLargeBytes = std::size_t{2} << 30;
+    constexpr std::uint64_t kLimitBytes = std::uint64_t{16} << 20;
+    std::uint64_t const page = host_page_bytes();
+    std::uint64_t const before = resident_pages(test);
+    {
+        os::Reservation const large = reserve_or_end(ByteCount{kLargeBytes}, os::ReserveAlignment::huge_page);
+        static_cast<void>(large.size());
+    }
+    std::uint64_t const after = resident_pages(test);
+    std::uint64_t const grown = after > before ? (after - before) * page : 0;
+    if (grown > kLimitBytes) {
+        ::fixy::report(::fixy::Sink::Err, "the end of a reservation of 2 GiB grew the resident bytes by {}\n", grown);
+    }
+    CRUCIBLE_TEST_ASSERT(test, grown <= kLimitBytes);
+    ::fixy::check::pass(test, "the end of a reservation of 2 GiB writes no shadow\n");
+}
+
 }  // namespace
 
 int main() {
@@ -364,5 +404,6 @@ int main() {
     test_grow_refusals(test);
     test_reserved_page_faults(test);
     test_range_of_another_reservation_dies(test);
+    test_end_of_a_large_reservation_writes_no_shadow(test);
     return 0;
 }

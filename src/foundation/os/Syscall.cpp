@@ -40,7 +40,7 @@
 #include <cstdint>
 #include <meta>
 
-#if defined(__SANITIZE_THREAD__)
+#if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__)
 #include "Intercepted.h"
 #endif
 
@@ -822,13 +822,6 @@ long raw_syscall(Syscall call, Word first, Word second, Word third, Word fourth,
     if (call == Syscall::write) {
         return detail::write_intercepted(first.bits(), second.bits(), third.bits());
     }
-    if (call == Syscall::mmap) {
-        return detail::map_intercepted(first.bits(), second.bits(), third.bits(), fourth.bits(), fifth.bits(),
-                                       sixth.bits());
-    }
-    if (call == Syscall::munmap) {
-        return detail::unmap_intercepted(first.bits(), second.bits());
-    }
     if (call == Syscall::close) {
         return issue_watched_close(first.bits());
     }
@@ -837,6 +830,19 @@ long raw_syscall(Syscall call, Word first, Word second, Word third, Word fourth,
             call == Syscall::openat ? detail::OpenCall::openat : detail::OpenCall::openat2;
         return issue_watched_open(
             detail::OpenWords{open_call, first.bits(), second.bits(), third.bits(), fourth.bits()});
+    }
+#endif
+#if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__)
+    // Only the interceptors of mmap and munmap reset the shadow of a range.
+    // The interceptor of AddressSanitizer resets a large range with a new map
+    // of its shadow pages, and it touches no page (THE SANITIZERS of
+    // foundation/os/Syscall.h).
+    if (call == Syscall::mmap) {
+        return detail::map_intercepted(first.bits(), second.bits(), third.bits(), fourth.bits(), fifth.bits(),
+                                       sixth.bits());
+    }
+    if (call == Syscall::munmap) {
+        return detail::unmap_intercepted(first.bits(), second.bits());
     }
 #endif
     return issue(number_of(call), first.bits(), second.bits(), third.bits(), fourth.bits(), fifth.bits(), sixth.bits());

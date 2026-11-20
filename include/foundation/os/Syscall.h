@@ -57,6 +57,12 @@
 //   and munmap reset the shadow, and the system call hooks of the two calls
 //   are empty.  So mmap and munmap go to the functions of the C library in
 //   src/foundation/os/Intercepted.cpp (the owner decision of 2026-11-14).
+//   AddressSanitizer has the same need: a raw unmap leaves the poison of the
+//   range for the next map, and an unpoison of a range writes one byte of
+//   shadow for each 8 bytes, 128 GiB for a range of 1 TiB.  Its interceptor of
+//   munmap resets a large range with a new map of the shadow pages, and it
+//   touches no page.  So in a build with AddressSanitizer too, mmap and munmap
+//   go to the functions of the C library (the decision of 2026-11-20).
 //   mprotect and madvise change no state of the sanitizer, and they stay raw.
 //   The sanitizer also keeps a state for each descriptor number, and a raw
 //   close that it does not see leaves that state for the next descriptor
