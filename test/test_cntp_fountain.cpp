@@ -30,7 +30,8 @@ template <std::size_t N>
     Bytes<N> bytes{};
     for (auto index : bytes.indices()) {
         auto const i = index.raw();
-        bytes.at(index) = static_cast<std::byte>((i * 29U + (i >> 2U) + 0xC3U) & 0xFFU);
+        auto const value = static_cast<std::byte>((i * 29U + (i >> 2U) + 0xC3U) & 0xFFU);
+        bytes.with_element(index, [value](std::byte& element) noexcept { element = value; });
     }
     return bytes;
 }
@@ -40,7 +41,7 @@ template <typename Packet>
     Packet packet{};
     packet.source_bytes = Packet::admit_source_bytes(Packet::max_source_bytes).expect("the full capacity fits");
     packet.mask = mask;
-    ::fixy::fill(packet.payload.view(), fill);
+    packet.payload.with_mut([fill](auto run) noexcept { ::fixy::fill(run.view(), fill); });
     return packet;
 }
 
@@ -110,12 +111,12 @@ int main() {
 
         ::foundation::core::FixedArray<std::uint32_t, 7> inclusion{};
         ::foundation::core::FixedArray<std::uint64_t, 256> masks_a{};
-        for (auto& mask : masks_a) {
+        for (auto index : masks_a.indices()) {
             auto packet = probe.next_packet().expect("the encoder is started");
-            mask = packet.mask;
+            masks_a.with_element(index, [mask = packet.mask](std::uint64_t& held) noexcept { held = mask; });
             for (auto bit : inclusion.indices()) {
                 if ((packet.mask >> bit.raw()) & 1ULL) {
-                    inclusion.at(bit) += 1;
+                    inclusion.with_element(bit, [](std::uint32_t& count) noexcept { count += 1; });
                 }
             }
         }
@@ -189,7 +190,7 @@ int main() {
         SmallDecoder small = ci::mint_fountain_decoder<4, 4, 4>(init);
         auto first = equation_packet<SmallPacket>(0b0011, std::byte{0x11});
         auto second = first;
-        second.payload.at(::fixy::index<0>()) = std::byte{0x22};
+        second.payload.with_element(::fixy::index<0>(), [](std::byte& element) noexcept { element = std::byte{0x22}; });
 
         CRUCIBLE_TEST_ASSERT(kTest, small.add_packet(first).is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(small.add_packet(second)) == ci::FountainError::InconsistentEquation);

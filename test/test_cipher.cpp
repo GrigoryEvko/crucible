@@ -1030,7 +1030,7 @@ int main() {
         const crucible::ContentHash latest_hash =
             persisted_hash(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, latest_batch.view()));
         ::fixy::FixedArray<std::byte, 24> garbage{};
-        ::fixy::fill(garbage.view(), std::byte{0x5A});
+        garbage.with_mut([](auto cells) noexcept { ::fixy::fill(cells.view(), std::byte{0x5A}); });
         overwrite_batch_file(cipher, session, latest_hash, garbage.view());
         ::fixy::FixedText<16> latest_digits{};
         ::fixy::append_hex<16>(latest_digits, latest_hash.raw()).expect("sixteen digits fit the text");
@@ -1064,13 +1064,15 @@ int main() {
     // format: the bytes 0 to 143, 72 bytes of 0xAB, and no byte.
     {
         ::foundation::core::FixedArray<std::byte, 144> counting{};
-        std::size_t position = 0;
-        for (std::byte& byte : counting) {
-            byte = static_cast<std::byte>(position);
-            ++position;
-        }
+        counting.with_mut([](auto cells) noexcept {
+            std::size_t position = 0;
+            for (std::byte& byte : cells) {
+                byte = static_cast<std::byte>(position);
+                ++position;
+            }
+        });
         ::foundation::core::FixedArray<std::byte, 72> repeated{};
-        ::fixy::fill(repeated.view(), std::byte{0xAB});
+        repeated.with_mut([](auto cells) noexcept { ::fixy::fill(cells.view(), std::byte{0xAB}); });
         CRUCIBLE_TEST_ASSERT(kTest, crucible::Cipher::session_event_batch_hash(counting.view())
                                         == crucible::ContentHash{0xeb48340c1ea14751ULL});
         CRUCIBLE_TEST_ASSERT(kTest, crucible::Cipher::session_event_batch_hash(repeated.view())
@@ -1116,10 +1118,11 @@ int main() {
                     kTest, is_cache_hit(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc,
                                                                       hashes.at(::fixy::index<0>()), read_arena)));
             }
-            crucible::ContentHash& stored =
-                *hashes.get(i).expect("a test reads an element at or past the count of its array");
-            stored = cipher.store(store_ctx(), ov,
-                                  crucible::Cipher::content_addressed(make_test_region(cache_dag_arena, i + 1)));
+            crucible::ContentHash const stored = cipher.store(
+                store_ctx(), ov, crucible::Cipher::content_addressed(make_test_region(cache_dag_arena, i + 1)));
+            hashes.with_element(::fixy::Index<kStoreCount>::check(i).expect(
+                                    "a test reads an element at or past the count of its array"),
+                                [stored](crucible::ContentHash& held) noexcept { held = stored; });
             CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(stored));
         }
         for (const crucible::ContentHash hash : hashes) {

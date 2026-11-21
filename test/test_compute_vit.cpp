@@ -88,37 +88,42 @@ int main() {
                 .pad2 = {}};
     };
 
-    slots.at(::foundation::core::index<SL_X>()) = make_ext(SL_X, SZ_BSD);
-    slots.at(::foundation::core::index<SL_G1>()) = make_ext(SL_G1, SZ_D);
-    slots.at(::foundation::core::index<SL_B1>()) = make_ext(SL_B1, SZ_D);
-    slots.at(::foundation::core::index<SL_WQ>()) = make_ext(SL_WQ, SZ_DD);
-    slots.at(::foundation::core::index<SL_WK>()) = make_ext(SL_WK, SZ_DD);
-    slots.at(::foundation::core::index<SL_WV>()) = make_ext(SL_WV, SZ_DD);
-    slots.at(::foundation::core::index<SL_WOUT>()) = make_ext(SL_WOUT, SZ_DD);
-    slots.at(::foundation::core::index<SL_G2>()) = make_ext(SL_G2, SZ_D);
-    slots.at(::foundation::core::index<SL_B2>()) = make_ext(SL_B2, SZ_D);
-    slots.at(::foundation::core::index<SL_WFF1>()) = make_ext(SL_WFF1, SZ_DFF);
-    slots.at(::foundation::core::index<SL_WFF2>()) = make_ext(SL_WFF2, SZ_FFD);
-    slots.at(::foundation::core::index<SL_WHEAD>()) = make_ext(SL_WHEAD, SZ_DNCLS);
+    // Write the slot at the index.
+    const auto put_slot = [&slots](::foundation::core::Index<N_SLOTS> index, TensorSlot const& slot) noexcept {
+        slots.with_element(index, [&slot](TensorSlot& held) noexcept { held = slot; });
+    };
 
-    slots.at(::foundation::core::index<SL_NORM1>()) = make_int(SL_NORM1, SZ_BSD, 0, 3);
-    slots.at(::foundation::core::index<SL_Q>()) = make_int(SL_Q, SZ_BSD, 1, 4);
-    slots.at(::foundation::core::index<SL_K>()) = make_int(SL_K, SZ_BSD, 2, 4);
-    slots.at(::foundation::core::index<SL_V>()) = make_int(SL_V, SZ_BSD, 3, 4);
-    slots.at(::foundation::core::index<SL_ATTN>()) = make_int(SL_ATTN, SZ_BSD, 4, 5);
-    slots.at(::foundation::core::index<SL_PROJ>()) = make_int(SL_PROJ, SZ_BSD, 5, 6);
-    slots.at(::foundation::core::index<SL_RES1>()) = make_int(SL_RES1, SZ_BSD, 6, 11);
-    slots.at(::foundation::core::index<SL_NORM2>()) = make_int(SL_NORM2, SZ_BSD, 7, 8);
-    slots.at(::foundation::core::index<SL_FF1>()) = make_int(SL_FF1, SZ_BSDFF, 8, 9);
-    slots.at(::foundation::core::index<SL_RELU>()) = make_int(SL_RELU, SZ_BSDFF, 9, 10);
-    slots.at(::foundation::core::index<SL_FF2>()) = make_int(SL_FF2, SZ_BSD, 10, 11);
+    put_slot(::foundation::core::index<SL_X>(), make_ext(SL_X, SZ_BSD));
+    put_slot(::foundation::core::index<SL_G1>(), make_ext(SL_G1, SZ_D));
+    put_slot(::foundation::core::index<SL_B1>(), make_ext(SL_B1, SZ_D));
+    put_slot(::foundation::core::index<SL_WQ>(), make_ext(SL_WQ, SZ_DD));
+    put_slot(::foundation::core::index<SL_WK>(), make_ext(SL_WK, SZ_DD));
+    put_slot(::foundation::core::index<SL_WV>(), make_ext(SL_WV, SZ_DD));
+    put_slot(::foundation::core::index<SL_WOUT>(), make_ext(SL_WOUT, SZ_DD));
+    put_slot(::foundation::core::index<SL_G2>(), make_ext(SL_G2, SZ_D));
+    put_slot(::foundation::core::index<SL_B2>(), make_ext(SL_B2, SZ_D));
+    put_slot(::foundation::core::index<SL_WFF1>(), make_ext(SL_WFF1, SZ_DFF));
+    put_slot(::foundation::core::index<SL_WFF2>(), make_ext(SL_WFF2, SZ_FFD));
+    put_slot(::foundation::core::index<SL_WHEAD>(), make_ext(SL_WHEAD, SZ_DNCLS));
+
+    put_slot(::foundation::core::index<SL_NORM1>(), make_int(SL_NORM1, SZ_BSD, 0, 3));
+    put_slot(::foundation::core::index<SL_Q>(), make_int(SL_Q, SZ_BSD, 1, 4));
+    put_slot(::foundation::core::index<SL_K>(), make_int(SL_K, SZ_BSD, 2, 4));
+    put_slot(::foundation::core::index<SL_V>(), make_int(SL_V, SZ_BSD, 3, 4));
+    put_slot(::foundation::core::index<SL_ATTN>(), make_int(SL_ATTN, SZ_BSD, 4, 5));
+    put_slot(::foundation::core::index<SL_PROJ>(), make_int(SL_PROJ, SZ_BSD, 5, 6));
+    put_slot(::foundation::core::index<SL_RES1>(), make_int(SL_RES1, SZ_BSD, 6, 11));
+    put_slot(::foundation::core::index<SL_NORM2>(), make_int(SL_NORM2, SZ_BSD, 7, 8));
+    put_slot(::foundation::core::index<SL_FF1>(), make_int(SL_FF1, SZ_BSDFF, 8, 9));
+    put_slot(::foundation::core::index<SL_RELU>(), make_int(SL_RELU, SZ_BSDFF, 9, 10));
+    put_slot(::foundation::core::index<SL_FF2>(), make_int(SL_FF2, SZ_BSD, 10, 11));
     // The last real consumer of RES2 is op 12, but the check after the loop
     // reads it too. Declaring death at the final op stops the sweep line
     // from handing its storage to a later activation.
-    slots.at(::foundation::core::index<SL_RES2>()) = make_int(SL_RES2, SZ_BSD, 11, 14);
-    slots.at(::foundation::core::index<SL_CLS>()) = make_int(SL_CLS, SZ_BD, 12, 13);
-    slots.at(::foundation::core::index<SL_LOGITS>()) = make_int(SL_LOGITS, SZ_BNCLS, 13, 14);
-    slots.at(::foundation::core::index<SL_PROBS>()) = make_int(SL_PROBS, SZ_BNCLS, 14, 14);
+    put_slot(::foundation::core::index<SL_RES2>(), make_int(SL_RES2, SZ_BSD, 11, 14));
+    put_slot(::foundation::core::index<SL_CLS>(), make_int(SL_CLS, SZ_BD, 12, 13));
+    put_slot(::foundation::core::index<SL_LOGITS>(), make_int(SL_LOGITS, SZ_BNCLS, 13, 14));
+    put_slot(::foundation::core::index<SL_PROBS>(), make_int(SL_PROBS, SZ_BNCLS, 14, 14));
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
     crucible::MemoryPlan plan_storage{};
@@ -160,12 +165,14 @@ int main() {
     };
 
     ::foundation::core::FixedArray<TraceEntry, N_OPS> ops{};
-    for (auto [op, def] : ops.view().walk().zip(defs.view().walk())) {
-        op->schema_hash = def->schema;
-        op->shape_hash = def->shape;
-        crucible::test::set_input_slots(test.alloc, runs, *op, def->in);
-        crucible::test::set_output_slots(test.alloc, runs, *op, def->out);
-    }
+    ops.with_mut([&test, &runs, &defs](auto run) noexcept {
+        for (auto [op, def] : run.view().walk().zip(defs.view().walk())) {
+            op->schema_hash = def->schema;
+            op->shape_hash = def->shape;
+            crucible::test::set_input_slots(test.alloc, runs, *op, def->in);
+            crucible::test::set_output_slots(test.alloc, runs, *op, def->out);
+        }
+    });
 
     RegionNode region{};
     region.kind = TraceNodeKind::REGION;

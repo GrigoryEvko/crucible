@@ -154,10 +154,12 @@ void the_key_after_the_last_cell_ends_the_process(::fixy::TestRunnerCtx const& t
     constexpr ::foundation::core::TextView key_text{"ThreadLocalRef 2"};
     ::foundation::core::SipKeyBytes key{};
     auto letter = key_text.begin();
-    for (std::byte& byte : key) {
-        byte = static_cast<std::byte>(*letter);
-        ++letter;
-    }
+    key.with_mut([&letter](auto run) noexcept {
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(*letter);
+            ++letter;
+        }
+    });
     std::uint64_t word = 0;
     int shift = 0;
     for (std::byte const byte : ::foundation::core::sip_hash(key, name)) {

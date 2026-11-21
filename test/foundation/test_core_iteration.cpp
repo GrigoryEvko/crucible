@@ -40,9 +40,11 @@ using Run = FixedArray<std::uint64_t, run_size>;
 }
 
 void fill_with_stream(Run& run, ::crucible::test::PhiloxStream& stream) {
-    for (std::uint64_t& value : run) {
-        value = stream.next_wide();
-    }
+    run.with_mut([&stream](auto elements) noexcept {
+        for (std::uint64_t& value : elements) {
+            value = stream.next_wide();
+        }
+    });
 }
 
 void test_reverse_reads_from_the_last_element() {
@@ -54,9 +56,11 @@ void test_reverse_reads_from_the_last_element() {
     }
     CRUCIBLE_TEST_ASSERT(kTest, expected == 0);
     FixedArray<int, 3> numbers{1, 2, 3};
-    for (int& value : numbers.reverse()) {
-        value *= 10;
-    }
+    numbers.with_mut([](auto run) noexcept {
+        for (int& value : run.view().reverse()) {
+            value *= 10;
+        }
+    });
     CRUCIBLE_TEST_ASSERT(kTest, numbers == (FixedArray<int, 3>{10, 20, 30}));
 }
 
@@ -90,9 +94,11 @@ void test_enumerate_gives_each_index_with_its_element() {
     }
     CRUCIBLE_TEST_ASSERT(kTest, expected_position == 5);
     FixedArray<int, 4> numbers{};
-    for (auto const [position, element] : numbers.enumerate()) {
-        *element = static_cast<int>(position.raw()) * 3;
-    }
+    numbers.with_mut([](auto run) noexcept {
+        for (auto const [position, element] : run.view().enumerate()) {
+            *element = static_cast<int>(position.raw()) * 3;
+        }
+    });
     CRUCIBLE_TEST_ASSERT(kTest, numbers == (FixedArray<int, 4>{0, 3, 6, 9}));
 }
 
@@ -105,9 +111,11 @@ void test_zip_of_one_fixed_extent() {
     }
     CRUCIBLE_TEST_ASSERT(kTest, total == 10 + 40 + 90 + 160);
     FixedArray<int, 4> target{};
-    for (auto const [destination, source] : target.view().walk().zip(left.view().walk())) {
-        *destination = *source + 1;
-    }
+    target.with_mut([&left](auto run) noexcept {
+        for (auto const [destination, source] : run.view().walk().zip(left.view().walk())) {
+            *destination = *source + 1;
+        }
+    });
     CRUCIBLE_TEST_ASSERT(kTest, target == (FixedArray<int, 4>{2, 3, 4, 5}));
 }
 

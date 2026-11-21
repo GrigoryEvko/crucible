@@ -93,7 +93,7 @@ static_assert(encoded_size_v<HoldsFixedArray> == 12);
     leaves.flag = true;
     leaves.scale = -0.0;
     FixedArray<std::byte, encoded_size_v<Leaves>> image{};
-    encode(leaves, image.view());
+    image.with_mut([&leaves](auto run) noexcept { encode(leaves, run.view()); });
     return image.at(index<0>()) == std::byte{0x02} && image.at(index<1>()) == std::byte{0x01}
         && image.at(index<2>()) == std::byte{1} && image.at(index<3>()) == std::byte{1}
         && image.at(index<4>()) == std::byte{0} && image.at(index<11>()) == std::byte{0x80};
@@ -107,12 +107,12 @@ static_assert(writes_the_image());
     leaves.kind = Kind::second;
     leaves.scale = 2.5;
     FixedArray<std::byte, encoded_size_v<Leaves>> image{};
-    encode(leaves, image.view());
+    image.with_mut([&leaves](auto run) noexcept { encode(leaves, run.view()); });
     FixedArray<std::byte, encoded_size_v<Leaves>> const& read = image;
     bool const is_back = decode<Leaves>(read.view())
                              .match([&leaves](Leaves back) noexcept { return equal(back, leaves); },
                                     [](DecodeFault) noexcept { return false; });
-    image.at(index<3>()) = std::byte{2};
+    image.with_element(index<3>(), [](std::byte& element) noexcept { element = std::byte{2}; });
     bool const is_refused =
         decode<Leaves>(read.view())
             .match([](Leaves) noexcept { return false; },
@@ -185,14 +185,14 @@ static_assert(Encodable<HoldsPart<Option<Sealed>>> && !Decodable<HoldsPart<Optio
     sums.outcome = Result<std::uint16_t, Kind>{Err<Kind>{Kind::second}};
     sums.either = OneOf<std::uint8_t, Leaves>{Leaves{.word = 3}};
     FixedArray<std::byte, encoded_size_v<HoldsSums>> image{};
-    encode(sums, image.view());
+    image.with_mut([&sums](auto run) noexcept { encode(sums, run.view()); });
     FixedArray<std::byte, encoded_size_v<HoldsSums>> const& read = image;
     bool const is_back = decode<HoldsSums>(read.view())
                              .match([&sums](HoldsSums back) noexcept { return equal(back, sums); },
                                     [](DecodeFault) noexcept { return false; });
     bool const has_tags = image.at(index<0>()) == std::byte{1} && image.at(index<5>()) == std::byte{1}
                        && image.at(index<6>()) == std::byte{1} && image.at(index<8>()) == std::byte{1};
-    image.at(index<8>()) = std::byte{2};
+    image.with_element(index<8>(), [](std::byte& element) noexcept { element = std::byte{2}; });
     bool const is_refused =
         decode<HoldsSums>(read.view())
             .match([](HoldsSums) noexcept { return false; },
@@ -226,7 +226,7 @@ static_assert(!Encodable<HoldsPart<FixedText<0x100000000>>>);
     bool const is_built =
         lists.words.append(std::uint16_t{0x0102}).is_ok() && lists.name.append(TextView{"ab"}).is_ok();
     FixedArray<std::byte, encoded_size_v<HoldsLists>> image{};
-    encode(lists, image.view());
+    image.with_mut([&lists](auto run) noexcept { encode(lists, run.view()); });
     FixedArray<std::byte, encoded_size_v<HoldsLists>> const& read = image;
     bool const is_back = decode<HoldsLists>(read.view())
                              .match([&lists](HoldsLists back) noexcept { return equal(back, lists); },
@@ -234,13 +234,13 @@ static_assert(!Encodable<HoldsPart<FixedText<0x100000000>>>);
     bool const has_counts = image.at(index<0>()) == std::byte{1} && image.at(index<1>()) == std::byte{0x02}
                          && image.at(index<7>()) == std::byte{2} && image.at(index<8>()) == std::byte{0}
                          && image.at(index<9>()) == std::byte{'a'} && image.at(index<11>()) == std::byte{0};
-    image.at(index<0>()) = std::byte{4};
+    image.with_element(index<0>(), [](std::byte& element) noexcept { element = std::byte{4}; });
     bool const is_count_refused =
         decode<HoldsLists>(read.view())
             .match([](HoldsLists) noexcept { return false; },
                    [](DecodeFault fault) noexcept { return fault == DecodeFault{DecodeRefusal::list_count, 0}; });
-    image.at(index<0>()) = std::byte{1};
-    image.at(index<4>()) = std::byte{1};
+    image.with_element(index<0>(), [](std::byte& element) noexcept { element = std::byte{1}; });
+    image.with_element(index<4>(), [](std::byte& element) noexcept { element = std::byte{1}; });
     bool const is_tail_refused =
         decode<HoldsLists>(read.view())
             .match([](HoldsLists) noexcept { return false; },

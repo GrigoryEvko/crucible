@@ -208,7 +208,7 @@ template <std::size_t Grain>
         HeapArray<std::size_t> const grain_order = draw_order(count, stream);
         for (std::size_t const offset : grain_order) {
             ::fixy::FixedArray<float, 1> one{};
-            one = with_mut(std::move(one), [&](auto own) noexcept {
+            one.with_mut([run, first, offset](auto own) noexcept {
                 ::foundation::core::sum_grains_by_tree<Grain>(run, first + offset, std::move(own));
             });
             *slots.get(first + offset).expect("a test reads an element at or past the count of its View") =

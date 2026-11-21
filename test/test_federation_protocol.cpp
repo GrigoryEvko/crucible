@@ -105,7 +105,7 @@ struct HeaderSpec {
         .reserved = 0,
     };
     Bytes<kHeader> out{};
-    ::fixy::encode(hdr, out.view());
+    out.with_mut([&hdr](auto run) noexcept { ::fixy::encode(hdr, run.view()); });
     return out;
 }
 
@@ -114,11 +114,13 @@ struct HeaderSpec {
 [[nodiscard]] static constexpr fed::FederationHashKey test_hash_key() noexcept {
     constexpr ::fixy::TextView text{"whats the Elvish word for friend"};
     Bytes<32> bytes{};
-    auto cursor = bytes.begin();
-    for (char const letter : text) {
-        *cursor = static_cast<std::byte>(letter);
-        ++cursor;
-    }
+    bytes.with_mut([text](auto run) noexcept {
+        auto cursor = run.begin();
+        for (char const letter : text) {
+            *cursor = static_cast<std::byte>(letter);
+            ++cursor;
+        }
+    });
     return fed::FederationHashKey{::fixy::View<std::byte const, 32>{bytes.view()}};
 }
 
@@ -202,7 +204,9 @@ static void test_round_trip_basic() {
     const auto payload = bytes_of(0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08);
 
     Bytes<kHeader + 16> buf{};
-    auto written = fed::serialize_federation_entry(buf.view(), key, payload.view());
+    auto written = buf.with_mut([&key, &payload](auto run) noexcept {
+        return fed::serialize_federation_entry(run.view(), key, payload.view());
+    });
     ASSERT_TRUE(written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == fed::FEDERATION_HEADER_BYTES + payload.size());
 
@@ -232,7 +236,8 @@ static void test_round_trip_empty_payload() {
     const fed::FederationKey key = key_of(0x1111222233334444ULL, 0xAAAABBBBCCCCDDDDULL, 0, 0);
 
     Bytes<kHeader> buf{};
-    auto written = fed::serialize_federation_entry(buf.view(), key, kNoPayload);
+    auto written = buf.with_mut(
+        [&key](auto run) noexcept { return fed::serialize_federation_entry(run.view(), key, kNoPayload); });
     ASSERT_TRUE(written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == fed::FEDERATION_HEADER_BYTES);  // header only
 
@@ -251,7 +256,9 @@ static void test_round_trip_empty_payload() {
 
 static void test_serialize_rejects_sentinel() {
     Bytes<kHeader> buf{};
-    auto written = fed::serialize_federation_entry(buf.view(), fed::FederationKey::sentinel(), kNoPayload);
+    auto written = buf.with_mut([](auto run) noexcept {
+        return fed::serialize_federation_entry(run.view(), fed::FederationKey::sentinel(), kNoPayload);
+    });
     ASSERT_TRUE(!written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, error_of(written) == fed::FederationError::SentinelKey);
 
@@ -267,7 +274,8 @@ static void test_serialize_rejects_zero() {
     CRUCIBLE_TEST_ASSERT(kTest, !zero.is_sentinel());
 
     Bytes<kHeader> buf{};
-    auto written = fed::serialize_federation_entry(buf.view(), zero, kNoPayload);
+    auto written = buf.with_mut(
+        [&zero](auto run) noexcept { return fed::serialize_federation_entry(run.view(), zero, kNoPayload); });
     ASSERT_TRUE(!written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, error_of(written) == fed::FederationError::ZeroKey);
 
@@ -281,13 +289,16 @@ static void test_serialize_rejects_undersized_buffer() {
     const Bytes<16> payload{};
 
     Bytes<kHeader + 8> buf{};  // 48 + 8 < 48 + 16
-    auto written = fed::serialize_federation_entry(buf.view(), HeaderSpec{}.key, payload.view());
+    auto written = buf.with_mut([&payload](auto run) noexcept {
+        return fed::serialize_federation_entry(run.view(), HeaderSpec{}.key, payload.view());
+    });
     ASSERT_TRUE(!written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, error_of(written) == fed::FederationError::OutputBufferTooSmall);
 
     // Smaller than the header alone.
     Bytes<16> tiny_buf{};
-    auto tiny_written = fed::serialize_federation_entry(tiny_buf.view(), HeaderSpec{}.key, kNoPayload);
+    auto tiny_written = tiny_buf.with_mut(
+        [](auto run) noexcept { return fed::serialize_federation_entry(run.view(), HeaderSpec{}.key, kNoPayload); });
     ASSERT_TRUE(!tiny_written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, error_of(tiny_written) == fed::FederationError::OutputBufferTooSmall);
 
@@ -347,9 +358,9 @@ static void test_deserialize_rejects_version_one() {
     HeaderSpec spec{};
     spec.protocol_version = 1u;
     Bytes<kHeader> buf = header_bytes(spec);
-    buf.at(index<12>()) = std::byte{0xEF};
-    buf.at(index<13>()) = std::byte{0xBE};
-    buf.at(index<46>()) = std::byte{0xAD};
+    buf.with_element(index<12>(), [](std::byte& element) noexcept { element = std::byte{0xEF}; });
+    buf.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{0xBE}; });
+    buf.with_element(index<46>(), [](std::byte& element) noexcept { element = std::byte{0xAD}; });
 
     auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
     ASSERT_TRUE(!view.is_ok());
@@ -365,7 +376,7 @@ static void test_deserialize_rejects_version_one() {
 static void test_deserialize_rejects_kind_and_width() {
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.at(index<12>()) = std::byte{2};
+        buf.with_element(index<12>(), [](std::byte& element) noexcept { element = std::byte{2}; });
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedHashKind);
@@ -373,7 +384,7 @@ static void test_deserialize_rejects_kind_and_width() {
 
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.at(index<12>()) = std::byte{0};
+        buf.with_element(index<12>(), [](std::byte& element) noexcept { element = std::byte{0}; });
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedHashKind);
@@ -382,7 +393,7 @@ static void test_deserialize_rejects_kind_and_width() {
     // A width of 16 bytes is the width that version 1 had in its two words.
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.at(index<13>()) = std::byte{16};
+        buf.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{16}; });
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedKeyWidth);
@@ -392,8 +403,8 @@ static void test_deserialize_rejects_kind_and_width() {
     // the fault of the kind.
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.at(index<12>()) = std::byte{9};
-        buf.at(index<13>()) = std::byte{64};
+        buf.with_element(index<12>(), [](std::byte& element) noexcept { element = std::byte{9}; });
+        buf.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{64}; });
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedHashKind);
@@ -409,7 +420,7 @@ static void test_deserialize_rejects_kind_and_width() {
 static void test_deserialize_rejects_reserved_nonzero() {
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.at(index<46>()) = std::byte{0x01};
+        buf.with_element(index<46>(), [](std::byte& element) noexcept { element = std::byte{0x01}; });
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::ReservedNonZero);
@@ -417,7 +428,7 @@ static void test_deserialize_rejects_reserved_nonzero() {
 
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.at(index<47>()) = std::byte{0x80};
+        buf.with_element(index<47>(), [](std::byte& element) noexcept { element = std::byte{0x80}; });
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::ReservedNonZero);
@@ -521,7 +532,9 @@ static void test_deserialize_rejects_truncated_payload() {
     HeaderSpec spec{};
     spec.payload_size = 100u;  // claims 100 bytes; only 4 remain
     const Bytes<kHeader> header = header_bytes(spec);
-    ::fixy::copy(buf.view().window<kHeader>(0).expect("the buffer holds the header"), header.view());
+    buf.with_mut([&header](auto run) noexcept {
+        ::fixy::copy(run.view().template window<kHeader>(0).expect("the buffer holds the header"), header.view());
+    });
 
     auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
     ASSERT_TRUE(!view.is_ok());
@@ -540,8 +553,12 @@ static void test_serialize_is_deterministic() {
 
     Bytes<kHeader + 16> buf_a{};
     Bytes<kHeader + 16> buf_b{};
-    auto wa = fed::serialize_federation_entry(buf_a.view(), key, payload.view());
-    auto wb = fed::serialize_federation_entry(buf_b.view(), key, payload.view());
+    auto wa = buf_a.with_mut([&key, &payload](auto run) noexcept {
+        return fed::serialize_federation_entry(run.view(), key, payload.view());
+    });
+    auto wb = buf_b.with_mut([&key, &payload](auto run) noexcept {
+        return fed::serialize_federation_entry(run.view(), key, payload.view());
+    });
     ASSERT_TRUE(wa.is_ok());
     ASSERT_TRUE(wb.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(wa) == value_of(wb));
@@ -571,7 +588,7 @@ static void test_header_overload_agreement() {
 
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.at(index<13>()) = std::byte{31};
+        buf.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{31}; });
         auto h = fed::deserialize_federation_header(buf.view(), 6);
         auto e = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         CRUCIBLE_TEST_ASSERT(kTest, error_of(h) == error_of(e));
@@ -580,7 +597,9 @@ static void test_header_overload_agreement() {
 
     {
         Bytes<kHeader> buf{};
-        auto written = fed::serialize_federation_entry(buf.view(), HeaderSpec{}.key, kNoPayload);
+        auto written = buf.with_mut([](auto run) noexcept {
+            return fed::serialize_federation_entry(run.view(), HeaderSpec{}.key, kNoPayload);
+        });
         ASSERT_TRUE(written.is_ok());
 
         // The sender stamps the atom count of this build, so the receiver of
@@ -637,14 +656,18 @@ static void test_error_name_coverage() {
 static void test_round_trip_full_byte_range() {
     const fed::FederationKey key = key_of(0x123456789ABCDEF0ULL, 0xFEDCBA9876543210ULL, 1, 2);
     Bytes<256> payload{};
-    std::size_t position = 0;
-    for (std::byte& byte : payload) {
-        byte = static_cast<std::byte>(position);
-        ++position;
-    }
+    payload.with_mut([](auto run) noexcept {
+        std::size_t position = 0;
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(position);
+            ++position;
+        }
+    });
 
     Bytes<fed::FEDERATION_HEADER_BYTES + 256> buf{};
-    auto written = fed::serialize_federation_entry(buf.view(), key, payload.view());
+    auto written = buf.with_mut([&key, &payload](auto run) noexcept {
+        return fed::serialize_federation_entry(run.view(), key, payload.view());
+    });
     ASSERT_TRUE(written.is_ok());
 
     auto view = fed::deserialize_untrusted_federation_entry(prefix(buf, value_of(written)),
@@ -662,7 +685,9 @@ static void test_round_trip_full_byte_range() {
 static void test_view_payload_aliases_input() {
     const auto payload = bytes_of(1, 2, 3, 4, 5, 6, 7, 8);
     Bytes<kHeader + 16> buf{};
-    auto written = fed::serialize_federation_entry(buf.view(), HeaderSpec{}.key, payload.view());
+    auto written = buf.with_mut([&payload](auto run) noexcept {
+        return fed::serialize_federation_entry(run.view(), HeaderSpec{}.key, payload.view());
+    });
     ASSERT_TRUE(written.is_ok());
 
     auto view = fed::deserialize_untrusted_federation_entry(prefix(buf, value_of(written)),
@@ -689,8 +714,10 @@ static void test_digest_on_wire() {
 
     Bytes<kHeader> buf_n{};
     Bytes<kHeader> buf_s{};
-    auto wn = fed::serialize_federation_entry(buf_n.view(), key, kNoPayload);
-    auto ws = fed::serialize_federation_entry(buf_s.view(), swapped, kNoPayload);
+    auto wn = buf_n.with_mut(
+        [&key](auto run) noexcept { return fed::serialize_federation_entry(run.view(), key, kNoPayload); });
+    auto ws = buf_s.with_mut(
+        [&swapped](auto run) noexcept { return fed::serialize_federation_entry(run.view(), swapped, kNoPayload); });
     ASSERT_TRUE(wn.is_ok());
     ASSERT_TRUE(ws.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(wn) == value_of(ws));  // same byte count
@@ -736,7 +763,9 @@ static void test_receiver_cardinality_is_explicit() {
 static void test_codec_is_noexcept() {
     Bytes<kHeader> buf{};
     const fed::FederationKey key = HeaderSpec{}.key;
-    static_assert(noexcept(fed::serialize_federation_entry(buf.view(), key, kNoPayload)));
+    buf.with_mut([&key](auto run) noexcept {
+        static_assert(noexcept(fed::serialize_federation_entry(run.view(), key, kNoPayload)));
+    });
     static_assert(noexcept(fed::deserialize_federation_header(kNoPayload, std::uint16_t{6})));
     static_assert(noexcept(fed::deserialize_untrusted_federation_entry(kNoPayload, std::uint16_t{6})));
     static_assert(noexcept(fed::federation_accepts_cardinality(std::uint16_t{6}, std::uint16_t{6})));
@@ -780,18 +809,23 @@ static void test_buffer_exactly_fits() {
     const auto payload = bytes_of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
 
     Bytes<kHeader + 16> buf{};  // 48 + 16, exactly
-    auto written = fed::serialize_federation_entry(buf.view(), key, payload.view());
+    auto written = buf.with_mut([&key, &payload](auto run) noexcept {
+        return fed::serialize_federation_entry(run.view(), key, payload.view());
+    });
     ASSERT_TRUE(written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == kHeader + 16);
 
     Bytes<kHeader + 15> short_buf{};
-    auto rejected = fed::serialize_federation_entry(short_buf.view(), key, payload.view());
+    auto rejected = short_buf.with_mut([&key, &payload](auto run) noexcept {
+        return fed::serialize_federation_entry(run.view(), key, payload.view());
+    });
     ASSERT_TRUE(!rejected.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, error_of(rejected) == fed::FederationError::OutputBufferTooSmall);
 
     // The same boundary with no payload at all.
     Bytes<kHeader> tight_buf{};
-    auto tight = fed::serialize_federation_entry(tight_buf.view(), key, kNoPayload);
+    auto tight = tight_buf.with_mut(
+        [&key](auto run) noexcept { return fed::serialize_federation_entry(run.view(), key, kNoPayload); });
     ASSERT_TRUE(tight.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(tight) == kHeader);
 
@@ -807,15 +841,19 @@ static void test_extra_bytes_at_end() {
     const auto payload = bytes_of(0xAA, 0xBB, 0xCC, 0xDD);
 
     Bytes<kHeader + 16> buf{};
-    auto written = fed::serialize_federation_entry(buf.view(), HeaderSpec{}.key, payload.view());
+    auto written = buf.with_mut([&payload](auto run) noexcept {
+        return fed::serialize_federation_entry(run.view(), HeaderSpec{}.key, payload.view());
+    });
     ASSERT_TRUE(written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == kHeader + 4);
 
     // A value that appears nowhere in the payload, so its absence from
     // the decoded payload is meaningful.
-    ::fixy::fill(
-        buf.view().window(kHeader + 4, buf.size() - kHeader - 4).expect("the buffer holds bytes after the entry"),
-        std::byte{0xEE});
+    buf.with_mut([](auto run) noexcept {
+        ::fixy::fill(
+            run.view().window(kHeader + 4, run.size() - kHeader - 4).expect("the buffer holds bytes after the entry"),
+            std::byte{0xEE});
+    });
 
     // Decode over the whole buffer, not over the bytes just written.
     auto view = fed::deserialize_untrusted_federation_entry(buf.view(), fed::FEDERATION_UNIVERSE_CARDINALITY);
@@ -839,7 +877,8 @@ static void test_partial_sentinel_accepted() {
         CRUCIBLE_TEST_ASSERT(kTest, !key.is_zero());
 
         Bytes<kHeader> buf{};
-        auto written = fed::serialize_federation_entry(buf.view(), key, kNoPayload);
+        auto written = buf.with_mut(
+            [&key](auto run) noexcept { return fed::serialize_federation_entry(run.view(), key, kNoPayload); });
         ASSERT_TRUE(written.is_ok());
 
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), fed::FEDERATION_UNIVERSE_CARDINALITY);
@@ -853,7 +892,8 @@ static void test_partial_sentinel_accepted() {
         CRUCIBLE_TEST_ASSERT(kTest, !key.is_zero());
 
         Bytes<kHeader> buf{};
-        auto written = fed::serialize_federation_entry(buf.view(), key, kNoPayload);
+        auto written = buf.with_mut(
+            [&key](auto run) noexcept { return fed::serialize_federation_entry(run.view(), key, kNoPayload); });
         ASSERT_TRUE(written.is_ok());
     }
 
@@ -866,11 +906,13 @@ static void test_partial_sentinel_accepted() {
 
 static void test_key_is_keyed_blake3() {
     Bytes<64> input{};
-    std::size_t position = 0;
-    for (std::byte& byte : input) {
-        byte = static_cast<std::byte>(position % 251);
-        ++position;
-    }
+    input.with_mut([](auto run) noexcept {
+        std::size_t position = 0;
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(position % 251);
+            ++position;
+        }
+    });
     const fed::FederationKey key = fed::federation_key_of_bytes(test_hash_key(), input.view());
     // The vector of 64 bytes: ba8ced36f327700d213f120b1a207a3b8c04330528586f414d09f2f7d9ccb7e6.
     const fed::FederationKey expected =
@@ -918,7 +960,7 @@ static void test_one_id_two_keys() {
 static void test_key_and_content_take_part() {
     const auto content = bytes_of(1, 2, 3, 4, 5, 6, 7, 8);
     Bytes<32> other_key_bytes{};
-    other_key_bytes.at(index<0>()) = std::byte{1};
+    other_key_bytes.with_element(index<0>(), [](std::byte& element) noexcept { element = std::byte{1}; });
     const fed::FederationHashKey other_hash_key{::fixy::View<std::byte const, 32>{other_key_bytes.view()}};
 
     const fed::FederationKey key = fed::federation_key_of_bytes(test_hash_key(), content.view());
@@ -1043,11 +1085,13 @@ static void test_permissioned_decode_tags_the_view() {
 
     const IoCtx ctx{fe::testing::bg()};
     SipKeyBytes shared_key{};
-    std::uint8_t next = 1;
-    for (std::byte& byte : shared_key) {
-        byte = static_cast<std::byte>(next);
-        ++next;
-    }
+    shared_key.with_mut([](auto run) noexcept {
+        std::uint8_t next = 1;
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(next);
+            ++next;
+        }
+    });
     Admission admission =
         Admission::mint_federation_admission<Policy>(ctx, ::fixy::mint_secret<SipKeyBytes>(shared_key));
     auto local_cipher = fp::mint_permission_root<door::LocalCipherTag>(ctx);
@@ -1060,7 +1104,8 @@ static void test_permissioned_decode_tags_the_view() {
     const fed::FederationKey key = key_of(0x1111111111111111ULL, 0x2222222222222222ULL, 0, 0);
     const auto body = bytes_of(1, 2, 3, 4);
     Bytes<kHeader + 16> buf{};
-    auto written = fed::serialize_federation_entry(buf.view(), key, body.view());
+    auto written = buf.with_mut(
+        [&key, &body](auto run) noexcept { return fed::serialize_federation_entry(run.view(), key, body.view()); });
     ASSERT_TRUE(written.is_ok());
 
     auto tagged =

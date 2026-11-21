@@ -73,7 +73,7 @@ constexpr auto send_ping = [](Wire& wire, Ping& ping) noexcept {
 using StorageView = ::fixy::View<std::uint64_t>;
 
 // The element at position of a read, or a value that no cell stores.
-[[nodiscard]] std::uint64_t element_of(StorageView read, std::size_t position) noexcept {
+[[nodiscard]] std::uint64_t element_of(::fixy::View<std::uint64_t const> read, std::size_t position) noexcept {
     std::uint64_t element = ~std::uint64_t{0};
     for (auto const found : read.get(position)) {
         element = *found;

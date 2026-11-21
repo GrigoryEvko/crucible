@@ -51,30 +51,32 @@ template <std::size_t N>
     std::uint64_t const inputs = std::uint64_t{1} << N;
     std::uint64_t const lanes = inputs < 64 ? ((std::uint64_t{1} << inputs) - 1) : ~std::uint64_t{0};
     ::fixy::FixedArray<std::uint64_t, N> wires{};
-    View<std::uint64_t> const wire_view = wires.view();
-    for (std::uint64_t base = 0; base < inputs; base += 64) {
-        for (std::size_t wire = 0; wire < N; ++wire) {
-            *wire_view.get(wire).expect("a test reads an element at or past the count of its View") =
-                wire_word(wire, base);
+    return wires.with_mut([&plan, inputs, lanes](auto run) noexcept {
+        View<std::uint64_t> const wire_view = run.view();
+        for (std::uint64_t base = 0; base < inputs; base += 64) {
+            for (std::size_t wire = 0; wire < N; ++wire) {
+                *wire_view.get(wire).expect("a test reads an element at or past the count of its View") =
+                    wire_word(wire, base);
+            }
+            for (::foundation::core::Comparator const step : plan) {
+                std::uint64_t& low =
+                    *wire_view.get(step.low).expect("a test reads an element at or past the count of its View");
+                std::uint64_t& high =
+                    *wire_view.get(step.high).expect("a test reads an element at or past the count of its View");
+                std::uint64_t const minimum = low & high;
+                high = low | high;
+                low = minimum;
+            }
+            for (std::size_t wire = 0; wire + 1 < N; ++wire) {
+                std::uint64_t const below =
+                    *wire_view.get(wire).expect("a test reads an element at or past the count of its View");
+                std::uint64_t const above =
+                    *wire_view.get(wire + 1).expect("a test reads an element at or past the count of its View");
+                if ((below & ~above & lanes) != 0) return false;
+            }
         }
-        for (::foundation::core::Comparator const step : plan) {
-            std::uint64_t& low =
-                *wire_view.get(step.low).expect("a test reads an element at or past the count of its View");
-            std::uint64_t& high =
-                *wire_view.get(step.high).expect("a test reads an element at or past the count of its View");
-            std::uint64_t const minimum = low & high;
-            high = low | high;
-            low = minimum;
-        }
-        for (std::size_t wire = 0; wire + 1 < N; ++wire) {
-            std::uint64_t const below =
-                *wire_view.get(wire).expect("a test reads an element at or past the count of its View");
-            std::uint64_t const above =
-                *wire_view.get(wire + 1).expect("a test reads an element at or past the count of its View");
-            if ((below & ~above & lanes) != 0) return false;
-        }
-    }
-    return true;
+        return true;
+    });
 }
 
 template <std::size_t... N>
@@ -140,13 +142,14 @@ template <std::size_t N>
 void check_network_on_floats(::crucible::test::PhiloxStream& stream) noexcept {
     for (int trial = 0; trial < 64; ++trial) {
         ::fixy::FixedArray<float, N> values{};
-        for (float& value : values) {
-            value = draw_special_float(stream);
-        }
+        values.with_mut([&stream](auto run) noexcept {
+            for (float& value : run) {
+                value = draw_special_float(stream);
+            }
+        });
         ::fixy::FixedArray<float, N> expected{values};
-        naive_sort(View<float>{expected.view()});
-        values = ::foundation::core::with_mut(
-            std::move(values), [](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
+        expected.with_mut([](auto run) noexcept { naive_sort(View<float>{run.view()}); });
+        values.with_mut([](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
         CRUCIBLE_TEST_ASSERT(kTest, same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
     }
 }

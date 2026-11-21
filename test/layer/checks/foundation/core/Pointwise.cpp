@@ -101,13 +101,13 @@ static_assert(transpose_source_(16, 4, 2, false, 4) == 8 && transpose_source_(16
     FixedArray<std::size_t, 2> const columns{1, 2};
     StridedView<int const, 2> const source =
         mint_strided_view(addends.view(), sizes.view(), columns.view(), 0).expect("the matrix fits");
-    auto [is_written, kept] = with_mut(std::move(values), [&](auto run) noexcept {
+    bool const is_written = values.with_mut([&sizes, &strides, &source](auto run) noexcept {
         auto out = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("a dense matrix");
         StridedView<int const, 2> const in_place = out.view();
         return write_pointwise(out, Add{}, in_place, source).is_ok();
     });
     // The source reads the addends in column-major order.
-    return is_written && kept == FixedArray<int, 6>{11, 32, 53, 24, 45, 66};
+    return is_written && values == FixedArray<int, 6>{11, 32, 53, 24, 45, 66};
 }
 static_assert(walks_in_constant_evaluation());
 
@@ -121,11 +121,11 @@ static_assert(walks_in_constant_evaluation());
     FixedArray<std::size_t, 1> const strides{1};
     StridedView<float const, 1> const source =
         mint_strided_view(values.view(), sizes.view(), strides.view(), 0).expect("the row fits");
-    auto [is_summed, summed] = with_mut(std::move(sums), [&](auto run) noexcept {
+    bool const is_summed = sums.with_mut([&sizes, &strides, &source](auto run) noexcept {
         auto out = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("a dense row");
         return write_pointwise(out, Add{}, source, source).is_ok();
     });
-    auto [is_copied, copied] = with_mut(std::move(copies), [&](auto run) noexcept {
+    bool const is_copied = copies.with_mut([&sizes, &strides, &source](auto run) noexcept {
         auto out = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("a dense row");
         return write_pointwise(out, Copy{}, source).is_ok();
     });
@@ -135,16 +135,20 @@ static_assert(walks_in_constant_evaluation());
     FixedArray<std::uint32_t, 2> const expected_copies{0x7FC12345u, 0x3FC00000u};
     FixedArray<std::uint32_t, 2> sum_bits{};
     FixedArray<std::uint32_t, 2> copy_bits{};
-    auto sum_cursor = sum_bits.begin();
-    for (float const value : summed) {
-        *sum_cursor = bit_cast<std::uint32_t>(value);
-        ++sum_cursor;
-    }
-    auto copy_cursor = copy_bits.begin();
-    for (float const value : copied) {
-        *copy_cursor = bit_cast<std::uint32_t>(value);
-        ++copy_cursor;
-    }
+    sum_bits.with_mut([&sums](auto run) noexcept {
+        auto sum_cursor = run.begin();
+        for (float const value : sums) {
+            *sum_cursor = bit_cast<std::uint32_t>(value);
+            ++sum_cursor;
+        }
+    });
+    copy_bits.with_mut([&copies](auto run) noexcept {
+        auto copy_cursor = run.begin();
+        for (float const value : copies) {
+            *copy_cursor = bit_cast<std::uint32_t>(value);
+            ++copy_cursor;
+        }
+    });
     return is_summed && is_copied && sum_bits == expected_sums && copy_bits == expected_copies;
 }
 static_assert(gives_canonical_nan_in_constant_evaluation());

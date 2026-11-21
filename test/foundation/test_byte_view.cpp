@@ -55,8 +55,10 @@ void test_reads_and_writes_the_run() {
 // The bytes of a fixed run hold its extent and its elements.
 void test_fixed_extent() {
     ::foundation::core::FixedArray<std::uint8_t, 4> run{};
-    View<std::byte, 4> const bytes = byte_view(run.view());
-    bytes.at(::foundation::core::index<3>()) = std::byte{0x7F};
+    run.with_mut([](auto cells) noexcept {
+        View<std::byte, 4> const bytes = byte_view(cells.view());
+        bytes.at(::foundation::core::index<3>()) = std::byte{0x7F};
+    });
     CRUCIBLE_FATAL_INVARIANT(run.view().at(::foundation::core::index<3>()) == 0x7F);
     CRUCIBLE_FATAL_INVARIANT(run.view().at(::foundation::core::index<0>()) == 0);
 }

@@ -89,7 +89,9 @@ static void test_uniform() {
         CRUCIBLE_TEST_ASSERT(kTest, u >= 0.0f && u < 1.0f);
         int bin = static_cast<int>(u * BINS);
         if (bin >= BINS) bin = BINS - 1;
-        ++*counts.get(static_cast<std::size_t>(bin)).expect("a bin is below the count of the bins");
+        counts.with_element(
+            ::fixy::Index<BINS>::check(static_cast<std::size_t>(bin)).expect("a bin is below the count of the bins"),
+            [](int& count) noexcept { ++count; });
     }
 
     double expected = static_cast<double>(N) / BINS;

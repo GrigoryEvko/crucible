@@ -39,9 +39,11 @@ using Run = FixedArray<std::uint64_t, run_size>;
 }
 
 void fill_with_stream(Run& run, ::crucible::test::PhiloxStream& stream) {
-    for (std::uint64_t& value : run) {
-        value = stream.next_wide() % 1000;
-    }
+    run.with_mut([&stream](auto elements) noexcept {
+        for (std::uint64_t& value : elements) {
+            value = stream.next_wide() % 1000;
+        }
+    });
 }
 
 [[nodiscard]] constexpr bool is_kept(std::uint64_t const& value) noexcept { return value % 3 != 0; }
@@ -64,15 +66,19 @@ void test_float_fold_runs_left_to_right() {
 // The cursor loop over a walk of a View of mutable elements writes each one.
 void test_cursor_loop_writes_through_the_walk() {
     FixedArray<int, 5> values{1, 2, 3, 4, 5};
-    for (int& value : values.view().walk().skip(ElementCount{1}).limit(ElementCount{3})) {
-        value *= 10;
-    }
+    values.with_mut([](auto run) noexcept {
+        for (int& value : run.view().walk().skip(ElementCount{1}).limit(ElementCount{3})) {
+            value *= 10;
+        }
+    });
     CRUCIBLE_TEST_ASSERT(kTest, values == (FixedArray<int, 5>{1, 20, 30, 40, 5}));
     FixedArray<int, 3> target{};
     FixedArray<int, 3> const source{7, 8, 9};
-    for (auto const [destination, origin] : target.view().walk().zip(source.view().walk())) {
-        *destination = *origin + 1;
-    }
+    target.with_mut([&source](auto run) noexcept {
+        for (auto const [destination, origin] : run.view().walk().zip(source.view().walk())) {
+            *destination = *origin + 1;
+        }
+    });
     CRUCIBLE_TEST_ASSERT(kTest, target == (FixedArray<int, 3>{8, 9, 10}));
 }
 

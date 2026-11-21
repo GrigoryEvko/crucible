@@ -364,6 +364,13 @@ void attack_clock_against_the_causal_order() {
         return Event::check(number).expect("a stored event number is below the event count");
     };
 
+    // Record that the event before precedes the event after.
+    auto mark_precedes = [&precedes](Event const before, Event const after) noexcept {
+        precedes.with_element(before, [after](::fixy::FixedArray<bool, kEvents>& row) noexcept {
+            row.with_element(after, [](bool& element) noexcept { element = true; });
+        });
+    };
+
     std::uint64_t state = g_seed * 0x9E3779B97F4A7C15ULL + 1;
     auto next_random = [&state]() {
         state = state * 6364136223846793005ULL + 1442695040888963407ULL;
@@ -373,41 +380,47 @@ void attack_clock_against_the_causal_order() {
     for (Event const e : Events{}) {
         Process const p = Process::check(next_random() % kProcesses).expect("a remainder of the count is below it");
         std::uint64_t const kind = next_random() % 3;
-        if (has_event.at(p)) precedes.at(event_at(last_event.at(p))).at(e) = true;
+        if (has_event.at(p)) mark_precedes(event_at(last_event.at(p)), e);
 
         // Receive the oldest message addressed to p, if one waits.
         bool received = false;
         if (kind == 2) {
             for (Event const m : Events{}) {
                 if (m.raw() >= mailbox_used) break;
-                Message& message = mailbox.at(m);
+                Message const& message = mailbox.at(m);
                 if (message.in_flight && message.to == p.raw()) {
-                    now.at(p) = HB::causal_merge(now.at(p), message.clock, p.raw());
-                    precedes.at(event_at(message.send_event)).at(e) = true;
-                    message.in_flight = false;
+                    HB::element_type const merged = HB::causal_merge(now.at(p), message.clock, p.raw());
+                    now.with_element(p, [merged](HB::element_type& clock) noexcept { clock = merged; });
+                    mark_precedes(event_at(message.send_event), e);
+                    mailbox.with_element(m, [](Message& held) noexcept { held.in_flight = false; });
                     received = true;
                     ++receive_count;
                     break;
                 }
             }
         }
-        if (!received) now.at(p) = HB::successor_at(now.at(p), p.raw());
+        if (!received) {
+            HB::element_type const advanced = HB::successor_at(now.at(p), p.raw());
+            now.with_element(p, [advanced](HB::element_type& clock) noexcept { clock = advanced; });
+        }
 
         // A send is a local event whose clock travels with the message.
         if (kind == 1) {
             std::size_t const to = (p.raw() + 1 + next_random() % (kProcesses - 1)) % kProcesses;
-            mailbox.at(event_at(mailbox_used++)) = Message{now.at(p), e.raw(), to, true};
+            Event const slot = event_at(mailbox_used++);
+            mailbox.with_element(
+                slot, [sent = Message{now.at(p), e.raw(), to, true}](Message& held) noexcept { held = sent; });
         }
-        clock_of.at(e) = now.at(p);
-        last_event.at(p) = e.raw();
-        has_event.at(p) = true;
+        clock_of.with_element(e, [clock = now.at(p)](HB::element_type& held) noexcept { held = clock; });
+        last_event.with_element(p, [event = e.raw()](std::size_t& held) noexcept { held = event; });
+        has_event.with_element(p, [](bool& held) noexcept { held = true; });
     }
 
     for (Event const k : Events{}) {
         for (Event const i : Events{}) {
             if (!precedes.at(i).at(k)) continue;
             for (Event const j : Events{}) {
-                if (precedes.at(k).at(j)) precedes.at(i).at(j) = true;
+                if (precedes.at(k).at(j)) mark_precedes(i, j);
             }
         }
     }

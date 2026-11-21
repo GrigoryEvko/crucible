@@ -170,7 +170,7 @@ consteval bool two_gets_reach_one_element() {
     FixedArray<int, 3> numbers{1, 2, 3};
     auto const first = numbers.get(1).expect("the position is below the count");
     auto const second = numbers.get(1).expect("the position is below the count");
-    ErasedRef const erased_first = erase_brand(first);
+    ErasedConstRef const erased_first = erase_brand(first);
     ErasedConstRef const erased_second = erase_brand(second);
     return !std::same_as<decltype(first), decltype(second)> && same_object(first, second)
         && same_object(erased_first, erased_second);

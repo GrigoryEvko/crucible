@@ -39,14 +39,16 @@ namespace {
 // Two numbers give two sockets, and one number gives one socket each time.
 [[nodiscard]] cntp::SocketFd test_socket(int number) {
     static ::foundation::core::FixedArray<crucible::test::TcpSocket, 256> bank{};
-    crucible::test::TcpSocket& socket =
-        *bank.get(static_cast<std::size_t>(number)).expect("the number of a test socket is below 256");
-    if (!socket.is_open()) {
-        ::fixy::TestRunnerCtx const ctx{fe::testing::test()};
-        socket = crucible::test::open_tcp_socket(ctx);
-        CRUCIBLE_TEST_ASSERT(kTest, socket.is_open());
-    }
-    return ::fixy::net::share_socket(socket.ref());
+    ::fixy::Index<256> const position =
+        ::fixy::Index<256>::check(static_cast<std::size_t>(number)).expect("the number of a test socket is below 256");
+    return bank.with_element(position, [](crucible::test::TcpSocket& socket) noexcept {
+        if (!socket.is_open()) {
+            ::fixy::TestRunnerCtx const ctx{fe::testing::test()};
+            socket = crucible::test::open_tcp_socket(ctx);
+            CRUCIBLE_TEST_ASSERT(kTest, socket.is_open());
+        }
+        return ::fixy::net::share_socket(socket.ref());
+    });
 }
 
 [[nodiscard]] cntp::LinearConnection<cntp::TransportClass::MtlsTcp> connection(int fd, cog::CogIdentity const& id,

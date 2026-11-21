@@ -30,10 +30,12 @@ struct CodeLeaves {
 // from 1 to 64, and from a first leaf other than zero.
 [[nodiscard]] consteval bool has_the_tree_of_reduce_by_tree() {
     FixedArray<Code, 64> leaves{};
-    std::uint64_t next = 1;
-    for (Code& leaf : leaves) {
-        leaf = Code{next++};
-    }
+    leaves.with_mut([](auto run) noexcept {
+        std::uint64_t next = 1;
+        for (Code& leaf : run) {
+            leaf = Code{next++};
+        }
+    });
     auto const add = [](Code const& left, Code const& right) noexcept { return left + right; };
     for (std::size_t count = 1; count <= 64; ++count) {
         View<Code const> const part = View<Code const>{leaves.view()}.window(0, count).expect("the part fits");

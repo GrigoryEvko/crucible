@@ -58,8 +58,11 @@ using WordBytes = core::View<unsigned char, sizeof(std::uint32_t)>;
 // The bits of the read after the two stores, with the two Views at the first
 // byte of the storage.
 [[nodiscard]] std::uint32_t read_through_two_types(StoreBytes& storage) {
-    const WordBytes word = storage.view().window<sizeof(std::uint32_t)>(0).expect("the storage holds one integer");
-    return read_after_a_store_of_another_type(word, word);
+    return storage.with_mut([](auto cells) noexcept {
+        const WordBytes word =
+            cells.view().template window<sizeof(std::uint32_t)>(0).expect("the storage holds one integer");
+        return read_after_a_store_of_another_type(word, word);
+    });
 }
 
 // Starts two pairs over the const storage.  Returns 0 when the two pairs hold
@@ -81,10 +84,11 @@ using WordBytes = core::View<unsigned char, sizeof(std::uint32_t)>;
 // starts there when it is at the position zero of that integer.  Each other
 // value names the check that fails.
 [[nodiscard]] int read_none_of(EmptyBytes& storage) {
-    const core::View<unsigned char> no_bytes = storage.view().window(0, 0).expect("the storage has an empty window");
-    const core::View<std::uint32_t> none = lifetime::start_as_array<std::uint32_t>(no_bytes);
+    const core::View<unsigned char const> no_bytes =
+        storage.view().window(0, 0).expect("the storage has an empty window");
+    const core::View<std::uint32_t const> none = lifetime::start_as_array<std::uint32_t>(no_bytes);
     if (none.size() != 0) return 1;
-    const core::View<std::uint32_t, 1> whole = lifetime::start_as_array<std::uint32_t>(storage.view());
+    const core::View<std::uint32_t const, 1> whole = lifetime::start_as_array<std::uint32_t>(storage.view());
     const bool starts_at_the_storage =
         core::offset_of(whole, none)
             .match([](std::size_t position) noexcept { return position == 0; }, [] noexcept { return false; });
@@ -102,7 +106,7 @@ using WordBytes = core::View<unsigned char, sizeof(std::uint32_t)>;
 [[nodiscard]] int const_storage_reads_its_bytes() {
     alignas(Pair) PairBytes storage{};
     const core::FixedArray<Pair, 2> written{Pair{1, 2}, Pair{3, 4}};
-    core::copy(storage.view(), core::bytes(written));
+    storage.with_mut([&written](auto cells) noexcept { core::copy(cells.view(), core::bytes(written)); });
     return read_pairs_of(storage);
 }
 
@@ -119,7 +123,8 @@ void refuses_bytes_that_hold_no_object(::fixy::TestRunnerCtx const& test) {
         test,
         [] noexcept {
             alignas(8) StoreBytes storage{};
-            const WordBytes shifted = storage.view().window<sizeof(std::uint32_t)>(1).expect("the storage holds it");
+            const core::View<unsigned char const, sizeof(std::uint32_t)> shifted =
+                storage.view().window<sizeof(std::uint32_t)>(1).expect("the storage holds it");
             static_cast<void>(lifetime::start_as_array<std::uint32_t>(shifted));
         },
         core::TextView{"foundation: fatal invariant failed: (__builtin_bit_cast(std::uintptr_t, storage) & "
@@ -128,7 +133,8 @@ void refuses_bytes_that_hold_no_object(::fixy::TestRunnerCtx const& test) {
         test,
         [] noexcept {
             alignas(8) StoreBytes storage{};
-            const core::View<unsigned char> three = storage.view().window(0, 3).expect("the storage holds three bytes");
+            const core::View<unsigned char const> three =
+                storage.view().window(0, 3).expect("the storage holds three bytes");
             static_cast<void>(lifetime::start_as_array<std::uint32_t>(three));
         },
         core::TextView{"foundation: fatal invariant failed: bytes.size() % sizeof(T) == 0"});

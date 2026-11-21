@@ -35,7 +35,8 @@ using MaterialBytes = ::foundation::core::FixedArray<std::byte, 96>;
 [[nodiscard]] FingerprintBytes make_fingerprint_bytes(unsigned seed) {
     FingerprintBytes out{};
     for (auto index : out.indices()) {
-        out.at(index) = static_cast<std::byte>(seed + index.raw() + 1u);
+        std::byte const value = static_cast<std::byte>(seed + index.raw() + 1u);
+        out.with_element(index, [value](std::byte& byte) noexcept { byte = value; });
     }
     return out;
 }
@@ -44,7 +45,8 @@ using MaterialBytes = ::foundation::core::FixedArray<std::byte, 96>;
 [[nodiscard]] MaterialBytes make_material(unsigned seed) {
     MaterialBytes out{};
     for (auto index : out.indices()) {
-        out.at(index) = static_cast<std::byte>(seed ^ (index.raw() * 13u));
+        std::byte const value = static_cast<std::byte>(seed ^ (index.raw() * 13u));
+        out.with_element(index, [value](std::byte& byte) noexcept { byte = value; });
     }
     return out;
 }

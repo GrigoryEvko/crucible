@@ -136,16 +136,20 @@ static_assert(equal(Wide{}, Wide{}) && std::is_eq(order(Wide{}, Wide{})));
 static_assert(differs_after([](Wide& wide) { wide.low = 1; }));
 static_assert(differs_after([](Wide& wide) { wide.sealed = Sealed{1, Mode::off}; }));
 static_assert(differs_after([](Wide& wide) { wide.sealed = Sealed{0, Mode::on}; }));
-static_assert(differs_after([](Wide& wide) { wide.lanes.at(index<2>()) = 1; }));
+static_assert(differs_after([](Wide& wide) {
+    wide.lanes.with_element(index<2>(), [](int& lane) noexcept { lane = 1; });
+}));
 static_assert(differs_after([](Wide& wide) { wide.scale = -0.0f; }));
 static_assert(differs_after([](Wide& wide) { wide.address = 1; }));
-static_assert(differs_after([](Wide& wide) { wide.pad.at(index<3>()) = 1; }));
+static_assert(differs_after([](Wide& wide) {
+    wide.pad.with_element(index<3>(), [](unsigned char& byte) noexcept { byte = 1; });
+}));
 
 // The order is lexicographic: the base decides before the members, and the
 // first member decides before the later ones.
 [[nodiscard]] consteval bool base_orders_first() {
     Wide low_base{};
-    low_base.lanes.at(index<0>()) = 9;
+    low_base.lanes.with_element(index<0>(), [](int& lane) noexcept { lane = 9; });
     Wide high_base{};
     high_base.low = 1;
     return std::is_lt(order(low_base, high_base)) && std::is_gt(order(high_base, low_base));

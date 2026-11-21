@@ -97,23 +97,29 @@ struct Work {
         ::fixy::FixedArray<TensorMeta, 4> records{};
         std::size_t filled = 0;
         for (const TensorMeta& meta : inputs) {
-            *records.view().get(filled).expect("an op of the test holds at most four tensors") = meta;
+            records.with_element(::fixy::Index<4>::check(filled).expect("an op of the test holds at most four tensors"),
+                                 [&meta](TensorMeta& record) noexcept { record = meta; });
             ++filled;
         }
         for (const TensorMeta& meta : outputs) {
-            *records.view().get(filled).expect("an op of the test holds at most four tensors") = meta;
+            records.with_element(::fixy::Index<4>::check(filled).expect("an op of the test holds at most four tensors"),
+                                 [&meta](TensorMeta& record) noexcept { record = meta; });
             ++filled;
         }
         const MetaIndex index = log.try_append(
             ::fixy::View<const TensorMeta>{records.view()}.window(0, filled).expect("the records fit the array"));
         CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
-        TraceRing::Entry& entry = *trace.get(count).expect("a test reads an element at or past the count of its array");
-        entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
-        entry.shape_hash = crucible::ShapeHash{0x8000ULL + op};
-        entry.num_inputs = static_cast<uint16_t>(inputs.size());
-        entry.num_outputs = static_cast<uint16_t>(outputs.size());
-        *meta_starts.get(count).expect("a test reads an element at or past the count of its array") = index;
-        *depths.get(count).expect("a test reads an element at or past the count of its array") = depth;
+        const ::fixy::Index<CAPACITY> slot =
+            ::fixy::Index<CAPACITY>::check(count).expect("a test reads an element at or past the count of its array");
+        trace.with_element(
+            slot, [op, input_count = inputs.size(), output_count = outputs.size()](TraceRing::Entry& entry) noexcept {
+                entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
+                entry.shape_hash = crucible::ShapeHash{0x8000ULL + op};
+                entry.num_inputs = static_cast<uint16_t>(input_count);
+                entry.num_outputs = static_cast<uint16_t>(output_count);
+            });
+        meta_starts.with_element(slot, [index](MetaIndex& held) noexcept { held = index; });
+        depths.with_element(slot, [depth](crucible::OpDepth& held) noexcept { held = depth; });
         ++count;
     }
 

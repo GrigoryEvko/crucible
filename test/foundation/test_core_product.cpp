@@ -267,62 +267,75 @@ void test_the_hard_cases() {
         // A product of -0 in each term gives -0, and one +0 term gives +0.
         FixedArray<T, 37> negative_zeros{};
         FixedArray<T, 37> ones{};
-        for (T& value : negative_zeros)
-            value = -zero;
-        for (T& value : ones)
-            value = one;
+        negative_zeros.with_mut([zero](auto cells) noexcept {
+            for (T& value : cells)
+                value = -zero;
+        });
+        ones.with_mut([one](auto cells) noexcept {
+            for (T& value : cells)
+                value = one;
+        });
         ::fixy::View<T const> const zeros_view{negative_zeros.view()};
         ::fixy::View<T const> const ones_view{ones.view()};
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(zeros_view, ones_view, lanes)) == bits_of_float(-zero));
-        *negative_zeros.get(17).expect("a test reads an element at or past the count of its array") = zero;
+        negative_zeros.with_element(::fixy::index<17>(), [zero](T& value) noexcept { value = zero; });
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(zeros_view, ones_view, lanes)) == bits_of_float(zero));
         // An infinity gives itself, and two infinities of the two signs give
         // the canonical NaN.
         FixedArray<T, 37> mixed{};
-        for (T& value : mixed)
-            value = one;
+        mixed.with_mut([one](auto cells) noexcept {
+            for (T& value : cells)
+                value = one;
+        });
         ::fixy::View<T const> const mixed_view{mixed.view()};
-        *mixed.get(3).expect("a test reads an element at or past the count of its array") = infinity;
+        mixed.with_element(::fixy::index<3>(), [infinity](T& value) noexcept { value = infinity; });
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(infinity));
-        *mixed.get(30).expect("a test reads an element at or past the count of its array") = -infinity;
+        mixed.with_element(::fixy::index<30>(), [infinity](T& value) noexcept { value = -infinity; });
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
         // A product of an infinity and a zero is a NaN, and each NaN of a
         // payload, a sign or a signaling bit gives the canonical NaN.
-        *mixed.get(30).expect("a test reads an element at or past the count of its array") = one;
-        *mixed.get(3).expect("a test reads an element at or past the count of its array") = infinity;
-        *negative_zeros.get(3).expect("a test reads an element at or past the count of its array") = zero;
+        mixed.with_element(::fixy::index<30>(), [one](T& value) noexcept { value = one; });
+        mixed.with_element(::fixy::index<3>(), [infinity](T& value) noexcept { value = infinity; });
+        negative_zeros.with_element(::fixy::index<3>(), [zero](T& value) noexcept { value = zero; });
         CRUCIBLE_TEST_ASSERT(kTest, bits_of_float(product_of_terms(mixed_view, zeros_view, lanes))
                                         == bits_of_float(canonical));
-        *mixed.get(3).expect("a test reads an element at or past the count of its array") = payload_nan<T>();
+        T const payload = payload_nan<T>();
+        mixed.with_element(::fixy::index<3>(), [payload](T& value) noexcept { value = payload; });
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
-        *mixed.get(3).expect("a test reads an element at or past the count of its array") = ::fixy::signaling_nan_of<T>;
+        mixed.with_element(::fixy::index<3>(), [](T& value) noexcept { value = ::fixy::signaling_nan_of<T>; });
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
         // A cancellation: x0 * 1 + ... with the pairs x and -x, and one small
         // term, gives the small term exactly.
         FixedArray<T, 37> pairs{};
-        for (std::size_t index = 0; index < 36; index += 2) {
-            T const value = T{3} * static_cast<T>(index + 1);
-            *pairs.get(index).expect("a test reads an element at or past the count of its array") = value;
-            *pairs.get(index + 1).expect("a test reads an element at or past the count of its array") = -value;
-        }
-        *pairs.get(36).expect("a test reads an element at or past the count of its array") = tiny;
+        pairs.with_mut([](auto cells) noexcept {
+            for (std::size_t index = 0; index < 36; index += 2) {
+                T const value = T{3} * static_cast<T>(index + 1);
+                *cells.get(index).expect("a test reads an element at or past the count of its array") = value;
+                *cells.get(index + 1).expect("a test reads an element at or past the count of its array") = -value;
+            }
+        });
+        pairs.with_element(::fixy::index<36>(), [tiny](T& value) noexcept { value = tiny; });
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(::fixy::View<T const>{pairs.view()}, ones_view, lanes))
                                  == bits_of_float(tiny));
         // A product that underflows to a subnormal value keeps its bits, and
         // a sum of subnormal values is exact.
         FixedArray<T, 37> halves{};
-        for (T& value : halves)
-            value = T{0.5};
+        halves.with_mut([](auto cells) noexcept {
+            for (T& value : cells)
+                value = T{0.5};
+        });
         FixedArray<T, 37> tinies{};
-        for (T& value : tinies)
-            value = tiny + tiny;
+        tinies.with_mut([tiny](auto cells) noexcept {
+            for (T& value : cells)
+                value = tiny + tiny;
+        });
         CRUCIBLE_TEST_ASSERT(kTest, bits_of_float(product_of_terms(::fixy::View<T const>{halves.view()},
                                                                    ::fixy::View<T const>{tinies.view()}, lanes))
                                         == bits_of_float(tiny * T{37}));

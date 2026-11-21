@@ -34,10 +34,12 @@ static_assert(count_inclusive_scan_depth(7) == 5 && count_inclusive_scan_depth(8
 template <std::size_t N>
 [[nodiscard]] consteval FixedArray<std::uint64_t, N> leaves_of() noexcept {
     FixedArray<std::uint64_t, N> leaves{};
-    std::uint64_t next = 1;
-    for (std::uint64_t& leaf : leaves) {
-        leaf = next++;
-    }
+    leaves.with_mut([](auto run) noexcept {
+        std::uint64_t next = 1;
+        for (std::uint64_t& leaf : run) {
+            leaf = next++;
+        }
+    });
     return leaves;
 }
 
@@ -45,13 +47,11 @@ template <std::size_t N>
 // frame of the owner and a split of its ViewMut, and gives the bool of write.
 template <class Owner, class Write>
 [[nodiscard]] consteval bool write_first(Owner& owner, std::size_t count, Write write) noexcept {
-    bool is_done = false;
-    owner = with_mut(std::move(owner), [&](auto whole) noexcept {
+    return owner.with_mut([count, &write](auto whole) noexcept {
         auto [part, rest] = split_at(std::move(whole), count).expect("the part fits the owner");
         static_cast<void>(rest.size());
-        is_done = write(std::move(part));
+        return write(std::move(part));
     });
-    return is_done;
 }
 
 // Writes the plan of kind into the count first steps of steps and into
@@ -59,15 +59,13 @@ template <class Owner, class Write>
 template <class Steps, class Outputs>
 [[nodiscard]] consteval bool write_plan_into(ScanKind kind, Steps& steps, std::size_t count,
                                              Outputs& outputs) noexcept {
-    bool is_written = false;
-    steps = with_mut(std::move(steps), [&](auto step_out) noexcept {
+    return steps.with_mut([kind, count, &outputs](auto step_out) noexcept {
         auto [part, rest] = split_at(std::move(step_out), count).expect("the steps fit");
         static_cast<void>(rest.size());
-        outputs = with_mut(std::move(outputs), [&](auto output_out) noexcept {
-            is_written = write_scan_plan(kind, std::move(part), std::move(output_out)).is_ok();
+        return outputs.with_mut([kind, &part](auto output_out) noexcept {
+            return write_scan_plan(kind, std::move(part), std::move(output_out)).is_ok();
         });
     });
-    return is_written;
 }
 
 // The outputs of a plan into out, with the count first slots of scratch,
@@ -76,17 +74,14 @@ template <class Scratch, class Out>
 [[nodiscard]] consteval bool evaluate_plan_into(View<TreeStep const> steps, View<PlanNode const> outputs,
                                                 View<std::uint64_t const> leaves, Scratch& scratch, std::size_t count,
                                                 Out& out) noexcept {
-    bool is_done = false;
-    scratch = with_mut(std::move(scratch), [&](auto scratch_out) noexcept {
+    return scratch.with_mut([steps, outputs, leaves, count, &out](auto scratch_out) noexcept {
         auto [part, rest] = split_at(std::move(scratch_out), count).expect("the scratch fits");
         static_cast<void>(rest.size());
-        out = with_mut(std::move(out), [&](auto out_part) noexcept {
-            is_done =
-                evaluate_scan_plan(steps, outputs, leaves, std::move(part), std::move(out_part), empty_value, Mix{})
-                    .is_ok();
+        return out.with_mut([steps, outputs, leaves, &part](auto out_part) noexcept {
+            return evaluate_scan_plan(steps, outputs, leaves, std::move(part), std::move(out_part), empty_value, Mix{})
+                .is_ok();
         });
     });
-    return is_done;
 }
 
 // The plan of an exclusive scan of four: out[0] is empty, out[1] is x0, out[2]
@@ -148,16 +143,19 @@ template <std::size_t N, ScanKind Kind>
     if (!is_scanned || !equal(from_plan.view(), from_scan.view())) return false;
     // Each step has a reader: a later step or an output.
     FixedArray<bool, N + step_count> is_read{};
-    View<bool> const read_marks = is_read.view();
-    for (TreeStep const step : steps) {
-        *read_marks.get(static_cast<std::size_t>(step.left)).expect("an operand is a node of the plan") = true;
-        *read_marks.get(static_cast<std::size_t>(step.right)).expect("an operand is a node of the plan") = true;
-    }
-    for (PlanNode const output : outputs) {
-        if (output != empty_plan_node) {
-            *read_marks.get(static_cast<std::size_t>(output)).expect("an output is a node of the plan") = true;
+    is_read.with_mut([steps, &outputs](auto run) noexcept {
+        View<bool> const read_marks = run.view();
+        for (TreeStep const step : steps) {
+            *read_marks.get(static_cast<std::size_t>(step.left)).expect("an operand is a node of the plan") = true;
+            *read_marks.get(static_cast<std::size_t>(step.right)).expect("an operand is a node of the plan") = true;
         }
-    }
+        for (PlanNode const output : outputs) {
+            if (output != empty_plan_node) {
+                *read_marks.get(static_cast<std::size_t>(output)).expect("an output is a node of the plan") = true;
+            }
+        }
+    });
+    View<bool const> const read_marks = is_read.view();
     for (std::size_t index = N; index < N + step_count; ++index) {
         if (!*read_marks.get(index).expect("the node is inside the plan")) return false;
     }

@@ -92,11 +92,13 @@ static_assert(!has_no_overlap(3, 2, 2, 3));
     FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     FixedArray<std::size_t, 2> const sizes{3, 4};
     FixedArray<std::size_t, 2> const strides{4, 1};
-    StridedView<int, 2> const matrix =
-        mint_strided_view(values.view(), sizes.view(), strides.view(), 0).expect("the matrix fits");
-    int total = 0;
-    if (walk([&total](int& element) noexcept { total += element; }, matrix).is_err()) return -1;
-    return total;
+    return values.with_mut([&sizes, &strides](auto run) noexcept {
+        StridedView<int, 2> const matrix =
+            mint_strided_view(run.view(), sizes.view(), strides.view(), 0).expect("the matrix fits");
+        int total = 0;
+        if (walk([&total](int& element) noexcept { total += element; }, matrix).is_err()) return -1;
+        return total;
+    });
 }
 static_assert(matrix_sum() == 66);
 
@@ -105,12 +107,14 @@ static_assert(matrix_sum() == 66);
     FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     FixedArray<std::size_t, 2> const sizes{3, 4};
     FixedArray<std::size_t, 2> const strides{4, 1};
-    StridedView<int, 2> const matrix =
-        mint_strided_view(values.view(), sizes.view(), strides.view(), 0).expect("the matrix fits");
-    return mint_strided_scope(matrix, [](auto branded) noexcept {
-        int total = 0;
-        walk([&total](int& element) noexcept { total += element; }, branded);
-        return total;
+    return values.with_mut([&sizes, &strides](auto run) noexcept {
+        StridedView<int, 2> const matrix =
+            mint_strided_view(run.view(), sizes.view(), strides.view(), 0).expect("the matrix fits");
+        return mint_strided_scope(matrix, [](auto branded) noexcept {
+            int total = 0;
+            walk([&total](int& element) noexcept { total += element; }, branded);
+            return total;
+        });
     });
 }
 static_assert(scope_sum() == 66);

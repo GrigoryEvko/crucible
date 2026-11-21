@@ -202,19 +202,21 @@ inline constexpr std::size_t kRunCount = 61;
 [[nodiscard]] std::uint64_t digest_run_sums(View<float const> elements) noexcept {
     FixedArray<View<float const>, kRuns> runs{};
     for (std::size_t run = 0; run < kRuns; ++run) {
-        *runs.get(run).expect("a test reads an element at or past the count of its array") =
-            elements.window(run * kRunCount, kRunCount).expect("the run fits");
+        View<float const> const window = elements.window(run * kRunCount, kRunCount).expect("the run fits");
+        runs.with_element(::foundation::core::Index<kRuns>::check(run).expect(
+                              "a test reads an element at or past the count of its array"),
+                          [window](View<float const>& cell) noexcept { cell = window; });
     }
     std::uint64_t digest = kFnvOffset;
     for (std::size_t first_runs = 1; first_runs <= kRuns; ++first_runs) {
         View<View<float const> const> const chosen =
             View<View<float const> const>{runs.view()}.window(0, first_runs).expect("the runs fit");
         FixedArray<float, kRunCount> sums{};
-        auto [is_summed, written] = with_mut(std::move(sums), [&](auto out) noexcept {
+        bool const is_summed = sums.with_mut([&chosen](auto out) noexcept {
             return ::foundation::core::sum_runs_by_tree(chosen, std::move(out)).is_ok();
         });
         CRUCIBLE_TEST_ASSERT(kTest, is_summed);
-        digest = fold_outputs(digest, View<float const>{written.view()});
+        digest = fold_outputs(digest, View<float const>{sums.view()});
     }
     return digest;
 }
@@ -406,11 +408,12 @@ struct KeyLess {
 template <std::size_t N>
 [[nodiscard]] std::uint64_t fold_network_sort(std::uint64_t digest, PhiloxStream& stream) noexcept {
     FixedArray<std::uint64_t, N> values{};
-    for (std::uint64_t& value : values) {
-        value = stream.below(64);
-    }
-    values =
-        with_mut(std::move(values), [](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
+    values.with_mut([&stream](auto cells) noexcept {
+        for (std::uint64_t& value : cells) {
+            value = stream.below(64);
+        }
+    });
+    values.with_mut([](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
     return fold_outputs(digest, View<std::uint64_t const>{values.view()});
 }
 

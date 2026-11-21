@@ -80,8 +80,8 @@ int main() {
     v2::CounterSnapshot before;
     v2::CounterSnapshot after;
 
-    after.values.at(::fixy::index<0>()) = 9;
-    before.values.at(::fixy::index<1>()) = 7;
+    after.values.with_element(::fixy::index<0>(), [](std::uint64_t& value) noexcept { value = 9; });
+    before.values.with_element(::fixy::index<1>(), [](std::uint64_t& value) noexcept { value = 7; });
 
     const v2::CounterDelta delta = after - before;
     if (delta.deltas.at(::fixy::index<0>()) != 9) {

@@ -56,8 +56,9 @@ using Payload = ::fixy::FixedArray<std::byte, kPayloadBytes>;
 
 [[nodiscard]] Payload pattern_of(std::uint8_t salt) {
     Payload pattern{};
-    for (auto [index, element] : pattern.enumerate()) {
-        *element = std::byte{static_cast<std::uint8_t>((index.raw() * 7u + salt) & 0xFFu)};
+    for (::fixy::Index<kPayloadBytes> const index : pattern.indices()) {
+        std::byte const value{static_cast<std::uint8_t>((index.raw() * 7u + salt) & 0xFFu)};
+        pattern.with_element(index, [value](std::byte& element) noexcept { element = value; });
     }
     return pattern;
 }
@@ -95,7 +96,9 @@ template <typename T>
     fs::FileOf<fs::read_only> const file = std::move(reader).expect("the reader opened");
     Payload readback{};
     // A failed read gives the count zero, so it returns false too.
-    if (fs::read_full(ctx, file.ref(), readback.view()).value_or(0) != kPayloadBytes) return false;
+    auto const read_count = readback.with_mut(
+        [&ctx, &file](auto run) noexcept { return fs::read_full(ctx, file.ref(), run.view()).value_or(0); });
+    if (read_count != kPayloadBytes) return false;
     return readback == expected;
 }
 

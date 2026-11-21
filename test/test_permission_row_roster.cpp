@@ -183,7 +183,8 @@ consteval ::fixy::TextView first_stale() {
         if (row_kind_of(tag) != RowKind::empty) continue;
         ::fixy::TextView const name = name_of_tag(tag);
         for (::fixy::Index<kRosterEntries> const index : kEmptyRowRoster.indices()) {
-            if (kEmptyRowRoster.at(index).name == name) found.at(index) = true;
+            if (kEmptyRowRoster.at(index).name == name)
+                found.with_element(index, [](bool& is_found) noexcept { is_found = true; });
         }
     }
     for (::fixy::Index<kRosterEntries> const index : kEmptyRowRoster.indices()) {

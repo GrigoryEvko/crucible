@@ -33,11 +33,13 @@ using PemBytes = ::fixy::FixedArray<std::byte, cntp::MtlsPrivateKeyBytes::max_by
 
 [[nodiscard]] PemBytes pattern() noexcept {
     PemBytes bytes{};
-    std::size_t position = 0;
-    for (std::byte& byte : bytes) {
-        byte = static_cast<std::byte>(0x41U + (position % 26U));
-        ++position;
-    }
+    bytes.with_mut([](auto run) noexcept {
+        std::size_t position = 0;
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(0x41U + (position % 26U));
+            ++position;
+        }
+    });
     return bytes;
 }
 
