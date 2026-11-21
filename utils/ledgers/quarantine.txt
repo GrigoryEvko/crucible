@@ -327,8 +327,8 @@ src/perf/ | opted-out | 3 | ABI: libbpf attaches a program to the raw descriptor
 src/perf/ | opted-out | 2 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
 src/perf/ | region | 1 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
 src/perf/ | region | 1 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
-test/ | c-array-object | 91 | - | -
-test/ | c-library-call | 95 | - | -
+test/ | c-array-object | 56 | - | -
+test/ | c-library-call | 93 | - | -
 test/ | c-library-object | 7 | - | -
 test/ | door-header | 3 | - | -
 test/ | foreign-symbol | 12 | - | -
@@ -350,8 +350,8 @@ test/ | opted-out | 22 | PROBE: the test probes the fold of the search builtins 
 test/ | opted-out | 6 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | opted-out | 26 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | raw-function-pointer | 1 | - | -
-test/ | raw-new-delete | 27 | - | -
-test/ | raw-pointer-object | 226 | - | -
+test/ | raw-new-delete | 25 | - | -
+test/ | raw-pointer-object | 158 | - | -
 test/ | region | 1 | ABI: dlsym finds each entry point of a test library by its C name | the case fallbacks of test_process_wide_across_libraries finds the two entry points of each test library by their C names with dlsym, as Python finds the entry points of the vessel, so the two declarations have C linkage
 test/ | region | 1 | ABI: the case gives a CrucibleHandle of vessel_api.h to the typed door | -
 test/ | region | 1 | ABI: the case gives two CrucibleHandle values of vessel_api.h to the typed door | -
@@ -370,8 +370,8 @@ test/ | region | 1 | PROBE: the test sets the current directory, the modes and t
 test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | replace-pending:<limits> | 7 | - | -
 test/ | replace-pending:std::bit_cast | 24 | - | -
-test/ | std-entity | 493 | - | -
-test/ | std-object | 157 | - | -
+test/ | std-entity | 466 | - | -
+test/ | std-object | 153 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
 test/cipher_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
