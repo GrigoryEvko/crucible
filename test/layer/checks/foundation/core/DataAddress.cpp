@@ -57,6 +57,7 @@ static_assert(sizeof(DataAddress<TwoBytes>) == 16 && alignof(DataAddress<TwoByte
 static_assert(sizeof(DataAddress<FourBytes>) == 16 && sizeof(DataAddress<Kind>) == 16);
 static_assert(sizeof(Option<DataAddress<TwoBytes>>) == 16 && sizeof(Option<DataAddress<Kind>>) == 16);
 static_assert(niche<RunAddress>::is_empty_never_built && niche<DataAddress<TwoBytes>>::is_empty_never_built);
+static_assert(detail::BuildsNoEmptyValue<RunAddress> && detail::BuildsNoEmptyValue<DataAddress<TwoBytes>>);
 
 // The copy and the end are those of the bytes, so the ABI gives the words in
 // registers.  The seal makes the assignment user-provided, so the types are

@@ -369,30 +369,36 @@ void test_member_niche_payload() {
 }
 
 // A class of the member protocol that states that no door builds the empty
-// value, while its aggregate can still build it.  The statement gives the
-// Option the frame door that writes the payload.  The niche slot tests each
-// payload in each build, so the false statement ends the process at the
-// first Option of the empty value.
-struct StatedSlot {
-    std::uint32_t raw = 0;
+// value.  Its one door builds a slot from a byte, and its step adds one to a
+// value below 256, so no slot holds the empty value.  The payload gate checks
+// the statement against its constructors, and the statement gives the Option
+// the frame door that writes the payload.  The storage of the Option then
+// does not test the payload.
+class StatedSlot {
+    std::uint32_t raw_ = 0;
+    constexpr explicit StatedSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+
+public:
     static constexpr bool is_niche_empty_never_built = true;
+    [[nodiscard]] static constexpr StatedSlot of_byte(std::uint8_t byte) noexcept { return StatedSlot{byte}; }
     [[nodiscard]] static constexpr StatedSlot niche_empty(::foundation::core::niche_key<StatedSlot> const&) noexcept {
         return StatedSlot{0xFFFFFFFFu};
     }
     [[nodiscard]] constexpr bool is_niche_empty(::foundation::core::niche_key<StatedSlot> const&) const noexcept {
-        return raw == 0xFFFFFFFFu;
+        return raw_ == 0xFFFFFFFFu;
     }
+    [[nodiscard]] constexpr std::uint32_t raw() const noexcept { return raw_; }
+    constexpr void step() noexcept { raw_ = (raw_ + 1u) & 0xFFu; }
 };
 
 void test_member_niche_statement() {
     static_assert(sizeof(Option<StatedSlot>) == sizeof(StatedSlot));
-    Option<StatedSlot> held = Option<StatedSlot>::some(StatedSlot{8});
-    held.with_mut([](auto slot) noexcept { slot->raw += 1; }, [] noexcept {});
-    CRUCIBLE_FATAL_INVARIANT(static_cast<Option<StatedSlot>&&>(held).expect("the slot was built").raw == 9);
-    expect_dies(
-        test_context(), [] noexcept { static_cast<void>(Option<StatedSlot>::some(StatedSlot{0xFFFFFFFFu})); },
-        ::foundation::core::TextView{
-            "foundation: fatal: Option::some got the empty value of the niche of its payload"});
+    Option<StatedSlot> held = Option<StatedSlot>::some(StatedSlot::of_byte(8));
+    held.with_mut([](auto slot) noexcept { slot->step(); }, [] noexcept {});
+    CRUCIBLE_FATAL_INVARIANT(static_cast<Option<StatedSlot>&&>(held).expect("the slot was built").raw() == 9);
+    Option<StatedSlot> filled{};
+    filled.fill(StatedSlot::of_byte(255));
+    CRUCIBLE_FATAL_INVARIANT(static_cast<Option<StatedSlot>&&>(filled).expect("fill built the slot").raw() == 255);
 }
 
 // The validity test of a value that a bit copy made.  A decode copies wire

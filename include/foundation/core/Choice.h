@@ -203,11 +203,12 @@ public:
 //   static constexpr bool is_empty_never_built = true;          in niche<T>
 //   static constexpr bool is_niche_empty_never_built = true;    in T
 //
-// The statement gives a loop over a mutable Option a cursor that writes the
-// payload.  The storage of a full Option tests each payload in each build,
-// also with the statement, and a payload equal to the empty value ends the
-// process.  So a false statement ends the process at the first door that
-// builds the empty value.
+// The payload gate checks the statement against the public constructors of
+// T at compile time (THE CHECK OF THE STATEMENT below).  The statement gives
+// a loop over a mutable Option a cursor that writes the payload, and the
+// storage of a full Option then does not test the payload.  The storage of
+// a full Option tests each payload of each other niche, in each build, and a
+// payload equal to the empty value ends the process.
 template <class T>
 struct[[= detail::UndeclaredNiche{}]]
       [[= ::foundation::open_extension{"a payload type states its empty value beside its own definition"}]] niche {};
@@ -355,6 +356,75 @@ public:
     }
 };
 
+// THE CHECK OF THE STATEMENT
+//   A payload that states that no door builds its empty value gets no test
+//   of its payload in the storage of a full Option.  Each door of T builds a
+//   T through a constructor of T, so the payload gate reads the constructors:
+//     - T is no aggregate, and it has no public default constructor, so no
+//       code builds a T from its members or from nothing.
+//     - Each public constructor other than copy and move that takes a raw
+//       value (a pointer, std::nullptr_t, an arithmetic type or an
+//       enumeration) also takes a voucher: a key, which is a class with no
+//       public copy constructor, such as RefKey, that only a door of the
+//       author makes, or a payload that states the same fact, such as the
+//       RunAddress of a DataAddress.  A raw value then comes in only through
+//       a door that checks it, or beside a value that is not empty.
+//     - A reflection reads no parameter of a constructor template, so T
+//       builds no value from std::nullptr_t, a pointer, an int or an
+//       unsigned long long at all.
+//   A private constructor, such as the constructor of the empty value, is a
+//   member of the class of the author, as the statement is.
+
+// True when a payload states that no door builds its empty value.
+template <class U>
+inline constexpr bool states_empty_never_built = requires { requires niche<U>::is_empty_never_built; };
+
+// True when the parameter type, with no reference and no cv, is a raw value.
+consteval bool is_raw_parameter(std::meta::info parameter_type) {
+    std::meta::info const bare = std::meta::remove_cvref(parameter_type);
+    return std::meta::is_pointer_type(bare) || std::meta::is_null_pointer_type(bare)
+        || std::meta::is_arithmetic_type(bare) || std::meta::is_enum_type(bare);
+}
+
+// True when the parameter type, with no reference and no cv, vouches for the
+// raw values beside it: a key, or a payload that states the fact.  A key and
+// a stated payload are complete classes, and an incomplete class, such as the
+// target of a Ref, is neither.
+consteval bool is_voucher_parameter(std::meta::info parameter_type) {
+    std::meta::info const bare = std::meta::remove_cvref(parameter_type);
+    if (!std::meta::is_class_type(bare) || !std::meta::is_complete_type(bare)) return false;
+    return !std::meta::is_copy_constructible_type(bare)
+        || std::meta::extract<bool>(std::meta::substitute(^^states_empty_never_built, {bare}));
+}
+
+// True when each public constructor of T other than copy and move that takes
+// a raw value also takes a voucher.  Complexity: linear in the members of T
+// and the parameters of its constructors.
+template <class T>
+consteval bool vouches_each_raw_parameter() {
+    for (std::meta::info const member : std::meta::members_of(^^T, std::meta::access_context::unprivileged())) {
+        bool const is_judged = std::meta::is_function(member) && std::meta::is_constructor(member)
+                            && !std::meta::is_copy_constructor(member) && !std::meta::is_move_constructor(member)
+                            && !std::meta::is_deleted(member);
+        if (!is_judged) continue;
+        bool is_raw = false;
+        bool is_vouched = false;
+        for (std::meta::info const parameter : std::meta::parameters_of(member)) {
+            is_raw = is_raw || is_raw_parameter(std::meta::type_of(parameter));
+            is_vouched = is_vouched || is_voucher_parameter(std::meta::type_of(parameter));
+        }
+        if (is_raw && !is_vouched) return false;
+    }
+    return true;
+}
+
+// The check of the statement of T (THE CHECK OF THE STATEMENT).
+template <class T>
+concept BuildsNoEmptyValue =
+    !std::is_aggregate_v<T> && !std::is_default_constructible_v<T> && !std::is_constructible_v<T, std::nullptr_t>
+    && !std::is_constructible_v<T, void*> && !std::is_constructible_v<T, int>
+    && !std::is_constructible_v<T, unsigned long long> && vouches_each_raw_parameter<T>();
+
 }  // namespace detail
 
 // The type declares no niche, or its niche is well formed.  A type declares
@@ -362,7 +432,8 @@ public:
 // trivial copy, move and destructor of the protocol, and its two members
 // take the key, have the types of the protocol and do not throw.  Its empty
 // value is a constant, and is_empty gives true for it.  A statement that no
-// door builds the empty value is a constant of type bool.  A malformed niche
+// door builds the empty value is a constant of type bool, and the
+// constructors of T hold it (THE CHECK OF THE STATEMENT).  A malformed niche
 // would give the plain or the owning form with no message, so the payload
 // gate refuses it.  This gate is the one gate that reads niche<T>.
 template <class T>
@@ -371,7 +442,7 @@ concept WellFormedNiche =
         { niche<T>::empty(key) } noexcept -> std::same_as<T>;
         { niche<T>::is_empty(key, value) } noexcept -> std::same_as<bool>;
         typename std::bool_constant<detail::NicheRead<T>::holds_its_empty()>;
-    } && detail::NicheRead<T>::holds_its_empty() && detail::NicheRead<T>::is_statement_well_formed());
+    } && detail::NicheRead<T>::holds_its_empty() && detail::NicheRead<T>::is_statement_well_formed() && (!detail::NicheRead<T>::is_empty_never_built() || detail::BuildsNoEmptyValue<T>));
 
 // The payload of an Option: an object type that is not an array, not
 // cv-qualified, not the empty marker itself and not the mark of an error.
@@ -909,13 +980,21 @@ class OptionSlot<T, OptionForm::niche> : NicheLifetime<NicheRead<T>::empty_has_z
     [[nodiscard]] constexpr T const& payload_() const noexcept { return value_; }
     constexpr void clear_() noexcept { value_ = NicheRead<T>::empty_(); }
 
+    // True when the slot tests each payload: the niche does not state that
+    // no door of T builds the empty value.  The payload gate checks a
+    // statement against the constructors of T (THE CHECK OF THE STATEMENT),
+    // so a payload of a stated niche is never the empty value.
+    static constexpr bool is_payload_tested_ = !NicheRead<T>::is_empty_never_built();
+
     // Builds the payload of an empty slot.  The test of the constructor runs
     // first, so the slot never holds the empty value as a payload.
     template <class U>
     constexpr void fill_(U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>) {
         T const built(static_cast<U&&>(value));
-        if (NicheRead<T>::is_empty_(built)) [[unlikely]] {
-            fatal("Option::fill got the empty value of the niche of its payload");
+        if constexpr (is_payload_tested_) {
+            if (NicheRead<T>::is_empty_(built)) [[unlikely]] {
+                fatal("Option::fill got the empty value of the niche of its payload");
+            }
         }
         value_ = built;
     }
@@ -926,11 +1005,12 @@ public:
     template <class U>
     constexpr OptionSlot(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
         : value_(static_cast<U&&>(value)) {
-        // A payload equal to the empty value would read as no value.  The
-        // test runs in each build, also for a niche that states that no door
-        // of T builds the empty value, so a false statement ends the process.
-        if (NicheRead<T>::is_empty_(value_)) [[unlikely]] {
-            fatal("Option::some got the empty value of the niche of its payload");
+        // A payload equal to the empty value would read as no value, so the
+        // slot of each niche with no statement tests it in each build.
+        if constexpr (is_payload_tested_) {
+            if (NicheRead<T>::is_empty_(value_)) [[unlikely]] {
+                fatal("Option::some got the empty value of the niche of its payload");
+            }
         }
     }
 };

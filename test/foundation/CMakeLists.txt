@@ -2494,6 +2494,21 @@ foundation_neg_compile_test(neg_core_option_niche_member_statement_alone
 foundation_neg_compile_test(neg_core_option_niche_member_wrong_type
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
   "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
+# The payload gate checks the statement that no door builds the empty value
+# against the constructors of the payload.  A public default constructor and
+# a public constructor from a pointer with no key each build the empty value.
+# The gate is a disjunction, so each fixture takes a concept depth of 3, and
+# its regex names the part of the check that fails.
+foundation_neg_compile_test(neg_core_option_niche_statement_default_door
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = SlotNumber\\]"
+  "the expression .!\\(is_default_constructible_v<T>\\) \\[with T = SlotNumber\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_default_door APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=3")
+foundation_neg_compile_test(neg_core_option_niche_statement_pointer_door
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = SlotNumber\\]"
+  "the expression .!\\(is_constructible_v<T, std::nullptr_t>\\) \\[with T = SlotNumber\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_pointer_door APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=3")
 foundation_neg_compile_test(neg_core_niche_ref_forge
   "no matching function for call to .foundation::core::niche<foundation::core::Ref<int, ForgeBrand> >::empty\\(\\)."
   "candidate expects 1 argument, 0 provided")

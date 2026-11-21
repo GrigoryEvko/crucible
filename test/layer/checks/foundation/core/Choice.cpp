@@ -34,11 +34,45 @@ struct Owner {
     constexpr ~Owner() {}
 };
 
-// A slot number whose niche states that no door builds the empty value.
-// The aggregate can still build it, so the checks below show that a
-// constant evaluation refuses a false statement.
-struct TrustedSlot {
+// A slot number whose niche states that no door builds the empty value.  Its
+// one door builds a slot from a byte, so no slot holds the empty value.
+class TrustedSlot {
+    std::uint32_t raw_ = 0;
+    constexpr explicit TrustedSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+    friend struct ::foundation::core::niche<TrustedSlot>;
+
+public:
+    [[nodiscard]] static constexpr TrustedSlot of_byte(std::uint8_t byte) noexcept { return TrustedSlot{byte}; }
+    [[nodiscard]] constexpr std::uint32_t raw() const noexcept { return raw_; }
+};
+
+// Two false statements: an aggregate builds the empty value from its member,
+// and a public constructor takes a pointer with no key.
+struct AggregateStatedSlot {
     std::uint32_t raw = 0;
+};
+class PointerStatedSlot {
+    std::uint32_t raw_ = 0;
+
+public:
+    constexpr explicit PointerStatedSlot(std::nullptr_t /*address*/) noexcept {}
+    [[nodiscard]] constexpr std::uint32_t raw() const noexcept { return raw_; }
+};
+
+// A constructor of two raw values with no voucher, which only the reflection
+// over the parameters finds, and the same constructor with a key.
+class PairStatedSlot {
+    std::uint32_t raw_ = 0;
+
+public:
+    constexpr PairStatedSlot(std::uint8_t high, std::uint8_t /*low*/) noexcept : raw_{high} {}
+};
+class KeyedPairSlot {
+    std::uint32_t raw_ = 0;
+
+public:
+    constexpr KeyedPairSlot(std::uint8_t low, niche_key<KeyedPairSlot> const& /*key*/) noexcept : raw_{low} {}
+    [[nodiscard]] constexpr std::uint32_t raw() const noexcept { return raw_; }
 };
 
 // A niche whose statement is not a bool.
@@ -57,7 +91,33 @@ struct niche<detail::choice_checks::TrustedSlot> {
     }
     [[nodiscard]] static constexpr bool is_empty(niche_key<detail::choice_checks::TrustedSlot> const&,
                                                  detail::choice_checks::TrustedSlot const& slot) noexcept {
+        return slot.raw() == 0xFFFFFFFFu;
+    }
+};
+
+template <>
+struct niche<detail::choice_checks::AggregateStatedSlot> {
+    static constexpr bool is_empty_never_built = true;
+    [[nodiscard]] static constexpr detail::choice_checks::AggregateStatedSlot
+    empty(niche_key<detail::choice_checks::AggregateStatedSlot> const&) noexcept {
+        return detail::choice_checks::AggregateStatedSlot{0xFFFFFFFFu};
+    }
+    [[nodiscard]] static constexpr bool is_empty(niche_key<detail::choice_checks::AggregateStatedSlot> const&,
+                                                 detail::choice_checks::AggregateStatedSlot const& slot) noexcept {
         return slot.raw == 0xFFFFFFFFu;
+    }
+};
+
+template <>
+struct niche<detail::choice_checks::PointerStatedSlot> {
+    static constexpr bool is_empty_never_built = true;
+    [[nodiscard]] static constexpr detail::choice_checks::PointerStatedSlot
+    empty(niche_key<detail::choice_checks::PointerStatedSlot> const&) noexcept {
+        return detail::choice_checks::PointerStatedSlot{nullptr};
+    }
+    [[nodiscard]] static constexpr bool is_empty(niche_key<detail::choice_checks::PointerStatedSlot> const&,
+                                                 detail::choice_checks::PointerStatedSlot const& slot) noexcept {
+        return slot.raw() == 0;
     }
 };
 
@@ -1108,30 +1168,38 @@ static_assert(NicheRead<TrustedSlot>::is_empty_never_built());
 static_assert(!NicheRead<SlotNumber>::is_empty_never_built() && !NicheRead<Ticket>::is_empty_never_built());
 static_assert(ChoicePayload<TrustedSlot> && !ChoicePayload<MisstatedSlot>);
 static_assert(sizeof(Option<TrustedSlot>) == sizeof(TrustedSlot));
-static_assert(Option<TrustedSlot>::some(TrustedSlot{3}).is_some() && Option<TrustedSlot>{}.is_none());
+static_assert(Option<TrustedSlot>::some(TrustedSlot::of_byte(3)).is_some() && Option<TrustedSlot>{}.is_none());
 
-// A slot number of the member protocol that states the fact.
-struct TrustedMemberSlot {
-    std::uint32_t raw = 0;
+// A slot number of the member protocol that states the fact.  Its one door
+// builds a slot from a byte.
+class TrustedMemberSlot {
+    std::uint32_t raw_ = 0;
+    constexpr explicit TrustedMemberSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+
+public:
     static constexpr bool is_niche_empty_never_built = true;
+    [[nodiscard]] static constexpr TrustedMemberSlot of_byte(std::uint8_t byte) noexcept {
+        return TrustedMemberSlot{byte};
+    }
     [[nodiscard]] static constexpr TrustedMemberSlot niche_empty(niche_key<TrustedMemberSlot> const&) noexcept {
         return TrustedMemberSlot{0xFFFFFFFFu};
     }
     [[nodiscard]] constexpr bool is_niche_empty(niche_key<TrustedMemberSlot> const&) const noexcept {
-        return raw == 0xFFFFFFFFu;
+        return raw_ == 0xFFFFFFFFu;
     }
 };
 
 static_assert(NicheRead<TrustedMemberSlot>::is_empty_never_built() && !NicheRead<MemberSlot>::is_empty_never_built());
 static_assert(ChoicePayload<TrustedMemberSlot> && sizeof(Option<TrustedMemberSlot>) == sizeof(TrustedMemberSlot));
 
-// The niche slot tests the payload in each build, also with the statement,
-// so a false statement fails a constant test, and at run time it ends the
-// process.
-template <std::uint32_t Raw>
-constexpr bool builds_trusted =
-    requires { typename std::bool_constant<Option<TrustedSlot>::some(TrustedSlot{Raw}).is_some()>; };
-static_assert(builds_trusted<3> && !builds_trusted<0xFFFFFFFFu>);
+// The payload gate checks a statement against the constructors of the type
+// (THE CHECK OF THE STATEMENT), so a false statement does not compile.  An
+// aggregate builds the empty value from its member, and a constructor from a
+// pointer with no key builds the empty value from the null pointer.
+static_assert(!ChoicePayload<AggregateStatedSlot> && !ChoicePayload<PointerStatedSlot>);
+static_assert(BuildsNoEmptyValue<TrustedSlot> && BuildsNoEmptyValue<TrustedMemberSlot>);
+static_assert(!vouches_each_raw_parameter<PairStatedSlot>() && !BuildsNoEmptyValue<PairStatedSlot>);
+static_assert(vouches_each_raw_parameter<KeyedPairSlot>() && BuildsNoEmptyValue<KeyedPairSlot>);
 
 // A sum compares only with a sum of its own type.  The implicit
 // constructors make no compare with none, a payload, an Err or a sum of a

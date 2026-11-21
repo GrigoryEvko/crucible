@@ -120,6 +120,14 @@ static_assert(sizeof(Ref<OverAligned const, CheckBrand>) == sizeof(void*));
 static_assert(sizeof(Option<Ref<int, CheckBrand>>) == sizeof(void*));
 static_assert(sizeof(Option<Ref<Abstract, CheckBrand>>) == sizeof(void*));
 
+// The niche of a Ref states that no door builds the null pointer, and the
+// constructors of Ref hold the statement (THE CHECK OF THE STATEMENT of
+// foundation/core/Choice.h): the constructor from a reference takes the key,
+// and the widening takes a Ref.
+static_assert(detail::BuildsNoEmptyValue<Ref<int, CheckBrand>>
+              && detail::BuildsNoEmptyValue<Ref<int const, CheckBrand>>);
+static_assert(detail::BuildsNoEmptyValue<Ref<Abstract, CheckBrand>>);
+
 // A Ref copies as a pointer copies, and the seal makes it not trivially
 // copyable, so std::bit_cast builds no Ref from the bytes of an address.
 static_assert(std::is_trivially_copy_constructible_v<Ref<int, CheckBrand>>);
