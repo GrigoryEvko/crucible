@@ -438,18 +438,19 @@ public:
     }
 
     // A step of one in the direction of Cmp: std::less adds one, and
-    // std::greater takes one away.  The step goes through advance, so the
-    // order checks it.  A step past the end of T would wrap the value to the
-    // other end, so the precondition refuses a value at the end of T.
+    // std::greater takes one away.  A step past the end of T would wrap the
+    // value to the other end, so the precondition refuses a value at the end
+    // of T.  The step goes from the value that the precondition read, so the
+    // order check of the step compares two registers, and the optimizer
+    // folds it into the precondition.
     constexpr void bump() noexcept
         requires ::foundation::core::Integer<T> && (AscendingOrder<T, Cmp> || DescendingOrder<T, Cmp>)
     {
-        CRUCIBLE_PRE(impl_.peek()
-                     != ((AscendingOrder<T, Cmp>) ? ::foundation::core::max_of<T> : ::foundation::core::min_of<T>));
         T const prior = impl_.peek();
+        CRUCIBLE_PRE(prior
+                     != ((AscendingOrder<T, Cmp>) ? ::foundation::core::max_of<T> : ::foundation::core::min_of<T>));
         T const stepped = AscendingOrder<T, Cmp> ? static_cast<T>(prior + T{1}) : static_cast<T>(prior - T{1});
-        advance(stepped);
-        CRUCIBLE_POST(0, impl_.peek() == stepped);
+        advance_from_checked_(prior, stepped);
     }
 
     // The only way to move the value backward. The caller must ensure

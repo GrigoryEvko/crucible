@@ -181,8 +181,11 @@ static void test_full_replay() {
     CRUCIBLE_TEST_ASSERT(kTest, p1 == ctx.pool().slot_ptr(SlotId{1}, pv));
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
+    // The rewind after COMPLETE puts the cursor at the first op, so the next
+    // advance reads the first op of the region.
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.engine().ops_matched() == 0);
 
-    // The rewind happens here, on the first advance after COMPLETE.
+    // The next advance matches the first op of the region again.
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{100}, ShapeHash{200}, cv).status() == ReplayStatus::MATCH);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{101}, ShapeHash{201}, cv).status() == ReplayStatus::COMPLETE);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 2);

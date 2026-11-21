@@ -38,7 +38,7 @@ using ::fixy::check::expect_dies;
 
 // The reports of the refusals of the counters that two or more cases share.
 constexpr ::fixy::TextView kBumpAtTheEnd{
-    "foundation: contract violation: impl_.peek() != ((AscendingOrder<T, Cmp>) ? ::foundation::core::max_of<T> : "
+    "foundation: contract violation: prior != ((AscendingOrder<T, Cmp>) ? ::foundation::core::max_of<T> : "
     "::foundation::core::min_of<T>)"};
 constexpr ::fixy::TextView kAdvanceBack{"foundation: contract violation: lattice_type::leq(impl_.peek(), new_value)"};
 constexpr ::fixy::TextView kAtomicAdvanceBack{"foundation: contract violation: replaced < new_value"};

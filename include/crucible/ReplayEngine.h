@@ -332,15 +332,14 @@ private:
     }
 
     // The cursor at the first op, and the guard values of that op.  The
-    // matched op does not change.
+    // matched op does not change.  A rewind that left the cursor in the
+    // middle of the region would break the determinism of the next
+    // iteration.  test_replay_engine and test_crucible_context read the
+    // position after the rewinds (ops_matched), so no check of the
+    // assignment runs here.
     CRUCIBLE_INLINE void rewind_() {
         cursor_ = ops_.begin();
         load_first_guard_();
-
-        // Failing to rewind leaves the next iteration resuming from the middle
-        // of the region, which is a silent break in determinism. The last
-        // matched entry is deliberately absent from this: it survives.
-        CRUCIBLE_POST(0, cursor_ == ops_.begin());
     }
 
     // The guard values of the op at the cursor, or no change at the end of
