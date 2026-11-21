@@ -638,51 +638,60 @@ struct family_reading {
 
 namespace detail {
 
-// Stops the build when a read of a sealed kind finds a fault.
-consteval void require_seal_holds(std::meta::info registry, std::meta::info kind) {
-    const seal_reading reading = read_seal(registry, kind);
-    if (reading.fault == seal_fault::sealed_twice) a_kind_of_registration_has_two_seals();
-    if (reading.fault == seal_fault::count_differs) a_registration_stands_outside_its_seal();
-}
-
-// The registrations of one kind that one namespace holds as its own
-// members, in static storage.  A namespace with a registration and no
-// seal of the kind is open.  The read counts the registrations against
-// the seal of the kind.  Complexity: linear in the members.
-[[nodiscard]] consteval static_run<std::meta::info> read_own_registrations(std::meta::info registry,
-                                                                           std::meta::info kind) {
-    require_seal_holds(registry, kind);
-    stack<std::meta::info> found{};
-    for (const std::meta::info member : std::meta::members_of(registry, std::meta::access_context::current())) {
-        if (is_registration_of(member, kind)) push(found, member);
-    }
-    return to_static_run(found);
-}
-
-// The registrations of one kind in one family, read one time for each
-// unit.  A family with a registration and no seal of the kind stops the
-// build, and so do two seals of the kind and a count that differs from the
-// count of its seal.  A namespace that holds no registration and no seal of
-// the kind is no family of that kind.  One walk of the members reads the
-// seals and the registrations together.  Complexity: linear in the members.
-[[nodiscard]] consteval family_reading read_family(std::meta::info family, std::meta::info kind) {
-    stack<std::meta::info> found{};
+// What one walk of the members of a namespace finds: the count of the seals
+// of one kind, and the count that the last such seal states.
+struct family_walk {
     std::size_t seals = 0;
     std::size_t sealed = 0;
+};
+
+// Pushes each registration of the kind that one namespace holds onto `found`,
+// and reads its seals of the kind in the same walk.  Complexity: linear in
+// the members.
+[[nodiscard]] consteval family_walk walk_family(std::meta::info family, std::meta::info kind,
+                                                stack<std::meta::info>& found) {
+    family_walk walk{};
     for (const std::meta::info member : std::meta::members_of(family, std::meta::access_context::current())) {
         if (is_registration_of(member, kind)) {
             push(found, member);
         } else if (is_registration_of(member, ^^seal)) {
             const seal entry = std::meta::extract<seal>(member);
             if (entry.kind != kind) continue;
-            ++seals;
-            sealed = entry.count;
+            ++walk.seals;
+            walk.sealed = entry.count;
         }
     }
-    if (found.top == 0 && seals == 0) return {};
-    if (seals == 0) a_family_holds_a_registration_with_no_seal();
-    if (seals > 1) a_kind_of_registration_has_two_seals();
-    if (found.top != sealed) a_registration_stands_outside_its_seal();
+    return walk;
+}
+
+// The registrations of one kind that one namespace holds as its own
+// members, in static storage.  A namespace with a registration and no
+// seal of the kind is open.  The same walk counts the registrations against
+// the seal of the kind, with the faults of read_seal.  Complexity: linear in
+// the members.
+[[nodiscard]] consteval static_run<std::meta::info> read_own_registrations(std::meta::info registry,
+                                                                           std::meta::info kind) {
+    stack<std::meta::info> found{};
+    const family_walk walk = walk_family(registry, kind, found);
+    if (walk.seals > 1) a_kind_of_registration_has_two_seals();
+    if (walk.seals == 1 && found.top != walk.sealed) a_registration_stands_outside_its_seal();
+    return to_static_run(found);
+}
+
+// The registrations of one kind in one family, in static storage.  A family
+// with a registration and no seal of the kind stops the build, and so do two
+// seals of the kind and a count that differs from the count of its seal.  A
+// namespace that holds no registration and no seal of the kind is no family
+// of that kind.  The read of a root reads a family here only when the family
+// has a fault (read_family_into), so the diagnostic names the family.
+// Complexity: linear in the members.
+[[nodiscard]] consteval family_reading read_family(std::meta::info family, std::meta::info kind) {
+    stack<std::meta::info> found{};
+    const family_walk walk = walk_family(family, kind, found);
+    if (found.top == 0 && walk.seals == 0) return {};
+    if (walk.seals == 0) a_family_holds_a_registration_with_no_seal();
+    if (walk.seals > 1) a_kind_of_registration_has_two_seals();
+    if (found.top != walk.sealed) a_registration_stands_outside_its_seal();
     return {true, to_static_run(found)};
 }
 
@@ -693,13 +702,30 @@ inline constexpr family_reading family_reading_v = detail::read_family(Family, K
 
 namespace detail {
 
-// Puts each registration of the kind that `registry` holds on `found`: the
-// own members of a flat registry, or the registrations of each family of a
-// root.  The members of the root are read where the query stands, so a
-// family that a later header opens is read by each query after that
-// header.  The reading of each family is kept for the unit.  Complexity:
-// linear in the members of the root and in the registrations.
-consteval void collect_registrations(std::meta::info registry, std::meta::info kind, stack<std::meta::info>& found) {
+// Pushes each registration of the kind that one namespace of a root holds
+// onto `found`, and gives whether the namespace is a family of the kind.  The
+// checks are the checks of read_family.  A fault reads the family through
+// family_reading_v, so the diagnostic names the family.  Complexity: linear
+// in the members.
+[[nodiscard]] consteval bool read_family_into(std::meta::info family, std::meta::info kind,
+                                              stack<std::meta::info>& found) {
+    const std::size_t first = found.top;
+    const family_walk walk = walk_family(family, kind, found);
+    const std::size_t count = found.top - first;
+    if (count == 0 && walk.seals == 0) return false;
+    if (walk.seals != 1 || count != walk.sealed) {
+        static_cast<void>(std::meta::extract<family_reading>(std::meta::substitute(
+            ^^family_reading_v, {std::meta::reflect_constant(family), std::meta::reflect_constant(kind)})));
+    }
+    return true;
+}
+
+// Each registration of the kind that `registry` holds, in static storage:
+// the own members of a flat registry, or the registrations of each family of
+// a root, in one array.  Complexity: linear in the members of the root and of
+// its families.
+[[nodiscard]] consteval static_run<std::meta::info> read_root(std::meta::info registry, std::meta::info kind) {
+    stack<std::meta::info> found{};
     bool has_family = false;
     bool has_own = false;
     for (const std::meta::info member : std::meta::members_of(registry, std::meta::access_context::current())) {
@@ -708,17 +734,34 @@ consteval void collect_registrations(std::meta::info registry, std::meta::info k
             continue;
         }
         if (!std::meta::is_namespace(member) || std::meta::is_namespace_alias(member)) continue;
-        const family_reading family = std::meta::extract<family_reading>(std::meta::substitute(
-            ^^family_reading_v, {std::meta::reflect_constant(member), std::meta::reflect_constant(kind)}));
-        if (!family.is_family) continue;
-        has_family = true;
-        for (const std::meta::info registration : family.registrations)
-            push(found, registration);
+        has_family = read_family_into(member, kind, found) || has_family;
     }
     if (has_family && has_own) a_registry_root_holds_a_registration_of_its_own();
-    if (has_family) return;
-    for (const std::meta::info registration : read_own_registrations(registry, kind))
-        push(found, registration);
+    if (has_family) return to_static_run(found);
+    return read_own_registrations(registry, kind);
+}
+
+}  // namespace detail
+
+// The registrations of one kind in one registry, kept for each count of the
+// members of the registry.  A root only grows, so the count tells two states
+// of a root apart: a family that a later header opens gives a new count, and
+// each query after that header reads it.
+template <std::meta::info Registry, std::meta::info Kind, std::size_t Members>
+inline constexpr static_run<std::meta::info> root_registrations_v = detail::read_root(Registry, Kind);
+
+namespace detail {
+
+// The registrations of the kind that `registry` holds where the query stands.
+// The members of the root are counted there, and the table of that count is
+// read one time for each unit.  Complexity: linear in the members of the root,
+// and one read of the root for each state of the root.
+[[nodiscard]] consteval static_run<std::meta::info> collect_registrations(std::meta::info registry,
+                                                                          std::meta::info kind) {
+    const std::size_t members = std::meta::members_of(registry, std::meta::access_context::current()).size();
+    return std::meta::extract<static_run<std::meta::info>>(std::meta::substitute(
+        ^^root_registrations_v, {std::meta::reflect_constant(registry), std::meta::reflect_constant(kind),
+                                 std::meta::reflect_constant(members)}));
 }
 
 // True when two reflections stand in one file.
@@ -751,8 +794,7 @@ consteval void require_home(std::meta::info registration, std::meta::info shape)
 // finds must stand at the home of its shape.  Complexity: quadratic in
 // the registrations of the registry, which are few.
 [[nodiscard]] consteval combinator_lookup read_combinator(std::meta::info registry, std::meta::info shape) {
-    stack<std::meta::info> registrations{};
-    detail::collect_registrations(registry, ^^combinator, registrations);
+    const static_run<std::meta::info> registrations = detail::collect_registrations(registry, ^^combinator);
     combinator_lookup result{};
     stack<std::meta::info> other_shapes{};
     for (const std::meta::info member : registrations) {
@@ -780,8 +822,7 @@ consteval void require_home(std::meta::info registration, std::meta::info shape)
 // shape stop the build.  The rule must stand at the home of its shape.
 // Complexity: linear in the registrations of the registry.
 [[nodiscard]] consteval payload_lookup read_payload_rule(std::meta::info registry, std::meta::info shape) {
-    stack<std::meta::info> registrations{};
-    detail::collect_registrations(registry, ^^payload_rule, registrations);
+    const static_run<std::meta::info> registrations = detail::collect_registrations(registry, ^^payload_rule);
     payload_lookup result{};
     for (const std::meta::info member : registrations) {
         const payload_rule entry = std::meta::extract<payload_rule>(member);
@@ -826,9 +867,7 @@ inline constexpr payload_lookup payload_lookup_v = read_payload_rule(Registry, S
 // order.  Complexity: linear in the members of the root and in the
 // registrations.
 [[nodiscard]] consteval static_run<std::meta::info> registrations_of(std::meta::info registry, std::meta::info kind) {
-    stack<std::meta::info> registrations{};
-    detail::collect_registrations(registry, kind, registrations);
-    return to_static_run(registrations);
+    return detail::collect_registrations(registry, kind);
 }
 
 // ── Coherence of one registration ─────────────────────────────────────
