@@ -210,6 +210,18 @@ crucible_script_test(NAME compile_ceilings
   COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/compile_cost/check_ceilings.py ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR})
 set_tests_properties(compile_ceilings PROPERTIES SKIP_RETURN_CODE 77)
 
+# The compile cost of one call of the member frame door with_mut of a
+# FixedArray.  The check compiles test/compile_cost/door_cost_with_mut.cpp
+# with the flags of the check of foundation/core/Scan.h.  In a build with the
+# address sanitizer, a door that costs more than 1.10 times the loop on the
+# array fails, through the raw loop on a C array as the floor.  In a tsan or
+# optimized build, a door above its measure with a margin of 10 % fails.  A
+# build of another kind and a host with no exact instruction counter give a
+# skip (THE CEILINGS of test/compile_cost/check_door_cost.py).
+crucible_script_test(NAME compile_door_cost
+  COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/compile_cost/check_door_cost.py ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR})
+set_tests_properties(compile_door_cost PROPERTIES SKIP_RETURN_CODE 77)
+
 # A regression test for the constant-evaluator defect that the patch
 # series in utils/toolchain/gcc fixes: memchr, strchr, strrchr and strstr from
 # an offset pointer.  A compiler without the fix cannot compile it.

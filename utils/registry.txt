@@ -90,6 +90,7 @@ rule witness-roster engine=plugin scope=include/foundation/,include/fixy/ ledger
 
 path test/bench_windows/check_windows.py | a test of the timed windows of the benches and of a probe of the bench harness, as a C++ test executable is.  It is outside the utils system
 path test/compile_cost/check_ceilings.py | a test of the compile cost of the probes of the heavy compile-time gates, as a C++ test executable is.  It is outside the utils system
+path test/compile_cost/check_door_cost.py | a test of the compile cost of one call of the member frame door of a FixedArray, as a C++ test executable is.  It is outside the utils system
 path test/fixy/storage_float/make_torch_tables.py | the writer of the PyTorch tables of the storage float test, which a person runs one time with the Python of .venv-torch.  It is outside the utils system
 path test/harness/check_output.py | a test of three C++ probes of the product, as a C++ test executable is.  It is outside the utils system
 path test/shape/check_alloc_loops.py | a test of the loops of one block of the refill and the flush of the allocator, as a C++ test executable is.  It is outside the utils system
