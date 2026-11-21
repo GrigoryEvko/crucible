@@ -158,8 +158,8 @@ private:
 enum class NumaPolicy : std::uint8_t {
     // Each page on a node of the mask, and on no other node (MPOL_BIND).
     bind,
-    // The pages on the nodes of the mask in turn, one page on each node
-    // (MPOL_INTERLEAVE).
+    // The pages on the nodes of the mask in turn, one page on each node, or
+    // on another node when that node is low on free memory (MPOL_INTERLEAVE).
     interleave,
     // Each page on the one node of the mask, or on another node when that
     // node is low on free memory (MPOL_PREFERRED).
@@ -293,8 +293,10 @@ public:
 
 // Proof that an anonymous memory region has the memory policy Policy over a
 // node mask: each page on a node of the mask (bind), the pages on the nodes
-// of the mask in turn (interleave), or each page on the one node of the mask
-// while that node has free memory (preferred).
+// of the mask in turn while each node has free memory (interleave), or each
+// page on the one node of the mask while that node has free memory
+// (preferred).  The kernel counts each page that went to another node in
+// numa_foreign of its node (fixy/os/NumaCounters.h).
 //
 // The proof owns the region, as NumaPlacement does.  Every constructor that
 // builds one is private, and the sole friend is
