@@ -90,7 +90,13 @@
 //   each node at most one time.  The channels cost O(R^2 + A) for R roles
 //   and A actions, and the check of the system costs O(R + C + A).  A unit
 //   reads each context one time (reading_of_), and each pair of a context
-//   and a channel type keeps its verdict in the instance of the door.
+//   and a channel type keeps its verdict in the instance of the door.  A
+//   name of a role or of a channel is a string in static storage, and each
+//   new text of such a string costs a constant of its own.  So the door and
+//   check_context_deadlock_freedom check a system whose processes and
+//   channels have plain names, and they make the names of the roles only for
+//   the text of a refusal.  marked_system_of_context gives the names of the
+//   roles.
 
 #include <fixy/session/Projection.h>
 #include <foundation/algebra/net/Priority.h>
@@ -645,13 +651,27 @@ template <typename Context>
     return detail::context_net::reading_of_<Context>.fault;
 }
 
+namespace detail::context_net {
+
+// The names of the processes and the channels of a marked system of a
+// context.  The liveness check reads a name only for the text of a refusal.
+// A name of a role costs a string in static storage, and a new text costs a
+// constant of its own (THE COSTS).  So the door checks the system with the
+// plain names, and it makes the names of the roles only for the text of a
+// refusal.
+enum class SystemNames : std::uint8_t {
+    // Each process has the name 'role', and each channel the name 'channel'.
+    Plain = 0,
+    // Each process has the name of its role, and each channel the names of
+    // its two roles: 'P to Q'.
+    OfRoles = 1,
+};
+
 // The marked system of a context with no fault and with an action (THE
-// SYSTEM).  Each channel has the capacity that Channel states.  Complexity:
-// O(C) for each action.
-template <typename Context, typename Channel>
-    requires StatesChannelCapacity<Channel>
-[[nodiscard]] consteval auto marked_system_of_context() noexcept {
-    namespace net = ::foundation::algebra::net;
+// SYSTEM), with the names of the form.  Each channel has the capacity that
+// Channel states.  Complexity: O(C) for each action.
+template <typename Context, typename Channel, SystemNames Names>
+[[nodiscard]] consteval auto marked_system_of_context_() noexcept {
     namespace cn = detail::context_net;
     using anchor = ::foundation::reflect::anchored_t<^^Context, void>;
     constexpr cn::context_reading reading = cn::reading_of_<Context>;
@@ -667,12 +687,20 @@ template <typename Context, typename Channel>
         constexpr std::size_t channel_count = reading.channels.size();
         constexpr std::size_t action_count = reading.actions.size();
         net::ProcessSystem<process_count, channel_count, action_count> marked{};
-        for (std::uint32_t place = 0; place < process_count; ++place)
-            marked.process_names[place] = cn::name_of_role_<anchor>(reading.roles[place]);
+        for (std::uint32_t place = 0; place < process_count; ++place) {
+            if constexpr (Names == SystemNames::OfRoles) {
+                marked.process_names[place] = cn::name_of_role_<anchor>(reading.roles[place]);
+            } else {
+                marked.process_names[place] = net::NetName{"role"};
+            }
+        }
         for (std::uint32_t place = 0; place < channel_count; ++place) {
+            net::NetName name{"channel"};
+            if constexpr (Names == SystemNames::OfRoles) {
+                name = cn::name_of_channel_<anchor>(reading, reading.channels[place]);
+            }
             marked.channels[place] =
-                net::NetChannel{.name = cn::name_of_channel_<anchor>(reading, reading.channels[place]),
-                                .capacity = static_cast<std::uint32_t>(channel_capacity_v<Channel>)};
+                net::NetChannel{.name = name, .capacity = static_cast<std::uint32_t>(channel_capacity_v<Channel>)};
         }
         for (std::uint32_t place = 0; place < action_count; ++place) {
             cn::read_action const act = reading.actions[place];
@@ -682,6 +710,27 @@ template <typename Context, typename Channel>
         }
         return marked;
     }
+}
+
+// True when the marked system of a context with the plain names holds no
+// liveness fault.  The names change no step of the check, and no name of
+// either form is empty, so the system with the names of the roles holds the
+// same fault.
+template <typename Context, typename Channel>
+inline constexpr bool is_context_live_v =
+    net::find_liveness_fault(marked_system_of_context_<Context, Channel, SystemNames::Plain>()).code
+    == net::LivenessFaultCode::NoFault;
+
+}  // namespace detail::context_net
+
+// The marked system of a context with no fault and with an action (THE
+// SYSTEM), with the names of its roles.  Each channel has the capacity that
+// Channel states.  Complexity: O(C) for each action.
+template <typename Context, typename Channel>
+    requires StatesChannelCapacity<Channel>
+[[nodiscard]] consteval auto marked_system_of_context() noexcept {
+    namespace cn = detail::context_net;
+    return cn::marked_system_of_context_<Context, Channel, cn::SystemNames::OfRoles>();
 }
 
 // The verdict on the waits of a context on channels of the capacity that
@@ -696,6 +745,8 @@ template <typename Context, typename Channel>
     if constexpr (reading.fault.is_fault()) {
         return detail::context_net::explain_context_fault_<anchor>(reading);
     } else if constexpr (reading.actions.size() == 0) {
+        return ::foundation::algebra::net::NetVerdict{};
+    } else if constexpr (detail::context_net::is_context_live_v<Context, Channel>) {
         return ::foundation::algebra::net::NetVerdict{};
     } else {
         return ::foundation::algebra::net::check_liveness(marked_system_of_context<Context, Channel>());
@@ -714,9 +765,12 @@ consteval void ensure_context_deadlock_free() noexcept {
     static_assert(!reading.fault.is_fault(),
                   cn::door_text_of_(cn::outside_model_class, cn::explain_context_fault_<anchor>(reading)));
     if constexpr (!reading.fault.is_fault() && reading.actions.size() != 0) {
-        constexpr ::foundation::algebra::net::NetVerdict verdict =
-            ::foundation::algebra::net::check_liveness(marked_system_of_context<Context, Channel>());
-        static_assert(verdict.is_admitted(), cn::door_text_of_(cn::not_live_class, verdict));
+        constexpr bool is_live = cn::is_context_live_v<Context, Channel>;
+        if constexpr (!is_live) {
+            static_assert(is_live,
+                          cn::door_text_of_(cn::not_live_class, ::foundation::algebra::net::check_liveness(
+                                                                    marked_system_of_context<Context, Channel>())));
+        }
     }
 }
 

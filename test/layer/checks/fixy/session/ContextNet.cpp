@@ -138,6 +138,17 @@ static_assert(check_context_deadlock_freedom<CrossedRing, OneSlot>().says(
 static_assert(check_context_deadlock_freedom<OrderedSessions, OneSlot>().is_admitted());
 static_assert(check_context_deadlock_freedom<OrderedSessions, TwoSlots>().is_admitted());
 
+// The door reads the system with the plain names, and the system with the
+// names of the roles gives the same verdict.
+static_assert(!detail::context_net::is_context_live_v<CrossedSessions, OneSlot>);
+static_assert(!detail::context_net::is_context_live_v<CrossedRing, OneSlot>);
+static_assert(detail::context_net::is_context_live_v<OrderedSessions, OneSlot>);
+static_assert(
+    detail::context_net::marked_system_of_context_<OrderedSessions, OneSlot, detail::context_net::SystemNames::Plain>()
+        .channels[0]
+        .name
+    == ::foundation::algebra::net::NetName{"channel"});
+
 // ── A verdict that the capacity decides ─────────────────────────────────
 //
 // P sends two messages to Q and then one to R.  R forwards one to Q, and Q
