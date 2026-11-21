@@ -317,10 +317,11 @@ static_assert(check_context_deadlock_freedom<StreamToRun, OneSlot>().says(
 
 // ── The bound of a reading ──────────────────────────────────────────────
 //
-// A reading holds at most 32 roles, 256 actions and 64 channels.  A step
-// of the walk costs about 2.5 M instructions, so the contexts past the
-// bound of the actions and of the channels are the fixtures
-// neg_sess_context_net_past_action_bound and
+// A reading holds at most role_bound roles, action_bound actions and
+// channel_bound channels, and each bound has a fault that names the count
+// of the context.  A step of the walk costs about 2.5 M instructions, so the
+// contexts past the bound of the actions and of the channels are the
+// fixtures neg_sess_context_net_past_action_bound and
 // neg_sess_context_net_past_channel_bound, each in a unit of its own.
 
 // The role at a place of a long context.
@@ -344,13 +345,37 @@ using FullRoles = numbered_context<31, At<P, Send<int, End>>>::type;
 static_assert(find_context_fault<FullRoles>().code == ContextFaultCode::NodeOutsideModel);
 static_assert(find_context_fault<FullRoles>().role == net::ProcessId{0});
 
-// The 33rd role, Numbered<1>, passes the bound.
+// The 33rd role, Numbered<1>, passes the bound, and the fault counts each
+// role of the context.
 using ManyRoles = numbered_context<33>::type;
-static_assert(find_context_fault<ManyRoles>().code == ContextFaultCode::PastTheBound);
+static_assert(find_context_fault<ManyRoles>().code == ContextFaultCode::RolesPastTheBound);
 static_assert(find_context_fault<ManyRoles>().role == net::ProcessId{32});
+static_assert(find_context_fault<ManyRoles>().count == 33);
 static_assert(find_context_fault<ManyRoles>().type == ^^Numbered<1>);
 static_assert(check_context_deadlock_freedom<ManyRoles, OneSlot>().says(
-    "context: the role 'fixy::session::detail::context_net_self_test::Numbered<1>' passes the bound of the check.  "
-    "A context holds at most 32 roles, 256 actions and 64 channels."));
+    "context: the context holds 33 roles, and the check reads at most 32 roles (role_bound).  The first role past "
+    "the bound is 'fixy::session::detail::context_net_self_test::Numbered<1>'."));
+static_assert(find_context_fault<numbered_context<40>::type>().count == 40);
+
+// The context with one more entry after its roles.
+template <typename Context, typename Last>
+struct with_last_entry;
+template <typename... States, typename Last>
+struct with_last_entry<TypingContext<States...>, Last> {
+    using type = TypingContext<States..., Last>;
+};
+
+// The reading reads each entry before the fault of the bound, so an entry
+// that is no RoleState after the bound is the fault of the context.
+using PastBoundThenNoState = with_last_entry<numbered_context<33>::type, int>::type;
+static_assert(find_context_fault<PastBoundThenNoState>().code == ContextFaultCode::NotAContext);
+static_assert(find_context_fault<PastBoundThenNoState>().type == ^^int);
+
+// A role past the bound that stands two times is the fault RoleTwice, at
+// the place of its second entry.
+using PastBoundThenTwice = with_last_entry<numbered_context<33>::type, At<Numbered<5>, End>>::type;
+static_assert(find_context_fault<PastBoundThenTwice>().code == ContextFaultCode::RoleTwice);
+static_assert(find_context_fault<PastBoundThenTwice>().role == net::ProcessId{33});
+static_assert(find_context_fault<PastBoundThenTwice>().type == ^^Numbered<5>);
 
 }  // namespace fixy::session::detail::context_net_self_test

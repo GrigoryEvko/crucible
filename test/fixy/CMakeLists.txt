@@ -4120,17 +4120,17 @@ fixy_neg_compile_test(neg_sess_context_net_peer_outside
 
 fixy_neg_compile_test(neg_sess_context_net_past_bound
   "static assertion failed"
-  "fixy::session::diagnostic \\[Context_Outside_Marked_Model\\]: context: the role 'neg_sess_context_net_past_bound_types::Numbered<33>' passes the bound of the check\\.  A context holds at most 32 roles, 256 actions and 64 channels\\."
+  "fixy::session::diagnostic \\[Context_Outside_Marked_Model\\]: context: the context holds 33 roles, and the check reads at most 32 roles \\(role_bound\\)\\.  The first role past the bound is 'neg_sess_context_net_past_bound_types::Numbered<33>'\\."
   "neg_sess_context_net_past_bound\\.cpp:[0-9]+:[0-9]+: +required from here")
 
 fixy_neg_compile_test(neg_sess_context_net_past_action_bound
   "static assertion failed"
-  "fixy::session::diagnostic \\[Context_Outside_Marked_Model\\]: context: the role 'neg_sess_context_net_past_action_bound_types::Numbered<29>' passes the bound of the check\\."
+  "fixy::session::diagnostic \\[Context_Outside_Marked_Model\\]: context: the context holds 261 actions, and the check reads at most 256 actions \\(action_bound\\)\\.  The first action past the bound is a step of the role 'neg_sess_context_net_past_action_bound_types::Numbered<29>'\\."
   "neg_sess_context_net_past_action_bound\\.cpp:[0-9]+:[0-9]+: +required from here")
 
 fixy_neg_compile_test(neg_sess_context_net_past_channel_bound
   "static assertion failed"
-  "fixy::session::diagnostic \\[Context_Outside_Marked_Model\\]: context: the role 'neg_sess_context_net_past_channel_bound_types::Numbered<8>' passes the bound of the check\\."
+  "fixy::session::diagnostic \\[Context_Outside_Marked_Model\\]: context: the context holds 81 channels, and the check reads at most 64 channels \\(channel_bound\\)\\.  The first channel past the bound goes from the role 'neg_sess_context_net_past_channel_bound_types::Numbered<8>'\\."
   "neg_sess_context_net_past_channel_bound\\.cpp:[0-9]+:[0-9]+: +required from here")
 
 fixy_neg_compile_test(neg_sess_strip_peers_two_peers

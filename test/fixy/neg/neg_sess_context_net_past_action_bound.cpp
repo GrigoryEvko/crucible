@@ -1,6 +1,7 @@
 // The context holds 29 roles that each send to 9 roles: 261 actions, past
-// the bound of 256 actions of a reading.  The 257th action is the fifth
-// step of the role Numbered<29>, so the door refuses the context there.
+// the bound of 256 actions of a reading (action_bound).  The 257th action
+// is the fifth step of the role Numbered<29>.  The door refuses the context,
+// and its text names the count of 261 actions, the bound and that role.
 
 #include <fixy/session/ContextNet.h>
 

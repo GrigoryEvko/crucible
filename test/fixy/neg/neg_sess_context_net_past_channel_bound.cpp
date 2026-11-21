@@ -1,7 +1,9 @@
 // The context holds 9 roles that each send to each of the 9: 81 channels,
-// past the bound of 64 channels of a reading.  The channels stand in the
-// order of the sender, so the 65th channel goes from the role Numbered<8>
-// to the role Numbered<2>, and the door refuses the context there.
+// past the bound of 64 channels of a reading (channel_bound).  The channels
+// stand in the order of the sender, so the 65th channel goes from the role
+// Numbered<8> to the role Numbered<2>.  The door refuses the context, and
+// its text names the count of 81 channels, the bound and the role
+// Numbered<8>.
 
 #include <fixy/session/ContextNet.h>
 

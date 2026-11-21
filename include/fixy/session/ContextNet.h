@@ -82,7 +82,9 @@
 //   which this context does not hold.  No mint calls the door.  A program
 //   that composes sessions on handles is checked only by the watch of
 //   fixy/session/Watch.h, at run time, on the run that waits.  A context
-//   holds at most 32 roles, 256 actions and 64 channels (THE COSTS).
+//   holds at most role_bound roles, action_bound actions and channel_bound
+//   channels.  Each bound has one constant, with its reason, in the detail
+//   namespace below (THE COSTS).
 //
 // THE COSTS
 //   One walk of the type graph of each local type: linear in its distinct
@@ -99,10 +101,11 @@
 //   the text of a refusal.  marked_system_of_context gives the names of the
 //   roles.
 //
-//   A reading holds fixed arrays of a stated bound: at most 32 roles, 256
-//   actions and 64 channels in one context, about 5 KB.  Each reading has
-//   one type, so each reader of a reading has one instance, and a context
-//   past the bound has the fault PastTheBound.  A run in static storage
+//   A reading holds a fixed array for each run, of the size of its bound
+//   (role_bound, action_bound and channel_bound).  Each reading has one
+//   type, so each reader of a reading has one instance.  A context past a
+//   bound has the fault of that bound, which names the bound and the count
+//   of the context.  A run in static storage
 //   (define_static_array, reflect_constant_array) costs a constant of its
 //   own for each new element type and each new content, and the first runs
 //   of a reading in a unit cost about 200 M instructions.  So a reading
@@ -144,9 +147,15 @@ enum class ContextFaultCode : std::uint8_t {
     // The fault names the role, and the type of its first choice of two or
     // more branches.
     ArmsWaitDifferently = 8,
-    // The fault names the role whose entry, action or channel passes the
-    // bound of a reading (THE COSTS), and the type of the role.
-    PastTheBound = 9,
+    // The fault names the first role past role_bound, its type, and the
+    // count of the roles of the context.
+    RolesPastTheBound = 9,
+    // The fault names the role of the first action past action_bound, its
+    // type, and the count of the actions of the context.
+    ActionsPastTheBound = 10,
+    // The fault names the sender of the first channel past channel_bound,
+    // its type, and the count of the channels of the context.
+    ChannelsPastTheBound = 11,
 };
 
 // The fault that find_context_fault finds.  The code tells which fields it
@@ -155,6 +164,9 @@ enum class ContextFaultCode : std::uint8_t {
 struct ContextFault {
     ContextFaultCode code = ContextFaultCode::NoFault;
     ::foundation::algebra::net::ProcessId role{};
+    // The count of the roles, the actions or the channels of the context,
+    // for a fault of a bound.
+    std::uint32_t count = 0;
     std::meta::info type{};
 
     [[nodiscard]] consteval bool is_fault() const noexcept { return code != ContextFaultCode::NoFault; }
@@ -198,33 +210,65 @@ enum class RunShape : std::uint8_t {
     Loops = 2,
 };
 
-// The most roles, actions and channels of one context (THE COSTS).  A
-// context past one of them has the fault PastTheBound.
+// The bounds of a reading (THE COSTS).  This is the one place of each
+// bound: each text and each comment names the constant, so a change of a
+// bound is one line.  A context past a bound has the fault of that bound.
+//
+// A reading holds one fixed array for each run at its bound, so the bounds
+// set the size of each reading, also of a context of two roles.  At these
+// bounds a reading holds about 5 KB, and each reading of a unit costs the
+// compiler about 6 M instructions to keep.  So a larger bound costs each
+// context of each unit that reads one.
+//
+// The most roles: each step of the walk finds its peer by a scan of the
+// roles, and push_channels_ marks the joins in a matrix of role_bound times
+// role_bound cells.  With 29 roles, a step costs about 2.5 M instructions.
 inline constexpr std::uint32_t role_bound = 32;
+// The most actions: each action is one step of the walk.  At about 2.5 M
+// instructions for each step, the walk of a context at this bound costs
+// about a tenth of a unit, so no unit pays more for one context.
 inline constexpr std::uint32_t action_bound = 256;
+// The most channels: the system of a context finds the channel of each
+// action by a scan of the channels (place_of_channel_), so the system costs
+// O(C) for each action.
 inline constexpr std::uint32_t channel_bound = 64;
 
-// The first elements of a fixed array of Bound elements, read by the id of
-// an element.  The caller asks is_full before a push.
+// The first Bound elements of the elements that a reading pushes, read by
+// the id of an element.  A push past the bound keeps no element, but the run
+// counts it and keeps the first element past the bound.  So a fault of a
+// bound names the count of the context and its first element past the bound.
 template <class Element, class Id, std::uint32_t Bound>
 class bounded_run {
     Element items_[Bound]{};
+    Element first_past_{};
     std::uint32_t count_ = 0;
+    std::uint32_t pushed_ = 0;
 
 public:
     [[nodiscard]] constexpr Element const& operator[](Id id) const noexcept {
         CRUCIBLE_PRE(static_cast<std::uint32_t>(id) < count_);
         return items_[static_cast<std::uint32_t>(id)];
     }
+    // The count of the elements that the run keeps: at most Bound.
     [[nodiscard]] constexpr std::uint32_t size() const noexcept { return count_; }
-    [[nodiscard]] constexpr bool is_full() const noexcept { return count_ == Bound; }
+    // The count of each push, also past the bound.
+    [[nodiscard]] constexpr std::uint32_t pushed() const noexcept { return pushed_; }
+    [[nodiscard]] constexpr bool is_past_bound() const noexcept { return pushed_ > Bound; }
+    [[nodiscard]] constexpr Element first_past() const noexcept {
+        CRUCIBLE_PRE(pushed_ > Bound);
+        return first_past_;
+    }
     [[nodiscard]] constexpr Element const* begin() const noexcept { return items_; }
     [[nodiscard]] constexpr Element const* end() const noexcept { return items_ + count_; }
 
     consteval void push(Element const& element) {
-        CRUCIBLE_PRE(count_ < Bound);
-        items_[count_] = element;
-        ++count_;
+        if (count_ < Bound) {
+            items_[count_] = element;
+            ++count_;
+        } else if (pushed_ == Bound) {
+            first_past_ = element;
+        }
+        ++pushed_;
     }
 };
 
@@ -416,8 +460,9 @@ template <class Anchor = void>
 // Pushes the actions of the local type of one role, after the actions of
 // the roles before it, and sets the shape of the role, or gives the fault of
 // the first node that the walk cannot read (THE MODEL OF THE CHECK, THE
-// UNION OF THE ARMS), or the fault PastTheBound for an action past the
-// bound.  Complexity: O(N^2) for N distinct nodes of the local type at most,
+// UNION OF THE ARMS).  A push past action_bound counts the action, and the
+// walk goes on, so the reading knows the count of the actions of the
+// context.  Complexity: O(N^2) for N distinct nodes of the local type at most,
 // because each round reads each node at most one time, and a round passes
 // one action of each arm.
 template <class Anchor = void>
@@ -466,7 +511,6 @@ template <class Anchor = void>
             shape = RunShape::Loops;
             return ContextFault{};
         }
-        if (actions.is_full()) return local_fault_(ContextFaultCode::PastTheBound, self, roles[self]);
         actions.push(first.act);
         walk.cursors.top = 0;
         for (std::size_t place = 0; place < walk.heads.top; ++place)
@@ -493,11 +537,10 @@ template <class Anchor = void>
 }
 
 // Pushes the channels of the actions, in the order of the sender and then
-// of the receiver (THE SYSTEM), or gives the fault PastTheBound for a
-// channel past the bound.  Complexity: O(R^2 + A).
+// of the receiver (THE SYSTEM).  A push past channel_bound counts the
+// channel.  Complexity: O(R^2 + A).
 template <class Anchor = void>
-[[nodiscard]] consteval ContextFault push_channels_(role_run const& roles, action_run const& actions,
-                                                    channel_run& channels) {
+consteval void push_channels_(role_run const& roles, action_run const& actions, channel_run& channels) {
     std::size_t const role_count = roles.size();
     tr::stack<bool> is_joined{};
     tr::make_room(is_joined, role_count * role_count);
@@ -511,14 +554,31 @@ template <class Anchor = void>
     for (std::uint32_t sender = 0; sender < role_count; ++sender) {
         for (std::uint32_t receiver = 0; receiver < role_count; ++receiver) {
             if (!is_joined.items[sender * role_count + receiver]) continue;
-            net::ProcessId const from{sender};
-            if (channels.is_full()) {
-                return ContextFault{.code = ContextFaultCode::PastTheBound, .role = from, .type = roles[from]};
-            }
-            channels.push(read_channel{.sender = from, .receiver = net::ProcessId{receiver}});
+            channels.push(read_channel{.sender = net::ProcessId{sender}, .receiver = net::ProcessId{receiver}});
         }
     }
-    return ContextFault{};
+}
+
+// The fault of a reading past action_bound, or NoFault.  It names the role
+// of the first action past the bound, and the count of the actions of the
+// context (THE COSTS).
+template <class Anchor = void>
+[[nodiscard]] consteval ContextFault find_action_bound_fault_(role_run const& roles, action_run const& actions) {
+    if (!actions.is_past_bound()) return ContextFault{};
+    net::ProcessId const role = actions.first_past().process;
+    return ContextFault{
+        .code = ContextFaultCode::ActionsPastTheBound, .role = role, .count = actions.pushed(), .type = roles[role]};
+}
+
+// The fault of a reading past channel_bound, or NoFault.  It names the
+// sender of the first channel past the bound, and the count of the channels
+// of the context (THE COSTS).
+template <class Anchor = void>
+[[nodiscard]] consteval ContextFault find_channel_bound_fault_(role_run const& roles, channel_run const& channels) {
+    if (!channels.is_past_bound()) return ContextFault{};
+    net::ProcessId const role = channels.first_past().sender;
+    return ContextFault{
+        .code = ContextFaultCode::ChannelsPastTheBound, .role = role, .count = channels.pushed(), .type = roles[role]};
 }
 
 // The reading of a context (THE SYSTEM), or its first fault.  The reading
@@ -552,18 +612,23 @@ template <class Anchor = void>
             ++part_place;
         }
         std::meta::info const role = std::meta::dealias(parts[0]);
-        net::ProcessId const place{reading.roles.size()};
+        net::ProcessId const place{reading.roles.pushed()};
         if (place_of_role_<Anchor>(reading.roles, role) != no_place) {
             reading.fault = ContextFault{.code = ContextFaultCode::RoleTwice, .role = place, .type = role};
-            return reading;
-        }
-        if (reading.roles.is_full()) {
-            reading.fault = ContextFault{.code = ContextFaultCode::PastTheBound, .role = place, .type = role};
             return reading;
         }
         reading.roles.push(role);
         queues.push(parts[1]);
         locals.push(parts[2]);
+    }
+    // The loop reads each entry, so the fault of role_bound comes after the
+    // faults of the entries, and it names the count of the roles.
+    if (reading.roles.is_past_bound()) {
+        reading.fault = ContextFault{.code = ContextFaultCode::RolesPastTheBound,
+                                     .role = net::ProcessId{role_bound},
+                                     .count = reading.roles.pushed(),
+                                     .type = reading.roles.first_past()};
+        return reading;
     }
     shape_run shapes{};
     step_rule_memo memo{};
@@ -582,9 +647,14 @@ template <class Anchor = void>
         }
         shapes.push(shape);
     }
+    // The walk reads each role, so the fault of action_bound comes after the
+    // faults of the local types, and it names the count of the actions.
+    reading.fault = find_action_bound_fault_<Anchor>(reading.roles, reading.actions);
+    if (reading.fault.is_fault()) return reading;
     reading.fault = find_loop_meets_run_<Anchor>(reading.roles, reading.actions, shapes);
     if (reading.fault.is_fault()) return reading;
-    reading.fault = push_channels_<Anchor>(reading.roles, reading.actions, reading.channels);
+    push_channels_<Anchor>(reading.roles, reading.actions, reading.channels);
+    reading.fault = find_channel_bound_fault_<Anchor>(reading.roles, reading.channels);
     return reading;
 }
 
@@ -699,16 +769,30 @@ template <class Anchor = void>
                 .put("' has arms that wait on other channels, or that end in other ways: ")
                 .put_name(name_of_type_<Anchor>(fault.type))
                 .put(".  Do a check of one context for each set of arms that the roles take together.");
-        case ContextFaultCode::PastTheBound:
-            return net::NetVerdict::refuse("context: the role '")
-                .put_name(role_name())
-                .put("' passes the bound of the check.  A context holds at most ")
+        case ContextFaultCode::RolesPastTheBound:
+            return net::NetVerdict::refuse("context: the context holds ")
+                .put_number(fault.count)
+                .put(" roles, and the check reads at most ")
                 .put_number(role_bound)
-                .put(" roles, ")
+                .put(" roles (role_bound).  The first role past the bound is '")
+                .put_name(role_name())
+                .put("'.");
+        case ContextFaultCode::ActionsPastTheBound:
+            return net::NetVerdict::refuse("context: the context holds ")
+                .put_number(fault.count)
+                .put(" actions, and the check reads at most ")
                 .put_number(action_bound)
-                .put(" actions and ")
+                .put(" actions (action_bound).  The first action past the bound is a step of the role '")
+                .put_name(role_name())
+                .put("'.");
+        case ContextFaultCode::ChannelsPastTheBound:
+            return net::NetVerdict::refuse("context: the context holds ")
+                .put_number(fault.count)
+                .put(" channels, and the check reads at most ")
                 .put_number(channel_bound)
-                .put(" channels.");
+                .put(" channels (channel_bound).  The first channel past the bound goes from the role '")
+                .put_name(role_name())
+                .put("'.");
         default:
             break;
     }

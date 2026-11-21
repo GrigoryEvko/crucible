@@ -1,6 +1,7 @@
-// The context holds 33 roles, one more than the bound of a reading.  A
-// reading keeps the roles in a fixed array of 32, so the context is outside
-// the model of the check, and the door refuses it.
+// The context holds 33 roles, one more than the bound of a reading
+// (role_bound).  A reading keeps the roles in a fixed array of 32, so the
+// context is outside the model of the check.  The door refuses it, and its
+// text names the count of 33 roles, the bound and the role Numbered<33>.
 
 #include <fixy/session/ContextNet.h>
 
