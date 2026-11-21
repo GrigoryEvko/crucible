@@ -1,0 +1,29 @@
+// The sentinel unit of include/foundation/counts.h.  The compile collects the
+// garbage at each point where GCC can collect it.  The instantiations of the
+// lambda of count_of for 64 types give 64 dummies, and the end of the body of
+// the template next_phase is a point of collection after them.
+
+#include <foundation/counts.h>
+
+#include <foundation/counted.h>
+
+template <int Number>
+struct Tag {};
+
+template <int Number>
+constexpr int count_all() noexcept {
+    if constexpr (Number == 0) {
+        return 0;
+    } else {
+        return foundation::counts::count_of<Tag<Number>>(Number) + count_all<Number - 1>();
+    }
+}
+
+constexpr int first_phase = count_all<64>();
+
+template <int Number>
+constexpr int next_phase() noexcept {
+    return Number;
+}
+
+int read_phases() { return first_phase + next_phase<1>() + foundation::counts::counted(); }

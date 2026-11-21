@@ -1,0 +1,23 @@
+#pragma once
+
+namespace foundation::keyed {
+
+// The key of the hidden friend.  Argument-dependent lookup of a call with a
+// key of Keyed<T> finds the friends of Keyed<T>.
+template <class T>
+struct key {};
+
+// A class template with a hidden friend: the class body declares and defines
+// it, and only argument-dependent lookup finds it.  Each instantiation of the
+// class gives GCC a new declaration of the friend in the namespace.  The class
+// declares no constructor, so an instantiation makes no other function.
+template <class T>
+struct Keyed {
+    T held{};
+
+    [[nodiscard]] constexpr T value() const noexcept { return held; }
+
+    [[nodiscard]] friend constexpr Keyed null_of_(key<Keyed> const& /*key*/) noexcept { return Keyed{}; }
+};
+
+}  // namespace foundation::keyed

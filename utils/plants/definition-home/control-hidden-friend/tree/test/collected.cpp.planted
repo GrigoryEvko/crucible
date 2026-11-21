@@ -1,0 +1,44 @@
+// A second sentinel unit of include/foundation/sorts.h.  The compile collects
+// the garbage at each point where GCC can collect it.  The first phase
+// instantiates the lambda of count_of for 64 types, and the dummy operator()
+// of each instantiation becomes garbage.  The end of the body of the template
+// next_phase is a point of collection.  The second phase instantiates 64
+// classes of keyed.h, and GCC gives each one a new declaration of its hidden
+// friend, which can take the address of a dummy.
+
+#include <foundation/sorts.h>
+
+#include <foundation/keyed.h>
+
+template <int Number>
+struct Tag {};
+
+template <int Number>
+constexpr int count_all() noexcept {
+    if constexpr (Number == 0) {
+        return 0;
+    } else {
+        return foundation::sorts::count_of<Tag<Number>>(Number) + count_all<Number - 1>();
+    }
+}
+
+template <int Number>
+constexpr int read_all() noexcept {
+    if constexpr (Number == 0) {
+        return 0;
+    } else {
+        using Keyed = foundation::keyed::Keyed<Tag<Number>>;
+        return static_cast<int>(sizeof(null_of_(foundation::keyed::key<Keyed>{}))) + read_all<Number - 1>();
+    }
+}
+
+constexpr int first_phase = count_all<64>();
+
+template <int Number>
+constexpr int next_phase() noexcept {
+    return Number;
+}
+
+constexpr int second_phase = read_all<64>();
+
+int read_phases() { return first_phase + second_phase + next_phase<1>(); }

@@ -1,0 +1,9 @@
+// The sentinel unit of include/foundation/sorts.h.  It gives the template of
+// the header a class of keyed.h, so GCC instantiates the class and its hidden
+// friend inside the template of the header.
+
+#include <foundation/sorts.h>
+
+#include <foundation/keyed.h>
+
+int read_first() { return foundation::sorts::first_of<foundation::keyed::Keyed<int>, foundation::keyed::key<foundation::keyed::Keyed<int>>>(); }

@@ -1,0 +1,19 @@
+# A hidden friend of a class template is no entity (definition.cpp, THE
+# KINDS): the class body declares and defines it, and only
+# argument-dependent lookup finds it.  In the compile sorts, the sentinel
+# header instantiates the class and calls the friend through a third header,
+# and the header names no class of keyed.h.  In the compile collected, a
+# garbage collection frees the dummy operator() of each lambda that captures,
+# and the hidden friends of 64 later classes can take their addresses
+# (definition.cpp, THE READS).  The units give no finding for a friend.  The
+# plant plant-collected-elsewhere is the control: a declaration that a
+# collection keeps still gives its finding.
+compile sorts test/sorts.cpp sentinel=include/foundation/sorts.h definition-home=on base-namespace=on
+exit sorts pass
+judge sorts
+finding sorts definition-home header include/foundation/sorts.h:1:1 | include/foundation/sorts.h
+compile collected test/collected.cpp sentinel=include/foundation/sorts.h definition-home=on base-namespace=on
+flag collected --param=ggc-min-expand=0 --param=ggc-min-heapsize=0
+exit collected pass
+judge collected
+finding collected definition-home header include/foundation/sorts.h:1:1 | include/foundation/sorts.h

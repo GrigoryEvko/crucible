@@ -1,0 +1,8 @@
+#pragma once
+
+namespace foundation::counts {
+
+// The definition of a function that counts.h declares.
+[[nodiscard]] constexpr int counted() noexcept { return 1; }
+
+}  // namespace foundation::counts

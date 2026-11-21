@@ -1,0 +1,11 @@
+# A garbage collection frees the dummy operator() of each lambda that
+# captures, and the rule drops the records of each freed tree (definition.cpp,
+# THE READS).  The declaration of counted stays, so its record stays too: the
+# header declares the function and counted.h defines it, and the unit gives
+# the finding elsewhere after each collection.
+compile counts test/counts.cpp sentinel=include/foundation/counts.h definition-home=on base-namespace=on
+flag counts --param=ggc-min-expand=0 --param=ggc-min-heapsize=0
+exit counts pass
+judge counts
+finding counts definition-home elsewhere include/foundation/counts.h:17:29 | foundation::counts::counted defined in include/foundation/counted.h
+finding counts definition-home header include/foundation/counts.h:1:1 | include/foundation/counts.h

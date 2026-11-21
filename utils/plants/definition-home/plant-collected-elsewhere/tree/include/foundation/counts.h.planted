@@ -1,0 +1,19 @@
+#pragma once
+
+namespace foundation::counts {
+
+// A template with a lambda that captures.  GCC gives each instantiation of
+// such a lambda a dummy operator() with a declaration event in this header,
+// and then drops it, so a garbage collection frees the dummy.
+template <class Type>
+[[nodiscard]] constexpr int count_of(int seed) noexcept {
+    int base = seed + static_cast<int>(sizeof(Type));
+    auto arm = [&base](int value) noexcept { return value + base; };
+    return arm(0);
+}
+
+// A function that this header declares and counted.h defines: a definition in
+// a different file.  Its tree stays, so each collection keeps its record.
+[[nodiscard]] constexpr int counted() noexcept;
+
+}  // namespace foundation::counts

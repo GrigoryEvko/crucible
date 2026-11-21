@@ -1,0 +1,28 @@
+#pragma once
+
+#include <foundation/empty.h>
+
+namespace foundation::sorts {
+
+// A template that reads the empty value of its argument through a lambda, as
+// the arm of a match does.  This header names no class of keyed.h, so the
+// first instantiation of Keyed<int> stands here only through the argument of
+// the sentinel unit.
+template <class Type, class Key>
+[[nodiscard]] constexpr int first_of() noexcept {
+    auto arm = [](Type const& value) noexcept { return value.value(); };
+    return arm(empty::empty_of<Type, Key>::make());
+}
+
+// A template with a lambda that captures.  GCC gives each instantiation of
+// such a lambda a dummy operator() for the parse of its declarator, with a
+// declaration event in this header, and then drops it.  A garbage collection
+// frees the dummy, and a later declaration can take its address.
+template <class Type>
+[[nodiscard]] constexpr int count_of(int seed) noexcept {
+    int base = seed + static_cast<int>(sizeof(Type));
+    auto arm = [&base](int value) noexcept { return value + base; };
+    return arm(0);
+}
+
+}  // namespace foundation::sorts

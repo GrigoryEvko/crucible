@@ -1,0 +1,12 @@
+#pragma once
+
+namespace foundation::empty {
+
+// The empty value of a type: a call of the hidden friend of the type through
+// argument-dependent lookup.  This header names no class of keyed.h.
+template <class Type, class Key>
+struct empty_of {
+    [[nodiscard]] static constexpr Type make() noexcept { return null_of_(Key{}); }
+};
+
+}  // namespace foundation::empty

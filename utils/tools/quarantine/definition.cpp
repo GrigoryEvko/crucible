@@ -131,6 +131,14 @@
 //                                     the definition
 //     A place in the check file of the header stands where the header stands
 //     (home.cpp, THE PLACE).
+//     The records of the events name a tree, and a garbage collection can
+//     free a tree and give its address to a later tree.  GCC gives each
+//     instantiation of a lambda that captures a dummy operator() with a
+//     declaration event, and then drops it.  A later hidden friend of a class
+//     template took the address of such a dummy and got its place.  So at
+//     each collection (PLUGIN_GGC_MARKING), each record of a tree that the
+//     collection does not mark goes.  GCC frees a declaration outside a
+//     collection only in duplicate_decls, and that declaration has no event.
 //
 // WHAT THE FAMILY DOES NOT READ
 //     A forward declaration of a class, or a declaration of a function
@@ -1108,6 +1116,28 @@ void on_finish_function(void* gcc_data, void*) {
     definition_places.emplace(function, DECL_SOURCE_LOCATION(function));
 }
 
+// Each record of PLACES whose tree has no mark of the collection.
+void drop_unmarked(std::unordered_map<tree, location_t>& places) {
+    for (auto entry = places.begin(); entry != places.end();) {
+        entry = ggc_marked_p(entry->first) ? std::next(entry) : places.erase(entry);
+    }
+}
+
+// Each tree of DECLS that has no mark of the collection.
+void drop_unmarked(std::vector<tree>& decls) {
+    decls.erase(std::remove_if(decls.begin(), decls.end(), [](tree decl) { return !ggc_marked_p(decl); }), decls.end());
+}
+
+// PLUGIN_GGC_MARKING: the collection marked each tree that it keeps, and each
+// tree with no mark is free after it, so each record of such a tree goes (THE
+// READS).  Complexity: linear in the records.
+void on_marking(void*, void*) {
+    drop_unmarked(declaration_places);
+    drop_unmarked(definition_places);
+    drop_unmarked(source_bodies);
+    drop_unmarked(source_functions);
+}
+
 // True when the file of PLACE defines the class TYPE: the header and its check
 // file for a place in the header, and the same file for a different place.
 bool is_defined_beside(tree type, location_t place) {
@@ -1302,6 +1332,7 @@ void register_definition_home(const char* plugin_name) {
     is_active = true;
     register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_decl, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_function, nullptr);
+    register_callback(plugin_name, PLUGIN_GGC_MARKING, on_marking, nullptr);
 }
 
 }  // namespace crucible_plugin

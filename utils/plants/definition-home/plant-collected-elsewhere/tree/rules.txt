@@ -1,0 +1,4 @@
+# The rule table of a plant of the rule definition-home: the headers of
+# include/foundation/ are base code, and test/ is quarantined.
+layer low 0 include/foundation/
+quarantine test/
