@@ -68,6 +68,8 @@
 //            that copies the bytes, so the Option is sealed too.
 //   owning   Each other payload.  The Option is move-only.  A move leaves
 //            the source empty, and the destructor destroys the payload.
+//            The end of a full Option of a linear payload ends the
+//            process, because it would drop the payload.
 //
 // A move of a niche or plain Option is a copy of the bytes, so the source
 // keeps its value.  The payload owns nothing in those two forms, so two
@@ -786,6 +788,10 @@ struct NoPayload final {};
 
 [[noreturn]] CRUCIBLE_COLD inline void report_full_fill_() noexcept {
     fatal("Option::fill got a full Option, and a fill would drop the payload that it holds");
+}
+
+[[noreturn]] CRUCIBLE_COLD inline void report_full_linear_end_() noexcept {
+    fatal("an Option of a linear payload ended with its payload: consume it with take, or end it with a named door");
 }
 
 constexpr void add_lend_(unsigned char& lend_count) noexcept {
@@ -1980,9 +1986,24 @@ public:
         delete("an owning Option is move-only: a copy would duplicate what the payload owns");
     OptionSlot& operator=(OptionSlot const&) = delete("an owning Option is move-only");
 
+    // THE END OF A LINEAR PAYLOAD
+    //   A linear payload leaves only through a consumer, so a full Option of
+    //   a linear payload at its end would drop a value that each path must
+    //   use one time.  The rule must-consume refuses such an end of a named
+    //   Option and of a temporary at compile time.  It does not see an Option
+    //   that a data member, a static object or a capture holds, or an end in
+    //   the body of a door.  So the end of a full Option of a linear payload
+    //   ends the process, in each build.  An empty one holds no payload to
+    //   end.  A droppable payload keeps the end of its payload.
     constexpr ~OptionSlot() {
         detail::refuse_lent_write_(lend_count_);
-        if (is_engaged_) storage_.destroy_(1);
+        if constexpr (DroppablePayload<T>) {
+            if (is_engaged_) storage_.destroy_(1);
+        } else {
+            if (is_engaged_) [[unlikely]] {
+                detail::report_full_linear_end_();
+            }
+        }
     }
 };
 

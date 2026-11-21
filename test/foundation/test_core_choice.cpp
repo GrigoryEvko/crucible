@@ -1230,6 +1230,35 @@ void test_expect_none() {
         },
         ::foundation::core::TextView{"the linear Option is full on purpose"});
 }
+
+// A class that holds an Option of a linear payload as a data member.
+struct TokenHolder {
+    Option<CountedToken> held;
+};
+
+// The end of a full Option of a linear payload ends the process, where the
+// rule must-consume does not see the end: in the body of the drop door, of an
+// Option and of a data member of a class.  The end of an empty one ends no
+// payload, and a droppable payload still ends with its Option.
+void test_full_linear_end_aborts() {
+    constexpr ::foundation::core::TextView kFullEnd{
+        "foundation: fatal: an Option of a linear payload ended with its payload: consume it with take, or end it with "
+        "a named door"};
+    expect_dies(
+        test_context(), [] noexcept { ::foundation::linear::drop(Option<CountedToken>::some(CountedToken{81})); },
+        kFullEnd);
+    expect_dies(
+        test_context(),
+        [] noexcept { ::foundation::linear::drop(TokenHolder{Option<CountedToken>::some(CountedToken{82})}); },
+        kFullEnd);
+    ::foundation::linear::drop(Option<CountedToken>{});
+    ::foundation::linear::drop(TokenHolder{Option<CountedToken>{}});
+    {
+        Option<CountedOwner> const owner = Option<CountedOwner>::some(CountedOwner{83});
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 1);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_owners == 0 && live_tokens == 0);
+}
 }  // namespace
 
 int main() {
@@ -1277,5 +1306,6 @@ int main() {
     test_named_option_doors_linear();
     test_named_option_doors_abort();
     test_expect_none();
+    test_full_linear_end_aborts();
     return 0;
 }

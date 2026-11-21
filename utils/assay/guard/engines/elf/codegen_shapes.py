@@ -888,15 +888,20 @@ PROBES: tuple[Probe, ...] = (
         "option_end_linear",
         "the drop door of an Option of a linear word moves the word out and empties the source, as the raw form does.  "
         "It adds the test of the lend count of the source and one branch to a call of the fatal exit, because a write "
-        "must not end a payload that a borrow match lends",
+        "must not end a payload that a borrow match lends.  The end of the moved Option adds one test of its flag and "
+        "one branch to a second call of the fatal exit, because the end of a full Option of a linear payload would "
+        "drop it.  The two cold calls share no block, so GCC sets up the frame pointer at the entry",
         checks=("fatal",),
     ),
     Probe(
         "option_end_owned",
         "the end of an Option of a word that only moves moves the word out and empties the source, as the raw form "
         "does.  It adds the test of the lend count of the source and one branch to a call of the fatal exit, because a "
-        "write must not end a payload that a borrow match lends",
+        "write must not end a payload that a borrow match lends.  At -O3 GCC tests the flag again on each side of the "
+        "test of the lend count, so the family side has one branch more than the raw side, which stores the flag "
+        "with no test",
         checks=("fatal",),
+        branches=True,
     ),
     Probe(
         "option_empty_word",
