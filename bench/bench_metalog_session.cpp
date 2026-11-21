@@ -6,8 +6,6 @@
 // at depth 0 or 1 across the auto-batched harness.
 
 #include <cstdint>
-#include <cstdio>
-#include <memory>
 #include <optional>
 #include <utility>
 
@@ -15,12 +13,16 @@
 #include <crucible/MetaLogSession.h>
 #include <crucible/PermissionedMetaLog.h>
 
+#include <fixy/Core.h>
+
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
 #include "bench_harness.h"
 
 namespace {
+
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
 struct BenchTag {};
 
@@ -45,14 +47,14 @@ using PermissionedLog = ::crucible::permissioned_metalog_t<decltype(log_root())>
     return meta;
 }
 
-[[nodiscard]] std::optional<::crucible::TensorMeta> raw_drain_one(::crucible::MetaLog& log) {
+[[nodiscard]] ::fixy::Option<::crucible::TensorMeta> raw_drain_one(::crucible::MetaLog& log) {
     const std::uint64_t t = log.tail.peek_relaxed();
     if (t == log.head.get()) {
-        return std::nullopt;
+        return ::fixy::none;
     }
     const ::crucible::TensorMeta meta = log.copy_record(t);
     log.advance_tail(t + 1);
-    return meta;
+    return ::fixy::some(meta);
 }
 
 void reset_log(::crucible::MetaLog& log) { log.reset(); }
@@ -88,8 +90,8 @@ bench::Report bench_permissioned_append_drain(PermissionedLog::ProducerHandle& p
 }
 
 // Each session owns its handle for the run and gives it back at End.  A
-// MetaLog handle refuses move-assignment, so each step puts the next
-// session in place of the last one with emplace.
+// MetaLog handle refuses move-assignment, so each step puts the next session
+// in place of the last one with emplace.
 bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle&& producer,
                                     PermissionedLog::ConsumerHandle&& consumer, ::crucible::MetaLog& log) {
     namespace ses = ::crucible::metalog_session;
@@ -105,8 +107,8 @@ bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle&& producer,
         bench::do_not_optimize(meta.version);
         cons.emplace(std::move(next));
     });
-    (void)std::move(*prod).select<1>(::fixy::session::no_label).close();
-    (void)std::move(*cons).select<1>(::fixy::session::no_label).close();
+    static_cast<void>(std::move(*prod).select<1>(::fixy::session::no_label).close());
+    static_cast<void>(std::move(*cons).select<1>(::fixy::session::no_label).close());
     reset_log(log);
     return report;
 }
@@ -117,7 +119,7 @@ int main() {
     static_assert(sizeof(PermissionedLog::ProducerHandle) == sizeof(void*));
     static_assert(sizeof(PermissionedLog::ConsumerHandle) == sizeof(void*));
 
-    auto raw_owner = std::make_unique<::crucible::MetaLog>(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<::crucible::MetaLog> raw_owner = ::fixy::mint_box<::crucible::MetaLog>(kAlloc, kAlloc);
     ::crucible::MetaLog& raw = *raw_owner;
     PermissionedLog log{raw};
 
@@ -136,17 +138,17 @@ int main() {
 
     bench::emit_reports_text(reports.view());
 
-    std::printf("\n=== MetaLogSession deltas ===\n");
+    bench::print("\n=== MetaLogSession deltas ===\n");
     ::fixy::FixedArray<bench::Compare, 2> const compares{
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())),
     };
     bench::emit_compares(compares.view());
 
-    std::printf("\n=== verdict (TIER A — structural) ===\n");
-    std::printf("  PermissionedMetaLog handles are pointer-sized.\n");
-    std::printf("  Timed MetaLog deltas above are informational; the bodies copy a\n");
-    std::printf("  168-byte TensorMeta and are sensitive to harness layout.\n");
+    bench::print("\n=== verdict (TIER A — structural) ===\n");
+    bench::print("  PermissionedMetaLog handles are pointer-sized.\n");
+    bench::print("  Timed MetaLog deltas above are informational; the bodies copy a\n");
+    bench::print("  168-byte TensorMeta and are sensitive to harness layout.\n");
 
     bench::emit_reports_json(reports.view(), bench::env_json());
     return 0;

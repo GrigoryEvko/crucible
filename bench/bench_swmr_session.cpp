@@ -9,7 +9,7 @@
 // The reader session reads through a polling read over try_load, so its
 // baseline is the bare try_load, and the handle's load is compared with the
 // bare load.  A handle cannot be reassigned, so each session arm keeps its
-// session in a std::optional and re-seats it with emplace.
+// session in a std::optional and seats the next session with emplace.
 
 #include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
@@ -21,8 +21,6 @@
 #include "bench_harness.h"
 
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <optional>
 #include <utility>
 
@@ -59,7 +57,7 @@ constexpr auto kForeground = ::foundation::effects::testing::foreground();
 
 template <typename Body>
 [[nodiscard]] bench::Report measure(::fixy::TextView name, Body&& body) {
-    return bench::Run{name}.samples(50000).warmup(5000).max_wall_ms(3000).measure(std::forward<Body>(body));
+    return bench::Run{name}.samples(50000).warmup(5000).max_wall_ms(3000).measure(static_cast<Body&&>(body));
 }
 
 // A reader of the channel, which has a free share by construction.
@@ -148,7 +146,7 @@ int main() {
     };
     bench::emit_reports_text(reports.view());
 
-    std::puts("\n=== comparisons ===");
+    bench::print("\n=== comparisons ===\n");
     ::fixy::FixedArray<bench::Compare, 4> const compares{
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),  // the writer handle
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())),  // the writer session
@@ -157,5 +155,5 @@ int main() {
     };
     bench::emit_compares(compares.view());
     bench::emit_reports_json(reports.view(), bench::env_json());
-    return EXIT_SUCCESS;
+    return 0;
 }

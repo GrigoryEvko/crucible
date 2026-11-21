@@ -13,6 +13,7 @@
 #include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
 #include <foundation/Linear.h>
+#include <foundation/core/Seat.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -288,9 +289,10 @@ void test_empty_drain() {
 // callback session that names its own protocol admits it.
 //
 // A MetaLog handle refuses move-assignment, so a session over it refuses
-// move-assignment too.  Each loop keeps its current session in an Option:
-// take gives the session to the step, and fill puts the next session in its
-// place.
+// move-assignment too.  Each loop keeps its current session in a Seat of
+// foundation/core/Seat.h: each step runs on the session in the storage of the
+// Seat and puts the next session there, and the take after the loop gives the
+// last session back.
 //
 // Each body owns its handle, and it writes its results into Atomics of the
 // test.  The thread door joins both threads before it returns, and the test
@@ -308,17 +310,14 @@ void test_typed_session_round_trip() {
 
     auto produce = [handle = std::move(producer), &producer_done, &producer_handle_back]() mutable noexcept {
         const FgCtx ctx = ::foundation::effects::testing::foreground();
-        auto head = ::fixy::some(ms::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(handle)));
+        auto head =
+            ::foundation::core::mint_seat(ms::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(handle)));
         for (int i = 0; i < kCount; ++i) {
-            head.fill(head.take()
-                          .expect("the loop keeps the producer session in the Option")
-                          .select<0>(::fixy::session::no_label)
-                          .send(ctx, make_meta(i + 10)));
+            head.step([&ctx, i](auto&& held) noexcept {
+                return std::move(held).template select<0>(::fixy::session::no_label).send(ctx, make_meta(i + 10));
+            });
         }
-        auto back = std::move(head)
-                        .expect("the loop leaves the producer session in the Option")
-                        .select<1>(::fixy::session::no_label)
-                        .close();
+        auto back = std::move(head).take().select<1>(::fixy::session::no_label).close();
         producer_handle_back.store_release(back.size_approx(kSnapshot) <= static_cast<std::uint32_t>(kCount));
         producer_done.store_release(true);
     };
@@ -326,19 +325,16 @@ void test_typed_session_round_trip() {
     auto consume = [handle = std::move(consumer), &matched_count, &consumer_handle_back]() mutable noexcept {
         const BgCtx ctx{::foundation::effects::testing::bg()};
         int matched = 0;
-        auto head = ::fixy::some(ms::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(handle)));
+        auto head =
+            ::foundation::core::mint_seat(ms::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(handle)));
         for (int i = 0; i < kCount; ++i) {
-            auto [meta, next] = head.take()
-                                    .expect("the loop keeps the consumer session in the Option")
-                                    .select<0>(::fixy::session::no_label)
-                                    .recv(ctx);
-            matched += same_meta(meta, make_meta(i + 10)) ? 1 : 0;
-            head.fill(std::move(next));
+            head.step([&ctx, &matched, i](auto&& held) noexcept {
+                auto [meta, next] = std::move(held).template select<0>(::fixy::session::no_label).recv(ctx);
+                matched += same_meta(meta, make_meta(i + 10)) ? 1 : 0;
+                return std::move(next);
+            });
         }
-        auto back = std::move(head)
-                        .expect("the loop leaves the consumer session in the Option")
-                        .select<1>(::fixy::session::no_label)
-                        .close();
+        auto back = std::move(head).take().select<1>(::fixy::session::no_label).close();
         matched_count.store_release(matched);
         consumer_handle_back.store_release(back.tail_index() == static_cast<std::uint32_t>(kCount));
     };

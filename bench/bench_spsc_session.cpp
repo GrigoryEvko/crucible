@@ -20,14 +20,14 @@
 // The deltas against the baseline give the cost of each side.  A session
 // owns its handle, so each arm has a channel of its own, with a tag of its
 // own.  A channel handle cannot be reassigned, so a typed arm keeps its
-// session in a std::optional and re-seats it with emplace, as
-// test/fixy/test_endpoint.cpp does.
+// session in a std::optional and seats the next session with emplace.
 //
 // Single-threaded: the ring's atomics are uncontended, which isolates the
 // cost of one operation.  test/fixy/test_concurrent_channels.cpp covers the
 // cross-thread behaviour.  The numbers are for inspection, and the program
 // exits 0.
 
+#include <fixy/Core.h>
 #include <fixy/channels/SubstrateSessionBridge.h>
 #include <fixy/concurrent/PermissionedChannel.h>
 
@@ -38,9 +38,6 @@
 #include "bench_harness.h"
 
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <memory>
 #include <optional>
 #include <utility>
 
@@ -52,6 +49,8 @@ namespace s = ::fixy::session;
 namespace perm = ::foundation::permissions;
 
 using Item = std::uint64_t;
+
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
 // 2^20 slots of 8 bytes.  Each body pops the item it pushed, so the ring
 // never fills.
@@ -84,22 +83,17 @@ constexpr auto kForeground = ::foundation::effects::testing::foreground();
 // Item, as it does after the typed receive.
 [[nodiscard]] inline Item pop_value(auto& consumer) noexcept { return consumer.try_pop().value_or(Item{0}); }
 
-// One channel per arm on the heap (8 MB of ring), and its two handles.
-template <int Arm>
-struct Rig {
-    std::unique_ptr<Channel<Arm>> channel = std::make_unique<Channel<Arm>>();
-    std::pair<typename Channel<Arm>::ProducerHandle, typename Channel<Arm>::ConsumerHandle> handles = [this] {
-        auto [producer_perm, consumer_perm] =
-            perm::mint_permission_split<typename Channel<Arm>::producer_tag, typename Channel<Arm>::consumer_tag>(
-                arm_root<Arm>());
-        return std::pair{channel->producer(std::move(producer_perm)), channel->consumer(std::move(consumer_perm))};
-    }();
-};
+// Each arm holds its channel on the heap (8 MB of ring) in a Box, and the two
+// handles of the channel as its locals.  The brand of the root of an arm
+// stays in the function of the arm.
 
 [[nodiscard]] bench::Report bare_push_bare_pop() {
     constexpr ::fixy::TextView name = "round-trip: bare push + bare pop";
-    Rig<0> rig;
-    auto& [producer, consumer] = rig.handles;
+    ::fixy::Box<Channel<0>> channel = ::fixy::mint_box<Channel<0>>(kAlloc);
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<Channel<0>::producer_tag, Channel<0>::consumer_tag>(arm_root<0>());
+    auto producer = (*channel).producer(std::move(producer_perm));
+    auto consumer = (*channel).consumer(std::move(consumer_perm));
     Item item = 0;
     return bench::run(name, [&] {
         if (!producer.try_push(++item)) [[unlikely]]
@@ -110,8 +104,11 @@ struct Rig {
 
 [[nodiscard]] bench::Report typed_send_bare_pop() {
     constexpr ::fixy::TextView name = "round-trip: typed send + bare pop";
-    Rig<1> rig;
-    auto& [producer, consumer] = rig.handles;
+    ::fixy::Box<Channel<1>> channel = ::fixy::mint_box<Channel<1>>(kAlloc);
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<Channel<1>::producer_tag, Channel<1>::consumer_tag>(arm_root<1>());
+    auto producer = (*channel).producer(std::move(producer_perm));
+    auto consumer = (*channel).consumer(std::move(consumer_perm));
     std::optional session{
         channels::mint_substrate_session<Channel<1>, channels::Direction::Producer>(kForeground, std::move(producer))};
     Item item = 0;
@@ -125,8 +122,11 @@ struct Rig {
 
 [[nodiscard]] bench::Report bare_push_typed_recv() {
     constexpr ::fixy::TextView name = "round-trip: bare push + typed recv";
-    Rig<2> rig;
-    auto& [producer, consumer] = rig.handles;
+    ::fixy::Box<Channel<2>> channel = ::fixy::mint_box<Channel<2>>(kAlloc);
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<Channel<2>::producer_tag, Channel<2>::consumer_tag>(arm_root<2>());
+    auto producer = (*channel).producer(std::move(producer_perm));
+    auto consumer = (*channel).consumer(std::move(consumer_perm));
     std::optional session{
         channels::mint_substrate_session<Channel<2>, channels::Direction::Consumer>(kForeground, std::move(consumer))};
     Item item = 0;
@@ -143,8 +143,11 @@ struct Rig {
 
 [[nodiscard]] bench::Report typed_send_typed_recv() {
     constexpr ::fixy::TextView name = "round-trip: typed send + typed recv";
-    Rig<3> rig;
-    auto& [producer, consumer] = rig.handles;
+    ::fixy::Box<Channel<3>> channel = ::fixy::mint_box<Channel<3>>(kAlloc);
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<Channel<3>::producer_tag, Channel<3>::consumer_tag>(arm_root<3>());
+    auto producer = (*channel).producer(std::move(producer_perm));
+    auto consumer = (*channel).consumer(std::move(consumer_perm));
     std::optional sender{
         channels::mint_substrate_session<Channel<3>, channels::Direction::Producer>(kForeground, std::move(producer))};
     std::optional receiver{
@@ -168,7 +171,7 @@ int main() {
                                                  typed_send_typed_recv()};
     bench::emit_reports_text(reports.view());
 
-    std::printf("\n=== SPSC session: cost of each side against the bare round trip ===\n");
+    bench::print("\n=== SPSC session: cost of each side against the bare round trip ===\n");
     ::fixy::FixedArray<bench::Compare, 3> const compares{
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),  // the typed send
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())),  // the typed receive
