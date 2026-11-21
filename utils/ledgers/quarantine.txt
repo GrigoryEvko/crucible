@@ -370,8 +370,8 @@ test/ | region | 1 | PROBE: the test sets the current directory, the modes and t
 test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | replace-pending:<limits> | 7 | - | -
 test/ | replace-pending:std::bit_cast | 24 | - | -
-test/ | std-entity | 505 | - | -
-test/ | std-object | 161 | - | -
+test/ | std-entity | 499 | - | -
+test/ | std-object | 159 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
 test/cipher_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
@@ -622,8 +622,8 @@ test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a 
 test/foundation/ | region | 1 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -
 test/foundation/ | region | 2 | PROBE: the walk of the extract gate reads the target of a raw pointer member | -
 test/foundation/ | region | 2 | PROBE: valid_span judges a raw pointer with a count, the form of a drain | -
-test/foundation/ | std-entity | 143 | - | -
-test/foundation/ | std-object | 31 | - | -
+test/foundation/ | std-entity | 130 | - | -
+test/foundation/ | std-object | 28 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
 test/foundation/neg/ | detail-use | 122 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type or a range or a cursor that the fixture forges
@@ -746,7 +746,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 7 | - | -
 test/session_oracle/ | std-entity | 25 | - | -
 test/session_oracle/ | std-object | 1383 | - | -
-test/shape/ | opted-out | 275 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/shape/ | opted-out | 277 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/tensor_neg/ | opted-out | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/tensor_neg/ | region | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
