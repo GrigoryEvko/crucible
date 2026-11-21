@@ -464,7 +464,9 @@ namespace detail {
     // body that takes a share of the pool, and the context fits the lend of
     // the pool (PoolCtx).  The test is a function that is not a template, so
     // no translation unit can specialize it to lend from a class that is no
-    // pool.
+    // pool.  Its lists are std::vector copies.  A ReflectionList here costs
+    // each includer about 16 M instructions, and std::meta::substitute
+    // takes no ReflectionList.
     [[nodiscard]] consteval bool with_shared_read_shaped(std::initializer_list<std::meta::info> arguments) {
         const std::vector<std::meta::info> args(arguments);
         const std::size_t n_ctx = leading_ctx_count(arguments);

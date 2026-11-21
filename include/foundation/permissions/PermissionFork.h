@@ -155,7 +155,9 @@ concept PermissionForkBody =
 // throwing.  A pack of bodies whose length is not the length of the
 // children takes nothing.  The test is a function that is not a template,
 // so no translation unit can specialize it to start a body that cannot
-// take its child.
+// take its child.  Its lists are std::vector copies.  A ReflectionList here
+// costs each includer about 17 M instructions, and a caller gives
+// reflections that are no constants.
 [[nodiscard]] consteval bool each_body_takes_its_child(std::meta::info ctx, std::meta::info brand,
                                                        std::meta::info children_tuple,
                                                        std::meta::info callables_tuple) {

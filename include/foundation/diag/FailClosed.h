@@ -160,8 +160,10 @@ class relation_cells;
 // Walks the namespace one time.  It reads the seal, counts the members
 // and keeps each edge.  A namespace with no seal is open and has no
 // fault.  Capacity is the member count of the key.  A walk that finds
-// another count keeps no edge, and the read refuses its state.
-// Complexity: linear in the members of the namespace.
+// another count keeps no edge, and the read refuses its state.  The
+// members are a std::vector copy.  A list of static storage costs each unit
+// that reads a relation about 56 M instructions.  Complexity: linear in the
+// members of the namespace.
 template <std::size_t Capacity>
 [[nodiscard]] consteval relation_cells<Capacity> walk_relation(std::meta::info ns);
 

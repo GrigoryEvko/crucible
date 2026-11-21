@@ -206,7 +206,9 @@ namespace detail {
 // foundation::reflect::Pack, because CtxFitsSpawn reads PackType before
 // this test.  The test is a function at namespace scope that is not a
 // template, so no translation unit can specialize it to spawn a body that
-// the fork refuses.
+// the fork refuses.  The tags are a std::vector copy: the arguments of the
+// fork take their iterators, and std::meta::substitute takes no
+// ReflectionList.
 [[nodiscard]] consteval bool spawn_fits(std::meta::info ctx, std::meta::info parent, std::meta::info brand,
                                         std::meta::info children_pack, std::meta::info callables_pack) {
     const std::meta::info children = std::meta::dealias(children_pack);

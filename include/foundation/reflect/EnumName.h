@@ -55,6 +55,10 @@ concept ScopedEnum = std::is_scoped_enum_v<E>;
 // costs about 68 M instructions in a unit, and a std::array of a size
 // that the enum gives costs almost nothing.  The size depends on E, so a
 // unit that instantiates no walk evaluates no list.
+//
+// The two copies below read a std::vector for the same reason.  A list
+// for each enum, with the reflection as a template parameter, adds about
+// 88 M instructions to a unit that names one enum from such a function.
 
 namespace detail {
 

@@ -299,7 +299,10 @@ concept WellFormedExecCtx = IsCapType<Cap> && IsEffectRow<Row> && Subrow<Row, ca
 // it directly.  No translation unit can specialize either.  A variable
 // template or a function template in their place is a door: an explicit
 // specialization of it skips the structure test, and a plain struct with a
-// row_type then passes every ctx-bound gate.
+// row_type then passes every ctx-bound gate.  The two queries of the check
+// copy into a std::vector.  A ReflectionList there costs each includer
+// about 52 M instructions, and Permission.h and Closure.h give reflections
+// that are no constants.
 //
 // The check and the concepts of the row come before the class, because the
 // class names the tag door below as a friend, and the head of the door
