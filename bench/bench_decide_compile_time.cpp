@@ -176,8 +176,11 @@ int main() {
         bench::run("decide::tier_replaces<CipherBenchTier>",
                    [&] {
                        // Hot-replaces-Warm: the canonical promotion case
-                       // exercised at the CipherTierPromotion sites.
-                       bool r = dc::tier_replaces<CipherBenchTier>(CipherBenchTier::Hot, CipherBenchTier::Warm);
+                       // exercised at the CipherTierPromotion sites.  The two
+                       // tiers go through the input sink, so the compiler
+                       // does not fold the call to a constant.
+                       bool r = dc::tier_replaces<CipherBenchTier>(bench::make_opaque(CipherBenchTier::Hot),
+                                                                   bench::make_opaque(CipherBenchTier::Warm));
                        bench::do_not_optimize(r);
                    }),
     };

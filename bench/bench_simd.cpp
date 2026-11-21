@@ -90,10 +90,12 @@ int main() {
     auto m4 = make_meta_ndim(4);
     auto m8 = make_meta_ndim(8);
 
-    // Input vectors for std::simd primitives (volatile-loaded to
-    // prevent constant-folding the entire reduction).
-    // The View of the eight lanes proves the count of the load, and the
-    // static has the alignment of one register.
+    // The input lanes of the reductions.  Each body of a reduction gives the
+    // array to the input sink first, so each call loads the lanes again (THE
+    // SINK of bench_harness.h).  With no sink, the optimizer reduces the
+    // array one time before the timed loop.  The View of the eight lanes
+    // proves the count of the load, and the static has the alignment of one
+    // register.
     alignas(64) static ::fixy::FixedArray<uint64_t, 8> v_in{
         0x0123456789ABCDEFULL, 0xFEDCBA9876543210ULL, 0xCAFEBABEDEADBEEFULL, 0x1111222233334444ULL,
         0x5555666677778888ULL, 0x9999AAAABBBBCCCCULL, 0xDDDDEEEEFFFF1234ULL, 0x6666777788889999ULL,
@@ -137,30 +139,35 @@ int main() {
         // ─── facade reductions ───────────────────────────────────────
         bench::run("simd::reduce_xor(u64x8)            [unmasked]",
                    [&] [[gnu::always_inline]] () {
+                       bench::mark_changed(v_in);
                        auto v = load_u64x8();
                        uint64_t r = foundation::simd::reduce_xor(v);
                        bench::do_not_optimize(r);
                    }),
         bench::run("simd::reduce_add(u64x8)            [unmasked]",
                    [&] [[gnu::always_inline]] () {
+                       bench::mark_changed(v_in);
                        auto v = load_u64x8();
                        uint64_t r = foundation::simd::reduce_add(v);
                        bench::do_not_optimize(r);
                    }),
         bench::run("simd::reduce_max(u64x8)",
                    [&] [[gnu::always_inline]] () {
+                       bench::mark_changed(v_in);
                        auto v = load_u64x8();
                        uint64_t r = foundation::simd::reduce_max(v);
                        bench::do_not_optimize(r);
                    }),
         bench::run("simd::reduce_min(u64x8)",
                    [&] [[gnu::always_inline]] () {
+                       bench::mark_changed(v_in);
                        auto v = load_u64x8();
                        uint64_t r = foundation::simd::reduce_min(v);
                        bench::do_not_optimize(r);
                    }),
         bench::run("simd::reduce_xor(u64x8, mask)      [masked half]",
                    [&] [[gnu::always_inline]] () {
+                       bench::mark_changed(v_in);
                        auto v = load_u64x8();
                        auto m = foundation::simd::prefix_mask<u64x8>(v_count_4);
                        uint64_t r = foundation::simd::reduce_xor(v, m);
@@ -172,34 +179,41 @@ int main() {
         // At ndim=1, scalar and SIMD do the same single-dim work plus
         // SIMD's load/mask overhead → scalar should win.
         // At ndim=4-8, SIMD's parallel multiply + masked reduce wins
-        // by ~3-4×.
+        // by ~3-4×.  Each body gives its descriptor to the input sink, so
+        // each call hashes it again.
         bench::run("dim_hash_scalar(ndim=1)            [scalar baseline]",
                    [&] [[gnu::always_inline]] () {
+                       bench::mark_changed(m1);
                        uint64_t h = dim_hash_scalar(m1);
                        bench::do_not_optimize(h);
                    }),
         bench::run("dim_hash_simd  (ndim=1)            [SIMD]",
                    [&] [[gnu::always_inline]] () {
+                       bench::mark_changed(m1);
                        uint64_t h = dim_hash_simd(m1);
                        bench::do_not_optimize(h);
                    }),
         bench::run("dim_hash_scalar(ndim=4)            [scalar baseline]",
                    [&] [[gnu::always_inline]] () {
+                       bench::mark_changed(m4);
                        uint64_t h = dim_hash_scalar(m4);
                        bench::do_not_optimize(h);
                    }),
         bench::run("dim_hash_simd  (ndim=4)            [SIMD]",
                    [&] [[gnu::always_inline]] () {
+                       bench::mark_changed(m4);
                        uint64_t h = dim_hash_simd(m4);
                        bench::do_not_optimize(h);
                    }),
         bench::run("dim_hash_scalar(ndim=8)            [scalar baseline]",
                    [&] [[gnu::always_inline]] () {
+                       bench::mark_changed(m8);
                        uint64_t h = dim_hash_scalar(m8);
                        bench::do_not_optimize(h);
                    }),
         bench::run("dim_hash_simd  (ndim=8)            [SIMD]",
                    [&] [[gnu::always_inline]] () {
+                       bench::mark_changed(m8);
                        uint64_t h = dim_hash_simd(m8);
                        bench::do_not_optimize(h);
                    }),
