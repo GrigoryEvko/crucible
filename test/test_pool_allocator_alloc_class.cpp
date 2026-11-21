@@ -10,6 +10,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
 #include <foundation/effects/Effect.h>
 
 #include <bit>
@@ -69,8 +70,10 @@ static TensorSlot make_slot(uint64_t off, uint64_t nbytes, uint32_t id, bool ext
 }
 
 static void test_slot_ptr_pinned_bit_equality() {
-    ::foundation::core::FixedArray<TensorSlot, 2> slots{make_slot(0, 1024, 0), make_slot(1024, 1024, 1)};
-    MemoryPlan plan = make_plan(slots.view(), 2048, 0);
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots = ::fixy::check::run_of(
+        kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, 1024, 0), make_slot(1024, 1024, 1));
+    MemoryPlan plan = make_plan(slots, 2048, 0);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -90,8 +93,10 @@ static void test_slot_ptr_pinned_bit_equality() {
 }
 
 static void test_slot_ptr_pinned_type_identity() {
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{make_slot(0, 256, 0)};
-    MemoryPlan plan = make_plan(slots.view(), 256, 0);
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots =
+        ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, 256, 0));
+    MemoryPlan plan = make_plan(slots, 256, 0);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -165,8 +170,10 @@ static void test_layout_invariant() {
 }
 
 static void test_pool_base_pinned_small_pool() {
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{make_slot(0, 1024, 0)};
-    MemoryPlan plan = make_plan(slots.view(), 1024, 0);
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots =
+        ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, 1024, 0));
+    MemoryPlan plan = make_plan(slots, 1024, 0);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -189,8 +196,11 @@ static void test_pool_base_huge_pinned() {
     // A pool of exactly one huge page is the smallest that qualifies
     // for huge-page alignment.
     constexpr uint64_t HP = crucible::warden::kHugePageBytes;
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{make_slot(0, HP / 2, 0)};  // one slot, half the pool
-    MemoryPlan plan = make_plan(slots.view(), HP, 0);
+    ::fixy::BumpArena arena{4096};
+    // one slot, half the pool
+    ::fixy::View<TensorSlot> const slots =
+        ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, HP / 2, 0));
+    MemoryPlan plan = make_plan(slots, HP, 0);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -210,8 +220,10 @@ static void test_pool_base_huge_pinned() {
 }
 
 static void test_pool_relax_to_weaker() {
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{make_slot(0, 256, 0)};
-    MemoryPlan plan = make_plan(slots.view(), 256, 0);
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots =
+        ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, 256, 0));
+    MemoryPlan plan = make_plan(slots, 256, 0);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -252,8 +264,10 @@ static ::fixy::Option<::fixy::RunAddress> pool_consumer(Slot slot) {
 }
 
 static void test_e2e_fence_checked_consumer() {
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{make_slot(0, 1024, 0)};
-    MemoryPlan plan = make_plan(slots.view(), 1024, 0);
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots =
+        ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, 1024, 0));
+    MemoryPlan plan = make_plan(slots, 1024, 0);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -272,8 +286,10 @@ static void test_e2e_fence_checked_consumer() {
 // size.
 static void test_pool_base_pinned_with_huge_alignment() {
     constexpr uint64_t HP = crucible::warden::kHugePageBytes;
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{make_slot(0, HP / 2, 0)};
-    MemoryPlan plan = make_plan(slots.view(), HP, 0);
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots =
+        ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, HP / 2, 0));
+    MemoryPlan plan = make_plan(slots, HP, 0);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);

@@ -62,9 +62,9 @@ static void test_single_append_returns_index_zero() {
 static void test_batch_append_and_monotonic() {
     MetaLog log{::foundation::effects::testing::test().alloc};
     ::fixy::FixedArray<TensorMeta, 8> batch{};
-    for (uint32_t i = 0; i < 8; ++i) {
-        *batch.get(i).expect("a test reads an element at or past the count of its array") =
-            make_meta(SyntheticAddress{0x1000 + i * 16});
+    for (const auto index : batch.indices()) {
+        const TensorMeta meta = make_meta(SyntheticAddress{0x1000 + index.raw() * 16});
+        batch.with_element(index, [meta](TensorMeta& element) noexcept { element = meta; });
     }
     const ::fixy::View<const TensorMeta> records{batch.view()};
     auto idx1 = log.try_append(records.window(0, 3).expect("the first run fits the batch"));
@@ -76,7 +76,7 @@ static void test_batch_append_and_monotonic() {
 
     // The copy of the two appends is the eight records in their order.
     ::fixy::FixedArray<TensorMeta, 8> copied{};
-    log.copy_run(0, copied.view());
+    copied.with_mut([&log](auto run) noexcept { log.copy_run(0, run.view()); });
     for (size_t i = 0; i < 8; ++i) {
         CRUCIBLE_TEST_ASSERT(
             kTest,
@@ -130,9 +130,9 @@ static void test_copy_run_across_the_end() {
     // Five entries into three remaining slots: the batch straddles the
     // end of the ring.
     ::fixy::FixedArray<TensorMeta, 5> tail5{};
-    for (uint32_t i = 0; i < 5; ++i) {
-        *tail5.get(i).expect("a test reads an element at or past the count of its array") =
-            make_meta(SyntheticAddress{0x5000 + i * 0x100});
+    for (const auto index : tail5.indices()) {
+        const TensorMeta meta = make_meta(SyntheticAddress{0x5000 + index.raw() * 0x100});
+        tail5.with_element(index, [meta](TensorMeta& element) noexcept { element = meta; });
     }
     auto idx = log.try_append(tail5.view());
     CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
@@ -141,7 +141,7 @@ static void test_copy_run_across_the_end() {
     // The copy joins the three records at the end of the buffer and the two
     // at its start, in the order of the append.
     ::fixy::FixedArray<TensorMeta, 5> copied{};
-    log.copy_run(near_end, copied.view());
+    copied.with_mut([&log, near_end](auto run) noexcept { log.copy_run(near_end, run.view()); });
     for (uint32_t i = 0; i < 5; ++i) {
         CRUCIBLE_TEST_ASSERT(
             kTest,
@@ -151,7 +151,7 @@ static void test_copy_run_across_the_end() {
 
     // A run that does not pass the end is one copy.
     ::fixy::FixedArray<TensorMeta, 2> head2{};
-    log.copy_run(near_end + 3, head2.view());
+    head2.with_mut([&log, near_end](auto run) noexcept { log.copy_run(near_end + 3, run.view()); });
     CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<0>()).data_ptr.value()
                                     == tail5.at(::fixy::index<3>()).data_ptr.value());
     CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<1>()).data_ptr.value()
@@ -170,9 +170,9 @@ static void test_counters_pass_two_to_the_32() {
     log.reset_at(MetaIndex{BELOW_WRAP});
 
     ::fixy::FixedArray<TensorMeta, 32> run{};
-    for (uint32_t i = 0; i < 32; ++i) {
-        *run.get(i).expect("a test reads an element at or past the count of its array") =
-            make_meta(SyntheticAddress{0x6000 + i * 0x100});
+    for (const auto index : run.indices()) {
+        const TensorMeta meta = make_meta(SyntheticAddress{0x6000 + index.raw() * 0x100});
+        run.with_element(index, [meta](TensorMeta& element) noexcept { element = meta; });
     }
     const ::fixy::View<const TensorMeta> records{run.view()};
     const MetaIndex first = log.try_append(records.window(0, 15).expect("the first run fits the array"));
@@ -186,7 +186,7 @@ static void test_counters_pass_two_to_the_32() {
     // The records keep their order across the boundary, in the copy of the
     // run and in the copy of one record at each index.
     ::fixy::FixedArray<TensorMeta, 32> copied{};
-    log.copy_run(first.raw(), copied.view());
+    copied.with_mut([&log, first](auto cells) noexcept { log.copy_run(first.raw(), cells.view()); });
     for (uint32_t i = 0; i < 32; ++i) {
         CRUCIBLE_TEST_ASSERT(
             kTest,

@@ -116,10 +116,12 @@ using Image = FixedArray<std::byte, encoded_size_v<Sample>>;
     sample.ratio = bit_cast<float>(stream.next_word());
     sample.scale = bit_cast<double>(stream.next_wide());
     for (auto const index : decltype(sample.lanes)::indices()) {
-        sample.lanes.at(index) = static_cast<std::uint16_t>(stream.next_word());
+        auto const lane = static_cast<std::uint16_t>(stream.next_word());
+        sample.lanes.with_element(index, [lane](std::uint16_t& element) noexcept { element = lane; });
     }
     for (auto const index : decltype(sample.pairs)::indices()) {
-        sample.pairs.at(index) = static_cast<std::int32_t>(stream.next_word());
+        auto const pair = static_cast<std::int32_t>(stream.next_word());
+        sample.pairs.with_element(index, [pair](std::int32_t& element) noexcept { element = pair; });
     }
     sample.ticket = Ticket{stream.next_word()};
     sample.address = stream.next_wide();
@@ -217,16 +219,17 @@ template <std::size_t N>
     return accumulator;
 }
 
-// The byte at an offset of an image.
-[[nodiscard]] std::byte& byte_at(Image& image, std::size_t at) noexcept {
-    return image.at(Index<encoded_size_v<Sample>>::check(at).expect("the offset is inside the image"));
+// Writes the byte at an offset of an image.
+void put_byte(Image& image, std::size_t at, std::byte byte) noexcept {
+    image.with_element(Index<encoded_size_v<Sample>>::check(at).expect("the offset is inside the image"),
+                       [byte](std::byte& element) noexcept { element = byte; });
 }
 
 // The hand image: each field in declaration order, the low byte first.
 template <class Word>
 void put_word(Image& image, std::size_t at, Word word) noexcept {
     for (std::size_t index = 0; index < sizeof(Word); ++index) {
-        byte_at(image, at + index) = static_cast<std::byte>(static_cast<std::uint8_t>(word >> (8 * index)));
+        put_byte(image, at + index, static_cast<std::byte>(static_cast<std::uint8_t>(word >> (8 * index))));
     }
 }
 
@@ -255,7 +258,7 @@ void put_word(Image& image, std::size_t at, Word word) noexcept {
 // The image of the sample.
 [[nodiscard]] Image image_of(Sample const& sample) noexcept {
     Image image{};
-    encode(sample, image.view());
+    image.with_mut([&sample](auto run) noexcept { encode(sample, run.view()); });
     return image;
 }
 
@@ -266,7 +269,7 @@ void put_word(Image& image, std::size_t at, Word word) noexcept {
 template <class T>
 [[nodiscard]] FixedArray<std::byte, encoded_size_v<T>> encoded(T const& value) noexcept {
     FixedArray<std::byte, encoded_size_v<T>> image{};
-    encode(value, image.view());
+    image.with_mut([&value](auto run) noexcept { encode(value, run.view()); });
     return image;
 }
 
@@ -309,8 +312,8 @@ void test_hash_agrees_with_the_hand_fold() {
     pinned.wide = -0x0123456789ABCDEFLL;
     pinned.ratio = -0.0f;
     pinned.scale = 1.5;
-    pinned.lanes.at(index<1>()) = 0xCDEF;
-    pinned.pairs.at(index<1>()) = -7;
+    pinned.lanes.with_element(index<1>(), [](std::uint16_t& lane) noexcept { lane = 0xCDEF; });
+    pinned.pairs.with_element(index<1>(), [](std::int32_t& pair) noexcept { pair = -7; });
     pinned.ticket = Ticket{42};
     CRUCIBLE_FATAL_INVARIANT(hash(pinned).raw() == hand_hash(pinned));
     CRUCIBLE_FATAL_INVARIANT(hash(pinned).raw() == kPinnedSampleHash);
@@ -386,17 +389,21 @@ template <class Leaf>
 
 template <class Leaf, std::size_t N>
 void fill(FixedArray<Leaf, N>& array, ::crucible::test::PhiloxStream& stream) noexcept {
-    for (Leaf& leaf : array) {
-        leaf = random_leaf<Leaf>(stream);
-    }
+    array.with_mut([&stream](auto run) noexcept {
+        for (Leaf& leaf : run) {
+            leaf = random_leaf<Leaf>(stream);
+        }
+    });
 }
 
 template <std::size_t N>
 void fill(FixedArray<Pair, N>& array, ::crucible::test::PhiloxStream& stream) noexcept {
-    for (Pair& pair : array) {
-        pair.narrow = random_leaf<std::uint16_t>(stream);
-        pair.tiny = random_leaf<std::uint8_t>(stream);
-    }
+    array.with_mut([&stream](auto run) noexcept {
+        for (Pair& pair : run) {
+            pair.narrow = random_leaf<std::uint16_t>(stream);
+            pair.tiny = random_leaf<std::uint8_t>(stream);
+        }
+    });
 }
 
 // The hash of the value is the hand fold of its image, and each byte of the
@@ -581,8 +588,9 @@ template <class T, std::size_t N>
     for (std::size_t index = 0; index < count; ++index) {
         auto const image = encoded(elements.at(Index<N>::check(index).expect("the index is below the count")));
         for (std::size_t at = 0; at < step; ++at) {
-            bytes.at(Index<N * step>::check(index * step + at).expect("the byte is in the run")) =
-                image.at(Index<step>::check(at).expect("the byte is in the image"));
+            std::byte const byte = image.at(Index<step>::check(at).expect("the byte is in the image"));
+            bytes.with_element(Index<N * step>::check(index * step + at).expect("the byte is in the run"),
+                               [byte](std::byte& element) noexcept { element = byte; });
         }
     }
     std::uint64_t accumulator = kStartSeed;
@@ -618,12 +626,16 @@ void test_hash_of_a_run() {
     FixedArray<OneBlock, 6> blocks{};
     for (int round = 0; round < 64; ++round) {
         fill(pairs, stream);
-        for (Edge& edge : edges) {
-            edge = Edge{random_leaf<std::uint16_t>(stream), random_leaf<std::uint16_t>(stream)};
-        }
-        for (OneBlock& block : blocks) {
-            block = OneBlock{random_leaf<std::uint64_t>(stream), random_leaf<std::uint64_t>(stream)};
-        }
+        edges.with_mut([&stream](auto run) noexcept {
+            for (Edge& edge : run) {
+                edge = Edge{random_leaf<std::uint16_t>(stream), random_leaf<std::uint16_t>(stream)};
+            }
+        });
+        blocks.with_mut([&stream](auto run) noexcept {
+            for (OneBlock& block : run) {
+                block = OneBlock{random_leaf<std::uint64_t>(stream), random_leaf<std::uint64_t>(stream)};
+            }
+        });
         for (std::size_t count = 0; count <= 40; ++count) {
             CRUCIBLE_FATAL_INVARIANT(hash_of_run(pairs, count) == hand_hash_of_run(pairs, count));
             CRUCIBLE_FATAL_INVARIANT(hash_of_run(edges, count) == hand_hash_of_run(edges, count));
@@ -673,26 +685,26 @@ void test_decode_refuses_each_byte_that_names_no_value() {
     Image const clean = image_of(Sample{});
 
     Image bad_bool = clean;
-    byte_at(bad_bool, kFlagAt) = std::byte{2};
+    put_byte(bad_bool, kFlagAt, std::byte{2});
     CRUCIBLE_FATAL_INVARIANT((fault_of(bad_bool) == DecodeFault{DecodeRefusal::bool_byte, kFlagAt}));
 
     Image bad_phase = clean;
-    byte_at(bad_phase, kPhaseAt) = std::byte{3};
+    put_byte(bad_phase, kPhaseAt, std::byte{3});
     CRUCIBLE_FATAL_INVARIANT((fault_of(bad_phase) == DecodeFault{DecodeRefusal::enumerator, kPhaseAt}));
 
     Image bad_pad = clean;
-    byte_at(bad_pad, kPadAt + 1) = std::byte{1};
+    put_byte(bad_pad, kPadAt + 1, std::byte{1});
     CRUCIBLE_FATAL_INVARIANT((fault_of(bad_pad) == DecodeFault{DecodeRefusal::pad_byte, kPadAt}));
 
     // The first fault in the order of the parts wins.
     Image two_faults = bad_pad;
-    byte_at(two_faults, kFlagAt) = std::byte{0xFF};
+    put_byte(two_faults, kFlagAt, std::byte{0xFF});
     CRUCIBLE_FATAL_INVARIANT((fault_of(two_faults) == DecodeFault{DecodeRefusal::bool_byte, kFlagAt}));
 
     // Each other value of the gap is refused too, and each enumerator is read.
     for (unsigned raw = 0; raw < 256; ++raw) {
         Image image = clean;
-        byte_at(image, kPhaseAt) = static_cast<std::byte>(raw);
+        put_byte(image, kPhaseAt, static_cast<std::byte>(raw));
         bool const names_value = raw == 0 || raw == 1 || raw == 7;
         CRUCIBLE_FATAL_INVARIANT(decode_of(image).is_ok() == names_value);
     }
@@ -704,7 +716,7 @@ void test_format_names_each_part() {
     sample.flag = true;
     sample.phase = Phase::other;
     sample.ratio = 0.5f;
-    sample.lanes.at(index<2>()) = 9;
+    sample.lanes.with_element(index<2>(), [](std::uint16_t& lane) noexcept { lane = 9; });
     sample.ticket = Ticket{7};
     sample.address = 1;
     FixedText<512> out{};
@@ -768,13 +780,15 @@ void test_c_array_and_pointer_parts() {
         HoldsFixedArray fixed_array{};
         for (std::size_t lane = 0; lane < 3; ++lane) {
             c_array.lanes[lane] = static_cast<std::uint16_t>(stream.next_word());
-            fixed_array.lanes.at(Index<3>::check(lane).expect("three lanes")) = c_array.lanes[lane];
+            std::uint16_t const lane_value = c_array.lanes[lane];
+            fixed_array.lanes.with_element(Index<3>::check(lane).expect("three lanes"),
+                                           [lane_value](std::uint16_t& element) noexcept { element = lane_value; });
         }
         CRUCIBLE_FATAL_INVARIANT(hash(c_array).raw() == hash(fixed_array).raw());
         FixedArray<std::byte, 6> c_image{};
         FixedArray<std::byte, 6> fixed_image{};
-        encode(c_array, c_image.view());
-        encode(fixed_array, fixed_image.view());
+        c_image.with_mut([&c_array](auto run) noexcept { encode(c_array, run.view()); });
+        fixed_image.with_mut([&fixed_array](auto run) noexcept { encode(fixed_array, run.view()); });
         CRUCIBLE_FATAL_INVARIANT(c_image == fixed_image);
         HoldsCArray other = c_array;
         other.lanes[2] = static_cast<std::uint16_t>(other.lanes[2] + 1U);
@@ -935,31 +949,31 @@ void test_sums_refuse_each_byte_that_names_no_value() {
     SumImage const clean = encoded(sample_with_sums());
 
     SumImage bad_option_tag = clean;
-    bad_option_tag.at(index<2>()) = std::byte{2};
+    bad_option_tag.with_element(index<2>(), [](std::byte& element) noexcept { element = std::byte{2}; });
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(bad_option_tag) == DecodeFault{DecodeRefusal::sum_tag, 2}));
 
     SumImage none_with_payload = encoded(WithSums{});
-    none_with_payload.at(index<4>()) = std::byte{1};
+    none_with_payload.with_element(index<4>(), [](std::byte& element) noexcept { element = std::byte{1}; });
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(none_with_payload) == DecodeFault{DecodeRefusal::tail_byte, 3}));
 
     SumImage bad_result_tag = clean;
-    bad_result_tag.at(index<7>()) = std::byte{2};
+    bad_result_tag.with_element(index<7>(), [](std::byte& element) noexcept { element = std::byte{2}; });
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(bad_result_tag) == DecodeFault{DecodeRefusal::sum_tag, 7}));
 
     SumImage error_with_tail = clean;
-    error_with_tail.at(index<9>()) = std::byte{1};
+    error_with_tail.with_element(index<9>(), [](std::byte& element) noexcept { element = std::byte{1}; });
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(error_with_tail) == DecodeFault{DecodeRefusal::tail_byte, 9}));
 
     SumImage bad_error = clean;
-    bad_error.at(index<8>()) = std::byte{3};
+    bad_error.with_element(index<8>(), [](std::byte& element) noexcept { element = std::byte{3}; });
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(bad_error) == DecodeFault{DecodeRefusal::enumerator, 8}));
 
     SumImage bad_one_of_tag = clean;
-    bad_one_of_tag.at(index<10>()) = std::byte{2};
+    bad_one_of_tag.with_element(index<10>(), [](std::byte& element) noexcept { element = std::byte{2}; });
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(bad_one_of_tag) == DecodeFault{DecodeRefusal::sum_tag, 10}));
 
     SumImage narrow_with_tail = encoded(WithSums{});
-    narrow_with_tail.at(index<13>()) = std::byte{1};
+    narrow_with_tail.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{1}; });
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(narrow_with_tail) == DecodeFault{DecodeRefusal::tail_byte, 12}));
 }
 
@@ -1069,26 +1083,26 @@ void test_lists_refuse_each_byte_that_names_no_value() {
     ListImage const clean = encoded(sample_with_lists());
 
     ListImage too_many_words = clean;
-    too_many_words.at(index<1>()) = std::byte{4};
+    too_many_words.with_element(index<1>(), [](std::byte& element) noexcept { element = std::byte{4}; });
     CRUCIBLE_FATAL_INVARIANT((list_fault_of(too_many_words) == DecodeFault{DecodeRefusal::list_count, 1}));
 
     ListImage word_tail = clean;
-    word_tail.at(index<7>()) = std::byte{1};
+    word_tail.with_element(index<7>(), [](std::byte& element) noexcept { element = std::byte{1}; });
     CRUCIBLE_FATAL_INVARIANT((list_fault_of(word_tail) == DecodeFault{DecodeRefusal::tail_byte, 6}));
 
     ListImage too_long_name = clean;
-    too_long_name.at(index<8>()) = std::byte{6};
+    too_long_name.with_element(index<8>(), [](std::byte& element) noexcept { element = std::byte{6}; });
     CRUCIBLE_FATAL_INVARIANT((list_fault_of(too_long_name) == DecodeFault{DecodeRefusal::list_count, 8}));
 
     ListImage name_tail = clean;
-    name_tail.at(index<13>()) = std::byte{1};
+    name_tail.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{1}; });
     CRUCIBLE_FATAL_INVARIANT((list_fault_of(name_tail) == DecodeFault{DecodeRefusal::tail_byte, 12}));
 
     // A count at the capacity takes each room, so no byte is a tail.
     ListImage full_name = clean;
-    full_name.at(index<8>()) = std::byte{5};
-    full_name.at(index<12>()) = std::byte{'c'};
-    full_name.at(index<13>()) = std::byte{'d'};
+    full_name.with_element(index<8>(), [](std::byte& element) noexcept { element = std::byte{5}; });
+    full_name.with_element(index<12>(), [](std::byte& element) noexcept { element = std::byte{'c'}; });
+    full_name.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{'d'}; });
     CRUCIBLE_FATAL_INVARIANT(decode<WithLists>(full_name.view()).is_ok());
 }
 
@@ -1121,8 +1135,10 @@ void test_lists_hash_as_array_elements_at_each_offset() {
         for (auto const index : decltype(value.names)::indices()) {
             std::uint64_t const count = (letters >> (2 * index.raw())) % 4;
             for (std::uint64_t letter = 0; letter < count; ++letter) {
-                is_built =
-                    is_built && value.names.at(index).append(static_cast<char>('a' + letter + index.raw())).is_ok();
+                char const character = static_cast<char>('a' + letter + index.raw());
+                is_built = is_built && value.names.with_element(index, [character](FixedText<3>& name) noexcept {
+                    return name.append(character).is_ok();
+                });
             }
         }
         for (std::uint64_t index = 0; index < (word >> 40) % 6; ++index) {
@@ -1251,8 +1267,10 @@ void test_decode_of_sums_and_lists_agrees_with_an_oracle() {
         for (std::uint64_t write = 0; write <= ((word >> 1) & 3U); ++write) {
             std::uint64_t const change = stream.next_word();
             std::uint64_t const raw = (change & 1U) != 0 ? (change >> 8) % 4 : (change >> 8) & 0xFFU;
-            image.at(Index<kOracleBytes>::check((change >> 16) % kOracleBytes).expect("an offset of the image")) =
-                static_cast<std::byte>(raw);
+            std::byte const byte = static_cast<std::byte>(raw);
+            image.with_element(
+                Index<kOracleBytes>::check((change >> 16) % kOracleBytes).expect("an offset of the image"),
+                [byte](std::byte& element) noexcept { element = byte; });
         }
         OracleImage const& read = image;
         DecodeFault const expected = first_oracle_fault(read);

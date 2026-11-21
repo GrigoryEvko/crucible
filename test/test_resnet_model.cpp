@@ -201,8 +201,9 @@ OpPacket build_pkt(const OpDef& op, uint32_t iter) {
     pkt.entry.num_outputs = op.n_out;
     pkt.n_metas = uint16_t(op.n_in + op.n_out);
     for (uint8_t i = 0; i < pkt.n_metas; i++)
-        *pkt.metas.get(i).expect("a test reads an element at or past the count of its array") =
-            make_meta(op.t[i], iter);
+        pkt.metas.with_element(
+            ::fixy::Index<6>::check(i).expect("a test reads an element at or past the count of its array"),
+            [meta = make_meta(op.t[i], iter)](TensorMeta& record) noexcept { record = meta; });
     return pkt;
 }
 

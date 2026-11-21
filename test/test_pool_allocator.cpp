@@ -45,45 +45,46 @@ static MemoryPlan make_manual_plan(::fixy::View<TensorSlot> slots, uint64_t pool
 }
 
 static void test_basic_init() {
-    ::foundation::core::FixedArray<TensorSlot, 3> slots{};
-    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
-                                                .nbytes = 1024,
-                                                .birth_op = OpIndex{0},
-                                                .death_op = OpIndex{5},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = false,
-                                                .pad = {},
-                                                .slot_id = SlotId{0},
-                                                .pad2 = {}};
-    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 1024,
-                                                .nbytes = 2048,
-                                                .birth_op = OpIndex{1},
-                                                .death_op = OpIndex{4},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = false,
-                                                .pad = {},
-                                                .slot_id = SlotId{1},
-                                                .pad2 = {}};
-    slots.at(::foundation::core::index<2>()) = {.offset_bytes = 0,
-                                                .nbytes = 512,
-                                                .birth_op = OpIndex{0},
-                                                .death_op = OpIndex{7},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = true,
-                                                .pad = {},
-                                                .slot_id = SlotId{2},
-                                                .pad2 = {}};
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots = arena.array(::foundation::effects::testing::test().alloc, 3, TensorSlot{});
+    *slots.get(0).expect("the run holds three slots") = {.offset_bytes = 0,
+                                                         .nbytes = 1024,
+                                                         .birth_op = OpIndex{0},
+                                                         .death_op = OpIndex{5},
+                                                         .dtype = ScalarType::Float,
+                                                         .device_type = DeviceType::CPU,
+                                                         .device_idx = 0,
+                                                         .layout = Layout::Strided,
+                                                         .is_external = false,
+                                                         .pad = {},
+                                                         .slot_id = SlotId{0},
+                                                         .pad2 = {}};
+    *slots.get(1).expect("the run holds three slots") = {.offset_bytes = 1024,
+                                                         .nbytes = 2048,
+                                                         .birth_op = OpIndex{1},
+                                                         .death_op = OpIndex{4},
+                                                         .dtype = ScalarType::Float,
+                                                         .device_type = DeviceType::CPU,
+                                                         .device_idx = 0,
+                                                         .layout = Layout::Strided,
+                                                         .is_external = false,
+                                                         .pad = {},
+                                                         .slot_id = SlotId{1},
+                                                         .pad2 = {}};
+    *slots.get(2).expect("the run holds three slots") = {.offset_bytes = 0,
+                                                         .nbytes = 512,
+                                                         .birth_op = OpIndex{0},
+                                                         .death_op = OpIndex{7},
+                                                         .dtype = ScalarType::Float,
+                                                         .device_type = DeviceType::CPU,
+                                                         .device_idx = 0,
+                                                         .layout = Layout::Strided,
+                                                         .is_external = true,
+                                                         .pad = {},
+                                                         .slot_id = SlotId{2},
+                                                         .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots.view(), 3072, 1);
+    MemoryPlan plan = make_manual_plan(slots, 3072, 1);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -124,33 +125,34 @@ static void test_basic_init() {
 }
 
 static void test_external_registration() {
-    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
-    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
-                                                .nbytes = 1024,
-                                                .birth_op = OpIndex{0},
-                                                .death_op = OpIndex{3},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = false,
-                                                .pad = {},
-                                                .slot_id = SlotId{0},
-                                                .pad2 = {}};
-    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
-                                                .nbytes = 512,
-                                                .birth_op = OpIndex{0},
-                                                .death_op = OpIndex{3},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = true,
-                                                .pad = {},
-                                                .slot_id = SlotId{1},
-                                                .pad2 = {}};
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots = arena.array(::foundation::effects::testing::test().alloc, 2, TensorSlot{});
+    *slots.get(0).expect("the run holds two slots") = {.offset_bytes = 0,
+                                                       .nbytes = 1024,
+                                                       .birth_op = OpIndex{0},
+                                                       .death_op = OpIndex{3},
+                                                       .dtype = ScalarType::Float,
+                                                       .device_type = DeviceType::CPU,
+                                                       .device_idx = 0,
+                                                       .layout = Layout::Strided,
+                                                       .is_external = false,
+                                                       .pad = {},
+                                                       .slot_id = SlotId{0},
+                                                       .pad2 = {}};
+    *slots.get(1).expect("the run holds two slots") = {.offset_bytes = 0,
+                                                       .nbytes = 512,
+                                                       .birth_op = OpIndex{0},
+                                                       .death_op = OpIndex{3},
+                                                       .dtype = ScalarType::Float,
+                                                       .device_type = DeviceType::CPU,
+                                                       .device_idx = 0,
+                                                       .layout = Layout::Strided,
+                                                       .is_external = true,
+                                                       .pad = {},
+                                                       .slot_id = SlotId{1},
+                                                       .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots.view(), 1024, 1);
+    MemoryPlan plan = make_manual_plan(slots, 1024, 1);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -170,45 +172,46 @@ static void test_external_registration() {
 // The three offsets are laid out end to end with no overlap, which is
 // the precondition the isolation check below rests on.
 static void test_write_read_isolation() {
-    ::foundation::core::FixedArray<TensorSlot, 3> slots{};
-    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
-                                                .nbytes = 256,
-                                                .birth_op = OpIndex{0},
-                                                .death_op = OpIndex{3},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = false,
-                                                .pad = {},
-                                                .slot_id = SlotId{0},
-                                                .pad2 = {}};
-    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 256,
-                                                .nbytes = 512,
-                                                .birth_op = OpIndex{1},
-                                                .death_op = OpIndex{4},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = false,
-                                                .pad = {},
-                                                .slot_id = SlotId{1},
-                                                .pad2 = {}};
-    slots.at(::foundation::core::index<2>()) = {.offset_bytes = 768,
-                                                .nbytes = 256,
-                                                .birth_op = OpIndex{2},
-                                                .death_op = OpIndex{5},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = false,
-                                                .pad = {},
-                                                .slot_id = SlotId{2},
-                                                .pad2 = {}};
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots = arena.array(::foundation::effects::testing::test().alloc, 3, TensorSlot{});
+    *slots.get(0).expect("the run holds three slots") = {.offset_bytes = 0,
+                                                         .nbytes = 256,
+                                                         .birth_op = OpIndex{0},
+                                                         .death_op = OpIndex{3},
+                                                         .dtype = ScalarType::Float,
+                                                         .device_type = DeviceType::CPU,
+                                                         .device_idx = 0,
+                                                         .layout = Layout::Strided,
+                                                         .is_external = false,
+                                                         .pad = {},
+                                                         .slot_id = SlotId{0},
+                                                         .pad2 = {}};
+    *slots.get(1).expect("the run holds three slots") = {.offset_bytes = 256,
+                                                         .nbytes = 512,
+                                                         .birth_op = OpIndex{1},
+                                                         .death_op = OpIndex{4},
+                                                         .dtype = ScalarType::Float,
+                                                         .device_type = DeviceType::CPU,
+                                                         .device_idx = 0,
+                                                         .layout = Layout::Strided,
+                                                         .is_external = false,
+                                                         .pad = {},
+                                                         .slot_id = SlotId{1},
+                                                         .pad2 = {}};
+    *slots.get(2).expect("the run holds three slots") = {.offset_bytes = 768,
+                                                         .nbytes = 256,
+                                                         .birth_op = OpIndex{2},
+                                                         .death_op = OpIndex{5},
+                                                         .dtype = ScalarType::Float,
+                                                         .device_type = DeviceType::CPU,
+                                                         .device_idx = 0,
+                                                         .layout = Layout::Strided,
+                                                         .is_external = false,
+                                                         .pad = {},
+                                                         .slot_id = SlotId{2},
+                                                         .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots.view(), 1024, 0);
+    MemoryPlan plan = make_manual_plan(slots, 1024, 0);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -235,33 +238,34 @@ static void test_write_read_isolation() {
 // A plan whose slots are all external asks for no pool at all, so the
 // allocator must report itself initialized while holding no memory.
 static void test_all_external() {
-    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
-    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
-                                                .nbytes = 1024,
-                                                .birth_op = OpIndex{0},
-                                                .death_op = OpIndex{3},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = true,
-                                                .pad = {},
-                                                .slot_id = SlotId{0},
-                                                .pad2 = {}};
-    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
-                                                .nbytes = 2048,
-                                                .birth_op = OpIndex{0},
-                                                .death_op = OpIndex{5},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = true,
-                                                .pad = {},
-                                                .slot_id = SlotId{1},
-                                                .pad2 = {}};
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots = arena.array(::foundation::effects::testing::test().alloc, 2, TensorSlot{});
+    *slots.get(0).expect("the run holds two slots") = {.offset_bytes = 0,
+                                                       .nbytes = 1024,
+                                                       .birth_op = OpIndex{0},
+                                                       .death_op = OpIndex{3},
+                                                       .dtype = ScalarType::Float,
+                                                       .device_type = DeviceType::CPU,
+                                                       .device_idx = 0,
+                                                       .layout = Layout::Strided,
+                                                       .is_external = true,
+                                                       .pad = {},
+                                                       .slot_id = SlotId{0},
+                                                       .pad2 = {}};
+    *slots.get(1).expect("the run holds two slots") = {.offset_bytes = 0,
+                                                       .nbytes = 2048,
+                                                       .birth_op = OpIndex{0},
+                                                       .death_op = OpIndex{5},
+                                                       .dtype = ScalarType::Float,
+                                                       .device_type = DeviceType::CPU,
+                                                       .device_idx = 0,
+                                                       .layout = Layout::Strided,
+                                                       .is_external = true,
+                                                       .pad = {},
+                                                       .slot_id = SlotId{1},
+                                                       .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots.view(), 0, 2);
+    MemoryPlan plan = make_manual_plan(slots, 0, 2);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -286,21 +290,22 @@ static void test_all_external() {
 }
 
 static void test_reinit() {
-    ::foundation::core::FixedArray<TensorSlot, 1> slots_a{};
-    slots_a.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
-                                                  .nbytes = 512,
-                                                  .birth_op = OpIndex{0},
-                                                  .death_op = OpIndex{3},
-                                                  .dtype = ScalarType::Float,
-                                                  .device_type = DeviceType::CPU,
-                                                  .device_idx = 0,
-                                                  .layout = Layout::Strided,
-                                                  .is_external = false,
-                                                  .pad = {},
-                                                  .slot_id = SlotId{0},
-                                                  .pad2 = {}};
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots_a = arena.array(::foundation::effects::testing::test().alloc, 1, TensorSlot{});
+    *slots_a.get(0).expect("the run holds one slot") = {.offset_bytes = 0,
+                                                        .nbytes = 512,
+                                                        .birth_op = OpIndex{0},
+                                                        .death_op = OpIndex{3},
+                                                        .dtype = ScalarType::Float,
+                                                        .device_type = DeviceType::CPU,
+                                                        .device_idx = 0,
+                                                        .layout = Layout::Strided,
+                                                        .is_external = false,
+                                                        .pad = {},
+                                                        .slot_id = SlotId{0},
+                                                        .pad2 = {}};
 
-    MemoryPlan plan_a = make_manual_plan(slots_a.view(), 512, 0);
+    MemoryPlan plan_a = make_manual_plan(slots_a, 512, 0);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan_a);
@@ -310,33 +315,33 @@ static void test_reinit() {
     pool.destroy();
     CRUCIBLE_TEST_ASSERT(kTest, !pool.is_initialized());
 
-    ::foundation::core::FixedArray<TensorSlot, 2> slots_b{};
-    slots_b.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
-                                                  .nbytes = 1024,
-                                                  .birth_op = OpIndex{0},
-                                                  .death_op = OpIndex{5},
-                                                  .dtype = ScalarType::Float,
-                                                  .device_type = DeviceType::CPU,
-                                                  .device_idx = 0,
-                                                  .layout = Layout::Strided,
-                                                  .is_external = false,
-                                                  .pad = {},
-                                                  .slot_id = SlotId{0},
-                                                  .pad2 = {}};
-    slots_b.at(::foundation::core::index<1>()) = {.offset_bytes = 1024,
-                                                  .nbytes = 2048,
-                                                  .birth_op = OpIndex{1},
-                                                  .death_op = OpIndex{4},
-                                                  .dtype = ScalarType::Float,
-                                                  .device_type = DeviceType::CPU,
-                                                  .device_idx = 0,
-                                                  .layout = Layout::Strided,
-                                                  .is_external = false,
-                                                  .pad = {},
-                                                  .slot_id = SlotId{1},
-                                                  .pad2 = {}};
+    ::fixy::View<TensorSlot> const slots_b = arena.array(::foundation::effects::testing::test().alloc, 2, TensorSlot{});
+    *slots_b.get(0).expect("the run holds two slots") = {.offset_bytes = 0,
+                                                         .nbytes = 1024,
+                                                         .birth_op = OpIndex{0},
+                                                         .death_op = OpIndex{5},
+                                                         .dtype = ScalarType::Float,
+                                                         .device_type = DeviceType::CPU,
+                                                         .device_idx = 0,
+                                                         .layout = Layout::Strided,
+                                                         .is_external = false,
+                                                         .pad = {},
+                                                         .slot_id = SlotId{0},
+                                                         .pad2 = {}};
+    *slots_b.get(1).expect("the run holds two slots") = {.offset_bytes = 1024,
+                                                         .nbytes = 2048,
+                                                         .birth_op = OpIndex{1},
+                                                         .death_op = OpIndex{4},
+                                                         .dtype = ScalarType::Float,
+                                                         .device_type = DeviceType::CPU,
+                                                         .device_idx = 0,
+                                                         .layout = Layout::Strided,
+                                                         .is_external = false,
+                                                         .pad = {},
+                                                         .slot_id = SlotId{1},
+                                                         .pad2 = {}};
 
-    MemoryPlan plan_b = make_manual_plan(slots_b.view(), 3072, 0);
+    MemoryPlan plan_b = make_manual_plan(slots_b, 3072, 0);
     pool.init(::foundation::effects::testing::test().alloc, plan_b);
     auto pv_b = pool.mint_initialized_view(kVigilForeground);
 
@@ -363,59 +368,59 @@ static void test_integration_with_sweep_line() {
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     constexpr uint32_t N = 4;
-    ::foundation::core::FixedArray<TensorSlot, N> slots{};
-    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
-                                                .nbytes = 1024,
-                                                .birth_op = OpIndex{0},
-                                                .death_op = OpIndex{5},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = false,
-                                                .pad = {},
-                                                .slot_id = SlotId{0},
-                                                .pad2 = {}};
-    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
-                                                .nbytes = 2048,
-                                                .birth_op = OpIndex{1},
-                                                .death_op = OpIndex{3},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = false,
-                                                .pad = {},
-                                                .slot_id = SlotId{1},
-                                                .pad2 = {}};
-    slots.at(::foundation::core::index<2>()) = {.offset_bytes = 0,
-                                                .nbytes = 1024,
-                                                .birth_op = OpIndex{4},
-                                                .death_op = OpIndex{7},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = false,
-                                                .pad = {},
-                                                .slot_id = SlotId{2},
-                                                .pad2 = {}};
-    slots.at(::foundation::core::index<3>()) = {.offset_bytes = 0,
-                                                .nbytes = 512,
-                                                .birth_op = OpIndex{0},
-                                                .death_op = OpIndex{7},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CPU,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = true,
-                                                .pad = {},
-                                                .slot_id = SlotId{3},
-                                                .pad2 = {}};
+    ::fixy::BumpArena sweep_arena{size_t{1} << 16};
+    ::fixy::View<TensorSlot> const slots = sweep_arena.array(test.alloc, N, TensorSlot{});
+    *slots.get(0).expect("the run holds four slots") = {.offset_bytes = 0,
+                                                        .nbytes = 1024,
+                                                        .birth_op = OpIndex{0},
+                                                        .death_op = OpIndex{5},
+                                                        .dtype = ScalarType::Float,
+                                                        .device_type = DeviceType::CPU,
+                                                        .device_idx = 0,
+                                                        .layout = Layout::Strided,
+                                                        .is_external = false,
+                                                        .pad = {},
+                                                        .slot_id = SlotId{0},
+                                                        .pad2 = {}};
+    *slots.get(1).expect("the run holds four slots") = {.offset_bytes = 0,
+                                                        .nbytes = 2048,
+                                                        .birth_op = OpIndex{1},
+                                                        .death_op = OpIndex{3},
+                                                        .dtype = ScalarType::Float,
+                                                        .device_type = DeviceType::CPU,
+                                                        .device_idx = 0,
+                                                        .layout = Layout::Strided,
+                                                        .is_external = false,
+                                                        .pad = {},
+                                                        .slot_id = SlotId{1},
+                                                        .pad2 = {}};
+    *slots.get(2).expect("the run holds four slots") = {.offset_bytes = 0,
+                                                        .nbytes = 1024,
+                                                        .birth_op = OpIndex{4},
+                                                        .death_op = OpIndex{7},
+                                                        .dtype = ScalarType::Float,
+                                                        .device_type = DeviceType::CPU,
+                                                        .device_idx = 0,
+                                                        .layout = Layout::Strided,
+                                                        .is_external = false,
+                                                        .pad = {},
+                                                        .slot_id = SlotId{2},
+                                                        .pad2 = {}};
+    *slots.get(3).expect("the run holds four slots") = {.offset_bytes = 0,
+                                                        .nbytes = 512,
+                                                        .birth_op = OpIndex{0},
+                                                        .death_op = OpIndex{7},
+                                                        .dtype = ScalarType::Float,
+                                                        .device_type = DeviceType::CPU,
+                                                        .device_idx = 0,
+                                                        .layout = Layout::Strided,
+                                                        .is_external = true,
+                                                        .pad = {},
+                                                        .slot_id = SlotId{3},
+                                                        .pad2 = {}};
 
     crucible::MemoryPlan plan_storage{};
-    ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view())
+    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots)
                                             .expect("the slots of the test fit in 64 bits");
     CRUCIBLE_TEST_ASSERT(kTest, plan.pool_bytes > 0);
 
@@ -464,33 +469,34 @@ static void test_integration_with_sweep_line() {
 // registered slot keeps the device that its owner states.
 static void test_device_of_slots() {
     const crucible::TensorDevice accelerator{DeviceType::CUDA, 0};
-    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
-    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
-                                                .nbytes = 256,
-                                                .birth_op = OpIndex{0},
-                                                .death_op = OpIndex{3},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CUDA,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = false,
-                                                .pad = {},
-                                                .slot_id = SlotId{0},
-                                                .pad2 = {}};
-    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
-                                                .nbytes = 256,
-                                                .birth_op = OpIndex{0},
-                                                .death_op = OpIndex{3},
-                                                .dtype = ScalarType::Float,
-                                                .device_type = DeviceType::CUDA,
-                                                .device_idx = 0,
-                                                .layout = Layout::Strided,
-                                                .is_external = true,
-                                                .pad = {},
-                                                .slot_id = SlotId{1},
-                                                .pad2 = {}};
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots = arena.array(::foundation::effects::testing::test().alloc, 2, TensorSlot{});
+    *slots.get(0).expect("the run holds two slots") = {.offset_bytes = 0,
+                                                       .nbytes = 256,
+                                                       .birth_op = OpIndex{0},
+                                                       .death_op = OpIndex{3},
+                                                       .dtype = ScalarType::Float,
+                                                       .device_type = DeviceType::CUDA,
+                                                       .device_idx = 0,
+                                                       .layout = Layout::Strided,
+                                                       .is_external = false,
+                                                       .pad = {},
+                                                       .slot_id = SlotId{0},
+                                                       .pad2 = {}};
+    *slots.get(1).expect("the run holds two slots") = {.offset_bytes = 0,
+                                                       .nbytes = 256,
+                                                       .birth_op = OpIndex{0},
+                                                       .death_op = OpIndex{3},
+                                                       .dtype = ScalarType::Float,
+                                                       .device_type = DeviceType::CUDA,
+                                                       .device_idx = 0,
+                                                       .layout = Layout::Strided,
+                                                       .is_external = true,
+                                                       .pad = {},
+                                                       .slot_id = SlotId{1},
+                                                       .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots.view(), 256, 1);
+    MemoryPlan plan = make_manual_plan(slots, 256, 1);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -500,9 +506,9 @@ static void test_device_of_slots() {
     CRUCIBLE_TEST_ASSERT(kTest, ::fixy::some(pooled.address()) == pool.slot_ptr(SlotId{0}, pv));
     CRUCIBLE_TEST_ASSERT(kTest, pool.slot_data(SlotId{1}, pv).is_none());
 
-    ::fixy::FixedArray<unsigned char, 256> fake_param{};
-    const ::fixy::RunAddress param =
-        ::fixy::mint_run_address(fake_param.view(), 0).expect("the buffer holds 256 bytes");
+    ::fixy::View<unsigned char> const fake_param =
+        arena.array(::foundation::effects::testing::test().alloc, 256, static_cast<unsigned char>(0));
+    const ::fixy::RunAddress param = ::fixy::mint_run_address(fake_param, 0).expect("the buffer holds 256 bytes");
     pool.register_external(SlotId{1}, crucible::TensorData{param, accelerator}, pv);
     CRUCIBLE_TEST_ASSERT(kTest,
                          pool.slot_data(SlotId{1}, pv) == ::fixy::some(crucible::TensorData{param, accelerator}));
@@ -522,8 +528,9 @@ static void test_device_of_slots() {
 // out the pointer.
 static void expect_abort_on_init(::fixy::TestRunnerCtx const& test, const TensorSlot& slot, uint64_t pool_bytes,
                                  ::fixy::TextView refusal) {
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{slot};
-    MemoryPlan plan = make_manual_plan(slots.view(), pool_bytes, 0);
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot> const slots = arena.array(::foundation::effects::testing::test().alloc, 1, slot);
+    MemoryPlan plan = make_manual_plan(slots, pool_bytes, 0);
     ::fixy::check::expect_dies(
         test,
         [&plan] noexcept {

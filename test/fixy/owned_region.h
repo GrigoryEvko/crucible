@@ -11,7 +11,7 @@
 #include <fixy/OwnedRegion.h>
 #include <fixy/check/Check.h>
 #include <foundation/Lifetime.h>
-#include <foundation/core/Array.h>
+#include <foundation/core/BumpArena.h>
 #include <foundation/core/Region.h>
 
 #include "owned_region_unchecked_arena.h"
@@ -43,28 +43,19 @@ struct DataB {
     using permission_row = ::foundation::effects::Row<>;
 };
 
-// One bump pointer over a fixed block: the smallest thing adopt asks
-// of an arena.  The lifetime start gives a live object only to a type
-// whose every subobject is an implicit-lifetime type, so the constraint
-// refuses every other type.  The arena gives the View of the objects that
-// start over a window of its block, and the window of a request past the
-// block ends the process.
+// The smallest thing adopt asks of an arena: a bump arena of the base, which
+// gives each request a run that no other request holds.  The constraint
+// admits only a type whose every subobject is an implicit-lifetime type, so
+// it refuses each other type, as an arena of live objects must.  Each element
+// of a run holds the value-initialized T.
 class Arena {
-    alignas(std::max_align_t)::foundation::core::FixedArray<unsigned char, std::size_t{1} << 16> block_{};
-    std::size_t used_ = 0;
+    ::foundation::core::BumpArena bump_{std::size_t{1} << 16};
 
 public:
     template <typename T>
         requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
-    [[nodiscard]] ::foundation::core::View<T> alloc_array(::foundation::effects::Alloc, std::size_t n) noexcept {
-        if (n == 0) return ::foundation::core::View<T>{};
-        const std::size_t misalign = used_ % alignof(T);
-        const std::size_t start = misalign == 0 ? used_ : used_ + (alignof(T) - misalign);
-        const std::size_t nbytes = n * sizeof(T);
-        const ::foundation::core::View<unsigned char> bytes =
-            block_.view().window(start, nbytes).expect("the block of the arena holds the request");
-        used_ = start + nbytes;
-        return ::foundation::lifetime::start_as_array<T>(bytes);
+    [[nodiscard]] ::foundation::core::View<T> alloc_array(::foundation::effects::Alloc alloc, std::size_t n) noexcept {
+        return bump_.array(alloc, n, T{});
     }
 };
 

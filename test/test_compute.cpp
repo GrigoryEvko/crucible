@@ -19,6 +19,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
 #include <foundation/AlignedBytes.h>
 
 namespace {
@@ -120,8 +121,12 @@ int main() {
     // An external slot brings its own memory, registered separately,
     // and lives for the whole iteration.  An internal slot is given an
     // offset by the planner, and its lifetime runs from the operation
-    // that produces it to the last one that reads it.
-    ::foundation::core::FixedArray<TensorSlot, N_SLOTS> slots{};
+    // that produces it to the last one that reads it.  The plan borrows the
+    // slots.  The slots, the ops, their slot ids, their zero metadata and
+    // their producers are arrays of this arena.
+    ::fixy::BumpArena runs{size_t{1} << 16};
+    ::fixy::View<TensorSlot, N_SLOTS> const slots =
+        runs.array(test.alloc, N_SLOTS, TensorSlot{}).window<N_SLOTS>(0).expect("the run holds N_SLOTS slots");
 
     slots.at(::foundation::core::index<SL_X>()) = {.offset_bytes = 0,
                                                    .nbytes = BATCH * IN_DIM * 4,
@@ -212,51 +217,50 @@ int main() {
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view())
+    crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots)
                                       .expect("the slots of the test fit in 64 bits");
 
     ::fixy::report(::fixy::Sink::Out, "  plan: pool={} bytes, {} slots ({} external)\n",
                    static_cast<unsigned long>(plan.pool_bytes), plan.num_slots(), plan.num_external);
 
-    ::foundation::core::FixedArray<SlotId, 2> op0_in{SlotId{SL_X}, SlotId{SL_W1}};
-    ::foundation::core::FixedArray<SlotId, 1> op0_out{SlotId{SL_MM1}};
+    ::fixy::View<SlotId> const op0_in = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_X}, SlotId{SL_W1});
+    ::fixy::View<SlotId> const op0_out = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_MM1});
 
-    ::foundation::core::FixedArray<SlotId, 1> op1_in{SlotId{SL_MM1}};
-    ::foundation::core::FixedArray<SlotId, 1> op1_out{SlotId{SL_REL}};
+    ::fixy::View<SlotId> const op1_in = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_MM1});
+    ::fixy::View<SlotId> const op1_out = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_REL});
 
-    ::foundation::core::FixedArray<SlotId, 2> op2_in{SlotId{SL_REL}, SlotId{SL_W2}};
-    ::foundation::core::FixedArray<SlotId, 1> op2_out{SlotId{SL_MM2}};
+    ::fixy::View<SlotId> const op2_in = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_REL}, SlotId{SL_W2});
+    ::fixy::View<SlotId> const op2_out = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_MM2});
 
-    ::foundation::core::FixedArray<SlotId, 1> op3_in{SlotId{SL_MM2}};
-    ::foundation::core::FixedArray<SlotId, 1> op3_out{SlotId{SL_SM}};
+    ::fixy::View<SlotId> const op3_in = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_MM2});
+    ::fixy::View<SlotId> const op3_out = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_SM});
 
-    ::foundation::core::FixedArray<TraceEntry, N_OPS> ops{};
-    // The zero metadata and the producers of the ops are arrays of this arena.
-    ::fixy::BumpArena runs{size_t{1} << 16};
+    ::fixy::View<TraceEntry, N_OPS> const ops =
+        runs.array(test.alloc, N_OPS, TraceEntry{}).window<N_OPS>(0).expect("the run holds N_OPS ops");
 
     ops.at(::fixy::index<0>()).schema_hash = H_MM1;
     ops.at(::fixy::index<0>()).shape_hash = S_MM1;
-    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<0>()), op0_in.view());
-    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<0>()), op0_out.view());
+    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<0>()), op0_in);
+    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<0>()), op0_out);
 
     ops.at(::fixy::index<1>()).schema_hash = H_RELU;
     ops.at(::fixy::index<1>()).shape_hash = S_RELU;
-    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<1>()), op1_in.view());
-    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<1>()), op1_out.view());
+    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<1>()), op1_in);
+    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<1>()), op1_out);
 
     ops.at(::fixy::index<2>()).schema_hash = H_MM2;
     ops.at(::fixy::index<2>()).shape_hash = S_MM2;
-    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<2>()), op2_in.view());
-    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<2>()), op2_out.view());
+    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<2>()), op2_in);
+    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<2>()), op2_out);
 
     ops.at(::fixy::index<3>()).schema_hash = H_SOFTMAX;
     ops.at(::fixy::index<3>()).shape_hash = S_SOFTMAX;
-    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<3>()), op3_in.view());
-    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<3>()), op3_out.view());
+    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<3>()), op3_in);
+    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<3>()), op3_out);
 
     RegionNode region{};
     region.kind = TraceNodeKind::REGION;
-    region.ops = ops.view();
+    region.ops = ops;
     region.plan = make_plan_link(plan);
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};

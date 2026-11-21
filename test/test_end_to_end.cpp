@@ -61,10 +61,12 @@ void feed_iteration(TraceRing& ring, MetaLog& meta_log, Iteration iteration) {
         ::fixy::FixedArray<TensorMeta, 2> metas{};
         uint16_t idx = 0;
         if (i > 0)
-            *metas.get(idx++).expect("a test reads an element at or past the count of its array") =
-                make_meta(fake_ptr(iter, i - 1));
-        *metas.get(idx++).expect("a test reads an element at or past the count of its array") =
-            make_meta(fake_ptr(iter, i));
+            metas.with_element(
+                ::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
+                [meta = make_meta(fake_ptr(iter, i - 1))](TensorMeta& record) noexcept { record = meta; });
+        metas.with_element(
+            ::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
+            [meta = make_meta(fake_ptr(iter, i))](TensorMeta& record) noexcept { record = meta; });
 
         auto ms = meta_log.try_append(crucible::test::records_of(metas, n_metas));
         CRUCIBLE_TEST_ASSERT(kTest, ms.is_valid() && "MetaLog overflow");
@@ -85,10 +87,12 @@ void feed_trigger(TraceRing& ring, MetaLog& meta_log, Iteration iteration) {
         ::fixy::FixedArray<TensorMeta, 2> metas{};
         uint16_t idx = 0;
         if (i > 0)
-            *metas.get(idx++).expect("a test reads an element at or past the count of its array") =
-                make_meta(fake_ptr(iter, i - 1));
-        *metas.get(idx++).expect("a test reads an element at or past the count of its array") =
-            make_meta(fake_ptr(iter, i));
+            metas.with_element(
+                ::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
+                [meta = make_meta(fake_ptr(iter, i - 1))](TensorMeta& record) noexcept { record = meta; });
+        metas.with_element(
+            ::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
+            [meta = make_meta(fake_ptr(iter, i))](TensorMeta& record) noexcept { record = meta; });
 
         auto ms = meta_log.try_append(crucible::test::records_of(metas, n_metas));
         CRUCIBLE_TEST_ASSERT(kTest, ms.is_valid());

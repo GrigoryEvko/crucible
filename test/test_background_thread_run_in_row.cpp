@@ -30,6 +30,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/core/WindowStack.h>
 
 #include <bit>
 #include <cstdint>
@@ -161,8 +162,12 @@ void test_uncompiled_queue_is_bounded() {
         // The queue never reads a region, so default nodes stand in for the
         // published regions.  Each push names a node of its own.
         constexpr uint64_t OVERRUN = 4u * CAP + 3u;
-        static ::fixy::FixedArray<crucible::RegionNode, OVERRUN> regions{};
-        auto region_at = [](uint64_t i) {
+        // The queue keeps the address of each node that it takes, so the nodes
+        // come from the loan of a window stack, which lasts the whole body.
+        static ::foundation::core::WindowStack<crucible::RegionNode, OVERRUN> nodes{};
+        const ::foundation::core::WindowLoan loan{nodes, ::foundation::core::WindowCount{OVERRUN}};
+        const ::fixy::View<crucible::RegionNode> regions = loan.window().expect("the loan of each node fits");
+        auto region_at = [regions](uint64_t i) {
             return ::fixy::some(::fixy::erase_brand(
                 regions.get(i).expect("a test reads an element at or past the count of its array")));
         };
@@ -199,7 +204,11 @@ void test_uncompiled_queue_refuses_past_its_capacity() {
     owner.run_on_publish_stage(
         [](BackgroundThread::PublishStageView&, BackgroundThread::PublishStage const& stage) noexcept {
             using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
-            static ::fixy::FixedArray<crucible::RegionNode, 8> regions{};
+            // The queues keep the address of each node, so the nodes come from
+            // the loan of a window stack, which lasts the whole body.
+            static ::foundation::core::WindowStack<crucible::RegionNode, 8> nodes{};
+            const ::foundation::core::WindowLoan loan{nodes, ::foundation::core::WindowCount{8}};
+            const ::fixy::View<crucible::RegionNode> regions = loan.window().expect("the loan of each node fits");
             BackgroundThread::UncompiledRegionQueue three{::foundation::effects::testing::test().alloc, Count{3}};
             BackgroundThread::UncompiledRegionQueue none{::foundation::effects::testing::test().alloc, Count{0}};
             CRUCIBLE_TEST_ASSERT(kTest, three.capacity() == 3 && none.capacity() == 0);

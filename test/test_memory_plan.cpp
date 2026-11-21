@@ -12,8 +12,10 @@ namespace {
 // lifetime that the planner accepts.
 void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    ::foundation::core::FixedArray<crucible::TensorSlot, 2> slots{};
+    ::fixy::View<crucible::TensorSlot, 2> const slots =
+        arena.array(test.alloc, 2, crucible::TensorSlot{}).window<2>(0).expect("the run holds two slots");
     crucible::TensorSlot& first_slot = slots.at(::foundation::core::index<0>());
     first_slot.nbytes = 1024;
     first_slot.birth_op = crucible::OpIndex{0};
@@ -26,7 +28,7 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     second_slot.slot_id = crucible::SlotId{1};
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view())
+    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots)
                                             .expect("the slots of the test fit in 64 bits");
     ::fixy::report(::fixy::Sink::Out, "  the planner returned a plan of {} bytes\n",
                    static_cast<unsigned long long>(plan.pool_bytes));
@@ -37,8 +39,10 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
 [[nodiscard]] ::fixy::Option<crucible::BackgroundThread::PlanRefusal> refusal_of_spans(std::uint64_t first_nbytes,
                                                                                        std::uint64_t second_nbytes) {
     auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
     crucible::BackgroundThread bt{test.alloc};
-    ::foundation::core::FixedArray<crucible::TensorSlot, 2> slots{};
+    ::fixy::View<crucible::TensorSlot, 2> const slots =
+        arena.array(test.alloc, 2, crucible::TensorSlot{}).window<2>(0).expect("the run holds two slots");
     crucible::TensorSlot& first_slot = slots.at(::foundation::core::index<0>());
     first_slot.nbytes = first_nbytes;
     first_slot.birth_op = crucible::OpIndex{0};
@@ -51,7 +55,7 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     second_slot.slot_id = crucible::SlotId{1};
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    return bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view()).err();
+    return bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots).err();
 }
 
 // The refusal of the planner for an internal slot and an external slot with
@@ -141,13 +145,15 @@ int main() {
     test_refuses_spans_past_64_bits(test);
     test_refuses_slot_ids_out_of_place(test);
     auto source = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     // The intervals are chosen so slot 2 can reuse slot 1's space: slot 1 dies at
     // op 3 and slot 2 is born at op 4.  Slot 3 is external and takes no pool
     // space.
     constexpr uint32_t N = 4;
-    ::foundation::core::FixedArray<crucible::TensorSlot, N> slots{};
+    ::fixy::View<crucible::TensorSlot, N> const slots =
+        arena.array(source.alloc, N, crucible::TensorSlot{}).window<N>(0).expect("the run holds N slots");
 
     using crucible::SlotId;
     using crucible::OpIndex;
@@ -205,7 +211,7 @@ int main() {
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(source.alloc, plan_storage, sweep_arena, slots.view())
+    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(source.alloc, plan_storage, sweep_arena, slots)
                                             .expect("the slots of the test fit in 64 bits");
     // The planner writes the plan into the storage of the caller, and the
     // result reaches that storage.
@@ -226,7 +232,7 @@ int main() {
     // internal live set is checked.
     using crucible::live_intervals_disjoint_at;
     for (uint32_t t = 0; t <= 7; ++t) {
-        bool disjoint = live_intervals_disjoint_at<4>(slots.view(), OpIndex{t});
+        bool disjoint = live_intervals_disjoint_at<4>(slots, OpIndex{t});
         CRUCIBLE_TEST_ASSERT(test, disjoint);
     }
 

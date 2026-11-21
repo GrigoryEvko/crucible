@@ -224,13 +224,19 @@ void test_data_ptr_typed() {
     // The typed read must return the same bits the wire struct holds,
     // only carrying provenance.
     ::fixy::FixedArray<CrucibleMeta, 3> arr{};
-    CrucibleMeta& first = arr.at(::fixy::index<0>());
-    CrucibleMeta& second = arr.at(::fixy::index<1>());
-    CrucibleMeta& third = arr.at(::fixy::index<2>());
+    const CrucibleMeta& first = arr.at(::fixy::index<0>());
+    const CrucibleMeta& second = arr.at(::fixy::index<1>());
+    const CrucibleMeta& third = arr.at(::fixy::index<2>());
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case writes the data pointers of the CrucibleMeta records of vessel_api.h")
-    first.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xAAAA0000));
-    second.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xBBBB0000));
-    third.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xCCCC0000));
+    arr.with_element(::fixy::index<0>(), [](CrucibleMeta& record) noexcept {
+        record.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xAAAA0000));
+    });
+    arr.with_element(::fixy::index<1>(), [](CrucibleMeta& record) noexcept {
+        record.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xBBBB0000));
+    });
+    arr.with_element(::fixy::index<2>(), [](CrucibleMeta& record) noexcept {
+        record.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xCCCC0000));
+    });
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
     auto typed_arr = crucible::vessel::as_meta_typed(&first, 3);
@@ -286,13 +292,14 @@ template <std::size_t Count>
 void test_ffi_records_copy() {
     // Each record has a different rank, which names it.
     ::fixy::FixedArray<CrucibleMeta, 3> sources{};
-    sources.at(::fixy::index<0>()).ndim = 1;
-    sources.at(::fixy::index<1>()).ndim = 2;
-    sources.at(::fixy::index<2>()).ndim = 3;
+    sources.with_element(::fixy::index<0>(), [](CrucibleMeta& source) noexcept { source.ndim = 1; });
+    sources.with_element(::fixy::index<1>(), [](CrucibleMeta& source) noexcept { source.ndim = 2; });
+    sources.with_element(::fixy::index<2>(), [](CrucibleMeta& source) noexcept { source.ndim = 3; });
     const TypedMeta typed = crucible::vessel::as_meta_typed(&sources.at(::fixy::index<0>()), 3);
 
     ::fixy::FixedArray<crucible::TensorMeta, 3> slots{};
-    const auto ranks = collect_ranks(crucible::vessel::decode_ffi_records(typed, slots.view()));
+    const auto ranks = slots.with_mut(
+        [typed](auto run) noexcept { return collect_ranks(crucible::vessel::decode_ffi_records(typed, run.view())); });
     EXPECT(has_ranks(ranks, ::fixy::FixedArray<uint8_t, 3>{1, 2, 3}),
            "the View holds each record of the caller, in order");
 }
@@ -313,24 +320,28 @@ void test_ffi_records_read_the_c_records() {
     written.storage_nbytes = 444;
     written.grad_fn_hash = 0xABC2U;
     ::fixy::FixedArray<CrucibleMeta, 2> callers{};
-    callers.at(::fixy::index<0>()) = written;
-    callers.at(::fixy::index<1>()) = written;
+    callers.with_element(::fixy::index<0>(), [written](CrucibleMeta& caller) noexcept { caller = written; });
+    callers.with_element(::fixy::index<1>(), [written](CrucibleMeta& caller) noexcept { caller = written; });
 
+    // The View of the records borrows the slots, so the reads stay in the
+    // frame of the slots.
     ::fixy::FixedArray<crucible::TensorMeta, 2> slots{};
-    const ::fixy::View<const crucible::TensorMeta> records =
-        crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2),
-                                             slots.view())
-            .value_or(::fixy::View<const crucible::TensorMeta>{});
-    EXPECT(records.size() == 2, "the View holds each record of the caller");
-    for (const crucible::TensorMeta& read : records) {
-        EXPECT(read.ndim == 1, "a record holds the rank that the caller wrote");
-        EXPECT(crucible::raw_tensor_dim(read.sizes[0]) == 12, "a record holds the size that the caller wrote");
-        EXPECT(read.dtype == crucible::ScalarType::Float, "a record holds the element type that the caller wrote");
-        EXPECT(read.requires_grad, "a record holds the gradient flag that the caller wrote");
-        EXPECT(read.data_ptr.value() == written.data_ptr, "a record holds the data pointer that the caller wrote");
-        EXPECT(read.storage_nbytes == 444, "a record holds the storage size that the caller wrote");
-        EXPECT(crucible::raw_grad_fn_hash(read) == 0xABC2U, "a record holds the hash that the caller wrote");
-    }
+    const TypedMeta typed = crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2);
+    slots.with_mut([typed, written](auto run) noexcept {
+        const ::fixy::View<const crucible::TensorMeta> records =
+            crucible::vessel::decode_ffi_records(typed, run.view())
+                .value_or(::fixy::View<const crucible::TensorMeta>{});
+        EXPECT(records.size() == 2, "the View holds each record of the caller");
+        for (const crucible::TensorMeta& read : records) {
+            EXPECT(read.ndim == 1, "a record holds the rank that the caller wrote");
+            EXPECT(crucible::raw_tensor_dim(read.sizes[0]) == 12, "a record holds the size that the caller wrote");
+            EXPECT(read.dtype == crucible::ScalarType::Float, "a record holds the element type that the caller wrote");
+            EXPECT(read.requires_grad, "a record holds the gradient flag that the caller wrote");
+            EXPECT(read.data_ptr.value() == written.data_ptr, "a record holds the data pointer that the caller wrote");
+            EXPECT(read.storage_nbytes == 444, "a record holds the storage size that the caller wrote");
+            EXPECT(crucible::raw_grad_fn_hash(read) == 0xABC2U, "a record holds the hash that the caller wrote");
+        }
+    });
 }
 
 // True when decode_ffi_meta gives a TensorMeta for the record.
@@ -401,10 +412,10 @@ void test_ffi_decode_refuses_each_broken_claim() {
 
     ::fixy::FixedArray<CrucibleMeta, 2> callers{held, wide_grad};
     ::fixy::FixedArray<crucible::TensorMeta, 2> slots{};
-    EXPECT(crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2),
-                                                slots.view())
-               .is_none(),
-           "an op with a refused record is refused");
+    const TypedMeta typed = crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2);
+    const bool is_refused = slots.with_mut(
+        [typed](auto run) noexcept { return crucible::vessel::decode_ffi_records(typed, run.view()).is_none(); });
+    EXPECT(is_refused, "an op with a refused record is refused");
 }
 
 // The ranks of the records that a thunk decodes into a frame of count slots
@@ -437,11 +448,13 @@ void test_ffi_records_reuse_the_slots_of_the_producer() {
     // position 5 breaks a claim of TensorMeta.
     ::fixy::FixedArray<CrucibleMeta, 6> sources{};
     uint8_t rank = 1;
-    for (CrucibleMeta& source : sources) {
-        source.ndim = rank;
-        ++rank;
-    }
-    sources.at(::fixy::index<5>()).requires_grad = 2;
+    sources.with_mut([&rank](auto run) noexcept {
+        for (CrucibleMeta& source : run) {
+            source.ndim = rank;
+            ++rank;
+        }
+    });
+    sources.with_element(::fixy::index<5>(), [](CrucibleMeta& source) noexcept { source.requires_grad = 2; });
     const CrucibleMeta& first = sources.at(::fixy::index<0>());
     const CrucibleMeta& fourth = sources.at(::fixy::index<3>());
     const auto typed_at = [](const CrucibleMeta& record, uint32_t count) noexcept {
@@ -671,10 +684,12 @@ void test_ladder_refuses_a_count_that_disagrees_with_the_entry() {
     entry.num_inputs = 1;
     entry.num_outputs = 1;
     ::fixy::FixedArray<crucible::TensorMeta, 3> metas{};
-    for (crucible::TensorMeta& meta : metas) {
-        meta.ndim = 1;
-        meta.dtype = crucible::ScalarType::Float;
-    }
+    metas.with_mut([](auto run) noexcept {
+        for (crucible::TensorMeta& meta : run) {
+            meta.ndim = 1;
+            meta.dtype = crucible::ScalarType::Float;
+        }
+    });
     const ::fixy::View<const crucible::TensorMeta> all_records{metas.view()};
     EXPECT(is_certified(entry, all_records.window(0, 2).expect("two records fit")),
            "a count of records that is the sum of the inputs and the outputs is certified");

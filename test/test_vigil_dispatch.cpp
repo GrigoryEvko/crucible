@@ -69,12 +69,14 @@ OpData make_op(uint32_t iter, uint32_t op_idx) {
     d.entry.num_inputs = (op_idx == 0) ? 0 : 1;
     d.entry.num_outputs = 1;
 
-    uint16_t idx = 0;
-    if (op_idx > 0)
-        *d.metas.get(idx++).expect("a test reads an element at or past the count of its array") =
-            make_meta(fake_ptr(iter, op_idx - 1));
-    *d.metas.get(idx++).expect("a test reads an element at or past the count of its array") =
-        make_meta(fake_ptr(iter, op_idx));
+    d.metas.with_mut([iter, op_idx](auto run) noexcept {
+        uint16_t idx = 0;
+        if (op_idx > 0)
+            *run.get(idx++).expect("a test reads an element at or past the count of its array") =
+                make_meta(fake_ptr(iter, op_idx - 1));
+        *run.get(idx++).expect("a test reads an element at or past the count of its array") =
+            make_meta(fake_ptr(iter, op_idx));
+    });
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }

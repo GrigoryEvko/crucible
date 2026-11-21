@@ -300,6 +300,8 @@ static void test_linux_boundaries_if_available() {
 // stamps.  A socket with no data gives RecvFailed, and the receive does not
 // wait.
 static void test_socket_calls() {
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
     BgFsCtx const bg_fs{::foundation::effects::testing::bg()};
     using TcpSocket = ::fixy::net::SocketHandle<::fixy::net::socket_kind::TcpStream>;
     TcpSocket const tcp = ::fixy::net::mint_socket<::fixy::net::socket_kind::TcpStream>(bg_fs).match(
@@ -329,8 +331,8 @@ static void test_socket_calls() {
     auto const empty = topology::recv_with_hw_timestamp(bg_fs, sock_fd, ::fixy::View<std::byte>{});
     CRUCIBLE_TEST_ASSERT(kTest, error_of(empty) == topology::PtpError::InvalidReceiveBuffer);
 
-    ::foundation::core::FixedArray<std::byte, 16> buffer{};
-    auto const idle = topology::recv_with_hw_timestamp(bg_fs, sock_fd, buffer.view());
+    ::fixy::View<std::byte> const buffer = arena.array(test.alloc, 16, std::byte{0});
+    auto const idle = topology::recv_with_hw_timestamp(bg_fs, sock_fd, buffer);
     CRUCIBLE_TEST_ASSERT(kTest, error_of(idle) == topology::PtpError::RecvFailed);
     ::fixy::check::pass(kTest, "  test_socket_calls:          PASSED\n");
 }
@@ -351,52 +353,53 @@ static ::fixy::net::TimestampedReceive stamped_receive(std::size_t count, ::foun
 static void test_packet_of_receive() {
     using ::foundation::os::KernelTimespec;
     using topology::PtpError;
-    ::foundation::core::FixedArray<std::byte, 16> buffer{};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<std::byte> const buffer = arena.array(test.alloc, 16, std::byte{0});
     KernelTimespec const zero{};
     KernelTimespec const software{.seconds = 3, .nanoseconds = 4};
     KernelTimespec const hardware{.seconds = 5, .nanoseconds = 6};
 
-    auto const both = topology::detail::packet_of_receive(buffer.view(), stamped_receive(8, software, hardware))
+    auto const both = topology::detail::packet_of_receive(buffer, stamped_receive(8, software, hardware))
                           .expect("two stamps give a packet");
     CRUCIBLE_TEST_ASSERT(kTest, both.hardware);
     CRUCIBLE_TEST_ASSERT(kTest, both.timestamp_ns.value() == 5000000006ULL);
     CRUCIBLE_TEST_ASSERT(kTest, both.size == 8 && both.payload.size() == 8);
 
-    auto const soft = topology::detail::packet_of_receive(buffer.view(), stamped_receive(16, software, zero))
+    auto const soft = topology::detail::packet_of_receive(buffer, stamped_receive(16, software, zero))
                           .expect("a software stamp gives a packet");
     CRUCIBLE_TEST_ASSERT(kTest, !soft.hardware);
     CRUCIBLE_TEST_ASSERT(kTest, soft.timestamp_ns.value() == 3000000004ULL);
     CRUCIBLE_TEST_ASSERT(kTest, soft.size == 16 && soft.payload.size() == 16);
 
-    auto const none = topology::detail::packet_of_receive(buffer.view(), stamped_receive(8, zero, zero));
+    auto const none = topology::detail::packet_of_receive(buffer, stamped_receive(8, zero, zero));
     CRUCIBLE_TEST_ASSERT(kTest, error_of(none) == PtpError::NoTimestamp);
 
     auto const no_message = topology::detail::packet_of_receive(
-        buffer.view(), ::fixy::net::TimestampedReceive{.count = 8, .control = ::fixy::net::NoTimestampMessage{}});
+        buffer, ::fixy::net::TimestampedReceive{.count = 8, .control = ::fixy::net::NoTimestampMessage{}});
     CRUCIBLE_TEST_ASSERT(kTest, error_of(no_message) == PtpError::NoTimestamp);
     auto const short_message = topology::detail::packet_of_receive(
-        buffer.view(), ::fixy::net::TimestampedReceive{.count = 8, .control = ::fixy::net::ShortTimestampMessage{}});
+        buffer, ::fixy::net::TimestampedReceive{.count = 8, .control = ::fixy::net::ShortTimestampMessage{}});
     CRUCIBLE_TEST_ASSERT(kTest, error_of(short_message) == PtpError::MalformedTimestampControl);
 
-    auto const no_bytes = topology::detail::packet_of_receive(buffer.view(), stamped_receive(0, software, hardware));
+    auto const no_bytes = topology::detail::packet_of_receive(buffer, stamped_receive(0, software, hardware));
     CRUCIBLE_TEST_ASSERT(kTest, error_of(no_bytes) == PtpError::RecvFailed);
 
     KernelTimespec const past_64_bits{.seconds = ::fixy::max_of<std::int64_t>, .nanoseconds = 0};
-    auto const overflow = topology::detail::packet_of_receive(buffer.view(), stamped_receive(8, zero, past_64_bits));
+    auto const overflow = topology::detail::packet_of_receive(buffer, stamped_receive(8, zero, past_64_bits));
     CRUCIBLE_TEST_ASSERT(kTest, error_of(overflow) == PtpError::TimestampOverflow);
 
     KernelTimespec const negative{.seconds = -1, .nanoseconds = 0};
     KernelTimespec const full_second{.seconds = 0, .nanoseconds = 1000000000};
-    auto const below_zero = topology::detail::packet_of_receive(buffer.view(), stamped_receive(8, negative, zero));
+    auto const below_zero = topology::detail::packet_of_receive(buffer, stamped_receive(8, negative, zero));
     CRUCIBLE_TEST_ASSERT(kTest, error_of(below_zero) == PtpError::ClockReadFailed);
     auto const too_many_nanoseconds =
-        topology::detail::packet_of_receive(buffer.view(), stamped_receive(8, zero, full_second));
+        topology::detail::packet_of_receive(buffer, stamped_receive(8, zero, full_second));
     CRUCIBLE_TEST_ASSERT(kTest, error_of(too_many_nanoseconds) == PtpError::ClockReadFailed);
 
     // A malformed hardware stamp is an error, also beside a good software
     // stamp, because the hardware stamp wins.
-    auto const bad_hardware =
-        topology::detail::packet_of_receive(buffer.view(), stamped_receive(8, software, negative));
+    auto const bad_hardware = topology::detail::packet_of_receive(buffer, stamped_receive(8, software, negative));
     CRUCIBLE_TEST_ASSERT(kTest, error_of(bad_hardware) == PtpError::ClockReadFailed);
     ::fixy::check::pass(kTest, "  test_packet_of_receive:     PASSED\n");
 }

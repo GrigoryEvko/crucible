@@ -4,6 +4,7 @@
 #include <foundation/Linear.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
 #include <foundation/effects/Effect.h>
 #include <fixy/Core.h>
 
@@ -123,13 +124,13 @@ template <class Fake>
         CRUCIBLE_TEST_ASSERT(kTest, agrees(m));
     }
 
-    ::foundation::core::FixedArray<crucible::TraceEntry, 3> ops{};
-    ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0xAABB};
-    ops.at(::fixy::index<1>()).schema_hash = SchemaHash{0xCCDD};
-    ops.at(::fixy::index<2>()).schema_hash = SchemaHash{0xEEFF};
+    ::fixy::View<crucible::TraceEntry> const ops = arena.array(test.alloc, 3, crucible::TraceEntry{});
+    ops.get(0).expect("the run holds three ops")->schema_hash = SchemaHash{0xAABB};
+    ops.get(1).expect("the run holds three ops")->schema_hash = SchemaHash{0xCCDD};
+    ops.get(2).expect("the run holds three ops")->schema_hash = SchemaHash{0xEEFF};
     // The nodes are held as references: a Ref local in this large function
     // costs the Debug compile far more than a reference.
-    crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops.view());
+    crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops);
     CRUCIBLE_TEST_ASSERT(kTest, region.kind == crucible::TraceNodeKind::REGION);
     CRUCIBLE_TEST_ASSERT(kTest, region.num_ops() == 3);
     CRUCIBLE_TEST_ASSERT(kTest, region.op_at(0).schema_hash == SchemaHash{0xAABB});
@@ -138,7 +139,7 @@ template <class Fake>
     CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(region.content_hash));
 
     ContentHash h1 = region.content_hash;
-    const crucible::RegionNode& region2 = *crucible::make_region(test.alloc, arena, ops.view());
+    const crucible::RegionNode& region2 = *crucible::make_region(test.alloc, arena, ops);
     CRUCIBLE_TEST_ASSERT(kTest, region2.content_hash == h1);
 
     crucible::TraceNode& terminal = *crucible::make_terminal(test.alloc, arena);
@@ -342,8 +343,10 @@ template <class Fake>
         CRUCIBLE_TEST_ASSERT(kTest, !recipe_strict.hash.is_sentinel());
 
         ::foundation::core::FixedArray<crucible::TraceEntry, 2> recipe_ops{};
-        recipe_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0xDEAD};
-        recipe_ops.at(::fixy::index<1>()).schema_hash = SchemaHash{0xBEEF};
+        recipe_ops.with_element(::fixy::index<0>(),
+                                [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xDEAD}; });
+        recipe_ops.with_element(::fixy::index<1>(),
+                                [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xBEEF}; });
         const ::fixy::View<const crucible::TraceEntry> ops_span = recipe_ops.view();
 
         const ContentHash h_null = crucible::compute_content_hash(ops_span);
@@ -360,28 +363,30 @@ template <class Fake>
         // The recipe contribution is additive: ops still disambiguate
         // under a fixed recipe.
         ::foundation::core::FixedArray<crucible::TraceEntry, 2> alt_recipe_ops{};
-        alt_recipe_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0xFACE};
-        alt_recipe_ops.at(::fixy::index<1>()).schema_hash = SchemaHash{0xBEEF};
+        alt_recipe_ops.with_element(::fixy::index<0>(),
+                                    [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xFACE}; });
+        alt_recipe_ops.with_element(::fixy::index<1>(),
+                                    [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xBEEF}; });
         const ::fixy::View<const crucible::TraceEntry> alt_ops_span = alt_recipe_ops.view();
         const ContentHash h_alt_tc = crucible::compute_content_hash(alt_ops_span, recipe_tc);
         CRUCIBLE_TEST_ASSERT(kTest, h_alt_tc != h_tc);
 
-        ::foundation::core::FixedArray<crucible::TraceEntry, 2> rops_a{};
-        rops_a.at(::fixy::index<0>()).schema_hash = SchemaHash{0x0A0A};
-        rops_a.at(::fixy::index<1>()).schema_hash = SchemaHash{0x0B0B};
-        ::foundation::core::FixedArray<crucible::TraceEntry, 2> rops_b{};
-        rops_b.at(::fixy::index<0>()).schema_hash = SchemaHash{0x0A0A};
-        rops_b.at(::fixy::index<1>()).schema_hash = SchemaHash{0x0B0B};
+        ::fixy::View<crucible::TraceEntry> const rops_a = arena.array(test.alloc, 2, crucible::TraceEntry{});
+        rops_a.get(0).expect("the run holds two ops")->schema_hash = SchemaHash{0x0A0A};
+        rops_a.get(1).expect("the run holds two ops")->schema_hash = SchemaHash{0x0B0B};
+        ::fixy::View<crucible::TraceEntry> const rops_b = arena.array(test.alloc, 2, crucible::TraceEntry{});
+        rops_b.get(0).expect("the run holds two ops")->schema_hash = SchemaHash{0x0A0A};
+        rops_b.get(1).expect("the run holds two ops")->schema_hash = SchemaHash{0x0B0B};
 
-        const crucible::RegionNode& r_tc = *crucible::make_region(test.alloc, arena, rops_a.view(), recipe_tc);
-        const crucible::RegionNode& r_strict = *crucible::make_region(test.alloc, arena, rops_b.view(), recipe_strict);
-        const crucible::RegionNode& r_none = *crucible::make_region(test.alloc, arena, rops_a.view());
+        const crucible::RegionNode& r_tc = *crucible::make_region(test.alloc, arena, rops_a, recipe_tc);
+        const crucible::RegionNode& r_strict = *crucible::make_region(test.alloc, arena, rops_b, recipe_strict);
+        const crucible::RegionNode& r_none = *crucible::make_region(test.alloc, arena, rops_a);
 
         CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash != r_strict.content_hash);
         CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash != r_none.content_hash);
         CRUCIBLE_TEST_ASSERT(kTest, r_strict.content_hash != r_none.content_hash);
 
-        const ContentHash direct_tc = crucible::compute_content_hash(rops_a.view(), recipe_tc);
+        const ContentHash direct_tc = crucible::compute_content_hash(rops_a, recipe_tc);
         CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash == direct_tc);
 
         crucible::KernelCache rcache{test.alloc};
@@ -414,15 +419,17 @@ template <class Fake>
         e_six_diff.schema_hash = SchemaHash{0xAA};
         e_ten.schema_hash = SchemaHash{0xAA};
 
-        ::foundation::core::FixedArray<int64_t, 5> s_five{1, 2, 3, 4, 5};
-        ::foundation::core::FixedArray<int64_t, 6> s_six{1, 2, 3, 4, 5, 99};
-        ::foundation::core::FixedArray<int64_t, 6> s_six_diff{1, 2, 3, 4, 5, 7};
-        ::foundation::core::FixedArray<int64_t, 10> s_ten{1, 2, 3, 4, 5, 99, 100, 101, 102, 103};
+        ::fixy::View<int64_t> const s_five = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{1}, 2, 3, 4, 5);
+        ::fixy::View<int64_t> const s_six = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{1}, 2, 3, 4, 5, 99);
+        ::fixy::View<int64_t> const s_six_diff =
+            ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{1}, 2, 3, 4, 5, 7);
+        ::fixy::View<int64_t> const s_ten =
+            ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{1}, 2, 3, 4, 5, 99, 100, 101, 102, 103);
 
-        e_five.set_scalar_args(s_five.view());
-        e_six.set_scalar_args(s_six.view());
-        e_six_diff.set_scalar_args(s_six_diff.view());
-        e_ten.set_scalar_args(s_ten.view());
+        e_five.set_scalar_args(s_five);
+        e_six.set_scalar_args(s_six);
+        e_six_diff.set_scalar_args(s_six_diff);
+        e_ten.set_scalar_args(s_ten);
 
         auto h_five = hash_one_op(e_five);
         auto h_six = hash_one_op(e_six);
@@ -461,33 +468,33 @@ template <class Fake>
             return fold.finish();
         };
 
-        ::foundation::core::FixedArray<crucible::TensorMeta, 1> input_meta{};
+        ::fixy::View<crucible::TensorMeta> const input_meta = arena.array(test.alloc, 1, crucible::TensorMeta{});
         // The fold reads no producer and no slot id of an input.
-        ::foundation::core::FixedArray<crucible::OpIndex, 1> no_producer{};
-        ::foundation::core::FixedArray<crucible::SlotId, 1> no_slot{};
+        ::fixy::View<crucible::OpIndex> const no_producer = arena.array(test.alloc, 1, crucible::OpIndex{});
+        ::fixy::View<crucible::SlotId> const no_slot = arena.array(test.alloc, 1, crucible::SlotId{});
 
         crucible::TraceEntry e_empty{};
         e_empty.schema_hash = SchemaHash{0x11};
 
-        ::foundation::core::FixedArray<int64_t, 3> s_three{7, 8, 9};
+        ::fixy::View<int64_t> const s_three = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{7}, 8, 9);
         crucible::TraceEntry e_three{};
         e_three.schema_hash = SchemaHash{0x22};
-        e_three.set_scalar_args(s_three.view());
+        e_three.set_scalar_args(s_three);
 
-        ::foundation::core::FixedArray<int64_t, 1> s_one{42};
+        ::fixy::View<int64_t> const s_one = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{42});
         crucible::TraceEntry e_one{};
         e_one.schema_hash = SchemaHash{0x33};
-        e_one.set_scalar_args(s_one.view());
+        e_one.set_scalar_args(s_one);
 
         // Five values is the boundary a clamped fold stops at.
-        ::foundation::core::FixedArray<int64_t, 5> s_five{9, 8, 7, 6, 5};
+        ::fixy::View<int64_t> const s_five = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{9}, 8, 7, 6, 5);
         crucible::TraceEntry e_five{};
         e_five.schema_hash = SchemaHash{0x44};
-        e_five.set_scalar_args(s_five.view());
+        e_five.set_scalar_args(s_five);
 
         crucible::TraceEntry e_tensor{};
         e_tensor.schema_hash = SchemaHash{0x55};
-        e_tensor.set_inputs(input_meta.view(), no_producer.view(), no_slot.view());
+        e_tensor.set_inputs(input_meta, no_producer, no_slot);
 
         for (const auto* op : {&e_empty, &e_three, &e_one, &e_five, &e_tensor}) {
             const ::foundation::core::FixedArray<crucible::TraceEntry, 1> single{*op};
@@ -543,15 +550,15 @@ template <class Fake>
         // and neither shape is special, but the vectors keep using a tensor
         // with a real dtype and device: a vector should exercise the ordinary
         // path, and the two former collapse shapes have their own block below.
-        ::foundation::core::FixedArray<crucible::TensorMeta, 1> real_meta{};
-        crucible::TensorMeta& real_input = real_meta.at(::foundation::core::index<0>());
+        ::fixy::View<crucible::TensorMeta> const real_meta = arena.array(test.alloc, 1, crucible::TensorMeta{});
+        crucible::TensorMeta& real_input = *real_meta.get(0).expect("the run holds one meta");
         real_input.dtype = crucible::ScalarType::Float;
         real_input.device_type = crucible::DeviceType::CUDA;
         real_input.device_idx = 0;
 
         crucible::TraceEntry e_real_tensor{};
         e_real_tensor.schema_hash = SchemaHash{0x66};
-        e_real_tensor.set_inputs(real_meta.view(), no_producer.view(), no_slot.view());
+        e_real_tensor.set_inputs(real_meta, no_producer, no_slot);
 
         const ::foundation::core::FixedArray<crucible::TraceEntry, 5> real_mix{e_empty, e_three, e_one, e_five,
                                                                                e_real_tensor};
@@ -596,8 +603,8 @@ template <class Fake>
         // Frozen 2026-11-16 when the word took these facts.  The tensor of
         // the vectors above has the rank zero, the strided layout, no bit and
         // the offset zero, so its word did not move.
-        ::foundation::core::FixedArray<crucible::TensorMeta, 1> fact_meta{real_input};
-        crucible::TensorMeta& fact_input = fact_meta.at(::foundation::core::index<0>());
+        ::fixy::View<crucible::TensorMeta> const fact_meta = arena.array(test.alloc, 1, real_input);
+        crucible::TensorMeta& fact_input = *fact_meta.get(0).expect("the run holds one meta");
         fact_input.ndim = 2;
         fact_input.sizes[0] = crucible::tensor_dim(3);
         fact_input.sizes[1] = crucible::tensor_dim(4);
@@ -608,7 +615,7 @@ template <class Fake>
         fact_input.storage_offset = 5;
         crucible::TraceEntry e_fact_tensor{};
         e_fact_tensor.schema_hash = SchemaHash{0x66};
-        e_fact_tensor.set_inputs(fact_meta.view(), no_producer.view(), no_slot.view());
+        e_fact_tensor.set_inputs(fact_meta, no_producer, no_slot);
         golden("one tensor with each fact", one_op(e_fact_tensor), 0x2FB41C5109940EECULL);
 
         CRUCIBLE_TEST_ASSERT(kTest, moved_vectors == 0
@@ -656,12 +663,12 @@ template <class Fake>
     // used to pin the defect: same two metas, opposite expectation.
     {
         // The fold reads no producer and no slot id of an input.
-        ::foundation::core::FixedArray<crucible::OpIndex, 1> no_producer{};
-        ::foundation::core::FixedArray<crucible::SlotId, 1> no_slot{};
+        ::fixy::View<crucible::OpIndex> const no_producer = arena.array(test.alloc, 1, crucible::OpIndex{});
+        ::fixy::View<crucible::SlotId> const no_slot = arena.array(test.alloc, 1, crucible::SlotId{});
         auto with_meta = [&no_producer, &no_slot](uint64_t schema, ::fixy::View<crucible::TensorMeta> meta) {
             crucible::TraceEntry e{};
             e.schema_hash = SchemaHash{schema};
-            e.set_inputs(meta, no_producer.view(), no_slot.view());
+            e.set_inputs(meta, no_producer, no_slot);
             return e;
         };
         auto no_tensor = [](uint64_t schema) {
@@ -670,14 +677,15 @@ template <class Fake>
             return e;
         };
 
-        ::foundation::core::FixedArray<crucible::TensorMeta, 1> undefined_meta{};  // dtype Undefined == -1
-        ::foundation::core::FixedArray<crucible::TensorMeta, 1> zero_packed_meta{};
-        crucible::TensorMeta& zero_packed = zero_packed_meta.at(::foundation::core::index<0>());
+        // dtype Undefined == -1
+        ::fixy::View<crucible::TensorMeta> const undefined_meta = arena.array(test.alloc, 1, crucible::TensorMeta{});
+        ::fixy::View<crucible::TensorMeta> const zero_packed_meta = arena.array(test.alloc, 1, crucible::TensorMeta{});
+        crucible::TensorMeta& zero_packed = *zero_packed_meta.get(0).expect("the run holds one meta");
         zero_packed.dtype = crucible::ScalarType::Byte;
         zero_packed.device_type = crucible::DeviceType::CPU;
         zero_packed.device_idx = 0;
 
-        for (const ::fixy::View<crucible::TensorMeta> meta : {undefined_meta.view(), zero_packed_meta.view()}) {
+        for (const ::fixy::View<crucible::TensorMeta> meta : {undefined_meta, zero_packed_meta}) {
             const ::foundation::core::FixedArray<crucible::TraceEntry, 2> region_a{no_tensor(0xAAAA),
                                                                                    with_meta(0x5555, meta)};
             const ::foundation::core::FixedArray<crucible::TraceEntry, 2> region_b{no_tensor(0xBBBB),
@@ -693,7 +701,7 @@ template <class Fake>
 
         // The zero-packed case used to produce the sentinel hash outright.
         CRUCIBLE_TEST_ASSERT(kTest,
-                             hash_one_op(with_meta(0x5555, zero_packed_meta.view())).raw() != 0
+                             hash_one_op(with_meta(0x5555, zero_packed_meta)).raw() != 0
                                  && "a uint8 tensor on CPU:0 hashes to the KernelCache empty-slot sentinel again");
 
         // A single mix is xor-symmetric, so a fold flattened into one xor
@@ -726,8 +734,10 @@ template <class Fake>
     // producer from reaching the first case by saying nothing at all.
     {
         ::foundation::core::FixedArray<crucible::TraceEntry, 2> numerics_ops{};
-        numerics_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0xAC01};
-        numerics_ops.at(::fixy::index<1>()).schema_hash = SchemaHash{0xAC02};
+        numerics_ops.with_element(::fixy::index<0>(),
+                                  [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xAC01}; });
+        numerics_ops.with_element(::fixy::index<1>(),
+                                  [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xAC02}; });
         const ::fixy::View<const crucible::TraceEntry> numerics_sp = numerics_ops.view();
 
         constexpr auto unordered = crucible::hashed(crucible::NumericalRecipe{
@@ -793,15 +803,15 @@ template <class Fake>
     {
         ::fixy::TestRunnerCtx const runner{::foundation::effects::testing::test()};
 
-        ::foundation::core::FixedArray<crucible::TraceEntry, 1> guard_body_ops{};
-        guard_body_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0x6AA6};
+        ::fixy::View<crucible::TraceEntry> const guard_body_ops = arena.array(test.alloc, 1, crucible::TraceEntry{});
+        guard_body_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x6AA6};
 
         // Each child builds its own arena: the parent's arena must not carry
         // a bump from a child that was about to abort.
         auto make = [&](crucible::LoopTermKind kind, uint32_t count, float epsilon) {
             return [&, kind, count, epsilon] {
                 ::fixy::BumpArena child_arena(1 << 12);
-                crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops.view());
+                crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops);
                 body.next = crucible::make_link(*crucible::make_terminal(test.alloc, child_arena));
                 crucible::LoopNode& node =
                     *crucible::make_loop(test.alloc, child_arena, body, crucible::compute_body_content_hash(body),
@@ -870,7 +880,7 @@ template <class Fake>
         auto open_door = [&](crucible::TraceNodeKind node_kind, Door door) {
             return [&, node_kind, door] {
                 ::fixy::BumpArena child_arena(1 << 12);
-                crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops.view());
+                crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops);
                 body.next = crucible::make_link(*crucible::make_terminal(test.alloc, child_arena));
                 crucible::TraceNode& loop_node =
                     *crucible::make_loop(test.alloc, child_arena, body, crucible::compute_body_content_hash(body),
@@ -912,30 +922,30 @@ template <class Fake>
         // count together, so an array of a different count ends the process.
         // No door sets a count with no array, so no array is absent at a
         // count above zero.
-        ::foundation::core::FixedArray<crucible::TensorMeta, 2> two_metas{};
-        ::foundation::core::FixedArray<crucible::OpIndex, 2> two_producers{};
-        ::foundation::core::FixedArray<crucible::SlotId, 2> two_slots{};
-        ::foundation::core::FixedArray<crucible::SlotId, 1> one_slot{};
+        ::fixy::View<crucible::TensorMeta> const two_metas = arena.array(test.alloc, 2, crucible::TensorMeta{});
+        ::fixy::View<crucible::OpIndex> const two_producers = arena.array(test.alloc, 2, crucible::OpIndex{});
+        ::fixy::View<crucible::SlotId> const two_slots = arena.array(test.alloc, 2, crucible::SlotId{});
+        ::fixy::View<crucible::SlotId> const one_slot = arena.array(test.alloc, 1, crucible::SlotId{});
         // The refusal is a call of fixy::fatal, which the optimizer keeps.
         auto set_inputs = [&](::fixy::View<crucible::SlotId> slot_ids) {
             return [&, slot_ids] {
                 crucible::TraceEntry entry{};
-                entry.set_inputs(two_metas.view(), two_producers.view(), slot_ids);
+                entry.set_inputs(two_metas, two_producers, slot_ids);
             };
         };
         auto set_outputs = [&](::fixy::View<crucible::SlotId> slot_ids) {
             return [&, slot_ids] {
                 crucible::TraceEntry entry{};
-                entry.set_outputs(two_metas.view(), slot_ids);
+                entry.set_outputs(two_metas, slot_ids);
             };
         };
         // Arrays of one count pass in the test process.
-        set_inputs(two_slots.view())();
-        set_outputs(two_slots.view())();
+        set_inputs(two_slots)();
+        set_outputs(two_slots)();
         constexpr ::fixy::TextView kOtherCount{
             "foundation: fatal: RunSet::set got a run of 1 elements for a slot of the count 2"};
-        ::fixy::check::expect_dies(runner, set_inputs(one_slot.view()), kOtherCount);
-        ::fixy::check::expect_dies(runner, set_outputs(one_slot.view()), kOtherCount);
+        ::fixy::check::expect_dies(runner, set_inputs(one_slot), kOtherCount);
+        ::fixy::check::expect_dies(runner, set_outputs(one_slot), kOtherCount);
 
         ::fixy::report(::fixy::Sink::Out, "  an entry refuses arrays of two counts for one kind\n");
     }

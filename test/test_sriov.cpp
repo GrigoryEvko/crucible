@@ -106,6 +106,8 @@ void test_admission() {
 }
 
 void test_mint_and_handles() {
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
     sriov::VfConfig config{};
     config.mac = sriov::admit_mac(sriov::MacAddress::locally_administered(9)).expect("the address is unicast");
     config.vlan = sriov::admit_vlan(42).expect("42 is a VLAN id");
@@ -122,8 +124,9 @@ void test_mint_and_handles() {
 
     // Six slots hold the four handles, so the View of the handles is the
     // first four slots.
-    ::foundation::core::FixedArray<sriov::VfHandle, 6> handles{};
-    auto materialized = sriov::materialize_vf_handles(plan, handles.view()).expect("six slots hold four handles");
+    ::fixy::View<sriov::VfHandle, 6> const handles =
+        arena.array(test.alloc, 6, sriov::VfHandle{}).window<6>(0).expect("the run holds six handles");
+    auto materialized = sriov::materialize_vf_handles(plan, handles).expect("six slots hold four handles");
     CRUCIBLE_TEST_ASSERT(kTest, materialized.size() == 4);
     sriov::VfHandle const& first = handles.at(::fixy::index<0>());
     sriov::VfHandle const& second_slot = handles.at(::fixy::index<1>());
@@ -146,8 +149,8 @@ void test_mint_and_handles() {
     auto out_of_range = sriov::vf_handle_at(plan, sriov::admit_vf_index(4).expect("4 is a function index"));
     CRUCIBLE_TEST_ASSERT(kTest, out_of_range.err() == ::fixy::some(sriov::SrIovError::VfIndexOutOfRange));
 
-    ::foundation::core::FixedArray<sriov::VfHandle, 2> small{};
-    auto too_small = sriov::materialize_vf_handles(plan, small.view());
+    ::fixy::View<sriov::VfHandle> const small = arena.array(test.alloc, 2, sriov::VfHandle{});
+    auto too_small = sriov::materialize_vf_handles(plan, small);
     CRUCIBLE_TEST_ASSERT(kTest, too_small.err() == ::fixy::some(sriov::SrIovError::InsufficientHandleCapacity));
 
     // An empty slot names no function.
@@ -186,14 +189,16 @@ void test_identity_and_capability_gates() {
 }
 
 void test_privileged_boundaries() {
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
     auto plan = two_vf_plan();
 
-    ::foundation::core::FixedArray<sriov::VfHandle, 2> handles{};
-    auto enable = sriov::enable(plan, handles.view());
+    ::fixy::View<sriov::VfHandle> const handles = arena.array(test.alloc, 2, sriov::VfHandle{});
+    auto enable = sriov::enable(plan, handles);
     CRUCIBLE_TEST_ASSERT(kTest, enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
 
     auto privileged = two_vf_plan(true);
-    auto privileged_enable = sriov::enable(privileged, handles.view());
+    auto privileged_enable = sriov::enable(privileged, handles);
     CRUCIBLE_TEST_ASSERT(kTest,
                          privileged_enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedBackendUnavailable));
 
@@ -215,6 +220,8 @@ void test_privileged_boundaries() {
 // "not attempted" and one that silently admits the request and does nothing.
 // Each privileged surface must name which of the two it is.
 void test_apply_paths_are_stubbed() {
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
     static_assert(sriov::privileged_apply_implemented == false,
                   "the SR-IOV apply paths are stubs. privileged_apply_implemented "
                   "turns true only alongside a CAP_NET_ADMIN backend and live-NIC "
@@ -224,12 +231,12 @@ void test_apply_paths_are_stubbed() {
 
     auto plan = two_vf_plan();
 
-    ::foundation::core::FixedArray<sriov::VfHandle, 2> handles{};
-    auto deferred = sriov::enable(plan, handles.view());
+    ::fixy::View<sriov::VfHandle> const handles = arena.array(test.alloc, 2, sriov::VfHandle{});
+    auto deferred = sriov::enable(plan, handles);
     CRUCIBLE_TEST_ASSERT(kTest, deferred.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
 
     auto requested = two_vf_plan(true);
-    auto requested_enable = sriov::enable(requested, handles.view());
+    auto requested_enable = sriov::enable(requested, handles);
     CRUCIBLE_TEST_ASSERT(kTest,
                          requested_enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedBackendUnavailable));
 

@@ -30,6 +30,7 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
 #include <foundation/effects/Effect.h>
 
 namespace {
@@ -211,25 +212,34 @@ void test_input_past_the_limit_reaches_the_digest() {
 
 // The content hash of a region of one op whose one input is meta.
 [[nodiscard]] crucible::ContentHash content_hash_of(crucible::TensorMeta const& meta) {
-    ::fixy::FixedArray<crucible::TensorMeta, 1> metas{meta};
-    ::fixy::FixedArray<crucible::OpIndex, 1> producers{crucible::OpIndex{}};
-    ::fixy::FixedArray<crucible::SlotId, 1> slot_ids{crucible::SlotId{}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<crucible::TensorMeta> const metas = ::fixy::check::run_of(kTest, test.alloc, arena, meta);
+    ::fixy::View<crucible::OpIndex> const producers =
+        ::fixy::check::run_of(kTest, test.alloc, arena, crucible::OpIndex{});
+    ::fixy::View<crucible::SlotId> const slot_ids = ::fixy::check::run_of(kTest, test.alloc, arena, crucible::SlotId{});
     ::fixy::FixedArray<crucible::TraceEntry, 1> ops{};
-    crucible::TraceEntry& op = ops.at(::fixy::index<0>());
-    op.schema_hash = crucible::SchemaHash{42};
-    op.set_inputs(metas.view(), producers.view(), slot_ids.view());
+    ops.with_element(::fixy::index<0>(), [metas, producers, slot_ids](crucible::TraceEntry& op) noexcept {
+        op.schema_hash = crucible::SchemaHash{42};
+        op.set_inputs(metas, producers, slot_ids);
+    });
     return crucible::compute_content_hash(ops.view());
 }
 
 // The content hash of a region of one op with the one scalar of the bits and
 // the word of the tags and the data slots of the scalars.
 [[nodiscard]] crucible::ContentHash content_hash_of_scalar(uint16_t scalar_kinds, int64_t bits = 1) {
-    ::fixy::FixedArray<int64_t, 1> scalars{bits};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<int64_t> const scalars = ::fixy::check::run_of(kTest, test.alloc, arena, bits);
+    const crucible::ScalarSlotKinds kinds =
+        crucible::ScalarSlotKinds::from_bits(scalar_kinds).expect("the test gives a word of the kinds");
     ::fixy::FixedArray<crucible::TraceEntry, 1> ops{};
-    crucible::TraceEntry& op = ops.at(::fixy::index<0>());
-    op.schema_hash = crucible::SchemaHash{42};
-    op.set_scalar_args(scalars.view());
-    op.scalar_kinds = crucible::ScalarSlotKinds::from_bits(scalar_kinds).expect("the test gives a word of the kinds");
+    ops.with_element(::fixy::index<0>(), [scalars, kinds](crucible::TraceEntry& op) noexcept {
+        op.schema_hash = crucible::SchemaHash{42};
+        op.set_scalar_args(scalars);
+        op.scalar_kinds = kinds;
+    });
     return crucible::compute_content_hash(ops.view());
 }
 
@@ -285,8 +295,8 @@ void test_content_hash_reads_no_data_value() {
 [[nodiscard]] crucible::UncheckedTensorMeta fields_on(crucible::DeviceType type, int8_t index) {
     crucible::UncheckedTensorMeta fields{};
     fields.ndim = 1;
-    fields.sizes.at(::fixy::index<0>()) = 4;
-    fields.strides.at(::fixy::index<0>()) = 1;
+    fields.sizes.with_element(::fixy::index<0>(), [](int64_t& element) noexcept { element = 4; });
+    fields.strides.with_element(::fixy::index<0>(), [](int64_t& element) noexcept { element = 1; });
     fields.dtype = static_cast<int8_t>(crucible::ScalarType::Float);
     fields.device_type = static_cast<int8_t>(type);
     fields.device_idx = index;
@@ -298,6 +308,8 @@ void test_content_hash_reads_no_data_value() {
 // of the vessel give one answer for the two names.  A device of a different
 // type keeps its index, so two such devices stay two devices.
 void test_host_index_is_one_device() {
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
     crucible::TensorMeta const host = meta_on(crucible::DeviceType::CPU, -1);
     crucible::TensorMeta const host_zero = meta_on(crucible::DeviceType::CPU, 0);
     crucible::TensorMeta const cuda_zero = meta_on(crucible::DeviceType::CUDA, 0);
@@ -309,8 +321,8 @@ void test_host_index_is_one_device() {
     CRUCIBLE_FATAL_INVARIANT(crucible::device_of(cuda_zero).index() == 0);
 
     // Two data addresses of one run on the two names of the host are equal.
-    ::fixy::FixedArray<uint8_t, 8> bytes{};
-    ::fixy::RunAddress const address = ::fixy::mint_run_address(bytes.view(), 0).expect("the run holds a byte");
+    ::fixy::View<uint8_t> const bytes = arena.array(test.alloc, 8, uint8_t{0});
+    ::fixy::RunAddress const address = ::fixy::mint_run_address(bytes, 0).expect("the run holds a byte");
     crucible::TensorData const on_host(address, crucible::device_of(host));
     crucible::TensorData const on_host_zero(address, crucible::device_of(host_zero));
     crucible::TensorData const on_cuda_zero(address, crucible::device_of(cuda_zero));

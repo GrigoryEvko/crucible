@@ -57,7 +57,9 @@ int main() {
     Weights weights;
     fill_weights(weights);
 
-    ::foundation::core::FixedArray<TensorSlot, N_SLOTS> slots{};
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorSlot, N_SLOTS> const slots =
+        arena.array(test.alloc, N_SLOTS, TensorSlot{}).window<N_SLOTS>(0).expect("the run holds N_SLOTS slots");
 
     auto make_ext = [](uint32_t id, uint64_t sz) -> TensorSlot {
         return {.offset_bytes = 0,
@@ -90,7 +92,7 @@ int main() {
 
     // Write the slot at the index.
     const auto put_slot = [&slots](::foundation::core::Index<N_SLOTS> index, TensorSlot const& slot) noexcept {
-        slots.with_element(index, [&slot](TensorSlot& held) noexcept { held = slot; });
+        slots.at(index) = slot;
     };
 
     put_slot(::foundation::core::index<SL_X>(), make_ext(SL_X, SZ_BSD));
@@ -128,7 +130,7 @@ int main() {
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view())
+    crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots)
                                       .expect("the slots of the test fit in 64 bits");
 
     ::fixy::report(::fixy::Sink::Out, "  plan: pool={} bytes, {} slots ({} external)\n",

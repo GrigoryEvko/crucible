@@ -19,6 +19,7 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
 #include <foundation/effects/Effect.h>
 
 namespace {
@@ -47,33 +48,43 @@ using crucible::TraceEntry;
     return meta;
 }
 
+// The capabilities of the test: the arena of each region takes its alloc.
+auto g_test = ::foundation::effects::testing::test();
+
 // The arrays of one region of three ops: op 0 and op 1 each write one output
 // of the extent of their slot, and op 2 reads the two outputs in the order of
-// first_read and second_read.
+// first_read and second_read.  The ops keep the Views of their inputs and
+// their outputs, so these are runs of the arena of the region.
 struct Region {
-    ::fixy::FixedArray<TensorMeta, 1> out_a{vector_meta(4)};
-    ::fixy::FixedArray<SlotId, 1> slot_a{SlotId{0}};
-    ::fixy::FixedArray<TensorMeta, 1> out_b{vector_meta(4)};
-    ::fixy::FixedArray<SlotId, 1> slot_b{SlotId{1}};
-    ::fixy::FixedArray<TensorMeta, 2> in_c{vector_meta(4), vector_meta(4)};
-    ::fixy::FixedArray<OpIndex, 2> producers_c{};
-    ::fixy::FixedArray<SlotId, 2> slots_c{};
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TensorMeta> out_a = ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4));
+    ::fixy::View<SlotId> slot_a = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{0});
+    ::fixy::View<TensorMeta> out_b = ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4));
+    ::fixy::View<SlotId> slot_b = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{1});
+    ::fixy::View<TensorMeta> in_c = ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4), vector_meta(4));
+    ::fixy::View<OpIndex> producers_c{};
+    ::fixy::View<SlotId> slots_c{};
     ::fixy::FixedArray<TraceEntry, 3> ops{};
 
     Region(uint32_t first_read, uint32_t second_read, int64_t extent_a, OpDepth depth_a) {
-        out_a.at(::fixy::index<0>()) = vector_meta(extent_a);
-        producers_c = ::fixy::FixedArray<OpIndex, 2>{OpIndex{first_read}, OpIndex{second_read}};
-        slots_c = ::fixy::FixedArray<SlotId, 2>{SlotId{first_read}, SlotId{second_read}};
-        TraceEntry& op_a = ops.at(::fixy::index<0>());
-        op_a.schema_hash = SchemaHash{0xA};
-        op_a.set_outputs(out_a.view(), slot_a.view());
-        op_a.depth = depth_a;
-        TraceEntry& op_b = ops.at(::fixy::index<1>());
-        op_b.schema_hash = SchemaHash{0xB};
-        op_b.set_outputs(out_b.view(), slot_b.view());
-        TraceEntry& op_c = ops.at(::fixy::index<2>());
-        op_c.schema_hash = SchemaHash{0xC};
-        op_c.set_inputs(in_c.view(), producers_c.view(), slots_c.view());
+        *out_a.get(0).expect("the run holds one output") = vector_meta(extent_a);
+        producers_c = ::fixy::check::run_of(kTest, g_test.alloc, arena, OpIndex{first_read}, OpIndex{second_read});
+        slots_c = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{first_read}, SlotId{second_read});
+        ops.with_element(::fixy::index<0>(),
+                         [outputs = out_a, output_slots = slot_a, depth_a](TraceEntry& op_a) noexcept {
+                             op_a.schema_hash = SchemaHash{0xA};
+                             op_a.set_outputs(outputs, output_slots);
+                             op_a.depth = depth_a;
+                         });
+        ops.with_element(::fixy::index<1>(), [outputs = out_b, output_slots = slot_b](TraceEntry& op_b) noexcept {
+            op_b.schema_hash = SchemaHash{0xB};
+            op_b.set_outputs(outputs, output_slots);
+        });
+        ops.with_element(::fixy::index<2>(),
+                         [inputs = in_c, producers = producers_c, input_slots = slots_c](TraceEntry& op_c) noexcept {
+                             op_c.schema_hash = SchemaHash{0xC};
+                             op_c.set_inputs(inputs, producers, input_slots);
+                         });
     }
 
     Region(const Region&) = delete("the ops of a region point into its arrays");

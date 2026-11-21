@@ -319,11 +319,16 @@ using RunStamps = ::fixy::FixedArray<uint64_t, kRunSteps>;
                              log.commit(owner, tx, arena_region(region), region.content_hash, region.merkle_hash));
         (void)log.activate(owner, tx);
         if (step % 3 == 0) CRUCIBLE_TEST_ASSERT(kTest, log.rollback(owner));
-        txs.at(slot) = ::fixy::some(::fixy::erase_brand(::fixy::to(tx)));
+        const ::fixy::Option<::fixy::Ref<crucible::Transaction>> held =
+            ::fixy::some(::fixy::erase_brand(::fixy::to(tx)));
+        txs.with_element(
+            slot, [held](::fixy::Option<::fixy::Ref<crucible::Transaction>>& element) noexcept { element = held; });
     }
     RunStamps stamps{};
-    for (const ::fixy::Index<kRunSteps> slot : stamps.indices())
-        stamps.at(slot) = address_of_tx(txs.at(slot))->event_order.get();
+    for (const ::fixy::Index<kRunSteps> slot : stamps.indices()) {
+        const uint64_t stamp = address_of_tx(txs.at(slot))->event_order.get();
+        stamps.with_element(slot, [stamp](uint64_t& element) noexcept { element = stamp; });
+    }
     return stamps;
 }
 
@@ -344,18 +349,18 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     Log log{};
     ::fixy::BumpArena arena(1 << 12);
 
-    ::foundation::core::FixedArray<crucible::TraceEntry, 1> ops{};
-    ops.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xFEED};
-    const ::fixy::Ref<crucible::RegionNode> region1 = crucible::make_region(test.alloc, arena, ops.view());
+    ::fixy::View<crucible::TraceEntry> const ops = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    ops.get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xFEED};
+    const ::fixy::Ref<crucible::RegionNode> region1 = crucible::make_region(test.alloc, arena, ops);
     // A commit requires a non-zero merkle root, so the hash is recomputed
     // first. The production path does the same thing in the same order.
     // Synthesizing a hash instead would take the test off that path.
     crucible::recompute_merkle(*region1);
     CRUCIBLE_TEST_ASSERT(kTest, region1->merkle_hash.raw() != 0);
 
-    ::foundation::core::FixedArray<crucible::TraceEntry, 1> ops2{};
-    ops2.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xBEEF};
-    const ::fixy::Ref<crucible::RegionNode> region2 = crucible::make_region(test.alloc, arena, ops2.view());
+    ::fixy::View<crucible::TraceEntry> const ops2 = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    ops2.get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xBEEF};
+    const ::fixy::Ref<crucible::RegionNode> region2 = crucible::make_region(test.alloc, arena, ops2);
     crucible::recompute_merkle(*region2);
     CRUCIBLE_TEST_ASSERT(kTest, region2->merkle_hash.raw() != 0);
 

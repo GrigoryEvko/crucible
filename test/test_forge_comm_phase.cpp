@@ -73,8 +73,11 @@ crucible::NumericalRecipe recipe(crucible::ReductionDeterminism det) {
 ::foundation::core::FixedArray<crucible::cog::CogIdentity, 4> peers() {
     ::foundation::core::FixedArray<crucible::cog::CogIdentity, 4> out{};
     for (auto const index : out.indices()) {
-        out.at(index).uuid = crucible::cog::Uuid{7, index.raw() + 1};
-        out.at(index).kind = crucible::cog::CogKind::Gpu;
+        crucible::cog::Uuid const uuid{7, index.raw() + 1};
+        out.with_element(index, [uuid](crucible::cog::CogIdentity& peer) noexcept {
+            peer.uuid = uuid;
+            peer.kind = crucible::cog::CogKind::Gpu;
+        });
     }
     return out;
 }

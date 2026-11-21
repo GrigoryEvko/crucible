@@ -43,9 +43,12 @@ using crucible::MetaLog;
 using crucible::TensorMeta;
 using crucible::TraceRing;
 
-// The memory that the data addresses of the tensors point into.  The build
-// reads an address as a key and never through it.
-::fixy::FixedArray<std::byte, 4096> g_memory{};
+// The memory that the data addresses of the tensors point into: a run of
+// 4096 bytes of this arena.  The build reads an address as a key and never
+// through it.
+::fixy::BumpArena g_memory_arena{size_t{1} << 13};
+::fixy::View<std::byte> const g_memory =
+    g_memory_arena.array(::foundation::effects::testing::test().alloc, 4096, std::byte{});
 
 // Four known generations, and the unknown generations of two periods of the
 // allocator.
@@ -74,8 +77,8 @@ constexpr crucible::StorageGeneration kUnknownInSecondPeriod =
     meta.layout = crucible::Layout::Strided;
     meta.storage_offset = first;
     if (first != 0) meta.flags = crucible::meta_flags::IS_VIEW;
-    meta.data_ptr = crucible::external_data_ptr(
-        &*g_memory.view().get(base + first * sizeof(float)).expect("the offset is in the memory"));
+    meta.data_ptr =
+        crucible::external_data_ptr(&*g_memory.get(base + first * sizeof(float)).expect("the offset is in the memory"));
     return meta;
 }
 

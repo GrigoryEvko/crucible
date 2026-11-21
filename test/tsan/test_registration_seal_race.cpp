@@ -144,7 +144,8 @@ void run_writer(RoundIndex round, WriterIndex writer, Register&& register_one, W
         const bool was_registered = register_one(hash_of(round, writer, index));
         CRUCIBLE_TEST_ASSERT(kTest, !(was_refused_before && was_registered));
         was_refused_before = was_refused_before || !was_registered;
-        registered.at(index) = was_registered;
+        registered.with_element(index,
+                                [was_registered](bool& is_registered) noexcept { is_registered = was_registered; });
     }
 }
 
@@ -233,11 +234,13 @@ template <typename Race>
     return [&rounds, chain](::fixy::BgLoadCtx const& ctx) noexcept {
         for (RoundIndex const round : rounds.indices()) {
             if (!is_round_of(round, chain)) continue;
-            auto& state = rounds.at(round);
-            state.start.wait(ctx);
-            while (!state.table.is_sealed())
-                CRUCIBLE_SPIN_PAUSE;
-            state.count_seen_by_reader = Race::read_sealed(state.table, round);
+            // Six threads share the round: the latch is atomic, and the reader writes only count_seen_by_reader.
+            rounds.with_element(round, [&ctx, round](Round<typename Race::Table>& state) noexcept {
+                state.start.wait(ctx);
+                while (!state.table.is_sealed())
+                    CRUCIBLE_SPIN_PAUSE;
+                state.count_seen_by_reader = Race::read_sealed(state.table, round);
+            });
         }
     };
 }
@@ -247,11 +250,13 @@ template <typename Race>
     return [&rounds, chain](::fixy::BgLoadCtx const& ctx) noexcept {
         for (RoundIndex const round : rounds.indices()) {
             if (!is_round_of(round, chain)) continue;
-            auto& state = rounds.at(round);
-            state.start.arrive_and_wait(ctx);
-            pause_for(seal_delay_of(round));
-            state.table.seal(kTest);
-            state.count_at_seal = state.table.count();
+            // Six threads share the round: the latch is atomic, and the sealer writes only the seal and count_at_seal.
+            rounds.with_element(round, [&ctx, round](Round<typename Race::Table>& state) noexcept {
+                state.start.arrive_and_wait(ctx);
+                pause_for(seal_delay_of(round));
+                state.table.seal(kTest);
+                state.count_at_seal = state.table.count();
+            });
         }
     };
 }
@@ -261,12 +266,19 @@ template <typename Race>
     return [&rounds, chain, writer](::fixy::BgLoadCtx const& ctx) noexcept {
         for (RoundIndex const round : rounds.indices()) {
             if (!is_round_of(round, chain)) continue;
-            auto& state = rounds.at(round);
-            state.start.arrive_and_wait(ctx);
-            run_writer(
-                round, writer,
-                [&state](crucible::SchemaHash hash) { return Race::register_one(state.table, state.view, hash); },
-                state.registered.at(writer));
+            // Six threads share the round: the latch is atomic, and a writer writes only its own flags and the table.
+            rounds.with_element(round, [&ctx, round, writer](Round<typename Race::Table>& state) noexcept {
+                state.start.arrive_and_wait(ctx);
+                // The four writers share the flags of the round, and each writer writes only its own flags.
+                state.registered.with_element(writer, [&state, round, writer](WriterFlags& registered) noexcept {
+                    run_writer(
+                        round, writer,
+                        [&state](crucible::SchemaHash hash) {
+                            return Race::register_one(state.table, state.view, hash);
+                        },
+                        registered);
+                });
+            });
         }
     };
 }

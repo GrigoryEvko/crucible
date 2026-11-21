@@ -71,7 +71,11 @@ FillRun& fill_run() {
 [[nodiscard]] MetaIndex drain_meta_start(TraceRing& ring, TraceRing::Entry& out_entry) {
     ::fixy::FixedArray<TraceRing::Entry, 1> entries{};
     ::fixy::FixedArray<MetaIndex, 1> meta_starts{};
-    CRUCIBLE_TEST_ASSERT(kTest, ring.drain(entries.view(), meta_starts.view()) == 1);
+    uint32_t const drained = entries.with_mut([&](auto entry_run) noexcept {
+        return meta_starts.with_mut(
+            [&](auto meta_run) noexcept { return ring.drain(entry_run.view(), meta_run.view()); });
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, drained == 1);
     out_entry = entries.at(::fixy::index<0>());
     return meta_starts.at(::fixy::index<0>());
 }

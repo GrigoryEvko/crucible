@@ -70,10 +70,14 @@ crucible::NumericalRecipe recipe() {
 
 ::foundation::core::FixedArray<crucible::cog::CogIdentity, 2> peers() {
     ::foundation::core::FixedArray<crucible::cog::CogIdentity, 2> out{};
-    out.at(::fixy::index<0>()).uuid = crucible::cog::Uuid{1, 10};
-    out.at(::fixy::index<0>()).kind = crucible::cog::CogKind::Gpu;
-    out.at(::fixy::index<1>()).uuid = crucible::cog::Uuid{1, 11};
-    out.at(::fixy::index<1>()).kind = crucible::cog::CogKind::Gpu;
+    out.with_element(::fixy::index<0>(), [](crucible::cog::CogIdentity& peer) noexcept {
+        peer.uuid = crucible::cog::Uuid{1, 10};
+        peer.kind = crucible::cog::CogKind::Gpu;
+    });
+    out.with_element(::fixy::index<1>(), [](crucible::cog::CogIdentity& peer) noexcept {
+        peer.uuid = crucible::cog::Uuid{1, 11};
+        peer.kind = crucible::cog::CogKind::Gpu;
+    });
     return out;
 }
 
@@ -155,7 +159,8 @@ void test_collective_node_admission() {
     CRUCIBLE_TEST_ASSERT(kTest, recipe_hash != header.content_hash);
 
     auto changed_peer = p;
-    changed_peer.at(::fixy::index<1>()).uuid = crucible::cog::Uuid{1, 12};
+    changed_peer.with_element(
+        ::fixy::index<1>(), [](crucible::cog::CogIdentity& peer) noexcept { peer.uuid = crucible::cog::Uuid{1, 12}; });
     auto changed_participants = op;
     changed_participants.attrs.participants.peers = ::fixy::mint_tagged<::fixy::tags::source::Ir001>(
         ::fixy::View<crucible::cog::CogIdentity const>{changed_peer.view()});

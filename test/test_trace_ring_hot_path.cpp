@@ -82,8 +82,12 @@ void test_ring_append_under_the_foreground() {
     CRUCIBLE_TEST_ASSERT(
         kTest, ring->try_append_pure(foreground, make_entry(1), MetaIndex::none(), ScopeHash{0}, CallsiteHash{0}));
     ::fixy::FixedArray<TraceRing::Entry, 4> drained{};
-    CRUCIBLE_TEST_ASSERT(kTest, ring->drain_pure(foreground, drained.view()) == 1u);
-    CRUCIBLE_TEST_ASSERT(kTest, ring->drain_pure(foreground, drained.view()) == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut([&ring, &foreground](auto run) noexcept {
+        return ring->drain_pure(foreground, run.view());
+    }) == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut([&ring, &foreground](auto run) noexcept {
+        return ring->drain_pure(foreground, run.view());
+    }) == 0u);
 }
 
 void test_log_append_under_the_foreground() {

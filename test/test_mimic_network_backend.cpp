@@ -65,9 +65,11 @@ crucible::NumericalRecipe recipe(crucible::ReductionDeterminism det) {
 ::foundation::core::FixedArray<cog::CogIdentity, 4> peers() {
     ::foundation::core::FixedArray<cog::CogIdentity, 4> out{};
     for (auto const index : out.indices()) {
-        out.at(index).uuid = cog::Uuid{0x1111ULL, index.raw() + 1};
-        out.at(index).kind = cog::CogKind::NicPort;
-        out.at(index).level = cog::CogLevel::L0_Atomic;
+        out.with_element(index, [uuid = cog::Uuid{0x1111ULL, index.raw() + 1}](cog::CogIdentity& peer) noexcept {
+            peer.uuid = uuid;
+            peer.kind = cog::CogKind::NicPort;
+            peer.level = cog::CogLevel::L0_Atomic;
+        });
     }
     return out;
 }

@@ -62,9 +62,11 @@ template <class Fake>
 }
 
 // The schema hashes are fixed so a comparison across pools or processes
-// stays stable.
+// stays stable.  The ops are a run of an arena, because the region keeps
+// them.
 constexpr uint32_t kOpsCount = 3;
-inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) noexcept {
+inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
+    ::fixy::View<TraceEntry, kOpsCount> const buf = run.window<kOpsCount>(0).expect("the run holds kOpsCount ops");
     buf.at(::fixy::index<0>()).schema_hash = SchemaHash{0xAA01};
     buf.at(::fixy::index<1>()).schema_hash = SchemaHash{0xBB02};
     buf.at(::fixy::index<2>()).schema_hash = SchemaHash{0xCC03};
@@ -113,13 +115,13 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         RecipeRegistry::RecipeRef const rec_strict =
             registry.by_name(kPure, names::kF32Strict).expect("the starter is present");
 
-        ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
+        ::fixy::View<TraceEntry> const ops = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
         mk_ops(ops);
 
-        const crucible::RegionNode& region_tc = *crucible::make_region(alloc_cap(), arena, ops.view(), *rec_tc);
-        const crucible::RegionNode& region_strict = *crucible::make_region(alloc_cap(), arena, ops.view(), *rec_strict);
+        const crucible::RegionNode& region_tc = *crucible::make_region(alloc_cap(), arena, ops, *rec_tc);
+        const crucible::RegionNode& region_strict = *crucible::make_region(alloc_cap(), arena, ops, *rec_strict);
         // The overload with no recipe.
-        const crucible::RegionNode& region_none = *crucible::make_region(alloc_cap(), arena, ops.view());
+        const crucible::RegionNode& region_none = *crucible::make_region(alloc_cap(), arena, ops);
 
         // Three recipe pins, counting the unpinned baseline, give three
         // hashes.
@@ -149,9 +151,9 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         const NumericalRecipe* recipe_orig =
             &*registry.by_name(kPure, names::kBf16F32AccumTc).expect("the starter is present");
 
-        ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
+        ::fixy::View<TraceEntry> const ops = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
         mk_ops(ops);
-        const crucible::RegionNode& region_orig = *crucible::make_region(alloc_cap(), arena, ops.view(), *recipe_orig);
+        const crucible::RegionNode& region_orig = *crucible::make_region(alloc_cap(), arena, ops, *recipe_orig);
         const ContentHash persisted_content_hash = region_orig.content_hash;
 
         // What is persisted per region is the pair of the region's content
@@ -169,8 +171,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
 
         // Rebuilding the region with the recovered recipe reproduces the
         // original content hash, which is the end-to-end claim.
-        const crucible::RegionNode& region_recovered =
-            *crucible::make_region(alloc_cap(), arena, ops.view(), *recovered);
+        const crucible::RegionNode& region_recovered = *crucible::make_region(alloc_cap(), arena, ops, *recovered);
         CRUCIBLE_TEST_ASSERT(kTest, region_recovered.content_hash == persisted_content_hash);
     }
 
@@ -188,9 +189,9 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         RecipeRegistry::RecipeRef const rec_a =
             reg_a.by_name(kPure, names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
 
-        ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops_a{};
+        ::fixy::View<TraceEntry> const ops_a = arena_a.array(alloc_cap(), kOpsCount, TraceEntry{});
         mk_ops(ops_a);
-        const crucible::RegionNode& region_a = *crucible::make_region(alloc_cap(), arena_a, ops_a.view(), *rec_a);
+        const crucible::RegionNode& region_a = *crucible::make_region(alloc_cap(), arena_a, ops_a, *rec_a);
         const ContentHash hash_in_proc_a = region_a.content_hash;
 
         // A second process, with its own pool, registry and arena, and so
@@ -206,9 +207,9 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         // One hash, which is the identity that crosses them.
         CRUCIBLE_TEST_ASSERT(kTest, rec_a->hash == rec_b->hash);
 
-        ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops_b{};
+        ::fixy::View<TraceEntry> const ops_b = arena_b.array(alloc_cap(), kOpsCount, TraceEntry{});
         mk_ops(ops_b);
-        const crucible::RegionNode& region_b = *crucible::make_region(alloc_cap(), arena_b, ops_b.view(), *rec_b);
+        const crucible::RegionNode& region_b = *crucible::make_region(alloc_cap(), arena_b, ops_b, *rec_b);
         const ContentHash hash_in_proc_b = region_b.content_hash;
 
         // The content hashes agree although no pointer is shared, which is
@@ -233,13 +234,12 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         RecipeRegistry::RecipeRef const rec_bf16_tc =
             registry.by_name(kPure, names::kBf16F32AccumTc).expect("the starter is present");
 
-        ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
+        ::fixy::View<TraceEntry> const ops = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
         mk_ops(ops);
 
-        const crucible::RegionNode& region_tc = *crucible::make_region(alloc_cap(), arena, ops.view(), *rec_tc);
-        const crucible::RegionNode& region_ord = *crucible::make_region(alloc_cap(), arena, ops.view(), *rec_ord);
-        const crucible::RegionNode& region_bf16_tc =
-            *crucible::make_region(alloc_cap(), arena, ops.view(), *rec_bf16_tc);
+        const crucible::RegionNode& region_tc = *crucible::make_region(alloc_cap(), arena, ops, *rec_tc);
+        const crucible::RegionNode& region_ord = *crucible::make_region(alloc_cap(), arena, ops, *rec_ord);
+        const crucible::RegionNode& region_bf16_tc = *crucible::make_region(alloc_cap(), arena, ops, *rec_bf16_tc);
 
         // Three hashes, so three cache slots.
         CRUCIBLE_TEST_ASSERT(kTest, region_tc.content_hash != region_ord.content_hash);
@@ -303,13 +303,12 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
             .flags = {},
             .hash = {},
         };
-        ::foundation::core::FixedArray<TraceEntry, 1> entry{};
-        entry.at(::fixy::index<0>()).schema_hash = SchemaHash{0xAA01};
+        ::fixy::View<TraceEntry> const entry = arena.array(alloc_cap(), 1, TraceEntry{});
+        entry.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0xAA01};
 
         const ContentHash with_recipe =
-            crucible::make_region(alloc_cap(), arena, entry.view(), *pool.intern(alloc_cap(), zero_bytes))
-                ->content_hash;
-        const ContentHash with_no_recipe = crucible::make_region(alloc_cap(), arena, entry.view())->content_hash;
+            crucible::make_region(alloc_cap(), arena, entry, *pool.intern(alloc_cap(), zero_bytes))->content_hash;
+        const ContentHash with_no_recipe = crucible::make_region(alloc_cap(), arena, entry)->content_hash;
         CRUCIBLE_TEST_ASSERT(kTest, with_recipe != with_no_recipe);
         CRUCIBLE_TEST_ASSERT(kTest, with_recipe.raw() != 0);
     }

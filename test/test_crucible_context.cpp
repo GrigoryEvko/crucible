@@ -5,6 +5,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
 #include "tensor_data.h"
 #include <cstdint>
 #include <cstdio>
@@ -101,21 +102,24 @@ static void test_initial_state() {
 }
 
 static void test_activate() {
-    ::foundation::core::FixedArray<SlotId, 1> out{SlotId{0}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ::fixy::View<TraceEntry, 2> const ops =
+        arena.array(test.alloc, 2, TraceEntry{}).window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{200};
-    set_output_slots(ops.at(::foundation::core::index<0>()), out.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out);
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
-    set_output_slots(ops.at(::foundation::core::index<1>()), out.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), out);
 
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
 
     RegionNode region{};
-    init_region(&region, ops.view(), crucible::make_plan_link(plan));
+    init_region(&region, ops, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
@@ -132,10 +136,12 @@ static void test_activate() {
 // A region with no memory plan cannot be activated, because the
 // replay has no pool to hand out pointers from.
 static void test_activate_no_plan() {
-    ::foundation::core::FixedArray<TraceEntry, 1> ops{};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<TraceEntry> const ops = arena.array(test.alloc, 1, TraceEntry{});
 
     RegionNode region{};
-    init_region(&region, ops.view(), crucible::PlanLink{});
+    init_region(&region, ops, crucible::PlanLink{});
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, !ctx.activate(region));
@@ -145,23 +151,26 @@ static void test_activate_no_plan() {
 }
 
 static void test_full_replay() {
-    ::foundation::core::FixedArray<SlotId, 1> out0{SlotId{0}};
-    ::foundation::core::FixedArray<SlotId, 1> out1{SlotId{1}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out0 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
+    ::fixy::View<SlotId> const out1 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{1});
 
-    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ::fixy::View<TraceEntry, 2> const ops =
+        arena.array(test.alloc, 2, TraceEntry{}).window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{200};
-    set_output_slots(ops.at(::foundation::core::index<0>()), out0.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out0);
 
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
-    set_output_slots(ops.at(::foundation::core::index<1>()), out1.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), out1);
 
-    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
-    auto plan = make_simple_plan(slots.view());
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 2, TensorSlot{});
+    auto plan = make_simple_plan(slots);
 
     RegionNode region{};
-    init_region(&region, ops.view(), crucible::make_plan_link(plan));
+    init_region(&region, ops, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
@@ -194,21 +203,23 @@ static void test_full_replay() {
 }
 
 static void test_divergence() {
-    ::foundation::core::FixedArray<SlotId, 1> out{SlotId{0}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
+    ::fixy::View<TraceEntry> const ops = arena.array(test.alloc, 3, TraceEntry{});
     for (uint32_t i = 0; i < 3; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{100 + i};
         op.shape_hash = ShapeHash{200 + i};
-        set_output_slots(op, out.view());
+        set_output_slots(op, out);
     }
 
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
 
     RegionNode region{};
-    init_region(&region, ops.view(), crucible::make_plan_link(plan));
+    init_region(&region, ops, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
@@ -230,37 +241,41 @@ static void test_divergence() {
 }
 
 static void test_reactivate() {
-    ::foundation::core::FixedArray<SlotId, 1> out{SlotId{0}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    ::foundation::core::FixedArray<TraceEntry, 1> ops_a{};
+    ::fixy::View<TraceEntry, 1> const ops_a =
+        arena.array(test.alloc, 1, TraceEntry{}).window<1>(0).expect("the run holds one op");
     ops_a.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
     ops_a.at(::foundation::core::index<0>()).shape_hash = ShapeHash{20};
-    set_output_slots(ops_a.at(::foundation::core::index<0>()), out.view());
+    set_output_slots(ops_a.at(::foundation::core::index<0>()), out);
 
-    ::foundation::core::FixedArray<TensorSlot, 1> slots_a{};
-    auto plan_a = make_simple_plan(slots_a.view());
+    ::fixy::View<TensorSlot> const slots_a = arena.array(test.alloc, 1, TensorSlot{});
+    auto plan_a = make_simple_plan(slots_a);
 
     RegionNode region_a{};
-    init_region(&region_a, ops_a.view(), crucible::make_plan_link(plan_a));
+    init_region(&region_a, ops_a, crucible::make_plan_link(plan_a));
 
     // The second region shares no hash with the first, so a stale guard
     // would diverge rather than silently match.
-    ::foundation::core::FixedArray<SlotId, 1> out_b0{SlotId{0}};
-    ::foundation::core::FixedArray<SlotId, 1> out_b1{SlotId{1}};
+    ::fixy::View<SlotId> const out_b0 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
+    ::fixy::View<SlotId> const out_b1 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{1});
 
-    ::foundation::core::FixedArray<TraceEntry, 2> ops_b{};
+    ::fixy::View<TraceEntry, 2> const ops_b =
+        arena.array(test.alloc, 2, TraceEntry{}).window<2>(0).expect("the run holds two ops");
     ops_b.at(::foundation::core::index<0>()).schema_hash = SchemaHash{30};
     ops_b.at(::foundation::core::index<0>()).shape_hash = ShapeHash{40};
-    set_output_slots(ops_b.at(::foundation::core::index<0>()), out_b0.view());
+    set_output_slots(ops_b.at(::foundation::core::index<0>()), out_b0);
     ops_b.at(::foundation::core::index<1>()).schema_hash = SchemaHash{31};
     ops_b.at(::foundation::core::index<1>()).shape_hash = ShapeHash{41};
-    set_output_slots(ops_b.at(::foundation::core::index<1>()), out_b1.view());
+    set_output_slots(ops_b.at(::foundation::core::index<1>()), out_b1);
 
-    ::foundation::core::FixedArray<TensorSlot, 2> slots_b{};
-    auto plan_b = make_simple_plan(slots_b.view());
+    ::fixy::View<TensorSlot> const slots_b = arena.array(test.alloc, 2, TensorSlot{});
+    auto plan_b = make_simple_plan(slots_b);
 
     RegionNode region_b{};
-    init_region(&region_b, ops_b.view(), crucible::make_plan_link(plan_b));
+    init_region(&region_b, ops_b, crucible::make_plan_link(plan_b));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
 
@@ -287,16 +302,20 @@ static void test_reactivate() {
 }
 
 static void test_external_slots() {
-    ::foundation::core::FixedArray<SlotId, 1> out{SlotId{0}};
-    ::foundation::core::FixedArray<SlotId, 1> in{SlotId{1}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
+    ::fixy::View<SlotId> const in = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{1});
 
-    ::foundation::core::FixedArray<TraceEntry, 1> ops{};
+    ::fixy::View<TraceEntry, 1> const ops =
+        arena.array(test.alloc, 1, TraceEntry{}).window<1>(0).expect("the run holds one op");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{50};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{60};
-    set_output_slots(ops.at(::foundation::core::index<0>()), out.view());
-    set_input_slots(ops.at(::foundation::core::index<0>()), in.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out);
+    set_input_slots(ops.at(::foundation::core::index<0>()), in);
 
-    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
+    ::fixy::View<TensorSlot, 2> const slots =
+        arena.array(test.alloc, 2, TensorSlot{}).window<2>(0).expect("the run holds two slots");
     slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
                                                 .nbytes = 256,
                                                 .birth_op = OpIndex{0},
@@ -323,14 +342,14 @@ static void test_external_slots() {
                                                 .pad2 = {}};
 
     MemoryPlan plan{};
-    plan.slots = slots.view();
+    plan.slots = slots;
     plan.num_external = 1;
     plan.pool_bytes = 256;
     plan.device_type = DeviceType::CPU;
     plan.device_idx = 0;
 
     RegionNode region{};
-    init_region(&region, ops.view(), crucible::make_plan_link(plan));
+    init_region(&region, ops, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
@@ -354,12 +373,14 @@ static void test_external_slots() {
 // chooses and the assertions never name one.
 static void test_integration_sweep_line() {
     auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     // Slot 2 is external: it stands for a parameter whose storage the
     // pool does not own and must not place.
     constexpr uint32_t NSLOTS = 3;
-    ::foundation::core::FixedArray<TensorSlot, NSLOTS> slots{};
+    ::fixy::View<TensorSlot, NSLOTS> const slots =
+        arena.array(test.alloc, NSLOTS, TensorSlot{}).window<NSLOTS>(0).expect("the run holds three slots");
     slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
                                                 .nbytes = 512,
                                                 .birth_op = OpIndex{0},
@@ -399,27 +420,28 @@ static void test_integration_sweep_line() {
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view())
+    crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots)
                                       .expect("the slots of the test fit in 64 bits");
 
-    ::foundation::core::FixedArray<SlotId, 1> op0_out{SlotId{0}};
-    ::foundation::core::FixedArray<SlotId, 1> op0_in{SlotId{2}};
-    ::foundation::core::FixedArray<SlotId, 1> op1_out{SlotId{1}};
-    ::foundation::core::FixedArray<SlotId, 1> op1_in{SlotId{0}};
+    ::fixy::View<SlotId> const op0_out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
+    ::fixy::View<SlotId> const op0_in = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{2});
+    ::fixy::View<SlotId> const op1_out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{1});
+    ::fixy::View<SlotId> const op1_in = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ::fixy::View<TraceEntry, 2> const ops =
+        arena.array(test.alloc, 2, TraceEntry{}).window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{0xAA};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{0xBB};
-    set_output_slots(ops.at(::foundation::core::index<0>()), op0_out.view());
-    set_input_slots(ops.at(::foundation::core::index<0>()), op0_in.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), op0_out);
+    set_input_slots(ops.at(::foundation::core::index<0>()), op0_in);
 
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{0xCC};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{0xDD};
-    set_output_slots(ops.at(::foundation::core::index<1>()), op1_out.view());
-    set_input_slots(ops.at(::foundation::core::index<1>()), op1_in.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), op1_out);
+    set_input_slots(ops.at(::foundation::core::index<1>()), op1_in);
 
     RegionNode region{};
-    init_region(&region, ops.view(), crucible::make_plan_link(plan));
+    init_region(&region, ops, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
@@ -464,21 +486,24 @@ static void test_integration_sweep_line() {
 // The divergence count belongs to the context, not to an activation, so
 // it survives deactivate and re-activate.
 static void test_divergence_counter() {
-    ::foundation::core::FixedArray<SlotId, 1> out{SlotId{0}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ::fixy::View<TraceEntry, 2> const ops =
+        arena.array(test.alloc, 2, TraceEntry{}).window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{20};
-    set_output_slots(ops.at(::foundation::core::index<0>()), out.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out);
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{11};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{21};
-    set_output_slots(ops.at(::foundation::core::index<1>()), out.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), out);
 
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
 
     RegionNode region{};
-    init_region(&region, ops.view(), crucible::make_plan_link(plan));
+    init_region(&region, ops, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
 

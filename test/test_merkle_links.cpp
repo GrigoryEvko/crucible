@@ -39,9 +39,10 @@ namespace {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena arena(1 << 16);
 
-    ::foundation::core::FixedArray<crucible::TraceEntry, 1> ops{};
+    ::fixy::View<crucible::TraceEntry, 1> const ops =
+        arena.array(test.alloc, 1, crucible::TraceEntry{}).window<1>(0).expect("the run holds one op");
     ops.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0x1111};
-    crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops.view());
+    crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops);
     crucible::TraceNode& terminal = *crucible::make_terminal(test.alloc, arena);
     crucible::LoopNode& loop =
         *crucible::make_loop(test.alloc, arena, region, crucible::ContentHash{0x5EED},
@@ -77,12 +78,14 @@ namespace {
     CRUCIBLE_TEST_ASSERT(kTest, terminal.as_loop().is_none());
 
     // ── The arms of a branch ──────────────────────────────────────────
-    ::foundation::core::FixedArray<crucible::TraceEntry, 1> ops_a{};
+    ::fixy::View<crucible::TraceEntry, 1> const ops_a =
+        arena.array(test.alloc, 1, crucible::TraceEntry{}).window<1>(0).expect("the run holds one op");
     ops_a.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xA1};
-    ::foundation::core::FixedArray<crucible::TraceEntry, 1> ops_b{};
+    ::fixy::View<crucible::TraceEntry, 1> const ops_b =
+        arena.array(test.alloc, 1, crucible::TraceEntry{}).window<1>(0).expect("the run holds one op");
     ops_b.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xB2};
-    crucible::RegionNode& region_a = *crucible::make_region(test.alloc, arena, ops_a.view());
-    crucible::RegionNode& region_b = *crucible::make_region(test.alloc, arena, ops_b.view());
+    crucible::RegionNode& region_a = *crucible::make_region(test.alloc, arena, ops_a);
+    crucible::RegionNode& region_b = *crucible::make_region(test.alloc, arena, ops_b);
     region_a.next = crucible::make_link(*crucible::make_terminal(test.alloc, arena));
     region_b.next = crucible::make_link(*crucible::make_terminal(test.alloc, arena));
     crucible::BranchNode& branch =
@@ -200,7 +203,9 @@ namespace {
 
     // collect_regions reads the region of each arm.
     ::foundation::core::FixedArray<crucible::RegionNode*, 4> collected{};
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::collect_regions(branch, collected.view()) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, collected.with_mut([&branch](auto run) noexcept {
+        return crucible::collect_regions(branch, run.view());
+    }) == 2);
     CRUCIBLE_TEST_ASSERT(kTest, crucible::compute_merkle_hash(branch) == branch.merkle_hash);
 
     // dag_diff agrees on one DAG and on two empty links, and reports an end
@@ -216,7 +221,7 @@ namespace {
 
     // find_merge_point gives the link to the first region of the shared
     // tail, and an empty link when the tails differ.
-    const ::fixy::View<const crucible::TraceEntry> tail_ops = ops_b.view();
+    const ::fixy::View<const crucible::TraceEntry> tail_ops = ops_b;
     CRUCIBLE_TEST_ASSERT(
         kTest, crucible::is_link_to(crucible::find_merge_point(tail_ops, crucible::make_link(region_b), ::fixy::none),
                                     region_b));

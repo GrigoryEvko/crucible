@@ -206,11 +206,11 @@ struct Built {
         ctx.alloc, dag_arena, ops.window(kSplit, kNumOps - kSplit).expect("the tail is in the ops"));
     head->next = crucible::make_link(*tail);
 
-    ::foundation::core::FixedArray<TensorSlot, kNumSlots> slots{};
-    build_slots(slots.view());
+    const ::fixy::View<TensorSlot> slots = arena.array<TensorSlot>(ctx.alloc, kNumSlots, TensorSlot{});
+    build_slots(slots);
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    head->plan = crucible::PlanLink::some(bt.compute_memory_plan(ctx.alloc, plan_storage, sweep_arena, slots.view())
+    head->plan = crucible::PlanLink::some(bt.compute_memory_plan(ctx.alloc, plan_storage, sweep_arena, slots)
                                               .expect("the slots of the test fit in 64 bits"));
     crucible::recompute_merkle(*head);
 

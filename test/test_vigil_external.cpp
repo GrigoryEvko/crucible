@@ -35,8 +35,14 @@ using divrig::NUM_OPS;
 
 // The memory that the data addresses of the tensors point into.  The Vigil
 // reads an address as a key, and gives it back through input_ptr, and never
-// reads through it.
-::fixy::FixedArray<std::byte, 16384> g_memory{};
+// reads through it.  The memory is a run of an arena that lives until the end
+// of the process, so each call gives the same run.
+[[nodiscard]] ::fixy::View<std::byte> memory() {
+    static ::fixy::BumpArena arena{16384};
+    static ::fixy::View<std::byte> const run =
+        arena.array(::foundation::effects::testing::test().alloc, 16384, std::byte{0});
+    return run;
+}
 
 // The offset of the batch of iteration iter, at an address of its own.
 [[nodiscard]] uint32_t batch_offset(uint32_t iter) noexcept { return iter * 64; }
@@ -45,7 +51,7 @@ using divrig::NUM_OPS;
 [[nodiscard]] uint32_t activation_offset(uint32_t iter, uint32_t op) noexcept { return 4096 + (iter * 16 + op) * 64; }
 
 // A tensor of 16 floats less `first`, at element `first` of the storage at
-// the offset of g_memory.  A tensor past the first element of its storage is
+// the offset of memory().  A tensor past the first element of its storage is
 // a view.
 [[nodiscard]] crucible::TensorMeta meta_at(uint32_t offset, uint32_t first = 0) {
     crucible::TensorMeta meta{};
@@ -59,13 +65,13 @@ using divrig::NUM_OPS;
     meta.storage_offset = first;
     if (first != 0) meta.flags = crucible::meta_flags::IS_VIEW;
     meta.data_ptr = crucible::external_data_ptr(
-        &*g_memory.view().get(offset + first * sizeof(float)).expect("the offset is in the memory"));
+        &*memory().get(offset + first * sizeof(float)).expect("the offset is in the memory"));
     return meta;
 }
 
 // The address of the batch of iteration iter.
 [[nodiscard]] ::fixy::Option<::fixy::RunAddress> batch_address(uint32_t iter) {
-    return ::fixy::mint_run_address(g_memory.view(), batch_offset(iter));
+    return ::fixy::mint_run_address(memory(), batch_offset(iter));
 }
 
 // The element of the batch that op 1 reads, when op 1 reads a view of the
@@ -88,15 +94,19 @@ divrig::OpData op_reading_batch(uint32_t iter, uint32_t op_idx, uint32_t op1_fir
     made.n_metas = 2;
     if (op1_first == kNestResult && op_idx < 2) {
         const crucible::TensorMeta result = meta_at(activation_offset(iter, 1));
-        made.metas.at(::fixy::index<0>()) = op_idx == 0 ? result : meta_at(batch_offset(iter));
-        made.metas.at(::fixy::index<1>()) = result;
+        const crucible::TensorMeta input = op_idx == 0 ? result : meta_at(batch_offset(iter));
+        made.metas.with_element(::fixy::index<0>(), [input](crucible::TensorMeta& record) noexcept { record = input; });
+        made.metas.with_element(::fixy::index<1>(),
+                                [result](crucible::TensorMeta& record) noexcept { record = result; });
         return made;
     }
     const bool is_view_read = op_idx == 1 && op1_first != kOutputOfOp0;
-    made.metas.at(::fixy::index<0>()) = op_idx == 0  ? meta_at(batch_offset(iter))
-                                      : is_view_read ? meta_at(batch_offset(iter), op1_first)
-                                                     : meta_at(activation_offset(iter, op_idx - 1));
-    made.metas.at(::fixy::index<1>()) = meta_at(activation_offset(iter, op_idx));
+    const crucible::TensorMeta input = op_idx == 0  ? meta_at(batch_offset(iter))
+                                     : is_view_read ? meta_at(batch_offset(iter), op1_first)
+                                                    : meta_at(activation_offset(iter, op_idx - 1));
+    made.metas.with_element(::fixy::index<0>(), [input](crucible::TensorMeta& record) noexcept { record = input; });
+    const crucible::TensorMeta output = meta_at(activation_offset(iter, op_idx));
+    made.metas.with_element(::fixy::index<1>(), [output](crucible::TensorMeta& record) noexcept { record = output; });
     return made;
 }
 
@@ -186,7 +196,7 @@ void test_internal_slot_of_a_nest_keeps_its_pool_bytes() {
         CRUCIBLE_TEST_ASSERT(kTest, dispatch(vigil, iter, 0, kNestResult).action == DispatchResult::Action::COMPILED);
         const ::fixy::Option<::fixy::RunAddress> planned = vigil.input_ptr(fg, 0);
         CRUCIBLE_TEST_ASSERT(kTest, planned.is_some() && "the pool holds the bytes of R");
-        CRUCIBLE_TEST_ASSERT(kTest, !(planned == ::fixy::mint_run_address(g_memory.view(), activation_offset(iter, 1)))
+        CRUCIBLE_TEST_ASSERT(kTest, !(planned == ::fixy::mint_run_address(memory(), activation_offset(iter, 1)))
                                         && "no bind gives the internal slot of R the address of the live R");
         CRUCIBLE_TEST_ASSERT(kTest, dispatch(vigil, iter, 1, kNestResult).action == DispatchResult::Action::COMPILED);
         CRUCIBLE_TEST_ASSERT(kTest,

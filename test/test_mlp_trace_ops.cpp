@@ -92,86 +92,88 @@ OpPacket build_op(uint32_t iter, uint32_t op_idx) {
 
     uint16_t m = 0;
 
-    switch (op_idx) {
-        case 0:  // mm(input, W1) → hidden
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(X_PTR, BATCH, IN_DIM);  // input (external)
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(W1_PTR, IN_DIM, HIDDEN);  // weight1 (external)
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_HIDDEN), BATCH, HIDDEN);
-            break;
-        case 1:  // add(hidden, B1) → biased
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_HIDDEN), BATCH, HIDDEN);
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_1d(B1_PTR, HIDDEN);  // bias1 (external)
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_BIASED), BATCH, HIDDEN);
-            break;
-        case 2:  // relu(biased) → activated
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_BIASED), BATCH, HIDDEN);
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_ACTIVATED), BATCH, HIDDEN);
-            break;
-        case 3:  // mm(activated, W2) → logits
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_ACTIVATED), BATCH, HIDDEN);
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(W2_PTR, HIDDEN, OUT_DIM);  // weight2 (external)
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_LOGITS), BATCH, OUT_DIM);
-            break;
-        case 4:  // add(logits, B2) → output
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_LOGITS), BATCH, OUT_DIM);
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_1d(B2_PTR, OUT_DIM);  // bias2 (external)
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_OUTPUT), BATCH, OUT_DIM);
-            break;
-        case 5:  // loss_bwd(output) → grad_out
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_OUTPUT), BATCH, OUT_DIM);
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_GRAD_OUT), BATCH, OUT_DIM);
-            break;
-        case 6:  // mm(grad_out, W2.T) → grad_act
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_GRAD_OUT), BATCH, OUT_DIM);
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(W2_PTR, HIDDEN, OUT_DIM);  // weight2 (external, transposed)
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_GRAD_ACT), BATCH, HIDDEN);
-            break;
-        case 7:  // relu_bwd(grad_act, biased) → grad_biased
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_GRAD_ACT), BATCH, HIDDEN);
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_BIASED), BATCH, HIDDEN);  // saved for backward
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_GRAD_BIA), BATCH, HIDDEN);
-            break;
-        case 8:  // mm(input.T, grad_biased) → grad_weight1
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(X_PTR, BATCH, IN_DIM);  // input (external)
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_GRAD_BIA), BATCH, HIDDEN);
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_GRAD_W1), IN_DIM, HIDDEN);
-            break;
-        case 9:  // accum_grad(W1, grad_weight1) → W1_updated
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(W1_PTR, IN_DIM, HIDDEN);  // weight1 (external)
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_GRAD_W1), IN_DIM, HIDDEN);
-            *p.metas.get(m++).expect("a test reads an element at or past the count of its array") =
-                make_2d(act_ptr(iter, ACT_W1_UPDATED), IN_DIM, HIDDEN);
-            break;
-        default:
-            break;
-    }
+    p.metas.with_mut([&m, iter, op_idx](auto run) noexcept {
+        switch (op_idx) {
+            case 0:  // mm(input, W1) → hidden
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(X_PTR, BATCH, IN_DIM);  // input (external)
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(W1_PTR, IN_DIM, HIDDEN);  // weight1 (external)
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_HIDDEN), BATCH, HIDDEN);
+                break;
+            case 1:  // add(hidden, B1) → biased
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_HIDDEN), BATCH, HIDDEN);
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_1d(B1_PTR, HIDDEN);  // bias1 (external)
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_BIASED), BATCH, HIDDEN);
+                break;
+            case 2:  // relu(biased) → activated
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_BIASED), BATCH, HIDDEN);
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_ACTIVATED), BATCH, HIDDEN);
+                break;
+            case 3:  // mm(activated, W2) → logits
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_ACTIVATED), BATCH, HIDDEN);
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(W2_PTR, HIDDEN, OUT_DIM);  // weight2 (external)
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_LOGITS), BATCH, OUT_DIM);
+                break;
+            case 4:  // add(logits, B2) → output
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_LOGITS), BATCH, OUT_DIM);
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_1d(B2_PTR, OUT_DIM);  // bias2 (external)
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_OUTPUT), BATCH, OUT_DIM);
+                break;
+            case 5:  // loss_bwd(output) → grad_out
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_OUTPUT), BATCH, OUT_DIM);
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_GRAD_OUT), BATCH, OUT_DIM);
+                break;
+            case 6:  // mm(grad_out, W2.T) → grad_act
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_GRAD_OUT), BATCH, OUT_DIM);
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(W2_PTR, HIDDEN, OUT_DIM);  // weight2 (external, transposed)
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_GRAD_ACT), BATCH, HIDDEN);
+                break;
+            case 7:  // relu_bwd(grad_act, biased) → grad_biased
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_GRAD_ACT), BATCH, HIDDEN);
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_BIASED), BATCH, HIDDEN);  // saved for backward
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_GRAD_BIA), BATCH, HIDDEN);
+                break;
+            case 8:  // mm(input.T, grad_biased) → grad_weight1
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(X_PTR, BATCH, IN_DIM);  // input (external)
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_GRAD_BIA), BATCH, HIDDEN);
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_GRAD_W1), IN_DIM, HIDDEN);
+                break;
+            case 9:  // accum_grad(W1, grad_weight1) → W1_updated
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(W1_PTR, IN_DIM, HIDDEN);  // weight1 (external)
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_GRAD_W1), IN_DIM, HIDDEN);
+                *run.get(m++).expect("a test reads an element at or past the count of its array") =
+                    make_2d(act_ptr(iter, ACT_W1_UPDATED), IN_DIM, HIDDEN);
+                break;
+            default:
+                break;
+        }
+    });
 
     p.n_metas = m;
     return p;

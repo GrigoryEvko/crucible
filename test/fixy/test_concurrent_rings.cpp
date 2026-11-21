@@ -55,14 +55,21 @@ static_assert(c::RingValue<Plain>);
 static_assert(!c::RingValue<OwnsSomething>);
 
 // The cells that a batch call of a ring reads or writes.  The batch calls
-// take a View of the base.
+// take a View of the base.  A write of one cell takes set, and a pop into
+// each cell takes with_each, so the run gives no View that writes it past a
+// call.
 template <class T, std::size_t N>
 class Run final {
     ::fixy::FixedArray<T, N> cells_{};
 
 public:
-    [[nodiscard]] T& at(std::size_t position) noexcept {
+    [[nodiscard]] T const& at(std::size_t position) const noexcept {
         return *cells_.get(position).expect("a position of a run is below the count of the run");
+    }
+
+    // Writes value into the cell at position.
+    void set(::fixy::Index<N> position, T value) noexcept {
+        cells_.with_element(position, [&value](T& cell) noexcept { cell = value; });
     }
 
     // The first count cells, for a push.
@@ -70,8 +77,12 @@ public:
         return cells_.view().window(0, count).expect("a run holds the count of a push");
     }
 
-    // Each cell, for a pop.
-    [[nodiscard]] ::fixy::View<T> each() noexcept { return cells_.view(); }
+    // Lends each cell to body as a View that writes them, for a pop, and
+    // gives the count that body gives.
+    template <class Body>
+    [[nodiscard]] std::size_t with_each(Body&& body) noexcept {
+        return cells_.with_mut([&body](auto run) noexcept -> std::size_t { return body(run.view()); });
+    }
 };
 
 // ── The waits of the threaded cases ──────────────────────────────────
@@ -238,8 +249,8 @@ using MpscWide = c::MpscRing<int, 128>;
     // A batch that does not fit fills what it can, unlike the MPSC
     // batch, which is all or nothing.
     Run<Plain, 6> six{};
-    for (std::size_t i = 0; i < 6; ++i)
-        six.at(i) = Plain{100 + static_cast<int>(i), 0};
+    for (::fixy::Index<6> const i : ::fixy::IndexRange<6>{})
+        six.set(i, Plain{100 + static_cast<int>(i.raw()), 0});
     if (ring.try_push_batch(six.first(6)) != 6) {
         std::fprintf(stderr, "SPSC batch push did not take all six\n");
         return 1;
@@ -250,7 +261,7 @@ using MpscWide = c::MpscRing<int, 128>;
     }
 
     Run<Plain, 8> drained{};
-    if (ring.try_pop_batch(drained.each()) != 8) {
+    if (drained.with_each([&ring](::fixy::View<Plain> cells) noexcept { return ring.try_pop_batch(cells); }) != 8) {
         std::fprintf(stderr, "SPSC batch pop did not drain the ring\n");
         return 1;
     }
@@ -307,19 +318,21 @@ using MpscWide = c::MpscRing<int, 128>;
     // A batch push of six into four free cells takes four, and a batch pop
     // with a cached head behind them takes all four.
     Run<int, 6> six{};
-    for (std::size_t i = 0; i < 6; ++i)
-        six.at(i) = 30 + static_cast<int>(i);
+    for (::fixy::Index<6> const i : ::fixy::IndexRange<6>{})
+        six.set(i, 30 + static_cast<int>(i.raw()));
     if (ring.try_push_batch(six.first(6)) != 4) return fail(fixy::TextView{"a batch push took the wrong count"});
     if (ring.try_push_batch(six.first(1)) != 0) return fail(fixy::TextView{"a batch push into a full ring"});
     Run<int, 3> three{};
-    if (ring.try_pop_batch(three.each()) != 3 || three.at(0) != 30 || three.at(2) != 32) {
+    if (three.with_each([&ring](::fixy::View<int> cells) noexcept { return ring.try_pop_batch(cells); }) != 3
+        || three.at(0) != 30 || three.at(2) != 32) {
         return fail(fixy::TextView{"a batch pop of three"});
     }
     // The cached tail says no free cell, and three are free.  A batch push
     // of three must read the tail again and take all three.
     if (ring.try_push_batch(six.first(3)) != 3) return fail(fixy::TextView{"a batch push behind a stale cache"});
     Run<int, 8> rest{};
-    if (ring.try_pop_batch(rest.each()) != 4 || rest.at(0) != 33 || rest.at(1) != 30 || rest.at(3) != 32) {
+    if (rest.with_each([&ring](::fixy::View<int> cells) noexcept { return ring.try_pop_batch(cells); }) != 4
+        || rest.at(0) != 33 || rest.at(1) != 30 || rest.at(3) != 32) {
         return fail(fixy::TextView{"the batch pop of the rest"});
     }
     if (!ring.empty_approx(kNondet) || ring.try_pop().is_some()) return fail(fixy::TextView{"the ring is not empty"});
@@ -550,8 +563,8 @@ struct ProvenOwner final {
         }
         // A batch between the single calls keeps the copies too.
         Run<int, 3> three{};
-        for (std::size_t i = 0; i < 3; ++i)
-            three.at(i) = next_in + static_cast<int>(i);
+        for (::fixy::Index<3> const i : ::fixy::IndexRange<3>{})
+            three.set(i, next_in + static_cast<int>(i.raw()));
         if (ring.try_push_batch(three.first(3)) != 3) return fail(fixy::TextView{"a batch push"});
         next_in += 3;
         for (int i = 0; i < 3; ++i) {
@@ -635,8 +648,8 @@ struct ProvenOwner final {
 
     // All or nothing: a batch larger than the free space pushes nothing.
     Run<Plain, 6> six{};
-    for (std::size_t i = 0; i < 6; ++i)
-        six.at(i) = Plain{200 + static_cast<int>(i), 0};
+    for (::fixy::Index<6> const i : ::fixy::IndexRange<6>{})
+        six.set(i, Plain{200 + static_cast<int>(i.raw()), 0});
     if (ring.try_push_batch(six.first(6)) != 6) {
         std::fprintf(stderr, "MPSC batch push did not take all six\n");
         return 1;
@@ -651,7 +664,8 @@ struct ProvenOwner final {
     // took, and returns more items than the ring holds.  The count and
     // the empty ring below show the clamp.
     Run<Plain, 64> oversized{};
-    const std::size_t taken = ring.try_pop_batch(kNondet, oversized.each());
+    const std::size_t taken =
+        oversized.with_each([&ring](::fixy::View<Plain> cells) noexcept { return ring.try_pop_batch(kNondet, cells); });
     if (taken != 6) {
         std::fprintf(stderr, "MPSC oversized batch pop returned %zu, not the six available\n", taken);
         return 1;
@@ -683,17 +697,21 @@ struct ProvenOwner final {
     }
     if (small.try_push(4)) return 1;
     Run<int, 4> out{};
-    if (small.try_pop_batch(kNondet, out.each()) != 4 || out.at(3) != 3) return 1;
+    if (out.with_each([&small](::fixy::View<int> cells) noexcept { return small.try_pop_batch(kNondet, cells); }) != 4
+        || out.at(3) != 3)
+        return 1;
 
     MpscWide wide{};
     Run<int, 100> items{};
-    for (std::size_t i = 0; i < 100; ++i)
-        items.at(i) = static_cast<int>(i);
+    for (::fixy::Index<100> const i : ::fixy::IndexRange<100>{})
+        items.set(i, static_cast<int>(i.raw()));
     if (wide.try_push_batch(items.first(100)) != 100) return 1;
 
     // The drain crosses many cache lines of cells.
     Run<int, 100> drained{};
-    if (wide.try_pop_batch(kNondet, drained.each()) != 100) return 1;
+    if (drained.with_each([&wide](::fixy::View<int> cells) noexcept { return wide.try_pop_batch(kNondet, cells); })
+        != 100)
+        return 1;
     for (int i = 0; i < 100; ++i) {
         if (drained.at(static_cast<std::size_t>(i)) != i) {
             std::fprintf(stderr, "the wide MPSC drain broke at index %d\n", i);
@@ -723,16 +741,19 @@ template <std::size_t Capacity, c::CellSpacing Spacing>
 
     if (offset > 0) {
         if (ring.try_push_batch(items.first(offset)) != offset) return fail(fixy::TextView{"offset push"});
-        if (ring.try_pop_batch(kNondet, drained.each()) != offset) return fail(fixy::TextView{"offset pop"});
+        if (drained.with_each([&ring](::fixy::View<int> cells) noexcept { return ring.try_pop_batch(kNondet, cells); })
+            != offset)
+            return fail(fixy::TextView{"offset pop"});
     }
 
-    for (std::size_t i = 0; i < Capacity; ++i)
-        items.at(i) = static_cast<int>(i);
+    for (::fixy::Index<Capacity> const i : ::fixy::IndexRange<Capacity>{})
+        items.set(i, static_cast<int>(i.raw()));
     if (ring.try_push_batch(items.first(count)) != count) return fail(fixy::TextView{"batch push"});
     for (std::size_t i = 0; i < singles; ++i) {
         if (ring.try_pop(kNondet).value_or(-1) != static_cast<int>(i)) return fail(fixy::TextView{"single pop"});
     }
-    const std::size_t rest = ring.try_pop_batch(kNondet, drained.each());
+    const std::size_t rest =
+        drained.with_each([&ring](::fixy::View<int> cells) noexcept { return ring.try_pop_batch(kNondet, cells); });
     if (rest != count - singles) return fail(fixy::TextView{"the batch pop count"});
     for (std::size_t i = 0; i < rest; ++i) {
         if (drained.at(i) != static_cast<int>(singles + i)) return fail(fixy::TextView{"the batch pop order"});
@@ -741,11 +762,12 @@ template <std::size_t Capacity, c::CellSpacing Spacing>
         return fail(fixy::TextView{"the drained ring"});
     }
 
-    for (std::size_t i = 0; i < Capacity; ++i)
-        items.at(i) = static_cast<int>(Capacity + i);
+    for (::fixy::Index<Capacity> const i : ::fixy::IndexRange<Capacity>{})
+        items.set(i, static_cast<int>(Capacity + i.raw()));
     if (ring.try_push_batch(items.first(Capacity)) != Capacity) return fail(fixy::TextView{"the refill"});
     if (ring.try_push(-1)) return fail(fixy::TextView{"a push past capacity"});
-    if (ring.try_pop_batch(kNondet, drained.each()) != Capacity) {
+    if (drained.with_each([&ring](::fixy::View<int> cells) noexcept { return ring.try_pop_batch(kNondet, cells); })
+        != Capacity) {
         return fail(fixy::TextView{"the refill drain count"});
     }
     for (std::size_t i = 0; i < Capacity; ++i) {
@@ -936,8 +958,8 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
     Waits waits{};
     Run<int, kProducers> last_seen{};
-    for (std::size_t p = 0; p < kProducers; ++p)
-        last_seen.at(p) = -1;
+    for (::fixy::Index<kProducers> const p : ::fixy::IndexRange<kProducers>{})
+        last_seen.set(p, -1);
     int received = 0;
     Run<Plain, kCapacity> drained{};
 
@@ -947,7 +969,8 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
                          item.producer < kProducers ? last_seen.at(item.producer) : -1);
             return false;
         }
-        last_seen.at(item.producer) = item.value;
+        last_seen.set(::fixy::Index<kProducers>::check(item.producer).expect("the test above bounds the producer"),
+                      item.value);
         ++received;
         return true;
     };
@@ -963,7 +986,8 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
                     for (std::size_t form = 0; is_pushed && form < 2; ++form) {
                         const std::size_t size = form == 0 ? kCapacity : kPartial;
                         for (std::size_t i = 0; i < size; ++i)
-                            batch.at(i) = Plain{next + static_cast<int>(i), p};
+                            batch.set(::fixy::Index<kCapacity>::check(i).expect("a batch holds at most kCapacity"),
+                                      Plain{next + static_cast<int>(i), p});
                         is_pushed = push_waiting(ctx, waits, [&ring, &batch, size]() noexcept {
                             return ring.try_push_batch(batch.first(size)) == size;
                         });
@@ -984,7 +1008,8 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
             // producer runs from the single item into the batch.
             pop_waiting(ctx, waits, [&ring, &single, &got, &drained, &finished]() noexcept {
                 single = ring.try_pop(kNondet);
-                got = ring.try_pop_batch(kNondet, drained.each());
+                got = drained.with_each(
+                    [&ring](::fixy::View<Plain> cells) noexcept { return ring.try_pop_batch(kNondet, cells); });
                 return single.is_some() || got != 0
                     || (finished.load_acquire() == kProducers && ring.empty_approx(kNondet));
             });
@@ -1057,8 +1082,8 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
                 // case hunts.
                 if (pushes_batches) {
                     Run<std::uint64_t, kBatch> batch{};
-                    for (std::size_t i = 0; i < kBatch; ++i)
-                        batch.at(i) = i + 1;
+                    for (::fixy::Index<kBatch> const i : ::fixy::IndexRange<kBatch>{})
+                        batch.set(i, i.raw() + 1);
                     for (std::uint64_t i = 0; i < kPushesPerProducer / kBatch; ++i) {
                         const std::size_t pushed = ring->try_push_batch(batch.first(kBatch));
                         taken += pushed;

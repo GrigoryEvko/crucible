@@ -118,7 +118,7 @@ static void test_offsets_prefix_sum_invariant() {
     // Chain: 0->1->2->...->9
     for (const auto index : edges.indices()) {
         const auto from = static_cast<uint32_t>(index.raw());
-        edges.at(index) = E(from, from + 1);
+        edges.with_element(index, [edge = E(from, from + 1)](Edge& held) noexcept { held = edge; });
     }
     build_csr(t.alloc, arena, g, edges.view(), /*num_ops=*/10);
 
@@ -139,7 +139,8 @@ static void test_fanout_node_has_multiple_edges() {
     // Hub-and-spoke: node 0 → {1, 2, 3, 4, 5, 6, 7, 8, 9}
     ::fixy::FixedArray<Edge, 9> edges{};
     for (const auto index : edges.indices()) {
-        edges.at(index) = E(0, static_cast<uint32_t>(index.raw()) + 1);
+        edges.with_element(index,
+                           [edge = E(0, static_cast<uint32_t>(index.raw()) + 1)](Edge& held) noexcept { held = edge; });
     }
     build_csr(t.alloc, arena, g, edges.view(), /*num_ops=*/10);
 

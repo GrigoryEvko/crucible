@@ -101,8 +101,10 @@ static void check_descriptor_images_agree() {
 
     crucible::UncheckedTensorMeta fields{};
     for (const auto lane : decltype(fields.sizes)::indices()) {
-        fields.sizes.at(lane) = crucible::raw_tensor_dim(meta.sizes[lane.raw()]);
-        fields.strides.at(lane) = crucible::raw_tensor_dim(meta.strides[lane.raw()]);
+        const int64_t size = crucible::raw_tensor_dim(meta.sizes[lane.raw()]);
+        const int64_t stride = crucible::raw_tensor_dim(meta.strides[lane.raw()]);
+        fields.sizes.with_element(lane, [size](int64_t& element) noexcept { element = size; });
+        fields.strides.with_element(lane, [stride](int64_t& element) noexcept { element = stride; });
     }
     fields.ndim = meta.ndim;
     fields.dtype = std::to_underlying(meta.dtype);
@@ -121,8 +123,8 @@ static void check_descriptor_images_agree() {
 
     ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::TensorMeta>> meta_image{};
     ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::UncheckedTensorMeta>> fields_image{};
-    ::fixy::encode(meta, meta_image.view());
-    ::fixy::encode(fields, fields_image.view());
+    meta_image.with_mut([&meta](auto run) noexcept { ::fixy::encode(meta, run.view()); });
+    fields_image.with_mut([&fields](auto run) noexcept { ::fixy::encode(fields, run.view()); });
     CRUCIBLE_TEST_ASSERT(kTest, meta_image == fields_image && "the image of a descriptor is the image of its fields");
 
     // The reader decodes the image, so the local parts of the fields come

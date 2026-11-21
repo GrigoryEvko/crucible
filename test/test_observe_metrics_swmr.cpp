@@ -77,9 +77,9 @@ observe::RuntimeMetrics make_metrics(double base) noexcept {
     m.ntk_alpha = base + 6.0;
     m.ntk_alpha_drift = base + 7.0;
     m.delta_g_count = 3;
-    m.delta_g.at(::fixy::index<0>()) = base + 8.0;
-    m.delta_g.at(::fixy::index<1>()) = base + 9.0;
-    m.delta_g.at(::fixy::index<2>()) = base + 10.0;
+    m.delta_g.with_element(::fixy::index<0>(), [value = base + 8.0](double& element) noexcept { element = value; });
+    m.delta_g.with_element(::fixy::index<1>(), [value = base + 9.0](double& element) noexcept { element = value; });
+    m.delta_g.with_element(::fixy::index<2>(), [value = base + 10.0](double& element) noexcept { element = value; });
     return m;
 }
 

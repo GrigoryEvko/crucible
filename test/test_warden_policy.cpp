@@ -130,11 +130,13 @@ constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
 // refused.
 [[nodiscard]] consteval ::fixy::FixedArray<std::uint64_t, 4096> make_read_only_words() noexcept {
     ::fixy::FixedArray<std::uint64_t, 4096> words{};
-    std::uint64_t value = 1;
-    for (std::uint64_t& word : words) {
-        word = value;
-        ++value;
-    }
+    words.with_mut([](auto run) noexcept {
+        std::uint64_t value = 1;
+        for (std::uint64_t& word : run) {
+            word = value;
+            ++value;
+        }
+    });
     return words;
 }
 

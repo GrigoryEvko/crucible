@@ -70,8 +70,18 @@ static void test_empty_returns_zero() {
     ::fixy::FixedArray<CallsiteHash, 8> out_calls{};
     ::fixy::FixedArray<OpDepth, 8> out_depths{};
 
-    uint32_t n =
-        pop_batch(*ring, out_entries.view(), out_metas.view(), out_scopes.view(), out_calls.view(), out_depths.view());
+    uint32_t n = out_entries.with_mut([&](auto entry_run) noexcept {
+        return out_metas.with_mut([&](auto meta_run) noexcept {
+            return out_scopes.with_mut([&](auto scope_run) noexcept {
+                return out_calls.with_mut([&](auto call_run) noexcept {
+                    return out_depths.with_mut([&](auto depth_run) noexcept {
+                        return pop_batch(*ring, entry_run.view(), meta_run.view(), scope_run.view(), call_run.view(),
+                                         depth_run.view());
+                    });
+                });
+            });
+        });
+    });
     CRUCIBLE_TEST_ASSERT(kTest, n == 0);
     CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
 
@@ -111,8 +121,18 @@ static void test_single_thread_fifo() {
     ::fixy::FixedArray<CallsiteHash, N> out_calls{};
     ::fixy::FixedArray<OpDepth, N> out_depths{};
 
-    uint32_t n =
-        pop_batch(*ring, out_entries.view(), out_metas.view(), out_scopes.view(), out_calls.view(), out_depths.view());
+    uint32_t n = out_entries.with_mut([&](auto entry_run) noexcept {
+        return out_metas.with_mut([&](auto meta_run) noexcept {
+            return out_scopes.with_mut([&](auto scope_run) noexcept {
+                return out_calls.with_mut([&](auto call_run) noexcept {
+                    return out_depths.with_mut([&](auto depth_run) noexcept {
+                        return pop_batch(*ring, entry_run.view(), meta_run.view(), scope_run.view(), call_run.view(),
+                                         depth_run.view());
+                    });
+                });
+            });
+        });
+    });
     CRUCIBLE_TEST_ASSERT(kTest, n == N);
     CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
 
@@ -165,11 +185,21 @@ static void test_multi_batch_drain() {
     uint32_t total = 0;
     for (uint32_t batch_size : batch_sizes) {
         const uint32_t batch = ::fixy::min(batch_size, N - total);
-        uint32_t n = pop_batch(*ring, out_entries.view().window(total, batch).expect("the batch fits"),
-                               out_metas.view().window(total, batch).expect("the batch fits"),
-                               out_scopes.view().window(total, batch).expect("the batch fits"),
-                               out_calls.view().window(total, batch).expect("the batch fits"),
-                               out_depths.view().window(total, batch).expect("the batch fits"));
+        uint32_t n = out_entries.with_mut([&](auto entry_run) noexcept {
+            return out_metas.with_mut([&](auto meta_run) noexcept {
+                return out_scopes.with_mut([&](auto scope_run) noexcept {
+                    return out_calls.with_mut([&](auto call_run) noexcept {
+                        return out_depths.with_mut([&](auto depth_run) noexcept {
+                            return pop_batch(*ring, entry_run.view().window(total, batch).expect("the batch fits"),
+                                             meta_run.view().window(total, batch).expect("the batch fits"),
+                                             scope_run.view().window(total, batch).expect("the batch fits"),
+                                             call_run.view().window(total, batch).expect("the batch fits"),
+                                             depth_run.view().window(total, batch).expect("the batch fits"));
+                        });
+                    });
+                });
+            });
+        });
         total += n;
         if (total >= N) break;
     }
@@ -210,7 +240,18 @@ static void test_wrap_around() {
         static ::fixy::FixedArray<ScopeHash, HALF> half_s{};
         static ::fixy::FixedArray<CallsiteHash, HALF> half_c{};
         static ::fixy::FixedArray<OpDepth, HALF> half_d{};
-        uint32_t n = pop_batch(*ring, half_e.view(), half_m.view(), half_s.view(), half_c.view(), half_d.view());
+        uint32_t n = half_e.with_mut([&](auto entry_run) noexcept {
+            return half_m.with_mut([&](auto meta_run) noexcept {
+                return half_s.with_mut([&](auto scope_run) noexcept {
+                    return half_c.with_mut([&](auto call_run) noexcept {
+                        return half_d.with_mut([&](auto depth_run) noexcept {
+                            return pop_batch(*ring, entry_run.view(), meta_run.view(), scope_run.view(),
+                                             call_run.view(), depth_run.view());
+                        });
+                    });
+                });
+            });
+        });
         CRUCIBLE_TEST_ASSERT(kTest, n == HALF);
     }
 
@@ -227,7 +268,18 @@ static void test_wrap_around() {
     ::fixy::FixedArray<ScopeHash, WRAP_N> s{};
     ::fixy::FixedArray<CallsiteHash, WRAP_N> c{};
     ::fixy::FixedArray<OpDepth, WRAP_N> d{};
-    uint32_t n = pop_batch(*ring, e.view(), m.view(), s.view(), c.view(), d.view());
+    uint32_t n = e.with_mut([&](auto entry_run) noexcept {
+        return m.with_mut([&](auto meta_run) noexcept {
+            return s.with_mut([&](auto scope_run) noexcept {
+                return c.with_mut([&](auto call_run) noexcept {
+                    return d.with_mut([&](auto depth_run) noexcept {
+                        return pop_batch(*ring, entry_run.view(), meta_run.view(), scope_run.view(), call_run.view(),
+                                         depth_run.view());
+                    });
+                });
+            });
+        });
+    });
     CRUCIBLE_TEST_ASSERT(kTest, n == WRAP_N);
 
     for (uint32_t i = 0; i < WRAP_N; ++i) {
@@ -281,21 +333,41 @@ static void test_equivalence_with_single_pop() {
         ++draw;
         const uint32_t drawn = 1u + block.at(::fixy::index<0>()) % 64u;
         uint32_t batch = ::fixy::min(drawn, N - a_total);
-        uint32_t n = pop_batch(*ring_a, a_entries.view().window(a_total, batch).expect("the batch fits"),
-                               a_metas.view().window(a_total, batch).expect("the batch fits"),
-                               a_scopes.view().window(a_total, batch).expect("the batch fits"),
-                               a_calls.view().window(a_total, batch).expect("the batch fits"),
-                               a_depths.view().window(a_total, batch).expect("the batch fits"));
+        uint32_t n = a_entries.with_mut([&](auto entry_run) noexcept {
+            return a_metas.with_mut([&](auto meta_run) noexcept {
+                return a_scopes.with_mut([&](auto scope_run) noexcept {
+                    return a_calls.with_mut([&](auto call_run) noexcept {
+                        return a_depths.with_mut([&](auto depth_run) noexcept {
+                            return pop_batch(*ring_a, entry_run.view().window(a_total, batch).expect("the batch fits"),
+                                             meta_run.view().window(a_total, batch).expect("the batch fits"),
+                                             scope_run.view().window(a_total, batch).expect("the batch fits"),
+                                             call_run.view().window(a_total, batch).expect("the batch fits"),
+                                             depth_run.view().window(a_total, batch).expect("the batch fits"));
+                        });
+                    });
+                });
+            });
+        });
         CRUCIBLE_TEST_ASSERT(kTest, n == batch);  // the batch is clamped, so it always fills
         a_total += n;
     }
 
     for (uint32_t i = 0; i < N; ++i) {
-        uint32_t n = ring_b->drain(b_entries.view().window(i, 1).expect("one entry fits"),
-                                   b_metas.view().window(i, 1).expect("one entry fits"),
-                                   b_scopes.view().window(i, 1).expect("one entry fits"),
-                                   b_calls.view().window(i, 1).expect("one entry fits"),
-                                   b_depths.view().window(i, 1).expect("one entry fits"));
+        uint32_t n = b_entries.with_mut([&](auto entry_run) noexcept {
+            return b_metas.with_mut([&](auto meta_run) noexcept {
+                return b_scopes.with_mut([&](auto scope_run) noexcept {
+                    return b_calls.with_mut([&](auto call_run) noexcept {
+                        return b_depths.with_mut([&](auto depth_run) noexcept {
+                            return ring_b->drain(entry_run.view().window(i, 1).expect("one entry fits"),
+                                                 meta_run.view().window(i, 1).expect("one entry fits"),
+                                                 scope_run.view().window(i, 1).expect("one entry fits"),
+                                                 call_run.view().window(i, 1).expect("one entry fits"),
+                                                 depth_run.view().window(i, 1).expect("one entry fits"));
+                        });
+                    });
+                });
+            });
+        });
         CRUCIBLE_TEST_ASSERT(kTest, n == 1);
     }
 
@@ -376,13 +448,23 @@ static void test_spsc_stress() {
 
         // The first batch entries of each output.
         const auto drain_batch = [&](uint32_t batch, bool is_pop_batch) -> uint32_t {
-            const auto entries = out_entries.view().window(0, batch).expect("the batch fits");
-            const auto metas = out_metas.view().window(0, batch).expect("the batch fits");
-            const auto scopes = out_scopes.view().window(0, batch).expect("the batch fits");
-            const auto calls = out_calls.view().window(0, batch).expect("the batch fits");
-            const auto depths = out_depths.view().window(0, batch).expect("the batch fits");
-            return is_pop_batch ? pop_batch(*ring, entries, metas, scopes, calls, depths)
-                                : ring->drain(entries, metas, scopes, calls, depths);
+            return out_entries.with_mut([&](auto entry_run) noexcept {
+                return out_metas.with_mut([&](auto meta_run) noexcept {
+                    return out_scopes.with_mut([&](auto scope_run) noexcept {
+                        return out_calls.with_mut([&](auto call_run) noexcept {
+                            return out_depths.with_mut([&](auto depth_run) noexcept {
+                                const auto entries = entry_run.view().window(0, batch).expect("the batch fits");
+                                const auto metas = meta_run.view().window(0, batch).expect("the batch fits");
+                                const auto scopes = scope_run.view().window(0, batch).expect("the batch fits");
+                                const auto calls = call_run.view().window(0, batch).expect("the batch fits");
+                                const auto depths = depth_run.view().window(0, batch).expect("the batch fits");
+                                return is_pop_batch ? pop_batch(*ring, entries, metas, scopes, calls, depths)
+                                                    : ring->drain(entries, metas, scopes, calls, depths);
+                            });
+                        });
+                    });
+                });
+            });
         };
 
         uint64_t mode = 0;

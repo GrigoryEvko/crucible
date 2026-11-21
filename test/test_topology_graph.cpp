@@ -138,31 +138,46 @@ static void test_mint_topology_graph_round_trip() {
     // four edges come from.
     using ::fixy::index;
     ::foundation::core::FixedArray<cog::CogIdentity, 3> nodes{};
-    nodes.at(index<0>()).uuid = cog::Uuid{0x1ULL, 0x1ULL};
-    nodes.at(index<0>()).kind = cog::CogKind::Gpu;
-    nodes.at(index<1>()).uuid = cog::Uuid{0x2ULL, 0x2ULL};
-    nodes.at(index<1>()).kind = cog::CogKind::NicPort;
-    nodes.at(index<2>()).uuid = cog::Uuid{0x3ULL, 0x3ULL};
-    nodes.at(index<2>()).kind = cog::CogKind::NvSwitch;
+    nodes.with_element(index<0>(), [](cog::CogIdentity& node) noexcept {
+        node.uuid = cog::Uuid{0x1ULL, 0x1ULL};
+        node.kind = cog::CogKind::Gpu;
+    });
+    nodes.with_element(index<1>(), [](cog::CogIdentity& node) noexcept {
+        node.uuid = cog::Uuid{0x2ULL, 0x2ULL};
+        node.kind = cog::CogKind::NicPort;
+    });
+    nodes.with_element(index<2>(), [](cog::CogIdentity& node) noexcept {
+        node.uuid = cog::Uuid{0x3ULL, 0x3ULL};
+        node.kind = cog::CogKind::NvSwitch;
+    });
 
     ::foundation::core::FixedArray<topology::TopologyEdge, 4> edges{};
-    edges.at(index<0>()).id = topology::EdgeId{0};
-    edges.at(index<0>()).kind = topology::LinkKind::PciE;
-    edges.at(index<0>()).peer = topology::NodeId{1};
-    edges.at(index<0>()).bandwidth_bytes_per_sec =
+    auto const bandwidth =
         ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(std::uint64_t{32} * 1024 * 1024 * 1024);
+    edges.with_element(index<0>(), [bandwidth](topology::TopologyEdge& edge) noexcept {
+        edge.id = topology::EdgeId{0};
+        edge.kind = topology::LinkKind::PciE;
+        edge.peer = topology::NodeId{1};
+        edge.bandwidth_bytes_per_sec = bandwidth;
+    });
 
-    edges.at(index<1>()).id = topology::EdgeId{1};
-    edges.at(index<1>()).kind = topology::LinkKind::PciE;
-    edges.at(index<1>()).peer = topology::NodeId{0};  // reverse half-edge
+    edges.with_element(index<1>(), [](topology::TopologyEdge& edge) noexcept {
+        edge.id = topology::EdgeId{1};
+        edge.kind = topology::LinkKind::PciE;
+        edge.peer = topology::NodeId{0};  // reverse half-edge
+    });
 
-    edges.at(index<2>()).id = topology::EdgeId{2};
-    edges.at(index<2>()).kind = topology::LinkKind::Ethernet;
-    edges.at(index<2>()).peer = topology::NodeId{2};
+    edges.with_element(index<2>(), [](topology::TopologyEdge& edge) noexcept {
+        edge.id = topology::EdgeId{2};
+        edge.kind = topology::LinkKind::Ethernet;
+        edge.peer = topology::NodeId{2};
+    });
 
-    edges.at(index<3>()).id = topology::EdgeId{3};
-    edges.at(index<3>()).kind = topology::LinkKind::Ethernet;
-    edges.at(index<3>()).peer = topology::NodeId{1};
+    edges.with_element(index<3>(), [](topology::TopologyEdge& edge) noexcept {
+        edge.id = topology::EdgeId{3};
+        edge.kind = topology::LinkKind::Ethernet;
+        edge.peer = topology::NodeId{1};
+    });
 
     eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
     auto g = topology::mint_topology_graph(ctx, nodes.view(), edges.view());
@@ -184,14 +199,16 @@ static void test_mint_topology_graph_round_trip() {
     CRUCIBLE_TEST_ASSERT(kTest, g.edge_by_id(topology::EdgeId{42}).is_none());
 
     ::foundation::core::FixedArray<topology::EdgeId, 8> incident{};
-    auto found = g.edges_incident_on(topology::NodeId{1}, incident.view());
+    auto found =
+        incident.with_mut([&g](auto run) noexcept { return g.edges_incident_on(topology::NodeId{1}, run.view()); });
     // The middle node is named as the far end of both links, once
     // from each side.
     CRUCIBLE_TEST_ASSERT(kTest, found == 2);
     CRUCIBLE_TEST_ASSERT(kTest, incident.at(index<0>()) == topology::EdgeId{0});
     CRUCIBLE_TEST_ASSERT(kTest, incident.at(index<1>()) == topology::EdgeId{3});
 
-    auto found_on_end_node = g.edges_incident_on(topology::NodeId{0}, incident.view());
+    auto found_on_end_node =
+        incident.with_mut([&g](auto run) noexcept { return g.edges_incident_on(topology::NodeId{0}, run.view()); });
     // An end node is named by one half-edge only.
     CRUCIBLE_TEST_ASSERT(kTest, found_on_end_node == 1);
     CRUCIBLE_TEST_ASSERT(kTest, incident.at(index<0>()) == topology::EdgeId{1});

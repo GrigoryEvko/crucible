@@ -89,8 +89,9 @@ bool record_wide(Vigil& vigil, uint64_t schema, uint64_t shape, uint64_t address
     entry.num_inputs = 1;
     entry.num_outputs = kWideRecords - 1;
     ::fixy::FixedArray<crucible::TensorMeta, kWideRecords> metas{};
-    for (auto [index, meta] : metas.enumerate())
-        *meta = make_meta(address + uint64_t{index.raw()} * 0x40);
+    for (auto const index : metas.indices())
+        metas.with_element(index, [value = make_meta(address + uint64_t{index.raw()} * 0x40)](
+                                      crucible::TensorMeta& meta) noexcept { meta = value; });
     const crucible::MetaLog& log = vigil.meta_log(vigil.mint_producer_context());
     const uint64_t head_before = log.head.get();
     (void)vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, kWideRecords));

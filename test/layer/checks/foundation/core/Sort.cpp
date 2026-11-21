@@ -50,12 +50,14 @@ template <std::size_t N>
 [[nodiscard]] consteval bool network_sorts_each_binary_input() noexcept {
     for (std::uint32_t input = 0; input < (std::uint32_t{1} << N); ++input) {
         FixedArray<std::uint8_t, N> wires{};
-        std::size_t wire = 0;
-        for (std::uint8_t& value : wires) {
-            value = static_cast<std::uint8_t>((input >> wire) & 1u);
-            ++wire;
-        }
-        wires = with_mut(std::move(wires), [](auto out) noexcept { sort_by_network(std::move(out)); });
+        wires.with_mut([input](auto run) noexcept {
+            std::size_t wire = 0;
+            for (std::uint8_t& value : run) {
+                value = static_cast<std::uint8_t>((input >> wire) & 1u);
+                ++wire;
+            }
+        });
+        wires.with_mut([](auto out) noexcept { sort_by_network(std::move(out)); });
         std::uint8_t last = 0;
         for (std::uint8_t const value : wires) {
             if (value < last) return false;
@@ -77,10 +79,9 @@ static_assert(networks_sort(std::make_index_sequence<9>{}));
     FixedArray<Record, 6> scratch{};
     auto const by_key = [](Record const& left, Record const& right) noexcept { return left.key < right.key; };
     bool is_sorted = false;
-    records = with_mut(std::move(records), [&](auto elements) noexcept {
-        scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
-            is_sorted = sort_stably(std::move(elements), std::move(room), by_key).is_ok();
-        });
+    records.with_mut([&](auto elements) noexcept {
+        scratch.with_mut(
+            [&](auto room) noexcept { is_sorted = sort_stably(std::move(elements), std::move(room), by_key).is_ok(); });
     });
     if (!is_sorted) return false;
     FixedArray<Record, 6> const expected{Record{1, 1}, Record{1, 4}, Record{2, 3},
@@ -100,20 +101,21 @@ static_assert(sort_stably_keeps_equal_keys_in_order());
 // input in constant evaluation too.
 [[nodiscard]] consteval bool comparator_form_keeps_equal_keys_in_order() noexcept {
     FixedArray<Record, 200> records{};
-    std::uint32_t tag = 0;
-    std::uint32_t next = 5;
-    for (Record& record : records) {
-        next = (next * 37 + 11) % 101;
-        record = Record{next % 7, tag};
-        ++tag;
-    }
+    records.with_mut([](auto run) noexcept {
+        std::uint32_t tag = 0;
+        std::uint32_t next = 5;
+        for (Record& record : run) {
+            next = (next * 37 + 11) % 101;
+            record = Record{next % 7, tag};
+            ++tag;
+        }
+    });
     FixedArray<Record, 200> scratch{};
     auto const by_key = [](Record const& left, Record const& right) noexcept { return left.key < right.key; };
     bool is_sorted = false;
-    records = with_mut(std::move(records), [&](auto elements) noexcept {
-        scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
-            is_sorted = sort_stably(std::move(elements), std::move(room), by_key).is_ok();
-        });
+    records.with_mut([&](auto elements) noexcept {
+        scratch.with_mut(
+            [&](auto room) noexcept { is_sorted = sort_stably(std::move(elements), std::move(room), by_key).is_ok(); });
     });
     Record last{0, 0};
     bool is_first = true;
@@ -142,17 +144,19 @@ static_assert(order_by_key (&Record::key)(Record{1, 0}, Record{2, 0})
 template <KeyDirection Direction>
 [[nodiscard]] consteval bool radix_by_key_keeps_equal_keys_in_order() noexcept {
     FixedArray<Record, 300> records{};
-    std::uint32_t tag = 0;
-    std::uint32_t next = 3;
-    for (Record& record : records) {
-        next = (next * 37 + 11) % 101;
-        record = Record{next % 9, tag};
-        ++tag;
-    }
+    records.with_mut([](auto run) noexcept {
+        std::uint32_t tag = 0;
+        std::uint32_t next = 3;
+        for (Record& record : run) {
+            next = (next * 37 + 11) % 101;
+            record = Record{next % 9, tag};
+            ++tag;
+        }
+    });
     FixedArray<Record, 300> scratch{};
     bool is_sorted = false;
-    records = with_mut(std::move(records), [&](auto elements) noexcept {
-        scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
+    records.with_mut([&](auto elements) noexcept {
+        scratch.with_mut([&](auto room) noexcept {
             if constexpr (Direction == KeyDirection::ascending) {
                 is_sorted = sort_stably(std::move(elements), std::move(room), order_by_key(&Record::key)).is_ok();
             } else {
@@ -179,10 +183,9 @@ static_assert(radix_by_key_keeps_equal_keys_in_order<KeyDirection::descending>()
     FixedArray<int, 4> values{4, 3, 2, 1};
     FixedArray<int, 3> scratch{};
     bool is_refused = false;
-    values = with_mut(std::move(values), [&](auto elements) noexcept {
-        scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
-            is_refused = sort_stably(std::move(elements), std::move(room)).is_err();
-        });
+    values.with_mut([&](auto elements) noexcept {
+        scratch.with_mut(
+            [&](auto room) noexcept { is_refused = sort_stably(std::move(elements), std::move(room)).is_err(); });
     });
     return is_refused;
 }
@@ -210,17 +213,18 @@ static_assert(radix_key_(-0.0) < radix_key_(0.0) && radix_key_(-1.0e300) < radix
 [[nodiscard]] consteval bool radix_sort_orders_values() noexcept {
     static_assert(stable_sort_radix_count <= 300);
     FixedArray<int, 300> values{};
-    int next = 7;
-    for (int& value : values) {
-        next = (next * 37 + 11) % 1009;
-        value = next - 500;
-    }
+    values.with_mut([](auto run) noexcept {
+        int next = 7;
+        for (int& value : run) {
+            next = (next * 37 + 11) % 1009;
+            value = next - 500;
+        }
+    });
     FixedArray<int, 300> scratch{};
     bool is_sorted = false;
-    values = with_mut(std::move(values), [&](auto elements) noexcept {
-        scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
-            is_sorted = sort_stably(std::move(elements), std::move(room)).is_ok();
-        });
+    values.with_mut([&](auto elements) noexcept {
+        scratch.with_mut(
+            [&](auto room) noexcept { is_sorted = sort_stably(std::move(elements), std::move(room)).is_ok(); });
     });
     int last = -501;
     for (int const value : values) {

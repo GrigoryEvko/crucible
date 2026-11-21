@@ -14,6 +14,7 @@
 #include <crucible/CrucibleContext.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/check/Fixture.h>
 #include <foundation/effects/Effect.h>
 
 #include <fixy/Core.h>
@@ -79,9 +80,15 @@ MemoryPlan make_plan(::fixy::View<TensorSlot> slots) {
     return plan;
 }
 
+// The metadata of the outputs and the slots of the plans are runs of this
+// arena, which lives as long as the process.  The first block holds the 2048
+// slots of the wide plan.
+auto g_test = ::foundation::effects::testing::test();
+::fixy::BumpArena g_runs{std::size_t{1} << 17};
+
 // The zero metadata of the outputs of the test ops.  The switch reads no
 // metadata, so the ops of each region share it.
-::foundation::core::FixedArray<TensorMeta, 2> output_metas{};
+::fixy::View<TensorMeta> const output_metas = g_runs.array(g_test.alloc, 2, TensorMeta{});
 
 // Two operations with the same hashes in each region, so the first one is
 // the shared prefix of a switch at position 1.
@@ -90,7 +97,7 @@ void make_ops(::fixy::View<TraceEntry> ops, ::fixy::View<SlotId> outputs) {
         TraceEntry& op = *ops.get(index).expect("a test region holds two ops");
         op.schema_hash = SchemaHash{100 + index};
         op.shape_hash = ShapeHash{200 + index};
-        op.set_outputs(output_metas.view().window(index, 1).expect("a test region has one output for each op"),
+        op.set_outputs(output_metas.window(index, 1).expect("a test region has one output for each op"),
                        outputs.window(index, 1).expect("a test region has one output for each op"));
     }
 }
@@ -102,29 +109,32 @@ void init_region(RegionNode* region, ::fixy::View<TraceEntry> ops, crucible::Pla
     region->plan = plan;
 }
 
-// The slots of the plans live in static storage: the wide plan has 2048
-// slots of 48 bytes, too many for the stack of a test.
-::foundation::core::FixedArray<TensorSlot, 2> old_slots{};
-::foundation::core::FixedArray<TensorSlot, kWideSlots> new_slots{};
+// The slots of the plans are runs of g_runs: the wide plan has 2048 slots of
+// 48 bytes, too many for the stack of a test.
+::fixy::View<TensorSlot> const old_slots = g_runs.array(g_test.alloc, 2, TensorSlot{});
+::fixy::View<TensorSlot> const new_slots = g_runs.array(g_test.alloc, kWideSlots, TensorSlot{});
 
 // Activates a region of two slots, then switches at position 1 to a region
 // whose plan has new_count slots.  The first operation of the new region
 // writes slot new_slot.  Returns the result of the switch.
 bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
-    ::foundation::core::FixedArray<SlotId, 2> old_outputs{SlotId{0}, SlotId{1}};
-    ::foundation::core::FixedArray<TraceEntry, 2> old_ops{};
-    make_ops(old_ops.view(), old_outputs.view());
-    MemoryPlan old_plan = make_plan(old_slots.view());
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const old_outputs = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId{1});
+    ::fixy::View<TraceEntry> const old_ops = arena.array(test.alloc, 2, TraceEntry{});
+    make_ops(old_ops, old_outputs);
+    MemoryPlan old_plan = make_plan(old_slots);
     RegionNode old_region{};
-    init_region(&old_region, old_ops.view(), crucible::make_plan_link(old_plan));
+    init_region(&old_region, old_ops, crucible::make_plan_link(old_plan));
 
-    ::foundation::core::FixedArray<SlotId, 2> new_outputs{SlotId{new_slot}, SlotId{0}};
-    ::foundation::core::FixedArray<TraceEntry, 2> new_ops{};
-    make_ops(new_ops.view(), new_outputs.view());
+    ::fixy::View<SlotId> const new_outputs =
+        ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{new_slot}, SlotId{0});
+    ::fixy::View<TraceEntry> const new_ops = arena.array(test.alloc, 2, TraceEntry{});
+    make_ops(new_ops, new_outputs);
     MemoryPlan new_plan =
-        make_plan(new_slots.view().window(0, new_count).expect("a test plan holds at most kWideSlots slots"));
+        make_plan(new_slots.window(0, new_count).expect("a test plan holds at most kWideSlots slots"));
     RegionNode new_region{};
-    init_region(&new_region, new_ops.view(), crucible::make_plan_link(new_plan));
+    init_region(&new_region, new_ops, crucible::make_plan_link(new_plan));
 
     CrucibleContext context{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, context.activate(old_region));
@@ -161,23 +171,26 @@ void test_slot_past_the_bitset_is_refused(::fixy::TestRunnerCtx const& test) {
 // new slot holds.  A copy of the whole old slot writes past the end of the
 // new pool, which AddressSanitizer reports in a Debug build.
 void test_smaller_new_slot_takes_its_own_size() {
-    ::foundation::core::FixedArray<SlotId, 2> outputs{SlotId{0}, SlotId{0}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const outputs = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId{0});
 
-    ::foundation::core::FixedArray<TensorSlot, 1> wide_slot{};
-    MemoryPlan old_plan = make_plan(wide_slot.view());
+    ::fixy::View<TensorSlot, 1> const wide_slot =
+        arena.array(test.alloc, 1, TensorSlot{}).window<1>(0).expect("the run holds one slot");
+    MemoryPlan old_plan = make_plan(wide_slot);
     wide_slot.at(::fixy::index<0>()).nbytes = 2 * kSlotBytes;
     old_plan.pool_bytes = 2 * kSlotBytes;
-    ::foundation::core::FixedArray<TraceEntry, 2> old_ops{};
-    make_ops(old_ops.view(), outputs.view());
+    ::fixy::View<TraceEntry> const old_ops = arena.array(test.alloc, 2, TraceEntry{});
+    make_ops(old_ops, outputs);
     RegionNode old_region{};
-    init_region(&old_region, old_ops.view(), crucible::make_plan_link(old_plan));
+    init_region(&old_region, old_ops, crucible::make_plan_link(old_plan));
 
-    ::foundation::core::FixedArray<TensorSlot, 1> narrow_slot{};
-    MemoryPlan new_plan = make_plan(narrow_slot.view());
-    ::foundation::core::FixedArray<TraceEntry, 2> new_ops{};
-    make_ops(new_ops.view(), outputs.view());
+    ::fixy::View<TensorSlot> const narrow_slot = arena.array(test.alloc, 1, TensorSlot{});
+    MemoryPlan new_plan = make_plan(narrow_slot);
+    ::fixy::View<TraceEntry> const new_ops = arena.array(test.alloc, 2, TraceEntry{});
+    make_ops(new_ops, outputs);
     RegionNode new_region{};
-    init_region(&new_region, new_ops.view(), crucible::make_plan_link(new_plan));
+    init_region(&new_region, new_ops, crucible::make_plan_link(new_plan));
 
     CrucibleContext context{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, context.activate(old_region));

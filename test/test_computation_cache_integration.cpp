@@ -86,7 +86,10 @@ namespace {
 using namespace test_computation_cache_integration_functions;
 
 using Slot = ::fixy::Option<::fixy::Ref<cipher::CompiledBody>>;
-using Bodies = ::foundation::core::FixedArray<cipher::CompiledBody, 8>;
+using Bodies = ::fixy::View<cipher::CompiledBody>;
+
+// The arena of the two populations of eight bodies.
+::fixy::BumpArena g_population_arena{4096};
 
 // The bodies that the scenarios insert.  Each object lives as long as the
 // process, as the slots do.
@@ -96,8 +99,10 @@ cipher::CompiledBody blind_body{};
 cipher::CompiledBody empty_row_body{};
 cipher::CompiledBody bg_row_body{};
 cipher::CompiledBody io_row_body{};
-Bodies blind_population{};
-Bodies aware_population{};
+Bodies const blind_population =
+    g_population_arena.array(::foundation::effects::testing::test().alloc, 8, cipher::CompiledBody{});
+Bodies const aware_population =
+    g_population_arena.array(::foundation::effects::testing::test().alloc, 8, cipher::CompiledBody{});
 cipher::CompiledBody lifetime_body{};
 cipher::CompiledBody hot_body{};
 
@@ -111,8 +116,8 @@ cipher::CompiledBody hot_body{};
 }
 
 // The body at position of bodies.
-[[nodiscard]] cipher::CompiledBody& body_at(Bodies& bodies, std::size_t position) noexcept {
-    return *bodies.view().get(position).expect("each position of the test is below eight");
+[[nodiscard]] cipher::CompiledBody& body_at(Bodies bodies, std::size_t position) noexcept {
+    return *bodies.get(position).expect("each position of the test is below eight");
 }
 
 // The Ref of a body on the erased brand.  A slot of the cache holds the

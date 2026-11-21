@@ -73,12 +73,16 @@ OpData make_op(const ShapeHash* shapes, uint32_t variant, uint32_t iter, uint32_
     uint16_t idx = 0;
     if (op_idx > 0) {
         int64_t in_sz = tensor_size(variant, op_idx - 1);
-        *d.metas.get(idx++).expect("a test reads an element at or past the count of its array") =
-            make_meta(fake_ptr(variant, iter, op_idx - 1), in_sz);
+        d.metas.with_element(
+            ::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
+            [meta = make_meta(fake_ptr(variant, iter, op_idx - 1), in_sz)](TensorMeta& element) noexcept {
+                element = meta;
+            });
     }
     int64_t out_sz = tensor_size(variant, op_idx);
-    *d.metas.get(idx++).expect("a test reads an element at or past the count of its array") =
-        make_meta(fake_ptr(variant, iter, op_idx), out_sz);
+    d.metas.with_element(
+        ::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
+        [meta = make_meta(fake_ptr(variant, iter, op_idx), out_sz)](TensorMeta& element) noexcept { element = meta; });
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
@@ -175,7 +179,8 @@ void test_find_alternate_tracks_live_plan() {
     RegionCache cache;
     ::fixy::BumpArena arena(1 << 14);
 
-    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ::fixy::View<TraceEntry, 2> const ops =
+        arena.array(test.alloc, 2, TraceEntry{}).window<2>(0).expect("the run holds two ops");
     TraceEntry& op0 = ops.at(::foundation::core::index<0>());
     TraceEntry& op1 = ops.at(::foundation::core::index<1>());
     op0.schema_hash = SchemaHash{0x900};
@@ -183,7 +188,7 @@ void test_find_alternate_tracks_live_plan() {
     op1.schema_hash = SchemaHash{0x902};
     op1.shape_hash = ShapeHash{0x903};
 
-    const auto region = make_region(test.alloc, arena, ops.view());
+    const auto region = make_region(test.alloc, arena, ops);
     CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_none());
 
     cache.insert(*region);
@@ -197,14 +202,15 @@ void test_find_alternate_tracks_live_plan() {
     CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(1, op1.schema_hash, op1.shape_hash).is_none());
 
     // The plan arrives after the insert. No second call into the cache.
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    ::fixy::View<TensorSlot, 1> const slots =
+        arena.array(test.alloc, 1, TensorSlot{}).window<1>(0).expect("the run holds one slot");
     TensorSlot& slot = slots.at(::foundation::core::index<0>());
     slot.nbytes = 4096;
     slot.birth_op = OpIndex{0};
     slot.death_op = OpIndex{1};
     slot.slot_id = SlotId{0};
     const auto plan = arena.make<MemoryPlan>(test.alloc);
-    plan->slots = slots.view();
+    plan->slots = slots;
     plan->pool_bytes = 4096;
     region->plan = make_plan_link(*plan);
 

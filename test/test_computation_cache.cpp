@@ -91,7 +91,7 @@ using Slot = ::fixy::Option<::fixy::Ref<cipher::CompiledBody>>;
 
 // The number of the workers of each race, and the bodies that they insert.
 constexpr std::uint32_t kWorkerCount = 4;
-using Bodies = ::fixy::FixedArray<cipher::CompiledBody, kWorkerCount>;
+using Bodies = ::fixy::View<cipher::CompiledBody, kWorkerCount>;
 using BodyIndex = ::fixy::Index<kWorkerCount>;
 
 // One function under these rows is one slot for each row.
@@ -113,10 +113,23 @@ cipher::CompiledBody isolated_body{};
 cipher::CompiledBody empty_row_body{};
 cipher::CompiledBody blind_pair_body{};
 cipher::CompiledBody bg_io_body{};
-Bodies disjoint_bodies{};
-Bodies contended_bodies{};
-Bodies disjoint_row_bodies{};
-Bodies contended_row_bodies{};
+
+// The bodies of the races are runs of this arena, which lives as long as the
+// process.
+auto g_test = ::foundation::effects::testing::test();
+::fixy::BumpArena g_runs{4096};
+
+// A run of one body for each worker of a race.
+[[nodiscard]] Bodies make_bodies() noexcept {
+    return g_runs.array(g_test.alloc, kWorkerCount, cipher::CompiledBody{})
+        .window<kWorkerCount>(0)
+        .expect("the run holds one body for each worker");
+}
+
+Bodies const disjoint_bodies = make_bodies();
+Bodies const contended_bodies = make_bodies();
+Bodies const disjoint_row_bodies = make_bodies();
+Bodies const contended_row_bodies = make_bodies();
 
 // True when the slot holds body.
 [[nodiscard]] bool holds(Slot slot, cipher::CompiledBody const& body) noexcept {
@@ -128,7 +141,7 @@ Bodies contended_row_bodies{};
 }
 
 // The body at position of bodies.
-[[nodiscard]] cipher::CompiledBody& body_at(Bodies& bodies, BodyIndex position) noexcept { return bodies.at(position); }
+[[nodiscard]] cipher::CompiledBody& body_at(Bodies bodies, BodyIndex position) noexcept { return bodies.at(position); }
 
 // The Ref of a body on the erased brand.  A slot of the cache holds the
 // bodies of each site, so an insert takes a Ref on the erased brand.

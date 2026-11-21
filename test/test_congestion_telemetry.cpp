@@ -110,8 +110,10 @@ using CongestionInfoBytes = ::foundation::core::FixedArray<std::byte, layout::cc
 // Writes value into the bytes of a kernel struct, at the offset of field.
 template <class T, std::size_t Size>
 void put_field(::foundation::core::FixedArray<std::byte, Size>& bytes, layout::KernelField<T> field, T value) {
-    ::fixy::copy(bytes.view().template window<sizeof(T)>(field.offset).expect("the field lies inside the struct"),
-                 ::fixy::bytes(value));
+    bytes.with_mut([field, value](auto run) noexcept {
+        ::fixy::copy(run.view().template window<sizeof(T)>(field.offset).expect("the field lies inside the struct"),
+                     ::fixy::bytes(value));
+    });
 }
 
 using TcpSocket = ::fixy::net::SocketHandle<::fixy::net::socket_kind::TcpStream>;

@@ -97,7 +97,7 @@ static void test_linear_match() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena arena{4096};
 
-    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
+    ::fixy::View<TraceEntry> const ops = arena.array(test.alloc, 3, TraceEntry{});
     for (uint32_t i = 0; i < 3; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{100 + i};
@@ -106,10 +106,10 @@ static void test_linear_match() {
     }
 
     RegionNode region{};
-    init_region(&region, ops.view());
+    init_region(&region, ops);
 
-    ::foundation::core::FixedArray<TensorSlot, 3> slots{};
-    auto plan = make_simple_plan(slots.view());
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 3, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -153,21 +153,23 @@ static void test_linear_match() {
 }
 
 static void test_schema_divergence() {
-    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out_slot = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
+    ::fixy::View<TraceEntry> const ops = arena.array(test.alloc, 3, TraceEntry{});
     for (uint32_t i = 0; i < 3; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{100 + i};
         op.shape_hash = ShapeHash{200};
-        set_output_slots(op, out_slot.view());
+        set_output_slots(op, out_slot);
     }
 
     RegionNode region{};
-    init_region(&region, ops.view());
+    init_region(&region, ops);
 
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -189,21 +191,24 @@ static void test_schema_divergence() {
 }
 
 static void test_shape_divergence() {
-    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out_slot = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ::fixy::View<TraceEntry, 2> const ops =
+        arena.array(test.alloc, 2, TraceEntry{}).window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{200};
-    set_output_slots(ops.at(::foundation::core::index<0>()), out_slot.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out_slot);
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
-    set_output_slots(ops.at(::foundation::core::index<1>()), out_slot.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), out_slot);
 
     RegionNode region{};
-    init_region(&region, ops.view());
+    init_region(&region, ops);
 
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -221,21 +226,24 @@ static void test_shape_divergence() {
 }
 
 static void test_reset() {
-    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out_slot = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ::fixy::View<TraceEntry, 2> const ops =
+        arena.array(test.alloc, 2, TraceEntry{}).window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{20};
-    set_output_slots(ops.at(::foundation::core::index<0>()), out_slot.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out_slot);
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{11};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{21};
-    set_output_slots(ops.at(::foundation::core::index<1>()), out_slot.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), out_slot);
 
     RegionNode region{};
-    init_region(&region, ops.view());
+    init_region(&region, ops);
 
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -266,25 +274,28 @@ static void test_reset() {
 // Op 1 reads the slot op 0 writes, so the two ops alias one pool
 // region through different entries.
 static void test_input_ptr() {
-    ::foundation::core::FixedArray<SlotId, 1> out0{SlotId{0}};
-    ::foundation::core::FixedArray<SlotId, 1> out1{SlotId{1}};
-    ::foundation::core::FixedArray<SlotId, 1> in1{SlotId{0}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out0 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
+    ::fixy::View<SlotId> const out1 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{1});
+    ::fixy::View<SlotId> const in1 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ::fixy::View<TraceEntry, 2> const ops =
+        arena.array(test.alloc, 2, TraceEntry{}).window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{50};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{60};
-    set_output_slots(ops.at(::foundation::core::index<0>()), out0.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out0);
 
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{51};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{61};
-    set_output_slots(ops.at(::foundation::core::index<1>()), out1.view());
-    set_input_slots(ops.at(::foundation::core::index<1>()), in1.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), out1);
+    set_input_slots(ops.at(::foundation::core::index<1>()), in1);
 
     RegionNode region{};
-    init_region(&region, ops.view());
+    init_region(&region, ops);
 
-    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
-    auto plan = make_simple_plan(slots.view());
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 2, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -304,18 +315,21 @@ static void test_input_ptr() {
 }
 
 static void test_invalid_slot() {
-    ::foundation::core::FixedArray<SlotId, 2> out{SlotId{0}, SlotId::none()};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId::none());
 
-    ::foundation::core::FixedArray<TraceEntry, 1> ops{};
+    ::fixy::View<TraceEntry, 1> const ops =
+        arena.array(test.alloc, 1, TraceEntry{}).window<1>(0).expect("the run holds one op");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{77};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{88};
-    set_output_slots(ops.at(::foundation::core::index<0>()), out.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out);
 
     RegionNode region{};
-    init_region(&region, ops.view());
+    init_region(&region, ops);
 
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -331,21 +345,23 @@ static void test_invalid_slot() {
 }
 
 static void test_current_entry() {
-    ::foundation::core::FixedArray<SlotId, 1> out{SlotId{0}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
+    ::fixy::View<TraceEntry> const ops = arena.array(test.alloc, 3, TraceEntry{});
     for (uint32_t i = 0; i < 3; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{300 + i};
         op.shape_hash = ShapeHash{400 + i};
-        set_output_slots(op, out.view());
+        set_output_slots(op, out);
     }
 
     RegionNode region{};
-    init_region(&region, ops.view());
+    init_region(&region, ops);
 
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -366,18 +382,20 @@ static void test_current_entry() {
 // The reset at the end of an iteration keeps the matched op, so the matched
 // index stays on the last op while the position goes back to the first.
 static void test_matched_index_after_reset() {
-    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
-    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out_slot = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
+    ::fixy::View<TraceEntry> const ops = arena.array(test.alloc, 3, TraceEntry{});
     for (uint32_t i = 0; i < 3; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{500 + i};
         op.shape_hash = ShapeHash{600 + i};
-        set_output_slots(op, out_slot.view());
+        set_output_slots(op, out_slot);
     }
     RegionNode region{};
-    init_region(&region, ops.view());
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    init_region(&region, ops);
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     ReplayEngine engine;
@@ -410,18 +428,20 @@ static void require_matched(const ReplayEngine& engine, uint32_t position) {
 // after a MATCH.  The step of each MATCH and each COMPLETE gives the same
 // position as the engine.
 static void test_matched_index_follows_the_cursor() {
-    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
-    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out_slot = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
+    ::fixy::View<TraceEntry> const ops = arena.array(test.alloc, 3, TraceEntry{});
     for (uint32_t i = 0; i < 3; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{700 + i};
         op.shape_hash = ShapeHash{800 + i};
-        set_output_slots(op, out_slot.view());
+        set_output_slots(op, out_slot);
     }
     RegionNode region{};
-    init_region(&region, ops.view());
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    init_region(&region, ops);
+    ::fixy::View<TensorSlot> const slots = arena.array(test.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     ReplayEngine engine;
@@ -450,18 +470,20 @@ static void test_matched_index_follows_the_cursor() {
 // matched, and each read of the matched op ends the process.  The next
 // iteration matches from the first op.
 static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx const& test) {
-    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
-    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
+    auto source = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out_slot = ::fixy::check::run_of(kTest, source.alloc, arena, SlotId{0});
+    ::fixy::View<TraceEntry> const ops = arena.array(source.alloc, 3, TraceEntry{});
     for (uint32_t i = 0; i < 3; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{700 + i};
         op.shape_hash = ShapeHash{800 + i};
-        set_output_slots(op, out_slot.view());
+        set_output_slots(op, out_slot);
     }
     RegionNode region{};
-    init_region(&region, ops.view());
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    init_region(&region, ops);
+    ::fixy::View<TensorSlot> const slots = arena.array(source.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     ReplayEngine engine;
@@ -485,18 +507,20 @@ static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx
 // A DIVERGED step matched no op, so a read of its matched position ends the
 // process in each build.  The status of the step stays readable.
 static void test_diverged_step_has_no_matched_position(::fixy::TestRunnerCtx const& test) {
-    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
-    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    auto source = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out_slot = ::fixy::check::run_of(kTest, source.alloc, arena, SlotId{0});
+    ::fixy::View<TraceEntry> const ops = arena.array(source.alloc, 2, TraceEntry{});
     for (uint32_t i = 0; i < 2; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{900 + i};
         op.shape_hash = ShapeHash{910 + i};
-        set_output_slots(op, out_slot.view());
+        set_output_slots(op, out_slot);
     }
     RegionNode region{};
-    init_region(&region, ops.view());
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    init_region(&region, ops);
+    ::fixy::View<TensorSlot> const slots = arena.array(source.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     ReplayEngine engine;
@@ -515,15 +539,18 @@ static void test_diverged_step_has_no_matched_position(::fixy::TestRunnerCtx con
 // takes the cursor back to the first op, so an advance after it, with no
 // reset, guards the first op of the next iteration.
 static void test_advance_after_the_end_guards_the_first_op() {
-    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
-    ::foundation::core::FixedArray<TraceEntry, 1> ops{};
+    auto source = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out_slot = ::fixy::check::run_of(kTest, source.alloc, arena, SlotId{0});
+    ::fixy::View<TraceEntry, 1> const ops =
+        arena.array(source.alloc, 1, TraceEntry{}).window<1>(0).expect("the run holds one op");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{70};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{71};
-    set_output_slots(ops.at(::foundation::core::index<0>()), out_slot.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out_slot);
     RegionNode region{};
-    init_region(&region, ops.view());
-    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
-    auto plan = make_simple_plan(slots.view());
+    init_region(&region, ops);
+    ::fixy::View<TensorSlot> const slots = arena.array(source.alloc, 1, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     ReplayEngine engine;
@@ -544,19 +571,22 @@ static void test_advance_after_the_end_guards_the_first_op() {
 // A slot id of the region past the count of the plan is a defect of the
 // build.  The init refuses it, so no replay reads past the slot table.
 static void test_slot_id_past_the_table_aborts_init(::fixy::TestRunnerCtx const& test) {
-    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
-    ::foundation::core::FixedArray<SlotId, 1> in_slot{SlotId{5}};
-    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    auto source = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const out_slot = ::fixy::check::run_of(kTest, source.alloc, arena, SlotId{0});
+    ::fixy::View<SlotId> const in_slot = ::fixy::check::run_of(kTest, source.alloc, arena, SlotId{5});
+    ::fixy::View<TraceEntry, 2> const ops =
+        arena.array(source.alloc, 2, TraceEntry{}).window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{80};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{81};
-    set_output_slots(ops.at(::foundation::core::index<0>()), out_slot.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out_slot);
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{82};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{83};
-    set_input_slots(ops.at(::foundation::core::index<1>()), in_slot.view());
+    set_input_slots(ops.at(::foundation::core::index<1>()), in_slot);
     RegionNode region{};
-    init_region(&region, ops.view());
-    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
-    auto plan = make_simple_plan(slots.view());
+    init_region(&region, ops);
+    ::fixy::View<TensorSlot> const slots = arena.array(source.alloc, 2, TensorSlot{});
+    auto plan = make_simple_plan(slots);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     ReplayEngine engine;
@@ -572,12 +602,14 @@ static void test_slot_id_past_the_table_aborts_init(::fixy::TestRunnerCtx const&
 // chooses and the assertions never name one.
 static void test_integration_with_pool() {
     auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     // Slot 2 is external: it stands for a parameter whose storage the
     // pool does not own and must not place.
     constexpr uint32_t NSLOTS = 3;
-    ::foundation::core::FixedArray<TensorSlot, NSLOTS> slots{};
+    ::fixy::View<TensorSlot, NSLOTS> const slots =
+        arena.array(test.alloc, NSLOTS, TensorSlot{}).window<NSLOTS>(0).expect("the run holds NSLOTS slots");
     slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
                                                 .nbytes = 512,
                                                 .birth_op = OpIndex{0},
@@ -617,7 +649,7 @@ static void test_integration_with_pool() {
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view())
+    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots)
                                             .expect("the slots of the test fit in 64 bits");
 
     PoolAllocator pool;
@@ -627,24 +659,25 @@ static void test_integration_with_pool() {
     alignas(256) char fake_param[128];
     pool.register_external(SlotId{2}, crucible::test::host_data(fake_param), pv);
 
-    ::foundation::core::FixedArray<SlotId, 1> op0_out{SlotId{0}};
-    ::foundation::core::FixedArray<SlotId, 1> op0_in{SlotId{2}};
-    ::foundation::core::FixedArray<SlotId, 1> op1_out{SlotId{1}};
-    ::foundation::core::FixedArray<SlotId, 1> op1_in{SlotId{0}};
+    ::fixy::View<SlotId> const op0_out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
+    ::fixy::View<SlotId> const op0_in = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{2});
+    ::fixy::View<SlotId> const op1_out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{1});
+    ::fixy::View<SlotId> const op1_in = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ::fixy::View<TraceEntry, 2> const ops =
+        arena.array(test.alloc, 2, TraceEntry{}).window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{0xAAAA};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{0xBBBB};
-    set_output_slots(ops.at(::foundation::core::index<0>()), op0_out.view());
-    set_input_slots(ops.at(::foundation::core::index<0>()), op0_in.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), op0_out);
+    set_input_slots(ops.at(::foundation::core::index<0>()), op0_in);
 
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{0xCCCC};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{0xDDDD};
-    set_output_slots(ops.at(::foundation::core::index<1>()), op1_out.view());
-    set_input_slots(ops.at(::foundation::core::index<1>()), op1_in.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), op1_out);
+    set_input_slots(ops.at(::foundation::core::index<1>()), op1_in);
 
     RegionNode region{};
-    init_region(&region, ops.view());
+    init_region(&region, ops);
 
     ReplayEngine engine;
     engine.init(region, ::fixy::to(pool));

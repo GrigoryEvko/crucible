@@ -75,7 +75,7 @@ static void test_bitmask_iteration() {
 
 static void test_group_match_empty() {
     alignas(64)::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-    ::fixy::fill(ctrl.view(), kEmpty);
+    ctrl.with_mut([](auto run) noexcept { ::fixy::fill(run.view(), kEmpty); });
     auto g = CtrlGroup::load(ctrl.view());
     auto empty = g.match_empty();
     CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(empty));
@@ -87,8 +87,10 @@ static void test_group_match_empty() {
     CRUCIBLE_TEST_ASSERT(kTest, n == kGroupWidth);
 
     // No empty slot: every byte is set to a non-empty tag.
-    for (const auto index : ctrl.indices())
-        ctrl.at(index) = static_cast<int8_t>(index.raw() & 0x7F);
+    for (const auto index : ctrl.indices()) {
+        int8_t const tag = static_cast<int8_t>(index.raw() & 0x7F);
+        ctrl.with_element(index, [tag](int8_t& element) noexcept { element = tag; });
+    }
     g = CtrlGroup::load(ctrl.view());
     CRUCIBLE_TEST_ASSERT(kTest, !static_cast<bool>(g.match_empty()));
     ::fixy::check::pass(kTest, "  test_match_empty:               PASSED\n");
@@ -98,7 +100,8 @@ static void test_group_match_tag() {
     alignas(64)::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
     // Sparse pattern: set tag 0x42 at every 3rd position, empty elsewhere.
     for (const auto index : ctrl.indices()) {
-        ctrl.at(index) = (index.raw() % 3 == 0) ? int8_t{0x42} : kEmpty;
+        int8_t const tag = (index.raw() % 3 == 0) ? int8_t{0x42} : kEmpty;
+        ctrl.with_element(index, [tag](int8_t& element) noexcept { element = tag; });
     }
     auto g = CtrlGroup::load(ctrl.view());
     auto hits = g.match(0x42);
@@ -123,8 +126,10 @@ static void test_match_single_position() {
     // reduction from vector lanes to a bitmask is checked at each index.
     for (size_t pos = 0; pos < kGroupWidth; ++pos) {
         alignas(64)::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        for (const auto index : ctrl.indices())
-            ctrl.at(index) = (index.raw() == pos) ? int8_t{0x3A} : kEmpty;
+        for (const auto index : ctrl.indices()) {
+            int8_t const tag = (index.raw() == pos) ? int8_t{0x3A} : kEmpty;
+            ctrl.with_element(index, [tag](int8_t& element) noexcept { element = tag; });
+        }
         auto g = CtrlGroup::load(ctrl.view());
         auto hits = g.match(0x3A);
         CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(hits));
