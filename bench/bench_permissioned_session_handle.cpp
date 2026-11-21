@@ -30,6 +30,10 @@
 // head again, so the measured body can assign the next handle back to the
 // same variable.  The loop has no exit branch, so each run ends with a typed
 // detach.
+//
+// The section on the speed of light gives each form in cycles of the core,
+// beside a floor row that does the work of the items with no handle, and two
+// chain rows that compare a protocol with no loop and a loop.
 
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
@@ -245,17 +249,192 @@ void print_one_send(bench::Report const& report, CallerForm form) {
                  ::fixy::Fixed<3>{report.pct.max / sends});
 }
 
+// ── The speed of light ───────────────────────────────────────────────
+//
+// THE FLOOR ROWS.  The floor of a send is the work of its item with no
+// handle: the add of the item, the input sink, and the write of the item
+// into the channel through the output sink.  The local floor runs that work
+// kSendsPerBody times on a channel that is local to the body, as the local
+// and the pinned forms do.  The floor of the caller memory writes one item
+// into the channel of the caller, through the closure, as that form does.
+// The gap of a row to its floor is the cost of the handle: the liveness
+// flag, the holder check, the count of the steps and the moves.
+//
+// THE MODEL.  A send of the local floor is one add, one store of the output
+// sink and the branch of the loop: three macro-ops, below the dispatch of six
+// a cycle.  The core takes one taken branch a cycle, so the model floor of a
+// send of a local form is one cycle (the Software Optimization Guide for the
+// AMD Zen4 Microarchitecture, AMD 57647 revision 1.00, sections 2.8.1.2 and
+// 2.9.8).  The floor of the caller memory adds the load of the item and the
+// store of the item of the caller.
+//
+// THE CLOCK.  kClockAdds dependent adds take one cycle each, so their time
+// gives the cycles of one nanosecond of the core in this run.  The core can
+// run at a clock that is not the clock of the TSC.
+//
+// THE CHAIN ROWS.  A body mints a session, sends kChainSends items and ends
+// it.  The finite chain is a protocol of kChainSends sends and End, so no
+// handle of it keeps a count of its steps.  The looped chain sends the same
+// items through Loop<Send<Item, Continue>> and detaches, so each of its
+// handles keeps the count.  The two pay one claim and one release of a
+// record of the watch.
+
+constexpr std::uint32_t kClockAdds = 64;
+constexpr std::size_t kClockBatch = 256;
+constexpr std::uint32_t kChainSends = 16;
+constexpr double kLocalFloorCycles = 1.0;
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: a chain of dependent adds gives the clock of the core")
+// kClockAdds dependent adds to the value in one block of code, which the
+// compiler cannot fold.
+[[gnu::always_inline]] inline void add_chain(std::uint64_t& value) noexcept {
+#if defined(__x86_64__)
+    asm volatile(".rept %c1\n\tadd $1, %0\n\t.endr" : "+r"(value) : "i"(kClockAdds));
+#else
+    asm volatile(".rept %c1\n\tadd %0, %0, #1\n\t.endr" : "+r"(value) : "i"(kClockAdds));
+#endif
+}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// kClockAdds dependent adds: one cycle each on the core (THE CLOCK).  The chain
+// runs on a local, so the value stays in a register.
+struct ClockChain {
+    std::uint64_t value = 0;
+
+    [[gnu::always_inline]] void operator()() noexcept {
+        std::uint64_t local = value;
+        add_chain(local);
+        value = local;
+    }
+};
+
+using CoreClock = ::fixy::Quantity<::fixy::unit::Quotient<::fixy::unit::Cycle, ::fixy::unit::Nanosecond>, double>;
+
+// The cycles of one nanosecond of the core in this run (THE CLOCK).
+[[nodiscard]] CoreClock measure_clock() {
+    ClockChain chain{};
+    bench::Report const report = bench::Run("clock").batch(kClockBatch).measure(chain);
+    bench::do_not_optimize(chain.value);
+    return CoreClock{report.pct.p50 > 0.0 ? kClockAdds / report.pct.p50 : 0.0};
+}
+
+// The sends of one body of a floor row, with no handle (THE FLOOR ROWS).
+template <CallerForm Form>
+void floor_body(FakeChannel& channel, Item& item) noexcept {
+    if constexpr (Form == CallerForm::LocalHandle) {
+        FakeChannel local = channel;
+        Item value = item;
+        for (std::uint32_t sent = 0; sent < kSendsPerBody; ++sent) {
+            ++value;
+            make_item_opaque(value);
+            static_cast<void>(send_item(local, value));
+        }
+        item = value;
+        channel = local;
+    } else {
+        Item value = item + 1;
+        make_item_opaque(value);
+        item = value;
+        static_cast<void>(send_item(channel, value));
+    }
+}
+
+template <CallerForm Form>
+[[nodiscard]] bench::Report floor_loop(::fixy::TextView name) {
+    FakeChannel channel{};
+    Item item = 0;
+    auto report = bench::run(name, [&] { floor_body<Form>(channel, item); });
+    bench::do_not_optimize(item);
+    return report;
+}
+
+// The protocol of the finite chain: kChainSends sends and End (THE CHAIN ROWS).
+template <std::uint32_t Count>
+struct send_chain_of {
+    using type = s::Send<Item, typename send_chain_of<Count - 1>::type>;
+};
+
+template <>
+struct send_chain_of<0> {
+    using type = s::End;
+};
+
+using SendChain = typename send_chain_of<kChainSends>::type;
+
+// Sends one item for each Send of the handle, and gives the handle at End.
+template <typename Handle>
+[[nodiscard]] auto send_each(Handle handle, Item& value) noexcept {
+    if constexpr (Handle::is_terminal()) {
+        return handle;
+    } else {
+        ++value;
+        make_item_opaque(value);
+        return send_each(std::move(handle).send(value, send_item), value);
+    }
+}
+
+[[nodiscard]] bench::Report finite_chain() {
+    Item item = 0;
+    auto report = bench::run("chain of 16 sends, finite protocol (mint, 16 sends, close)", [&] {
+        auto at_end = send_each(s::mint_session<SendChain>(kForeground, FakeChannel{}), item);
+        FakeChannel const channel = std::move(at_end).close();
+        bench::do_not_optimize(channel.last);
+    });
+    return report;
+}
+
+[[nodiscard]] bench::Report looped_chain() {
+    Item item = 0;
+    auto report = bench::run("chain of 16 sends, looped protocol (mint, 16 sends, detach)", [&] {
+        auto handle = s::mint_session<SendLoop>(kForeground, FakeChannel{});
+        for (std::uint32_t sent = 0; sent < kChainSends; ++sent) {
+            ++item;
+            make_item_opaque(item);
+            handle = std::move(handle).send(item, send_item);
+        }
+        std::move(handle).detach(s::detach_reason::TestInstrumentation{});
+    });
+    return report;
+}
+
+// Writes one row of the speed of light: the cycles of one send at the p50 and
+// the p99, the cycles of one send of its floor row, and the gap to the floor
+// row.  The floor row of a form sends as many items in a body as the form.
+void print_light(bench::Report const& report, bench::Report const& floor, CallerForm form, CoreClock clock) {
+    CRUCIBLE_PRE(sends_of(form) > 0);
+    const double sends = sends_of(form);
+    const double p50 = report.pct.p50 * clock.raw() / sends;
+    const double floor_p50 = floor.pct.p50 * clock.raw() / sends;
+    bench::print("  {}  one send: p50 {} cycles  p99 {} cycles  floor row {} cycles  gap {} cycles\n",
+                 report.name.view(), ::fixy::Fixed<2>{p50}, ::fixy::Fixed<2>{report.pct.p99 * clock.raw() / sends},
+                 ::fixy::Fixed<2>{floor_p50}, ::fixy::Fixed<2>{p50 - floor_p50});
+}
+
+// Writes one chain row in cycles of one send: the time of a body, which holds
+// one mint and one end, over kChainSends.
+void print_chain(bench::Report const& report, CoreClock clock) {
+    const double sends = kChainSends;
+    bench::print("  {}  one send: p50 {} cycles  p99 {} cycles\n", report.name.view(),
+                 ::fixy::Fixed<2>{report.pct.p50 * clock.raw() / sends},
+                 ::fixy::Fixed<2>{report.pct.p99 * clock.raw() / sends});
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::FixedArray<bench::Report, 8> reports{empty_set_send_local(),
-                                                 permitted_send_local(),
-                                                 empty_set_send_in_caller_memory(),
-                                                 permitted_send_in_caller_memory(),
-                                                 empty_set_send_pinned(),
-                                                 permitted_send_pinned(),
-                                                 empty_set_pin_alone(),
-                                                 permitted_pin_alone()};
+    ::fixy::FixedArray<bench::Report, 12> reports{empty_set_send_local(),
+                                                  permitted_send_local(),
+                                                  empty_set_send_in_caller_memory(),
+                                                  permitted_send_in_caller_memory(),
+                                                  empty_set_send_pinned(),
+                                                  permitted_send_pinned(),
+                                                  empty_set_pin_alone(),
+                                                  permitted_pin_alone(),
+                                                  floor_loop<CallerForm::LocalHandle>("floor, local (64 sends a body)"),
+                                                  floor_loop<CallerForm::CallerMemory>("floor, caller memory"),
+                                                  finite_chain(),
+                                                  looped_chain()};
+    const CoreClock clock = measure_clock();
     bench::emit_reports_text(reports.view());
 
     bench::print("\n=== the time of one send ===\n");
@@ -265,6 +444,21 @@ int main() {
     print_one_send(reports.at(::fixy::index<3>()), CallerForm::CallerMemory);
     print_one_send(reports.at(::fixy::index<4>()), CallerForm::PinnedHandle);
     print_one_send(reports.at(::fixy::index<5>()), CallerForm::PinnedHandle);
+
+    bench::print("\n=== the speed of light: {} cycles a ns, the model floor of a local send {} cycle ===\n",
+                 ::fixy::Fixed<3>{clock.raw()}, ::fixy::Fixed<1>{kLocalFloorCycles});
+    bench::Report const& local_floor = reports.at(::fixy::index<8>());
+    bench::Report const& caller_floor = reports.at(::fixy::index<9>());
+    print_light(reports.at(::fixy::index<0>()), local_floor, CallerForm::LocalHandle, clock);
+    print_light(reports.at(::fixy::index<1>()), local_floor, CallerForm::LocalHandle, clock);
+    print_light(reports.at(::fixy::index<2>()), caller_floor, CallerForm::CallerMemory, clock);
+    print_light(reports.at(::fixy::index<3>()), caller_floor, CallerForm::CallerMemory, clock);
+    print_light(reports.at(::fixy::index<4>()), local_floor, CallerForm::PinnedHandle, clock);
+    print_light(reports.at(::fixy::index<5>()), local_floor, CallerForm::PinnedHandle, clock);
+    print_light(local_floor, local_floor, CallerForm::LocalHandle, clock);
+    print_light(caller_floor, caller_floor, CallerForm::CallerMemory, clock);
+    print_chain(reports.at(::fixy::index<10>()), clock);
+    print_chain(reports.at(::fixy::index<11>()), clock);
 
     bench::print("\n=== permission set: pair delta ===\n");
     ::fixy::FixedArray<bench::Compare, 4> const compares{
