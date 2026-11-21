@@ -2,7 +2,8 @@
 // as the parts of a Record are in the cells of its bases.  A move of the one
 // part of a Record of one part consumes the Record, for a part with bytes and
 // for an empty part.  A move of each part of an object with two cells
-// consumes it, and a move of one of the two parts leaves the other live.
+// consumes it, and a move of one of the two parts leaves the other live.  A
+// move of a base subobject and a const member of a base consume nothing.
 #include <foundation/Linear.h>
 #include <foundation/core/Record.h>
 
@@ -45,5 +46,25 @@ void each_cell(Pair pair) {
 }
 
 void one_cell(Pair pair) { take(static_cast<Handle&&>(static_cast<Cell<0, Handle>&>(pair).part)); }
+
+// A base is no field slot, so a move of the base subobject of an object into a
+// parameter consumes nothing, and the object stays live.  A const member of a
+// base consumes nothing either.
+struct [[= ::foundation::linear::linear{}]] Core {
+    int value = 0;
+    constexpr Core() noexcept = default;
+    constexpr Core(Core&&) noexcept = default;
+    constexpr Core& operator=(Core&&) noexcept { return *this; }
+    Core(const Core&) = delete;
+    [[nodiscard]] int peek() const noexcept { return value; }
+};
+
+struct Wrapped : Core {};
+
+void take_core(Core&& core) noexcept;
+
+void base_moved(Wrapped wrapped) { take_core(static_cast<Core&&>(wrapped)); }
+
+void base_queried(Wrapped wrapped) { static_cast<void>(wrapped.peek()); }
 
 }  // namespace planted

@@ -38,7 +38,8 @@
 //     casts, std::move and std::forward only:
 //       * an argument of a parameter of an rvalue reference or of a class by
 //         value, of a call that is not std::move or std::forward
-//       * the object argument of a member function with the qualifier &&
+//       * the object argument of a member function with the qualifier &&,
+//         also of a member of a base class of the object (THE BASE DOORS)
 //       * the value of a return
 //       * the source of an initialization or an assignment of a linear
 //         object, also of a member, and an element of a braced list, such as
@@ -124,6 +125,17 @@
 //     from the move to the object.  A move of the whole after a move of a
 //     field, or of a field after a move of the whole, is a second consume.  A
 //     reference to a field borrows it.
+//
+// THE BASE DOORS
+//     A member function of a base class gets the base subobject as its object.
+//     The qualifier && of such a member tells that the call takes the object,
+//     as the detach of the base of a session handle does.  So the walk from
+//     the object argument of such a call follows each step to a base back to
+//     the tracked object, and the call consumes the whole object and each of
+//     its field slots.  The rule trusts the member, as it trusts a member with
+//     the qualifier && of the class itself.  A base is no field slot, so a move
+//     of a base subobject into a parameter consumes nothing, and the object
+//     stays live.
 //
 // THE ACCESSORS
 //     After a move cast, the walk to the tracked object goes through a member
@@ -682,6 +694,13 @@ tree walk_presence(tree* node_pointer, int* walk_subtrees, void* data) {
     return NULL_TREE;
 }
 
+// How the walk to a tracked object reads a base of the object with no field
+// after it (THE FIELDS, THE BASE DOORS).
+enum class BaseStep : std::uint8_t {
+    no_slot,  // a base is no slot, so the walk names no object
+    whole_object,  // the walk names the whole object, for the object of a member with the qualifier &&
+};
+
 // True when the special member FUNCTION moves or transfers a linear value by
 // its contract: a move constructor or a move assignment, or a constructor or
 // an assignment of a class that carries the annotation linear (THE OBJECTS).
@@ -975,8 +994,10 @@ private:
     // accessor: a member function that gives a reference to a linear value of
     // its object, such as operator* or value() of std::optional.  The move of
     // that reference consumes the field that the accessor gives, or the object
-    // (THE ACCESSORS).
-    tree strip_to_tracked(tree node, bool& saw_rvalue, tree* field = nullptr) const {
+    // (THE ACCESSORS).  BASE_STEP tells what a base of the object with no field
+    // after it names (THE BASE DOORS).
+    tree strip_to_tracked(tree node, bool& saw_rvalue, tree* field = nullptr,
+                          BaseStep base_step = BaseStep::no_slot) const {
         if (field != nullptr) {
             *field = NULL_TREE;
         }
@@ -1062,8 +1083,13 @@ private:
                         return found;
                     }
                     // A base of the object with no field after it is no
-                    // field slot, and neither is a field with no slot.
-                    if (is_base_only || (leaf != NULL_TREE && slot_for(found, leaf) == kNoParent)) {
+                    // field slot, and neither is a field with no slot.  The
+                    // object of a member with the qualifier && names the
+                    // whole object through its base (THE BASE DOORS).
+                    if (is_base_only) {
+                        return base_step == BaseStep::whole_object ? found : NULL_TREE;
+                    }
+                    if (leaf != NULL_TREE && slot_for(found, leaf) == kNoParent) {
                         return NULL_TREE;
                     }
                     *field = leaf != NULL_TREE ? leaf : field_by_uid(found, accessor_field);
@@ -1681,7 +1707,9 @@ private:
             tree argument = argument_at(call, index);
             bool saw_rvalue = false;
             tree field = NULL_TREE;
-            tree decl = strip_to_tracked(argument, saw_rvalue, &field);
+            bool is_rvalue_object = is_method && index == 0 && FUNCTION_RVALUE_QUALIFIED(type);
+            tree decl = strip_to_tracked(argument, saw_rvalue, &field,
+                                         is_rvalue_object ? BaseStep::whole_object : BaseStep::no_slot);
             if (is_method && index == 0) {
                 walk_object_argument(decl, field, argument, type, callee, is_constructor, is_assignment, location,
                                      state);

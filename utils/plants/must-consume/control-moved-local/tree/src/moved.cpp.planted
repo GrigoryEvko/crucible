@@ -7,7 +7,8 @@
 // argument of an empty class by value is the argument and an EMPTY_CLASS_EXPR
 // after it, in a call and in the initializer of a base.  An lvalue reference
 // to a local borrows it and does not consume it, and a move through the
-// reference consumes the local.
+// reference consumes the local.  A member with the qualifier && of a base
+// class consumes the whole object.
 #include <foundation/Linear.h>
 
 namespace planted {
@@ -90,6 +91,46 @@ void handed_back() {
     Token value = mint();
     value = pass(static_cast<Token&&>(value));
     take(static_cast<Token&&>(value));
+}
+
+// A member with the qualifier && of a base class takes the whole object: of a
+// linear base with bytes, of a base that holds no linear part under a class
+// that holds a token, and through two bases.  A const member of a base is no
+// consume, so a move after it is the one consume.
+struct [[= ::foundation::linear::linear{}]] Core {
+    int value = 0;
+    constexpr Core() noexcept = default;
+    constexpr Core(Core&&) noexcept = default;
+    constexpr Core& operator=(Core&&) noexcept { return *this; }
+    Core(const Core&) = delete;
+    void close() && noexcept;
+};
+
+struct Wrapped : Core {};
+
+struct Tracker {
+    int marks = 0;
+    void detach() && noexcept;
+    [[nodiscard]] int count() const noexcept { return marks; }
+};
+
+struct Session : Tracker {
+    Token token;
+};
+
+struct Deep : Session {};
+
+void take_session(Session&& session) noexcept;
+
+void linear_base_door(Wrapped wrapped) { static_cast<Wrapped&&>(wrapped).close(); }
+
+void base_door_of_holder(Session session) { static_cast<Session&&>(session).detach(); }
+
+void door_through_two_bases(Deep deep) { static_cast<Deep&&>(deep).detach(); }
+
+void queried_then_moved(Session session) {
+    static_cast<void>(session.count());
+    take_session(static_cast<Session&&>(session));
 }
 
 }  // namespace planted

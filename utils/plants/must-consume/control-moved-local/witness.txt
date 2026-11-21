@@ -5,6 +5,9 @@
 # and in the initializer of a base.  An lvalue reference to a local is a borrow
 # and no consume, and a move through it consumes the local.  A value that a
 # call gives back and that an assignment puts back into its local gives no line.
+# A member with the qualifier && of a base class consumes the whole object,
+# through one base and through two, and a const member of a base consumes
+# nothing, so a move after it is no second consume.
 
 compile moved src/moved.cpp must-consume=on
 flag moved -freflection
