@@ -6,6 +6,8 @@
 // test_compute_vit.cpp.
 
 #include <crucible/CrucibleContext.h>
+#include <fixy/Core.h>
+#include <foundation/AlignedBytes.h>
 
 #include <cstdint>
 
@@ -100,27 +102,34 @@ inline constexpr uint64_t SZ_BSDFF = B * S * D_FF * 4;
 inline constexpr uint64_t SZ_BD = B * D * 4;
 inline constexpr uint64_t SZ_BNCLS = B * N_CLS * 4;
 
-// The input and the parameters of the block.
+// The input and the parameters of the block.  Each is a block of floats on
+// the host at an alignment of 64, so the test registers its bytes as the
+// View of an external slot.
 struct Weights {
-    alignas(64) float X[B * S * D]{};
-    alignas(64) float gamma1[D]{};
-    alignas(64) float beta1[D]{};
-    alignas(64) float W_q[D * D]{};
-    alignas(64) float W_k[D * D]{};
-    alignas(64) float W_v[D * D]{};
-    alignas(64) float W_out[D * D]{};
-    alignas(64) float gamma2[D]{};
-    alignas(64) float beta2[D]{};
-    alignas(64) float W_ff1[D * D_FF]{};
-    alignas(64) float W_ff2[D_FF * D]{};
-    alignas(64) float W_head[D * N_CLS]{};
+    ::foundation::AlignedBytes X{};
+    ::foundation::AlignedBytes gamma1{};
+    ::foundation::AlignedBytes beta1{};
+    ::foundation::AlignedBytes W_q{};
+    ::foundation::AlignedBytes W_k{};
+    ::foundation::AlignedBytes W_v{};
+    ::foundation::AlignedBytes W_out{};
+    ::foundation::AlignedBytes gamma2{};
+    ::foundation::AlignedBytes beta2{};
+    ::foundation::AlignedBytes W_ff1{};
+    ::foundation::AlignedBytes W_ff2{};
+    ::foundation::AlignedBytes W_head{};
 };
+
+// The floats of a block of the weights.
+[[nodiscard]] inline ::fixy::View<float const> read_floats(::foundation::AlignedBytes const& block) noexcept {
+    return ::foundation::lifetime::start_as_array<float>(block.view());
+}
 
 // The two outputs of the direct CPU reference pass that the test compares
 // with the pool.
 struct Reference {
-    float res2[B * S * D]{};
-    float probs[B * N_CLS]{};
+    ::fixy::FixedArray<float, B * S * D> res2{};
+    ::fixy::FixedArray<float, B * N_CLS> probs{};
 };
 
 // The fixed-seed weights and the direct CPU reference pass

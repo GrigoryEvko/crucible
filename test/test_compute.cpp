@@ -15,24 +15,64 @@
 #include <foundation/effects/Effect.h>
 
 #include "entry_arrays.h"
+#include <crucible/Philox.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
-#include "tensor_data.h"
-#include <cmath>
-#include <cstring>
-#include <random>
+#include <foundation/AlignedBytes.h>
 
 namespace {
 
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
+// The layout of count floats at an alignment of 64.
+[[nodiscard]] ::fixy::Layout make_float_layout(::fixy::ElementCount count) {
+    return ::fixy::mint_layout(::fixy::ByteCount{count.raw() * sizeof(float)},
+                               ::fixy::mint_alignment(::fixy::ByteCount{64}).expect("64 is a power of two"))
+        .expect("a block of floats of the test is a layout");
+}
+
+// A block of count floats on the host, each drawn from the Philox stream of
+// Key into [-0.5, 0.5).  The float at position i comes from the first word
+// of the block of the counter i, so each run and each host draws the same
+// floats.
+template <std::uint64_t Key>
+[[nodiscard]] ::foundation::AlignedBytes make_weights(::fixy::ElementCount count) {
+    using Start = ::foundation::core::side::WindowStart;
+    using Length = ::foundation::core::side::WindowLength;
+    ::foundation::AlignedBytes block =
+        ::foundation::mint_aligned_bytes_zeroed(::foundation::effects::testing::test().alloc, make_float_layout(count));
+    ::fixy::FixedList<::foundation::ByteWindow, 1> windows{};
+    CRUCIBLE_TEST_ASSERT(kTest, windows
+                                    .append(::foundation::ByteWindow{
+                                        ::fixy::side_as<Start>(::fixy::ByteCount{0}),
+                                        ::fixy::side_as<Length>(::fixy::ByteCount{count.raw() * sizeof(float)})})
+                                    .is_ok());
+    const auto drawn = ::foundation::with_mut_windows<float>(block, windows, [](auto& views) noexcept {
+        std::uint64_t draw = 0;
+        for (auto& view : views) {
+            for (float& element : view) {
+                const ::fixy::Philox4x32::Counter word = ::fixy::Philox4x32::generate(draw, Key);
+                element = crucible::Philox::to_uniform(word.at(::fixy::index<0>())) - 0.5f;
+                ++draw;
+            }
+        }
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, drawn.is_ok());
+    return block;
+}
+
 }  // namespace
 
 using namespace crucible;
-using crucible::test::host_data;
-using crucible::test::host_ptr;
+using ::foundation::core::side::LeftFactor;
+using ::foundation::core::side::RightFactor;
+using cpu::make_dim;
+using cpu::make_input;
+using cpu::read_input;
+using cpu::write_output;
+namespace roles = cpu::side;
 
 // The views of the replay chain are minted on the thread that holds a
 // Vigil's producer claim.  This test drives the context without a Vigil,
@@ -71,21 +111,11 @@ int main() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::report(::fixy::Sink::Out, "test_compute:\n");
 
-    // A fixed seed, so the same numbers flow through on every run and
-    // the reference comparison below is reproducible.
-    std::mt19937 rng(42);
-    std::uniform_real_distribution<float> dist(-0.5f, 0.5f);
-
-    alignas(64) float X[BATCH * IN_DIM];
-    alignas(64) float W1[IN_DIM * HIDDEN];
-    alignas(64) float W2[HIDDEN * OUT_DIM];
-
-    for (auto& v : X)
-        v = dist(rng);
-    for (auto& v : W1)
-        v = dist(rng);
-    for (auto& v : W2)
-        v = dist(rng);
+    // A fixed key for each block, so the same numbers flow through on every
+    // run and the reference comparison below is reproducible.
+    ::foundation::AlignedBytes x_block = make_weights<42>(::fixy::ElementCount{BATCH * IN_DIM});
+    ::foundation::AlignedBytes w1_block = make_weights<43>(::fixy::ElementCount{IN_DIM * HIDDEN});
+    ::foundation::AlignedBytes w2_block = make_weights<44>(::fixy::ElementCount{HIDDEN * OUT_DIM});
 
     // An external slot brings its own memory, registered separately,
     // and lives for the whole iteration.  An internal slot is given an
@@ -239,87 +269,106 @@ int main() {
     // is only reachable in compiled mode.
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
-    ctx.register_external(SlotId{SL_X}, host_data(X), cv);
-    ctx.register_external(SlotId{SL_W1}, host_data(W1), cv);
-    ctx.register_external(SlotId{SL_W2}, host_data(W2), cv);
+    ctx.register_external_view(SlotId{SL_X}, x_block.view(), cv);
+    ctx.register_external_view(SlotId{SL_W1}, w1_block.view(), cv);
+    ctx.register_external_view(SlotId{SL_W2}, w2_block.view(), cv);
 
     // A read-only view, so that even these checks reach the pool the
     // way the hot path does.
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
-    CRUCIBLE_TEST_ASSERT(kTest, host_ptr<float>(ctx.pool().slot_ptr(SlotId{SL_X}, pv)) == X);
-    CRUCIBLE_TEST_ASSERT(kTest, host_ptr<float>(ctx.pool().slot_ptr(SlotId{SL_W1}, pv)) == W1);
-    CRUCIBLE_TEST_ASSERT(kTest, host_ptr<float>(ctx.pool().slot_ptr(SlotId{SL_W2}, pv)) == W2);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().slot_ptr(SlotId{SL_X}, pv) == ::fixy::mint_run_address(x_block.view(), 0));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().slot_ptr(SlotId{SL_W1}, pv) == ::fixy::mint_run_address(w1_block.view(), 0));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().slot_ptr(SlotId{SL_W2}, pv) == ::fixy::mint_run_address(w2_block.view(), 0));
 
     for (int iter = 0; iter < 100; iter++) {
         // The trailing names below say which slot each index reaches,
         // which the index alone does not.
         auto s = ctx.advance(H_MM1, S_MM1, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        cpu::mm(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)),  // X
-                host_ptr<const float>(ctx.input_ptr(1, cv)),  // W1
-                host_ptr<float>(ctx.output_ptr(0, cv)),  // mm1_out
-                BATCH, HIDDEN, IN_DIM);
+        write_output(kTest, ctx, cv, [&ctx, &cv](::fixy::View<float> mm1_out) noexcept {
+            cpu::mm(kTest, make_input<LeftFactor>(read_input(ctx, cv, InputPosition{0})),  // X
+                    make_input<RightFactor>(read_input(ctx, cv, InputPosition{1})),  // W1
+                    mm1_out, make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(HIDDEN),
+                    make_dim<roles::Inner>(IN_DIM));
+        });
 
         s = ctx.advance(H_RELU, S_RELU, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        cpu::relu(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)),  // mm1_out
-                  host_ptr<float>(ctx.output_ptr(0, cv)),  // relu_out
-                  BATCH * HIDDEN);
+        write_output(kTest, ctx, cv, [&ctx, &cv](::fixy::View<float> relu_out) noexcept {
+            cpu::relu(kTest, read_input(ctx, cv, InputPosition{0}),  // mm1_out
+                      relu_out, make_dim<roles::Count>(BATCH * HIDDEN));
+        });
 
         s = ctx.advance(H_MM2, S_MM2, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        cpu::mm(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)),  // relu_out
-                host_ptr<const float>(ctx.input_ptr(1, cv)),  // W2
-                host_ptr<float>(ctx.output_ptr(0, cv)),  // mm2_out
-                BATCH, OUT_DIM, HIDDEN);
+        write_output(kTest, ctx, cv, [&ctx, &cv](::fixy::View<float> mm2_out) noexcept {
+            cpu::mm(kTest, make_input<LeftFactor>(read_input(ctx, cv, InputPosition{0})),  // relu_out
+                    make_input<RightFactor>(read_input(ctx, cv, InputPosition{1})),  // W2
+                    mm2_out, make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(OUT_DIM),
+                    make_dim<roles::Inner>(HIDDEN));
+        });
 
         // The last operation of an iteration completes it rather
         // than matching.
         s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
-        cpu::softmax(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)),  // mm2_out
-                     host_ptr<float>(ctx.output_ptr(0, cv)),  // softmax_out
-                     BATCH, OUT_DIM);
+        write_output(kTest, ctx, cv, [&ctx, &cv](::fixy::View<float> softmax_out) noexcept {
+            cpu::softmax(kTest, read_input(ctx, cv, InputPosition{0}),  // mm2_out
+                         softmax_out, make_dim<roles::Rows>(BATCH), make_dim<roles::Width>(OUT_DIM));
+        });
     }
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 100);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 0);
 
-    float ref_mm1[BATCH * HIDDEN]{};
-    float ref_relu[BATCH * HIDDEN]{};
-    float ref_mm2[BATCH * OUT_DIM]{};
-    float ref_sm[BATCH * OUT_DIM]{};
+    ::fixy::FixedArray<float, BATCH * HIDDEN> ref_mm1{};
+    ::fixy::FixedArray<float, BATCH * HIDDEN> ref_relu{};
+    ::fixy::FixedArray<float, BATCH * OUT_DIM> ref_mm2{};
+    ::fixy::FixedArray<float, BATCH * OUT_DIM> ref_sm{};
+    const ::fixy::View<float const> x_floats = ctx.pool().slot_view<float>(SlotId{SL_X}, pv).expect("X is registered");
+    const ::fixy::View<float const> w1_floats =
+        ctx.pool().slot_view<float>(SlotId{SL_W1}, pv).expect("W1 is registered");
+    const ::fixy::View<float const> w2_floats =
+        ctx.pool().slot_view<float>(SlotId{SL_W2}, pv).expect("W2 is registered");
 
-    cpu::mm(kTest, X, W1, ref_mm1, BATCH, HIDDEN, IN_DIM);
-    cpu::relu(kTest, ref_mm1, ref_relu, BATCH * HIDDEN);
-    cpu::mm(kTest, ref_relu, W2, ref_mm2, BATCH, OUT_DIM, HIDDEN);
-    cpu::softmax(kTest, ref_mm2, ref_sm, BATCH, OUT_DIM);
+    cpu::mm(kTest, make_input<LeftFactor>(x_floats), make_input<RightFactor>(w1_floats), ref_mm1.view(),
+            make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(HIDDEN), make_dim<roles::Inner>(IN_DIM));
+    cpu::relu(kTest, ref_mm1.view(), ref_relu.view(), make_dim<roles::Count>(BATCH * HIDDEN));
+    cpu::mm(kTest, make_input<LeftFactor>(ref_relu.view()), make_input<RightFactor>(w2_floats), ref_mm2.view(),
+            make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(OUT_DIM), make_dim<roles::Inner>(HIDDEN));
+    cpu::softmax(kTest, ref_mm2.view(), ref_sm.view(), make_dim<roles::Rows>(BATCH), make_dim<roles::Width>(OUT_DIM));
 
-    auto* pool_sm = host_ptr<const float>(ctx.pool().slot_ptr(SlotId{SL_SM}, pv));
+    const ::fixy::View<float const> pool_sm =
+        ctx.pool().slot_view<float>(SlotId{SL_SM}, pv).expect("the softmax output is a pooled slot of floats");
+    const ::fixy::View<float const> ref_floats = ref_sm.view();
+    const auto pool_at = [&pool_sm](cpu::Offset position) noexcept {
+        return *pool_sm.get(position.raw()).expect("the softmax output holds BATCH * OUT_DIM floats");
+    };
 
     float max_err = 0.0f;
-    for (int i = 0; i < BATCH * OUT_DIM; i++) {
-        float err = std::abs(pool_sm[i] - ref_sm[i]);
-        max_err = std::max(max_err, err);
+    for (auto [got, want] :
+         pool_sm.walk().try_zip(ref_floats.walk()).expect("the two runs hold BATCH * OUT_DIM floats")) {
+        float err = ::fixy::fp::abs(*got - *want);
+        max_err = ::fixy::max(max_err, err);
     }
 
     ::fixy::report(::fixy::Sink::Out, "  max_error vs reference: {}\n", static_cast<double>(max_err));
     CRUCIBLE_TEST_ASSERT(kTest, max_err < 1e-5f && "softmax output diverged from reference");
 
-    for (int b = 0; b < BATCH; b++) {
+    for (std::size_t b = 0; b < BATCH; b++) {
         float row_sum = 0.0f;
-        for (int j = 0; j < OUT_DIM; j++) {
-            float v = pool_sm[b * OUT_DIM + j];
+        for (std::size_t j = 0; j < OUT_DIM; j++) {
+            float v = pool_at(cpu::Offset{b * OUT_DIM + j});
             CRUCIBLE_TEST_ASSERT(kTest, v >= 0.0f && v <= 1.0f);
             row_sum += v;
         }
-        CRUCIBLE_TEST_ASSERT(kTest, std::abs(row_sum - 1.0f) < 1e-5f && "softmax row doesn't sum to 1");
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fp::abs(row_sum - 1.0f) < 1e-5f && "softmax row doesn't sum to 1");
     }
 
-    ::fixy::report(::fixy::Sink::Out, "  softmax[0] = [{}, {}, {}]\n", static_cast<double>(pool_sm[0]),
-                   static_cast<double>(pool_sm[1]), static_cast<double>(pool_sm[2]));
-    ::fixy::report(::fixy::Sink::Out, "  softmax[1] = [{}, {}, {}]\n", static_cast<double>(pool_sm[3]),
-                   static_cast<double>(pool_sm[4]), static_cast<double>(pool_sm[5]));
+    ::fixy::report(::fixy::Sink::Out, "  softmax[0] = [{}, {}, {}]\n", static_cast<double>(pool_at(cpu::Offset{0})),
+                   static_cast<double>(pool_at(cpu::Offset{1})), static_cast<double>(pool_at(cpu::Offset{2})));
+    ::fixy::report(::fixy::Sink::Out, "  softmax[1] = [{}, {}, {}]\n", static_cast<double>(pool_at(cpu::Offset{3})),
+                   static_cast<double>(pool_at(cpu::Offset{4})), static_cast<double>(pool_at(cpu::Offset{5})));
     ::fixy::report(::fixy::Sink::Out, "  100 iterations, {} ops/iter, compiled_iters={}\n", N_OPS,
                    ctx.compiled_iterations());
 

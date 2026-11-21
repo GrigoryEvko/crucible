@@ -4,171 +4,324 @@
 // real numbers.  They are written for obvious correctness, not for
 // speed, and none of them belongs in production.
 //
-// Every function takes raw float pointers and integer dimensions, and
-// every array is row-major.
+// Each kernel reads its inputs as View<float const> and writes its output
+// as View<float>, and every array is row-major.  Two inputs of one type
+// come in their roles (Side), and each dimension is a count of elements in
+// a role of its own (Dim), so no call can swap two of them.  A kernel first
+// checks that each run holds the elements that its dimensions name, and
+// each read and write then checks its position, so no kernel reaches past a
+// run.  Each kernel keeps the order of its float operations, so its result
+// has the same bits on each run.
 
-#include <algorithm>
+#include <crucible/CrucibleContext.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/core/Product.h>
+#include <foundation/effects/Effect.h>
 #include <cmath>
-#include <cstring>
+#include <cstddef>
 
 namespace crucible::cpu {
 
+// The roles of the inputs and of the dimensions of the kernels.
+namespace side {
+
+// The two operands of an elementwise add, and of a difference.
+struct Augend final {};
+struct Addend final {};
+struct Minuend final {};
+struct Subtrahend final {};
+// The gradient that the backward pass of a rectifier gates, and the input
+// of the forward pass that gates it.
+struct Gradient final {};
+struct Activation final {};
+// The scale and the shift of a normalization, for each column or channel.
+struct Scale final {};
+struct Shift final {};
+// The weights of a convolution.
+struct Filter final {};
+// The keys and the values of an attention.
+struct Keys final {};
+struct Values final {};
+// The class of each sample of a loss.
+struct Targets final {};
+// The value that the larger of two floats compares with the running value.
+struct Candidate final {};
+
+// The dimensions.
+struct Count final {};  // the elements of an elementwise kernel
+struct Period final {};  // the elements of a second operand that tiles over the first
+struct Rows final {};  // the rows of a matrix, or of a run of rows
+struct Columns final {};  // the columns of the output of a matrix product
+struct Inner final {};  // the shared dimension of a matrix product
+struct Width final {};  // the elements of one row of a row-wise kernel
+struct Batch final {};  // the samples of a batch
+struct Channels final {};  // the channels of each sample
+struct OutChannels final {};  // the channels of the output of a convolution
+struct Positions final {};  // the positions of one channel of a sample
+struct Height final {};  // the rows of one channel of a sample
+struct WidthOfImage final {};  // the columns of one channel of a sample
+struct KernelHeight final {};  // the rows of the window of a convolution
+struct KernelWidth final {};  // the columns of the window of a convolution
+struct Window final {};  // the side of the square window of a pool
+struct Sequence final {};  // the positions of one sequence
+struct Selected final {};  // the position that a gather takes from each sequence
+
+}  // namespace side
+
+// A dimension of a kernel: a count of elements in its role.
+template <class Role>
+using Dim = ::fixy::Side<Role, ::fixy::ElementCount>;
+
+// The dimension of count elements in the role Role.
+template <class Role>
+[[nodiscard]] constexpr Dim<Role> make_dim(std::size_t count) noexcept {
+    return ::fixy::side_as<Role>(::fixy::ElementCount{count});
+}
+
+// The run of an input of a kernel in the role Role.  A View of floats that
+// the caller can write converts to the read-only View of the role.
+template <class Role>
+[[nodiscard]] constexpr ::fixy::Side<Role, ::fixy::View<float const>>
+make_input(::fixy::View<float const> run) noexcept {
+    return ::fixy::side_as<Role>(run);
+}
+
+// The position of an element in a run.
+using Offset = ::fixy::Id<struct OffsetTag, std::size_t>;
+
+namespace detail {
+
+// The count of a dimension.
+template <class Role>
+[[nodiscard]] constexpr std::size_t count_of(Dim<Role> const& dim) noexcept {
+    return dim.value().raw();
+}
+
+// The element at a position of a run.  A position at or past the count
+// ends the process, so a kernel never reads or writes outside its run.
+template <class Element>
+[[nodiscard]] Element& element_at(::fixy::View<Element> run, Offset position) noexcept {
+    return *run.get(position.raw()).expect("a reference kernel reads and writes inside its runs");
+}
+
+// The larger of two floats with the rule of std::max: the second value only
+// when the first is less, so a NaN first value stays.
+[[nodiscard]] constexpr float max_keep_first(float first, ::fixy::Side<side::Candidate, float> second) noexcept {
+    return first < second.value() ? second.value() : first;
+}
+
+}  // namespace detail
+
 // C[M,N] = A[M,K] times B[K,N].
-inline void mm(::fixy::TestRunnerCtx const& test, const float* A, const float* B, float* C, int M, int N, int K) {
-    CRUCIBLE_TEST_ASSERT(test, A && B && C);
-    for (int i = 0; i < M; i++) {
-        for (int j = 0; j < N; j++) {
+inline void mm(::fixy::TestRunnerCtx const& test,
+               ::fixy::Side<::foundation::core::side::LeftFactor, ::fixy::View<float const>> A,
+               ::fixy::Side<::foundation::core::side::RightFactor, ::fixy::View<float const>> B, ::fixy::View<float> C,
+               Dim<side::Rows> rows, Dim<side::Columns> columns, Dim<side::Inner> inner) {
+    std::size_t const M = detail::count_of(rows);
+    std::size_t const N = detail::count_of(columns);
+    std::size_t const K = detail::count_of(inner);
+    CRUCIBLE_TEST_ASSERT(test, A.value().size() >= M * K && B.value().size() >= K * N && C.size() >= M * N);
+    for (std::size_t i = 0; i < M; i++) {
+        for (std::size_t j = 0; j < N; j++) {
             float sum = 0.0f;
-            for (int k = 0; k < K; k++)
-                sum += A[i * K + k] * B[k * N + j];
-            C[i * N + j] = sum;
+            for (std::size_t k = 0; k < K; k++)
+                sum +=
+                    detail::element_at(A.value(), Offset{i * K + k}) * detail::element_at(B.value(), Offset{k * N + j});
+            detail::element_at(C, Offset{i * N + j}) = sum;
         }
     }
 }
 
 // C[n] = A[n] + B[n].  A shorter second operand is tiled over the
-// first, so bias_n equal to n is a plain elementwise add and bias_n
-// equal to the last dimension is a bias add.
-inline void add(::fixy::TestRunnerCtx const& test, const float* A, const float* B, float* C, int n, int bias_n = 0) {
-    CRUCIBLE_TEST_ASSERT(test, A && B && C);
-    if (bias_n <= 0) bias_n = n;
-    for (int i = 0; i < n; i++)
-        C[i] = A[i] + B[i % bias_n];
+// first, so a period equal to n is a plain elementwise add and a period
+// equal to the last dimension is a bias add.  A period of zero is n.
+inline void add(::fixy::TestRunnerCtx const& test, ::fixy::Side<side::Augend, ::fixy::View<float const>> A,
+                ::fixy::Side<side::Addend, ::fixy::View<float const>> B, ::fixy::View<float> C, Dim<side::Count> count,
+                Dim<side::Period> period = make_dim<side::Period>(0)) {
+    std::size_t const n = detail::count_of(count);
+    std::size_t const bias_n = detail::count_of(period) == 0 ? n : detail::count_of(period);
+    CRUCIBLE_TEST_ASSERT(test, A.value().size() >= n && B.value().size() >= bias_n && C.size() >= n);
+    for (std::size_t i = 0; i < n; i++)
+        detail::element_at(C, Offset{i}) =
+            detail::element_at(A.value(), Offset{i}) + detail::element_at(B.value(), Offset{i % bias_n});
 }
 
 // C[n] = A[n] - B[n].
-inline void sub(::fixy::TestRunnerCtx const& test, const float* A, const float* B, float* C, int n) {
-    CRUCIBLE_TEST_ASSERT(test, A && B && C);
-    for (int i = 0; i < n; i++)
-        C[i] = A[i] - B[i];
+inline void sub(::fixy::TestRunnerCtx const& test, ::fixy::Side<side::Minuend, ::fixy::View<float const>> A,
+                ::fixy::Side<side::Subtrahend, ::fixy::View<float const>> B, ::fixy::View<float> C,
+                Dim<side::Count> count) {
+    std::size_t const n = detail::count_of(count);
+    CRUCIBLE_TEST_ASSERT(test, A.value().size() >= n && B.value().size() >= n && C.size() >= n);
+    for (std::size_t i = 0; i < n; i++)
+        detail::element_at(C, Offset{i}) =
+            detail::element_at(A.value(), Offset{i}) - detail::element_at(B.value(), Offset{i});
 }
 
 // C[n] = A[n] times B[n].
-inline void mul(::fixy::TestRunnerCtx const& test, const float* A, const float* B, float* C, int n) {
-    CRUCIBLE_TEST_ASSERT(test, A && B && C);
-    for (int i = 0; i < n; i++)
-        C[i] = A[i] * B[i];
+inline void mul(::fixy::TestRunnerCtx const& test,
+                ::fixy::Side<::foundation::core::side::LeftFactor, ::fixy::View<float const>> A,
+                ::fixy::Side<::foundation::core::side::RightFactor, ::fixy::View<float const>> B, ::fixy::View<float> C,
+                Dim<side::Count> count) {
+    std::size_t const n = detail::count_of(count);
+    CRUCIBLE_TEST_ASSERT(test, A.value().size() >= n && B.value().size() >= n && C.size() >= n);
+    for (std::size_t i = 0; i < n; i++)
+        detail::element_at(C, Offset{i}) =
+            detail::element_at(A.value(), Offset{i}) * detail::element_at(B.value(), Offset{i});
 }
 
 // C[n] = max(A[n], 0).
-inline void relu(::fixy::TestRunnerCtx const& test, const float* A, float* C, int n) {
-    CRUCIBLE_TEST_ASSERT(test, A && C);
-    for (int i = 0; i < n; i++)
-        C[i] = A[i] > 0.0f ? A[i] : 0.0f;
+inline void relu(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy::View<float> C,
+                 Dim<side::Count> count) {
+    std::size_t const n = detail::count_of(count);
+    CRUCIBLE_TEST_ASSERT(test, A.size() >= n && C.size() >= n);
+    for (std::size_t i = 0; i < n; i++) {
+        float const value = detail::element_at(A, Offset{i});
+        detail::element_at(C, Offset{i}) = value > 0.0f ? value : 0.0f;
+    }
 }
 
 // C[n] = grad[n] where the input was positive, and zero elsewhere.
-inline void relu_bwd(::fixy::TestRunnerCtx const& test, const float* grad, const float* input, float* C, int n) {
-    CRUCIBLE_TEST_ASSERT(test, grad && input && C);
-    for (int i = 0; i < n; i++)
-        C[i] = input[i] > 0.0f ? grad[i] : 0.0f;
+inline void relu_bwd(::fixy::TestRunnerCtx const& test, ::fixy::Side<side::Gradient, ::fixy::View<float const>> grad,
+                     ::fixy::Side<side::Activation, ::fixy::View<float const>> input, ::fixy::View<float> C,
+                     Dim<side::Count> count) {
+    std::size_t const n = detail::count_of(count);
+    CRUCIBLE_TEST_ASSERT(test, grad.value().size() >= n && input.value().size() >= n && C.size() >= n);
+    for (std::size_t i = 0; i < n; i++)
+        detail::element_at(C, Offset{i}) =
+            detail::element_at(input.value(), Offset{i}) > 0.0f ? detail::element_at(grad.value(), Offset{i}) : 0.0f;
 }
 
 // C[n] = A[n] * 0.5 * (1 + erf(A[n] / sqrt(2))).
-inline void gelu(::fixy::TestRunnerCtx const& test, const float* A, float* C, int n) {
-    CRUCIBLE_TEST_ASSERT(test, A && C);
+inline void gelu(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy::View<float> C,
+                 Dim<side::Count> count) {
+    std::size_t const n = detail::count_of(count);
+    CRUCIBLE_TEST_ASSERT(test, A.size() >= n && C.size() >= n);
     constexpr float k = 0.7071067811865476f;  // 1/sqrt(2)
-    for (int i = 0; i < n; i++)
-        C[i] = A[i] * 0.5f * (1.0f + std::erf(A[i] * k));
+    for (std::size_t i = 0; i < n; i++) {
+        float const value = detail::element_at(A, Offset{i});
+        detail::element_at(C, Offset{i}) = value * 0.5f * (1.0f + std::erf(value * k));
+    }
 }
 
 // C[n] = 1 / (1 + exp(-A[n])).
-inline void sigmoid(::fixy::TestRunnerCtx const& test, const float* A, float* C, int n) {
-    CRUCIBLE_TEST_ASSERT(test, A && C);
-    for (int i = 0; i < n; i++)
-        C[i] = 1.0f / (1.0f + std::exp(-A[i]));
+inline void sigmoid(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy::View<float> C,
+                    Dim<side::Count> count) {
+    std::size_t const n = detail::count_of(count);
+    CRUCIBLE_TEST_ASSERT(test, A.size() >= n && C.size() >= n);
+    for (std::size_t i = 0; i < n; i++)
+        detail::element_at(C, Offset{i}) = 1.0f / (1.0f + std::exp(-detail::element_at(A, Offset{i})));
 }
 
 // C[n] = A[n] * sigmoid(A[n]).
-inline void silu(::fixy::TestRunnerCtx const& test, const float* A, float* C, int n) {
-    CRUCIBLE_TEST_ASSERT(test, A && C);
-    for (int i = 0; i < n; i++) {
-        float s = 1.0f / (1.0f + std::exp(-A[i]));
-        C[i] = A[i] * s;
+inline void silu(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy::View<float> C,
+                 Dim<side::Count> count) {
+    std::size_t const n = detail::count_of(count);
+    CRUCIBLE_TEST_ASSERT(test, A.size() >= n && C.size() >= n);
+    for (std::size_t i = 0; i < n; i++) {
+        float const value = detail::element_at(A, Offset{i});
+        float s = 1.0f / (1.0f + std::exp(-value));
+        detail::element_at(C, Offset{i}) = value * s;
     }
 }
 
 // C[n] = value.
-inline void fill(::fixy::TestRunnerCtx const& test, float* C, int n, float value) {
-    CRUCIBLE_TEST_ASSERT(test, C);
-    for (int i = 0; i < n; i++)
-        C[i] = value;
+inline void fill(::fixy::TestRunnerCtx const& test, ::fixy::View<float> C, Dim<side::Count> count, float value) {
+    std::size_t const n = detail::count_of(count);
+    CRUCIBLE_TEST_ASSERT(test, C.size() >= n);
+    for (std::size_t i = 0; i < n; i++)
+        detail::element_at(C, Offset{i}) = value;
 }
 
 // Y[B,D] = softmax of X[B,D] over the last dimension.  The row
 // maximum is subtracted before the exponential, so the largest
 // exponent is zero and no term can overflow.
-inline void softmax(::fixy::TestRunnerCtx const& test, const float* X, float* Y, int B, int D) {
-    CRUCIBLE_TEST_ASSERT(test, X && Y);
-    for (int b = 0; b < B; b++) {
-        const float* x = X + b * D;
-        float* y = Y + b * D;
-        float mx = x[0];
-        for (int d = 1; d < D; d++)
-            mx = std::max(mx, x[d]);
+inline void softmax(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::fixy::View<float> Y,
+                    Dim<side::Rows> rows, Dim<side::Width> width) {
+    std::size_t const B = detail::count_of(rows);
+    std::size_t const D = detail::count_of(width);
+    CRUCIBLE_TEST_ASSERT(test, X.size() >= B * D && Y.size() >= B * D && D > 0);
+    for (std::size_t b = 0; b < B; b++) {
+        std::size_t const row = b * D;
+        float mx = detail::element_at(X, Offset{row});
+        for (std::size_t d = 1; d < D; d++)
+            mx = detail::max_keep_first(mx, ::fixy::side_as<side::Candidate>(detail::element_at(X, Offset{row + d})));
         float sum = 0.0f;
-        for (int d = 0; d < D; d++) {
-            y[d] = std::exp(x[d] - mx);
-            sum += y[d];
+        for (std::size_t d = 0; d < D; d++) {
+            detail::element_at(Y, Offset{row + d}) = std::exp(detail::element_at(X, Offset{row + d}) - mx);
+            sum += detail::element_at(Y, Offset{row + d});
         }
         float inv = 1.0f / sum;
-        for (int d = 0; d < D; d++)
-            y[d] *= inv;
+        for (std::size_t d = 0; d < D; d++)
+            detail::element_at(Y, Offset{row + d}) *= inv;
     }
 }
 
 // Y[B,D] = (X - mean) / sqrt(var + eps), scaled by gamma[D] and
 // shifted by beta[D], with both statistics taken over each row.
-inline void layer_norm(::fixy::TestRunnerCtx const& test, const float* X, const float* gamma, const float* beta,
-                       float* Y, int B, int D, float eps = 1e-5f) {
-    CRUCIBLE_TEST_ASSERT(test, X && gamma && beta && Y);
-    for (int b = 0; b < B; b++) {
-        const float* x = X + b * D;
-        float* y = Y + b * D;
+inline void layer_norm(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
+                       ::fixy::Side<side::Scale, ::fixy::View<float const>> gamma,
+                       ::fixy::Side<side::Shift, ::fixy::View<float const>> beta, ::fixy::View<float> Y,
+                       Dim<side::Rows> rows, Dim<side::Width> width, float eps = 1e-5f) {
+    std::size_t const B = detail::count_of(rows);
+    std::size_t const D = detail::count_of(width);
+    CRUCIBLE_TEST_ASSERT(test, X.size() >= B * D && gamma.value().size() >= D && beta.value().size() >= D
+                                   && Y.size() >= B * D);
+    for (std::size_t b = 0; b < B; b++) {
+        std::size_t const row = b * D;
         float mean = 0.0f;
-        for (int d = 0; d < D; d++)
-            mean += x[d];
+        for (std::size_t d = 0; d < D; d++)
+            mean += detail::element_at(X, Offset{row + d});
         mean /= static_cast<float>(D);
         float var = 0.0f;
-        for (int d = 0; d < D; d++) {
-            float diff = x[d] - mean;
+        for (std::size_t d = 0; d < D; d++) {
+            float diff = detail::element_at(X, Offset{row + d}) - mean;
             var += diff * diff;
         }
         var /= static_cast<float>(D);
         float inv = 1.0f / std::sqrt(var + eps);
-        for (int d = 0; d < D; d++)
-            y[d] = (x[d] - mean) * inv * gamma[d] + beta[d];
+        for (std::size_t d = 0; d < D; d++)
+            detail::element_at(Y, Offset{row + d}) =
+                (detail::element_at(X, Offset{row + d}) - mean) * inv * detail::element_at(gamma.value(), Offset{d})
+                + detail::element_at(beta.value(), Offset{d});
     }
 }
 
 // Y[N,C,HW], normalized per channel.  The mean and variance are taken
 // over all positions of all samples in a channel, and gamma[C] and
 // beta[C] scale and shift it.
-inline void batch_norm(::fixy::TestRunnerCtx const& test, const float* X, const float* gamma, const float* beta,
-                       float* Y, int N, int C, int HW, float eps = 1e-5f) {
-    CRUCIBLE_TEST_ASSERT(test, X && gamma && beta && Y);
-    for (int c = 0; c < C; c++) {
+inline void batch_norm(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
+                       ::fixy::Side<side::Scale, ::fixy::View<float const>> gamma,
+                       ::fixy::Side<side::Shift, ::fixy::View<float const>> beta, ::fixy::View<float> Y,
+                       Dim<side::Batch> batch, Dim<side::Channels> channels, Dim<side::Positions> positions,
+                       float eps = 1e-5f) {
+    std::size_t const N = detail::count_of(batch);
+    std::size_t const C = detail::count_of(channels);
+    std::size_t const HW = detail::count_of(positions);
+    CRUCIBLE_TEST_ASSERT(test, X.size() >= N * C * HW && gamma.value().size() >= C && beta.value().size() >= C
+                                   && Y.size() >= N * C * HW);
+    for (std::size_t c = 0; c < C; c++) {
         float mean = 0.0f;
-        int count = N * HW;
-        for (int n = 0; n < N; n++)
-            for (int hw = 0; hw < HW; hw++)
-                mean += X[(n * C + c) * HW + hw];
+        std::size_t count = N * HW;
+        for (std::size_t n = 0; n < N; n++)
+            for (std::size_t hw = 0; hw < HW; hw++)
+                mean += detail::element_at(X, Offset{(n * C + c) * HW + hw});
         mean /= static_cast<float>(count);
         float var = 0.0f;
-        for (int n = 0; n < N; n++)
-            for (int hw = 0; hw < HW; hw++) {
-                float d = X[(n * C + c) * HW + hw] - mean;
+        for (std::size_t n = 0; n < N; n++)
+            for (std::size_t hw = 0; hw < HW; hw++) {
+                float d = detail::element_at(X, Offset{(n * C + c) * HW + hw}) - mean;
                 var += d * d;
             }
         var /= static_cast<float>(count);
         float inv = 1.0f / std::sqrt(var + eps);
-        for (int n = 0; n < N; n++)
-            for (int hw = 0; hw < HW; hw++) {
-                int idx = (n * C + c) * HW + hw;
-                Y[idx] = (X[idx] - mean) * inv * gamma[c] + beta[c];
+        for (std::size_t n = 0; n < N; n++)
+            for (std::size_t hw = 0; hw < HW; hw++) {
+                Offset const idx{(n * C + c) * HW + hw};
+                detail::element_at(Y, idx) =
+                    (detail::element_at(X, idx) - mean) * inv * detail::element_at(gamma.value(), Offset{c})
+                    + detail::element_at(beta.value(), Offset{c});
             }
     }
 }
@@ -176,143 +329,218 @@ inline void batch_norm(::fixy::TestRunnerCtx const& test, const float* X, const 
 // Y[N,Co,Ho,Wo] from X[N,Ci,Hi,Wi] and W[Co,Ci,Kh,Kw].  There is no
 // padding and the stride is one, so Ho is Hi - Kh + 1 and Wo is
 // Wi - Kw + 1.
-inline void conv2d(::fixy::TestRunnerCtx const& test, const float* X, const float* W, float* Y, int N, int Ci, int Hi,
-                   int Wi, int Co, int Kh, int Kw) {
-    CRUCIBLE_TEST_ASSERT(test, X && W && Y);
-    int Ho = Hi - Kh + 1;
-    int Wo = Wi - Kw + 1;
-    std::memset(Y, 0, static_cast<size_t>(N * Co * Ho * Wo) * sizeof(float));
-    for (int n = 0; n < N; n++)
-        for (int co = 0; co < Co; co++)
-            for (int ci = 0; ci < Ci; ci++)
-                for (int ho = 0; ho < Ho; ho++)
-                    for (int wo = 0; wo < Wo; wo++)
-                        for (int kh = 0; kh < Kh; kh++)
-                            for (int kw = 0; kw < Kw; kw++)
-                                Y[((n * Co + co) * Ho + ho) * Wo + wo] +=
-                                    X[((n * Ci + ci) * Hi + (ho + kh)) * Wi + (wo + kw)]
-                                    * W[((co * Ci + ci) * Kh + kh) * Kw + kw];
+inline void conv2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
+                   ::fixy::Side<side::Filter, ::fixy::View<float const>> W, ::fixy::View<float> Y,
+                   Dim<side::Batch> batch, Dim<side::Channels> channels, Dim<side::Height> height,
+                   Dim<side::WidthOfImage> image_width, Dim<side::OutChannels> out_channels,
+                   Dim<side::KernelHeight> kernel_height, Dim<side::KernelWidth> kernel_width) {
+    std::size_t const N = detail::count_of(batch);
+    std::size_t const Ci = detail::count_of(channels);
+    std::size_t const Hi = detail::count_of(height);
+    std::size_t const Wi = detail::count_of(image_width);
+    std::size_t const Co = detail::count_of(out_channels);
+    std::size_t const Kh = detail::count_of(kernel_height);
+    std::size_t const Kw = detail::count_of(kernel_width);
+    CRUCIBLE_TEST_ASSERT(test, Kh >= 1 && Kh <= Hi && Kw >= 1 && Kw <= Wi);
+    std::size_t Ho = Hi - Kh + 1;
+    std::size_t Wo = Wi - Kw + 1;
+    CRUCIBLE_TEST_ASSERT(test, X.size() >= N * Ci * Hi * Wi && W.value().size() >= Co * Ci * Kh * Kw
+                                   && Y.size() >= N * Co * Ho * Wo);
+    ::fixy::fill(Y.window(0, N * Co * Ho * Wo).expect("the check above bounds the output"), 0.0f);
+    for (std::size_t n = 0; n < N; n++)
+        for (std::size_t co = 0; co < Co; co++)
+            for (std::size_t ci = 0; ci < Ci; ci++)
+                for (std::size_t ho = 0; ho < Ho; ho++)
+                    for (std::size_t wo = 0; wo < Wo; wo++)
+                        for (std::size_t kh = 0; kh < Kh; kh++)
+                            for (std::size_t kw = 0; kw < Kw; kw++)
+                                detail::element_at(Y, Offset{((n * Co + co) * Ho + ho) * Wo + wo}) +=
+                                    detail::element_at(X, Offset{((n * Ci + ci) * Hi + (ho + kh)) * Wi + (wo + kw)})
+                                    * detail::element_at(W.value(), Offset{((co * Ci + ci) * Kh + kh) * Kw + kw});
 }
 
 // Y[N,C,H/K,W/K], the maximum over each K by K window.
-inline void maxpool2d(::fixy::TestRunnerCtx const& test, const float* X, float* Y, int N, int C, int H, int W,
-                      int K = 2) {
-    CRUCIBLE_TEST_ASSERT(test, X && Y);
-    int Ho = H / K, Wo = W / K;
-    for (int n = 0; n < N; n++)
-        for (int c = 0; c < C; c++)
-            for (int ho = 0; ho < Ho; ho++)
-                for (int wo = 0; wo < Wo; wo++) {
-                    float mx = -INFINITY;
-                    for (int kh = 0; kh < K; kh++)
-                        for (int kw = 0; kw < K; kw++)
-                            mx = std::max(mx, X[((n * C + c) * H + ho * K + kh) * W + wo * K + kw]);
-                    Y[((n * C + c) * Ho + ho) * Wo + wo] = mx;
+inline void maxpool2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::fixy::View<float> Y,
+                      Dim<side::Batch> batch, Dim<side::Channels> channels, Dim<side::Height> height,
+                      Dim<side::WidthOfImage> image_width, Dim<side::Window> window = make_dim<side::Window>(2)) {
+    std::size_t const N = detail::count_of(batch);
+    std::size_t const C = detail::count_of(channels);
+    std::size_t const H = detail::count_of(height);
+    std::size_t const W = detail::count_of(image_width);
+    std::size_t const K = detail::count_of(window);
+    CRUCIBLE_TEST_ASSERT(test, K > 0);
+    std::size_t Ho = H / K, Wo = W / K;
+    CRUCIBLE_TEST_ASSERT(test, X.size() >= N * C * H * W && Y.size() >= N * C * Ho * Wo);
+    for (std::size_t n = 0; n < N; n++)
+        for (std::size_t c = 0; c < C; c++)
+            for (std::size_t ho = 0; ho < Ho; ho++)
+                for (std::size_t wo = 0; wo < Wo; wo++) {
+                    float mx = -::fixy::infinity_of<float>;
+                    for (std::size_t kh = 0; kh < K; kh++)
+                        for (std::size_t kw = 0; kw < K; kw++)
+                            mx = detail::max_keep_first(
+                                mx, ::fixy::side_as<side::Candidate>(detail::element_at(
+                                        X, Offset{((n * C + c) * H + ho * K + kh) * W + wo * K + kw})));
+                    detail::element_at(Y, Offset{((n * C + c) * Ho + ho) * Wo + wo}) = mx;
                 }
 }
 
 // Y[N,C] = the mean of X[N,C,HW] over all positions.
-inline void avgpool_global(::fixy::TestRunnerCtx const& test, const float* X, float* Y, int N, int C, int HW) {
-    CRUCIBLE_TEST_ASSERT(test, X && Y);
+inline void avgpool_global(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::fixy::View<float> Y,
+                           Dim<side::Batch> batch, Dim<side::Channels> channels, Dim<side::Positions> positions) {
+    std::size_t const N = detail::count_of(batch);
+    std::size_t const C = detail::count_of(channels);
+    std::size_t const HW = detail::count_of(positions);
+    CRUCIBLE_TEST_ASSERT(test, X.size() >= N * C * HW && Y.size() >= N * C);
     float inv = 1.0f / static_cast<float>(HW);
-    for (int n = 0; n < N; n++)
-        for (int c = 0; c < C; c++) {
+    for (std::size_t n = 0; n < N; n++)
+        for (std::size_t c = 0; c < C; c++) {
             float sum = 0.0f;
-            for (int hw = 0; hw < HW; hw++)
-                sum += X[(n * C + c) * HW + hw];
-            Y[n * C + c] = sum * inv;
+            for (std::size_t hw = 0; hw < HW; hw++)
+                sum += detail::element_at(X, Offset{(n * C + c) * HW + hw});
+            detail::element_at(Y, Offset{n * C + c}) = sum * inv;
         }
 }
 
 // Y[B,S,D] from Q, K and V, each [B,S,D].  Y is the softmax of Q
 // times the transpose of K, divided by the square root of D, times V.
 //
-// The attention weights go on the stack up to a sequence length of
-// 128 and on the heap beyond it.  Either is acceptable because this
-// never runs anywhere but a test.
-inline void sdpa(::fixy::TestRunnerCtx const& test, const float* Q, const float* K, const float* V, float* Y, int B,
-                 int S, int D) {
-    CRUCIBLE_TEST_ASSERT(test, Q && K && V && Y);
+// The attention weights of one sequence form an S by S matrix in a block
+// of the heap of the test, which this never runs anywhere but a test.
+inline void sdpa(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> Q,
+                 ::fixy::Side<side::Keys, ::fixy::View<float const>> K,
+                 ::fixy::Side<side::Values, ::fixy::View<float const>> V, ::fixy::View<float> Y, Dim<side::Batch> batch,
+                 Dim<side::Sequence> sequence, Dim<side::Width> width) {
+    std::size_t const B = detail::count_of(batch);
+    std::size_t const S = detail::count_of(sequence);
+    std::size_t const D = detail::count_of(width);
+    CRUCIBLE_TEST_ASSERT(test, Q.size() >= B * S * D && K.value().size() >= B * S * D && V.value().size() >= B * S * D
+                                   && Y.size() >= B * S * D && S > 0);
     float scale = 1.0f / std::sqrt(static_cast<float>(D));
 
-    // The weights form an S by S matrix.
-    float stack_attn[128 * 128];
-    float* attn = (S <= 128) ? stack_attn : new float[static_cast<size_t>(S) * static_cast<size_t>(S)];
+    ::fixy::HeapArray<float> weights =
+        ::fixy::mint_heap_array_zeroed<float>(::foundation::effects::testing::test().alloc, S * S);
+    ::fixy::View<float> const attn = weights.view();
 
-    for (int b = 0; b < B; b++) {
-        const float* q = Q + b * S * D;
-        const float* k = K + b * S * D;
-        const float* v = V + b * S * D;
-        float* y = Y + b * S * D;
+    for (std::size_t b = 0; b < B; b++) {
+        std::size_t const base = b * S * D;
 
-        for (int i = 0; i < S; i++)
-            for (int j = 0; j < S; j++) {
+        for (std::size_t i = 0; i < S; i++)
+            for (std::size_t j = 0; j < S; j++) {
                 float dot = 0.0f;
-                for (int d = 0; d < D; d++)
-                    dot += q[i * D + d] * k[j * D + d];
-                attn[i * S + j] = dot * scale;
+                for (std::size_t d = 0; d < D; d++)
+                    dot += detail::element_at(Q, Offset{base + i * D + d})
+                         * detail::element_at(K.value(), Offset{base + j * D + d});
+                detail::element_at(attn, Offset{i * S + j}) = dot * scale;
             }
 
-        for (int i = 0; i < S; i++) {
-            float* row = attn + i * S;
-            float mx = row[0];
-            for (int j = 1; j < S; j++)
-                mx = std::max(mx, row[j]);
+        for (std::size_t i = 0; i < S; i++) {
+            std::size_t const row = i * S;
+            float mx = detail::element_at(attn, Offset{row});
+            for (std::size_t j = 1; j < S; j++)
+                mx = detail::max_keep_first(
+                    mx, ::fixy::side_as<side::Candidate>(detail::element_at(attn, Offset{row + j})));
             float sum = 0.0f;
-            for (int j = 0; j < S; j++) {
-                row[j] = std::exp(row[j] - mx);
-                sum += row[j];
+            for (std::size_t j = 0; j < S; j++) {
+                detail::element_at(attn, Offset{row + j}) = std::exp(detail::element_at(attn, Offset{row + j}) - mx);
+                sum += detail::element_at(attn, Offset{row + j});
             }
             float inv = 1.0f / sum;
-            for (int j = 0; j < S; j++)
-                row[j] *= inv;
+            for (std::size_t j = 0; j < S; j++)
+                detail::element_at(attn, Offset{row + j}) *= inv;
         }
 
-        for (int i = 0; i < S; i++)
-            for (int d = 0; d < D; d++) {
+        for (std::size_t i = 0; i < S; i++)
+            for (std::size_t d = 0; d < D; d++) {
                 float sum = 0.0f;
-                for (int j = 0; j < S; j++)
-                    sum += attn[i * S + j] * v[j * D + d];
-                y[i * D + d] = sum;
+                for (std::size_t j = 0; j < S; j++)
+                    sum += detail::element_at(attn, Offset{i * S + j})
+                         * detail::element_at(V.value(), Offset{base + j * D + d});
+                detail::element_at(Y, Offset{base + i * D + d}) = sum;
             }
     }
-
-    if (S > 128) delete[] attn;
 }
 
 // The mean over the batch of the negative log of the softmax
 // probability at the target class.  logits is [B,C], targets is [B],
 // and probs is a [B,C] scratch buffer the caller supplies, which is
 // left holding the softmax on return.
-inline float cross_entropy(::fixy::TestRunnerCtx const& test, const float* logits, const int* targets, float* probs,
-                           int B, int C) {
-    CRUCIBLE_TEST_ASSERT(test, logits && targets && probs);
-    softmax(test, logits, probs, B, C);
+inline float cross_entropy(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> logits,
+                           ::fixy::Side<side::Targets, ::fixy::View<int const>> targets, ::fixy::View<float> probs,
+                           Dim<side::Rows> rows, Dim<side::Width> classes) {
+    std::size_t const B = detail::count_of(rows);
+    std::size_t const C = detail::count_of(classes);
+    CRUCIBLE_TEST_ASSERT(test, targets.value().size() >= B);
+    softmax(test, logits, probs, rows, classes);
     float loss = 0.0f;
-    for (int b = 0; b < B; b++) {
-        CRUCIBLE_TEST_ASSERT(test, targets[b] >= 0 && targets[b] < C);
-        loss -= std::log(std::max(probs[b * C + targets[b]], 1e-7f));
+    for (std::size_t b = 0; b < B; b++) {
+        int const target = detail::element_at(targets.value(), Offset{b});
+        CRUCIBLE_TEST_ASSERT(test, target >= 0 && static_cast<std::size_t>(target) < C);
+        loss -=
+            std::log(detail::max_keep_first(detail::element_at(probs, Offset{b * C + static_cast<std::size_t>(target)}),
+                                            ::fixy::side_as<side::Candidate>(1e-7f)));
     }
     return loss / static_cast<float>(B);
 }
 
 // Y[B,D] = X[B,idx,D], one position taken from every sequence.
-inline void index_select(::fixy::TestRunnerCtx const& test, const float* X, float* Y, int B, int S, int D, int idx) {
-    CRUCIBLE_TEST_ASSERT(test, X && Y && idx >= 0 && idx < S);
-    for (int b = 0; b < B; b++)
-        std::memcpy(Y + b * D, X + (b * S + idx) * D, static_cast<size_t>(D) * sizeof(float));
+inline void index_select(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::fixy::View<float> Y,
+                         Dim<side::Batch> batch, Dim<side::Sequence> sequence, Dim<side::Width> width,
+                         Dim<side::Selected> selected) {
+    std::size_t const B = detail::count_of(batch);
+    std::size_t const S = detail::count_of(sequence);
+    std::size_t const D = detail::count_of(width);
+    std::size_t const idx = detail::count_of(selected);
+    CRUCIBLE_TEST_ASSERT(test, idx < S && X.size() >= B * S * D && Y.size() >= B * D);
+    for (std::size_t b = 0; b < B; b++)
+        ::fixy::copy(Y.window(b * D, D).expect("the check above bounds the output"),
+                     X.window((b * S + idx) * D, D).expect("the check above bounds the input"))
+            .expect("the two windows hold one count of elements");
 }
 
 // Y[batch,N,M] = X[batch,M,N], transposing the last two dimensions.
-inline void transpose_2d(::fixy::TestRunnerCtx const& test, const float* X, float* Y, int batch, int M, int N) {
-    CRUCIBLE_TEST_ASSERT(test, X && Y);
-    for (int b = 0; b < batch; b++) {
-        const float* x = X + b * M * N;
-        float* y = Y + b * N * M;
-        for (int i = 0; i < M; i++)
-            for (int j = 0; j < N; j++)
-                y[j * M + i] = x[i * N + j];
+inline void transpose_2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::fixy::View<float> Y,
+                         Dim<side::Batch> batch, Dim<side::Rows> rows, Dim<side::Columns> columns) {
+    std::size_t const batches = detail::count_of(batch);
+    std::size_t const M = detail::count_of(rows);
+    std::size_t const N = detail::count_of(columns);
+    CRUCIBLE_TEST_ASSERT(test, X.size() >= batches * M * N && Y.size() >= batches * N * M);
+    for (std::size_t b = 0; b < batches; b++) {
+        std::size_t const base = b * M * N;
+        for (std::size_t i = 0; i < M; i++)
+            for (std::size_t j = 0; j < N; j++)
+                detail::element_at(Y, Offset{base + j * M + i}) = detail::element_at(X, Offset{base + i * N + j});
     }
+}
+
+// ── The ops of a replay ────────────────────────────────────────────────
+//
+// A test that replays a region through a compiled context reads each input
+// of the matched op through input_view, and it writes the one output of
+// the op through with_output_views.  The kernel gets the plain View of the
+// ViewMut of the output, for the time of the call.
+
+// The input at a position of the matched op, as floats.  An input that the
+// context gives no View of floats ends the process.
+[[nodiscard]] inline ::fixy::View<float const>
+read_input(CrucibleContext const& ctx, CrucibleContext::CompiledView const& cv, InputPosition position) {
+    return ctx.input_view<float>(position, cv).expect("each input of a reference op is a slot of floats");
+}
+
+// Runs kernel on the View of the one output of the matched op.  A refusal of
+// the outputs, or an op with a count of outputs other than one, fails the
+// test.
+template <class Kernel>
+void write_output(::fixy::TestRunnerCtx const& test, CrucibleContext& ctx, CrucibleContext::CompiledView const& cv,
+                  Kernel const& kernel) {
+    std::size_t outputs = 0;
+    const auto written = ctx.with_output_views<float>(cv, [&kernel, &outputs](auto& views) noexcept {
+        for (auto& view : views) {
+            kernel(view.view());
+            ++outputs;
+        }
+    });
+    CRUCIBLE_TEST_ASSERT(test, written.is_ok() && outputs == 1);
 }
 
 }  // namespace crucible::cpu

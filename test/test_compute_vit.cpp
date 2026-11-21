@@ -23,6 +23,8 @@
 
 #include "compute_vit.h"
 
+#include "cpu_kernels.h"
+
 #include <crucible/BackgroundThread.h>
 #include <crucible/CrucibleContext.h>
 #include <foundation/effects/Effect.h>
@@ -32,9 +34,6 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/check/Fixture.h>
-#include "tensor_data.h"
-#include <algorithm>
-#include <cmath>
 
 namespace {
 
@@ -178,22 +177,22 @@ int main() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
     auto cv = ctx.mint_compiled_view(kVigilForeground);
-    const auto bind = [&](uint32_t slot, void* ptr) {
-        ctx.register_external(SlotId{slot}, crucible::test::host_data(ptr), cv);
+    const auto bind = [&](SlotId slot, ::foundation::AlignedBytes& block) noexcept {
+        ctx.register_external_view(slot, block.view(), cv);
     };
 
-    bind(SL_X, weights.X);
-    bind(SL_G1, weights.gamma1);
-    bind(SL_B1, weights.beta1);
-    bind(SL_WQ, weights.W_q);
-    bind(SL_WK, weights.W_k);
-    bind(SL_WV, weights.W_v);
-    bind(SL_WOUT, weights.W_out);
-    bind(SL_G2, weights.gamma2);
-    bind(SL_B2, weights.beta2);
-    bind(SL_WFF1, weights.W_ff1);
-    bind(SL_WFF2, weights.W_ff2);
-    bind(SL_WHEAD, weights.W_head);
+    bind(SlotId{SL_X}, weights.X);
+    bind(SlotId{SL_G1}, weights.gamma1);
+    bind(SlotId{SL_B1}, weights.beta1);
+    bind(SlotId{SL_WQ}, weights.W_q);
+    bind(SlotId{SL_WK}, weights.W_k);
+    bind(SlotId{SL_WV}, weights.W_v);
+    bind(SlotId{SL_WOUT}, weights.W_out);
+    bind(SlotId{SL_G2}, weights.gamma2);
+    bind(SlotId{SL_B2}, weights.beta2);
+    bind(SlotId{SL_WFF1}, weights.W_ff1);
+    bind(SlotId{SL_WFF2}, weights.W_ff2);
+    bind(SlotId{SL_WHEAD}, weights.W_head);
 
     for (int iter = 0; iter < 50; iter++) {
         run_attention_ops(ctx, cv);
@@ -207,40 +206,51 @@ int main() {
     compute_reference(weights, reference);
 
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
-    auto* pool_probs = crucible::test::host_ptr<const float>(ctx.pool().slot_ptr(SlotId{SL_PROBS}, pv));
+    const ::fixy::View<float const> pool_probs =
+        ctx.pool().slot_view<float>(SlotId{SL_PROBS}, pv).expect("the probabilities are a pooled slot of floats");
+    const ::fixy::View<float const> ref_probs = reference.probs.view();
+    const auto probs_at = [&pool_probs](crucible::cpu::Offset position) noexcept {
+        return *pool_probs.get(position.raw()).expect("the probabilities hold B * N_CLS floats");
+    };
 
     float max_err = 0.0f;
-    for (int i = 0; i < B * N_CLS; i++) {
-        float err = std::abs(pool_probs[i] - reference.probs[i]);
-        max_err = std::max(max_err, err);
+    for (auto [got, want] : pool_probs.walk().try_zip(ref_probs.walk()).expect("the two runs hold B * N_CLS floats")) {
+        float err = ::fixy::fp::abs(*got - *want);
+        max_err = ::fixy::max(max_err, err);
     }
 
     ::fixy::report(::fixy::Sink::Out, "  max_error vs reference: {}\n", static_cast<double>(max_err));
     CRUCIBLE_TEST_ASSERT(kTest, max_err < 1e-5f && "ViT output diverged from reference");
 
-    for (int b = 0; b < B; b++) {
+    for (std::size_t b = 0; b < B; b++) {
         float row_sum = 0.0f;
-        for (int j = 0; j < N_CLS; j++) {
-            float v = pool_probs[b * N_CLS + j];
+        for (std::size_t j = 0; j < N_CLS; j++) {
+            float v = probs_at(crucible::cpu::Offset{b * N_CLS + j});
             CRUCIBLE_TEST_ASSERT(kTest, v >= 0.0f && v <= 1.0f);
             row_sum += v;
         }
-        CRUCIBLE_TEST_ASSERT(kTest, std::abs(row_sum - 1.0f) < 1e-5f && "softmax row does not sum to 1");
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fp::abs(row_sum - 1.0f) < 1e-5f && "softmax row does not sum to 1");
     }
 
-    auto* pool_res2 = crucible::test::host_ptr<const float>(ctx.pool().slot_ptr(SlotId{SL_RES2}, pv));
+    const ::fixy::View<float const> pool_res2 =
+        ctx.pool().slot_view<float>(SlotId{SL_RES2}, pv).expect("the residual is a pooled slot of floats");
+    const ::fixy::View<float const> ref_res2 = reference.res2.view();
     float max_res2_err = 0.0f;
-    for (int i = 0; i < B * S * D; i++) {
-        float err = std::abs(pool_res2[i] - reference.res2[i]);
-        max_res2_err = std::max(max_res2_err, err);
+    for (auto [got, want] : pool_res2.walk().try_zip(ref_res2.walk()).expect("the two runs hold B * S * D floats")) {
+        float err = ::fixy::fp::abs(*got - *want);
+        max_res2_err = ::fixy::max(max_res2_err, err);
     }
     ::fixy::report(::fixy::Sink::Out, "  resid2 max_error: {}\n", static_cast<double>(max_res2_err));
     CRUCIBLE_TEST_ASSERT(kTest, max_res2_err < 1e-5f && "residual output diverged from reference");
 
-    ::fixy::report(::fixy::Sink::Out, "  probs[0] = [{}, {}, {}]\n", static_cast<double>(pool_probs[0]),
-                   static_cast<double>(pool_probs[1]), static_cast<double>(pool_probs[2]));
-    ::fixy::report(::fixy::Sink::Out, "  probs[1] = [{}, {}, {}]\n", static_cast<double>(pool_probs[3]),
-                   static_cast<double>(pool_probs[4]), static_cast<double>(pool_probs[5]));
+    ::fixy::report(::fixy::Sink::Out, "  probs[0] = [{}, {}, {}]\n",
+                   static_cast<double>(probs_at(crucible::cpu::Offset{0})),
+                   static_cast<double>(probs_at(crucible::cpu::Offset{1})),
+                   static_cast<double>(probs_at(crucible::cpu::Offset{2})));
+    ::fixy::report(::fixy::Sink::Out, "  probs[1] = [{}, {}, {}]\n",
+                   static_cast<double>(probs_at(crucible::cpu::Offset{3})),
+                   static_cast<double>(probs_at(crucible::cpu::Offset{4})),
+                   static_cast<double>(probs_at(crucible::cpu::Offset{5})));
     ::fixy::report(::fixy::Sink::Out, "  50 iterations, {} ops/iter, compiled_iters={}\n", N_OPS,
                    ctx.compiled_iterations());
 
