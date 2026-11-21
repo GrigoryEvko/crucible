@@ -4083,8 +4083,9 @@ fixy_neg_compile_test(neg_sess_context_live_queue_mismatch
   "Liveness\\.h:[0-9]+:[0-9]+: +required from here")
 
 # The door of the marked system of a context (fixy/session/ContextNet.h):
-# two contexts whose waits make a cycle, and two contexts outside the model
-# of the check.
+# two contexts whose waits make a cycle, two contexts outside the model of
+# the check, and three contexts past the bound of a reading: one each for
+# the roles, the actions and the channels.
 fixy_neg_compile_test(neg_sess_context_net_crossed_sessions
   "static assertion failed"
   "fixy::session::diagnostic \\[Context_Not_Live\\]: liveness: a cycle of waits holds no token: P receives 'Q to P' step 0 <- Q sends 'Q to P' step 0 <- Q receives 'P to Q' step 0 <- P sends 'P to Q' step 0\\."
@@ -4104,6 +4105,21 @@ fixy_neg_compile_test(neg_sess_context_net_peer_outside
   "static assertion failed"
   "fixy::session::diagnostic \\[Context_Outside_Marked_Model\\]: context: the local type of the role 'P' names the peer 'R', which is no role of the context\\."
   "neg_sess_context_net_peer_outside\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_sess_context_net_past_bound
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Context_Outside_Marked_Model\\]: context: the role 'neg_sess_context_net_past_bound_types::Numbered<33>' passes the bound of the check\\.  A context holds at most 32 roles, 256 actions and 64 channels\\."
+  "neg_sess_context_net_past_bound\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_sess_context_net_past_action_bound
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Context_Outside_Marked_Model\\]: context: the role 'neg_sess_context_net_past_action_bound_types::Numbered<29>' passes the bound of the check\\."
+  "neg_sess_context_net_past_action_bound\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_sess_context_net_past_channel_bound
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Context_Outside_Marked_Model\\]: context: the role 'neg_sess_context_net_past_channel_bound_types::Numbered<8>' passes the bound of the check\\."
+  "neg_sess_context_net_past_channel_bound\\.cpp:[0-9]+:[0-9]+: +required from here")
 
 fixy_neg_compile_test(neg_sess_strip_peers_two_peers
   "template constraint failure for .template<class Local>"

@@ -315,4 +315,42 @@ static_assert(check_context_deadlock_freedom<StreamToRun, OneSlot>().says(
     "context: the role 'P' loops, the role 'Q' runs one time, and a channel joins them.  Along each channel the two "
     "roles loop, or the two run one time."));
 
+// ── The bound of a reading ──────────────────────────────────────────────
+//
+// A reading holds at most 32 roles, 256 actions and 64 channels.  A step
+// of the walk costs about 2.5 M instructions, so the contexts past the
+// bound of the actions and of the channels are the fixtures
+// neg_sess_context_net_past_action_bound and
+// neg_sess_context_net_past_channel_bound, each in a unit of its own.
+
+// The role at a place of a long context.
+template <std::size_t Place>
+struct Numbered {};
+
+// A context of the entries States, then the roles Numbered<Count> down to
+// Numbered<1>, each with the local type End.
+template <std::size_t Count, typename... States>
+struct numbered_context {
+    using type = typename numbered_context<Count - 1, States..., At<Numbered<Count>, End>>::type;
+};
+template <typename... States>
+struct numbered_context<0, States...> {
+    using type = TypingContext<States...>;
+};
+
+// 32 roles pass the bound of the roles: the reading reaches the local type
+// of the first role, which is outside the model.
+using FullRoles = numbered_context<31, At<P, Send<int, End>>>::type;
+static_assert(find_context_fault<FullRoles>().code == ContextFaultCode::NodeOutsideModel);
+static_assert(find_context_fault<FullRoles>().role == net::ProcessId{0});
+
+// The 33rd role, Numbered<1>, passes the bound.
+using ManyRoles = numbered_context<33>::type;
+static_assert(find_context_fault<ManyRoles>().code == ContextFaultCode::PastTheBound);
+static_assert(find_context_fault<ManyRoles>().role == net::ProcessId{32});
+static_assert(find_context_fault<ManyRoles>().type == ^^Numbered<1>);
+static_assert(check_context_deadlock_freedom<ManyRoles, OneSlot>().says(
+    "context: the role 'fixy::session::detail::context_net_self_test::Numbered<1>' passes the bound of the check.  "
+    "A context holds at most 32 roles, 256 actions and 64 channels."));
+
 }  // namespace fixy::session::detail::context_net_self_test

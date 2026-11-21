@@ -81,7 +81,8 @@
 //   hands over an endpoint of another session adds the waits of that session,
 //   which this context does not hold.  No mint calls the door.  A program
 //   that composes sessions on handles is checked only by the watch of
-//   fixy/session/Watch.h, at run time, on the run that waits.
+//   fixy/session/Watch.h, at run time, on the run that waits.  A context
+//   holds at most 32 roles, 256 actions and 64 channels (THE COSTS).
 //
 // THE COSTS
 //   One walk of the type graph of each local type: linear in its distinct
@@ -97,6 +98,17 @@
 //   channels have plain names, and they make the names of the roles only for
 //   the text of a refusal.  marked_system_of_context gives the names of the
 //   roles.
+//
+//   A reading holds fixed arrays of a stated bound: at most 32 roles, 256
+//   actions and 64 channels in one context, about 5 KB.  Each reading has
+//   one type, so each reader of a reading has one instance, and a context
+//   past the bound has the fault PastTheBound.  A run in static storage
+//   (define_static_array, reflect_constant_array) costs a constant of its
+//   own for each new element type and each new content, and the first runs
+//   of a reading in a unit cost about 200 M instructions.  So a reading
+//   keeps no run in static storage: the template arguments stay transient
+//   lists, and the reading looks up the payload rule of a shape one time for
+//   each run of steps of that shape.
 
 #include <fixy/session/Projection.h>
 #include <foundation/algebra/net/Priority.h>
@@ -132,6 +144,9 @@ enum class ContextFaultCode : std::uint8_t {
     // The fault names the role, and the type of its first choice of two or
     // more branches.
     ArmsWaitDifferently = 8,
+    // The fault names the role whose entry, action or channel passes the
+    // bound of a reading (THE COSTS), and the type of the role.
+    PastTheBound = 9,
 };
 
 // The fault that find_context_fault finds.  The code tells which fields it
@@ -167,6 +182,7 @@ struct read_action {
     net::ProcessId sender{};
     net::ProcessId receiver{};
     net::Move move = net::Move::Receive;
+    std::uint8_t reserved[3]{};
 };
 
 // One channel: the queue from the sender to the receiver.
@@ -182,13 +198,50 @@ enum class RunShape : std::uint8_t {
     Loops = 2,
 };
 
+// The most roles, actions and channels of one context (THE COSTS).  A
+// context past one of them has the fault PastTheBound.
+inline constexpr std::uint32_t role_bound = 32;
+inline constexpr std::uint32_t action_bound = 256;
+inline constexpr std::uint32_t channel_bound = 64;
+
+// The first elements of a fixed array of Bound elements, read by the id of
+// an element.  The caller asks is_full before a push.
+template <class Element, class Id, std::uint32_t Bound>
+class bounded_run {
+    Element items_[Bound]{};
+    std::uint32_t count_ = 0;
+
+public:
+    [[nodiscard]] constexpr Element const& operator[](Id id) const noexcept {
+        CRUCIBLE_PRE(static_cast<std::uint32_t>(id) < count_);
+        return items_[static_cast<std::uint32_t>(id)];
+    }
+    [[nodiscard]] constexpr std::uint32_t size() const noexcept { return count_; }
+    [[nodiscard]] constexpr bool is_full() const noexcept { return count_ == Bound; }
+    [[nodiscard]] constexpr Element const* begin() const noexcept { return items_; }
+    [[nodiscard]] constexpr Element const* end() const noexcept { return items_ + count_; }
+
+    consteval void push(Element const& element) {
+        CRUCIBLE_PRE(count_ < Bound);
+        items_[count_] = element;
+        ++count_;
+    }
+};
+
+using role_run = bounded_run<std::meta::info, net::ProcessId, role_bound>;
+using action_run = bounded_run<read_action, net::ActionId, action_bound>;
+using channel_run = bounded_run<read_channel, net::ChannelId, channel_bound>;
+using shape_run = bounded_run<RunShape, net::ProcessId, role_bound>;
+
 // The reading of a context: the fault, the type of each role, the actions
 // in the order of the roles, and the channels in their order (THE SYSTEM).
+// Each reading has this one type, so each reader of a reading has one
+// instance (THE COSTS).
 struct context_reading {
     ContextFault fault{};
-    tr::static_run<std::meta::info> roles{};
-    tr::static_run<read_action> actions{};
-    tr::static_run<read_channel> channels{};
+    role_run roles{};
+    action_run actions{};
+    channel_run channels{};
 };
 
 // True when the type, read through its aliases, is a specialization of the
@@ -200,27 +253,51 @@ template <std::meta::info Family, class Anchor = void>
     return std::meta::has_template_arguments(named) && std::meta::template_of(named) == Family;
 }
 
-// The template arguments of a specialization, each read through its
-// aliases.
-[[nodiscard]] consteval tr::static_run<std::meta::info> parts_of_(std::meta::info type) {
-    return tr::template_arguments_run(std::meta::dealias(type));
-}
-
-// The place of a role among the first roles of a stack, or no_place.
+// The place of a role among the roles of a reading, or no_place.
 // Complexity: linear in the roles.
-[[nodiscard]] consteval std::uint32_t place_of_role_(tr::stack<std::meta::info> const& roles, std::meta::info role) {
-    for (std::uint32_t place = 0; place < roles.top; ++place) {
-        if (roles.items[place] == role) return place;
+template <class Anchor = void>
+[[nodiscard]] consteval std::uint32_t place_of_role_(role_run const& roles, std::meta::info role) {
+    for (std::uint32_t place = 0; place < roles.size(); ++place) {
+        if (roles[net::ProcessId{place}] == role) return place;
     }
     return no_place;
 }
 
+// The rule of the last payload shape that a reading read: the place of the
+// peer among the template arguments of a message of that shape, or npos.
+// The steps of a context mostly share one shape, so a reading looks up the
+// registry one time for each run of steps of one shape.
+struct step_rule_memo {
+    std::meta::info shape{};
+    std::size_t peer_argument = tr::npos;
+};
+
 // The peer that the message of a step names, or the null reflection for a
-// step whose payload names no peer.
-[[nodiscard]] consteval std::meta::info peer_of_step_(tr::graph_node const& step) {
-    tr::payload_lookup const rule = ::fixy::session::detail::message_rule_of(step.payload);
-    if (!rule.is_found || rule.entry.peer_argument == tr::npos) return {};
-    return ::fixy::session::detail::rule_argument_of(step.payload, rule.entry.peer_argument);
+// step whose payload names no peer.  Only a complete class has a payload
+// rule (payload_rule_of of fixy/session/Classification.h).  The arguments
+// stay a transient list, because a run in static storage costs a constant
+// for each new payload (THE COSTS).  A rule that names an argument past the
+// arguments of the payload stops the build, as rule_argument_of does.
+template <class Anchor = void>
+[[nodiscard]] consteval std::meta::info peer_of_step_(tr::graph_node const& step, step_rule_memo& memo) {
+    std::meta::info const bare = std::meta::dealias(step.payload);
+    bool const is_class = std::meta::is_class_type(bare) || std::meta::is_union_type(bare);
+    if (!is_class || !std::meta::is_complete_type(bare)) return {};
+    std::meta::info const shape = tr::shape_of(bare);
+    if (shape != memo.shape) {
+        tr::payload_lookup const rule = ::fixy::session::detail::message_rule_of(bare);
+        memo = step_rule_memo{.shape = shape, .peer_argument = rule.is_found ? rule.entry.peer_argument : tr::npos};
+    }
+    if (memo.peer_argument == tr::npos) return {};
+    if (std::meta::has_template_arguments(bare)) {
+        std::size_t place = 0;
+        for (std::meta::info const argument : std::meta::template_arguments_of(bare)) {
+            if (place == memo.peer_argument) return std::meta::dealias(argument);
+            ++place;
+        }
+    }
+    ::fixy::session::detail::a_payload_rule_names_an_argument_that_the_payload_lacks();
+    return {};
 }
 
 // A fault of the local type of a role.
@@ -297,8 +374,9 @@ consteval void expand_arms_(tr::graph_view const& graph, arm_walk& walk) {
 // cannot read (THE MODEL OF THE CHECK).  The root of a graph is its node 0,
 // so a Loop around the whole local type is the binder of node 0, and its
 // Continue is a back node to node 0.
+template <class Anchor = void>
 [[nodiscard]] consteval ContextFault head_of_arm_(tr::graph_view const& graph, tr::graph_node const& node,
-                                                  net::ProcessId self, tr::stack<std::meta::info> const& roles,
+                                                  net::ProcessId self, role_run const& roles, step_rule_memo& memo,
                                                   arm_head& head) {
     bool const is_loop_at_top = graph.nodes[0].entry.kind == tr::shape_kind::binder;
     switch (node.entry.kind) {
@@ -321,9 +399,9 @@ consteval void expand_arms_(tr::graph_view const& graph, arm_walk& walk) {
         default:
             return local_fault_(ContextFaultCode::NodeOutsideModel, self, node.type);
     }
-    std::meta::info const peer = peer_of_step_(node);
+    std::meta::info const peer = peer_of_step_<Anchor>(node, memo);
     if (peer == std::meta::info{}) return local_fault_(ContextFaultCode::NodeOutsideModel, self, node.type);
-    std::uint32_t const place = place_of_role_(roles, peer);
+    std::uint32_t const place = place_of_role_<Anchor>(roles, peer);
     if (place == no_place) return local_fault_(ContextFaultCode::PeerOutsideContext, self, peer);
     bool const is_send = node.entry.direction == tr::polarity::output;
     net::ProcessId const other{place};
@@ -338,13 +416,13 @@ consteval void expand_arms_(tr::graph_view const& graph, arm_walk& walk) {
 // Pushes the actions of the local type of one role, after the actions of
 // the roles before it, and sets the shape of the role, or gives the fault of
 // the first node that the walk cannot read (THE MODEL OF THE CHECK, THE
-// UNION OF THE ARMS).  Complexity: O(N^2) for N distinct nodes of the local
-// type at most, because each round reads each node at most one time, and a
-// round passes one action of each arm.
+// UNION OF THE ARMS), or the fault PastTheBound for an action past the
+// bound.  Complexity: O(N^2) for N distinct nodes of the local type at most,
+// because each round reads each node at most one time, and a round passes
+// one action of each arm.
 template <class Anchor = void>
-[[nodiscard]] consteval ContextFault read_local_(std::meta::info local, net::ProcessId self,
-                                                 tr::stack<std::meta::info> const& roles,
-                                                 tr::stack<read_action>& actions, RunShape& shape) {
+[[nodiscard]] consteval ContextFault read_local_(std::meta::info local, net::ProcessId self, role_run const& roles,
+                                                 step_rule_memo& memo, action_run& actions, RunShape& shape) {
     ::fixy::session::detail::subtype::require_registered_spine(local);
     if (!::fixy::session::detail::subtype::holds_for(^^::fixy::session::is_well_formed_v, local)) {
         return local_fault_(ContextFaultCode::NodeOutsideModel, self, local);
@@ -353,7 +431,7 @@ template <class Anchor = void>
     if (graph.unregistered != std::meta::info{}) {
         return local_fault_(ContextFaultCode::NodeOutsideModel, self, graph.unregistered);
     }
-    std::size_t const first_action = actions.top;
+    std::uint32_t const first_action = actions.size();
     bool const is_loop_at_top = graph.nodes[0].entry.kind == tr::shape_kind::binder;
     arm_walk walk{};
     tr::make_room(walk.seen, graph.nodes.size());
@@ -368,7 +446,8 @@ template <class Anchor = void>
         arm_head first{};
         for (std::size_t place = 0; place < walk.heads.top; ++place) {
             arm_head head{};
-            ContextFault const fault = head_of_arm_(graph, graph.nodes[walk.heads.items[place]], self, roles, head);
+            ContextFault const fault =
+                head_of_arm_<Anchor>(graph, graph.nodes[walk.heads.items[place]], self, roles, memo, head);
             if (fault.is_fault()) return fault;
             if (place == 0) first = head;
             if (!is_same_wait_(head, first)) {
@@ -377,17 +456,18 @@ template <class Anchor = void>
             }
         }
         if (first.step == ArmStep::Ends) {
-            shape = actions.top == first_action ? RunShape::NoAction : RunShape::RunsOnce;
+            shape = actions.size() == first_action ? RunShape::NoAction : RunShape::RunsOnce;
             return ContextFault{};
         }
         if (first.step == ArmStep::Continues) {
-            if (actions.top == first_action) {
+            if (actions.size() == first_action) {
                 return local_fault_(ContextFaultCode::LoopNotWhole, self, graph.nodes[0].type);
             }
             shape = RunShape::Loops;
             return ContextFault{};
         }
-        tr::push(actions, first.act);
+        if (actions.is_full()) return local_fault_(ContextFaultCode::PastTheBound, self, roles[self]);
+        actions.push(first.act);
         walk.cursors.top = 0;
         for (std::size_t place = 0; place < walk.heads.top; ++place)
             tr::push(walk.cursors, graph.nodes[walk.heads.items[place]].next);
@@ -399,28 +479,26 @@ template <class Anchor = void>
 // runs one time, as the fault LoopMeetsRun, or NoFault (THE MODEL OF THE
 // CHECK).  A role with no action holds no channel.  Complexity: O(A).
 template <class Anchor = void>
-[[nodiscard]] consteval ContextFault find_loop_meets_run_(tr::stack<std::meta::info> const& roles,
-                                                          tr::stack<read_action> const& actions,
-                                                          tr::stack<RunShape> const& shapes) {
+[[nodiscard]] consteval ContextFault find_loop_meets_run_(role_run const& roles, action_run const& actions,
+                                                          shape_run const& shapes) {
     for (read_action const& act : actions) {
-        RunShape const sender = shapes.items[static_cast<std::uint32_t>(act.sender)];
-        RunShape const receiver = shapes.items[static_cast<std::uint32_t>(act.receiver)];
+        RunShape const sender = shapes[act.sender];
+        RunShape const receiver = shapes[act.receiver];
         if (sender == receiver || sender == RunShape::NoAction || receiver == RunShape::NoAction) continue;
         net::ProcessId const looper = sender == RunShape::Loops ? act.sender : act.receiver;
         net::ProcessId const runner = sender == RunShape::Loops ? act.receiver : act.sender;
-        return ContextFault{.code = ContextFaultCode::LoopMeetsRun,
-                            .role = looper,
-                            .type = roles.items[static_cast<std::uint32_t>(runner)]};
+        return ContextFault{.code = ContextFaultCode::LoopMeetsRun, .role = looper, .type = roles[runner]};
     }
     return ContextFault{};
 }
 
 // Pushes the channels of the actions, in the order of the sender and then
-// of the receiver (THE SYSTEM).  Complexity: O(R^2 + A).
+// of the receiver (THE SYSTEM), or gives the fault PastTheBound for a
+// channel past the bound.  Complexity: O(R^2 + A).
 template <class Anchor = void>
-consteval void push_channels_(tr::stack<std::meta::info> const& roles, tr::stack<read_action> const& actions,
-                              tr::stack<read_channel>& channels) {
-    std::size_t const role_count = roles.top;
+[[nodiscard]] consteval ContextFault push_channels_(role_run const& roles, action_run const& actions,
+                                                    channel_run& channels) {
+    std::size_t const role_count = roles.size();
     tr::stack<bool> is_joined{};
     tr::make_room(is_joined, role_count * role_count);
     for (std::size_t slot = 0; slot < role_count * role_count; ++slot)
@@ -433,13 +511,20 @@ consteval void push_channels_(tr::stack<std::meta::info> const& roles, tr::stack
     for (std::uint32_t sender = 0; sender < role_count; ++sender) {
         for (std::uint32_t receiver = 0; receiver < role_count; ++receiver) {
             if (!is_joined.items[sender * role_count + receiver]) continue;
-            tr::push(channels, read_channel{.sender = net::ProcessId{sender}, .receiver = net::ProcessId{receiver}});
+            net::ProcessId const from{sender};
+            if (channels.is_full()) {
+                return ContextFault{.code = ContextFaultCode::PastTheBound, .role = from, .type = roles[from]};
+            }
+            channels.push(read_channel{.sender = from, .receiver = net::ProcessId{receiver}});
         }
     }
+    return ContextFault{};
 }
 
-// The reading of a context (THE SYSTEM), or its first fault.  Complexity:
-// linear in the distinct nodes of the local types, and O(R^2 + A).
+// The reading of a context (THE SYSTEM), or its first fault.  The reading
+// fills its fixed arrays in place, and it keeps no array in static storage
+// (THE COSTS).  Complexity: linear in the distinct nodes of the local types,
+// and O(R^2 + A).
 template <class Anchor = void>
 [[nodiscard]] consteval context_reading read_context(std::meta::info context) {
     context_reading reading{};
@@ -447,47 +532,59 @@ template <class Anchor = void>
         reading.fault = ContextFault{.code = ContextFaultCode::NotAContext, .type = context};
         return reading;
     }
-    tr::static_run<std::meta::info> const entries = parts_of_(context);
-    tr::stack<std::meta::info> roles{};
-    for (std::meta::info const entry : entries) {
+    // The template arguments stay transient lists, because a run in static
+    // storage costs a constant for each new list (THE COSTS).  queues and
+    // locals hold the queue and the local type of each role, at the place of
+    // the role.
+    role_run queues{};
+    role_run locals{};
+    for (std::meta::info const entry : std::meta::template_arguments_of(std::meta::dealias(context))) {
         if (!is_instance_of_<^^::fixy::session::RoleState, Anchor>(entry)) {
             reading.fault = ContextFault{.code = ContextFaultCode::NotAContext, .type = entry};
             return reading;
         }
-        std::meta::info const role = std::meta::dealias(parts_of_(entry)[0]);
-        if (place_of_role_(roles, role) != no_place) {
-            reading.fault = ContextFault{.code = ContextFaultCode::RoleTwice,
-                                         .role = net::ProcessId{static_cast<std::uint32_t>(roles.top)},
-                                         .type = role};
+        // A RoleState has three template arguments: the role, the queue and
+        // the local type.
+        std::meta::info parts[3]{};
+        std::size_t part_place = 0;
+        for (std::meta::info const part : std::meta::template_arguments_of(std::meta::dealias(entry))) {
+            if (part_place < 3) parts[part_place] = part;
+            ++part_place;
+        }
+        std::meta::info const role = std::meta::dealias(parts[0]);
+        net::ProcessId const place{reading.roles.size()};
+        if (place_of_role_<Anchor>(reading.roles, role) != no_place) {
+            reading.fault = ContextFault{.code = ContextFaultCode::RoleTwice, .role = place, .type = role};
             return reading;
         }
-        tr::push(roles, role);
+        if (reading.roles.is_full()) {
+            reading.fault = ContextFault{.code = ContextFaultCode::PastTheBound, .role = place, .type = role};
+            return reading;
+        }
+        reading.roles.push(role);
+        queues.push(parts[1]);
+        locals.push(parts[2]);
     }
-    reading.roles = tr::to_static_run(roles);
-    tr::stack<read_action> actions{};
-    tr::stack<RunShape> shapes{};
-    for (std::uint32_t place = 0; place < entries.size(); ++place) {
-        tr::static_run<std::meta::info> const parts = parts_of_(entries[place]);
-        if (std::meta::dealias(parts[1]) != ^^::fixy::session::OutQueue<>) {
-            reading.fault =
-                ContextFault{.code = ContextFaultCode::QueuedMessage, .role = net::ProcessId{place}, .type = parts[1]};
+    shape_run shapes{};
+    step_rule_memo memo{};
+    for (std::uint32_t place = 0; place < reading.roles.size(); ++place) {
+        net::ProcessId const self{place};
+        if (std::meta::dealias(queues[self]) != ^^::fixy::session::OutQueue<>) {
+            reading.fault = ContextFault{.code = ContextFaultCode::QueuedMessage, .role = self, .type = queues[self]};
             return reading;
         }
         RunShape shape = RunShape::NoAction;
         ContextFault const fault =
-            read_local_<Anchor>(std::meta::dealias(parts[2]), net::ProcessId{place}, roles, actions, shape);
+            read_local_<Anchor>(std::meta::dealias(locals[self]), self, reading.roles, memo, reading.actions, shape);
         if (fault.is_fault()) {
             reading.fault = fault;
             return reading;
         }
-        tr::push(shapes, shape);
+        shapes.push(shape);
     }
-    reading.fault = find_loop_meets_run_<Anchor>(roles, actions, shapes);
+    reading.fault = find_loop_meets_run_<Anchor>(reading.roles, reading.actions, shapes);
     if (reading.fault.is_fault()) return reading;
-    tr::stack<read_channel> channels{};
-    push_channels_<Anchor>(roles, actions, channels);
-    reading.actions = tr::to_static_run(actions);
-    reading.channels = tr::to_static_run(channels);
+    reading.fault = push_channels_<Anchor>(reading.roles, reading.actions, reading.channels);
     return reading;
 }
 
@@ -521,9 +618,9 @@ consteval void push_name_(tr::stack<char>& text, net::NetName name) {
 template <class Anchor = void>
 [[nodiscard]] consteval net::NetName name_of_channel_(context_reading const& reading, read_channel channel) {
     tr::stack<::foundation::reflect::anchored_t<^^Anchor, char>> text{};
-    push_name_<Anchor>(text, name_of_role_<Anchor>(reading.roles[static_cast<std::uint32_t>(channel.sender)]));
+    push_name_<Anchor>(text, name_of_role_<Anchor>(reading.roles[channel.sender]));
     push_name_<Anchor>(text, net::NetName{" to "});
-    push_name_<Anchor>(text, name_of_role_<Anchor>(reading.roles[static_cast<std::uint32_t>(channel.receiver)]));
+    push_name_<Anchor>(text, name_of_role_<Anchor>(reading.roles[channel.receiver]));
     return net::NetName{std::define_static_string(text)};
 }
 
@@ -532,9 +629,8 @@ template <class Anchor = void>
 template <class Anchor = void>
 [[nodiscard]] consteval std::uint32_t place_of_channel_(context_reading const& reading, read_action act) {
     for (std::uint32_t place = 0; place < reading.channels.size(); ++place) {
-        if (reading.channels[place].sender == act.sender && reading.channels[place].receiver == act.receiver) {
-            return place;
-        }
+        read_channel const& channel = reading.channels[net::ChannelId{place}];
+        if (channel.sender == act.sender && channel.receiver == act.receiver) return place;
     }
     return no_place;
 }
@@ -552,9 +648,9 @@ template <class Anchor = void>
 [[nodiscard]] consteval net::NetVerdict explain_context_fault_(context_reading const& reading) {
     ContextFault const& fault = reading.fault;
     auto const role_name = [&]() consteval {
-        auto const place = static_cast<std::uint32_t>(fault.role);
-        return place < reading.roles.size() ? name_of_role_<Anchor>(reading.roles[place])
-                                            : name_of_role_<Anchor>(fault.type);
+        return static_cast<std::uint32_t>(fault.role) < reading.roles.size()
+                 ? name_of_role_<Anchor>(reading.roles[fault.role])
+                 : name_of_role_<Anchor>(fault.type);
     };
     switch (fault.code) {
         case ContextFaultCode::NoFault:
@@ -603,6 +699,16 @@ template <class Anchor = void>
                 .put("' has arms that wait on other channels, or that end in other ways: ")
                 .put_name(name_of_type_<Anchor>(fault.type))
                 .put(".  Do a check of one context for each set of arms that the roles take together.");
+        case ContextFaultCode::PastTheBound:
+            return net::NetVerdict::refuse("context: the role '")
+                .put_name(role_name())
+                .put("' passes the bound of the check.  A context holds at most ")
+                .put_number(role_bound)
+                .put(" roles, ")
+                .put_number(action_bound)
+                .put(" actions and ")
+                .put_number(channel_bound)
+                .put(" channels.");
         default:
             break;
     }
@@ -674,7 +780,7 @@ template <typename Context, typename Channel, SystemNames Names>
 [[nodiscard]] consteval auto marked_system_of_context_() noexcept {
     namespace cn = detail::context_net;
     using anchor = ::foundation::reflect::anchored_t<^^Context, void>;
-    constexpr cn::context_reading reading = cn::reading_of_<Context>;
+    constexpr cn::context_reading const& reading = cn::reading_of_<Context>;
     if constexpr (reading.fault.is_fault()) {
         static_assert(!reading.fault.is_fault(),
                       cn::door_text_of_(cn::outside_model_class, cn::explain_context_fault_<anchor>(reading)));
@@ -689,7 +795,7 @@ template <typename Context, typename Channel, SystemNames Names>
         net::ProcessSystem<process_count, channel_count, action_count> marked{};
         for (std::uint32_t place = 0; place < process_count; ++place) {
             if constexpr (Names == SystemNames::OfRoles) {
-                marked.process_names[place] = cn::name_of_role_<anchor>(reading.roles[place]);
+                marked.process_names[place] = cn::name_of_role_<anchor>(reading.roles[net::ProcessId{place}]);
             } else {
                 marked.process_names[place] = net::NetName{"role"};
             }
@@ -697,13 +803,13 @@ template <typename Context, typename Channel, SystemNames Names>
         for (std::uint32_t place = 0; place < channel_count; ++place) {
             net::NetName name{"channel"};
             if constexpr (Names == SystemNames::OfRoles) {
-                name = cn::name_of_channel_<anchor>(reading, reading.channels[place]);
+                name = cn::name_of_channel_<anchor>(reading, reading.channels[net::ChannelId{place}]);
             }
             marked.channels[place] =
                 net::NetChannel{.name = name, .capacity = static_cast<std::uint32_t>(channel_capacity_v<Channel>)};
         }
         for (std::uint32_t place = 0; place < action_count; ++place) {
-            cn::read_action const act = reading.actions[place];
+            cn::read_action const act = reading.actions[net::ActionId{place}];
             marked.actions[place] = net::Action{.process = act.process,
                                                 .channel = net::ChannelId{cn::place_of_channel_<anchor>(reading, act)},
                                                 .move = act.move};
@@ -741,7 +847,7 @@ template <typename Context, typename Channel>
     requires StatesChannelCapacity<Channel>
 [[nodiscard]] consteval ::foundation::algebra::net::NetVerdict check_context_deadlock_freedom() noexcept {
     using anchor = ::foundation::reflect::anchored_t<^^Context, void>;
-    constexpr detail::context_net::context_reading reading = detail::context_net::reading_of_<Context>;
+    constexpr detail::context_net::context_reading const& reading = detail::context_net::reading_of_<Context>;
     if constexpr (reading.fault.is_fault()) {
         return detail::context_net::explain_context_fault_<anchor>(reading);
     } else if constexpr (reading.actions.size() == 0) {
@@ -761,7 +867,7 @@ template <typename Context, typename Channel>
 consteval void ensure_context_deadlock_free() noexcept {
     namespace cn = detail::context_net;
     using anchor = ::foundation::reflect::anchored_t<^^Context, void>;
-    constexpr cn::context_reading reading = cn::reading_of_<Context>;
+    constexpr cn::context_reading const& reading = cn::reading_of_<Context>;
     static_assert(!reading.fault.is_fault(),
                   cn::door_text_of_(cn::outside_model_class, cn::explain_context_fault_<anchor>(reading)));
     if constexpr (!reading.fault.is_fault() && reading.actions.size() != 0) {
