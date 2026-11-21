@@ -420,9 +420,11 @@ enforce examples/ report
 enforce include/crucible/ report
 enforce include/fixy/ error include
 enforce include/foundation/ error include
-enforce src/ report
+enforce src/ error
 enforce src/fixy/ error include
+enforce src/fixy/ report
 enforce src/foundation/ error include
+enforce src/foundation/ report
 enforce src/perf/ error
 enforce test/ report
 enforce test/bench_neg/ error
