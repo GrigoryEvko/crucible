@@ -188,12 +188,19 @@ int main() {
     ::fixy::FixedArray<float, N> v{};
     const ::fixy::FixedArray<float, N> grad{0.1f, -0.2f, 0.05f, 0.0f};
 
-    bound.value()(
-        ::fixy::side_as<buffer_role::Parameters>(line_of(params.view())),
-        ::fixy::side_as<buffer_role::FirstMoment>(line_of(m.view())),
-        ::fixy::side_as<buffer_role::SecondMoment>(line_of(v.view())),
-        ::fixy::side_as<buffer_role::Gradients>(line_of(grad.view())),
-        AdamHyperparameters{.learning_rate = 0.01f, .beta1 = 0.9f, .beta2 = 0.999f, .epsilon = 1e-8f, .step = 1});
+    // The step writes the three state arrays through the runs that their frame doors lend.
+    params.with_mut([&bound, &m, &v, &grad](auto params_run) noexcept {
+        m.with_mut([&bound, &v, &grad, &params_run](auto first_moment_run) noexcept {
+            v.with_mut([&bound, &grad, &params_run, &first_moment_run](auto second_moment_run) noexcept {
+                bound.value()(::fixy::side_as<buffer_role::Parameters>(line_of(params_run.view())),
+                              ::fixy::side_as<buffer_role::FirstMoment>(line_of(first_moment_run.view())),
+                              ::fixy::side_as<buffer_role::SecondMoment>(line_of(second_moment_run.view())),
+                              ::fixy::side_as<buffer_role::Gradients>(line_of(grad.view())),
+                              AdamHyperparameters{
+                                  .learning_rate = 0.01f, .beta1 = 0.9f, .beta2 = 0.999f, .epsilon = 1e-8f, .step = 1});
+            });
+        });
+    });
 
     ::fixy::report(::fixy::Sink::Out, "custom_optimizer params after 1 step: [{}, {}, {}, {}]\n",
                    params.at(::fixy::index<0>()), params.at(::fixy::index<1>()), params.at(::fixy::index<2>()),

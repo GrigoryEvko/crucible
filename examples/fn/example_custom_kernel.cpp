@@ -165,10 +165,13 @@ int main() {
     const ::fixy::FixedArray<float, K * N> b{5.f, 6.f, 7.f, 8.f};
     ::fixy::FixedArray<float, M * N> c{};
 
-    bound.value()(
-        matrix_of(c.view(), ::fixy::FixedArray<std::size_t, 2>{M, N}),
-        ::fixy::side_as<::fixy::side::LeftFactor>(matrix_of(a.view(), ::fixy::FixedArray<std::size_t, 2>{M, K})),
-        ::fixy::side_as<::fixy::side::RightFactor>(matrix_of(b.view(), ::fixy::FixedArray<std::size_t, 2>{K, N})));
+    // The kernel writes C through the run that the frame door of c lends.
+    c.with_mut([&bound, &a, &b](auto run) noexcept {
+        bound.value()(
+            matrix_of(run.view(), ::fixy::FixedArray<std::size_t, 2>{M, N}),
+            ::fixy::side_as<::fixy::side::LeftFactor>(matrix_of(a.view(), ::fixy::FixedArray<std::size_t, 2>{M, K})),
+            ::fixy::side_as<::fixy::side::RightFactor>(matrix_of(b.view(), ::fixy::FixedArray<std::size_t, 2>{K, N})));
+    });
 
     // C = [[1*5 + 2*7, 1*6 + 2*8], [3*5 + 4*7, 3*6 + 4*8]] = [[19, 22], [43, 50]].
     // Each product and each sum is a small integer, so the result is exact
