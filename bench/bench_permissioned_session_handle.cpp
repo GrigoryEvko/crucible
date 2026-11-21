@@ -362,8 +362,11 @@ struct send_chain_of<0> {
 using SendChain = typename send_chain_of<kChainSends>::type;
 
 // Sends one item for each Send of the handle, and gives the handle at End.
+// The chain rows force each body inline, so the inliner of GCC cannot make a
+// call of one form and inline the other: an outlined body of the finite chain
+// cost two cycles a send more than the inline body.
 template <typename Handle>
-[[nodiscard]] auto send_each(Handle handle, Item& value) noexcept {
+[[nodiscard, gnu::always_inline]] inline auto send_each(Handle handle, Item& value) noexcept {
     if constexpr (Handle::is_terminal()) {
         return handle;
     } else {
@@ -375,7 +378,7 @@ template <typename Handle>
 
 [[nodiscard]] bench::Report finite_chain() {
     Item item = 0;
-    auto report = bench::run("chain of 16 sends, finite protocol (mint, 16 sends, close)", [&] {
+    auto report = bench::run("chain of 16 sends, finite protocol (mint, 16 sends, close)", [&] [[gnu::always_inline]] {
         auto at_end = send_each(s::mint_session<SendChain>(kForeground, FakeChannel{}), item);
         FakeChannel const channel = std::move(at_end).close();
         bench::do_not_optimize(channel.last);
@@ -385,7 +388,7 @@ template <typename Handle>
 
 [[nodiscard]] bench::Report looped_chain() {
     Item item = 0;
-    auto report = bench::run("chain of 16 sends, looped protocol (mint, 16 sends, detach)", [&] {
+    auto report = bench::run("chain of 16 sends, looped protocol (mint, 16 sends, detach)", [&] [[gnu::always_inline]] {
         auto handle = s::mint_session<SendLoop>(kForeground, FakeChannel{});
         for (std::uint32_t sent = 0; sent < kChainSends; ++sent) {
             ++item;
