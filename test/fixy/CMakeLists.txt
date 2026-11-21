@@ -5149,15 +5149,22 @@ fixy_neg_compile_test(neg_pipeline_mint_not_a_stage
   "the expression .\\(IsStage<Stages> && \\.\\.\\.\\).*, int\\}\\].* evaluated to .false.")
 fixy_neg_compile_test(neg_pipeline_mint_chain_break
   "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
-  "pipeline_chain_check<std::tuple<typename std::remove_cvref<[A-Za-z_]+>::type \\.\\.\\.> >\\)\\(\\{\\}\\)"
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeAcrossChannels, 0, 0, 0\\}"
   "&float_to_double\\(<unnamed>::FakeConsumer<float>&&")
+# A link of a chain whose input handle states no capacity.  The chain gate
+# is the check of the stage graph of the chain, so its refusal names the
+# fault, which names the handle, and the place of the link.
+fixy_neg_compile_test(neg_pipeline_chain_input_capacity_unstated
+  "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeInputCapacityUnstated, 0, 0, 0\\}")
 # One payload on two channels.  The payloads of the two stages agree, so
 # only the channel that each handle names can refuse the chain.  The two
 # last regexes pin the producer on channel A and the consumer on channel B.
 fixy_neg_compile_test(neg_pipeline_mint_chain_across_channels
   "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
   "&writes_a\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::InTag, <unnamed>::FixtureBrand>::ConsumerHandle&&, fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::ATag, <unnamed>::FixtureBrand>::ProducerHandle&&\\)"
-  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&")
+  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&"
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeAcrossChannels, 0, 0, 0\\}")
 # One payload, one capacity and one tag on two channels.  The roots of the
 # two channels come from two call sites, so only the brand of each channel
 # can refuse the chain.  The two last regexes pin the tag of channel A on
@@ -5166,7 +5173,8 @@ fixy_neg_compile_test(neg_pipeline_mint_chain_across_channels
 fixy_neg_compile_test(neg_pipeline_mint_chain_across_root_sites
   "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
   "PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ProducerHandle&&\\)"
-  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ConsumerHandle&&")
+  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ConsumerHandle&&"
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeAcrossChannels, 0, 0, 0\\}")
 fixy_neg_compile_test(neg_pipeline_mint_empty_pack
   "no matching function for call to .mint_pipeline\\(const fixy::BgDrainCtx&\\)."
   "sizeof \\.\\.\\. \\(Stages \\.\\.\\.\\) >= 1 \\[with Stages = \\{\\}\\]. evaluated to .false.")
@@ -5268,6 +5276,14 @@ fixy_neg_compile_test(neg_pipeline_dag_edge_capacities_disagree
 fixy_neg_compile_test(neg_pipeline_dag_edge_capacity_unstated
   "required for the satisfaction of .StageGraphWellFormed<Graph>."
   "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeCapacityUnstated, 0, 0, 0\\}")
+# The sixth and the seventh refusals: the one edge joins one channel, and
+# one of its two handles states no capacity.  The fault names that handle.
+fixy_neg_compile_test(neg_pipeline_dag_edge_output_capacity_unstated
+  "required for the satisfaction of .StageGraphWellFormed<Graph>."
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeOutputCapacityUnstated, 0, 0, 0\\}")
+fixy_neg_compile_test(neg_pipeline_dag_edge_input_capacity_unstated
+  "required for the satisfaction of .StageGraphWellFormed<Graph>."
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeInputCapacityUnstated, 0, 0, 0\\}")
 # The marked system of a graph (THE MARKED SYSTEM of fixy/concurrent/
 # StageNet.h): the handle of an input end states no capacity.
 fixy_neg_compile_test(neg_stage_graph_input_end_states_no_capacity

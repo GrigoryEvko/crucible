@@ -242,8 +242,9 @@ static_assert(detail::stage_graph_check<HalfSizedGraph>()
 
 // Two handles of the channel of S_int_to_int that state no capacity.  No
 // capacity of their channel is known, so they agree with no handle, and an
-// edge between them has the fault EdgeCapacityUnstated.  A handle of an
-// output end of a pipeline, the sink, can state none.
+// edge between them has the fault EdgeCapacityUnstated.  An edge with one
+// such handle has the fault that names that handle.  A handle of an output
+// end of a pipeline, the sink, can state none.
 template <typename T>
 struct UnstatedConsumer {
     using channel_type = FakeChannel<T>;
@@ -268,10 +269,15 @@ static_assert(!HandlesAgreeOnCapacity<FakeProducer<int>, UnstatedConsumer<int>>)
 static_assert(!stages_chain<S_into_unstated, S_from_unstated>, "a channel with no stated capacity");
 static_assert(pipeline_chain<S_int_to_int, S_into_unstated>);
 using UnstatedGraph = StageGraph<StagePack<S_into_unstated, S_from_unstated>, EdgePack<StageEdge<0, 1>>>;
-using HalfUnstatedGraph = StageGraph<StagePack<S_int_to_int, S_from_unstated>, EdgePack<StageEdge<0, 1>>>;
+using InputUnstatedGraph = StageGraph<StagePack<S_int_to_int, S_from_unstated>, EdgePack<StageEdge<0, 1>>>;
+using OutputUnstatedGraph = StageGraph<StagePack<S_into_unstated, S_int_to_int>, EdgePack<StageEdge<0, 1>>>;
 static_assert(detail::stage_graph_check<UnstatedGraph>() == StageGraphCheck{StageGraphFault::EdgeCapacityUnstated, 0});
-static_assert(detail::stage_graph_check<HalfUnstatedGraph>()
-              == StageGraphCheck{StageGraphFault::EdgeCapacitiesDisagree, 0});
+static_assert(detail::stage_graph_check<InputUnstatedGraph>()
+              == StageGraphCheck{StageGraphFault::EdgeInputCapacityUnstated, 0});
+static_assert(detail::stage_graph_check<OutputUnstatedGraph>()
+              == StageGraphCheck{StageGraphFault::EdgeOutputCapacityUnstated, 0});
+static_assert(!StageGraphWellFormed<InputUnstatedGraph>);
+static_assert(!StageGraphWellFormed<OutputUnstatedGraph>);
 
 static_assert(CtxFitsPipelineDag<BgDrainCtx, ChainGraph>);
 static_assert(CtxFitsPipelineDag<BgDrainCtx, DiamondGraph>);

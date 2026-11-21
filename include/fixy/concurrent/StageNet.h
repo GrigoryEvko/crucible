@@ -583,23 +583,12 @@ template <class Graph>
 
 namespace detail {
 
-// The edges of a chain from the stage Link to the stage Last: an edge from
-// each stage to the next.  Complexity: one step for each edge.
-template <std::size_t Link, std::size_t Last, class... Edges>
-struct chain_edges {
-    using type = typename chain_edges<Link + 1, Last, Edges..., StageEdge<Link, Link + 1>>::type;
-};
-template <std::size_t Last, class... Edges>
-struct chain_edges<Last, Last, Edges...> {
-    using type = EdgePack<Edges...>;
-};
-
 // The stage graph of a pipeline (pipeline_graph_t).
 template <class Runner>
 struct pipeline_graph {};
 template <class... Stages>
 struct pipeline_graph<Pipeline<Stages...>> {
-    using type = StageGraph<StagePack<Stages...>, typename chain_edges<0, sizeof...(Stages) - 1>::type>;
+    using type = chain_graph_t<Stages...>;
 };
 template <class Runner>
     requires requires { typename Runner::graph_type; }
@@ -610,9 +599,9 @@ struct pipeline_graph<Runner> {
 }  // namespace detail
 
 // The stage graph of a minted pipeline: the graph of a PipelineDag, and for a
-// Pipeline the chain of its stages, with an edge from each stage to the next.
-// The gate of a Pipeline admits each link of the chain, so the gate of the
-// stage graph holds for the chain too.
+// Pipeline the chain of its stages, with an edge from each stage to the next
+// (chain_graph_t of fixy/concurrent/Pipeline.h).  The gate of a Pipeline is
+// the gate of that graph, so the gate of the stage graph holds for it.
 template <class Runner>
 using pipeline_graph_t = typename detail::pipeline_graph<Runner>::type;
 

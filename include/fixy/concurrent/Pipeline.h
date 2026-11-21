@@ -237,24 +237,6 @@ template <class S1, class S2>
 concept stages_chain = IsStage<S1> && IsStage<S2> && stage_output_count_v<S1> == 1 && stage_input_count_v<S2> == 1
                     && stage_port_feeds<S1, 0, S2, 0>;
 
-namespace detail {
-
-template <class Tuple, std::size_t... Is>
-consteval bool pipeline_chain_check(std::index_sequence<Is...>) noexcept {
-    if constexpr (sizeof...(Is) == 0) {
-        return true;  // one stage: no adjacent pair to check
-    } else {
-        return ((stages_chain<std::tuple_element_t<Is, Tuple>, std::tuple_element_t<Is + 1, Tuple>>) && ...);
-    }
-}
-
-}  // namespace detail
-
-template <class... Stages>
-concept pipeline_chain = sizeof...(Stages) >= 1 && (IsStage<Stages> && ...)
-                      && detail::pipeline_chain_check<std::tuple<std::remove_cvref_t<Stages>...>>(
-                             std::make_index_sequence<(sizeof...(Stages) > 0 ? sizeof...(Stages) - 1 : 0)>{});
-
 // The context here is the one that starts the stages, not the one any stage
 // runs under.  It has to admit the effects of all of them together.
 
@@ -290,11 +272,6 @@ template <class Ctx>
 concept CtxStartsStageThreads =
     ::foundation::effects::CtxOwnsAnyOf<Ctx, ::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Init>;
 
-template <class Ctx, class... Stages>
-concept CtxFitsPipeline =
-    ::foundation::effects::IsExecCtx<Ctx> && CtxStartsStageThreads<Ctx> && pipeline_chain<Stages...>
-    && ::foundation::effects::is_subrow(^^pipeline_row_union_t<Stages...>, ^^typename Ctx::row_type);
-
 template <class... Stages>
 struct StagePack {};
 
@@ -329,9 +306,11 @@ struct StageGraph {};
 //
 // The two handles of an edge state the same capacity of its channel
 // (HandlesAgreeOnCapacity).  An edge whose two handles state no capacity
-// has the fault EdgeCapacityUnstated, and an edge whose handles state two
-// capacities, or whose one handle states none, has the fault
-// EdgeCapacitiesDisagree.
+// has the fault EdgeCapacityUnstated.  An edge whose one handle states none
+// has a fault that names that handle: EdgeOutputCapacityUnstated for the
+// handle of the output port of the stage From, EdgeInputCapacityUnstated
+// for the handle of the input port of the stage To.  An edge whose handles
+// state two capacities has the fault EdgeCapacitiesDisagree.
 enum class StageGraphFault : std::uint8_t {
     None,
     NoStage,
@@ -341,6 +320,8 @@ enum class StageGraphFault : std::uint8_t {
     EdgeRunsBackward,
     EdgeAcrossChannels,
     EdgeCapacityUnstated,
+    EdgeOutputCapacityUnstated,
+    EdgeInputCapacityUnstated,
     EdgeCapacitiesDisagree,
     InputPortEdgeCount,
     OutputPortEdgeCount,
@@ -384,8 +365,9 @@ struct stage_graph_traits<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>> 
 
 // The fault of one edge, in a graph whose stages are each a stage.  The edge
 // faults follow the three terms of stage_port_feeds in its order, and the
-// term of the capacity has two faults.  So an edge that stage_port_feeds
-// admits has no fault.
+// term of the capacity has four faults: no handle, the output handle alone or
+// the input handle alone states no capacity, or the two state two
+// capacities.  So an edge that stage_port_feeds admits has no fault.
 template <class Edge, class... Stages>
 consteval StageGraphFault stage_graph_edge_fault() noexcept {
     if constexpr (Edge::from >= sizeof...(Stages) || Edge::to >= sizeof...(Stages)) {
@@ -403,6 +385,10 @@ consteval StageGraphFault stage_graph_edge_fault() noexcept {
     } else if constexpr (!StatesHandleCapacity<stage_output_handle_t<Stages...[Edge::from], Edge::from_output>>
                          && !StatesHandleCapacity<stage_input_handle_t<Stages...[Edge::to], Edge::to_input>>) {
         return StageGraphFault::EdgeCapacityUnstated;
+    } else if constexpr (!StatesHandleCapacity<stage_output_handle_t<Stages...[Edge::from], Edge::from_output>>) {
+        return StageGraphFault::EdgeOutputCapacityUnstated;
+    } else if constexpr (!StatesHandleCapacity<stage_input_handle_t<Stages...[Edge::to], Edge::to_input>>) {
+        return StageGraphFault::EdgeInputCapacityUnstated;
     } else if constexpr (!HandlesAgreeOnCapacity<stage_output_handle_t<Stages...[Edge::from], Edge::from_output>,
                                                  stage_input_handle_t<Stages...[Edge::to], Edge::to_input>>) {
         return StageGraphFault::EdgeCapacitiesDisagree;
@@ -539,6 +525,36 @@ concept StageGraphCheckHolds = detail::stage_graph_check_holds(Check);
 template <class Graph>
 concept StageGraphWellFormed =
     IsStageGraph<Graph> && StageGraphCheckHolds<detail::stage_graph_check<std::remove_cvref_t<Graph>>()>;
+
+namespace detail {
+
+// The edges of a chain of stages: one edge from each stage to the next, from
+// output 0 to input 0.
+template <std::size_t... Is>
+consteval EdgePack<StageEdge<Is, Is + 1>...> chain_edges_(std::index_sequence<Is...>) noexcept {
+    return {};
+}
+
+// The stage graph of a chain of stages.
+template <class... Stages>
+using chain_graph_t = StageGraph<StagePack<std::remove_cvref_t<Stages>...>,
+                                 decltype(chain_edges_(std::make_index_sequence<sizeof...(Stages) - 1>{}))>;
+
+}  // namespace detail
+
+// A linear pipeline is the stage graph of its chain, with one edge from each
+// stage to the next.  So each link feeds as an edge of a graph does
+// (stage_port_feeds), each stage has one output but the last and one input
+// but the first, and a refusal prints the record of the check: the fault
+// and the place of the link.
+template <class... Stages>
+concept pipeline_chain =
+    sizeof...(Stages) >= 1 && (IsStage<Stages> && ...) && StageGraphWellFormed<detail::chain_graph_t<Stages...>>;
+
+template <class Ctx, class... Stages>
+concept CtxFitsPipeline =
+    ::foundation::effects::IsExecCtx<Ctx> && CtxStartsStageThreads<Ctx> && pipeline_chain<Stages...>
+    && ::foundation::effects::is_subrow(^^pipeline_row_union_t<Stages...>, ^^typename Ctx::row_type);
 
 template <class Graph>
     requires StageGraphWellFormed<Graph>
