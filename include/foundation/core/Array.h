@@ -89,6 +89,22 @@
 //                       frame, and the door gives the array back
 //                       (foundation/core/Frame.h)
 //
+// THE ELEMENT DOOR
+//   with_element(index, body)   of a FixedArray, with an Index<N>: body gets
+//                       the element in place, as T&, for the time of the
+//                       call, and the door gives the result of body
+// The result holds no borrow (HoldsNoBorrow of foundation/core/Choice.h), so
+// no reference to the element leaves the door, and the door gives no View.  A
+// const array gives T const&.  The door carries the annotation borrow_match,
+// so the rule borrow-match refuses a call of a member of the same array that
+// is not const in the body, such as a second door that would give a second
+// reference to the element.  A body that writes the whole run takes with_mut.
+//
+// The door writes no state of the array.  So two threads can call it on one
+// shared array at the same time, and only an element that is safe for
+// concurrent writes, such as an Atomic or a pinned cell, makes such calls
+// correct.
+//
 // THE LIFETIME START
 //   lifetime::start_as_array<T>(storage, count)
 //                       the View of count objects of T whose lifetime starts
@@ -236,6 +252,30 @@ public:
     T& at(Index<N>) && = delete("an element of a temporary FixedArray dangles at the end of the full expression");
     T const&
         at(Index<N>) const&& = delete("an element of a temporary FixedArray dangles at the end of the full expression");
+
+    // The frame door of one element (THE ELEMENT DOOR): body gets the
+    // element at a proven index in place, for the time of the call, and the
+    // door gives the result of body.  The result holds no borrow, so no
+    // reference to the element leaves the door.  A const array gives a const
+    // element.  Complexity: O(1), and the cost of body.
+    template <class Body>
+        requires std::is_invocable_v<Body, T&> && HoldsNoBorrow<std::invoke_result_t<Body, T&>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, T&>
+        with_element(Index<N> index, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
+        return static_cast<Body&&>(body)(elements_[index.raw()]);
+    }
+    template <class Body>
+        requires std::is_invocable_v<Body, T const&> && HoldsNoBorrow<std::invoke_result_t<Body, T const&>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, T const&>
+        with_element(Index<N> index, Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, T const&>) {
+        return static_cast<Body&&>(body)(elements_[index.raw()]);
+    }
+    template <class Body>
+    void with_element(Index<N> index, Body&& body) && =
+        delete("a frame door of a temporary FixedArray lends an element that the full expression ends");
+    template <class Body>
+    void with_element(Index<N> index, Body&& body) const&& =
+        delete("a frame door of a temporary FixedArray lends an element that the full expression ends");
 
     // The element at a position that no type proves, as an Option of a
     // Ref with the fresh brand of the call, or no value at or past N: one

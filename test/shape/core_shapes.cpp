@@ -303,6 +303,13 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
     return array.at(position);
 }
 
+// The or of a bit into one word of a FixedArray through the element door, as
+// the insert of a CPU into a CpuSet does.
+[[gnu::used]] void fixed_array_with_element(::foundation::core::FixedArray<std::uint64_t, 128>& words,
+                                            fixy::Index<128> position, std::uint64_t bit) noexcept {
+    words.with_element(position, [bit](std::uint64_t& word) noexcept { word |= bit; });
+}
+
 [[gnu::used]] fixy::Option<fixy::Index<16>> index_check(std::size_t position) noexcept {
     return fixy::Index<16>::check(position);
 }
@@ -1607,6 +1614,11 @@ struct RawColumn final {
 
 [[gnu::used]] std::uint32_t fixed_array_at_raw(std::uint32_t const* first, std::uint32_t position) noexcept {
     return first[position];
+}
+
+[[gnu::used]] void fixed_array_with_element_raw(std::uint64_t* first, std::uint32_t position,
+                                                std::uint64_t bit) noexcept {
+    first[position] |= bit;
 }
 
 // An Option of an Index has the niche of the count: 16 is the empty value.

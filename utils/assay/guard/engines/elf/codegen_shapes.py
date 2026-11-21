@@ -526,6 +526,11 @@ PROBES: tuple[Probe, ...] = (
         "with the count 0, so the fill does no test for an empty View",
     ),
     Probe("fixed_array_at", "at of a FixedArray with an Index is the load of the raw subscript, with no bounds test"),
+    Probe(
+        "fixed_array_with_element",
+        "with_element of a FixedArray with an Index is the or of the raw subscript into its element, with no bounds "
+        "test and no call of the body",
+    ),
     Probe("index_check", "the check of an Index is one compare, and the empty Option is the count of the Index"),
     Probe("text_window", "window of a TextView gives its Option with no test of the niche of the Option"),
     Probe(

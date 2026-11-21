@@ -3708,6 +3708,11 @@ foundation_neg_compile_test(neg_core_fixed_array_subscript
 foundation_neg_compile_test(neg_core_fixed_array_at_wider_index
   "no matching function for call to .foundation::core::FixedArray<int, 4>::at\\(foundation::core::Index<8>&\\) const."
   "In function .int read_past\\(const foundation::core::FixedArray<int, 4>&, foundation::core::Index<8>\\).")
+# The element door carries the annotation borrow_match, so the rule
+# borrow-match refuses a second door of the same array in its body.
+foundation_neg_compile_test(neg_core_fixed_array_nested_element_door
+  "this arm of a borrow match writes the sum that the match reads .mutating-call array."
+  "the payload that the arm borrows can end while the arm holds its reference")
 foundation_neg_compile_test(neg_core_text_view_window_member_forged
   "no declaration matches .constexpr auto foundation::core::TextView::window\\(std::size_t, std::size_t\\) const."
   ".class foundation::core::TextView. defined here")

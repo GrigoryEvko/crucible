@@ -134,6 +134,22 @@ void test_fixed_array_reads_at_proven_indexes() {
     CRUCIBLE_TEST_ASSERT(kTest, numbers.at(small) == 9);
 }
 
+// The element door writes one element in place and gives the result of its
+// body.  The door of a const array reads, and each other element keeps its
+// value.
+void test_fixed_array_element_door_writes_in_place() {
+    FixedArray<std::uint64_t, 4> words{1, 2, 4, 8};
+    words.with_element(index<2>(), [](std::uint64_t& word) noexcept { word |= 16; });
+    int const steps = words.with_element(index<0>(), [](std::uint64_t& word) noexcept {
+        ++word;
+        return 1;
+    });
+    FixedArray<std::uint64_t, 4> const& read = words;
+    std::uint64_t const third = read.with_element(index<2>(), [](std::uint64_t const& word) noexcept { return word; });
+    CRUCIBLE_TEST_ASSERT(kTest, steps == 1 && third == 20);
+    CRUCIBLE_TEST_ASSERT(kTest, (words == FixedArray<std::uint64_t, 4>{2, 2, 20, 8}));
+}
+
 void test_fixed_array_view_fill_and_copy() {
     FixedArray<std::uint32_t, 8> target;
     FixedArray<std::uint32_t, 8> source{1, 2, 3, 4, 5, 6, 7, 8};
@@ -254,6 +270,7 @@ int main() {
     test_fixed_array_starts_with_zeros();
     test_large_fixed_array_value_initializes();
     test_fixed_array_reads_at_proven_indexes();
+    test_fixed_array_element_door_writes_in_place();
     test_fixed_array_view_fill_and_copy();
     test_get_reads_below_the_count();
     test_fixed_array_of_a_type_with_no_default();
