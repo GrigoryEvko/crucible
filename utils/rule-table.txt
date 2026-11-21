@@ -413,7 +413,7 @@ kernel include/crucible/canopy/bpf/ include/crucible/cntp/_wip/bpf/ include/cruc
 
 enforce @build/ report
 enforce @build/test/fuzz/generated/ error
-enforce bench/ report
+enforce bench/ error
 enforce cmake/ report
 enforce examples/ report
 enforce include/crucible/ report
