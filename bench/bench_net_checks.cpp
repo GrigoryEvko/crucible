@@ -25,7 +25,11 @@
 //   - the sort of Kahn over a list of the edges with no token of the marked
 //     graph of the ring, for the liveness, and the sort over the same edges
 //     read from the arrays of the steps, as the body reads them, with no check
-//     of the names, the sides and the ranges of the system
+//     of the names, the sides and the ranges of the system.  The checked form
+//     of that sort reads the names, the sides and the ranges in the same
+//     loops, as the plain form of the body does, and it is the reference of
+//     the plain form.  The bare form is the reference of the sealed system,
+//     whose seal checked the form one time (THE SEALED SYSTEM of Priority.h)
 //   - the walk of the chain from its boundary agent with an explicit stack,
 //     for the canonical form.  It folds the same count of words into four
 //     chains, as the body does, and its word of a kind is the index of the
@@ -547,15 +551,42 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the plain loops over the nets and the ri
 // an edge to receive s, and receive s to send s + k.  The send of a
 // rendezvous names the receive of its node, whose process goes on after the
 // node.  Gives the count of the nodes that the sort orders, or 0 when a cycle
-// leaves a node out.
-[[gnu::noipa]] std::uint32_t sort_steps_by_kahn(RingSystem const& ring) noexcept {
+// leaves a node out.  The checked form also reads the form of the ring, as
+// the plain form of the body does: a name for each process and each channel,
+// each action inside the ring, and one process for each side of a channel.
+// It gives 0 for a fault of the form.
+enum class ReferenceForm : std::uint8_t {
+    Bare = 0,
+    Checked = 1,
+};
+template <ReferenceForm Form>
+[[nodiscard]] std::uint32_t sort_steps_by_kahn_(RingSystem const& ring) noexcept {
     constexpr std::uint32_t none = 0xFFFFFFFFu;
+    if constexpr (Form == ReferenceForm::Checked) {
+        for (net::NetName const& name : ring.process_names) {
+            if (name.is_empty()) return 0;
+        }
+        for (net::NetChannel const& channel : ring.channels) {
+            if (channel.name.is_empty()) return 0;
+        }
+    }
     std::uint32_t step_of[4000]{};
-    std::uint32_t step_count[2000]{};
+    // The checked form keeps the process of each side after the counts, at
+    // 2000 + side, as the index of the process plus one, and 0 for a side
+    // that no action holds yet.
+    std::uint32_t step_count[Form == ReferenceForm::Checked ? 4000 : 2000]{};
     for (std::uint32_t index = 0; index < 4000; ++index) {
         net::Action const& act = ring.actions[index];
         std::uint32_t const side =
             2 * static_cast<std::uint32_t>(act.channel) + (act.move == net::Move::Send ? 0u : 1u);
+        if constexpr (Form == ReferenceForm::Checked) {
+            auto const process = static_cast<std::uint32_t>(act.process);
+            if (process >= 1000 || static_cast<std::uint32_t>(act.channel) >= 1000
+                || (act.move != net::Move::Send && act.move != net::Move::Receive))
+                return 0;
+            if (step_count[2000 + side] == 0u) step_count[2000 + side] = process + 1u;
+            if (step_count[2000 + side] != process + 1u) return 0;
+        }
         step_of[index] = step_count[side];
         ++step_count[side];
     }
@@ -634,6 +665,14 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the plain loops over the nets and the ri
         }
     }
     return order_count == node_count ? order_count : 0;
+}
+
+[[gnu::noipa]] std::uint32_t sort_steps_by_kahn(RingSystem const& ring) noexcept {
+    return sort_steps_by_kahn_<ReferenceForm::Bare>(ring);
+}
+
+[[gnu::noipa]] std::uint32_t sort_checked_steps_by_kahn(RingSystem const& ring) noexcept {
+    return sort_steps_by_kahn_<ReferenceForm::Checked>(ring);
 }
 
 // The canonical form of the chain as plain loops: the peer of each port, the
@@ -831,12 +870,24 @@ void bench_fork_tree(ForkNet const& tree) {
 }
 
 void bench_ring(RingSystem const& ring) {
-    if (sort_marked_by_kahn(ring) == 0 || sort_steps_by_kahn(ring) == 0) {
+    if (sort_marked_by_kahn(ring) == 0 || sort_steps_by_kahn(ring) == 0 || sort_checked_steps_by_kahn(ring) == 0) {
         fixy::fatal("the references read the ring as a live system");
     }
+    auto const sealed = net::seal_system(ring);
+    bench::do_not_optimize(sealed);
     bench::Report const liveness =
         measure_row(bench::Run{"liveness ring"}, [&] { bench::do_not_optimize(net::find_liveness_fault(ring).code); });
     print_row("find_liveness_fault, ring of 4000 actions", liveness);
+    print_row("seal_system, ring of 4000 actions", measure_row(bench::Run{"seal ring"}, [&] {
+                  bench::do_not_optimize(net::seal_system(ring).form_fault().code);
+              }));
+    bench::Report const sealed_liveness = measure_row(
+        bench::Run{"liveness sealed ring"}, [&] { bench::do_not_optimize(net::find_liveness_fault(sealed).code); });
+    print_row("find_liveness_fault, sealed ring of 4000 actions", sealed_liveness);
+    bench::Report const checked_kahn = measure_row(bench::Run{"checked steps kahn ring"},
+                                                   [&] { bench::do_not_optimize(sort_checked_steps_by_kahn(ring)); });
+    print_row("reference sort of Kahn over the arrays of the steps with the checks of the form, ring of 4000 actions",
+              checked_kahn);
     bench::Report const marked_kahn =
         measure_row(bench::Run{"marked kahn ring"}, [&] { bench::do_not_optimize(sort_marked_by_kahn(ring)); });
     print_row("reference sort of Kahn of the marked graph, ring of 4000 actions", marked_kahn);
@@ -845,6 +896,10 @@ void bench_ring(RingSystem const& ring) {
     print_row("reference sort of Kahn over the arrays of the steps, ring of 4000 actions", steps_kahn);
     print_ratio("find_liveness_fault / reference sort of Kahn of the marked graph", liveness, marked_kahn);
     print_ratio("find_liveness_fault / reference sort of Kahn over the arrays of the steps", liveness, steps_kahn);
+    print_ratio("find_liveness_fault / reference sort of Kahn over the arrays of the steps with the checks of the form",
+                liveness, checked_kahn);
+    print_ratio("find_liveness_fault sealed / reference sort of Kahn over the arrays of the steps", sealed_liveness,
+                steps_kahn);
 }
 
 }  // namespace
