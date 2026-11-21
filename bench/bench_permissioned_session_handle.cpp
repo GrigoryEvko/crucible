@@ -73,25 +73,21 @@ using PermittedLoopHandle = decltype(s::mint_permissioned_session<SendLoop>(kFor
 static_assert(sizeof(PermittedLoopHandle) == sizeof(EmptySetLoopHandle),
               "a permission set must take no storage in the handle");
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the two sinks keep each send of a body, so the optimizer cannot fold them")
+// An input sink: the asm sink of the harness holds the item in a register
+// and gives it back changed.  So the optimizer cannot know the item of a
+// send.  The sink emits no instruction and has no memory clobber, so the
+// other values of the loop stay in registers.
+[[gnu::always_inline]] inline void make_item_opaque(Item& item) noexcept { bench::do_not_optimize(item); }
 
-// An input sink: the empty asm statement reads and writes the register of the
-// item.  So the optimizer cannot know the item of a send.  The statement emits
-// no instruction and has no memory clobber, so the other values of the loop
-// stay in registers.
-[[gnu::always_inline]] inline void make_item_opaque(Item& item) noexcept { asm volatile("" : "+r"(item)); }
-
-// An output sink: the empty asm statement reads and writes a copy of the
-// item in memory.  So each send stores its item, as a send into a channel
+// An output sink: the sink of an object in memory reads and writes a copy of
+// the item in memory.  So each send stores its item, as a send into a channel
 // that another thread reads does, and the optimizer cannot move the stores
-// out of the loop.  The statement has no memory clobber.  But with it in the
-// loop, GCC 16 keeps the handle of the local and the pinned forms in memory
-// (the disassembly of this bench shows it), so the count of the steps makes a
+// out of the loop.  The sink has no memory clobber.  But with it in the loop,
+// GCC 16 keeps the handle of the local and the pinned forms in memory (the
+// disassembly of this bench shows it), so the count of the steps makes a
 // chain of a load and a store in each send.  Each form pays that chain, so the
 // forms still compare.
-[[gnu::always_inline]] inline void keep_item_written(Item copy) noexcept { asm volatile("" : "+m"(copy)); }
-
-CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+[[gnu::always_inline]] inline void keep_item_written(Item copy) noexcept { bench::mark_changed(copy); }
 
 // The trying write: it always has room, and the output sink keeps each write.
 constexpr auto send_item = [](FakeChannel& channel, Item& value) noexcept {
