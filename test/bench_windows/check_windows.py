@@ -52,9 +52,16 @@ THE PROBE
     Its row run_kept_row reads a value through an input sink, and its row
     run_lost_row reads the same value with no input sink.  The check must
     refuse the windows of the body of the lost row, accept each window of
-    the kept row, and find a memory read in the loop of each such window of
-    the kept row.  The probe is the control of the check: the test fails
-    when the check accepts the lost row.
+    the kept row, and find in the kept row one window whose loop reads
+    memory for each window of the body of the lost row.  The two rows can
+    hold a different count of windows of the harness, so the check does not
+    match the windows by their number.  The probe is the control of the
+    check: the test fails when the check accepts the lost row.  Its rows
+    run_state_row and run_with_state_row do one body on one state, through
+    run and through run_with.  The body loops of their windows are compared
+    with each register as its class and its width: the loop through run_with
+    must add no instruction to the loop through run, so a row through
+    run_with times no more code than through run.
 
 Usage:
     check_windows.py probe ROOT OBJECT
@@ -72,6 +79,7 @@ from __future__ import annotations
 
 import platform
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -120,6 +128,8 @@ END = "rdtscp"
 FRAME_BASES = frozenset({"rbp", "rsp"})
 KEPT_ROW = "run_kept_row"
 LOST_ROW = "run_lost_row"
+STATE_ROW = "run_state_row"
+WITH_ROW = "run_with_state_row"
 SKIP = 77
 
 # The position of one instruction: the index of its part, and its index in the part.
@@ -143,6 +153,7 @@ class Loop:
     work: tuple[str, ...]
     reads: bool
     compared: frozenset[str]
+    shape: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -335,7 +346,13 @@ def windows_of(code: Code) -> list[Window]:
                 }
                 work = tuple(member.shown for member in members if not is_counter(member, compared))
                 instructions = tuple(member.shown for member in members)
-                loops.append(Loop(instructions, work, any(map(reads_data, members)), frozenset(compared)))
+                shape = tuple(
+                    member.mnemonic
+                    if member.is_jump or member.mnemonic == "call"
+                    else f"{member.mnemonic} {shapes.normalized_operands(member.operands)}"
+                    for member in members
+                )
+                loops.append(Loop(instructions, work, any(map(reads_data, members)), frozenset(compared), shape))
                 bodies.append(body)
         if not loops:
             continue
@@ -372,6 +389,38 @@ def shown_window(window: Window) -> str:
     return "\n".join(lines)
 
 
+def body_shapes(windows: list[Window]) -> list[tuple[str, ...]]:
+    """Return the shape of each loop of the body of the windows: a loop with work and no call, in a sorted order.
+
+    A loop with a call is a loop of the harness, such as the wait for the next tick of the clock.
+    """
+    return sorted(loop.shape for window in windows for loop in window.loops if loop.work and "call" not in loop.shape)
+
+
+def state_row_problems(windows: list[Window]) -> list[str]:
+    """Return the problems of the two rows of a state: a missing row, or an instruction that run_with adds.
+
+    A loop through run_with may have fewer instructions than through run: the state is a member of the body of the
+    harness, so its address needs no load from a closure.  It must add none (THE PROBE).
+    """
+    through_run = [window for window in windows if STATE_ROW in window.function and WITH_ROW not in window.function]
+    through_with = [window for window in windows if WITH_ROW in window.function]
+    if not through_run or not through_with:
+        return [f"the probe has {len(through_run)} windows of {STATE_ROW} and {len(through_with)} of {WITH_ROW}"]
+    run_shapes, with_shapes = body_shapes(through_run), body_shapes(through_with)
+    if not run_shapes or len(run_shapes) != len(with_shapes):
+        return [f"{STATE_ROW} has {len(run_shapes)} body loops and {WITH_ROW} has {len(with_shapes)}"]
+    problems: list[str] = []
+    for run_shape, with_shape in zip(run_shapes, with_shapes, strict=True):
+        added = Counter(with_shape) - Counter(run_shape)
+        if added:
+            problems.append(
+                f"the body loop of {WITH_ROW} adds {sorted(added.elements())} to the loop of {STATE_ROW}:\n"
+                f"    {STATE_ROW}: {' ; '.join(run_shape)}\n    {WITH_ROW}: {' ; '.join(with_shape)}"
+            )
+    return problems
+
+
 def check_probe(path: str) -> int:
     """Return 0 when the kept row holds its read and the check refuses the body of the lost row (THE PROBE)."""
     windows = timed_windows(path)
@@ -388,11 +437,16 @@ def check_probe(path: str) -> int:
     for window in kept:
         if window.is_refused:
             problems.append(f"the check refuses the kept row:\n{shown_window(window)}")
-        elif window.number in body_windows and not any(loop.reads for loop in window.loops):
-            problems.append(f"the loop of the kept row reads no memory:\n{shown_window(window)}")
-    kept_numbers = {window.number for window in kept}
-    if not body_windows <= kept_numbers:
-        problems.append(f"the kept row has no window {sorted(body_windows - kept_numbers)} with a loop")
+    # The two rows can hold a different count of windows of the harness before their body, so the number of a
+    # window of the body differs between them.  The kept row holds one window that reads memory in its loop for
+    # each window of the body of the lost row.
+    reading = [window for window in kept if any(loop.reads and loop.work for loop in window.loops)]
+    if len(reading) < len(body_windows):
+        problems.append(
+            f"the kept row has {len(reading)} windows whose loop reads memory, and the lost row has "
+            f"{len(body_windows)} windows of its body"
+        )
+    problems.extend(state_row_problems(windows))
     for problem in problems:
         print(f"check_windows: {problem}")
     if problems:

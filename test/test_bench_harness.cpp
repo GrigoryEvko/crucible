@@ -666,6 +666,22 @@ void test_cycle_floor_marks_a_row() {
     std::move(checks).close();
 }
 
+// A row through measure_with holds its state for the run, calls the body on
+// it once for each iteration, and gives the state back beside the report.
+// The count of the calls is the warmup and the timed iterations, so it is at
+// least the count of the samples.
+void test_measure_with_gives_the_state_back() {
+    ::fixy::check::Tally checks{kTest, "test_measure_with_gives_the_state_back"};
+    auto [report, calls] = bench::measure_with(bench::Run("state").samples(8).warmup(2), std::uint64_t{0},
+                                               [](std::uint64_t& count) noexcept {
+                                                   ++count;
+                                                   bench::mark_changed(count);
+                                               });
+    CRUCIBLE_TEST_EXPECT(checks, calls >= 10);
+    CRUCIBLE_TEST_EXPECT(checks, report.pct.p50 >= 0.0);
+    std::move(checks).close();
+}
+
 // The number of CPUs in the affinity of the calling thread, or zero when
 // the kernel refuses the query.
 std::size_t affinity_cpu_count() {
@@ -1493,6 +1509,7 @@ int main() {
     test_clobber_array_source_container_diversity();
     test_sink_keeps_each_value();
     test_cycle_floor_marks_a_row();
+    test_measure_with_gives_the_state_back();
     test_run_pins_through_the_door_and_restores();
     test_fan_out_keeps_the_worker_affinity();
     test_core_of_run_stays_in_the_affinity();
@@ -1516,7 +1533,7 @@ int main() {
     test_run_measures_in_windows();
     test_windows_judge_no_sleep();
 
-    constexpr int kNumGroups = 26;
+    constexpr int kNumGroups = 27;
     if (g_failures == 0) {
         ::fixy::check::pass(kTest, "test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);
         return 0;

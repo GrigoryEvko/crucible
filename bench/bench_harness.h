@@ -3872,6 +3872,49 @@ template <std::size_t Capacity, typename Body>
     return run(name.view(), std::forward<Body>(body));
 }
 
+// THE STATE OF A ROW
+//   run_with(name, state, body) times body(state) as run(name, body) times
+//   body().  The harness holds the state by value for the whole row, the
+//   body takes it as an lvalue in each call, and the call gives the state
+//   back beside the Report in one Record.  So a row whose state is linear,
+//   such as the Seat of a session, needs no lambda that captures the state by
+//   reference: the row takes the state back and ends it at its own door.  The
+//   result of the body holds no borrow, so no reference to the state leaves
+//   a call.  measure_with(run, state, body) is the same for a Run that a row
+//   sets up itself.
+template <typename State, typename Body>
+struct StateBody {
+    State state;
+    Body body;
+
+    [[gnu::always_inline]] void operator()() noexcept(noexcept(body(state))) { body(state); }
+
+    // The state, out of a body that the row gives up.
+    [[nodiscard]] State take_state() && noexcept { return static_cast<State&&>(state); }
+};
+
+// A body of a row with a state: a call on the state as an lvalue, whose
+// result holds no borrow.
+template <typename Body, typename State>
+concept StateRowBody = !std::is_reference_v<State> && std::is_invocable_v<Body&, State&>
+                    && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&, State&>>;
+
+template <typename State, typename Body>
+    requires StateRowBody<Body, State>
+[[nodiscard]] inline ::fixy::Record<Report, State> measure_with(Run const& run, State state, Body body) {
+    StateBody<State, Body> held{static_cast<State&&>(state), static_cast<Body&&>(body)};
+    Report report = run.measure(held);
+    return {static_cast<Report&&>(report), static_cast<StateBody<State, Body>&&>(held).take_state()};
+}
+
+template <typename State, typename Body>
+    requires StateRowBody<Body, State>
+[[nodiscard]] inline ::fixy::Record<Report, State> run_with(::fixy::TextView name, State state, Body body) {
+    Run r{name};
+    if (const int c = env_core(); c >= 0) (void)r.core(c);
+    return measure_with(r, static_cast<State&&>(state), static_cast<Body&&>(body));
+}
+
 // Writes the text line of each report to standard output, in order.  A bench
 // holds its reports in an owner of the base and passes its view().  Each emit
 // function is not inline, so its report() calls stay out of a caller that
