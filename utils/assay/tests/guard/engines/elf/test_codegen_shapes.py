@@ -52,6 +52,7 @@ PLUGIN_MACRO = "-DCRUCIBLE_QUARANTINE_ACTIVE"
 # The distance between two planted instructions.
 STEP = 4
 FATAL = "R_X86_64_GOTPCRELX\tfoundation::core::detail::report_fatal_(char const*)-0x4"
+INVARIANT = "R_X86_64_GOTPCRELX\tfoundation::detail::fail_invariant(char const*, char const*, char const*, int)-0x4"
 ZERO_COST = shapes.Probe("probe", "c")
 # The planted constant-time functions: one refused instruction of each kind, a compare and a clean function.  The
 # variants with the -fharden- flags give the compare a branch.
@@ -179,6 +180,19 @@ def walk_cases(expect: testing.Expect) -> None:
     texts = [step.text for step in shapes.steps_of(fatal_inline)]
     expect(
         "a call of the fatal exit ends its path, also when code follows it, and the jump into it is a check",
+        texts == ["endbr64", "test g64,g64", "je !fatal", "mov g32,DWORD PTR [g64]", "ret"],
+    )
+    invariant_inline = code_of(
+        "probe",
+        [
+            *plain("endbr64", "test rdi,rdi", "je @5", "mov eax,DWORD PTR [rdi]", "ret", "lea rdi,[rip+0x0]"),
+            ("call QWORD PTR [rip+0x0]", INVARIANT),
+            *plain("mov eax,0x25", "ret"),
+        ],
+    )
+    texts = [step.text for step in shapes.steps_of(invariant_inline)]
+    expect(
+        "a call of the exit of CRUCIBLE_FATAL_INVARIANT ends its path, and the jump into it is a check of a fatal path",
         texts == ["endbr64", "test g64,g64", "je !fatal", "mov g32,DWORD PTR [g64]", "ret"],
     )
     fall_through = code_of(
