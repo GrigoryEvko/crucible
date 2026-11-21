@@ -232,6 +232,13 @@ public:
     void
     view() const&& = delete("a view of a temporary FixedArray points into an object that the full expression ends");
 
+    // The run of the elements for the frame door with_mut: a View that writes
+    // them.  The key of a frame keeps each caller outside the base out, so
+    // only a frame door gives a View that writes the elements of an array.
+    [[nodiscard]] friend constexpr View<T, N> frame_run_(detail::FrameKey const& /*key*/, FixedArray& array) noexcept {
+        return View<T, N>{detail::ViewDoor::key(), array.elements_};
+    }
+
     // The loop `for (T& element : array)`.  A loop over a temporary binds it
     // to a reference first, and a cursor of an rvalue is refused.
     [[nodiscard]] constexpr ViewCursor<T> begin() & noexcept { return view().begin(); }
@@ -276,6 +283,41 @@ public:
     template <class Body>
     void with_element(Index<N> index, Body&& body) const&& =
         delete("a frame door of a temporary FixedArray lends an element that the full expression ends");
+
+    // The frame door of the run in place (THE FRAME DOOR): body gets the
+    // ViewMut<T, Fresh, N> of the elements, with the scope brand of the
+    // frame, and the door gives the result of body.  The array stays in
+    // place, and the door writes no byte of it, so it copies no element.  The
+    // result of body leaves the frame (FrameResult of Choice.h).  The pack
+    // refuses each explicit argument, so no caller names the brand.
+    // Complexity: O(1), and the cost of body.
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && FrameBody<Body, T, Fresh, N>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body&&, ViewMut<T, Fresh, N>>
+        with_mut(Body&& body) & noexcept {
+        return static_cast<Body&&>(body)(
+            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), View<T, N>{detail::ViewDoor::key(), elements_}});
+    }
+
+    // A body whose result holds a borrow or names the brand of the frame
+    // binds to this overload, so the refusal gives its reason.
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && RefusedFrameBody<Body, T, Fresh, N>
+    void with_mut(Body&& body) & = delete(
+        "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
+        "the frame: give a plain value");
+
+    // A const array lends no writer, so each body binds to this overload,
+    // and the refusal gives its reason.
+    template <class Body>
+    void with_mut(Body&& body) const& = delete("a const FixedArray lends no writer of its elements: read them through "
+                                               "view(), or take a FixedArray that is not const");
+    template <class Body>
+    void with_mut(Body&& body) && =
+        delete("a frame door of a temporary FixedArray lends elements that the full expression ends");
+    template <class Body>
+    void with_mut(Body&& body) const&& =
+        delete("a frame door of a temporary FixedArray lends elements that the full expression ends");
 
     // The element at a position that no type proves, as an Option of a
     // Ref with the fresh brand of the call, or no value at or past N: one
