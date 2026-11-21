@@ -240,6 +240,9 @@ TARGET_WORDS = ("-march=", "-mtune=", "-mcpu=")
 # The exit function of include/foundation/core/Fatal.h and include/foundation/core/Report.h: each cold function of
 # `foundation::core::detail` with a name that starts with report_.
 FATAL_PREFIX = "foundation::core::detail::report_"
+# The exit of CRUCIBLE_FATAL_INVARIANT of include/foundation/Platform.h, a cold [[noreturn]] function.  Its path is a
+# fatal path, as the path of the exit of Fatal.h is.
+INVARIANT_EXIT = "foundation::detail::fail_invariant"
 RAW_SUFFIX = "_raw"
 COLD_SUFFIX = " [clone .cold]"
 ANONYMOUS = "(anonymous namespace)::"
@@ -264,7 +267,7 @@ TAG_CHECK = (
 HARDENING_TESTS = 2
 # The kinds of a failure path, the first kind first, each with the prefixes of the names of its callees (THE WALK).
 FAILURE_KINDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("fatal", (FATAL_PREFIX,)),
+    ("fatal", (FATAL_PREFIX, INVARIANT_EXIT)),
     ("contract", ("handle_contract_violation",)),
     ("assertion", ("std::__glibcxx_assert_fail",)),
     ("stack", ("__stack_chk_fail",)),
@@ -279,6 +282,7 @@ NORETURN_NAMES = frozenset(
 )
 NORETURN_PREFIXES = (
     FATAL_PREFIX,
+    INVARIANT_EXIT,
     "std::__glibcxx_assert_fail",
     "std::__throw_",
     "__asan_report_",
@@ -753,6 +757,19 @@ PROBES: tuple[Probe, ...] = (
             "foundation::detail::stored_block_layout",
             "foundation::core::detail::heap_release_",
         ),
+    ),
+    Probe(
+        "aligned_bytes_two_windows",
+        "with_mut_windows of two windows of a named block is the raw form of two pointer windows: for each window the "
+        "compare with the bytes of the block, the test of a whole count of floats and the test of the alignment, then "
+        "the four compares of the pair and the store of the body into each window, with no call.  The list of the "
+        "views lives in the frame, because the body takes it by reference, so the function takes the canary of the "
+        "stack protector.  The start of the lifetime of each window keeps the checks of start_as_array, with a "
+        "branch to the exit of CRUCIBLE_FATAL_INVARIANT, where the optimizer does not fold them into the tests of "
+        "the door.  In a unit with -fharden-compares, the compares of the door that give a value take a second test "
+        "into a trap",
+        checks=("fatal", "stack"),
+        branches=True,
     ),
     Probe(
         "box_read",

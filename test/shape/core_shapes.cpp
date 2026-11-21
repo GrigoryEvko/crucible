@@ -733,6 +733,26 @@ public:
     return one.size() + two.size();
 }
 
+// The output windows of one op with two outputs.  The probe builds the list
+// of the two windows, so its count is two at compile time.  The door checks
+// each window against the block and compares the pair, and the body writes
+// value into the first element of each window that holds one.  The two
+// windows can swap with no change of the result.
+[[gnu::used]] bool aligned_bytes_two_windows(foundation::AlignedBytes& block, foundation::ByteWindow first,
+                                             foundation::ByteWindow second, float value) noexcept {
+    fixy::FixedList<foundation::ByteWindow, 2> windows{};
+    static_cast<void>(windows.append(first).is_ok());
+    static_cast<void>(windows.append(second).is_ok());
+    auto const write_first = [value](auto& views) noexcept {
+        for (auto& view : views) {
+            for (auto element : view.get(0)) {
+                *element = value;
+            }
+        }
+    };
+    return foundation::with_mut_windows<float>(block, windows, write_first).is_ok();
+}
+
 // ── Ref, Choice and Report ──────────────────────────────────────────────────
 
 [[gnu::used]] std::uint32_t box_read(fixy::Box<Payload>& box) noexcept { return box->value; }
@@ -1978,6 +1998,47 @@ struct RawOwnerWords final {
     __builtin_free(two);
     __builtin_free(one);
     return first_bytes + second_bytes;
+}
+
+// The fields of a named block: its storage, its count of bytes and its
+// alignment (THE STORAGE of foundation/AlignedBytes.h).
+struct RawBlock final {
+    std::uint8_t* storage;
+    std::size_t bytes;
+    std::size_t alignment;
+};
+
+// A window of a block: the offset of its first byte and its count of bytes.
+struct RawByteWindow final {
+    std::size_t start;
+    std::size_t length;
+};
+
+// Two pointer windows of a block, with the tests of the door in its order:
+// inside the block, a whole count of floats and the first byte aligned for
+// each window, and then no byte that the two share.  Then value goes into
+// the first element of each window that holds one.
+[[gnu::used]] bool aligned_bytes_two_windows_raw(RawBlock& block, RawByteWindow first, RawByteWindow second,
+                                                 float value) noexcept {
+    std::uint8_t* const base =
+        block.storage == nullptr
+            ? nullptr
+            : block.storage
+                  + ((std::size_t{0} - __builtin_bit_cast(std::uintptr_t, block.storage)) & (block.alignment - 1));
+    if (first.start > block.bytes || first.length > block.bytes - first.start) return false;
+    if (first.length % sizeof(float) != 0) return false;
+    if ((__builtin_bit_cast(std::uintptr_t, base + first.start) & (alignof(float) - 1)) != 0) return false;
+    if (second.start > block.bytes || second.length > block.bytes - second.start) return false;
+    if (second.length % sizeof(float) != 0) return false;
+    if ((__builtin_bit_cast(std::uintptr_t, base + second.start) & (alignof(float) - 1)) != 0) return false;
+    std::size_t const first_end = first.start + first.length;
+    std::size_t const second_end = second.start + second.length;
+    if (first.start < first_end && second.start < second_end && first.start < second_end && second.start < first_end) {
+        return false;
+    }
+    if (first.length != 0) *static_cast<float*>(static_cast<void*>(base + first.start)) = value;
+    if (second.length != 0) *static_cast<float*>(static_cast<void*>(base + second.start)) = value;
+    return true;
 }
 
 [[gnu::used]] std::uint32_t box_read_raw(std::unique_ptr<Payload>& box) noexcept { return box->value; }
