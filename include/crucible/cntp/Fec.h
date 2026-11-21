@@ -557,12 +557,16 @@ public:
         return ::fixy::Unit{};
     }
 
+    // The owned forms take the buffer, and they end it after the code reads
+    // it, also when the code refuses the shape.
     template <ByteContiguousBuffer Input, MutableByteContiguousBuffer Output>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, FecError> encode_owned(LinearShardBuffer<Input>&& input,
                                                                       Output& output) const noexcept {
         ::fixy::View<std::byte const> const source = detail::bytes(input.peek());
-        return detail::with_mutable_bytes(
+        auto result = detail::with_mutable_bytes(
             output, [this, source](::fixy::View<std::byte> target) noexcept { return encode(source, target); });
+        drop(std::move(input));
+        return result;
     }
 
     template <ByteContiguousBuffer Input, MutableByteContiguousBuffer Output>
@@ -570,10 +574,12 @@ public:
                                                                       ::fixy::View<bool const> erasure_mask,
                                                                       Output& output) const noexcept {
         ::fixy::View<std::byte const> const source = detail::bytes(received.peek());
-        return detail::with_mutable_bytes(output,
-                                          [this, source, erasure_mask](::fixy::View<std::byte> target) noexcept {
-                                              return decode(source, erasure_mask, target);
-                                          });
+        auto result =
+            detail::with_mutable_bytes(output, [this, source, erasure_mask](::fixy::View<std::byte> target) noexcept {
+                return decode(source, erasure_mask, target);
+            });
+        drop(std::move(received));
+        return result;
     }
 
 private:

@@ -364,6 +364,14 @@ template <TlsVersion MinVersion = TlsVersion::V13, MtlsCipherSuite Primary = Mtl
     });
 }
 
+// The end of a config that no connection uses any more.  Each certificate is
+// linear, so the door ends each one, and the key ends through its own policy.
+[[= ::foundation::linear::drop_door{}]] inline void retire_mtls_config(DeclaredMtlsConfig&& config) noexcept {
+    MtlsConfig owned = std::move(config).into();
+    drop(std::move(owned.ca_cert));
+    drop(std::move(owned.client_cert));
+}
+
 [[nodiscard]] constexpr bool mtls_cipher_is_approved(MtlsCipherSuite suite) noexcept {
     return suite == MtlsCipherSuite::TlsAes256GcmSha384 || suite == MtlsCipherSuite::TlsChacha20Poly1305Sha256;
 }

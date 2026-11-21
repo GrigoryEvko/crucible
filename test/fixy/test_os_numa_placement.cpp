@@ -108,19 +108,10 @@ struct AddressPolicy {
     return status == 0 ? node : -1;
 }
 
-[[nodiscard]] int a_bound_region_is_on_its_node() {
-    BgCtx ctx{eff::testing::bg()};
-    auto placed = fixy::numa::mint_numa_placement(ctx, map_two_pages(ctx), kNodeZero);
-    if (placed.is_err()) {
-        if (is_machine_refusal(error_of(placed))) {
-            std::fprintf(stderr, "[skipped] the kernel refused a binding to node 0 (errno %d)\n",
-                         foundation::os::error_number_of(placed));
-            return kSkip;
-        }
-        std::fprintf(stderr, "a binding to node 0 failed (errno %d)\n", foundation::os::error_number_of(placed));
-        return 1;
-    }
-    auto const placement = std::move(placed).expect("the binding succeeded");
+// The checks of a placement over node 0, with no end of the placement: the
+// caller ends it after the checks, on each path.
+template <typename Placement>
+[[nodiscard]] int check_bound_region(Placement const& placement) {
     if (placement.node() != kNodeZero || placement.size() != 2 * page_bytes()) {
         std::fprintf(stderr, "the proof states a node or a length that the mint was not given\n");
         return 1;
@@ -151,19 +142,53 @@ struct AddressPolicy {
     return 0;
 }
 
+[[nodiscard]] int a_bound_region_is_on_its_node() {
+    BgCtx ctx{eff::testing::bg()};
+    auto placed = fixy::numa::mint_numa_placement(ctx, map_two_pages(ctx), kNodeZero);
+    if (placed.is_err()) {
+        if (is_machine_refusal(error_of(placed))) {
+            std::fprintf(stderr, "[skipped] the kernel refused a binding to node 0 (errno %d)\n",
+                         foundation::os::error_number_of(placed));
+            return kSkip;
+        }
+        std::fprintf(stderr, "a binding to node 0 failed (errno %d)\n", foundation::os::error_number_of(placed));
+        return 1;
+    }
+    auto placement = std::move(placed).expect("the binding succeeded");
+    int const status = check_bound_region(placement);
+    drop(std::move(placement).consume());
+    return status;
+}
+
+// The checks of a moved placement and of its source.  The caller ends the
+// moved placement after the checks, on each path.
+template <typename Placement>
+[[nodiscard]] int check_moved_claim(Placement const& moved, Placement const& source) {
+    if (moved.node() != kNodeZero || !moved.admits(kNodeZero)) {
+        std::fprintf(stderr, "a move did not carry the binding\n");
+        return 1;
+    }
+    if (source.admits(kNodeZero) || source.node() != fixy::NumaNodeId::None) {
+        std::fprintf(stderr, "the source of a move still claims a node\n");
+        return 1;
+    }
+    return 0;
+}
+
 [[nodiscard]] int the_proof_admits_only_its_node() {
     BgCtx ctx{eff::testing::bg()};
     auto placed = fixy::numa::mint_numa_placement(ctx, map_two_pages(ctx), kNodeZero);
     if (placed.is_err()) return is_machine_refusal(error_of(placed)) ? kSkip : 1;
     auto placement = std::move(placed).expect("the binding succeeded");
 
+    int status = 0;
     if (!placement.admits(kNodeZero) || !placement.admits(fixy::NumaNodeId::None)) {
         std::fprintf(stderr, "a proof over node 0 does not admit node 0\n");
-        return 1;
+        status = 1;
     }
     if (placement.admits(fixy::NumaNodeId{1}) || placement.admits(fixy::NumaNodeId::Any)) {
         std::fprintf(stderr, "a proof over node 0 admits a request that it does not cover\n");
-        return 1;
+        status = 1;
     }
 
     // A move carries the claim, and the source covers no node after it.
@@ -174,23 +199,20 @@ struct AddressPolicy {
     static_assert(foundation::brand::IsBranded<Placement::region_type>,
                   "a placement keeps the brand of the mapping it binds");
     Placement moved{std::move(placement)};
-    if (moved.node() != kNodeZero || !moved.admits(kNodeZero)) {
-        std::fprintf(stderr, "a move did not carry the binding\n");
-        return 1;
-    }
-    if (placement.admits(kNodeZero) || placement.node() != fixy::NumaNodeId::None) {
-        std::fprintf(stderr, "the source of a move still claims a node\n");
-        return 1;
+    if (check_moved_claim(moved, placement) != 0) {
+        status = 1;
     }
 
-    // consume gives the region back, mapped, and ends the claim.
+    // consume gives the region back, mapped, and ends the claim.  The test
+    // ends the region at its drop door after the check.
     void* const address = moved.data();
     auto region = std::move(moved).consume();
     if (!region.peek().is_mapped() || region.peek().data() != address) {
         std::fprintf(stderr, "consume did not give back the bound region\n");
-        return 1;
+        status = 1;
     }
-    return 0;
+    drop(std::move(region));
+    return status;
 }
 
 [[nodiscard]] int the_mint_refuses_a_sentinel_node() {

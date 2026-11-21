@@ -377,16 +377,19 @@ wrap(Payload payload) noexcept(std::is_nothrow_move_constructible_v<Payload>) {
 }
 
 // The hash of the payload must be the hash of the message.  A payload whose
-// hash is zero has no admitted hash, so it gives ZeroHash.
+// hash is zero has no admitted hash, so it gives ZeroHash.  A refused message
+// ends its payload at the drop door, because no caller can verify it.
 template <ByteContiguousPayload Payload>
 [[nodiscard]] inline ::fixy::Result<IntegrityVerifiedPayload<Payload>, IntegrityError>
 unwrap(IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>> message) noexcept(
     std::is_nothrow_move_constructible_v<Payload>) {
     std::uint64_t const actual = xxhash64_raw(detail::payload_bytes(message.payload.peek()));
     if (actual == 0) {
+        drop(std::move(message.payload));
         return ::fixy::err(IntegrityError::ZeroHash);
     }
     if (actual != message.hash.value()) {
+        drop(std::move(message.payload));
         return ::fixy::err(IntegrityError::HashMismatch);
     }
     return ::fixy::mint_tagged<::fixy::tags::source::External>(std::move(message.payload))

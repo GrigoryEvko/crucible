@@ -294,12 +294,14 @@ eligibility_check(NumericalRecipe const& recipe, SharpRecipeLaws laws, DeclaredS
     });
 }
 
-// A reducer takes a SHARP context, and only mint_sharp_context makes one.
-class SharpReducer : public ::foundation::Pinned<SharpReducer> {
+// A reducer takes a SHARP context, and only mint_sharp_context makes one.  The
+// end of a reducer is the door of its context: the destructor drops it.
+class[[= ::foundation::linear::scope_end_door{}]] SharpReducer : public ::foundation::Pinned<SharpReducer> {
     SharpContext context_;
 
 public:
     explicit SharpReducer(SharpContext context) noexcept : context_{std::move(context)} {}
+    ~SharpReducer() { drop(std::move(context_)); }
 
     template <class Ctx>
         requires CtxFitsSharpDispatch<Ctx>

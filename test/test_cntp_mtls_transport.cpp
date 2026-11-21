@@ -185,6 +185,7 @@ void test_policy_and_peer_admission() {
     CRUCIBLE_TEST_ASSERT(kTest, cntp::connect_mtls(fd, config, allowed, pin).err()
                                     == ::fixy::some(cntp::MtlsError::BackendUnavailable));
 
+    cntp::retire_mtls_config(std::move(config));
     ::fixy::check::pass(kTest, "  test_policy_and_peer_admission: PASSED\n");
 }
 
@@ -267,6 +268,7 @@ void test_data_plane_is_stub() {
     CRUCIBLE_TEST_ASSERT(kTest, cntp::connect_mtls(fd, config, unauthorized_dns, pin).err()
                                     == ::fixy::some(cntp::MtlsError::PeerNameNotAllowed));
 
+    cntp::retire_mtls_config(std::move(config));
     ::fixy::check::pass(kTest, "  test_data_plane_is_stub:        PASSED\n");
 }
 
@@ -295,14 +297,15 @@ void test_reject_insecure_policy() {
     CRUCIBLE_TEST_ASSERT(kTest, cntp::validate_mtls_config(empty_key_config).err()
                                     == ::fixy::some(cntp::MtlsError::EmptyPrivateKey));
 
+    cntp::retire_mtls_config(std::move(empty_key_config));
     ::fixy::check::pass(kTest, "  test_reject_insecure_policy:   PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    static_assert(sizeof(cntp::MtlsCertificate) == sizeof(cntp::MtlsCertificateBytes));
-    static_assert(sizeof(cntp::MtlsPrivateKey) == sizeof(cntp::MtlsPrivateKeyBytes));
+    static_assert(::fixy::qtt_consume_tracked || sizeof(cntp::MtlsCertificate) == sizeof(cntp::MtlsCertificateBytes));
+    static_assert(::fixy::qtt_consume_tracked || sizeof(cntp::MtlsPrivateKey) == sizeof(cntp::MtlsPrivateKeyBytes));
     static_assert(sizeof(cntp::AuthenticatedMtlsPeer) == sizeof(cntp::MtlsPeerIdentity));
     static_assert(!std::copy_constructible<cntp::MtlsPrivateKeyBytes>);
     static_assert(!std::copy_constructible<cntp::MtlsConfig>);
