@@ -626,6 +626,38 @@ void test_sink_keeps_each_value() {
     std::move(checks).close();
 }
 
+// A row whose median call takes less than kCycleFloor cycles of the TSC is
+// NOT VALID (THE CYCLE FLOOR of bench/bench_harness.h).  One cycle a call is
+// the time of a body with one load, so the floor does not mark it.  A report
+// with no calibration of the TSC has no cycles, and the floor does not judge
+// it.  The time of a real body changes with the load of the host, so each
+// report here states its cycles.  The probe of test/bench_windows compiles a
+// body that loses its work, and its check reads the timed loop.  The input
+// sink of an object in memory changes no bit of the object.
+void test_cycle_floor_marks_a_row() {
+    ::fixy::check::Tally checks{kTest, "test_cycle_floor_marks_a_row"};
+    bench::Report lost_work{};
+    lost_work.p50_cycles = 0.49;
+    CRUCIBLE_TEST_EXPECT(checks, lost_work.is_below_cycle_floor());
+    bench::Report one_load{};
+    one_load.p50_cycles = 0.99;
+    CRUCIBLE_TEST_EXPECT(checks, !one_load.is_below_cycle_floor());
+    bench::Report at_the_floor{};
+    at_the_floor.p50_cycles = bench::kCycleFloor;
+    CRUCIBLE_TEST_EXPECT(checks, !at_the_floor.is_below_cycle_floor());
+    bench::Report not_calibrated{};
+    CRUCIBLE_TEST_EXPECT(checks, !not_calibrated.is_below_cycle_floor());
+
+    std::uint64_t cell = 0x5A5A5A5A5A5A5A5AULL;
+    static_assert(noexcept(bench::mark_changed(cell)));
+    bench::mark_changed(cell);
+    CRUCIBLE_TEST_EXPECT(checks, cell == 0x5A5A5A5A5A5A5A5AULL);
+    TwoWords pair{};
+    bench::mark_changed(pair);
+    CRUCIBLE_TEST_EXPECT(checks, pair.low == 5 && pair.high == 9);
+    std::move(checks).close();
+}
+
 // The number of CPUs in the affinity of the calling thread, or zero when
 // the kernel refuses the query.
 std::size_t affinity_cpu_count() {
@@ -1452,6 +1484,7 @@ int main() {
     test_clobber_array_empty_and_single();
     test_clobber_array_source_container_diversity();
     test_sink_keeps_each_value();
+    test_cycle_floor_marks_a_row();
     test_run_pins_through_the_door_and_restores();
     test_fan_out_keeps_the_worker_affinity();
     test_core_of_run_stays_in_the_affinity();
@@ -1475,7 +1508,7 @@ int main() {
     test_run_measures_in_windows();
     test_windows_judge_no_sleep();
 
-    constexpr int kNumGroups = 25;
+    constexpr int kNumGroups = 26;
     if (g_failures == 0) {
         ::fixy::check::pass(kTest, "test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);
         return 0;

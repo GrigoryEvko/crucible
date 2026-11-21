@@ -249,6 +249,19 @@ public:
 // where it must see the effects of its body on memory, and it states the
 // reason beside the call.
 //
+// mark_changed(object) is the input sink of an object in memory.  The
+// statement reads and writes each byte of the object, so a read of the
+// object after it loads the object again, and a write before it stays.  It
+// emits no instruction and holds no other object.  A body that reads an
+// object that does not change, such as a cell or a table, gives the object
+// to mark_changed() first.  Else the optimizer reads the object one time
+// before the timed loop, and the loop holds no instruction of the body.  The
+// form that is not const of do_not_optimize() holds an integer in a
+// register, so for an integer in memory it adds a load and a store to the
+// loop, and the load can still move out of the loop with the store.
+// make_opaque(value) gives a copy of a const value, such as a view, through
+// that form, so a body that takes the copy computes its operation again.
+//
 // Each operand has one alternative.  The forms with two alternatives,
 // "+m,r" and "r,m", lose the value or its earlier stores when GCC picks the
 // register (GCC PR124958, PR109057 and PR105519).
@@ -309,6 +322,25 @@ template <typename T>
         using ObjectBytes = unsigned char[sizeof(T)];
         asm volatile("" : "+m"(*static_cast<ObjectBytes*>(static_cast<void*>(__builtin_addressof(value)))));
     }
+}
+
+// The input sink of an object in memory (THE SINK).  The operand is the bytes
+// of the object, as for a class in the form of do_not_optimize() that is not
+// const.
+template <typename T>
+[[gnu::always_inline]] inline void mark_changed(T& object) noexcept {
+    using ObjectBytes = unsigned char[sizeof(T)];
+    asm volatile("" : "+m"(*static_cast<ObjectBytes*>(static_cast<void*>(__builtin_addressof(object)))));
+}
+
+// A copy of value that the optimizer does not know: the input sink of a
+// value that does not change, such as a const view of a table (THE SINK).
+// The copy goes through the form of do_not_optimize() that is not const, so
+// a copy of a class goes through memory.
+template <typename T>
+[[nodiscard, gnu::always_inline]] inline T make_opaque(T value) noexcept {
+    do_not_optimize(value);
+    return value;
 }
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -2243,6 +2275,19 @@ inline constexpr ::fixy::FixedArray<BpfField, 54> kBpfFields{
 
 }  // namespace detail
 
+// THE CYCLE FLOOR
+//
+// A row whose median call takes less than kCycleFloor cycles of the TSC is
+// NOT VALID.  A body that does one load in each call takes one cycle a call,
+// so a floor of one cycle marks correct rows.  A loop that lost the work of
+// its body holds only its counter, and it takes one cycle a call too, so the
+// time cannot tell the two apart.  Only an unrolled loop of the counter goes
+// below one cycle, such as two calls in each cycle.  So the floor catches
+// that case, and it keeps a margin for a core that runs a little faster than
+// its TSC.  The scan of the timed windows (test/bench_windows) catches the
+// loop that is not unrolled.
+inline constexpr double kCycleFloor = 0.75;
+
 // A report owns each of its parts: the name and the samples own their bytes,
 // and each other part is a plain value.  So a report moves to another
 // thread, and it states sendable (foundation/Transfer.h), which the pointer
@@ -2270,6 +2315,10 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     // cycles — but on a pinned, non-throttled core the two are equal
     // to within a few percent and suffice for cross-commit comparison.
     double cycles_per_op = 0;
+
+    // The cycles of the TSC of the median call, or 0 when the TSC has no
+    // calibration (THE CYCLE FLOOR).
+    double p50_cycles = 0;
 
     // The time that the threads of the run lost over the sampled loop (THE
     // PAUSE CHECK).  A pause over kPauseBoundNs makes the run not valid.
@@ -2350,6 +2399,10 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
 
     [[nodiscard]] bool noisy(double cv_threshold = 0.05) const noexcept { return pct.cv > cv_threshold; }
 
+    // True when the median call takes less than kCycleFloor cycles of the
+    // TSC, so the row is NOT VALID (THE CYCLE FLOOR).
+    [[nodiscard]] bool is_below_cycle_floor() const noexcept { return p50_cycles > 0.0 && p50_cycles < kCycleFloor; }
+
     // Writes the summary line of the report to standard output, then the
     // pause line when the pause is over its bound, then the BPF line.  The
     // report of the base writes at once, and a bench can hold text of its
@@ -2393,6 +2446,10 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
         if (noisy()) ::fixy::report(Sink::Out, "  [noisy]");
         if (drift_flag) ::fixy::report(Sink::Out, "  [drift]");
         if (freq_drift_flag) ::fixy::report(Sink::Out, "  [freq-drift]");
+        if (is_below_cycle_floor()) {
+            ::fixy::report(Sink::Out, "  [NOT VALID: {} cycle a call, below {}]", Fixed<2>{p50_cycles},
+                           Fixed<2>{kCycleFloor});
+        }
         ::fixy::report(Sink::Out, "\n");
         if (pause.is_over_bound()) print_pause_();
 
@@ -2432,10 +2489,12 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
                        freq_end_hz);
         ::fixy::report(Sink::Out,
                        "\"pause_ns\":{},\"thread_delay_ns\":{},\"thread_arrivals\":{},\"paused\":{},\"windows\":{},"
-                       "\"window_p50_median\":{},\"window_spread\":{},\"windows_judged\":{},\"paused_windows\":{}",
+                       "\"window_p50_median\":{},\"window_spread\":{},\"windows_judged\":{},\"paused_windows\":{},"
+                       "\"p50_cycles\":{},\"below_cycle_floor\":{}",
                        pause.own_ns(), pause.other.run_delay_ns, pause.other.arrivals, pause.is_over_bound() ? 1 : 0,
                        windows.windows, Fixed<3>{windows.median}, Fixed<5>{windows.spread},
-                       window_basis == PauseBasis::LostTime ? 1 : 0, paused_windows);
+                       window_basis == PauseBasis::LostTime ? 1 : 0, paused_windows, Fixed<3>{p50_cycles},
+                       is_below_cycle_floor() ? 1 : 0);
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         print_bpf_json_();
 #endif
@@ -3285,6 +3344,16 @@ private:
         // PMU availability.
         if (const double tsc_hz = Timer::tsc_freq_hz(); tsc_hz > 0.0) {
             r.cycles_per_op = r.pct.mean * tsc_hz / 1e9;
+            r.p50_cycles = r.pct.p50 * tsc_hz / 1e9;
+        }
+        // A bench that prints its rows with no report of the harness still
+        // shows the mark of the floor, on standard error (THE CYCLE FLOOR).
+        if (r.is_below_cycle_floor()) {
+            ::fixy::report(::fixy::Sink::Err,
+                           "bench: the row {} takes {} cycle a call, below {}, so its timed loop lost the work of its "
+                           "body, and the row is NOT VALID.  Give each input of the body an input sink, such as "
+                           "bench::mark_changed(object).\n",
+                           r.name.view(), ::fixy::Fixed<2>{r.p50_cycles}, ::fixy::Fixed<2>{kCycleFloor});
         }
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
