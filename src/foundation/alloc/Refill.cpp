@@ -1,8 +1,9 @@
 // The cold bodies of the refill of a heap of the allocator of the base (THE
 // FAST PATHS of foundation/alloc/HeapState.h): the refill of an empty bin,
-// the start of a slab, the take of a chunk, and the census of the testing
-// door.  This file holds no variable: each word is a field of a HeapState or
-// of a record of the metadata region.
+// the start of a slab, and the census of the testing door.  The take of a
+// chunk is a door of the window in src/foundation/alloc/Root.cpp.  This file
+// holds no variable: each word is a field of a HeapState or of a record of
+// the metadata region.
 
 #include <foundation/alloc/HeapState.h>
 
@@ -11,19 +12,15 @@
 #include <foundation/alloc/Layout.h>
 #include <foundation/alloc/Metadata.h>
 #include <foundation/alloc/SlabHeap.h>
-#include <foundation/alloc/Window.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Quantity.h>
-#include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
-#include <foundation/os/Errno.h>
 
 #include <cstddef>
 #include <cstdint>
-#include <utility>
 
 namespace foundation::alloc {
 
@@ -84,25 +81,6 @@ void start_bitmap(SlabMeta& meta, SizeClass size_class) noexcept {
         free += static_cast<std::size_t>(core::popcount(bits));
     }
     return is_sound && free == meta.free_count().raw();
-}
-
-// Starts the record of a unit of a chunk of the heap, or ends the process
-// with the refusal of the kernel.
-void start_record(Window& window, WindowCommits& commits, ChunkIndex chunk, UnitIndex unit) noexcept {
-    auto started = window.start_slab_meta(commits, chunk, unit);
-    if (started.is_err()) {
-        core::fatal("foundation: the kernel refused the memory of the record of a slab of the allocator, with {}",
-                    core::enum_name_text(started.err().value_or(os::Errno::enomem)));
-    }
-}
-
-// Ends the process for a commit of the path of a chunk that the kernel
-// refused, such as enomem under strict overcommit.
-void require_commit(core::Result<core::Unit, os::Errno> const& committed) noexcept {
-    if (committed.is_err()) {
-        core::fatal("foundation: the kernel refused the memory of a chunk of the allocator, with {}",
-                    core::enum_name_text(committed.err().value_or(os::Errno::enomem)));
-    }
 }
 
 }  // namespace
@@ -170,54 +148,28 @@ SlabLink HeapState::start_slab_(SizeClass size_class) noexcept {
 
 SlabLink HeapState::start_small_unit_() noexcept {
     if (small_units_ == kUnitsPerChunk) {
-        small_chunk_ = take_chunk_();
+        small_chunk_ = detail::claim_window_chunk_(self_);
         small_units_ = 0;
+        ++chunks_taken_;
     }
     UnitIndex const unit = UnitIndex::check(small_units_).expect("the units of a chunk of small slabs lie below 32");
     ++small_units_;
-    start_record(*window_, *commits_, small_chunk_, unit);
+    detail::start_window_slab_(small_chunk_, unit);
     return link_of(slab_number_of(small_chunk_, unit));
 }
 
 SlabLink HeapState::start_medium_chunk_() noexcept {
-    ChunkIndex const chunk = take_chunk_();
-    UnitIndex const unit{core::StaticIndex<0>{}};
-    start_record(*window_, *commits_, chunk, unit);
-    return link_of(slab_number_of(chunk, unit));
-}
-
-ChunkIndex HeapState::take_chunk_() noexcept {
-    Window& window = *window_;
-    WindowCommits& commits = *commits_;
-    core::Option<ChunkIndex> const claimed = window.claim_chunk(commits);
-    if (claimed.is_none()) {
-        core::fatal("foundation: the window of the allocator holds no free chunk for the heap {}: a claim took each of "
-                    "its {} chunks.  The window is the address-space limit of the allocator.  Raise the address-space "
-                    "limit of the process (ulimit -v), and start it again.",
-                    std::uint32_t{static_cast<std::uint16_t>(self_)}, window.record().chunk_count());
-    }
-    ChunkIndex const chunk = core::Option<ChunkIndex>{claimed}.value_or(ChunkIndex{0});
-    require_commit(window.commit_extent_of(commits, chunk));
-    require_commit(window.commit_slab_records_of(commits, chunk));
-    auto started = window.start_chunk_meta(commits, chunk);
-    if (started.is_err()) {
-        core::fatal("foundation: the kernel refused the memory of the record of a chunk of the allocator, with {}",
-                    core::enum_name_text(started.err().value_or(os::Errno::enomem)));
-    }
-    auto record = std::move(started).expect("the record of the chunk is started");
-    record->set_owner(self_);
-    record->set_state(ChunkState::owned);
-    window.set_owner(chunk, self_);
+    ChunkIndex const chunk = detail::claim_window_chunk_(self_);
     ++chunks_taken_;
-    return chunk;
+    UnitIndex const unit{core::StaticIndex<0>{}};
+    detail::start_window_slab_(chunk, unit);
+    return link_of(slab_number_of(chunk, unit));
 }
 
 HeapCensus HeapState::census() const noexcept {
     HeapCensus counts{};
-    if (window_ == nullptr) return counts;
-    Window const& window = *window_;
-    WindowRecord const record = window.record();
-    std::size_t const claimed = window.claimed_chunks(*commits_).raw();
+    if (is_sentinel(*this)) return counts;
+    std::size_t const claimed = detail::claimed_window_chunks_().raw();
     std::size_t chunks = 0;
     std::size_t slabs = 0;
     std::size_t taken = 0;
@@ -228,7 +180,8 @@ HeapCensus HeapState::census() const noexcept {
     std::size_t wrong_bitmaps = 0;
     for (std::size_t raw = 0; raw < claimed; ++raw) {
         ChunkIndex const chunk{static_cast<std::uint32_t>(raw)};
-        if (is_guard_chunk(chunk) || chunk_map_.owner_of(record.address_of(chunk)) != self_) continue;
+        AddressWord const first_byte{static_cast<std::uint64_t>(window_base_) + (std::uint64_t{raw} << kChunkShift)};
+        if (is_guard_chunk(chunk) || chunk_map_.owner_of(first_byte) != self_) continue;
         ++chunks;
         UnitIndex const first_unit{core::StaticIndex<0>{}};
         SizeClass const first_class = slab_records_.meta(slab_number_of(chunk, first_unit)).size_class();

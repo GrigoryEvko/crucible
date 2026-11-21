@@ -74,8 +74,10 @@
 //   census() walks the chunks of the window that the heap owns, and the
 //   slabs of each, and it counts the live slots, the empty, partial and full
 //   slabs, the slabs of each slab heap and the blocks in the bins.  A test
-//   reads it after each step.  It reads only the state of its own heap, so
-//   only the owner thread calls it.
+//   reads it after each step.  It writes nothing, and only the owner thread
+//   calls it.  It reads the map entry of each claimed chunk with a plain
+//   load, also an entry that another heap writes, so its counts hold only
+//   when no other thread takes a chunk during the call.
 //
 // THE CELL
 //   tls_heap_ is a thread_local with the initial-exec model and constinit, so
@@ -104,13 +106,11 @@
 //
 // This header is in the layer F0_primitives of utils/rule-table.txt, and it
 // includes nothing above foundation/alloc/SlabHeap.h, so the allocation door
-// of foundation/core/Heap.h can read the cell and the fast paths.  It names
-// the window door only by a declaration: the claim gives each heap the
-// address of its window and of the commits of that window, and only the cold
-// bodies read them.  The door layer foundation/alloc/Root.h holds the root,
-// src/foundation/alloc/Root.cpp holds the claim, and
-// src/foundation/alloc/Refill.cpp and src/foundation/alloc/Flush.cpp hold
-// the cold bodies.
+// of foundation/core/Heap.h can read the cell and the fast paths.  The door
+// layer foundation/alloc/Root.h holds the root, and
+// src/foundation/alloc/Root.cpp holds the claim and the three doors of the
+// window.  src/foundation/alloc/Refill.cpp and src/foundation/alloc/Flush.cpp
+// hold the cold bodies.
 
 #include <foundation/Platform.h>
 #include <foundation/alloc/ChunkMap.h>
@@ -126,14 +126,29 @@
 namespace foundation::alloc {
 
 class HeapState;
-class Window;
-class WindowCommits;
 
 namespace detail {
 
 // The one writer of the fields of a new HeapState.  src/foundation/alloc/Root.cpp
 // defines it.
 struct HeapStateDoor;
+
+// The doors of the window of a heap for the cold bodies of the refill and the
+// census.  src/foundation/alloc/Root.cpp holds each body, which reads the host
+// window and its commits in the root.  No fast path calls one.
+//   claim_window_chunk_(owner)       a chunk of the window for the heap of
+//                                    the entry: claimed, its extent and the
+//                                    records of its 32 units committed, its
+//                                    record started with the owner, and its
+//                                    owner entry written.  A full window or a
+//                                    refusal of the kernel ends the process
+//   start_window_slab_(chunk, unit)  the record of a unit of a chunk of the
+//                                    heap, in zero bytes
+//   claimed_window_chunks_()         the chunks below the claim index of the
+//                                    window
+[[nodiscard, gnu::cold]] ChunkIndex claim_window_chunk_(ChunkOwner owner) noexcept;
+[[gnu::cold]] void start_window_slab_(ChunkIndex chunk, UnitIndex unit) noexcept;
+[[nodiscard, gnu::cold]] ::foundation::core::ElementCount claimed_window_chunks_() noexcept;
 
 // The first word of the stack of each class in the bin stacks, and the count
 // of the words of each stack before it, at the index of the class.  Index 0
@@ -277,8 +292,8 @@ public:
             && offsetof(HeapState, self_padding_) == 10 && offsetof(HeapState, small_units_) == 12
             && offsetof(HeapState, small_chunk_) == 16 && offsetof(HeapState, chunks_taken_) == 20
             && offsetof(HeapState, window_base_) == 24 && offsetof(HeapState, window_bytes_) == 32
-            && offsetof(HeapState, slab_records_) == 40 && offsetof(HeapState, window_) == 48
-            && offsetof(HeapState, commits_) == 56 && offsetof(HeapState, bins_) == 64
+            && offsetof(HeapState, slab_records_) == 40 && offsetof(HeapState, header_spare_) == 48
+            && sizeof(header_spare_) == 16 && offsetof(HeapState, bins_) == 64
             && offsetof(HeapState, partial_) == 64 + 24 * (kSizeClassCount + 1)
             && offsetof(HeapState, empty_small_) == offsetof(HeapState, partial_) + 4 * (kLastMediumClass + 1)
             && offsetof(HeapState, empty_medium_) == offsetof(HeapState, empty_small_) + 4
@@ -320,11 +335,6 @@ private:
     [[nodiscard]] SlabLink start_small_unit_() noexcept;
     [[nodiscard]] SlabLink start_medium_chunk_() noexcept;
 
-    // A chunk of the window for this heap: claimed, its extent and its slab
-    // records committed, its record started and its owner entry written
-    // (Refill.cpp).
-    [[nodiscard]] ChunkIndex take_chunk_() noexcept;
-
     // Gives one block of the class back to its slab, with the checks of THE
     // FAST PATHS (Flush.cpp).
     void give_back_(SizeClass size_class, AddressWord block) noexcept;
@@ -342,10 +352,7 @@ private:
     AddressWord window_base_{};
     std::uint64_t window_bytes_{0};
     SlabRecords slab_records_{};
-    // The window door of the window of the heap, which only the cold bodies
-    // read (the declaration of the window door above).
-    Window* window_ = nullptr;
-    WindowCommits* commits_ = nullptr;
+    std::uint8_t header_spare_[16]{};
     // The bin of each class, at the index of the class.  Index 0 names no
     // class.
     Bin bins_[kSizeClassCount + 1]{};

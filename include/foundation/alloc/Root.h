@@ -28,9 +28,11 @@
 //   blocks.  A full window ends the process with the remedy text of the
 //   window door (THE FULL WINDOW of foundation/alloc/Window.h).
 //
-//   No engine path reads the window through the root.  A heap holds a copy
-//   of the chunk map in its HeapState, and the root is read only at the init
-//   and at a claim.
+//   No fast path reads the window through the root.  A heap holds a copy of
+//   the chunk map, the base and the slab records in its HeapState, and the
+//   root is read only at the init, at a claim, and in the three doors of the
+//   window of foundation/alloc/HeapState.h: the take of a chunk, the start of
+//   a slab record, and the claim index for the census.
 //
 // THE HEAP TABLE
 //   The root owns one reservation for the HeapState of each heap, apart from
@@ -63,8 +65,7 @@
 //   commit one step at the same time, and the kernel gives the step the same
 //   access two times.  The claim then builds the HeapState in its slot: the
 //   chunk map, the base, the bytes and the slab records of the host window,
-//   the address of the window and of its commits, the entry of its id, and
-//   the three pointers of each bin.  It writes no word of the bin stacks.
+//   the entry of its id, and the three pointers of each bin.  It writes no word of the bin stacks.
 //   Then it writes the cell of the thread.  A claim past the last slot ends
 //   the process with the
 //   count of the table, and a commit that the kernel refuses, such as enomem
