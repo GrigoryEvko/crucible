@@ -263,47 +263,50 @@ template <ScopedEnum E>
     return found.size != 0 ? found : unknown_enum_chars<E>;
 }
 
-// The identifier of the enumerator that holds `value`, or the sentinel, as a
-// std::string_view, for a builder of the std::string_view texts of the
-// insights of fixy/Insights.h and of axis_name of fixy/Axis.h.
-template <ScopedEnum E>
-[[nodiscard]] constexpr std::string_view enum_name_view_(E value) noexcept {
-    NameChars const name = enum_name_chars(value);
-    return std::string_view{name.first, name.size};
+// True when the two names hold the same characters in the same order.  The
+// two names can swap with no change of the answer.  Complexity: linear in
+// the count of the characters.
+[[nodiscard]] consteval bool same_chars_(NameChars left, NameChars right) noexcept {
+    if (left.size != right.size) return false;
+    for (std::size_t index = 0; index < left.size; ++index) {
+        if (left.first[index] != right.first[index]) return false;
+    }
+    return true;
 }
 
-// True when identifier spells the name of the enumerator that holds value,
-// for a reader of reflection that compares an identifier, such as the bare
-// tag of an effect in foundation/effects/Effect.h.  A value that no
-// enumerator holds matches no identifier.  Complexity: linear in the
-// enumerators and the characters of the identifier.
+// True when the identifier of the entity that `entity` reflects spells the
+// name of the enumerator that holds value, for a reader of reflection that
+// compares an identifier, such as the bare tag of an effect in
+// foundation/effects/Effect.h.  A value that no enumerator holds matches no
+// identifier.  Complexity: linear in the enumerators and the characters of
+// the identifier.
 template <ScopedEnum E>
-[[nodiscard]] consteval bool is_enumerator_identifier(std::string_view identifier, E value) {
+[[nodiscard]] consteval bool is_enumerator_identifier(std::meta::info entity, E value) {
     FoundName const found = enumerator_chars(value);
-    return found.is_found && identifier == std::string_view{found.name.first, found.name.size};
+    return found.is_found && same_chars_(read_identifier_chars(entity), found.name);
 }
 
-// The identifier in lower case, with the separator between words.  An
-// upper-case letter that follows a lower-case letter or a digit starts a
-// new word.  So CopyHostToDevice reads copy_host_to_device with '_', and
-// SocketOracle reads socket-oracle with '-'.  The text lives in static
-// storage.  Complexity: linear in the length of the identifier.  The
-// function is a template only so that its text can depend on Anchor
-// (foundation/reflect/Anchor.h).
-template <class Anchor = void>
-[[nodiscard]] consteval std::string_view lower_words_of(std::string_view identifier, char separator) {
+// The characters of the identifier in lower case, with Separator between
+// words.  An upper-case letter that follows a lower-case letter or a digit
+// starts a new word.  So CopyHostToDevice reads copy_host_to_device with '_',
+// and SocketOracle reads socket-oracle with '-'.  The text lives in static
+// storage, with a zero after its last character.  Complexity: linear in the
+// length of the identifier.  The function is a template only so that its
+// text can depend on Anchor (foundation/reflect/Anchor.h).
+template <char Separator, class Anchor = void>
+[[nodiscard]] consteval NameChars lower_words_of(NameChars identifier) {
     anchored_t<^^Anchor, std::string> words;
-    for (std::size_t index = 0; index < identifier.size(); ++index) {
-        const char letter = identifier[index];
+    for (std::size_t index = 0; index < identifier.size; ++index) {
+        const char letter = identifier.first[index];
         const bool is_upper = letter >= 'A' && letter <= 'Z';
         if (is_upper && index > 0) {
-            const char previous = identifier[index - 1];
+            const char previous = identifier.first[index - 1];
             const bool ends_word = (previous >= 'a' && previous <= 'z') || (previous >= '0' && previous <= '9');
-            if (ends_word) words += separator;
+            if (ends_word) words += Separator;
         }
         words += is_upper ? static_cast<char>(letter - 'A' + 'a') : letter;
     }
-    return std::define_static_string(words);
+    return NameChars{std::define_static_string(words), words.size()};
 }
 
 // The identifier of the enumerator that holds `value`, in lower-case words
@@ -322,9 +325,9 @@ template <ScopedEnum E, char Separator>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto e : enumerators) {
-        constexpr std::string_view spelled = lower_words_of(std::meta::identifier_of(e), Separator);
+        constexpr NameChars spelled = lower_words_of<Separator>(read_identifier_chars(e));
         if (!is_found && value == [:e:]) {
-            words = NameChars{spelled.data(), spelled.size()};
+            words = spelled;
             is_found = true;
         }
     }

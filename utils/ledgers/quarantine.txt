@@ -170,8 +170,8 @@ include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 1 | ABI: libbpf opened the descriptor of the BPF map, and the map door maps it | libbpf gives the descriptor of a BPF map as a raw int, and map_foreign_region is the door that maps a descriptor that a C library opened
-include/fixy/ | base-std-entity | 239 | - | -
-include/fixy/ | base-std-object | 142 | - | -
+include/fixy/ | base-std-entity | 238 | - | -
+include/fixy/ | base-std-object | 81 | - | -
 include/fixy/ | replace-pending:<array> | 4 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/ | replace-pending:<bit> | 2 | - | -
@@ -182,7 +182,7 @@ include/fixy/ | replace-pending:<memory> | 2 | - | -
 include/fixy/ | replace-pending:<optional> | 4 | - | -
 include/fixy/ | replace-pending:<span> | 3 | - | -
 include/fixy/ | replace-pending:<string> | 4 | - | -
-include/fixy/ | replace-pending:<string_view> | 10 | - | -
+include/fixy/ | replace-pending:<string_view> | 9 | - | -
 include/fixy/ | replace-pending:<tuple> | 4 | - | -
 include/fixy/ | replace-pending:<vector> | 11 | - | -
 include/fixy/atoms/ | base-std-entity | 46 | - | -
@@ -222,13 +222,10 @@ include/fixy/fp/ | base-std-object | 4 | - | -
 include/fixy/fp/ | replace-pending:<array> | 1 | - | -
 include/fixy/fp/ | replace-pending:<bit> | 2 | - | -
 include/fixy/fp/ | replace-pending:<cmath> | 2 | - | -
-include/fixy/handle/ | base-c-library-call | 3 | - | -
-include/fixy/handle/ | base-std-entity | 21 | - | -
+include/fixy/handle/ | base-std-entity | 15 | - | -
 include/fixy/handle/ | base-std-object | 6 | - | -
 include/fixy/handle/ | replace-pending:<array> | 1 | - | -
 include/fixy/handle/ | replace-pending:<atomic> | 4 | - | -
-include/fixy/handle/ | replace-pending:<cstdio> | 1 | - | -
-include/fixy/handle/ | replace-pending:<cstdlib> | 1 | - | -
 include/fixy/os/ | base-std-entity | 65 | - | -
 include/fixy/os/ | base-std-object | 31 | - | -
 include/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
@@ -281,13 +278,13 @@ include/foundation/contracts/ | base-std-object | 14 | - | -
 include/foundation/contracts/ | replace-pending:<span> | 1 | - | -
 include/foundation/contracts/ | replace-pending:<string_view> | 1 | - | -
 include/foundation/contracts/ | replace-pending:<vector> | 1 | - | -
-include/foundation/diag/ | base-std-entity | 90 | - | -
-include/foundation/diag/ | base-std-object | 88 | - | -
-include/foundation/diag/ | replace-pending:<array> | 4 | - | -
+include/foundation/diag/ | base-std-entity | 39 | - | -
+include/foundation/diag/ | base-std-object | 28 | - | -
+include/foundation/diag/ | replace-pending:<array> | 3 | - | -
 include/foundation/diag/ | replace-pending:<source_location> | 2 | - | -
 include/foundation/diag/ | replace-pending:<span> | 1 | - | -
 include/foundation/diag/ | replace-pending:<string> | 1 | - | -
-include/foundation/diag/ | replace-pending:<string_view> | 5 | - | -
+include/foundation/diag/ | replace-pending:<string_view> | 1 | - | -
 include/foundation/diag/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/diag/ | replace-pending:<vector> | 3 | - | -
 include/foundation/effects/ | base-std-entity | 60 | - | -
@@ -305,8 +302,8 @@ include/foundation/permissions/ | replace-pending:<optional> | 1 | - | -
 include/foundation/permissions/ | replace-pending:<string_view> | 2 | - | -
 include/foundation/permissions/ | replace-pending:<tuple> | 2 | - | -
 include/foundation/permissions/ | replace-pending:<vector> | 3 | - | -
-include/foundation/reflect/ | base-std-entity | 107 | - | -
-include/foundation/reflect/ | base-std-object | 43 | - | -
+include/foundation/reflect/ | base-std-entity | 100 | - | -
+include/foundation/reflect/ | base-std-object | 38 | - | -
 include/foundation/reflect/ | replace-pending:<array> | 3 | - | -
 include/foundation/reflect/ | replace-pending:<bit> | 1 | - | -
 include/foundation/reflect/ | replace-pending:<string> | 2 | - | -
@@ -319,8 +316,8 @@ src/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
 src/fixy/os/ | replace-pending:<string> | 1 | - | -
 src/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 src/fixy/os/ | replace-pending:<vector> | 1 | - | -
-src/foundation/ | base-std-entity | 20 | - | -
-src/foundation/ | base-std-object | 14 | - | -
+src/foundation/ | base-std-entity | 10 | - | -
+src/foundation/ | base-std-object | 5 | - | -
 src/foundation/ | replace-pending:<atomic> | 1 | - | -
 src/foundation/ | replace-pending:<csignal> | 1 | - | -
 src/foundation/os/ | base-std-entity | 28 | - | -
@@ -463,8 +460,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/ | std-entity | 2265 | - | -
-test/fixy/ | std-object | 769 | - | -
+test/fixy/ | std-entity | 2221 | - | -
+test/fixy/ | std-object | 744 | - | -
 test/fixy/neg/ | c-array-object | 42 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 322 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
@@ -551,8 +548,8 @@ test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
 test/fixy/neg/ | std-entity | 74 | - | -
 test/fixy/neg/ | std-object | 31 | - | -
-test/foundation/ | c-array-object | 9 | - | -
-test/foundation/ | c-library-call | 8 | - | -
+test/foundation/ | c-array-object | 6 | - | -
+test/foundation/ | c-library-call | 2 | - | -
 test/foundation/ | opted-out | 12 | ABI: the linker gives the bounds of a section as the C symbols __start_ and __stop_ | -
 test/foundation/ | opted-out | 32 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | opted-out | 27 | ORACLE: GCC <cpuid.h> and __builtin_cpu_supports give the x86-64 features | test_os_x86_level takes the bits of each x86-64 feature from GCC <cpuid.h> and the features of this host from __builtin_cpu_supports, as an oracle outside the level door.  test_target_units takes the address of the exact form of fp::fma in each of its units.  The level probe of the vessel gives Python the level of the host through a C entry
@@ -588,7 +585,6 @@ test/foundation/ | opted-out | 2 | PROBE: the walk of the Protocol family over a
 test/foundation/ | opted-out | 2 | PROBE: the walk of the extract gate reads the target of a raw pointer member | -
 test/foundation/ | opted-out | 3 | PROBE: valid_span judges a raw pointer with a count, the form of a drain | -
 test/foundation/ | raw-function-pointer | 9 | - | -
-test/foundation/ | raw-pointer-object | 1 | - | -
 test/foundation/ | region | 1 | ABI: the kernel gives the pages of a map as a pointer to raw bytes and a count | the entry view_entry.cpp of a fuzz harness of base types takes the input and the seeds of the runner as a std::span and a std::vector in one ABI region, and the test of the cap of a heap image takes a View of a map of 4 GiB of the guarded region door in one ABI region
 test/foundation/ | region | 1 | ABI: the linker gives the bounds of a section as the C symbols __start_ and __stop_ | -
 test/foundation/ | region | 2 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
@@ -624,8 +620,8 @@ test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a 
 test/foundation/ | region | 1 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -
 test/foundation/ | region | 2 | PROBE: the walk of the extract gate reads the target of a raw pointer member | -
 test/foundation/ | region | 2 | PROBE: valid_span judges a raw pointer with a count, the form of a drain | -
-test/foundation/ | std-entity | 220 | - | -
-test/foundation/ | std-object | 59 | - | -
+test/foundation/ | std-entity | 143 | - | -
+test/foundation/ | std-object | 31 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
 test/foundation/neg/ | detail-use | 122 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type or a range or a cursor that the fixture forges
@@ -674,16 +670,15 @@ test/foundation/neg/ | region | 1 | PROBE: the fixture plants a tag template of 
 test/foundation/neg/ | region | 6 | PROBE: the fixture specializes a trait of the base, and the compiler refuses it | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the probe forges a niche of a Ref to show that Ref gives a niche no friend | -
 test/foundation/neg/ | region | 1 | PROBE: the probe specializes the Ref door to show that it cannot write the pointer | -
-test/foundation/neg/ | std-entity | 46 | - | -
-test/foundation/neg/ | std-object | 10 | - | -
+test/foundation/neg/ | std-entity | 45 | - | -
+test/foundation/neg/ | std-object | 6 | - | -
 test/fuzz/boundary/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
 test/fuzz/boundary/ | opted-out | 15 | ABI: the death path runs in a signal handler and in the death callback of the sanitizer | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
 test/fuzz/boundary/ | opted-out | 1 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the entry view_entry.cpp of a fuzz harness of base types takes the input and the seeds of the runner as a std::span and a std::vector in one ABI region, and the test of the cap of a heap image takes a View of a map of 4 GiB of the guarded region door in one ABI region
 test/fuzz/boundary/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
 test/fuzz/boundary/ | region | 1 | ABI: the death path runs in a signal handler and in the death callback of the sanitizer | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
 test/fuzz/boundary/ | region | 1 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the entry view_entry.cpp of a fuzz harness of base types takes the input and the seeds of the runner as a std::span and a std::vector in one ABI region, and the test of the cap of a heap image takes a View of a map of 4 GiB of the guarded region door in one ABI region
-test/fuzz/boundary/harnesses/ | std-entity | 10 | - | -
-test/fuzz/boundary/harnesses/ | std-object | 3 | - | -
+test/fuzz/boundary/harnesses/ | std-entity | 1 | - | -
 test/fuzz/property/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
 test/fuzz/property/ | opted-out | 3 | ORACLE: the overflow builtins of GCC are the model of the saturating operations | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
 test/fuzz/property/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
@@ -701,7 +696,7 @@ test/layer/checks/crucible/mimic/ | std-object | 1 | - | -
 test/layer/checks/crucible/observe/ | std-entity | 1 | - | -
 test/layer/checks/fixy/ | c-array-object | 2 | - | -
 test/layer/checks/fixy/ | raw-pointer-object | 8 | - | -
-test/layer/checks/fixy/ | std-entity | 84 | - | -
+test/layer/checks/fixy/ | std-entity | 72 | - | -
 test/layer/checks/fixy/ | std-object | 5 | - | -
 test/layer/checks/fixy/atoms/ | std-entity | 18 | - | -
 test/layer/checks/fixy/atoms/ | std-object | 4 | - | -
@@ -724,8 +719,8 @@ test/layer/checks/foundation/algebra/lattices/ | c-array-object | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-entity | 28 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-object | 3 | - | -
 test/layer/checks/foundation/contracts/ | c-array-object | 4 | - | -
-test/layer/checks/foundation/diag/ | std-entity | 64 | - | -
-test/layer/checks/foundation/diag/ | std-object | 34 | - | -
+test/layer/checks/foundation/diag/ | std-entity | 37 | - | -
+test/layer/checks/foundation/diag/ | std-object | 1 | - | -
 test/layer/checks/foundation/effects/ | c-array-object | 2 | - | -
 test/layer/checks/foundation/effects/ | raw-function-pointer | 1 | - | -
 test/layer/checks/foundation/effects/ | std-entity | 33 | - | -

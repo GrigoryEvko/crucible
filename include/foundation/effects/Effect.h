@@ -272,7 +272,7 @@ template <Effect E>
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : members) {
         if constexpr (std::meta::is_type(member)) {
-            if (::foundation::reflect::detail::is_enumerator_identifier(std::meta::identifier_of(member), E)) {
+            if (::foundation::reflect::detail::is_enumerator_identifier(member, E)) {
                 return member;
             }
         }
