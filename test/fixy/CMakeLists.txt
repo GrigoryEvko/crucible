@@ -2580,6 +2580,9 @@ fixy_neg_compile_test(neg_sess_family_declared_before_its_header
 fixy_neg_compile_test(neg_sess_family_without_seal
   "a_family_holds_a_registration_with_no_seal"
   "family_reading_v<.*fixy::session::combinators::unsealed .*combinator>")
+fixy_neg_compile_test(neg_sess_family_with_two_seals
+  "a_kind_of_registration_has_two_seals"
+  "family_reading_v<.*fixy::session::combinators::sealed_twice .*combinator>")
 fixy_neg_compile_test(neg_sess_registered_class_without_definition
   "a_registered_class_has_no_definition_here"
   "combinator_lookup_v<.*Halt>")
