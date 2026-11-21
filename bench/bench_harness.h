@@ -1431,8 +1431,10 @@ read_proc_file_again(ProcFile const& file, ::fixy::FixedText<Capacity>& text) no
     const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
     text = ::fixy::FixedText<Capacity>{};
     ::fixy::FixedArray<std::byte, Capacity> bytes{};
-    CRUCIBLE_TRY(count, ::fixy::fs::read_full_at(startup, file.ref(), ::fixy::View<std::byte>{bytes.view()},
-                                                 ::fixy::fs::FileOffset{0}));
+    CRUCIBLE_TRY(count, bytes.with_mut([&startup, &file](auto run) noexcept {
+        return ::fixy::fs::read_full_at(startup, file.ref(), ::fixy::View<std::byte>{run.view()},
+                                        ::fixy::fs::FileOffset{0});
+    }));
     for (std::byte const byte : bytes.view().window(0, count).expect("a read gives at most the size of its buffer")) {
         if (text.append(::fixy::bit_cast<char>(byte)).is_err()) return ::fixy::err(::foundation::os::Errno::efbig);
     }
@@ -1622,9 +1624,10 @@ public:
         const std::size_t position = !cpu.is_valid() || static_cast<std::size_t>(cpu.raw()) >= kSpreadCpus
                                        ? kSpreadCpus - 1
                                        : static_cast<std::size_t>(cpu.raw());
-        static_cast<void>(
-            counts_.at(::fixy::Index<kSpreadCpus>::check(position).expect("the test above bounds the CPU"))
-                .fetch_add_relaxed(1));
+        // Each count is an atomic counter, which each thread of the bench
+        // steps at the same time.
+        counts_.with_element(::fixy::Index<kSpreadCpus>::check(position).expect("the test above bounds the CPU"),
+                             [](Counter& counter) noexcept { static_cast<void>(counter.fetch_add_relaxed(1)); });
     }
 
     // Prints each CPU with a note, and its count of notes, on one line after
@@ -1714,15 +1717,22 @@ struct OffCpuTop {
         std::size_t place = kept < kOffCpuTopK ? kept : kOffCpuTopK - 1;
         if (kept < kOffCpuTopK) ++kept;
         while (place > 0 && at_(place - 1).off_ns < spike.off_ns) {
-            at_(place) = at_(place - 1);
+            put_(place, at_(place - 1));
             --place;
         }
-        at_(place) = spike;
+        put_(place, spike);
     }
 
     // The spike at a place below kOffCpuTopK.
-    [[nodiscard]] OffCpuSpike& at_(std::size_t place) noexcept {
+    [[nodiscard]] OffCpuSpike const& at_(std::size_t place) const noexcept {
         return longest.at(::fixy::Index<kOffCpuTopK>::check(place).expect("a place of the top set is below its size"));
+    }
+
+    // Writes the spike at a place below kOffCpuTopK.
+    void put_(std::size_t place, OffCpuSpike spike) noexcept {
+        longest.with_element(
+            ::fixy::Index<kOffCpuTopK>::check(place).expect("a place of the top set is below its size"),
+            [spike](OffCpuSpike& held) noexcept { held = spike; });
     }
 };
 
