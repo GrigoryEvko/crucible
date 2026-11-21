@@ -1439,7 +1439,6 @@ inline void print_memory(MemoryReading const& memory) noexcept {
     std::size_t const live_raw = memory.live.raw();
     std::size_t const growth = memory.steady.raw() > memory.start.raw() ? memory.steady.raw() - memory.start.raw() : 0;
     std::uint64_t const centi_ratio = live_raw == 0 ? 0 : (growth * 100 + live_raw / 2) / live_raw;
-    bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out,
                    "    resident: {} MiB at the start, {}{}.{} MiB at the end of the window for {}.{} MiB live "
                    "({}.{}{} resident bytes for each live byte), {}{}.{} MiB after the stop with no count of the "
@@ -1966,7 +1965,6 @@ void print_row(RowResult const& row, EfficiencyBase const& base) noexcept {
     auto const median = static_cast<std::uint64_t>(row.windows.median * 100.0 + 0.5);
     auto const spread = static_cast<std::uint64_t>(row.windows.spread * 1000.0 + 0.5);
     bool const is_paused = row.window_pause.is_over_bound() || row.paused_windows > 0 || row.steal_ms > 0;
-    bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out, "  {} threads{}{}: {}.{}{} Mitems/s, efficiency {}.{}{}", row.threads.raw(),
                    W::kRow == RowKind::pair ? ::fixy::TextView{", consumer in the "} : ::fixy::TextView{},
                    W::kRow == RowKind::pair ? name_of(row.placement) : ::fixy::TextView{}, row.centi_mops / 100,
@@ -1999,7 +1997,6 @@ template <class W>
 // three places of a pair row.  Then the line of each row.
 template <AllocatorAdapter A, class W>
 void run_workload_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> counts, RunRecord& record) {
-    bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out, "\n=== {} {} ===\n", name_of(A::kind), name_of(W::kRow));
     ::fixy::FixedList<RowResult, kMaxRows> rows{};
     if constexpr (W::kRow == RowKind::pair) {
@@ -2173,7 +2170,6 @@ namespace bench_alloc {
 template <AllocatorAdapter A, RowKind Kind>
 void run_round_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> counts, RunRecord& record) {
     using Round = RoundWorkload<A, Kind>;
-    bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out, "\n=== {} {} ===\n", name_of(A::kind), name_of(Kind));
     bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a run has the slot of the main thread");
     RowPlaces const places{.spread = spread};
@@ -2210,7 +2206,6 @@ void run_round_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const>
         std::uint64_t const steal_ms =
             steal_ms_between(::fixy::side_as<bench::side::ReadingBefore>(steal_before),
                              ::fixy::side_as<bench::side::ReadingAfter>(read_steal(places, threads)));
-        bench::detail::flush_standard_output();
         ::fixy::report(::fixy::Sink::Out,
                        "  {} threads: {}.{}{} ns for each replace at the p50 of a round, steal {} ms{}\n",
                        threads.raw(), centi_ns / 100, centi_ns % 100 / 10, centi_ns % 10, steal_ms,
@@ -2284,7 +2279,6 @@ template <AllocatorAdapter A>
 
 template <AllocatorAdapter A, std::size_t... Classes>
 void run_class_rows(bench::CpuId cpu, RunRecord& record, std::index_sequence<Classes...> /*classes*/) {
-    bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out, "\n=== {} class: a block of each size class on one thread ===\n",
                    name_of(A::kind));
     MemoryReading memory{.start = read_resident()};
@@ -2304,7 +2298,6 @@ void run_class_rows(bench::CpuId cpu, RunRecord& record, std::index_sequence<Cla
 // a huge page, which writes each byte, and releases it.
 template <AllocatorAdapter A>
 void run_span_rows(bench::CpuId cpu, RunRecord& record) {
-    bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out, "\n=== {} span: take, write and release a span on one thread ===\n",
                    name_of(A::kind));
     ::fixy::FixedArray<std::size_t, 4> const spans{2, 8, 64, 256};

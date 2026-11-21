@@ -47,7 +47,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <type_traits>
 #include <utility>
 
@@ -1203,12 +1202,6 @@ struct WindowClock {
 
 namespace detail {
 
-// Writes the text that stdio holds for standard output, so a report of the
-// base, which writes at once, comes after it.  A bench that prints its own
-// lines through stdio then keeps the order of its lines and of the rows.  The
-// flush goes when no bench prints through stdio.
-inline void flush_standard_output() noexcept { static_cast<void>(std::fflush(stdout)); }
-
 // The value of the first line of text that starts with key: the characters
 // after the colon of the line, with no blank at either end, or no character.
 // Complexity: linear in the text.
@@ -1567,7 +1560,6 @@ lost_between(::fixy::Side<side::ReadingBefore, WindowClock> const& before,
 // each thread.
 inline void print_thread_cpus(::fixy::TextView label) noexcept {
     using ::fixy::Sink;
-    detail::flush_standard_output();
     ::fixy::report(Sink::Out, "     └─ threads of {} (cpu, involuntary switches):", label);
     static_cast<void>(::foundation::os::for_each_entry("/proc/self/task", [](::fixy::CText name) noexcept {
         const auto read = [&name](::fixy::CText leaf, auto& text) noexcept {
@@ -1634,7 +1626,6 @@ public:
     // the label.  Call it after the threads that noted joined.
     void print(::fixy::TextView label) const noexcept {
         using ::fixy::Sink;
-        detail::flush_standard_output();
         ::fixy::report(Sink::Out, "     └─ cpus of the threads of {} (cpu: notes):", label);
         std::size_t cpu = 0;
         for (Counter const& count : counts_) {
@@ -2110,7 +2101,6 @@ template <class... Args>
 template <class... Args>
     requires(::fixy::Formattable<Args> && ...)
 [[gnu::noinline]] void print(::fixy::Fmt<std::type_identity_t<Args>...> const& fmt, Args... args) noexcept {
-    detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out, fmt, args...);
 }
 
@@ -2426,7 +2416,6 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
         using ::fixy::Fixed;
         using ::fixy::Padded;
         using ::fixy::Sink;
-        detail::flush_standard_output();
         const detail::NsText p50_text = detail::ns_text(pct.p50);
         const detail::NsText p90_text = detail::ns_text(pct.p90);
         const detail::NsText p99_text = detail::ns_text(pct.p99);
@@ -2482,7 +2471,6 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     [[gnu::noinline]] void print_json() const noexcept {
         using ::fixy::Fixed;
         using ::fixy::Sink;
-        detail::flush_standard_output();
         const detail::JsonName json_name = detail::json_name_of(name.view());
         ::fixy::report(Sink::Out, "{{\"name\":{},\"batch\":{},\"n\":{},\"cpu\":{},\"cpu_count\":{},", json_name.view(),
                        batch, pct.n, pinned_cpu.raw(), pinned_cpu_count);
@@ -2534,7 +2522,6 @@ private:
         }
         auto const hundredths = static_cast<std::uint64_t>(scaled * 100.0 + 0.5);
         auto const tenths = static_cast<std::uint64_t>(windows.spread * 1000.0 + 0.5);
-        detail::flush_standard_output();
         ::fixy::report(Sink::Out, "  win={} w50={}.{}{}{} spread={}.{}%", windows.windows, hundredths / 100,
                        hundredths % 100 / 10, hundredths % 10, unit, tenths / 10, tenths % 10);
         if (paused_windows > 0) ::fixy::report(Sink::Out, "  [paused windows {}]", paused_windows);
@@ -2545,7 +2532,6 @@ private:
     // PAUSE CHECK).  The times are in microseconds.
     void print_pause_() const noexcept {
         using ::fixy::Sink;
-        detail::flush_standard_output();
         ::fixy::report(Sink::Out, "     └─ [pause] in {} ms of the sampled loop:", pause.wall_ns / 1000000);
         if (pause.basis == PauseBasis::LostTime) {
             ::fixy::report(Sink::Out,
@@ -2722,7 +2708,6 @@ struct Compare {
         using ::fixy::SignMark;
         using ::fixy::Sink;
         using Delta = Fixed<2, 6, ::fixy::Align::Right, SignMark::Always>;
-        detail::flush_standard_output();
         ::fixy::report(Sink::Out, "  Δ {} → {}:  Δp50={}%  Δp99={}%  Δμ={}%  z={}", a_name.view(), b_name.view(),
                        Delta{delta_p50_pct}, Delta{delta_p99_pct}, Delta{delta_mean_pct},
                        Fixed<2, 5, ::fixy::Align::Right, SignMark::Always>{z});
@@ -3677,7 +3662,6 @@ private:
 [[gnu::noinline]] inline void print_system_info() {
     using ::fixy::Sink;
     using ::fixy::TextView;
-    detail::flush_standard_output();
     ::fixy::report(Sink::Out, "=== system ===\n");
 
     // The first 4 KiB of /proc/cpuinfo hold the block of the first CPU.
@@ -3941,7 +3925,6 @@ template <typename State, typename Body>
 [[gnu::noinline]] inline void emit_reports_json(::fixy::View<const Report> reports, JsonTail tail) noexcept {
     using ::fixy::Sink;
     if (tail == JsonTail::Off) return;
-    detail::flush_standard_output();
     ::fixy::report(Sink::Out, "\n=== json ===\n[\n");
     std::size_t written = 0;
     for (Report const& report : reports) {

@@ -131,7 +131,6 @@ void print_time_ratios(RunRecord const& record) noexcept {
     for (Summary const& summary : record.summaries)
         has_reference = has_reference || summary.allocator != AllocatorKind::base;
     if (!has_reference) return;
-    bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out,
                    "\n=== the time of the base over the time of each reference: above 1.00 the base is slower ===\n");
     for (Summary const& summary : record.summaries) {
@@ -153,7 +152,6 @@ int run_bench(::fixy::os::Args const& arguments) {
     bench::elevate_priority();
     bench::Spread const spread = bench::Spread::of_calling_thread();
     Arguments const selected = arguments_of(arguments, spread);
-    bench::detail::flush_standard_output();
     if (spread.source() == bench::SpreadSource::Claim) {
         ::fixy::report(::fixy::Sink::Out, "  slots: the {} claimed cores, slot k on core k, from cpu{}\n",
                        spread.count(), spread.of_slot(bench::kMeasuringSlot).value_or(bench::CpuId::none()).raw());

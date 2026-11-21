@@ -174,7 +174,6 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
 }  // namespace
 
 void run_box_channel_rows(bench::Spread const& spread, RunRecord& record) {
-    bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out,
                    "\n=== base box-channel: a Box of 64 bytes across a PermissionedBoxChannel ===\n");
     ::fixy::FixedList<RowResult, kMaxRows> rows{};
