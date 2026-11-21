@@ -466,7 +466,7 @@ enforce test/vessel_neg/ error
 enforce test/vigil_neg/ error
 enforce test/warden_neg/ error
 enforce utils/tools/ error
-enforce vessel/ report
+enforce vessel/ error
 
 language F0_primitives include/foundation/core/ include/foundation/alloc/Layout.h include/foundation/alloc/ChunkMap.h include/foundation/alloc/Metadata.h include/foundation/alloc/SlabHeap.h src/foundation/alloc/SlabHeap.cpp include/foundation/alloc/HeapState.h src/foundation/core/ include/fixy/Core.h
 
