@@ -661,6 +661,12 @@ witness <foundation/alloc/Metadata.h> private | foundation::alloc::MetadataLayou
 # A window owns the reservation of a window and of its region, which the
 # ladder of the window door gave.
 witness <foundation/alloc/Window.h> private | foundation::alloc::Window | foundation::alloc::Window{forge::rvalue<foundation::os::Reservation>(), forge::rvalue<foundation::os::Reservation>(), forge::rvalue<foundation::alloc::MetadataLayout>(), forge::rvalue<foundation::alloc::WindowRecord>()}
+# A block of a heap scope names one block that the heap of the scope gave.
+# Only allocate of the scope builds one.
+witness <foundation/heap/HeapScope.h> private | foundation::heap::LocalBlock<foundation::alloc::SizeClass{1}, forge::brand> | foundation::heap::LocalBlock<foundation::alloc::SizeClass{1}, forge::brand>{forge::rvalue<foundation::alloc::AddressWord>()}
+# A heap scope names the heap of the thread of its mint, and it holds the
+# permission of the owner.  Only mint_heap_scope builds one.
+witness <foundation/heap/HeapScope.h> private | foundation::heap::HeapScope<forge::brand> | foundation::heap::HeapScope<forge::brand>{forge::lvalue<foundation::alloc::HeapState>(), forge::rvalue<foundation::permissions::Permission<foundation::heap::heap_tag::Owner, forge::brand>>()}
 witness <foundation/effects/Effect.h> private | foundation::effects::cap::IO | foundation::effects::cap::IO{}
 witness <foundation/effects/Effect.h> private | foundation::effects::cap::Block | foundation::effects::cap::Block{}
 witness <foundation/effects/Effect.h> private | foundation::effects::cap::Nondet | foundation::effects::cap::Nondet{}

@@ -2880,6 +2880,26 @@ target_link_libraries(test_alloc_slab_heap PRIVATE fixy)
 # process.
 foundation_test(test_alloc_heap_state)
 target_link_libraries(test_alloc_heap_state PRIVATE fixy)
+# The typed testing door of foundation/heap/HeapScope.h: a scope claims the
+# heap of its thread, its blocks of each slab kind lie in chunks of that heap,
+# and two scopes of one thread name one heap.  The fixtures: a block does not
+# pass to a scope of another brand, a class with no slab does not compile,
+# and the mint refuses a body whose result names the brand and a body that
+# can throw.
+foundation_test(test_heap_scope)
+target_link_libraries(test_heap_scope PRIVATE fixy)
+foundation_neg_compile_test(neg_heap_scope_release_into_other_brand
+  "no matching function for call to .foundation::heap::HeapScope<.*>::release\\("
+  "neg_heap_scope_release_into_other_brand\\.cpp:[0-9]+:[0-9]+: error:")
+foundation_neg_compile_test(neg_heap_scope_class_without_slab
+  "required for the satisfaction of .SlabSizeClass<Class>. .with Class = \\(foundation::alloc::SizeClass\\)53"
+  "neg_heap_scope_class_without_slab\\.cpp:[0-9]+:[0-9]+: error:")
+foundation_neg_compile_test(neg_heap_scope_result_names_brand
+  "the expression .!names_brand\\("
+  "neg_heap_scope_result_names_brand\\.cpp:[0-9]+:[0-9]+: error:")
+foundation_neg_compile_test(neg_heap_scope_body_can_throw
+  "the expression .is_nothrow_invocable_v<Body&&, foundation::heap::HeapScope<Brand>&>"
+  "neg_heap_scope_body_can_throw\\.cpp:[0-9]+:[0-9]+: error:")
 # The root of foundation/alloc/Root.h in one process: the sentinel before the
 # init, the map that the init writes into it, the sentinel of a new thread,
 # and the claims of the heap table.  The threads come from the thread door of

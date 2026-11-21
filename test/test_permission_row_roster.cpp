@@ -122,7 +122,7 @@ struct RosterEntry {
 };
 
 // The count of the entries of the roster.
-constexpr std::size_t kRosterEntries = 11;
+constexpr std::size_t kRosterEntries = 12;
 
 // The reason of each tag with an empty row.
 constexpr ::fixy::FixedArray<RosterEntry, kRosterEntries> kEmptyRowRoster{
@@ -151,6 +151,9 @@ constexpr ::fixy::FixedArray<RosterEntry, kRosterEntries> kEmptyRowRoster{
                 "a witness tag of fixy/channels/SwmrSession.h"},
     RosterEntry{"foundation::permissions::detail::read_view_test_tag",
                 "a self-test tag of foundation/permissions/ReadView.h"},
+    RosterEntry{"foundation::heap::heap_tag::Owner",
+                "the owner of a heap in foundation/heap/HeapScope.h: the scope door also takes the allocation "
+                "capability, and a root names no heap until a scope binds it to the heap of its own thread"},
 };
 
 consteval bool roster_names(::fixy::TextView name) {

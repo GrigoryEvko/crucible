@@ -471,6 +471,10 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
                             "takes, words of a request that carry no grade"},
     {^^::foundation::alloc::side, "the roles of the bases and the lengths of a window record: empty tags that a Side "
                                   "names at compile time, and no value"},
+    {^^::foundation::heap, "the typed testing door of the allocator: the scope of the heap of a thread and its "
+                           "blocks, which live in the body of the scope and cross no kernel signature"},
+    {^^::foundation::heap::heap_tag, "the tag of the permission of the owner of a heap: an empty class that a "
+                                     "Permission names at compile time, and no value"},
     {^^::fixy::tags::source, kGradeVocabulary},
     {^^::fixy::tags::trust, kGradeVocabulary},
     {^^::fixy::tags::access, kGradeVocabulary},
