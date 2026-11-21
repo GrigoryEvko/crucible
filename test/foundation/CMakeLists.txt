@@ -2186,6 +2186,12 @@ foundation_neg_compile_test(neg_aligned_bytes_static_window_view_leaves_frame
 foundation_neg_compile_test(neg_aligned_bytes_static_windows_too_many
   "use of deleted function .void foundation::with_mut_windows"
   "with_mut_windows takes at most max_block_windows windows")
+# A tested window starts its elements with no check, so only the tests of the
+# static form make one: its constructor from a first byte and a count is
+# private.
+foundation_neg_compile_test(neg_aligned_bytes_tested_window_from_parts
+  "is private within this context"
+  "neg_aligned_bytes_tested_window_from_parts.cpp:11")
 # No number converts to a ByteCount or to an Alignment, so the doors of a
 # Layout refuse two bare numbers, a swapped pair, and a count of elements.  A
 # type that is only declared has no layout.

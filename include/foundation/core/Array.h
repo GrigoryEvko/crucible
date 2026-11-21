@@ -1145,6 +1145,30 @@ void with_mut(Owner&& owner, Body&& body) = delete(
 
 namespace foundation::lifetime {
 
+// The start of count objects of type T over the storage, with no check: the
+// door of the base layer, which start_as_array below ends in after its three
+// checks.  The comment there tells how a start works.  The caller proves the
+// three facts that start_as_array checks.  The storage is aligned for T, the
+// count is at most max_view_count(sizeof(T)), and the storage is not null
+// when the count is above zero.  An owner whose own tests give the three
+// facts starts its objects through it, as an owner that proves its run makes
+// its View through the key.  The tested window of the frame door of
+// foundation/AlignedBytes.h is such an owner.  The rule owners keeps each
+// caller outside the base out of the key.
+template <ImplicitLifetimeThroughout T, typename Storage>
+    requires(!std::is_volatile_v<Storage> && ::foundation::core::ViewElement<element_for_storage_t<Storage, T>>)
+[[nodiscard]] CRUCIBLE_INLINE ::foundation::core::View<element_for_storage_t<Storage, T>>
+start_as_array(::foundation::core::detail::ViewKey const& key, Storage* storage, std::size_t count) noexcept {
+    using Element = element_for_storage_t<Storage, T>;
+    using Untyped = std::conditional_t<std::is_const_v<Storage>, const void, void>;
+    Element* first = static_cast<Element*>(static_cast<Untyped*>(storage));
+    if (count != 0) {
+        auto* const region = __builtin_bit_cast(unsigned char (*)[], static_cast<Untyped*>(storage));
+        __asm__ __volatile__("" : "+r"(first), "=m"(*region) : "m"(*region));
+    }
+    return ::foundation::core::View<Element>{key, first, count};
+}
+
 // Starts the lifetime of count objects of type T over the storage and
 // returns them as a View of the base.  The storage must hold count * sizeof(T)
 // bytes aligned for T.  The element of the View is const when the storage or
@@ -1183,8 +1207,8 @@ namespace foundation::lifetime {
 // of the asm statement would see no start with no statement.  The address of a
 // local of a known alignment folds the check of the alignment.  The checks
 // read the storage before the asm statement, because the statement hides the
-// pointer from the optimizer.  The View then comes through the door of the
-// base layer, with no second check.
+// pointer from the optimizer.  The start then goes through the form with the
+// key above, with no second check.
 //
 // Volatile storage is refused, because a View holds no volatile element.  A
 // caller that reads through volatile converts the address of an element to a
@@ -1195,16 +1219,10 @@ template <ImplicitLifetimeThroughout T, typename Storage>
 [[nodiscard]] CRUCIBLE_INLINE ::foundation::core::View<element_for_storage_t<Storage, T>>
 start_as_array(Storage* storage, std::size_t count) noexcept {
     using Element = element_for_storage_t<Storage, T>;
-    using Untyped = std::conditional_t<std::is_const_v<Storage>, const void, void>;
     CRUCIBLE_FATAL_INVARIANT((__builtin_bit_cast(std::uintptr_t, storage) & (alignof(Element) - 1)) == 0);
     CRUCIBLE_FATAL_INVARIANT(count <= ::foundation::core::max_view_count(sizeof(Element)));
     CRUCIBLE_FATAL_INVARIANT(storage != nullptr || count == 0);
-    Element* first = static_cast<Element*>(static_cast<Untyped*>(storage));
-    if (count != 0) {
-        auto* const region = __builtin_bit_cast(unsigned char (*)[], static_cast<Untyped*>(storage));
-        __asm__ __volatile__("" : "+r"(first), "=m"(*region) : "m"(*region));
-    }
-    return ::foundation::core::View<Element>{::foundation::core::detail::ViewDoor::key(), first, count};
+    return start_as_array<T>(::foundation::core::detail::ViewDoor::key(), storage, count);
 }
 
 // A byte of the bytes of a View that start_as_array takes: unsigned char or

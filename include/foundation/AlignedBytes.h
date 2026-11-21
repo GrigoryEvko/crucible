@@ -640,33 +640,57 @@ template <std::size_t N, std::size_t... Firsts>
     return (false || ... || overlaps_a_later_window_<Firsts>(windows, std::make_index_sequence<N>{}));
 }
 
-// The ViewMut of the elements of one window that the tests passed.  The
-// start of the lifetime of the elements gives their View (start_as_array of
-// foundation/core/Array.h).  The tests of the door prove two facts that the
-// start checks again, and the two assumptions give them to the optimizer,
-// as size() of a View gives its bound:
-//   - The window is inside the bytes, and a View holds at most
-//     max_view_count(1) bytes, so its count of T is at most
-//     max_view_count(sizeof(T)).
-//   - A View holds a pointer that is not null for each count above zero, so
-//     the first byte of a window of some elements is not null.
-// A window of no element starts no lifetime, so its View holds no object.
-// Complexity: O(1).
-template <class T, ::foundation::brand::IsBrand Fresh>
-[[nodiscard]] CRUCIBLE_INLINE core::ViewMut<T, Fresh> window_view_(core::View<std::uint8_t> bytes,
-                                                                   ByteWindow const& window) noexcept {
-    std::uint8_t* const first = first_of_(core::detail::ViewDoor::key(), bytes) + window.start().raw();
-    std::size_t const count = window.length().raw() / sizeof(T);
-    if (count == 0) {
-        T* const none = static_cast<T*>(static_cast<void*>(first));
-        return core::ViewMut<T, Fresh>{core::detail::FrameDoor::key(),
-                                       core::View<T>{core::detail::ViewDoor::key(), none, count}};
+// A window of a block that passed the tests of one window for T: it is
+// inside the bytes of the block, its bytes hold a whole count of T, and its
+// first byte is aligned for T.  test is its one door, so a tested window
+// holds the three facts that a start of the lifetime of its elements needs:
+//   - The first byte is aligned for T, which the test of the alignment gives.
+//   - The count of T is at most max_view_count(sizeof(T)), because a View of
+//     the block holds at most max_view_count(1) bytes.
+//   - The first byte is not null when the window holds an element, because
+//     a View holds a pointer that is not null for each count above zero.
+// So lend starts the elements through the form of start_as_array with the
+// key of a View, which checks nothing (foundation/core/Array.h).  The window
+// of no element at no address also holds the three facts, so it is the
+// default.  The type holds the first byte and the count, so it costs what
+// the two words cost.
+template <class T>
+class TestedWindow final {
+public:
+    constexpr TestedWindow() noexcept = default;
+
+    // The tests of is_window_refused_, in its order.  A window that passes
+    // them gives false and writes its tested window to tested.  A refused
+    // window gives true, writes its WindowRefusal to refusal, and leaves
+    // tested as it was.  The two words of a tested window then stay in
+    // registers, where a Result of a tested window took a slot of the
+    // frame at -O1.  Complexity: O(1).
+    [[nodiscard]] CRUCIBLE_INLINE static bool is_refused(core::View<std::uint8_t> bytes, ByteWindow const& window,
+                                                         TestedWindow& tested, WindowRefusal& refusal) noexcept {
+        if (is_window_refused_<T>(bytes, window, refusal)) [[unlikely]] {
+            return true;
+        }
+        tested = TestedWindow{first_of_(core::detail::ViewDoor::key(), bytes) + window.start().raw(),
+                              window.length().raw() / sizeof(T)};
+        return false;
     }
-    [[assume(count <= core::max_view_count(sizeof(T)))]];
-    [[assume(first != nullptr)]];
-    core::View<T> const elements = lifetime::start_as_array<T>(first, count);
-    return core::ViewMut<T, Fresh>{core::detail::FrameDoor::key(), elements};
-}
+
+    // The ViewMut of the elements of the window, with the brand of the frame.
+    // The start of their lifetime gives their View, with their values.  A
+    // window of no element starts no lifetime, so its View holds no object.
+    // Complexity: O(1).
+    template <::foundation::brand::IsBrand Fresh>
+    [[nodiscard]] CRUCIBLE_INLINE core::ViewMut<T, Fresh> lend() const noexcept {
+        return core::ViewMut<T, Fresh>{core::detail::FrameDoor::key(),
+                                       lifetime::start_as_array<T>(core::detail::ViewDoor::key(), first_, count_)};
+    }
+
+private:
+    constexpr TestedWindow(std::uint8_t* first, std::size_t count) noexcept : first_{first}, count_{count} {}
+
+    std::uint8_t* first_ = nullptr;
+    std::size_t count_ = 0;
+};
 
 // The type of the argument of a body of the static form at a position: one
 // ViewMut for each window.
@@ -688,39 +712,38 @@ using window_body_result_t =
         return std::type_identity<std::invoke_result_t<Body, window_argument_t<View, Positions>...>>{};
     }(std::make_index_sequence<N>{}))::type;
 
-// The views of the windows that the tests passed, given to body.  The windows
-// come by value, so the door reads each field one time, before the start of
-// the lifetime of a window, which hides the memory of the window from the
-// optimizer.  The checks of each start then read the values that the tests
-// of the door read.
-template <class T, ::foundation::brand::IsBrand Fresh, class Body, class... Windows>
-[[nodiscard]] CRUCIBLE_INLINE decltype(auto) lend_window_views_(core::View<std::uint8_t> bytes, Body&& body,
-                                                                Windows... chosen) noexcept {
-    return static_cast<Body&&>(body)(window_view_<T, Fresh>(bytes, chosen)...);
-}
-
-// The windows at each position, tested and lent to body (the door below).
-template <class T, ::foundation::brand::IsBrand Fresh, std::size_t N, class Body, std::size_t... Positions>
-[[nodiscard]] CRUCIBLE_INLINE auto lend_static_windows_(core::View<std::uint8_t> bytes,
+// The windows from Position on, each tested in order, then each pair, and
+// the tested windows lent to body (the door below).  tested holds the
+// windows before Position, which passed their tests.  A tested window goes
+// by value, so the door reads each of its two words one time, before the
+// start of the lifetime of a window hides the memory of the window from the
+// optimizer.  Complexity: N - Position tests, and the compares of the pairs.
+template <class T, ::foundation::brand::IsBrand Fresh, std::size_t Position, std::size_t N, class Body, class... Tested>
+[[nodiscard]] CRUCIBLE_INLINE auto lend_tested_windows_(core::View<std::uint8_t> bytes,
                                                         core::FixedArray<ByteWindow, N> const& windows, Body&& body,
-                                                        std::index_sequence<Positions...> positions) noexcept
+                                                        Tested... tested) noexcept
     -> core::Result<window_frame_value_t<window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal> {
-    using Given = window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>;
-    WindowRefusal refusal = WindowRefusal::overlap;
-    bool const is_refused =
-        (false || ... || is_window_refused_<T>(bytes, windows.at(core::index<Positions>()), refusal))
-        || has_window_overlap_(windows, positions);
-    if (is_refused) [[unlikely]] {
-        return core::err(refusal);
-    }
-    // Each ViewMut goes to body as an argument of its own, so no array of
-    // views lives in the frame.  The windows do not overlap, so the order of
-    // the starts of their lifetimes does not change a byte.
-    if constexpr (std::is_void_v<Given>) {
-        lend_window_views_<T, Fresh>(bytes, static_cast<Body&&>(body), windows.at(core::index<Positions>())...);
-        return core::Unit{};
+    if constexpr (Position < N) {
+        TestedWindow<T> next{};
+        WindowRefusal refusal = WindowRefusal::overlap;
+        if (TestedWindow<T>::is_refused(bytes, windows.at(core::index<Position>()), next, refusal)) [[unlikely]] {
+            return core::err(refusal);
+        }
+        return lend_tested_windows_<T, Fresh, Position + 1>(bytes, windows, static_cast<Body&&>(body), tested..., next);
     } else {
-        return lend_window_views_<T, Fresh>(bytes, static_cast<Body&&>(body), windows.at(core::index<Positions>())...);
+        if (has_window_overlap_(windows, std::make_index_sequence<N>{})) [[unlikely]] {
+            return core::err(WindowRefusal::overlap);
+        }
+        // Each ViewMut goes to body as an argument of its own, so no array of
+        // views lives in the frame.  The windows do not overlap, so the order
+        // of the starts of their lifetimes does not change a byte.
+        using Given = window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>;
+        if constexpr (std::is_void_v<Given>) {
+            static_cast<Body&&>(body)(tested.template lend<Fresh>()...);
+            return core::Unit{};
+        } else {
+            return static_cast<Body&&>(body)(tested.template lend<Fresh>()...);
+        }
     }
 }
 
@@ -745,8 +768,7 @@ template <class T, class... Refused, std::size_t N, class Body,
 [[nodiscard]] core::Result<
     detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal>
 with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept {
-    return detail::lend_static_windows_<T, Fresh>(block.view(), windows, static_cast<Body&&>(body),
-                                                  std::make_index_sequence<N>{});
+    return detail::lend_tested_windows_<T, Fresh, 0>(block.view(), windows, static_cast<Body&&>(body));
 }
 
 // A body whose result holds a borrow or names the brand of the frame binds
