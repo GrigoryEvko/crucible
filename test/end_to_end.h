@@ -38,11 +38,14 @@ crucible::TensorMeta make_meta(void* data_ptr);
 // for the producer-consumer match, so any distinct non-null value does.
 void* fake_ptr(uint32_t iter, uint32_t op);
 
-void feed_iteration(crucible::TraceRing* ring, crucible::MetaLog* meta_log, uint32_t iter);
+// The position of an iteration of the synthetic workload.
+using Iteration = ::fixy::Id<struct IterationTag, uint32_t>;
+
+void feed_iteration(crucible::TraceRing& ring, crucible::MetaLog& meta_log, Iteration iter);
 
 // K is the length of the detector's signature, so feeding exactly the
 // first K ops of an iteration is what presents it with a repeat.
-void feed_trigger(crucible::TraceRing* ring, crucible::MetaLog* meta_log, uint32_t iter);
+void feed_trigger(crucible::TraceRing& ring, crucible::MetaLog& meta_log, Iteration iter);
 
 // The feeding thread has no other handshake with the background thread,
 // so it spins on the processed counter until the drain has caught up

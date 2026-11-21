@@ -48,7 +48,8 @@ void* fake_ptr(uint32_t iter, uint32_t op) {
     return std::bit_cast<void*>(static_cast<std::uintptr_t>((iter + 1) * 0x100000 + (op + 1) * 0x1000));
 }
 
-void feed_iteration(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
+void feed_iteration(TraceRing& ring, MetaLog& meta_log, Iteration iteration) {
+    const uint32_t iter = iteration.raw();
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         TraceRing::Entry e{};
         e.schema_hash = SCHEMA[i];
@@ -65,13 +66,14 @@ void feed_iteration(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
         *metas.get(idx++).expect("a test reads an element at or past the count of its array") =
             make_meta(fake_ptr(iter, i));
 
-        auto ms = meta_log->try_append(crucible::test::records_of(metas, n_metas));
+        auto ms = meta_log.try_append(crucible::test::records_of(metas, n_metas));
         CRUCIBLE_TEST_ASSERT(kTest, ms.is_valid() && "MetaLog overflow");
-        CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(e, ms) && "TraceRing full");
+        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(e, ms) && "TraceRing full");
     }
 }
 
-void feed_trigger(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
+void feed_trigger(TraceRing& ring, MetaLog& meta_log, Iteration iteration) {
+    const uint32_t iter = iteration.raw();
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         TraceRing::Entry e{};
         e.schema_hash = SCHEMA[i];
@@ -88,9 +90,9 @@ void feed_trigger(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
         *metas.get(idx++).expect("a test reads an element at or past the count of its array") =
             make_meta(fake_ptr(iter, i));
 
-        auto ms = meta_log->try_append(crucible::test::records_of(metas, n_metas));
+        auto ms = meta_log.try_append(crucible::test::records_of(metas, n_metas));
         CRUCIBLE_TEST_ASSERT(kTest, ms.is_valid());
-        CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(e, ms));
+        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(e, ms));
     }
 }
 

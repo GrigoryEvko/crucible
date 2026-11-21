@@ -29,14 +29,15 @@ namespace test_end_to_end {
 // discarding them.  So the feed here completes that partial iteration
 // before starting a fresh one.
 void test_pipeline_multi_iteration() {
-    auto* ring = new TraceRing();
-    auto* meta_log = new MetaLog(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<MetaLog> meta_log = ::fixy::mint_box<MetaLog>(::foundation::effects::testing::test().alloc,
+                                                              ::foundation::effects::testing::test().alloc);
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
-    feed_iteration(ring, meta_log, 0);
-    feed_iteration(ring, meta_log, 1);
-    feed_trigger(ring, meta_log, 2);
+    feed_iteration(*ring, *meta_log, Iteration{0});
+    feed_iteration(*ring, *meta_log, Iteration{1});
+    feed_trigger(*ring, *meta_log, Iteration{2});
 
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
@@ -61,8 +62,8 @@ void test_pipeline_multi_iteration() {
         CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(e, ms));
     }
 
-    feed_iteration(ring, meta_log, 3);
-    feed_trigger(ring, meta_log, 4);
+    feed_iteration(*ring, *meta_log, Iteration{3});
+    feed_trigger(*ring, *meta_log, Iteration{4});
 
     wait_processed(bt, *ring);
     const ::fixy::Ref<const RegionNode> region2 =
@@ -86,8 +87,6 @@ void test_pipeline_multi_iteration() {
 
     ctx.deactivate();
     bt.stop();
-    delete meta_log;
-    delete ring;
 
     ::fixy::check::pass(kTest, "  test_pipeline_multi_iteration: PASSED\n");
 }

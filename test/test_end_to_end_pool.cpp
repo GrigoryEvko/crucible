@@ -9,11 +9,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
-#include "tensor_data.h"
-#include <atomic>
 #include <cstdint>
-#include <cstdio>
-#include <cstring>
 
 namespace {
 
@@ -26,18 +22,23 @@ using namespace crucible;
 
 namespace test_end_to_end {
 
+// The count of the bytes of each tensor of the workload: 1024 floats.
+constexpr std::size_t kTensorBytes = 4096;
+
 // Each op fills its output with a pattern of its own, so reading the
 // expected pattern back through the next op's input is what proves the
-// two entries resolve to the same pool bytes.
+// two entries resolve to the same pool bytes.  The output of an op comes
+// through with_output_views, and its input through input_view.
 void test_pipeline_data_flow() {
-    auto* ring = new TraceRing();
-    auto* meta_log = new MetaLog(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<MetaLog> meta_log = ::fixy::mint_box<MetaLog>(::foundation::effects::testing::test().alloc,
+                                                              ::foundation::effects::testing::test().alloc);
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
-    feed_iteration(ring, meta_log, 0);
-    feed_iteration(ring, meta_log, 1);
-    feed_trigger(ring, meta_log, 2);
+    feed_iteration(*ring, *meta_log, Iteration{0});
+    feed_iteration(*ring, *meta_log, Iteration{1});
+    feed_trigger(*ring, *meta_log, Iteration{2});
 
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
@@ -48,47 +49,70 @@ void test_pipeline_data_flow() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
+    // The byte that the next write of an output writes, and that the next
+    // read of an input expects.
+    std::uint8_t pattern = 0x11;
+    // Writes pattern into each byte of the output of the matched op.
+    const auto is_output_written = [&ctx, &cv, &pattern]() noexcept {
+        return ctx
+            .with_output_views<std::uint8_t>(cv,
+                                             [&pattern](auto& views) noexcept {
+                                                 std::size_t count = 0;
+                                                 for (auto& view : views) {
+                                                     for (std::uint8_t& byte : view) {
+                                                         byte = pattern;
+                                                         ++count;
+                                                     }
+                                                 }
+                                                 return count;
+                                             })
+            .is_ok_and([](std::size_t const& count) noexcept { return count == kTensorBytes; });
+    };
+    // True when each byte of the input of the matched op holds pattern.
+    const auto is_input_pattern = [&ctx, &cv, &pattern]() noexcept {
+        return ctx.input_view<std::uint8_t>(InputPosition{0}, cv)
+            .is_some_and([&pattern](::fixy::View<std::uint8_t const> const& bytes) noexcept {
+                return bytes.size() == kTensorBytes
+                    && bytes.walk().all_of([&pattern](std::uint8_t const& byte) noexcept { return byte == pattern; });
+            });
+    };
+
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[0], SHAPE[0], cv).status() == ReplayStatus::MATCH);
-    std::memset(crucible::test::host_ptr(ctx.output_ptr(0, cv)), 0x11, 4096);
+    CRUCIBLE_TEST_ASSERT(kTest, is_output_written());
 
     for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
         CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[i], SHAPE[i], cv).status() == ReplayStatus::MATCH);
-
-        auto* in_data = crucible::test::host_ptr<uint8_t>(ctx.input_ptr(0, cv));
-        uint8_t expected = static_cast<uint8_t>(0x11 + i - 1);
-        for (uint32_t b = 0; b < 4096; b++) {
-            CRUCIBLE_TEST_ASSERT(kTest, in_data[b] == expected);
-        }
-
-        std::memset(crucible::test::host_ptr(ctx.output_ptr(0, cv)), static_cast<int>(0x11 + i), 4096);
+        CRUCIBLE_TEST_ASSERT(kTest, is_input_pattern());
+        pattern = static_cast<std::uint8_t>(0x11 + i);
+        CRUCIBLE_TEST_ASSERT(kTest, is_output_written());
     }
 
+    // The last op reads the output of the op before it.
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[7], SHAPE[7], cv).status() == ReplayStatus::COMPLETE);
-    auto* in_last = crucible::test::host_ptr<uint8_t>(ctx.input_ptr(0, cv));
-    uint8_t expected_last = static_cast<uint8_t>(0x11 + NUM_OPS - 2);
-    for (uint32_t b = 0; b < 4096; b++) {
-        CRUCIBLE_TEST_ASSERT(kTest, in_last[b] == expected_last);
-    }
+    CRUCIBLE_TEST_ASSERT(kTest, is_input_pattern());
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
     ctx.deactivate();
     bt.stop();
-    delete meta_log;
-    delete ring;
 
     ::fixy::check::pass(kTest, "  test_pipeline_data_flow: PASSED\n");
 }
 
+// The outputs and the inputs of each op are inside the pool.
+// with_output_views refuses an output whose window ends past the last byte
+// of the pool (OutsidePool), so each lent output of the tensor bytes is
+// inside it, and each input reads the window of the pool of its slot.
 void test_pipeline_pool_bounds() {
-    auto* ring = new TraceRing();
-    auto* meta_log = new MetaLog(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<MetaLog> meta_log = ::fixy::mint_box<MetaLog>(::foundation::effects::testing::test().alloc,
+                                                              ::foundation::effects::testing::test().alloc);
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
-    feed_iteration(ring, meta_log, 0);
-    feed_iteration(ring, meta_log, 1);
-    feed_trigger(ring, meta_log, 2);
+    feed_iteration(*ring, *meta_log, Iteration{0});
+    feed_iteration(*ring, *meta_log, Iteration{1});
+    feed_trigger(*ring, *meta_log, Iteration{2});
 
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
@@ -97,38 +121,48 @@ void test_pipeline_pool_bounds() {
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
-
-    auto* pool_base = crucible::test::host_ptr<uint8_t>(ctx.pool().pool_base());
-    uint64_t pool_bytes = ctx.pool().pool_bytes();
-    CRUCIBLE_TEST_ASSERT(kTest, pool_base != nullptr);
-    CRUCIBLE_TEST_ASSERT(kTest, pool_bytes > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().pool_base().is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().pool_bytes() > 0);
 
     auto cv2 = ctx.mint_compiled_view(kVigilForeground);
 
+    // True when the door lends the output of the matched op, with the tensor
+    // bytes.
+    const auto is_output_inside = [&ctx, &cv2]() noexcept {
+        return ctx
+            .with_output_views<std::uint8_t>(cv2,
+                                             [](auto& views) noexcept {
+                                                 std::size_t count = 0;
+                                                 for (auto& view : views) {
+                                                     for (std::uint8_t const& byte : view) {
+                                                         static_cast<void>(byte);
+                                                         ++count;
+                                                     }
+                                                 }
+                                                 return count;
+                                             })
+            .is_ok_and([](std::size_t const& count) noexcept { return count == kTensorBytes; });
+    };
+
     for (uint32_t i = 0; i < NUM_OPS; i++) {
-        auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv2);
-        (void)s;
-        auto* p = crucible::test::host_ptr<uint8_t>(ctx.output_ptr(0, cv2));
-        CRUCIBLE_TEST_ASSERT(kTest, p >= pool_base);
-        CRUCIBLE_TEST_ASSERT(kTest, p + 4096 <= pool_base + pool_bytes);
+        static_cast<void>(ctx.advance(SCHEMA[i], SHAPE[i], cv2));
+        CRUCIBLE_TEST_ASSERT(kTest, is_output_inside());
     }
 
     // The loop above consumed the iteration, so this one replays it.  No
     // reset is needed: the first advance after COMPLETE rewinds.
     for (uint32_t i = 0; i < NUM_OPS; i++) {
-        auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv2);
-        (void)s;
+        static_cast<void>(ctx.advance(SCHEMA[i], SHAPE[i], cv2));
         if (i > 0) {
-            auto* p = crucible::test::host_ptr<uint8_t>(ctx.input_ptr(0, cv2));
-            CRUCIBLE_TEST_ASSERT(kTest, p >= pool_base);
-            CRUCIBLE_TEST_ASSERT(kTest, p + 4096 <= pool_base + pool_bytes);
+            CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<std::uint8_t>(InputPosition{0}, cv2)
+                                            .is_some_and([](::fixy::View<std::uint8_t const> const& bytes) noexcept {
+                                                return bytes.size() == kTensorBytes;
+                                            }));
         }
     }
 
     ctx.deactivate();
     bt.stop();
-    delete meta_log;
-    delete ring;
 
     ::fixy::check::pass(kTest, "  test_pipeline_pool_bounds: PASSED\n");
 }

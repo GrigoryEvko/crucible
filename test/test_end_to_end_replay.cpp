@@ -28,17 +28,18 @@ namespace test_end_to_end {
 // the second produces a candidate match, and the third's K-th matching
 // op confirms the boundary.
 void test_pipeline_basic() {
-    auto* ring = new TraceRing();
-    auto* meta_log = new MetaLog(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<MetaLog> meta_log = ::fixy::mint_box<MetaLog>(::foundation::effects::testing::test().alloc,
+                                                              ::foundation::effects::testing::test().alloc);
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     // Everything is queued before the background thread starts, so the
     // drain sees one complete stream and the outcome does not depend on
     // how the two threads interleave.
-    feed_iteration(ring, meta_log, 0);
-    feed_iteration(ring, meta_log, 1);
-    feed_trigger(ring, meta_log, 2);
+    feed_iteration(*ring, *meta_log, Iteration{0});
+    feed_iteration(*ring, *meta_log, Iteration{1});
+    feed_trigger(*ring, *meta_log, Iteration{2});
 
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
@@ -109,21 +110,20 @@ void test_pipeline_basic() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
 
     bt.stop();
-    delete meta_log;
-    delete ring;
 
     ::fixy::check::pass(kTest, "  test_pipeline_basic: PASSED\n");
 }
 
 void test_pipeline_divergence() {
-    auto* ring = new TraceRing();
-    auto* meta_log = new MetaLog(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
+    ::fixy::Box<MetaLog> meta_log = ::fixy::mint_box<MetaLog>(::foundation::effects::testing::test().alloc,
+                                                              ::foundation::effects::testing::test().alloc);
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
-    feed_iteration(ring, meta_log, 0);
-    feed_iteration(ring, meta_log, 1);
-    feed_trigger(ring, meta_log, 2);
+    feed_iteration(*ring, *meta_log, Iteration{0});
+    feed_iteration(*ring, *meta_log, Iteration{1});
+    feed_trigger(*ring, *meta_log, Iteration{2});
 
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
@@ -153,8 +153,6 @@ void test_pipeline_divergence() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
 
     bt.stop();
-    delete meta_log;
-    delete ring;
 
     ::fixy::check::pass(kTest, "  test_pipeline_divergence: PASSED\n");
 }
