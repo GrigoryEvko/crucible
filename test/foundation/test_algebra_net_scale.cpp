@@ -471,9 +471,17 @@ template <class Graph>
         && is_same_fault(form.fault, sum_form.fault) && form.hash == sum_form.hash;
 }
 
+// The ring and the waiting ring, plain and sealed, give the faults of the
+// compile at run time.  The seal holds no fault of the form of either ring.
 [[nodiscard]] bool do_rings_match(RingSystem const& ring, WaitingRingSystem const& waiting) noexcept {
+    auto const sealed = seal_system(ring);
+    auto const sealed_waiting = seal_system(waiting);
     return is_same_fault(find_liveness_at_run_time(ring), LivenessFault{})
-        && is_same_fault(find_liveness_at_run_time(waiting), waiting_ring_fault);
+        && is_same_fault(find_liveness_at_run_time(waiting), waiting_ring_fault)
+        && is_same_fault(sealed.form_fault(), LivenessFault{})
+        && is_same_fault(sealed_waiting.form_fault(), LivenessFault{})
+        && is_same_fault(find_liveness_at_run_time(sealed), LivenessFault{})
+        && is_same_fault(find_liveness_at_run_time(sealed_waiting), waiting_ring_fault);
 }
 
 // ── The places of the faults ────────────────────────────────────────────

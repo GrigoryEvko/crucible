@@ -15,6 +15,11 @@
 //   find_liveness_fault(system)
 //                             the body of the check: the first fault, or the
 //                             fault NoFault
+//   SealedSystem<P, C, A>     a copy of a system that no caller can change,
+//                             and the fault of its form, found one time
+//   seal_system(system)       the sealed system of a system: its form checked
+//                             one time.  find_liveness_fault on a sealed
+//                             system runs no check of the form again
 //   explain_liveness_fault(system, fault)
 //                             the text of the refusal of a fault
 //   check_liveness(system)    each cycle of waits holds a token, so no
@@ -63,6 +68,19 @@
 //   parameter or as a variable, never on a constant, because the compiler
 //   folds a call on a constant into a second run of the check (THE RUN-TIME
 //   FORM of foundation/algebra/net/Net.h).
+//
+// THE SEALED SYSTEM
+//   The check first reads the form of the system: a name for each process
+//   and each channel, each action inside the system, and one process for
+//   each side of each channel.  A program that checks one system more than
+//   one time does that work one time, at the boundary where the system comes
+//   in: seal_system copies the system into a SealedSystem and finds the fault
+//   of the form of the copy.  No caller can change the copy, so the fault
+//   stays the fault of the system.  find_liveness_fault on a sealed system
+//   gives that fault, or it runs the body of the check with no check of the
+//   form, and it gives the fault of find_liveness_fault on the same system.
+//   The door is seal_system and not a door mint_*, for the reason of seal_net
+//   (THE SEALED NET of foundation/algebra/net/Net.h).
 //
 // THE LIMITS
 //   A branch and a choice have no form here: a caller checks one system for
@@ -287,17 +305,19 @@ find_liveness_cycle_(ProcessSystem<Processes, Channels, Actions> const& protocol
     return fault;
 }
 
-}  // namespace detail
+// Whether the body of the liveness check runs the checks of the form of the
+// system, or reads a system whose seal holds the fault of its form (THE
+// SEALED SYSTEM).
+enum class FormCheck : std::uint8_t {
+    Run = 0,
+    Sealed = 1,
+};
 
-// The first fault of the marked graph of the system (THE MODEL), or
-// NoFault.  The edges with no token leave each action to at most two
-// actions: the next action of its process, and the action of its channel that
-// waits on it.  So the sort of Kahn reads the edges of a node from the arrays
-// of the steps, with no list of the edges.  Complexity: O(P + C + A).
+// The first process and then the first channel with no name, or NoFault.
+// Complexity: O(P + C).
 template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
 [[nodiscard]] constexpr LivenessFault
-find_liveness_fault(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept {
-    constexpr std::uint32_t none = detail::no_index;
+find_name_fault_(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept {
     for (std::uint32_t process = 0; process < Processes; ++process) {
         if (protocol.process_names[process].is_empty()) {
             return LivenessFault{.code = LivenessFaultCode::ProcessWithoutName, .process = ProcessId{process}};
@@ -308,15 +328,35 @@ find_liveness_fault(ProcessSystem<Processes, Channels, Actions> const& protocol)
             return LivenessFault{.code = LivenessFaultCode::ChannelWithoutName, .channel = ChannelId{channel}};
         }
     }
+    return LivenessFault{};
+}
 
-    // The step of each action on its side of its channel, the count of the
-    // sends and of the receives of each channel, and the process that holds
-    // each side.  Side 0 of channel c is the slot 2c, and side 1 is 2c + 1.
-    detail::MarkedGraph<Channels, Actions> graph{};
-    std::uint32_t step_count[2 * Channels]{};
-    std::uint32_t holder[2 * Channels]{};
-    for (std::uint32_t& slot : holder)
-        slot = none;
+// The process that holds each side of each channel, while the checks of the
+// form read the actions.  Side 0 of channel c is the slot 2c, and side 1 is
+// 2c + 1.  A slot holds the index of its process plus one, and 0 for a side
+// that no action holds yet, so the zero fill of the array is its first state.
+// The sealed form reads no side, so it holds no slot.
+template <std::size_t Channels, FormCheck Form>
+struct side_holders {
+    std::uint32_t process_after[2 * Channels]{};
+};
+template <std::size_t Channels>
+struct side_holders<Channels, FormCheck::Sealed> {};
+
+// The fault of the form of a system (THE SEALED SYSTEM): the first process
+// and then the first channel with no name, and then, in the order of the
+// actions, the first action past the system or on a side that two processes
+// hold.  These are the faults that find_liveness_fault finds before it counts
+// the steps, in the same order.  The loop of the plain form holds the same
+// checks of an action inline (find_liveness_fault_), and the check file of
+// this header pins that the two forms give one fault for each code.
+// Complexity: O(P + C + A).
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard]] constexpr LivenessFault
+find_form_fault_(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept {
+    LivenessFault const named = find_name_fault_(protocol);
+    if (named.is_fault()) return named;
+    side_holders<Channels, FormCheck::Run> holders{};
     for (std::uint32_t index = 0; index < Actions; ++index) {
         Action const& act = protocol.actions[index];
         auto const process = static_cast<std::uint32_t>(act.process);
@@ -325,12 +365,54 @@ find_liveness_fault(ProcessSystem<Processes, Channels, Actions> const& protocol)
             return LivenessFault{.code = LivenessFaultCode::ActionPastSystem, .action = ActionId{index}};
         }
         std::uint32_t const slot = 2 * channel + (act.move == Move::Send ? 0u : 1u);
-        if (holder[slot] == none) holder[slot] = process;
-        if (holder[slot] != process) {
+        if (holders.process_after[slot] == 0u) holders.process_after[slot] = process + 1u;
+        if (holders.process_after[slot] != process + 1u) {
             return LivenessFault{.code = LivenessFaultCode::SideHeldTwice,
-                                 .process = ProcessId{holder[slot]},
+                                 .process = ProcessId{holders.process_after[slot] - 1u},
                                  .channel = act.channel,
                                  .action = ActionId{index}};
+        }
+    }
+    return LivenessFault{};
+}
+
+// The body of the liveness check (THE MODEL), with the checks of the form, or
+// on a system whose seal found no fault of its form.  Complexity: O(P + C +
+// A).
+template <FormCheck Form, std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard]] constexpr LivenessFault
+find_liveness_fault_(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept {
+    constexpr std::uint32_t none = no_index;
+    if constexpr (Form == FormCheck::Run) {
+        LivenessFault const named = find_name_fault_(protocol);
+        if (named.is_fault()) return named;
+    }
+
+    // The step of each action on its side of its channel, and the count of
+    // the sends and of the receives of each channel.  Side 0 of channel c is
+    // the slot 2c, and side 1 is 2c + 1.  The plain form checks the form of
+    // each action in the same loop, with the checks of find_form_fault_
+    // inline: a code that a helper gives back costs one more hardened compare
+    // for each action under -fharden-compares, about 6% of the check.
+    MarkedGraph<Channels, Actions> graph{};
+    std::uint32_t step_count[2 * Channels]{};
+    [[maybe_unused]] side_holders<Channels, Form> holders{};
+    for (std::uint32_t index = 0; index < Actions; ++index) {
+        Action const& act = protocol.actions[index];
+        auto const channel = static_cast<std::uint32_t>(act.channel);
+        std::uint32_t const slot = 2 * channel + (act.move == Move::Send ? 0u : 1u);
+        if constexpr (Form == FormCheck::Run) {
+            auto const process = static_cast<std::uint32_t>(act.process);
+            if (process >= Processes || channel >= Channels || (act.move != Move::Send && act.move != Move::Receive)) {
+                return LivenessFault{.code = LivenessFaultCode::ActionPastSystem, .action = ActionId{index}};
+            }
+            if (holders.process_after[slot] == 0u) holders.process_after[slot] = process + 1u;
+            if (holders.process_after[slot] != process + 1u) {
+                return LivenessFault{.code = LivenessFaultCode::SideHeldTwice,
+                                     .process = ProcessId{holders.process_after[slot] - 1u},
+                                     .channel = act.channel,
+                                     .action = ActionId{index}};
+            }
         }
         graph.step_of[index] = step_count[slot];
         ++step_count[slot];
@@ -430,7 +512,81 @@ find_liveness_fault(ProcessSystem<Processes, Channels, Actions> const& protocol)
         }
     }
     if (order_count == node_count) return LivenessFault{};
-    return detail::find_liveness_cycle_(protocol, graph);
+    return find_liveness_cycle_(protocol, graph);
+}
+
+}  // namespace detail
+
+// The first fault of the marked graph of the system (THE MODEL), or
+// NoFault.  The edges with no token leave each action to at most two
+// actions: the next action of its process, and the action of its channel that
+// waits on it.  So the sort of Kahn reads the edges of a node from the arrays
+// of the steps, with no list of the edges.  Complexity: O(P + C + A).
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard]] constexpr LivenessFault
+find_liveness_fault(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept {
+    return detail::find_liveness_fault_<detail::FormCheck::Run>(protocol);
+}
+
+// ── The sealed system ───────────────────────────────────────────────────
+
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+class SealedSystem;
+
+// Seals a system (THE SEALED SYSTEM): copies it, and finds the fault of the
+// form of the copy one time.  Complexity: O(P + C + A), the copy and the
+// checks of the form.
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard]] constexpr auto seal_system(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept
+    -> SealedSystem<Processes, Channels, Actions>;
+
+// A system checked one time at a boundary (THE SEALED SYSTEM): a copy of the
+// system, which no caller can change, and the fault of its form.  seal_system
+// is the only door.  A copy of a sealed system is a sealed system, because the
+// two fields copy together.  The seal closes the two byte routes, std::bit_cast
+// and a lifetime start over bytes, so no image of bytes makes a sealed system
+// with a fault that is not the fault of its system.
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+class SealedSystem {
+    ProcessSystem<Processes, Channels, Actions> system_{};
+    LivenessFault form_fault_{};
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr explicit SealedSystem(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept
+        : system_{protocol}, form_fault_{detail::find_form_fault_(system_)} {}
+
+    template <std::size_t SealedProcesses, std::size_t SealedChannels, std::size_t SealedActions>
+    friend constexpr auto
+    seal_system(ProcessSystem<SealedProcesses, SealedChannels, SealedActions> const& protocol) noexcept
+        -> SealedSystem<SealedProcesses, SealedChannels, SealedActions>;
+
+public:
+    // The system that the seal holds.  The reference is const, so no caller
+    // changes the system that the fault describes.
+    [[nodiscard]] constexpr ProcessSystem<Processes, Channels, Actions> const& value() const noexcept {
+        return system_;
+    }
+
+    // The fault of the form of the system, or NoFault.
+    [[nodiscard]] constexpr LivenessFault form_fault() const noexcept { return form_fault_; }
+};
+
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard]] constexpr auto seal_system(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept
+    -> SealedSystem<Processes, Channels, Actions> {
+    return SealedSystem<Processes, Channels, Actions>{protocol};
+}
+
+// The first fault of the marked graph of a sealed system: the fault of its
+// form that the seal holds, or the body of the check with no check of the
+// form.  It gives the fault of find_liveness_fault on the system of the seal.
+// Complexity: O(P + C + A).
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard]] constexpr LivenessFault
+find_liveness_fault(SealedSystem<Processes, Channels, Actions> const& sealed) noexcept {
+    LivenessFault const form = sealed.form_fault();
+    if (form.is_fault()) return form;
+    return detail::find_liveness_fault_<detail::FormCheck::Sealed>(sealed.value());
 }
 
 namespace detail {

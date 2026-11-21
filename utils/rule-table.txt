@@ -1170,6 +1170,9 @@ witness <fixy/Collision.h> private | fixy::collision::detail::payload_premises_c
 # A sealed net holds the fault of the wiring of its own copy of a net, so
 # only seal_net makes one.
 witness <foundation/algebra/net/Net.h> private | foundation::algebra::net::SealedNet<1, 1, 1, 1> | foundation::algebra::net::SealedNet<1, 1, 1, 1>{foundation::algebra::net::Net<1, 1, 1, 1>{}}
+# A sealed system holds the fault of the form of its own copy of a system, so
+# only seal_system makes one.
+witness <foundation/algebra/net/Priority.h> private | foundation::algebra::net::SealedSystem<1, 1, 1> | foundation::algebra::net::SealedSystem<1, 1, 1>{foundation::algebra::net::ProcessSystem<1, 1, 1>{}}
 
 # The heavy and the light rows.  `python3 utils/bin/loop derive header-costs --measure BUILD_DIR` writes each line after this one.
 # Measured in user instructions with ~/.local/gcc16-patched-p5/usr/bin/g++-16p on AMD EPYC 9655 96-Core Processor with 376 threads.  An empty translation unit costs 0.045 G.

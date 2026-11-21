@@ -266,6 +266,46 @@ inline constexpr ProcessSystem<2, 1, 2> foreign_process{
 static_assert(check_liveness(foreign_process)
                   .says("liveness: action 1 names a process, a channel or a move that the system does not have."));
 
+// ── The sealed system ───────────────────────────────────────────────────
+
+// True when two faults name the same code, process, channel, action and
+// cycle.  The two arguments can swap with no change of the result.
+[[nodiscard]] consteval bool is_same_liveness_fault(LivenessFault const& left, LivenessFault const& right) noexcept {
+    if (left.code != right.code || left.process != right.process || left.channel != right.channel
+        || left.action != right.action || left.path_count != right.path_count || left.is_path_cut != right.is_path_cut)
+        return false;
+    for (std::size_t index = 0; index < left.path_count && index < max_liveness_path; ++index) {
+        if (left.path[index] != right.path[index]) return false;
+    }
+    return true;
+}
+
+// The check of the sealed system of a system gives the fault of the check of
+// the system, and the seal holds a fault only for a fault of the form.
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard]] consteval bool
+does_seal_keep_the_fault(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept {
+    SealedSystem<Processes, Channels, Actions> const sealed = seal_system(protocol);
+    LivenessFault const fault = find_liveness_fault(protocol);
+    bool const is_form_fault =
+        fault.code == LivenessFaultCode::ProcessWithoutName || fault.code == LivenessFaultCode::ChannelWithoutName
+        || fault.code == LivenessFaultCode::ActionPastSystem || fault.code == LivenessFaultCode::SideHeldTwice;
+    LivenessFault const expected_form = is_form_fault ? fault : LivenessFault{};
+    return is_same_liveness_fault(find_liveness_fault(sealed), fault)
+        && is_same_liveness_fault(sealed.form_fault(), expected_form);
+}
+
+// Each code: no fault, a cycle with no token, two sends and one receive, a
+// side that two processes hold, a process and a channel with no name, and an
+// action past the system.
+static_assert(does_seal_keep_the_fault(pipeline_loop) && does_seal_keep_the_fault(pipeline_waits_first));
+static_assert(does_seal_keep_the_fault(crossed_sessions) && does_seal_keep_the_fault(crossed_ring));
+static_assert(does_seal_keep_the_fault(uneven_sides) && does_seal_keep_the_fault(shared_side));
+static_assert(does_seal_keep_the_fault(unnamed_process) && does_seal_keep_the_fault(unnamed_channel));
+static_assert(does_seal_keep_the_fault(foreign_process) && does_seal_keep_the_fault(ring_of_queues));
+static_assert(find_liveness_fault(seal_system(crossed_sessions)).code == LivenessFaultCode::CycleWithoutToken);
+static_assert(seal_system(foreign_process).form_fault().code == LivenessFaultCode::ActionPastSystem);
+
 }  // namespace detail::priority_self_test
 
 }  // namespace foundation::algebra::net

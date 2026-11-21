@@ -4407,6 +4407,12 @@ foundation_neg_compile_test(neg_net_sealed_by_hand
 foundation_neg_compile_test(neg_net_sealed_net_written
   "in read-only object"
   "foundation::algebra::net::PortRef::port")
+foundation_neg_compile_test(neg_net_sealed_system_by_hand
+  "is private within this context"
+  "foundation::algebra::net::SealedSystem<Processes, Channels, Actions>::")
+foundation_neg_compile_test(neg_net_sealed_system_written
+  "in read-only object"
+  "foundation::algebra::net::Action::channel")
 foundation_neg_compile_test(neg_net_reflect_stray_member
   "static assertion failed: net: member 'count' of agent 'num' is no port"
   "A port is a member of the type Give<T>, Take<T> or Meet<T>\\.")
