@@ -199,7 +199,7 @@ that the axis does not apply to the row.
 | `mint_sequence_source` | `include/fixy/Stale.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 | `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 4 |
-| `mint_tagged` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 15 |
+| `mint_tagged` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 17 |
 | `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_wide_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 3 |
