@@ -187,6 +187,104 @@ void test_layouts_refuse_bad_requests() {
     CRUCIBLE_FATAL_INVARIANT(::foundation::alloc::mint_layout(ByteCount{~std::size_t{0}}, Alignment{64}).is_err());
 }
 
+using ::foundation::ByteWindow;
+using ::foundation::WindowRefusal;
+using ::foundation::with_mut_windows;
+using ::foundation::core::FixedList;
+using ::foundation::core::side_as;
+
+using Start = ::foundation::core::side::WindowStart;
+using Length = ::foundation::core::side::WindowLength;
+
+// The list of the windows, in their order.
+template <class... Windows>
+    requires(std::is_same_v<Windows, ByteWindow> && ...)
+[[nodiscard]] FixedList<ByteWindow, sizeof...(Windows)> make_windows(Windows... windows) noexcept {
+    FixedList<ByteWindow, sizeof...(Windows)> list{};
+    (static_cast<void>(list.append(windows).expect("the list holds each window")), ...);
+    return list;
+}
+
+// The windows of the tests: the bytes [start, start + length) of a block.
+constexpr ByteWindow kFirst16{side_as<Start>(ByteCount{0}), side_as<Length>(ByteCount{16})};
+constexpr ByteWindow kAt8Of16{side_as<Start>(ByteCount{8}), side_as<Length>(ByteCount{16})};
+constexpr ByteWindow kAt16Of16{side_as<Start>(ByteCount{16}), side_as<Length>(ByteCount{16})};
+constexpr ByteWindow kAt32Of16{side_as<Start>(ByteCount{32}), side_as<Length>(ByteCount{16})};
+constexpr ByteWindow kAt64Of16{side_as<Start>(ByteCount{64}), side_as<Length>(ByteCount{16})};
+constexpr ByteWindow kAt64Of32{side_as<Start>(ByteCount{64}), side_as<Length>(ByteCount{32})};
+constexpr ByteWindow kFirst36{side_as<Start>(ByteCount{0}), side_as<Length>(ByteCount{36})};
+constexpr ByteWindow kAt240Of32{side_as<Start>(ByteCount{240}), side_as<Length>(ByteCount{32})};
+constexpr ByteWindow kAt2Of4{side_as<Start>(ByteCount{2}), side_as<Length>(ByteCount{4})};
+constexpr ByteWindow kFirst6{side_as<Start>(ByteCount{0}), side_as<Length>(ByteCount{6})};
+constexpr ByteWindow kAt8Empty{side_as<Start>(ByteCount{8}), side_as<Length>(ByteCount{0})};
+
+// The door lends one ViewMut for each window, in the order of the windows,
+// and each ViewMut writes only the bytes of its window.  A second call reads
+// the values back.  A body that gives void gives Unit.
+void test_windows_lend_disjoint_views() {
+    auto const alloc = ::foundation::effects::testing::test().alloc;
+    AlignedBytes block = mint_aligned_bytes_zeroed(alloc, layout_of(ByteCount{256}, Alignment{64}));
+    FixedList<ByteWindow, 2> const windows = make_windows(kFirst16, kAt64Of32);
+    auto const written = with_mut_windows<float>(block, windows, [](auto& views) noexcept {
+        float value = 1.5f;
+        std::size_t count = 0;
+        for (auto& view : views) {
+            for (float& element : view) {
+                element = value;
+                ++count;
+            }
+            value += 1.0f;
+        }
+        return count;
+    });
+    CRUCIBLE_FATAL_INVARIANT(written.is_ok_and([](std::size_t const& count) noexcept { return count == 12; }));
+    auto const matched = with_mut_windows<float>(block, windows, [](auto& views) noexcept {
+        using ::foundation::core::bit_cast;
+        float expected = 1.5f;
+        std::size_t count = 0;
+        for (auto& view : views) {
+            for (float& element : view) {
+                count += bit_cast<std::uint32_t>(element) == bit_cast<std::uint32_t>(expected) ? 1u : 0u;
+            }
+            expected += 1.0f;
+        }
+        return count;
+    });
+    CRUCIBLE_FATAL_INVARIANT(matched.is_ok_and([](std::size_t const& count) noexcept { return count == 12; }));
+    AlignedBytes const& reader = block;
+    std::size_t nonzero_between = 0;
+    for (std::uint8_t const byte : reader.view().window(16, 48).expect("the gap between the windows fits")) {
+        nonzero_between += byte != 0 ? 1u : 0u;
+    }
+    CRUCIBLE_FATAL_INVARIANT(nonzero_between == 0);
+    auto const empty = with_mut_windows<float>(block, windows, [](auto&) noexcept {});
+    CRUCIBLE_FATAL_INVARIANT(empty.is_ok());
+}
+
+// Each refused window gives its kind, and the body does not run.  A window
+// of no byte shares no byte with a second window.
+void test_windows_refusals() {
+    auto const alloc = ::foundation::effects::testing::test().alloc;
+    AlignedBytes block = mint_aligned_bytes_zeroed(alloc, layout_of(ByteCount{256}, Alignment{64}));
+    int runs = 0;
+    auto const refusal_of = [&block, &runs](FixedList<ByteWindow, 2> const& windows) noexcept {
+        return with_mut_windows<float>(block, windows, [&runs](auto&) noexcept { ++runs; })
+            .err()
+            .expect("the door refuses the windows");
+    };
+    CRUCIBLE_FATAL_INVARIANT(refusal_of(make_windows(kFirst16, kAt240Of32)) == WindowRefusal::outside_block);
+    CRUCIBLE_FATAL_INVARIANT(refusal_of(make_windows(kAt2Of4, kAt64Of16)) == WindowRefusal::misaligned);
+    CRUCIBLE_FATAL_INVARIANT(refusal_of(make_windows(kFirst6, kAt64Of16)) == WindowRefusal::partial_element);
+    CRUCIBLE_FATAL_INVARIANT(refusal_of(make_windows(kFirst16, kAt8Of16)) == WindowRefusal::overlap);
+    CRUCIBLE_FATAL_INVARIANT(refusal_of(make_windows(kAt32Of16, kFirst36)) == WindowRefusal::overlap);
+    CRUCIBLE_FATAL_INVARIANT(runs == 0);
+    auto const touching =
+        with_mut_windows<float>(block, make_windows(kFirst16, kAt16Of16), [&runs](auto&) noexcept { ++runs; });
+    auto const nothing =
+        with_mut_windows<float>(block, make_windows(kAt8Empty, kFirst16), [&runs](auto&) noexcept { ++runs; });
+    CRUCIBLE_FATAL_INVARIANT(touching.is_ok() && nothing.is_ok() && runs == 2);
+}
+
 }  // namespace
 
 int main() {
@@ -197,6 +295,8 @@ int main() {
     test_write_in_order();
     test_move();
     test_layouts_refuse_bad_requests();
+    test_windows_lend_disjoint_views();
+    test_windows_refusals();
 
     // A writer that leaves a byte with no write, or that gives a byte past the
     // last one, ends the process.  Each refused call runs in a child through

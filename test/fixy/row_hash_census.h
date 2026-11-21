@@ -925,6 +925,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::UnwrittenBytes,
      "an owned block of bytes that no write reached: it holds storage, gives no read, and makes no claim about the "
      "bytes"},
+    {^^::foundation::ByteWindow,
+     "a window of a block: the offset of its first byte and its count of bytes, and it makes no claim about the "
+     "bytes"},
     {^^::foundation::SwissTableBuffer,
      "the one allocation of an open-addressing table: it holds storage and makes no claim about the slots"},
     {^^::foundation::ThreadLocalRef,

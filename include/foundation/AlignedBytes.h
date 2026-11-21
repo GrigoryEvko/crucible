@@ -45,6 +45,25 @@
 // the source empty, and the destructor gives them back to the allocation
 // door.
 //
+// THE WINDOWS
+//   with_mut_windows<T>(block, windows, body)
+//                   the frame door of some windows of a named block, as
+//                   slice::get_disjoint_mut of Rust (1.86) gives one unique
+//                   borrow for each of some indexes.  body gets one ViewMut<T>
+//                   for each window, with the brand of the frame, and the door
+//                   gives the result of body.  A window is the offset of its
+//                   first byte and its count of bytes (ByteWindow).  The door
+//                   checks each window in each build: inside the block, its
+//                   first byte aligned for T, a whole count of T, and no byte
+//                   shared with a second window.  A window comes from data
+//                   outside the code, such as a memory plan, so a refused
+//                   window gives a WindowRefusal and not an end of the process.
+//                   A call takes at most max_block_windows windows, and the
+//                   check of overlap compares each pair of them
+// The block stays with the caller while body runs, so the door holds no
+// proof that body reads no byte of the block through a second name.  The
+// windows do not overlap, so two ViewMuts of one call never share a byte.
+//
 // The header also holds the arithmetic of an aligned allocation, which the
 // block and SwissTableBuffer share, and the size of one huge page.  The
 // alignment of a huge page is necessary for the kernel to back a region with
@@ -55,9 +74,12 @@
 #include <foundation/core/Array.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/List.h>
 #include <foundation/core/Owner.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
+#include <foundation/core/Side.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -402,5 +424,151 @@ template <class Marker>
     return AlignedBytes{detail::AlignedBytesDoor::key(),
                         core::detail::owner::AlignedBytesState::allocated(layout, detail::BlockStorage::zeroed)};
 }
+
+// ── The windows of a block ─────────────────────────────────────────────────
+
+namespace core::side {
+
+// The two roles of the values of a ByteWindow: the offset of its first byte
+// in its block, and its count of bytes.
+struct WindowStart final {};
+struct WindowLength final {};
+
+}  // namespace core::side
+
+// A window of a block: the offset of its first byte and its count of bytes.
+// The two values have one type, so each comes in its role, and no call can
+// swap them.
+class ByteWindow final {
+public:
+    constexpr ByteWindow(core::Side<core::side::WindowStart, core::ByteCount> start,
+                         core::Side<core::side::WindowLength, core::ByteCount> length) noexcept
+        : start_{start.value()}, length_{length.value()} {}
+
+    [[nodiscard]] constexpr core::ByteCount start() const noexcept { return start_; }
+    [[nodiscard]] constexpr core::ByteCount length() const noexcept { return length_; }
+
+private:
+    core::ByteCount start_{std::size_t{0}};
+    core::ByteCount length_{std::size_t{0}};
+};
+
+// Why with_mut_windows refused its windows.
+enum class WindowRefusal : std::uint8_t {
+    outside_block,  // a window ends past the last byte of the block
+    misaligned,  // the first byte of a window is not aligned for the element
+    partial_element,  // the count of bytes of a window holds no whole count of elements
+    overlap,  // two windows share a byte
+};
+
+// The most windows of one call of with_mut_windows.  The check of overlap
+// compares each pair of windows: at most 28 compares, which costs less than
+// a sort for the outputs of one op.
+inline constexpr std::size_t max_block_windows = 8;
+
+namespace detail {
+
+// The value of a Result of with_mut_windows: Unit for a body that gives
+// void, and the result of the body for each other body.
+template <class Given>
+using window_frame_value_t = std::conditional_t<std::is_void_v<Given>, core::Unit, std::remove_cv_t<Given>>;
+
+// True when the two windows share a byte.  A window of no byte shares none.
+// Each window is inside its block, so no end wraps.
+[[nodiscard]] constexpr bool windows_overlap_(ByteWindow const& first, ByteWindow const& second) noexcept {
+    std::size_t const first_start = first.start().raw();
+    std::size_t const second_start = second.start().raw();
+    std::size_t const first_end = first_start + first.length().raw();
+    std::size_t const second_end = second_start + second.length().raw();
+    return first_start < first_end && second_start < second_end && first_start < second_end && second_start < first_end;
+}
+
+}  // namespace detail
+
+// The frame door of some windows of a named block (THE WINDOWS).  body gets
+// a reference to a FixedList of one ViewMut<T, Fresh> for each window, in the
+// order of the windows, and the door gives its result, or Unit for a body
+// that gives void.  A ViewMut does not copy, so a body that takes the list by
+// value does not fit, and the list never moves out of the frame.
+// A refused window gives its WindowRefusal, and body does not run.  Each
+// window starts the lifetime of its elements of T over its bytes
+// (start_as_array of foundation/core/Array.h), so T is an implicit-lifetime
+// type throughout.  The pack refuses each explicit argument after T, so no
+// caller names the brand of the frame.  Complexity: O(W) for the windows and
+// O(W^2) for the check of overlap, with W at most max_block_windows, and the
+// cost of the body.
+template <class T, class... Refused, std::size_t N, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (N <= max_block_windows)
+         && core::UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>
+         && std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
+         && core::FrameResult<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>, Fresh>
+[[nodiscard]] core::Result<
+    detail::window_frame_value_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>>,
+    WindowRefusal>
+with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept {
+    using Views = core::FixedList<core::ViewMut<T, Fresh>, N>;
+    using Given = std::invoke_result_t<Body&&, Views&>;
+    core::View<std::uint8_t> const bytes = block.view();
+    core::View<ByteWindow const> const asked = windows.view();
+    Views views{};
+    for (ByteWindow const& window : asked) {
+        core::Option<core::View<std::uint8_t>> const found = bytes.window(window.start().raw(), window.length().raw());
+        if (found.is_none()) [[unlikely]] {
+            return core::err(WindowRefusal::outside_block);
+        }
+        core::View<std::uint8_t> const run =
+            core::Option<core::View<std::uint8_t>>{found}.expect("the test above found the window");
+        if (window.length().raw() % sizeof(T) != 0) [[unlikely]] {
+            return core::err(WindowRefusal::partial_element);
+        }
+        std::uint8_t* const first = first_of_(core::detail::ViewDoor::key(), run);
+        if ((__builtin_bit_cast(std::uintptr_t, first) & (alignof(T) - 1)) != 0) [[unlikely]] {
+            return core::err(WindowRefusal::misaligned);
+        }
+        core::View<T> const elements = lifetime::start_as_array<T>(run);
+        static_cast<void>(views.append(core::ViewMut<T, Fresh>{core::detail::FrameDoor::key(), elements})
+                              .expect("the list of views holds one view for each window"));
+    }
+    std::size_t outer = 0;
+    for (ByteWindow const& first_window : asked) {
+        std::size_t inner = 0;
+        for (ByteWindow const& second_window : asked) {
+            if (inner > outer && detail::windows_overlap_(first_window, second_window)) [[unlikely]] {
+                return core::err(WindowRefusal::overlap);
+            }
+            ++inner;
+        }
+        ++outer;
+    }
+    if constexpr (std::is_void_v<Given>) {
+        static_cast<Body&&>(body)(views);
+        return core::Unit{};
+    } else {
+        return static_cast<Body&&>(body)(views);
+    }
+}
+
+// A body whose result holds a borrow or names the brand of the frame binds
+// to this overload, so the refusal gives its reason.
+template <class T, class... Refused, std::size_t N, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (N <= max_block_windows) && core::UniqueTarget<T>
+             && std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
+             && (!core::FrameResult<std::invoke_result_t<Body &&, core::FixedList<core::ViewMut<T, Fresh>, N>&>, Fresh>)
+void with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) = delete(
+    "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
+    "the frame: give a plain value");
+
+// More windows than the check of overlap compares bind to this overload.
+template <class T, class... Refused, std::size_t N, class Body>
+    requires(N > max_block_windows)
+void with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) =
+    delete("with_mut_windows takes at most max_block_windows windows, because its check of overlap compares each pair");
+
+// A temporary block gives its bytes back at the end of the full expression.
+template <class T, class... Refused, std::size_t N, class Body>
+void with_mut_windows(AlignedBytes&& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) =
+    delete("a ViewMut of a temporary block points into bytes that the full expression gives back: name the block");
 
 }  // namespace foundation

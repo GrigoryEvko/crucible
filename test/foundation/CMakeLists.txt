@@ -2169,6 +2169,14 @@ foundation_neg_compile_test(neg_aligned_bytes_without_allocation_marker
 foundation_neg_compile_test(neg_aligned_bytes_view_of_temporary
   "use of deleted function .void foundation::AlignedBytes::view\\(\\) &&."
   "a view of a temporary AlignedBytes points into a block that the full expression gives back")
+# with_mut_windows lends its ViewMuts for the call of the body only, and only
+# from a named block.
+foundation_neg_compile_test(neg_aligned_bytes_window_view_leaves_frame
+  "use of deleted function .void foundation::with_mut_windows"
+  "the result of a frame door leaves the frame, so it holds no reference and no address")
+foundation_neg_compile_test(neg_aligned_bytes_windows_of_temporary
+  "use of deleted function .void foundation::with_mut_windows"
+  "a ViewMut of a temporary block points into bytes that the full expression gives back")
 # No number converts to a ByteCount or to an Alignment, so the doors of a
 # Layout refuse two bare numbers, a swapped pair, and a count of elements.  A
 # type that is only declared has no layout.

@@ -21,6 +21,22 @@
 //                       alternative gets the RefMut<T, Brand> of its payload
 //                       in place, and the sum keeps the payload
 //
+// THE FAMILY
+//   Each door of the family stands beside its owner.  Each door that lends a
+//   ViewMut or a RefMut builds it with the key of this header:
+//     with_mut(std::move(owner), body)   the arrays (foundation/core/Array.h),
+//                       FixedList (List.h) and GrowList (Grow.h)
+//     sum.with_mut(arms...)   Option and Result (Choice.h) and OneOf (OneOf.h)
+//     list.with_element(position, on_some, on_none)   the element at a
+//                       position of a GrowList, given to an arm in place
+//                       (Grow.h), with no key
+//     with_mut_windows<T>(block, windows, body)   one ViewMut<T> for each of
+//                       some disjoint windows of a named AlignedBytes
+//                       (foundation/AlignedBytes.h), as slice::get_disjoint_mut
+//                       of Rust gives one unique borrow for each of some indexes.
+//                       The block stays with the caller, so its frame proves
+//                       only that its windows do not overlap
+//
 // A body of the first form that gives void gives the owner back alone.  A
 // body that gives a value gives a Record of the value and the owner.  The
 // value holds no borrow and names no brand of the frame (FrameResult of

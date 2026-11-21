@@ -304,14 +304,14 @@ that the axis does not apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_aligned_bytes` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 2 |
-| `mint_aligned_bytes_zeroed` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 2 |
+| `mint_aligned_bytes_zeroed` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 3 |
 
 ## include/foundation/alloc/
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_alignment` | `include/foundation/alloc/Layout.h` | Y | Y | Y | · | token | · | HS14: 2 |
-| `mint_layout` | `include/foundation/alloc/Layout.h` | Y | Y | Y | · | token | · | HS14: 2 |
+| `mint_layout` | `include/foundation/alloc/Layout.h` | Y | Y | Y | · | token | · | HS14: 3 |
 
 ## include/foundation/core/
 
