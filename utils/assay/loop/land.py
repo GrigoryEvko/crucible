@@ -548,8 +548,14 @@ THE STACK
         an entry with no verdict, so its run overlaps the run below it.  A
         batch whose run on the stack is red, or whose base leaves the stack,
         stacks from then on only on entries that the gate accepted.  Before
-        such a round, the batch waits until each entry of the stack below it
-        has the mark accepted, or until the stack is empty.  The round then
+        such a round, the batch waits until each entry of the stack with no
+        verdict at the first look of the wait has the mark accepted or has
+        left.  The batch has no entry while it waits, so an entry that comes
+        into the stack during the wait composed after it, and it does not
+        hold the wait.  On 2026-11-21, a batch waited 2400 s for five
+        entries in turn, and four of them came into the stack during its
+        wait, because each new first run of a different lane went in front
+        of it.  The round then
         composes on the accepted part of the stack (accepted_part()).  An
         accepted entry changes its commit only when its swap is refused, or
         when the batch below it lands a different commit.  Thus a run that
@@ -3121,7 +3127,9 @@ class BatchLanding:
         """Wait before a step of a round for the batches that go first, and tell if the base can never be the branch.
 
         Before a run, the batch waits while a right of way goes first, or while the stack holds STACK_DEPTH entries.
-        `is_stacking` tells that the round can compose on the stack.  Before a swap, the batch waits while a right of way
+        `is_stacking` tells that the round can compose on the stack.  A batch on THE RULE OF ONE LOST RUN also waits
+        while an entry of the stack that had no verdict at the first look of the wait has none.  An entry that comes
+        into the stack during the wait does not hold it (THE STACK).  Before a swap, the batch waits while a right of way
         goes first, or while batches of the stack are below its base.  A right of way does not go first when its holder
         is below the batch in the stack, or when the entry of its holder is not on the branch, because such a holder
         cannot swap first (THE RIGHT OF WAY, THE STACK).  The wait looks again each POLL_S seconds.  A right of way holds
@@ -3134,13 +3142,19 @@ class BatchLanding:
         waited = 0.0
         rights_shown: set[int] = set()
         stack_shown: set[int] = set()
+        first_open: frozenset[int] | None = None
         while True:
             entries = self.stack.entries(self.branch) if self.stack is not None else []
             tip = self.tip()
             if step == RUN_STEP:
                 below = self.stack.top(tip, entries) if is_stacking and self.stack is not None else []
-                is_top_open = self.is_on_accepted and any(not item.is_accepted for item in below)
-                is_held_by_stack = len(below) >= STACK_DEPTH or is_top_open
+                open_numbers = {item.number for item in below if not item.is_accepted}
+                if first_open is None:
+                    first_open = frozenset(open_numbers)
+                is_top_open = self.is_on_accepted and bool(open_numbers & first_open)
+                is_full = len(below) >= STACK_DEPTH
+                is_held_by_stack = is_full or is_top_open
+                holding = {item.number for item in below} if is_full else open_numbers & first_open
             else:
                 path = stack_path(tip, self.base, entries)
                 if path is None:
@@ -3151,6 +3165,7 @@ class BatchLanding:
                         )
                     return True
                 below, is_held_by_stack = path, bool(path)
+                holding = {item.number for item in below}
             numbers = {item.number for item in below}
             off_branch = {item.number for item in entries if item.base != tip}
             rights = self.right.first() if self.right is not None else []
@@ -3171,7 +3186,7 @@ class BatchLanding:
                 names = " ".join(f"{number:0{NUMBER_WIDTH}d}" for number in new_rights)
                 check_report.write_line(f"loop land: the batch waits before its {step} for the right of way of {names}")
                 rights_shown.update(new_rights)
-            new_below = sorted(numbers - stack_shown) if is_held_by_stack else []
+            new_below = sorted(holding - stack_shown) if is_held_by_stack else []
             if new_below:
                 names = " ".join(f"{number:0{NUMBER_WIDTH}d}" for number in new_below)
                 where = "the batches below it in the stack"

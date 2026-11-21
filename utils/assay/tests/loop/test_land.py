@@ -2588,6 +2588,60 @@ def lost_run_cases(expect: testing.Expect) -> None:
         )
 
 
+def newer_entry_cases(expect: testing.Expect) -> None:
+    """Hold the wait of THE RULE OF ONE LOST RUN to the entries of its first look (THE STACK).
+
+    The batch 3 loses its first run, because the batch 1 below it composes again.  While the batch 3 waits for the
+    verdict of the batch 1, the batch 4 stacks on the batch 1, and its run never ends.  The batch 1 then lands.  The
+    entry of the batch 4 came into the stack during the wait, so it does not hold the batch 3.
+    """
+    with tempfile.TemporaryDirectory(prefix="land-newer-entry-") as work_text:
+        root, queue = Path(work_text) / "repo", Path(work_text) / "queue"
+        queue.mkdir(parents=True)
+        tip = planted_repository(root)
+        branch = land.branch_of(root)
+        first = side_commit(root, tip, "a.txt", "a\n")
+        second = side_commit(root, tip, "a.txt", "a2\n")
+        above = side_commit(root, second, "b.txt", "b\n")
+        below = OtherEntry(queue, branch, 1, tip, first)
+        newer: list[OtherEntry] = []
+        seen: list[tuple[gate.Candidate, bool]] = []
+        steps: list[str] = []
+
+        def newer_batch_stacks(seconds: float) -> None:
+            """Move the batch 1, stack the batch 4 on it, accept the batch 1, then land it."""
+            if seconds != land.POLL_S:
+                return
+            if not steps:
+                below.move(tip, second)
+                steps.append("moved")
+            elif steps[-1] == "moved":
+                newer.append(OtherEntry(queue, branch, 4, second, above))
+                steps.append("stacked")
+            elif steps[-1] == "stacked":
+                below.move(tip, second, is_accepted=True)
+                steps.append("accepted")
+            elif steps[-1] == "accepted":
+                land.swap(root, branch, second, tip, "Below")
+                below.leave()
+                steps.append("landed")
+
+        with mock.patch.object(land, "STACK_WAIT_S", 40 * land.POLL_S):
+            decisions, printed = right_batch(root, queue, 3, passing(seen), newer_batch_stacks)
+        for entry in newer:
+            entry.leave()
+        expect(
+            "a batch whose base left the stack waits for the verdict of the entry of its first look, and not for an "
+            "entry that stacks on it during the wait: it runs on the accepted commit of that entry, and lands",
+            decisions[3].status == 0
+            and [candidate.head for candidate, _ in seen] == [first, second]
+            and git.parent(root, "HEAD") == second
+            and "waits before its run for the verdicts of the stack: 00000001" in printed
+            and "00000004" not in printed
+            and "it goes on to its run" not in printed,
+        )
+
+
 def stack_thread_cases(expect: testing.Expect) -> None:
     """Hold THE STACK with three real batches in threads: the top one ends its run first, and they land in order."""
     with tempfile.TemporaryDirectory(prefix="land-stack-threads-") as work_text:
@@ -3809,6 +3863,7 @@ def main(argv: list[str]) -> int:
             right_cases,
             stack_cases,
             lost_run_cases,
+            newer_entry_cases,
             stack_thread_cases,
             series_cases,
             series_words_cases,
