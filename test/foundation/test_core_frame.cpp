@@ -88,20 +88,25 @@ struct Counted final {
     }
 };
 
-// A FixedArray moves into the frame by a copy of its elements.  The body
-// writes the copy, and the caller takes the written array back.  A body that
-// gives a value gives it in a Record before the array.
+// A FixedArray lends its run in place.  The body writes the elements of the
+// array itself, and a body that gives a value gives it alone.  The door
+// copies no element: the address of the first element in the body is the
+// address of the first element of the array.
 void test_fixed_array() {
     FixedArray<int, 4> array{1, 2, 3, 4};
-    array = with_mut(std::move(array), [](auto out) noexcept {
+    array.with_mut([](auto out) noexcept {
         CRUCIBLE_TEST_ASSERT(kTest, out.size() == 4);
         for (int& element : out) {
             element *= 10;
         }
     });
     CRUCIBLE_TEST_ASSERT(kTest, sum_of(array) == 100);
-    auto [total, back] = with_mut(std::move(array), [](auto out) noexcept { return sum_of(out); });
-    CRUCIBLE_TEST_ASSERT(kTest, total == 100 && sum_of(back) == 100);
+    int const total = array.with_mut([](auto out) noexcept { return sum_of(out); });
+    CRUCIBLE_TEST_ASSERT(kTest, total == 100 && sum_of(array) == 100);
+    View<int const, 4> const elements = array.view();
+    bool const is_in_place = array.with_mut(
+        [elements](auto out) noexcept { return offset_of(elements, View<int const>{out.view()}).is_some(); });
+    CRUCIBLE_TEST_ASSERT(kTest, is_in_place);
 }
 
 // A HeapArray gives its storage to the frame, so the name that the caller
@@ -245,7 +250,7 @@ template <class Run, class Expected>
 void test_brands_and_shape() {
     FixedArray<int, 2> outer{1, 2};
     HeapArray<int> inner = ::foundation::core::mint_heap_array(allocation(), 2, 3);
-    outer = with_mut(std::move(outer), [&inner](auto outer_view) noexcept {
+    outer.with_mut([&inner](auto outer_view) noexcept {
         inner = with_mut(std::move(inner), [&outer_view](auto inner_view) noexcept {
             using Outer = std::remove_cvref_t<decltype(outer_view)>;
             using Inner = std::remove_cvref_t<decltype(inner_view)>;
@@ -294,7 +299,7 @@ void test_splits() {
     CRUCIBLE_TEST_ASSERT(kTest, holds_each(run, [](std::size_t position) noexcept { return position < 4 ? 1 : 2; }));
 
     FixedArray<int, 6> fixed{};
-    fixed = with_mut(std::move(fixed), [](auto whole) noexcept {
+    fixed.with_mut([](auto whole) noexcept {
         using Whole = std::remove_cvref_t<decltype(whole)>;
         auto [low, high] = split_at<2>(std::move(whole));
         static_assert(decltype(low)::extent == 2 && decltype(high)::extent == 4);

@@ -108,7 +108,7 @@ void test_large_fixed_array_value_initializes() {
         if (element == 0) ++zeros_seen;
     }
     CRUCIBLE_TEST_ASSERT(kTest, sevens_seen == 65536 && zeros_seen == 65536);
-    sevens.at(index<65535>()).value = 8;
+    sevens.with_element(index<65535>(), [](Seven& element) noexcept { element.value = 8; });
     CRUCIBLE_TEST_ASSERT(kTest, sevens.at(Index<65536>::check(65535).expect("65535 is below 65536")).value == 8);
 }
 
@@ -116,7 +116,7 @@ void test_fixed_array_reads_at_proven_indexes() {
     FixedArray<int, 4> numbers{4, 8, 15, 16};
     CRUCIBLE_TEST_ASSERT(kTest, numbers.at(index<0>()) == 4);
     CRUCIBLE_TEST_ASSERT(kTest, numbers.at(index<3>()) == 16);
-    numbers.at(index<1>()) = 9;
+    numbers.with_element(index<1>(), [](int& element) noexcept { element = 9; });
     int total = 0;
     for (Index<4> const position : numbers.indices()) {
         total += numbers.at(position);
@@ -153,21 +153,23 @@ void test_fixed_array_element_door_writes_in_place() {
 void test_fixed_array_view_fill_and_copy() {
     FixedArray<std::uint32_t, 8> target;
     FixedArray<std::uint32_t, 8> source{1, 2, 3, 4, 5, 6, 7, 8};
-    ::foundation::core::fill(target.view(), std::uint32_t{0xAB});
+    target.with_mut([](auto run) noexcept { ::foundation::core::fill(run.view(), std::uint32_t{0xAB}); });
     for (std::uint32_t const value : target) {
         CRUCIBLE_TEST_ASSERT(kTest, value == 0xAB);
     }
-    ::foundation::core::copy(target.view(), source.view());
+    target.with_mut([&source](auto run) noexcept { ::foundation::core::copy(run.view(), source.view()); });
     CRUCIBLE_TEST_ASSERT(kTest, target == source);
-    View<std::uint32_t, 8> const elements = target.view();
+    View<std::uint32_t const, 8> const elements = target.view();
     CRUCIBLE_TEST_ASSERT(kTest, elements.at(index<7>()) == 8);
     std::uint32_t sum = 0;
     for (Index<8> const position : elements.indices()) {
         sum += elements.at(position);
     }
     CRUCIBLE_TEST_ASSERT(kTest, sum == 36);
-    // A window of the View writes the elements of the array.
-    ::foundation::core::fill(target.view().window(2, 3).expect("three elements fit"), std::uint32_t{0});
+    // A window of the run of a frame writes the elements of the array.
+    target.with_mut([](auto run) noexcept {
+        ::foundation::core::fill(run.view().window(2, 3).expect("three elements fit"), std::uint32_t{0});
+    });
     CRUCIBLE_TEST_ASSERT(kTest, target.at(index<1>()) == 2 && target.at(index<2>()) == 0 && target.at(index<4>()) == 0);
     CRUCIBLE_TEST_ASSERT(kTest, target.at(index<5>()) == 6);
     CRUCIBLE_TEST_ASSERT(kTest, !(target == source));
@@ -178,18 +180,20 @@ void test_fixed_array_view_fill_and_copy() {
 void test_get_reads_below_the_count() {
     FixedArray<int, 4> numbers{4, 8, 15, 16};
     FixedArray<int, 4> const& fixed = numbers;
-    View<int> const elements = numbers.view();
-    CRUCIBLE_TEST_ASSERT(kTest, *elements.get(2).expect("the position is below the count") == 15);
-    CRUCIBLE_TEST_ASSERT(kTest, elements.get(4).is_none());
-    CRUCIBLE_TEST_ASSERT(kTest, elements.get(~std::size_t{0}).is_none());
-    *elements.get(0).expect("the position is below the count") = 5;
+    numbers.with_mut([](auto run) noexcept {
+        View<int> const elements = run.view();
+        CRUCIBLE_TEST_ASSERT(kTest, *elements.get(2).expect("the position is below the count") == 15);
+        CRUCIBLE_TEST_ASSERT(kTest, elements.get(4).is_none());
+        CRUCIBLE_TEST_ASSERT(kTest, elements.get(~std::size_t{0}).is_none());
+        *elements.get(0).expect("the position is below the count") = 5;
+    });
     CRUCIBLE_TEST_ASSERT(kTest, numbers.at(index<0>()) == 5);
 
     View<int const, 4> const fixed_view = fixed.view();
     CRUCIBLE_TEST_ASSERT(kTest, *fixed_view.get(3).expect("the position is below the count") == 16);
     CRUCIBLE_TEST_ASSERT(kTest, fixed_view.get(4).is_none());
 
-    *numbers.get(1).expect("the position is below the count") = 9;
+    numbers.with_mut([](auto run) noexcept { *run.get(1).expect("the position is below the count") = 9; });
     CRUCIBLE_TEST_ASSERT(kTest, numbers.at(index<1>()) == 9);
     CRUCIBLE_TEST_ASSERT(kTest, *fixed.get(1).expect("the position is below the count") == 9);
     CRUCIBLE_TEST_ASSERT(kTest, fixed.get(4).is_none());
@@ -248,7 +252,7 @@ void test_fixed_array_agrees_with_std_array() {
         std::size_t const raw = stream.below(80);
         std::uint64_t const value = stream.next_wide();
         for (Index<64> const position : Index<64>::check(raw)) {
-            array.at(position) = value;
+            array.with_element(position, [value](std::uint64_t& element) noexcept { element = value; });
         }
         if (raw < model.size()) model[raw] = value;
     }

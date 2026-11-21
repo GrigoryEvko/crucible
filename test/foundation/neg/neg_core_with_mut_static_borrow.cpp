@@ -24,6 +24,6 @@ struct KeepsFirst final {
 
 int main() {
     core::FixedArray<int, 2> array{1, 2};
-    array = core::with_mut(std::move(array), KeepsFirst{});
+    array.with_mut(KeepsFirst{});
     return 0;
 }
