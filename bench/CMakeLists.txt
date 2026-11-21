@@ -62,6 +62,8 @@ function(crucible_bench name)
   # `loop bench` and `loop pgo` read the bench list from there, through
   # bench_targets() of utils/assay/loop/bench.py.
   set_target_properties(${name} PROPERTIES FOLDER crucible_bench)
+  # The scan of the timed windows at the end of this file reads each bench.
+  set_property(GLOBAL APPEND PROPERTY CRUCIBLE_BENCH_TARGETS ${name})
 
   # Asm dump (gitignored, opt-in via -DCRUCIBLE_DUMP_ASM=ON).
   crucible_dump_asm(${name})
@@ -468,4 +470,28 @@ set_tests_properties(bench_strided_budget PROPERTIES
   LABELS "bench;latency")
 if(_record_leaf_not_measured)
   set_tests_properties(bench_strided_budget PROPERTIES DISABLED TRUE)
+endif()
+
+# The scan of the timed windows of each bench.  test/bench_windows/check_windows.py
+# reads each bench, and it refuses a timed window whose loops hold no
+# instruction of the body of the row: the optimizer moved the work of the
+# body out of the timed loop, and the row measures nothing (THE COUNTER).  The
+# gate does not build a bench preset, so `loop nightly` runs the scan, and
+# the probe of test/CMakeLists.txt is the control that the gate runs.  The
+# scan reads the code of a Release build, so each configuration that disables
+# bench_record_leaf disables it too.  It runs no bench, and it reads each
+# bench in some seconds.
+get_property(_bench_targets GLOBAL PROPERTY CRUCIBLE_BENCH_TARGETS)
+set(_bench_files "")
+foreach(_bench_target IN LISTS _bench_targets)
+  list(APPEND _bench_files "$<TARGET_FILE:${_bench_target}>")
+endforeach()
+crucible_script_test(NAME bench_windows
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/test/bench_windows/check_windows.py scan ${CMAKE_SOURCE_DIR} ${_bench_files})
+set_tests_properties(bench_windows PROPERTIES
+  TIMEOUT 900
+  SKIP_RETURN_CODE 77
+  LABELS "bench")
+if(_record_leaf_not_measured OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  set_tests_properties(bench_windows PROPERTIES DISABLED TRUE)
 endif()

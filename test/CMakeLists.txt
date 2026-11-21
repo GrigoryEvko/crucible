@@ -171,6 +171,34 @@ crucible_script_test(NAME harness_output
           $<TARGET_FILE:harness_probe_report> $<TARGET_FILE:harness_probe_diag> ${_harness_emulator}
   COMMAND_EXPAND_LISTS)
 
+# ── The timed windows of the bench harness ───────────────────────────
+#
+# The harness times a loop of calls of the body of a row.  A body that reads
+# a value that does not change, with no input sink, loses its work: the
+# optimizer reads the value one time before the loop, and the loop holds only
+# its counter (THE SINK of bench/bench_harness.h).  The probe
+# bench_windows/probe_windows.cpp holds such a body and the same body with
+# its input sink.  The test reads the object of the probe with
+# bench_windows/check_windows.py, which must accept the first body and refuse
+# the second (THE PROBE).  The probe is the control of the scan of the
+# windows of each bench, which only a bench preset builds (bench/CMakeLists.txt).
+# The test needs the code of a Release build of x86-64 with no profile
+# counters and no UBSan, such as the presets release and release-v3 of the
+# gate.  CRUCIBLE_SANITIZE and CRUCIBLE_TSAN change only a Debug build.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64" AND CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT CRUCIBLE_UBSAN_STRICT
+   AND NOT CRUCIBLE_PGO STREQUAL "generate")
+  add_library(bench_window_probe OBJECT bench_windows/probe_windows.cpp)
+  target_include_directories(bench_window_probe PRIVATE ${CMAKE_SOURCE_DIR}/bench)
+  target_link_libraries(bench_window_probe PRIVATE crucible)
+  # The flags of the timed loops of crucible_bench() of bench/CMakeLists.txt,
+  # with the target of the preset.
+  target_compile_options(bench_window_probe PRIVATE -O3 -fno-omit-frame-pointer -falign-loops=64)
+  crucible_script_test(NAME bench_window_probe
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/bench_windows/check_windows.py probe ${CMAKE_SOURCE_DIR}
+            $<TARGET_OBJECTS:bench_window_probe>)
+  set_tests_properties(bench_window_probe PROPERTIES SKIP_RETURN_CODE 77)
+endif()
+
 # The compile ceilings of the heavy compile-time gates of the base.  Each probe
 # of test/compile_cost/ runs one gate on a fixed input, and the check compiles
 # it with the flags of a test of the session layer and the quarantine plugin.
