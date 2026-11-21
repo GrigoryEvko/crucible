@@ -247,11 +247,14 @@
 //   Each structural check calls find_wiring_fault on the net itself, and not
 //   on the copy, so the compiler keeps one result for each net that some
 //   checks read.  A pass that checks the wiring inside the forest or the
-//   dataflow saved 7% and 9% of the run-time instructions on the chain of
-//   1,000 agents of bench/bench_net_checks.cpp.  But it cost 4% to 7% more
-//   compile instructions in the units of the net checks, because each check
-//   of a net then checks its wiring again, and each net type instantiates
-//   the pass.  So the plain forms keep the two steps.  explain_fault is a
+//   dataflow saved 7.0% and 7.6% of the run-time instructions on the chain of
+//   1,000 agents of bench/bench_net_checks.cpp, and 7% and 9% of the cycles.
+//   It cost more compile instructions, for two separate causes.  With the
+//   pass in each constant evaluation too, each check of a net checked its
+//   wiring again: 11.8% more in test_algebra_net_scale.cpp and 8.8% more in
+//   the check file of this header.  With the pass at run time only, each net
+//   type instantiated the pass: 7.4% and 4.0% more.  So the plain forms keep
+//   the two steps.  explain_fault is a
 //   template on the capacity class too, and it puts each name through
 //   helpers that are no templates.
 //   This header includes two headers of the base, and no other.  The mixer
