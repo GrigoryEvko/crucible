@@ -313,8 +313,9 @@ private:
 // The payload rules of the markers (fixy/session/Registry.h).  The payload
 // walk of fixy/session/Classification.h reads the tag of a marker at
 // argument 1, its brand at argument 2 and its value at argument 0.  A share
-// changes no set.  The row of a marker is the row of its value, and a share
-// carries no row.
+// changes no set, and its brand is at argument 1, so the stable hash of a
+// share erases its brand as it erases the brand of a marker.  The row of a
+// marker is the row of its value, and a share carries no row.
 namespace combinators::perm {
 
 inline constexpr ::fixy::session::transition::payload_rule transferable{
@@ -350,7 +351,7 @@ inline constexpr ::fixy::session::transition::payload_rule released{
     .row_arguments = std::uint64_t{1}};
 
 inline constexpr ::fixy::session::transition::payload_rule shared_reader{
-    .shape = ^^SharedReader, .role = ::fixy::session::transition::payload_role::share};
+    .shape = ^^SharedReader, .role = ::fixy::session::transition::payload_role::share, .brand_argument = 1};
 
 inline constexpr ::fixy::session::transition::seal payload_rule_seal{
     .kind = ^^::fixy::session::transition::payload_rule, .count = 5};

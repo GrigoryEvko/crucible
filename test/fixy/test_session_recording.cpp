@@ -474,6 +474,33 @@ int check_fresh_brand_recording() {
     return 0;
 }
 
+// A share of a pool of a fresh brand.  The payload rule of SharedReader names
+// its brand, so the stable hash erases it, as it erases the brand of a marker.
+// A hand-off of a protocol that carries the share records one hash, and a
+// unit that spells the erased brand replays it.
+int check_fresh_brand_share() {
+    using Brand =
+        ::foundation::brand::brand_of_t<decltype(::foundation::permissions::mint_permission_root<RecordedRegion>())>;
+    using Share = s::SharedReader<RecordedRegion, Brand>;
+    // The singleton root of a tag has the erased brand.
+    using SingletonToken = decltype(::foundation::permissions::mint_singleton_root<RecordedRegion>());
+    using ErasedShare = s::SharedReader<RecordedRegion, ::foundation::brand::brand_of_t<SingletonToken>>;
+    using Carried = s::Send<Share, s::End>;
+    using ErasedCarried = s::Send<ErasedShare, s::End>;
+    static_assert(!::foundation::reflect::HasStableIdentity<Share>,
+                  "the brand of a root site is a closure, which has no stable id");
+    static_assert(s::default_schema_hash<Share> == s::default_schema_hash<ErasedShare>);
+    static_assert(s::default_proto_hash<Carried> == s::default_proto_hash<ErasedCarried>);
+
+    s::SessionEventLog log;
+    s::SessionEventWriter writer = s::mint_session_event_writer(log);
+    writer.record_now(s::SessionEvent::delegate_handoff(kSelf, kPeer, s::default_proto_hash<Carried>));
+    if (log.size() != 1 || log[0].op() != s::SessionOp::Delegate
+        || log[0].delegated_proto() != s::default_proto_hash<ErasedCarried>)
+        return fail("the hand-off of a protocol that carries a share of a fresh brand did not replay");
+    return 0;
+}
+
 }  // namespace
 
 // ── A Ref of a fresh brand ──────────────────────────────────────────
@@ -646,6 +673,7 @@ int main() {
     if (const int rc = check_pinned_roll_recording(); rc != 0) return rc;
     if (const int rc = check_handoff_recording(); rc != 0) return rc;
     if (const int rc = check_fresh_brand_recording(); rc != 0) return rc;
+    if (const int rc = check_fresh_brand_share(); rc != 0) return rc;
     if (const int rc = check_keyed_recording(); rc != 0) return rc;
     if (const int rc = check_keyed_checkpoint(); rc != 0) return rc;
     if (const int rc = check_pole_select_recording(); rc != 0) return rc;

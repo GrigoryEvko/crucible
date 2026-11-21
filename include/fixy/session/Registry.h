@@ -385,8 +385,9 @@ struct payload_rule {
     payload_role role = payload_role::members;
     // The tag of a token or of a loan.
     std::size_t tag_argument = npos;
-    // The brand of that token or loan.  A family of the role moves, lends or
-    // releases names it, and the walk stops the build when it is npos.
+    // The brand of that token or loan, or of a share.  A family of the role
+    // moves, lends or releases names it, and the walk stops the build when it
+    // is npos.  The stable hash erases the brand at this position.
     std::size_t brand_argument = npos;
     // The value that the family carries.
     std::size_t value_argument = npos;
