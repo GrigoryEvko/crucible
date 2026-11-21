@@ -23,8 +23,10 @@
 //   in the slab of the pass with the end of its last slot holds the checks of
 //   the window and of the slab, and only a block that fails it takes the
 //   branch that keeps it for a later pass or ends the process.  Then one
-//   multiply checks the first byte of a slot, and one test of the bit finds a
-//   second release.  A second release of one block in one run sets the bit of
+//   multiply gives the slot, and the low word of the same product checks the
+//   first byte of a slot (THE SLOT OF AN OFFSET of
+//   foundation/alloc/Metadata.h).  One test of the bit finds a second
+//   release.  A second release of one block in one run sets the bit of
 //   the open word, or of a word that an earlier step of the pass wrote, so the
 //   next test of the bit finds it.  Complexity: O(n k) for n blocks in k
 //   slabs, at most 128 times 128 for one bin.
@@ -178,7 +180,7 @@ void HeapState::give_back_run_(SizeClass size_class, AddressWord* first, core::E
         // so its slot is below 4096 and its word below 64 also before the
         // check of the slot.  Each word index below holds by the same bound.
         std::uint64_t const lead_in_slab = static_cast<std::uint64_t>(lead) - slab_address;
-        auto open = static_cast<std::uint32_t>(detail::slot_quotient(facts, core::ByteCount{lead_in_slab}) >> 6);
+        auto open = static_cast<std::uint32_t>(detail::slot_product(facts, core::ByteCount{lead_in_slab}).slot() >> 6);
         auto bits = static_cast<std::uint64_t>(meta.bitmap_word(BitmapWordIndex{core::detail::IndexDoor::key(), open}));
         std::size_t kept = 0;
         for (std::size_t index = 0; index < remaining; ++index) {
@@ -196,10 +198,11 @@ void HeapState::give_back_run_(SizeClass size_class, AddressWord* first, core::E
                 ++kept;
                 continue;
             }
-            std::uint64_t const slot = detail::slot_quotient(facts, core::ByteCount{in_slab});
-            if (slot * slot_bytes != in_slab) [[unlikely]] {
+            detail::SlotProduct const product = detail::slot_product(facts, core::ByteCount{in_slab});
+            if (!product.is_slot_start(facts)) [[unlikely]] {
                 die_inside_slot(BadRelease{block, self_, size_class});
             }
+            std::uint64_t const slot = product.slot();
             // A word holds 64 slots, so the word changes at most one time in
             // 64 blocks of a run in the order of their slots.
             auto const word = static_cast<std::uint32_t>(slot >> 6);

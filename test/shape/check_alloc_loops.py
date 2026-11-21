@@ -18,7 +18,10 @@ THE CLAIMS
             A RUN there).  So the loop of one block reads one word of memory,
             the block of the run, and calls nothing.  A read of the owner
             entry, of the class or of a record of the slab in that loop is a
-            refusal.
+            refusal.  One product gives the slot of a block and the check of
+            its first byte (THE SLOT OF AN OFFSET of
+            foundation/alloc/Metadata.h), so the loop holds at most
+            FLUSH_BLOCK_MULTIPLIES multiplies.
 
 THE COMPILE
     Each source compiles with its own command of the compile database of the
@@ -60,6 +63,10 @@ FLUSH_PART = "give_back_run_"
 # blsr with its branch, and the compare of the count with its branch, 9
 # instructions, and one more for a change of the register allocation.
 REFILL_BLOCK_LIMIT = 10
+# The loop of one block of the flush: one multiply of 64 by 64 bits for the
+# slot and the check of its first byte.
+FLUSH_BLOCK_MULTIPLIES = 1
+MULTIPLY_MNEMONICS = ("imul", "mul", "mulx")
 DROPPED_PREFIXES = ("-fplugin", "-fsanitize", "-fno-sanitize", "-DCRUCIBLE_QUARANTINE_ACTIVE")
 STEADY_LEVELS = ("-O2", "-O3")
 SKIPPED = 77
@@ -174,7 +181,14 @@ def check_flush(flow) -> list[str]:
 
     block_reads, block_calls = findings(block_runs[0])
     pass_reads, _ = findings(all_runs[-1])
+    first, last = block_runs[0]
+    multiplies = sum(1 for index in range(first, last + 1) if flow.parts[0][index].mnemonic in MULTIPLY_MNEMONICS)
     problems: list[str] = []
+    if multiplies > FLUSH_BLOCK_MULTIPLIES:
+        problems.append(
+            f"the loop of one block of {FLUSH_PART} holds {multiplies} multiplies, and the limit is "
+            f"{FLUSH_BLOCK_MULTIPLIES}"
+        )
     if block_reads != 1:
         problems.append(
             f"the loop of one block of {FLUSH_PART} reads {block_reads} words of memory, and the claim is "
@@ -227,7 +241,8 @@ def main(arguments: list[str]) -> int:
         return 1
     print(
         f"check_alloc_loops: the loop of one block of {REFILL_PART} holds no setcc and at most {REFILL_BLOCK_LIMIT} "
-        f"instructions, and the loop of one block of {FLUSH_PART} reads one word and calls nothing."
+        f"instructions, and the loop of one block of {FLUSH_PART} reads one word, holds at most "
+        f"{FLUSH_BLOCK_MULTIPLIES} multiply and calls nothing."
     )
     return 0
 

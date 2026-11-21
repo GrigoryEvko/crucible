@@ -47,7 +47,18 @@ static_assert(slot_at(SizeClass{9}, core::ByteCount{320}).value_or(SlabSlotIndex
 static_assert(slot_at(SizeClass{9}, core::ByteCount{321}).is_none());
 static_assert(slot_at(SizeClass{9}, core::ByteCount{409 * 160}).is_none());
 static_assert(slot_at(SizeClass{1}, core::ByteCount{kSlabUnitBytes - 16}).is_some());
-static_assert(detail::kSlotFacts.rows[1].reciprocal == (std::uint64_t{1} << 28));
+static_assert(detail::kSlotFacts.rows[1].reciprocal == (std::uint64_t{1} << 43));
+// The bounds of the proof: c <= 2^43, so a product of an offset below one
+// chunk fits 64 bits, and c > 2^26 for a slot below one chunk, else c <= 2^26.
+static_assert([] consteval {
+    for (std::uint32_t value = 1; value <= kSizeClassCount; ++value) {
+        detail::SlotFacts const facts = detail::kSlotFacts.rows[value];
+        if (facts.reciprocal > (std::uint64_t{1} << 43)) return false;
+        bool const is_below_chunk = facts.slot_bytes < kSlabChunkBytes;
+        if (is_below_chunk != (facts.reciprocal > (std::uint64_t{1} << 26))) return false;
+    }
+    return true;
+}());
 static_assert(detail::kSlotFacts.rows[kSizeClassCount].slab_slots == 1);
 
 // A record lives at its place in the region.

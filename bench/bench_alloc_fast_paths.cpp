@@ -88,7 +88,7 @@
 //   The rows of the stream subtract their warm rows: the refill and the flush
 //   of each block.  The refill loop is 9 instructions a block, with 6 ALU
 //   operations at 4 a cycle (section 2.9.8): 1.5 cycles.  The flush loop is
-//   25 instructions, 21 macro-ops a block (a bt and its jc do not fuse): 3.5
+//   23 instructions, 19 macro-ops a block (a bt and its jb do not fuse): 3.17
 //   cycles of dispatch.  The fixed work of one refill or flush adds the rest.
 //
 // THE COMMAND

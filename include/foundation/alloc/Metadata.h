@@ -276,18 +276,26 @@ inline constexpr std::size_t kSlabMetaBytes = 576;
 //   The flush of a bin finds the slot of each address that it gives back: the
 //   offset of the address from the first byte of its slab, over the bytes of
 //   the slot of the class.  A slot is not a power of two above 128 bytes, so
-//   each class holds a reciprocal in place of a division: the index of the
-//   slot is (offset * m) >> kSlotReciprocalShift, with m = ceil(2^32 / slot),
-//   as the div_info of jemalloc divides by a slot.  Then the test
-//   index * slot == offset refuses an offset inside a slot, and a second test
-//   refuses an index past the slots of the slab.  So the index must be exact
-//   only for an offset that is a whole count of the slot.  With m * slot =
-//   2^32 + e and e < slot, the error of such an offset is index * e / 2^32,
-//   and index * e < offset < 2^21, so the error stays below 1.  An offset
-//   lies below one chunk, so the product stays below 2^49.
+//   each class holds a reciprocal in place of a division: c = ceil(2^F / d)
+//   for the slot of d bytes, with F = kSlotFractionBits = 47.  One product
+//   c * n for the offset n gives the two facts of the flush (Lemire, Kaser
+//   and Kurz, "Faster remainder by direct computation", 2019): its bits from
+//   F up are the index of the slot, and its low F bits are below c only when
+//   n is the first byte of a slot.  An offset lies below one chunk, n < 2^21,
+//   and a slot holds at least 16 bytes, so c <= 2^43 and c * n < 2^64.
+//   Write c * d = 2^F + e with 0 <= e < d, and n = q * d + r with 0 <= r < d.
+//   Then c * n = q * 2^F + q * e + r * c, and q * e < n < 2^21.  For r = 0 the
+//   low bits are q * e: zero for q = 0, and below c for q > 0, because then
+//   d <= n < 2^21 and c > 2^26.  For r > 0 they are q * e + r * c, at least c.
+//   They stay below 2^F: for d < 2^21, r * c <= 2^F + e - c and c > e + 2^21;
+//   for d >= 2^21, q = 0, c <= 2^26 and n * c < 2^47.  So the high bits are q
+//   in each case.  The check file of this header holds the bounds on c for
+//   each class.  A second test refuses an index past the slots of the slab.
 
-// The shift of the reciprocal of a slot (THE SLOT OF AN OFFSET).
-inline constexpr std::uint32_t kSlotReciprocalShift = 32;
+// The bits of the fraction of the reciprocal of a slot (THE SLOT OF AN
+// OFFSET), and their mask.
+inline constexpr std::uint32_t kSlotFractionBits = 47;
+inline constexpr std::uint64_t kSlotFractionMask = (std::uint64_t{1} << kSlotFractionBits) - 1;
 
 // The index of a slot in a slab: below the 4096 slots of the smallest class.
 using SlabSlotIndex = ::foundation::core::Index<kSlabBitmapWords * 64>;
@@ -313,7 +321,7 @@ struct SlotFactTable final {
     for (std::uint32_t value = 1; value <= kSizeClassCount; ++value) {
         SizeClass const size_class{static_cast<std::uint8_t>(value)};
         std::uint64_t const slot = slot_bytes(size_class).raw();
-        table.rows[value].reciprocal = ((std::uint64_t{1} << kSlotReciprocalShift) + slot - 1) / slot;
+        table.rows[value].reciprocal = ((std::uint64_t{1} << kSlotFractionBits) + slot - 1) / slot;
         table.rows[value].slot_bytes = static_cast<std::uint32_t>(slot);
         table.rows[value].slab_slots = slab_slots(size_class);
     }
@@ -322,16 +330,34 @@ struct SlotFactTable final {
 
 inline constexpr SlotFactTable kSlotFacts = build_slot_facts_();
 
-// The index of the slot of the class of FACTS whose first byte is OFFSET
-// bytes after the first byte of its slab, for an offset that is a whole count
-// of the slot (THE SLOT OF AN OFFSET).  For each other offset below one chunk
-// it is the floor of the quotient, or that floor plus one when the fraction
-// is above 1 - 2^-11, and the test index * slot == offset refuses it.  The
-// flush calls it with the facts of its class in registers.  Complexity: O(1),
-// one multiply and one shift.
-[[nodiscard]] constexpr std::uint64_t slot_quotient(SlotFacts const& facts,
-                                                    ::foundation::core::ByteCount offset) noexcept {
-    return (offset.raw() * facts.reciprocal) >> kSlotReciprocalShift;
+// The product of an offset below one chunk and the reciprocal of the slot of
+// a class (THE SLOT OF AN OFFSET): the index of the slot that holds the
+// offset, and the test of its first byte.  slot_product makes one.  The word
+// proves nothing, so the type has no door: a word that slot_product did not
+// make gives a wrong slot, and no path reads memory through it.
+class SlotProduct final {
+public:
+    constexpr explicit SlotProduct(std::uint64_t word) noexcept : word_{word} {}
+
+    // The index of the slot that holds the offset.
+    [[nodiscard]] constexpr std::uint64_t slot() const noexcept { return word_ >> kSlotFractionBits; }
+
+    // True when the offset is the first byte of its slot, for the facts that
+    // made the product.
+    [[nodiscard]] constexpr bool is_slot_start(SlotFacts const& facts) const noexcept {
+        return (word_ & kSlotFractionMask) < facts.reciprocal;
+    }
+
+private:
+    std::uint64_t word_ = 0;
+};
+
+// The product of OFFSET, below one chunk, and the reciprocal of the slot of
+// FACTS.  The flush calls it with the facts of its class in registers.
+// Complexity: O(1), one multiply.
+[[nodiscard]] constexpr SlotProduct slot_product(SlotFacts const& facts,
+                                                 ::foundation::core::ByteCount offset) noexcept {
+    return SlotProduct{offset.raw() * facts.reciprocal};
 }
 
 }  // namespace detail
@@ -340,18 +366,17 @@ inline constexpr SlotFactTable kSlotFacts = build_slot_facts_();
 // the class, or none for an offset that is not the first byte of a slot of
 // the slab (THE SLOT OF AN OFFSET).  The flush of a bin in the static library
 // foundation calls it, so the check of the class is a fatal invariant, as in
-// MetadataLayout.  Complexity: O(1), two multiplies, one shift and three
-// compares, with no division.
+// MetadataLayout.  Complexity: O(1), one multiply and three compares, with no
+// division.
 [[nodiscard]] constexpr ::foundation::core::Option<SlabSlotIndex>
 slot_at(SizeClass size_class, ::foundation::core::ByteCount offset) noexcept {
     CRUCIBLE_FATAL_INVARIANT(is_size_class(size_class));
-    std::uint64_t const bytes = offset.raw();
-    if (bytes >= kSlabChunkBytes) return ::foundation::core::none;
+    if (offset.raw() >= kSlabChunkBytes) return ::foundation::core::none;
     detail::SlotFacts const& facts = detail::kSlotFacts.rows[static_cast<std::uint8_t>(size_class)];
-    std::uint64_t const index = detail::slot_quotient(facts, offset);
-    if (index * facts.slot_bytes != bytes) return ::foundation::core::none;
-    if (index >= facts.slab_slots) return ::foundation::core::none;
-    return SlabSlotIndex::check(static_cast<std::size_t>(index));
+    detail::SlotProduct const product = detail::slot_product(facts, offset);
+    if (!product.is_slot_start(facts)) return ::foundation::core::none;
+    if (product.slot() >= facts.slab_slots) return ::foundation::core::none;
+    return SlabSlotIndex::check(product.slot());
 }
 
 // The guard before the first section and after the last section of the
