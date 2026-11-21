@@ -1,0 +1,30 @@
+# The front end registers the destructor of each static object with a call
+# that keeps the place of the first registration of the unit, here the
+# guarded static of Table.h.  Each reference in such a call takes the place of
+# its object (registered_object of expression.cpp).  So an opt-out region
+# around the object covers each finding of its registration, and the mode
+# error passes.  The same object outside a region gives its findings at its
+# own line, and the mode error fails.  No unit gives a finding in Table.h.
+
+compile registered registered.cpp
+flag registered -isystem ../outside
+exit registered pass
+finding registered quarantine region registered.cpp:12:1 | ABI: the registration macro of a library
+finding registered quarantine opted-out registered.cpp:13:1 | c-library-call static_init_first_0
+finding registered quarantine opted-out registered.cpp:13:1 | std-entity outside::make_key
+finding registered quarantine opted-out registered.cpp:14:1 | c-library-call static_init_second_1
+finding registered quarantine opted-out registered.cpp:14:1 | std-entity outside::make_key
+
+compile registered-error registered.cpp mode=error out=no errors=registered
+flag registered-error -isystem ../outside
+exit registered-error pass
+
+compile unregistered unregistered.cpp
+flag unregistered -isystem ../outside
+exit unregistered pass
+finding unregistered quarantine c-library-call unregistered.cpp:9:1 | static_init_first_0
+finding unregistered quarantine std-entity unregistered.cpp:9:1 | outside::make_key
+
+compile unregistered-error unregistered.cpp mode=error out=no errors=unregistered
+flag unregistered-error -isystem ../outside
+exit unregistered-error fail

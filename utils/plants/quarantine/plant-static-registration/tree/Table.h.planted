@@ -1,0 +1,15 @@
+#pragma once
+
+// A guarded static in a header: the first destructor registration of the
+// unit.  The front end builds the address of its callee here, one time.
+
+struct Table {
+    Table() noexcept : count(1) {}
+    ~Table() {}
+    int count;
+};
+
+inline Table& global_table() {
+    static Table table;
+    return table;
+}

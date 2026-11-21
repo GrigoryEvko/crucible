@@ -172,6 +172,9 @@ struct RefinedParameter {
 
 struct BodyWalk {
     location_t last = UNKNOWN_LOCATION;
+    // True while the walk reads a destructor registration of the front end,
+    // whose nodes keep the place of its object (registered_object).
+    bool is_place_pinned = false;
     bool is_pattern = false;
     hash_set<tree>* visited = nullptr;
     // The function whose body the walk reads, or null for an initializer.
@@ -1454,13 +1457,52 @@ void check_expression_rules(tree node, BodyWalk& walk) {
     }
 }
 
+// The object of a destructor registration that the front end makes for a
+// variable with static or thread storage, or null.  Such a call is
+// __cxa_atexit (DESTRUCTOR, &OBJECT, HANDLE) or __cxa_thread_atexit with the
+// same arguments, and the front end declares the callee, so the callee is
+// artificial.  The front end builds the address of the callee one time for
+// the unit, and each registration takes the place of that first use, such as
+// a guarded static of a header.  So a walk gives the nodes of the call the
+// place of the object.
+tree registered_object(tree call) {
+    if (TREE_CODE(call) != CALL_EXPR || call_expr_nargs(call) != 3) {
+        return NULL_TREE;
+    }
+    tree callee = get_callee_fndecl(call);
+    if (callee == NULL_TREE || !DECL_ARTIFICIAL(callee) || DECL_NAME(callee) == NULL_TREE) {
+        return NULL_TREE;
+    }
+    std::string name = identifier_text(DECL_NAME(callee));
+    if (name != "__cxa_atexit" && name != "__cxa_thread_atexit") {
+        return NULL_TREE;
+    }
+    tree object = CALL_EXPR_ARG(call, 1);
+    STRIP_NOPS(object);
+    if (TREE_CODE(object) != ADDR_EXPR) {
+        return NULL_TREE;
+    }
+    object = TREE_OPERAND(object, 0);
+    return VAR_P(object) ? object : NULL_TREE;
+}
+
 tree visit_body_node(tree* node_pointer, int* walk_subtrees, void* data) {
     tree node = *node_pointer;
     BodyWalk& walk = *static_cast<BodyWalk*>(data);
     if (node == NULL_TREE) {
         return NULL_TREE;
     }
-    if (EXPR_P(node) && EXPR_HAS_LOCATION(node)) {
+    if (tree object = !walk.is_place_pinned ? registered_object(node) : NULL_TREE; object != NULL_TREE) {
+        walk.last = DECL_SOURCE_LOCATION(object);
+        walk.is_place_pinned = true;
+        for (int index = 0; index < call_expr_nargs(node); ++index) {
+            walk_expression(&CALL_EXPR_ARG(node, index), walk);
+        }
+        walk.is_place_pinned = false;
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    if (!walk.is_place_pinned && EXPR_P(node) && EXPR_HAS_LOCATION(node)) {
         walk.last = EXPR_LOCATION(node);
     }
     if (EXPR_P(node) || TREE_CODE(node) == CONSTRUCTOR) {

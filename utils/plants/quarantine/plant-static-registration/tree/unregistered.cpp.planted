@@ -1,0 +1,9 @@
+// One registration of the library outside an opt-out region.  Each reference
+// of its initializer and of the registration of its destructor is a finding
+// at the line of the object, and Table.h gets none.
+#include "Table.h"
+#include <Registrar.h>
+
+int read_table() { return global_table().count; }
+
+OUTSIDE_REGISTER(first, 1)

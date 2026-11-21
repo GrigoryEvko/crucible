@@ -1,0 +1,15 @@
+// Two registrations of the library inside an opt-out region.  The static
+// initializer of the unit registers the destructor of each object, and each
+// reference in a registration takes the place of its object.  So the region
+// covers each finding, and Table.h gets none.
+#include <foundation/Quarantine.h>
+
+#include "Table.h"
+#include <Registrar.h>
+
+int read_table() { return global_table().count; }
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the registration macro of a library")
+OUTSIDE_REGISTER(first, 1)
+OUTSIDE_REGISTER(second, 2)
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

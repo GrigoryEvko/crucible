@@ -1,0 +1,28 @@
+#pragma once
+
+// A registration macro of a library outside the root, as the blocks of
+// PyTorch are: it declares a static object with a library class, and the
+// name of the object comes from a token paste in the macro.  The class has a
+// destructor, so the front end registers the destructor of each object.
+
+namespace outside {
+
+struct Key {
+    int value;
+    ~Key() {}
+};
+
+inline Key make_key(int value) noexcept { return Key{value}; }
+
+struct Registrar {
+    Registrar(int value, Key key) noexcept : value_(value + key.value) {}
+    ~Registrar() {}
+    int value_;
+};
+
+}  // namespace outside
+
+#define OUTSIDE_CONCAT_(first, second) first##second
+#define OUTSIDE_CONCAT(first, second) OUTSIDE_CONCAT_(first, second)
+#define OUTSIDE_REGISTER(name, value) \
+    static const ::outside::Registrar OUTSIDE_CONCAT(static_init_##name##_, __COUNTER__)(value, ::outside::make_key(value));
