@@ -430,9 +430,14 @@ THE STORE
     A stop of the host can damage the git store of the repository: a file
     config with no bytes, or an object with no bytes.  Before each batch,
     the holder reads the store (store_problem()).  The file config must have
-    bytes, and `git fsck --connectivity-only` must exit 0.  A damaged store
-    refuses each request of the batch with the reason, and the branch does
-    not move.
+    bytes, and `git fsck --connectivity-only --no-reflogs` must exit 0.  A
+    damaged store refuses each request of the batch with the reason, and the
+    branch does not move.  The check reads no reflog: a rebase in a
+    different work tree writes the reflog of its branch, and a check that
+    reads it at that moment can exit 2 for a store with no damage.  The
+    check also runs STORE_TRIES times, STORE_RETRY_S seconds apart, before a
+    refusal, so a ref that a different tree writes at that moment refuses
+    no request.  The refusal names each ref of the error of git.
 
 THE RIGHT OF WAY
     A long run of the gate, such as a run of --all-configurations, can lose
@@ -499,6 +504,14 @@ THE STACK
         tests, the batch writes that commit into its entry
         (Candidate.on_fold).  A batch that starts after that write stacks on
         the commit that lands, if no later fold of the ledgers changes it.
+      * A request of the run can leave the queue while the gate runs, such
+        as a request that its agent cancels.  The commit of the entry holds
+        its change, so that commit can never land.  A thread of the holder
+        looks at the process of each request of the run each WATCH_S
+        seconds, and it frees the entry at once when one left: the files
+        NUMBER.stack and NUMBER.stacked go (gone_watch()).  A batch above
+        then does not wait on the entry until the run ends.  On 2026-11-21
+        such an entry held the next batch 260 s.
     A batch swaps only when the branch is at its base, with the same
     compare-and-swap.  Before the swap, it waits while its base is the top
     of a path of entries from the branch.  When a batch below lands a
@@ -665,6 +678,7 @@ import re
 import secrets
 import sys
 import tempfile
+import threading
 import time
 import traceback
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -753,8 +767,13 @@ STACK_LOCK_SUFFIX = ".stacked"
 # with no lock can be the file of a live holder.  On 2026-11-19 the queue held such files of dead holders from
 # 2026-11-15 on.
 DEAD_HOLDER_AGE_S = 3600.0
-# The lines of the error of `git fsck` that the refusal of a damaged store names (THE STORE).
+# The lines of the error of `git fsck` that the refusal of a damaged store names, the runs of the check before a
+# refusal, the pause between two runs in seconds, and a ref in the error (THE STORE).  On 2026-11-21, a rebase in a
+# different work tree made one check exit 2 for a reflog entry of its branch, and a check some minutes later exited 0.
 STORE_LINES = 3
+STORE_TRIES = 3
+STORE_RETRY_S = 5.0
+STORE_REF = re.compile(r"\brefs/[^\s:]+")
 PATCH_MARK = ".patch-"
 REQUEST_FORMAT = 2
 # The bytes of the random token of a request (THE QUEUE).
@@ -762,6 +781,8 @@ TOKEN_BYTES = 8
 # The interval of the wait for a verdict or for the lock, in seconds (THE WAIT).  The wait for the request file of a
 # request with a lock, and its interval, in seconds (THE HOLDER).
 POLL_S = 2.0
+# The interval of the look of a holder at the processes of the requests of its run, in seconds (THE STACK).
+WATCH_S = POLL_S
 INCOMPLETE_S = 5.0
 INCOMPLETE_POLL_S = 0.1
 # The lock file of the update of a work tree, in its git directory (THE INDEX AND THE WORKING TREE).
@@ -1934,11 +1955,12 @@ def refused(status: int, *texts: str) -> Decision:
     return Decision(status, "", tuple(Line(text, True) for text in texts))
 
 
-def store_problem(repository: Path) -> str | None:
+def store_problem(repository: Path, pause: Callable[[float], None] = time.sleep) -> str | None:
     """Return why the git store of a repository is damaged, or None for a whole store (THE STORE).
 
     A stop of the host can leave the file config with no bytes, or an object with no bytes.  The file config must
-    have bytes, and `git fsck --connectivity-only` must exit 0.  The check of the store of the tree takes about 3 s.
+    have bytes, and `git fsck --connectivity-only --no-reflogs` must exit 0 in one of STORE_TRIES runs, with a pause
+    of STORE_RETRY_S between two runs.  The check of the store of the tree takes about 3 s.
 
     Raises:
         git.GitError: If git cannot start, or it runs past its limit
@@ -1949,13 +1971,22 @@ def store_problem(repository: Path) -> str | None:
             f"the file {config} of the git store has no bytes, the damage of a stop of the host, so no landing moves "
             f"the branch.  Write the configuration of the repository again, then queue the request again"
         )
-    completed = git.run_any_exit(repository, "fsck", "--connectivity-only", "--no-progress", timeout_s=proc.TOOL_S)
+    words = ("fsck", "--connectivity-only", "--no-reflogs", "--no-progress")
+    completed = git.run_any_exit(repository, *words, timeout_s=proc.TOOL_S)
+    for _retry in range(STORE_TRIES - 1):
+        if completed.exit == 0:
+            return None
+        pause(STORE_RETRY_S)
+        completed = git.run_any_exit(repository, *words, timeout_s=proc.TOOL_S)
     if completed.exit == 0:
         return None
     shown = " | ".join(completed.err.strip().splitlines()[:STORE_LINES])
+    refs = sorted(set(STORE_REF.findall(completed.err)))
+    named = f"  The error names {' '.join(refs)}." if refs else ""
     return (
-        f"`git fsck --connectivity-only` exits {completed.exit} in {repository}, so the git store is damaged and no "
-        f"landing moves the branch: {shown}.  Repair the store, then queue the request again"
+        f"`git fsck --connectivity-only --no-reflogs` exits {completed.exit} in {repository} in {STORE_TRIES} runs "
+        f"{STORE_RETRY_S:g} s apart, so the git store is damaged and no landing moves the branch: {shown}.{named}  "
+        f"Repair the store, then queue the request again"
     )
 
 
@@ -2262,6 +2293,7 @@ class BatchLanding:
         "is_alive",
         "is_check",
         "is_cut",
+        "is_entry_freed",
         "is_on_accepted",
         "is_publishing",
         "is_stack_stuck",
@@ -2276,6 +2308,7 @@ class BatchLanding:
         "right",
         "runs",
         "stack",
+        "stack_lock",
     )
 
     def __init__(
@@ -2310,6 +2343,8 @@ class BatchLanding:
         self.stack = None if self.is_check else stack
         self.release: Release = release if release is not None else (lambda _queued: None)
         self.is_publishing = False
+        self.is_entry_freed = False
+        self.stack_lock = threading.Lock()
         self.is_stack_stuck = False
         self.is_on_accepted = False
         self.is_cut = False
@@ -2371,10 +2406,12 @@ class BatchLanding:
         )
         if is_published and self.stack is not None:
             self.is_publishing = False
+            self.is_entry_freed = False
             self.stack.publish(self.branch, self.base, commit, False)
         started = time.monotonic()
         try:
-            verdict = self.check(candidate, bool(self.runs))
+            with self.gone_watch(chain, is_published):
+                verdict = self.check(candidate, bool(self.runs))
         except Exception as problem:  # noqa: BLE001
             text = f"the gate cannot judge the commit {candidate.commit[:SHORT_HASH]}: {error_text(problem)}"
             check_report.write_line(f"loop land: {text}", is_error=True)
@@ -2386,6 +2423,44 @@ class BatchLanding:
         self.runs.append(Run(candidate, numbers, subjects, tuple(link.queued.entry_time for link in chain), verdict))
         return verdict
 
+    @contextlib.contextmanager
+    def gone_watch(self, chain: Sequence[Link], is_published: bool) -> Iterator[None]:
+        """Free the entry of the stack at once when a request of the chain leaves the queue while the block runs.
+
+        A batch above stacks on the entry, and the commit of the entry holds the change of the request that left, so
+        that commit can never land (THE STACK).  A thread looks at the process of each request each WATCH_S seconds.
+        After the free, no fold writes the entry again (publish_fold()).  The batch then drops the request after the
+        run, as before.  With no published entry, the block runs with no thread.
+        """
+        if not is_published or self.stack is None:
+            yield
+            return
+        stack = self.stack
+        ended = threading.Event()
+
+        def watch() -> None:
+            """Look at the processes of the chain until the block ends, and free the entry when one of them left."""
+            while not ended.wait(WATCH_S):
+                gone = [link.queued.name for link in chain if not self.is_alive(link.queued)]
+                if not gone:
+                    continue
+                with self.stack_lock:
+                    self.is_entry_freed = True
+                    stack.free()
+                check_report.write_line(
+                    f"loop land: {' '.join(gone)} left the queue during the run, so the batch frees its entry of the "
+                    f"stack at once, and no batch stacks on a commit that cannot land"
+                )
+                return
+
+        thread = threading.Thread(target=watch, name="land-gone-watch", daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            ended.set()
+            thread.join()
+
     def publish_fold(self, commit: str) -> None:
         """Write the commit of the fold of the built files into the entry of the batch, during the run (THE STACK).
 
@@ -2395,7 +2470,10 @@ class BatchLanding:
         if self.stack is None:
             return
         try:
-            self.stack.publish(self.branch, self.base, commit, False)
+            with self.stack_lock:
+                if self.is_entry_freed:
+                    return
+                self.stack.publish(self.branch, self.base, commit, False)
         except OSError as problem:
             check_report.write_line(
                 f"loop land: the entry of the stack cannot hold the commit {commit[:SHORT_HASH]}: {problem}",
@@ -2709,7 +2787,7 @@ class BatchLanding:
             OSError: If a journal or a verdict cannot be written
         """
         try:
-            problem = store_problem(self.repository)
+            problem = store_problem(self.repository, self.pause)
             if problem is not None:
                 for queued in items:
                     self.decide(queued, refused(ExitCode.TOOL_FAILED, f"loop land: REFUSED, {problem}"))

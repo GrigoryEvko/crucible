@@ -1771,6 +1771,7 @@ def store_cases(expect: testing.Expect) -> None:
         )
         tree_hash = git.run(root, "rev-parse", "HEAD^{tree}").decode().strip()
         loose = root / ".git" / "objects" / tree_hash[:2] / tree_hash[2:]
+        tree_bytes = git.run(root, "cat-file", "tree", tree_hash)
         loose.chmod(0o644)
         loose.write_bytes(b"")
         decisions, _ = batch_landing(root, requests, passing(seen))
@@ -1779,6 +1780,91 @@ def store_cases(expect: testing.Expect) -> None:
             f"a store with an object of no bytes fails `git fsck --connectivity-only`, and the batch is refused with "
             f"the error of git and runs no gate: {said[:160]}",
             decisions[1].status == ExitCode.TOOL_FAILED and "git fsck --connectivity-only" in said and not seen,
+        )
+        pauses: list[float] = []
+
+        def repairing(seconds: float) -> None:
+            """Give the object its bytes back on the first pause, as a ref write of a different tree ends."""
+            pauses.append(seconds)
+            if len(pauses) == 1:
+                loose.unlink()
+                git.run(root, "hash-object", "-w", "-t", "tree", "--stdin", stdin=tree_bytes)
+
+        batch = [land.Queued(1, root, requests[0], options())]
+        made: dict[int, land.Decision] = {}
+        landing = land.BatchLanding(
+            batch, passing(seen), lambda item, decision: made.__setitem__(item.number, decision), repairing
+        )
+        landing.land(batch)
+        expect(
+            f"a store that a run of the check refuses and the next run accepts lands after one pause: {pauses}",
+            made[1].status == 0 and pauses[:1] == [land.STORE_RETRY_S] and git.head(root) != head,
+        )
+        side = root / ".git" / "logs" / "refs" / "heads" / "side"
+        git.run(root, "branch", "side")
+        with open(side, "a", encoding="utf-8") as handle:
+            handle.write(f"{'0' * 40} {'1' * 40} p <p@p> 1 +0000\tan entry that a rebase writes\n")
+        moved = git.head(root)
+        decisions, _ = batch_landing(root, own_requests(root, ("two\n",)), passing(seen))
+        expect(
+            "a reflog entry of a different branch that git cannot read refuses no request, because the check reads no "
+            "reflog",
+            decisions[1].status == 0 and git.head(root) != moved,
+        )
+
+
+# The bound of the wait of a planted gate for the free of an entry of the stack, in seconds.  The watch frees the entry
+# in a few looks of land.WATCH_S, so the bound only ends a case whose code never frees it.
+FREE_BOUND_S = 60.0
+
+
+def gone_watch_cases(expect: testing.Expect) -> None:
+    """Hold the free of the entry of the stack when a request of the run leaves the queue during the run (THE STACK).
+
+    On the old code the entry stayed live until the run ended, and a batch above waited on a commit that could never
+    land.
+    """
+    with tempfile.TemporaryDirectory(prefix="land-gone-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root)
+        queue = work / "queue"
+        queue.mkdir()
+        requests = own_requests(root, ("one\n",))
+        entry = land.queue_file(queue, 5, land.STACK_SUFFIX)
+        lock = land.queue_file(queue, 5, land.STACK_LOCK_SUFFIX)
+        is_alive = [True]
+        seen: list[bool] = []
+
+        def leaving(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+            """Cancel the request in the run, and wait until the entry of the batch and its lock file go."""
+            seen.append(entry.is_file() and lock.is_file())
+            is_alive[0] = False
+            deadline = time.monotonic() + FREE_BOUND_S
+            while (entry.exists() or lock.exists()) and time.monotonic() < deadline:
+                time.sleep(0.01)
+            seen.append(entry.exists() or lock.exists())
+            return gate.Verdict(("debug",), (), 1.0)
+
+        batch = [land.Queued(5, root, requests[0], options())]
+        made: dict[int, land.Decision] = {}
+        with mock.patch.object(land, "WATCH_S", 0.02):
+            landing = land.BatchLanding(
+                batch,
+                leaving,
+                lambda item, decision: made.__setitem__(item.number, decision),
+                no_pause,
+                is_alive=lambda _item: is_alive[0],
+                stack=land.Stack(queue, 5),
+            )
+            _result, printed = testing.captured(lambda: landing.land(batch))
+        expect(
+            "a request that leaves the queue during the run frees the entry of the stack and its lock file at once, "
+            "and the batch lands nothing",
+            seen == [True, False]
+            and 5 not in made
+            and git.head(root) == head
+            and "left the queue during the run" in printed,
         )
 
 
@@ -3678,6 +3764,7 @@ def main(argv: list[str]) -> int:
             confirmation_cases,
             drop_cases,
             store_cases,
+            gone_watch_cases,
             dead_holder_cases,
             right_cases,
             stack_cases,
