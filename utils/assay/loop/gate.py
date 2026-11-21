@@ -544,6 +544,36 @@ THE RAISE OF A BUDGET
     The verdict gives a line for each raised row, with its old and its new
     value (Verdict.raised), and the record of the run holds the lines.
 
+THE LOWER OF A BUDGET
+    A row of a budget goes down only by an explicit write that lowers one
+    named row to the largest measure of the configurations of the gate, with
+    the reason of the cut (THE LOWER of
+    assay.guard.engines.buildsys.cost_budgets).  An agent has the build of
+    one configuration, and the gate has a build of each.  Thus a candidate
+    with a lower (Candidate.lowers, `loop land --lower RULE ITEM
+    --lower-reason TEXT`) lets the gate make that write in its own run.  The
+    rules are those of LOWER_RULES.
+      * The candidate selects each configuration, as --all-configurations
+        does (THE SELECTION).
+      * When the first round built each configuration with no problem, the
+        gate runs `guard write --rule RULE --lower --row ITEM... --reason
+        TEXT --build-dir BUILD...` of the warm tree for each rule and each
+        reason, with the build of each configuration of objects
+        (Step.lower_budgets()).  The writes run after THE REDUCE, and the
+        fold puts the lowered ledgers into the commit with the falls.  Each
+        configuration then runs again, as after THE REDUCE.  A lowered row
+        holds the largest measure of the builds of the round, so the round
+        after the fold measures no item above it.
+      * A write that fails gives its ledger its bytes back, and the verdict
+        gives the line of the failure with its log.  A lower is no check of
+        correctness, so the failure does not refuse the candidate.  A round
+        that did not build each configuration lowers no row, and the verdict
+        tells it.
+    The verdict gives a line for each lowered or removed row, with its old
+    and its new value (Verdict.lowered), and the record of the run holds the
+    lines.  A preset of `loop nightly` or `loop release` that then measures
+    more raises its row with its own reason, because the nightly is no gate.
+
 THE RUN OF THE BASE
     A candidate with a focus is the commit of a run of the base (THE RUN OF
     THE BASE of assay.loop.land), or of the run alone of one request (THE
@@ -729,6 +759,9 @@ ROW_REASON = "REASON"
 # each rule (THE RAISE OF A BUDGET).  No rule of correctness is in the list.
 BUDGET_RULES = ("header-alone", "instruction-total", "object-size", "step-cost")
 BUDGET_TESTS = {f"{RULE_TEST_PREFIX}{rule.replace('-', '_')}": rule for rule in BUDGET_RULES}
+# The rules of a budget whose named rows the gate lowers for a candidate with a lower (THE LOWER OF A BUDGET).  The rule
+# instruction-total has one total and no named row, and its write with no reason lowers it.
+LOWER_RULES = ("header-alone", "object-size", "step-cost")
 # The rule of a failing item of a finding line (THE FAILING ITEMS).
 ITEM_RULE = re.compile(r" \[(?P<rule>[^\]\s]+)\]$")
 # The configuration that runs the full suite for each change.  Its build gives the tests that read a build (THE
@@ -935,7 +968,9 @@ class Candidate:
     the landing knows the kind of the run.  With no title, the line names the commit.  `on_fold` gets the new commit
     when the gate folds the built files into the commit, before the tests of each configuration (THE BUILT FILES).
     The landing then writes that commit into its entry of the stack (THE STACK of assay.loop.land).  `budget_reason`
-    is the reason of each row of a budget that the gate raises, or "" for no raise (THE RAISE OF A BUDGET).
+    is the reason of each row of a budget that the gate raises, or "" for no raise (THE RAISE OF A BUDGET).  `lowers`
+    holds the rule, the item and the reason of the cut of each row that the gate lowers, and a candidate with a lower
+    selects each configuration (THE LOWER OF A BUDGET).
     """
 
     head: str
@@ -947,6 +982,7 @@ class Candidate:
     title: str = ""
     on_fold: Callable[[str], None] | None = field(default=None, compare=False)
     budget_reason: str = ""
+    lowers: tuple[tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -962,7 +998,8 @@ class Verdict:
     holds each file that the gate wrote from the build of ALWAYS and folded into `final` (THE BUILT FILES).  `rows`
     holds the lines of THE RATCHET ROWS of a refused commit.  `items` holds the failing items of the problems (THE
     FAILING ITEMS).  A verdict with problems and no items gets each problem as its own item.  `raised` holds a line for
-    each row of a budget that the gate raised, with the old and the new value (THE RAISE OF A BUDGET).
+    each row of a budget that the gate raised, with the old and the new value (THE RAISE OF A BUDGET).  `lowered`
+    holds a line for each row that the gate lowered, or the line of a lower that wrote nothing (THE LOWER OF A BUDGET).
     """
 
     configurations: tuple[str, ...]
@@ -980,6 +1017,7 @@ class Verdict:
     rows: tuple[str, ...] = ()
     items: tuple[str, ...] = ()
     raised: tuple[str, ...] = ()
+    lowered: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Give each problem as its own item when the verdict has no items, so a problem always has an item."""
@@ -1328,10 +1366,11 @@ def is_budget_round(outcomes: Sequence[Outcome]) -> bool:
 
 
 def raised_lines(path: str, before: str, after: str) -> list[str]:
-    """Return a line for each row of a ledger that a raise wrote: its key, its old value or no row, and its new value.
+    """Return a line for each row of a ledger that a write changed: its key, its old value or no row, and its new value.
 
     A row is PATH | KIND | VALUE | ENTITY | REASON, and its key is PATH, KIND and ENTITY.  A row that the write did not
-    change gives no line.  Complexity: linear in the lines of the two texts.
+    change gives no line, and a row that the write removed has the new value "no row".  Complexity: linear in the
+    lines of the two texts.
     """
 
     def rows_of(text: str) -> dict[tuple[str, str, str], str]:
@@ -1345,11 +1384,11 @@ def raised_lines(path: str, before: str, after: str) -> list[str]:
 
     old, new = rows_of(before), rows_of(after)
     lines: list[str] = []
-    for key, value in sorted(new.items()):
-        if old.get(key) == value:
+    for key in sorted(old.keys() | new.keys()):
+        if old.get(key) == new.get(key):
             continue
         shown = " ".join(cell for cell in key if cell != "-")
-        lines.append(f"{path}: {shown} from {old.get(key, 'no row')} to {value}")
+        lines.append(f"{path}: {shown} from {old.get(key, 'no row')} to {new.get(key, 'no row')}")
     return lines
 
 
@@ -1879,7 +1918,7 @@ class Gate:
             if careful(touches, True, "the inputs of the rules of the parse builds", "each parse configuration"):
                 presets += each_parse
             counted = careful(lambda: counted_rules(self.tree), (), "the counted ledgers", "no reduce")
-            selected = select(candidate.changed, presets, self.is_every or candidate.is_every)
+            selected = select(candidate.changed, presets, self.is_every or candidate.is_every or bool(candidate.lowers))
             plan = tuple(
                 Run(item, Mode.PARSE) if item.is_parse else Run(item, Mode.FULL, is_build_only=item.name != ALWAYS)
                 for item in selected
@@ -1933,14 +1972,20 @@ class Gate:
                 rows = self.ratchet(step.candidate, environment, outcomes, counted)
             final: str = step.candidate.commit
             ledgers: tuple[str, ...] = ()
+            lowered: tuple[str, ...] = ()
             if not candidate.focus and not any(item.problems for item in outcomes):
                 if is_each_built(outcomes):
                     step.reduce(counted)
+                    lowered = step.lower_budgets() if candidate.lowers else ()
                 else:
                     check_report.write_line(
                         "loop land: the landing builds only some configurations of the gate, so the gate lowers no "
                         "row of a counted ledger"
                     )
+                    if candidate.lowers:
+                        lowered = ("the gate lowers no named row, because the round did not build each configuration",)
+                for line in lowered:
+                    check_report.write_line(f"loop land: the lower of a budget: {line}")
                 final, ledgers = step.fold()
             if ledgers:
                 check_report.write_line(
@@ -1983,6 +2028,7 @@ class Gate:
             rows,
             tuple(dict.fromkeys(found for item in outcomes for found in item.items or item.problems)),
             raised,
+            lowered,
         )
 
     def ratchet(
@@ -2501,6 +2547,53 @@ class Step:
                 (tree / path).write_bytes(kept)
         self.say("loop land: the raise writes no row, so the crossed rows of the budgets stay problems")
         return ()
+
+    def lower_budgets(self) -> tuple[str, ...]:
+        """Lower each row that the candidate names to the largest measure of the builds of the round, and give the lines.
+
+        THE LOWER OF A BUDGET gives the rules.  Each rule gets one write for each reason, on the build of each
+        configuration of objects.  The writes of one rule run one after the other, and the rules run at the same time.
+        A rule whose write fails gets its ledger bytes back and one line that names the log.  Complexity: one write for
+        each rule and each reason.
+        """
+        groups: dict[tuple[str, str], list[str]] = {}
+        for rule, item, reason in self.candidate.lowers:
+            groups.setdefault((rule, reason), []).append(item)
+        tree = self.gate.tree
+        builds = [str(build_directory(tree, item)) for item in CONFIGURATIONS if not item.is_parse]
+        rules = sorted({rule for rule, _ in groups})
+        paths = {rule: rule_ledger.shown_path(rule) for rule in rules}
+        before = {rule: (tree / path).read_bytes() if (tree / path).is_file() else None for rule, path in paths.items()}
+        self.say(f"loop land: the gate lowers the named rows of {' '.join(rules)} to the largest measure of its builds")
+        with self.leased() as share:
+
+            def write_rule(rule: str) -> str:
+                """Write the lowers of one rule, and give the line of a write that fails, or ""."""
+                writes = [(reason, items) for (name, reason), items in sorted(groups.items()) if name == rule]
+                for index, (reason, items) in enumerate(writes):
+                    log = f"lower-{rule}-{index}.log"
+                    command = [*self.gate.master("guard"), "write", "--rule", rule, "--lower", "--reason", reason]
+                    command += [word for item in items for word in ("--row", item)]
+                    command += [word for build in builds for word in ("--build-dir", build)]
+                    status = self.run_logged(command, log, share, proc.TOOL_S)
+                    if status != ExitCode.OK:
+                        return f"the lower of {rule} exits {status} and writes no row, see {self.gate.logs / log}"
+                return ""
+
+            failures = dict(zip(rules, self.concurrently(rules, write_rule), strict=True))
+        lines: list[str] = []
+        for rule, path in paths.items():
+            if failures[rule]:
+                kept = before[rule]
+                if kept is None:
+                    (tree / path).unlink(missing_ok=True)
+                else:
+                    (tree / path).write_bytes(kept)
+                lines.append(failures[rule])
+                continue
+            after = (tree / path).read_bytes() if (tree / path).is_file() else None
+            lines += raised_lines(path, (before[rule] or b"").decode("utf-8"), (after or b"").decode("utf-8"))
+        return tuple(lines)
 
     def ratchet_rows(self, outcomes: Sequence[Outcome], counted: Sequence[str]) -> tuple[str, ...]:
         """Return the lines of THE RATCHET ROWS of the red configurations of objects of a round.

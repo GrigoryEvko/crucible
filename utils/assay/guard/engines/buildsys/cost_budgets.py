@@ -143,6 +143,31 @@ THE PRUNE
     measure of an object, a compile or a test changes with the build, so no
     row of such an item gets a lower value.
 
+THE LOWER
+    One build cannot lower a row of an object or a step, because a different
+    build can measure more (THE PRUNE).  After a cut of a cost, `guard write
+    --rule RULE --row ITEM... [--kind KIND] --lower --reason TEXT --build-dir
+    DIR...` lowers each named row to the largest measure of its item over
+    the builds, with the reason of the cut (lowered_ledger()).  The builds are
+    one build of each configuration of objects of the landing gate
+    (assay.loop.gate), so the row holds the largest value that the gate
+    measures.  A preset of `loop nightly` or `loop release` that then
+    measures more raises its row with its own reason, because the nightly is
+    no gate.  `loop land --lower RULE ITEM --lower-reason TEXT` lets the gate
+    run this write on the builds of its run (THE LOWER OF A BUDGET of
+    assay.loop.gate).
+    The lower reads the measure of a compile also from the record of a
+    ccache hit: the cost of the compile that made the object, which the cost
+    store gives the record (assay.core.record, THE FORMAT).  It reads the
+    rows of the kinds of LOWERED_KINDS and of each layer of header-alone.  A
+    test and a fixture have a record only after their run, so the write
+    refuses a row of such a kind.  It also refuses an item that names no
+    row, an item that a build holds with no measure, and an item that no
+    build measures.  A row below the largest measure of its item stays, with
+    a line, because a lower writes no higher value.  A row whose largest
+    measure with the noise of its unit is at or below the limit keeps
+    nothing, and the write removes it.
+
 
 Complexity: one read of the compile database, the code model and the records of the outputs that a rule reads.
 """
@@ -235,6 +260,13 @@ RULE_KINDS: dict[str, tuple[str, ...]] = {
 }
 # The form of the item of a ledger row of each kind of a step meter: the name of a test or of a fixture (THE LEDGERS).
 NAMED_KINDS = frozenset({FIXTURE_KIND, TEST_KIND})
+# The kinds of each rule with a fixed set of kinds whose measure each build holds, which the lower reads (THE LOWER).
+# The lower reads each layer of header-alone too.
+LOWERED_KINDS: dict[str, tuple[str, ...]] = {
+    STEP_COST: (COMPILE_KIND,),
+    STEP_MEMORY: (COMPILE_KIND, LINK_KIND),
+    OBJECT_SIZE: (FUNCTION_KIND, OBJECT_KIND),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,6 +283,18 @@ class Measured:
 
     values: tuple[cost_budget.Measure, ...] = ()
     problems: tuple[check_report.Finding, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class LowerRequest:
+    """The rows that a lower names, by their items and at most one kind, and the reason of the cut (THE LOWER).
+
+    An empty `kind` names each kind of the items.
+    """
+
+    items: tuple[str, ...]
+    kind: str
+    reason: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -862,6 +906,143 @@ def is_deleted_source(root: Path, source: Path) -> bool:
     except git.GitError:
         return False
     return bool(found.strip())
+
+
+def lower_values(
+    context: BuildContext,
+    rule_id: str,
+    budgets: Mapping[str, check_report.Budget],
+    wanted: Collection[tuple[str, str]],
+) -> dict[tuple[str, str], float]:
+    """Return the measure of each wanted kind and item that the build holds, also of a ccache hit (THE LOWER).
+
+    A compile or a link gives the cost of the step that made its output, which a record of a hit keeps from the cost
+    store.  Complexity: one read of the record of each output of a wanted kind of a step, one read of each named
+    object of object-size, or one measure of the headers of header-alone.
+
+    Raises:
+        rule_ledger.LedgerError: If the build holds a wanted item with no measure
+    """
+    build = context.require_build()
+    found: dict[tuple[str, str], float] = {}
+    if rule_id not in STEP_KINDS:
+        items = {item for _, item in wanted}
+        try:
+            if rule_id == OBJECT_SIZE:
+                outputs, problems = compile_outputs(context, rule_id)
+                named = [output for output in outputs if build_census.shown(output.path, build) in items]
+                measured = replace(object_values(context, rule_id, named), problems=tuple(problems))
+            else:
+                measured = measured_of(context, rule_id, budgets)
+        except meta_runner.NotApplicable:
+            return found
+        for problem in measured.problems:
+            if problem.level == "error" and (not problem.entity or problem.entity in items):
+                raise rule_ledger.LedgerError(f"the build {build} gives no measure: {problem.message}")
+        return {
+            (value.kind, value.item): value.value for value in measured.values if (value.kind, value.item) in wanted
+        }
+    for kind, spec in STEP_KINDS[rule_id].items():
+        items = {item for wanted_kind, item in wanted if wanted_kind == kind}
+        if not items:
+            continue
+        read = link_outputs if spec.step == cost_record.LINK else compile_outputs
+        outputs, problems = read(context, rule_id)
+        if problems:
+            raise rule_ledger.LedgerError(f"the build {build} gives no measure: {problems[0].message}")
+        for output in outputs:
+            item = build_census.shown(output.path, build)
+            if item not in items:
+                continue
+            try:
+                cost = step_record(output, spec.step).real_cost
+            except cost_record.RecordError as problem:
+                raise rule_ledger.LedgerError(
+                    f"the build {build} holds {item} with no usable record: {problem}"
+                ) from None
+            value: float | None = None
+            if cost is not None and spec.quantity == Quantity.MEMORY:
+                value = cost.peak_rss_kb / cost_meter.KB_PER_GB
+            elif cost is not None and cost.compiler_instructions is not None:
+                value = cost.compiler_instructions / GIGA
+            if value is None:
+                raise rule_ledger.LedgerError(
+                    f"the build {build} holds {item} with no measure: its record is a ccache hit whose compile the cost "
+                    f"store does not hold, or it holds no count.  Build the output again with CCACHE_RECACHE=1"
+                )
+            found[(kind, item)] = value
+    return found
+
+
+def lowered_ledger(
+    rule_id: str, contexts: Sequence[BuildContext], ledger: rule_ledger.Ledger, request: LowerRequest
+) -> tuple[rule_ledger.Ledger, list[str]]:
+    """Return the ledger with each named row at the largest measure of its item over the builds (THE LOWER).
+
+    Complexity: linear in the rows, and one measure of the named items in each build.
+
+    Args:
+        rule_id: The rule
+        contexts: The context of each build of the lower
+        ledger: The ledger at this time
+        request: The named rows and the reason of the cut
+
+    Returns:
+        The new ledger, and one line for each named row with its old and its new value
+
+    Raises:
+        rule_ledger.LedgerError: If a named row cannot be lowered, as THE LOWER tells
+    """
+    budgets, missing = budgets_of(contexts[0], rule_id)
+    if missing:
+        raise rule_ledger.LedgerError(missing[0].message)
+    forms = ledger_forms(rule_id, budgets)
+    lowered_kinds = LOWERED_KINDS.get(rule_id, tuple(budgets))
+    named: dict[rule_ledger.Key, tuple[str, str]] = {}
+    for key in ledger.base:
+        form = forms.get(key.kind)
+        item = None if form is None else cost_meter.item_of(key.path, key.entity, form)
+        if item in request.items and (not request.kind or key.kind == request.kind):
+            named[key] = (key.kind, item)
+    found_items = {item for _, item in named.values()}
+    of_kind = f" of the kind {request.kind}" if request.kind else ""
+    for item in request.items:
+        if item not in found_items:
+            raise rule_ledger.LedgerError(f"--row {item} names no row{of_kind} of the ledger of {rule_id}")
+    for kind, item in named.values():
+        if kind not in lowered_kinds:
+            raise rule_ledger.LedgerError(
+                f"the row of {item} has the kind {kind}, and a lower reads no measure of that kind: a test and a "
+                f"fixture have a record only after their run.  The kinds of a lower of {rule_id} are "
+                f"{', '.join(lowered_kinds)}"
+            )
+    measures: dict[tuple[str, str], list[float]] = {}
+    for context in contexts:
+        for kind_item, value in lower_values(context, rule_id, budgets, set(named.values())).items():
+            measures.setdefault(kind_item, []).append(value)
+    base = dict(ledger.base)
+    lines: list[str] = []
+    for key, (kind, item) in sorted(named.items(), key=lambda pair: pair[1]):
+        values = measures.get((kind, item))
+        if not values:
+            raise rule_ledger.LedgerError(f"no build of the call measures {item} of the kind {kind or '-'}")
+        budget = budgets[kind]
+        measure = max(values)
+        kept = cost_budget.kept_value(measure)
+        old = float(base[key].value)
+        if kept > old:
+            lines.append(
+                f"{item} of the kind {kind or '-'}: {old:g} {budget.unit} stays, because the builds measure "
+                f"{kept:g} {budget.unit} and a lower writes no higher value"
+            )
+            continue
+        if measure * (1.0 + cost_budget.noise_of(budget.unit)) <= budget.limit:
+            del base[key]
+            lines.append(f"{item} of the kind {kind or '-'}: {old:g} {budget.unit} removed, at {kept:g} {budget.unit}")
+            continue
+        base[key] = rule_ledger.Entry(key, kept, request.reason)
+        lines.append(f"{item} of the kind {kind or '-'}: {old:g} -> {kept:g} {budget.unit}")
+    return replace(ledger, base=base), lines
 
 
 def test_measures(context: BuildContext, rule_id: str) -> list[tuple[str, float]]:

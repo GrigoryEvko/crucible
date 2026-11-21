@@ -12,6 +12,7 @@ import tempfile
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 from assay.core import git, testing
 from assay.core import ledger as rule_ledger
@@ -350,6 +351,123 @@ def header_prune_cases(expect: testing.Expect) -> None:
         )
 
 
+# Two builds of one tree for a lower (THE LOWER of cost_budgets): the compile of scan.cpp ran 111 G in the first build
+# and is a ccache hit of a compile of 112 G in the second, light.cpp stays under the limit 110 G with the margin, and the
+# second build gives the object blind.cpp.o as a hit with no cost in the cost store.
+LOWER_FIRST = f"""\
+format 1
+kind {KIND}
+compile CMakeFiles/lib.dir/scan.cpp.o src/scan.cpp cpu=1 instructions=111 functions=_Z1fv:1024 text=802816
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=1 instructions=100
+compile CMakeFiles/lib.dir/blind.cpp.o src/blind.cpp cpu=1 instructions=130
+"""
+LOWER_SECOND = f"""\
+format 1
+kind {KIND}
+compile CMakeFiles/lib.dir/scan.cpp.o src/scan.cpp result=hit last-cpu=1 last-instructions=112
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=1 instructions=101
+compile CMakeFiles/lib.dir/blind.cpp.o src/blind.cpp result=hit
+"""
+
+
+def lower_cases(expect: testing.Expect) -> None:
+    """Lower named rows to the largest measure over the builds, and refuse each lower that THE LOWER refuses."""
+    with tempfile.TemporaryDirectory(prefix="test-ledger-lower-") as scratch:
+        first = context_of(Path(scratch) / "first", LOWER_FIRST)
+        second = context_of(Path(scratch) / "second", LOWER_SECOND)
+        scan, light, blind = (
+            output_key(f"CMakeFiles/lib.dir/{name}.cpp.o", "compile") for name in ("scan", "light", "blind")
+        )
+        rows = planted_ledger("step-cost", {scan: 123.912, light: 120.0, blind: 140.0})
+        cut = cost_budgets.LowerRequest(
+            ("CMakeFiles/lib.dir/scan.cpp.o", "CMakeFiles/lib.dir/light.cpp.o"), "", "a cut"
+        )
+        lowered, lines = cost_budgets.lowered_ledger("step-cost", [first, second], rows, cut)
+        expect(
+            "a lower sets a named row to the largest measure over the builds, also the measure of a ccache hit from "
+            "the cost store, with the reason of the cut, removes a row whose measure with the margin is under the "
+            "limit, and keeps each other row",
+            {key: (entry.value, entry.reason) for key, entry in lowered.base.items()}
+            == {scan: (112.0, "a cut"), blind: (140.0, "a planted reason")}
+            and lines
+            == [
+                "CMakeFiles/lib.dir/light.cpp.o of the kind compile: 120 G instructions removed, at 101 G instructions",
+                "CMakeFiles/lib.dir/scan.cpp.o of the kind compile: 123.912 -> 112 G instructions",
+            ],
+        )
+        refusals = {
+            "an item that names no row": cost_budgets.LowerRequest(("CMakeFiles/lib.dir/none.cpp.o",), "", "r"),
+            "a hit with no cost in the cost store": cost_budgets.LowerRequest(
+                ("CMakeFiles/lib.dir/blind.cpp.o",), "", "r"
+            ),
+            "a kind that names no row of the item": cost_budgets.LowerRequest(
+                ("CMakeFiles/lib.dir/scan.cpp.o",), "test", "r"
+            ),
+        }
+        for what, request in refusals.items():
+            expect(
+                f"a lower refuses {what}",
+                bool(
+                    raised(
+                        lambda request=request: cost_budgets.lowered_ledger("step-cost", [first, second], rows, request)
+                    )
+                ),
+            )
+        low = planted_ledger("step-cost", {scan: 111.5, light: 120.0})
+        kept, kept_lines = cost_budgets.lowered_ledger("step-cost", [first, second], low, cut)
+        expect(
+            "a lower keeps a row below the largest measure with a line, and still lowers the other named rows",
+            {key: entry.value for key, entry in kept.base.items()} == {scan: 111.5}
+            and "scan.cpp.o of the kind compile: 111.5 G instructions stays" in " ".join(kept_lines),
+        )
+        test_key = rule_ledger.Key("", "test", "heavy_test")
+        tested = replace(rows, base={**rows.base, test_key: rule_ledger.Entry(test_key, 700.0, "a row")})
+        kind_refusal = raised(
+            lambda: cost_budgets.lowered_ledger(
+                "step-cost", [first, second], tested, cost_budgets.LowerRequest(("heavy_test",), "test", "r")
+            )
+        )
+        expect(
+            "a lower refuses a row of the kind test, which has a record only after its run", "kind test" in kind_refusal
+        )
+        sized = planted_ledger("object-size", {output_key("CMakeFiles/lib.dir/scan.cpp.o", "object"): 852.123})
+        objects, _ = cost_budgets.lowered_ledger(
+            "object-size",
+            [first],
+            sized,
+            cost_budgets.LowerRequest(("CMakeFiles/lib.dir/scan.cpp.o",), "object", "a cut"),
+        )
+        expect(
+            "a lower of object-size sets the row of the object to its machine code",
+            [entry.value for entry in objects.base.values()] == [785.0],
+        )
+        root = first.root
+        rule_ledger.store(rows, root)
+        step_cost = rule_registry.load().rules["step-cost"]
+        words = ["--rule", "step-cost", "--root", str(root), "--row", "CMakeFiles/lib.dir/scan.cpp.o", "--lower"]
+        builds = ["--build-dir", str(first.require_build()), "--build-dir", str(second.require_build())]
+        status, said = testing.captured(lambda: guard_write.main([*words, "--reason", "a cut", *builds]))
+        refusal = guard_write.lower_refusal(REPO_ROOT, [first.require_build(), second.require_build()])
+        expect(
+            "guard write --lower refuses builds that are not one build of each configuration of objects of the gate, "
+            "and the ledger stays",
+            status == 2
+            and "is not written" in said
+            and "one build of each configuration of objects of the gate" in refusal
+            and rule_ledger.read(step_cost, root).base[scan].value == 123.912,
+        )
+        status, said = testing.captured(lambda: guard_write.main([*words, *builds]))
+        expect("guard write --lower refuses a call with no reason", status == 2 and "--reason" in said)
+        with mock.patch.object(guard_write, "lower_refusal", lambda _root, _builds: ""):
+            status, said = testing.captured(lambda: guard_write.main([*words, "--reason", "a cut", *builds]))
+        expect(
+            "guard write --lower on builds of each configuration writes the named row and tells its old and new value",
+            status == 0
+            and "scan.cpp.o of the kind compile: 123.912 -> 112 G instructions" in said
+            and rule_ledger.read(step_cost, root).base[scan].value == 112.0,
+        )
+
+
 def list_text(context: BuildContext) -> str:
     """Return the text of the list of header-constexpr-ops in the tree of a context."""
     return (context.root / header_constexpr.LIST).read_text(encoding="utf-8")
@@ -426,5 +544,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (record_cases, fixture_cases, object_prune_cases, header_prune_cases, list_cases, compile_cases),
+        (record_cases, fixture_cases, object_prune_cases, header_prune_cases, lower_cases, list_cases, compile_cases),
     )

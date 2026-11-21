@@ -342,6 +342,20 @@ def word_cases(expect: testing.Expect) -> None:
             ("an empty budget reason", ["--budget-reason", " ", "-m", "s", "--patch", "p", "--"]),
             ("two budget reasons", ["--budget-reason", "a", "--budget-reason", "b", "-m", "s", "--patch", "p", "--"]),
             ("a budget reason with --dry-run", ["--budget-reason", "a", "--dry-run", "-m", "s", "--patch", "p", "--"]),
+            ("a lower with no reason", ["--lower", "step-cost", "a.o", "-m", "s", "--patch", "p", "--"]),
+            ("a lower reason with no lower", ["--lower-reason", "a cut", "-m", "s", "--patch", "p", "--"]),
+            (
+                "a lower of a rule with no named rows",
+                ["--lower", "instruction-total", "x", "--lower-reason", "a cut", "-m", "s", "--patch", "p", "--"],
+            ),
+            (
+                "a lower of an item with a bar",
+                ["--lower", "step-cost", "a | b", "--lower-reason", "a cut", "-m", "s", "--patch", "p", "--"],
+            ),
+            (
+                "a lower with --tree",
+                ["--lower", "step-cost", "a.o", "--lower-reason", "a cut", "--tree", "-m", "s", "--patch", "p", "--"],
+            ),
         ):
             try:
                 land.parse(words, scratch)
@@ -354,6 +368,15 @@ def word_cases(expect: testing.Expect) -> None:
         expect(
             "--budget-reason gives the reason of the raise of a budget, also for a series",
             reasoned.budget_reason == "the cause of the growth" and reasoned.series == "wt/a",
+        )
+        lower_words = ["--lower", "step-cost", "a.o", "--lower", "header-alone", "include/a.h", "--lower", "step-cost"]
+        _request, lowering = land.parse(
+            ["--series", "wt/a", *lower_words, "a.o", "--lower-reason", "the cut of a door", "--"], scratch
+        )
+        expect(
+            "--lower gives each named row once, in the sequence of the words, and --lower-reason the reason of the cut",
+            lowering.lowers == (("step-cost", "a.o"), ("header-alone", "include/a.h"))
+            and lowering.lower_reason == "the cut of a door",
         )
 
 
@@ -1356,6 +1379,50 @@ def budget_reason_cases(expect: testing.Expect) -> None:
         )
         reason, _lines = reasons_of([first, land.Options(False, False, jobs=1)], "mixed")
         expect("a chain with a request of no reason gets no reason, so it gets no raise", reason == "")
+
+
+def lower_cases(expect: testing.Expect) -> None:
+    """Hold THE LOWER: the request file holds the rows and the reason, each row of a chain takes the reason of its own
+    request, and a verdict names each lowered row."""
+    with tempfile.TemporaryDirectory(prefix="land-lower-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        planted_repository(root)
+        queue = work / "queue"
+        queue.mkdir()
+        first = land.Options(False, False, jobs=1, lowers=(("step-cost", "a.o"),), lower_reason="a cut")
+        second = land.Options(
+            False, False, jobs=1, lowers=(("step-cost", "a.o"), ("object-size", "b.o")), lower_reason="b cut"
+        )
+        queued = land.Queued(7, root, request_of(("Add r1",), own=("r1.txt",)), second, token="planted")
+        decoded = land.decoded_request(queue, 7, land.encoded_request(queued, []))
+        expect(
+            "the request file holds the rows of a lower and the reason of the cut",
+            decoded.options.lowers == second.lowers and decoded.options.lower_reason == "b cut",
+        )
+        line = "utils/ledgers/step-cost.txt: @build/a.o compile from 123.912 to 111.001"
+        seen: list[gate.Candidate] = []
+
+        def lowering(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+            """Accept each commit with one lowered row, as a lower of a budget gives."""
+            seen.append(candidate)
+            return gate.Verdict(("debug",), (), 1.0, lowered=(line,))
+
+        requests = own_requests(root, ["lowered 0\n", "lowered 1\n"])
+        batch = [land.Queued(index + 1, root, item, (first, second)[index]) for index, item in enumerate(requests)]
+        decisions: dict[int, land.Decision] = {}
+        landing = land.BatchLanding(
+            batch, lowering, lambda item, made: decisions.__setitem__(item.number, made), no_pause
+        )
+        landing.land(batch)
+        lines = [item.content for item in decisions[1].lines]
+        expect(
+            f"each row of a chain takes the reason of the first request that names it, and the verdict names the "
+            f"lowered row: {seen[0].lowers if seen else ()} {lines}",
+            bool(seen)
+            and seen[0].lowers == (("step-cost", "a.o", "a cut"), ("object-size", "b.o", "b cut"))
+            and f"loop land: the lower of a budget: {line}" in lines,
+        )
 
 
 def fall_cases(expect: testing.Expect, work: Path) -> None:
@@ -3851,6 +3918,7 @@ def main(argv: list[str]) -> int:
             count_sum_cases,
             registry_merge_cases,
             budget_reason_cases,
+            lower_cases,
             built_cases,
             built_race_cases,
             ratchet_rows_cases,

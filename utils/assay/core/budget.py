@@ -89,7 +89,9 @@ THE WRITE
     item, or holds it with a lower value, then keeps the row of a different
     build.  The write of the rules of the engine build then removes each row
     that keeps nothing in each build (THE PRUNE of
-    assay.guard.engines.buildsys.cost_budgets).
+    assay.guard.engines.buildsys.cost_budgets).  An explicit lower of a named
+    row reads one build of each configuration of the gate (THE LOWER of that
+    module).
 
 THE STEP RULES
     The rule step-cost has the kinds compile, fixture and test, and the rule

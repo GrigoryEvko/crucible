@@ -293,7 +293,8 @@ sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 # of the planted ledger, as after the fold of the gate.  In a build with the mode reconfigure, `check` of the rule
 # reconfigure-noop gives findings.  `write` of door-unit lowers the count 2 of its ledger to 1, as the reduce of the
 # gate does.  `write --rule header-alone --reason TEXT` raises the row of include/a.h from 3.1 to 3.3 with that reason,
-# as a raise of a budget does.  `write --admit --reason TEXT` adds a row of door-unit, or two rows of owners, with that
+# as a raise of a budget does.  `write --lower --row ITEM --reason TEXT` lowers the row of step-cost from 123.912 to
+# 111.001 with that reason, as a lower of a budget does, and exits 1 for the item of a row that is not there.  `write --admit --reason TEXT` adds a row of door-unit, or two rows of owners, with that
 # reason.  Each write writes its rule, the count of its build directories, and the word admit and the reason of the
 # mode admit to writes.txt of each of them.
 UTILS_MARK = "@UTILS@"
@@ -327,6 +328,13 @@ if words[0] == "write":
             ],
         }
         ledger.write_text(ledger.read_text() + "".join(f"{row}\\n" for row in rows.get(words[2], [])))
+    elif "--lower" in words:
+        if words[words.index("--row") + 1] == "CMakeFiles/a.dir/missing.cpp.o":
+            print("guard write: --row CMakeFiles/a.dir/missing.cpp.o names no row", file=sys.stderr)
+            sys.exit(1)
+        ledger = pathlib.Path("utils/ledgers/step-cost.txt")
+        lowered = f"| 111.001 | - | {words[words.index('--reason') + 1]}"
+        ledger.write_text(ledger.read_text().replace("| 123.912 | - | a kept cost", lowered))
     elif words[2] == "header-alone":
         ledger = pathlib.Path("utils/ledgers/header-alone.txt")
         raised = f"| 3.3 | - | {words[words.index('--reason') + 1]}"
@@ -336,7 +344,8 @@ if words[0] == "write":
         ledger.write_text(ledger.read_text().replace("| 2 |", "| 1 |"))
     for build in builds:
         with open(build / "writes.txt", "a", encoding="utf-8") as handle:
-            handle.write(f"{words[2]} {len(builds)}{' admit ' + reason if '--admit' in words else ''}\\n")
+            lower = " lower" if "--lower" in words else ""
+            handle.write(f"{words[2]} {len(builds)}{' admit ' + reason if '--admit' in words else ''}{lower}\\n")
     sys.exit(0)
 sys.exit(0 if words[0] == "warnings" else 77)
 """
@@ -1710,6 +1719,70 @@ def budget_cases(expect: testing.Expect) -> None:
         )
 
 
+LOWER_PATH = "utils/ledgers/step-cost.txt"
+LOWER_LEDGER = "format 1\nrule step-cost\n@build/CMakeFiles/a.dir/scan.cpp.o | compile | 123.912 | - | a kept cost\n"
+LOWER_REASON = "a cut of the door cost, measured at 111.0 G"
+
+
+def lower_cases(expect: testing.Expect) -> None:
+    """Hold THE LOWER OF A BUDGET: a candidate with a lower runs each configuration and folds the lowered row.
+
+    The write gets the build of each configuration of objects.  A write that fails gives its line and the ledger of the
+    commit, and the candidate lands.
+    """
+    with tempfile.TemporaryDirectory(prefix="gate-lower-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root, {LOWER_PATH: LOWER_LEDGER})
+        commit = commit_change(root, "src/a.cpp", "int a;\n", "Cut a cost")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        others = {item.build: "clean" for item in gate.CONFIGURATIONS if item.build != "build"}
+        planted = planted_gate(work, root, tree, "clean", others)
+        lowers = (("step-cost", "CMakeFiles/a.dir/scan.cpp.o", LOWER_REASON),)
+        candidate = gate.Candidate(head, commit, ("src/a.cpp",), lowers=lowers)
+        verdict, printed = testing.captured(lambda: planted.check(candidate, False))
+        objects = [item for item in gate.CONFIGURATIONS if not item.is_parse]
+        writes = [gate.build_directory(tree, item) / "writes.txt" for item in objects]
+        line = f"{LOWER_PATH}: @build/CMakeFiles/a.dir/scan.cpp.o compile from 123.912 to 111.001"
+        lowered_ledger = git.show(root, verdict.final, LOWER_PATH) if verdict.final else None
+        holds = (
+            verdict.is_accepted
+            and set(verdict.configurations) >= {item.name for item in gate.CONFIGURATIONS}
+            and verdict.lowered == (line,)
+            and verdict.ledgers == (LOWER_PATH,)
+            and git.parent(root, verdict.final) == head
+            and lowered_ledger
+            == LOWER_LEDGER.replace("| 123.912 | - | a kept cost", f"| 111.001 | - | {LOWER_REASON}").encode()
+            and all(
+                path.is_file() and f"step-cost {len(objects)} lower" in path.read_text(encoding="utf-8")
+                for path in writes
+            )
+            and f"loop land: the lower of a budget: {line}" in printed
+        )
+        label = (
+            f"a candidate with a lower runs each configuration, writes the named row on the build of each configuration "
+            f"of objects with the reason of the cut, folds it into the commit, and gives the line of the lower: "
+            f"{verdict.lowered}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        for path in writes:
+            path.unlink(missing_ok=True)
+        missing = gate.Candidate(
+            head, commit, ("src/a.cpp",), lowers=(("step-cost", "CMakeFiles/a.dir/missing.cpp.o", "r"),)
+        )
+        verdict, printed = testing.captured(lambda: planted.check(missing, False))
+        holds = (
+            verdict.is_accepted
+            and len(verdict.lowered) == 1
+            and "the lower of step-cost exits 1 and writes no row" in verdict.lowered[0]
+            and git.show(root, verdict.final, LOWER_PATH) == LOWER_LEDGER.encode()
+            and (tree / LOWER_PATH).read_text(encoding="utf-8") == LOWER_LEDGER
+        )
+        label = f"a lower that fails gives its line and keeps the ledger, and it refuses nothing: {verdict.lowered}"
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+
+
 def changed_tests_cases(expect: testing.Expect) -> None:
     """Hold a configuration of the tests of the changed inputs: no --all, and a red test rejects."""
     with tempfile.TemporaryDirectory(prefix="gate-changed-") as work_text:
@@ -2697,6 +2770,7 @@ def main(argv: list[str]) -> int:
             built_fixture_cases,
             ratchet_cases,
             budget_cases,
+            lower_cases,
             changed_tests_cases,
             touched_cases,
             thread_cases,

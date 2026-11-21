@@ -2,6 +2,7 @@
 
 usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [--build-dir DIR]... [--path PATH]...
        guard write --rule ID --row ITEM... [--kind KIND] --reason TEXT [--root DIR]
+       guard write --rule ID --row ITEM... [--kind KIND] --lower --reason TEXT [--root DIR] --build-dir DIR...
        guard write --rule ID [ARG]...      a rule with a legacy module
 
 A rule with a module of its own: the command runs the rule and writes its
@@ -44,6 +45,15 @@ ledger, also of the policy max.  An item that names no row is refused.  This
 write corrects the reason of a row whose value holds, so no change of a
 ledger needs a hand edit.
 
+--lower with --row lowers each named row of a rule of the module
+assay.guard.engines.buildsys.cost_budgets to the largest measure of its
+item over the builds of --build-dir, with the reason of --reason (THE LOWER
+of that module).  The builds must be one build of each configuration of
+objects of the landing gate (lower_refusal()), so the row holds the largest
+value that the gate measures.  The write takes no mode and no --path.  The
+landing gate makes this write for `loop land --lower` (THE LOWER OF A BUDGET
+of assay.loop.gate).
+
 A rule of the policy none has no ledger.  Its module can write a data file
 from a build.  Then the function refresh(context) of the module writes the
 file again, and the command prints the line that the function returns.  The
@@ -81,6 +91,11 @@ from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 from assay.guard import check
 
+# The name is only for a type, and the command imports the module of the rules of a budget only for a lower.
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from assay.guard.engines.buildsys.cost_budgets import LowerRequest
+
 # The policies with rows that --path can divide by their path, and the engines that write the ledger in the runner.
 PARTIAL_POLICIES = (rule_registry.Policy.COUNT, rule_registry.Policy.ADMIT)
 OWN_WRITE_ENGINES = (rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF)
@@ -116,6 +131,74 @@ def reduce_refusal(rule_id: str, root: Path, builds: Sequence[Path]) -> str:
             f"{', '.join(sorted(names))}"
         )
     return ""
+
+
+def lower_refusal(root: Path, builds: Sequence[Path]) -> str:
+    """Return the reason that the builds of a lower are not one build of each configuration of objects of the gate, or "".
+
+    A parse configuration builds no object, so it measures no item of a rule of a budget.  Complexity: one read of the
+    build kind and the CMake cache of each build, and one read of the presets of the tree.
+    """
+    from assay.core import configuration as build_config
+    from assay.loop import gate
+
+    names: list[str] = []
+    for build in builds:
+        try:
+            names.append(build_config.read_configuration(build).name)
+        except build_config.ConfigurationError as problem:
+            return str(problem)
+    try:
+        required = sorted(item.configuration_name for item in gate.configurations(root) if not item.is_parse)
+    except gate.GateError as problem:
+        return str(problem)
+    if sorted(names) != required:
+        return (
+            f"a lower writes the largest measure that the landing gate gives, so it takes one build of each "
+            f"configuration of objects of the gate: {', '.join(required)}.  The builds have the configurations "
+            f"{', '.join(sorted(names))}.  `loop land --lower RULE ITEM --lower-reason TEXT` makes the gate write it"
+        )
+    return ""
+
+
+def write_lowered(rule: rule_registry.Rule, root: Path, builds: Sequence[Path], request: LowerRequest) -> int:
+    """Lower each row that the request names to the largest measure of its item over the builds (THE LOWER).
+
+    Returns:
+        0 when the ledger is written, 1 when the lower is refused, 2 for a rule with no lower or builds that do not
+        apply
+    """
+    from assay.guard.engines.buildsys import cost_budgets
+    from assay.guard.engines.buildsys import runner as build_runner
+
+    if rule.id not in cost_budgets.RULES:
+        check_report.write_line(
+            f"guard write: --lower applies to the rules {', '.join(sorted(cost_budgets.RULES))}, not to {rule.id}",
+            is_error=True,
+        )
+        return 2
+    refusal = lower_refusal(root, builds)
+    if refusal:
+        check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {refusal}", is_error=True)
+        return 2
+    contexts: list[build_runner.BuildContext] = []
+    for build in builds:
+        context = build_runner.BuildContext(root, build)
+        context.rule = rule
+        contexts.append(context)
+    try:
+        written, lines = cost_budgets.lowered_ledger(rule.id, contexts, rule_ledger.read(rule, root), request)
+    except (rule_ledger.LedgerError, rows_grammar.RowsError) as problem:
+        print(f"guard write: the ledger of {rule.id} is not written: {problem}", file=sys.stderr)
+        return 1
+    changed = rule_ledger.store(written, root)
+    for line in lines:
+        print(f"guard write: the lower of {rule.id}: {line}")
+    print(
+        f"guard write: {rule_ledger.shown_path(rule.id)} holds {len(written.base)} rows"
+        + ("" if changed else ", with no change")
+    )
+    return 0
 
 
 def write_reasons(rule: rule_registry.Rule, root: Path, request: rule_ledger.RowReason) -> int:
@@ -167,6 +250,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--path", dest="paths", action="append", default=[], metavar="PATH")
     parser.add_argument("--row", dest="rows", action="append", default=[], metavar="ITEM")
     parser.add_argument("--kind", default="", metavar="KIND")
+    parser.add_argument("--lower", dest="is_lower", action="store_true")
     options = parser.parse_args(argv)
     requested = registry.rules.get(options.rule)
     is_held_write = requested is not None and requested.held_by is not None and requested.policy in JUDGED_POLICIES
@@ -175,6 +259,25 @@ def main(argv: list[str]) -> int:
         print(f"guard write: {chosen}", file=sys.stderr)
         return 2
     rule = chosen[0]
+    if options.is_lower:
+        if (
+            not options.rows
+            or not options.reason
+            or not options.build_dirs
+            or options.mode is not None
+            or options.paths
+        ):
+            check_report.write_line(
+                "guard write: --lower lowers the rows that --row names: give one --row ITEM or more, at most --kind "
+                "KIND, --reason TEXT with the reason of the cut, and one --build-dir DIR for each configuration of "
+                "objects of the gate, with no mode and no --path",
+                is_error=True,
+            )
+            return 2
+        from assay.guard.engines.buildsys import cost_budgets
+
+        lowered = cost_budgets.LowerRequest(tuple(options.rows), options.kind, options.reason)
+        return write_lowered(rule, options.root.resolve(), [path.resolve() for path in options.build_dirs], lowered)
     if options.rows or options.kind:
         if not options.rows or options.mode is not None or options.paths or options.build_dirs:
             check_report.write_line(
