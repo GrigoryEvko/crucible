@@ -427,7 +427,8 @@ template <class Graph>
 }
 
 // The chain passes, and the miswired chain and the crossed chain, made from
-// it at run time, give the faults of the compile.
+// it at run time, give the faults of the compile.  The forest and the
+// dataflow of the miswired chain give the fault of its wiring.
 [[nodiscard]] bool does_chain_match(LineNet const& chain) noexcept {
     LineNet const crossed = cross_chain(chain, crossed_stage);
     LineNet const miswired = miswire_chain(chain, miswired_stage);
@@ -435,6 +436,8 @@ template <class Graph>
         && is_same_fault(find_at_run_time<NetCheck::ProofNet>(chain), NetFault{})
         && is_same_fault(find_at_run_time<NetCheck::Dataflow>(chain), NetFault{})
         && is_same_fault(find_at_run_time<NetCheck::Wiring>(miswired), miswired_wiring_fault)
+        && is_same_fault(find_at_run_time<NetCheck::Forest>(miswired), miswired_wiring_fault)
+        && is_same_fault(find_at_run_time<NetCheck::Dataflow>(miswired), miswired_wiring_fault)
         && is_same_fault(find_at_run_time<NetCheck::Forest>(crossed), crossed_forest_fault)
         && is_same_fault(find_at_run_time<NetCheck::ProofNet>(crossed), crossed_proof_net_fault)
         && is_same_fault(find_at_run_time<NetCheck::Vicious>(crossed), crossed_vicious_fault)
@@ -552,11 +555,14 @@ template <class Graph>
 }
 
 // The sum tree with each fault of the wiring.  find_canonical_form checks the
-// wiring in its walk, so it gives the fault that find_wiring_fault gives.
+// wiring in its walk, so it gives the fault that find_wiring_fault gives, and
+// so do the forest and the dataflow.
 [[gnu::noinline, nodiscard]] bool do_sum_variants_keep_their_faults(LineNet const& sum) noexcept {
     auto const keeps = [](LineNet const& graph, NetFault const& expected) noexcept {
         return is_same_fault(find_form_at_run_time(graph).fault, expected)
-            && is_same_fault(find_at_run_time<NetCheck::Wiring>(graph), expected);
+            && is_same_fault(find_at_run_time<NetCheck::Wiring>(graph), expected)
+            && is_same_fault(find_at_run_time<NetCheck::Forest>(graph), expected)
+            && is_same_fault(find_at_run_time<NetCheck::Dataflow>(graph), expected);
     };
     LineNet past_net = sum;
     past_net.wires[10].left = PortRef{AgentId{1000}, 0};

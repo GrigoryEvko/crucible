@@ -246,8 +246,14 @@
 //                      its sizes
 //   Each structural check calls find_wiring_fault on the net itself, and not
 //   on the copy, so the compiler keeps one result for each net that some
-//   checks read.  explain_fault is a template on the capacity class too, and
-//   it puts each name through helpers that are no templates.
+//   checks read.  A pass that checks the wiring inside the forest or the
+//   dataflow saved 7% and 9% of the run-time instructions on the chain of
+//   1,000 agents of bench/bench_net_checks.cpp.  But it cost 4% to 7% more
+//   compile instructions in the units of the net checks, because each check
+//   of a net then checks its wiring again, and each net type instantiates
+//   the pass.  So the plain forms keep the two steps.  explain_fault is a
+//   template on the capacity class too, and it puts each name through
+//   helpers that are no templates.
 //   This header includes two headers of the base, and no other.  The mixer
 //   foundation/reflect/Mix.h gives the fold of the hash, and it includes only
 //   <cstdint>.  The seal foundation/ByteSeal.h has one reason: a sealed net is
@@ -1766,71 +1772,75 @@ namespace detail {
 // The most agents of a cycle of waits that a fault names.
 inline constexpr std::uint8_t max_wait_path = 5;
 
-// The body of find_dataflow_fault, on the arrays of a capacity class of a
-// net with no fault of its wiring.
-template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
-[[nodiscard]] constexpr NetFault find_dataflow_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
-                                                         AgentCount agents, WireCount wires) noexcept {
-    constexpr std::uint32_t none = no_index;
-    std::uint32_t const agent_count = count_of(agents);
-    std::uint32_t const wire_count = count_of(wires);
-    // The producer and the consumer of each wire.
+// The arrays of the sort of Kahn of a net: the producer and the consumer of
+// each wire, the count of the inputs of each agent that the sort has not
+// read, and the first slot of the outputs of each agent.
+template <std::size_t AgentCapacity, std::size_t WireCapacity>
+struct DataflowArrays {
     std::uint32_t source[WireCapacity]{};
     std::uint32_t target[WireCapacity]{};
     std::uint32_t indegree[AgentCapacity]{};
     std::uint32_t out_first[AgentCapacity + 1]{};
-    for (std::uint32_t index = 0; index < wire_count; ++index) {
-        Wire const& wire = graph.wires[index];
-        PortType const left = kind_of_(graph, wire.left.agent).port_types[wire.left.port];
-        if (left.polarity == Polarity::Meet) return NetFault{.code = NetFaultCode::DataflowMeetPort, .wire = index};
-        bool const is_left_source = left.polarity == Polarity::Give;
-        source[index] = index_of(is_left_source ? wire.left.agent : wire.right.agent);
-        target[index] = index_of(is_left_source ? wire.right.agent : wire.left.agent);
-        ++indegree[target[index]];
-        ++out_first[source[index] + 1];
-    }
+};
+
+// The sort of Kahn over the arrays of a net: the count of the agents that it
+// orders.  Each agent that it leaves keeps an input in indegree.
+// Complexity: O(A + W).
+template <std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard]] constexpr std::uint32_t sort_dataflow_(DataflowArrays<AgentCapacity, WireCapacity>& arrays,
+                                                     AgentCount agents, WireCount wires) noexcept {
+    std::uint32_t const agent_count = count_of(agents);
+    std::uint32_t const wire_count = count_of(wires);
     for (std::uint32_t agent = 0; agent < agent_count; ++agent)
-        out_first[agent + 1] += out_first[agent];
+        arrays.out_first[agent + 1] += arrays.out_first[agent];
     std::uint32_t fill[AgentCapacity]{};
     for (std::uint32_t agent = 0; agent < agent_count; ++agent)
-        fill[agent] = out_first[agent];
+        fill[agent] = arrays.out_first[agent];
     std::uint32_t out_wire[WireCapacity]{};
     for (std::uint32_t index = 0; index < wire_count; ++index) {
-        out_wire[fill[source[index]]] = index;
-        ++fill[source[index]];
+        out_wire[fill[arrays.source[index]]] = index;
+        ++fill[arrays.source[index]];
     }
     std::uint32_t order[AgentCapacity]{};
     std::uint32_t order_count = 0;
     for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
-        if (indegree[agent] == 0u) {
+        if (arrays.indegree[agent] == 0u) {
             order[order_count] = agent;
             ++order_count;
         }
     }
     for (std::uint32_t read = 0; read < order_count; ++read) {
         std::uint32_t const agent = order[read];
-        for (std::uint32_t slot = out_first[agent]; slot < out_first[agent + 1]; ++slot) {
-            std::uint32_t const next = target[out_wire[slot]];
-            --indegree[next];
-            if (indegree[next] == 0u) {
+        for (std::uint32_t slot = arrays.out_first[agent]; slot < arrays.out_first[agent + 1]; ++slot) {
+            std::uint32_t const next = arrays.target[out_wire[slot]];
+            --arrays.indegree[next];
+            if (arrays.indegree[next] == 0u) {
                 order[order_count] = next;
                 ++order_count;
             }
         }
     }
-    if (order_count == agent_count) return NetFault{};
+    return order_count;
+}
 
-    // A cycle remains.  Each agent that the sort left has an input from
-    // another such agent, so a walk back along these inputs repeats an agent.
+// The cycle of waits of a net whose sort left some agents.  Each agent that
+// the sort left has an input from another such agent, so a walk back along
+// these inputs repeats an agent.  Complexity: O(A + W).
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard]] constexpr NetFault find_dataflow_cycle_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                      DataflowArrays<AgentCapacity, WireCapacity> const& arrays,
+                                                      AgentCount agents, WireCount wires) noexcept {
+    constexpr std::uint32_t none = no_index;
     std::uint32_t into[AgentCapacity]{};
     for (std::uint32_t& slot : into)
         slot = none;
-    for (std::uint32_t index = 0; index < wire_count; ++index) {
-        if (indegree[source[index]] != 0u && indegree[target[index]] != 0u) into[target[index]] = index;
+    for (std::uint32_t index = 0; index < count_of(wires); ++index) {
+        if (arrays.indegree[arrays.source[index]] != 0u && arrays.indegree[arrays.target[index]] != 0u)
+            into[arrays.target[index]] = index;
     }
     std::uint32_t walk = none;
-    for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
-        if (indegree[agent] != 0u) {
+    for (std::uint32_t agent = 0; agent < count_of(agents); ++agent) {
+        if (arrays.indegree[agent] != 0u) {
             walk = agent;
             break;
         }
@@ -1838,19 +1848,39 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
     std::uint8_t is_seen[AgentCapacity]{};
     while (is_seen[walk] == 0u) {
         is_seen[walk] = 1;
-        walk = source[into[walk]];
+        walk = arrays.source[into[walk]];
     }
     Wire const& closing = graph.wires[into[walk]];
-    PortRef const input = target[into[walk]] == index_of(closing.left.agent) ? closing.left : closing.right;
+    PortRef const input = arrays.target[into[walk]] == index_of(closing.left.agent) ? closing.left : closing.right;
     NetFault fault{.code = NetFaultCode::DataflowCycle, .agent = input.agent, .port = input.port};
     std::uint32_t member = walk;
     do {
         fault.path[fault.path_count] = AgentId{member};
         ++fault.path_count;
-        member = source[into[member]];
+        member = arrays.source[into[member]];
     } while (member != walk && fault.path_count < max_wait_path);
     fault.is_path_cut = member != walk;
     return fault;
+}
+
+// The body of find_dataflow_fault, on the arrays of a capacity class of a
+// net with no fault of its wiring.
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard]] constexpr NetFault find_dataflow_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                         AgentCount agents, WireCount wires) noexcept {
+    DataflowArrays<AgentCapacity, WireCapacity> arrays{};
+    for (std::uint32_t index = 0; index < count_of(wires); ++index) {
+        Wire const& wire = graph.wires[index];
+        PortType const left = kind_of_(graph, wire.left.agent).port_types[wire.left.port];
+        if (left.polarity == Polarity::Meet) return NetFault{.code = NetFaultCode::DataflowMeetPort, .wire = index};
+        bool const is_left_source = left.polarity == Polarity::Give;
+        arrays.source[index] = index_of(is_left_source ? wire.left.agent : wire.right.agent);
+        arrays.target[index] = index_of(is_left_source ? wire.right.agent : wire.left.agent);
+        ++arrays.indegree[arrays.target[index]];
+        ++arrays.out_first[arrays.source[index] + 1];
+    }
+    if (sort_dataflow_(arrays, agents, wires) == count_of(agents)) return NetFault{};
+    return find_dataflow_cycle_(graph, arrays, agents, wires);
 }
 
 // The body of find_dataflow_fault on a net with no fault of its wiring, on

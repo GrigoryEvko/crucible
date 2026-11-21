@@ -34,6 +34,19 @@
 //     for the canonical form.  It folds the same count of words into four
 //     chains, as the body does, and its word of a kind is the index of the
 //     kind, where the body folds the hash of the form of the kind.
+//   The sort of Kahn, the union-find and the canonical walk each have a
+//   checked form too.  It runs the checks of the input that the plain form of
+//   its check runs, in its own loops: the signature, the kind of each agent,
+//   the two ends and the types of each wire, and the wire of each port.  The
+//   bare form is the reference of a sealed net, and the checked form is the
+//   reference of a plain net.
+//
+// THE SPEED OF LIGHT
+//   A chain of dependent adds gives the cycles of one nanosecond of the core
+//   in the run.  The floor row reads each wire and the kinds of its two
+//   agents, with an add for each read and no check: the minimum of a check
+//   that reads the plain chain.  Each line of cycles gives the p50 and the
+//   p99 of one call, the floor, and the ratio to the floor.
 //
 // A find function on a Net runs the check of the wiring and then its body.
 // A find function on a sealed net runs only its body, because seal_net
@@ -243,19 +256,134 @@ inline constexpr RingSystem ring_of_1000 = build_ring();
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the plain loops over the nets and the ring are the references")
 
+// The form of a reference.  The bare form reads its input with no check.
+// The checked form also runs the checks of the input that the plain form of
+// its check runs, in the loops of the reference, and it gives 0 for a fault.
+// The bare form is the reference of a sealed net or system, and the checked
+// form is the reference of a plain one.
+enum class ReferenceForm : std::uint8_t {
+    Bare = 0,
+    Checked = 1,
+};
+
+// Whether the checks of the input of a reference refuse a kind with a par
+// group, as the forest does.
+enum class ParGroups : std::uint8_t {
+    Admitted = 0,
+    Refused = 1,
+};
+
+// The tables of the kinds of the chain, as find_wiring_fault reads them: the
+// count of the ports of each kind, and the type of each port as one word,
+// its type index and then two bits of its polarity.
+struct ChainTables {
+    std::uint32_t port_count[3]{};
+    std::uint32_t type_word[3 * 8]{};
+};
+
+// The checks of the signature and of the kind of each agent, and the tables
+// of the kinds.  Gives false for a fault.
+[[nodiscard]] bool read_chain_kinds(LineNet const& chain, ChainTables& tables, ParGroups pars) noexcept {
+    if (net::find_signature_fault(chain.signature).is_fault()) return false;
+    bool is_par_kind[3]{};
+    for (std::uint32_t kind = 0; kind < 3; ++kind) {
+        net::AgentKind const& entry = chain.signature.kinds[kind];
+        while (tables.port_count[kind] < 8 && !entry.port_names[tables.port_count[kind]].is_empty())
+            ++tables.port_count[kind];
+        for (std::uint32_t port = 0; port < tables.port_count[kind]; ++port) {
+            net::PortType const type = entry.port_types[port];
+            tables.type_word[kind * 8 + port] =
+                (std::uint32_t{static_cast<std::uint16_t>(type.type)} << 2) | static_cast<std::uint32_t>(type.polarity);
+        }
+        is_par_kind[kind] = pars == ParGroups::Refused && entry.par_ports != 0u;
+    }
+    for (KindId const kind : chain.agents) {
+        if (net::index_of(kind) >= 3 || is_par_kind[net::index_of(kind)]) return false;
+    }
+    return true;
+}
+
+// The agent and the type word of each end of one wire.
+struct WireEnds {
+    std::uint32_t agent[2]{};
+    std::uint32_t word[2]{};
+};
+
+// The checks of one wire, as find_wiring_fault reads them: each end inside
+// the net and inside the ports of its agent, each port with one wire, and two
+// dual types.  Gives false for a fault.
+[[gnu::always_inline]] inline bool read_wire_ends(LineNet const& chain, ChainTables const& tables,
+                                                  std::uint32_t (&used)[1000], Wire const& wire,
+                                                  WireEnds& ends) noexcept {
+    for (std::uint32_t side = 0; side < 2; ++side) {
+        PortRef const end = side == 0 ? wire.left : wire.right;
+        std::uint32_t const agent = net::index_of(end.agent);
+        if (agent >= 1000) return false;
+        std::uint32_t const kind = net::index_of(chain.agents[agent]);
+        if (end.port >= tables.port_count[kind]) return false;
+        std::uint32_t const bit = 1u << end.port;
+        if ((used[agent] & bit) != 0u) return false;
+        used[agent] |= bit;
+        ends.agent[side] = agent;
+        ends.word[side] = tables.type_word[kind * 8 + end.port];
+    }
+    std::uint32_t const first = ends.word[0];
+    return ends.word[1] == ((first & 2u) == 0u ? first ^ 1u : first);
+}
+
+// Each port of each agent has a wire.
+[[nodiscard]] bool has_each_port_wired(LineNet const& chain, ChainTables const& tables,
+                                       std::uint32_t const (&used)[1000]) noexcept {
+    for (std::uint32_t agent = 0; agent < 1000; ++agent) {
+        if (used[agent] != (1u << tables.port_count[net::index_of(chain.agents[agent])]) - 1u) return false;
+    }
+    return true;
+}
+
+// The floor of a check of the plain chain (THE SPEED OF LIGHT): one read of
+// each wire and of the kind of each of its two agents, and an add for each
+// read, with no check, no table and no sort.
+[[gnu::noipa]] std::uint32_t read_each_wire(LineNet const& chain) noexcept {
+    std::uint32_t sum = 0;
+    for (Wire const& wire : chain.wires) {
+        std::uint32_t const left = net::index_of(wire.left.agent);
+        std::uint32_t const right = net::index_of(wire.right.agent);
+        sum += left + wire.left.port + right + wire.right.port;
+        sum += net::index_of(chain.agents[left]) + net::index_of(chain.agents[right]);
+    }
+    return sum;
+}
+
 // The sort of Kahn over the directed wires of the chain: the producer of each
 // wire is the agent of its give port.  Gives the count of the sorted agents,
-// which is 1,000 for a net with no cycle of waits.  noipa keeps the call on
-// the net of the caller.
-[[gnu::noipa]] std::uint32_t sort_by_kahn(LineNet const& chain) noexcept {
+// which is 1,000 for a net with no cycle of waits.  The checked form also
+// refuses a meet port, as the dataflow does.
+template <ReferenceForm Form>
+[[nodiscard]] std::uint32_t sort_by_kahn_(LineNet const& chain) noexcept {
+    constexpr bool is_checked = Form == ReferenceForm::Checked;
+    [[maybe_unused]] ChainTables tables{};
+    [[maybe_unused]] std::uint32_t used[is_checked ? 1000 : 1]{};
+    if constexpr (is_checked) {
+        if (!read_chain_kinds(chain, tables, ParGroups::Admitted)) return 0;
+    }
     std::uint32_t source[999]{};
     std::uint32_t target[999]{};
     std::uint32_t indegree[1000]{};
     std::uint32_t out_first[1001]{};
     for (std::uint32_t index = 0; index < 999; ++index) {
         Wire const& wire = chain.wires[index];
-        net::AgentKind const& kind = chain.signature.kinds[net::index_of(chain.agents[net::index_of(wire.left.agent)])];
-        bool const is_left_source = kind.port_types[wire.left.port].polarity == net::Polarity::Give;
+        bool is_left_source = false;
+        if constexpr (is_checked) {
+            WireEnds ends{};
+            if (!read_wire_ends(chain, tables, used, wire, ends)) return 0;
+            std::uint32_t const polarity = ends.word[0] & 3u;
+            if (polarity == static_cast<std::uint32_t>(net::Polarity::Meet)) return 0;
+            is_left_source = polarity == static_cast<std::uint32_t>(net::Polarity::Give);
+        } else {
+            net::AgentKind const& kind =
+                chain.signature.kinds[net::index_of(chain.agents[net::index_of(wire.left.agent)])];
+            is_left_source = kind.port_types[wire.left.port].polarity == net::Polarity::Give;
+        }
         source[index] = net::index_of(is_left_source ? wire.left.agent : wire.right.agent);
         target[index] = net::index_of(is_left_source ? wire.right.agent : wire.left.agent);
         ++indegree[target[index]];
@@ -283,13 +411,33 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the plain loops over the nets and the ri
             if (--indegree[next] == 0u) order[order_count++] = next;
         }
     }
+    if constexpr (is_checked) {
+        if (!has_each_port_wired(chain, tables, used)) return 0;
+    }
     return order_count;
+}
+
+// noipa keeps the call on the net of the caller.
+[[gnu::noipa]] std::uint32_t sort_by_kahn(LineNet const& chain) noexcept {
+    return sort_by_kahn_<ReferenceForm::Bare>(chain);
+}
+
+[[gnu::noipa]] std::uint32_t sort_checked_by_kahn(LineNet const& chain) noexcept {
+    return sort_by_kahn_<ReferenceForm::Checked>(chain);
 }
 
 // The union-find over the agents of the chain, with the union by size and
 // the halving of paths.  Gives the count of the wires that join two trees,
-// which is 999 for a forest.
-[[gnu::noipa]] std::uint32_t join_by_union_find(LineNet const& chain) noexcept {
+// which is 999 for a forest.  The checked form also refuses a kind with a
+// par group, as the forest does.
+template <ReferenceForm Form>
+[[nodiscard]] std::uint32_t join_by_union_find_(LineNet const& chain) noexcept {
+    constexpr bool is_checked = Form == ReferenceForm::Checked;
+    [[maybe_unused]] ChainTables tables{};
+    [[maybe_unused]] std::uint32_t used[is_checked ? 1000 : 1]{};
+    if constexpr (is_checked) {
+        if (!read_chain_kinds(chain, tables, ParGroups::Refused)) return 0;
+    }
     std::uint32_t parent[1000]{};
     std::uint32_t size[1000]{};
     for (std::uint32_t agent = 0; agent < 1000; ++agent) {
@@ -305,8 +453,16 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the plain loops over the nets and the ri
     };
     std::uint32_t joined = 0;
     for (Wire const& wire : chain.wires) {
-        std::uint32_t left = find(net::index_of(wire.left.agent));
-        std::uint32_t right = find(net::index_of(wire.right.agent));
+        std::uint32_t left_agent = net::index_of(wire.left.agent);
+        std::uint32_t right_agent = net::index_of(wire.right.agent);
+        if constexpr (is_checked) {
+            WireEnds ends{};
+            if (!read_wire_ends(chain, tables, used, wire, ends)) return 0;
+            left_agent = ends.agent[0];
+            right_agent = ends.agent[1];
+        }
+        std::uint32_t left = find(left_agent);
+        std::uint32_t right = find(right_agent);
         if (left == right) continue;
         if (size[left] < size[right]) {
             std::uint32_t const smaller = left;
@@ -317,7 +473,18 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the plain loops over the nets and the ri
         size[left] += size[right];
         ++joined;
     }
+    if constexpr (is_checked) {
+        if (!has_each_port_wired(chain, tables, used)) return 0;
+    }
     return joined;
+}
+
+[[gnu::noipa]] std::uint32_t join_by_union_find(LineNet const& chain) noexcept {
+    return join_by_union_find_<ReferenceForm::Bare>(chain);
+}
+
+[[gnu::noipa]] std::uint32_t join_checked_by_union_find(LineNet const& chain) noexcept {
+    return join_by_union_find_<ReferenceForm::Checked>(chain);
 }
 
 // The criterion of Danos and Regnier on the fork tree as a plain contraction
@@ -555,10 +722,6 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the plain loops over the nets and the ri
 // the plain form of the body does: a name for each process and each channel,
 // each action inside the ring, and one process for each side of a channel.
 // It gives 0 for a fault of the form.
-enum class ReferenceForm : std::uint8_t {
-    Bare = 0,
-    Checked = 1,
-};
 template <ReferenceForm Form>
 [[nodiscard]] std::uint32_t sort_steps_by_kahn_(RingSystem const& ring) noexcept {
     constexpr std::uint32_t none = 0xFFFFFFFFu;
@@ -678,9 +841,17 @@ template <ReferenceForm Form>
 // The canonical form of the chain as plain loops: the peer of each port, the
 // boundary agents first, a walk from each with an explicit stack, and the fold
 // of the entry of each number into chain n % 4, as the body folds it.  Gives
-// the hash, or 0 when an agent has no number.
-[[gnu::noipa]] std::uint64_t number_by_walk(LineNet const& chain) noexcept {
+// the hash, or 0 when an agent has no number.  The checked form gives 0 for a
+// fault of the input too.
+template <ReferenceForm Form>
+[[nodiscard]] std::uint64_t number_by_walk_(LineNet const& chain) noexcept {
     constexpr std::uint32_t none = 0xFFFFFFFFu;
+    constexpr bool is_checked = Form == ReferenceForm::Checked;
+    [[maybe_unused]] ChainTables tables{};
+    [[maybe_unused]] std::uint32_t used[is_checked ? 1000 : 1]{};
+    if constexpr (is_checked) {
+        if (!read_chain_kinds(chain, tables, ParGroups::Admitted)) return 0;
+    }
     std::uint32_t port_count[3]{};
     for (std::uint32_t kind = 0; kind < 3; ++kind) {
         while (port_count[kind] < 8 && !chain.signature.kinds[kind].port_names[port_count[kind]].is_empty())
@@ -688,10 +859,19 @@ template <ReferenceForm Form>
     }
     std::uint32_t peer[1000 * 8]{};
     for (Wire const& wire : chain.wires) {
-        std::uint32_t const left = net::index_of(wire.left.agent) * 8 + wire.left.port;
-        std::uint32_t const right = net::index_of(wire.right.agent) * 8 + wire.right.port;
+        std::uint32_t left = net::index_of(wire.left.agent) * 8 + wire.left.port;
+        std::uint32_t right = net::index_of(wire.right.agent) * 8 + wire.right.port;
+        if constexpr (is_checked) {
+            WireEnds ends{};
+            if (!read_wire_ends(chain, tables, used, wire, ends)) return 0;
+            left = ends.agent[0] * 8 + wire.left.port;
+            right = ends.agent[1] * 8 + wire.right.port;
+        }
         peer[left] = right;
         peer[right] = left;
+    }
+    if constexpr (is_checked) {
+        if (!has_each_port_wired(chain, tables, used)) return 0;
     }
     std::uint32_t number_of[1000]{};
     std::uint32_t agent_at[1000]{};
@@ -754,9 +934,113 @@ template <ReferenceForm Form>
     return ::foundation::reflect::combine_ids(hash, fourth);
 }
 
+[[gnu::noipa]] std::uint64_t number_by_walk(LineNet const& chain) noexcept {
+    return number_by_walk_<ReferenceForm::Bare>(chain);
+}
+
+[[gnu::noipa]] std::uint64_t number_checked_by_walk(LineNet const& chain) noexcept {
+    return number_by_walk_<ReferenceForm::Checked>(chain);
+}
+
+// The count of the dependent adds of one call of the clock chain, and the
+// calls of one sample of it.
+constexpr std::uint32_t kClockAdds = 64;
+constexpr std::size_t kClockBatch = 256;
+
+// kClockAdds dependent adds to the value in one block of code, one cycle each
+// on the core (THE SPEED OF LIGHT).  The compiler cannot fold them.
+[[gnu::always_inline]] inline void add_chain(std::uint64_t& value) noexcept {
+#if defined(__x86_64__)
+    asm volatile(".rept %c1\n\tadd $1, %0\n\t.endr" : "+r"(value) : "i"(kClockAdds));
+#else
+    asm volatile(".rept %c1\n\tadd %0, %0, #1\n\t.endr" : "+r"(value) : "i"(kClockAdds));
+#endif
+}
+
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+// The clock chain of the core.  The chain runs on a local, so the value stays
+// in a register.
+struct ClockChain {
+    std::uint64_t value = 0;
+
+    [[gnu::always_inline]] void operator()() noexcept {
+        std::uint64_t local = value;
+        add_chain(local);
+        value = local;
+    }
+};
+
+// The cycles of one nanosecond of the core in this run, from the clock chain.
+[[nodiscard]] double measure_cycles_per_ns() {
+    ClockChain chain{};
+    bench::Run run{"clock"};
+    if (int const core = bench::env_core(); core >= 0) static_cast<void>(run.core(core));
+    bench::Report const report = run.batch(kClockBatch).measure(chain);
+    bench::do_not_optimize(chain.value);
+    return report.pct.p50 > 0.0 ? kClockAdds / report.pct.p50 : 0.0;
+}
+
+// The scale of the lines of cycles: the cycles of one nanosecond of the core
+// in the run, and the p50 of the floor row in nanoseconds.
+struct LightScale {
+    double cycles_per_ns = 0.0;
+    double floor_ns = 0.0;
+};
+
+// Writes one line of the speed of light: the cycles of the p50 and the p99 of
+// one call, the cycles of the floor row, and the ratio of the p50 to it.
+void print_light(fixy::TextView name, bench::Report const& measured, LightScale const& scale) noexcept {
+    auto const centi = [](double value) noexcept { return static_cast<std::uint64_t>(value * 100.0 + 0.5); };
+    std::uint64_t const p50 = centi(measured.pct.p50 * scale.cycles_per_ns) / 100;
+    std::uint64_t const p99 = centi(measured.pct.p99 * scale.cycles_per_ns) / 100;
+    std::uint64_t const floor_cycles = centi(scale.floor_ns * scale.cycles_per_ns) / 100;
+    std::uint64_t const ratio = scale.floor_ns > 0.0 ? centi(measured.pct.p50 / scale.floor_ns) : 0;
+    bench::print("  {}  p50={} cycles  p99={} cycles  floor={} cycles  ratio={}.{}{}\n", name, p50, p99, floor_cycles,
+                 ratio / 100, ratio % 100 / 10, ratio % 10);
+}
+
 // ── The rows ────────────────────────────────────────────────────────────
+
+// Each measured check runs in a function of its own, as each reference does.
+// A check inlined into the loop of a row moved by 17% when an unrelated body
+// of Net.h changed, with the same instructions, because the code of the row
+// took another place.  noipa keeps the call on the net of the caller.
+template <class Graph>
+[[gnu::noipa]] std::uint32_t run_wiring(Graph const& graph) noexcept {
+    return static_cast<std::uint32_t>(net::find_wiring_fault(graph).code);
+}
+template <class Graph>
+[[gnu::noipa]] std::uint32_t run_seal(Graph const& graph) noexcept {
+    return static_cast<std::uint32_t>(net::seal_net(graph).wiring_fault().code);
+}
+template <class Graph>
+[[gnu::noipa]] std::uint64_t run_canonical(Graph const& graph) noexcept {
+    return static_cast<std::uint64_t>(net::find_canonical_form(graph).hash);
+}
+template <class Graph>
+[[gnu::noipa]] std::uint32_t run_forest(Graph const& graph) noexcept {
+    return static_cast<std::uint32_t>(net::find_forest_fault(graph).code);
+}
+template <class Graph>
+[[gnu::noipa]] std::uint32_t run_proof_net(Graph const& graph) noexcept {
+    return static_cast<std::uint32_t>(net::find_proof_net_fault(graph).code);
+}
+template <class Graph>
+[[gnu::noipa]] std::uint32_t run_vicious(Graph const& graph) noexcept {
+    return static_cast<std::uint32_t>(net::find_vicious_fault(graph).code);
+}
+template <class Graph>
+[[gnu::noipa]] std::uint32_t run_dataflow(Graph const& graph) noexcept {
+    return static_cast<std::uint32_t>(net::find_dataflow_fault(graph).code);
+}
+template <class System>
+[[gnu::noipa]] std::uint32_t run_liveness(System const& protocol) noexcept {
+    return static_cast<std::uint32_t>(net::find_liveness_fault(protocol).code);
+}
+[[gnu::noipa]] std::uint32_t run_seal_system(RingSystem const& ring) noexcept {
+    return static_cast<std::uint32_t>(net::seal_system(ring).form_fault().code);
+}
 
 // The five checks of a net, each with its own check of the wiring.
 [[nodiscard]] std::uint64_t check_five_times(LineNet const& chain) noexcept {
@@ -781,49 +1065,53 @@ void bench_chain(LineNet const& chain) {
     if (sort_by_kahn(chain) != 1000 || join_by_union_find(chain) != 999) {
         fixy::fatal("the references read the chain as a forest with no cycle of waits");
     }
+    if (sort_checked_by_kahn(chain) != 1000 || join_checked_by_union_find(chain) != 999) {
+        fixy::fatal("the checked references read the chain as a forest with no cycle of waits");
+    }
     if (walk_principal_ports(chain) != 1 || number_by_walk(chain) == 0) {
         fixy::fatal("the references read the chain as a tree with no vicious circle and with a canonical form");
     }
+    if (number_checked_by_walk(chain) != number_by_walk(chain)) {
+        fixy::fatal("the checked canonical walk gives the hash of the bare walk");
+    }
+    double const cycles_per_ns = measure_cycles_per_ns();
+    bench::print("clock of the core: {} cycles in 1000 ns\n", static_cast<std::uint64_t>(cycles_per_ns * 1000.0 + 0.5));
     if (net::find_canonical_form(chain).fault.is_fault()) fixy::fatal("the chain has a canonical form");
     auto const sealed = net::seal_net(chain);
     if (sealed.wiring_fault().is_fault()) fixy::fatal("the wiring of the chain is admitted");
     bench::do_not_optimize(sealed);
     bench::Report const wiring =
-        measure_row(bench::Run{"wiring chain"}, [&] { bench::do_not_optimize(net::find_wiring_fault(chain).code); });
+        measure_row(bench::Run{"wiring chain"}, [&] { bench::do_not_optimize(run_wiring(chain)); });
     print_row("find_wiring_fault, chain of 1000", wiring);
-    print_row("seal_net, chain of 1000", measure_row(bench::Run{"seal chain"}, [&] {
-                  bench::do_not_optimize(net::seal_net(chain).wiring_fault().code);
-              }));
-    bench::Report const form = measure_row(bench::Run{"canonical form chain"},
-                                           [&] { bench::do_not_optimize(net::find_canonical_form(chain).hash); });
+    print_row("seal_net, chain of 1000",
+              measure_row(bench::Run{"seal chain"}, [&] { bench::do_not_optimize(run_seal(chain)); }));
+    bench::Report const form =
+        measure_row(bench::Run{"canonical form chain"}, [&] { bench::do_not_optimize(run_canonical(chain)); });
     print_row("find_canonical_form, chain of 1000", form);
-    bench::Report const sealed_form = measure_row(bench::Run{"canonical form sealed chain"}, [&] {
-        bench::do_not_optimize(net::find_canonical_form(sealed).hash);
-    });
+    bench::Report const sealed_form =
+        measure_row(bench::Run{"canonical form sealed chain"}, [&] { bench::do_not_optimize(run_canonical(sealed)); });
     print_row("find_canonical_form, sealed chain of 1000", sealed_form);
     bench::Report const forest =
-        measure_row(bench::Run{"forest chain"}, [&] { bench::do_not_optimize(net::find_forest_fault(chain).code); });
+        measure_row(bench::Run{"forest chain"}, [&] { bench::do_not_optimize(run_forest(chain)); });
     print_row("find_forest_fault, chain of 1000", forest);
-    bench::Report const sealed_forest = measure_row(
-        bench::Run{"forest sealed chain"}, [&] { bench::do_not_optimize(net::find_forest_fault(sealed).code); });
+    bench::Report const sealed_forest =
+        measure_row(bench::Run{"forest sealed chain"}, [&] { bench::do_not_optimize(run_forest(sealed)); });
     print_row("find_forest_fault, sealed chain of 1000", sealed_forest);
-    print_row("find_proof_net_fault, chain of 1000", measure_row(bench::Run{"proof net chain"}, [&] {
-                  bench::do_not_optimize(net::find_proof_net_fault(chain).code);
-              }));
-    bench::Report const sealed_proof_net = measure_row(
-        bench::Run{"proof net sealed chain"}, [&] { bench::do_not_optimize(net::find_proof_net_fault(sealed).code); });
+    print_row("find_proof_net_fault, chain of 1000",
+              measure_row(bench::Run{"proof net chain"}, [&] { bench::do_not_optimize(run_proof_net(chain)); }));
+    bench::Report const sealed_proof_net =
+        measure_row(bench::Run{"proof net sealed chain"}, [&] { bench::do_not_optimize(run_proof_net(sealed)); });
     print_row("find_proof_net_fault, sealed chain of 1000", sealed_proof_net);
-    print_row("find_vicious_fault, chain of 1000", measure_row(bench::Run{"vicious chain"}, [&] {
-                  bench::do_not_optimize(net::find_vicious_fault(chain).code);
-              }));
-    bench::Report const sealed_vicious = measure_row(
-        bench::Run{"vicious sealed chain"}, [&] { bench::do_not_optimize(net::find_vicious_fault(sealed).code); });
+    print_row("find_vicious_fault, chain of 1000",
+              measure_row(bench::Run{"vicious chain"}, [&] { bench::do_not_optimize(run_vicious(chain)); }));
+    bench::Report const sealed_vicious =
+        measure_row(bench::Run{"vicious sealed chain"}, [&] { bench::do_not_optimize(run_vicious(sealed)); });
     print_row("find_vicious_fault, sealed chain of 1000", sealed_vicious);
-    bench::Report const dataflow = measure_row(bench::Run{"dataflow chain"},
-                                               [&] { bench::do_not_optimize(net::find_dataflow_fault(chain).code); });
+    bench::Report const dataflow =
+        measure_row(bench::Run{"dataflow chain"}, [&] { bench::do_not_optimize(run_dataflow(chain)); });
     print_row("find_dataflow_fault, chain of 1000", dataflow);
-    bench::Report const sealed_dataflow = measure_row(
-        bench::Run{"dataflow sealed chain"}, [&] { bench::do_not_optimize(net::find_dataflow_fault(sealed).code); });
+    bench::Report const sealed_dataflow =
+        measure_row(bench::Run{"dataflow sealed chain"}, [&] { bench::do_not_optimize(run_dataflow(sealed)); });
     print_row("find_dataflow_fault, sealed chain of 1000", sealed_dataflow);
     print_row("five checks of the chain of 1000",
               measure_row(bench::Run{"five checks chain"}, [&] { bench::do_not_optimize(check_five_times(chain)); }));
@@ -841,27 +1129,52 @@ void bench_chain(LineNet const& chain) {
     bench::Report const canonical_walk =
         measure_row(bench::Run{"canonical walk chain"}, [&] { bench::do_not_optimize(number_by_walk(chain)); });
     print_row("reference canonical walk, chain of 1000", canonical_walk);
-    print_ratio("find_dataflow_fault / reference sort of Kahn", dataflow, kahn);
-    print_ratio("find_forest_fault / reference union-find", forest, union_find);
+    bench::Report const checked_kahn =
+        measure_row(bench::Run{"checked kahn chain"}, [&] { bench::do_not_optimize(sort_checked_by_kahn(chain)); });
+    print_row("reference sort of Kahn with the checks of the input, chain of 1000", checked_kahn);
+    bench::Report const checked_union_find = measure_row(
+        bench::Run{"checked union-find chain"}, [&] { bench::do_not_optimize(join_checked_by_union_find(chain)); });
+    print_row("reference union-find with the checks of the input, chain of 1000", checked_union_find);
+    bench::Report const checked_walk = measure_row(bench::Run{"checked canonical walk chain"},
+                                                   [&] { bench::do_not_optimize(number_checked_by_walk(chain)); });
+    print_row("reference canonical walk with the checks of the input, chain of 1000", checked_walk);
+    bench::Report const floor =
+        measure_row(bench::Run{"floor chain"}, [&] { bench::do_not_optimize(read_each_wire(chain)); });
+    print_row("floor: one read of each wire and of its two kinds, chain of 1000", floor);
     print_ratio("find_canonical_form / find_wiring_fault", form, wiring);
+    print_ratio("find_dataflow_fault / reference sort of Kahn with the checks of the input", dataflow, checked_kahn);
+    print_ratio("find_forest_fault / reference union-find with the checks of the input", forest, checked_union_find);
+    print_ratio("find_canonical_form / reference canonical walk with the checks of the input", form, checked_walk);
     print_ratio("find_dataflow_fault sealed / reference sort of Kahn", sealed_dataflow, kahn);
     print_ratio("find_forest_fault sealed / reference union-find", sealed_forest, union_find);
     print_ratio("find_proof_net_fault sealed / reference union-find", sealed_proof_net, union_find);
     print_ratio("find_vicious_fault sealed / reference walk of the principal ports", sealed_vicious, principal_walk);
-    print_ratio("find_canonical_form / reference canonical walk", form, canonical_walk);
     print_ratio("find_canonical_form sealed / reference canonical walk", sealed_form, canonical_walk);
+    LightScale const scale{.cycles_per_ns = cycles_per_ns, .floor_ns = floor.pct.p50};
+    print_light("find_forest_fault          ", forest, scale);
+    print_light("checked union-find         ", checked_union_find, scale);
+    print_light("find_forest_fault sealed   ", sealed_forest, scale);
+    print_light("bare union-find            ", union_find, scale);
+    print_light("find_dataflow_fault        ", dataflow, scale);
+    print_light("checked sort of Kahn       ", checked_kahn, scale);
+    print_light("find_dataflow_fault sealed ", sealed_dataflow, scale);
+    print_light("bare sort of Kahn          ", kahn, scale);
+    print_light("find_canonical_form        ", form, scale);
+    print_light("checked canonical walk     ", checked_walk, scale);
+    print_light("find_canonical_form sealed ", sealed_form, scale);
+    print_light("bare canonical walk        ", canonical_walk, scale);
+    print_light("find_wiring_fault          ", wiring, scale);
+    print_light("floor row                  ", floor, scale);
 }
 
 void bench_fork_tree(ForkNet const& tree) {
     if (contract_by_passes(tree) != 1) fixy::fatal("the reference reads the fork tree as a proof net");
-    print_row("find_proof_net_fault, fork tree of 1001", measure_row(bench::Run{"proof net fork tree"}, [&] {
-                  bench::do_not_optimize(net::find_proof_net_fault(tree).code);
-              }));
+    print_row("find_proof_net_fault, fork tree of 1001",
+              measure_row(bench::Run{"proof net fork tree"}, [&] { bench::do_not_optimize(run_proof_net(tree)); }));
     auto const sealed = net::seal_net(tree);
     bench::do_not_optimize(sealed);
-    bench::Report const sealed_proof_net = measure_row(bench::Run{"proof net sealed fork tree"}, [&] {
-        bench::do_not_optimize(net::find_proof_net_fault(sealed).code);
-    });
+    bench::Report const sealed_proof_net =
+        measure_row(bench::Run{"proof net sealed fork tree"}, [&] { bench::do_not_optimize(run_proof_net(sealed)); });
     print_row("find_proof_net_fault, sealed fork tree of 1001", sealed_proof_net);
     bench::Report const contraction =
         measure_row(bench::Run{"contraction fork tree"}, [&] { bench::do_not_optimize(contract_by_passes(tree)); });
@@ -876,13 +1189,12 @@ void bench_ring(RingSystem const& ring) {
     auto const sealed = net::seal_system(ring);
     bench::do_not_optimize(sealed);
     bench::Report const liveness =
-        measure_row(bench::Run{"liveness ring"}, [&] { bench::do_not_optimize(net::find_liveness_fault(ring).code); });
+        measure_row(bench::Run{"liveness ring"}, [&] { bench::do_not_optimize(run_liveness(ring)); });
     print_row("find_liveness_fault, ring of 4000 actions", liveness);
-    print_row("seal_system, ring of 4000 actions", measure_row(bench::Run{"seal ring"}, [&] {
-                  bench::do_not_optimize(net::seal_system(ring).form_fault().code);
-              }));
-    bench::Report const sealed_liveness = measure_row(
-        bench::Run{"liveness sealed ring"}, [&] { bench::do_not_optimize(net::find_liveness_fault(sealed).code); });
+    print_row("seal_system, ring of 4000 actions",
+              measure_row(bench::Run{"seal ring"}, [&] { bench::do_not_optimize(run_seal_system(ring)); }));
+    bench::Report const sealed_liveness =
+        measure_row(bench::Run{"liveness sealed ring"}, [&] { bench::do_not_optimize(run_liveness(sealed)); });
     print_row("find_liveness_fault, sealed ring of 4000 actions", sealed_liveness);
     bench::Report const checked_kahn = measure_row(bench::Run{"checked steps kahn ring"},
                                                    [&] { bench::do_not_optimize(sort_checked_steps_by_kahn(ring)); });
