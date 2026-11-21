@@ -15,10 +15,15 @@
 //     the chunk for each block.
 //   - The first allocation of a new thread claims its heap through the
 //     sentinel.
+//   - A flush of a run whose blocks of two slabs alternate, and of a run
+//     whose blocks alternate between two words of a bitmap, keeps each
+//     bitmap sound.
 //   - In a child process, each with releases after the bad one that fill the
 //     bin and force a flush with the bad address in its older half: a second
-//     release of one block dies, a release of an address inside a block
-//     dies, and a release with the wrong class dies.
+//     release of one block dies, also with a block of a second slab between
+//     the two releases, a release of an address inside a block dies, a
+//     release with the wrong class dies, a release of a block of another heap
+//     dies, and a release of an address outside the window dies.
 
 #include <foundation/alloc/ChunkMap.h>
 #include <foundation/alloc/HeapState.h>
@@ -247,6 +252,63 @@ void first_allocation_claims_through_the_sentinel(TestRunnerCtx const& test) {
     pass(test, "  first_allocation_claims_through_the_sentinel: PASSED\n");
 }
 
+// The blocks of the class 8 in two slabs of 512 slots: the test takes 1024
+// blocks, so the first 512 lie in one slab and the next 512 in the next one.
+constexpr std::size_t kTwoSlabBlocks = 1024;
+constexpr std::size_t kSlotsOfClassEight = 512;
+
+// Takes kTwoSlabBlocks blocks of the class 8 into HELD, and then gives the
+// blocks of the bins back to their slabs, so each bin is empty.
+void take_two_slabs(alloc::HeapState& heap, Held& held) noexcept {
+    for (std::size_t position = 0; position < kTwoSlabBlocks; ++position) {
+        held.blocks.at(held_at(position)) = heap.allocate(class_of(8));
+    }
+    heap.flush_bins();
+}
+
+// True when two blocks lie in two units of the window.
+[[nodiscard]] bool are_in_two_units(alloc::AddressWord first, alloc::AddressWord second) noexcept {
+    return (static_cast<std::uint64_t>(first) >> alloc::kUnitShift)
+        != (static_cast<std::uint64_t>(second) >> alloc::kUnitShift);
+}
+
+// A flush of a run whose blocks of two slabs alternate, and a flush of a run
+// whose blocks of one slab alternate between two words of the bitmap.  The
+// census after each release agrees with the blocks, and each bitmap agrees
+// with its free count and its summary word.
+void flush_takes_each_slab_and_each_word(TestRunnerCtx const& test) {
+    bool const is_sound = on_other_thread([] noexcept {
+        core::Box<Held> held = core::mint_box<Held>(::foundation::effects::testing::test().alloc);
+        alloc::HeapState& heap = alloc::claim_thread_heap();
+        take_two_slabs(heap, *held);
+        bool sound = are_in_two_units(held->blocks.at(held_at(0)), held->blocks.at(held_at(kSlotsOfClassEight)));
+        std::size_t live = kTwoSlabBlocks;
+        for (std::size_t step = 0; step < kSlotsOfClassEight; ++step) {
+            heap.release(class_of(8), held->blocks.at(held_at(step)));
+            heap.release(class_of(8), held->blocks.at(held_at(kSlotsOfClassEight + step)));
+            live -= 2;
+            sound = sound && is_census_sound(heap, core::ElementCount{live});
+        }
+        sound = sound && is_empty_after_flush(heap);
+        // The class 1 has 64 slots in each word of its bitmap, so the blocks
+        // 0 and 64 of a fresh slab lie in two words.
+        for (std::size_t position = 0; position < 128; ++position) {
+            held->blocks.at(held_at(position)) = heap.allocate(class_of(1));
+        }
+        heap.flush_bins();
+        live = 128;
+        for (std::size_t step = 0; step < 64; ++step) {
+            heap.release(class_of(1), held->blocks.at(held_at(step)));
+            heap.release(class_of(1), held->blocks.at(held_at(64 + step)));
+            live -= 2;
+            sound = sound && is_census_sound(heap, core::ElementCount{live});
+        }
+        return sound && is_empty_after_flush(heap);
+    });
+    CRUCIBLE_TEST_ASSERT(test, is_sound);
+    pass(test, "  flush_takes_each_slab_and_each_word: PASSED\n");
+}
+
 // The releases after a bad release into an empty bin: the blocks of the
 // class at the positions FIRST to the capacity.  The bad word and the
 // capacity - 1 words after it fill the bin, and the next release forces the
@@ -308,6 +370,52 @@ void bad_releases_die_at_the_flush(TestRunnerCtx const& test) {
             fill_and_flush(heap, size_class, *held, held_at(1));
         },
         "and its slab holds the class 1");
+    // A second release of one block, with a block of a second slab between
+    // the two releases.  The lead block of the run lies in the second slab, so
+    // its pass keeps the two copies for the pass of their own slab, and that
+    // pass finds the second one.
+    expect_dies(
+        test,
+        [] noexcept {
+            core::Box<Held> held = core::mint_box<Held>(::foundation::effects::testing::test().alloc);
+            alloc::HeapState& heap = alloc::claim_thread_heap();
+            take_two_slabs(heap, *held);
+            heap.release(class_of(8), held->blocks.at(held_at(0)));
+            heap.release(class_of(8), held->blocks.at(held_at(kSlotsOfClassEight)));
+            heap.release(class_of(8), held->blocks.at(held_at(0)));
+            std::size_t const capacity = alloc::bin_capacity(class_of(8));
+            for (std::size_t position = 1; position <= capacity - 2; ++position) {
+                heap.release(class_of(8), held->blocks.at(held_at(kSlotsOfClassEight + position)));
+            }
+        },
+        "a double free");
+    // A release of a block of the heap of a second thread: its chunk has
+    // another owner.
+    expect_dies(
+        test,
+        [] noexcept {
+            core::Box<Held> held = core::mint_box<Held>(::foundation::effects::testing::test().alloc);
+            alloc::HeapState& heap = alloc::claim_thread_heap();
+            alloc::SizeClass const size_class = class_of(2);
+            take_blocks(heap, size_class, *held);
+            alloc::AddressWord const foreign =
+                on_other_thread([] noexcept { return alloc::claim_thread_heap().allocate(class_of(2)); });
+            heap.release(size_class, foreign);
+            fill_and_flush(heap, size_class, *held, held_at(1));
+        },
+        "and its chunk has the owner");
+    // A release of an address outside the window of the heap.
+    expect_dies(
+        test,
+        [] noexcept {
+            core::Box<Held> held = core::mint_box<Held>(::foundation::effects::testing::test().alloc);
+            alloc::HeapState& heap = alloc::claim_thread_heap();
+            alloc::SizeClass const size_class = class_of(2);
+            take_blocks(heap, size_class, *held);
+            heap.release(size_class, alloc::AddressWord{std::uint64_t{4096}});
+            fill_and_flush(heap, size_class, *held, held_at(1));
+        },
+        "and the address is outside the window");
     pass(test, "  bad_releases_die_at_the_flush: PASSED\n");
 }
 
@@ -318,6 +426,7 @@ int main() {
     each_class_in_both_orders(test);
     sequence_is_the_same_on_two_heaps(test);
     first_allocation_claims_through_the_sentinel(test);
+    flush_takes_each_slab_and_each_word(test);
     bad_releases_die_at_the_flush(test);
     pass(test, "test_alloc_heap_state: PASSED\n");
     return 0;

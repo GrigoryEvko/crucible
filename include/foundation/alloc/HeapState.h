@@ -58,8 +58,10 @@
 //   fresh slab.  A fresh slab comes from the empty slabs of its slab kind,
 //   then from the next unit of the chunk of small slabs of the heap, or from
 //   a chunk of the window.  The flush of a full bin gives back its older
-//   half, so the hot top of the stack stays.  For each address it ends the
-//   process when the address is outside the window of the heap, when its
+//   half, so the hot top of the stack stays.  It takes the blocks one slab
+//   at a time and writes each word of a bitmap, the summary and the free
+//   count of a slab one time (THE GIVE-BACK OF A RUN of Flush.cpp).  It ends
+//   the process when an address is outside the window of the heap, when its
 //   chunk has another owner, when its slab holds another class, when it is
 //   not the first byte of a slot, and when its slot is free already (a
 //   second release).  These checks see only an address that reaches a
@@ -318,9 +320,13 @@ private:
     // takes half a bin from the slabs of the class (Refill.cpp).
     [[nodiscard, gnu::cold, gnu::noinline]] AddressWord refill_(SizeClass size_class) noexcept;
 
-    // The cold body of a full bin: claims a heap for the sentinel, or gives
-    // back the older half of the bin and pushes the block (Flush.cpp).
-    [[gnu::cold, gnu::noinline]] void flush_(SizeClass size_class, AddressWord block) noexcept;
+    // The body of a full bin: claims a heap for the sentinel, or gives back
+    // the older half of the bin and pushes the block (Flush.cpp).  A stream
+    // of releases runs it once for each half bin, so it is speed code with no
+    // cold mark: a cold body is code for size, and its copy of the newer half
+    // takes two branches for each word.  The fast path calls it on an
+    // unlikely branch.
+    [[gnu::noinline]] void flush_(SizeClass size_class, AddressWord block) noexcept;
 
     // Takes up to WANTED free slots of the partial slab SLAB of the class,
     // lowest first, into the words from FIRST, and gives the count.  A slab
@@ -337,9 +343,10 @@ private:
     [[nodiscard]] SlabLink start_small_unit_() noexcept;
     [[nodiscard]] SlabLink start_medium_chunk_() noexcept;
 
-    // Gives one block of the class back to its slab, with the checks of THE
-    // FAST PATHS (Flush.cpp).
-    void give_back_(SizeClass size_class, AddressWord block) noexcept;
+    // Gives the COUNT blocks of the class from FIRST back to their slabs, one
+    // slab at a time, with the checks of THE FAST PATHS, and uses the words
+    // of the run as scratch (THE GIVE-BACK OF A RUN of Flush.cpp).
+    void give_back_run_(SizeClass size_class, AddressWord* first, ::foundation::core::ElementCount count) noexcept;
 
     BiasedChunkMap chunk_map_{};
     ChunkOwner self_{ChunkOwner::none};

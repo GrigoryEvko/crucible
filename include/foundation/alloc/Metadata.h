@@ -322,6 +322,18 @@ struct SlotFactTable final {
 
 inline constexpr SlotFactTable kSlotFacts = build_slot_facts_();
 
+// The index of the slot of the class of FACTS whose first byte is OFFSET
+// bytes after the first byte of its slab, for an offset that is a whole count
+// of the slot (THE SLOT OF AN OFFSET).  For each other offset below one chunk
+// it is the floor of the quotient, or that floor plus one when the fraction
+// is above 1 - 2^-11, and the test index * slot == offset refuses it.  The
+// flush calls it with the facts of its class in registers.  Complexity: O(1),
+// one multiply and one shift.
+[[nodiscard]] constexpr std::uint64_t slot_quotient(SlotFacts const& facts,
+                                                    ::foundation::core::ByteCount offset) noexcept {
+    return (offset.raw() * facts.reciprocal) >> kSlotReciprocalShift;
+}
+
 }  // namespace detail
 
 // The slot whose first byte is OFFSET bytes after the first byte of a slab of
@@ -336,7 +348,7 @@ slot_at(SizeClass size_class, ::foundation::core::ByteCount offset) noexcept {
     std::uint64_t const bytes = offset.raw();
     if (bytes >= kSlabChunkBytes) return ::foundation::core::none;
     detail::SlotFacts const& facts = detail::kSlotFacts.rows[static_cast<std::uint8_t>(size_class)];
-    std::uint64_t const index = (bytes * facts.reciprocal) >> kSlotReciprocalShift;
+    std::uint64_t const index = detail::slot_quotient(facts, offset);
     if (index * facts.slot_bytes != bytes) return ::foundation::core::none;
     if (index >= facts.slab_slots) return ::foundation::core::none;
     return SlabSlotIndex::check(static_cast<std::size_t>(index));
