@@ -1,9 +1,10 @@
 // Tests of foundation/core/Choice.h: Option, none, expect, value_or, match,
-// ok_or, some, the loop of zero or one turns and the conversion of an
-// error, also for a linear payload and a linear error.
+// ok_or, some, take, fill, replace, the loop of zero or one turns and the
+// conversion of an error, also for a linear payload and a linear error.
 
 #include <foundation/core/Choice.h>
 
+#include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
@@ -1018,6 +1019,179 @@ void test_as_ref() {
     CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
 }
 
+// take, fill and replace of a named Option, in the plain, the niche and the
+// owning form.  take empties the named Option, fill builds a payload in an
+// empty one, and replace gives the old payload back, also when the named
+// Option was empty.
+void test_named_option_doors() {
+    Option<int> held{};
+    held.fill(4);
+    CRUCIBLE_FATAL_INVARIANT(held == Option<int>::some(4));
+    Option<int> const old = held.replace(5);
+    CRUCIBLE_FATAL_INVARIANT(old == Option<int>::some(4) && held == Option<int>::some(5));
+    Option<int> const taken = held.take();
+    CRUCIBLE_FATAL_INVARIANT(taken == Option<int>::some(5) && held.is_none());
+    Option<int> const nothing = held.take();
+    CRUCIBLE_FATAL_INVARIANT(nothing.is_none() && held.is_none());
+    Option<int> const was_empty = held.replace(6);
+    CRUCIBLE_FATAL_INVARIANT(was_empty.is_none() && held == Option<int>::some(6));
+
+    Option<SlotNumber> slot{};
+    slot.fill(SlotNumber{7});
+    CRUCIBLE_FATAL_INVARIANT(slot.is_some());
+    Option<SlotNumber> const old_slot = slot.replace(SlotNumber{8});
+    CRUCIBLE_FATAL_INVARIANT(old_slot.is_some_and([](SlotNumber const& number) noexcept { return number.raw == 7; }));
+    CRUCIBLE_FATAL_INVARIANT(slot.take().expect("the slot holds eight").raw == 8 && slot.is_none());
+
+    {
+        Option<CountedOwner> owner{};
+        owner.fill(CountedOwner{41});
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 1 && handle_of(owner) == 41);
+        Option<CountedOwner> const previous = owner.replace(CountedOwner{42});
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 2 && handle_of(previous) == 41 && handle_of(owner) == 42);
+        Option<CountedOwner> const moved = owner.take();
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 2 && owner.is_none() && handle_of(moved) == 42);
+        owner.fill(CountedOwner{43});
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 3 && handle_of(owner) == 43);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+}
+
+// replace builds the new payload before it takes the old one, so a value
+// that names the old payload gives its own value.  A take first would clear
+// the payload, and the Ref would then read the zero words of the empty
+// Option.
+void test_replace_reads_the_old_payload_first() {
+    using ::foundation::core::as_ref;
+    Option<std::uint64_t> aliased = Option<std::uint64_t>::some(9u);
+    auto const inner = as_ref(aliased).expect("the Option holds nine");
+    Option<std::uint64_t> const before = aliased.replace(*inner);
+    CRUCIBLE_FATAL_INVARIANT(before == Option<std::uint64_t>::some(9u));
+    CRUCIBLE_FATAL_INVARIANT(aliased == Option<std::uint64_t>::some(9u));
+}
+
+// A linear payload moves through one named Option, as in a loop over a
+// linear session handle: each turn takes the token, builds the next one,
+// and fills the Option.  replace gives the old token back, and the test
+// consumes it.
+void test_named_option_doors_linear() {
+    {
+        Option<CountedToken> held{};
+        held.fill(CountedToken{61});
+        CRUCIBLE_FATAL_INVARIANT(live_tokens == 1);
+        {
+            Option<CountedToken> previous = held.replace(CountedToken{62});
+            CRUCIBLE_FATAL_INVARIANT(live_tokens == 2 && previous.is_some() && held.is_some());
+            CountedToken first =
+                static_cast<Option<CountedToken>&&>(previous).expect("replace gave the first token back");
+            CRUCIBLE_FATAL_INVARIANT(first.handle() == 61);
+            ::foundation::linear::drop(static_cast<CountedToken&&>(first));
+        }
+        CRUCIBLE_FATAL_INVARIANT(live_tokens == 1);
+        for (int turn = 0; turn < 3; ++turn) {
+            CountedToken current = held.take().expect("the loop keeps a token in the Option");
+            CRUCIBLE_FATAL_INVARIANT(held.is_none() && current.handle() == 62 + turn);
+            held.fill(CountedToken{current.handle() + 1});
+            ::foundation::linear::drop(static_cast<CountedToken&&>(current));
+        }
+        CRUCIBLE_FATAL_INVARIANT(live_tokens == 1);
+        CountedToken last = static_cast<Option<CountedToken>&&>(held).expect("the loop leaves the last token");
+        CRUCIBLE_FATAL_INVARIANT(last.handle() == 65);
+        ::foundation::linear::drop(static_cast<CountedToken&&>(last));
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
+}
+
+// A linear payload whose end is not trivial, so an Option of it takes the
+// owning form, and a constant evaluation can build and end it.  No lifetime
+// start over bytes builds it, so no copy of bytes forges a token.
+class[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] ConstantToken {
+public:
+    constexpr explicit ConstantToken(int handle) noexcept : handle_{handle} {}
+    constexpr ConstantToken(ConstantToken&& other) noexcept : handle_{other.handle_} { other.handle_ = 0; }
+    ConstantToken(ConstantToken const&) = delete;
+    ConstantToken& operator=(ConstantToken const&) = delete;
+    ConstantToken& operator=(ConstantToken&&) = delete;
+    constexpr ~ConstantToken() {}
+
+    [[nodiscard]] constexpr int handle() const noexcept { return handle_; }
+
+private:
+    int handle_ = 0;
+};
+
+// In a constant evaluation, the clear of take ends the payload and writes
+// no zero words, so fill starts the storage over an ended payload.
+consteval int sum_of_doors_in_constant_evaluation() {
+    Option<ConstantToken> held = Option<ConstantToken>::some(ConstantToken{1});
+    ConstantToken first = held.take().expect("the Option holds the first token");
+    held.fill(ConstantToken{first.handle() + 1});
+    Option<ConstantToken> second = held.replace(ConstantToken{3});
+    ConstantToken taken = static_cast<Option<ConstantToken>&&>(second).expect("replace gave the second token");
+    ConstantToken third = static_cast<Option<ConstantToken>&&>(held).expect("the Option holds the third token");
+    int const sum = first.handle() * 100 + taken.handle() * 10 + third.handle();
+    ::foundation::linear::drop(static_cast<ConstantToken&&>(first));
+    ::foundation::linear::drop(static_cast<ConstantToken&&>(taken));
+    ::foundation::linear::drop(static_cast<ConstantToken&&>(third));
+    return sum;
+}
+
+static_assert(sum_of_doors_in_constant_evaluation() == 123);
+
+void replace_handle(Option<Handle>& target) noexcept { static_cast<void>(target.replace(Handle{79})); }
+
+// fill of a full Option ends the process in each form, because the fill
+// would drop the payload.  fill of the empty value of a niche ends it too.
+// replace ends the old payload through the clear of take, so a borrow match
+// that lends the payload ends the process.
+void test_named_option_doors_abort() {
+    constexpr ::foundation::core::TextView kFullFill{
+        "foundation: fatal: Option::fill got a full Option, and a fill would drop the payload that it holds"};
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            Option<int> held = Option<int>::some(1);
+            held.fill(2);
+        },
+        kFullFill);
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            Option<SlotNumber> held = Option<SlotNumber>::some(SlotNumber{3});
+            held.fill(SlotNumber{4});
+        },
+        kFullFill);
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            Option<Handle> held = Option<Handle>::some(Handle{5});
+            held.fill(Handle{6});
+        },
+        kFullFill);
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            Option<SlotNumber> held{};
+            held.fill(SlotNumber{0xFFFFFFFFu});
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: Option::fill got the empty value of the niche of its payload"});
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            Option<Handle> held = Option<Handle>::some(Handle{78});
+            static_cast<void>(held.match(
+                [&held](Handle const& handle) noexcept {
+                    replace_handle(held);
+                    return handle.value;
+                },
+                [] noexcept { return 0; }));
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: a write ends the payload of a sum while a borrow match lends that payload to "
+            "an arm"});
+}
+
 }  // namespace
 
 int main() {
@@ -1060,5 +1234,9 @@ int main() {
     test_combinator_lend_aborts();
     test_combinators_agree_with_match();
     test_as_ref();
+    test_named_option_doors();
+    test_replace_reads_the_old_payload_first();
+    test_named_option_doors_linear();
+    test_named_option_doors_abort();
     return 0;
 }

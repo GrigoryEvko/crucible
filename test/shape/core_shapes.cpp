@@ -802,6 +802,13 @@ option_expect_niche(fixy::Option<fixy::View<std::uint32_t const>> option) noexce
 // goes through memory, so its empty marker writes no zero word.
 [[gnu::used]] void option_clear_block(fixy::Option<Block64>& held) noexcept { held = {}; }
 
+// A fill of an empty Option of a linear word builds the word in place.  The
+// word is linear, so the Option takes the owning form, with a flag byte as
+// std::optional has.
+[[gnu::used]] void option_fill_linear(fixy::Option<fixy::Linear<std::uint64_t>>& held, std::uint64_t value) noexcept {
+    held.fill(fixy::mint_linear<std::uint64_t>(value));
+}
+
 // An empty Option of a word, and an Option that an inlined function gives,
 // come back in two registers with no store to the stack.  The tag fills the
 // word after the storage, so the cells hold no padding byte that a copy
@@ -2020,6 +2027,10 @@ struct ImmortalRaw final {
 }
 
 [[gnu::used]] void option_clear_block_raw(std::optional<Block64>& held) noexcept { held = std::nullopt; }
+
+[[gnu::used]] void option_fill_linear_raw(std::optional<std::uint64_t>& held, std::uint64_t value) noexcept {
+    held.emplace(value);
+}
 
 // The raw form of an Option of a word is a size and a flag word, which come
 // back in two registers.

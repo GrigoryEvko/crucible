@@ -838,6 +838,13 @@ PROBES: tuple[Probe, ...] = (
         "through memory, so its empty marker writes no zero word over the storage",
     ),
     Probe(
+        "option_fill_linear",
+        "a fill of an empty Option of a linear word is the store of the word and the store of the flag byte, as the "
+        "emplace of the raw form is.  It adds the test of the flag and one branch to a call of the fatal exit, because "
+        "a fill of a full Option would drop its payload",
+        checks=("fatal",),
+    ),
+    Probe(
         "option_empty_word",
         "an empty Option of a word comes back in two registers that hold zero, as a raw pair of a size and a flag "
         "word does",

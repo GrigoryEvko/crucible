@@ -40,6 +40,13 @@
 // the Option keeps it.  A Result gives its value and its error in place
 // through the same door, and a OneOf gives its active alternative.
 //
+// A named Option has three doors that change it and drop no payload.
+// take() gives the payload as an Option and leaves the named Option empty.
+// fill(value) builds a payload in an empty Option.  replace(value) puts a new
+// payload in and gives the old payload back as an Option.  An Option of a
+// linear payload has no assignment, but its payload can move through one
+// named Option with these doors, as in a loop over a linear session handle.
+//
 // The storage has three forms, and the payload type selects the form:
 //
 //   niche    The payload declares an empty value through niche<T>.  The
@@ -772,6 +779,10 @@ struct NoPayload final {};
     fatal("more than 255 borrow matches lend the payload of one sum at one time");
 }
 
+[[noreturn]] CRUCIBLE_COLD inline void report_full_fill_() noexcept {
+    fatal("Option::fill got a full Option, and a fill would drop the payload that it holds");
+}
+
 constexpr void add_lend_(unsigned char& lend_count) noexcept {
     if consteval {
         if (lend_count == 255) report_lend_overflow_();
@@ -886,6 +897,17 @@ class OptionSlot<T, OptionForm::niche> : NicheLifetime<NicheRead<T>::empty_has_z
     [[nodiscard]] constexpr T& payload_() noexcept { return value_; }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return value_; }
     constexpr void clear_() noexcept { value_ = NicheRead<T>::empty_(); }
+
+    // Builds the payload of an empty slot.  The test of the constructor runs
+    // first, so the slot never holds the empty value as a payload.
+    template <class U>
+    constexpr void fill_(U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>) {
+        T const built(static_cast<U&&>(value));
+        if (NicheRead<T>::is_empty_(built)) [[unlikely]] {
+            fatal("Option::fill got the empty value of the niche of its payload");
+        }
+        value_ = built;
+    }
 
 public:
     constexpr OptionSlot() noexcept = default;
@@ -1048,6 +1070,67 @@ public:
         slot_.clear_();
         return Result<T, E>{static_cast<T&&>(taken)};
     }
+
+    // THE DOORS OF A NAMED OPTION
+    //   take, fill and replace change an Option that the caller names, and no
+    //   one of them drops a payload, so each one is legal for a linear
+    //   payload.  A loop over a linear session handle keeps the handle in one
+    //   Option: each turn takes the handle, steps it, and fills the Option
+    //   with the next handle.  take and replace give the old payload back as
+    //   an Option, which is [[nodiscard]], and an Option of a linear payload
+    //   is linear, so the rule must-consume holds it to one consume.  An
+    //   owning Option ends its old payload through its clear, so a borrow
+    //   match that lends the payload ends the process (THE LEND COUNT).
+
+    // The payload as a full Option, or an empty Option.  This Option is
+    // empty after the call.  The cost is the one branch of expect.
+    [[nodiscard]] constexpr Option take() & noexcept {
+        if (!slot_.holds_()) return Option{none};
+        Option taken{detail::SomeTag{}, static_cast<T&&>(slot_.payload_())};
+        slot_.clear_();
+        return taken;
+    }
+
+    void take() && = delete("a take of a temporary Option empties an object that the full expression ends: use "
+                            "expect(), the rvalue match or a combinator");
+    void take() const&& = delete("a take of a temporary Option empties an object that the full expression ends: use "
+                                 "expect(), the rvalue match or a combinator");
+
+    // Builds the payload from value in this empty Option, in place.  A full
+    // Option would drop its payload, so it ends the process.  The check is a
+    // check of the family and not a contract, so it holds in each build and
+    // with each contract semantic, and this header needs no contracts header.
+    // The cost is one test of the state and the construction of the payload.
+    template <class U>
+        requires std::constructible_from<T, U&&>
+    constexpr void fill(U&& value) & noexcept(std::is_nothrow_constructible_v<T, U&&>) {
+        if (slot_.holds_()) [[unlikely]] {
+            detail::report_full_fill_();
+        }
+        slot_.fill_(static_cast<U&&>(value));
+    }
+
+    template <class U>
+    void fill(U&& value) && = delete("a fill of a temporary Option builds a payload that the full expression ends: "
+                                     "name the Option, or build a full Option with some(value)");
+
+    // Puts the payload built from value into this Option, and gives the old
+    // payload back as an Option, which is empty when this Option was empty.
+    // The new payload is built first, because value can live inside the old
+    // payload.  The cost is the branch of take and three moves of a payload,
+    // which the optimizer merges for a payload whose move copies its bytes.
+    template <class U>
+        requires std::constructible_from<T, U&&>
+    [[nodiscard]] constexpr Option replace(U&& value) & noexcept(std::is_nothrow_constructible_v<T, U&&>) {
+        T fresh(static_cast<U&&>(value));
+        Option old = take();
+        slot_.fill_(static_cast<T&&>(fresh));
+        return old;
+    }
+
+    template <class U>
+    void replace(U&& value) && = delete("a replace of a temporary Option puts a payload into an object that the full "
+                                        "expression ends: name the Option, or build a full Option with some(value)");
 
     // THE COMBINATORS
     //   A combinator is the rvalue match with the empty arm fixed by the
@@ -1741,6 +1824,13 @@ class OptionSlot<T, OptionForm::plain> {
     [[nodiscard]] constexpr T const& payload_() const noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
     constexpr void clear_() noexcept { sum_ = SumSlot<NoPayload, T>{AlternativeAt<0>{}, NoPayload{}}; }
 
+    // Builds the payload of an empty slot: the cells of the payload and the
+    // tag 1, as the constructor of a full slot writes them.
+    template <class U>
+    constexpr void fill_(U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>) {
+        sum_ = SumSlot<NoPayload, T>{AlternativeAt<1>{}, static_cast<U&&>(value)};
+    }
+
 public:
     constexpr OptionSlot() noexcept = default;
 
@@ -1811,6 +1901,16 @@ class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionFor
         }
     }
 
+    // Builds the payload of an empty slot in place.  The storage of an empty
+    // slot holds the empty marker, the zero words or an ended payload, and
+    // no one of them needs an end.  So a new storage of the payload starts
+    // over it, as the storage of the constructor of a full slot.
+    template <class U>
+    constexpr void fill_(U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>) {
+        ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<1>{}, static_cast<U&&>(value));
+        is_engaged_ = true;
+    }
+
 public:
     constexpr OptionSlot() noexcept = default;
 
@@ -1845,7 +1945,7 @@ public:
     OptionSlot& operator=(OptionSlot&&)
         requires(!DroppablePayload<T>)
     = delete("an assignment drops the payload that the Option holds, and a linear payload must not be dropped: "
-             "build a new Option instead");
+             "take the payload out with take() or replace(value), or build it in an empty Option with fill(value)");
 
     OptionSlot(OptionSlot const&) =
         delete("an owning Option is move-only: a copy would duplicate what the payload owns");
