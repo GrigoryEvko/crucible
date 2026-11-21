@@ -696,6 +696,19 @@ def tree_cases(expect: testing.Expect) -> None:
             expect("the gate refuses a warm tree in the work tree of the repository", True)
 
 
+# The planted ninja of the repair: `-t query build.ninja` refuses a graph with a build of the rule gone, which no rule
+# line names, as the ninja of a damaged lane does, and accepts each other graph.
+PLANTED_NINJA = """import pathlib
+import sys
+
+words = sys.argv[1:]
+graph = pathlib.Path(words[words.index("-C") + 1], "build.ninja").read_text()
+if ": gone " in graph:
+    print("ninja: error: build.ninja:1: unknown build rule 'gone'", file=sys.stderr)
+    sys.exit(1)
+"""
+
+
 def repair_cases(expect: testing.Expect) -> None:
     """Hold repair_builds(): outputs with no bytes and a reply that does not read go, and a whole build stays."""
     with tempfile.TemporaryDirectory(prefix="gate-repair-") as work_text:
@@ -732,6 +745,23 @@ def repair_cases(expect: testing.Expect) -> None:
             (whole / "build.ninja").is_file()
             and (whole.joinpath(*gate.REPLY_DIRECTORY) / "index-1.json").is_file()
             and f"{release.name}:" not in printed,
+        )
+        ninja = testing.planted_program(tree, "ninja", PLANTED_NINJA)
+        tsan, ubsan = gate.BY_NAME["tsan"], gate.BY_NAME["ubsan-strict"]
+        broken, loaded = tree / tsan.build, tree / ubsan.build
+        for build, graph in ((broken, "build x.o: gone x.cpp\n"), (loaded, "rule cc\nbuild x.o: cc x.cpp\n")):
+            build.mkdir(parents=True)
+            (build / "build.ninja").write_text(graph, encoding="utf-8")
+            cmake_reader.plant(build, cache={gate.NINJA_ENTRY: ninja})
+        _, printed = testing.captured(lambda: gate.repair_builds(tree, (tsan, ubsan)))
+        expect(
+            "a graph that ninja cannot load, such as a graph that names a rule that the rules do not hold, goes, so "
+            f"the run configures the build again, and a graph that ninja loads stays: {printed}",
+            not (broken / "build.ninja").exists()
+            and (loaded / "build.ninja").is_file()
+            and f"{tsan.name}: ninja cannot load build.ninja" in printed
+            and "unknown build rule 'gone'" in printed
+            and f"{ubsan.name}:" not in printed,
         )
 
 

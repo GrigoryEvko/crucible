@@ -193,8 +193,10 @@ THE WARM TREE
     A HEAD with no commit gets the last commit of its reflog (repair_head()).
     After the move, the gate removes each output of a build with no bytes,
     and a reply of the CMake file API that does not read, with its graph
-    (repair_builds()).  Ninja builds such an output again, and the run
-    configures such a build again.  The build directory of each configuration is
+    (repair_builds()).  It also removes each graph build.ninja that the
+    ninja of the build cannot load, such as a graph that names a rule that
+    CMakeFiles/rules.ninja does not hold (unloadable_graphs()).  Ninja builds
+    such an output again, and the run configures such a build again.  The build directory of each configuration is
     in the warm tree, at the binaryDir of its preset.  The build directories
     stay from one landing to the next.  A guard that reads the git history
     reads the history of the landing.  The gate refuses a warm tree in the
@@ -672,6 +674,7 @@ from assay.core.exit import ExitCode
 from assay.guard.engines.buildsys.parse_builds import COUNTED_RULES
 from assay.loop import affected, heavy, tiers
 from assay.loop import inputs as guard_inputs
+from assay.readers import cmake as cmake_reader
 from assay.readers import ctest as ctest_reader
 from assay.readers import ninja as ninja_reader
 from assay.setup import pins as cmake_pin
@@ -774,6 +777,10 @@ UNBORN_REF = "refs/heads/main"
 # directory, and the number of empty outputs that the line of repair_builds() names (THE WARM TREE).
 OUTPUT_SUFFIXES = (".o", ".a", ".so")
 REPLY_DIRECTORY = (".cmake", "api", "v1", "reply")
+# The graph of Ninja in a build directory, and the entry of the CMake cache that names the ninja of the build (THE
+# WARM TREE).
+GRAPH_FILE = "build.ninja"
+NINJA_ENTRY = "CMAKE_MAKE_PROGRAM"
 EMPTY_SHOWN = 5
 # The word of a configure that drops the cache of the build directory first (THE COMPILER HEAL).
 FRESH_WORD = "--fresh"
@@ -1473,8 +1480,9 @@ def repair_builds(tree: Path, configurations: Sequence[Configuration]) -> None:
     removes each object, archive and shared library of OUTPUT_SUFFIXES with no bytes, and Ninja builds it again.  A
     stop during a configure can leave a reply of the CMake file API with no bytes, or an index of the reply that does
     not read as JSON.  The function then removes the reply and the graph build.ninja, so the run configures the
-    build again (THE RUN OF A CONFIGURATION, step 1).  The holder of the lane is the only writer of the warm tree.
-    Complexity: linear in the files of the build directories.
+    build again (THE RUN OF A CONFIGURATION, step 1).  A graph that ninja cannot load goes too (unloadable_graphs()).
+    The holder of the lane is the only writer of the warm tree.  Complexity: linear in the files of the build
+    directories, and one load of each graph.
     """
     for configuration in configurations:
         build = build_directory(tree, configuration)
@@ -1492,11 +1500,51 @@ def repair_builds(tree: Path, configurations: Sequence[Configuration]) -> None:
         reply = build.joinpath(*REPLY_DIRECTORY)
         if reply.is_dir() and not is_reply_whole(reply):
             shutil.rmtree(reply, ignore_errors=True)
-            (build / "build.ninja").unlink(missing_ok=True)
+            (build / GRAPH_FILE).unlink(missing_ok=True)
             check_report.write_line(
                 f"loop land: {configuration.name}: the reply of the CMake file API does not read, so the gate removes "
                 f"it and the run configures {build} again"
             )
+    builds = {build_directory(tree, item): item.name for item in configurations}
+    for build, problem in unloadable_graphs([build for build in builds if (build / GRAPH_FILE).is_file()]).items():
+        (build / GRAPH_FILE).unlink(missing_ok=True)
+        check_report.write_line(
+            f"loop land: {builds[build]}: ninja cannot load {GRAPH_FILE}, so the gate removes it and the run "
+            f"configures {build} again: {problem}"
+        )
+
+
+def unloadable_graphs(builds: Sequence[Path]) -> dict[Path, str]:
+    """Return the first line of the error of ninja for each build whose graph build.ninja ninja cannot load.
+
+    A configure that a stop ends after CMake writes CMakeFiles/rules.ninja and before it writes build.ninja leaves a
+    graph that names a rule that the rules do not hold.  Ninja then cannot load the graph, so it never runs the step of
+    the graph that configures the build again, and each run of the lane fails (2026-11-21, lane 5).  The ninja of the
+    CMake cache of each build loads its graph with `ninja -t query`, and the loads run at the same time: a load of a
+    graph of 42 MB took 0.35 s.  A build whose cache names no ninja is not judged.  Complexity: one load of each graph.
+    """
+    running: list[tuple[Path, proc.Running]] = []
+    for build in builds:
+        program = ninja_of(build)
+        if program:
+            command = proc.Command([program, "-C", str(build), "-t", "query", GRAPH_FILE], timeout_s=proc.TOOL_S)
+            running.append((build, proc.start(command)))
+    found: dict[Path, str] = {}
+    for build, started in running:
+        completed = started.wait()
+        if completed.exit != 0:
+            found[build] = next(iter(completed.err.strip().splitlines()), f"ninja exits {completed.exit}")
+    return found
+
+
+def ninja_of(build: Path) -> str:
+    """Return the ninja that the CMake cache of a build names, or "" when the cache names no ninja that exists."""
+    try:
+        entry = cmake_reader.cache(build).get(NINJA_ENTRY)
+    except cmake_reader.CmakeError:
+        return ""
+    program = entry.value.strip() if entry is not None else ""
+    return program if program and Path(program).is_file() else ""
 
 
 def output_files(build: Path) -> Iterator[Path]:
