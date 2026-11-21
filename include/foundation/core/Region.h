@@ -705,12 +705,20 @@ public:
         return ViewCursor<T const>{detail::ViewCursorDoor::key(), first_ + size(), first_ + size()};
     }
 
-    // The element at position, with the brand of the frame.  The brand keeps
-    // the Ref out of the result of the frame (FrameResult of Choice.h).
-    [[nodiscard]] constexpr Option<Ref<T, Brand>> get(std::size_t position) & noexcept {
+    // The element at position, as an Option<Ref<T, Brand>> with the brand of
+    // the frame.  The brand keeps the Ref out of the result of the frame
+    // (FrameResult of Choice.h).  Each frame has a brand of its own, so each
+    // frame makes a ViewMut class of its own.  The member is a template, so
+    // that class names no Option type and checks no constraint of one until a
+    // body reads an element.  The pack refuses each explicit argument.
+    template <class... Refused>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr auto get(std::size_t position) & noexcept {
         return detail::element_at_<Brand>(first_, size(), position);
     }
-    [[nodiscard]] constexpr Option<Ref<T const, Brand>> get(std::size_t position) const& noexcept {
+    template <class... Refused>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr auto get(std::size_t position) const& noexcept {
         return detail::element_at_<Brand>(static_cast<T const*>(first_), size(), position);
     }
 
