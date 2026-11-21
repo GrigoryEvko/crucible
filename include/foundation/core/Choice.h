@@ -46,6 +46,11 @@
 // payload in and gives the old payload back as an Option.  An Option of a
 // linear payload has no assignment, but its payload can move through one
 // named Option with these doors, as in a loop over a linear session handle.
+// expect_none(why) is the fatal end of an empty Option, the twin of expect:
+// a full Option ends the process, so no payload drops.  The rule must-consume
+// reads the empty state of a named Option through the annotations of
+// foundation/Linear.h on these doors, on the two tests and on the two
+// constructors of an empty Option.
 //
 // The storage has three forms, and the payload type selects the form:
 //
@@ -1013,7 +1018,8 @@ concept ResultFrameArms =
     && std::same_as<std::invoke_result_t<OnOk&&, RefMut<T, Brand>>, std::invoke_result_t<OnErr&&, RefMut<E, Brand>>>;
 
 template <ChoicePayload T>
-class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<T>>]] Option {
+class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<T>>]][[= ::foundation::linear::sum{}]]
+    Option {
     detail::OptionSlot<T> slot_;
 
     template <class U>
@@ -1021,8 +1027,10 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
         : slot_{tag, static_cast<U&&>(value)} {}
 
 public:
-    constexpr Option() noexcept = default;
-    constexpr Option(NoValue) noexcept {}
+    // The two constructors of an empty Option carry the annotation empties,
+    // so the rule must-consume reads an Option that they build as empty.
+    [[= ::foundation::linear::empties{}]] constexpr Option() noexcept = default;
+    [[= ::foundation::linear::empties{}]] constexpr Option(NoValue) noexcept {}
 
     template <class F>
     Option(Err<F>) = delete("a Result carries an error that an Option drops: write std::move(result).ok()");
@@ -1033,8 +1041,15 @@ public:
         return Option{detail::SomeTag{}, static_cast<U&&>(value)};
     }
 
-    [[nodiscard]] constexpr bool is_some() const noexcept { return slot_.holds_(); }
-    [[nodiscard]] constexpr bool is_none() const noexcept { return !slot_.holds_(); }
+    // The two tests of the state.  The rule must-consume reads a test of a
+    // named Option in the condition of an if statement, so an Option that
+    // the test finds empty can end with no consume.
+    [[= ::foundation::linear::tests_full{}]] [[nodiscard]] constexpr bool is_some() const noexcept {
+        return slot_.holds_();
+    }
+    [[= ::foundation::linear::tests_empty{}]] [[nodiscard]] constexpr bool is_none() const noexcept {
+        return !slot_.holds_();
+    }
 
     // The fatal unwrap at a boundary.  The reason tells why the Option
     // holds a value there.  An empty Option gives the reason and the place
@@ -1045,6 +1060,18 @@ public:
         T taken(static_cast<T&&>(slot_.payload_()));
         slot_.clear_();
         return taken;
+    }
+
+    // The fatal end of an empty Option.  The reason tells why the Option
+    // holds no value there.  A full Option gives the reason and the place of
+    // the call to fatal(), and the process ends, so no payload drops.  The
+    // door takes the Option as an rvalue, so the rule must-consume counts it
+    // as a consume, also of a temporary, such as a refused upgrade.  A
+    // passing expect_none() costs one branch.
+    constexpr void expect_none(Fmt<> why) && noexcept {
+        if (slot_.holds_()) [[unlikely]] {
+            fatal(why);
+        }
     }
 
     // The payload, or fallback when the Option is empty.  The Option is
@@ -1084,7 +1111,7 @@ public:
 
     // The payload as a full Option, or an empty Option.  This Option is
     // empty after the call.  The cost is the one branch of expect.
-    [[nodiscard]] constexpr Option take() & noexcept {
+    [[= ::foundation::linear::empties{}]] [[nodiscard]] constexpr Option take() & noexcept {
         if (!slot_.holds_()) return Option{none};
         Option taken{detail::SomeTag{}, static_cast<T&&>(slot_.payload_())};
         slot_.clear_();
@@ -1103,7 +1130,8 @@ public:
     // The cost is one test of the state and the construction of the payload.
     template <class U>
         requires std::constructible_from<T, U&&>
-    constexpr void fill(U&& value) & noexcept(std::is_nothrow_constructible_v<T, U&&>) {
+    [[= ::foundation::linear::fills{}]] constexpr void
+        fill(U&& value) & noexcept(std::is_nothrow_constructible_v<T, U&&>) {
         if (slot_.holds_()) [[unlikely]] {
             detail::report_full_fill_();
         }
@@ -1121,7 +1149,8 @@ public:
     // which the optimizer merges for a payload whose move copies its bytes.
     template <class U>
         requires std::constructible_from<T, U&&>
-    [[nodiscard]] constexpr Option replace(U&& value) & noexcept(std::is_nothrow_constructible_v<T, U&&>) {
+    [[= ::foundation::linear::fills{}]] [[nodiscard]] constexpr Option
+        replace(U&& value) & noexcept(std::is_nothrow_constructible_v<T, U&&>) {
         T fresh(static_cast<U&&>(value));
         Option old = take();
         slot_.fill_(static_cast<T&&>(fresh));
@@ -2015,7 +2044,7 @@ public:
 // so the annotation no_start_over_bytes refuses a lifetime start over bytes.
 template <ChoicePayload T, ErrorValue E>
 class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<T, E>>]]
-                   [[= ::foundation::lifetime::no_start_over_bytes{}]] Result {
+                   [[= ::foundation::linear::sum{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] Result {
     detail::ResultSlot<T, E> slot_;
 
     // The return is a copy-initialization, so only an implicit conversion

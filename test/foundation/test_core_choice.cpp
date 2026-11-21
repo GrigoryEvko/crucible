@@ -1,6 +1,7 @@
-// Tests of foundation/core/Choice.h: Option, none, expect, value_or, match,
-// ok_or, some, take, fill, replace, the loop of zero or one turns and the
-// conversion of an error, also for a linear payload and a linear error.
+// Tests of foundation/core/Choice.h: Option, none, expect, expect_none,
+// value_or, match, ok_or, some, take, fill, replace, the loop of zero or one
+// turns and the conversion of an error, also for a linear payload and a linear
+// error.
 
 #include <foundation/core/Choice.h>
 
@@ -1192,6 +1193,43 @@ void test_named_option_doors_abort() {
             "an arm"});
 }
 
+// expect_none ends an empty Option in each form, named or temporary.  A full
+// Option ends the process with the reason of the call, so no payload drops,
+// also a linear payload.
+void test_expect_none() {
+    Option<int> plain{};
+    static_cast<Option<int>&&>(plain).expect_none("the plain Option is empty");
+    Option<SlotNumber>{}.expect_none("the niche Option is empty");
+    Option<CountedOwner> owner{};
+    static_cast<Option<CountedOwner>&&>(owner).expect_none("the owning Option is empty");
+    {
+        Option<CountedToken> held = Option<CountedToken>::some(CountedToken{71});
+        CountedToken token = held.take().expect("the Option holds a token");
+        static_cast<Option<CountedToken>&&>(held).expect_none("take emptied the Option");
+        CRUCIBLE_FATAL_INVARIANT(token.handle() == 71 && live_tokens == 1);
+        ::foundation::linear::drop(static_cast<CountedToken&&>(token));
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_owners == 0 && live_tokens == 0);
+    expect_dies(
+        test_context(), [] noexcept { Option<int>::some(1).expect_none("the plain Option is full on purpose"); },
+        ::foundation::core::TextView{"the plain Option is full on purpose"});
+    expect_dies(
+        test_context(),
+        [] noexcept { Option<SlotNumber>::some(SlotNumber{2}).expect_none("the niche Option is full on purpose"); },
+        ::foundation::core::TextView{"the niche Option is full on purpose"});
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            Option<CountedOwner>::some(CountedOwner{3}).expect_none("the owning Option is full on purpose");
+        },
+        ::foundation::core::TextView{"the owning Option is full on purpose"});
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            Option<CountedToken>::some(CountedToken{4}).expect_none("the linear Option is full on purpose");
+        },
+        ::foundation::core::TextView{"the linear Option is full on purpose"});
+}
 }  // namespace
 
 int main() {
@@ -1238,5 +1276,6 @@ int main() {
     test_replace_reads_the_old_payload_first();
     test_named_option_doors_linear();
     test_named_option_doors_abort();
+    test_expect_none();
     return 0;
 }

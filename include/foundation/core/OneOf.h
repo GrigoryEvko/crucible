@@ -71,7 +71,7 @@ namespace detail {
 template <class... Ts>
     requires OneOfAlternatives<Ts...>
 class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<Ts...>>]]
-                   [[= ::foundation::lifetime::no_start_over_bytes{}]] OneOf {
+                   [[= ::foundation::linear::sum{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] OneOf {
     detail::SumSlot<Ts...> slot_;
 
     // The tag and the alternative at Index, through the door of the readers

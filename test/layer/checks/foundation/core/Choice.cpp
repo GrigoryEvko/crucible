@@ -1365,7 +1365,7 @@ static_assert(refused_with(5)
 inline constexpr TextView choice_names{
     "none NoValue Unit Err err some is_some is_none value_or ok_or is_ok is_err ok is which niche empty is_empty "
     "is_empty_never_built with_mut map map_err and_then or_else filter is_some_and is_none_or is_ok_and is_err_and "
-    "take fill replace"};
+    "take fill replace expect_none"};
 
 // Each form of an Option, and each Result, gives only the shared verbs, the
 // language protocols and the names of the list.

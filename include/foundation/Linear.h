@@ -45,7 +45,11 @@
 // refuses each other call.  The annotation borrow_match marks the match of a
 // sum that gives each arm a reference into the payload, such as the match of
 // a const Option.  The rule borrow-match of the plugin refuses an arm that
-// assigns, moves or changes the sum that it reads.
+// assigns, moves or changes the sum that it reads.  The annotation sum marks
+// a sum class, and the annotations empties, fills, tests_full and tests_empty
+// mark the members that change or test the empty state of a sum.  The rule
+// must-consume reads them, and it refuses a linear sum that ends with a
+// payload that no consumer took.
 //
 // The trait reads a closure as a class: the sixth GCC patch shows the field
 // of each capture, so a closure that holds a linear value by copy is linear.
@@ -88,6 +92,26 @@ struct binding_hook final {};
 // The annotation of a match that gives each arm a reference into the
 // payload of the sum.  A write of the sum in an arm ends that payload.
 struct borrow_match final {};
+
+// The annotation of a sum class: a class that holds one of some
+// alternatives, such as an Option, a Result or a OneOf.  A linear instance
+// gives its linear alternative out only through a consumer.  So the rule
+// must-consume refuses each linear instance that ends with no consume, and
+// each temporary of one that the code discards, in each build.
+struct sum final {};
+
+// The annotations of the empty state of a sum, such as the state "no value"
+// of an Option.  The rule must-consume reads them, so an empty Option of a
+// linear payload can end with no consume.  empties marks a constructor that
+// builds an empty sum, and a member after which the sum is empty, such as
+// take.  fills marks a member after which the sum holds a payload, such as
+// fill and replace.  tests_full marks a const member that gives true when
+// the sum holds a payload, and tests_empty a const member that gives true
+// when the sum is empty.
+struct empties final {};
+struct fills final {};
+struct tests_full final {};
+struct tests_empty final {};
 
 // The annotation value of a class template whose instances are linear
 // only for some arguments.
