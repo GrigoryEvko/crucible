@@ -789,6 +789,11 @@ witness <foundation/core/Ref.h> private | foundation::core::BoxWord<int, forge::
 # mint_hole.
 witness <foundation/core/Ref.h> no-match | foundation::core::Hole<8, 8> | foundation::core::Hole<8, 8>{forge::rvalue<void*>()}
 witness <foundation/core/Ref.h> private | foundation::core::detail::HoleKey | foundation::core::detail::HoleKey{}
+# A Seat has no default constructor, and its one constructor takes the key
+# that only mint_seat builds, so each Seat comes through the mint and is full
+# from its start.
+witness <foundation/core/Seat.h> deleted | foundation::core::Seat<int> | foundation::core::Seat<int>{}
+witness <foundation/core/Seat.h> private | foundation::core::Seat<int>::MintKey | foundation::core::Seat<int>::MintKey{}
 # A Ref has no constructor from a pointer, so no Ref holds a null pointer.
 # A Ref of an object takes the key that only RefDoor builds, so each Ref
 # from an object comes through the door.

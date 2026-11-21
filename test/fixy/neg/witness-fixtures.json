@@ -497,6 +497,16 @@
       "constructor": "\\bRunAddress\\("
     },
     {
+      "name": "neg_witness_core_seat_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bSeat\\("
+    },
+    {
+      "name": "neg_witness_core_seat_mintkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bMintKey\\("
+    },
+    {
       "name": "neg_witness_core_slotcursor_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bSlotCursor\\("
@@ -1693,6 +1703,14 @@
     {
       "type": "foundation::core::detail::HoleKey",
       "header": "foundation/core/Ref.h"
+    },
+    {
+      "type": "foundation::core::Seat<int>",
+      "header": "foundation/core/Seat.h"
+    },
+    {
+      "type": "foundation::core::Seat<int>::MintKey",
+      "header": "foundation/core/Seat.h"
     },
     {
       "type": "foundation::core::Ref<int, forge::brand>",

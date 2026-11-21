@@ -2912,6 +2912,29 @@ foundation_test(test_core_ref)
 # refusals in a child process through the Check family of fixy.
 foundation_test(test_core_immortal)
 target_link_libraries(test_core_immortal PRIVATE fixy)
+# The holder of foundation/core/Seat.h: a loop of steps and the take at its
+# end, one move of the payload for each step, one end of each payload, and the
+# linear marker of a Seat of a linear payload.
+foundation_test(test_core_seat)
+target_link_libraries(test_core_seat PRIVATE fixy)
+# A step to another payload type, a copy of a Seat and a step of a temporary
+# Seat do not compile.  The mint refuses a const payload and a payload whose
+# move can throw.
+foundation_neg_compile_test(neg_core_seat_step_other_type
+  "no matching function for call to .foundation::core::Seat<long unsigned int>::step"
+  "required for the satisfaction of .StepOf<Fn, T>.")
+foundation_neg_compile_test(neg_core_seat_copy
+  "use of deleted function .foundation::core::Seat<T>::Seat.const foundation::core::Seat<T>&."
+  "a copy would give the payload a second holder")
+foundation_neg_compile_test(neg_core_seat_step_rvalue
+  "use of deleted function .void foundation::core::Seat<T>::step.Fn&&. &&"
+  "a step of a temporary Seat builds a payload that the full expression ends")
+foundation_neg_compile_test(neg_core_seat_mint_const
+  "no matching function for call to .mint_seat<const uint64_t>"
+  "the expression .!.is_const_v<T>.")
+foundation_neg_compile_test(neg_core_seat_mint_throwing_move
+  "no matching function for call to .mint_seat"
+  "the expression .is_nothrow_move_constructible_v<T>")
 
 # A Link gives its object as a Ref of const through a const Link, and its
 # expect of no object ends the process.

@@ -155,6 +155,7 @@
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/CallRef.h>
 #include <foundation/core/Immortal.h>
+#include <foundation/core/Seat.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/diag/Insights.h>
@@ -962,6 +963,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::Immortal,
      "the storage of one object of the whole process: it holds storage, makes no claim about the object, and is "
      "never a value in a kernel signature"},
+    {^^::foundation::core::Seat,
+     "the holder of the value of a loop: it holds its payload from its mint to its take, makes no claim about the "
+     "payload, and is never a value in a kernel signature"},
     {^^::foundation::core::BoxWord,
      "the object of a Box in a ring cell: one address that its authority claims, and never a value in a kernel "
      "signature"},
