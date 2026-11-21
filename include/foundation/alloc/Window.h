@@ -13,6 +13,8 @@
 //                                    THE LADDER)
 //   window.record()                  the WindowRecord of the window
 //   window.layout()                  the MetadataLayout of its region
+//   window.slab_records_at()         the address of the record of the slab
+//                                    0, for a SlabRecords
 //   WindowCommits                    the words of the commits of a window
 //                                    that many threads change: the bit of
 //                                    each committed extent, the front of
@@ -184,6 +186,13 @@ public:
 
     [[nodiscard]] WindowRecord record() const noexcept { return record_; }
     [[nodiscard]] MetadataLayout layout() const noexcept { return layout_; }
+
+    // The address of the record of the slab 0 of the window: the first byte
+    // of its section of slab records.  A SlabRecords of
+    // foundation/alloc/SlabHeap.h holds it.  Complexity: O(1).
+    [[nodiscard]] AddressWord slab_records_at() const noexcept {
+        return AddressWord{static_cast<std::uint64_t>(record_.region_base()) + layout_.slab_records_offset().raw()};
+    }
 
     // The next chunk that no claim took, past each guard chunk, or none when
     // each chunk of the window has a claim (THE CHUNK SOURCE).  Complexity:

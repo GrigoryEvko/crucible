@@ -2868,6 +2868,11 @@ target_link_libraries(test_alloc_chunk_map PRIVATE fixy)
 # each chunk has one claim.  The tsan preset runs it with no suppression.
 foundation_test(test_alloc_chunk_source)
 target_link_libraries(test_alloc_chunk_source PRIVATE fixy)
+# The slab heap of foundation/alloc/SlabHeap.h over the records of a window
+# of 1 GiB: a Philox sequence of inserts, pops and removals against an oracle,
+# with a walk of each link of the tree.
+foundation_test(test_alloc_slab_heap)
+target_link_libraries(test_alloc_slab_heap PRIVATE fixy)
 # The root of foundation/alloc/Root.h in one process: the sentinel before the
 # init, the map that the init writes into it, the sentinel of a new thread,
 # and the claims of the heap table.  The threads come from the thread door of

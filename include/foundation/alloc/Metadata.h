@@ -8,8 +8,11 @@
 //                              page kind, the state, the unit map, the decay
 //                              stamp, the source word and the mark stamp of
 //                              one chunk: one cache line
-//   SlabMeta                   the class, the free count, the summary word
-//                              and the bitmap of one unit: 576 bytes
+//   SlabMeta                   the class, the free count, the summary word,
+//                              the three links of its slab heap and the
+//                              bitmap of one unit: 576 bytes
+//   SlabNumber, SlabLink       the number of a slab in its window, and a link
+//                              of a slab heap: that number plus one, or none
 //   MetadataLayout::of(chunks) the offset of each section of the region of
 //                              a window of that many chunks, and of each
 //                              record
@@ -188,10 +191,36 @@ enum class SlotBits : std::uint64_t {
 enum class SummaryBits : std::uint64_t {
 };
 
+// The number of a slab in its window: the index of its chunk times
+// kUnitsPerChunk, plus the index of its unit.  A medium slab is the whole
+// chunk, so its number holds the unit 0.  The order of the numbers is the
+// order of the addresses of the slabs.
+struct SlabNumberTag final {};
+using SlabNumber = ::foundation::core::Id<SlabNumberTag, std::uint32_t>;
+
+[[nodiscard]] constexpr SlabNumber slab_number_of(ChunkIndex chunk, UnitIndex unit) noexcept {
+    return SlabNumber{chunk.raw() * kUnitsPerChunk + static_cast<std::uint32_t>(unit.raw())};
+}
+
+// A link of the slab heap of foundation/alloc/SlabHeap.h: the number of a
+// slab plus one, or none.  A record starts as zero bytes, and the slab 0 is a
+// real slab, so zero must mean no link.
+enum class SlabLink : std::uint32_t {
+    none = 0,
+};
+
+[[nodiscard]] constexpr SlabLink link_of(SlabNumber slab) noexcept { return SlabLink{slab.raw() + 1}; }
+
 // The record of one unit (THE RECORDS): a header of one cache line and a
 // bitmap of 512 bytes.  A set bit is a free slot.  Bit k of the summary word
 // is set when word k of the bitmap holds a free slot.  The class of a unit
 // with no slab is zero, which names no class.
+//
+// The three links are the place of the slab in one slab heap of its owner
+// (foundation/alloc/SlabHeap.h): its first child, its next sibling, and its
+// last sibling or its parent.  They are named fields in the spare bytes of
+// the header, so the record keeps its size and each field before them keeps
+// its offset (the decision of 2026-11-21).
 class alignas(64) SlabMeta final {
 public:
     constexpr SlabMeta() noexcept = default;
@@ -202,11 +231,17 @@ public:
     [[nodiscard]] constexpr SlabSlotCount free_count() const noexcept { return SlabSlotCount{free_count_}; }
     [[nodiscard]] constexpr SummaryBits summary() const noexcept { return summary_; }
     [[nodiscard]] constexpr SlotBits bitmap_word(BitmapWordIndex word) const noexcept { return bitmap_[word.raw()]; }
+    [[nodiscard]] constexpr SlabLink heap_child() const noexcept { return heap_child_; }
+    [[nodiscard]] constexpr SlabLink heap_next() const noexcept { return heap_next_; }
+    [[nodiscard]] constexpr SlabLink heap_prev() const noexcept { return heap_prev_; }
 
     constexpr void set_size_class(SizeClass size_class) noexcept { size_class_ = size_class; }
     constexpr void set_free_count(SlabSlotCount free_count) noexcept { free_count_ = free_count.raw(); }
     constexpr void set_summary(SummaryBits summary) noexcept { summary_ = summary; }
     constexpr void set_bitmap_word(BitmapWordIndex word, SlotBits bits) noexcept { bitmap_[word.raw()] = bits; }
+    constexpr void set_heap_child(SlabLink child) noexcept { heap_child_ = child; }
+    constexpr void set_heap_next(SlabLink next) noexcept { heap_next_ = next; }
+    constexpr void set_heap_prev(SlabLink prev) noexcept { heap_prev_ = prev; }
 
     // True when each field is at its offset, so each byte of the header is a
     // named field and the bitmap starts at the second line (THE RECORDS).
@@ -214,8 +249,9 @@ public:
     [[nodiscard]] static consteval bool has_named_bytes() noexcept {
         return offsetof(SlabMeta, size_class_) == 0 && offsetof(SlabMeta, class_padding_) == 1
             && offsetof(SlabMeta, free_count_) == 2 && offsetof(SlabMeta, count_padding_) == 4
-            && offsetof(SlabMeta, summary_) == 8 && offsetof(SlabMeta, spare_) == 16 && sizeof(spare_) == 48
-            && offsetof(SlabMeta, bitmap_) == 64;
+            && offsetof(SlabMeta, summary_) == 8 && offsetof(SlabMeta, heap_child_) == 16
+            && offsetof(SlabMeta, heap_next_) == 20 && offsetof(SlabMeta, heap_prev_) == 24
+            && offsetof(SlabMeta, spare_) == 28 && sizeof(spare_) == 36 && offsetof(SlabMeta, bitmap_) == 64;
     }
 
 private:
@@ -224,7 +260,10 @@ private:
     std::uint16_t free_count_{0};
     std::uint32_t count_padding_{0};
     SummaryBits summary_{};
-    std::uint8_t spare_[48]{};
+    SlabLink heap_child_{SlabLink::none};
+    SlabLink heap_next_{SlabLink::none};
+    SlabLink heap_prev_{SlabLink::none};
+    std::uint8_t spare_[36]{};
     SlotBits bitmap_[kSlabBitmapWords]{};
 };
 

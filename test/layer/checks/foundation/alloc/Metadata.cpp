@@ -20,14 +20,25 @@ static_assert(ChunkMeta::has_named_bytes());
 
 // A SlabMeta is a header of one cache line and a bitmap of 512 bytes, and
 // each byte of the header is a named member: the class, its padding, the free
-// count, its padding, the summary, 48 spare bytes and the bitmap.
+// count, its padding, the summary, the three links of the slab heap, 36 spare
+// bytes and the bitmap.
 static_assert(sizeof(SlabMeta) == kSlabMetaBytes && alignof(SlabMeta) == 64);
 static_assert(kSlabBitmapWords == 64);
 static_assert(SlabMeta::has_named_bytes());
 
-// A new record reads as the state of a chunk or a unit that no heap took.
+// A new record reads as the state of a chunk or a unit that no heap took, and
+// a new slab is in no slab heap.
 static_assert(ChunkMeta{}.owner() == ChunkOwner::none && ChunkMeta{}.state() == ChunkState::clean);
 static_assert(SlabMeta{}.free_count().raw() == 0 && SlabMeta{}.summary() == SummaryBits{});
+static_assert(SlabMeta{}.heap_child() == SlabLink::none && SlabMeta{}.heap_next() == SlabLink::none
+              && SlabMeta{}.heap_prev() == SlabLink::none);
+
+// The link of the slab 0 is not the link none, and the number of a slab keeps
+// the order of the addresses: the last unit of a chunk comes before the first
+// unit of the next chunk.
+static_assert(link_of(SlabNumber{0}) != SlabLink::none);
+static_assert(slab_number_of(ChunkIndex{1}, UnitIndex{core::StaticIndex<0>{}}).raw()
+              == slab_number_of(ChunkIndex{0}, UnitIndex{core::StaticIndex<kUnitsPerChunk - 1>{}}).raw() + 1);
 
 // THE SLOT OF AN OFFSET: the first byte of a slot gives its index, a byte
 // inside a slot and the first byte past the slots of a slab give none, and
