@@ -21,7 +21,6 @@
 #include <foundation/effects/Effect.h>
 #include <crucible/Vigil.h>
 
-#include <bit>
 #include <cstdint>
 
 using namespace crucible;
@@ -94,11 +93,22 @@ template <std::size_t Count>
     return ::fixy::Index<Count>::check((slot.raw() + 1) % Count).expect("a remainder is below its divisor");
 }
 
-void* fake_ptr(uint32_t iter, uint32_t op) noexcept {
-    return std::bit_cast<void*>(static_cast<std::uintptr_t>((iter + 1) * 0x100000 + (op + 1) * 0x1000));
+// The iteration and the position of an op: the two parts of its synthetic
+// data address.
+enum class IterationNumber : std::uint32_t {
+};
+enum class OpPosition : std::uint32_t {
+};
+
+// The synthetic data address of the op at a position of an iteration.  No
+// tensor lives there, and the bench reads only the bits of the address.
+[[nodiscard]] SyntheticAddress fake_address(IterationNumber iter, OpPosition op) noexcept {
+    const std::uint32_t low =
+        (static_cast<std::uint32_t>(iter) + 1) * 0x100000 + (static_cast<std::uint32_t>(op) + 1) * 0x1000;
+    return SyntheticAddress{low};
 }
 
-TensorMeta make_meta(void* data_ptr) noexcept {
+TensorMeta make_meta(SyntheticAddress address) noexcept {
     TensorMeta m{};
     m.ndim = 1;
     m.sizes[0] = tensor_dim(1024);
@@ -107,7 +117,7 @@ TensorMeta make_meta(void* data_ptr) noexcept {
     m.device_type = DeviceType::CPU;
     m.device_idx = 0;
     m.layout = Layout::Strided;
-    m.data_ptr = external_data_ptr(data_ptr);
+    m.data_ptr = mint_synthetic_data_ptr(address);
     return m;
 }
 
@@ -137,9 +147,9 @@ OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
     uint16_t idx = 0;
     if (op_idx > 0)
         d.metas.at(::fixy::Index<2>::check(idx++).expect("the position fits the array")) =
-            make_meta(fake_ptr(iter, op_idx - 1));
+            make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx - 1}));
     d.metas.at(::fixy::Index<2>::check(idx++).expect("the position fits the array")) =
-        make_meta(fake_ptr(iter, op_idx));
+        make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx}));
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
@@ -339,8 +349,8 @@ int main() {
         MetaLog meta_log{::foundation::effects::testing::test().alloc};
         meta_log.reset();
         ::fixy::FixedArray<TensorMeta, 2> metas{
-            make_meta(fake_ptr(0, 0)),
-            make_meta(fake_ptr(0, 1)),
+            make_meta(fake_address(IterationNumber{0}, OpPosition{0})),
+            make_meta(fake_address(IterationNumber{0}, OpPosition{1})),
         };
         return bench::run("MetaLog::try_append (2 metas)", [&] {
             bench::do_not_optimize(meta_log);
@@ -659,8 +669,8 @@ int main() {
             bad.num_inputs = 1;
             bad.num_outputs = 1;
             ::fixy::FixedArray<TensorMeta, 2> bad_metas{
-                make_meta(fake_ptr(10, 2)),
-                make_meta(fake_ptr(10, 3)),
+                make_meta(fake_address(IterationNumber{10}, OpPosition{2})),
+                make_meta(fake_address(IterationNumber{10}, OpPosition{3})),
             };
             auto rr = vigil.dispatch_op(certify_synthetic_op(bad, bad_metas.view()));
             bench::do_not_optimize(rr);

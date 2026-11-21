@@ -11,7 +11,6 @@
 //
 // Simulates ResNet-18 (481 ops) and GPT-style (1110 ops) iteration sizes.
 
-#include <bit>
 #include <cstdint>
 
 #include <crucible/BackgroundThread.h>
@@ -63,8 +62,7 @@ TensorMeta make_synthetic_meta(uint8_t ndim) {
         m.sizes[d] = tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256)));
         m.strides[d] = tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64)));
     }
-    m.data_ptr = external_data_ptr(
-        std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + bench_rand() % 0x100000)));
+    m.data_ptr = mint_synthetic_data_ptr(SyntheticAddress{0x7f0000000000ULL + bench_rand() % 0x100000});
     check_meta_tail(m);
     return m;
 }
@@ -300,8 +298,7 @@ int run_bench(::fixy::os::Args const& arguments) {
                     meta.sizes[d] = tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256)));
                     meta.strides[d] = tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64)));
                 }
-                meta.data_ptr = external_data_ptr(
-                    std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + (i * 8 + j) * 0x1000)));
+                meta.data_ptr = mint_synthetic_data_ptr(SyntheticAddress{0x7f0000000000ULL + (i * 8 + j) * 0x1000});
             }
             MetaIndex meta_start = meta_log.try_append(
                 ::fixy::View<const TensorMeta>{metas.view()}.window(0, total_metas).expect("the run fits the array"));
@@ -338,8 +335,7 @@ int run_bench(::fixy::os::Args const& arguments) {
                     meta.ndim = 4;
                     meta.dtype = ScalarType::Float;
                     meta.device_type = DeviceType::CUDA;
-                    meta.data_ptr = external_data_ptr(
-                        std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + (i * 8 + j) * 0x1000)));
+                    meta.data_ptr = mint_synthetic_data_ptr(SyntheticAddress{0x7f0000000000ULL + (i * 8 + j) * 0x1000});
                 }
                 // The build reads the metas at the indices in meta_batch, so this call does not
                 // use the returned index.
