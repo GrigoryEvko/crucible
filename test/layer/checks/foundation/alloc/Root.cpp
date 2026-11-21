@@ -24,4 +24,12 @@ inline constexpr bool kIsConstant = [] consteval {
 
 static_assert(root_check::kIsConstant);
 
+// THE HEAP TABLE: a slot of 20 KiB is five pages, and it holds the HeapState
+// and the bin stacks of its heap.  The slots of 65,534 heaps take 1.25 GiB of
+// address space, and a step of 2 MiB holds 102 whole slots.
+static_assert(kHeapSlotBytes == 5 * 4096);
+static_assert(sizeof(HeapState) + kBinStackBytes <= kHeapSlotBytes);
+static_assert(kHeapTableSlotsBytes == (std::size_t{5} << 28));
+static_assert(kHeapTableStepBytes / kHeapSlotBytes == 102);
+
 }  // namespace foundation::alloc

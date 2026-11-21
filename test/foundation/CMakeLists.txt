@@ -2873,6 +2873,13 @@ target_link_libraries(test_alloc_chunk_source PRIVATE fixy)
 # with a walk of each link of the tree.
 foundation_test(test_alloc_slab_heap)
 target_link_libraries(test_alloc_slab_heap PRIVATE fixy)
+# The heap state of foundation/alloc/HeapState.h: each class in the order of
+# the stack and of the allocations, a Philox order with the census after each
+# step, the same layout on the heaps of two threads, the claim through the
+# sentinel, and the three bad releases that die at the flush in a child
+# process.
+foundation_test(test_alloc_heap_state)
+target_link_libraries(test_alloc_heap_state PRIVATE fixy)
 # The root of foundation/alloc/Root.h in one process: the sentinel before the
 # init, the map that the init writes into it, the sentinel of a new thread,
 # and the claims of the heap table.  The threads come from the thread door of

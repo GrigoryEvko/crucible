@@ -206,6 +206,13 @@ core::Result<core::Unit, os::Errno> Window::grow_section_(WindowCommits& commits
     return core::Unit{};
 }
 
+core::Result<core::Unit, os::Errno> Window::commit_slab_records_of(WindowCommits& commits, ChunkIndex chunk) noexcept {
+    UnitIndex const last{core::StaticIndex<kUnitsPerChunk - 1>{}};
+    std::size_t const offset = layout_.slab_meta_offset(chunk, last).raw();
+    std::size_t const in_section = offset - layout_.slab_records_offset().raw();
+    return grow_section_(commits, RecordSection::slab_records, core::ByteCount{in_section + kSlabMetaBytes});
+}
+
 core::Result<ChunkMeta*, os::Errno> Window::start_chunk_meta_(WindowCommits& commits, ChunkIndex chunk) noexcept {
     std::size_t const offset = layout_.chunk_meta_offset(chunk).raw();
     std::size_t const in_section = offset - layout_.chunk_records_offset().raw();

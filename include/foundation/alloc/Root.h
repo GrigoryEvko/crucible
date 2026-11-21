@@ -43,15 +43,30 @@
 //   the last.  The init of the root reserves the table, and it commits
 //   nothing.
 //
+//   A slot holds the HeapState and then the bin stacks of its heap
+//   (bin_stacks_at of foundation/alloc/HeapState.h).  A slot is 20 KiB, five
+//   pages (the decision of 2026-11-21): the stacks take 13,760 bytes, and
+//   the HeapState with the outbox and the inbox of the remote free takes
+//   3,544 to 4,056 bytes, more than the 16 KiB of the first plan.  So the
+//   slots of the table take 1.25 GiB of address space, and a step of 2 MiB
+//   holds 102 slots.  A slot is a whole count of pages, so no two heaps share
+//   a page, and the first touch of the owner thread puts each page of its
+//   heap on its node.  Under AddressSanitizer the page source maps the table
+//   through the C library (THE SANITIZERS of foundation/os/PageSource.h), and
+//   the table lives in an Immortal, so no end of the process unmaps it.
+//
 //   A claim takes the next slot with one atomic add.  The slots commit from
 //   the front in steps of kHeapTableStepBytes: the claim of slot S reads the
 //   front with acquire, commits each byte from the front to the end of the
 //   step of S, and then raises the front to that end with release.  Each byte
 //   below a front that a claim reads is thus committed.  Two claims can
 //   commit one step at the same time, and the kernel gives the step the same
-//   access two times.  The claim then builds the HeapState in its slot, with
-//   the chunk map of the host window and the entry of its id, and writes the
-//   cell of the thread.  A claim past the last slot ends the process with the
+//   access two times.  The claim then builds the HeapState in its slot: the
+//   chunk map, the base, the bytes and the slab records of the host window,
+//   the address of the window and of its commits, the entry of its id, and
+//   the three pointers of each bin.  It writes no word of the bin stacks.
+//   Then it writes the cell of the thread.  A claim past the last slot ends
+//   the process with the
 //   count of the table, and a commit that the kernel refuses, such as enomem
 //   under strict overcommit, ends it with the error.
 //
@@ -74,8 +89,9 @@
 namespace foundation::alloc {
 
 // The bytes of one slot of the heap table, the guard on each side of it, and
-// the step of a commit of its slots (THE HEAP TABLE).
-inline constexpr std::size_t kHeapSlotBytes = sizeof(HeapState);
+// the step of a commit of its slots (THE HEAP TABLE).  The slot is 20 KiB
+// (the decision of 2026-11-21), and this constant is its one place.
+inline constexpr std::size_t kHeapSlotBytes = std::size_t{20} << 10;
 inline constexpr std::size_t kHeapTableGuardBytes = std::size_t{2} << 20;
 inline constexpr std::size_t kHeapTableStepBytes = std::size_t{2} << 20;
 

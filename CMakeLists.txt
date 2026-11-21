@@ -417,8 +417,9 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # door, the guarded memory door, the allocation door, the spin-hint door and the
 # cold path of the arena of the Ref family.  It holds the window door of the
 # allocator of the base, src/foundation/alloc/Window.cpp, the cold init and
-# claim of its root, src/foundation/alloc/Root.cpp, and the slab heap,
-# src/foundation/alloc/SlabHeap.cpp.  foundation starts no
+# claim of its root, src/foundation/alloc/Root.cpp, the slab heap,
+# src/foundation/alloc/SlabHeap.cpp, and the refill and the flush of the bins
+# of a heap, src/foundation/alloc/Refill.cpp and Flush.cpp.  foundation starts no
 # thread.  `fixy` is a static
 # library for the same reason: it holds the cold bodies of fixy headers, the
 # probe of the machine topology, the door that starts and joins each thread of
@@ -430,6 +431,8 @@ add_library(foundation STATIC
   src/foundation/DiagRuntime.cpp
   src/foundation/Platform.cpp
   src/foundation/SharedPermission.cpp
+  src/foundation/alloc/Flush.cpp
+  src/foundation/alloc/Refill.cpp
   src/foundation/alloc/Root.cpp
   src/foundation/alloc/SlabHeap.cpp
   src/foundation/alloc/Window.cpp

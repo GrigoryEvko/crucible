@@ -22,6 +22,10 @@
 //                                    index of chunks (THE CHUNK SOURCE)
 //   window.claim_chunk(commits)      the next chunk that no thread claimed,
 //                                    or none past the last chunk
+//   window.claimed_chunks(commits)   the chunks below the claim index
+//   window.commit_slab_records_of(commits, chunk)
+//                                    commits the records of the 32 units of
+//                                    the chunk, with no record started
 //   window.commit_extent_of(commits, chunk)
 //                                    commits the extent of the chunk, one
 //                                    time (THE COMMITS)
@@ -200,8 +204,23 @@ public:
     // time.
     [[nodiscard]] ::foundation::core::Option<ChunkIndex> claim_chunk(WindowCommits& commits) const noexcept;
 
+    // The count of the chunks below the claim index: each chunk that a claim
+    // took is below it, with the guard chunks between them.  One acquire
+    // load.
+    [[nodiscard]] ::foundation::core::ElementCount claimed_chunks(WindowCommits const& commits) const noexcept {
+        return ::foundation::core::ElementCount{std::size_t{commits.next_chunk_.load_acquire()}};
+    }
+
     // True when the extent of the chunk is committed.  One acquire load.
     [[nodiscard]] bool is_extent_committed(WindowCommits const& commits, ChunkIndex chunk) const noexcept;
+
+    // Commits the section of slab records up to the end of the records of
+    // the 32 units of the chunk, with no record started (THE COMMITS).  A
+    // heap calls it when it takes the chunk, so a read of the record of each
+    // unit of the chunk reads a committed page, and a record that no slab
+    // started reads zero.
+    [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+    commit_slab_records_of(WindowCommits& commits, ChunkIndex chunk) noexcept;
 
     // Commits the extent of the chunk, less its guard chunk, when it is not
     // committed (THE COMMITS).  The chunk is not a guard chunk.  The error is

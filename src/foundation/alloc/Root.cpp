@@ -8,6 +8,8 @@
 #include <foundation/Platform.h>
 #include <foundation/alloc/ChunkMap.h>
 #include <foundation/alloc/HeapState.h>
+#include <foundation/alloc/Layout.h>
+#include <foundation/alloc/SlabHeap.h>
 #include <foundation/alloc/Window.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Quantity.h>
@@ -27,12 +29,29 @@ namespace foundation::alloc::detail {
 struct HeapStateDoor {
     static void set_chunk_map(HeapState& heap, BiasedChunkMap chunk_map) noexcept { heap.chunk_map_ = chunk_map; }
 
-    // Builds the state of a heap at the first byte of its committed slot.
-    [[nodiscard]] static HeapState& start(AddressWord slot, BiasedChunkMap chunk_map, HeapId id) noexcept {
+    // Builds the state of a heap at the first byte of its committed slot,
+    // with the facts of its window and the three pointers of each bin into
+    // the bin stacks of the slot (THE BINS of foundation/alloc/HeapState.h).
+    // It writes the HeapState, and no word of the stacks.
+    [[nodiscard]] static HeapState& start(AddressWord slot, HeapId id, Window& window,
+                                          WindowCommits& commits) noexcept {
         void* const place = __builtin_bit_cast(void*, static_cast<std::uint64_t>(slot));
         HeapState* const heap = ::new(place) HeapState{};
-        heap->chunk_map_ = chunk_map;
+        WindowRecord const record = window.record();
+        heap->chunk_map_ = record.chunk_map();
         heap->self_ = owner_entry_of(id);
+        heap->window_base_ = record.base();
+        heap->window_bytes_ = record.length().raw();
+        heap->slab_records_ = SlabRecords::at(window.slab_records_at());
+        heap->window_ = &window;
+        heap->commits_ = &commits;
+        auto* const stacks = __builtin_bit_cast(AddressWord*, static_cast<std::uint64_t>(bin_stacks_at(slot)));
+        for (std::uint32_t value = 1; value <= kSizeClassCount; ++value) {
+            HeapState::Bin& bin = heap->bins_[value];
+            bin.full_begin = stacks + detail::kBinStacks.first[value];
+            bin.empty_end = stacks + detail::kBinStacks.first[value + 1];
+            bin.head = bin.empty_end;
+        }
         return *heap;
     }
 };
@@ -114,8 +133,8 @@ struct RootDoor {
         }
         HeapSlot const index = core::Option<HeapSlot>{slot}.value_or(HeapSlot{core::StaticIndex<0>{}});
         commit_slots(root, core::ByteCount{(std::size_t{index.raw()} + 1) * kHeapSlotBytes});
-        HeapState& heap =
-            HeapStateDoor::start(slot_address(root, index), root.windows_.host().chunk_map(), heap_id_of(index));
+        HeapState& heap = HeapStateDoor::start(slot_address(root, index), heap_id_of(index), *root.host_window_.get(),
+                                               root.host_commits_);
         tls_heap_ = &heap;
         return heap;
     }
