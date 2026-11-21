@@ -46,6 +46,11 @@ THE WRITE
     exceptions.  --raise permits each such count, and --admit permits a count
     of an admitted kind of the rule.  The write reads no git history, so a
     change that moves a finding to a key with no row writes it with --raise.
+    A rule can tell that no build of any configuration can give a finding
+    of a key (CountedRule.is_gone), for example because the file of the row
+    holds no include of its header.  Each write then removes each row of
+    such a key with no count in its builds, also a write of one build and a
+    row with a reason, and it gives one line for each removed row.
 
 Complexity: linear in the finding lines of the builds, and O(k log k) for k rows of the ledger and counts of the builds.
 """
@@ -82,7 +87,9 @@ class CountedRule[Inputs]:
     `admitted_kinds` are the kinds of a count that --admit can write above its row.  `refusal` is the advice of a
     write that refuses a count above its row.  `context_of` makes the context of a build from the root and the build
     directory (THE CONTEXT).  `comment` is the head comment that each write gives the ledger (assay.core.ledger, THE
-    HEAD COMMENT).  An empty text keeps the head of the file.
+    HEAD COMMENT).  An empty text keeps the head of the file.  `is_gone` takes the root of the tree and a key, and it
+    tells that no build of any configuration can give a finding of the key (THE WRITE).  With None, a write of one
+    build keeps each row.
     """
 
     rule_id: str
@@ -94,6 +101,7 @@ class CountedRule[Inputs]:
     refusal: str
     context_of: Callable[[Path, Path | None], runner.PluginContext] = runner.PluginContext
     comment: str = ""
+    is_gone: Callable[[Path, Key], bool] | None = None
 
 
 def no_inputs(_root: Path) -> None:
@@ -240,6 +248,8 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
         request.reason,
         is_partial=request.is_partial,
     )
+    if spec.is_gone is not None:
+        written = without_gone_rows(spec, written, counts, request.root)
     if spec.comment:
         written = dataclasses.replace(written, comment=spec.comment)
     rule_ledger.store(written, request.root)
@@ -248,6 +258,30 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
         f"{rule_ledger.ledger_path(spec.rule_id, request.root)}"
     )
     return 0
+
+
+def without_gone_rows[Inputs](
+    spec: CountedRule[Inputs], ledger: rule_ledger.Ledger, counts: Mapping[Key, int], root: Path
+) -> rule_ledger.Ledger:
+    """Return the ledger with no row of a key that its builds do not count and that no build can give (THE WRITE).
+
+    Each removed row gives one line.  A reason row of a prefix that then holds no row goes too.  Complexity: linear in
+    the rows, and one call of `is_gone` for each row with no count.
+    """
+    is_gone = spec.is_gone
+    if is_gone is None:
+        return ledger
+    gone = [key for key in sorted(ledger.base) if counts.get(key, 0) == 0 and is_gone(root, key)]
+    if not gone:
+        return ledger
+    for key in gone:
+        check_report.write_line(
+            f"{spec.rule_id}: the row of {key.path} with {described(key.kind, key.entity)} goes, because no build of any "
+            f"configuration can give its finding"
+        )
+    removed = frozenset(gone)
+    base = {key: entry for key, entry in ledger.base.items() if key not in removed}
+    return rule_ledger.needed_reasons(dataclasses.replace(ledger, base=base))
 
 
 def increases_permitted[Inputs](

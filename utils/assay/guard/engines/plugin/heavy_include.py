@@ -35,6 +35,14 @@ THE LEDGER
     --admit --reason TEXT` writes such a row.  A reason row of a prefix also
     gives the reason of a row (assay.core.ledger, THE REASON OF A PREFIX).
     A row gives no output, with a reason or with none.
+    The plugin reads an include only in the arms that a build compiles, so
+    the write of one build keeps a row that the build does not count.  But
+    a row whose file is gone, or whose file holds no text of its header,
+    can give no finding in any build (is_gone()).  Each write removes such
+    a row, also a row with a reason.  An include of a header through a
+    macro would hide its name from the text, and no header of include/
+    holds such an include.  A text of the header in a comment keeps the
+    row, which is the safe side.
 
 THE VERDICT
     * A count more than its ledger count is an error: a new include of a heavy
@@ -165,10 +173,28 @@ def evaluate(
     return found
 
 
+def is_gone(root: Path, key: Key) -> bool:
+    """Tell that no build can give a finding of a row: its file is gone, or its text holds no text of its header.
+
+    The entity of a row is the header in angle brackets, and an include of it holds that text (THE LEDGER).  A file
+    that cannot be read keeps its row.  Complexity: one read of the file.
+    """
+    path = root / key.path
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return bool(key.entity) and key.entity not in text
+
+
 # The line that tells the includes, the rows and the files of one run or one write.
 summary = counted.summary_of(RULE, "includes of a heavy or an unmeasured header", "files", "objects")
 
-SPEC = counted.CountedRule(RULE, findings, counted.no_inputs, evaluate, summary, ADMITTED_KINDS, REFUSAL)
+SPEC = counted.CountedRule(
+    RULE, findings, counted.no_inputs, evaluate, summary, ADMITTED_KINDS, REFUSAL, is_gone=is_gone
+)
 
 
 def judge(rule: rule_registry.Rule, context: runner.PluginContext) -> list[check_report.Finding]:

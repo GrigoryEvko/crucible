@@ -162,10 +162,21 @@ def write_cases(expect: testing.Expect) -> None:
 
 
 def build_cases(expect: testing.Expect) -> None:
-    """Check the write of one planted build, which lowers no row, and the reduce over two planted builds."""
+    """Check the write of one planted build, which lowers no row, and the reduce over two planted builds.
+
+    The rows of gone.h and missing.h name an include that the tree does not hold: gone.h includes a different header,
+    and missing.h is not in the tree.  Each write removes them, also the write of one build and a row with a reason.
+    """
     with tempfile.TemporaryDirectory(prefix="counted-") as work:
         root = Path(work)
-        plant_tree(root, "a.h | heavy-include | 2 | <chrono> | -\narm.h | heavy-include | 1 | <chrono> | -\n")
+        rows = (
+            "a.h | heavy-include | 2 | <chrono> | -\narm.h | heavy-include | 1 | <chrono> | -\n"
+            "gone.h | heavy-include | 1 | <chrono> | -\nmissing.h | heavy-include | 1 | <chrono> | a door of the clock\n"
+        )
+        plant_tree(root, rows)
+        (root / "a.h").write_text("#include <chrono>\n#include <chrono>\n", encoding="utf-8")
+        (root / "arm.h").write_text("#if defined(__aarch64__)\n#include <chrono>\n#endif\n", encoding="utf-8")
+        (root / "gone.h").write_text("#include <cstdint>\n", encoding="utf-8")
         first, second, broken = root / "first", root / "second", root / "broken"
         planted = {
             first: [finding("a.h", 2, KIND, "<chrono>")],
@@ -182,12 +193,18 @@ def build_cases(expect: testing.Expect) -> None:
 
         spec = dataclasses.replace(heavy_include.SPEC, context_of=planted_context)
         rule = rule_ledger.rule_of(RULE)
-        before = rule_ledger.read(rule, root).expected()
-        status, _text = testing.captured(lambda: counted.write(spec, rule, runner.WriteRequest(root, first)))
+        held = {rule_ledger.Key("a.h", KIND, "<chrono>"): 2, rule_ledger.Key("arm.h", KIND, "<chrono>"): 1}
+        status, text = testing.captured(lambda: counted.write(spec, rule, runner.WriteRequest(root, first)))
+        after = rule_ledger.read(rule, root).expected()
         expect(
-            "the write of one build lowers no row, also a row that the build does not give",
-            status == 0 and rule_ledger.read(rule, root).expected() == before,
+            f"the write of one build lowers no row of an include that the tree holds, also a row that the build does "
+            f"not give, and it removes each row of an include that the tree does not hold: {after}",
+            status == 0
+            and after == held
+            and "the row of gone.h with the kind heavy-include and the entity <chrono> goes" in text
+            and "the row of missing.h" in text,
         )
+        before = after
         status, _text = testing.captured(
             lambda: counted.write(spec, rule, runner.WriteRequest(root, first, more_builds=(second, broken)))
         )
