@@ -48,11 +48,26 @@ concept ByteContiguousBuffer =
         { buffer.view() } -> std::convertible_to<::fixy::View<std::byte const>>;
     };
 
-// A buffer whose bytes a codec can write.
+namespace detail {
+
+// A body of the frame door of an owner of bytes, for the test of the door.
+struct ByteRunProbe final {
+    template <class Run>
+    constexpr void operator()(Run /*run*/) const noexcept {}
+};
+
+}  // namespace detail
+
+// A buffer whose bytes a codec can write: a View of bytes, an owner whose
+// view() gives a View that writes, or an owner that lends its bytes in place
+// through its member frame door with_mut, such as a FixedArray of bytes.
 template <typename Buffer>
 concept MutableByteContiguousBuffer =
     std::convertible_to<Buffer&, ::fixy::View<std::byte>> || requires(Buffer& buffer) {
         { buffer.view() } -> std::convertible_to<::fixy::View<std::byte>>;
+    } || requires(Buffer& buffer) {
+        { buffer.view() } -> std::convertible_to<::fixy::View<std::byte const>>;
+        buffer.with_mut(detail::ByteRunProbe{});
     };
 
 namespace detail {
@@ -387,12 +402,18 @@ template <ByteContiguousBuffer Buffer>
     }
 }
 
-template <MutableByteContiguousBuffer Buffer>
-[[nodiscard]] constexpr ::fixy::View<std::byte> mutable_bytes(Buffer& buffer) noexcept {
-    if constexpr (requires { buffer.view(); }) {
-        return buffer.view();
+// Gives body the View of the bytes of buffer that writes them, for the time of
+// the call, and gives the result of body.  An owner with a member frame door
+// lends its bytes in place through that door.
+template <MutableByteContiguousBuffer Buffer, class Body>
+[[nodiscard]] constexpr auto with_mutable_bytes(Buffer& buffer, Body&& body) noexcept {
+    if constexpr (std::convertible_to<Buffer&, ::fixy::View<std::byte>>) {
+        return static_cast<Body&&>(body)(::fixy::View<std::byte>{buffer});
+    } else if constexpr (requires { buffer.with_mut(ByteRunProbe{}); }) {
+        return buffer.with_mut(
+            [&body](auto run) noexcept { return static_cast<Body&&>(body)(::fixy::View<std::byte>{run.view()}); });
     } else {
-        return buffer;
+        return static_cast<Body&&>(body)(::fixy::View<std::byte>{buffer.view()});
     }
 }
 
@@ -528,14 +549,20 @@ public:
     template <ByteContiguousBuffer Input, MutableByteContiguousBuffer Output>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, FecError> encode_owned(LinearShardBuffer<Input>&& input,
                                                                       Output& output) const noexcept {
-        return encode(detail::bytes(input.peek()), detail::mutable_bytes(output));
+        ::fixy::View<std::byte const> const source = detail::bytes(input.peek());
+        return detail::with_mutable_bytes(
+            output, [this, source](::fixy::View<std::byte> target) noexcept { return encode(source, target); });
     }
 
     template <ByteContiguousBuffer Input, MutableByteContiguousBuffer Output>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, FecError> decode_owned(LinearShardBuffer<Input>&& received,
                                                                       ::fixy::View<bool const> erasure_mask,
                                                                       Output& output) const noexcept {
-        return decode(detail::bytes(received.peek()), erasure_mask, detail::mutable_bytes(output));
+        ::fixy::View<std::byte const> const source = detail::bytes(received.peek());
+        return detail::with_mutable_bytes(output,
+                                          [this, source, erasure_mask](::fixy::View<std::byte> target) noexcept {
+                                              return decode(source, erasure_mask, target);
+                                          });
     }
 
 private:
