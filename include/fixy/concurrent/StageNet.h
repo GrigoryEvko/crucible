@@ -55,13 +55,15 @@
 //   the graph on that channel states (StatesHandleCapacity): the output
 //   handle of the stage before an edge or before an output end, and the input
 //   handle of the first stage for an input end.  The gate of the graph proves
-//   that the two handles of an edge state the same capacity, or none
+//   that the two handles of an edge state the same capacity
 //   (HandlesAgreeOnCapacity of fixy/concurrent/HandleTraits.h).  The output
 //   ends are the sink: the push into a sink takes the message, so the sink
 //   holds none.  A handle of an output end can state no capacity, such as the
 //   writer of a snapshot, and then its channel reads as a rendezvous.  Each
-//   other handle states its capacity (StatesStageGraphCapacities), and a
-//   rendezvous states the capacity 0.  A system that is live on rendezvous
+//   handle of an input end states its capacity (StatesStageGraphCapacities),
+//   and marked_system_of_stage_graph refuses a graph with an input end that
+//   states none, with a text that names the port.  A rendezvous states the
+//   capacity 0.  A system that is live on rendezvous
 //   channels is live on channels of each capacity, so the capacity 0 can
 //   refuse a live pipeline, and it never admits a pipeline that deadlocks.  A
 //   capacity above the range of a channel of the system reads as the top of
@@ -493,41 +495,69 @@ template <class... Stages, class... Edges>
     return marked;
 }
 
-// True when the input handle of each port of the stage from Port on states
-// the capacity of its channel.  Complexity: one step for each port.
+// The first port of the stage from Port on whose input handle states no
+// capacity, or the count of the inputs of the stage.  Complexity: one step
+// for each port.
 template <class Stage, std::size_t Port>
-[[nodiscard]] consteval bool states_input_capacities_() noexcept {
-    if constexpr (Port < stage_input_count_v<Stage>) {
-        return StatesHandleCapacity<stage_input_handle_t<Stage, Port>> && states_input_capacities_<Stage, Port + 1>();
+[[nodiscard]] consteval std::size_t first_unstated_input_() noexcept {
+    if constexpr (Port >= stage_input_count_v<Stage>) {
+        return Port;
+    } else if constexpr (!StatesHandleCapacity<stage_input_handle_t<Stage, Port>>) {
+        return Port;
     } else {
-        return true;
+        return first_unstated_input_<Stage, Port + 1>();
     }
 }
 
-// True when each handle of an edge and of an input end of a graph whose gate
-// holds states the capacity of its channel (THE MARKED SYSTEM).  The gate
-// proves that the two handles of an edge agree, so the output handle of an
-// edge stands for the two.  Complexity: linear in the edges and the input
-// ends.
-template <class... Stages, class... Edges>
-[[nodiscard]] consteval bool states_stage_graph_capacities_(StagePack<Stages...>, EdgePack<Edges...>) noexcept {
-    return (StatesHandleCapacity<stage_output_handle_t<Stages...[Edges::from], Edges::from_output>> && ... && true)
-        && states_input_capacities_<Stages...[0], 0>();
+// The first input end of a graph whose handle states no capacity, or the
+// count of the input ends.  The input ends are the inputs of the first stage.
+template <class... Stages>
+[[nodiscard]] consteval std::size_t first_unstated_end_(StagePack<Stages...>) noexcept {
+    return first_unstated_input_<Stages...[0], 0>();
 }
 
-// The answer of states_stage_graph_capacities_ for a graph whose gate holds.
-// The call has a qualifier, so no lookup by its arguments adds an overload.
+// The count of the input ends of a graph.
+template <class... Stages>
+[[nodiscard]] consteval std::size_t input_end_count_(StagePack<Stages...>) noexcept {
+    return stage_input_count_v<Stages...[0]>;
+}
+
+// The first input end of a graph whose gate holds, whose handle states no
+// capacity, or the count of the input ends.  The gate proves that each
+// handle of an edge states its capacity.  Each call has a qualifier, so no
+// lookup by its arguments adds an overload.
 template <class Graph>
-inline constexpr bool states_stage_graph_capacities_v = detail::states_stage_graph_capacities_(
-    typename stage_graph_traits<Graph>::stage_pack_type{}, typename stage_graph_traits<Graph>::edge_pack_type{});
+inline constexpr std::size_t first_unstated_end_v =
+    detail::first_unstated_end_(typename stage_graph_traits<Graph>::stage_pack_type{});
+
+template <class Graph>
+inline constexpr std::size_t input_end_count_v =
+    detail::input_end_count_(typename stage_graph_traits<Graph>::stage_pack_type{});
+
+// The verdict on the input ends of a graph whose gate holds (THE MARKED
+// SYSTEM): admitted when the handle of each input end states the capacity of
+// its channel, or a refusal that names the first input end that states none.
+template <class Graph>
+[[nodiscard]] consteval ::foundation::algebra::net::NetVerdict check_stage_graph_ends_() noexcept {
+    if constexpr (first_unstated_end_v<Graph> == input_end_count_v<Graph>) {
+        return ::foundation::algebra::net::NetVerdict{};
+    } else {
+        return ::foundation::algebra::net::NetVerdict::refuse("stage graph: the handle of input ")
+            .put_number(first_unstated_end_v<Graph>)
+            .put(" of stage 0, an input end of the graph, states no capacity.  The handle of each input end states "
+                 "the capacity of its channel, and a rendezvous states 0.");
+    }
+}
 
 }  // namespace detail
 
 // True when a stage graph has a marked system (THE MARKED SYSTEM): its gate
-// holds, and each handle of an edge and of an input end states the capacity
-// of its channel.  Only a handle of an output end, the sink, can state none.
+// holds, and the handle of each input end states the capacity of its channel.
+// The gate proves that each handle of an edge states it, and only a handle of
+// an output end, the sink, can state none.
 template <class Graph>
-concept StatesStageGraphCapacities = StageGraphWellFormed<Graph> && detail::states_stage_graph_capacities_v<Graph>;
+concept StatesStageGraphCapacities =
+    StageGraphWellFormed<Graph> && detail::first_unstated_end_v<Graph> == detail::input_end_count_v<Graph>;
 
 // The net of a stage graph (THE NET), for a graph whose gate holds and whose
 // stages each have at most eight ports.
@@ -539,12 +569,15 @@ template <class Graph>
 }
 
 // The marked system of a stage graph (THE MARKED SYSTEM), for a graph whose
-// gate holds, whose handles state their capacities, and whose stages each
-// have at most eight ports.
+// gate holds and whose stages each have at most eight ports.  A graph with
+// an input end that states no capacity does not compile: one static_assert
+// fires, with a text that names the port.
 template <class Graph>
-    requires StatesStageGraphCapacities<Graph>
+    requires StageGraphWellFormed<Graph>
 [[nodiscard]] consteval auto marked_system_of_stage_graph() noexcept {
     using traits = detail::stage_graph_traits<Graph>;
+    constexpr ::foundation::algebra::net::NetVerdict verdict = detail::check_stage_graph_ends_<Graph>();
+    static_assert(verdict.is_admitted(), verdict);
     return detail::marked_system_of_stage_graph_(typename traits::stage_pack_type{}, typename traits::edge_pack_type{});
 }
 

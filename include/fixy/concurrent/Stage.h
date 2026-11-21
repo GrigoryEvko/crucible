@@ -530,9 +530,10 @@ mint_swmr_stage(Ctx const& ctx, std::remove_reference_t<::foundation::reflect::p
 // test/fixy/row_hash_census.h name them too.  No code runs them.
 namespace detail::stage_witness {
 
-// A pipeline joins two stages only when their handles name one channel, so
-// each fake names one.  The writer publishes into a cell that no stage
-// drains, so it names a cell of its own.
+// A pipeline joins two stages only when their handles name one channel and
+// state one capacity of it, so each fake names one and states the capacity
+// 0: each channel of a witness is a rendezvous.  The writer publishes into a
+// cell that no stage drains, so it names a cell of its own.
 template <typename T>
 struct FakeChannel {};
 
@@ -543,6 +544,7 @@ template <typename T>
 struct FakeConsumer {
     using channel_type = FakeChannel<T>;
     static constexpr std::size_t per_call_working_set = 64;
+    static constexpr std::size_t channel_capacity = 0;
     [[nodiscard]] ::foundation::core::Option<T> try_pop() noexcept { return {}; }
 };
 
@@ -550,6 +552,7 @@ template <typename T>
 struct FakeProducer {
     using channel_type = FakeChannel<T>;
     static constexpr std::size_t per_call_working_set = 64;
+    static constexpr std::size_t channel_capacity = 0;
     [[nodiscard]] bool try_push(T const&) noexcept { return false; }
 };
 

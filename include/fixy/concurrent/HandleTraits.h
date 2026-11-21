@@ -367,13 +367,12 @@ template <class Handle>
 concept StatesHandleCapacity = requires { static_cast<std::size_t>(Handle::channel_capacity); };
 
 // The two handles of one channel agree on its capacity: each of them states
-// the same capacity, or none of them states one.  A handle that states a
-// capacity and a handle that states none do not agree, so no capacity of a
-// channel comes from one of its handles alone.
+// the same capacity.  A handle that states none agrees with no handle, so no
+// capacity of a channel comes from one of its handles alone, and no channel
+// between two handles has an unknown capacity.  A rendezvous states 0.
 template <typename Producer, typename Consumer>
 concept HandlesAgreeOnCapacity =
-    (StatesHandleCapacity<Producer> && StatesHandleCapacity<Consumer>
-     && static_cast<std::size_t>(Producer::channel_capacity) == static_cast<std::size_t>(Consumer::channel_capacity))
-    || (!StatesHandleCapacity<Producer> && !StatesHandleCapacity<Consumer>);
+    StatesHandleCapacity<Producer> && StatesHandleCapacity<Consumer>
+    && static_cast<std::size_t>(Producer::channel_capacity) == static_cast<std::size_t>(Consumer::channel_capacity);
 
 }  // namespace fixy::concurrent

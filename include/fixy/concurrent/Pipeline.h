@@ -327,8 +327,11 @@ struct StageGraph {};
 // Each stage has at least one input and one output.  So when each port has
 // its edge, a path of edges connects each stage to the first stage.
 //
-// The two handles of an edge state the same capacity of its channel, or none
-// of them states one (HandlesAgreeOnCapacity).
+// The two handles of an edge state the same capacity of its channel
+// (HandlesAgreeOnCapacity).  An edge whose two handles state no capacity
+// has the fault EdgeCapacityUnstated, and an edge whose handles state two
+// capacities, or whose one handle states none, has the fault
+// EdgeCapacitiesDisagree.
 enum class StageGraphFault : std::uint8_t {
     None,
     NoStage,
@@ -337,6 +340,7 @@ enum class StageGraphFault : std::uint8_t {
     EdgeOutOfRange,
     EdgeRunsBackward,
     EdgeAcrossChannels,
+    EdgeCapacityUnstated,
     EdgeCapacitiesDisagree,
     InputPortEdgeCount,
     OutputPortEdgeCount,
@@ -379,8 +383,9 @@ struct stage_graph_traits<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>> 
 };
 
 // The fault of one edge, in a graph whose stages are each a stage.  The edge
-// faults follow the three terms of stage_port_feeds in its order, so an edge
-// that stage_port_feeds admits has no fault.
+// faults follow the three terms of stage_port_feeds in its order, and the
+// term of the capacity has two faults.  So an edge that stage_port_feeds
+// admits has no fault.
 template <class Edge, class... Stages>
 consteval StageGraphFault stage_graph_edge_fault() noexcept {
     if constexpr (Edge::from >= sizeof...(Stages) || Edge::to >= sizeof...(Stages)) {
@@ -395,6 +400,9 @@ consteval StageGraphFault stage_graph_edge_fault() noexcept {
                          || !HandlesShareChannel<stage_output_handle_t<Stages...[Edge::from], Edge::from_output>,
                                                  stage_input_handle_t<Stages...[Edge::to], Edge::to_input>>) {
         return StageGraphFault::EdgeAcrossChannels;
+    } else if constexpr (!StatesHandleCapacity<stage_output_handle_t<Stages...[Edge::from], Edge::from_output>>
+                         && !StatesHandleCapacity<stage_input_handle_t<Stages...[Edge::to], Edge::to_input>>) {
+        return StageGraphFault::EdgeCapacityUnstated;
     } else if constexpr (!HandlesAgreeOnCapacity<stage_output_handle_t<Stages...[Edge::from], Edge::from_output>,
                                                  stage_input_handle_t<Stages...[Edge::to], Edge::to_input>>) {
         return StageGraphFault::EdgeCapacitiesDisagree;

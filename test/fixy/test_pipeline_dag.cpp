@@ -224,13 +224,14 @@ static_assert(cc::StatesStageGraphCapacities<SinkChain>);
 static_assert(cc::marked_system_of_stage_graph<SinkChain>().channels[0].capacity == 4
               && cc::marked_system_of_stage_graph<SinkChain>().channels[2].capacity == 0);
 
-// A graph whose edge or input end states no capacity has no marked system:
-// marked_system_of_stage_graph asks StatesStageGraphCapacities.  The two
-// handles of the edge state none, so the gate of the graph admits it.
+// The gate refuses an edge whose two handles state no capacity.  A graph
+// whose input end states none passes the gate and has no marked system:
+// marked_system_of_stage_graph refuses it with a text, as the fixture
+// neg_stage_graph_input_end_states_no_capacity shows.
 using UnstatedEdgeChain =
     cc::StageGraph<cc::StagePack<IntoSinkStage, FromUnstatedStage>, cc::EdgePack<cc::StageEdge<0, 1>>>;
 using UnstatedInputChain = cc::StageGraph<cc::StagePack<FromUnstatedStage>, cc::EdgePack<>>;
-static_assert(cc::StageGraphWellFormed<UnstatedEdgeChain> && cc::StageGraphWellFormed<UnstatedInputChain>);
+static_assert(!cc::StageGraphWellFormed<UnstatedEdgeChain> && cc::StageGraphWellFormed<UnstatedInputChain>);
 static_assert(!cc::StatesStageGraphCapacities<UnstatedEdgeChain>
               && !cc::StatesStageGraphCapacities<UnstatedInputChain>);
 

@@ -29,12 +29,14 @@ struct FakeChannel {};
 template <typename T>
 struct FakeConsumer {
     using channel_type = FakeChannel<T>;
+    static constexpr std::size_t channel_capacity = 0;
     [[nodiscard]] ::foundation::core::Option<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>
 struct FakeProducer {
     using channel_type = FakeChannel<T>;
+    static constexpr std::size_t channel_capacity = 0;
     [[nodiscard]] bool try_push(T const&) noexcept { return false; }
 };
 

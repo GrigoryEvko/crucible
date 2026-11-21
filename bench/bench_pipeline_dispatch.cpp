@@ -48,6 +48,7 @@ template <std::size_t Ws>
 struct Consumer {
     using channel_type = IntChannel;
     static constexpr std::size_t per_call_working_set = Ws;
+    static constexpr std::size_t channel_capacity = 0;
     [[nodiscard]] ::fixy::Option<int> try_pop() noexcept { return ::fixy::Option<int>::some(1); }
 };
 
@@ -55,6 +56,7 @@ template <std::size_t Ws>
 struct Producer {
     using channel_type = IntChannel;
     static constexpr std::size_t per_call_working_set = Ws;
+    static constexpr std::size_t channel_capacity = 0;
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
 

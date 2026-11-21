@@ -26,6 +26,7 @@ template <std::size_t Ws>
 struct TinyConsumer {
     using channel_type = TinyChannel;
     static constexpr std::size_t per_call_working_set = Ws;
+    static constexpr std::size_t channel_capacity = 0;
     [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept {
         return ::foundation::core::Option<int>::some(1);
     }
@@ -35,6 +36,7 @@ template <std::size_t Ws>
 struct TinyProducer {
     using channel_type = TinyChannel;
     static constexpr std::size_t per_call_working_set = Ws;
+    static constexpr std::size_t channel_capacity = 0;
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
 

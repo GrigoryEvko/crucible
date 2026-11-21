@@ -195,8 +195,8 @@ static_assert(detail::stage_graph_check<NotAStageGraph>() == StageGraphCheck{Sta
 static_assert(detail::stage_graph_check<EmptyGraph>() == StageGraphCheck{StageGraphFault::NoStage});
 
 // The two handles of an edge agree on the capacity of its channel: the two
-// state one capacity, or none of them states one.  These handles name the
-// channel of S_int_to_int, whose handles state none.
+// state one capacity.  These handles name the channel of S_int_to_int, whose
+// handles state the capacity 0.
 template <typename T, std::size_t Capacity>
 struct SizedConsumer {
     using channel_type = FakeChannel<T>;
@@ -238,6 +238,39 @@ static_assert(StageGraphWellFormed<SizedGraph>);
 static_assert(detail::stage_graph_check<NarrowedGraph>()
               == StageGraphCheck{StageGraphFault::EdgeCapacitiesDisagree, 0});
 static_assert(detail::stage_graph_check<HalfSizedGraph>()
+              == StageGraphCheck{StageGraphFault::EdgeCapacitiesDisagree, 0});
+
+// Two handles of the channel of S_int_to_int that state no capacity.  No
+// capacity of their channel is known, so they agree with no handle, and an
+// edge between them has the fault EdgeCapacityUnstated.  A handle of an
+// output end of a pipeline, the sink, can state none.
+template <typename T>
+struct UnstatedConsumer {
+    using channel_type = FakeChannel<T>;
+    static constexpr std::size_t per_call_working_set = 64;
+    [[nodiscard]] ::foundation::core::Option<T> try_pop() noexcept { return {}; }
+};
+
+template <typename T>
+struct UnstatedProducer {
+    using channel_type = FakeChannel<T>;
+    static constexpr std::size_t per_call_working_set = 64;
+    [[nodiscard]] bool try_push(T const&) noexcept { return false; }
+};
+
+inline void stage_into_unstated(FakeConsumer<int>&&, UnstatedProducer<int>&&) noexcept {}
+inline void stage_from_unstated(UnstatedConsumer<int>&&, FakeProducer<int>&&) noexcept {}
+using S_into_unstated = Stage<&stage_into_unstated, HotFgCtx>;
+using S_from_unstated = Stage<&stage_from_unstated, HotFgCtx>;
+
+static_assert(!HandlesAgreeOnCapacity<UnstatedProducer<int>, UnstatedConsumer<int>>);
+static_assert(!HandlesAgreeOnCapacity<FakeProducer<int>, UnstatedConsumer<int>>);
+static_assert(!stages_chain<S_into_unstated, S_from_unstated>, "a channel with no stated capacity");
+static_assert(pipeline_chain<S_int_to_int, S_into_unstated>);
+using UnstatedGraph = StageGraph<StagePack<S_into_unstated, S_from_unstated>, EdgePack<StageEdge<0, 1>>>;
+using HalfUnstatedGraph = StageGraph<StagePack<S_int_to_int, S_from_unstated>, EdgePack<StageEdge<0, 1>>>;
+static_assert(detail::stage_graph_check<UnstatedGraph>() == StageGraphCheck{StageGraphFault::EdgeCapacityUnstated, 0});
+static_assert(detail::stage_graph_check<HalfUnstatedGraph>()
               == StageGraphCheck{StageGraphFault::EdgeCapacitiesDisagree, 0});
 
 static_assert(CtxFitsPipelineDag<BgDrainCtx, ChainGraph>);

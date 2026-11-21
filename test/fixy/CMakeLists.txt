@@ -5251,6 +5251,16 @@ fixy_neg_compile_test(neg_pipeline_dag_edge_capacities_disagree
   "required for the satisfaction of .StageGraphWellFormed<Graph>."
   "StagePack<fixy::concurrent::Stage<&build_body\\(stage_loop_fakes::EdgeConsumer<2>&&, stage_loop_fakes::EdgeProducer<3>&&\\)"
   "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeCapacitiesDisagree, 0, 0, 0\\}")
+# The fifth refusal: the one edge joins one channel, and none of its two
+# handles states a capacity.
+fixy_neg_compile_test(neg_pipeline_dag_edge_capacity_unstated
+  "required for the satisfaction of .StageGraphWellFormed<Graph>."
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeCapacityUnstated, 0, 0, 0\\}")
+# The marked system of a graph (THE MARKED SYSTEM of fixy/concurrent/
+# StageNet.h): the handle of an input end states no capacity.
+fixy_neg_compile_test(neg_stage_graph_input_end_states_no_capacity
+  "static assertion failed: stage graph: the handle of input 0 of stage 0, an input end of the graph, states no capacity\\."
+  "neg_stage_graph_input_end_states_no_capacity\\.cpp:[0-9]+:[0-9]+: +required from here")
 
 # The port check.  The first stage and the last stage are the ends of the
 # graph, and each other port has exactly one edge.  The four fixtures are

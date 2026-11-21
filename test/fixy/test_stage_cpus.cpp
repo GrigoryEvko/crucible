@@ -170,12 +170,14 @@ struct PinChannel {};
 struct PinConsumer {
     using channel_type = PinChannel;
     static constexpr std::size_t per_call_working_set = 64 * 1024 * KiB;
+    static constexpr std::size_t channel_capacity = 0;
     [[nodiscard]] ::fixy::Option<int> try_pop() noexcept { return ::fixy::Option<int>::some(1); }
 };
 
 struct PinProducer {
     using channel_type = PinChannel;
     static constexpr std::size_t per_call_working_set = 64 * 1024 * KiB;
+    static constexpr std::size_t channel_capacity = 0;
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
 
