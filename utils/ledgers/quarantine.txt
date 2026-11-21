@@ -71,7 +71,6 @@
 format 1
 rule quarantine
 reason @build/ | The unit perf of section 14.1 of the plan misc/01_10_2026_quarantine.md moves the embed of each BPF object onto the types of the base
-reason @build/test/ | The unit tests of section 14.1 of the plan misc/01_10_2026_quarantine.md moves each generated test header onto the types of the base
 reason bench/ | The unit bench of section 14.1 of the plan misc/01_10_2026_quarantine.md moves bench/ onto the types of the base, and bench/bench_harness.h goes first
 reason include/crucible/ | The units core-ir, vigil, cipher, cntp, observe, cog-mimic, perf and rest of section 14.1 of the plan misc/01_10_2026_quarantine.md move include/crucible/ onto the types of the base
 reason include/fixy/ | The slices of section 13.1 of the plan misc/01_10_2026_quarantine.md move fixy onto the families of the base, and the slice 4.9 removes each other std use, one unit for each directory
@@ -85,7 +84,6 @@ reason test/fuzz/ | The unit fuzz of section 14.1 of the plan misc/01_10_2026_qu
 reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_quarantine.md moves vessel/ onto the types of the base, and the ABI of PyTorch stays behind regions
 @build/ | opted-out | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
 @build/ | region | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
-@build/test/fixy/armed_roster/ | c-array-object | 1 | - | -
 bench/ | opted-out | 4 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 bench/ | opted-out | 1 | ABI: the BPF program of SchedSwitch writes the timeline that the harness reads | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 bench/ | opted-out | 2 | ABI: the BPF programs of the perf facades write the timeline rings that the bench reads | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
@@ -455,8 +453,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/ | std-entity | 2142 | - | -
-test/fixy/ | std-object | 665 | - | -
+test/fixy/ | std-entity | 2123 | - | -
+test/fixy/ | std-object | 664 | - | -
 test/fixy/neg/ | c-array-object | 42 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 322 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
@@ -673,7 +671,6 @@ test/fuzz/boundary/ | opted-out | 1 | ABI: the fuzzer gives its input as a point
 test/fuzz/boundary/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
 test/fuzz/boundary/ | region | 1 | ABI: the death path runs in a signal handler and in the death callback of the sanitizer | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
 test/fuzz/boundary/ | region | 1 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the entry view_entry.cpp of a fuzz harness of base types takes the input and the seeds of the runner as a std::span and a std::vector in one ABI region, and the test of the cap of a heap image takes a View of a map of 4 GiB of the guarded region door in one ABI region
-test/fuzz/boundary/harnesses/ | std-entity | 1 | - | -
 test/fuzz/property/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
 test/fuzz/property/ | opted-out | 3 | ORACLE: the overflow builtins of GCC are the model of the saturating operations | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
 test/fuzz/property/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region

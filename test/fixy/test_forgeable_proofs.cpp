@@ -416,9 +416,10 @@ struct RosterVerdict {
     std::meta::info first_stale{};
 };
 
+// The roster is a FixedArray or an array of the types, which a loop reads.
 // Complexity: the size of the roster times the size of the ledger.
-[[nodiscard]] consteval RosterVerdict roster_verdict(std::span<const std::meta::info> roster,
-                                                     std::span<const ByteCopyAllowance> ledger) {
+template <class Roster>
+[[nodiscard]] consteval RosterVerdict roster_verdict(Roster const& roster, std::span<const ByteCopyAllowance> ledger) {
     RosterVerdict result;
     for (const std::meta::info type : roster) {
         ++result.walked;
